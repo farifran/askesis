@@ -1,0 +1,102 @@
+import { ui } from './ui';
+import { handleHabitDrop } from './habitActions';
+import { isCurrentlySwiping } from './swipeHandler';
+import { Habit, state, TimeOfDay } from './state';
+import { getHabitDisplayInfo } from './i18n';
+
+export function setupDragAndDropHandler(habitContainer: HTMLElement) {
+    let draggedElement: HTMLElement | null = null;
+    let draggedHabitId: string | null = null;
+    let draggedHabitOriginalTime: TimeOfDay | null = null;
+
+    const handleBodyDragOver = (e: DragEvent) => {
+        e.preventDefault(); // É crucial para permitir o evento 'drop'.
+        const target = e.target as HTMLElement;
+
+        // Limpa os estilos de feedback de todos os grupos
+        document.querySelectorAll('.drag-over, .invalid-drop').forEach(el => el.classList.remove('drag-over', 'invalid-drop'));
+        
+        const dropZone = target.closest<HTMLElement>('.drop-zone');
+
+        if (dropZone && draggedHabitId) {
+            const habit = state.habits.find(h => h.id === draggedHabitId);
+            if (!habit) {
+                e.dataTransfer!.dropEffect = 'none';
+                return;
+            }
+
+            const newTime = dropZone.dataset.time as TimeOfDay;
+            const dailyInfo = state.dailyData[state.selectedDate]?.[draggedHabitId];
+            const scheduleForDay = dailyInfo?.dailySchedule || habit.times;
+
+            const isSameTime = newTime === draggedHabitOriginalTime;
+            // A drop is a duplicate if the target time is already in the schedule for the day.
+            const isDuplicate = scheduleForDay.includes(newTime);
+
+            if (!isSameTime && !isDuplicate) {
+                dropZone.classList.add('drag-over');
+                e.dataTransfer!.dropEffect = 'move';
+            } else {
+                if (isDuplicate && !isSameTime) {
+                    dropZone.classList.add('invalid-drop');
+                }
+                e.dataTransfer!.dropEffect = 'none';
+            }
+        } else {
+            e.dataTransfer!.dropEffect = 'none'; // Não é um alvo de drop válido.
+        }
+    };
+
+    const handleBodyDrop = (e: DragEvent) => {
+        e.preventDefault();
+        
+        // Limpa imediatamente o feedback visual ao soltar.
+        document.querySelectorAll('.drag-over, .invalid-drop').forEach(el => el.classList.remove('drag-over', 'invalid-drop'));
+
+        if (!draggedHabitId || !draggedHabitOriginalTime) return;
+        const target = e.target as HTMLElement;
+        const dropZone = target.closest<HTMLElement>('.drop-zone');
+
+        if (dropZone?.dataset.time) {
+            const newTime = dropZone.dataset.time as TimeOfDay;
+            // The final validation logic is inside handleHabitDrop, but dragOver should prevent invalid drops.
+            handleHabitDrop(draggedHabitId, draggedHabitOriginalTime, newTime);
+        }
+    };
+    
+    const cleanupDrag = () => {
+        draggedElement?.classList.remove('dragging');
+        document.querySelectorAll('.drag-over, .invalid-drop').forEach(el => el.classList.remove('drag-over', 'invalid-drop'));
+        document.body.removeEventListener('dragover', handleBodyDragOver);
+        document.body.removeEventListener('drop', handleBodyDrop);
+        draggedElement = null;
+        draggedHabitId = null;
+        draggedHabitOriginalTime = null;
+    };
+
+    habitContainer.addEventListener('dragstart', e => {
+        if (isCurrentlySwiping()) {
+            e.preventDefault();
+            return;
+        }
+        const cardContent = (e.target as HTMLElement).closest<HTMLElement>('.habit-content-wrapper');
+        const card = cardContent?.closest<HTMLElement>('.habit-card');
+        if (card && card.dataset.habitId && card.dataset.time) {
+            draggedElement = card;
+            draggedHabitId = card.dataset.habitId;
+            draggedHabitOriginalTime = card.dataset.time as TimeOfDay;
+
+            e.dataTransfer!.setData('text/plain', draggedHabitId);
+            e.dataTransfer!.effectAllowed = 'move';
+            
+            document.body.addEventListener('dragover', handleBodyDragOver);
+            document.body.addEventListener('drop', handleBodyDrop);
+            document.body.addEventListener('dragend', cleanupDrag, { once: true });
+
+            // Atraso para permitir que o navegador capture o "fantasma" do elemento original
+            setTimeout(() => {
+                card.classList.add('dragging');
+            }, 0);
+        }
+    });
+}

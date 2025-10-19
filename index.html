@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Habit Tracker com IA</title>
+    <link rel="stylesheet" href="bundle.css">
+<script type="importmap">
+{
+  "imports": {
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.25.0"
+  }
+}
+</script>
+</head>
+<body>
+    <div class="app-container">
+        <header class="app-header">
+            <div class="header-top">
+                <button id="fab-add-habit" aria-label="Adicionar Hábito">+</button>
+                <div id="calendar-strip" class="calendar-strip"></div>
+                <div class="header-icon-stack">
+                    <button id="manage-habits-btn" class="icon-btn" aria-label="Configurações"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></button>
+                    <button id="ai-eval-btn" class="icon-btn" aria-label="Avaliação IA"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg></button>
+                </div>
+            </div>
+            <div class="header-bottom">
+                <h1 id="header-title">Hoje</h1>
+                <div id="time-filter-rotary" class="reel-rotary">
+                    <button id="time-filter-prev" class="reel-btn" aria-label="Horário anterior"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg></button>
+                    <div id="time-filter-viewport" class="reel-viewport">
+                        <div id="time-filter-reel" class="reel-reel"></div>
+                    </div>
+                    <button id="time-filter-next" class="reel-btn" aria-label="Próximo horário"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg></button>
+                </div>
+            </div>
+        </header>
+
+        <main id="habit-container">
+            <div class="habit-group-wrapper" data-time-wrapper="Manhã">
+                <h2>Manhã</h2>
+                <div class="duplicate-drop-notice"></div>
+                <div class="habit-group drop-zone" data-time="Manhã"></div>
+            </div>
+            <div class="habit-group-wrapper" data-time-wrapper="Tarde">
+                <h2>Tarde</h2>
+                <div class="duplicate-drop-notice"></div>
+                <div class="habit-group drop-zone" data-time="Tarde"></div>
+            </div>
+            <div class="habit-group-wrapper" data-time-wrapper="Noite">
+                <h2>Noite</h2>
+                <div class="duplicate-drop-notice"></div>
+                <div class="habit-group drop-zone" data-time="Noite"></div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modals -->
+    <div id="explore-modal" class="modal-overlay">
+        <div class="modal-content">
+            <h2>Explorar Hábitos</h2>
+            <div id="explore-habit-list"></div>
+            <button id="create-custom-habit-btn" class="btn btn--primary">Criar hábito personalizado</button>
+            <button class="btn modal-close-btn">Fechar</button>
+        </div>
+    </div>
+    
+    <div id="manage-modal" class="modal-overlay">
+        <div class="modal-content">
+            <h2>Gerenciar Hábitos</h2>
+            <ul id="habit-list"></ul>
+            <div class="modal-settings-section">
+                <h3>Configurações Gerais</h3>
+                <div class="setting-item">
+                    <label id="label-language">Idioma</label>
+                    <div id="language-rotary" class="reel-rotary">
+                        <button id="language-prev" class="reel-btn" aria-label="Idioma anterior"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg></button>
+                        <div id="language-viewport" class="reel-viewport">
+                            <div id="language-reel" class="reel-reel"></div>
+                        </div>
+                        <button id="language-next" class="reel-btn" aria-label="Próximo idioma"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg></button>
+                    </div>
+                </div>
+                <div class="setting-item">
+                    <label id="label-reset">Reinicialização</label>
+                    <button id="reset-app-btn" class="btn btn--danger">Apagar dados</button>
+                </div>
+            </div>
+            <button class="btn modal-close-btn">Fechar</button>
+        </div>
+    </div>
+
+    <div id="ai-modal" class="modal-overlay">
+        <div class="modal-content">
+            <h2 id="ai-modal-title">Avaliação da IA</h2>
+            <div id="ai-response"></div>
+            <button class="btn modal-close-btn">Fechar</button>
+        </div>
+    </div>
+
+    <div id="confirm-modal" class="modal-overlay">
+        <div class="modal-content">
+            <h2>Confirmar Ação</h2>
+            <p id="confirm-modal-text"></p>
+            <div class="modal-actions">
+                <button class="btn modal-close-btn">Cancelar</button>
+                <button id="confirm-modal-edit-btn" class="btn">Editar</button>
+                <button id="confirm-modal-confirm-btn" class="btn btn--primary">Confirmar</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="notes-modal" class="modal-overlay">
+        <div class="modal-content">
+            <h2 id="notes-modal-title"></h2>
+            <p id="notes-modal-subtitle"></p>
+            <textarea id="notes-textarea" rows="5" placeholder="Digite sua nota..."></textarea>
+            <div class="modal-actions">
+                <button class="btn modal-close-btn">Cancelar</button>
+                <button id="save-note-btn" class="btn btn--primary">Salvar Nota</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="edit-habit-modal" class="modal-overlay">
+        <div class="modal-content">
+            <h2 id="edit-habit-modal-title"></h2>
+            <form id="edit-habit-form" novalidate>
+                <div class="form-group">
+                    <label for="habit-name" id="label-habit-name">Nome</label>
+                    <input type="text" id="habit-name" name="habit-name" class="form-control" required>
+                    <div class="duplicate-habit-notice"></div>
+                </div>
+                <div class="form-group">
+                    <label id="label-habit-time">Horário(s)</label>
+                    <div id="habit-time-checkboxes" class="time-checkbox-group">
+                        <label>
+                            <input type="checkbox" name="habit-time" value="Manhã">
+                            <span data-i18n="filterMorning">Manhã</span>
+                        </label>
+                        <label>
+                            <input type="checkbox" name="habit-time" value="Tarde">
+                            <span data-i18n="filterAfternoon">Tarde</span>
+                        </label>
+                        <label>
+                            <input type="checkbox" name="habit-time" value="Noite">
+                            <span data-i18n="filterEvening">Noite</span>
+                        </label>
+                    </div>
+                </div>
+                <div class="form-group form-group--inline">
+                    <label id="label-frequency">Frequência</label>
+                    <div id="frequency-rotary" class="reel-rotary">
+                        <button type="button" id="frequency-prev" class="reel-btn" aria-label="Frequência anterior"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg></button>
+                        <div id="frequency-viewport" class="reel-viewport">
+                            <div id="frequency-reel" class="reel-reel"></div>
+                        </div>
+                        <button type="button" id="frequency-next" class="reel-btn" aria-label="Próxima frequência"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg></button>
+                    </div>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn modal-close-btn">Cancelar</button>
+                    <button type="submit" class="btn btn--primary">Salvar Hábito</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="undo-toast" class="undo-toast">
+        <span>Hábito encerrado.</span>
+        <button id="undo-btn">Desfazer</button>
+    </div>
+    
+    <script type="module" src="bundle.js"></script>
+</body>
+</html>

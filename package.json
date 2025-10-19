@@ -1,0 +1,18 @@
+{
+  "name": "habit-tracker-ai-vercel",
+  "version": "1.0.0",
+  "description": "A dynamic habit tracker with data visualization and personalized AI-powered feedback.",
+  "scripts": {
+    "build": "node build.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@google/genai": "^1.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.24",
+    "esbuild": "^0.20.0"
+  }
+}

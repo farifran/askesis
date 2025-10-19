@@ -1,0 +1,1245 @@
+:root {
+    --bg-color: #121212;
+    --surface-color: #1e1e1e;
+    --surface-hover: #2a2a2a;
+    --border-color: #2a2a2a;
+    --text-primary: #e5e5e5;
+    --text-secondary: #b3b3b3;
+    --text-tertiary: #737373;
+    --accent-blue: #007aff;
+    --accent-blue-hover: #006be0;
+    --accent-green: #27ae60;
+    --accent-green-hover: #229954;
+    --color-red: #e74c3c;
+    --color-red-hover: #c0392b;
+    --color-yellow: #facc15;
+    --surface-light: #e0e0e0;
+    --surface-light-hover: #d0d0d0;
+    --icon-dark: #333333;
+    --swipe-action-width: 60px;
+}
+
+@keyframes green-glow {
+    0% { box-shadow: 0 0 4px var(--accent-green); }
+    50% { box-shadow: 0 0 12px var(--accent-green); }
+    100% { box-shadow: 0 0 4px var(--accent-green); }
+}
+
+@keyframes white-glow-text {
+    0% { text-shadow: 0 0 3px var(--text-primary), 0 0 5px var(--text-primary); }
+    50% { text-shadow: 0 0 8px var(--text-primary), 0 0 12px var(--text-primary); }
+    100% { text-shadow: 0 0 3px var(--text-primary), 0 0 5px var(--text-primary); }
+}
+
+@keyframes yellow-glow {
+    0% { text-shadow: 0 0 2px var(--color-yellow), 0 0 4px var(--color-yellow); }
+    50% { text-shadow: 0 0 8px var(--color-yellow), 0 0 12px var(--color-yellow); }
+    100% { text-shadow: 0 0 2px var(--color-yellow), 0 0 4px var(--color-yellow); }
+}
+
+@keyframes blue-glow {
+    0% { box-shadow: 0 0 3px var(--accent-blue), 0 0 5px var(--accent-blue); }
+    50% { box-shadow: 0 0 8px var(--accent-blue), 0 0 12px var(--accent-blue); }
+    100% { box-shadow: 0 0 3px var(--accent-blue), 0 0 5px var(--accent-blue); }
+}
+
+/* --- RESET E ESTILOS GLOBAIS --- */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg-color);
+    color: var(--text-primary);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+/* --- LAYOUT BASE --- */
+.app-container {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 0 16px 100px 16px;
+}
+
+.app-header {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    padding: 20px 0;
+    margin-bottom: 16px;
+}
+
+.header-top {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.header-icon-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+}
+.header-icon-stack .icon-btn {
+    width: 38px;
+    height: 38px;
+    font-size: 20px;
+}
+.header-icon-stack #ai-eval-btn {
+    width: 38px;
+    height: 38px;
+}
+.header-icon-stack #ai-eval-btn svg {
+    width: 22px;
+    height: 22px;
+}
+.header-icon-stack #ai-eval-btn.has-notification::after {
+    top: 4px;
+    right: 4px;
+}
+
+.header-bottom {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.header-bottom #header-title {
+    flex-shrink: 0;
+}
+
+
+.app-header h1 {
+    font-size: 28px;
+    font-weight: 700;
+    position: relative;
+    top: -1px;
+}
+
+/* --- COMPONENTES --- */
+
+/* Botões */
+.btn {
+    padding: 10px 18px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--surface-color);
+    color: var(--text-primary);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.btn:hover { background: var(--border-color); }
+
+.btn--danger {
+    background-color: var(--color-red);
+    border-color: var(--color-red);
+    color: white;
+}
+.btn--danger:hover {
+    background-color: var(--color-red-hover);
+    border-color: var(--color-red-hover);
+}
+.btn--primary {
+    background-color: var(--accent-blue);
+    border-color: var(--accent-blue);
+    color: white;
+}
+.btn--primary:hover { opacity: 0.9; }
+
+.icon-btn {
+    background: none;
+    border: none;
+    color: var(--text-primary);
+    font-size: 24px;
+    cursor: pointer;
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0; /* Garante que os botões de ícone não encolham */
+}
+
+#ai-eval-btn {
+    width: 48px;
+    height: 48px;
+    position: relative; /* Necessário para o posicionamento da notificação */
+}
+#ai-eval-btn svg {
+    width: 28px;
+    height: 28px;
+}
+
+#ai-eval-btn.has-notification::after {
+    content: '';
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 10px;
+    height: 10px;
+    background-color: var(--accent-blue);
+    border: 2px solid var(--bg-color);
+    border-radius: 50%;
+    animation: blue-glow 1.5s infinite ease-in-out;
+}
+
+#ai-eval-btn.loading {
+    opacity: 0.6;
+    cursor: wait;
+}
+
+#fab-add-habit {
+    width: 40px;
+    height: 40px;
+    font-size: 24px;
+    font-weight: 300;
+    line-height: 1;
+    border-radius: 50%;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    background-color: var(--accent-green);
+    color: white;
+    border: none;
+    box-shadow: 0 0 5px var(--accent-green);
+    animation: green-glow 2.5s infinite ease-in-out;
+    transition: all 0.2s ease;
+}
+
+#fab-add-habit:hover {
+    background-color: var(--accent-green-hover);
+    transform: scale(1.1);
+}
+
+/* Seletor de Carrossel (Genérico) */
+.reel-rotary {
+    display: flex;
+    align-items: center;
+    background-color: var(--surface-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    overflow: hidden;
+    height: 28px; /* Altura controlada */
+}
+
+.reel-viewport {
+    height: 100%;
+    overflow: hidden;
+    position: relative;
+    display: flex;
+    align-items: center;
+    cursor: grab;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: none;
+}
+.reel-viewport:focus {
+    outline: 2px solid var(--accent-blue);
+    outline-offset: 2px;
+}
+
+.reel-reel {
+    display: flex;
+    position: absolute;
+    height: 100%;
+    transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+.reel-option {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+
+.reel-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 2px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s;
+}
+
+.reel-btn:hover {
+    background-color: var(--surface-hover);
+}
+
+.reel-btn svg {
+    stroke: var(--text-tertiary);
+    width: 16px;
+    height: 16px;
+}
+
+/* Específico para o seletor de horários (header) */
+#time-filter-rotary {
+    border: none;
+    height: 24px;
+}
+#time-filter-viewport,
+#time-filter-rotary .reel-option {
+    width: 52px;
+}
+#time-filter-rotary .reel-option {
+    color: var(--text-primary);
+}
+
+
+/* Específico para o seletor de idioma */
+#language-rotary .reel-viewport,
+#language-rotary .reel-option {
+    width: 95px;
+}
+
+/* Específico para seletores no modal */
+#frequency-rotary .reel-viewport,
+#frequency-rotary .reel-option {
+    width: 125px;
+}
+#habit-time-rotary .reel-viewport,
+#habit-time-rotary .reel-option {
+    width: 80px;
+}
+#frequency-rotary .reel-option,
+#habit-time-rotary .reel-option {
+    color: var(--text-primary);
+}
+
+
+/* Calendário */
+.calendar-strip {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    flex: 1; /* Permite que ele cresça e encolha */
+    min-width: 0; /* Importante para o encolhimento */
+}
+.calendar-strip::-webkit-scrollbar { display: none; }
+
+.day-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 8px;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    border: 2px solid transparent;
+}
+.day-item:hover { background-color: var(--surface-hover); }
+.day-item.selected { background-color: var(--surface-color); }
+.day-item .day-name {
+    display: block;
+    font-size: 12px;
+    color: var(--text-secondary);
+    font-weight: 500;
+    transform: translateZ(0); /* Garante a renderização correta no carregamento inicial */
+}
+
+.day-progress-ring {
+    position: relative;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+}
+.day-progress-ring::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    padding: 2px;
+    background: conic-gradient(
+        from -90deg,
+        var(--accent-blue) 0% var(--completed-percent, 0%),
+        var(--text-primary) var(--completed-percent, 0%) var(--total-percent, 0%),
+        transparent var(--total-percent, 0%) 100%
+    );
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+}
+
+.day-item .day-number {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-primary);
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    z-index: 1;
+}
+.day-item.today .day-number {
+    background-color: var(--accent-green);
+    color: white;
+    animation: green-glow 2.5s infinite ease-in-out;
+}
+
+/* Destaca o número do dia se uma meta foi aumentada */
+.day-item .day-number.has-plus {
+    color: var(--text-primary);
+    font-weight: 700;
+    animation: white-glow-text 2.5s infinite ease-in-out;
+}
+
+/* Garante que a cor 'has-plus' sobrescreva a cor 'today' */
+.day-item.today .day-number.has-plus {
+    color: var(--text-primary);
+}
+
+/* Cartões de Hábito */
+.habit-group-wrapper { margin-bottom: 0; }
+.habit-group-wrapper + .habit-group-wrapper {
+    margin-top: 12px;
+}
+
+.habit-container h2 {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 12px;
+    padding-left: 4px;
+}
+.habit-group {
+    padding: 0 8px; /* Removido padding vertical */
+    border-radius: 12px;
+    border: 2px dashed transparent;
+    transition: background-color 0.2s, border-color 0.2s;
+}
+.habit-group.drag-over {
+    background-color: var(--surface-hover);
+    border-color: var(--accent-blue);
+}
+.habit-group.invalid-drop {
+    border-color: var(--color-red);
+}
+.empty-group-placeholder {
+    text-align: center;
+    padding: 10px;
+    color: var(--text-tertiary);
+    font-style: italic;
+    font-size: 14px;
+}
+
+.habit-card {
+    border-radius: 10px;
+    margin-bottom: 10px;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+}
+
+.habit-group .habit-card:last-child {
+    margin-bottom: 0;
+}
+
+/* Nova barra indicadora vertical de status */
+.habit-card::before {
+    content: '';
+    position: absolute;
+    top: 8px;
+    bottom: 8px;
+    width: 5px;
+    border-radius: 3px;
+    z-index: 3;
+    background-color: transparent;
+    transition: transform 0.3s ease, background-color 0.3s ease;
+    transform: scaleX(0);
+}
+
+/* Barra cinza à esquerda para 'adiado' */
+.habit-card.snoozed::before {
+    left: 5px;
+    background-color: var(--text-tertiary);
+    transform: scaleX(1);
+    transform-origin: left;
+}
+
+/* Barra azul à direita para 'concluído' */
+.habit-card.completed::before {
+    right: 5px;
+    background-color: var(--accent-blue);
+    transform: scaleX(1);
+    transform-origin: right;
+}
+
+/* Oculta a barra de status durante o deslize ou quando as ações estão abertas */
+.habit-card.is-swiping::before,
+.habit-card.is-open-left::before,
+.habit-card.is-open-right::before {
+    transform: scaleX(0);
+    transition: transform 0.2s ease-out; /* Garante que ela desapareça rapidamente */
+}
+
+.habit-card::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 10px;
+    border: 1px solid var(--border-color);
+    pointer-events: none;
+    z-index: 3;
+    transition: border-color 0.2s ease;
+}
+
+/* Remove a borda quando o indicador de barra está visível */
+.habit-card.completed::after,
+.habit-card.snoozed::after {
+    border-color: transparent;
+}
+
+.habit-content-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 20px 12px 23px;
+    position: relative;
+    z-index: 2;
+    background-color: var(--surface-color);
+    cursor: pointer;
+    transition: transform 0.3s cubic-bezier(0.23, 1, 0.32, 1), background-color 0.2s ease;
+    border-radius: 9px;
+    flex-grow: 1;
+    touch-action: pan-y;
+}
+.habit-card:hover .habit-content-wrapper { background-color: var(--surface-hover); }
+
+.habit-card.completed .habit-content-wrapper { background-color: #1c2a3e; }
+
+.habit-card.snoozed .habit-content-wrapper {
+    background-color: var(--surface-color);
+}
+.habit-card.snoozed .habit-icon,
+.habit-card.snoozed .habit-details,
+.habit-card.snoozed .habit-goal {
+    opacity: 0.5;
+}
+
+
+/* Estilo para o placeholder fantasma durante o arraste */
+.habit-card.dragging {
+    opacity: 0.4;
+}
+.habit-card.is-swiping .habit-content-wrapper {
+    transition: none; /* Desativa a transição durante o deslize manual */
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+
+/* Estilos de consolidação de hábito */
+.habit-card.semi-consolidated::after {
+    border-color: rgba(255, 255, 255, 0.8);
+}
+.habit-card.consolidated::after {
+    border-color: var(--accent-green);
+}
+.consolidation-message {
+    font-size: 10px;
+    font-weight: 500;
+    margin-top: 4px;
+    color: var(--text-secondary);
+}
+.consolidated .consolidation-message {
+    color: var(--accent-green);
+}
+
+.habit-icon {
+    font-size: 14px;
+    width: 34px;
+    height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+}
+.habit-icon svg {
+    width: 60%;
+    height: 60%;
+}
+.habit-details { flex-grow: 1; }
+.habit-details .name {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-primary);
+    transition: color 0.3s ease, text-decoration-color 0.3s ease;
+}
+.habit-details .subtitle { font-size: 11px; color: var(--text-secondary); }
+
+.habit-card.completed .habit-details .name {
+    color: var(--text-secondary);
+    text-decoration: line-through;
+    text-decoration-color: var(--accent-blue);
+    text-decoration-thickness: 2px;
+}
+
+.habit-goal {
+    text-align: right;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    min-height: 26px;
+}
+.habit-goal .progress { font-size: 11px; font-weight: 600; }
+.habit-goal .unit { font-size: 8px; color: var(--text-secondary); }
+
+.habit-goal-controls {
+    display: flex;
+    align-items: center;
+    gap: 0px;
+    transition: opacity 0.2s ease;
+}
+.goal-control-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-primary);
+    font-size: 22px;
+    font-weight: 500;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    padding: 0;
+    flex-shrink: 0;
+}
+.goal-control-btn:hover { background-color: var(--surface-hover); }
+.goal-control-btn:active { transform: scale(0.95); }
+.goal-value-wrapper {
+    text-align: center;
+    min-width: 23px;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    transition: background-color 0.2s;
+}
+.goal-value-wrapper:hover {
+    background-color: var(--surface-hover);
+}
+
+.goal-input-inline {
+    width: 40px;
+    background: var(--bg-color);
+    border: 1px solid var(--accent-blue);
+    color: var(--text-primary);
+    font-size: 14px;
+    text-align: center;
+    border-radius: 4px;
+    padding: 2px;
+    -moz-appearance: textfield; /* Esconde os botões de seta no Firefox */
+}
+.goal-input-inline::-webkit-outer-spin-button,
+.goal-input-inline::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+/* Feedback de cor para ajuste de meta */
+.goal-value-wrapper .progress {
+    color: var(--text-primary); /* Cor branca padrão */
+    transition: color 0.3s ease;
+}
+.goal-value-wrapper .progress.goal-increased {
+    color: var(--accent-green);
+}
+.goal-value-wrapper .progress.goal-decreased {
+    color: var(--color-red);
+}
+
+/* Ações de Deslize */
+.habit-actions-left, .habit-actions-right {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    width: 200px;
+}
+.habit-actions-left {
+    left: 0;
+    background-color: var(--text-tertiary);
+}
+.habit-actions-right {
+    right: 0;
+    background-color: var(--accent-blue);
+    justify-content: flex-end;
+}
+
+/* --- ADICIONADO: Estilos para o estado de deslize aberto --- */
+.habit-card.is-open-left .habit-content-wrapper {
+    transform: translateX(var(--swipe-action-width));
+}
+.habit-card.is-open-right .habit-content-wrapper {
+    transform: translateX(calc(-1 * var(--swipe-action-width)));
+}
+
+.habit-card.is-open-left .habit-goal-controls,
+.habit-card.is-open-right .habit-goal-controls {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.swipe-delete-btn, .swipe-note-btn {
+    border: none;
+    height: 100%;
+    width: var(--swipe-action-width);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s;
+    /* A cor de fundo agora colore o ícone, que é uma máscara */
+    background-color: white;
+    -webkit-mask-size: 24px;
+    mask-size: 24px;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    -webkit-mask-position: center;
+    mask-position: center;
+}
+
+.swipe-delete-btn:hover, .swipe-note-btn:hover {
+    background-color: var(--surface-light-hover); /* Muda a cor do ÍCONE no hover */
+}
+
+.swipe-delete-btn {
+    -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 6h18'/%3E%3Cpath d='M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2'/%3E%3Cline x1='10' y1='11' x2='10' y2='17'/%3E%3Cline x1='14' y1='11' x2='14' y2='17'/%3E%3C/svg%3E");
+    mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 6h18'/%3E%3Cpath d='M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2'/%3E%3Cline x1='10' y1='11' x2='10' y2='17'/%3E%3Cline x1='14' y1='11' x2='14' y2='17'/%3E%3C/svg%3E");
+}
+
+.swipe-note-btn {
+    -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'/%3E%3Cpolyline points='14 2 14 8 20 8'/%3E%3Cline x1='12' y1='18' x2='12' y2='12'/%3E%3Cline x1='9' y1='15' x2='15' y2='15'/%3E%3C/svg%3E");
+    mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'/%3E%3Cpolyline points='14 2 14 8 20 8'/%3E%3Cline x1='12' y1='18' x2='12' y2='12'/%3E%3Cline x1='9' y1='15' x2='15' y2='15'/%3E%3C/svg%3E");
+}
+
+.swipe-note-btn.has-note {
+    -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'/%3E%3Cpolyline points='14 2 14 8 20 8'/%3E%3Cline x1='8' y1='13' x2='16' y2='13'/%3E%3Cline x1='8' y1='17' x2='16' y2='17'/%3E%3C/svg%3E");
+    mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'/%3E%3Cpolyline points='14 2 14 8 20 8'/%3E%3Cline x1='8' y1='13' x2='16' y2='13'/%3E%3Cline x1='8' y1='17' x2='16' y2='17'/%3E%3C/svg%3E");
+}
+
+/* --- MODAIS --- */
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    backdrop-filter: blur(5px);
+    -webkit-backdrop-filter: blur(5px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.3s, visibility 0.3s;
+}
+.modal-overlay.visible { opacity: 1; visibility: visible; }
+.modal-content {
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    width: 90%;
+    max-width: 400px;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    padding: 24px;
+}
+.modal-content h2 {
+    margin-bottom: 24px;
+    text-align: center;
+}
+/* Estilos aplicados apenas a botões de fechar que são filhos diretos do modal-content */
+.modal-content > .modal-close-btn { 
+    margin-top: 20px; 
+    width: 100%; 
+    padding: 12px; 
+}
+
+/* Modal Gerenciar Hábito */
+#habit-list { list-style: none; margin-bottom: 20px; max-height: 200px; overflow-y: auto; }
+#habit-list li.habit-list-item { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--border-color); }
+#habit-list li:last-child { border-bottom: none; }
+#habit-list li span {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+#habit-list li svg {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+}
+.habit-list-actions {
+    display: flex;
+    gap: 8px;
+}
+.end-habit-btn, .permanent-delete-habit-btn, .reactivate-habit-btn, .graduate-habit-btn, .edit-habit-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px;
+    border-radius: 50%;
+    transition: background-color 0.2s;
+}
+.end-habit-btn:hover, .permanent-delete-habit-btn:hover, .reactivate-habit-btn:hover, .graduate-habit-btn:hover, .edit-habit-btn:hover {
+    background-color: var(--surface-hover);
+}
+.end-habit-btn, .edit-habit-btn {
+    color: var(--text-secondary);
+}
+.permanent-delete-habit-btn {
+    color: var(--color-red);
+}
+.reactivate-habit-btn {
+    color: var(--accent-green);
+}
+.graduate-habit-btn {
+    color: var(--color-yellow);
+}
+
+
+/* Estilo para hábitos no modal de gerenciamento */
+.habit-list-item.ended {
+    opacity: 0.6;
+}
+
+.habit-list-item.graduated {
+    opacity: 0.8;
+}
+
+
+/* Opções no Modal de Gerenciamento */
+.modal-settings-section {
+    margin-top: 24px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+.modal-settings-section h3 {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 16px;
+    padding-bottom: 0;
+    border-bottom: none;
+}
+.setting-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.setting-item label {
+    font-size: 14px;
+    color: var(--text-secondary);
+}
+
+/* --- REGRAS MOBILE-FIRST PARA MODAL EXPLORAR --- */
+#explore-modal .modal-content {
+    padding: 20px 8px;
+    width: 96vw;
+    max-width: 96vw;
+}
+#explore-habit-list {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 4px;
+    overflow-y: auto;
+    margin-bottom: 20px;
+}
+.explore-habit-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 8px;
+    padding: 8px 2px;
+    background-color: var(--bg-color);
+    border-radius: 12px;
+    cursor: pointer;
+    transition: background-color 0.2s, opacity 0.2s;
+}
+.explore-habit-item:hover { background-color: var(--surface-hover); }
+.explore-habit-item.disabled {
+    opacity: 0.5;
+    pointer-events: none;
+    cursor: default;
+}
+.explore-habit-item.disabled:hover {
+    background-color: var(--bg-color);
+}
+.explore-habit-icon {
+    font-size: 24px;
+    width: 38px;
+    height: 38px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--surface-color);
+    border-radius: 8px;
+    margin-bottom: 2px;
+}
+.explore-habit-icon svg {
+    width: 60%;
+    height: 60%;
+}
+.explore-habit-details .name {
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1.2;
+}
+.explore-habit-details .subtitle {
+    display: none;
+}
+#create-custom-habit-btn { width: 100%; padding: 12px; }
+
+/* Modal AI & Confirmação */
+#ai-response { margin-bottom: 20px; max-height: 300px; overflow-y: auto; color: var(--text-secondary); line-height: 1.6; }
+#ai-response strong { color: var(--text-primary); font-weight: 600; }
+#ai-response p { margin-bottom: 10px; }
+#ai-response p:last-child { margin-bottom: 0; }
+#ai-response ul { list-style: none; padding-left: 0; margin-top: 10px; }
+#ai-response li { 
+    margin-bottom: 8px; 
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+#ai-response li svg {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+}
+.loader { text-align: center; padding: 20px; font-style: italic; color: var(--text-tertiary); }
+#confirm-modal-text {
+    color: var(--text-secondary);
+    line-height: 1.6;
+    margin-bottom: 10px;
+}
+#confirm-modal {
+    z-index: 1001; /* Garante que o modal de confirmação apareça sobre outros modais, como o de edição */
+}
+
+/* --- UTILITÁRIOS --- */
+.undo-toast {
+    position: fixed;
+    bottom: -100px;
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: #252525;
+    color: var(--text-primary);
+    padding: 14px 20px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    transition: bottom 0.5s cubic-bezier(0.23, 1, 0.32, 1);
+    z-index: 2000;
+}
+.undo-toast.visible {
+    bottom: 20px;
+    /* Adiciona espaçamento para a barra de gestos em dispositivos móveis modernos */
+    bottom: calc(20px + env(safe-area-inset-bottom));
+}
+.undo-toast button {
+    background: none;
+    border: none;
+    color: var(--accent-blue);
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+    padding: 0;
+}
+
+.duplicate-habit-notice, .duplicate-drop-notice {
+    color: var(--color-red);
+    font-size: 13px;
+    font-weight: 500;
+    opacity: 0;
+    max-height: 0;
+    transition: opacity 0.3s, max-height 0.3s, padding 0.3s;
+    text-align: center;
+    padding: 0;
+    margin-top: 4px;
+}
+.duplicate-drop-notice {
+    padding-bottom: 8px; /* Espaço quando a notificação de drop aparece */
+}
+.duplicate-habit-notice.visible, .duplicate-drop-notice.visible {
+    opacity: 1;
+    max-height: 40px;
+}
+.duplicate-habit-notice.visible {
+    padding: 8px 0;
+}
+
+
+/* Modal de Notas */
+#notes-modal .modal-content {
+    gap: 16px;
+}
+#notes-modal h2, #notes-modal p {
+    margin: 0;
+    text-align: center;
+}
+#notes-modal-subtitle {
+    color: var(--text-secondary);
+}
+#notes-textarea {
+    background: var(--bg-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 12px;
+    color: var(--text-primary);
+    font-size: 14px;
+    resize: vertical;
+    width: 100%;
+    min-height: 100px;
+}
+
+.modal-actions {
+    display: flex;
+    gap: 12px;
+    margin-top: 24px;
+}
+.modal-actions .btn {
+    flex-grow: 1;
+    padding: 12px;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+
+/* Novo estilo para ícone e texto 'adiado' */
+.snoozed-icon {
+    width: 20px;
+    height: 20px;
+    stroke: var(--text-tertiary);
+}
+
+.snoozed-text {
+    font-size: 14px !important;
+    color: var(--text-tertiary);
+    font-weight: 500;
+}
+
+/* Estilos para o Modal de Edição/Criação de Hábito */
+#edit-habit-modal .modal-content {
+    max-width: 440px;
+}
+.form-group {
+    margin-bottom: 20px;
+}
+
+.form-group label {
+    display: block;
+    color: var(--text-secondary);
+    font-size: 14px;
+    font-weight: 500;
+    margin-bottom: 8px;
+}
+.form-control {
+    width: 100%;
+    background: var(--bg-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 12px;
+    color: var(--text-primary);
+    font-size: 15px;
+    height: 44px;
+}
+.form-control[readonly] {
+    background-color: var(--surface-hover);
+    cursor: not-allowed;
+}
+
+.form-row {
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+    margin-bottom: 20px;
+}
+.form-row .form-group {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-bottom: 0;
+}
+
+/* Novo estilo para layout em linha no formulário */
+.form-group.form-group--inline {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.form-group.form-group--inline label {
+    margin-bottom: 0;
+}
+
+/* Estilos para o novo grupo de checkbox de horário */
+.time-checkbox-group {
+    display: flex;
+    justify-content: space-around;
+    background: var(--bg-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 10px 0;
+}
+.time-checkbox-group label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-primary);
+    cursor: pointer;
+    font-size: 14px;
+    padding: 4px 8px;
+}
+.time-checkbox-group input[type="checkbox"] {
+    accent-color: var(--accent-blue);
+    width: 16px;
+    height: 16px;
+}
+
+
+/* --- RESPONSIVIDADE PARA TELAS MENORES (MÓVEIS) --- */
+@media (max-width: 767px) {
+    .app-header h1 {
+        font-size: 14px;
+        font-weight: 600;
+    }
+    
+    .header-top {
+        gap: 12px;
+    }
+
+    #fab-add-habit {
+        width: 38px;
+        height: 38px;
+        font-size: 22px; /* Ajuste para o novo tamanho */
+    }
+
+    #time-filter-rotary {
+        height: 22px; /* Redução de ~10% de 24px */
+    }
+    
+    .header-bottom {
+        gap: 8px; /* Reduz o espaçamento entre os itens do cabeçalho */
+    }
+}
+
+/* --- RESPONSIVIDADE PARA TELAS MAIORES --- */
+@media (min-width: 768px) {
+    .app-container {
+        padding: 0 24px 100px 24px;
+    }
+
+    .app-header {
+        padding: 32px 0;
+    }
+
+    .app-header h1 {
+        font-size: 32px;
+    }
+
+    .habit-group {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
+        padding: 0;
+    }
+
+    .habit-card {
+        flex: 1 1 calc(50% - 7px);
+        margin-bottom: 0;
+        min-width: 150px; /* Impede que os cartões fiquem muito estreitos */
+    }
+
+    .empty-group-placeholder {
+        width: 100%;
+    }
+
+    .habit-content-wrapper {
+        padding: 4px 24px 4px 27px;
+    }
+
+    .habit-details .name {
+        font-size: 19px;
+    }
+    
+    .habit-details .subtitle {
+        font-size: 12px;
+    }
+
+    .modal-content {
+        max-width: 500px;
+        padding: 40px;
+    }
+    
+    /* --- ESTILOS DESKTOP PARA MODAL EXPLORAR --- */
+    #explore-modal .modal-content {
+        max-width: 90vw;
+        max-height: 90vh;
+        width: auto; /* Permite que o modal cresça com o conteúdo */
+    }
+
+    #explore-habit-list {
+        grid-template-columns: repeat(6, 1fr);
+        gap: 12px;
+    }
+    
+    .explore-habit-item {
+        padding: 16px 8px;
+    }
+    .explore-habit-icon {
+        width: 44px;
+        height: 44px;
+        margin-bottom: 4px;
+    }
+    .explore-habit-details .name {
+        font-size: 14px;
+    }
+    .explore-habit-details .subtitle {
+        display: block; /* Mostra o subtítulo em telas maiores */
+        font-size: 11px;
+        color: var(--text-secondary);
+        line-height: 1.3;
+    }
+}
