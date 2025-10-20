@@ -630,7 +630,7 @@ export function openNotesModal(habitId: string, date: string, time: TimeOfDay) {
     const { name } = getHabitDisplayInfo(habit);
     ui.notesModalTitle.textContent = t('modalNotesTitleFor', { habitName: name });
     const dateObj = parseUTCIsoDate(date);
-    ui.notesModalSubtitle.textContent = dateObj.toLocaleDateString(state.activeLanguageCode, { weekday: 'long', day: 'numeric', month: 'long' });
+    ui.notesModalSubtitle.textContent = dateObj.toLocaleDateString(state.activeLanguageCode, { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
     ui.notesTextarea.value = habitNote;
     openModal(ui.notesModal);
     ui.notesTextarea.focus();

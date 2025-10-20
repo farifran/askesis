@@ -1,4 +1,3 @@
-
 {
     "appName": "Seguimiento de Hábitos con IA", "headerTitleToday": "Hoy", "headerTitleYesterday": "Ayer", "headerTitleTomorrow": "Mañana",
     "noHabitsToday": "No hay hábitos para hoy.", "undoToastText": "Hábito finalizado.", "undoButton": "Deshacer",
@@ -43,11 +42,11 @@
     "celebrationSemiConsolidatedTitle": "¡Felicidades!",
     "celebrationSemiConsolidatedBody": "<p>¡Estás cogiendo un gran ritmo! Tu esfuerzo y constancia son inspiradores.</p><p>Has alcanzado 21 días consecutivos y has semi-consolidado los siguientes hábitos:</p><ul>{habitList}</ul><p>Mantén esta dedicación durante otros 45 días para consolidarlos por completo. ¡Tú puedes!</p>",
     "promptShow": "Mostrar prompt enviado",
-    "aiPromptMain": "Eres un coach de hábitos amigable y motivacional. Analiza el siguiente historial de hábitos, que incluye el estado de cada hábito (Completado, Pospuesto o Pendiente) y las notas del usuario para cada día. Las notas pueden existir incluso para hábitos 'Pendientes' y son cruciales para entender el contexto del usuario.\\n'Graduado' significa que el usuario ha dominado el hábito.\\n\\nAquí están los hábitos que el usuario está tratando de crear activamente: {activeHabitList}.\\n{graduatedHabitsSection}\\nAquí está el historial de finalización y notas de los últimos 7 días:\\n{history}\\n\\nTus comentarios deben:\\n1. Ser positivos y alentadores, mencionando los hábitos 'Graduados' como éxitos continuos.\\n2. Analizar las notas del usuario para ofrecer un feedback personalizado, especialmente para entender por qué un hábito quedó 'Pendiente' o fue 'Pospuesto'.\\n3. Señalar un patrón positivo, si lo hay (ej: \"¡He notado que has sido constante con la Lectura!\").\\n4. Ofrecer una sugerencia amable y práctica para un hábito que se está descuidando o posponiendo con frecuencia, sin ser crítico (ej: \"¿Qué tal si intentas dedicar 5 minutos a la Meditación después del almuerzo?\").\\n5. Mantener el texto corto, ideal para una vista en un modal de móvil (2-3 párrafos cortos).\\n6. Usar formato markdown para una mejor legibilidad (negrita, listas).",
-    "aiPromptGraduatedSection": "Además, el usuario ya ha consolidado y se ha \"graduado\" en los siguientes hábitos: {graduatedHabitList}. Elogialos por mantener estos éxitos como parte de su rutina.",
-    "aiPromptCompleted": "Completados", "aiPromptSnoozed": "Pospuestos", "aiPromptNoHabits": "Ningún hábito registrado.", "aiPromptNoData": "Sin datos.",
-    "aiPromptNotePrefix": "Nota: ", "aiPromptHistoryHeader": "Datos de hábitos y notas de los últimos 7 días:",
-    "aiPromptStatus_completed": "Completado", "aiPromptStatus_snoozed": "Pospuesto", "aiPromptStatus_pending": "Pendiente",
+    "aiPromptMain": "Eres un Sabio Estoico, un mentor de hábitos que valora la consistencia sobre la perfección y el enfoque en lo que podemos controlar (nuestras acciones). Tu análisis debe ser global, buscando patrones en los últimos 7 días. Tu feedback DEBE ser: 1. Una reflexión estoica concisa (1-2 frases) sobre el patrón general. 2. UNA única sugerencia práctica y profunda, como un elemento de lista, para fortalecer la virtud y la disciplina. Usa markdown. Leyenda: ✅=Completado, ⚪️=Pendiente, ➡️=Pospuesto.\n\nDatos:\n- Hábitos Activos: {activeHabitList}\n{graduatedHabitsSection}- Historial de los Últimos 7 Días:\n{history}",
+    "aiPromptGraduatedSection": "- Hábitos Graduados: {graduatedHabitList}\n",
+    "aiPromptNoHabits": "Ningún hábito registrado.", "aiPromptNoData": "Sin datos.",
+    "aiPromptNotePrefix": "Nota: ",
+    "aiPromptNone": "Ninguno",
     "confirmHabitMove": "Has movido {habitName} de {oldTime} a {newTime}. ¿Deseas aplicar este cambio solo para hoy o de forma permanente?",
     "buttonJustToday": "Solo Hoy", "buttonFromNowOn": "De Ahora en Adelante", "modalMoveHabitTitle": "Mover Hábito",
     "modalEndHabitTitle": "Finalizar Hábito",

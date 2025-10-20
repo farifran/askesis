@@ -2,63 +2,75 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-import { state, addDays, getHabitDailyInfoForDate, getTodayUTC, toUTCIsoDateString, shouldHabitAppearOnDate } from "./state";
+// FIX: Corrected typo in function name from 'toUTCIsoString' to 'toUTCIsoDateString' to match the export from './state'.
+// FIX: Imported TimeOfDay to use in timeToKeyMap.
+import { state, addDays, getHabitDailyInfoForDate, getTodayUTC, toUTCIsoDateString, shouldHabitAppearOnDate, HabitStatus, TimeOfDay } from "./state";
 import { t, getLocaleDayName, getHabitDisplayInfo } from "./i18n";
 
+const statusToSymbol: Record<HabitStatus, string> = {
+    completed: '✅',
+    snoozed: '➡️',
+    pending: '⚪️'
+};
+
+// FIX: Added a map to translate TimeOfDay values to translation keys.
+const timeToKeyMap: Record<TimeOfDay, string> = {
+    'Manhã': 'filterMorning',
+    'Tarde': 'filterAfternoon',
+    'Noite': 'filterEvening'
+};
+
 export const buildAIPrompt = (): string => {
-    let history = `${t('aiPromptHistoryHeader')}\n`;
+    const daySummaries: string[] = [];
+
     for (let i = 0; i < 7; i++) {
         const date = addDays(getTodayUTC(), -i);
         const isoDate = toUTCIsoDateString(date);
         const dailyInfoByHabit = getHabitDailyInfoForDate(isoDate);
-        const dayName = getLocaleDayName(date);
-        history += `\n**${dayName} (${isoDate})**\n`;
 
         const habitsOnThisDay = state.habits.filter(h => shouldHabitAppearOnDate(h, date) && !h.graduatedOn);
 
         if (habitsOnThisDay.length > 0) {
-            let dayEntries: string[] = [];
-            for (const habit of habitsOnThisDay) {
+            const dayEntries = habitsOnThisDay.map(habit => {
                 const dailyInfo = dailyInfoByHabit[habit.id];
                 const habitInstances = dailyInfo?.instances || {};
                 const scheduleForDay = dailyInfo?.dailySchedule || habit.times;
                 const { name } = getHabitDisplayInfo(habit);
-                
-                if (scheduleForDay.length > 1) {
-                    dayEntries.push(`- **${name}**:`);
-                    scheduleForDay.forEach(time => {
-                        const instance = habitInstances[time];
-                        const status = instance?.status || 'pending';
-                        const note = instance?.note;
-                        let entry = `  - ${t(`filter${time}`)}: ${t(`aiPromptStatus_${status}`)}`;
-                        if (note) {
-                            entry += ` (${t('aiPromptNotePrefix')}"${note}")`;
-                        }
-                        dayEntries.push(entry);
-                    });
-                } else if (scheduleForDay.length === 1) {
-                    const time = scheduleForDay[0];
+
+                const statusDetails = scheduleForDay.map(time => {
                     const instance = habitInstances[time];
-                    const status = instance?.status || 'pending';
+                    const status: HabitStatus = instance?.status || 'pending';
                     const note = instance?.note;
-                    let entry = `- **${name}**: ${t(`aiPromptStatus_${status}`)}`;
-                    if (note) {
-                        entry += ` (${t('aiPromptNotePrefix')}"${note}")`;
+                    
+                    let detail = statusToSymbol[status];
+                    // Adiciona o nome do horário apenas para hábitos com múltiplos horários para economizar espaço
+                    if (scheduleForDay.length > 1) {
+                        // FIX: Used timeToKeyMap to get the correct translation key for the time of day.
+                        detail = `${t(timeToKeyMap[time])}${detail}`;
                     }
-                    dayEntries.push(entry);
-                }
-            }
-            history += dayEntries.join('\n');
-        } else {
-            history += t('aiPromptNoHabits');
+
+                    if (note) {
+                        detail += ` ("${note}")`;
+                    }
+                    return detail;
+                });
+                
+                return `- ${name}: ${statusDetails.join(', ')}`;
+            });
+            daySummaries.push(`${isoDate}:\n${dayEntries.join('\n')}`);
         }
-        history += "\n";
+    }
+    
+    let history = daySummaries.join('\n\n');
+
+    if (!history.trim()) {
+        history = t('aiPromptNoData');
     }
 
     const activeHabits = state.habits.filter(h => !h.endedOn && !h.graduatedOn);
     const graduatedHabits = state.habits.filter(h => h.graduatedOn);
 
-    const activeHabitList = activeHabits.map(h => getHabitDisplayInfo(h).name).join(', ') || 'Nenhum';
+    const activeHabitList = activeHabits.map(h => getHabitDisplayInfo(h).name).join(', ') || t('aiPromptNone');
     
     let graduatedHabitsSection = '';
     if (graduatedHabits.length > 0) {

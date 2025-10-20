@@ -260,7 +260,7 @@ function requestHabitEnding(habitId: string, date: string) {
     if (!habit) return;
 
     const { name } = getHabitDisplayInfo(habit);
-    const dateFormatted = parseUTCIsoDate(date).toLocaleDateString(state.activeLanguageCode, { day: 'numeric', month: 'long' });
+    const dateFormatted = parseUTCIsoDate(date).toLocaleDateString(state.activeLanguageCode, { day: 'numeric', month: 'long', timeZone: 'UTC' });
     const confirmationText = t('confirmEndHabit', { 
         habitName: `<strong>${name}</strong>`,
         date: `<strong>${dateFormatted}</strong>`
@@ -290,7 +290,7 @@ export function requestHabitTimeRemoval(habitId: string, timeToRemove: TimeOfDay
     // Caso principal: o hábito tem outros horários, então apenas editamos o agendamento.
     const { name } = getHabitDisplayInfo(habit);
     const timeName = t(`filter${timeToRemove}`);
-    const dateFormatted = parseUTCIsoDate(state.selectedDate).toLocaleDateString(state.activeLanguageCode, { day: 'numeric', month: 'long' });
+    const dateFormatted = parseUTCIsoDate(state.selectedDate).toLocaleDateString(state.activeLanguageCode, { day: 'numeric', month: 'long', timeZone: 'UTC' });
 
     const confirmationText = t('confirmRemoveTime', {
         habitName: `<strong>${name}</strong>`,
@@ -339,7 +339,7 @@ export function requestHabitEndingFromModal(habitId: string) {
     const habit = state.habits.find(h => h.id === habitId);
     if (!habit) return;
     const { name } = getHabitDisplayInfo(habit);
-    const dateFormatted = parseUTCIsoDate(getTodayUTCIso()).toLocaleDateString(state.activeLanguageCode, { day: 'numeric', month: 'long' });
+    const dateFormatted = parseUTCIsoDate(getTodayUTCIso()).toLocaleDateString(state.activeLanguageCode, { day: 'numeric', month: 'long', timeZone: 'UTC' });
     const confirmationText = t('confirmEndHabit', { 
         habitName: `<strong>${name}</strong>`,
         date: `<strong>${dateFormatted}</strong>` 
@@ -414,28 +414,61 @@ export function handleSaveNote() {
     state.editingNoteFor = null;
 }
 
-export function resetApplicationData() {
-    // This function will delete all habits and their associated progress data.
-    state.habits = [];
-    state.dailyData = {};
-    state.streaksCache = {};
-    state.lastEnded = null;
-    if (state.undoTimeout) {
-        clearTimeout(state.undoTimeout);
+/**
+ * Utilitário para limpar todos os cookies associados ao domínio atual.
+ * Itera sobre os cookies e os expira definindo uma data no passado.
+ */
+function clearAllCookies() {
+    const cookies = document.cookie.split(";");
+    for (const cookie of cookies) {
+        const eqPos = cookie.indexOf("=");
+        const name = eqPos > -1 ? cookie.substr(0, eqPos) : cookie;
+        // Para deletar um cookie, precisamos definir sua data de expiração para o passado
+        // e especificar o caminho. Assumindo que o caminho é a raiz ('/').
+        document.cookie = `${name.trim()}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`;
     }
-    state.undoTimeout = null;
-    state.pending21DayHabitIds = [];
-    state.pendingConsolidationHabitIds = [];
-    state.notificationsShown = [];
-    
-    // Save the now-empty state. This will overwrite the existing state in localStorage.
-    saveState(); 
-    
-    // Re-render the entire application to reflect the empty state.
-    renderApp(); 
-    
-    // Also update the list within the manage modal (which is now closed, but will be correct next time it's opened).
-    setupManageModal(); 
+}
+
+export async function resetApplicationData() {
+    // 1. Limpa todas as principais APIs de armazenamento síncrono.
+    localStorage.clear();
+    sessionStorage.clear();
+    clearAllCookies();
+
+    // Agrupa todas as operações de limpeza assíncronas para executá-las em paralelo.
+    const clearingPromises = [];
+
+    // 2. Limpa os caches da API de Cache.
+    if ('caches' in window) {
+        const cacheClearPromise = caches.keys().then(keys =>
+            Promise.all(keys.map(key => caches.delete(key)))
+        );
+        clearingPromises.push(cacheClearPromise);
+    }
+
+    // 3. Limpa os bancos de dados do IndexedDB.
+    // A API `indexedDB.databases()` é a forma moderna, mas pode não ser suportada por todos os navegadores.
+    if ('indexedDB' in window && (window.indexedDB as any).databases) {
+        const indexedDbClearPromise = (window.indexedDB as any).databases().then((databases: IDBDatabaseInfo[]) =>
+            Promise.all(databases.map(db => db.name ? window.indexedDB.deleteDatabase(db.name) : Promise.resolve()))
+        );
+        clearingPromises.push(indexedDbClearPromise);
+    }
+
+    // 4. Desregistra todos os service workers.
+    if ('serviceWorker' in navigator) {
+        const serviceWorkerUnregisterPromise = navigator.serviceWorker.getRegistrations().then(registrations =>
+            Promise.all(registrations.map(registration => registration.unregister()))
+        );
+        clearingPromises.push(serviceWorkerUnregisterPromise);
+    }
+        
+    // Espera que todas as operações de limpeza assíncronas sejam concluídas.
+    await Promise.all(clearingPromises);
+
+    // 5. Força uma recarga da página a partir do servidor.
+    // Isso garante que nenhum recurso em cache (incluindo o próprio script do service worker) seja usado.
+    location.reload();
 }
 
 export function requestHabitEditingFromModal(habitId: string) {
@@ -506,7 +539,7 @@ export function saveHabitFromModal() {
         newHabitTemplate.frequency = habitData.frequency;
 
         if (parseUTCIsoDate(prospectiveStartDate) < parseUTCIsoDate(todayISO)) {
-            const dateFormatted = parseUTCIsoDate(prospectiveStartDate).toLocaleDateString(state.activeLanguageCode, { day: 'numeric', month: 'long', year: 'numeric' });
+            const dateFormatted = parseUTCIsoDate(prospectiveStartDate).toLocaleDateString(state.activeLanguageCode, { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
             const habitDisplayName = newHabitTemplate.nameKey ? t(newHabitTemplate.nameKey) : newHabitTemplate.name;
             const confirmationText = t('confirmNewHabitPastDate', { habitName: `<strong>${habitDisplayName}</strong>`, date: `<strong>${dateFormatted}</strong>` });
             showConfirmationModal(confirmationText, () => finalizeCreation(newHabitTemplate, prospectiveStartDate));
@@ -542,7 +575,7 @@ export function saveHabitFromModal() {
         
         // Schedule has changed, requires versioning
         const changeDateISO = state.selectedDate;
-        const dateFormatted = parseUTCIsoDate(changeDateISO).toLocaleDateString(state.activeLanguageCode, { day: 'numeric', month: 'long' });
+        const dateFormatted = parseUTCIsoDate(changeDateISO).toLocaleDateString(state.activeLanguageCode, { day: 'numeric', month: 'long', timeZone: 'UTC' });
         const confirmHabitName = hasNameChanged ? habitName : getHabitDisplayInfo(originalHabit).name;
         const confirmationText = t('confirmScheduleChange', { habitName: `<strong>${confirmHabitName}</strong>`, date: dateFormatted });
         

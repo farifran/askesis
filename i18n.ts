@@ -42,12 +42,12 @@ export function t(key: string, options?: { [key: string]: string | number }): st
         return key; // Retorna a chave se nenhum idioma estiver carregado.
     }
 
-    const translation = dict[key] || key;
+    let translation = dict[key] || key;
 
+    // FIX: Refactored logic to ensure placeholders are replaced in pluralized strings.
     if (typeof translation === 'object' && options?.count !== undefined) {
         const pluralKey = new Intl.PluralRules(lang).select(options.count as number);
-        const value = (translation as PluralableTranslation)[pluralKey as keyof PluralableTranslation] || (translation as PluralableTranslation).other;
-        return value;
+        translation = (translation as PluralableTranslation)[pluralKey as keyof PluralableTranslation] || (translation as PluralableTranslation).other;
     }
 
     if (typeof translation === 'string' && options) {
@@ -74,7 +74,7 @@ export function getHabitDisplayInfo(habit: Habit | PredefinedHabit): { name: str
 }
 
 export function getLocaleDayName(date: Date): string {
-    return date.toLocaleDateString(state.activeLanguageCode, { weekday: 'short' }).toUpperCase();
+    return date.toLocaleDateString(state.activeLanguageCode, { weekday: 'short', timeZone: 'UTC' }).toUpperCase();
 }
 
 function updateUIText() {
