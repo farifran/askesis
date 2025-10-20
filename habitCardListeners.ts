@@ -2,7 +2,6 @@ import { ui } from './ui';
 import { state, Habit, getSmartGoalForHabit, TimeOfDay } from './state';
 import { openNotesModal, showConfirmationModal, closeModal, openEditModal } from './render';
 import {
-    requestHabitEnding,
     toggleHabitStatus,
     handleGoalControlClick,
     updateGoalOverride,

@@ -28,8 +28,9 @@ export interface HabitHistoryPeriod {
 
 export interface Habit {
     id: string;
-    name: string; // For custom habits
-    subtitle: string; // For custom habits
+    // FIX: Made name and subtitle optional as they only exist for custom habits.
+    name?: string; // For custom habits
+    subtitle?: string; // For custom habits
     nameKey?: string; // For predefined habits
     subtitleKey?: string; // For predefined habits
     icon: string;
@@ -38,7 +39,8 @@ export interface Habit {
     goal: { 
         type: 'pages' | 'minutes' | 'check'; 
         total?: number; 
-        unit: string; // For custom habits
+        // FIX: Made unit optional as it only exists for custom habits.
+        unit?: string; // For custom habits
         unitKey?: string; // For predefined habits
     };
     endedOn?: string;
@@ -50,7 +52,8 @@ export interface Habit {
     previousVersionId?: string;
 }
 
-export type PredefinedHabit = Omit<Habit, 'id' | 'createdOn' | 'scheduleAnchor' | 'name' | 'subtitle' | 'goal' | 'previousVersionId'> & {
+// FIX: Removed `scheduleAnchor` and `previousVersionId` from Omit<> to make PredefinedHabit assignable.
+export type PredefinedHabit = Omit<Habit, 'id' | 'createdOn' | 'name' | 'subtitle' | 'goal' | 'previousVersionId'> & {
     goal: {
         type: 'pages' | 'minutes' | 'check';
         total?: number;
@@ -247,6 +250,13 @@ export function shouldHabitAppearOnDate(habit: Habit, date: Date): boolean {
 
     const daysDifference = Math.round((date.getTime() - anchorDate.getTime()) / (1000 * 60 * 60 * 24));
 
+    // A habit's frequency schedule should only apply from its anchor date forward.
+    // This prevents habits, especially daily ones, from appearing on past dates
+    // before they were scheduled to start.
+    if (daysDifference < 0) {
+        return false;
+    }
+
     if (habit.frequency.type === 'daily') {
         return daysDifference % habit.frequency.interval === 0;
     }
@@ -263,7 +273,8 @@ export function shouldHabitAppearOnDate(habit: Habit, date: Date): boolean {
 /**
  * Finds the previous N completed occurrence dates for a habit, skipping snoozed days.
  * A streak is considered broken if a 'pending' or missing day is found.
- * @param habit The habit to check.
+ * This function is now version-aware and will traverse the habit's history.
+ * @param habit The habit to check (latest version).
  * @param startDate The date to start searching backwards from (exclusive).
  * @param count The number of previous completed occurrences to find.
  * @returns An array of Date objects for the previous completed occurrences.
@@ -272,30 +283,38 @@ export function shouldHabitAppearOnDate(habit: Habit, date: Date): boolean {
 function getPreviousCompletedOccurrences(habit: Habit, startDate: Date, count: number): Date[] {
     const dates: Date[] = [];
     let currentDate = new Date(startDate);
-    const habitCreationDate = parseUTCIsoDate(habit.createdOn);
+    let currentHabit: Habit | undefined = habit;
+    
+    mainLoop:
+    while (dates.length < count && currentHabit) {
+        const habitCreationDate = parseUTCIsoDate(currentHabit.createdOn);
+        
+        while (dates.length < count && currentDate > habitCreationDate) {
+            currentDate = addDays(currentDate, -1);
 
-    while (dates.length < count && currentDate.getTime() > habitCreationDate.getTime()) {
-        currentDate = addDays(currentDate, -1);
+            if (shouldHabitAppearOnDate(currentHabit, currentDate)) {
+                const dayISO = toUTCIsoDateString(currentDate);
+                const dailyInfo = state.dailyData[dayISO]?.[currentHabit.id];
+                const instances = dailyInfo?.instances || {};
+                const scheduleForDay = dailyInfo?.dailySchedule || currentHabit.times;
 
-        if (shouldHabitAppearOnDate(habit, currentDate)) {
-            const dayISO = toUTCIsoDateString(currentDate);
-            const dailyInfo = state.dailyData[dayISO]?.[habit.id];
-            const instances = dailyInfo?.instances || {};
-            const scheduleForDay = dailyInfo?.dailySchedule || habit.times;
+                const statuses = scheduleForDay.map(time => instances[time]?.status ?? 'pending');
+                
+                const allCompleted = statuses.length > 0 && statuses.every(s => s === 'completed');
+                const hasPending = statuses.some(s => s === 'pending');
 
-            const statuses = scheduleForDay.map(time => instances[time]?.status ?? 'pending');
-            
-            const allCompleted = statuses.length > 0 && statuses.every(s => s === 'completed');
-            const hasPending = statuses.some(s => s === 'pending');
-
-            if (allCompleted) {
-                dates.push(new Date(currentDate));
-            } else if (hasPending) {
-                // Any 'pending' status breaks the streak.
-                break;
+                if (allCompleted) {
+                    dates.push(new Date(currentDate));
+                } else if (hasPending) {
+                    break mainLoop;
+                }
             }
-            // If it's all 'snoozed' or a mix of 'snoozed' and 'completed' (but not all 'completed'),
-            // it doesn't count as a completion but also doesn't break the streak.
+        }
+
+        if (currentHabit.previousVersionId) {
+            currentHabit = state.habits.find(h => h.id === currentHabit!.previousVersionId);
+        } else {
+            break mainLoop;
         }
     }
     

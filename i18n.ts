@@ -66,10 +66,10 @@ export function getHabitDisplayInfo(habit: Habit | PredefinedHabit): { name: str
             subtitle: habit.subtitleKey ? t(habit.subtitleKey) : ''
         };
     }
-    // Fix: Cast to Habit as PredefinedHabit does not have name/subtitle and is handled above.
+    // FIX: Provide fallbacks for optional name/subtitle properties.
     return {
-        name: (habit as Habit).name,
-        subtitle: (habit as Habit).subtitle
+        name: (habit as Habit).name || '',
+        subtitle: (habit as Habit).subtitle || ''
     };
 }
 

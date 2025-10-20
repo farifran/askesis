@@ -540,16 +540,36 @@ export function createManageHabitListItemHTML(habit: Habit): string {
 }
 
 export function setupManageModal() {
-    // Filtra as versões antigas dos hábitos para não as mostrar na lista.
+    // 1. Get latest versions of all lineages
     const nextVersionIds = new Set(state.habits.map(h => h.previousVersionId).filter(Boolean));
-    const visibleHabits = state.habits.filter(h => !nextVersionIds.has(h.id));
+    const latestVersions = state.habits.filter(h => !nextVersionIds.has(h.id));
 
-    const habitsToDisplay = [...visibleHabits].sort((a, b) => {
+    // 2. Consolidate habits that have the same name (from different lineages)
+    const consolidatedHabits = new Map<string, Habit>();
+    for (const habit of latestVersions) {
+        const name = getHabitDisplayInfo(habit).name;
+        const existingHabit = consolidatedHabits.get(name);
+
+        // If we haven't seen this name, or if the current habit is active and the stored one isn't,
+        // then the current habit is the one we want to display.
+        const isCurrentActive = !habit.endedOn && !habit.graduatedOn;
+        const isExistingActive = existingHabit ? (!existingHabit.endedOn && !existingHabit.graduatedOn) : false;
+
+        if (!existingHabit || (isCurrentActive && !isExistingActive)) {
+            consolidatedHabits.set(name, habit);
+        }
+    }
+
+    const habitsToDisplay = Array.from(consolidatedHabits.values());
+
+    // 3. Sort and render
+    habitsToDisplay.sort((a, b) => {
         const aIsActive = !a.endedOn && !a.graduatedOn;
         const bIsActive = !b.endedOn && !b.graduatedOn;
         if (aIsActive !== bIsActive) return aIsActive ? -1 : 1;
         return getHabitDisplayInfo(a).name.localeCompare(getHabitDisplayInfo(b).name);
     });
+    
     ui.habitList.innerHTML = habitsToDisplay.map(createManageHabitListItemHTML).join('');
 }
 
@@ -562,13 +582,45 @@ export function showUndoToast() {
     }, 5000);
 }
 
-export function showConfirmationModal(text: string, onConfirm: () => void, onEdit?: () => void) {
-    ui.confirmModalText.innerHTML = text; // Usa innerHTML para permitir formatação
+export function showConfirmationModal(
+    text: string,
+    onConfirm: () => void,
+    options?: {
+        title?: string;
+        onEdit?: () => void;
+        confirmText?: string;
+        editText?: string;
+        cancelText?: string;
+    }
+) {
+    const titleEl = ui.confirmModal.querySelector('h2');
+    if (titleEl) {
+        titleEl.textContent = options?.title || t('modalConfirmTitle');
+    }
+
+    ui.confirmModalText.innerHTML = text;
     state.confirmAction = onConfirm;
-    state.confirmEditAction = onEdit || null;
-    ui.confirmModalEditBtn.style.display = onEdit ? 'inline-flex' : 'none';
+    state.confirmEditAction = options?.onEdit || null;
+
+    const confirmBtn = ui.confirmModalConfirmBtn;
+    const editBtn = ui.confirmModalEditBtn;
+    const cancelBtn = ui.confirmModal.querySelector('.modal-close-btn') as HTMLButtonElement;
+
+    confirmBtn.textContent = options?.confirmText || t('confirmButton');
+    if (cancelBtn) {
+        cancelBtn.textContent = options?.cancelText || t('cancelButton');
+    }
+
+    if (options?.onEdit) {
+        editBtn.style.display = 'inline-flex';
+        editBtn.textContent = options.editText || t('editButton');
+    } else {
+        editBtn.style.display = 'none';
+    }
+
     openModal(ui.confirmModal);
 }
+
 
 export function openNotesModal(habitId: string, date: string, time: TimeOfDay) {
     const habit = state.habits.find(h => h.id === habitId);
@@ -613,7 +665,13 @@ export function openEditModal(habitData: Habit | PredefinedHabit | null) {
 
     renderFrequencyFilter();
     
-    nameInput.readOnly = false;
+    // Se for um hábito predefinido (tem uma nameKey), o nome não pode ser editado.
+    if ('nameKey' in template && template.nameKey && template.nameKey.length > 0) {
+        nameInput.readOnly = true;
+    } else {
+        nameInput.readOnly = false;
+    }
+
     if(noticeEl) noticeEl.classList.remove('visible');
     openModal(ui.editHabitModal);
     if(isCustomNew) nameInput.focus();

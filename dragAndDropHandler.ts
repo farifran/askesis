@@ -1,8 +1,9 @@
 import { ui } from './ui';
 import { handleHabitDrop } from './habitActions';
 import { isCurrentlySwiping } from './swipeHandler';
-import { Habit, state, TimeOfDay } from './state';
-import { getHabitDisplayInfo } from './i18n';
+import { state, TimeOfDay } from './state';
+import { getHabitDisplayInfo, t } from './i18n';
+import { showInlineNotice } from './render';
 
 export function setupDragAndDropHandler(habitContainer: HTMLElement) {
     let draggedElement: HTMLElement | null = null;
@@ -50,17 +51,34 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
     const handleBodyDrop = (e: DragEvent) => {
         e.preventDefault();
         
+        const target = e.target as HTMLElement;
+        const dropZone = target.closest<HTMLElement>('.drop-zone');
+        
         // Limpa imediatamente o feedback visual ao soltar.
         document.querySelectorAll('.drag-over, .invalid-drop').forEach(el => el.classList.remove('drag-over', 'invalid-drop'));
 
         if (!draggedHabitId || !draggedHabitOriginalTime) return;
-        const target = e.target as HTMLElement;
-        const dropZone = target.closest<HTMLElement>('.drop-zone');
 
         if (dropZone?.dataset.time) {
             const newTime = dropZone.dataset.time as TimeOfDay;
-            // The final validation logic is inside handleHabitDrop, but dragOver should prevent invalid drops.
-            handleHabitDrop(draggedHabitId, draggedHabitOriginalTime, newTime);
+            const habit = state.habits.find(h => h.id === draggedHabitId);
+            if (!habit) return;
+
+            const dailyInfo = state.dailyData[state.selectedDate]?.[draggedHabitId];
+            const scheduleForDay = dailyInfo?.dailySchedule || habit.times;
+
+            const isDuplicate = scheduleForDay.includes(newTime);
+            const isSameTime = newTime === draggedHabitOriginalTime;
+
+            if (isDuplicate && !isSameTime) {
+                const noticeEl = dropZone.closest('.habit-group-wrapper')?.querySelector<HTMLElement>('.duplicate-drop-notice');
+                if (noticeEl) {
+                    const habitName = getHabitDisplayInfo(habit).name;
+                    showInlineNotice(noticeEl, t('noticeDuplicateDrop', { habitName }));
+                }
+            } else if (!isSameTime) {
+                handleHabitDrop(draggedHabitId, draggedHabitOriginalTime, newTime);
+            }
         }
     };
     

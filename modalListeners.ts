@@ -323,6 +323,9 @@ export const setupModalListeners = () => {
     });
 
     ui.confirmModalEditBtn.addEventListener('click', () => {
+        // First close the confirmation modal, then execute the action (e.g., opening another modal).
+        // This prevents having two modals open at the same time.
+        closeModal(ui.confirmModal);
         state.confirmEditAction?.();
         state.confirmAction = null;
         state.confirmEditAction = null;

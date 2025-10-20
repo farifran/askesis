@@ -1,3 +1,9 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+*/
+import { getTodayUTCIso, state } from './state';
+
 let isSwiping = false;
 
 /**
@@ -29,6 +35,9 @@ export function setupSwipeHandler(habitContainer: HTMLElement) {
         const deltaX = currentX - startX;
         activeCard.classList.remove('is-swiping');
 
+        // Adicionado: Verifica se a ação está em uma data passada.
+        const isPastDate = state.selectedDate < getTodayUTCIso();
+
         // Processa o resultado do deslize apenas se a direção foi confirmada como horizontal
         if (swipeDirection === 'horizontal') {
             if (wasOpenLeft) {
@@ -42,12 +51,15 @@ export function setupSwipeHandler(habitContainer: HTMLElement) {
                     activeCard.classList.remove('is-open-right');
                 }
             } else { // O cartão estava fechado
-                // Se deslizou para a direita, abre à esquerda
+                // Se deslizou para a direita, abre à esquerda (notas)
                 if (deltaX > SWIPE_INTENT_THRESHOLD) {
                     activeCard.classList.add('is-open-left');
-                // Se deslizou para a esquerda, abre à direita
+                // Se deslizou para a esquerda, abre à direita (excluir)
                 } else if (deltaX < -SWIPE_INTENT_THRESHOLD) {
-                    activeCard.classList.add('is-open-right');
+                    // Só permite abrir a ação de excluir se não for uma data passada.
+                    if (!isPastDate) {
+                        activeCard.classList.add('is-open-right');
+                    }
                 }
             }
         }
@@ -100,7 +112,14 @@ export function setupSwipeHandler(habitContainer: HTMLElement) {
                 else if (wasOpenRight) baseTranslate = -swipeActionWidth;
                 
                 const deltaX = currentX - startX;
-                const newTranslateX = baseTranslate + deltaX;
+                let newTranslateX = baseTranslate + deltaX;
+
+                // Adicionado: Se a data for passada, não permite arrastar para a esquerda (além de 0) para a ação de excluir.
+                const isPastDate = state.selectedDate < getTodayUTCIso();
+                if (isPastDate && !wasOpenRight && newTranslateX < 0) {
+                    newTranslateX = 0;
+                }
+                
                 const dragLimit = swipeActionWidth * 1.5;
                 const clampedTranslateX = Math.max(-dragLimit, Math.min(dragLimit, newTranslateX));
                 
