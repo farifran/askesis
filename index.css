@@ -954,6 +954,75 @@ body {
     z-index: 1001; /* Garante que o modal de confirmação apareça sobre outros modais, como o de edição */
 }
 
+/* Modal de Opções de IA */
+#ai-options-modal .modal-content {
+    gap: 20px;
+}
+.ai-options-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+.ai-option-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 14px 16px;
+    border: 1px solid var(--border-color);
+    background-color: var(--surface-color);
+    border-radius: 10px;
+    text-align: left;
+    cursor: pointer;
+    transition: background-color 0.2s, border-color 0.2s;
+    width: 100%;
+}
+.ai-option-btn:hover {
+    background-color: var(--surface-hover);
+    border-color: var(--text-tertiary);
+}
+.ai-option-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+}
+.ai-option-desc {
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.4;
+}
+
+#ai-habit-selection h3 {
+    font-size: 18px;
+    margin-bottom: 12px;
+}
+#ai-habit-selection-list {
+    list-style: none;
+    max-height: 200px;
+    overflow-y: auto;
+}
+#ai-habit-selection-list li {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+#ai-habit-selection-list li:hover {
+    background-color: var(--surface-hover);
+}
+#ai-habit-selection-list li svg {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+}
+#ai-habit-selection-list li span {
+    font-size: 15px;
+    font-weight: 500;
+}
+
 /* --- UTILITÁRIOS --- */
 .undo-toast {
     position: fixed;

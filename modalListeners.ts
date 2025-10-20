@@ -93,9 +93,8 @@ const handleCelebrationCheck = (
     return false;
 };
 
-const handleAIEvaluationClick = async () => {
-    if (handleCelebrationCheck('pendingConsolidationHabitIds', 'celebrationConsolidatedTitle', 'celebrationConsolidatedBody')) return;
-    if (handleCelebrationCheck('pending21DayHabitIds', 'celebrationSemiConsolidatedTitle', 'celebrationSemiConsolidatedBody')) return;
+const runAIEvaluation = async (analysisType: 'weekly' | 'monthly' | 'deep-dive', habitId?: string) => {
+    closeModal(ui.aiOptionsModal); // Close the options modal first
 
     if (!navigator.onLine) {
         ui.aiModalTitle.textContent = t('modalAIOfflineTitle');
@@ -104,7 +103,7 @@ const handleAIEvaluationClick = async () => {
         return;
     }
 
-    const prompt = buildAIPrompt();
+    const prompt = buildAIPrompt(analysisType, habitId);
 
     ui.aiModalTitle.textContent = t('modalAITitle');
     ui.aiResponse.innerHTML = `
@@ -117,11 +116,11 @@ const handleAIEvaluationClick = async () => {
         </div>
     `;
     openModal(ui.aiModal);
-    
+
     ui.aiEvalBtn.disabled = true;
     ui.aiEvalBtn.classList.add('loading');
     const responseContentEl = document.getElementById('ai-response-content');
-    
+
     try {
         const responseStream = getAIEvaluationStream(prompt);
         let fullText = '';
@@ -145,6 +144,17 @@ const handleAIEvaluationClick = async () => {
         ui.aiEvalBtn.disabled = false;
         ui.aiEvalBtn.classList.remove('loading');
     }
+}
+
+
+const handleAIEvaluationClick = async () => {
+    if (handleCelebrationCheck('pendingConsolidationHabitIds', 'celebrationConsolidatedTitle', 'celebrationConsolidatedBody')) return;
+    if (handleCelebrationCheck('pending21DayHabitIds', 'celebrationSemiConsolidatedTitle', 'celebrationSemiConsolidatedBody')) return;
+
+    // Now, open the options modal instead of running the analysis directly.
+    ui.aiHabitSelection.style.display = 'none'; // Hide habit list initially
+    ui.aiHabitSelectionList.innerHTML = '';
+    openModal(ui.aiOptionsModal);
 };
 
 const setupLanguageFilterListeners = () => {
@@ -290,7 +300,7 @@ export const setupModalListeners = () => {
     });
     ui.aiEvalBtn.addEventListener('click', handleAIEvaluationClick);
 
-    [ui.manageModal, ui.exploreModal, ui.aiModal, ui.confirmModal, ui.notesModal, ui.editHabitModal].forEach(initializeModalClosing);
+    [ui.manageModal, ui.exploreModal, ui.aiModal, ui.confirmModal, ui.notesModal, ui.editHabitModal, ui.aiOptionsModal].forEach(initializeModalClosing);
 
     ui.exploreHabitList.addEventListener('click', e => {
         const item = (e.target as HTMLElement).closest<HTMLElement>('.explore-habit-item');
@@ -352,6 +362,34 @@ export const setupModalListeners = () => {
     ui.resetAppBtn.addEventListener('click', () => {
         closeModal(ui.manageModal);
         showConfirmationModal(t('confirmResetApp'), resetApplicationData);
+    });
+
+    ui.aiWeeklyCheckinBtn.addEventListener('click', () => runAIEvaluation('weekly'));
+    ui.aiMonthlyReviewBtn.addEventListener('click', () => runAIEvaluation('monthly'));
+
+    ui.aiHabitDeepDiveBtn.addEventListener('click', () => {
+        const activeHabits = state.habits.filter(h => !h.endedOn && !h.graduatedOn);
+        if (activeHabits.length === 0) {
+            ui.aiHabitSelectionList.innerHTML = `<li>${t('noActiveHabits')}</li>`;
+        } else {
+            ui.aiHabitSelectionList.innerHTML = activeHabits
+                .map(habit => {
+                    const { name } = getHabitDisplayInfo(habit);
+                    return `<li data-habit-id="${habit.id}">${habit.icon}<span>${name}</span></li>`;
+                })
+                .join('');
+        }
+        ui.aiHabitSelection.style.display = 'block';
+    });
+
+    ui.aiHabitSelectionList.addEventListener('click', e => {
+        const target = e.target as HTMLElement;
+        const li = target.closest<HTMLLIElement>('li');
+        const habitId = li?.dataset.habitId;
+
+        if (habitId) {
+            runAIEvaluation('deep-dive', habitId);
+        }
     });
 
     setupLanguageFilterListeners();

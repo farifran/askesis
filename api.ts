@@ -4,7 +4,7 @@
 */
 // FIX: Corrected typo in function name from 'toUTCIsoString' to 'toUTCIsoDateString' to match the export from './state'.
 // FIX: Imported TimeOfDay to use in timeToKeyMap.
-import { state, addDays, getHabitDailyInfoForDate, getTodayUTC, toUTCIsoDateString, shouldHabitAppearOnDate, HabitStatus, TimeOfDay } from "./state";
+import { state, addDays, getHabitDailyInfoForDate, getTodayUTC, toUTCIsoDateString, shouldHabitAppearOnDate, HabitStatus, TimeOfDay, Habit, parseUTCIsoDate } from "./state";
 import { t, getLocaleDayName, getHabitDisplayInfo } from "./i18n";
 
 const statusToSymbol: Record<HabitStatus, string> = {
@@ -20,48 +20,116 @@ const timeToKeyMap: Record<TimeOfDay, string> = {
     'Noite': 'filterEvening'
 };
 
-export const buildAIPrompt = (): string => {
-    const daySummaries: string[] = [];
-
-    for (let i = 0; i < 7; i++) {
-        const date = addDays(getTodayUTC(), -i);
-        const isoDate = toUTCIsoDateString(date);
-        const dailyInfoByHabit = getHabitDailyInfoForDate(isoDate);
-
-        const habitsOnThisDay = state.habits.filter(h => shouldHabitAppearOnDate(h, date) && !h.graduatedOn);
-
-        if (habitsOnThisDay.length > 0) {
-            const dayEntries = habitsOnThisDay.map(habit => {
-                const dailyInfo = dailyInfoByHabit[habit.id];
-                const habitInstances = dailyInfo?.instances || {};
-                const scheduleForDay = dailyInfo?.dailySchedule || habit.times;
-                const { name } = getHabitDisplayInfo(habit);
-
-                const statusDetails = scheduleForDay.map(time => {
-                    const instance = habitInstances[time];
-                    const status: HabitStatus = instance?.status || 'pending';
-                    const note = instance?.note;
-                    
-                    let detail = statusToSymbol[status];
-                    // Adiciona o nome do horário apenas para hábitos com múltiplos horários para economizar espaço
-                    if (scheduleForDay.length > 1) {
-                        // FIX: Used timeToKeyMap to get the correct translation key for the time of day.
-                        detail = `${t(timeToKeyMap[time])}${detail}`;
-                    }
-
-                    if (note) {
-                        detail += ` ("${note}")`;
-                    }
-                    return detail;
-                });
-                
-                return `- ${name}: ${statusDetails.join(', ')}`;
-            });
-            daySummaries.push(`${isoDate}:\n${dayEntries.join('\n')}`);
+/**
+ * Traverses the habit version history to retrieve the full lineage of a habit.
+ * @param habitId The ID of the latest version of the habit.
+ * @returns An array of habit objects, chronologically sorted.
+ */
+function getHabitLineage(habitId: string): Habit[] {
+    const lineage: Habit[] = [];
+    let currentHabit: Habit | undefined = state.habits.find(h => h.id === habitId);
+    while (currentHabit) {
+        lineage.unshift(currentHabit); // Add to the beginning to keep it in chronological order
+        if (currentHabit.previousVersionId) {
+            currentHabit = state.habits.find(h => h.id === currentHabit!.previousVersionId);
+        } else {
+            break;
         }
     }
-    
-    let history = daySummaries.join('\n\n');
+    return lineage;
+}
+
+
+export const buildAIPrompt = (analysisType: 'weekly' | 'monthly' | 'deep-dive', habitId?: string): string => {
+    let history = '';
+    let promptTemplateKey = '';
+    const templateOptions: { [key: string]: string | undefined } = {};
+    const daySummaries: string[] = [];
+    const today = getTodayUTC();
+
+    if (analysisType === 'weekly' || analysisType === 'monthly') {
+        const daysToScan = analysisType === 'weekly' ? 7 : 30;
+        promptTemplateKey = analysisType === 'weekly' ? 'aiPromptWeekly' : 'aiPromptMonthly';
+
+        for (let i = 0; i < daysToScan; i++) {
+            const date = addDays(today, -i);
+            const isoDate = toUTCIsoDateString(date);
+            const dailyInfoByHabit = getHabitDailyInfoForDate(isoDate);
+            const habitsOnThisDay = state.habits.filter(h => shouldHabitAppearOnDate(h, date) && !h.graduatedOn);
+
+            if (habitsOnThisDay.length > 0) {
+                const dayEntries = habitsOnThisDay.map(habit => {
+                    const dailyInfo = dailyInfoByHabit[habit.id];
+                    const habitInstances = dailyInfo?.instances || {};
+                    const scheduleForDay = dailyInfo?.dailySchedule || habit.times;
+                    const { name } = getHabitDisplayInfo(habit);
+
+                    const statusDetails = scheduleForDay.map(time => {
+                        const instance = habitInstances[time];
+                        const status: HabitStatus = instance?.status || 'pending';
+                        const note = instance?.note;
+                        
+                        let detail = statusToSymbol[status];
+                        if (scheduleForDay.length > 1) {
+                            detail = `${t(timeToKeyMap[time])}${detail}`;
+                        }
+
+                        if (note) {
+                            detail += ` ("${note}")`;
+                        }
+                        return detail;
+                    });
+                    
+                    return `- ${name}: ${statusDetails.join(', ')}`;
+                });
+                daySummaries.push(`${isoDate}:\n${dayEntries.join('\n')}`);
+            }
+        }
+        history = daySummaries.join('\n\n');
+
+    } else if (analysisType === 'deep-dive' && habitId) {
+        promptTemplateKey = 'aiPromptDeepDive';
+        const habitLineage = getHabitLineage(habitId);
+        const latestHabit = habitLineage[habitLineage.length-1];
+        const { name } = getHabitDisplayInfo(latestHabit);
+        templateOptions.habitName = name;
+
+        const allHistory: { date: string, statuses: string[] }[] = [];
+        if (habitLineage.length > 0) {
+            const firstDate = parseUTCIsoDate(habitLineage[0].createdOn);
+            // Iterate from the first day of the habit until today
+            for (let d = firstDate; d <= today; d = addDays(d, 1)) {
+                const dateISO = toUTCIsoDateString(d);
+                const habitOnThisDay = habitLineage.find(h => shouldHabitAppearOnDate(h, d));
+                
+                if (habitOnThisDay) {
+                    const dailyInfo = getHabitDailyInfoForDate(dateISO)?.[habitOnThisDay.id];
+                    const instances = dailyInfo?.instances || {};
+                    const scheduleForDay = dailyInfo?.dailySchedule || habitOnThisDay.times;
+                    
+                    const statusDetails = scheduleForDay.map(time => {
+                        const status = instances[time]?.status || 'pending';
+                        return statusToSymbol[status];
+                    });
+                    allHistory.push({ date: dateISO, statuses: statusDetails });
+                }
+            }
+        }
+
+        // Summarize to avoid overly long prompts. Group by month.
+        const summaryByMonth: Record<string, string[]> = {};
+        allHistory.forEach(item => {
+            const month = item.date.substring(0, 7); // YYYY-MM
+            if (!summaryByMonth[month]) {
+                summaryByMonth[month] = [];
+            }
+            summaryByMonth[month].push(`${item.date}: ${item.statuses.join('')}`);
+        });
+
+        history = Object.entries(summaryByMonth)
+            .map(([month, entries]) => `${t('aiPromptMonthHeader', { month })}:\n${entries.join('\n')}`)
+            .join('\n\n');
+    }
 
     if (!history.trim()) {
         history = t('aiPromptNoData');
@@ -84,12 +152,12 @@ export const buildAIPrompt = (): string => {
         'es': 'Español'
     }[state.activeLanguageCode] || 'Português (Brasil)';
 
-    return t('aiPromptMain', {
-        activeHabitList: activeHabitList,
-        graduatedHabitsSection: graduatedHabitsSection,
-        history: history,
-        languageName: languageName
-    });
+    templateOptions.activeHabitList = activeHabitList;
+    templateOptions.graduatedHabitsSection = graduatedHabitsSection;
+    templateOptions.history = history;
+    templateOptions.languageName = languageName;
+    
+    return t(promptTemplateKey, templateOptions);
 };
 
 export const getAIEvaluationStream = async function* (prompt: string) {

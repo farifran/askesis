@@ -17,6 +17,12 @@ type UIElements = {
     aiEvalBtn: HTMLButtonElement;
     aiModal: HTMLElement;
     aiModalTitle: HTMLElement;
+    aiOptionsModal: HTMLElement;
+    aiWeeklyCheckinBtn: HTMLButtonElement;
+    aiMonthlyReviewBtn: HTMLButtonElement;
+    aiHabitDeepDiveBtn: HTMLButtonElement;
+    aiHabitSelection: HTMLElement;
+    aiHabitSelectionList: HTMLElement;
     confirmModal: HTMLElement;
     habitList: HTMLElement;
     aiResponse: HTMLElement;
@@ -68,6 +74,12 @@ export function initUI(): void {
         aiEvalBtn: document.getElementById('ai-eval-btn') as HTMLButtonElement,
         aiModal: document.getElementById('ai-modal')!,
         aiModalTitle: document.getElementById('ai-modal-title')!,
+        aiOptionsModal: document.getElementById('ai-options-modal')!,
+        aiWeeklyCheckinBtn: document.getElementById('ai-weekly-checkin-btn') as HTMLButtonElement,
+        aiMonthlyReviewBtn: document.getElementById('ai-monthly-review-btn') as HTMLButtonElement,
+        aiHabitDeepDiveBtn: document.getElementById('ai-habit-deep-dive-btn') as HTMLButtonElement,
+        aiHabitSelection: document.getElementById('ai-habit-selection')!,
+        aiHabitSelectionList: document.getElementById('ai-habit-selection-list')!,
         confirmModal: document.getElementById('confirm-modal')!,
         habitList: document.getElementById('habit-list')!,
         aiResponse: document.getElementById('ai-response')!,

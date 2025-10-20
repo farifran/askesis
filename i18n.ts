@@ -34,7 +34,7 @@ async function loadLanguage(langCode: 'pt' | 'en' | 'es'): Promise<void> {
     }
 }
 
-export function t(key: string, options?: { [key: string]: string | number }): string {
+export function t(key: string, options?: { [key: string]: string | number | undefined }): string {
     const lang = state.activeLanguageCode || 'pt';
     const dict = loadedTranslations[lang] || loadedTranslations['pt']; // Fallback para PT se o idioma atual não estiver carregado.
     
@@ -99,6 +99,15 @@ function updateUIText() {
     
     ui.aiModal.querySelector('.modal-close-btn')!.textContent = t('closeButton');
     
+    ui.aiOptionsModal.querySelector('h2')!.textContent = t('modalAIOptionsTitle');
+    ui.aiOptionsModal.querySelector<HTMLSpanElement>('#ai-weekly-checkin-btn .ai-option-title')!.textContent = t('aiOptionWeeklyTitle');
+    ui.aiOptionsModal.querySelector<HTMLSpanElement>('#ai-weekly-checkin-btn .ai-option-desc')!.textContent = t('aiOptionWeeklyDesc');
+    ui.aiOptionsModal.querySelector<HTMLSpanElement>('#ai-monthly-review-btn .ai-option-title')!.textContent = t('aiOptionMonthlyTitle');
+    ui.aiOptionsModal.querySelector<HTMLSpanElement>('#ai-monthly-review-btn .ai-option-desc')!.textContent = t('aiOptionMonthlyDesc');
+    ui.aiOptionsModal.querySelector<HTMLSpanElement>('#ai-habit-deep-dive-btn .ai-option-title')!.textContent = t('aiOptionDeepDiveTitle');
+    ui.aiOptionsModal.querySelector<HTMLSpanElement>('#ai-habit-deep-dive-btn .ai-option-desc')!.textContent = t('aiOptionDeepDiveDesc');
+    ui.aiOptionsModal.querySelector<HTMLHeadingElement>('#ai-habit-selection h3')!.textContent = t('aiOptionSelectHabit');
+
     ui.confirmModal.querySelector('h2')!.textContent = t('modalConfirmTitle');
     ui.confirmModal.querySelector('.modal-close-btn')!.textContent = t('cancelButton');
     ui.confirmModalEditBtn.textContent = t('editButton');
