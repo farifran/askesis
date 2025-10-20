@@ -365,8 +365,9 @@ export function renderAINotificationState() {
 }
 
 export function renderApp() {
-    renderCalendar();
+    // FIX: Swapped order to render habits before calendar to fix update bug.
     renderHabits();
+    renderCalendar();
     renderAINotificationState();
 }
 

@@ -326,9 +326,10 @@ export function shouldShowPlusIndicator(dateISO: string): boolean {
     const dailyInfo = state.dailyData[dateISO] || {};
     const activeHabitsOnDate = state.habits.filter(h => shouldHabitAppearOnDate(h, dateObj));
 
-    // Find habits that had at least one instance exceeding its goal on the given date.
+    // 1. Find habits that had their goal exceeded on the given date.
     const goalExceededHabits = activeHabitsOnDate.filter(habit => {
         if (habit.goal.type !== 'pages' && habit.goal.type !== 'minutes') return false;
+        
         const habitDailyInfo = dailyInfo[habit.id];
         if (!habitDailyInfo) return false;
         
@@ -345,14 +346,40 @@ export function shouldShowPlusIndicator(dateISO: string): boolean {
         return false;
     }
 
-    // Check if any of these habits also had their previous two occurrences fully completed.
+    // 2. For each of those habits, check if the other conditions are met.
     for (const habit of goalExceededHabits) {
+        // Condition A: The habit was completed for the previous 2 scheduled occurrences.
         const previousCompletions = getPreviousCompletedOccurrences(habit, dateObj, 2);
-        if (previousCompletions.length === 2) {
+        if (previousCompletions.length !== 2) {
+            continue; // Streak condition not met, try next habit.
+        }
+
+        // Condition B: All *other* active habits on this date must also be completed.
+        const otherHabits = activeHabitsOnDate.filter(h => h.id !== habit.id);
+        const allOtherHabitsCompleted = otherHabits.every(otherHabit => {
+            const otherHabitDailyInfo = dailyInfo[otherHabit.id];
+            const scheduleForDay = otherHabitDailyInfo?.dailySchedule || otherHabit.times;
+            const instances = otherHabitDailyInfo?.instances || {};
+
+            // If a habit is scheduled but has no instances at all, it's considered pending.
+            if (scheduleForDay.length > 0 && Object.keys(instances).length === 0) {
+                return false;
+            }
+
+            // Every single scheduled instance for this other habit must be 'completed'.
+            return scheduleForDay.every(time => {
+                const status = instances[time]?.status;
+                return status === 'completed';
+            });
+        });
+
+        // If both streak and "all others completed" conditions are met, we show the plus.
+        if (allOtherHabitsCompleted) {
             return true;
         }
     }
 
+    // If we looped through all goal-exceeded habits and none met all conditions.
     return false;
 }
 
