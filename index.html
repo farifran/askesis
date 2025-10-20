@@ -24,6 +24,7 @@
                     <button id="ai-eval-btn" class="icon-btn" aria-label="Avaliação IA"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg></button>
                 </div>
             </div>
+            <div id="stoic-quote-display" class="stoic-quote"></div>
             <div class="header-bottom">
                 <h1 id="header-title">Hoje</h1>
                 <div id="time-filter-rotary" class="reel-rotary">
@@ -110,14 +111,10 @@
                     <span class="ai-option-title">Revisão Mensal</span>
                     <span class="ai-option-desc">Uma análise aprofundada dos últimos 30 dias.</span>
                 </button>
-                <button id="ai-habit-deep-dive-btn" class="ai-option-btn">
-                    <span class="ai-option-title">Análise de Hábito</span>
-                    <span class="ai-option-desc">Analise o histórico completo de um hábito específico.</span>
+                <button id="ai-general-analysis-btn" class="ai-option-btn">
+                    <span class="ai-option-title">Análise Geral</span>
+                    <span class="ai-option-desc">Uma visão holística de toda a sua jornada de hábitos.</span>
                 </button>
-            </div>
-            <div id="ai-habit-selection" class="modal-settings-section" style="display: none;">
-                <h3>Selecione um hábito para analisar:</h3>
-                <ul id="ai-habit-selection-list"></ul>
             </div>
             <button class="btn modal-close-btn">Cancelar</button>
         </div>

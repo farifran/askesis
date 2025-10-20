@@ -93,7 +93,7 @@ const handleCelebrationCheck = (
     return false;
 };
 
-const runAIEvaluation = async (analysisType: 'weekly' | 'monthly' | 'deep-dive', habitId?: string) => {
+const runAIEvaluation = async (analysisType: 'weekly' | 'monthly' | 'general') => {
     closeModal(ui.aiOptionsModal); // Close the options modal first
 
     if (!navigator.onLine) {
@@ -103,7 +103,7 @@ const runAIEvaluation = async (analysisType: 'weekly' | 'monthly' | 'deep-dive',
         return;
     }
 
-    const prompt = buildAIPrompt(analysisType, habitId);
+    const prompt = buildAIPrompt(analysisType);
 
     ui.aiModalTitle.textContent = t('modalAITitle');
     ui.aiResponse.innerHTML = `
@@ -152,8 +152,6 @@ const handleAIEvaluationClick = async () => {
     if (handleCelebrationCheck('pending21DayHabitIds', 'celebrationSemiConsolidatedTitle', 'celebrationSemiConsolidatedBody')) return;
 
     // Now, open the options modal instead of running the analysis directly.
-    ui.aiHabitSelection.style.display = 'none'; // Hide habit list initially
-    ui.aiHabitSelectionList.innerHTML = '';
     openModal(ui.aiOptionsModal);
 };
 
@@ -366,32 +364,8 @@ export const setupModalListeners = () => {
 
     ui.aiWeeklyCheckinBtn.addEventListener('click', () => runAIEvaluation('weekly'));
     ui.aiMonthlyReviewBtn.addEventListener('click', () => runAIEvaluation('monthly'));
-
-    ui.aiHabitDeepDiveBtn.addEventListener('click', () => {
-        const activeHabits = state.habits.filter(h => !h.endedOn && !h.graduatedOn);
-        if (activeHabits.length === 0) {
-            ui.aiHabitSelectionList.innerHTML = `<li>${t('noActiveHabits')}</li>`;
-        } else {
-            ui.aiHabitSelectionList.innerHTML = activeHabits
-                .map(habit => {
-                    const { name } = getHabitDisplayInfo(habit);
-                    return `<li data-habit-id="${habit.id}">${habit.icon}<span>${name}</span></li>`;
-                })
-                .join('');
-        }
-        ui.aiHabitSelection.style.display = 'block';
-    });
-
-    ui.aiHabitSelectionList.addEventListener('click', e => {
-        const target = e.target as HTMLElement;
-        const li = target.closest<HTMLLIElement>('li');
-        const habitId = li?.dataset.habitId;
-
-        if (habitId) {
-            runAIEvaluation('deep-dive', habitId);
-        }
-    });
-
+    ui.aiGeneralAnalysisBtn.addEventListener('click', () => runAIEvaluation('general'));
+    
     setupLanguageFilterListeners();
     setupFrequencyFilterListeners();
 };

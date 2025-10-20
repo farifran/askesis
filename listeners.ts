@@ -6,6 +6,7 @@ import {
     updateHeaderTitle,
     renderFilters,
     createCalendarDayElement,
+    renderStoicQuote,
 } from './render';
 import { setupModalListeners } from './modalListeners';
 import { setupHabitCardListeners } from './habitCardListeners';
@@ -50,6 +51,7 @@ const setupGlobalListeners = () => {
             updateCalendarSelection();
             updateHeaderTitle();
             renderHabits();
+            renderStoicQuote();
         }
 
         if (clickTimeout) {

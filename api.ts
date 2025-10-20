@@ -40,7 +40,7 @@ function getHabitLineage(habitId: string): Habit[] {
 }
 
 
-export const buildAIPrompt = (analysisType: 'weekly' | 'monthly' | 'deep-dive', habitId?: string): string => {
+export const buildAIPrompt = (analysisType: 'weekly' | 'monthly' | 'general'): string => {
     let history = '';
     let promptTemplateKey = '';
     const templateOptions: { [key: string]: string | undefined } = {};
@@ -87,43 +87,51 @@ export const buildAIPrompt = (analysisType: 'weekly' | 'monthly' | 'deep-dive', 
         }
         history = daySummaries.join('\n\n');
 
-    } else if (analysisType === 'deep-dive' && habitId) {
-        promptTemplateKey = 'aiPromptDeepDive';
-        const habitLineage = getHabitLineage(habitId);
-        const latestHabit = habitLineage[habitLineage.length-1];
-        const { name } = getHabitDisplayInfo(latestHabit);
-        templateOptions.habitName = name;
+    } else if (analysisType === 'general') {
+        promptTemplateKey = 'aiPromptGeneral';
+        
+        // Find the earliest date any habit was created to define the start of our history scan.
+        let firstDateEver = today;
+        if (state.habits.length > 0) {
+            firstDateEver = state.habits.reduce((earliest, habit) => {
+                const habitStartDate = parseUTCIsoDate(habit.createdOn);
+                return habitStartDate < earliest ? habitStartDate : earliest;
+            }, today);
+        }
+        
+        const allHistory: { date: string, entries: string[] }[] = [];
+        
+        // Iterate from the very first day until today.
+        for (let d = firstDateEver; d <= today; d = addDays(d, 1)) {
+            const dateISO = toUTCIsoDateString(d);
+            const dailyInfoByHabit = getHabitDailyInfoForDate(dateISO);
+            const habitsOnThisDay = state.habits.filter(h => shouldHabitAppearOnDate(h, d));
 
-        const allHistory: { date: string, statuses: string[] }[] = [];
-        if (habitLineage.length > 0) {
-            const firstDate = parseUTCIsoDate(habitLineage[0].createdOn);
-            // Iterate from the first day of the habit until today
-            for (let d = firstDate; d <= today; d = addDays(d, 1)) {
-                const dateISO = toUTCIsoDateString(d);
-                const habitOnThisDay = habitLineage.find(h => shouldHabitAppearOnDate(h, d));
-                
-                if (habitOnThisDay) {
-                    const dailyInfo = getHabitDailyInfoForDate(dateISO)?.[habitOnThisDay.id];
-                    const instances = dailyInfo?.instances || {};
-                    const scheduleForDay = dailyInfo?.dailySchedule || habitOnThisDay.times;
-                    
+            if (habitsOnThisDay.length > 0) {
+                const dayEntries = habitsOnThisDay.map(habit => {
+                    const dailyInfo = dailyInfoByHabit[habit.id];
+                    const habitInstances = dailyInfo?.instances || {};
+                    const scheduleForDay = dailyInfo?.dailySchedule || habit.times;
+                    const { name } = getHabitDisplayInfo(habit);
+
                     const statusDetails = scheduleForDay.map(time => {
-                        const status = instances[time]?.status || 'pending';
-                        return statusToSymbol[status];
+                         const status = habitInstances[time]?.status || 'pending';
+                         return statusToSymbol[status];
                     });
-                    allHistory.push({ date: dateISO, statuses: statusDetails });
-                }
+                    return `- ${name}: ${statusDetails.join('')}`;
+                });
+                allHistory.push({ date: dateISO, entries: dayEntries });
             }
         }
-
-        // Summarize to avoid overly long prompts. Group by month.
+        
+        // Summarize by month to keep the prompt manageable.
         const summaryByMonth: Record<string, string[]> = {};
-        allHistory.forEach(item => {
-            const month = item.date.substring(0, 7); // YYYY-MM
+        allHistory.forEach(day => {
+            const month = day.date.substring(0, 7); // YYYY-MM
             if (!summaryByMonth[month]) {
                 summaryByMonth[month] = [];
             }
-            summaryByMonth[month].push(`${item.date}: ${item.statuses.join('')}`);
+            summaryByMonth[month].push(`${day.date}:\n${day.entries.join('\n')}`);
         });
 
         history = Object.entries(summaryByMonth)

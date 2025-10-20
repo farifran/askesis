@@ -2,6 +2,7 @@
 type UIElements = {
     calendarStrip: HTMLElement;
     headerTitle: HTMLElement;
+    stoicQuoteDisplay: HTMLElement;
     timeFilterPrev: HTMLButtonElement;
     timeFilterViewport: HTMLElement;
     timeFilterReel: HTMLElement;
@@ -20,9 +21,7 @@ type UIElements = {
     aiOptionsModal: HTMLElement;
     aiWeeklyCheckinBtn: HTMLButtonElement;
     aiMonthlyReviewBtn: HTMLButtonElement;
-    aiHabitDeepDiveBtn: HTMLButtonElement;
-    aiHabitSelection: HTMLElement;
-    aiHabitSelectionList: HTMLElement;
+    aiGeneralAnalysisBtn: HTMLButtonElement;
     confirmModal: HTMLElement;
     habitList: HTMLElement;
     aiResponse: HTMLElement;
@@ -59,6 +58,7 @@ export function initUI(): void {
     Object.assign(ui, {
         calendarStrip: document.getElementById('calendar-strip')!,
         headerTitle: document.getElementById('header-title')!,
+        stoicQuoteDisplay: document.getElementById('stoic-quote-display')!,
         timeFilterPrev: document.getElementById('time-filter-prev') as HTMLButtonElement,
         timeFilterViewport: document.getElementById('time-filter-viewport')!,
         timeFilterReel: document.getElementById('time-filter-reel')!,
@@ -77,9 +77,7 @@ export function initUI(): void {
         aiOptionsModal: document.getElementById('ai-options-modal')!,
         aiWeeklyCheckinBtn: document.getElementById('ai-weekly-checkin-btn') as HTMLButtonElement,
         aiMonthlyReviewBtn: document.getElementById('ai-monthly-review-btn') as HTMLButtonElement,
-        aiHabitDeepDiveBtn: document.getElementById('ai-habit-deep-dive-btn') as HTMLButtonElement,
-        aiHabitSelection: document.getElementById('ai-habit-selection')!,
-        aiHabitSelectionList: document.getElementById('ai-habit-selection-list')!,
+        aiGeneralAnalysisBtn: document.getElementById('ai-general-analysis-btn') as HTMLButtonElement,
         confirmModal: document.getElementById('confirm-modal')!,
         habitList: document.getElementById('habit-list')!,
         aiResponse: document.getElementById('ai-response')!,

@@ -26,6 +26,7 @@ import {
 } from './state';
 import { ui } from './ui';
 import { t, getLocaleDayName, getHabitDisplayInfo } from './i18n';
+import { STOIC_QUOTES } from './quotes';
 
 function updateReelRotaryARIA(viewportEl: HTMLElement, currentIndex: number, options: readonly string[] | string[], labelKey: string) {
     if (!viewportEl) return;
@@ -364,11 +365,35 @@ export function renderAINotificationState() {
     ui.aiEvalBtn.classList.toggle('has-notification', hasNotifications);
 }
 
+export function renderStoicQuote() {
+    const date = parseUTCIsoDate(state.selectedDate);
+    // Calculate day of the year to get a consistent daily quote
+    const startOfYear = new Date(date.getUTCFullYear(), 0, 0);
+    const diff = date.getTime() - startOfYear.getTime();
+    const oneDay = 1000 * 60 * 60 * 24;
+    const dayOfYear = Math.floor(diff / oneDay);
+    
+    const quoteIndex = dayOfYear % STOIC_QUOTES.length;
+    const quote = STOIC_QUOTES[quoteIndex];
+    
+    const lang = state.activeLanguageCode as keyof typeof quote;
+    const quoteText = quote[lang];
+    
+    // Use a timeout to allow the opacity transition to work when the text content changes
+    ui.stoicQuoteDisplay.classList.remove('visible');
+    
+    setTimeout(() => {
+        ui.stoicQuoteDisplay.textContent = `"${quoteText}" — ${t('marcusAurelius')}`;
+        ui.stoicQuoteDisplay.classList.add('visible');
+    }, 100);
+}
+
 export function renderApp() {
     // FIX: Swapped order to render habits before calendar to fix update bug.
     renderHabits();
     renderCalendar();
     renderAINotificationState();
+    renderStoicQuote();
 }
 
 export function updateHabitCardDOM(habitId: string, time: TimeOfDay) {

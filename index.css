@@ -122,6 +122,21 @@ body {
     top: -1px;
 }
 
+/* Citação Estoica */
+.stoic-quote {
+    font-size: 13px;
+    font-style: italic;
+    color: var(--text-secondary);
+    padding-left: 2px;
+    min-height: 2.2em;
+    line-height: 1.4;
+    transition: opacity 0.5s ease-in-out;
+    opacity: 0;
+}
+.stoic-quote.visible {
+    opacity: 1;
+}
+
 /* --- COMPONENTES --- */
 
 /* Botões */
@@ -992,37 +1007,6 @@ body {
     line-height: 1.4;
 }
 
-#ai-habit-selection h3 {
-    font-size: 18px;
-    margin-bottom: 12px;
-}
-#ai-habit-selection-list {
-    list-style: none;
-    max-height: 200px;
-    overflow-y: auto;
-}
-#ai-habit-selection-list li {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 12px;
-    border-radius: 8px;
-    cursor: pointer;
-    transition: background-color 0.2s;
-}
-#ai-habit-selection-list li:hover {
-    background-color: var(--surface-hover);
-}
-#ai-habit-selection-list li svg {
-    width: 20px;
-    height: 20px;
-    flex-shrink: 0;
-}
-#ai-habit-selection-list li span {
-    font-size: 15px;
-    font-weight: 500;
-}
-
 /* --- UTILITÁRIOS --- */
 .undo-toast {
     position: fixed;
@@ -1210,9 +1194,15 @@ body {
 
 /* --- RESPONSIVIDADE PARA TELAS MENORES (MÓVEIS) --- */
 @media (max-width: 767px) {
+    .app-header {
+        gap: 12px;
+    }
     .app-header h1 {
         font-size: 14px;
         font-weight: 600;
+    }
+    .stoic-quote {
+        font-size: 12px;
     }
     
     .header-top {
@@ -1231,6 +1221,7 @@ body {
     
     .header-bottom {
         gap: 8px; /* Reduz o espaçamento entre os itens do cabeçalho */
+        flex-wrap: wrap; /* Permite que os itens quebrem a linha */
     }
 }
 
