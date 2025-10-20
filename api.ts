@@ -78,10 +78,17 @@ export const buildAIPrompt = (): string => {
         graduatedHabitsSection = t('aiPromptGraduatedSection', { graduatedHabitList });
     }
     
+    const languageName = {
+        'pt': 'Português (Brasil)',
+        'en': 'English',
+        'es': 'Español'
+    }[state.activeLanguageCode] || 'Português (Brasil)';
+
     return t('aiPromptMain', {
         activeHabitList: activeHabitList,
         graduatedHabitsSection: graduatedHabitsSection,
-        history: history
+        history: history,
+        languageName: languageName
     });
 };
 
