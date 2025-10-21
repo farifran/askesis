@@ -626,6 +626,7 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     height: 18px;
     color: var(--text-tertiary);
     gap: 4px; /* Espaço entre os ícones quando há múltiplos */
+    transition: opacity 0.3s ease;
 }
 .time-of-day-icon svg {
     width: 18px; /* Largura fixa para cada SVG */
@@ -641,6 +642,7 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     align-items: center;
     justify-content: center;
     border-radius: 6px;
+    transition: opacity 0.3s ease;
 }
 .habit-icon svg {
     width: 60%;
@@ -770,6 +772,11 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 .habit-card.is-open-right .habit-goal-controls {
     opacity: 0;
     pointer-events: none;
+}
+
+.habit-card.is-open-right .time-of-day-icon,
+.habit-card.is-open-right .habit-icon {
+    opacity: 0;
 }
 
 .swipe-delete-btn, .swipe-note-btn {
