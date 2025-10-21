@@ -7,7 +7,6 @@ import {
     state,
     saveState,
     Habit,
-    PREDEFINED_HABITS,
     TimeOfDay,
     HabitStatus,
     getNextStatus,
@@ -16,9 +15,13 @@ import {
     STREAK_SEMI_CONSOLIDATED,
     STREAK_CONSOLIDATED,
     calculateHabitStreak,
-    STATE_STORAGE_KEY,
     TIMES_OF_DAY,
-    Frequency
+    Frequency,
+    PredefinedHabit,
+    HabitSchedule,
+    getScheduleForDate,
+    // FIX: Import PREDEFINED_HABITS to be used in createDefaultHabit.
+    PREDEFINED_HABITS,
 } from './state';
 import {
     renderHabits,
@@ -32,85 +35,77 @@ import {
     setupManageModal,
     showInlineNotice,
     renderCalendar,
+    removeHabitFromDOM,
 } from './render';
 import { t, getHabitDisplayInfo } from './i18n';
 import { ui } from './ui';
 
-/**
- * Creates a new version of a habit when its schedule or name changes,
- * preserving the history of the original habit.
- * @param originalHabit The habit to be versioned.
- * @param changeDateISO The date (YYYY-MM-DD) from which the new version is active.
- * @param updates An object containing the new name, times, and/or frequency.
- */
-function applyHabitVersioning(
+function updateHabitSchedule(
     originalHabit: Habit,
     changeDateISO: string,
-    updates: { name?: string, times: TimeOfDay[], frequency: Frequency }
+    updates: Partial<Pick<HabitSchedule, 'name' | 'times' | 'frequency'>>
 ): void {
-    const changeDate = parseUTCIsoDate(changeDateISO);
+    const lastSchedule = originalHabit.scheduleHistory[originalHabit.scheduleHistory.length - 1];
 
-    // 1. End the original habit's active period on the day of the change.
-    originalHabit.endedOn = changeDateISO;
-
-    // 2. Create the new habit version with updated properties.
-    const newHabit: Habit = {
-        id: generateUUID(),
-        createdOn: changeDateISO,
+    const newSchedule: HabitSchedule = {
+        startDate: changeDateISO,
         scheduleAnchor: changeDateISO,
-        name: updates.name ?? originalHabit.name,
-        nameKey: originalHabit.nameKey,
-        subtitle: originalHabit.subtitle,
-        subtitleKey: originalHabit.subtitleKey,
-        icon: originalHabit.icon,
-        color: originalHabit.color,
-        goal: originalHabit.goal,
-        times: updates.times,
-        frequency: updates.frequency,
-        previousVersionId: originalHabit.id,
-        history: [...(originalHabit.history || []), { startDate: originalHabit.createdOn, endDate: changeDateISO }],
+        name: updates.name ?? lastSchedule.name,
+        subtitle: lastSchedule.subtitle,
+        nameKey: lastSchedule.nameKey,
+        subtitleKey: lastSchedule.subtitleKey,
+        times: updates.times ?? lastSchedule.times,
+        frequency: updates.frequency ?? lastSchedule.frequency,
     };
-    state.habits.push(newHabit);
     
-    // 3. Migrate daily data from the change date onwards to prevent data loss.
+    lastSchedule.endDate = changeDateISO;
+    originalHabit.scheduleHistory.push(newSchedule);
+
+    const changeDate = parseUTCIsoDate(changeDateISO);
     Object.keys(state.dailyData).forEach(dateStr => {
         const currentDate = parseUTCIsoDate(dateStr);
         if (currentDate >= changeDate && state.dailyData[dateStr][originalHabit.id]) {
-            const dataToMove = state.dailyData[dateStr][originalHabit.id]!;
+            const dataToClean = state.dailyData[dateStr][originalHabit.id]!;
             
-            // Clean up instances whose time slots are no longer in the new schedule.
-            const newTimesSet = new Set(updates.times);
-            for (const time in dataToMove.instances) {
-                if (!newTimesSet.has(time as TimeOfDay)) {
-                    delete dataToMove.instances[time as TimeOfDay];
+            if (updates.times) {
+                const newTimesSet = new Set(updates.times);
+                for (const time in dataToClean.instances) {
+                    if (!newTimesSet.has(time as TimeOfDay)) {
+                        delete dataToClean.instances[time as TimeOfDay];
+                    }
                 }
             }
-            
-            // A daily schedule override (from drag-and-drop) is based on the old schedule.
-            // It's safer to remove it, letting the habit use its new default schedule.
-            if (dataToMove.dailySchedule) {
-                delete dataToMove.dailySchedule;
+            if (dataToClean.dailySchedule) {
+                delete dataToClean.dailySchedule;
             }
-
-            // Move the cleaned data to the new habit's ID.
-            state.dailyData[dateStr][newHabit.id] = dataToMove;
-            delete state.dailyData[dateStr][originalHabit.id];
         }
     });
-    
-    // 4. Save state and re-render the application to reflect the changes.
+
     saveState();
     renderHabits();
     renderCalendar();
     setupManageModal();
 }
 
-export function addHabit(habitTemplate: Omit<Habit, 'id' | 'createdOn'>, startDate: string): Habit {
+export function addHabit(habitTemplate: PredefinedHabit | any, startDate: string): Habit {
+    const firstSchedule: HabitSchedule = {
+        startDate: startDate,
+        scheduleAnchor: startDate,
+        name: habitTemplate.name,
+        subtitle: habitTemplate.subtitle,
+        nameKey: habitTemplate.nameKey,
+        subtitleKey: habitTemplate.subtitleKey,
+        times: habitTemplate.times,
+        frequency: habitTemplate.frequency,
+    };
+
     const newHabit: Habit = {
         id: generateUUID(),
         createdOn: startDate,
-        ...habitTemplate,
-        scheduleAnchor: startDate, // Anchor new habits to their creation date
+        icon: habitTemplate.icon,
+        color: habitTemplate.color,
+        goal: habitTemplate.goal,
+        scheduleHistory: [firstSchedule],
     };
     state.habits.push(newHabit);
     saveState();
@@ -118,7 +113,6 @@ export function addHabit(habitTemplate: Omit<Habit, 'id' | 'createdOn'>, startDa
 }
 
 export function createDefaultHabit() {
-    // Add the "Drink Water" habit by default
     const waterHabitTemplate = PREDEFINED_HABITS.find(h => h.nameKey === 'predefinedHabitWaterName');
     if (waterHabitTemplate) {
         addHabit(waterHabitTemplate, getTodayUTCIso());
@@ -134,11 +128,8 @@ export function toggleHabitStatus(habitId: string, time: TimeOfDay) {
     const newStatus = getNextStatus(oldStatus);
     dayInstanceData.status = newStatus;
 
-    // Check for streak milestones only when completing a habit
     if (newStatus === 'completed') {
-        // We calculate the streak for the *current* day, as if it were completed.
         const streak = calculateHabitStreak(habitId, state.selectedDate);
-
         if (streak === STREAK_SEMI_CONSOLIDATED && !state.notificationsShown.includes(habitId)) {
             state.pending21DayHabitIds.push(habitId);
         } else if (streak === STREAK_CONSOLIDATED && !state.notificationsShown.includes(habitId)) {
@@ -157,7 +148,6 @@ export function updateGoalOverride(habitId: string, date: string, time: TimeOfDa
     const habit = state.habits.find(h => h.id === habitId);
     if (!habit || (habit.goal.type !== 'pages' && habit.goal.type !== 'minutes')) return;
 
-    // Ensure the new goal is a positive number.
     const sanitizedGoal = Math.max(1, newGoal);
     
     const dayInstanceData = ensureHabitInstanceData(date, habitId, time);
@@ -178,7 +168,7 @@ export function handleGoalControlClick(habitId: string, time: TimeOfDay, action:
     if (action === 'increment') {
         newGoal = currentGoal + GOAL_STEP;
     } else {
-        newGoal = Math.max(1, currentGoal - GOAL_STEP); // Cannot go below 1
+        newGoal = Math.max(1, currentGoal - GOAL_STEP);
     }
 
     updateGoalOverride(habitId, state.selectedDate, time, newGoal);
@@ -190,7 +180,10 @@ function setAllHabitsStatusForDate(date: string, status: HabitStatus) {
     state.habits.forEach(habit => {
         if (shouldHabitAppearOnDate(habit, dateObj)) {
             const habitDailyInfo = state.dailyData[date]?.[habit.id];
-            const scheduleForDay = habitDailyInfo?.dailySchedule || habit.times;
+            const activeSchedule = getScheduleForDate(habit, dateObj);
+            if (!activeSchedule) return;
+
+            const scheduleForDay = habitDailyInfo?.dailySchedule || activeSchedule.times;
             
             scheduleForDay.forEach(time => {
                 const dayInstanceData = ensureHabitInstanceData(date, habit.id, time);
@@ -203,10 +196,7 @@ function setAllHabitsStatusForDate(date: string, status: HabitStatus) {
     });
 
     if (changedHabits.size > 0) {
-        // Invalida o cache de sequências, pois as ações em massa o afetam.
         state.streaksCache = {};
-        
-        // Dispara verificações de consolidação apenas para os hábitos que foram alterados para 'completed'
         if (status === 'completed') {
             changedHabits.forEach(habit => {
                 const streak = calculateHabitStreak(habit.id, date);
@@ -219,7 +209,7 @@ function setAllHabitsStatusForDate(date: string, status: HabitStatus) {
         }
         
         saveState();
-        renderHabits(); // Re-render all habits for the day
+        renderHabits();
         updateCalendarDayDOM(date);
     }
 }
@@ -232,16 +222,16 @@ export function snoozeAllHabitsForDate(date: string) {
     setAllHabitsStatusForDate(date, 'snoozed');
 }
 
-function endHabit(habitId: string, endDate: string) {
-    const habit = state.habits.find(h => h.id === habitId);
-    if (habit) {
-        habit.endedOn = endDate;
-        state.lastEnded = { habitId: habitId };
+function endHabit(habit: Habit, endDate: string) {
+    const lastSchedule = habit.scheduleHistory[habit.scheduleHistory.length - 1];
+    if (lastSchedule && !lastSchedule.endDate) {
+        lastSchedule.endDate = endDate;
+        state.lastEnded = { habitId: habit.id, lastSchedule: JSON.parse(JSON.stringify(lastSchedule)) };
         saveState();
         renderHabits();
         renderCalendar();
         showUndoToast();
-        setupManageModal(); // Update list in manage modal
+        setupManageModal();
     }
 }
 
@@ -256,10 +246,8 @@ function requestHabitEnding(habitId: string, date: string) {
         date: `<strong>${dateFormatted}</strong>`
     });
 
-    showConfirmationModal(confirmationText, () => endHabit(habitId, date), {
-        onEdit: () => {
-            openEditModal(habit);
-        },
+    showConfirmationModal(confirmationText, () => endHabit(habit, date), {
+        onEdit: () => openEditModal(habit),
         title: t('modalEndHabitTitle'),
         confirmText: t('buttonEndHabit'),
         editText: t('buttonEditHabit'),
@@ -269,15 +257,13 @@ function requestHabitEnding(habitId: string, date: string) {
 export function requestHabitTimeRemoval(habitId: string, timeToRemove: TimeOfDay) {
     const habit = state.habits.find(h => h.id === habitId);
     if (!habit) return;
-
-    // Caso especial: se este for o último horário do hábito,
-    // removê-lo é equivalente a encerrar o hábito por completo.
-    if (habit.times.length <= 1) {
+    
+    const lastSchedule = habit.scheduleHistory[habit.scheduleHistory.length - 1];
+    if (lastSchedule.times.length <= 1) {
         requestHabitEnding(habitId, state.selectedDate);
         return;
     }
 
-    // Caso principal: o hábito tem outros horários, então apenas editamos o agendamento.
     const { name } = getHabitDisplayInfo(habit);
     const timeName = t(`filter${timeToRemove}`);
     const dateFormatted = parseUTCIsoDate(state.selectedDate).toLocaleDateString(state.activeLanguageCode, { day: 'numeric', month: 'long', timeZone: 'UTC' });
@@ -291,17 +277,11 @@ export function requestHabitTimeRemoval(habitId: string, timeToRemove: TimeOfDay
     showConfirmationModal(
         confirmationText,
         () => {
-            const newTimes = habit.times.filter(t => t !== timeToRemove);
-            applyHabitVersioning(habit, state.selectedDate, {
-                times: newTimes,
-                frequency: habit.frequency,
-                name: habit.name, // Preserva o nome original se for personalizado
-            });
+            const newTimes = lastSchedule.times.filter(t => t !== timeToRemove);
+            updateHabitSchedule(habit, state.selectedDate, { times: newTimes });
         },
         {
-            onEdit: () => {
-                openEditModal(habit);
-            },
+            onEdit: () => openEditModal(habit),
             title: t('modalRemoveTimeTitle'),
             confirmText: t('buttonRemoveTime'),
             editText: t('buttonEditHabit'),
@@ -314,14 +294,18 @@ export function handleUndoDelete() {
     if (state.lastEnded) {
         const habit = state.habits.find(h => h.id === state.lastEnded!.habitId);
         if (habit) {
-            habit.endedOn = undefined;
+            const lastSchedule = habit.scheduleHistory[habit.scheduleHistory.length - 1];
+            // Only undo if the last schedule matches the one we stored
+            if (lastSchedule.endDate === state.lastEnded.lastSchedule.endDate) {
+                 delete lastSchedule.endDate;
+            }
             state.lastEnded = null;
             if (state.undoTimeout) clearTimeout(state.undoTimeout);
             ui.undoToast.classList.remove('visible');
             saveState();
             renderHabits();
             renderCalendar();
-            setupManageModal(); // Update list in manage modal
+            setupManageModal();
         }
     }
 }
@@ -335,9 +319,7 @@ export function requestHabitEndingFromModal(habitId: string) {
         habitName: `<strong>${name}</strong>`,
         date: `<strong>${dateFormatted}</strong>` 
     });
-    showConfirmationModal(confirmationText, () => {
-        endHabit(habitId, getTodayUTCIso()); // Encerrar a partir do modal sempre encerra 'hoje'
-    });
+    showConfirmationModal(confirmationText, () => endHabit(habit, getTodayUTCIso()));
 }
 
 export function requestHabitPermanentDeletion(habitId: string) {
@@ -348,32 +330,16 @@ export function requestHabitPermanentDeletion(habitId: string) {
     const confirmationText = t('confirmPermanentDelete', { habitName: `<strong>${name}</strong>` });
 
     showConfirmationModal(confirmationText, () => {
-        const habitNameToDelete = getHabitDisplayInfo(habit).name;
-        const idsToDelete = new Set<string>();
-        
-        // Encontra todos os hábitos (todas as versões) com o mesmo nome para garantir a exclusão completa da linhagem.
-        state.habits.forEach(h => {
-            if (getHabitDisplayInfo(h).name === habitNameToDelete) {
-                idsToDelete.add(h.id);
+        state.habits = state.habits.filter(h => h.id !== habitId);
+        Object.keys(state.dailyData).forEach(date => {
+            if (state.dailyData[date][habitId]) {
+                delete state.dailyData[date][habitId];
             }
         });
 
-        // Filtra a lista de hábitos para remover os selecionados.
-        state.habits = state.habits.filter(h => !idsToDelete.has(h.id));
-
-        // Remove os dados diários associados a esses hábitos.
-        Object.keys(state.dailyData).forEach(date => {
-            idsToDelete.forEach(id => {
-                if (state.dailyData[date][id]) {
-                    delete state.dailyData[date][id];
-                }
-            });
-        });
-
         saveState();
-        renderHabits();
-        renderCalendar();
-        setupManageModal(); // Re-render the list in the manage modal.
+        removeHabitFromDOM(habitId);
+        setupManageModal();
     });
 }
 
@@ -388,7 +354,7 @@ export function graduateHabit(habitId: string) {
         saveState();
         renderHabits();
         renderCalendar();
-        setupManageModal(); // Update its state in manage modal
+        setupManageModal();
     });
 }
 
@@ -407,60 +373,33 @@ export function handleSaveNote() {
     state.editingNoteFor = null;
 }
 
-/**
- * Utilitário para limpar todos os cookies associados ao domínio atual.
- * Itera sobre os cookies e os expira definindo uma data no passado.
- */
 function clearAllCookies() {
     const cookies = document.cookie.split(";");
     for (const cookie of cookies) {
         const eqPos = cookie.indexOf("=");
         const name = eqPos > -1 ? cookie.substr(0, eqPos) : cookie;
-        // Para deletar um cookie, precisamos definir sua data de expiração para o passado
-        // e especificar o caminho. Assumindo que o caminho é a raiz ('/').
         document.cookie = `${name.trim()}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`;
     }
 }
 
 export async function resetApplicationData() {
-    // 1. Limpa todas as principais APIs de armazenamento síncrono.
     localStorage.clear();
     sessionStorage.clear();
     clearAllCookies();
 
-    // Agrupa todas as operações de limpeza assíncronas para executá-las em paralelo.
     const clearingPromises = [];
-
-    // 2. Limpa os caches da API de Cache.
     if ('caches' in window) {
-        const cacheClearPromise = caches.keys().then(keys =>
-            Promise.all(keys.map(key => caches.delete(key)))
-        );
-        clearingPromises.push(cacheClearPromise);
+        clearingPromises.push(caches.keys().then(keys => Promise.all(keys.map(key => caches.delete(key)))));
     }
-
-    // 3. Limpa os bancos de dados do IndexedDB.
-    // A API `indexedDB.databases()` é a forma moderna, mas pode não ser suportada por todos os navegadores.
     if ('indexedDB' in window && (window.indexedDB as any).databases) {
-        const indexedDbClearPromise = (window.indexedDB as any).databases().then((databases: IDBDatabaseInfo[]) =>
+        clearingPromises.push((window.indexedDB as any).databases().then((databases: IDBDatabaseInfo[]) =>
             Promise.all(databases.map(db => db.name ? window.indexedDB.deleteDatabase(db.name) : Promise.resolve()))
-        );
-        clearingPromises.push(indexedDbClearPromise);
+        ));
     }
-
-    // 4. Desregistra todos os service workers.
     if ('serviceWorker' in navigator) {
-        const serviceWorkerUnregisterPromise = navigator.serviceWorker.getRegistrations().then(registrations =>
-            Promise.all(registrations.map(registration => registration.unregister()))
-        );
-        clearingPromises.push(serviceWorkerUnregisterPromise);
+        clearingPromises.push(navigator.serviceWorker.getRegistrations().then(regs => Promise.all(regs.map(reg => reg.unregister()))));
     }
-        
-    // Espera que todas as operações de limpeza assíncronas sejam concluídas.
     await Promise.all(clearingPromises);
-
-    // 5. Força uma recarga da página a partir do servidor.
-    // Isso garante que nenhum recurso em cache (incluindo o próprio script do service worker) seja usado.
     location.reload();
 }
 
@@ -484,20 +423,18 @@ export function saveHabitFromModal() {
         return;
     }
 
-    const { isNew, habitData } = state.editingHabit;
+    const { isNew, habitId, originalData, formData } = state.editingHabit;
 
     if (!nameInput.readOnly) {
-        const habitIdBeingEdited = isNew ? null : (habitData as Habit).id;
         const isDuplicate = state.habits.some(h => {
-            if (h.id === habitIdBeingEdited || h.endedOn || h.graduatedOn) {
-                return false;
-            }
-            if (!h.nameKey && h.name) {
-                return h.name.toLowerCase() === habitName.toLowerCase();
+            if (h.id === habitId) return false;
+            const lastSchedule = h.scheduleHistory[h.scheduleHistory.length - 1];
+            if (lastSchedule.endDate || h.graduatedOn) return false;
+            if (!lastSchedule.nameKey && lastSchedule.name) {
+                return lastSchedule.name.toLowerCase() === habitName.toLowerCase();
             }
             return false;
         });
-
         if (isDuplicate) {
             if (noticeEl) showInlineNotice(noticeEl, t('noticeDuplicateHabitWithName'));
             nameInput.focus();
@@ -507,13 +444,14 @@ export function saveHabitFromModal() {
     
     const selectedTimes = Array.from(form.querySelectorAll<HTMLInputElement>('input[name="habit-time"]:checked'))
                                .map(cb => cb.value as TimeOfDay);
-                               
     if (selectedTimes.length === 0) {
         if (noticeEl) showInlineNotice(noticeEl, t('errorSelectTime'));
         return;
     }
 
-    const finalizeCreation = (template: Omit<Habit, 'id'|'createdOn'>, startDate: string) => {
+    const currentFrequency = formData.frequency;
+
+    const finalizeCreation = (template: any, startDate: string) => {
         const newHabit = addHabit(template, startDate);
         addHabitToDOM(newHabit);
         closeModal(ui.editHabitModal);
@@ -524,12 +462,14 @@ export function saveHabitFromModal() {
         const todayISO = getTodayUTCIso();
         const prospectiveStartDate = state.selectedDate;
 
-        const newHabitTemplate = { ...habitData };
-        if (!habitData.nameKey) { // It's a custom habit
+        // FIX: Cast to `any` to handle the union type of `formData` which can be a `PredefinedHabit` (with nameKey)
+        // or a custom habit object (with name). This resolves subsequent TypeScript errors.
+        const newHabitTemplate: any = { ...formData };
+        if (!newHabitTemplate.nameKey) {
             newHabitTemplate.name = habitName;
         }
         newHabitTemplate.times = selectedTimes;
-        newHabitTemplate.frequency = habitData.frequency;
+        newHabitTemplate.frequency = currentFrequency;
 
         if (parseUTCIsoDate(prospectiveStartDate) < parseUTCIsoDate(todayISO)) {
             const dateFormatted = parseUTCIsoDate(prospectiveStartDate).toLocaleDateString(state.activeLanguageCode, { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
@@ -539,56 +479,34 @@ export function saveHabitFromModal() {
         } else {
             finalizeCreation(newHabitTemplate, prospectiveStartDate);
         }
+    } else { // Editing
+        if (!originalData) return;
+        const lastSchedule = originalData.scheduleHistory[originalData.scheduleHistory.length - 1];
 
-    } else {
-        // Editing an existing habit
-        const originalHabit = state.habits.find(h => h.id === (habitData as Habit).id);
-        if (!originalHabit) return;
-
-        const hasNameChanged = !originalHabit.nameKey && originalHabit.name !== habitName;
-        const hasTimesChanged = originalHabit.times.length !== selectedTimes.length || !originalHabit.times.every(t => selectedTimes.includes(t));
-        const hasFrequencyChanged = originalHabit.frequency.type !== habitData.frequency.type || originalHabit.frequency.interval !== habitData.frequency.interval;
-        const hasScheduleChanged = hasTimesChanged || hasFrequencyChanged;
-
-        if (!hasScheduleChanged && !hasNameChanged) {
-            closeModal(ui.editHabitModal);
-            state.editingHabit = null;
-            return;
-        }
-
-        if (!hasScheduleChanged) { // Only name changed, no versioning needed
-            originalHabit.name = habitName;
-            saveState();
-            renderHabits();
-            setupManageModal();
-            closeModal(ui.editHabitModal);
-            state.editingHabit = null;
-            return;
-        }
+        const hasNameChanged = !lastSchedule.nameKey && getHabitDisplayInfo(originalData).name !== habitName;
+        const hasTimesChanged = lastSchedule.times.length !== selectedTimes.length || !lastSchedule.times.every(t => selectedTimes.includes(t));
+        const hasFrequencyChanged = lastSchedule.frequency.type !== currentFrequency.type || lastSchedule.frequency.interval !== currentFrequency.interval;
         
-        // Schedule has changed, requires versioning
+        if (!hasNameChanged && !hasTimesChanged && !hasFrequencyChanged) {
+            closeModal(ui.editHabitModal);
+            state.editingHabit = null;
+            return;
+        }
+
         const changeDateISO = state.selectedDate;
         const dateFormatted = parseUTCIsoDate(changeDateISO).toLocaleDateString(state.activeLanguageCode, { day: 'numeric', month: 'long', timeZone: 'UTC' });
-        const confirmHabitName = hasNameChanged ? habitName : getHabitDisplayInfo(originalHabit).name;
+        const confirmHabitName = hasNameChanged ? habitName : getHabitDisplayInfo(originalData).name;
         const confirmationText = t('confirmScheduleChange', { habitName: `<strong>${confirmHabitName}</strong>`, date: dateFormatted });
         
         showConfirmationModal(
             confirmationText,
             () => {
-                applyHabitVersioning(originalHabit, changeDateISO, {
-                    name: hasNameChanged ? habitName : originalHabit.name,
-                    times: selectedTimes,
-                    frequency: habitData.frequency,
-                });
+                const newName = hasNameChanged ? habitName : lastSchedule.name;
+                updateHabitSchedule(originalData, changeDateISO, { name: newName, times: selectedTimes, frequency: currentFrequency });
                 closeModal(ui.editHabitModal);
                 state.editingHabit = null;
             },
-            {
-                onEdit: () => {
-                    // onEdit callback: just close the confirm modal, leaving the edit modal open
-                    closeModal(ui.confirmModal);
-                },
-            }
+            { onEdit: () => closeModal(ui.confirmModal) }
         );
     }
 }
@@ -610,11 +528,11 @@ export function handleHabitDrop(habitId: string, oldTime: TimeOfDay, newTime: Ti
     });
 
     const onConfirmForToday = () => {
-        // This is the logic for a single-day override.
-        // The validation that this is not a duplicate time is now handled in the drag-and-drop handler
-        // before this function is ever called.
+        const activeSchedule = getScheduleForDate(habit, state.selectedDate);
+        if (!activeSchedule) return;
+
         const dailyInfo = state.dailyData[state.selectedDate]?.[habitId];
-        const scheduleForDay = dailyInfo?.dailySchedule || habit.times;
+        const scheduleForDay = dailyInfo?.dailySchedule || activeSchedule.times;
 
         state.dailyData[state.selectedDate] ??= {};
         state.dailyData[state.selectedDate][habitId] ??= { instances: {} };
@@ -633,16 +551,11 @@ export function handleHabitDrop(habitId: string, oldTime: TimeOfDay, newTime: Ti
     };
 
     const onConfirmFromNowOn = () => {
-        // This is the versioning logic
+        const lastSchedule = habit.scheduleHistory[habit.scheduleHistory.length - 1];
         const changeDateISO = state.selectedDate;
-        const oldTimes = habit.times;
+        const oldTimes = lastSchedule.times;
         const newTimes = oldTimes.map(t => t === oldTime ? newTime : t).sort((a, b) => TIMES_OF_DAY.indexOf(a) - TIMES_OF_DAY.indexOf(b));
-
-        applyHabitVersioning(habit, changeDateISO, {
-            times: newTimes,
-            frequency: habit.frequency,
-            name: habit.name
-        });
+        updateHabitSchedule(habit, changeDateISO, { times: newTimes });
     };
 
     showConfirmationModal(confirmationText, onConfirmFromNowOn, {

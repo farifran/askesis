@@ -2,11 +2,9 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// FIX: Corrected typo in function name from 'toUTCIsoString' to 'toUTCIsoDateString' to match the export from './state'.
-// FIX: Imported TimeOfDay to use in timeToKeyMap.
-import { state, getHabitDailyInfoForDate, shouldHabitAppearOnDate, HabitStatus, TimeOfDay, Habit } from "./state";
+import { state, getHabitDailyInfoForDate, shouldHabitAppearOnDate, HabitStatus, TimeOfDay, Habit, getScheduleForDate } from "./state";
 import { addDays, getTodayUTC, toUTCIsoDateString, parseUTCIsoDate } from './utils';
-import { t, getLocaleDayName, getHabitDisplayInfo } from "./i18n";
+import { t, getHabitDisplayInfo } from "./i18n";
 
 const statusToSymbol: Record<HabitStatus, string> = {
     completed: '✅',
@@ -14,32 +12,11 @@ const statusToSymbol: Record<HabitStatus, string> = {
     pending: '⚪️'
 };
 
-// FIX: Added a map to translate TimeOfDay values to translation keys.
 const timeToKeyMap: Record<TimeOfDay, string> = {
     'Manhã': 'filterMorning',
     'Tarde': 'filterAfternoon',
     'Noite': 'filterEvening'
 };
-
-/**
- * Traverses the habit version history to retrieve the full lineage of a habit.
- * @param habitId The ID of the latest version of the habit.
- * @returns An array of habit objects, chronologically sorted.
- */
-function getHabitLineage(habitId: string): Habit[] {
-    const lineage: Habit[] = [];
-    let currentHabit: Habit | undefined = state.habits.find(h => h.id === habitId);
-    while (currentHabit) {
-        lineage.unshift(currentHabit); // Add to the beginning to keep it in chronological order
-        if (currentHabit.previousVersionId) {
-            currentHabit = state.habits.find(h => h.id === currentHabit!.previousVersionId);
-        } else {
-            break;
-        }
-    }
-    return lineage;
-}
-
 
 export const buildAIPrompt = (analysisType: 'weekly' | 'monthly' | 'general'): string => {
     let history = '';
@@ -61,9 +38,12 @@ export const buildAIPrompt = (analysisType: 'weekly' | 'monthly' | 'general'): s
             if (habitsOnThisDay.length > 0) {
                 const dayEntries = habitsOnThisDay.map(habit => {
                     const dailyInfo = dailyInfoByHabit[habit.id];
+                    const activeSchedule = getScheduleForDate(habit, date);
+                    if (!activeSchedule) return '';
+                    
+                    const { name } = getHabitDisplayInfo({ ...habit, scheduleHistory: [activeSchedule]});
                     const habitInstances = dailyInfo?.instances || {};
-                    const scheduleForDay = dailyInfo?.dailySchedule || habit.times;
-                    const { name } = getHabitDisplayInfo(habit);
+                    const scheduleForDay = dailyInfo?.dailySchedule || activeSchedule.times;
 
                     const statusDetails = scheduleForDay.map(time => {
                         const instance = habitInstances[time];
@@ -82,8 +62,10 @@ export const buildAIPrompt = (analysisType: 'weekly' | 'monthly' | 'general'): s
                     });
                     
                     return `- ${name}: ${statusDetails.join(', ')}`;
-                });
-                daySummaries.push(`${isoDate}:\n${dayEntries.join('\n')}`);
+                }).filter(Boolean);
+                if(dayEntries.length > 0) {
+                    daySummaries.push(`${isoDate}:\n${dayEntries.join('\n')}`);
+                }
             }
         }
         history = daySummaries.join('\n\n');
@@ -91,7 +73,6 @@ export const buildAIPrompt = (analysisType: 'weekly' | 'monthly' | 'general'): s
     } else if (analysisType === 'general') {
         promptTemplateKey = 'aiPromptGeneral';
         
-        // Find the earliest date any habit was created to define the start of our history scan.
         let firstDateEver = today;
         if (state.habits.length > 0) {
             firstDateEver = state.habits.reduce((earliest, habit) => {
@@ -102,7 +83,6 @@ export const buildAIPrompt = (analysisType: 'weekly' | 'monthly' | 'general'): s
         
         const allHistory: { date: string, entries: string[] }[] = [];
         
-        // Iterate from the very first day until today.
         for (let d = firstDateEver; d <= today; d = addDays(d, 1)) {
             const dateISO = toUTCIsoDateString(d);
             const dailyInfoByHabit = getHabitDailyInfoForDate(dateISO);
@@ -111,21 +91,25 @@ export const buildAIPrompt = (analysisType: 'weekly' | 'monthly' | 'general'): s
             if (habitsOnThisDay.length > 0) {
                 const dayEntries = habitsOnThisDay.map(habit => {
                     const dailyInfo = dailyInfoByHabit[habit.id];
+                    const activeSchedule = getScheduleForDate(habit, d);
+                    if (!activeSchedule) return '';
+                    
+                    const { name } = getHabitDisplayInfo({ ...habit, scheduleHistory: [activeSchedule]});
                     const habitInstances = dailyInfo?.instances || {};
-                    const scheduleForDay = dailyInfo?.dailySchedule || habit.times;
-                    const { name } = getHabitDisplayInfo(habit);
+                    const scheduleForDay = dailyInfo?.dailySchedule || activeSchedule.times;
 
                     const statusDetails = scheduleForDay.map(time => {
                          const status = habitInstances[time]?.status || 'pending';
                          return statusToSymbol[status];
                     });
                     return `- ${name}: ${statusDetails.join('')}`;
-                });
-                allHistory.push({ date: dateISO, entries: dayEntries });
+                }).filter(Boolean);
+                if (dayEntries.length > 0) {
+                    allHistory.push({ date: dateISO, entries: dayEntries });
+                }
             }
         }
         
-        // Summarize by month to keep the prompt manageable.
         const summaryByMonth: Record<string, string[]> = {};
         allHistory.forEach(day => {
             const month = day.date.substring(0, 7); // YYYY-MM
@@ -144,7 +128,10 @@ export const buildAIPrompt = (analysisType: 'weekly' | 'monthly' | 'general'): s
         history = t('aiPromptNoData');
     }
 
-    const activeHabits = state.habits.filter(h => !h.endedOn && !h.graduatedOn);
+    const activeHabits = state.habits.filter(h => {
+        const lastSchedule = h.scheduleHistory[h.scheduleHistory.length - 1];
+        return !lastSchedule.endDate && !h.graduatedOn;
+    });
     const graduatedHabits = state.habits.filter(h => h.graduatedOn);
 
     const activeHabitList = activeHabits.map(h => getHabitDisplayInfo(h).name).join(', ') || t('aiPromptNone');
@@ -173,9 +160,7 @@ export const getAIEvaluationStream = async function* (prompt: string) {
     try {
         const response = await fetch('/api/generate', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
+            headers: { 'Content-Type': 'application/json', },
             body: JSON.stringify({ prompt }),
         });
 
@@ -194,20 +179,15 @@ export const getAIEvaluationStream = async function* (prompt: string) {
 
         while (true) {
             const { done, value } = await reader.read();
-            if (done) {
-                break;
-            }
-
+            if (done) break;
             buffer += decoder.decode(value, { stream: true });
-            
             const lines = buffer.split('\n');
-            buffer = lines.pop() || ''; // Keep the last, possibly incomplete, line
+            buffer = lines.pop() || '';
 
             for (const line of lines) {
                 if (line.trim()) {
                     try {
                         const chunk = JSON.parse(line);
-                        // Yield an object that mimics the Gemini SDK's stream chunk
                         if (chunk.text) {
                             yield { text: chunk.text };
                         }
@@ -218,7 +198,6 @@ export const getAIEvaluationStream = async function* (prompt: string) {
             }
         }
         
-        // Process any remaining data in the buffer after the stream closes
         if (buffer.trim()) {
             try {
                 const chunk = JSON.parse(buffer);
@@ -232,7 +211,6 @@ export const getAIEvaluationStream = async function* (prompt: string) {
 
     } catch (error) {
         console.error("API call to /api/generate failed:", error);
-        // Re-throw so the UI can catch it.
         throw error;
     }
 };

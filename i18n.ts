@@ -10,15 +10,13 @@ type PluralableTranslation = { one: string; other: string };
 type TranslationValue = string | PluralableTranslation;
 type Translations = Record<string, TranslationValue>;
 
-// Cache para armazenar os idiomas já carregados.
 const loadedTranslations: Record<string, Translations> = {};
 
 async function loadLanguage(langCode: 'pt' | 'en' | 'es'): Promise<void> {
     if (loadedTranslations[langCode]) {
-        return; // Já está carregado
+        return;
     }
     try {
-        // Usamos um caminho relativo que funcionará após o build.
         const response = await fetch(`./locales/${langCode}.json`);
         if (!response.ok) {
             throw new Error(`Failed to load language file: ${response.statusText}`);
@@ -27,7 +25,6 @@ async function loadLanguage(langCode: 'pt' | 'en' | 'es'): Promise<void> {
         loadedTranslations[langCode] = translations;
     } catch (error) {
         console.error(`Could not load translations for ${langCode}:`, error);
-        // Carrega o português como fallback em caso de erro.
         if (langCode !== 'pt') {
             await loadLanguage('pt');
         }
@@ -36,15 +33,14 @@ async function loadLanguage(langCode: 'pt' | 'en' | 'es'): Promise<void> {
 
 export function t(key: string, options?: { [key: string]: string | number | undefined }): string {
     const lang = state.activeLanguageCode || 'pt';
-    const dict = loadedTranslations[lang] || loadedTranslations['pt']; // Fallback para PT se o idioma atual não estiver carregado.
+    const dict = loadedTranslations[lang] || loadedTranslations['pt'];
     
     if (!dict) {
-        return key; // Retorna a chave se nenhum idioma estiver carregado.
+        return key;
     }
 
     let translation = dict[key] || key;
 
-    // FIX: Refactored logic to ensure placeholders are replaced in pluralized strings.
     if (typeof translation === 'object' && options?.count !== undefined) {
         const pluralKey = new Intl.PluralRules(lang).select(options.count as number);
         translation = (translation as PluralableTranslation)[pluralKey as keyof PluralableTranslation] || (translation as PluralableTranslation).other;
@@ -60,16 +56,21 @@ export function t(key: string, options?: { [key: string]: string | number | unde
 }
 
 export function getHabitDisplayInfo(habit: Habit | PredefinedHabit): { name: string, subtitle: string } {
-    if ('nameKey' in habit && habit.nameKey) {
+    let source: any = habit;
+    // If it's a full Habit object, get the latest schedule for its display info
+    if ('scheduleHistory' in habit && habit.scheduleHistory.length > 0) {
+        source = habit.scheduleHistory[habit.scheduleHistory.length - 1];
+    }
+
+    if (source.nameKey) {
         return {
-            name: t(habit.nameKey),
-            subtitle: habit.subtitleKey ? t(habit.subtitleKey) : ''
+            name: t(source.nameKey),
+            subtitle: source.subtitleKey ? t(source.subtitleKey) : ''
         };
     }
-    // FIX: Provide fallbacks for optional name/subtitle properties.
     return {
-        name: (habit as Habit).name || '',
-        subtitle: (habit as Habit).subtitle || ''
+        name: source.name || '',
+        subtitle: source.subtitle || ''
     };
 }
 
@@ -83,7 +84,6 @@ function updateUIText() {
     ui.manageHabitsBtn.setAttribute('aria-label', t('manageHabits_ariaLabel'));
     ui.aiEvalBtn.setAttribute('aria-label', t('aiEval_ariaLabel'));
     
-    // Modals
     ui.exploreModal.querySelector('h2')!.textContent = t('modalExploreTitle');
     ui.createCustomHabitBtn.textContent = t('modalExploreCreateCustom');
     ui.exploreModal.querySelector('.modal-close-btn')!.textContent = t('closeButton');
@@ -96,7 +96,6 @@ function updateUIText() {
     ui.resetAppBtn.textContent = t('modalManageResetButton');
     ui.manageModal.querySelector('.modal-close-btn')!.textContent = t('closeButton');
 
-    // Textos da Sincronização
     document.getElementById('sync-inactive-desc')!.textContent = t('syncInactiveDesc');
     ui.enableSyncBtn.textContent = t('syncEnable');
     ui.enterKeyViewBtn.textContent = t('syncEnterKey');
@@ -144,20 +143,16 @@ export async function setLanguage(langCode: 'pt' | 'en' | 'es') {
     document.documentElement.lang = langCode;
     localStorage.setItem('habitTrackerLanguage', langCode);
     
-    // Re-initialize dynamic text components
     initFrequencyFilter();
     initHabitTimeFilter();
     initLanguageFilter();
 
-    // Update all static text
     updateUIText();
     
-    // Re-render the manage modal content if it's open
     if (ui.manageModal.classList.contains('visible')) {
         setupManageModal();
     }
 
-    // Re-render the main app view to apply all other dynamic text changes
     renderApp();
     updateHeaderTitle();
 }

@@ -23,6 +23,8 @@ import {
     Frequency,
     PredefinedHabit,
     TimeOfDay,
+    getScheduleForDate,
+    HabitSchedule,
 } from './state';
 import { getTodayUTCIso, addDays, toUTCIsoDateString, parseUTCIsoDate, getTodayUTC } from './utils';
 import { ui } from './ui';
@@ -43,7 +45,6 @@ function updateReelRotaryARIA(viewportEl: HTMLElement, currentIndex: number, opt
 
 export function initLanguageFilter() {
     const langNames = LANGUAGES.map(lang => t(lang.nameKey));
-    // FIX: Changed 'text' to 'name' to match the map parameter.
     ui.languageReel.innerHTML = langNames.map(name => `<span class="reel-option">${name}</span>`).join('');
     const currentIndex = LANGUAGES.findIndex(l => l.code === state.activeLanguageCode);
     updateReelRotaryARIA(ui.languageViewport, currentIndex, langNames, 'language_ariaLabel');
@@ -51,7 +52,6 @@ export function initLanguageFilter() {
 
 export function initFrequencyFilter() {
     const freqLabels = FREQUENCIES.map(freq => t(freq.labelKey));
-    // FIX: Changed 'text' to 'label' to match the map parameter.
     ui.frequencyReel.innerHTML = freqLabels.map(label => `<span class="reel-option">${label}</span>`).join('');
     updateReelRotaryARIA(ui.frequencyViewport, 0, freqLabels, 'frequency_ariaLabel');
 }
@@ -75,10 +75,12 @@ function calculateDayProgress(isoDate: string): { completedPercent: number, tota
     let snoozedInstances = 0;
 
     activeHabitsOnDate.forEach(habit => {
-        // FIX: Corrected undefined variable 'daily' to 'dailyInfo'.
         const habitDailyInfo = dailyInfo[habit.id];
+        const activeSchedule = getScheduleForDate(habit, dateObj);
+        if (!activeSchedule) return;
+
         const instances = habitDailyInfo?.instances || {};
-        const scheduleForDay = habitDailyInfo?.dailySchedule || habit.times;
+        const scheduleForDay = habitDailyInfo?.dailySchedule || activeSchedule.times;
         
         scheduleForDay.forEach(time => {
             totalInstances++;
@@ -150,7 +152,7 @@ export function renderLanguageFilter() {
 
 export function renderFrequencyFilter() {
     if (!state.editingHabit) return;
-    const currentFrequency = state.editingHabit.habitData.frequency;
+    const currentFrequency = state.editingHabit.formData.frequency;
     const freqLabels = FREQUENCIES.map(f => t(f.labelKey));
     const currentIndex = FREQUENCIES.findIndex(f => 
         f.value.type === currentFrequency.type && f.value.interval === currentFrequency.interval
@@ -309,17 +311,15 @@ export function renderHabits() {
     const selectedDateObj = parseUTCIsoDate(state.selectedDate);
     const dailyInfoByHabit = getHabitDailyInfoForDate(state.selectedDate);
 
-    // 1. Determina quais hábitos devem ser exibidos para cada horário do dia
-    const habitsByTime: Record<TimeOfDay, Habit[]> = {
-        'Manhã': [],
-        'Tarde': [],
-        'Noite': []
-    };
+    const habitsByTime: Record<TimeOfDay, Habit[]> = { 'Manhã': [], 'Tarde': [], 'Noite': [] };
     
     state.habits.forEach(habit => {
         if (shouldHabitAppearOnDate(habit, selectedDateObj)) {
             const habitDailyInfo = dailyInfoByHabit[habit.id];
-            const scheduleForDay = habitDailyInfo?.dailySchedule || habit.times;
+            const activeSchedule = getScheduleForDate(habit, selectedDateObj);
+            if (!activeSchedule) return;
+
+            const scheduleForDay = habitDailyInfo?.dailySchedule || activeSchedule.times;
             
             scheduleForDay.forEach(time => {
                 if (habitsByTime[time]) {
@@ -331,7 +331,6 @@ export function renderHabits() {
 
     const groupHasHabits: Record<TimeOfDay, boolean> = { 'Manhã': false, 'Tarde': false, 'Noite': false };
 
-    // 2. Realiza uma atualização com chaves para cada grupo de horário
     TIMES_OF_DAY.forEach(time => {
         const wrapperEl = ui.habitContainer.querySelector(`.habit-group-wrapper[data-time-wrapper="${time}"]`);
         const groupEl = wrapperEl?.querySelector<HTMLElement>(`.habit-group[data-time="${time}"]`);
@@ -344,26 +343,21 @@ export function renderHabits() {
         const existingCardsMap = new Map(existingCards.map(card => [card.dataset.habitId, card]));
         const requiredIds = new Set(requiredHabits.map(h => h.id));
 
-        // Remove os cartões que não são mais necessários
         for (const card of existingCards) {
             if (!requiredIds.has(card.dataset.habitId!)) {
                 card.remove();
             }
         }
 
-        // Adiciona e reordena os cartões
         let lastPlacedElement: HTMLElement | null = null;
         for (const habit of requiredHabits) {
             let cardEl = existingCardsMap.get(habit.id);
             if (!cardEl) {
-                // O cartão é novo, cria-o
                 cardEl = createHabitCardElement(habit, time);
             } else {
-                // O cartão existe, atualiza-o caso seu estado tenha mudado
                 updateHabitCardDOM(habit.id, time);
             }
             
-            // Lógica de reordenação
             const nextSibling = lastPlacedElement ? lastPlacedElement.nextElementSibling : groupEl.firstElementChild;
             if (nextSibling !== cardEl) {
                  groupEl.insertBefore(cardEl, nextSibling);
@@ -373,7 +367,6 @@ export function renderHabits() {
         }
     });
 
-    // 3. Atualiza os placeholders com base nos grupos que têm hábitos
     document.querySelectorAll('.show-smart-placeholder').forEach(el => el.classList.remove('show-smart-placeholder'));
     const emptyTimes = TIMES_OF_DAY.filter(time => !groupHasHabits[time]);
 
@@ -461,7 +454,6 @@ export function renderAINotificationState() {
 
 export function renderStoicQuote() {
     const date = parseUTCIsoDate(state.selectedDate);
-    // Calculate day of the year to get a consistent daily quote
     const startOfYear = new Date(date.getUTCFullYear(), 0, 0);
     const diff = date.getTime() - startOfYear.getTime();
     const oneDay = 1000 * 60 * 60 * 24;
@@ -473,7 +465,6 @@ export function renderStoicQuote() {
     const lang = state.activeLanguageCode as keyof typeof quote;
     const quoteText = quote[lang];
     
-    // Use a timeout to allow the opacity transition to work when the text content changes
     ui.stoicQuoteDisplay.classList.remove('visible');
     
     setTimeout(() => {
@@ -483,7 +474,6 @@ export function renderStoicQuote() {
 }
 
 export function renderApp() {
-    // FIX: Swapped order to render habits before calendar to fix update bug.
     renderHabits();
     renderCalendar();
     renderAINotificationState();
@@ -504,20 +494,17 @@ export function updateHabitCardDOM(habitId: string, time: TimeOfDay) {
     const streak = calculateHabitStreak(habit.id, state.selectedDate);
     const { name, subtitle } = getHabitDisplayInfo(habit);
 
-    // Atualiza as classes
     card.className = `habit-card ${status}`;
     if (streak >= STREAK_CONSOLIDATED) card.classList.add('consolidated');
     else if (streak >= STREAK_SEMI_CONSOLIDATED) card.classList.add('semi-consolidated');
-    card.dataset.time = time; // Ensure data-time is set
+    card.dataset.time = time;
 
-    // Atualiza o botão de nota
     const noteBtn = card.querySelector<HTMLElement>('.swipe-note-btn');
     if (noteBtn) {
         noteBtn.classList.toggle('has-note', hasNote);
         noteBtn.setAttribute('aria-label', t(hasNote ? 'habitNoteEdit_ariaLabel' : 'habitNoteAdd_ariaLabel'));
     }
 
-    // Atualiza os detalhes
     const detailsEl = card.querySelector<HTMLElement>('.habit-details');
     if (detailsEl) {
         detailsEl.querySelector<HTMLElement>('.name')!.textContent = name;
@@ -540,7 +527,6 @@ export function updateHabitCardDOM(habitId: string, time: TimeOfDay) {
         }
     }
     
-    // Atualiza o conteúdo da meta
     const goalEl = card.querySelector<HTMLElement>('.habit-goal');
     if (goalEl) {
         updateGoalContentElement(goalEl, status, habit, time, habitInstanceData);
@@ -564,7 +550,6 @@ export function updateCalendarDayDOM(dateISO: string) {
     dayItem.querySelector<HTMLElement>('.day-number')?.classList.toggle('has-plus', showPlus);
 }
 
-// Mapa para armazenar os listeners de focus trap para poder removê-los depois
 const focusTrapListeners = new Map<HTMLElement, (e: KeyboardEvent) => void>();
 
 export function openModal(modal: HTMLElement) {
@@ -578,18 +563,17 @@ export function openModal(modal: HTMLElement) {
     const firstFocusable = focusableElements[0];
     const lastFocusable = focusableElements[focusableElements.length - 1];
 
-    // Move o foco para o primeiro elemento focável dentro do modal
     firstFocusable.focus();
 
     const trapListener = (e: KeyboardEvent) => {
         if (e.key !== 'Tab') return;
         
-        if (e.shiftKey) { // Tab reverso
+        if (e.shiftKey) {
             if (document.activeElement === firstFocusable) {
                 lastFocusable.focus();
                 e.preventDefault();
             }
-        } else { // Tab normal
+        } else {
             if (document.activeElement === lastFocusable) {
                 firstFocusable.focus();
                 e.preventDefault();
@@ -628,7 +612,8 @@ export function showInlineNotice(element: HTMLElement, message: string) {
 }
 
 export function createManageHabitListItemHTML(habit: Habit): string {
-    const isEnded = !!habit.endedOn;
+    const lastSchedule = habit.scheduleHistory[habit.scheduleHistory.length - 1];
+    const isEnded = !!lastSchedule.endDate;
     const isGraduated = !!habit.graduatedOn;
     const streak = calculateHabitStreak(habit.id, getTodayUTCIso());
     const isConsolidated = streak >= STREAK_CONSOLIDATED;
@@ -660,33 +645,19 @@ export function createManageHabitListItemHTML(habit: Habit): string {
 }
 
 export function setupManageModal() {
-    // 1. Get latest versions of all lineages
-    const nextVersionIds = new Set(state.habits.map(h => h.previousVersionId).filter(Boolean));
-    const latestVersions = state.habits.filter(h => !nextVersionIds.has(h.id));
+    const habitsToDisplay = [...state.habits];
 
-    // 2. Consolidate habits that have the same name (from different lineages)
-    const consolidatedHabits = new Map<string, Habit>();
-    for (const habit of latestVersions) {
-        const name = getHabitDisplayInfo(habit).name;
-        const existingHabit = consolidatedHabits.get(name);
-
-        // If we haven't seen this name, or if the current habit is active and the stored one isn't,
-        // then the current habit is the one we want to display.
-        const isCurrentActive = !habit.endedOn && !habit.graduatedOn;
-        const isExistingActive = existingHabit ? (!existingHabit.endedOn && !existingHabit.graduatedOn) : false;
-
-        if (!existingHabit || (isCurrentActive && !isExistingActive)) {
-            consolidatedHabits.set(name, habit);
-        }
-    }
-
-    const habitsToDisplay = Array.from(consolidatedHabits.values());
-
-    // 3. Sort and render
     habitsToDisplay.sort((a, b) => {
-        const aIsActive = !a.endedOn && !a.graduatedOn;
-        const bIsActive = !b.endedOn && !b.graduatedOn;
-        if (aIsActive !== bIsActive) return aIsActive ? -1 : 1;
+        const aIsGraduated = !!a.graduatedOn;
+        const bIsGraduated = !!b.graduatedOn;
+        const aLastSchedule = a.scheduleHistory[a.scheduleHistory.length - 1];
+        const bLastSchedule = b.scheduleHistory[b.scheduleHistory.length - 1];
+        const aIsEnded = !!aLastSchedule.endDate;
+        const bIsEnded = !!bLastSchedule.endDate;
+
+        if (aIsGraduated !== bIsGraduated) return aIsGraduated ? 1 : -1;
+        if (aIsEnded !== bIsEnded) return aIsEnded ? 1 : -1;
+        
         return getHabitDisplayInfo(a).name.localeCompare(getHabitDisplayInfo(b).name);
     });
     
@@ -756,41 +727,56 @@ export function openNotesModal(habitId: string, date: string, time: TimeOfDay) {
     ui.notesTextarea.focus();
 }
 
-export function openEditModal(habitData: Habit | PredefinedHabit | null) {
+export function openEditModal(habitOrTemplate: Habit | PredefinedHabit | null) {
     const form = ui.editHabitForm;
     const nameInput = form.elements.namedItem('habit-name') as HTMLInputElement;
     const noticeEl = form.querySelector<HTMLElement>('.duplicate-habit-notice');
 
-    const isExistingHabit = habitData !== null && 'id' in habitData;
-    const isCustomNew = habitData === null;
-    const template = isCustomNew ? {
-        nameKey: '', name: '', subtitleKey: '', subtitle: '',
-        icon: icons.custom,
-        color: '#8e44ad',
-        times: ['Manhã'],
-        goal: { type: 'check', unitKey: 'unitCheck' } as const,
-        frequency: { type: 'daily', interval: 1 } as Frequency,
-    } : (habitData as Habit | PredefinedHabit);
+    const isNew = habitOrTemplate === null || !('id' in habitOrTemplate);
+    const isCustomNew = habitOrTemplate === null;
+
+    let habitId: string | undefined;
+    let originalHabit: Habit | undefined;
+    let formData: any;
+
+    if (isCustomNew) {
+        formData = {
+            name: '',
+            subtitle: t('customHabitSubtitle'),
+            icon: icons.custom,
+            color: '#8e44ad',
+            times: ['Manhã'],
+            goal: { type: 'check', unitKey: 'unitCheck' },
+            frequency: { type: 'daily', interval: 1 },
+        };
+    } else if (isNew) { // Predefined habit
+        formData = habitOrTemplate;
+    } else { // Existing habit
+        originalHabit = habitOrTemplate as Habit;
+        habitId = originalHabit.id;
+        const latestSchedule = originalHabit.scheduleHistory[originalHabit.scheduleHistory.length - 1];
+        const displayInfo = getHabitDisplayInfo(originalHabit);
+        formData = {
+            ...originalHabit,
+            ...latestSchedule,
+            name: displayInfo.name,
+            subtitle: displayInfo.subtitle,
+        };
+    }
+
+    state.editingHabit = { isNew, habitId, originalData: originalHabit, formData };
     
-    const habitInfo = getHabitDisplayInfo(template as Habit);
-    
-    state.editingHabit = { isNew: !isExistingHabit, habitData: template as Omit<Habit, 'id'|'createdOn'> };
-    ui.editHabitModalTitle.textContent = isExistingHabit ? t('modalEditTitle') : (isCustomNew ? t('modalCreateTitle') : t('modalAddHabitTitle', { habitName: habitInfo.name }));
-    nameInput.value = habitInfo.name;
+    ui.editHabitModalTitle.textContent = !isNew ? t('modalEditTitle') : (isCustomNew ? t('modalCreateTitle') : t('modalAddHabitTitle', { habitName: formData.name }));
+    nameInput.value = formData.name;
 
     const checkboxes = form.querySelectorAll<HTMLInputElement>('input[name="habit-time"]');
     checkboxes.forEach(cb => {
-        cb.checked = template.times.includes(cb.value as TimeOfDay);
+        cb.checked = formData.times.includes(cb.value as TimeOfDay);
     });
 
     renderFrequencyFilter();
     
-    // Se for um hábito predefinido (tem uma nameKey), o nome não pode ser editado.
-    if ('nameKey' in template && template.nameKey && template.nameKey.length > 0) {
-        nameInput.readOnly = true;
-    } else {
-        nameInput.readOnly = false;
-    }
+    nameInput.readOnly = !!formData.nameKey;
 
     if(noticeEl) noticeEl.classList.remove('visible');
     openModal(ui.editHabitModal);
@@ -821,24 +807,14 @@ export function updateHeaderTitle() {
 }
 
 export function addHabitToDOM(habit: Habit) {
-    renderHabits(); // Re-render all habits to place the new one correctly in all its time slots
+    renderHabits();
     ui.habitList.insertAdjacentHTML('beforeend', createManageHabitListItemHTML(habit));
 }
 
 export function removeHabitFromDOM(habitId: string) {
     const cardEls = ui.habitContainer.querySelectorAll<HTMLElement>(`.habit-card[data-habit-id="${habitId}"]`);
-    cardEls.forEach(cardEl => {
-        const parentGroup = cardEl.parentElement as HTMLElement;
-        cardEl.remove();
-        
-        // Reavalia o estado do grupo após a remoção, mostrando o placeholder se necessário
-        if (parentGroup) {
-            const hasHabits = !!parentGroup.querySelector('.habit-card');
-            const time = parentGroup.dataset.time as TimeOfDay;
-            // A lógica de placeholder inteligente já está em renderHabits, então podemos simplificar
-            // ou chamar uma re-renderização completa. Chamar renderHabits é mais seguro.
-            renderHabits();
-        }
-    });
+    cardEls.forEach(cardEl => cardEl.remove());
+    
     ui.habitList.querySelector<HTMLElement>(`li[data-habit-id="${habitId}"]`)?.remove();
+    renderHabits(); // Re-render to correctly handle placeholders
 }

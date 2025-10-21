@@ -39,20 +39,9 @@ const setupGlobalListeners = () => {
     ui.calendarStrip.addEventListener('click', (e) => {
         const dayItem = (e.target as HTMLElement).closest<HTMLElement>('.day-item');
         if (!dayItem?.dataset.date) return;
-
         const date = dayItem.dataset.date;
+        
         clickCount++;
-
-        // No primeiro clique de uma sequência, executa a ação de clique simples imediatamente
-        // para uma resposta de UI mais rápida e para garantir que o estado de seleção esteja correto
-        // antes que as ações de clique duplo/triplo sejam acionadas.
-        if (clickCount === 1) {
-            state.selectedDate = date;
-            updateCalendarSelection();
-            updateHeaderTitle();
-            renderHabits();
-            renderStoicQuote();
-        }
 
         if (clickTimeout) {
             clearTimeout(clickTimeout);
@@ -60,12 +49,21 @@ const setupGlobalListeners = () => {
 
         // Atrasamos a execução para verificar se mais cliques ocorreram para "aprimorar" a ação.
         clickTimeout = window.setTimeout(() => {
-            // A ação de clique simples já foi executada, então só precisamos lidar com múltiplos cliques.
-            if (clickCount === 2) {
+            if (clickCount === 1) {
+                // Ação de clique simples: seleciona o dia e atualiza a visualização.
+                state.selectedDate = date;
+                updateCalendarSelection();
+                updateHeaderTitle();
+                renderHabits();
+                renderStoicQuote();
+            } else if (clickCount === 2) {
+                // Ação de clique duplo: completa todos os hábitos para o dia.
                 completeAllHabitsForDate(date);
             } else if (clickCount >= 3) {
+                // Ação de clique triplo: adia todos os hábitos para o dia.
                 snoozeAllHabitsForDate(date);
             }
+            
             // Reseta a contagem após a ação ser executada.
             clickCount = 0;
         }, CLICK_DELAY);

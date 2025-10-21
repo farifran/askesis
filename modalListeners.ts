@@ -94,7 +94,7 @@ const handleCelebrationCheck = (
 };
 
 const runAIEvaluation = async (analysisType: 'weekly' | 'monthly' | 'general') => {
-    closeModal(ui.aiOptionsModal); // Close the options modal first
+    closeModal(ui.aiOptionsModal);
 
     if (!navigator.onLine) {
         ui.aiModalTitle.textContent = t('modalAIOfflineTitle');
@@ -151,7 +151,6 @@ const handleAIEvaluationClick = async () => {
     if (handleCelebrationCheck('pendingConsolidationHabitIds', 'celebrationConsolidatedTitle', 'celebrationConsolidatedBody')) return;
     if (handleCelebrationCheck('pending21DayHabitIds', 'celebrationSemiConsolidatedTitle', 'celebrationSemiConsolidatedBody')) return;
 
-    // Now, open the options modal instead of running the analysis directly.
     openModal(ui.aiOptionsModal);
 };
 
@@ -175,27 +174,21 @@ const setupLanguageFilterListeners = () => {
         else if (e.key === 'ArrowLeft') handleLanguageChange('prev');
     });
 
-    let startX = 0;
-    let isSwiping = false;
-    let startTransformX = 0;
-    let itemWidth = 95;
+    let startX = 0, isSwiping = false, startTransformX = 0, itemWidth = 95;
     const SWIPE_THRESHOLD = 40;
 
     const pointerMove = (e: PointerEvent) => {
         if (!isSwiping) return;
-        const currentX = e.clientX;
-        const diffX = currentX - startX;
+        const diffX = e.clientX - startX;
         const newTranslateX = startTransformX + diffX;
         const minTranslateX = -(LANGUAGES.length - 1) * itemWidth;
-        const maxTranslateX = 0;
-        const clampedTranslateX = Math.max(minTranslateX, Math.min(maxTranslateX, newTranslateX));
+        const clampedTranslateX = Math.max(minTranslateX, Math.min(0, newTranslateX));
         ui.languageReel.style.transform = `translateX(${clampedTranslateX}px)`;
     };
 
     const pointerUp = async (e: PointerEvent) => {
         if (!isSwiping) return;
-        const currentX = e.clientX;
-        const diffX = currentX - startX;
+        const diffX = e.clientX - startX;
         let currentIndex = LANGUAGES.findIndex(l => l.code === state.activeLanguageCode);
         
         if (Math.abs(diffX) > SWIPE_THRESHOLD) {
@@ -205,9 +198,7 @@ const setupLanguageFilterListeners = () => {
         }
         renderLanguageFilter();
 
-        setTimeout(() => {
-            ui.languageReel.style.transition = 'transform 0.3s cubic-bezier(0.25, 1, 0.5, 1)';
-        }, 50);
+        setTimeout(() => { ui.languageReel.style.transition = 'transform 0.3s cubic-bezier(0.25, 1, 0.5, 1)'; }, 50);
 
         window.removeEventListener('pointermove', pointerMove);
         window.removeEventListener('pointerup', pointerUp);
@@ -219,8 +210,7 @@ const setupLanguageFilterListeners = () => {
         isSwiping = true;
         const firstOption = ui.languageReel.querySelector('.reel-option') as HTMLElement | null;
         itemWidth = firstOption?.offsetWidth || 95;
-        const currentStyle = window.getComputedStyle(ui.languageReel);
-        const matrix = new DOMMatrix(currentStyle.transform);
+        const matrix = new DOMMatrix(window.getComputedStyle(ui.languageReel).transform);
         startTransformX = matrix.m41;
         ui.languageReel.style.transition = 'none';
         window.addEventListener('pointermove', pointerMove);
@@ -231,12 +221,12 @@ const setupLanguageFilterListeners = () => {
 const setupFrequencyFilterListeners = () => {
     const handleFrequencyChange = (direction: 'next' | 'prev') => {
         if (!state.editingHabit) return;
-        const currentFrequency = state.editingHabit.habitData.frequency;
+        const currentFrequency = state.editingHabit.formData.frequency;
         const currentIndex = FREQUENCIES.findIndex(f => f.value.type === currentFrequency.type && f.value.interval === currentFrequency.interval);
         let nextIndex;
         if (direction === 'next') nextIndex = (currentIndex + 1) % FREQUENCIES.length;
         else nextIndex = (currentIndex - 1 + FREQUENCIES.length) % FREQUENCIES.length;
-        state.editingHabit.habitData.frequency = FREQUENCIES[nextIndex].value;
+        state.editingHabit.formData.frequency = FREQUENCIES[nextIndex].value;
         renderFrequencyFilter();
     };
     ui.frequencyPrevBtn.addEventListener('click', () => handleFrequencyChange('prev'));
@@ -260,12 +250,12 @@ const setupFrequencyFilterListeners = () => {
     const pointerUp = (e: PointerEvent) => {
         if (!isSwiping || !state.editingHabit) return;
         const diffX = e.clientX - startX;
-        const currentFrequency = state.editingHabit.habitData.frequency;
+        const currentFrequency = state.editingHabit.formData.frequency;
         let currentIndex = FREQUENCIES.findIndex(f => f.value.type === currentFrequency.type && f.value.interval === currentFrequency.interval);
         if (Math.abs(diffX) > SWIPE_THRESHOLD) {
             if (diffX < 0) currentIndex = Math.min(FREQUENCIES.length - 1, currentIndex + 1);
             else currentIndex = Math.max(0, currentIndex - 1);
-            state.editingHabit.habitData.frequency = FREQUENCIES[currentIndex].value;
+            state.editingHabit.formData.frequency = FREQUENCIES[currentIndex].value;
         }
         renderFrequencyFilter();
         setTimeout(() => { ui.frequencyReel.style.transition = 'transform 0.3s cubic-bezier(0.25, 1, 0.5, 1)'; }, 50);
@@ -305,15 +295,16 @@ export const setupModalListeners = () => {
         if (!item?.dataset.index) return;
         
         const predefinedHabit = PREDEFINED_HABITS[parseInt(item.dataset.index)];
-        const existingHabit = state.habits.find(h => h.nameKey === predefinedHabit.nameKey && !h.endedOn && !h.graduatedOn);
+        const existingHabit = state.habits.find(h => {
+            const lastSchedule = h.scheduleHistory[h.scheduleHistory.length - 1];
+            return lastSchedule.nameKey === predefinedHabit.nameKey && !lastSchedule.endDate && !h.graduatedOn;
+        });
         
         closeModal(ui.exploreModal);
         
         if (existingHabit) {
-            // If habit already exists, open it for editing
             openEditModal(existingHabit);
         } else {
-            // Otherwise, open a new one from the template
             openEditModal(predefinedHabit);
         }
     });
@@ -331,8 +322,6 @@ export const setupModalListeners = () => {
     });
 
     ui.confirmModalEditBtn.addEventListener('click', () => {
-        // First close the confirmation modal, then execute the action (e.g., opening another modal).
-        // This prevents having two modals open at the same time.
         closeModal(ui.confirmModal);
         state.confirmEditAction?.();
         state.confirmAction = null;

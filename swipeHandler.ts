@@ -45,12 +45,12 @@ export function setupSwipeHandler(habitContainer: HTMLElement) {
         // Processa o resultado do deslize apenas se a direção foi confirmada como horizontal
         if (swipeDirection === 'horizontal') {
             if (wasOpenLeft) {
-                // Se deslizou para a esquerda (fechando), fecha a ação da esquerda (excluir)
+                // Se estava aberto à esquerda, um deslize para a ESQUERDA o fecha
                 if (deltaX < -SWIPE_INTENT_THRESHOLD) {
                     activeCard.classList.remove('is-open-left');
                 }
             } else if (wasOpenRight) {
-                // Se deslizou para a direita (fechando), fecha a ação da direita (nota)
+                // Se estava aberto à direita, um deslize para a DIREITA o fecha
                 if (deltaX > SWIPE_INTENT_THRESHOLD) {
                     activeCard.classList.remove('is-open-right');
                 }

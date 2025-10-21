@@ -52,14 +52,8 @@ export default async function handler(req: Request) {
         if (req.method === 'GET') {
             const data = await kv.get(dataKey);
 
-            if (!data) {
-                return new Response(JSON.stringify({ message: 'No data found for this sync key.' }), {
-                    status: 404,
-                    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-                });
-            }
-
-            return new Response(JSON.stringify(data), {
+            // Retorna os dados se encontrados, ou nulo se não. Sempre com status 200 OK.
+            return new Response(JSON.stringify(data || null), {
                 status: 200,
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' },
             });

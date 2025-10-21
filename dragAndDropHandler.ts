@@ -1,9 +1,10 @@
 import { ui } from './ui';
 import { handleHabitDrop } from './habitActions';
 import { isCurrentlySwiping } from './swipeHandler';
-import { state, TimeOfDay } from './state';
+import { state, TimeOfDay, getScheduleForDate } from './state';
 import { getHabitDisplayInfo, t } from './i18n';
 import { showInlineNotice } from './render';
+import { parseUTCIsoDate } from './utils';
 
 export function setupDragAndDropHandler(habitContainer: HTMLElement) {
     let draggedElement: HTMLElement | null = null;
@@ -11,10 +12,9 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
     let draggedHabitOriginalTime: TimeOfDay | null = null;
 
     const handleBodyDragOver = (e: DragEvent) => {
-        e.preventDefault(); // É crucial para permitir o evento 'drop'.
+        e.preventDefault();
         const target = e.target as HTMLElement;
 
-        // Limpa os estilos de feedback de todos os grupos
         document.querySelectorAll('.drag-over, .invalid-drop').forEach(el => el.classList.remove('drag-over', 'invalid-drop'));
         
         const dropZone = target.closest<HTMLElement>('.drop-zone');
@@ -25,13 +25,18 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
                 e.dataTransfer!.dropEffect = 'none';
                 return;
             }
+            
+            const activeSchedule = getScheduleForDate(habit, state.selectedDate);
+            if (!activeSchedule) {
+                e.dataTransfer!.dropEffect = 'none';
+                return;
+            }
 
             const newTime = dropZone.dataset.time as TimeOfDay;
             const dailyInfo = state.dailyData[state.selectedDate]?.[draggedHabitId];
-            const scheduleForDay = dailyInfo?.dailySchedule || habit.times;
+            const scheduleForDay = dailyInfo?.dailySchedule || activeSchedule.times;
 
             const isSameTime = newTime === draggedHabitOriginalTime;
-            // A drop is a duplicate if the target time is already in the schedule for the day.
             const isDuplicate = scheduleForDay.includes(newTime);
 
             if (!isSameTime && !isDuplicate) {
@@ -44,7 +49,7 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
                 e.dataTransfer!.dropEffect = 'none';
             }
         } else {
-            e.dataTransfer!.dropEffect = 'none'; // Não é um alvo de drop válido.
+            e.dataTransfer!.dropEffect = 'none';
         }
     };
 
@@ -54,7 +59,6 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
         const target = e.target as HTMLElement;
         const dropZone = target.closest<HTMLElement>('.drop-zone');
         
-        // Limpa imediatamente o feedback visual ao soltar.
         document.querySelectorAll('.drag-over, .invalid-drop').forEach(el => el.classList.remove('drag-over', 'invalid-drop'));
 
         if (!draggedHabitId || !draggedHabitOriginalTime) return;
@@ -63,9 +67,12 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
             const newTime = dropZone.dataset.time as TimeOfDay;
             const habit = state.habits.find(h => h.id === draggedHabitId);
             if (!habit) return;
+            
+            const activeSchedule = getScheduleForDate(habit, state.selectedDate);
+            if (!activeSchedule) return;
 
             const dailyInfo = state.dailyData[state.selectedDate]?.[draggedHabitId];
-            const scheduleForDay = dailyInfo?.dailySchedule || habit.times;
+            const scheduleForDay = dailyInfo?.dailySchedule || activeSchedule.times;
 
             const isDuplicate = scheduleForDay.includes(newTime);
             const isSameTime = newTime === draggedHabitOriginalTime;
@@ -113,7 +120,6 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
             document.body.addEventListener('drop', handleBodyDrop);
             document.body.addEventListener('dragend', cleanupDrag, { once: true });
 
-            // Atraso para permitir que o navegador capture o "fantasma" do elemento original
             setTimeout(() => {
                 card.classList.add('dragging');
             }, 0);

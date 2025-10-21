@@ -23,45 +23,45 @@ export interface HabitDailyInfo {
     dailySchedule?: TimeOfDay[]; // Override for habit.times for this day
 }
 
-
-export interface HabitHistoryPeriod {
+export interface HabitSchedule {
     startDate: string;
-    endDate: string;
+    endDate?: string;
+    name?: string;
+    subtitle?: string;
+    nameKey?: string;
+    subtitleKey?: string;
+    times: TimeOfDay[];
+    frequency: Frequency;
+    scheduleAnchor: string;
 }
 
 export interface Habit {
     id: string;
-    // FIX: Made name and subtitle optional as they only exist for custom habits.
-    name?: string; // For custom habits
-    subtitle?: string; // For custom habits
-    nameKey?: string; // For predefined habits
-    subtitleKey?: string; // For predefined habits
     icon: string;
     color: string;
-    times: ('Manhã' | 'Tarde' | 'Noite')[]; // Internal value, display is translated
     goal: { 
         type: 'pages' | 'minutes' | 'check'; 
         total?: number; 
-        // FIX: Made unit optional as it only exists for custom habits.
-        unit?: string; // For custom habits
-        unitKey?: string; // For predefined habits
+        unit?: string;
+        unitKey?: string;
     };
-    endedOn?: string;
-    graduatedOn?: string;
-    frequency: Frequency;
     createdOn: string;
-    scheduleAnchor?: string;
-    history?: HabitHistoryPeriod[];
-    previousVersionId?: string;
+    graduatedOn?: string;
+    scheduleHistory: HabitSchedule[];
 }
 
-// FIX: Removed `scheduleAnchor` and `previousVersionId` from Omit<> to make PredefinedHabit assignable.
-export type PredefinedHabit = Omit<Habit, 'id' | 'createdOn' | 'name' | 'subtitle' | 'goal' | 'previousVersionId'> & {
+export type PredefinedHabit = {
+    nameKey: string;
+    subtitleKey: string;
+    icon: string;
+    color: string;
+    times: TimeOfDay[];
     goal: {
         type: 'pages' | 'minutes' | 'check';
         total?: number;
         unitKey: string;
     };
+    frequency: Frequency;
 };
 
 
@@ -78,7 +78,7 @@ export interface AppState {
 
 // --- CONSTANTS ---
 export const STATE_STORAGE_KEY = 'habitTrackerState_v1';
-export const APP_VERSION = 5; // Increased version for daily schedule overrides (drag & drop)
+export const APP_VERSION = 6; // Increased version for scheduleHistory refactor
 export const DAYS_IN_CALENDAR = 61;
 export const STREAK_SEMI_CONSOLIDATED = 21;
 export const STREAK_CONSOLIDATED = 66;
@@ -157,7 +157,7 @@ export const state: {
     habits: Habit[];
     dailyData: Record<string, Record<string, HabitDailyInfo>>;
     streaksCache: Record<string, number>;
-    lastEnded: { habitId: string } | null;
+    lastEnded: { habitId: string, lastSchedule: HabitSchedule } | null;
     undoTimeout: number | null;
     calendarDates: Date[];
     selectedDate: string;
@@ -170,7 +170,18 @@ export const state: {
     editingNoteFor: { habitId: string; date: string; time: TimeOfDay; } | null;
     editingHabit: {
         isNew: boolean;
-        habitData: Omit<Habit, 'id' | 'createdOn'>;
+        habitId?: string; // For existing habits
+        originalData?: Habit; // For comparing changes
+        // A template-like object for the form
+        formData: PredefinedHabit | {
+            name: string;
+            subtitle: string;
+            icon: string;
+            color: string;
+            times: TimeOfDay[];
+            goal: Habit['goal'];
+            frequency: Frequency;
+        }
     } | null;
 } = {
     habits: [],
@@ -191,6 +202,21 @@ export const state: {
 };
 
 // --- STATE-DEPENDENT HELPERS ---
+export function getScheduleForDate(habit: Habit, date: Date | string): HabitSchedule | null {
+    const dateStr = typeof date === 'string' ? date : toUTCIsoDateString(date);
+    const dateAsTime = parseUTCIsoDate(dateStr).getTime();
+
+    for (const schedule of [...habit.scheduleHistory].reverse()) {
+        const startAsTime = parseUTCIsoDate(schedule.startDate).getTime();
+        const endAsTime = schedule.endDate ? parseUTCIsoDate(schedule.endDate).getTime() : Infinity;
+
+        if (dateAsTime >= startAsTime && dateAsTime < endAsTime) {
+            return schedule;
+        }
+    }
+    return null;
+}
+
 export function getHabitDailyInfoForDate(date: string): Record<string, HabitDailyInfo> {
     return state.dailyData[date] || {};
 }
@@ -206,92 +232,57 @@ export function ensureHabitInstanceData(date: string, habitId: string, time: Tim
 export function shouldHabitAppearOnDate(habit: Habit, date: Date): boolean {
     if (habit.graduatedOn) return false;
 
-    const dateAsTime = date.getTime();
-    const currentPeriodStartDate = parseUTCIsoDate(habit.createdOn);
-    let isInCurrentPeriod = dateAsTime >= currentPeriodStartDate.getTime();
-    if (habit.endedOn) {
-        const currentPeriodEndDate = parseUTCIsoDate(habit.endedOn);
-        isInCurrentPeriod = isInCurrentPeriod && (dateAsTime < currentPeriodEndDate.getTime());
-    }
-    
-    const isInHistoryPeriod = habit.history?.some(period => {
-        const periodStartDate = parseUTCIsoDate(period.startDate);
-        const periodEndDate = parseUTCIsoDate(period.endDate);
-        return dateAsTime >= periodStartDate.getTime() && dateAsTime < periodEndDate.getTime();
-    }) || false;
+    const activeSchedule = getScheduleForDate(habit, date);
+    if (!activeSchedule) return false;
 
-    const isWithinAnyActivityPeriod = isInCurrentPeriod || isInHistoryPeriod;
-    if (!isWithinAnyActivityPeriod) return false;
-
-    const anchorDate = parseUTCIsoDate(habit.scheduleAnchor || habit.createdOn);
-
+    const anchorDate = parseUTCIsoDate(activeSchedule.scheduleAnchor);
     const daysDifference = Math.round((date.getTime() - anchorDate.getTime()) / (1000 * 60 * 60 * 24));
 
-    // A habit's frequency schedule should only apply from its anchor date forward.
-    // This prevents habits, especially daily ones, from appearing on past dates
-    // before they were scheduled to start.
     if (daysDifference < 0) {
         return false;
     }
 
-    if (habit.frequency.type === 'daily') {
-        return daysDifference % habit.frequency.interval === 0;
+    if (activeSchedule.frequency.type === 'daily') {
+        return daysDifference % activeSchedule.frequency.interval === 0;
     }
 
-    if (habit.frequency.type === 'weekly') {
+    if (activeSchedule.frequency.type === 'weekly') {
         if (date.getUTCDay() !== anchorDate.getUTCDay()) return false;
         const weeksDifference = Math.floor(daysDifference / 7);
-        return weeksDifference % habit.frequency.interval === 0;
+        return weeksDifference % activeSchedule.frequency.interval === 0;
     }
 
     return true;
 }
 
-/**
- * Finds the previous N completed occurrence dates for a habit, skipping snoozed days.
- * A streak is considered broken if a 'pending' or missing day is found.
- * This function is now version-aware and will traverse the habit's history.
- * @param habit The habit to check (latest version).
- * @param startDate The date to start searching backwards from (exclusive).
- * @param count The number of previous completed occurrences to find.
- * @returns An array of Date objects for the previous completed occurrences.
- *          Returns an array with fewer than `count` items if the streak is broken or history ends.
- */
 function getPreviousCompletedOccurrences(habit: Habit, startDate: Date, count: number): Date[] {
     const dates: Date[] = [];
     let currentDate = new Date(startDate);
-    let currentHabit: Habit | undefined = habit;
-    
-    mainLoop:
-    while (dates.length < count && currentHabit) {
-        const habitCreationDate = parseUTCIsoDate(currentHabit.createdOn);
-        
-        while (dates.length < count && currentDate > habitCreationDate) {
-            currentDate = addDays(currentDate, -1);
+    const earliestDate = parseUTCIsoDate(habit.createdOn);
 
-            if (shouldHabitAppearOnDate(currentHabit, currentDate)) {
-                const dayISO = toUTCIsoDateString(currentDate);
-                const dailyInfo = state.dailyData[dayISO]?.[currentHabit.id];
-                const instances = dailyInfo?.instances || {};
-                const scheduleForDay = dailyInfo?.dailySchedule || currentHabit.times;
+    while (dates.length < count && currentDate > earliestDate) {
+        currentDate = addDays(currentDate, -1);
 
-                const statuses = scheduleForDay.map(time => instances[time]?.status ?? 'pending');
-                
-                const allCompleted = statuses.length > 0 && statuses.every(s => s === 'completed');
-                const hasPending = statuses.some(s => s === 'pending');
+        if (shouldHabitAppearOnDate(habit, currentDate)) {
+            const dayISO = toUTCIsoDateString(currentDate);
+            const dailyInfo = state.dailyData[dayISO]?.[habit.id];
+            
+            const activeSchedule = getScheduleForDate(habit, currentDate);
+            if (!activeSchedule) continue;
 
-                if (allCompleted) {
-                    dates.push(new Date(currentDate));
-                } else if (hasPending) {
-                    break mainLoop;
-                }
+            const instances = dailyInfo?.instances || {};
+            const scheduleForDay = dailyInfo?.dailySchedule || activeSchedule.times;
+
+            const statuses = scheduleForDay.map(time => instances[time]?.status ?? 'pending');
+            
+            const allCompleted = statuses.length > 0 && statuses.every(s => s === 'completed');
+            const hasPending = statuses.some(s => s === 'pending');
+
+            if (allCompleted) {
+                dates.push(new Date(currentDate));
+            } else if (hasPending) {
+                return []; // Streak broken
             }
-        }
-
-        if (currentHabit.previousVersionId) {
-            currentHabit = state.habits.find(h => h.id === currentHabit!.previousVersionId);
-        } else {
-            break mainLoop;
         }
     }
     
@@ -303,14 +294,16 @@ export function shouldShowPlusIndicator(dateISO: string): boolean {
     const dailyInfo = state.dailyData[dateISO] || {};
     const activeHabitsOnDate = state.habits.filter(h => shouldHabitAppearOnDate(h, dateObj));
 
-    // 1. Find habits that had their goal exceeded on the given date.
     const goalExceededHabits = activeHabitsOnDate.filter(habit => {
         if (habit.goal.type !== 'pages' && habit.goal.type !== 'minutes') return false;
         
         const habitDailyInfo = dailyInfo[habit.id];
         if (!habitDailyInfo) return false;
         
-        const scheduleForDay = habitDailyInfo.dailySchedule || habit.times;
+        const activeSchedule = getScheduleForDate(habit, dateObj);
+        if (!activeSchedule) return false;
+        
+        const scheduleForDay = habitDailyInfo.dailySchedule || activeSchedule.times;
         return scheduleForDay.some(time => {
             const instance = habitDailyInfo.instances[time];
             return instance?.status === 'completed' &&
@@ -319,50 +312,35 @@ export function shouldShowPlusIndicator(dateISO: string): boolean {
         });
     });
 
-    if (goalExceededHabits.length === 0) {
-        return false;
-    }
+    if (goalExceededHabits.length === 0) return false;
 
-    // 2. For each of those habits, check if the other conditions are met.
     for (const habit of goalExceededHabits) {
-        // Condition A: The habit was completed for the previous 2 scheduled occurrences.
         const previousCompletions = getPreviousCompletedOccurrences(habit, dateObj, 2);
-        if (previousCompletions.length !== 2) {
-            continue; // Streak condition not met, try next habit.
-        }
+        if (previousCompletions.length !== 2) continue;
 
-        // Condition B: All *other* active habits on this date must also be completed.
         const otherHabits = activeHabitsOnDate.filter(h => h.id !== habit.id);
         const allOtherHabitsCompleted = otherHabits.every(otherHabit => {
             const otherHabitDailyInfo = dailyInfo[otherHabit.id];
-            const scheduleForDay = otherHabitDailyInfo?.dailySchedule || otherHabit.times;
+            const activeSchedule = getScheduleForDate(otherHabit, dateObj);
+            if (!activeSchedule) return false;
+
+            const scheduleForDay = otherHabitDailyInfo?.dailySchedule || activeSchedule.times;
             const instances = otherHabitDailyInfo?.instances || {};
 
-            // If a habit is scheduled but has no instances at all, it's considered pending.
-            if (scheduleForDay.length > 0 && Object.keys(instances).length === 0) {
-                return false;
-            }
+            if (scheduleForDay.length > 0 && Object.keys(instances).length === 0) return false;
 
-            // Every single scheduled instance for this other habit must be 'completed'.
-            return scheduleForDay.every(time => {
-                const status = instances[time]?.status;
-                return status === 'completed';
-            });
+            return scheduleForDay.every(time => instances[time]?.status === 'completed');
         });
 
-        // If both streak and "all others completed" conditions are met, we show the plus.
-        if (allOtherHabitsCompleted) {
-            return true;
-        }
+        if (allOtherHabitsCompleted) return true;
     }
-
-    // If we looped through all goal-exceeded habits and none met all conditions.
     return false;
 }
 
 export function getSmartGoalForHabit(habit: Habit, dateISO: string, time: TimeOfDay): number {
+    const activeSchedule = getScheduleForDate(habit, dateISO);
     const baseGoal = habit.goal.total ?? 0;
-    if (habit.goal.type !== 'pages' && habit.goal.type !== 'minutes') return baseGoal;
+    if (!activeSchedule || (habit.goal.type !== 'pages' && habit.goal.type !== 'minutes')) return baseGoal;
 
     const consecutiveExceededGoals: number[] = [];
     let currentDate = parseUTCIsoDate(dateISO);
@@ -383,13 +361,11 @@ export function getSmartGoalForHabit(habit: Habit, dateISO: string, time: TimeOf
             if (wasGoalExceeded) {
                 consecutiveExceededGoals.push(habitInstance.goalOverride!);
             } else {
-                // If any instance in the potential streak was not an exceeded goal, reset to base.
                 return baseGoal;
             }
         }
     }
     
-    // If we found 3 consecutive exceeded goals for this specific time slot.
     const sum = consecutiveExceededGoals.reduce((a, b) => a + b, 0);
     return Math.round(sum / 3);
 }
@@ -397,55 +373,48 @@ export function getSmartGoalForHabit(habit: Habit, dateISO: string, time: TimeOf
 export function calculateHabitStreak(habitId: string, dateISO: string): number {
     const cacheKey = `${habitId}|${dateISO}`;
     if (state.streaksCache[cacheKey] !== undefined) return state.streaksCache[cacheKey];
+
+    const habit = state.habits.find(h => h.id === habitId);
+    if (!habit) {
+        state.streaksCache[cacheKey] = 0;
+        return 0;
+    }
     
     let streak = 0;
     let currentDate = parseUTCIsoDate(dateISO);
-    let currentHabit: Habit | undefined = state.habits.find(h => h.id === habitId);
-    
-    // Este loop nos permite percorrer as versões anteriores de um hábito.
-    while (currentHabit) {
-        const habitCreationDate = parseUTCIsoDate(currentHabit.createdOn);
-        let streakBroken = false;
+    const earliestDate = parseUTCIsoDate(habit.createdOn);
 
-        // Este loop calcula a sequência para a versão atual do hábito.
-        while (currentDate >= habitCreationDate) {
-            if (shouldHabitAppearOnDate(currentHabit, currentDate)) {
-                const currentDayISO = toUTCIsoDateString(currentDate);
-                const dailyInfo = state.dailyData[currentDayISO]?.[currentHabit.id];
-                
-                const instances = dailyInfo?.instances || {};
-                const scheduleForDay = dailyInfo?.dailySchedule || currentHabit.times;
-                
-                const statuses = scheduleForDay.map(time => instances[time]?.status ?? 'pending');
-                
-                const allCompleted = statuses.length > 0 && statuses.every(s => s === 'completed');
-                const hasPending = statuses.some(s => s === 'pending');
-
-                if (allCompleted) {
-                    streak++;
-                } else if (hasPending) {
-                    streakBroken = true;
-                    break;
-                }
+    while (currentDate >= earliestDate) {
+        if (shouldHabitAppearOnDate(habit, currentDate)) {
+            const currentDayISO = toUTCIsoDateString(currentDate);
+            const dailyInfo = state.dailyData[currentDayISO]?.[habit.id];
+            
+            const activeSchedule = getScheduleForDate(habit, currentDate);
+            if (!activeSchedule) {
+                 break; 
             }
-            currentDate = addDays(currentDate, -1);
-        }
 
-        if (streakBroken) {
-            break; // A sequência está quebrada, para de percorrer as versões anteriores.
-        }
+            const instances = dailyInfo?.instances || {};
+            const scheduleForDay = dailyInfo?.dailySchedule || activeSchedule.times;
+            
+            const statuses = scheduleForDay.map(time => instances[time]?.status ?? 'pending');
+            
+            const allCompleted = statuses.length > 0 && statuses.every(s => s === 'completed');
+            const hasPending = statuses.some(s => s === 'pending');
 
-        // Se a sequência não foi quebrada, passa para a versão anterior.
-        if (currentHabit.previousVersionId) {
-            currentHabit = state.habits.find(h => h.id === currentHabit!.previousVersionId);
-        } else {
-            currentHabit = undefined; // Não há mais versões anteriores.
+            if (allCompleted) {
+                streak++;
+            } else if (hasPending) {
+                break;
+            }
         }
+        currentDate = addDays(currentDate, -1);
     }
 
     state.streaksCache[cacheKey] = streak;
     return streak;
 }
+
 
 // --- CLOUD SYNC & STATE MANAGEMENT ---
 import { syncStateWithCloud } from './cloud';
@@ -459,16 +428,13 @@ export function saveState() {
         pending21DayHabitIds: state.pending21DayHabitIds,
         pendingConsolidationHabitIds: state.pendingConsolidationHabitIds,
     };
-    // Salva localmente para acesso rápido e offline.
     try {
         localStorage.setItem(STATE_STORAGE_KEY, JSON.stringify(appState));
         localStorage.setItem('habitTrackerLanguage', state.activeLanguageCode);
     } catch (e) {
         console.error("Failed to save state to localStorage:", e);
-        // Opcional: Notificar o usuário que as alterações locais não podem ser salvas.
     }
     
-    // Invalida o cache de sequências e aciona a sincronização com a nuvem.
     state.streaksCache = {};
     syncStateWithCloud(appState);
 }
@@ -488,10 +454,60 @@ export function loadState(cloudState?: AppState) {
     if (loadedAppState) {
         const loadedVersion = loadedAppState.version || 0;
 
-        // Migrações de estado (se necessário)
-        if (loadedVersion < APP_VERSION) {
-            // ... (lógica de migração existente permanece aqui) ...
+        if (loadedVersion < APP_VERSION && loadedVersion < 6) {
+            console.log(`Migrating data from v${loadedVersion} to v${APP_VERSION}`);
+            const oldHabits = loadedAppState.habits as any[];
+            const previousVersionIds = new Set(oldHabits.map(h => h.previousVersionId).filter(Boolean));
+            const latestHabits = oldHabits.filter(h => !previousVersionIds.has(h.id));
+            const newHabits: Habit[] = [];
+
+            for (const latestHabit of latestHabits) {
+                const lineage: any[] = [];
+                let currentHabitInLineage: any | undefined = latestHabit;
+                while (currentHabitInLineage) {
+                    lineage.unshift(currentHabitInLineage);
+                    currentHabitInLineage = oldHabits.find(h => h.id === currentHabitInLineage.previousVersionId);
+                }
+                
+                const firstHabit = lineage[0];
+                const newHabit: Habit = {
+                    id: latestHabit.id,
+                    icon: firstHabit.icon,
+                    color: firstHabit.color,
+                    goal: firstHabit.goal,
+                    createdOn: firstHabit.createdOn,
+                    graduatedOn: latestHabit.graduatedOn,
+                    scheduleHistory: [],
+                };
+
+                for (const oldVersion of lineage) {
+                    const schedule: HabitSchedule = {
+                        startDate: oldVersion.createdOn,
+                        endDate: oldVersion.endedOn,
+                        name: oldVersion.name,
+                        subtitle: oldVersion.subtitle,
+                        nameKey: oldVersion.nameKey,
+                        subtitleKey: oldVersion.subtitleKey,
+                        times: oldVersion.times,
+                        frequency: oldVersion.frequency,
+                        scheduleAnchor: oldVersion.scheduleAnchor || oldVersion.createdOn,
+                    };
+                    newHabit.scheduleHistory.push(schedule);
+
+                    if (oldVersion.id !== newHabit.id) {
+                         Object.keys(loadedAppState.dailyData).forEach(dateStr => {
+                            if (loadedAppState.dailyData[dateStr][oldVersion.id]) {
+                                loadedAppState.dailyData[dateStr][newHabit.id] = loadedAppState.dailyData[dateStr][oldVersion.id];
+                                delete loadedAppState.dailyData[dateStr][oldVersion.id];
+                            }
+                        });
+                    }
+                }
+                newHabits.push(newHabit);
+            }
+            loadedAppState.habits = newHabits;
         }
+
 
         state.habits = loadedAppState.habits;
         state.dailyData = loadedAppState.dailyData;
@@ -499,7 +515,6 @@ export function loadState(cloudState?: AppState) {
         state.pending21DayHabitIds = loadedAppState.pending21DayHabitIds || [];
         state.pendingConsolidationHabitIds = loadedAppState.pendingConsolidationHabitIds || [];
     } else {
-        // Estado inicial se não houver nada localmente ou na nuvem
         state.habits = [];
         state.dailyData = {};
         state.notificationsShown = [];

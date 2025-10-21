@@ -36,7 +36,6 @@ export async function fetchStateFromCloud(): Promise<AppState | undefined> {
     try {
         const keyHash = await getSyncKeyHash();
         if (!keyHash) {
-            // Se não conseguirmos obter o hash (por exemplo, erro de criptografia), tratamos como um erro de sincronização.
             throw new Error("Could not generate sync key hash.");
         };
 
@@ -46,21 +45,26 @@ export async function fetchStateFromCloud(): Promise<AppState | undefined> {
             }
         });
 
-        if (response.ok) {
-            const data = await response.json();
+        if (!response.ok) {
+            throw new Error(`Failed to fetch state, status: ${response.status}`);
+        }
+
+        const data = await response.json();
+
+        if (data) {
+            // Dados existem na nuvem
             setSyncStatus('syncSynced');
             return data as AppState;
-        }
-        if (response.status === 404) {
-            console.log("No state found in cloud for this sync key.");
-            // Se não há dados na nuvem, mas temos dados locais, podemos fazer o upload.
+        } else {
+            // Nenhum dado na nuvem (resposta foi 200 com corpo nulo)
+            console.log("No state found in cloud for this sync key. Performing initial sync.");
             const localData = localStorage.getItem(STATE_STORAGE_KEY);
             if (localData) {
-                syncLocalStateToCloud();
+                // Aguardamos para garantir que a sincronização inicial seja concluída e para tratar quaisquer erros.
+                await syncLocalStateToCloud();
             }
             return undefined;
         }
-        throw new Error(`Failed to fetch state, status: ${response.status}`);
     } catch (error) {
         console.error("Error fetching state from cloud:", error);
         setSyncStatus('syncError');
@@ -138,5 +142,7 @@ export async function syncLocalStateToCloud() {
     } catch (error) {
         console.error("Error on initial sync to cloud:", error);
         setSyncStatus('syncError');
+        // Lança o erro para que a função chamadora (fetchStateFromCloud) possa pegá-lo.
+        throw error;
     }
 }
