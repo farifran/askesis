@@ -4,6 +4,7 @@
 */
 import './index.css';
 import { loadState, state } from './state';
+import { addDays, getTodayUTC } from './utils';
 import { ui, initUI } from './ui';
 import { renderApp, updateHeaderTitle, initLanguageFilter, renderLanguageFilter, renderAINotificationState, openModal, initFrequencyFilter, initHabitTimeFilter } from './render';
 import { setupEventListeners } from './listeners';

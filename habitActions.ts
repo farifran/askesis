@@ -2,12 +2,12 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
+import { generateUUID, getTodayUTCIso, parseUTCIsoDate, addDays } from './utils';
 import {
     state,
     saveState,
     Habit,
     PREDEFINED_HABITS,
-    getTodayUTCIso,
     TimeOfDay,
     HabitStatus,
     getNextStatus,
@@ -16,10 +16,8 @@ import {
     STREAK_SEMI_CONSOLIDATED,
     STREAK_CONSOLIDATED,
     calculateHabitStreak,
-    parseUTCIsoDate,
     STATE_STORAGE_KEY,
     TIMES_OF_DAY,
-    addDays,
     Frequency
 } from './state';
 import {
@@ -30,24 +28,13 @@ import {
     showConfirmationModal,
     closeModal,
     addHabitToDOM,
-    removeHabitFromDOM,
     openEditModal,
     setupManageModal,
     showInlineNotice,
-    // FIX: Imported `renderApp` to resolve a reference error.
-    renderApp,
     renderCalendar,
 } from './render';
 import { t, getHabitDisplayInfo } from './i18n';
 import { ui } from './ui';
-
-function generateUUID(): string {
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
-        const r = Math.random() * 16 | 0;
-        const v = c === 'x' ? r : (r & 0x3 | 0x8);
-        return v.toString(16);
-    });
-}
 
 /**
  * Creates a new version of a habit when its schedule or name changes,
@@ -113,7 +100,8 @@ function applyHabitVersioning(
     
     // 4. Save state and re-render the application to reflect the changes.
     saveState();
-    renderApp();
+    renderHabits();
+    renderCalendar();
     setupManageModal();
 }
 
@@ -398,7 +386,8 @@ export function graduateHabit(habitId: string) {
     showConfirmationModal(confirmationText, () => {
         habit.graduatedOn = getTodayUTCIso();
         saveState();
-        renderApp(); // Re-render the full app view
+        renderHabits();
+        renderCalendar();
         setupManageModal(); // Update its state in manage modal
     });
 }

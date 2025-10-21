@@ -1,4 +1,5 @@
-import { state, addDays, saveState } from './state';
+import { state, saveState } from './state';
+import { addDays } from './utils';
 import { ui } from './ui';
 import {
     renderHabits,

@@ -13,22 +13,18 @@ import {
     getSmartGoalForHabit,
     shouldShowPlusIndicator,
     calculateHabitStreak,
-    getTodayUTCIso,
     LANGUAGES,
     FREQUENCIES,
     TIMES_OF_DAY,
     PREDEFINED_HABITS,
     STREAK_CONSOLIDATED,
     STREAK_SEMI_CONSOLIDATED,
-    addDays,
     shouldHabitAppearOnDate,
     Frequency,
     PredefinedHabit,
     TimeOfDay,
-    toUTCIsoDateString,
-    parseUTCIsoDate,
-    getTodayUTC,
 } from './state';
+import { getTodayUTCIso, addDays, toUTCIsoDateString, parseUTCIsoDate, getTodayUTC } from './utils';
 import { ui } from './ui';
 import { t, getLocaleDayName, getHabitDisplayInfo } from './i18n';
 import { STOIC_QUOTES } from './quotes';
@@ -312,10 +308,11 @@ export function renderHabits() {
     const selectedDateObj = parseUTCIsoDate(state.selectedDate);
     const dailyInfoByHabit = getHabitDailyInfoForDate(state.selectedDate);
 
-    const habitGroups: Record<TimeOfDay, DocumentFragment> = {
-        'Manhã': document.createDocumentFragment(),
-        'Tarde': document.createDocumentFragment(),
-        'Noite': document.createDocumentFragment()
+    // 1. Determina quais hábitos devem ser exibidos para cada horário do dia
+    const habitsByTime: Record<TimeOfDay, Habit[]> = {
+        'Manhã': [],
+        'Tarde': [],
+        'Noite': []
     };
     
     state.habits.forEach(habit => {
@@ -324,21 +321,59 @@ export function renderHabits() {
             const scheduleForDay = habitDailyInfo?.dailySchedule || habit.times;
             
             scheduleForDay.forEach(time => {
-                if (habitGroups[time]) {
-                    habitGroups[time].appendChild(createHabitCardElement(habit, time));
+                if (habitsByTime[time]) {
+                    habitsByTime[time].push(habit);
                 }
             });
         }
     });
 
-    const groupHasHabits: Record<TimeOfDay, boolean> = {
-        'Manhã': habitGroups['Manhã'].hasChildNodes(),
-        'Tarde': habitGroups['Tarde'].hasChildNodes(),
-        'Noite': habitGroups['Noite'].hasChildNodes()
-    };
+    const groupHasHabits: Record<TimeOfDay, boolean> = { 'Manhã': false, 'Tarde': false, 'Noite': false };
 
+    // 2. Realiza uma atualização com chaves para cada grupo de horário
+    TIMES_OF_DAY.forEach(time => {
+        const wrapperEl = ui.habitContainer.querySelector(`.habit-group-wrapper[data-time-wrapper="${time}"]`);
+        const groupEl = wrapperEl?.querySelector<HTMLElement>(`.habit-group[data-time="${time}"]`);
+        if (!groupEl) return;
+
+        const requiredHabits = habitsByTime[time];
+        groupHasHabits[time] = requiredHabits.length > 0;
+        
+        const existingCards = Array.from(groupEl.querySelectorAll<HTMLElement>('.habit-card'));
+        const existingCardsMap = new Map(existingCards.map(card => [card.dataset.habitId, card]));
+        const requiredIds = new Set(requiredHabits.map(h => h.id));
+
+        // Remove os cartões que não são mais necessários
+        for (const card of existingCards) {
+            if (!requiredIds.has(card.dataset.habitId!)) {
+                card.remove();
+            }
+        }
+
+        // Adiciona e reordena os cartões
+        let lastPlacedElement: HTMLElement | null = null;
+        for (const habit of requiredHabits) {
+            let cardEl = existingCardsMap.get(habit.id);
+            if (!cardEl) {
+                // O cartão é novo, cria-o
+                cardEl = createHabitCardElement(habit, time);
+            } else {
+                // O cartão existe, atualiza-o caso seu estado tenha mudado
+                updateHabitCardDOM(habit.id, time);
+            }
+            
+            // Lógica de reordenação
+            const nextSibling = lastPlacedElement ? lastPlacedElement.nextElementSibling : groupEl.firstElementChild;
+            if (nextSibling !== cardEl) {
+                 groupEl.insertBefore(cardEl, nextSibling);
+            }
+            
+            lastPlacedElement = cardEl;
+        }
+    });
+
+    // 3. Atualiza os placeholders com base nos grupos que têm hábitos
     document.querySelectorAll('.show-smart-placeholder').forEach(el => el.classList.remove('show-smart-placeholder'));
-
     const emptyTimes = TIMES_OF_DAY.filter(time => !groupHasHabits[time]);
 
     let targetTime: TimeOfDay | null = null;
@@ -351,24 +386,20 @@ export function renderHabits() {
     } else if (!groupHasHabits['Noite']) {
         targetTime = 'Noite';
     }
-
+    
     TIMES_OF_DAY.forEach(time => {
         const wrapperEl = ui.habitContainer.querySelector(`.habit-group-wrapper[data-time-wrapper="${time}"]`);
-        const groupEl = ui.habitContainer.querySelector<HTMLElement>(`.habit-group[data-time="${time}"]`);
+        const groupEl = wrapperEl?.querySelector<HTMLElement>(`.habit-group[data-time="${time}"]`);
         const titleEl = wrapperEl?.querySelector('h2');
         if (!wrapperEl || !groupEl || !titleEl) return;
         
         const timeToKeyMap: Record<TimeOfDay, string> = { 'Manhã': 'filterMorning', 'Tarde': 'filterAfternoon', 'Noite': 'filterEvening' };
         titleEl.textContent = t(timeToKeyMap[time]);
         
-        groupEl.innerHTML = '';
-        groupEl.appendChild(habitGroups[time]);
-        
-        const hasHabitsInGroup = groupHasHabits[time];
-        wrapperEl.classList.toggle('has-habits', hasHabitsInGroup);
+        wrapperEl.classList.toggle('has-habits', groupHasHabits[time]);
 
         let placeholder = groupEl.querySelector<HTMLElement>('.empty-group-placeholder');
-        if (!hasHabitsInGroup) {
+        if (!groupHasHabits[time]) {
             if (!placeholder) {
                 placeholder = document.createElement('div');
                 placeholder.className = 'empty-group-placeholder';
@@ -378,7 +409,6 @@ export function renderHabits() {
             const text = t('dragToAddHabit');
             let iconHTML = '';
 
-            // Se for o placeholder inteligente E houver vários horários vazios, cria as duas versões do ícone.
             if (time === targetTime && emptyTimes.length > 1) {
                 const genericIconHTML = emptyTimes
                     .map(getTimeOfDayIcon)
@@ -390,7 +420,6 @@ export function renderHabits() {
                     <span class="placeholder-icon-specific">${specificIconHTML}</span>
                 `;
             } else {
-                // Para todos os outros placeholders, cria apenas a versão específica.
                 const specificIconHTML = getTimeOfDayIcon(time);
                 iconHTML = `<span class="placeholder-icon-specific">${specificIconHTML}</span>`;
             }

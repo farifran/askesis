@@ -2,7 +2,8 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-import { getTodayUTCIso, state } from './state';
+import { state } from './state';
+import { getTodayUTCIso } from './utils';
 
 let isSwiping = false;
 

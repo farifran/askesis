@@ -4,7 +4,8 @@
 */
 // FIX: Corrected typo in function name from 'toUTCIsoString' to 'toUTCIsoDateString' to match the export from './state'.
 // FIX: Imported TimeOfDay to use in timeToKeyMap.
-import { state, addDays, getHabitDailyInfoForDate, getTodayUTC, toUTCIsoDateString, shouldHabitAppearOnDate, HabitStatus, TimeOfDay, Habit, parseUTCIsoDate } from "./state";
+import { state, getHabitDailyInfoForDate, shouldHabitAppearOnDate, HabitStatus, TimeOfDay, Habit } from "./state";
+import { addDays, getTodayUTC, toUTCIsoDateString, parseUTCIsoDate } from './utils';
 import { t, getLocaleDayName, getHabitDisplayInfo } from "./i18n";
 
 const statusToSymbol: Record<HabitStatus, string> = {
