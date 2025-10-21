@@ -42,31 +42,25 @@ export function setupSwipeHandler(habitContainer: HTMLElement) {
         const deltaX = currentX - startX;
         activeCard.classList.remove('is-swiping');
 
-        // Adicionado: Verifica se a ação está em uma data passada.
-        const isPastDate = state.selectedDate < getTodayUTCIso();
-
         // Processa o resultado do deslize apenas se a direção foi confirmada como horizontal
         if (swipeDirection === 'horizontal') {
             if (wasOpenLeft) {
-                // Se deslizou para a esquerda (fechando), fecha
+                // Se deslizou para a esquerda (fechando), fecha a ação da esquerda (excluir)
                 if (deltaX < -SWIPE_INTENT_THRESHOLD) {
                     activeCard.classList.remove('is-open-left');
                 }
             } else if (wasOpenRight) {
-                // Se deslizou para a direita (fechando), fecha
+                // Se deslizou para a direita (fechando), fecha a ação da direita (nota)
                 if (deltaX > SWIPE_INTENT_THRESHOLD) {
                     activeCard.classList.remove('is-open-right');
                 }
             } else { // O cartão estava fechado
-                // Se deslizou para a direita, abre à esquerda (notas)
+                // Se deslizou para a direita, abre à esquerda (excluir)
                 if (deltaX > SWIPE_INTENT_THRESHOLD) {
                     activeCard.classList.add('is-open-left');
-                // Se deslizou para a esquerda, abre à direita (excluir)
+                // Se deslizou para a esquerda, abre à direita (nota)
                 } else if (deltaX < -SWIPE_INTENT_THRESHOLD) {
-                    // Só permite abrir a ação de excluir se não for uma data passada.
-                    if (!isPastDate) {
-                        activeCard.classList.add('is-open-right');
-                    }
+                    activeCard.classList.add('is-open-right');
                 }
             }
         }
@@ -127,12 +121,6 @@ export function setupSwipeHandler(habitContainer: HTMLElement) {
             if (wasOpenLeft) translateX += swipeActionWidth;
             if (wasOpenRight) translateX -= swipeActionWidth;
 
-            // Adicionado: Verifica se a ação de exclusão está sendo tentada em uma data passada.
-            const isPastDate = state.selectedDate < getTodayUTCIso();
-            if (isPastDate && translateX < 0 && !wasOpenRight) {
-                translateX = 0; // Impede o deslize para a esquerda em datas passadas.
-            }
-
             const content = activeCard.querySelector<HTMLElement>('.habit-content-wrapper');
             if (content) {
                 content.style.transform = `translateX(${translateX}px)`;
@@ -177,6 +165,12 @@ export function setupSwipeHandler(habitContainer: HTMLElement) {
         
         const targetCard = contentWrapper.closest<HTMLElement>('.habit-card');
         if (!targetCard) return;
+
+        // Fecha qualquer outro cartão que possa estar aberto para garantir que apenas um esteja ativo por vez.
+        const currentlyOpenCard = habitContainer.querySelector('.habit-card.is-open-left, .habit-card.is-open-right');
+        if (currentlyOpenCard && currentlyOpenCard !== targetCard) {
+            currentlyOpenCard.classList.remove('is-open-left', 'is-open-right');
+        }
 
         activeCard = targetCard;
         startX = e.clientX;

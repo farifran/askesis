@@ -28,6 +28,7 @@ import { getTodayUTCIso, addDays, toUTCIsoDateString, parseUTCIsoDate, getTodayU
 import { ui } from './ui';
 import { t, getLocaleDayName, getHabitDisplayInfo } from './i18n';
 import { STOIC_QUOTES } from './quotes';
+import { icons } from './icons';
 
 function updateReelRotaryARIA(viewportEl: HTMLElement, currentIndex: number, options: readonly string[] | string[], labelKey: string) {
     if (!viewportEl) return;
@@ -764,7 +765,7 @@ export function openEditModal(habitData: Habit | PredefinedHabit | null) {
     const isCustomNew = habitData === null;
     const template = isCustomNew ? {
         nameKey: '', name: '', subtitleKey: '', subtitle: '',
-        icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#8e44ad" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="6"></circle><circle cx="12" cy="12" r="2"></circle></svg>',
+        icon: icons.custom,
         color: '#8e44ad',
         times: ['Manhã'],
         goal: { type: 'check', unitKey: 'unitCheck' } as const,
