@@ -3,10 +3,6 @@ type UIElements = {
     calendarStrip: HTMLElement;
     headerTitle: HTMLElement;
     stoicQuoteDisplay: HTMLElement;
-    timeFilterPrev: HTMLButtonElement;
-    timeFilterViewport: HTMLElement;
-    timeFilterReel: HTMLElement;
-    timeFilterNext: HTMLButtonElement;
     habitContainer: HTMLElement;
     manageHabitsBtn: HTMLElement;
     fabAddHabit: HTMLElement;
@@ -59,10 +55,6 @@ export function initUI(): void {
         calendarStrip: document.getElementById('calendar-strip')!,
         headerTitle: document.getElementById('header-title')!,
         stoicQuoteDisplay: document.getElementById('stoic-quote-display')!,
-        timeFilterPrev: document.getElementById('time-filter-prev') as HTMLButtonElement,
-        timeFilterViewport: document.getElementById('time-filter-viewport')!,
-        timeFilterReel: document.getElementById('time-filter-reel')!,
-        timeFilterNext: document.getElementById('time-filter-next') as HTMLButtonElement,
         habitContainer: document.getElementById('habit-container')!,
         manageHabitsBtn: document.getElementById('manage-habits-btn')!,
         fabAddHabit: document.getElementById('fab-add-habit')!,

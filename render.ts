@@ -1,3 +1,9 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+*/
+
+
 import {
     state,
     Habit,
@@ -8,7 +14,6 @@ import {
     shouldShowPlusIndicator,
     calculateHabitStreak,
     getTodayUTCIso,
-    FILTERS,
     LANGUAGES,
     FREQUENCIES,
     TIMES_OF_DAY,
@@ -39,14 +44,9 @@ function updateReelRotaryARIA(viewportEl: HTMLElement, currentIndex: number, opt
     viewportEl.setAttribute('tabindex', '0'); // Torna o elemento focável
 }
 
-export function initFilters() {
-    const filterNames = [t('filterAllDay'), t('filterMorning'), t('filterAfternoon'), t('filterEvening')];
-    ui.timeFilterReel.innerHTML = filterNames.map(text => `<span class="reel-option">${text}</span>`).join('');
-    updateReelRotaryARIA(ui.timeFilterViewport, FILTERS.indexOf(state.activeFilter), filterNames, 'timeFilter_ariaLabel');
-}
-
 export function initLanguageFilter() {
     const langNames = LANGUAGES.map(lang => t(lang.nameKey));
+    // FIX: Changed 'text' to 'name' to match the map parameter.
     ui.languageReel.innerHTML = langNames.map(name => `<span class="reel-option">${name}</span>`).join('');
     const currentIndex = LANGUAGES.findIndex(l => l.code === state.activeLanguageCode);
     updateReelRotaryARIA(ui.languageViewport, currentIndex, langNames, 'language_ariaLabel');
@@ -54,6 +54,7 @@ export function initLanguageFilter() {
 
 export function initFrequencyFilter() {
     const freqLabels = FREQUENCIES.map(freq => t(freq.labelKey));
+    // FIX: Changed 'text' to 'label' to match the map parameter.
     ui.frequencyReel.innerHTML = freqLabels.map(label => `<span class="reel-option">${label}</span>`).join('');
     updateReelRotaryARIA(ui.frequencyViewport, 0, freqLabels, 'frequency_ariaLabel');
 }
@@ -77,6 +78,7 @@ function calculateDayProgress(isoDate: string): { completedPercent: number, tota
     let snoozedInstances = 0;
 
     activeHabitsOnDate.forEach(habit => {
+        // FIX: Corrected undefined variable 'daily' to 'dailyInfo'.
         const habitDailyInfo = dailyInfo[habit.id];
         const instances = habitDailyInfo?.instances || {};
         const scheduleForDay = habitDailyInfo?.dailySchedule || habit.times;
@@ -137,17 +139,6 @@ export function renderCalendar() {
         fragment.appendChild(createCalendarDayElement(date));
     });
     ui.calendarStrip.appendChild(fragment);
-}
-
-
-export function renderFilters() {
-    const currentIndex = FILTERS.indexOf(state.activeFilter);
-    const firstOption = ui.timeFilterReel.querySelector('.reel-option') as HTMLElement | null;
-    const itemWidth = firstOption?.offsetWidth || 52;
-    const transformX = -currentIndex * itemWidth;
-    ui.timeFilterReel.style.transform = `translateX(${transformX}px)`;
-    const filterNames = [t('filterAllDay'), t('filterMorning'), t('filterAfternoon'), t('filterEvening')];
-    updateReelRotaryARIA(ui.timeFilterViewport, currentIndex, filterNames, 'timeFilter_ariaLabel');
 }
 
 export function renderLanguageFilter() {
@@ -234,6 +225,19 @@ function updateGoalContentElement(goalEl: HTMLElement, status: HabitStatus, habi
     }
 }
 
+function getTimeOfDayIcon(time: TimeOfDay): string {
+    switch (time) {
+        case 'Manhã':
+            return '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L12 5"/><path d="M12 19L12 22"/><path d="M5 12L2 12"/><path d="M22 12L19 12"/><path d="M19.07 4.93L16.24 7.76"/><path d="M7.76 16.24L4.93 19.07"/><path d="M19.07 19.07L16.24 16.24"/><path d="M7.76 7.76L4.93 4.93"/><path d="M4 17h16"/></svg>'; // Sunrise-like icon
+        case 'Tarde':
+            return '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>'; // Full sun icon
+        case 'Noite':
+            return '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>'; // Moon icon
+        default:
+            return '';
+    }
+}
+
 export function createHabitCardElement(habit: Habit, time: TimeOfDay): HTMLElement {
     const dailyInfo = getHabitDailyInfoForDate(state.selectedDate);
     const habitInstanceData = dailyInfo[habit.id]?.instances?.[time];
@@ -262,6 +266,10 @@ export function createHabitCardElement(habit: Habit, time: TimeOfDay): HTMLEleme
     const contentWrapper = document.createElement('div');
     contentWrapper.className = 'habit-content-wrapper';
     contentWrapper.draggable = true;
+
+    const timeOfDayIcon = document.createElement('div');
+    timeOfDayIcon.className = 'time-of-day-icon';
+    timeOfDayIcon.innerHTML = getTimeOfDayIcon(time);
     
     const icon = document.createElement('div');
     icon.className = 'habit-icon';
@@ -294,7 +302,7 @@ export function createHabitCardElement(habit: Habit, time: TimeOfDay): HTMLEleme
     goal.className = 'habit-goal';
     updateGoalContentElement(goal, status, habit, time, habitInstanceData);
 
-    contentWrapper.append(icon, details, goal);
+    contentWrapper.append(timeOfDayIcon, icon, details, goal);
     card.append(actionsLeft, actionsRight, contentWrapper);
     
     return card;
@@ -323,25 +331,81 @@ export function renderHabits() {
         }
     });
 
+    const groupHasHabits: Record<TimeOfDay, boolean> = {
+        'Manhã': habitGroups['Manhã'].hasChildNodes(),
+        'Tarde': habitGroups['Tarde'].hasChildNodes(),
+        'Noite': habitGroups['Noite'].hasChildNodes()
+    };
+
+    document.querySelectorAll('.show-smart-placeholder').forEach(el => el.classList.remove('show-smart-placeholder'));
+
+    const emptyTimes = TIMES_OF_DAY.filter(time => !groupHasHabits[time]);
+
+    let targetTime: TimeOfDay | null = null;
+    if (groupHasHabits['Manhã'] && !groupHasHabits['Tarde'] && groupHasHabits['Noite']) {
+        targetTime = 'Tarde';
+    } else if (!groupHasHabits['Manhã']) {
+        targetTime = 'Manhã';
+    } else if (!groupHasHabits['Tarde']) {
+        targetTime = 'Tarde';
+    } else if (!groupHasHabits['Noite']) {
+        targetTime = 'Noite';
+    }
+
     TIMES_OF_DAY.forEach(time => {
         const wrapperEl = ui.habitContainer.querySelector(`.habit-group-wrapper[data-time-wrapper="${time}"]`);
         const groupEl = ui.habitContainer.querySelector<HTMLElement>(`.habit-group[data-time="${time}"]`);
         const titleEl = wrapperEl?.querySelector('h2');
         if (!wrapperEl || !groupEl || !titleEl) return;
         
-        const timeToKeyMap: Record<TimeOfDay, string> = {
-            'Manhã': 'filterMorning',
-            'Tarde': 'filterAfternoon',
-            'Noite': 'filterEvening'
-        };
+        const timeToKeyMap: Record<TimeOfDay, string> = { 'Manhã': 'filterMorning', 'Tarde': 'filterAfternoon', 'Noite': 'filterEvening' };
         titleEl.textContent = t(timeToKeyMap[time]);
-        
-        (wrapperEl as HTMLElement).hidden = !(state.activeFilter === 'Todos' || state.activeFilter === time);
         
         groupEl.innerHTML = '';
         groupEl.appendChild(habitGroups[time]);
-        updateGroupPlaceholder(groupEl);
+        
+        const hasHabitsInGroup = groupHasHabits[time];
+        wrapperEl.classList.toggle('has-habits', hasHabitsInGroup);
+
+        let placeholder = groupEl.querySelector<HTMLElement>('.empty-group-placeholder');
+        if (!hasHabitsInGroup) {
+            if (!placeholder) {
+                placeholder = document.createElement('div');
+                placeholder.className = 'empty-group-placeholder';
+                groupEl.appendChild(placeholder);
+            }
+            
+            const text = t('dragToAddHabit');
+            let iconHTML = '';
+
+            // Se for o placeholder inteligente E houver vários horários vazios, cria as duas versões do ícone.
+            if (time === targetTime && emptyTimes.length > 1) {
+                const genericIconHTML = emptyTimes
+                    .map(getTimeOfDayIcon)
+                    .join('<span class="icon-separator">/</span>');
+                const specificIconHTML = getTimeOfDayIcon(time);
+                
+                iconHTML = `
+                    <span class="placeholder-icon-generic">${genericIconHTML}</span>
+                    <span class="placeholder-icon-specific">${specificIconHTML}</span>
+                `;
+            } else {
+                // Para todos os outros placeholders, cria apenas a versão específica.
+                const specificIconHTML = getTimeOfDayIcon(time);
+                iconHTML = `<span class="placeholder-icon-specific">${specificIconHTML}</span>`;
+            }
+            
+            placeholder.innerHTML = `<div class="time-of-day-icon">${iconHTML}</div><span>${text}</span>`;
+
+        } else if (placeholder) {
+            placeholder.remove();
+        }
     });
+
+    if (targetTime) {
+        const smartPlaceholder = ui.habitContainer.querySelector(`.habit-group[data-time="${targetTime}"] .empty-group-placeholder`);
+        smartPlaceholder?.classList.add('show-smart-placeholder');
+    }
 }
 
 
@@ -673,7 +737,7 @@ export function openEditModal(habitData: Habit | PredefinedHabit | null) {
         nameKey: '', name: '', subtitleKey: '', subtitle: '',
         icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#8e44ad" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="6"></circle><circle cx="12" cy="12" r="2"></circle></svg>',
         color: '#8e44ad',
-        times: state.activeFilter !== 'Todos' ? [state.activeFilter] : ['Manhã'],
+        times: ['Manhã'],
         goal: { type: 'check', unitKey: 'unitCheck' } as const,
         frequency: { type: 'daily', interval: 1 } as Frequency,
     } : (habitData as Habit | PredefinedHabit);
@@ -726,23 +790,6 @@ export function updateHeaderTitle() {
     }
 }
 
-export function updateGroupPlaceholder(groupEl: HTMLElement | null) {
-    if (!groupEl) return;
-    let placeholder = groupEl.querySelector<HTMLElement>('.empty-group-placeholder');
-    const hasHabits = !!groupEl.querySelector('.habit-card');
-
-    if (hasHabits && placeholder) {
-        placeholder.remove();
-    } else if (!hasHabits && !placeholder) {
-        placeholder = document.createElement('div');
-        placeholder.className = 'empty-group-placeholder';
-        placeholder.textContent = t('noHabitsToday');
-        groupEl.appendChild(placeholder);
-    } else if (!hasHabits && placeholder) {
-        placeholder.textContent = t('noHabitsToday');
-    }
-}
-
 export function addHabitToDOM(habit: Habit) {
     renderHabits(); // Re-render all habits to place the new one correctly in all its time slots
     ui.habitList.insertAdjacentHTML('beforeend', createManageHabitListItemHTML(habit));
@@ -753,7 +800,15 @@ export function removeHabitFromDOM(habitId: string) {
     cardEls.forEach(cardEl => {
         const parentGroup = cardEl.parentElement as HTMLElement;
         cardEl.remove();
-        updateGroupPlaceholder(parentGroup);
+        
+        // Reavalia o estado do grupo após a remoção, mostrando o placeholder se necessário
+        if (parentGroup) {
+            const hasHabits = !!parentGroup.querySelector('.habit-card');
+            const time = parentGroup.dataset.time as TimeOfDay;
+            // A lógica de placeholder inteligente já está em renderHabits, então podemos simplificar
+            // ou chamar uma re-renderização completa. Chamar renderHabits é mais seguro.
+            renderHabits();
+        }
     });
     ui.habitList.querySelector<HTMLElement>(`li[data-habit-id="${habitId}"]`)?.remove();
 }

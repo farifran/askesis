@@ -79,8 +79,6 @@ export const APP_VERSION = 5; // Increased version for daily schedule overrides 
 export const DAYS_IN_CALENDAR = 61;
 export const STREAK_SEMI_CONSOLIDATED = 21;
 export const STREAK_CONSOLIDATED = 66;
-export const FILTERS = ['Todos', 'Manhã', 'Tarde', 'Noite'] as const;
-export type FilterType = typeof FILTERS[number];
 
 export const TIMES_OF_DAY = ['Manhã', 'Tarde', 'Noite'] as const;
 export type TimeOfDay = typeof TIMES_OF_DAY[number];
@@ -182,7 +180,6 @@ export const state: {
     undoTimeout: number | null;
     calendarDates: Date[];
     selectedDate: string;
-    activeFilter: FilterType;
     activeLanguageCode: Language['code'];
     pending21DayHabitIds: string[];
     pendingConsolidationHabitIds: string[];
@@ -202,7 +199,6 @@ export const state: {
     undoTimeout: null,
     calendarDates: Array.from({ length: DAYS_IN_CALENDAR }, (_, i) => addDays(getTodayUTC(), i - 30)),
     selectedDate: getTodayUTCIso(),
-    activeFilter: 'Todos',
     activeLanguageCode: 'pt',
     pending21DayHabitIds: [],
     pendingConsolidationHabitIds: [],

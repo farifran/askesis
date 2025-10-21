@@ -64,6 +64,7 @@
     "buttonEditHabit": "Editar Hábito",
     "modalRemoveTimeTitle": "Quitar Horario",
     "buttonRemoveTime": "Quitar",
+    "dragToAddHabit": "Arrastra un hábito a este horario.",
     "predefinedHabitReadName": "Leer", "predefinedHabitReadSubtitle": "Expande tu mente",
     "predefinedHabitMeditateName": "Meditar", "predefinedHabitMeditateSubtitle": "Claridad y paz interior",
     "predefinedHabitWaterName": "Beber Agua", "predefinedHabitWaterSubtitle": "La hidratación es vida",

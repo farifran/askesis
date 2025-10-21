@@ -1,10 +1,9 @@
-import { state, FilterType, FILTERS, addDays, saveState } from './state';
+import { state, addDays, saveState } from './state';
 import { ui } from './ui';
 import {
     renderHabits,
     updateCalendarSelection,
     updateHeaderTitle,
-    renderFilters,
     createCalendarDayElement,
     renderStoicQuote,
 } from './render';
@@ -69,93 +68,6 @@ const setupGlobalListeners = () => {
             // Reseta a contagem após a ação ser executada.
             clickCount = 0;
         }, CLICK_DELAY);
-    });
-
-    // Listener para o novo filtro de horários rotativo (com swipe e teclado)
-    const handleFilterChange = (direction: 'next' | 'prev') => {
-        const currentIndex = FILTERS.indexOf(state.activeFilter);
-        let nextIndex;
-        if (direction === 'next') {
-            nextIndex = (currentIndex + 1) % FILTERS.length;
-        } else {
-            nextIndex = (currentIndex - 1 + FILTERS.length) % FILTERS.length;
-        }
-        state.activeFilter = FILTERS[nextIndex];
-        renderFilters();
-        renderHabits();
-    };
-
-    ui.timeFilterPrev.addEventListener('click', () => handleFilterChange('prev'));
-    ui.timeFilterNext.addEventListener('click', () => handleFilterChange('next'));
-    ui.timeFilterViewport.addEventListener('keydown', (e: KeyboardEvent) => {
-        if (e.key === 'ArrowRight') handleFilterChange('next');
-        else if (e.key === 'ArrowLeft') handleFilterChange('prev');
-    });
-
-    // Swipe handler para o novo filtro de carrossel
-    let filterStartX = 0;
-    let filterIsSwiping = false;
-    let startTransformX = 0;
-    let itemWidth = 52; // Valor padrão de fallback
-    const SWIPE_THRESHOLD = 30; // pixels
-
-    const filterPointerMove = (e: PointerEvent) => {
-        if (!filterIsSwiping) return;
-        const currentX = e.clientX;
-        const diffX = currentX - filterStartX;
-        const newTranslateX = startTransformX + diffX;
-
-        // Limita a translação para evitar o deslize além das extremidades
-        const minTranslateX = -(FILTERS.length - 1) * itemWidth;
-        const maxTranslateX = 0;
-        const clampedTranslateX = Math.max(minTranslateX, Math.min(maxTranslateX, newTranslateX));
-
-        ui.timeFilterReel.style.transform = `translateX(${clampedTranslateX}px)`;
-    };
-
-    const filterPointerUp = (e: PointerEvent) => {
-        if (!filterIsSwiping) return;
-
-        const currentX = e.clientX;
-        const diffX = currentX - filterStartX;
-
-        let currentIndex = FILTERS.indexOf(state.activeFilter);
-        if (Math.abs(diffX) > SWIPE_THRESHOLD) {
-            if (diffX < 0) { // Deslizou para a esquerda
-                currentIndex = Math.min(FILTERS.length - 1, currentIndex + 1);
-            } else { // Deslizou para a direita
-                currentIndex = Math.max(0, currentIndex - 1);
-            }
-        }
-        
-        state.activeFilter = FILTERS[currentIndex];
-        renderFilters(); // Anima para a posição correta
-        renderHabits();
-
-        setTimeout(() => {
-            ui.timeFilterReel.style.transition = 'transform 0.3s cubic-bezier(0.25, 1, 0.5, 1)';
-        }, 50);
-
-        window.removeEventListener('pointermove', filterPointerMove);
-        window.removeEventListener('pointerup', filterPointerUp);
-        filterIsSwiping = false;
-    };
-
-    ui.timeFilterViewport.addEventListener('pointerdown', (e: PointerEvent) => {
-        filterStartX = e.clientX;
-        filterIsSwiping = true;
-
-        // Lê a largura do item dinamicamente do DOM
-        const firstOption = ui.timeFilterReel.querySelector('.reel-option') as HTMLElement | null;
-        itemWidth = firstOption?.offsetWidth || 52;
-
-        const currentStyle = window.getComputedStyle(ui.timeFilterReel);
-        const matrix = new DOMMatrix(currentStyle.transform);
-        startTransformX = matrix.m41;
-
-        ui.timeFilterReel.style.transition = 'none'; // Remove transição para manipulação direta
-        window.addEventListener('pointermove', filterPointerMove);
-        window.addEventListener('pointerup', filterPointerUp);
     });
 
     // Handler para "infinite scroll" do calendário

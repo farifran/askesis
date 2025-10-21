@@ -4,7 +4,7 @@
 */
 import { state, Habit, LANGUAGES, PredefinedHabit } from './state';
 import { ui } from './ui';
-import { renderApp, updateHeaderTitle, initFilters, initFrequencyFilter, initHabitTimeFilter, setupManageModal, initLanguageFilter } from './render';
+import { renderApp, updateHeaderTitle, initFrequencyFilter, initHabitTimeFilter, setupManageModal, initLanguageFilter } from './render';
 
 type PluralableTranslation = { one: string; other: string };
 type TranslationValue = string | PluralableTranslation;
@@ -82,8 +82,6 @@ function updateUIText() {
     ui.fabAddHabit.setAttribute('aria-label', t('fabAddHabit_ariaLabel'));
     ui.manageHabitsBtn.setAttribute('aria-label', t('manageHabits_ariaLabel'));
     ui.aiEvalBtn.setAttribute('aria-label', t('aiEval_ariaLabel'));
-    ui.timeFilterPrev.setAttribute('aria-label', t('timeFilterPrev_ariaLabel'));
-    ui.timeFilterNext.setAttribute('aria-label', t('timeFilterNext_ariaLabel'));
     
     // Modals
     ui.exploreModal.querySelector('h2')!.textContent = t('modalExploreTitle');
@@ -133,7 +131,6 @@ export async function setLanguage(langCode: 'pt' | 'en' | 'es') {
     localStorage.setItem('habitTrackerLanguage', langCode);
     
     // Re-initialize dynamic text components
-    initFilters();
     initFrequencyFilter();
     initHabitTimeFilter();
     initLanguageFilter();

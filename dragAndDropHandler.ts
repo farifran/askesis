@@ -84,6 +84,7 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
     
     const cleanupDrag = () => {
         draggedElement?.classList.remove('dragging');
+        document.body.classList.remove('is-dragging-active');
         document.querySelectorAll('.drag-over, .invalid-drop').forEach(el => el.classList.remove('drag-over', 'invalid-drop'));
         document.body.removeEventListener('dragover', handleBodyDragOver);
         document.body.removeEventListener('drop', handleBodyDrop);
@@ -107,6 +108,7 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
             e.dataTransfer!.setData('text/plain', draggedHabitId);
             e.dataTransfer!.effectAllowed = 'move';
             
+            document.body.classList.add('is-dragging-active');
             document.body.addEventListener('dragover', handleBodyDragOver);
             document.body.addEventListener('drop', handleBodyDrop);
             document.body.addEventListener('dragend', cleanupDrag, { once: true });

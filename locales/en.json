@@ -64,6 +64,7 @@
     "buttonEditHabit": "Edit Habit",
     "modalRemoveTimeTitle": "Remove Time Slot",
     "buttonRemoveTime": "Remove",
+    "dragToAddHabit": "Drag a habit to this time slot.",
     "predefinedHabitReadName": "Read", "predefinedHabitReadSubtitle": "Expand your mind",
     "predefinedHabitMeditateName": "Meditate", "predefinedHabitMeditateSubtitle": "Clarity and inner peace",
     "predefinedHabitWaterName": "Drink Water", "predefinedHabitWaterSubtitle": "Hydration is life",

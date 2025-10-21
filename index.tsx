@@ -5,7 +5,7 @@
 import './index.css';
 import { loadState, state } from './state';
 import { ui, initUI } from './ui';
-import { renderFilters, renderApp, updateHeaderTitle, initFilters, initLanguageFilter, renderLanguageFilter, renderAINotificationState, openModal, initFrequencyFilter, initHabitTimeFilter } from './render';
+import { renderApp, updateHeaderTitle, initLanguageFilter, renderLanguageFilter, renderAINotificationState, openModal, initFrequencyFilter, initHabitTimeFilter } from './render';
 import { setupEventListeners } from './listeners';
 import { initI18n } from './i18n';
 import { createDefaultHabit } from './habitActions';
@@ -22,11 +22,9 @@ const init = async () => {
         createDefaultHabit();
     }
     
-    initFilters();
     initLanguageFilter();
     initFrequencyFilter();
     initHabitTimeFilter();
-    renderFilters();
     renderLanguageFilter();
     renderApp();
     updateHeaderTitle();

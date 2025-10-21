@@ -70,7 +70,7 @@ body {
     flex-direction: column;
     gap: 20px;
     padding: 20px 0;
-    margin-bottom: 16px;
+    margin-bottom: -14px;
 }
 
 .header-top {
@@ -119,7 +119,7 @@ body {
     font-size: 28px;
     font-weight: 700;
     position: relative;
-    top: -1px;
+    top: -6px;
 }
 
 /* Citação Estoica */
@@ -132,6 +132,8 @@ body {
     line-height: 1.4;
     transition: opacity 0.5s ease-in-out;
     opacity: 0;
+    flex: 1;
+    min-width: 0;
 }
 .stoic-quote.visible {
     opacity: 1;
@@ -302,20 +304,6 @@ body {
     height: 16px;
 }
 
-/* Específico para o seletor de horários (header) */
-#time-filter-rotary {
-    border: none;
-    height: 24px;
-}
-#time-filter-viewport,
-#time-filter-rotary .reel-option {
-    width: 52px;
-}
-#time-filter-rotary .reel-option {
-    color: var(--text-primary);
-}
-
-
 /* Específico para o seletor de idioma */
 #language-rotary .reel-viewport,
 #language-rotary .reel-option {
@@ -432,18 +420,16 @@ body {
     margin-top: 12px;
 }
 
-.habit-container h2 {
-    font-size: 18px;
-    font-weight: 700;
-    color: var(--text-primary);
-    margin-bottom: 12px;
-    padding-left: 4px;
+.habit-group-wrapper h2 {
+    display: none;
 }
+
 .habit-group {
     padding: 0 8px; /* Removido padding vertical */
     border-radius: 12px;
     border: 2px dashed transparent;
     transition: background-color 0.2s, border-color 0.2s;
+    min-height: 40px; /* Garante que a zona de drop tenha altura mesmo vazia */
 }
 .habit-group.drag-over {
     background-color: var(--surface-hover);
@@ -452,13 +438,59 @@ body {
 .habit-group.invalid-drop {
     border-color: var(--color-red);
 }
+
+/* --- NOVA LÓGICA DE VISIBILIDADE DO PLACEHOLDER --- */
 .empty-group-placeholder {
-    text-align: center;
     padding: 10px;
     color: var(--text-tertiary);
     font-style: italic;
     font-size: 14px;
+    display: none; /* Oculto por padrão */
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: opacity 0.2s;
 }
+
+/* Estado padrão: mostra apenas o placeholder "inteligente" */
+.habit-group-wrapper:not(.has-habits) .empty-group-placeholder.show-smart-placeholder {
+    display: flex;
+}
+
+/* Estado de arraste: mostra TODOS os placeholders em grupos vazios */
+body.is-dragging-active .habit-group-wrapper:not(.has-habits) .empty-group-placeholder {
+    display: flex;
+}
+
+/* Garante que o placeholder nunca seja mostrado em um grupo que tem hábitos */
+.habit-group-wrapper.has-habits .empty-group-placeholder {
+    display: none;
+    padding: 0;
+    pointer-events: none;
+}
+
+/* Lógica de Troca de Ícone do Placeholder */
+.placeholder-icon-generic,
+.placeholder-icon-specific {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+.placeholder-icon-generic .icon-separator {
+    margin: 0 4px;
+    opacity: 0.5;
+}
+/* Estado padrão (e de arraste): mostra o ícone específico */
+.placeholder-icon-generic { display: none; }
+.placeholder-icon-specific { display: flex; }
+/* Caso especial: Placeholder inteligente quando NÃO está arrastando: mostra o ícone genérico */
+body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .placeholder-icon-generic {
+    display: flex;
+}
+body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .placeholder-icon-specific {
+    display: none;
+}
+
 
 .habit-card {
     border-radius: 10px;
@@ -531,7 +563,7 @@ body {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 12px 20px 12px 23px;
+    padding: 12px 20px 12px 18px;
     position: relative;
     z-index: 2;
     background-color: var(--surface-color);
@@ -581,6 +613,24 @@ body {
 }
 .consolidated .consolidation-message {
     color: var(--accent-green);
+}
+
+/* Novo ícone de horário */
+.time-of-day-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: auto; /* Permite que o contêiner se expanda */
+    min-width: 18px; /* Garante espaço para pelo menos um ícone */
+    height: 18px;
+    color: var(--text-tertiary);
+    gap: 4px; /* Espaço entre os ícones quando há múltiplos */
+}
+.time-of-day-icon svg {
+    width: 18px; /* Largura fixa para cada SVG */
+    height: 100%;
+    stroke: currentColor;
 }
 
 .habit-icon {
@@ -1215,10 +1265,6 @@ body {
         font-size: 22px; /* Ajuste para o novo tamanho */
     }
 
-    #time-filter-rotary {
-        height: 22px; /* Redução de ~10% de 24px */
-    }
-    
     .header-bottom {
         gap: 8px; /* Reduz o espaçamento entre os itens do cabeçalho */
         flex-wrap: wrap; /* Permite que os itens quebrem a linha */
@@ -1257,7 +1303,7 @@ body {
     }
 
     .habit-content-wrapper {
-        padding: 4px 24px 4px 27px;
+        padding: 4px 24px 4px 22px;
     }
 
     .habit-details .name {
