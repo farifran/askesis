@@ -75,31 +75,44 @@ async function handleSubmitKey() {
     const key = ui.syncKeyInput.value.trim();
     if (!key) return;
 
-    storeKey(key);
-    
-    // Tenta buscar os dados da nuvem com a nova chave.
-    const cloudState = await fetchStateFromCloud();
-    if (cloudState) {
-        // Se encontrar, pergunta ao usuário se ele quer substituir os dados locais.
+    const proceed = async () => {
+        storeKey(key);
+        
+        const cloudState = await fetchStateFromCloud();
+        if (cloudState) {
+            showConfirmationModal(
+                t('confirmSyncOverwrite'),
+                () => {
+                    loadState(cloudState);
+                    saveState();
+                    renderApp();
+                    showView('active');
+                },
+                {
+                    title: t('syncDataFoundTitle'),
+                    confirmText: t('syncConfirmOverwrite'),
+                    cancelText: t('cancelButton')
+                }
+            );
+        } else {
+            await syncLocalStateToCloud();
+            showView('active');
+        }
+    };
+
+    const uuidRegex = /^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$/;
+    if (!uuidRegex.test(key)) {
         showConfirmationModal(
-            t('confirmSyncOverwrite'),
-            () => {
-                loadState(cloudState);
-                saveState(); // Salva o estado mesclado localmente
-                renderApp();
-                showView('active');
-            },
+            t('confirmInvalidKeyBody'),
+            proceed,
             {
-                title: t('syncDataFoundTitle'),
-                confirmText: t('syncConfirmOverwrite'),
+                title: t('confirmInvalidKeyTitle'),
+                confirmText: t('confirmButton'),
                 cancelText: t('cancelButton')
             }
         );
     } else {
-         // Se não encontrar, significa que esta chave não tem dados na nuvem ainda.
-         // Então, fazemos o upload dos dados locais atuais.
-        await syncLocalStateToCloud();
-        showView('active');
+        await proceed();
     }
 }
 

@@ -11,6 +11,17 @@ import { getSyncKeyHash, hasLocalSyncKey } from './sync';
 let syncTimeout: number | null = null;
 const DEBOUNCE_DELAY = 2000; // 2 segundos
 
+/**
+ * Constrói uma URL de API absoluta a partir de um endpoint relativo.
+ * Isso garante que as chamadas de API funcionem corretamente, mesmo que a aplicação
+ * seja servida a partir de um subdiretório.
+ * @param endpoint O caminho da API, por exemplo, '/api/sync'.
+ * @returns A URL completa da API.
+ */
+const getApiUrl = (endpoint: string): string => {
+    return new URL(endpoint, window.location.origin).toString();
+};
+
 export function setSyncStatus(statusKey: 'syncSaving' | 'syncSynced' | 'syncError' | 'syncInitial') {
     ui.syncStatus.textContent = t(statusKey);
 }
@@ -20,11 +31,16 @@ export function hasSyncKey(): boolean {
 }
 
 export async function fetchStateFromCloud(): Promise<AppState | undefined> {
-    const keyHash = await getSyncKeyHash();
-    if (!keyHash) return undefined;
+    if (!hasSyncKey()) return undefined;
 
     try {
-        const response = await fetch('/api/sync', {
+        const keyHash = await getSyncKeyHash();
+        if (!keyHash) {
+            // Se não conseguirmos obter o hash (por exemplo, erro de criptografia), tratamos como um erro de sincronização.
+            throw new Error("Could not generate sync key hash.");
+        };
+
+        const response = await fetch(getApiUrl('/api/sync'), {
             headers: {
                 'X-Sync-Key-Hash': keyHash
             }
@@ -65,13 +81,13 @@ export function syncStateWithCloud(appState: AppState) {
     }
 
     syncTimeout = window.setTimeout(async () => {
-        const keyHash = await getSyncKeyHash();
-        if (!keyHash) {
-             setSyncStatus('syncError');
-             return;
-        }
         try {
-            const response = await fetch('/api/sync', {
+            const keyHash = await getSyncKeyHash();
+            if (!keyHash) {
+                 throw new Error("Could not generate sync key hash for saving.");
+            }
+            
+            const response = await fetch(getApiUrl('/api/sync'), {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -95,27 +111,32 @@ export function syncStateWithCloud(appState: AppState) {
 // Função para fazer o upload único do estado local para a nuvem.
 export async function syncLocalStateToCloud() {
     const localStateJSON = localStorage.getItem(STATE_STORAGE_KEY);
-    const keyHash = await getSyncKeyHash();
-    if (localStateJSON && keyHash) {
-        console.log("Found local state. Syncing to cloud...");
-        try {
-            const localState: AppState = JSON.parse(localStateJSON);
-            const response = await fetch('/api/sync', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Sync-Key-Hash': keyHash
-                },
-                body: JSON.stringify(localState),
-            });
-            if (!response.ok) {
-                throw new Error(`Initial sync failed with status ${response.status}`);
-            }
-            console.log("Initial sync successful.");
-            setSyncStatus('syncSynced');
-        } catch (error) {
-            console.error("Error on initial sync to cloud:", error);
-            setSyncStatus('syncError');
+    if (!localStateJSON) return;
+
+    try {
+        const keyHash = await getSyncKeyHash();
+        if (!keyHash) {
+             throw new Error("Could not generate sync key hash for initial sync.");
         }
+        
+        console.log("Found local state. Syncing to cloud...");
+        const localState: AppState = JSON.parse(localStateJSON);
+        const response = await fetch(getApiUrl('/api/sync'), {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Sync-Key-Hash': keyHash
+            },
+            body: JSON.stringify(localState),
+        });
+        if (!response.ok) {
+            throw new Error(`Initial sync failed with status ${response.status}`);
+        }
+        console.log("Initial sync successful.");
+        setSyncStatus('syncSynced');
+
+    } catch (error) {
+        console.error("Error on initial sync to cloud:", error);
+        setSyncStatus('syncError');
     }
 }

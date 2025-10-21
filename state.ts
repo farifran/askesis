@@ -479,8 +479,13 @@ export function saveState() {
         pendingConsolidationHabitIds: state.pendingConsolidationHabitIds,
     };
     // Salva localmente para acesso rápido e offline.
-    localStorage.setItem(STATE_STORAGE_KEY, JSON.stringify(appState));
-    localStorage.setItem('habitTrackerLanguage', state.activeLanguageCode);
+    try {
+        localStorage.setItem(STATE_STORAGE_KEY, JSON.stringify(appState));
+        localStorage.setItem('habitTrackerLanguage', state.activeLanguageCode);
+    } catch (e) {
+        console.error("Failed to save state to localStorage:", e);
+        // Opcional: Notificar o usuário que as alterações locais não podem ser salvas.
+    }
     
     // Invalida o cache de sequências e aciona a sincronização com a nuvem.
     state.streaksCache = {};

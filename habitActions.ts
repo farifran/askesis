@@ -36,6 +36,7 @@ import {
     showInlineNotice,
     // FIX: Imported `renderApp` to resolve a reference error.
     renderApp,
+    renderCalendar,
 } from './render';
 import { t, getHabitDisplayInfo } from './i18n';
 import { ui } from './ui';
@@ -249,7 +250,8 @@ function endHabit(habitId: string, endDate: string) {
         habit.endedOn = endDate;
         state.lastEnded = { habitId: habitId };
         saveState();
-        renderApp(); // Re-render the full app view, including calendar
+        renderHabits();
+        renderCalendar();
         showUndoToast();
         setupManageModal(); // Update list in manage modal
     }
@@ -329,7 +331,8 @@ export function handleUndoDelete() {
             if (state.undoTimeout) clearTimeout(state.undoTimeout);
             ui.undoToast.classList.remove('visible');
             saveState();
-            renderApp(); // Re-render the full app view
+            renderHabits();
+            renderCalendar();
             setupManageModal(); // Update list in manage modal
         }
     }
@@ -380,7 +383,8 @@ export function requestHabitPermanentDeletion(habitId: string) {
         });
 
         saveState();
-        renderApp(); // Re-render the main app view
+        renderHabits();
+        renderCalendar();
         setupManageModal(); // Re-render the list in the manage modal.
     });
 }

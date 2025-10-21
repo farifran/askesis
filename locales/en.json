@@ -123,5 +123,7 @@
     "syncConfirmOverwrite": "Overwrite",
     "confirmSyncDisable": "Are you sure you want to disable sync? You will no longer be able to access your data on other devices and new data will not be saved to the cloud.",
     "syncDisableTitle": "Disable Sync",
-    "syncDisableConfirm": "Disable"
+    "syncDisableConfirm": "Disable",
+    "confirmInvalidKeyTitle": "Invalid Key Format",
+    "confirmInvalidKeyBody": "The entered key does not appear to be a valid UUID. Sync keys typically have a format like '123e4567-e89b-12d3-a456-426614174000'. Do you want to continue anyway?"
 }

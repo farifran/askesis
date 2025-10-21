@@ -123,5 +123,7 @@
     "syncConfirmOverwrite": "Substituir",
     "confirmSyncDisable": "Tem certeza que deseja desativar a sincronização? Você não poderá mais acessar seus dados em outros dispositivos e os novos dados não serão salvos na nuvem.",
     "syncDisableTitle": "Desativar Sincronização",
-    "syncDisableConfirm": "Desativar"
+    "syncDisableConfirm": "Desativar",
+    "confirmInvalidKeyTitle": "Formato de Chave Inválido",
+    "confirmInvalidKeyBody": "A chave inserida não parece um UUID válido. Chaves de sincronização geralmente têm um formato como '123e4567-e89b-12d3-a456-426614174000'. Deseja continuar mesmo assim?"
 }
