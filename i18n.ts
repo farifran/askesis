@@ -88,12 +88,26 @@ function updateUIText() {
     ui.createCustomHabitBtn.textContent = t('modalExploreCreateCustom');
     ui.exploreModal.querySelector('.modal-close-btn')!.textContent = t('closeButton');
 
-    ui.manageModal.querySelector('h2')!.textContent = t('modalManageTitle');
-    ui.manageModal.querySelector('h3')!.textContent = t('modalManageGeneralSettings');
+    ui.manageModalTitle.textContent = t('modalManageTitle');
+    ui.habitListTitle.textContent = t('modalManageHabitsSubtitle');
     document.getElementById('label-language')!.textContent = t('modalManageLanguage');
+    document.getElementById('label-sync')!.textContent = t('syncLabel');
     document.getElementById('label-reset')!.textContent = t('modalManageReset');
     ui.resetAppBtn.textContent = t('modalManageResetButton');
     ui.manageModal.querySelector('.modal-close-btn')!.textContent = t('closeButton');
+
+    // Textos da Sincronização
+    document.getElementById('sync-inactive-desc')!.textContent = t('syncInactiveDesc');
+    ui.enableSyncBtn.textContent = t('syncEnable');
+    ui.enterKeyViewBtn.textContent = t('syncEnterKey');
+    document.getElementById('label-enter-key')!.textContent = t('syncLabelEnterKey');
+    ui.cancelEnterKeyBtn.textContent = t('cancelButton');
+    ui.submitKeyBtn.textContent = t('syncSubmitKey');
+    document.getElementById('sync-warning-text')!.innerHTML = t('syncWarning');
+    ui.keySavedBtn.textContent = t('syncKeySaved');
+    document.getElementById('sync-active-desc')!.textContent = t('syncActiveDesc');
+    ui.viewKeyBtn.textContent = t('syncViewKey');
+    ui.disableSyncBtn.textContent = t('syncDisable');
     
     ui.aiModal.querySelector('.modal-close-btn')!.textContent = t('closeButton');
     

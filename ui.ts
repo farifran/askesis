@@ -7,10 +7,11 @@ type UIElements = {
     manageHabitsBtn: HTMLElement;
     fabAddHabit: HTMLElement;
     manageModal: HTMLElement;
+    manageModalTitle: HTMLElement;
+    habitListTitle: HTMLElement;
     exploreModal: HTMLElement;
     exploreHabitList: HTMLElement;
     createCustomHabitBtn: HTMLElement;
-    // FIX: Changed type to HTMLButtonElement to allow access to the 'disabled' property.
     aiEvalBtn: HTMLButtonElement;
     aiModal: HTMLElement;
     aiModalTitle: HTMLElement;
@@ -43,13 +44,26 @@ type UIElements = {
     frequencyViewport: HTMLElement;
     frequencyReel: HTMLElement;
     frequencyNextBtn: HTMLButtonElement;
+    syncStatus: HTMLElement;
+    syncSection: HTMLElement;
+    syncInactiveView: HTMLElement;
+    enableSyncBtn: HTMLButtonElement;
+    enterKeyViewBtn: HTMLButtonElement;
+    syncEnterKeyView: HTMLElement;
+    syncKeyInput: HTMLInputElement;
+    cancelEnterKeyBtn: HTMLButtonElement;
+    submitKeyBtn: HTMLButtonElement;
+    syncDisplayKeyView: HTMLElement;
+    syncKeyText: HTMLElement;
+    copyKeyBtn: HTMLButtonElement;
+    keySavedBtn: HTMLButtonElement;
+    syncActiveView: HTMLElement;
+    viewKeyBtn: HTMLButtonElement;
+    disableSyncBtn: HTMLButtonElement;
 };
 
-// Exporta um objeto shell, mas tipado como se já estivesse preenchido.
-// Este é um contrato de que initUI() DEVE ser chamado antes de qualquer propriedade ser acessada.
 export const ui = {} as UIElements;
 
-// Esta função será chamada assim que o DOM estiver pronto para preencher o objeto ui.
 export function initUI(): void {
     Object.assign(ui, {
         calendarStrip: document.getElementById('calendar-strip')!,
@@ -59,10 +73,11 @@ export function initUI(): void {
         manageHabitsBtn: document.getElementById('manage-habits-btn')!,
         fabAddHabit: document.getElementById('fab-add-habit')!,
         manageModal: document.getElementById('manage-modal')!,
+        manageModalTitle: document.getElementById('manage-modal-title')!,
+        habitListTitle: document.getElementById('habit-list-title')!,
         exploreModal: document.getElementById('explore-modal')!,
         exploreHabitList: document.getElementById('explore-habit-list')!,
         createCustomHabitBtn: document.getElementById('create-custom-habit-btn')!,
-        // FIX: Added cast to HTMLButtonElement to match the type in UIElements.
         aiEvalBtn: document.getElementById('ai-eval-btn') as HTMLButtonElement,
         aiModal: document.getElementById('ai-modal')!,
         aiModalTitle: document.getElementById('ai-modal-title')!,
@@ -95,5 +110,21 @@ export function initUI(): void {
         frequencyViewport: document.getElementById('frequency-viewport')!,
         frequencyReel: document.getElementById('frequency-reel')!,
         frequencyNextBtn: document.getElementById('frequency-next') as HTMLButtonElement,
+        syncStatus: document.getElementById('sync-status')!,
+        syncSection: document.getElementById('sync-section')!,
+        syncInactiveView: document.getElementById('sync-inactive-view')!,
+        enableSyncBtn: document.getElementById('enable-sync-btn') as HTMLButtonElement,
+        enterKeyViewBtn: document.getElementById('enter-key-view-btn') as HTMLButtonElement,
+        syncEnterKeyView: document.getElementById('sync-enter-key-view')!,
+        syncKeyInput: document.getElementById('sync-key-input') as HTMLInputElement,
+        cancelEnterKeyBtn: document.getElementById('cancel-enter-key-btn') as HTMLButtonElement,
+        submitKeyBtn: document.getElementById('submit-key-btn') as HTMLButtonElement,
+        syncDisplayKeyView: document.getElementById('sync-display-key-view')!,
+        syncKeyText: document.getElementById('sync-key-text')!,
+        copyKeyBtn: document.getElementById('copy-key-btn') as HTMLButtonElement,
+        keySavedBtn: document.getElementById('key-saved-btn') as HTMLButtonElement,
+        syncActiveView: document.getElementById('sync-active-view')!,
+        viewKeyBtn: document.getElementById('view-key-btn') as HTMLButtonElement,
+        disableSyncBtn: document.getElementById('disable-sync-btn') as HTMLButtonElement,
     });
 }

@@ -108,18 +108,26 @@ body {
     display: flex;
     align-items: center;
     gap: 16px;
+    justify-content: space-between;
 }
 
-.header-bottom #header-title {
-    flex-shrink: 0;
+.title-container {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
 }
 
+#sync-status {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    font-style: italic;
+    transition: opacity 0.3s;
+    text-align: right;
+}
 
 .app-header h1 {
     font-size: 28px;
     font-weight: 700;
-    position: relative;
-    top: -6px;
 }
 
 /* Citação Estoica */
@@ -140,6 +148,17 @@ body {
 }
 
 /* --- COMPONENTES --- */
+
+/* Seção de Autenticação */
+.auth-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+#auth-section .btn {
+    padding: 6px 12px;
+    font-size: 13px;
+}
 
 /* Botões */
 .btn {
@@ -914,30 +933,96 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 
 /* Opções no Modal de Gerenciamento */
 .modal-settings-section {
-    margin-top: 24px;
-    padding-top: 20px;
-    border-top: 1px solid var(--border-color);
+    margin-bottom: 20px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--border-color);
     display: flex;
     flex-direction: column;
     gap: 16px;
 }
-.modal-settings-section h3 {
-    font-size: 22px;
-    font-weight: 700;
+.modal-subtitle {
+    font-size: 18px;
+    font-weight: 600;
     color: var(--text-primary);
+    margin-top: 12px;
     margin-bottom: 16px;
-    padding-bottom: 0;
-    border-bottom: none;
 }
 .setting-item {
     display: flex;
     justify-content: space-between;
     align-items: center;
 }
+.setting-item-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    width: 100%;
+    margin-bottom: 8px;
+}
+.setting-item.setting-item--column {
+    flex-direction: column;
+    align-items: stretch;
+}
 .setting-item label {
     font-size: 14px;
     color: var(--text-secondary);
 }
+
+/* Nova Seção de Sincronização */
+#sync-section {
+    background: var(--bg-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 16px;
+}
+
+.sync-view {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+.sync-view p {
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text-secondary);
+    text-align: center;
+}
+.sync-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+}
+.sync-actions .btn {
+    flex-grow: 1;
+}
+
+.sync-key-display {
+    background-color: var(--bg-color);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 10px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+#sync-key-text {
+    font-family: monospace;
+    font-size: 14px;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+#copy-key-btn {
+    width: 32px;
+    height: 32px;
+}
+.sync-warning {
+    color: var(--color-yellow) !important;
+    font-weight: 500;
+}
+
 
 /* --- REGRAS MOBILE-FIRST PARA MODAL EXPLORAR --- */
 #explore-modal .modal-content {
@@ -1255,8 +1340,7 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
         gap: 12px;
     }
     .app-header h1 {
-        font-size: 14px;
-        font-weight: 600;
+        font-size: 24px;
     }
     .stoic-quote {
         font-size: 12px;
@@ -1274,7 +1358,7 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 
     .header-bottom {
         gap: 8px; /* Reduz o espaçamento entre os itens do cabeçalho */
-        flex-wrap: wrap; /* Permite que os itens quebrem a linha */
+        flex-wrap: nowrap; /* Impede que os itens quebrem a linha */
     }
 }
 

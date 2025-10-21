@@ -9,15 +9,24 @@ import { renderApp, updateHeaderTitle, initLanguageFilter, renderLanguageFilter,
 import { setupEventListeners } from './listeners';
 import { initI18n } from './i18n';
 import { createDefaultHabit } from './habitActions';
+import { initSync } from './sync';
+import { fetchStateFromCloud, hasSyncKey } from './cloud';
 
 // --- INITIALIZATION ---
 const init = async () => {
     initUI(); // Preenche as referências de elementos da UI agora que o DOM está pronto.
-    loadState();
-    await initI18n(); // Detecta o idioma, CARREGA o JSON e atualiza o texto estático inicial
+    
+    // A inicialização do i18n primeiro garante que o texto esteja disponível
+    await initI18n(); 
+
+    // A inicialização da sincronização configura a UI e a lógica da chave
+    await initSync();
+
+    // Carrega os dados do estado, priorizando a nuvem se a sincronização estiver ativa
+    const cloudState = hasSyncKey() ? await fetchStateFromCloud() : undefined;
+    loadState(cloudState);
     
     // Se for a primeira execução (sem hábitos), cria um padrão.
-    // Isso é executado após a inicialização do i18n para que as traduções estejam disponíveis.
     if (state.habits.length === 0) {
         createDefaultHabit();
     }

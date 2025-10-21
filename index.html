@@ -20,13 +20,15 @@
                 <button id="fab-add-habit" aria-label="Adicionar Hábito">+</button>
                 <div id="calendar-strip" class="calendar-strip"></div>
                 <div class="header-icon-stack">
-                    <button id="manage-habits-btn" class="icon-btn" aria-label="Configurações"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></button>
+                    <button id="manage-habits-btn" class="icon-btn" aria-label="Configurações"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06-.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></button>
                     <button id="ai-eval-btn" class="icon-btn" aria-label="Avaliação IA"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg></button>
                 </div>
             </div>
             <div class="header-bottom">
                 <div id="stoic-quote-display" class="stoic-quote"></div>
-                <h1 id="header-title">Hoje</h1>
+                <div class="title-container">
+                    <h1 id="header-title">Hoje</h1>
+                </div>
             </div>
         </header>
 
@@ -61,10 +63,8 @@
     
     <div id="manage-modal" class="modal-overlay">
         <div class="modal-content">
-            <h2>Gerenciar Hábitos</h2>
-            <ul id="habit-list"></ul>
+            <h2 id="manage-modal-title">Configurações Gerais</h2>
             <div class="modal-settings-section">
-                <h3>Configurações Gerais</h3>
                 <div class="setting-item">
                     <label id="label-language">Idioma</label>
                     <div id="language-rotary" class="reel-rotary">
@@ -75,11 +75,57 @@
                         <button id="language-next" class="reel-btn" aria-label="Próximo idioma"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg></button>
                     </div>
                 </div>
+                 <div class="setting-item setting-item--column">
+                    <div class="setting-item-header">
+                         <label id="label-sync">Sincronização na Nuvem</label>
+                         <span id="sync-status"></span>
+                    </div>
+                    <div id="sync-section">
+                        <!-- Estado: Sincronização Inativa -->
+                        <div class="sync-view" id="sync-inactive-view">
+                            <p id="sync-inactive-desc"></p>
+                            <div class="sync-actions">
+                                <button id="enable-sync-btn" class="btn btn--primary"></button>
+                                <button id="enter-key-view-btn" class="btn"></button>
+                            </div>
+                        </div>
+                        <!-- Estado: Entrada de Chave -->
+                        <div class="sync-view" id="sync-enter-key-view" style="display: none;">
+                             <div class="form-group">
+                                <label for="sync-key-input" id="label-enter-key"></label>
+                                <input type="text" id="sync-key-input" class="form-control" autocomplete="off">
+                            </div>
+                            <div class="sync-actions">
+                                <button id="cancel-enter-key-btn" class="btn"></button>
+                                <button id="submit-key-btn" class="btn btn--primary"></button>
+                            </div>
+                        </div>
+                         <!-- Estado: Exibição da Chave Gerada -->
+                        <div class="sync-view" id="sync-display-key-view" style="display: none;">
+                            <p class="sync-warning" id="sync-warning-text"></p>
+                            <div class="sync-key-display">
+                                <span id="sync-key-text"></span>
+                                <button id="copy-key-btn" class="icon-btn" aria-label="Copiar Chave"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg></button>
+                            </div>
+                            <button id="key-saved-btn" class="btn btn--primary"></button>
+                        </div>
+                        <!-- Estado: Sincronização Ativa -->
+                        <div class="sync-view" id="sync-active-view" style="display: none;">
+                            <p id="sync-active-desc"></p>
+                            <div class="sync-actions">
+                                <button id="view-key-btn" class="btn"></button>
+                                <button id="disable-sync-btn" class="btn btn--danger"></button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
                 <div class="setting-item">
                     <label id="label-reset">Reinicialização</label>
                     <button id="reset-app-btn" class="btn btn--danger">Apagar dados</button>
                 </div>
             </div>
+            <h3 id="habit-list-title" class="modal-subtitle">Gerenciar Hábitos</h3>
+            <ul id="habit-list"></ul>
             <button class="btn modal-close-btn">Fechar</button>
         </div>
     </div>
