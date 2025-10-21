@@ -7,7 +7,7 @@
 // 1. Instalar o SDK do Vercel KV: `npm install @vercel/kv`
 // 2. Configurar um armazenamento Vercel KV no seu projeto Vercel.
 //
-// import { kv } from '@vercel/kv';
+import { kv } from '@vercel/kv';
 
 export const config = {
   runtime: 'edge',
@@ -33,9 +33,8 @@ export default async function handler(req: Request) {
         const dataKey = `sync_data:${keyHash}`;
 
         if (req.method === 'GET') {
-            // Simulação de busca no Vercel KV
-            // const data = await kv.get(dataKey);
-            const data = null; // Simulado: kv.get retornaria os dados ou null
+            // Busca no Vercel KV
+            const data = await kv.get(dataKey);
 
             if (!data) {
                 return new Response(JSON.stringify({ message: 'No data found for this sync key.' }), {
@@ -53,8 +52,8 @@ export default async function handler(req: Request) {
         if (req.method === 'POST') {
             const body = await req.json();
             
-            // Simulação de escrita no Vercel KV
-            // await kv.set(dataKey, body);
+            // Escrita no Vercel KV
+            await kv.set(dataKey, body);
             
             return new Response(JSON.stringify({ success: true }), {
                 status: 200,

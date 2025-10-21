@@ -102,6 +102,7 @@
     "langPortuguese": "Portugués",
     "langEnglish": "Inglés",
     "langSpanish": "Español",
+    "syncLabel": "Sincronización",
     "syncInitial": "Sincronización en la nube desactivada.",
     "syncSaving": "Guardando...",
     "syncSynced": "Sincronizado ✓",
@@ -116,5 +117,11 @@
     "syncActiveDesc": "La sincronización en la nube está activa en este dispositivo.",
     "syncViewKey": "Ver Clave",
     "syncDisable": "Desactivar",
-    "syncYourKey": "Tu Clave de Sincronización"
+    "syncYourKey": "Tu Clave de Sincronización",
+    "syncDataFoundTitle": "Datos Encontrados en la Nube",
+    "confirmSyncOverwrite": "Los datos en la nube son diferentes de tus datos locales. ¿Deseas sobrescribir tus datos locales con los datos de la nube?",
+    "syncConfirmOverwrite": "Sobrescribir",
+    "confirmSyncDisable": "¿Seguro que quieres desactivar la sincronización? Ya no podrás acceder a tus datos en otros dispositivos y los nuevos datos no se guardarán en la nube.",
+    "syncDisableTitle": "Desactivar Sincronización",
+    "syncDisableConfirm": "Desactivar"
 }

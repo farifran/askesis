@@ -21,14 +21,20 @@ export function setupSwipeHandler(habitContainer: HTMLElement) {
     let wasOpenLeft = false;
     let wasOpenRight = false;
     let swipeActionWidth = 60; // Valor padrão
+    let dragEnableTimer: number | null = null;
     const SWIPE_INTENT_THRESHOLD = 10; // Um limiar baixo para detectar a intenção de deslizar.
 
     const cleanup = () => {
+        if (dragEnableTimer) {
+            clearTimeout(dragEnableTimer);
+            dragEnableTimer = null;
+        }
+
         if (!activeCard) return;
 
         const content = activeCard.querySelector<HTMLElement>('.habit-content-wrapper');
         if (content) {
-            content.draggable = true;
+            content.draggable = true; // Sempre reativa o arrastar ao final da interação
             content.style.transform = ''; // Deixa o CSS cuidar da transição
         }
 
@@ -90,69 +96,105 @@ export function setupSwipeHandler(habitContainer: HTMLElement) {
                 if (deltaX > deltaY) {
                     swipeDirection = 'horizontal';
                     isSwiping = true;
+                    // Se um deslize começa, cancela o timer que reativaria o arrastar
+                    if (dragEnableTimer) {
+                        clearTimeout(dragEnableTimer);
+                        dragEnableTimer = null;
+                    }
                     activeCard.classList.add('is-swiping');
-                    const contentWrapper = activeCard.querySelector<HTMLElement>('.habit-content-wrapper');
-                    if (contentWrapper) {
-                        contentWrapper.draggable = false;
+                    const content = activeCard.querySelector<HTMLElement>('.habit-content-wrapper');
+                    // Desativa explicitamente o arrastar ao iniciar o deslize
+                    if (content) {
+                        content.draggable = false;
                     }
                 } else {
                     swipeDirection = 'vertical';
+                    cleanup(); // Permite a rolagem vertical
+                    return;
                 }
             }
         }
 
         if (swipeDirection === 'horizontal') {
-            e.preventDefault(); // Previne a rolagem e outras ações
             currentX = e.clientX;
-            // Transforma manualmente durante o deslize para feedback imediato
+            const deltaX = currentX - startX;
+
+            const rootStyles = getComputedStyle(document.documentElement);
+            swipeActionWidth = parseInt(rootStyles.getPropertyValue('--swipe-action-width'), 10) || 60;
+
+            let translateX = deltaX;
+            if (wasOpenLeft) translateX += swipeActionWidth;
+            if (wasOpenRight) translateX -= swipeActionWidth;
+
+            // Adicionado: Verifica se a ação de exclusão está sendo tentada em uma data passada.
+            const isPastDate = state.selectedDate < getTodayUTCIso();
+            if (isPastDate && translateX < 0 && !wasOpenRight) {
+                translateX = 0; // Impede o deslize para a esquerda em datas passadas.
+            }
+
             const content = activeCard.querySelector<HTMLElement>('.habit-content-wrapper');
             if (content) {
-                let baseTranslate = 0;
-                if (wasOpenLeft) baseTranslate = swipeActionWidth;
-                else if (wasOpenRight) baseTranslate = -swipeActionWidth;
-                
-                const deltaX = currentX - startX;
-                let newTranslateX = baseTranslate + deltaX;
-
-                // Adicionado: Se a data for passada, não permite arrastar para a esquerda (além de 0) para a ação de excluir.
-                const isPastDate = state.selectedDate < getTodayUTCIso();
-                if (isPastDate && !wasOpenRight && newTranslateX < 0) {
-                    newTranslateX = 0;
-                }
-                
-                const dragLimit = swipeActionWidth * 1.5;
-                const clampedTranslateX = Math.max(-dragLimit, Math.min(dragLimit, newTranslateX));
-                
-                content.style.transform = `translateX(${clampedTranslateX}px)`;
+                content.style.transform = `translateX(${translateX}px)`;
             }
-        } else if (swipeDirection === 'vertical') {
-            // Se decidimos que é uma rolagem vertical, aborta o deslize.
-            cleanup();
         }
     };
 
-    habitContainer.addEventListener('pointerdown', (e) => {
-        const card = (e.target as HTMLElement).closest<HTMLElement>('.habit-card');
-        // Ignora se estiver clicando nos controles de meta
-        if (!card || (e.target as HTMLElement).closest('.goal-control-btn')) return;
+    habitContainer.addEventListener('dragstart', () => {
+        if (activeCard) {
+            // Uma operação de arrastar teve precedência sobre um deslize.
+            // Devemos abortar a interação de deslize completamente para evitar conflitos de estado.
+            window.removeEventListener('pointermove', handlePointerMove);
+            window.removeEventListener('pointerup', cleanup);
+            window.removeEventListener('pointercancel', cleanup);
 
-        // Fecha qualquer outro cartão aberto
-        const currentlyOpen = document.querySelector('.habit-card.is-open-left, .habit-card.is-open-right');
-        if (currentlyOpen && currentlyOpen !== card) {
-            currentlyOpen.classList.remove('is-open-left', 'is-open-right');
+            if (dragEnableTimer) {
+                clearTimeout(dragEnableTimer);
+            }
+
+            // Restaura o cartão para seu estado pré-interação.
+            activeCard.classList.remove('is-swiping');
+            const content = activeCard.querySelector<HTMLElement>('.habit-content-wrapper');
+            if (content) {
+                content.style.transform = '';
+                content.draggable = true;
+            }
+            
+            // Reseta todas as variáveis de estado para o handler de deslize.
+            activeCard = null;
+            isSwiping = false;
+            swipeDirection = 'none';
+            dragEnableTimer = null;
         }
+    });
 
-        activeCard = card;
-        // Lê a largura da ação do CSS para garantir que JS e CSS estejam sempre sincronizados
-        swipeActionWidth = parseFloat(getComputedStyle(activeCard).getPropertyValue('--swipe-action-width')) || 60;
+    habitContainer.addEventListener('pointerdown', e => {
+        if (activeCard || e.button !== 0) return; // Só permite um deslize por vez e o botão esquerdo do mouse
+
+        // O gesto de deslize deve se originar da área de conteúdo do cartão.
+        const contentWrapper = (e.target as HTMLElement).closest<HTMLElement>('.habit-content-wrapper');
+        if (!contentWrapper) return;
         
+        const targetCard = contentWrapper.closest<HTMLElement>('.habit-card');
+        if (!targetCard) return;
+
+        activeCard = targetCard;
         startX = e.clientX;
         startY = e.clientY;
-        currentX = e.clientX; // Inicializa currentX
-        swipeDirection = 'none'; // Reseta a direção
+        currentX = startX;
         wasOpenLeft = activeCard.classList.contains('is-open-left');
         wasOpenRight = activeCard.classList.contains('is-open-right');
-        isSwiping = false; // Será definido como true apenas se um deslize horizontal for detectado
+
+        const content = activeCard.querySelector<HTMLElement>('.habit-content-wrapper');
+        if (content) {
+            content.draggable = false; // Desativa o arrastar por padrão no início do toque
+            // Inicia um timer para reativar o arrastar se o toque for longo
+            dragEnableTimer = window.setTimeout(() => {
+                if (content && swipeDirection === 'none') {
+                    content.draggable = true;
+                }
+                dragEnableTimer = null;
+            }, 150);
+        }
 
         window.addEventListener('pointermove', handlePointerMove);
         window.addEventListener('pointerup', cleanup);

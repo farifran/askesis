@@ -102,6 +102,7 @@
     "langPortuguese": "Portuguese",
     "langEnglish": "English",
     "langSpanish": "Spanish",
+    "syncLabel": "Sync",
     "syncInitial": "Cloud sync is disabled.",
     "syncSaving": "Saving...",
     "syncSynced": "Synced ✓",
@@ -116,5 +117,11 @@
     "syncActiveDesc": "Cloud sync is active on this device.",
     "syncViewKey": "View Key",
     "syncDisable": "Disable",
-    "syncYourKey": "Your Sync Key"
+    "syncYourKey": "Your Sync Key",
+    "syncDataFoundTitle": "Data Found in Cloud",
+    "confirmSyncOverwrite": "The data in the cloud is different from your local data. Do you want to overwrite your local data with the cloud data?",
+    "syncConfirmOverwrite": "Overwrite",
+    "confirmSyncDisable": "Are you sure you want to disable sync? You will no longer be able to access your data on other devices and new data will not be saved to the cloud.",
+    "syncDisableTitle": "Disable Sync",
+    "syncDisableConfirm": "Disable"
 }
