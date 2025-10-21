@@ -2,6 +2,7 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
+import { inject } from '@vercel/analytics';
 import './index.css';
 import { loadState, state } from './state';
 import { addDays, getTodayUTC } from './utils';
@@ -15,6 +16,7 @@ import { fetchStateFromCloud, hasSyncKey } from './cloud';
 
 // --- INITIALIZATION ---
 const init = async () => {
+    inject(); // Habilita o Vercel Analytics
     initUI(); // Preenche as referências de elementos da UI agora que o DOM está pronto.
     
     // A inicialização do i18n primeiro garante que o texto esteja disponível
