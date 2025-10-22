@@ -200,6 +200,9 @@ export const state: {
         // A template-like object for the form
         formData: HabitTemplate;
     } | null;
+    aiState: 'idle' | 'loading' | 'completed' | 'error';
+    lastAIResult: string | null;
+    lastAIError: string | null;
 } = {
     habits: [],
     dailyData: {},
@@ -216,6 +219,9 @@ export const state: {
     confirmEditAction: null,
     editingNoteFor: null,
     editingHabit: null,
+    aiState: 'idle',
+    lastAIResult: null,
+    lastAIError: null,
 };
 
 // --- STATE-DEPENDENT HELPERS ---

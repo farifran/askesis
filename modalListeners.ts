@@ -97,14 +97,22 @@ const runAIEvaluation = async (analysisType: 'weekly' | 'monthly' | 'general') =
     closeModal(ui.aiOptionsModal);
 
     if (!navigator.onLine) {
+        state.lastAIError = `<p>${t('modalAIOfflineMessage')}</p>`;
+        state.aiState = 'error';
+        renderAINotificationState();
         ui.aiModalTitle.textContent = t('modalAIOfflineTitle');
-        ui.aiResponse.innerHTML = `<p>${t('modalAIOfflineMessage')}</p>`;
+        ui.aiResponse.innerHTML = state.lastAIError;
+        ui.aiNewAnalysisBtn.style.display = 'block';
         openModal(ui.aiModal);
         return;
     }
-
+    
+    state.aiState = 'loading';
+    state.lastAIResult = null;
+    state.lastAIError = null;
+    renderAINotificationState();
+    
     const prompt = buildAIPrompt(analysisType);
-
     ui.aiModalTitle.textContent = t('modalAITitle');
     ui.aiResponse.innerHTML = `
         <details>
@@ -115,10 +123,9 @@ const runAIEvaluation = async (analysisType: 'weekly' | 'monthly' | 'general') =
             <div class="loader">${t('modalAILoading')}</div>
         </div>
     `;
+    ui.aiNewAnalysisBtn.style.display = 'none';
     openModal(ui.aiModal);
 
-    ui.aiEvalBtn.disabled = true;
-    ui.aiEvalBtn.classList.add('loading');
     const responseContentEl = document.getElementById('ai-response-content');
 
     try {
@@ -129,29 +136,57 @@ const runAIEvaluation = async (analysisType: 'weekly' | 'monthly' | 'general') =
             fullText += chunk.text;
             if (responseContentEl) responseContentEl.innerHTML = simpleMarkdownToHTML(fullText);
         }
+        state.lastAIResult = fullText;
+        state.aiState = 'completed';
     } catch (error) {
         console.error("AI Evaluation Error:", error);
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        state.lastAIError = `
+            <p>${t('modalAIError')}</p>
+            <p style="font-family: monospace; background: var(--bg-color); padding: 8px; border-radius: 4px; margin-top: 12px; font-size: 13px; color: var(--color-red); word-wrap: break-word;">
+                <strong>${t('errorDetail')}:</strong> ${errorMessage}
+            </p>
+        `;
+        state.aiState = 'error';
         if (responseContentEl) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            responseContentEl.innerHTML = `
-                <p>${t('modalAIError')}</p>
-                <p style="font-family: monospace; background: var(--bg-color); padding: 8px; border-radius: 4px; margin-top: 12px; font-size: 13px; color: var(--color-red); word-wrap: break-word;">
-                    <strong>${t('errorDetail')}:</strong> ${errorMessage}
-                </p>
-            `;
+            responseContentEl.innerHTML = state.lastAIError;
         }
     } finally {
-        ui.aiEvalBtn.disabled = false;
-        ui.aiEvalBtn.classList.remove('loading');
+        renderAINotificationState();
+        if (state.aiState !== 'loading') {
+            ui.aiNewAnalysisBtn.style.display = 'block';
+        }
     }
 }
 
 
 const handleAIEvaluationClick = async () => {
+    // As celebrações de marco têm prioridade sobre a exibição de resultados de IA.
     if (handleCelebrationCheck('pendingConsolidationHabitIds', 'celebrationConsolidatedTitle', 'celebrationConsolidatedBody')) return;
     if (handleCelebrationCheck('pending21DayHabitIds', 'celebrationSemiConsolidatedTitle', 'celebrationSemiConsolidatedBody')) return;
 
-    openModal(ui.aiOptionsModal);
+    // Roteia a ação com base no estado atual da IA.
+    switch (state.aiState) {
+        case 'completed':
+            ui.aiModalTitle.textContent = t('modalAITitle');
+            ui.aiResponse.innerHTML = simpleMarkdownToHTML(state.lastAIResult!);
+            ui.aiNewAnalysisBtn.style.display = 'block';
+            openModal(ui.aiModal);
+            break;
+        case 'error':
+            ui.aiModalTitle.textContent = t('modalAIError');
+            ui.aiResponse.innerHTML = state.lastAIError!;
+            ui.aiNewAnalysisBtn.style.display = 'block';
+            openModal(ui.aiModal);
+            break;
+        case 'idle':
+            openModal(ui.aiOptionsModal);
+            break;
+        case 'loading':
+            // O botão está desativado, então esta ação não deve ser acionada.
+            // Nenhuma ação é necessária como fallback.
+            break;
+    }
 };
 
 const setupLanguageFilterListeners = () => {
@@ -355,6 +390,15 @@ export const setupModalListeners = () => {
     ui.aiMonthlyReviewBtn.addEventListener('click', () => runAIEvaluation('monthly'));
     ui.aiGeneralAnalysisBtn.addEventListener('click', () => runAIEvaluation('general'));
     
+    ui.aiNewAnalysisBtn.addEventListener('click', () => {
+        state.aiState = 'idle';
+        state.lastAIResult = null;
+        state.lastAIError = null;
+        renderAINotificationState();
+        closeModal(ui.aiModal);
+        openModal(ui.aiOptionsModal);
+    });
+
     setupLanguageFilterListeners();
     setupFrequencyFilterListeners();
 };

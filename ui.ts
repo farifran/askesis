@@ -19,6 +19,7 @@ type UIElements = {
     aiWeeklyCheckinBtn: HTMLButtonElement;
     aiMonthlyReviewBtn: HTMLButtonElement;
     aiGeneralAnalysisBtn: HTMLButtonElement;
+    aiNewAnalysisBtn: HTMLButtonElement;
     confirmModal: HTMLElement;
     habitList: HTMLElement;
     aiResponse: HTMLElement;
@@ -85,6 +86,7 @@ export function initUI(): void {
         aiWeeklyCheckinBtn: document.getElementById('ai-weekly-checkin-btn') as HTMLButtonElement,
         aiMonthlyReviewBtn: document.getElementById('ai-monthly-review-btn') as HTMLButtonElement,
         aiGeneralAnalysisBtn: document.getElementById('ai-general-analysis-btn') as HTMLButtonElement,
+        aiNewAnalysisBtn: document.getElementById('ai-new-analysis-btn') as HTMLButtonElement,
         confirmModal: document.getElementById('confirm-modal')!,
         habitList: document.getElementById('habit-list')!,
         aiResponse: document.getElementById('ai-response')!,

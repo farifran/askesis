@@ -43,6 +43,12 @@
     100% { box-shadow: 0 0 3px var(--accent-blue), 0 0 5px var(--accent-blue); }
 }
 
+@keyframes spin {
+    100% {
+        transform: rotate(360deg);
+    }
+}
+
 /* --- RESET E ESTILOS GLOBAIS --- */
 * {
     margin: 0;
@@ -238,6 +244,18 @@ body {
     opacity: 0.6;
     cursor: wait;
 }
+
+#ai-eval-btn .loading-icon {
+    display: none;
+}
+#ai-eval-btn.loading .loading-icon {
+    display: block;
+    animation: spin 1s linear infinite;
+}
+#ai-eval-btn.loading .default-icon {
+    display: none;
+}
+
 
 #fab-add-habit {
     width: 40px;
@@ -1107,6 +1125,11 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     width: 20px;
     height: 20px;
     flex-shrink: 0;
+}
+#ai-new-analysis-btn {
+    width: 100%;
+    padding: 12px;
+    margin-top: 12px;
 }
 .loader { text-align: center; padding: 20px; font-style: italic; color: var(--text-tertiary); }
 #confirm-modal-text {

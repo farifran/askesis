@@ -449,8 +449,13 @@ export function renderExploreHabits() {
 }
 
 export function renderAINotificationState() {
-    const hasNotifications = state.pending21DayHabitIds.length > 0 || state.pendingConsolidationHabitIds.length > 0;
-    ui.aiEvalBtn.classList.toggle('has-notification', hasNotifications);
+    const isLoading = state.aiState === 'loading';
+    const hasCelebrations = state.pending21DayHabitIds.length > 0 || state.pendingConsolidationHabitIds.length > 0;
+    const hasCompletedResult = state.aiState === 'completed' || state.aiState === 'error';
+
+    ui.aiEvalBtn.classList.toggle('loading', isLoading);
+    ui.aiEvalBtn.disabled = isLoading;
+    ui.aiEvalBtn.classList.toggle('has-notification', hasCelebrations || hasCompletedResult);
 }
 
 export function renderStoicQuote() {
