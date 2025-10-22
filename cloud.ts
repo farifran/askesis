@@ -100,7 +100,8 @@ export async function fetchStateFromCloud(): Promise<AppState | undefined> {
     } catch (error) {
         console.error("Error fetching state from cloud:", error);
         setSyncStatus('syncError');
-        return undefined;
+        // Lança novamente o erro para que a função chamadora possa lidar com ele.
+        throw error;
     }
 }
 

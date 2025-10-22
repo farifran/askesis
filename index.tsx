@@ -4,7 +4,7 @@
 */
 import { inject } from '@vercel/analytics';
 import './index.css';
-import { loadState, state } from './state';
+import { AppState, loadState, state } from './state';
 import { addDays, getTodayUTC } from './utils';
 import { ui, initUI } from './ui';
 import { renderApp, updateHeaderTitle, initLanguageFilter, renderLanguageFilter, renderAINotificationState, openModal, initFrequencyFilter, initHabitTimeFilter } from './render';
@@ -26,7 +26,16 @@ const init = async () => {
     await initSync();
 
     // Carrega os dados do estado, priorizando a nuvem se a sincronização estiver ativa
-    const cloudState = hasSyncKey() ? await fetchStateFromCloud() : undefined;
+    let cloudState;
+    if (hasSyncKey()) {
+        try {
+            cloudState = await fetchStateFromCloud();
+        } catch (error) {
+            console.error("Initial sync failed on app load:", error);
+            // O status de erro já é definido em fetchStateFromCloud.
+            // A aplicação continuará com o estado local.
+        }
+    }
     loadState(cloudState);
     
     // Se for a primeira execução (sem hábitos), cria um padrão.

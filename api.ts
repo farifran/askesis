@@ -55,6 +55,11 @@ export const buildAIPrompt = (analysisType: 'weekly' | 'monthly' | 'general'): s
                             detail = `${t(timeToKeyMap[time])}${detail}`;
                         }
 
+                        if ((habit.goal.type === 'pages' || habit.goal.type === 'minutes') && instance?.status === 'completed' && instance.goalOverride !== undefined) {
+                            const unit = t(habit.goal.unitKey, { count: instance.goalOverride });
+                            detail += ` ${instance.goalOverride} ${unit}`;
+                        }
+
                         if (note) {
                             detail += ` ("${note}")`;
                         }
@@ -99,10 +104,22 @@ export const buildAIPrompt = (analysisType: 'weekly' | 'monthly' | 'general'): s
                     const scheduleForDay = dailyInfo?.dailySchedule || activeSchedule.times;
 
                     const statusDetails = scheduleForDay.map(time => {
-                         const status = habitInstances[time]?.status || 'pending';
-                         return statusToSymbol[status];
+                        const instance = habitInstances[time];
+                        const status: HabitStatus = instance?.status || 'pending';
+                        const note = instance?.note;
+                        let detail = statusToSymbol[status];
+                        
+                        if ((habit.goal.type === 'pages' || habit.goal.type === 'minutes') && instance?.status === 'completed' && instance.goalOverride !== undefined) {
+                            const unit = t(habit.goal.unitKey, { count: instance.goalOverride });
+                            detail += ` ${instance.goalOverride} ${unit}`;
+                        }
+                        
+                        if (note) {
+                            detail += ` ("${note}")`;
+                        }
+                        return detail;
                     });
-                    return `- ${name}: ${statusDetails.join('')}`;
+                    return `- ${name}: ${statusDetails.join(' ')}`;
                 }).filter(Boolean);
                 if (dayEntries.length > 0) {
                     allHistory.push({ date: dateISO, entries: dayEntries });

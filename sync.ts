@@ -5,7 +5,7 @@
 import { state } from "./state";
 import { ui } from "./ui";
 import { t } from "./i18n";
-import { fetchStateFromCloud, syncLocalStateToCloud, setSyncStatus } from "./cloud";
+import { fetchStateFromCloud, setSyncStatus } from "./cloud";
 import { loadState, saveState } from "./state";
 import { renderApp, showConfirmationModal } from "./render";
 
@@ -68,7 +68,13 @@ async function handleEnableSync() {
     ui.syncKeyText.textContent = newKey;
     showView('displayKey');
     // Faz o upload do estado local atual para a nuvem com a nova chave.
-    await syncLocalStateToCloud();
+    try {
+        // Chamar fetchStateFromCloud acionará a sincronização inicial se não houver dados.
+        await fetchStateFromCloud();
+    } catch(e) {
+        console.error("Failed initial sync on new key generation", e);
+        // O status de erro já está definido. O usuário vê a chave, mas a sincronização falhou.
+    }
 }
 
 async function handleSubmitKey() {
@@ -77,26 +83,35 @@ async function handleSubmitKey() {
 
     const proceed = async () => {
         storeKey(key);
-        
-        const cloudState = await fetchStateFromCloud();
-        if (cloudState) {
-            showConfirmationModal(
-                t('confirmSyncOverwrite'),
-                () => {
-                    loadState(cloudState);
-                    saveState();
-                    renderApp();
-                    showView('active');
-                },
-                {
-                    title: t('syncDataFoundTitle'),
-                    confirmText: t('syncConfirmOverwrite'),
-                    cancelText: t('cancelButton')
-                }
-            );
-        } else {
-            await syncLocalStateToCloud();
-            showView('active');
+        try {
+            const cloudState = await fetchStateFromCloud();
+            if (cloudState) {
+                showConfirmationModal(
+                    t('confirmSyncOverwrite'),
+                    () => {
+                        loadState(cloudState);
+                        saveState(); // Salva o estado mesclado localmente e aciona a sincronização com a nuvem
+                        renderApp();
+                        showView('active');
+                    },
+                    {
+                        title: t('syncDataFoundTitle'),
+                        confirmText: t('syncConfirmOverwrite'),
+                        cancelText: t('cancelButton')
+                    }
+                );
+            } else {
+                // Nenhum estado na nuvem foi encontrado. fetchStateFromCloud já acionou uma sincronização inicial.
+                // Apenas muda a visualização.
+                showView('active');
+            }
+        } catch (error) {
+            console.error("Failed to sync with provided key:", error);
+            // Limpa a chave inválida
+            clearKey();
+            // Mantém o usuário na mesma tela e mostra o status de erro
+            setSyncStatus('syncError');
+            // A visualização permanece 'enterKey' porque não a mudamos em caso de falha
         }
     };
 
