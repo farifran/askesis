@@ -1,5 +1,5 @@
 import { state, saveState } from './state';
-import { addDays } from './utils';
+import { addDays, parseUTCIsoDate } from './utils';
 import { ui } from './ui';
 import {
     renderHabits,
@@ -7,12 +7,14 @@ import {
     updateHeaderTitle,
     createCalendarDayElement,
     renderStoicQuote,
+    showConfirmationModal,
 } from './render';
 import { setupModalListeners } from './modalListeners';
 import { setupHabitCardListeners } from './habitCardListeners';
 import { setupSwipeHandler } from './swipeHandler';
 import { setupDragAndDropHandler } from './dragAndDropHandler';
 import { handleUndoDelete, completeAllHabitsForDate, snoozeAllHabitsForDate } from './habitActions';
+import { t } from './i18n';
 
 /**
  * Cria uma função "debounced" que atrasa a invocação de `func` até que `wait`
@@ -33,13 +35,23 @@ function debounce<T extends (...args: any[]) => any>(func: T, wait: number): (..
 const setupGlobalListeners = () => {
     let clickTimeout: number | null = null;
     let clickCount = 0;
-    const CLICK_DELAY = 250; // ms
+    let lastClickElement: HTMLElement | null = null;
+    const CLICK_DELAY = 300; // Atraso aumentado para cliques múltiplos mais tolerantes
 
-    // Listener para a faixa de calendário (gerencia clique, duplo e triplo)
-    ui.calendarStrip.addEventListener('click', (e) => {
+    const handleCalendarClick = (e: MouseEvent) => {
         const dayItem = (e.target as HTMLElement).closest<HTMLElement>('.day-item');
         if (!dayItem?.dataset.date) return;
+        
         const date = dayItem.dataset.date;
+
+        // Se clicar em um item de dia diferente, reinicia o contador.
+        if (dayItem !== lastClickElement) {
+            clickCount = 0;
+            if (clickTimeout) {
+                clearTimeout(clickTimeout);
+            }
+        }
+        lastClickElement = dayItem;
         
         clickCount++;
 
@@ -47,27 +59,33 @@ const setupGlobalListeners = () => {
             clearTimeout(clickTimeout);
         }
 
-        // Atrasamos a execução para verificar se mais cliques ocorreram para "aprimorar" a ação.
-        clickTimeout = window.setTimeout(() => {
-            if (clickCount === 1) {
-                // Ação de clique simples: seleciona o dia e atualiza a visualização.
+        // Lida imediatamente com o primeiro clique para responsividade (seleção de dia)
+        if (clickCount === 1) {
+            if (state.selectedDate !== date) {
                 state.selectedDate = date;
                 updateCalendarSelection();
                 updateHeaderTitle();
                 renderHabits();
                 renderStoicQuote();
-            } else if (clickCount === 2) {
-                // Ação de clique duplo: completa todos os hábitos para o dia.
+            }
+        }
+        
+        // Define um timeout para aguardar mais cliques antes de disparar ações em massa
+        clickTimeout = window.setTimeout(() => {
+            // O timeout disparou. Agora executa a ação com base na contagem final de cliques.
+            if (clickCount === 2) {
                 completeAllHabitsForDate(date);
             } else if (clickCount >= 3) {
-                // Ação de clique triplo: adia todos os hábitos para o dia.
                 snoozeAllHabitsForDate(date);
             }
             
-            // Reseta a contagem após a ação ser executada.
+            // Reinicia para a próxima série de cliques.
             clickCount = 0;
+            lastClickElement = null;
         }, CLICK_DELAY);
-    });
+    };
+    
+    ui.calendarStrip.addEventListener('click', handleCalendarClick);
 
     // Handler para "infinite scroll" do calendário
     const handleCalendarScroll = () => {

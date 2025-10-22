@@ -25,6 +25,7 @@ import {
     TimeOfDay,
     getScheduleForDate,
     HabitSchedule,
+    HabitTemplate,
 } from './state';
 import { getTodayUTCIso, addDays, toUTCIsoDateString, parseUTCIsoDate, getTodayUTC } from './utils';
 import { ui } from './ui';
@@ -737,7 +738,7 @@ export function openEditModal(habitOrTemplate: Habit | PredefinedHabit | null) {
 
     let habitId: string | undefined;
     let originalHabit: Habit | undefined;
-    let formData: any;
+    let formData: HabitTemplate;
 
     if (isCustomNew) {
         formData = {
@@ -750,24 +751,32 @@ export function openEditModal(habitOrTemplate: Habit | PredefinedHabit | null) {
             frequency: { type: 'daily', interval: 1 },
         };
     } else if (isNew) { // Predefined habit
-        formData = habitOrTemplate;
+        formData = habitOrTemplate as PredefinedHabit;
     } else { // Existing habit
         originalHabit = habitOrTemplate as Habit;
         habitId = originalHabit.id;
         const latestSchedule = originalHabit.scheduleHistory[originalHabit.scheduleHistory.length - 1];
         const displayInfo = getHabitDisplayInfo(originalHabit);
+        
         formData = {
-            ...originalHabit,
-            ...latestSchedule,
             name: displayInfo.name,
             subtitle: displayInfo.subtitle,
+            icon: originalHabit.icon,
+            color: originalHabit.color,
+            times: latestSchedule.times,
+            goal: originalHabit.goal,
+            frequency: latestSchedule.frequency,
         };
     }
 
     state.editingHabit = { isNew, habitId, originalData: originalHabit, formData };
     
-    ui.editHabitModalTitle.textContent = !isNew ? t('modalEditTitle') : (isCustomNew ? t('modalCreateTitle') : t('modalAddHabitTitle', { habitName: formData.name }));
-    nameInput.value = formData.name;
+    const habitDisplayName = 'name' in formData ? formData.name : t(formData.nameKey);
+    ui.editHabitModalTitle.textContent = !isNew 
+        ? t('modalEditTitle') 
+        : (isCustomNew ? t('modalCreateTitle') : t('modalAddHabitTitle', { habitName: habitDisplayName }));
+    nameInput.value = habitDisplayName;
+
 
     const checkboxes = form.querySelectorAll<HTMLInputElement>('input[name="habit-time"]');
     checkboxes.forEach(cb => {
@@ -776,11 +785,12 @@ export function openEditModal(habitOrTemplate: Habit | PredefinedHabit | null) {
 
     renderFrequencyFilter();
     
-    nameInput.readOnly = !!formData.nameKey;
+    nameInput.readOnly = false;
 
     if(noticeEl) noticeEl.classList.remove('visible');
     openModal(ui.editHabitModal);
-    if(isCustomNew) nameInput.focus();
+    nameInput.focus();
+    nameInput.select();
 }
 
 export function updateHeaderTitle() {

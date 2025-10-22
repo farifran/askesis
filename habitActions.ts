@@ -17,10 +17,9 @@ import {
     calculateHabitStreak,
     TIMES_OF_DAY,
     Frequency,
-    PredefinedHabit,
+    HabitTemplate,
     HabitSchedule,
     getScheduleForDate,
-    // FIX: Import PREDEFINED_HABITS to be used in createDefaultHabit.
     PREDEFINED_HABITS,
 } from './state';
 import {
@@ -87,14 +86,15 @@ function updateHabitSchedule(
     setupManageModal();
 }
 
-export function addHabit(habitTemplate: PredefinedHabit | any, startDate: string): Habit {
+export function addHabit(habitTemplate: HabitTemplate, startDate: string): Habit {
+    const isCustom = 'name' in habitTemplate;
     const firstSchedule: HabitSchedule = {
         startDate: startDate,
         scheduleAnchor: startDate,
-        name: habitTemplate.name,
-        subtitle: habitTemplate.subtitle,
-        nameKey: habitTemplate.nameKey,
-        subtitleKey: habitTemplate.subtitleKey,
+        name: isCustom ? habitTemplate.name : undefined,
+        subtitle: isCustom ? habitTemplate.subtitle : undefined,
+        nameKey: !isCustom ? habitTemplate.nameKey : undefined,
+        subtitleKey: !isCustom ? habitTemplate.subtitleKey : undefined,
         times: habitTemplate.times,
         frequency: habitTemplate.frequency,
     };
@@ -185,13 +185,18 @@ function setAllHabitsStatusForDate(date: string, status: HabitStatus) {
 
             const scheduleForDay = habitDailyInfo?.dailySchedule || activeSchedule.times;
             
+            let wasChanged = false; // Flag to see if this habit was modified at all
             scheduleForDay.forEach(time => {
                 const dayInstanceData = ensureHabitInstanceData(date, habit.id, time);
                 if (dayInstanceData.status !== status) {
                     dayInstanceData.status = status;
-                    changedHabits.add(habit);
+                    wasChanged = true;
                 }
             });
+
+            if (wasChanged) {
+                changedHabits.add(habit);
+            }
         }
     });
 
@@ -209,7 +214,18 @@ function setAllHabitsStatusForDate(date: string, status: HabitStatus) {
         }
         
         saveState();
-        renderHabits();
+        
+        // Performance Improvement: Instead of a full re-render, update only changed cards
+        changedHabits.forEach(habit => {
+            const habitDailyInfo = state.dailyData[date]?.[habit.id];
+            const activeSchedule = getScheduleForDate(habit, dateObj);
+            if (!activeSchedule) return;
+            const scheduleForDay = habitDailyInfo?.dailySchedule || activeSchedule.times;
+            scheduleForDay.forEach(time => {
+                updateHabitCardDOM(habit.id, time);
+            });
+        });
+
         updateCalendarDayDOM(date);
     }
 }
@@ -418,28 +434,26 @@ export function saveHabitFromModal() {
     const noticeEl = form.querySelector<HTMLElement>('.duplicate-habit-notice');
     const habitName = nameInput.value.trim();
 
-    if (!habitName && !nameInput.readOnly) {
+    if (!habitName) {
+        if (noticeEl) showInlineNotice(noticeEl, t('noticeNameCannotBeEmpty'));
         nameInput.focus();
         return;
     }
 
     const { isNew, habitId, originalData, formData } = state.editingHabit;
 
-    if (!nameInput.readOnly) {
-        const isDuplicate = state.habits.some(h => {
-            if (h.id === habitId) return false;
-            const lastSchedule = h.scheduleHistory[h.scheduleHistory.length - 1];
-            if (lastSchedule.endDate || h.graduatedOn) return false;
-            if (!lastSchedule.nameKey && lastSchedule.name) {
-                return lastSchedule.name.toLowerCase() === habitName.toLowerCase();
-            }
-            return false;
-        });
-        if (isDuplicate) {
-            if (noticeEl) showInlineNotice(noticeEl, t('noticeDuplicateHabitWithName'));
-            nameInput.focus();
-            return;
-        }
+    const isDuplicate = state.habits.some(h => {
+        if (h.id === habitId) return false;
+        const lastSchedule = h.scheduleHistory[h.scheduleHistory.length - 1];
+        if (lastSchedule.endDate || h.graduatedOn) return false;
+        const currentDisplayName = getHabitDisplayInfo(h).name;
+        return currentDisplayName.toLowerCase() === habitName.toLowerCase();
+    });
+
+    if (isDuplicate) {
+        if (noticeEl) showInlineNotice(noticeEl, t('noticeDuplicateHabitWithName'));
+        nameInput.focus();
+        return;
     }
     
     const selectedTimes = Array.from(form.querySelectorAll<HTMLInputElement>('input[name="habit-time"]:checked'))
@@ -451,7 +465,33 @@ export function saveHabitFromModal() {
 
     const currentFrequency = formData.frequency;
 
-    const finalizeCreation = (template: any, startDate: string) => {
+    const finalizeCreation = (template: HabitTemplate, startDate: string) => {
+        if ('nameKey' in template) {
+            const existingEndedHabit = state.habits.find(h => {
+                const lastSchedule = h.scheduleHistory[h.scheduleHistory.length - 1];
+                return lastSchedule.nameKey === template.nameKey && !!lastSchedule.endDate;
+            });
+
+            if (existingEndedHabit) {
+                const newSchedule: HabitSchedule = {
+                    startDate: startDate,
+                    scheduleAnchor: startDate,
+                    nameKey: template.nameKey,
+                    subtitleKey: template.subtitleKey,
+                    times: template.times,
+                    frequency: template.frequency,
+                };
+                existingEndedHabit.scheduleHistory.push(newSchedule);
+                
+                saveState();
+                renderHabits();
+                setupManageModal();
+                closeModal(ui.editHabitModal);
+                state.editingHabit = null;
+                return;
+            }
+        }
+        
         const newHabit = addHabit(template, startDate);
         addHabitToDOM(newHabit);
         closeModal(ui.editHabitModal);
@@ -462,18 +502,41 @@ export function saveHabitFromModal() {
         const todayISO = getTodayUTCIso();
         const prospectiveStartDate = state.selectedDate;
 
-        // FIX: Cast to `any` to handle the union type of `formData` which can be a `PredefinedHabit` (with nameKey)
-        // or a custom habit object (with name). This resolves subsequent TypeScript errors.
-        const newHabitTemplate: any = { ...formData };
-        if (!newHabitTemplate.nameKey) {
-            newHabitTemplate.name = habitName;
+        let newHabitTemplate: HabitTemplate;
+
+        if ('nameKey' in formData) { // Based on a predefined habit template
+            const originalName = t(formData.nameKey);
+            if (habitName !== originalName) {
+                // Name was changed, create as a new custom habit
+                newHabitTemplate = {
+                    name: habitName,
+                    subtitle: t('customHabitSubtitle'),
+                    icon: formData.icon,
+                    color: formData.color,
+                    times: selectedTimes,
+                    goal: formData.goal,
+                    frequency: currentFrequency,
+                };
+            } else {
+                // Name was NOT changed, create as a predefined habit
+                newHabitTemplate = {
+                    ...formData,
+                    times: selectedTimes,
+                    frequency: currentFrequency,
+                };
+            }
+        } else { // This is a fully custom habit from the "create custom" button
+            newHabitTemplate = {
+                ...formData,
+                name: habitName,
+                times: selectedTimes,
+                frequency: currentFrequency,
+            };
         }
-        newHabitTemplate.times = selectedTimes;
-        newHabitTemplate.frequency = currentFrequency;
 
         if (parseUTCIsoDate(prospectiveStartDate) < parseUTCIsoDate(todayISO)) {
             const dateFormatted = parseUTCIsoDate(prospectiveStartDate).toLocaleDateString(state.activeLanguageCode, { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
-            const habitDisplayName = newHabitTemplate.nameKey ? t(newHabitTemplate.nameKey) : newHabitTemplate.name;
+            const habitDisplayName = 'nameKey' in newHabitTemplate ? t(newHabitTemplate.nameKey) : newHabitTemplate.name;
             const confirmationText = t('confirmNewHabitPastDate', { habitName: `<strong>${habitDisplayName}</strong>`, date: `<strong>${dateFormatted}</strong>` });
             showConfirmationModal(confirmationText, () => finalizeCreation(newHabitTemplate, prospectiveStartDate));
         } else {
@@ -483,7 +546,7 @@ export function saveHabitFromModal() {
         if (!originalData) return;
         const lastSchedule = originalData.scheduleHistory[originalData.scheduleHistory.length - 1];
 
-        const hasNameChanged = !lastSchedule.nameKey && getHabitDisplayInfo(originalData).name !== habitName;
+        const hasNameChanged = getHabitDisplayInfo(originalData).name !== habitName;
         const hasTimesChanged = lastSchedule.times.length !== selectedTimes.length || !lastSchedule.times.every(t => selectedTimes.includes(t));
         const hasFrequencyChanged = lastSchedule.frequency.type !== currentFrequency.type || lastSchedule.frequency.interval !== currentFrequency.interval;
         
@@ -495,14 +558,13 @@ export function saveHabitFromModal() {
 
         const changeDateISO = state.selectedDate;
         const dateFormatted = parseUTCIsoDate(changeDateISO).toLocaleDateString(state.activeLanguageCode, { day: 'numeric', month: 'long', timeZone: 'UTC' });
-        const confirmHabitName = hasNameChanged ? habitName : getHabitDisplayInfo(originalData).name;
-        const confirmationText = t('confirmScheduleChange', { habitName: `<strong>${confirmHabitName}</strong>`, date: dateFormatted });
+        
+        const confirmationText = t('confirmScheduleChange', { habitName: `<strong>${habitName}</strong>`, date: dateFormatted });
         
         showConfirmationModal(
             confirmationText,
             () => {
-                const newName = hasNameChanged ? habitName : lastSchedule.name;
-                updateHabitSchedule(originalData, changeDateISO, { name: newName, times: selectedTimes, frequency: currentFrequency });
+                updateHabitSchedule(originalData, changeDateISO, { name: habitName, times: selectedTimes, frequency: currentFrequency });
                 closeModal(ui.editHabitModal);
                 state.editingHabit = null;
             },

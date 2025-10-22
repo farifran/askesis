@@ -1,5 +1,7 @@
 import { addDays, getTodayUTC, getTodayUTCIso, toUTCIsoDateString, parseUTCIsoDate } from './utils';
 import { icons } from './icons';
+import { syncStateWithCloud } from './cloud';
+import { migrateState } from './migration';
 
 // --- TYPES & INTERFACES ---
 export type HabitStatus = 'completed' | 'snoozed' | 'pending';
@@ -64,10 +66,33 @@ export type PredefinedHabit = {
     frequency: Frequency;
 };
 
+/**
+ * Represents the data needed to create a new habit.
+ * It can be a predefined habit (identified by nameKey) or a custom one (identified by name).
+ */
+export type HabitTemplate = {
+    icon: string;
+    color: string;
+    times: TimeOfDay[];
+    goal: Habit['goal'];
+    frequency: Frequency;
+} & ({
+    nameKey: string;
+    subtitleKey: string;
+    name?: never;
+    subtitle?: never;
+} | {
+    name: string;
+    subtitle: string;
+    nameKey?: never;
+    subtitleKey?: never;
+});
+
 
 // Nova interface para o estado completo da aplicação
 export interface AppState {
     version: number;
+    lastModified: number;
     habits: Habit[];
     dailyData: Record<string, Record<string, HabitDailyInfo>>;
     notificationsShown: string[];
@@ -173,15 +198,7 @@ export const state: {
         habitId?: string; // For existing habits
         originalData?: Habit; // For comparing changes
         // A template-like object for the form
-        formData: PredefinedHabit | {
-            name: string;
-            subtitle: string;
-            icon: string;
-            color: string;
-            times: TimeOfDay[];
-            goal: Habit['goal'];
-            frequency: Frequency;
-        }
+        formData: HabitTemplate;
     } | null;
 } = {
     habits: [],
@@ -294,47 +311,62 @@ export function shouldShowPlusIndicator(dateISO: string): boolean {
     const dailyInfo = state.dailyData[dateISO] || {};
     const activeHabitsOnDate = state.habits.filter(h => shouldHabitAppearOnDate(h, dateObj));
 
+    if (activeHabitsOnDate.length === 0) return false;
+
+    // 1. Prerequisite: Check if ALL active habits for the day are completed.
+    const allHabitsCompleted = activeHabitsOnDate.every(habit => {
+        const habitDailyInfo = dailyInfo[habit.id];
+        const activeSchedule = getScheduleForDate(habit, dateObj);
+        if (!activeSchedule) return false; // Should not happen if it's an active habit
+
+        const scheduleForDay = habitDailyInfo?.dailySchedule || activeSchedule.times;
+        const instances = habitDailyInfo?.instances || {};
+
+        // If a habit is scheduled but has no instance data, it's not complete.
+        if (scheduleForDay.length > 0 && Object.keys(instances).length < scheduleForDay.length) {
+            return false;
+        }
+        
+        // Every scheduled instance must be 'completed'.
+        return scheduleForDay.every(time => instances[time]?.status === 'completed');
+    });
+
+    if (!allHabitsCompleted) {
+        return false;
+    }
+
+    // 2. Find habits where the goal was exceeded.
     const goalExceededHabits = activeHabitsOnDate.filter(habit => {
         if (habit.goal.type !== 'pages' && habit.goal.type !== 'minutes') return false;
         
         const habitDailyInfo = dailyInfo[habit.id];
-        if (!habitDailyInfo) return false;
+        if (!habitDailyInfo) return false; // Should be present due to the previous check
         
         const activeSchedule = getScheduleForDate(habit, dateObj);
         if (!activeSchedule) return false;
         
         const scheduleForDay = habitDailyInfo.dailySchedule || activeSchedule.times;
+
         return scheduleForDay.some(time => {
             const instance = habitDailyInfo.instances[time];
+            // Status check is redundant because of the prerequisite, but good for safety.
             return instance?.status === 'completed' &&
                    instance.goalOverride !== undefined &&
                    instance.goalOverride > (habit.goal.total ?? 0);
         });
     });
 
-    if (goalExceededHabits.length === 0) return false;
-
-    for (const habit of goalExceededHabits) {
-        const previousCompletions = getPreviousCompletedOccurrences(habit, dateObj, 2);
-        if (previousCompletions.length !== 2) continue;
-
-        const otherHabits = activeHabitsOnDate.filter(h => h.id !== habit.id);
-        const allOtherHabitsCompleted = otherHabits.every(otherHabit => {
-            const otherHabitDailyInfo = dailyInfo[otherHabit.id];
-            const activeSchedule = getScheduleForDate(otherHabit, dateObj);
-            if (!activeSchedule) return false;
-
-            const scheduleForDay = otherHabitDailyInfo?.dailySchedule || activeSchedule.times;
-            const instances = otherHabitDailyInfo?.instances || {};
-
-            if (scheduleForDay.length > 0 && Object.keys(instances).length === 0) return false;
-
-            return scheduleForDay.every(time => instances[time]?.status === 'completed');
-        });
-
-        if (allOtherHabitsCompleted) return true;
+    if (goalExceededHabits.length === 0) {
+        return false;
     }
-    return false;
+
+    // 3. Check if at least one of the exceeded habits has the required streak.
+    const hasExceededHabitWithStreak = goalExceededHabits.some(habit => {
+        const previousCompletions = getPreviousCompletedOccurrences(habit, dateObj, 2);
+        return previousCompletions.length === 2;
+    });
+
+    return hasExceededHabitWithStreak;
 }
 
 export function getSmartGoalForHabit(habit: Habit, dateISO: string, time: TimeOfDay): number {
@@ -417,11 +449,11 @@ export function calculateHabitStreak(habitId: string, dateISO: string): number {
 
 
 // --- CLOUD SYNC & STATE MANAGEMENT ---
-import { syncStateWithCloud } from './cloud';
 
 export function saveState() {
     const appState: AppState = {
         version: APP_VERSION,
+        lastModified: Date.now(),
         habits: state.habits,
         dailyData: state.dailyData,
         notificationsShown: state.notificationsShown,
@@ -440,7 +472,7 @@ export function saveState() {
 }
 
 export function loadState(cloudState?: AppState) {
-    let loadedAppState: AppState | null = null;
+    let loadedAppState: any | null = null; // Use any to handle old structures before migration
 
     if (cloudState) {
         loadedAppState = cloudState;
@@ -453,61 +485,11 @@ export function loadState(cloudState?: AppState) {
 
     if (loadedAppState) {
         const loadedVersion = loadedAppState.version || 0;
-
-        if (loadedVersion < APP_VERSION && loadedVersion < 6) {
-            console.log(`Migrating data from v${loadedVersion} to v${APP_VERSION}`);
-            const oldHabits = loadedAppState.habits as any[];
-            const previousVersionIds = new Set(oldHabits.map(h => h.previousVersionId).filter(Boolean));
-            const latestHabits = oldHabits.filter(h => !previousVersionIds.has(h.id));
-            const newHabits: Habit[] = [];
-
-            for (const latestHabit of latestHabits) {
-                const lineage: any[] = [];
-                let currentHabitInLineage: any | undefined = latestHabit;
-                while (currentHabitInLineage) {
-                    lineage.unshift(currentHabitInLineage);
-                    currentHabitInLineage = oldHabits.find(h => h.id === currentHabitInLineage.previousVersionId);
-                }
-                
-                const firstHabit = lineage[0];
-                const newHabit: Habit = {
-                    id: latestHabit.id,
-                    icon: firstHabit.icon,
-                    color: firstHabit.color,
-                    goal: firstHabit.goal,
-                    createdOn: firstHabit.createdOn,
-                    graduatedOn: latestHabit.graduatedOn,
-                    scheduleHistory: [],
-                };
-
-                for (const oldVersion of lineage) {
-                    const schedule: HabitSchedule = {
-                        startDate: oldVersion.createdOn,
-                        endDate: oldVersion.endedOn,
-                        name: oldVersion.name,
-                        subtitle: oldVersion.subtitle,
-                        nameKey: oldVersion.nameKey,
-                        subtitleKey: oldVersion.subtitleKey,
-                        times: oldVersion.times,
-                        frequency: oldVersion.frequency,
-                        scheduleAnchor: oldVersion.scheduleAnchor || oldVersion.createdOn,
-                    };
-                    newHabit.scheduleHistory.push(schedule);
-
-                    if (oldVersion.id !== newHabit.id) {
-                         Object.keys(loadedAppState.dailyData).forEach(dateStr => {
-                            if (loadedAppState.dailyData[dateStr][oldVersion.id]) {
-                                loadedAppState.dailyData[dateStr][newHabit.id] = loadedAppState.dailyData[dateStr][oldVersion.id];
-                                delete loadedAppState.dailyData[dateStr][oldVersion.id];
-                            }
-                        });
-                    }
-                }
-                newHabits.push(newHabit);
-            }
-            loadedAppState.habits = newHabits;
+        
+        // Refactored: Centralized migration logic
+        if (loadedVersion < APP_VERSION) {
+            loadedAppState = migrateState(loadedAppState);
         }
-
 
         state.habits = loadedAppState.habits;
         state.dailyData = loadedAppState.dailyData;

@@ -56,6 +56,11 @@ body {
     color: var(--text-primary);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    -webkit-touch-callout: none; /* iOS Safari */
+    -webkit-user-select: none;   /* Safari */
+    -moz-user-select: none;      /* Firefox */
+    -ms-user-select: none;       /* Internet Explorer/Edge */
+    user-select: none;           /* Standard syntax */
 }
 
 /* --- LAYOUT BASE --- */
@@ -116,7 +121,7 @@ body {
     flex-direction: column;
     align-items: flex-start;
     position: relative;
-    top: -2px;
+    top: -3px;
 }
 
 #sync-status {
