@@ -9,17 +9,16 @@ export const config = {
 };
 
 // --- Tipos e Interfaces ---
-// Uma definição simplificada da estrutura de dados para validação no lado do servidor.
-interface AppState {
+// A estrutura que o cliente envia. O 'state' é uma string criptografada.
+interface ClientPayload {
     lastModified: number;
-    habits: { id: string }[];
-    dailyData: Record<string, any>;
+    state: string;
 }
 
 // A estrutura que realmente armazenamos no Vercel KV.
 interface StoredData {
     lastModified: number;
-    state: AppState;
+    state: string; // string criptografada
 }
 
 const corsHeaders = {
@@ -31,17 +30,6 @@ const corsHeaders = {
 const getSyncKeyHash = (req: Request): string | null => {
     return req.headers.get('x-sync-key-hash');
 };
-
-/**
- * Heurística para determinar se um estado de aplicativo é "significativo".
- * Usado para prevenir que um estado "vazio" (de um novo dispositivo/reset)
- * sobrescreva um estado com dados substanciais.
- */
-const isStateSignificant = (state: AppState): boolean => {
-    // Mais de 2 hábitos OU mais de 5 dias de dados é considerado significativo.
-    return state.habits.length > 2 || Object.keys(state.dailyData).length > 5;
-};
-
 
 export default async function handler(req: Request) {
     if (req.method === 'OPTIONS') {
@@ -61,39 +49,30 @@ export default async function handler(req: Request) {
 
         if (req.method === 'GET') {
             const storedData = await kv.get<StoredData>(dataKey);
-            return new Response(JSON.stringify(storedData ? storedData.state : null), {
+            // Retorna o objeto StoredData completo ou nulo se não encontrado.
+            return new Response(JSON.stringify(storedData || null), {
                 status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
             });
         }
 
         if (req.method === 'POST') {
-            const clientState: AppState = await req.json();
+            const clientPayload: ClientPayload = await req.json();
             const storedData = await kv.get<StoredData>(dataKey);
 
             if (storedData) {
-                // Conflito 1: Os dados do cliente são mais antigos que os do servidor.
-                if (clientState.lastModified < storedData.lastModified) {
-                    return new Response(JSON.stringify(storedData.state), {
+                // Conflito: os dados do cliente são mais antigos que os do servidor.
+                if (clientPayload.lastModified < storedData.lastModified) {
+                    return new Response(JSON.stringify(storedData), {
                         status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
                     });
                 }
-
-                // Conflito 2: Proteção contra sobrescrita por estado trivial.
-                // Previne que um reset acidental em um dispositivo apague os dados da nuvem.
-                const isClientDataTrivial = !isStateSignificant(clientState);
-                const isServerDataSignificant = isStateSignificant(storedData.state);
-
-                if (isClientDataTrivial && isServerDataSignificant) {
-                    return new Response(JSON.stringify(storedData.state), {
-                        status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-                    });
-                }
+                // A lógica 'isStateSignificant' foi removida, pois o servidor não pode mais inspecionar o estado.
             }
 
-            // Sem conflitos, ou é a primeira sincronização. Salva os dados.
+            // Sem conflitos, ou é a primeira sincronização. Salva o payload do cliente.
             const dataToStore: StoredData = {
-                lastModified: clientState.lastModified,
-                state: clientState,
+                lastModified: clientPayload.lastModified,
+                state: clientPayload.state,
             };
             await kv.set(dataKey, dataToStore);
             

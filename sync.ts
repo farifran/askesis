@@ -74,6 +74,9 @@ async function handleEnableSync() {
     } catch(e) {
         console.error("Failed initial sync on new key generation", e);
         // O status de erro já está definido. O usuário vê a chave, mas a sincronização falhou.
+        // Se a sincronização falhar, a chave não é útil. Devemos revertê-la.
+        clearKey();
+        showView('inactive');
     }
 }
 
@@ -82,7 +85,7 @@ async function handleSubmitKey() {
     if (!key) return;
 
     const proceed = async () => {
-        storeKey(key);
+        storeKey(key); // Armazena temporariamente a chave para tentar a sincronização
         try {
             const cloudState = await fetchStateFromCloud();
             if (cloudState) {
@@ -107,7 +110,7 @@ async function handleSubmitKey() {
             }
         } catch (error) {
             console.error("Failed to sync with provided key:", error);
-            // Limpa a chave inválida
+            // Limpa a chave inválida que acabamos de armazenar
             clearKey();
             // Mantém o usuário na mesma tela e mostra o status de erro
             setSyncStatus('syncError');
@@ -186,6 +189,10 @@ export async function initSync() {
 
 export function hasLocalSyncKey(): boolean {
     return localSyncKey !== null;
+}
+
+export function getSyncKey(): string | null {
+    return localSyncKey;
 }
 
 export async function getSyncKeyHash(): Promise<string | null> {
