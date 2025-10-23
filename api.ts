@@ -18,6 +18,61 @@ const timeToKeyMap: Record<TimeOfDay, string> = {
     'Noite': 'filterEvening'
 };
 
+/**
+ * REATORAÇÃO: Função auxiliar para gerar o resumo de texto para um único dia.
+ * @param date O objeto Date para o qual gerar o resumo.
+ * @returns Uma string formatada para o prompt da IA, ou null se não houver hábitos ativos.
+ */
+function generateDailyHabitSummary(date: Date): string | null {
+    const isoDate = toUTCIsoDateString(date);
+    const dailyInfoByHabit = getHabitDailyInfoForDate(isoDate);
+    const habitsOnThisDay = state.habits.filter(h => shouldHabitAppearOnDate(h, date) && !h.graduatedOn);
+
+    if (habitsOnThisDay.length === 0) {
+        return null;
+    }
+
+    const dayEntries = habitsOnThisDay.map(habit => {
+        const dailyInfo = dailyInfoByHabit[habit.id];
+        const activeSchedule = getScheduleForDate(habit, date);
+        if (!activeSchedule) return '';
+        
+        const { name } = getHabitDisplayInfo({ ...habit, scheduleHistory: [activeSchedule] });
+        const habitInstances = dailyInfo?.instances || {};
+        const scheduleForDay = dailyInfo?.dailySchedule || activeSchedule.times;
+
+        const statusDetails = scheduleForDay.map(time => {
+            const instance = habitInstances[time];
+            const status: HabitStatus = instance?.status || 'pending';
+            const note = instance?.note;
+            
+            let detail = statusToSymbol[status];
+            if (scheduleForDay.length > 1) {
+                detail = `${t(timeToKeyMap[time])}${detail}`;
+            }
+
+            if ((habit.goal.type === 'pages' || habit.goal.type === 'minutes') && instance?.status === 'completed' && instance.goalOverride !== undefined) {
+                const unit = t(habit.goal.unitKey, { count: instance.goalOverride });
+                detail += ` ${instance.goalOverride} ${unit}`;
+            }
+
+            if (note) {
+                detail += ` ("${note}")`;
+            }
+            return detail;
+        });
+        
+        return `- ${name}: ${statusDetails.join(', ')}`;
+    }).filter(Boolean);
+
+    if (dayEntries.length > 0) {
+        return `${isoDate}:\n${dayEntries.join('\n')}`;
+    }
+
+    return null;
+}
+
+
 export const buildAIPrompt = (analysisType: 'weekly' | 'monthly' | 'general'): string => {
     let history = '';
     let promptTemplateKey = '';
@@ -29,48 +84,12 @@ export const buildAIPrompt = (analysisType: 'weekly' | 'monthly' | 'general'): s
         const daysToScan = analysisType === 'weekly' ? 7 : 30;
         promptTemplateKey = analysisType === 'weekly' ? 'aiPromptWeekly' : 'aiPromptMonthly';
 
+        // REATORAÇÃO: Usa a função auxiliar para simplificar a coleta de dados.
         for (let i = 0; i < daysToScan; i++) {
             const date = addDays(today, -i);
-            const isoDate = toUTCIsoDateString(date);
-            const dailyInfoByHabit = getHabitDailyInfoForDate(isoDate);
-            const habitsOnThisDay = state.habits.filter(h => shouldHabitAppearOnDate(h, date) && !h.graduatedOn);
-
-            if (habitsOnThisDay.length > 0) {
-                const dayEntries = habitsOnThisDay.map(habit => {
-                    const dailyInfo = dailyInfoByHabit[habit.id];
-                    const activeSchedule = getScheduleForDate(habit, date);
-                    if (!activeSchedule) return '';
-                    
-                    const { name } = getHabitDisplayInfo({ ...habit, scheduleHistory: [activeSchedule]});
-                    const habitInstances = dailyInfo?.instances || {};
-                    const scheduleForDay = dailyInfo?.dailySchedule || activeSchedule.times;
-
-                    const statusDetails = scheduleForDay.map(time => {
-                        const instance = habitInstances[time];
-                        const status: HabitStatus = instance?.status || 'pending';
-                        const note = instance?.note;
-                        
-                        let detail = statusToSymbol[status];
-                        if (scheduleForDay.length > 1) {
-                            detail = `${t(timeToKeyMap[time])}${detail}`;
-                        }
-
-                        if ((habit.goal.type === 'pages' || habit.goal.type === 'minutes') && instance?.status === 'completed' && instance.goalOverride !== undefined) {
-                            const unit = t(habit.goal.unitKey, { count: instance.goalOverride });
-                            detail += ` ${instance.goalOverride} ${unit}`;
-                        }
-
-                        if (note) {
-                            detail += ` ("${note}")`;
-                        }
-                        return detail;
-                    });
-                    
-                    return `- ${name}: ${statusDetails.join(', ')}`;
-                }).filter(Boolean);
-                if(dayEntries.length > 0) {
-                    daySummaries.push(`${isoDate}:\n${dayEntries.join('\n')}`);
-                }
+            const summary = generateDailyHabitSummary(date);
+            if (summary) {
+                daySummaries.push(summary);
             }
         }
         history = daySummaries.join('\n\n');
@@ -86,54 +105,25 @@ export const buildAIPrompt = (analysisType: 'weekly' | 'monthly' | 'general'): s
             }, today);
         }
         
-        const allHistory: { date: string, entries: string[] }[] = [];
+        const allSummaries: string[] = [];
         
+        // REATORAÇÃO: Usa a função auxiliar para simplificar a coleta de dados.
         for (let d = firstDateEver; d <= today; d = addDays(d, 1)) {
-            const dateISO = toUTCIsoDateString(d);
-            const dailyInfoByHabit = getHabitDailyInfoForDate(dateISO);
-            const habitsOnThisDay = state.habits.filter(h => shouldHabitAppearOnDate(h, d));
-
-            if (habitsOnThisDay.length > 0) {
-                const dayEntries = habitsOnThisDay.map(habit => {
-                    const dailyInfo = dailyInfoByHabit[habit.id];
-                    const activeSchedule = getScheduleForDate(habit, d);
-                    if (!activeSchedule) return '';
-                    
-                    const { name } = getHabitDisplayInfo({ ...habit, scheduleHistory: [activeSchedule]});
-                    const habitInstances = dailyInfo?.instances || {};
-                    const scheduleForDay = dailyInfo?.dailySchedule || activeSchedule.times;
-
-                    const statusDetails = scheduleForDay.map(time => {
-                        const instance = habitInstances[time];
-                        const status: HabitStatus = instance?.status || 'pending';
-                        const note = instance?.note;
-                        let detail = statusToSymbol[status];
-                        
-                        if ((habit.goal.type === 'pages' || habit.goal.type === 'minutes') && instance?.status === 'completed' && instance.goalOverride !== undefined) {
-                            const unit = t(habit.goal.unitKey, { count: instance.goalOverride });
-                            detail += ` ${instance.goalOverride} ${unit}`;
-                        }
-                        
-                        if (note) {
-                            detail += ` ("${note}")`;
-                        }
-                        return detail;
-                    });
-                    return `- ${name}: ${statusDetails.join(' ')}`;
-                }).filter(Boolean);
-                if (dayEntries.length > 0) {
-                    allHistory.push({ date: dateISO, entries: dayEntries });
-                }
+            const summary = generateDailyHabitSummary(d);
+            if (summary) {
+                allSummaries.push(summary);
             }
         }
         
+        // REATORAÇÃO: A lógica de agrupamento por mês agora opera em resumos já formatados.
         const summaryByMonth: Record<string, string[]> = {};
-        allHistory.forEach(day => {
-            const month = day.date.substring(0, 7); // YYYY-MM
+        allSummaries.forEach(daySummary => {
+            const dateStr = daySummary.substring(0, 10); // Extrai 'YYYY-MM-DD'
+            const month = dateStr.substring(0, 7); // Extrai 'YYYY-MM'
             if (!summaryByMonth[month]) {
                 summaryByMonth[month] = [];
             }
-            summaryByMonth[month].push(`${day.date}:\n${day.entries.join('\n')}`);
+            summaryByMonth[month].push(daySummary);
         });
 
         history = Object.entries(summaryByMonth)

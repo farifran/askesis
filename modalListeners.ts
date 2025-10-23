@@ -28,6 +28,7 @@ import {
 } from './habitActions';
 import { getAIEvaluationStream, buildAIPrompt } from './api';
 import { t, setLanguage, getHabitDisplayInfo } from './i18n';
+import { setupReelRotary } from './rotary';
 
 function simpleMarkdownToHTML(text: string): string {
     const lines = text.split('\n');
@@ -189,128 +190,6 @@ const handleAIEvaluationClick = async () => {
     }
 };
 
-const setupLanguageFilterListeners = () => {
-    const handleLanguageChange = async (direction: 'next' | 'prev') => {
-        const currentIndex = LANGUAGES.findIndex(l => l.code === state.activeLanguageCode);
-        let nextIndex;
-        if (direction === 'next') {
-            nextIndex = (currentIndex + 1) % LANGUAGES.length;
-        } else {
-            nextIndex = (currentIndex - 1 + LANGUAGES.length) % LANGUAGES.length;
-        }
-        await setLanguage(LANGUAGES[nextIndex].code);
-        renderLanguageFilter();
-    };
-
-    ui.languagePrevBtn.addEventListener('click', () => handleLanguageChange('prev'));
-    ui.languageNextBtn.addEventListener('click', () => handleLanguageChange('next'));
-    ui.languageViewport.addEventListener('keydown', (e: KeyboardEvent) => {
-        if (e.key === 'ArrowRight') handleLanguageChange('next');
-        else if (e.key === 'ArrowLeft') handleLanguageChange('prev');
-    });
-
-    let startX = 0, isSwiping = false, startTransformX = 0, itemWidth = 95;
-    const SWIPE_THRESHOLD = 40;
-
-    const pointerMove = (e: PointerEvent) => {
-        if (!isSwiping) return;
-        const diffX = e.clientX - startX;
-        const newTranslateX = startTransformX + diffX;
-        const minTranslateX = -(LANGUAGES.length - 1) * itemWidth;
-        const clampedTranslateX = Math.max(minTranslateX, Math.min(0, newTranslateX));
-        ui.languageReel.style.transform = `translateX(${clampedTranslateX}px)`;
-    };
-
-    const pointerUp = async (e: PointerEvent) => {
-        if (!isSwiping) return;
-        const diffX = e.clientX - startX;
-        let currentIndex = LANGUAGES.findIndex(l => l.code === state.activeLanguageCode);
-        
-        if (Math.abs(diffX) > SWIPE_THRESHOLD) {
-            if (diffX < 0) currentIndex = Math.min(LANGUAGES.length - 1, currentIndex + 1);
-            else currentIndex = Math.max(0, currentIndex - 1);
-            await setLanguage(LANGUAGES[currentIndex].code);
-        }
-        renderLanguageFilter();
-
-        setTimeout(() => { ui.languageReel.style.transition = 'transform 0.3s cubic-bezier(0.25, 1, 0.5, 1)'; }, 50);
-
-        window.removeEventListener('pointermove', pointerMove);
-        window.removeEventListener('pointerup', pointerUp);
-        isSwiping = false;
-    };
-
-    ui.languageViewport.addEventListener('pointerdown', (e: PointerEvent) => {
-        startX = e.clientX;
-        isSwiping = true;
-        const firstOption = ui.languageReel.querySelector('.reel-option') as HTMLElement | null;
-        itemWidth = firstOption?.offsetWidth || 95;
-        const matrix = new DOMMatrix(window.getComputedStyle(ui.languageReel).transform);
-        startTransformX = matrix.m41;
-        ui.languageReel.style.transition = 'none';
-        window.addEventListener('pointermove', pointerMove);
-        window.addEventListener('pointerup', pointerUp);
-    });
-};
-
-const setupFrequencyFilterListeners = () => {
-    const handleFrequencyChange = (direction: 'next' | 'prev') => {
-        if (!state.editingHabit) return;
-        const currentFrequency = state.editingHabit.formData.frequency;
-        const currentIndex = FREQUENCIES.findIndex(f => f.value.type === currentFrequency.type && f.value.interval === currentFrequency.interval);
-        let nextIndex;
-        if (direction === 'next') nextIndex = (currentIndex + 1) % FREQUENCIES.length;
-        else nextIndex = (currentIndex - 1 + FREQUENCIES.length) % FREQUENCIES.length;
-        state.editingHabit.formData.frequency = FREQUENCIES[nextIndex].value;
-        renderFrequencyFilter();
-    };
-    ui.frequencyPrevBtn.addEventListener('click', () => handleFrequencyChange('prev'));
-    ui.frequencyNextBtn.addEventListener('click', () => handleFrequencyChange('next'));
-    ui.frequencyViewport.addEventListener('keydown', (e: KeyboardEvent) => {
-        if (e.key === 'ArrowRight') handleFrequencyChange('next');
-        else if (e.key === 'ArrowLeft') handleFrequencyChange('prev');
-    });
-    
-    let startX = 0, isSwiping = false, startTransformX = 0;
-    let itemWidth = 125;
-    const SWIPE_THRESHOLD = 50;
-    const pointerMove = (e: PointerEvent) => {
-        if (!isSwiping) return;
-        const diffX = e.clientX - startX;
-        const newTranslateX = startTransformX + diffX;
-        const minTranslateX = -(FREQUENCIES.length - 1) * itemWidth;
-        const clampedTranslateX = Math.max(minTranslateX, Math.min(0, newTranslateX));
-        ui.frequencyReel.style.transform = `translateX(${clampedTranslateX}px)`;
-    };
-    const pointerUp = (e: PointerEvent) => {
-        if (!isSwiping || !state.editingHabit) return;
-        const diffX = e.clientX - startX;
-        const currentFrequency = state.editingHabit.formData.frequency;
-        let currentIndex = FREQUENCIES.findIndex(f => f.value.type === currentFrequency.type && f.value.interval === currentFrequency.interval);
-        if (Math.abs(diffX) > SWIPE_THRESHOLD) {
-            if (diffX < 0) currentIndex = Math.min(FREQUENCIES.length - 1, currentIndex + 1);
-            else currentIndex = Math.max(0, currentIndex - 1);
-            state.editingHabit.formData.frequency = FREQUENCIES[currentIndex].value;
-        }
-        renderFrequencyFilter();
-        setTimeout(() => { ui.frequencyReel.style.transition = 'transform 0.3s cubic-bezier(0.25, 1, 0.5, 1)'; }, 50);
-        window.removeEventListener('pointermove', pointerMove);
-        window.removeEventListener('pointerup', pointerUp);
-        isSwiping = false;
-    };
-    ui.frequencyViewport.addEventListener('pointerdown', (e: PointerEvent) => {
-        startX = e.clientX;
-        isSwiping = true;
-        const firstOption = ui.frequencyReel.querySelector('.reel-option') as HTMLElement | null;
-        itemWidth = firstOption?.offsetWidth || 125;
-        const matrix = new DOMMatrix(window.getComputedStyle(ui.frequencyReel).transform);
-        startTransformX = matrix.m41;
-        ui.frequencyReel.style.transition = 'none';
-        window.addEventListener('pointermove', pointerMove);
-        window.addEventListener('pointerup', pointerUp);
-    });
-};
-
 export const setupModalListeners = () => {
     ui.manageHabitsBtn.addEventListener('click', () => {
         setupManageModal();
@@ -399,6 +278,37 @@ export const setupModalListeners = () => {
         openModal(ui.aiOptionsModal);
     });
 
-    setupLanguageFilterListeners();
-    setupFrequencyFilterListeners();
+    // REATORAÇÃO: Usa o módulo rotary reutilizável para ambos os seletores
+    setupReelRotary({
+        viewportEl: ui.languageViewport,
+        reelEl: ui.languageReel,
+        prevBtn: ui.languagePrevBtn,
+        nextBtn: ui.languageNextBtn,
+        optionsCount: LANGUAGES.length,
+        getInitialIndex: () => LANGUAGES.findIndex(l => l.code === state.activeLanguageCode),
+        onIndexChange: async (index) => {
+            await setLanguage(LANGUAGES[index].code);
+        },
+        render: renderLanguageFilter,
+    });
+
+    setupReelRotary({
+        viewportEl: ui.frequencyViewport,
+        reelEl: ui.frequencyReel,
+        prevBtn: ui.frequencyPrevBtn,
+        nextBtn: ui.frequencyNextBtn,
+        optionsCount: FREQUENCIES.length,
+        getInitialIndex: () => {
+            if (!state.editingHabit) return 0;
+            const currentFrequency = state.editingHabit.formData.frequency;
+            const index = FREQUENCIES.findIndex(f => f.value.type === currentFrequency.type && f.value.interval === currentFrequency.interval);
+            return Math.max(0, index);
+        },
+        onIndexChange: (index) => {
+            if (!state.editingHabit) return;
+            state.editingHabit.formData.frequency = FREQUENCIES[index].value;
+            renderFrequencyFilter();
+        },
+        render: renderFrequencyFilter,
+    });
 };

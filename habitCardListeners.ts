@@ -29,7 +29,7 @@ function createGoalInput(habit: Habit, time: TimeOfDay, wrapper: HTMLElement) {
     const save = () => {
         const newGoal = parseInt(input.value, 10);
         if (!isNaN(newGoal) && newGoal > 0) {
-            updateGoalOverride(habitId, state.selectedDate, time, newGoal);
+            updateGoalOverride(habitId, state.selectedDate, time, newGoal, currentGoal);
         } else {
             wrapper.innerHTML = originalContent; // Restaura em caso de entrada inválida
         }

@@ -21,6 +21,7 @@ import {
     HabitSchedule,
     getScheduleForDate,
     PREDEFINED_HABITS,
+    getSmartGoalForHabit,
 } from './state';
 import {
     renderHabits,
@@ -147,11 +148,24 @@ export function toggleHabitStatus(habitId: string, time: TimeOfDay) {
 
 const GOAL_STEP = 5;
 
-export function updateGoalOverride(habitId: string, date: string, time: TimeOfDay, newGoal: number) {
+export function updateGoalOverride(habitId: string, date: string, time: TimeOfDay, newGoal: number, oldGoal?: number) {
     const habit = state.habits.find(h => h.id === habitId);
     if (!habit || (habit.goal.type !== 'pages' && habit.goal.type !== 'minutes')) return;
 
     const sanitizedGoal = Math.max(1, newGoal);
+    
+    // Animação da UI
+    const cardEl = ui.habitContainer.querySelector(`.habit-card[data-habit-id="${habitId}"][data-time="${time}"]`);
+    const progressEl = cardEl?.querySelector<HTMLElement>('.progress');
+    
+    if (progressEl && oldGoal !== undefined && sanitizedGoal !== oldGoal) {
+        const animClass = sanitizedGoal > oldGoal ? 'goal-increased' : 'goal-decreased';
+        
+        progressEl.classList.add(animClass);
+        progressEl.addEventListener('animationend', () => {
+            progressEl.classList.remove(animClass);
+        }, { once: true });
+    }
     
     const dayInstanceData = ensureHabitInstanceData(date, habitId, time);
     dayInstanceData.goalOverride = sanitizedGoal;
@@ -165,7 +179,8 @@ export function handleGoalControlClick(habitId: string, time: TimeOfDay, action:
     if (!habit || (habit.goal.type !== 'pages' && habit.goal.type !== 'minutes')) return;
     
     const dayInstanceData = state.dailyData[state.selectedDate]?.[habitId]?.instances[time];
-    const currentGoal = dayInstanceData?.goalOverride ?? habit.goal.total ?? 0;
+    const smartGoal = getSmartGoalForHabit(habit, state.selectedDate, time);
+    const currentGoal = dayInstanceData?.goalOverride ?? smartGoal;
     
     let newGoal;
     if (action === 'increment') {
@@ -174,7 +189,7 @@ export function handleGoalControlClick(habitId: string, time: TimeOfDay, action:
         newGoal = Math.max(1, currentGoal - GOAL_STEP);
     }
 
-    updateGoalOverride(habitId, state.selectedDate, time, newGoal);
+    updateGoalOverride(habitId, state.selectedDate, time, newGoal, currentGoal);
 }
 
 function setAllHabitsStatusForDate(date: string, status: HabitStatus) {
@@ -637,4 +652,28 @@ export function handleHabitDrop(habitId: string, oldTime: TimeOfDay, newTime: Ti
         confirmText: t('buttonFromNowOn'),
         editText: t('buttonJustToday'),
     });
+}
+
+export function reorderHabit(draggedId: string, targetId: string, position: 'before' | 'after') {
+    const fromIndex = state.habits.findIndex(h => h.id === draggedId);
+    let toIndex = state.habits.findIndex(h => h.id === targetId);
+
+    if (fromIndex === -1 || toIndex === -1) return;
+
+    // Remove o item de sua posição original
+    const [movedItem] = state.habits.splice(fromIndex, 1);
+
+    // Se o item foi movido de antes do alvo, o índice do alvo terá mudado
+    if (fromIndex < toIndex) {
+        toIndex--;
+    }
+
+    // Calcula o novo ponto de inserção
+    const insertAtIndex = position === 'before' ? toIndex : toIndex + 1;
+    
+    // Insere o item na nova posição
+    state.habits.splice(insertAtIndex, 0, movedItem);
+
+    saveState();
+    renderHabits();
 }

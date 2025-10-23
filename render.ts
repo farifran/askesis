@@ -183,7 +183,24 @@ export const formatGoalForDisplay = (goal: number): string => {
 };
 
 function updateGoalContentElement(goalEl: HTMLElement, status: HabitStatus, habit: Habit, time: TimeOfDay, dayDataForInstance: HabitDayData | undefined) {
-    goalEl.innerHTML = ''; // Limpa o conteúdo anterior
+    // For pending numeric goals, we do a less destructive update to preserve the DOM for animations.
+    if (status === 'pending' && (habit.goal.type === 'pages' || habit.goal.type === 'minutes')) {
+        const smartGoal = getSmartGoalForHabit(habit, state.selectedDate, time);
+        const currentGoal = dayDataForInstance?.goalOverride ?? smartGoal;
+        
+        let controlsEl = goalEl.querySelector('.habit-goal-controls');
+        if (controlsEl) {
+            // Structure exists, just update the values
+            const progressEl = controlsEl.querySelector<HTMLElement>('.progress');
+            const unitEl = controlsEl.querySelector<HTMLElement>('.unit');
+            if (progressEl) progressEl.textContent = formatGoalForDisplay(currentGoal);
+            if (unitEl) unitEl.textContent = getUnitString(habit, currentGoal);
+            return; // Exit early
+        }
+    }
+
+    // For all other cases, or if the structure doesn't exist, rebuild the innerHTML.
+    goalEl.innerHTML = '';
 
     switch (status) {
         case 'completed':
