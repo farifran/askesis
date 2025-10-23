@@ -109,9 +109,8 @@ export function renderChart() {
     const lastPoint = chartData[chartData.length - 1];
     let referencePoint = chartData[0];
     
-    // FIX: Replace findLastIndex with a manual loop for wider browser compatibility.
     let lastDayWithoutHabitsIndex = -1;
-    // Iterate backwards from the second to last element.
+    // Itera para trás a partir do penúltimo elemento.
     for (let i = chartData.length - 2; i >= 0; i--) {
         if (chartData[i].scheduledCount === 0) {
             lastDayWithoutHabitsIndex = i;

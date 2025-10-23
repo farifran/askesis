@@ -1,10 +1,9 @@
 
 {
     "appName": "Habit Tracker with AI", "headerTitleToday": "Today", "headerTitleYesterday": "Yesterday", "headerTitleTomorrow": "Tomorrow",
-    "noHabitsToday": "No habits for today.", "undoToastText": "Habit ended.", "undoButton": "Undo",
+    "undoToastText": "Habit ended.", "undoButton": "Undo",
     "closeButton": "Close", "cancelButton": "Cancel", "saveButton": "Save", "confirmButton": "Confirm", "editButton": "Edit",
-    "filterAllDay": "Times", "filterAll": "All", "filterMorning": "Morning", "filterAfternoon": "Afternoon", "filterEvening": "Night",
-    "dayNameSun": "SUN", "dayNameMon": "MON", "dayNameTue": "TUE", "dayNameWed": "WED", "dayNameThu": "THU", "dayNameFri": "FRI", "dayNameSat": "SAT",
+    "filterMorning": "Morning", "filterAfternoon": "Afternoon", "filterEvening": "Night",
     "fabAddHabit_ariaLabel": "Add Habit", "manageHabits_ariaLabel": "Settings", "aiEval_ariaLabel": "AI Evaluation",
     "language_ariaLabel": "Language selector", "languagePrev_ariaLabel": "Previous language", "languageNext_ariaLabel": "Next language",
     "frequency_ariaLabel": "Frequency selector", "frequencyPrev_ariaLabel": "Previous frequency", "frequencyNext_ariaLabel": "Next frequency",
@@ -15,7 +14,7 @@
     "modalManageHabitsSubtitle": "Manage Habits", "modalManageLanguage": "Language", "modalManageReset": "Reset", "modalManageResetButton": "Delete data",
     "modalAITitle": "AI Evaluation", "modalAIOptionsTitle": "AI Analysis Options", "modalAILoading": "Analyzing your habits...", "modalConfirmTitle": "Confirm Action",
     "modalNotesTitle": "Add Note", "modalNotesTitleFor": "Note for \"{habitName}\"", "modalNotesTextareaPlaceholder": "Enter your note about this habit for the selected day...",
-    "modalNotesSaveButton": "Save Note", "modalEditTitle": "Edit Habit", "modalAddTitle": "Add Habit", "modalCreateTitle": "Create Custom Habit",
+    "modalNotesSaveButton": "Save Note", "modalEditTitle": "Edit Habit", "modalAddTitle": "Add Habit",
     "modalAddHabitTitle": "Add \"{habitName}\"", "modalEditFormNameLabel": "Name", "modalEditFormTimeLabel": "Time(s)",
     "modalEditFormFrequencyLabel": "Frequency", "modalEditSaveButton": "Save Habit", "modalStatusEnded": "(Ended)", "modalStatusGraduated": "(Graduated)",
     "modalAIOfflineTitle": "Offline Mode", "modalAIOfflineMessage": "The AI Evaluation requires an internet connection. Please connect and try again.",

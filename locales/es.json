@@ -1,10 +1,9 @@
 
 {
     "appName": "Seguimiento de Hábitos con IA", "headerTitleToday": "Hoy", "headerTitleYesterday": "Ayer", "headerTitleTomorrow": "Mañana",
-    "noHabitsToday": "No hay hábitos para hoy.", "undoToastText": "Hábito finalizado.", "undoButton": "Deshacer",
+    "undoToastText": "Hábito finalizado.", "undoButton": "Deshacer",
     "closeButton": "Cerrar", "cancelButton": "Cancelar", "saveButton": "Guardar", "confirmButton": "Confirmar", "editButton": "Editar",
-    "filterAllDay": "Horarios", "filterAll": "Todos", "filterMorning": "Mañana", "filterAfternoon": "Tarde", "filterEvening": "Noche",
-    "dayNameSun": "DOM", "dayNameMon": "LUN", "dayNameTue": "MAR", "dayNameWed": "MIÉ", "dayNameThu": "JUE", "dayNameFri": "VIE", "dayNameSat": "SÁB",
+    "filterMorning": "Mañana", "filterAfternoon": "Tarde", "filterEvening": "Noche",
     "fabAddHabit_ariaLabel": "Añadir Hábito", "manageHabits_ariaLabel": "Configuración", "aiEval_ariaLabel": "Evaluación IA",
     "language_ariaLabel": "Selector de idioma", "languagePrev_ariaLabel": "Idioma anterior", "languageNext_ariaLabel": "Próximo idioma",
     "frequency_ariaLabel": "Selector de frecuencia", "frequencyPrev_ariaLabel": "Frecuencia anterior", "frequencyNext_ariaLabel": "Próxima frecuencia",
@@ -15,7 +14,7 @@
     "modalManageHabitsSubtitle": "Gestionar Hábitos", "modalManageLanguage": "Idioma", "modalManageReset": "Restablecer", "modalManageResetButton": "Borrar datos",
     "modalAITitle": "Evaluación de IA", "modalAIOptionsTitle": "Opciones de Análisis de IA", "modalAILoading": "Analizando tus hábitos...", "modalConfirmTitle": "Confirmar Acción",
     "modalNotesTitle": "Añadir Nota", "modalNotesTitleFor": "Nota para \"{habitName}\"", "modalNotesTextareaPlaceholder": "Escribe tu nota sobre este hábito para el día seleccionado...",
-    "modalNotesSaveButton": "Guardar Nota", "modalEditTitle": "Editar Hábito", "modalAddTitle": "Añadir Hábito", "modalCreateTitle": "Crear Hábito Personalizado",
+    "modalNotesSaveButton": "Guardar Nota", "modalEditTitle": "Editar Hábito", "modalAddTitle": "Añadir Hábito",
     "modalAddHabitTitle": "Añadir \"{habitName}\"", "modalEditFormNameLabel": "Nombre", "modalEditFormTimeLabel": "Hora(s)",
     "modalEditFormFrequencyLabel": "Frecuencia", "modalEditSaveButton": "Guardar Hábito", "modalStatusEnded": "(Finalizado)", "modalStatusGraduated": "(Graduado)",
     "modalAIOfflineTitle": "Modo Offline", "modalAIOfflineMessage": "La Evaluación de IA requiere una conexión a internet. Por favor, conéctese e inténtelo de nuevo.",

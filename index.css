@@ -969,18 +969,17 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 .habit-list-item.ended { opacity: 0.6; }
 .habit-list-item.graduated { opacity: 0.8; }
 .habit-list-actions { display: flex; gap: var(--space-sm); }
-.end-habit-btn, .permanent-delete-habit-btn, .reactivate-habit-btn, .graduate-habit-btn, .edit-habit-btn {
+.end-habit-btn, .permanent-delete-habit-btn, .graduate-habit-btn, .edit-habit-btn {
     background: none; border: none; cursor: pointer; font-size: 20px;
     display: flex; align-items: center; justify-content: center;
     padding: var(--space-xs); border-radius: var(--border-radius-pill);
     transition: background-color var(--transition-duration);
 }
-.end-habit-btn:hover, .permanent-delete-habit-btn:hover, .reactivate-habit-btn:hover, .graduate-habit-btn:hover, .edit-habit-btn:hover {
+.end-habit-btn:hover, .permanent-delete-habit-btn:hover, .graduate-habit-btn:hover, .edit-habit-btn:hover {
     background-color: var(--surface-hover);
 }
 .end-habit-btn, .edit-habit-btn { color: var(--text-secondary); }
 .permanent-delete-habit-btn { color: var(--color-red); }
-.reactivate-habit-btn { color: var(--accent-green); }
 .graduate-habit-btn { color: var(--color-yellow); }
 
 .setting-item { display: flex; justify-content: space-between; align-items: center; }
