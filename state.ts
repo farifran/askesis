@@ -203,6 +203,7 @@ export const state: {
     aiState: 'idle' | 'loading' | 'completed' | 'error';
     lastAIResult: string | null;
     lastAIError: string | null;
+    syncState: 'syncSaving' | 'syncSynced' | 'syncError' | 'syncInitial';
 } = {
     habits: [],
     dailyData: {},
@@ -222,6 +223,7 @@ export const state: {
     aiState: 'idle',
     lastAIResult: null,
     lastAIError: null,
+    syncState: 'syncInitial',
 };
 
 // --- STATE-DEPENDENT HELPERS ---

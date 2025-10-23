@@ -58,10 +58,6 @@ export function initFrequencyFilter() {
     updateReelRotaryARIA(ui.frequencyViewport, 0, freqLabels, 'frequency_ariaLabel');
 }
 
-export function updateCalendarSelection() {
-    document.querySelectorAll('.day-item').forEach(el => el.classList.toggle('selected', el.getAttribute('data-date') === state.selectedDate));
-}
-
 function calculateDayProgress(isoDate: string): { completedPercent: number, totalPercent: number } {
     const dailyInfo = getHabitDailyInfoForDate(isoDate);
     const dateObj = parseUTCIsoDate(isoDate);
@@ -173,23 +169,7 @@ export const formatGoalForDisplay = (goal: number): string => {
 };
 
 function updateGoalContentElement(goalEl: HTMLElement, status: HabitStatus, habit: Habit, time: TimeOfDay, dayDataForInstance: HabitDayData | undefined) {
-    // For pending numeric goals, we do a less destructive update to preserve the DOM for animations.
-    if (status === 'pending' && (habit.goal.type === 'pages' || habit.goal.type === 'minutes')) {
-        const smartGoal = getSmartGoalForHabit(habit, state.selectedDate, time);
-        const currentGoal = dayDataForInstance?.goalOverride ?? smartGoal;
-        
-        let controlsEl = goalEl.querySelector('.habit-goal-controls');
-        if (controlsEl) {
-            // Structure exists, just update the values
-            const progressEl = controlsEl.querySelector<HTMLElement>('.progress');
-            const unitEl = controlsEl.querySelector<HTMLElement>('.unit');
-            if (progressEl) progressEl.textContent = formatGoalForDisplay(currentGoal);
-            if (unitEl) unitEl.textContent = getUnitString(habit, currentGoal);
-            return; // Exit early
-        }
-    }
-
-    // For all other cases, or if the structure doesn't exist, rebuild the innerHTML.
+    // Para todos os casos, ou se a estrutura não existir, reconstrua o innerHTML.
     goalEl.innerHTML = '';
 
     switch (status) {
@@ -413,7 +393,6 @@ export function renderHabits() {
         }
     });
 }
-
 
 export function renderExploreHabits() {
     ui.exploreHabitList.innerHTML = PREDEFINED_HABITS.map((habit, index) => {

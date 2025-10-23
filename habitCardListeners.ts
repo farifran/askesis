@@ -1,6 +1,6 @@
 import { ui } from './ui';
 import { state, Habit, getSmartGoalForHabit, TimeOfDay } from './state';
-import { openNotesModal, showConfirmationModal, closeModal, openEditModal, renderHabits } from './render';
+import { openNotesModal, showConfirmationModal, closeModal, openEditModal } from './render';
 import {
     toggleHabitStatus,
     updateGoalOverride,
@@ -31,9 +31,10 @@ function createGoalInput(habit: Habit, time: TimeOfDay, wrapper: HTMLElement) {
         const newGoal = parseInt(input.value, 10);
         if (!isNaN(newGoal) && newGoal > 0) {
             updateGoalOverride(habitId, state.selectedDate, time, newGoal);
+        } else {
+             // Se o valor for inválido, restaura o conteúdo original para evitar um estado vazio.
+            wrapper.innerHTML = originalContent;
         }
-        // A atualização da UI será feita por renderHabits após o estado ser salvo
-        renderHabits();
     };
     
     input.addEventListener('blur', save);

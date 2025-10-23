@@ -147,6 +147,7 @@ export async function setLanguage(langCode: 'pt' | 'en' | 'es') {
     initLanguageFilter();
 
     updateUIText();
+    ui.syncStatus.textContent = t(state.syncState);
     
     if (ui.manageModal.classList.contains('visible')) {
         setupManageModal();

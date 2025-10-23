@@ -2,7 +2,7 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-import { AppState, STATE_STORAGE_KEY, loadState } from './state';
+import { AppState, STATE_STORAGE_KEY, loadState, state } from './state';
 import { ui } from './ui';
 import { t } from './i18n';
 import { getSyncKey, getSyncKeyHash, hasLocalSyncKey } from './sync';
@@ -31,6 +31,7 @@ const getApiUrl = (endpoint: string): string => {
 };
 
 export function setSyncStatus(statusKey: 'syncSaving' | 'syncSynced' | 'syncError' | 'syncInitial') {
+    state.syncState = statusKey;
     ui.syncStatus.textContent = t(statusKey);
 }
 

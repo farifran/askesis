@@ -3,7 +3,7 @@ import { addDays, parseUTCIsoDate } from './utils';
 import { ui } from './ui';
 import {
     renderHabits,
-    updateCalendarSelection,
+    renderCalendar,
     updateHeaderTitle,
     createCalendarDayElement,
     renderStoicQuote,
@@ -64,7 +64,7 @@ const setupGlobalListeners = () => {
         if (clickCount === 1) {
             if (state.selectedDate !== date) {
                 state.selectedDate = date;
-                updateCalendarSelection();
+                renderCalendar();
                 updateHeaderTitle();
                 renderHabits();
                 renderStoicQuote();
