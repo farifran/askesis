@@ -58,11 +58,6 @@ export function initFrequencyFilter() {
     updateReelRotaryARIA(ui.frequencyViewport, 0, freqLabels, 'frequency_ariaLabel');
 }
 
-export function initHabitTimeFilter() {
-    // This function is no longer needed as the rotary selector was replaced by checkboxes.
-    // Kept to avoid breaking the import chain, but its content is removed.
-}
-
 export function updateCalendarSelection() {
     document.querySelectorAll('.day-item').forEach(el => el.classList.toggle('selected', el.getAttribute('data-date') === state.selectedDate));
 }
@@ -164,11 +159,6 @@ export function renderFrequencyFilter() {
     const transformX = -Math.max(0, currentIndex) * itemWidth;
     ui.frequencyReel.style.transform = `translateX(${transformX}px)`;
     updateReelRotaryARIA(ui.frequencyViewport, Math.max(0, currentIndex), freqLabels, 'frequency_ariaLabel');
-}
-
-export function renderHabitTimeFilter() {
-    // This function is no longer needed as the rotary selector was replaced by checkboxes.
-    // Kept to avoid breaking the import chain, but its content is removed.
 }
 
 const getUnitString = (habit: Habit, value: number | undefined) => {

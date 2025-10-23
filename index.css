@@ -394,10 +394,8 @@ main {
 /* REATORAÇÃO: Centraliza a definição de largura usando variáveis locais. */
 #language-rotary { --reel-item-width: 95px; }
 #frequency-rotary { --reel-item-width: 125px; }
-#habit-time-rotary { --reel-item-width: 80px; }
 
-#frequency-rotary .reel-option,
-#habit-time-rotary .reel-option {
+#frequency-rotary .reel-option {
     color: var(--text-primary);
 }
 

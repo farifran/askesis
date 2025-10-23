@@ -1,3 +1,4 @@
+
 {
     "appName": "Habit Tracker with AI", "headerTitleToday": "Today", "headerTitleYesterday": "Yesterday", "headerTitleTomorrow": "Tomorrow",
     "noHabitsToday": "No habits for today.", "undoToastText": "Habit ended.", "undoButton": "Undo",
@@ -5,10 +6,8 @@
     "filterAllDay": "Times", "filterAll": "All", "filterMorning": "Morning", "filterAfternoon": "Afternoon", "filterEvening": "Night",
     "dayNameSun": "SUN", "dayNameMon": "MON", "dayNameTue": "TUE", "dayNameWed": "WED", "dayNameThu": "THU", "dayNameFri": "FRI", "dayNameSat": "SAT",
     "fabAddHabit_ariaLabel": "Add Habit", "manageHabits_ariaLabel": "Settings", "aiEval_ariaLabel": "AI Evaluation",
-    "timeFilter_ariaLabel": "Time filter", "timeFilterPrev_ariaLabel": "Previous time", "timeFilterNext_ariaLabel": "Next time",
     "language_ariaLabel": "Language selector", "languagePrev_ariaLabel": "Previous language", "languageNext_ariaLabel": "Next language",
     "frequency_ariaLabel": "Frequency selector", "frequencyPrev_ariaLabel": "Previous frequency", "frequencyNext_ariaLabel": "Next frequency",
-    "habitTime_ariaLabel": "Habit time selector", "habitTimePrev_ariaLabel": "Previous time", "habitTimeNext_ariaLabel": "Next time",
     "habitGoalDecrement_ariaLabel": "Decrease goal", "habitGoalIncrement_ariaLabel": "Increase goal", "habitEnd_ariaLabel": "End Habit",
     "habitNoteAdd_ariaLabel": "Add Note", "habitNoteEdit_ariaLabel": "Edit Note",
     "aria_delete_permanent": "Delete {habitName} permanently", "aria_edit": "Edit {habitName}", "aria_graduate": "Graduate Habit {habitName}", "aria_end": "End {habitName}",

@@ -7,7 +7,7 @@ import './index.css';
 import { AppState, loadState, state } from './state';
 import { addDays, getTodayUTC } from './utils';
 import { ui, initUI } from './ui';
-import { renderApp, updateHeaderTitle, initLanguageFilter, renderLanguageFilter, renderAINotificationState, openModal, initFrequencyFilter, initHabitTimeFilter } from './render';
+import { renderApp, updateHeaderTitle, initLanguageFilter, renderLanguageFilter, renderAINotificationState, openModal, initFrequencyFilter } from './render';
 import { setupEventListeners } from './listeners';
 import { initI18n } from './i18n';
 import { createDefaultHabit } from './habitActions';
@@ -45,7 +45,6 @@ const init = async () => {
     
     initLanguageFilter();
     initFrequencyFilter();
-    initHabitTimeFilter();
     renderLanguageFilter();
     renderApp();
     updateHeaderTitle();

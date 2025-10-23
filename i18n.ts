@@ -4,7 +4,7 @@
 */
 import { state, Habit, LANGUAGES, PredefinedHabit } from './state';
 import { ui } from './ui';
-import { renderApp, updateHeaderTitle, initFrequencyFilter, initHabitTimeFilter, setupManageModal, initLanguageFilter } from './render';
+import { renderApp, updateHeaderTitle, initFrequencyFilter, setupManageModal, initLanguageFilter } from './render';
 
 type PluralableTranslation = { one: string; other: string };
 type TranslationValue = string | PluralableTranslation;
@@ -144,7 +144,6 @@ export async function setLanguage(langCode: 'pt' | 'en' | 'es') {
     localStorage.setItem('habitTrackerLanguage', langCode);
     
     initFrequencyFilter();
-    initHabitTimeFilter();
     initLanguageFilter();
 
     updateUIText();

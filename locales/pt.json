@@ -1,3 +1,4 @@
+
 {
     "appName": "Habit Tracker com IA", "headerTitleToday": "Hoje", "headerTitleYesterday": "Ontem", "headerTitleTomorrow": "Amanhã",
     "noHabitsToday": "Nenhum hábito para hoje.", "undoToastText": "Hábito encerrado.", "undoButton": "Desfazer",
@@ -5,10 +6,8 @@
     "filterAllDay": "Horários", "filterAll": "Todos", "filterMorning": "Manhã", "filterAfternoon": "Tarde", "filterEvening": "Noite",
     "dayNameSun": "DOM", "dayNameMon": "SEG", "dayNameTue": "TER", "dayNameWed": "QUA", "dayNameThu": "QUI", "dayNameFri": "SEX", "dayNameSat": "SÁB",
     "fabAddHabit_ariaLabel": "Adicionar Hábito", "manageHabits_ariaLabel": "Configurações", "aiEval_ariaLabel": "Avaliação IA",
-    "timeFilter_ariaLabel": "Filtro de horário", "timeFilterPrev_ariaLabel": "Horário anterior", "timeFilterNext_ariaLabel": "Próximo horário",
     "language_ariaLabel": "Seletor de idioma", "languagePrev_ariaLabel": "Idioma anterior", "languageNext_ariaLabel": "Próximo idioma",
     "frequency_ariaLabel": "Seletor de frequência", "frequencyPrev_ariaLabel": "Frequência anterior", "frequencyNext_ariaLabel": "Próxima frequência",
-    "habitTime_ariaLabel": "Seletor de horário do hábito", "habitTimePrev_ariaLabel": "Horário anterior", "habitTimeNext_ariaLabel": "Próximo horário",
     "habitGoalDecrement_ariaLabel": "Diminuir meta", "habitGoalIncrement_ariaLabel": "Aumentar meta", "habitEnd_ariaLabel": "Encerrar Hábito",
     "habitNoteAdd_ariaLabel": "Adicionar Nota", "habitNoteEdit_ariaLabel": "Editar Nota",
     "aria_delete_permanent": "Apagar permanentemente {habitName}", "aria_edit": "Editar {habitName}", "aria_graduate": "Graduar Hábito {habitName}", "aria_end": "Encerrar {habitName}",
