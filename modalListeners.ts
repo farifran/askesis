@@ -29,34 +29,7 @@ import {
 import { getAIEvaluationStream, buildAIPrompt } from './api';
 import { t, setLanguage, getHabitDisplayInfo } from './i18n';
 import { setupReelRotary } from './rotary';
-
-function simpleMarkdownToHTML(text: string): string {
-    const lines = text.split('\n');
-    let html = '';
-    let inList = false;
-
-    for (const line of lines) {
-        const trimmedLine = line.trim();
-        let processedLine = line.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-        const isListItem = trimmedLine.startsWith('* ') || trimmedLine.startsWith('- ');
-
-        if (isListItem) {
-            if (!inList) {
-                html += '<ul>';
-                inList = true;
-            }
-            html += `<li>${processedLine.trim().substring(2)}</li>`;
-        } else {
-            if (inList) {
-                html += '</ul>';
-                inList = false;
-            }
-            if (trimmedLine.length > 0) html += `<p>${processedLine}</p>`;
-        }
-    }
-    if (inList) html += '</ul>';
-    return html;
-}
+import { simpleMarkdownToHTML } from './utils';
 
 type PendingHabitKey = 'pending21DayHabitIds' | 'pendingConsolidationHabitIds';
 
