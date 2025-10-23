@@ -39,6 +39,7 @@ export function setupReelRotary({
         }
         await onIndexChange(nextIndex);
         currentIndex = getInitialIndex(); // Re-sincroniza caso o estado tenha sido atualizado
+        render(); // Garante que a UI seja redesenhada após a mudança.
     };
 
     prevBtn.addEventListener('click', () => handleIndexChange('prev'));
