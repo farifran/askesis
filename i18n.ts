@@ -133,7 +133,7 @@ function updateUIText() {
     ui.editHabitForm.querySelector('.modal-close-btn')!.textContent = t('cancelButton');
     ui.editHabitForm.querySelector('button[type="submit"]')!.textContent = t('modalEditSaveButton');
     
-    ui.undoToast.firstChild!.textContent = `${t('undoToastText')} `;
+    ui.undoToast.firstElementChild!.textContent = t('undoToastText');
     ui.undoBtn.textContent = t('undoButton');
 }
 
