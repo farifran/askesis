@@ -98,6 +98,11 @@ export interface AppState {
     notificationsShown: string[];
     pending21DayHabitIds: string[];
     pendingConsolidationHabitIds: string[];
+    // Propriedades do estado da IA
+    aiState?: 'idle' | 'loading' | 'completed' | 'error';
+    lastAIResult?: string | null;
+    lastAIError?: string | null;
+    hasSeenAIResult?: boolean;
 }
 
 
@@ -201,6 +206,7 @@ export const state: {
         formData: HabitTemplate;
     } | null;
     aiState: 'idle' | 'loading' | 'completed' | 'error';
+    hasSeenAIResult: boolean;
     lastAIResult: string | null;
     lastAIError: string | null;
     syncState: 'syncSaving' | 'syncSynced' | 'syncError' | 'syncInitial';
@@ -221,6 +227,7 @@ export const state: {
     editingNoteFor: null,
     editingHabit: null,
     aiState: 'idle',
+    hasSeenAIResult: true,
     lastAIResult: null,
     lastAIError: null,
     syncState: 'syncInitial',
@@ -467,6 +474,11 @@ export function saveState() {
         notificationsShown: state.notificationsShown,
         pending21DayHabitIds: state.pending21DayHabitIds,
         pendingConsolidationHabitIds: state.pendingConsolidationHabitIds,
+        // Propriedades do estado da IA
+        aiState: state.aiState,
+        lastAIResult: state.lastAIResult,
+        lastAIError: state.lastAIError,
+        hasSeenAIResult: state.hasSeenAIResult,
     };
     try {
         localStorage.setItem(STATE_STORAGE_KEY, JSON.stringify(appState));
@@ -504,11 +516,25 @@ export function loadState(cloudState?: AppState) {
         state.notificationsShown = loadedAppState.notificationsShown || [];
         state.pending21DayHabitIds = loadedAppState.pending21DayHabitIds || [];
         state.pendingConsolidationHabitIds = loadedAppState.pendingConsolidationHabitIds || [];
+        // Carrega o estado da IA, com padrões para versões antigas
+        state.aiState = loadedAppState.aiState || 'idle';
+        state.lastAIResult = loadedAppState.lastAIResult || null;
+        state.lastAIError = loadedAppState.lastAIError || null;
+        state.hasSeenAIResult = loadedAppState.hasSeenAIResult ?? true;
+        // Se um estado de 'loading' foi carregado de uma sessão anterior, reseta-o para evitar travamento.
+        if (state.aiState === 'loading') {
+            state.aiState = 'idle';
+        }
     } else {
         state.habits = [];
         state.dailyData = {};
         state.notificationsShown = [];
         state.pending21DayHabitIds = [];
         state.pendingConsolidationHabitIds = [];
+        // Define padrões para um estado novo
+        state.aiState = 'idle';
+        state.lastAIResult = null;
+        state.lastAIError = null;
+        state.hasSeenAIResult = true;
     }
 }

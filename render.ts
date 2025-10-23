@@ -405,11 +405,12 @@ export function renderExploreHabits() {
 export function renderAINotificationState() {
     const isLoading = state.aiState === 'loading';
     const hasCelebrations = state.pending21DayHabitIds.length > 0 || state.pendingConsolidationHabitIds.length > 0;
-    const hasCompletedResult = state.aiState === 'completed' || state.aiState === 'error';
+    // Um resultado não visto existe se o estado for concluído/erro E hasSeenAIResult for falso.
+    const hasUnseenResult = (state.aiState === 'completed' || state.aiState === 'error') && !state.hasSeenAIResult;
 
     ui.aiEvalBtn.classList.toggle('loading', isLoading);
     ui.aiEvalBtn.disabled = isLoading;
-    ui.aiEvalBtn.classList.toggle('has-notification', hasCelebrations || hasCompletedResult);
+    ui.aiEvalBtn.classList.toggle('has-notification', hasCelebrations || hasUnseenResult);
 }
 
 export function renderStoicQuote() {
@@ -610,7 +611,7 @@ export function openNotesModal(habitId: string, date: string, time: TimeOfDay) {
     state.editingNoteFor = { habitId, date, time };
     const habitNote = getHabitDailyInfoForDate(date)[habitId]?.instances?.[time]?.note || '';
     const { name } = getHabitDisplayInfo(habit);
-    ui.notesModalTitle.textContent = t('modalNotesTitleFor', { habitName: name });
+    ui.notesModalTitle.textContent = name;
     const dateObj = parseUTCIsoDate(date);
     ui.notesModalSubtitle.textContent = dateObj.toLocaleDateString(state.activeLanguageCode, { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
     ui.notesTextarea.value = habitNote;

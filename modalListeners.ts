@@ -224,6 +224,7 @@ const runAIEvaluation = async (analysisType: 'weekly' | 'monthly' | 'general') =
     if (!navigator.onLine) {
         state.lastAIError = `<p>${t('modalAIOfflineMessage')}</p>`;
         state.aiState = 'error';
+        saveState();
         renderAINotificationState();
         ui.aiModalTitle.textContent = t('modalAIOfflineTitle');
         ui.aiResponse.innerHTML = state.lastAIError;
@@ -233,6 +234,7 @@ const runAIEvaluation = async (analysisType: 'weekly' | 'monthly' | 'general') =
     }
     
     state.aiState = 'loading';
+    state.hasSeenAIResult = false;
     state.lastAIResult = null;
     state.lastAIError = null;
     renderAINotificationState();
@@ -285,6 +287,7 @@ const runAIEvaluation = async (analysisType: 'weekly' | 'monthly' | 'general') =
             responseContentEl.innerHTML = state.lastAIError;
         }
     } finally {
+        saveState();
         renderAINotificationState();
         if (state.aiState !== 'loading') {
             ui.aiNewAnalysisBtn.style.display = 'block';
@@ -298,28 +301,49 @@ const handleAIEvaluationClick = async () => {
     if (handleCelebrationCheck('pendingConsolidationHabitIds', 'celebrationConsolidatedTitle', 'celebrationConsolidatedBody')) return;
     if (handleCelebrationCheck('pending21DayHabitIds', 'celebrationSemiConsolidatedTitle', 'celebrationSemiConsolidatedBody')) return;
 
+    const showResult = () => {
+        const isError = state.aiState === 'error';
+        if (isError) {
+            ui.aiModalTitle.textContent = t('modalAIError');
+            ui.aiResponse.innerHTML = state.lastAIError!;
+        } else { // 'completed'
+            ui.aiModalTitle.textContent = t('modalAITitle');
+            ui.aiResponse.innerHTML = simpleMarkdownToHTML(state.lastAIResult!);
+        }
+        ui.aiNewAnalysisBtn.style.display = 'block';
+        openModal(ui.aiModal);
+        
+        // Marca como visto e remove a notificação
+        if (!state.hasSeenAIResult) {
+            state.hasSeenAIResult = true;
+            saveState();
+            renderAINotificationState();
+        }
+    };
+
     // Roteia a ação com base no estado atual da IA.
     switch (state.aiState) {
         case 'completed':
-            ui.aiModalTitle.textContent = t('modalAITitle');
-            ui.aiResponse.innerHTML = simpleMarkdownToHTML(state.lastAIResult!);
-            ui.aiNewAnalysisBtn.style.display = 'block';
-            openModal(ui.aiModal);
-            break;
         case 'error':
-            ui.aiModalTitle.textContent = t('modalAIError');
-            ui.aiResponse.innerHTML = state.lastAIError!;
-            ui.aiNewAnalysisBtn.style.display = 'block';
-            openModal(ui.aiModal);
+            showResult();
             break;
         case 'idle':
             openModal(ui.aiOptionsModal);
             break;
         case 'loading':
             // O botão está desativado, então esta ação não deve ser acionada.
-            // Nenhuma ação é necessária como fallback.
             break;
     }
+};
+
+const closeAIModalAndReset = () => {
+    closeModal(ui.aiModal);
+    state.aiState = 'idle';
+    state.lastAIResult = null;
+    state.lastAIError = null;
+    state.hasSeenAIResult = true; // Garante que foi marcado como visto/resetado
+    saveState(); // Salva o estado resetado
+    renderAINotificationState();
 };
 
 export const setupModalListeners = () => {
@@ -334,7 +358,22 @@ export const setupModalListeners = () => {
     });
     ui.aiEvalBtn.addEventListener('click', handleAIEvaluationClick);
 
-    [ui.manageModal, ui.exploreModal, ui.aiModal, ui.confirmModal, ui.notesModal, ui.editHabitModal, ui.aiOptionsModal].forEach(initializeModalClosing);
+    // Initialize generic closing for modals that don't need special cleanup
+    [ui.manageModal, ui.exploreModal, ui.confirmModal, ui.notesModal, ui.editHabitModal, ui.aiOptionsModal].forEach(initializeModalClosing);
+
+    // Custom closing logic for the AI modal
+    ui.aiModal.addEventListener('click', e => {
+        if (e.target === ui.aiModal) {
+             // Apenas fecha o modal, não reseta o estado, para que o usuário possa reabrir.
+            closeModal(ui.aiModal);
+        }
+    });
+
+    ui.aiModal.querySelector('.modal-close-btn')!.addEventListener('click', () => {
+        // O botão 'Fechar' também apenas fecha o modal.
+        closeModal(ui.aiModal);
+    });
+
 
     ui.exploreHabitList.addEventListener('click', e => {
         const item = (e.target as HTMLElement).closest<HTMLElement>('.explore-habit-item');
@@ -401,12 +440,9 @@ export const setupModalListeners = () => {
     ui.aiMonthlyReviewBtn.addEventListener('click', () => runAIEvaluation('monthly'));
     ui.aiGeneralAnalysisBtn.addEventListener('click', () => runAIEvaluation('general'));
     
+    // O botão "Iniciar Nova Análise" agora reseta o estado da IA para permitir um novo ciclo.
     ui.aiNewAnalysisBtn.addEventListener('click', () => {
-        state.aiState = 'idle';
-        state.lastAIResult = null;
-        state.lastAIError = null;
-        renderAINotificationState();
-        closeModal(ui.aiModal);
+        closeAIModalAndReset();
         openModal(ui.aiOptionsModal);
     });
 
