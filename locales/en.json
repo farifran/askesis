@@ -125,5 +125,10 @@
     "syncDisableTitle": "Disable Sync",
     "syncDisableConfirm": "Disable",
     "confirmInvalidKeyTitle": "Invalid Key Format",
-    "confirmInvalidKeyBody": "The entered key does not appear to be a valid UUID. Sync keys typically have a format like '123e4567-e89b-12d3-a456-426614174000'. Do you want to continue anyway?"
+    "confirmInvalidKeyBody": "The entered key does not appear to be a valid UUID. Sync keys typically have a format like '123e4567-e89b-12d3-a456-426614174000'. Do you want to continue anyway?",
+    "chartTitle": "Compound Growth",
+    "chartEmptyState": "Keep tracking your habits to see your progress here.",
+    "chartTooltipScore": "Score",
+    "chartTooltipCompleted": "Completed: {completed}/{total}",
+    "chartEvolutionSince": "Evolution since {date}"
 }

@@ -32,6 +32,7 @@ import { ui } from './ui';
 import { t, getLocaleDayName, getHabitDisplayInfo } from './i18n';
 import { STOIC_QUOTES } from './quotes';
 import { icons } from './icons';
+import { renderChart } from './chart';
 
 function updateReelRotaryARIA(viewportEl: HTMLElement, currentIndex: number, options: readonly string[] | string[], labelKey: string) {
     if (!viewportEl) return;
@@ -331,46 +332,11 @@ export function renderHabits() {
     });
 
     const groupHasHabits: Record<TimeOfDay, boolean> = { 'Manhã': false, 'Tarde': false, 'Noite': false };
-
     TIMES_OF_DAY.forEach(time => {
-        const wrapperEl = ui.habitContainer.querySelector(`.habit-group-wrapper[data-time-wrapper="${time}"]`);
-        const groupEl = wrapperEl?.querySelector<HTMLElement>(`.habit-group[data-time="${time}"]`);
-        if (!groupEl) return;
-
-        const requiredHabits = habitsByTime[time];
-        groupHasHabits[time] = requiredHabits.length > 0;
-        
-        const existingCards = Array.from(groupEl.querySelectorAll<HTMLElement>('.habit-card'));
-        const existingCardsMap = new Map(existingCards.map(card => [card.dataset.habitId, card]));
-        const requiredIds = new Set(requiredHabits.map(h => h.id));
-
-        for (const card of existingCards) {
-            if (!requiredIds.has(card.dataset.habitId!)) {
-                card.remove();
-            }
-        }
-
-        let lastPlacedElement: HTMLElement | null = null;
-        for (const habit of requiredHabits) {
-            let cardEl = existingCardsMap.get(habit.id);
-            if (!cardEl) {
-                cardEl = createHabitCardElement(habit, time);
-            } else {
-                updateHabitCardDOM(habit.id, time);
-            }
-            
-            const nextSibling = lastPlacedElement ? lastPlacedElement.nextElementSibling : groupEl.firstElementChild;
-            if (nextSibling !== cardEl) {
-                 groupEl.insertBefore(cardEl, nextSibling);
-            }
-            
-            lastPlacedElement = cardEl;
-        }
+        groupHasHabits[time] = habitsByTime[time].length > 0;
     });
 
-    document.querySelectorAll('.show-smart-placeholder').forEach(el => el.classList.remove('show-smart-placeholder'));
     const emptyTimes = TIMES_OF_DAY.filter(time => !groupHasHabits[time]);
-
     let targetTime: TimeOfDay | null = null;
     if (groupHasHabits['Manhã'] && !groupHasHabits['Tarde'] && groupHasHabits['Noite']) {
         targetTime = 'Tarde';
@@ -381,30 +347,62 @@ export function renderHabits() {
     } else if (!groupHasHabits['Noite']) {
         targetTime = 'Noite';
     }
-    
+
     TIMES_OF_DAY.forEach(time => {
         const wrapperEl = ui.habitContainer.querySelector(`.habit-group-wrapper[data-time-wrapper="${time}"]`);
         const groupEl = wrapperEl?.querySelector<HTMLElement>(`.habit-group[data-time="${time}"]`);
         const titleEl = wrapperEl?.querySelector('h2');
         if (!wrapperEl || !groupEl || !titleEl) return;
+
+        // Render cards
+        const requiredHabits = habitsByTime[time];
+        const existingCards = Array.from(groupEl.querySelectorAll<HTMLElement>('.habit-card'));
+        const existingCardsMap = new Map(existingCards.map(card => [card.dataset.habitId, card]));
+        const requiredIds = new Set(requiredHabits.map(h => h.id));
+
+        for (const card of existingCards) {
+            if (!requiredIds.has(card.dataset.habitId!)) {
+                card.remove();
+            }
+        }
+        let lastPlacedElement: HTMLElement | null = null;
+        for (const habit of requiredHabits) {
+            let cardEl = existingCardsMap.get(habit.id);
+            if (!cardEl) {
+                cardEl = createHabitCardElement(habit, time);
+            } else {
+                updateHabitCardDOM(habit.id, time);
+            }
+            const nextSibling = lastPlacedElement ? lastPlacedElement.nextElementSibling : groupEl.firstElementChild;
+            if (nextSibling !== cardEl) {
+                 groupEl.insertBefore(cardEl, nextSibling);
+            }
+            lastPlacedElement = cardEl;
+        }
+        
+        // Update wrapper and placeholder state
+        const hasHabits = groupHasHabits[time];
+        const isSmartPlaceholder = time === targetTime;
         
         const timeToKeyMap: Record<TimeOfDay, string> = { 'Manhã': 'filterMorning', 'Tarde': 'filterAfternoon', 'Noite': 'filterEvening' };
         titleEl.textContent = t(timeToKeyMap[time]);
         
-        wrapperEl.classList.toggle('has-habits', groupHasHabits[time]);
+        wrapperEl.classList.toggle('has-habits', hasHabits);
+        wrapperEl.classList.toggle('is-collapsible', !hasHabits && !isSmartPlaceholder);
 
         let placeholder = groupEl.querySelector<HTMLElement>('.empty-group-placeholder');
-        if (!groupHasHabits[time]) {
+        if (!hasHabits) {
             if (!placeholder) {
                 placeholder = document.createElement('div');
                 placeholder.className = 'empty-group-placeholder';
                 groupEl.appendChild(placeholder);
             }
+            placeholder.classList.toggle('show-smart-placeholder', isSmartPlaceholder);
             
             const text = t('dragToAddHabit');
             let iconHTML = '';
 
-            if (time === targetTime && emptyTimes.length > 1) {
+            if (isSmartPlaceholder && emptyTimes.length > 1) {
                 const genericIconHTML = emptyTimes
                     .map(getTimeOfDayIcon)
                     .join('<span class="icon-separator">/</span>');
@@ -415,8 +413,7 @@ export function renderHabits() {
                     <span class="placeholder-icon-specific">${specificIconHTML}</span>
                 `;
             } else {
-                const specificIconHTML = getTimeOfDayIcon(time);
-                iconHTML = `<span class="placeholder-icon-specific">${specificIconHTML}</span>`;
+                iconHTML = `<span class="placeholder-icon-specific">${getTimeOfDayIcon(time)}</span>`;
             }
             
             placeholder.innerHTML = `<div class="time-of-day-icon">${iconHTML}</div><span>${text}</span>`;
@@ -425,11 +422,6 @@ export function renderHabits() {
             placeholder.remove();
         }
     });
-
-    if (targetTime) {
-        const smartPlaceholder = ui.habitContainer.querySelector(`.habit-group[data-time="${targetTime}"] .empty-group-placeholder`);
-        smartPlaceholder?.classList.add('show-smart-placeholder');
-    }
 }
 
 
@@ -484,6 +476,7 @@ export function renderApp() {
     renderCalendar();
     renderAINotificationState();
     renderStoicQuote();
+    renderChart();
 }
 
 export function updateHabitCardDOM(habitId: string, time: TimeOfDay) {

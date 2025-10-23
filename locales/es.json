@@ -125,5 +125,10 @@
     "syncDisableTitle": "Desactivar Sincronización",
     "syncDisableConfirm": "Desactivar",
     "confirmInvalidKeyTitle": "Formato de Clave Inválido",
-    "confirmInvalidKeyBody": "La clave introducida no parece ser un UUID válido. Las claves de sincronización suelen tener un formato como '123e4567-e89b-12d3-a456-426614174000'. ¿Desea continuar de todos modos?"
+    "confirmInvalidKeyBody": "La clave introducida no parece ser un UUID válido. Las claves de sincronización suelen tener un formato como '123e4567-e89b-12d3-a456-426614174000'. ¿Desea continuar de todos modos?",
+    "chartTitle": "Evolución Compuesta",
+    "chartEmptyState": "Sigue registrando tus hábitos para ver tu evolución aquí.",
+    "chartTooltipScore": "Puntuación",
+    "chartTooltipCompleted": "Completados: {completed}/{total}",
+    "chartEvolutionSince": "Evolución desde {date}"
 }

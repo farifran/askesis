@@ -25,59 +25,6 @@ export function setupSwipeHandler(habitContainer: HTMLElement) {
     let dragEnableTimer: number | null = null;
     const SWIPE_INTENT_THRESHOLD = 10; // Um limiar baixo para detectar a intenção de deslizar.
 
-    const cleanup = () => {
-        if (dragEnableTimer) {
-            clearTimeout(dragEnableTimer);
-            dragEnableTimer = null;
-        }
-
-        if (!activeCard) return;
-
-        const content = activeCard.querySelector<HTMLElement>('.habit-content-wrapper');
-        if (content) {
-            content.draggable = true; // Sempre reativa o arrastar ao final da interação
-            content.style.transform = ''; // Deixa o CSS cuidar da transição
-        }
-
-        const deltaX = currentX - startX;
-        activeCard.classList.remove('is-swiping');
-
-        // Processa o resultado do deslize apenas se a direção foi confirmada como horizontal
-        if (swipeDirection === 'horizontal') {
-            if (wasOpenLeft) {
-                // Se estava aberto à esquerda, um deslize para a ESQUERDA o fecha
-                if (deltaX < -SWIPE_INTENT_THRESHOLD) {
-                    activeCard.classList.remove('is-open-left');
-                }
-            } else if (wasOpenRight) {
-                // Se estava aberto à direita, um deslize para a DIREITA o fecha
-                if (deltaX > SWIPE_INTENT_THRESHOLD) {
-                    activeCard.classList.remove('is-open-right');
-                }
-            } else { // O cartão estava fechado
-                // Se deslizou para a direita, abre à esquerda (excluir)
-                if (deltaX > SWIPE_INTENT_THRESHOLD) {
-                    activeCard.classList.add('is-open-left');
-                // Se deslizou para a esquerda, abre à direita (nota)
-                } else if (deltaX < -SWIPE_INTENT_THRESHOLD) {
-                    activeCard.classList.add('is-open-right');
-                }
-            }
-        }
-        
-        // Reseta todas as variáveis de estado
-        activeCard = null;
-        swipeDirection = 'none';
-        
-        window.removeEventListener('pointermove', handlePointerMove);
-        window.removeEventListener('pointerup', cleanup);
-        window.removeEventListener('pointercancel', cleanup);
-
-        // Um atraso para prevenir cliques acidentais após um deslize,
-        // alinhado com a duração da transição CSS (300ms + 50ms de margem).
-        setTimeout(() => { isSwiping = false; }, 350);
-    };
-
     const handlePointerMove = (e: PointerEvent) => {
         if (!activeCard) return;
 
@@ -126,6 +73,75 @@ export function setupSwipeHandler(habitContainer: HTMLElement) {
                 content.style.transform = `translateX(${translateX}px)`;
             }
         }
+    };
+
+    const cleanup = () => {
+        if (dragEnableTimer) {
+            clearTimeout(dragEnableTimer);
+            dragEnableTimer = null;
+        }
+
+        if (!activeCard) return;
+
+        const content = activeCard.querySelector<HTMLElement>('.habit-content-wrapper');
+        if (content) {
+            content.draggable = true; // Sempre reativa o arrastar ao final da interação
+            content.style.transform = ''; // Deixa o CSS cuidar da transição
+        }
+
+        const deltaX = currentX - startX;
+        activeCard.classList.remove('is-swiping');
+
+        // Processa o resultado do deslize apenas se a direção foi confirmada como horizontal
+        if (swipeDirection === 'horizontal') {
+            if (wasOpenLeft) {
+                // Se estava aberto à esquerda, um deslize para a ESQUERDA o fecha
+                if (deltaX < -SWIPE_INTENT_THRESHOLD) {
+                    activeCard.classList.remove('is-open-left');
+                }
+            } else if (wasOpenRight) {
+                // Se estava aberto à direita, um deslize para a DIREITA o fecha
+                if (deltaX > SWIPE_INTENT_THRESHOLD) {
+                    activeCard.classList.remove('is-open-right');
+                }
+            } else { // O cartão estava fechado
+                // Se deslizou para a direita, abre à esquerda (excluir)
+                if (deltaX > SWIPE_INTENT_THRESHOLD) {
+                    activeCard.classList.add('is-open-left');
+                // Se deslizou para a esquerda, abre à direita (nota)
+                } else if (deltaX < -SWIPE_INTENT_THRESHOLD) {
+                    activeCard.classList.add('is-open-right');
+                }
+            }
+
+            // Se um deslize real ocorreu, previne o evento de 'clique' que se segue.
+            if (Math.abs(deltaX) > SWIPE_INTENT_THRESHOLD) {
+                const blockClick = (e: MouseEvent) => {
+                    const target = e.target as HTMLElement;
+                    // Permite cliques intencionais nos próprios botões de ação.
+                    if (target.closest('.swipe-delete-btn') || target.closest('.swipe-note-btn')) {
+                        window.removeEventListener('click', blockClick, true); // Limpa o listener e permite o evento
+                        return;
+                    }
+            
+                    // Bloqueia cliques acidentais em outros elementos.
+                    e.stopPropagation();
+                    e.preventDefault();
+                    window.removeEventListener('click', blockClick, true);
+                };
+                // Adiciona no modo de captura para garantir que seja executado antes de outros listeners.
+                window.addEventListener('click', blockClick, true);
+            }
+        }
+        
+        // Reseta todas as variáveis de estado
+        activeCard = null;
+        swipeDirection = 'none';
+        isSwiping = false; // Reseta o estado de deslize imediatamente para permitir o arrasto.
+        
+        window.removeEventListener('pointermove', handlePointerMove);
+        window.removeEventListener('pointerup', cleanup);
+        window.removeEventListener('pointercancel', cleanup);
     };
 
     habitContainer.addEventListener('dragstart', () => {

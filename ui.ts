@@ -4,6 +4,7 @@ type UIElements = {
     headerTitle: HTMLElement;
     stoicQuoteDisplay: HTMLElement;
     habitContainer: HTMLElement;
+    chartContainer: HTMLElement;
     manageHabitsBtn: HTMLElement;
     fabAddHabit: HTMLElement;
     manageModal: HTMLElement;
@@ -71,6 +72,7 @@ export function initUI(): void {
         headerTitle: document.getElementById('header-title')!,
         stoicQuoteDisplay: document.getElementById('stoic-quote-display')!,
         habitContainer: document.getElementById('habit-container')!,
+        chartContainer: document.getElementById('chart-container')!,
         manageHabitsBtn: document.getElementById('manage-habits-btn')!,
         fabAddHabit: document.getElementById('fab-add-habit')!,
         manageModal: document.getElementById('manage-modal')!,

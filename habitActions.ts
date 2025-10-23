@@ -38,6 +38,7 @@ import {
 } from './render';
 import { t, getHabitDisplayInfo } from './i18n';
 import { ui } from './ui';
+import { renderChart } from './chart';
 
 function updateHabitSchedule(
     originalHabit: Habit,
@@ -83,6 +84,7 @@ function updateHabitSchedule(
     saveState();
     renderHabits();
     renderCalendar();
+    renderChart();
     setupManageModal();
 }
 
@@ -140,6 +142,7 @@ export function toggleHabitStatus(habitId: string, time: TimeOfDay) {
     saveState();
     updateHabitCardDOM(habitId, time);
     updateCalendarDayDOM(state.selectedDate);
+    renderChart();
 }
 
 const GOAL_STEP = 5;
@@ -227,6 +230,7 @@ function setAllHabitsStatusForDate(date: string, status: HabitStatus) {
         });
 
         updateCalendarDayDOM(date);
+        renderChart();
     }
 }
 
@@ -246,6 +250,7 @@ function endHabit(habit: Habit, endDate: string) {
         saveState();
         renderHabits();
         renderCalendar();
+        renderChart();
         showUndoToast();
         setupManageModal();
     }
@@ -321,6 +326,7 @@ export function handleUndoDelete() {
             saveState();
             renderHabits();
             renderCalendar();
+            renderChart();
             setupManageModal();
         }
     }
@@ -355,6 +361,7 @@ export function requestHabitPermanentDeletion(habitId: string) {
 
         saveState();
         removeHabitFromDOM(habitId);
+        renderChart();
         setupManageModal();
     });
 }
@@ -370,6 +377,7 @@ export function graduateHabit(habitId: string) {
         saveState();
         renderHabits();
         renderCalendar();
+        renderChart();
         setupManageModal();
     });
 }
@@ -485,6 +493,7 @@ export function saveHabitFromModal() {
                 
                 saveState();
                 renderHabits();
+                renderChart();
                 setupManageModal();
                 closeModal(ui.editHabitModal);
                 state.editingHabit = null;
@@ -494,6 +503,7 @@ export function saveHabitFromModal() {
         
         const newHabit = addHabit(template, startDate);
         addHabitToDOM(newHabit);
+        renderChart();
         closeModal(ui.editHabitModal);
         state.editingHabit = null;
     };
@@ -610,6 +620,7 @@ export function handleHabitDrop(habitId: string, oldTime: TimeOfDay, newTime: Ti
 
         saveState();
         renderHabits();
+        renderChart();
     };
 
     const onConfirmFromNowOn = () => {
