@@ -147,6 +147,7 @@ export async function setLanguage(langCode: 'pt' | 'en' | 'es') {
     initLanguageFilter();
 
     updateUIText();
+    // Garante que o status de sincronização dinâmico seja re-traduzido a partir do estado.
     ui.syncStatus.textContent = t(state.syncState);
     
     if (ui.manageModal.classList.contains('visible')) {

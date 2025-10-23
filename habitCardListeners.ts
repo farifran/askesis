@@ -1,13 +1,12 @@
 import { ui } from './ui';
 import { state, Habit, getSmartGoalForHabit, TimeOfDay } from './state';
-import { openNotesModal, showConfirmationModal, closeModal, openEditModal } from './render';
+import { openNotesModal } from './render';
 import {
     toggleHabitStatus,
     updateGoalOverride,
     requestHabitTimeRemoval,
 } from './habitActions';
 import { isCurrentlySwiping } from './swipeHandler';
-import { getHabitDisplayInfo, t } from './i18n';
 
 const GOAL_STEP = 5;
 

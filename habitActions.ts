@@ -137,8 +137,6 @@ export function toggleHabitStatus(habitId: string, time: TimeOfDay) {
     }
 
     saveState();
-
-    // Com as otimizações parciais removidas, sempre fazemos uma re-renderização completa e robusta.
     renderHabits();
     renderCalendar();
     renderChart();
@@ -154,9 +152,8 @@ export function updateGoalOverride(habitId: string, date: string, time: TimeOfDa
     dayInstanceData.goalOverride = sanitizedGoal;
 
     saveState();
-    // A animação de mudança de meta será interrompida por uma re-renderização completa,
-    // mas isso é uma troca aceitável pela simplicidade arquitetural.
     renderHabits();
+    renderCalendar();
 }
 
 function setAllHabitsStatusForDate(date: string, status: HabitStatus) {

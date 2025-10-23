@@ -169,47 +169,40 @@ export const formatGoalForDisplay = (goal: number): string => {
 };
 
 function updateGoalContentElement(goalEl: HTMLElement, status: HabitStatus, habit: Habit, time: TimeOfDay, dayDataForInstance: HabitDayData | undefined) {
-    // Para todos os casos, ou se a estrutura não existir, reconstrua o innerHTML.
-    goalEl.innerHTML = '';
+    goalEl.innerHTML = ''; // Limpa o conteúdo
 
-    switch (status) {
-        case 'completed':
-            if (habit.goal.type === 'pages' || habit.goal.type === 'minutes') {
-                const smartGoal = getSmartGoalForHabit(habit, state.selectedDate, time);
-                const completedGoal = dayDataForInstance?.goalOverride ?? smartGoal;
-                goalEl.innerHTML = `
-                    <div class="goal-value-wrapper">
-                        <div class="progress" style="color: var(--accent-blue);">${formatGoalForDisplay(completedGoal)}</div>
-                        <div class="unit">${getUnitString(habit, completedGoal)}</div>
-                    </div>`;
-            } else {
-                goalEl.innerHTML = `<div class="progress" style="color: var(--accent-blue);">✓</div><div class="unit">${getUnitString(habit, 1)}</div>`;
-            }
-            break;
-
-        case 'snoozed':
+    if (status === 'completed') {
+        if (habit.goal.type === 'pages' || habit.goal.type === 'minutes') {
+            const smartGoal = getSmartGoalForHabit(habit, state.selectedDate, time);
+            const completedGoal = dayDataForInstance?.goalOverride ?? smartGoal;
             goalEl.innerHTML = `
-                <div class="progress">
-                    <svg class="snoozed-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="13 17 18 12 13 7"></polyline><polyline points="6 17 11 12 6 7"></polyline></svg>
-                </div>
-                <div class="unit snoozed-text">${t('habitSnoozed')}</div>`;
-            break;
-
-        default: // 'pending'
-            if (habit.goal.type === 'pages' || habit.goal.type === 'minutes') {
-                const smartGoal = getSmartGoalForHabit(habit, state.selectedDate, time);
-                const currentGoal = dayDataForInstance?.goalOverride ?? smartGoal;
-                goalEl.innerHTML = `
-                    <div class="habit-goal-controls">
-                        <button class="goal-control-btn" data-habit-id="${habit.id}" data-time="${time}" data-action="decrement" aria-label="${t('habitGoalDecrement_ariaLabel')}">-</button>
-                        <div class="goal-value-wrapper">
-                            <div class="progress">${formatGoalForDisplay(currentGoal)}</div>
-                            <div class="unit">${getUnitString(habit, currentGoal)}</div>
-                        </div>
-                        <button class="goal-control-btn" data-habit-id="${habit.id}" data-time="${time}" data-action="increment" aria-label="${t('habitGoalIncrement_ariaLabel')}">+</button>
-                    </div>`;
-            }
-            break;
+                <div class="goal-value-wrapper">
+                    <div class="progress" style="color: var(--accent-blue);">${formatGoalForDisplay(completedGoal)}</div>
+                    <div class="unit">${getUnitString(habit, completedGoal)}</div>
+                </div>`;
+        } else {
+            goalEl.innerHTML = `<div class="progress" style="color: var(--accent-blue);">✓</div><div class="unit">${getUnitString(habit, 1)}</div>`;
+        }
+    } else if (status === 'snoozed') {
+        goalEl.innerHTML = `
+            <div class="progress">
+                <svg class="snoozed-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="13 17 18 12 13 7"></polyline><polyline points="6 17 11 12 6 7"></polyline></svg>
+            </div>
+            <div class="unit snoozed-text">${t('habitSnoozed')}</div>`;
+    } else { // 'pending'
+        if (habit.goal.type === 'pages' || habit.goal.type === 'minutes') {
+            const smartGoal = getSmartGoalForHabit(habit, state.selectedDate, time);
+            const currentGoal = dayDataForInstance?.goalOverride ?? smartGoal;
+            goalEl.innerHTML = `
+                <div class="habit-goal-controls">
+                    <button class="goal-control-btn" data-habit-id="${habit.id}" data-time="${time}" data-action="decrement" aria-label="${t('habitGoalDecrement_ariaLabel')}">-</button>
+                    <div class="goal-value-wrapper">
+                        <div class="progress">${formatGoalForDisplay(currentGoal)}</div>
+                        <div class="unit">${getUnitString(habit, currentGoal)}</div>
+                    </div>
+                    <button class="goal-control-btn" data-habit-id="${habit.id}" data-time="${time}" data-action="increment" aria-label="${t('habitGoalIncrement_ariaLabel')}">+</button>
+                </div>`;
+        }
     }
 }
 
