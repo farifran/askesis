@@ -31,7 +31,7 @@ import { t, setLanguage, getHabitDisplayInfo } from './i18n';
 import { setupReelRotary } from './rotary';
 import { simpleMarkdownToHTML, addDays, getTodayUTC, toUTCIsoDateString, parseUTCIsoDate } from './utils';
 
-// --- Lógica da IA movida para cá, eliminando api.ts ---
+// --- Lógica da IA centralizada, eliminando api.ts e /api/generate.ts ---
 
 const statusToSymbol: Record<HabitStatus, string> = {
     completed: '✅',
@@ -178,7 +178,6 @@ const buildAIPrompt = (analysisType: 'weekly' | 'monthly' | 'general'): string =
     
     return t(promptTemplateKey, templateOptions);
 };
-
 
 // --- Fim da lógica da IA ---
 
