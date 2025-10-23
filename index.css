@@ -99,7 +99,25 @@ body {
     color: var(--text-primary);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    -webkit-user-select: none; /* Safari */
+    -moz-user-select: none;    /* Firefox */
+    -ms-user-select: none;     /* IE/Edge */
+    user-select: none;         /* Padrão */
 }
+
+/* Permitir seleção em campos de texto e conteúdo onde é útil */
+:is(input, textarea),
+#ai-response,
+#stoic-quote-display,
+#sync-key-text,
+#confirm-modal-text,
+#ai-response pre {
+    -webkit-user-select: text;
+    -moz-user-select: text;
+    -ms-user-select: text;
+    user-select: text;
+}
+
 
 /* MELHORIA A11Y: Estado de foco visível e consistente com cor adaptável ao tema. */
 :is(button, a, input, [tabindex]):focus-visible {

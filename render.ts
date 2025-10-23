@@ -749,24 +749,25 @@ export function openEditModal(habitOrTemplate: Habit | PredefinedHabit | null) {
     const noticeEl = form.querySelector<HTMLElement>('.duplicate-habit-notice');
 
     const isNew = habitOrTemplate === null || !('id' in habitOrTemplate);
-    const isCustomNew = habitOrTemplate === null;
 
     let habitId: string | undefined;
     let originalHabit: Habit | undefined;
     let formData: HabitTemplate;
 
-    if (isCustomNew) {
-        formData = {
-            name: '',
-            subtitle: t('customHabitSubtitle'),
-            icon: icons.custom,
-            color: '#8e44ad',
-            times: ['Manhã'],
-            goal: { type: 'check', unitKey: 'unitCheck' },
-            frequency: { type: 'daily', interval: 1 },
-        };
-    } else if (isNew) { // Predefined habit
-        formData = habitOrTemplate as PredefinedHabit;
+    if (isNew) {
+        if (habitOrTemplate === null) { // Custom new
+            formData = {
+                name: '',
+                subtitle: t('customHabitSubtitle'),
+                icon: icons.custom,
+                color: '#8e44ad',
+                times: ['Manhã'],
+                goal: { type: 'check', unitKey: 'unitCheck' },
+                frequency: { type: 'daily', interval: 1 },
+            };
+        } else { // Predefined habit
+            formData = habitOrTemplate as PredefinedHabit;
+        }
     } else { // Existing habit
         originalHabit = habitOrTemplate as Habit;
         habitId = originalHabit.id;
@@ -787,11 +788,9 @@ export function openEditModal(habitOrTemplate: Habit | PredefinedHabit | null) {
     state.editingHabit = { isNew, habitId, originalData: originalHabit, formData };
     
     const habitDisplayName = 'name' in formData ? formData.name : t(formData.nameKey);
-    ui.editHabitModalTitle.textContent = !isNew 
-        ? t('modalEditTitle') 
-        : (isCustomNew ? t('modalCreateTitle') : t('modalAddHabitTitle', { habitName: habitDisplayName }));
+    
+    ui.editHabitModalTitle.textContent = isNew ? t('modalAddTitle') : t('modalEditTitle');
     nameInput.value = habitDisplayName;
-
 
     const checkboxes = form.querySelectorAll<HTMLInputElement>('input[name="habit-time"]');
     checkboxes.forEach(cb => {
