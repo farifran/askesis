@@ -1,14 +1,15 @@
 import { ui } from './ui';
 import { state, Habit, getSmartGoalForHabit, TimeOfDay } from './state';
-import { openNotesModal, showConfirmationModal, closeModal, openEditModal } from './render';
+import { openNotesModal, showConfirmationModal, closeModal, openEditModal, renderHabits } from './render';
 import {
     toggleHabitStatus,
-    handleGoalControlClick,
     updateGoalOverride,
     requestHabitTimeRemoval,
 } from './habitActions';
 import { isCurrentlySwiping } from './swipeHandler';
 import { getHabitDisplayInfo, t } from './i18n';
+
+const GOAL_STEP = 5;
 
 function createGoalInput(habit: Habit, time: TimeOfDay, wrapper: HTMLElement) {
     const controls = wrapper.closest('.habit-goal-controls');
@@ -29,10 +30,10 @@ function createGoalInput(habit: Habit, time: TimeOfDay, wrapper: HTMLElement) {
     const save = () => {
         const newGoal = parseInt(input.value, 10);
         if (!isNaN(newGoal) && newGoal > 0) {
-            updateGoalOverride(habitId, state.selectedDate, time, newGoal, currentGoal);
-        } else {
-            wrapper.innerHTML = originalContent; // Restaura em caso de entrada inválida
+            updateGoalOverride(habitId, state.selectedDate, time, newGoal);
         }
+        // A atualização da UI será feita por renderHabits após o estado ser salvo
+        renderHabits();
     };
     
     input.addEventListener('blur', save);
@@ -78,10 +79,33 @@ export function setupHabitCardListeners() {
         const controlBtn = target.closest<HTMLElement>('.goal-control-btn');
         if (controlBtn && habitId && time) {
             e.stopPropagation(); // Impede que o clique se propague para o card
-            const action = controlBtn.dataset.action;
-            if (action === 'increment' || action === 'decrement') {
-                handleGoalControlClick(habitId, time, action);
+            const action = controlBtn.dataset.action as 'increment' | 'decrement';
+            
+            const habit = state.habits.find(h => h.id === habitId);
+            if (!habit || (habit.goal.type !== 'pages' && habit.goal.type !== 'minutes')) return;
+    
+            const dayInstanceData = state.dailyData[state.selectedDate]?.[habitId]?.instances[time];
+            const smartGoal = getSmartGoalForHabit(habit, state.selectedDate, time);
+            const currentGoal = dayInstanceData?.goalOverride ?? smartGoal;
+            
+            let newGoal;
+            if (action === 'increment') {
+                newGoal = currentGoal + GOAL_STEP;
+            } else {
+                newGoal = Math.max(1, currentGoal - GOAL_STEP);
             }
+
+            // Animação da UI
+            const progressEl = controlBtn.parentElement?.querySelector<HTMLElement>('.progress');
+            if (progressEl && newGoal !== currentGoal) {
+                const animClass = newGoal > currentGoal ? 'goal-increased' : 'goal-decreased';
+                progressEl.classList.add(animClass);
+                progressEl.addEventListener('animationend', () => {
+                    progressEl.classList.remove(animClass);
+                }, { once: true });
+            }
+
+            updateGoalOverride(habitId, state.selectedDate, time, newGoal);
             return;
         }
 

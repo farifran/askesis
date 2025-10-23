@@ -360,32 +360,15 @@ export function renderHabits() {
         const groupEl = wrapperEl?.querySelector<HTMLElement>(`.habit-group[data-time="${time}"]`);
         const titleEl = wrapperEl?.querySelector('h2');
         if (!wrapperEl || !groupEl || !titleEl) return;
-
-        // Render cards
-        const requiredHabits = habitsByTime[time];
-        const existingCards = Array.from(groupEl.querySelectorAll<HTMLElement>('.habit-card'));
-        const existingCardsMap = new Map(existingCards.map(card => [card.dataset.habitId, card]));
-        const requiredIds = new Set(requiredHabits.map(h => h.id));
-
-        for (const card of existingCards) {
-            if (!requiredIds.has(card.dataset.habitId!)) {
-                card.remove();
-            }
-        }
-        let lastPlacedElement: HTMLElement | null = null;
-        for (const habit of requiredHabits) {
-            let cardEl = existingCardsMap.get(habit.id);
-            if (!cardEl) {
-                cardEl = createHabitCardElement(habit, time);
-            } else {
-                updateHabitCardDOM(habit.id, time);
-            }
-            const nextSibling = lastPlacedElement ? lastPlacedElement.nextElementSibling : groupEl.firstElementChild;
-            if (nextSibling !== cardEl) {
-                 groupEl.insertBefore(cardEl, nextSibling);
-            }
-            lastPlacedElement = cardEl;
-        }
+        
+        // REATORAÇÃO: Simplifica a renderização. Em vez de reconciliar o DOM,
+        // é mais simples, rápido e menos propenso a erros limpar e recriar.
+        const fragment = document.createDocumentFragment();
+        habitsByTime[time].forEach(habit => {
+            fragment.appendChild(createHabitCardElement(habit, time));
+        });
+        groupEl.innerHTML = ''; // Limpa o conteúdo antigo
+        groupEl.appendChild(fragment); // Adiciona o novo conteúdo
         
         // Update wrapper and placeholder state
         const hasHabits = groupHasHabits[time];
@@ -484,76 +467,6 @@ export function renderApp() {
     renderAINotificationState();
     renderStoicQuote();
     renderChart();
-}
-
-export function updateHabitCardDOM(habitId: string, time: TimeOfDay) {
-    const card = ui.habitContainer.querySelector<HTMLElement>(`.habit-card[data-habit-id="${habitId}"][data-time="${time}"]`);
-    if (!card) return;
-    
-    const habit = state.habits.find(h => h.id === habitId);
-    if (!habit) return;
-
-    const dailyInfo = getHabitDailyInfoForDate(state.selectedDate);
-    const habitInstanceData = dailyInfo[habit.id]?.instances?.[time];
-    const status = habitInstanceData?.status ?? 'pending';
-    const hasNote = !!(habitInstanceData?.note && habitInstanceData.note.length > 0);
-    const streak = calculateHabitStreak(habit.id, state.selectedDate);
-    const { name, subtitle } = getHabitDisplayInfo(habit);
-
-    card.className = `habit-card ${status}`;
-    if (streak >= STREAK_CONSOLIDATED) card.classList.add('consolidated');
-    else if (streak >= STREAK_SEMI_CONSOLIDATED) card.classList.add('semi-consolidated');
-    card.dataset.time = time;
-
-    const noteBtn = card.querySelector<HTMLElement>('.swipe-note-btn');
-    if (noteBtn) {
-        noteBtn.classList.toggle('has-note', hasNote);
-        noteBtn.setAttribute('aria-label', t(hasNote ? 'habitNoteEdit_ariaLabel' : 'habitNoteAdd_ariaLabel'));
-    }
-
-    const detailsEl = card.querySelector<HTMLElement>('.habit-details');
-    if (detailsEl) {
-        detailsEl.querySelector<HTMLElement>('.name')!.textContent = name;
-        detailsEl.querySelector<HTMLElement>('.subtitle')!.textContent = subtitle;
-        
-        let consolidationMessage = '';
-        if (streak >= STREAK_CONSOLIDATED) consolidationMessage = t('habitConsolidatedMessage');
-        else if (streak >= STREAK_SEMI_CONSOLIDATED) consolidationMessage = t('habitSemiConsolidatedMessage');
-        
-        let msgEl = detailsEl.querySelector<HTMLElement>('.consolidation-message');
-        if (consolidationMessage) {
-            if (!msgEl) {
-                msgEl = document.createElement('div');
-                msgEl.className = 'consolidation-message';
-                detailsEl.appendChild(msgEl);
-            }
-            msgEl.textContent = consolidationMessage;
-        } else if (msgEl) {
-            msgEl.remove();
-        }
-    }
-    
-    const goalEl = card.querySelector<HTMLElement>('.habit-goal');
-    if (goalEl) {
-        updateGoalContentElement(goalEl, status, habit, time, habitInstanceData);
-    }
-}
-
-
-export function updateCalendarDayDOM(dateISO: string) {
-    const dayItem = ui.calendarStrip.querySelector<HTMLElement>(`.day-item[data-date="${dateISO}"]`);
-    if (!dayItem) return;
-
-    const { completedPercent, totalPercent } = calculateDayProgress(dateISO);
-    const showPlus = shouldShowPlusIndicator(dateISO);
-    
-    const ringEl = dayItem.querySelector<HTMLElement>('.day-progress-ring');
-    if (ringEl) {
-        ringEl.style.setProperty('--completed-percent', `${completedPercent}%`);
-        ringEl.style.setProperty('--total-percent', `${totalPercent}%`);
-    }
-    
-    dayItem.querySelector<HTMLElement>('.day-number')?.classList.toggle('has-plus', showPlus);
 }
 
 const focusTrapListeners = new Map<HTMLElement, (e: KeyboardEvent) => void>();
@@ -818,17 +731,4 @@ export function updateHeaderTitle() {
             : { day: 'numeric', month: 'long', timeZone: 'UTC' };
         ui.headerTitle.textContent = selectedDate.toLocaleDateString(state.activeLanguageCode, formatOptions);
     }
-}
-
-export function addHabitToDOM(habit: Habit) {
-    renderHabits();
-    ui.habitList.insertAdjacentHTML('beforeend', createManageHabitListItemHTML(habit));
-}
-
-export function removeHabitFromDOM(habitId: string) {
-    const cardEls = ui.habitContainer.querySelectorAll<HTMLElement>(`.habit-card[data-habit-id="${habitId}"]`);
-    cardEls.forEach(cardEl => cardEl.remove());
-    
-    ui.habitList.querySelector<HTMLElement>(`li[data-habit-id="${habitId}"]`)?.remove();
-    renderHabits(); // Re-render to correctly handle placeholders
 }

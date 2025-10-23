@@ -25,17 +25,13 @@ import {
 } from './state';
 import {
     renderHabits,
-    updateHabitCardDOM,
-    updateCalendarDayDOM,
     showUndoToast,
     showConfirmationModal,
     closeModal,
-    addHabitToDOM,
     openEditModal,
     setupManageModal,
     showInlineNotice,
     renderCalendar,
-    removeHabitFromDOM,
 } from './render';
 import { t, getHabitDisplayInfo } from './i18n';
 import { ui } from './ui';
@@ -141,55 +137,22 @@ export function toggleHabitStatus(habitId: string, time: TimeOfDay) {
     }
 
     saveState();
-    updateHabitCardDOM(habitId, time);
-    updateCalendarDayDOM(state.selectedDate);
+    renderHabits();
+    renderCalendar();
     renderChart();
 }
 
-const GOAL_STEP = 5;
-
-export function updateGoalOverride(habitId: string, date: string, time: TimeOfDay, newGoal: number, oldGoal?: number) {
+export function updateGoalOverride(habitId: string, date: string, time: TimeOfDay, newGoal: number) {
     const habit = state.habits.find(h => h.id === habitId);
     if (!habit || (habit.goal.type !== 'pages' && habit.goal.type !== 'minutes')) return;
 
     const sanitizedGoal = Math.max(1, newGoal);
     
-    // Animação da UI
-    const cardEl = ui.habitContainer.querySelector(`.habit-card[data-habit-id="${habitId}"][data-time="${time}"]`);
-    const progressEl = cardEl?.querySelector<HTMLElement>('.progress');
-    
-    if (progressEl && oldGoal !== undefined && sanitizedGoal !== oldGoal) {
-        const animClass = sanitizedGoal > oldGoal ? 'goal-increased' : 'goal-decreased';
-        
-        progressEl.classList.add(animClass);
-        progressEl.addEventListener('animationend', () => {
-            progressEl.classList.remove(animClass);
-        }, { once: true });
-    }
-    
     const dayInstanceData = ensureHabitInstanceData(date, habitId, time);
     dayInstanceData.goalOverride = sanitizedGoal;
 
     saveState();
-    updateHabitCardDOM(habitId, time);
-}
-
-export function handleGoalControlClick(habitId: string, time: TimeOfDay, action: 'increment' | 'decrement') {
-    const habit = state.habits.find(h => h.id === habitId);
-    if (!habit || (habit.goal.type !== 'pages' && habit.goal.type !== 'minutes')) return;
-    
-    const dayInstanceData = state.dailyData[state.selectedDate]?.[habitId]?.instances[time];
-    const smartGoal = getSmartGoalForHabit(habit, state.selectedDate, time);
-    const currentGoal = dayInstanceData?.goalOverride ?? smartGoal;
-    
-    let newGoal;
-    if (action === 'increment') {
-        newGoal = currentGoal + GOAL_STEP;
-    } else {
-        newGoal = Math.max(1, currentGoal - GOAL_STEP);
-    }
-
-    updateGoalOverride(habitId, state.selectedDate, time, newGoal, currentGoal);
+    renderHabits(); // Atualiza a UI para refletir a nova meta
 }
 
 function setAllHabitsStatusForDate(date: string, status: HabitStatus) {
@@ -232,19 +195,8 @@ function setAllHabitsStatusForDate(date: string, status: HabitStatus) {
         }
         
         saveState();
-        
-        // Performance Improvement: Instead of a full re-render, update only changed cards
-        changedHabits.forEach(habit => {
-            const habitDailyInfo = state.dailyData[date]?.[habit.id];
-            const activeSchedule = getScheduleForDate(habit, dateObj);
-            if (!activeSchedule) return;
-            const scheduleForDay = habitDailyInfo?.dailySchedule || activeSchedule.times;
-            scheduleForDay.forEach(time => {
-                updateHabitCardDOM(habit.id, time);
-            });
-        });
-
-        updateCalendarDayDOM(date);
+        renderHabits();
+        renderCalendar();
         renderChart();
     }
 }
@@ -375,7 +327,7 @@ export function requestHabitPermanentDeletion(habitId: string) {
         });
 
         saveState();
-        removeHabitFromDOM(habitId);
+        renderHabits();
         renderChart();
         setupManageModal();
     });
@@ -407,7 +359,7 @@ export function handleSaveNote() {
     dayInstanceData.note = noteText.trim();
     
     saveState();
-    updateHabitCardDOM(habitId, time);
+    renderHabits(); // A nota pode influenciar a renderização (ex: classe 'has-note')
     closeModal(ui.notesModal);
     state.editingNoteFor = null;
 }
@@ -516,9 +468,10 @@ export function saveHabitFromModal() {
             }
         }
         
-        const newHabit = addHabit(template, startDate);
-        addHabitToDOM(newHabit);
+        addHabit(template, startDate);
+        renderHabits();
         renderChart();
+        setupManageModal();
         closeModal(ui.editHabitModal);
         state.editingHabit = null;
     };

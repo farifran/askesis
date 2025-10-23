@@ -8,13 +8,12 @@ import { t, getHabitDisplayInfo } from './i18n';
 import { addDays, parseUTCIsoDate, toUTCIsoDateString } from './utils';
 
 const CHART_DAYS = 30;
-const INITIAL_SCORE = 100;
-const GROWTH_FACTOR_PER_HABIT = 0.02; // 2% de crescimento por hábito
-const DECAY_FACTOR = 0.995; // -0.5% de decaimento por dia perdido
+const INITIAL_SCORE = 100; // Pontuação inicial para o crescimento composto
+const MAX_DAILY_CHANGE_RATE = 0.02; // Mudança máxima de 2% por dia
 
 type ChartDataPoint = {
     date: string;
-    value: number;
+    value: number; // Agora representa a pontuação composta
     completedCount: number;
     scheduledCount: number;
 };
@@ -24,7 +23,7 @@ function calculateChartData(): ChartDataPoint[] {
     const endDate = parseUTCIsoDate(state.selectedDate);
     const startDate = addDays(endDate, -(CHART_DAYS - 1));
 
-    let previousDayScore = INITIAL_SCORE;
+    let previousDayValue = INITIAL_SCORE;
 
     for (let i = 0; i < CHART_DAYS; i++) {
         const currentDate = addDays(startDate, i);
@@ -52,24 +51,27 @@ function calculateChartData(): ChartDataPoint[] {
             });
         });
 
-        let currentScore = previousDayScore;
+        let currentValue: number;
         if (scheduledCount > 0) {
-            if (completedCount > 0) {
-                const growthRate = (completedCount / scheduledCount) * GROWTH_FACTOR_PER_HABIT;
-                currentScore *= (1 + growthRate);
-            } else {
-                currentScore *= DECAY_FACTOR;
-            }
+            const completionRatio = completedCount / scheduledCount;
+            // Mapeia a taxa de conclusão [0, 1] para um fator de performance [-1, 1]
+            // 0% -> -1, 50% -> 0, 100% -> 1
+            const performanceFactor = (completionRatio - 0.5) * 2;
+            const dailyChange = performanceFactor * MAX_DAILY_CHANGE_RATE;
+            currentValue = previousDayValue * (1 + dailyChange);
+        } else {
+            // Se não houver hábitos agendados, a pontuação não muda.
+            currentValue = previousDayValue;
         }
         
         data.push({
             date: currentDateISO,
-            value: currentScore,
+            value: currentValue,
             completedCount,
             scheduledCount,
         });
 
-        previousDayScore = currentScore;
+        previousDayValue = currentValue;
     }
 
     return data;
@@ -79,7 +81,7 @@ function calculateChartData(): ChartDataPoint[] {
 export function renderChart() {
     const chartData = calculateChartData();
 
-    if (chartData.length < 2) {
+    if (chartData.length < 2 || chartData.every(d => d.scheduledCount === 0)) {
         ui.chartContainer.innerHTML = `
             <div class="chart-header">
                 <h3 class="chart-title">${t('chartTitle')}</h3>
@@ -100,27 +102,18 @@ export function renderChart() {
     const chartHeight = svgHeight - padding.top - padding.bottom;
     
     const values = chartData.map(d => d.value);
-    const minVal = Math.min(...values) * 0.98;
-    const maxVal = Math.max(...values) * 1.02;
+    const minVal = Math.min(...values) * 0.98; // Buffer de 2%
+    const maxVal = Math.max(...values) * 1.02; // Buffer de 2%
+    const valueRange = maxVal - minVal;
 
     const xScale = (index: number) => padding.left + (index / (chartData.length - 1)) * chartWidth;
-    const yScale = (value: number) => padding.top + chartHeight - ((value - minVal) / (maxVal - minVal)) * chartHeight;
+    const yScale = (value: number) => padding.top + chartHeight - ((value - minVal) / (valueRange > 0 ? valueRange : 1)) * chartHeight;
 
     const lastPoint = chartData[chartData.length - 1];
-    let referencePoint = chartData[0];
+    let referencePoint = chartData.find(d => d.scheduledCount > 0) || chartData[0];
     
-    let lastDayWithoutHabitsIndex = -1;
-    // Itera para trás a partir do penúltimo elemento.
-    for (let i = chartData.length - 2; i >= 0; i--) {
-        if (chartData[i].scheduledCount === 0) {
-            lastDayWithoutHabitsIndex = i;
-            break;
-        }
-    }
-    if (lastDayWithoutHabitsIndex > -1) {
-        referencePoint = chartData[lastDayWithoutHabitsIndex];
-    }
     const evolution = ((lastPoint.value - referencePoint.value) / referencePoint.value) * 100;
+
     const evolutionString = `${evolution > 0 ? '+' : ''}${evolution.toFixed(1)}%`;
     const evolutionClass = evolution >= 0 ? 'positive' : 'negative';
     const referenceDate = parseUTCIsoDate(referencePoint.date).toLocaleDateString(state.activeLanguageCode, { month: 'short', day: 'numeric', timeZone: 'UTC' });
@@ -196,7 +189,7 @@ export function renderChart() {
             <div class="tooltip-date">${date}</div>
             <div class="tooltip-score">
                 ${t('chartTooltipScore')}: 
-                <span class="tooltip-score-value">${point.value.toFixed(1)}</span>
+                <span class="tooltip-score-value">${point.value.toFixed(2)}</span>
             </div>
             <ul class="tooltip-habits">
                 <li>${t('chartTooltipCompleted', { completed: point.completedCount, total: point.scheduledCount })}</li>
