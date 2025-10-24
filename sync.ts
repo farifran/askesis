@@ -8,6 +8,7 @@ import { t } from "./i18n";
 import { fetchStateFromCloud, setSyncStatus } from "./cloud";
 import { loadState, saveState } from "./state";
 import { renderApp, showConfirmationModal } from "./render";
+import { updateNotificationUI } from "./notifications";
 
 const SYNC_KEY_STORAGE_KEY = 'habitTrackerSyncKey';
 let localSyncKey: string | null = null;
@@ -71,12 +72,14 @@ async function handleEnableSync() {
     try {
         // Chamar fetchStateFromCloud acionará a sincronização inicial se não houver dados.
         await fetchStateFromCloud();
+        updateNotificationUI(); // Atualiza a UI de notificações
     } catch(e) {
         console.error("Failed initial sync on new key generation", e);
         // O status de erro já está definido. O usuário vê a chave, mas a sincronização falhou.
         // Se a sincronização falhar, a chave não é útil. Devemos revertê-la.
         clearKey();
         showView('inactive');
+        updateNotificationUI(); // Atualiza a UI de notificações
     }
 }
 
@@ -96,6 +99,7 @@ async function handleSubmitKey() {
                         saveState(); // Salva o estado mesclado localmente e aciona a sincronização com a nuvem
                         renderApp();
                         showView('active');
+                        updateNotificationUI(); // Atualiza a UI de notificações
                     },
                     {
                         title: t('syncDataFoundTitle'),
@@ -107,6 +111,7 @@ async function handleSubmitKey() {
                 // Nenhum estado na nuvem foi encontrado. fetchStateFromCloud já acionou uma sincronização inicial.
                 // Apenas muda a visualização.
                 showView('active');
+                updateNotificationUI(); // Atualiza a UI de notificações
             }
         } catch (error) {
             console.error("Failed to sync with provided key:", error);
@@ -114,6 +119,7 @@ async function handleSubmitKey() {
             clearKey();
             // Mantém o usuário na mesma tela e mostra o status de erro
             setSyncStatus('syncError');
+            updateNotificationUI(); // Atualiza a UI de notificações
             // A visualização permanece 'enterKey' porque não a mudamos em caso de falha
         }
     };
@@ -141,6 +147,7 @@ function handleDisableSync() {
             clearKey();
             setSyncStatus('syncInitial');
             showView('inactive');
+            updateNotificationUI(); // Atualiza a UI de notificações
         },
         { title: t('syncDisableTitle'), confirmText: t('syncDisableConfirm') }
     );
@@ -181,13 +188,16 @@ export async function initSync() {
     ui.enterKeyViewBtn.addEventListener('click', () => showView('enterKey'));
     ui.cancelEnterKeyBtn.addEventListener('click', () => showView('inactive'));
     ui.submitKeyBtn.addEventListener('click', handleSubmitKey);
-    ui.keySavedBtn.addEventListener('click', () => showView('active'));
+    ui.keySavedBtn.addEventListener('click', () => {
+        showView('active');
+        updateNotificationUI();
+    });
     ui.copyKeyBtn.addEventListener('click', handleCopyKey);
     ui.viewKeyBtn.addEventListener('click', handleViewKey);
     ui.disableSyncBtn.addEventListener('click', handleDisableSync);
 }
 
-export function hasLocalSyncKey(): boolean {
+export function hasSyncKey(): boolean {
     return localSyncKey !== null;
 }
 

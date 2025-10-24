@@ -4,11 +4,13 @@
 */
 import { kv } from '@vercel/kv';
 import webpush, { PushSubscription } from 'web-push';
-import { TimeOfDay } from '../state';
 
 export const config = {
   runtime: 'edge',
 };
+
+// This type must be kept in sync with the frontend's state.ts
+type TimeOfDay = 'Manhã' | 'Tarde' | 'Noite';
 
 interface ScheduleData {
     schedules: TimeOfDay[];
@@ -20,10 +22,10 @@ interface StoredSubscription {
     lang: 'pt' | 'en' | 'es';
 }
 
-// Configura o web-push com as chaves VAPID (devem ser variáveis de ambiente)
+// Configure web-push with VAPID keys (should be environment variables)
 if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
     webpush.setVapidDetails(
-        'mailto:your-email@example.com', // Substitua pelo seu e-mail
+        'mailto:your-email@example.com', // Replace with your email
         process.env.VAPID_PUBLIC_KEY,
         process.env.VAPID_PRIVATE_KEY
     );
@@ -41,7 +43,7 @@ function shouldSendNotification(schedules: TimeOfDay[], timezone: string): boole
         const localTimeString = now.toLocaleString('en-US', { timeZone: timezone, hour: '2-digit', hour12: false });
         const localHour = parseInt(localTimeString, 10);
 
-        // Verifica se a hora local atual corresponde a uma das horas alvo agendadas
+        // Check if the current local hour matches a scheduled target hour
         return schedules.some(schedule => {
             const targetHour = timeOfDayTargetHours[schedule];
             return localHour === targetHour;
@@ -73,7 +75,7 @@ async function sendNotification(subscription: PushSubscription, lang: 'pt'|'en'|
         await webpush.sendNotification(subscription, payload);
     } catch (error: any) {
         if (error.statusCode === 410) {
-            // Código 410 (Gone) indica que a inscrição não é mais válida
+            // Code 410 (Gone) means the subscription is no longer valid
             console.log(`Subscription gone for endpoint: ${subscription.endpoint}. It should be deleted.`);
             return 'gone';
         } else {
@@ -90,7 +92,7 @@ export default async function handler(req: Request) {
         return new Response('Method Not Allowed', { status: 405 });
     }
 
-    // Protege o endpoint de cron para que não seja executado por qualquer pessoa
+    // Protect the cron endpoint from being run by anyone
     const authHeader = req.headers.get('authorization');
     if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
         return new Response('Unauthorized', { status: 401 });
@@ -125,7 +127,7 @@ export default async function handler(req: Request) {
                     if (result === 'sent') {
                         sentCount++;
                     } else if (result === 'gone') {
-                        // A inscrição é inválida, então a removemos do KV
+                        // The subscription is invalid, so we remove it from KV
                         await kv.del(pushSubKey);
                         deletedCount++;
                     }

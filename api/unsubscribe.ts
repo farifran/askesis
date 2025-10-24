@@ -33,8 +33,8 @@ export default async function handler(req: Request) {
             });
         }
         
-        // Embora não precisemos do corpo para excluir, é uma boa prática confirmar
-        // que o cliente sabe o que está fazendo. A exclusão é baseada no hash da chave.
+        // While we don't need the body to delete, it's good practice to confirm
+        // the client knows what it's doing. Deletion is based on key hash.
         const body = await req.json();
         if (!body || !body.endpoint) {
              return new Response(JSON.stringify({ error: 'Bad Request: Missing endpoint in request body' }), {

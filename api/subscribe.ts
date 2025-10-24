@@ -8,9 +8,9 @@ export const config = {
   runtime: 'edge',
 };
 
-// Interface para o payload que o cliente envia
+// Interface for the payload the client sends
 interface SubscriptionPayload {
-    subscription: any; // O tipo PushSubscription não está disponível no servidor Edge
+    subscription: any; // The PushSubscription type is not available on the Edge server
     lang: 'pt' | 'en' | 'es';
 }
 
@@ -47,7 +47,7 @@ export default async function handler(req: Request) {
         }
 
         const dataKey = `push_sub:${keyHash}`;
-        // Salva o objeto inteiro, que inclui tanto a inscrição quanto o idioma
+        // Save the whole object, which includes both the subscription and the language
         await kv.set(dataKey, payload);
 
         return new Response(JSON.stringify({ success: true }), {

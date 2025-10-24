@@ -3,11 +3,13 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 import { kv } from '@vercel/kv';
-import { TimeOfDay } from '../state';
 
 export const config = {
   runtime: 'edge',
 };
+
+// This type must be kept in sync with the frontend's state.ts
+type TimeOfDay = 'Manhã' | 'Tarde' | 'Noite';
 
 interface SchedulePayload {
     schedules: TimeOfDay[];
@@ -49,10 +51,10 @@ export default async function handler(req: Request) {
         const scheduleKey = `schedule:${keyHash}`;
         
         if (payload.schedules.length === 0) {
-            // Se a lista de agendamentos estiver vazia, remove a chave do KV.
+            // If the schedule list is empty, remove the key from KV.
             await kv.del(scheduleKey);
         } else {
-            // Caso contrário, salva o agendamento.
+            // Otherwise, save the schedule.
             await kv.set(scheduleKey, payload);
         }
 

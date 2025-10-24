@@ -4,7 +4,7 @@
 */
 import { ui } from './ui';
 import { t } from './i18n';
-import { getSyncKeyHash } from './sync';
+import { getSyncKeyHash, hasSyncKey } from './sync';
 import { state, saveState, TimeOfDay } from './state';
 import { showInlineNotice } from './render';
 
@@ -90,7 +90,6 @@ async function sendSchedulesToBackend() {
             timezone: timezone,
         };
         
-        // Esta API será criada na próxima etapa. Por enquanto, estamos preparando o cliente.
         const response = await fetch(getApiUrl('/api/schedules'), {
             method: 'POST',
             body: JSON.stringify(payload),
@@ -118,7 +117,7 @@ async function subscribeUser() {
         });
         await sendSubscriptionToBackend(subscription);
         isSubscribed = true;
-        updateUI();
+        updateNotificationUI();
         // Sincroniza os agendamentos atuais (mesmo que vazios) quando o usuário se inscreve.
         await sendSchedulesToBackend();
     } catch (err) {
@@ -126,7 +125,7 @@ async function subscribeUser() {
         showInlineNotice(ui.notificationsFeedback, t('notificationSubscribeError'));
         // Reverte o estado do toggle se a inscrição falhar
         isSubscribed = false;
-        updateUI();
+        updateNotificationUI();
     }
 }
 
@@ -139,10 +138,10 @@ async function unsubscribeUser() {
             await subscription.unsubscribe();
         }
         isSubscribed = false;
-        updateUI();
-        // Limpa os agendamentos no backend quando o usuário cancela a inscrição.
         state.notificationSchedules = [];
         saveState();
+        updateNotificationUI();
+        // Limpa os agendamentos no backend quando o usuário cancela a inscrição.
         await sendSchedulesToBackend();
     } catch (err) {
         console.error('Erro ao cancelar a inscrição do usuário: ', err);
@@ -150,12 +149,15 @@ async function unsubscribeUser() {
     }
 }
 
-function updateUI() {
+export function updateNotificationUI() {
     // 1. Determina o estado geral das notificações
-    let statusKey: 'unsupported_insecure' | 'unsupported_api' | 'blocked' | 'granted' | 'default' = 'default';
+    let statusKey: 'unsupported_insecure' | 'unsupported_api' | 'blocked' | 'granted' | 'default' | 'sync_required' = 'default';
     let isEnabled = false;
+    const syncActive = hasSyncKey();
 
-    if (!window.isSecureContext) {
+    if (!syncActive) {
+        statusKey = 'sync_required';
+    } else if (!window.isSecureContext) {
         statusKey = 'unsupported_insecure';
     } else if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
         statusKey = 'unsupported_api';
@@ -175,13 +177,24 @@ function updateUI() {
         blocked: t('notificationsStatusBlocked'),
         granted: t('notificationsStatusGranted'),
         default: t('notificationsStatusDefault'),
+        sync_required: t('notificationsStatusSyncRequired')
     };
+    
+    const descTextMap = {
+        unsupported_insecure: t('notificationsDesc'),
+        unsupported_api: t('notificationsDesc'),
+        blocked: t('notificationsDesc'),
+        granted: t('notificationsDesc'),
+        default: t('notificationsDesc'),
+        sync_required: t('notificationsDescSyncRequired')
+    }
 
     // 3. Atualiza a UI com base no estado
     ui.notificationsStatus.textContent = statusTextMap[statusKey];
     ui.notificationsToggle.disabled = !isEnabled;
     ui.notificationsToggle.checked = isSubscribed;
     ui.notificationScheduleOptions.classList.toggle('visible', isSubscribed && isEnabled);
+    document.getElementById('notifications-desc')!.textContent = descTextMap[statusKey];
 
     // 4. Sincroniza os checkboxes (sempre, para refletir o estado)
     ui.notificationScheduleMorning.checked = state.notificationSchedules.includes('Manhã');
@@ -240,7 +253,7 @@ export async function handleNotificationToggle() {
         } else {
             // Se a permissão não foi concedida, garante que a UI reflita isso.
             isSubscribed = false;
-            updateUI();
+            updateNotificationUI();
         }
     }
 }
@@ -267,5 +280,5 @@ export async function initNotifications() {
     ui.notificationScheduleAfternoon.addEventListener('change', handleScheduleChange);
     ui.notificationScheduleEvening.addEventListener('change', handleScheduleChange);
 
-    updateUI(); // Chama updateUI, que agora contém toda a lógica de exibição.
+    updateNotificationUI(); // Chama updateUI, que agora contém toda a lógica de exibição.
 }

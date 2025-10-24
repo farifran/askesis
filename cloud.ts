@@ -5,7 +5,8 @@
 import { AppState, STATE_STORAGE_KEY, loadState, state } from './state';
 import { ui } from './ui';
 import { t } from './i18n';
-import { getSyncKey, getSyncKeyHash, hasLocalSyncKey } from './sync';
+// FIX: Correctly import `hasSyncKey` from './sync' and alias it to `hasLocalSyncKey` to resolve the compilation error.
+import { getSyncKey, getSyncKeyHash, hasSyncKey as hasLocalSyncKey } from './sync';
 import { renderApp } from './render';
 import { encrypt, decrypt } from './crypto';
 
