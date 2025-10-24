@@ -30,6 +30,7 @@ import {
 import { t, setLanguage, getHabitDisplayInfo } from './i18n';
 import { setupReelRotary } from './rotary';
 import { simpleMarkdownToHTML, addDays, getTodayUTC, toUTCIsoDateString, parseUTCIsoDate } from './utils';
+import { handleNotificationToggle } from "./notifications";
 
 // --- Lógica da IA centralizada, eliminando api.ts e /api/generate.ts ---
 
@@ -445,6 +446,9 @@ export const setupModalListeners = () => {
         closeAIModalAndReset();
         openModal(ui.aiOptionsModal);
     });
+    
+    ui.notificationsToggle.addEventListener('change', handleNotificationToggle);
+
 
     // REATORAÇÃO: Usa o módulo rotary reutilizável para ambos os seletores
     setupReelRotary({

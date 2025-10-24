@@ -128,5 +128,14 @@
     "chartEmptyState": "Continue registrando seus hábitos para ver sua evolução aqui.",
     "chartTooltipScore": "Pontuação Composta",
     "chartTooltipCompleted": "Completos: {completed}/{total}",
-    "chartEvolutionSince": "Evolução desde {date}"
+    "chartEvolutionSince": "Evolução desde {date}",
+    "labelNotifications": "Notificações Push",
+    "notificationsDesc": "Receba lembretes para seus hábitos.",
+    "notificationsStatusUnsupported": "Não suportado",
+    "notificationsStatusBlocked": "Bloqueado",
+    "notificationsStatusGranted": "Ativado",
+    "notificationsStatusDefault": "Desativado",
+    "notificationScheduleMorning": "Lembrar de manhã",
+    "notificationScheduleAfternoon": "Lembrar à tarde",
+    "notificationScheduleEvening": "Lembrar à noite"
 }

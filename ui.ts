@@ -62,6 +62,12 @@ type UIElements = {
     syncActiveView: HTMLElement;
     viewKeyBtn: HTMLButtonElement;
     disableSyncBtn: HTMLButtonElement;
+    notificationsToggle: HTMLInputElement;
+    notificationsStatus: HTMLElement;
+    notificationScheduleOptions: HTMLElement;
+    notificationScheduleMorning: HTMLInputElement;
+    notificationScheduleAfternoon: HTMLInputElement;
+    notificationScheduleEvening: HTMLInputElement;
 };
 
 export const ui = {} as UIElements;
@@ -130,5 +136,11 @@ export function initUI(): void {
         syncActiveView: document.getElementById('sync-active-view')!,
         viewKeyBtn: document.getElementById('view-key-btn') as HTMLButtonElement,
         disableSyncBtn: document.getElementById('disable-sync-btn') as HTMLButtonElement,
+        notificationsToggle: document.getElementById('notifications-toggle') as HTMLInputElement,
+        notificationsStatus: document.getElementById('notifications-status')!,
+        notificationScheduleOptions: document.getElementById('notification-schedule-options')!,
+        notificationScheduleMorning: document.getElementById('notification-schedule-morning') as HTMLInputElement,
+        notificationScheduleAfternoon: document.getElementById('notification-schedule-afternoon') as HTMLInputElement,
+        notificationScheduleEvening: document.getElementById('notification-schedule-evening') as HTMLInputElement,
     });
 }

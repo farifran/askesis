@@ -128,5 +128,14 @@
     "chartEmptyState": "Keep tracking your habits to see your progress here.",
     "chartTooltipScore": "Compound Score",
     "chartTooltipCompleted": "Completed: {completed}/{total}",
-    "chartEvolutionSince": "Evolution since {date}"
+    "chartEvolutionSince": "Evolution since {date}",
+    "labelNotifications": "Push Notifications",
+    "notificationsDesc": "Get reminders for your habits.",
+    "notificationsStatusUnsupported": "Not supported",
+    "notificationsStatusBlocked": "Blocked",
+    "notificationsStatusGranted": "Enabled",
+    "notificationsStatusDefault": "Disabled",
+    "notificationScheduleMorning": "Remind me in the morning",
+    "notificationScheduleAfternoon": "Remind me in the afternoon",
+    "notificationScheduleEvening": "Remind me at night"
 }

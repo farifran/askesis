@@ -986,6 +986,66 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 .setting-item-header { display: flex; justify-content: space-between; align-items: baseline; width: 100%; margin-block-end: var(--space-sm); }
 .setting-item.setting-item--column { flex-direction: column; align-items: stretch; }
 .setting-item label { font-size: 14px; color: var(--text-secondary); }
+.setting-item-content { display: flex; justify-content: space-between; align-items: center; gap: var(--space-lg); }
+.setting-desc { font-size: 13px; color: var(--text-tertiary); flex-grow: 1; line-height: 1.4; }
+.setting-status { font-size: 11px; color: var(--text-tertiary); font-style: italic; transition: opacity var(--transition-duration-slow); }
+
+.notification-schedule-options {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+    margin-block-start: var(--space-lg);
+    padding-inline-start: var(--space-sm);
+    max-height: 0;
+    opacity: 0;
+    overflow: hidden;
+    transition: max-height var(--transition-duration-slow), opacity var(--transition-duration-slow), margin-block-start var(--transition-duration-slow);
+}
+.notification-schedule-options.visible {
+    max-height: 200px;
+    opacity: 1;
+}
+.notification-schedule-options input[type="checkbox"] {
+    accent-color: var(--accent-blue);
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+}
+
+
+/* --- INTERRUPTOR (TOGGLE SWITCH) --- */
+.toggle-switch-container { flex-shrink: 0; }
+.toggle-switch { position: relative; display: inline-block; width: 50px; height: 28px; }
+.toggle-switch input { opacity: 0; width: 0; height: 0; }
+.slider {
+    position: absolute; cursor: pointer;
+    inset: 0;
+    background-color: var(--bg-color);
+    border: 1px solid var(--border-color);
+    transition: var(--transition-duration-slow);
+    border-radius: 28px;
+}
+.slider:before {
+    position: absolute; content: "";
+    height: 20px; width: 20px;
+    left: 3px; bottom: 3px;
+    background-color: var(--text-tertiary);
+    transition: var(--transition-duration-slow);
+    border-radius: var(--border-radius-pill);
+}
+input:checked + .slider {
+    background-color: var(--accent-blue);
+    border-color: var(--accent-blue);
+}
+input:checked + .slider:before {
+    transform: translateX(22px);
+    background-color: white;
+}
+input:disabled + .slider {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
 
 /* Modal: Sincronização */
 #sync-section {

@@ -1,0 +1,64 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+*/
+import { kv } from '@vercel/kv';
+
+export const config = {
+  runtime: 'edge',
+};
+
+// Interface para o payload que o cliente envia
+interface SubscriptionPayload {
+    subscription: any; // O tipo PushSubscription não está disponível no servidor Edge
+    lang: 'pt' | 'en' | 'es';
+}
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, X-Sync-Key-Hash',
+};
+
+export default async function handler(req: Request) {
+    if (req.method === 'OPTIONS') {
+        return new Response(null, { status: 204, headers: corsHeaders });
+    }
+
+    if (req.method !== 'POST') {
+        return new Response(JSON.stringify({ error: 'Method not allowed' }), {
+            status: 405, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+    }
+
+    try {
+        const keyHash = req.headers.get('x-sync-key-hash');
+        if (!keyHash) {
+            return new Response(JSON.stringify({ error: 'Unauthorized: Missing sync key hash' }), {
+                status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+        }
+        
+        const payload: SubscriptionPayload = await req.json();
+        if (!payload || !payload.subscription || !payload.subscription.endpoint || !payload.lang) {
+             return new Response(JSON.stringify({ error: 'Bad Request: Invalid subscription payload' }), {
+                status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+        }
+
+        const dataKey = `push_sub:${keyHash}`;
+        // Salva o objeto inteiro, que inclui tanto a inscrição quanto o idioma
+        await kv.set(dataKey, payload);
+
+        return new Response(JSON.stringify({ success: true }), {
+            status: 201, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+
+    } catch (error) {
+        console.error('Error in /api/subscribe:', error);
+        const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+        return new Response(JSON.stringify({ error: 'Internal Server Error', details: errorMessage }), {
+            status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+    }
+}
