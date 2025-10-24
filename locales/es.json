@@ -131,7 +131,7 @@
     "chartEvolutionSince": "Evolución desde {date}",
     "labelNotifications": "Notificaciones Push",
     "notificationsDesc": "Recibe recordatorios para tus hábitos.",
-    "notificationsStatusUnsupported": "API no soportada",
+    "notificationsStatusUnsupported": "Navegador/contexto no soportado",
     "notificationsStatusInsecureContext": "Requiere HTTPS (contexto seguro)",
     "notificationsStatusBlocked": "Bloqueado",
     "notificationsStatusGranted": "Activado",
