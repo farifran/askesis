@@ -184,6 +184,30 @@ function updateUI() {
     ui.notificationScheduleMorning.checked = state.notificationSchedules.includes('Manhã');
     ui.notificationScheduleAfternoon.checked = state.notificationSchedules.includes('Tarde');
     ui.notificationScheduleEvening.checked = state.notificationSchedules.includes('Noite');
+
+    // 5. Mostra ou esconde a mensagem de detalhes para o estado de "não suportado"
+    const detailsEl = document.getElementById('notifications-unsupported-details');
+    const detailsTextEl = document.getElementById('notifications-unsupported-text');
+
+    if (isEnabled || !detailsEl || !detailsTextEl) {
+        if (detailsEl) detailsEl.style.display = 'none';
+    } else {
+        let detailsKey = '';
+        if (statusKey === 'unsupported_insecure') {
+            detailsKey = 'notificationsUnsupportedInsecureBody';
+        } else if (statusKey === 'unsupported_api') {
+            detailsKey = 'notificationsUnsupportedApiBody';
+        } else if (statusKey === 'blocked') {
+            detailsKey = 'notificationsUnsupportedBlockedBody';
+        }
+
+        if (detailsKey) {
+            detailsTextEl.innerHTML = t(detailsKey); // Usa innerHTML porque as traduções podem conter links/tags
+            detailsEl.style.display = 'block';
+        } else {
+            detailsEl.style.display = 'none';
+        }
+    }
 }
 
 async function handleScheduleChange() {

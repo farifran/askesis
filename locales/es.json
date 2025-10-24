@@ -138,5 +138,8 @@
     "notificationsStatusDefault": "Desactivado",
     "notificationScheduleMorning": "Recordarme por la mañana",
     "notificationScheduleAfternoon": "Recordarme por la tarde",
-    "notificationScheduleEvening": "Recordarme por la noche"
+    "notificationScheduleEvening": "Recordarme por la noche",
+    "notificationsUnsupportedApiBody": "Tu navegador actual no es compatible con las notificaciones Push. Para una mejor experiencia, te recomendamos usar las últimas versiones de Chrome, Firefox o Edge en un ordenador o dispositivo Android.",
+    "notificationsUnsupportedInsecureBody": "Las notificaciones Push requieren una conexión segura (HTTPS). Por favor, accede al sitio usando un enlace `https://`.",
+    "notificationsUnsupportedBlockedBody": "Has bloqueado los permisos de notificación para este sitio. Para activarlas, por favor, revisa la configuración de permisos de tu navegador."
 }

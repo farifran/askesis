@@ -75,16 +75,6 @@
         <div class="modal-content">
             <h2 id="manage-modal-title">Configurações Gerais</h2>
             <div class="modal-settings-section">
-                <div class="setting-item">
-                    <label id="label-language">Idioma</label>
-                    <div id="language-rotary" class="reel-rotary">
-                        <button id="language-prev" class="reel-btn" aria-label="Idioma anterior"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg></button>
-                        <div id="language-viewport" class="reel-viewport">
-                            <div id="language-reel" class="reel-reel"></div>
-                        </div>
-                        <button id="language-next" class="reel-btn" aria-label="Próximo idioma"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg></button>
-                    </div>
-                </div>
                  <div class="setting-item setting-item--column">
                     <div class="setting-item-header">
                          <label id="label-sync">Sincronização na Nuvem</label>
@@ -131,7 +121,7 @@
                 </div>
                 <div class="setting-item setting-item--column">
                     <div class="setting-item-header">
-                        <label id="label-notifications">Notificações Push</label>
+                        <label id="label-notifications" for="notifications-toggle">Notificações Push</label>
                         <span id="notifications-status" class="setting-status"></span>
                     </div>
                     <div class="setting-item-content">
@@ -142,6 +132,9 @@
                                 <span class="slider"></span>
                             </label>
                         </div>
+                    </div>
+                    <div id="notifications-unsupported-details" class="setting-details" style="display: none;">
+                        <p id="notifications-unsupported-text"></p>
                     </div>
                     <div id="notification-schedule-options" class="notification-schedule-options">
                         <div class="setting-item">
@@ -161,6 +154,16 @@
                 <div class="setting-item">
                     <label id="label-reset">Reinicialização</label>
                     <button id="reset-app-btn" class="btn btn--danger">Apagar dados</button>
+                </div>
+                <div class="setting-item">
+                    <label id="label-language">Idioma</label>
+                    <div id="language-rotary" class="reel-rotary">
+                        <button id="language-prev" class="reel-btn" aria-label="Idioma anterior"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg></button>
+                        <div id="language-viewport" class="reel-viewport">
+                            <div id="language-reel" class="reel-reel"></div>
+                        </div>
+                        <button id="language-next" class="reel-btn" aria-label="Próximo idioma"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg></button>
+                    </div>
                 </div>
             </div>
             <h3 id="habit-list-title" class="modal-subtitle">Gerenciar Hábitos</h3>

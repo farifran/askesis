@@ -378,10 +378,12 @@ main {
     border: none;
     color: var(--text-secondary);
     cursor: pointer;
-    padding: var(--space-xs);
+    width: 28px;
+    height: 100%;
     display: flex;
     align-items: center;
     justify-content: center;
+    flex-shrink: 0;
     transition: background-color var(--transition-duration);
 }
 .reel-btn:hover { background-color: var(--surface-hover); }
@@ -394,6 +396,11 @@ main {
 /* REATORAÇÃO: Centraliza a definição de largura usando variáveis locais. */
 #language-rotary { --reel-item-width: 95px; }
 #frequency-rotary { --reel-item-width: 125px; }
+
+#language-rotary .reel-btn {
+    position: relative;
+    top: -5px;
+}
 
 #frequency-rotary .reel-option {
     color: var(--text-primary);
@@ -1010,6 +1017,24 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     width: 18px;
     height: 18px;
     cursor: pointer;
+}
+
+.setting-details {
+    font-size: 12px;
+    color: var(--text-tertiary);
+    background-color: var(--bg-color);
+    border-radius: var(--border-radius-base);
+    padding: var(--space-md);
+    margin-top: var(--space-sm);
+    border: 1px solid var(--border-color);
+    line-height: 1.5;
+}
+.setting-details a {
+    color: var(--accent-blue);
+    text-decoration: none;
+}
+.setting-details a:hover {
+    text-decoration: underline;
 }
 
 

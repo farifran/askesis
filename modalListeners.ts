@@ -350,8 +350,12 @@ const closeAIModalAndReset = () => {
 export const setupModalListeners = () => {
     ui.manageHabitsBtn.addEventListener('click', () => {
         setupManageModal();
-        renderLanguageFilter();
         openModal(ui.manageModal);
+        // Garante que o seletor de idioma seja renderizado depois que o modal estiver visível,
+        // para calcular corretamente a largura dos itens.
+        requestAnimationFrame(() => {
+            renderLanguageFilter();
+        });
     });
     ui.fabAddHabit.addEventListener('click', () => {
         renderExploreHabits();

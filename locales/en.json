@@ -138,5 +138,8 @@
     "notificationsStatusDefault": "Disabled",
     "notificationScheduleMorning": "Remind me in the morning",
     "notificationScheduleAfternoon": "Remind me in the afternoon",
-    "notificationScheduleEvening": "Remind me at night"
+    "notificationScheduleEvening": "Remind me at night",
+    "notificationsUnsupportedApiBody": "Your current browser does not support Push Notifications. For the best experience, we recommend using the latest versions of Chrome, Firefox, or Edge on a computer or Android device.",
+    "notificationsUnsupportedInsecureBody": "Push notifications require a secure connection (HTTPS). Please access the site using an `https://` link.",
+    "notificationsUnsupportedBlockedBody": "You have blocked notification permissions for this site. To enable them, please check your browser's permission settings."
 }
