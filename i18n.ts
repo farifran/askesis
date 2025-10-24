@@ -92,11 +92,6 @@ function updateUIText() {
     ui.habitListTitle.textContent = t('modalManageHabitsSubtitle');
     document.getElementById('label-language')!.textContent = t('modalManageLanguage');
     document.getElementById('label-sync')!.textContent = t('syncLabel');
-    document.getElementById('label-notifications')!.textContent = t('labelNotifications');
-    document.getElementById('notifications-desc')!.textContent = t('notificationsDesc');
-    document.getElementById('label-notification-schedule-morning')!.textContent = t('notificationScheduleMorning');
-    document.getElementById('label-notification-schedule-afternoon')!.textContent = t('notificationScheduleAfternoon');
-    document.getElementById('label-notification-schedule-evening')!.textContent = t('notificationScheduleEvening');
     document.getElementById('label-reset')!.textContent = t('modalManageReset');
     ui.resetAppBtn.textContent = t('modalManageResetButton');
     ui.manageModal.querySelector('.modal-close-btn')!.textContent = t('closeButton');
