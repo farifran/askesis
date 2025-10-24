@@ -148,31 +148,39 @@ async function unsubscribeUser() {
 }
 
 function updateUI() {
-    // Verifique primeiro se o navegador suporta notificações.
-    if (!('Notification' in window)) {
-        ui.notificationsStatus.textContent = t('notificationsStatusUnsupported');
-        ui.notificationsToggle.checked = false;
-        ui.notificationsToggle.disabled = true;
-        ui.notificationScheduleOptions.classList.remove('visible');
-        return;
+    // 1. Determina o estado geral das notificações
+    let statusKey: 'unsupported_insecure' | 'unsupported_api' | 'blocked' | 'granted' | 'default' = 'default';
+    let isEnabled = false;
+
+    if (!window.isSecureContext) {
+        statusKey = 'unsupported_insecure';
+    } else if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
+        statusKey = 'unsupported_api';
+    } else if (window.Notification.permission === 'denied') {
+        statusKey = 'blocked';
+    } else {
+        isEnabled = true;
+        if (isSubscribed) {
+            statusKey = 'granted';
+        }
     }
 
-    if (window.Notification.permission === 'denied') {
-        ui.notificationsStatus.textContent = t('notificationsStatusBlocked');
-        ui.notificationsToggle.checked = false;
-        ui.notificationsToggle.disabled = true;
-        ui.notificationScheduleOptions.classList.remove('visible');
-        return;
-    }
-    
-    ui.notificationsToggle.disabled = false;
+    // 2. Mapeia o estado para as chaves de tradução
+    const statusTextMap = {
+        unsupported_insecure: t('notificationsStatusInsecureContext'),
+        unsupported_api: t('notificationsStatusUnsupported'),
+        blocked: t('notificationsStatusBlocked'),
+        granted: t('notificationsStatusGranted'),
+        default: t('notificationsStatusDefault'),
+    };
+
+    // 3. Atualiza a UI com base no estado
+    ui.notificationsStatus.textContent = statusTextMap[statusKey];
+    ui.notificationsToggle.disabled = !isEnabled;
     ui.notificationsToggle.checked = isSubscribed;
-    ui.notificationsStatus.textContent = isSubscribed ? t('notificationsStatusGranted') : t('notificationsStatusDefault');
+    ui.notificationScheduleOptions.classList.toggle('visible', isSubscribed && isEnabled);
 
-    // Mostra/oculta as opções de agendamento
-    ui.notificationScheduleOptions.classList.toggle('visible', isSubscribed);
-
-    // Sincroniza o estado dos checkboxes com o estado do aplicativo
+    // 4. Sincroniza os checkboxes (sempre, para refletir o estado)
     ui.notificationScheduleMorning.checked = state.notificationSchedules.includes('Manhã');
     ui.notificationScheduleAfternoon.checked = state.notificationSchedules.includes('Tarde');
     ui.notificationScheduleEvening.checked = state.notificationSchedules.includes('Noite');
@@ -191,9 +199,8 @@ async function handleScheduleChange() {
 
 
 export async function handleNotificationToggle() {
-    if (!('Notification' in window)) {
-        console.error('Notifications API not supported in this browser.');
-        updateUI();
+    // A lógica de verificação agora está centralizada em updateUI, então aqui apenas lidamos com a ação.
+    if (ui.notificationsToggle.disabled) {
         return;
     }
 
@@ -204,7 +211,7 @@ export async function handleNotificationToggle() {
         if (permission === 'granted') {
             await subscribeUser();
         } else {
-            // Se a permissão não foi concedida, garante que o toggle esteja desligado.
+            // Se a permissão não foi concedida, garante que a UI reflita isso.
             isSubscribed = false;
             updateUI();
         }
@@ -212,22 +219,26 @@ export async function handleNotificationToggle() {
 }
 
 export async function initNotifications() {
-    if ('serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window) {
+    // A lógica de detecção de recursos e registro agora vive aqui,
+    // e o resultado (isSubscribed) é usado por updateUI.
+    if (window.isSecureContext && 'serviceWorker' in navigator && 'PushManager' in window) {
         try {
-            const registration = await navigator.serviceWorker.register('service-worker.js');
+            // Usar um caminho absoluto para o service worker é mais robusto.
+            const registration = await navigator.serviceWorker.register('/service-worker.js');
             const subscription = await registration.pushManager.getSubscription();
-            isSubscribed = !(subscription === null);
+            isSubscribed = (subscription !== null);
         } catch (error) {
             console.error('Falha ao registrar o Service Worker:', error);
+            isSubscribed = false; // Garante que o estado esteja correto em caso de falha
         }
     } else {
-        console.log('Push notifications are not fully supported by this browser.');
+        isSubscribed = false; // Não pode estar inscrito se os recursos não estiverem disponíveis
     }
     
-    // Adiciona listeners para os novos checkboxes
+    // Adiciona listeners para os checkboxes de agendamento
     ui.notificationScheduleMorning.addEventListener('change', handleScheduleChange);
     ui.notificationScheduleAfternoon.addEventListener('change', handleScheduleChange);
     ui.notificationScheduleEvening.addEventListener('change', handleScheduleChange);
 
-    updateUI();
+    updateUI(); // Chama updateUI, que agora contém toda a lógica de exibição.
 }
