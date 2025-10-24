@@ -30,6 +30,7 @@ import {
 import { t, setLanguage, getHabitDisplayInfo } from './i18n';
 import { setupReelRotary } from './rotary';
 import { simpleMarkdownToHTML, addDays, getTodayUTC, toUTCIsoDateString, parseUTCIsoDate } from './utils';
+import { handleNotificationToggle } from "./notifications";
 
 // --- Lógica da IA centralizada, eliminando api.ts e /api/generate.ts ---
 
@@ -349,8 +350,12 @@ const closeAIModalAndReset = () => {
 export const setupModalListeners = () => {
     ui.manageHabitsBtn.addEventListener('click', () => {
         setupManageModal();
-        renderLanguageFilter();
         openModal(ui.manageModal);
+        // Garante que o seletor de idioma seja renderizado depois que o modal estiver visível,
+        // para calcular corretamente a largura dos itens.
+        requestAnimationFrame(() => {
+            renderLanguageFilter();
+        });
     });
     ui.fabAddHabit.addEventListener('click', () => {
         renderExploreHabits();
@@ -445,6 +450,9 @@ export const setupModalListeners = () => {
         closeAIModalAndReset();
         openModal(ui.aiOptionsModal);
     });
+    
+    ui.notificationsToggle.addEventListener('change', handleNotificationToggle);
+
 
     // REATORAÇÃO: Usa o módulo rotary reutilizável para ambos os seletores
     setupReelRotary({

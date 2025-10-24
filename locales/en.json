@@ -128,5 +128,20 @@
     "chartEmptyState": "Keep tracking your habits to see your progress here.",
     "chartTooltipScore": "Compound Score",
     "chartTooltipCompleted": "Completed: {completed}/{total}",
-    "chartEvolutionSince": "Evolution since {date}"
+    "chartEvolutionSince": "Evolution since {date}",
+    "labelNotifications": "Push Notifications",
+    "notificationsDesc": "Get reminders for your habits.",
+    "notificationsStatusUnsupported": "Browser/context not supported",
+    "notificationsStatusInsecureContext": "Requires HTTPS (secure context)",
+    "notificationsStatusBlocked": "Blocked",
+    "notificationsStatusGranted": "Enabled",
+    "notificationsStatusDefault": "Disabled",
+    "notificationScheduleMorning": "Remind me in the morning",
+    "notificationScheduleAfternoon": "Remind me in the afternoon",
+    "notificationScheduleEvening": "Remind me at night",
+    "notificationsUnsupportedApiBody": "Your current browser does not support Push Notifications. For the best experience, we recommend using the latest versions of Chrome, Firefox, or Edge on a computer or Android device.",
+    "notificationsUnsupportedInsecureBody": "Push notifications require a secure connection (HTTPS). Please access the site using an `https://` link.",
+    "notificationsUnsupportedBlockedBody": "You have blocked notification permissions for this site. To enable them, please check your browser's permission settings.",
+    "notificationSubscribeError": "Failed to enable notifications. Please try again.",
+    "notificationUnsubscribeError": "Failed to disable notifications. Please try again."
 }

@@ -128,5 +128,20 @@
     "chartEmptyState": "Continue registrando seus hábitos para ver sua evolução aqui.",
     "chartTooltipScore": "Pontuação Composta",
     "chartTooltipCompleted": "Completos: {completed}/{total}",
-    "chartEvolutionSince": "Evolução desde {date}"
+    "chartEvolutionSince": "Evolução desde {date}",
+    "labelNotifications": "Notificações Push",
+    "notificationsDesc": "Receba lembretes para seus hábitos.",
+    "notificationsStatusUnsupported": "Navegador/contexto não suportado",
+    "notificationsStatusInsecureContext": "Requer HTTPS (contexto seguro)",
+    "notificationsStatusBlocked": "Bloqueado",
+    "notificationsStatusGranted": "Ativado",
+    "notificationsStatusDefault": "Desativado",
+    "notificationScheduleMorning": "Lembrar de manhã",
+    "notificationScheduleAfternoon": "Lembrar à tarde",
+    "notificationScheduleEvening": "Lembrar à noite",
+    "notificationsUnsupportedApiBody": "Seu navegador atual não suporta notificações Push. Para uma melhor experiência, recomendamos usar as versões mais recentes do Chrome, Firefox ou Edge em um computador ou dispositivo Android.",
+    "notificationsUnsupportedInsecureBody": "As notificações Push requerem uma conexão segura (HTTPS). Por favor, acesse o site através de um link `https://`.",
+    "notificationsUnsupportedBlockedBody": "Você bloqueou as permissões de notificação para este site. Para ativá-las, por favor, verifique as configurações de permissão do seu navegador.",
+    "notificationSubscribeError": "Falha ao ativar as notificações. Por favor, tente novamente.",
+    "notificationUnsubscribeError": "Falha ao desativar as notificações. Por favor, tente novamente."
 }
