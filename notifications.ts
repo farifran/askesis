@@ -185,7 +185,7 @@ export function updateNotificationUI() {
         granted: t('notificationsDesc'),
         default: t('notificationsDesc'),
         sync_required: t('notificationsDescSyncRequired')
-    }
+    };
 
     // 3. Atualiza a UI com base no estado
     ui.notificationsStatus.textContent = statusTextMap[statusKey];
