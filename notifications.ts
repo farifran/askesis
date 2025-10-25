@@ -8,10 +8,8 @@ import { getSyncKeyHash, hasSyncKey } from './sync';
 import { state, saveState, TimeOfDay } from './state';
 import { showInlineNotice } from './render';
 
-// Esta chave pública VAPID deve ser armazenada como uma variável de ambiente em um aplicativo do mundo real.
-// É usada pelo serviço de push para autenticar o servidor de aplicativos.
-// Corresponde a uma chave privada que o servidor usaria para assinar as mensagens de push.
-const VAPID_PUBLIC_KEY = 'BE6i9mJ-s2c51iZJSCd1rUp0waFIG2ih3t1fS4I-sZNe6TPm16KCHzSj0-fX95Jk02-gaaU7wz6e42Kta_pG1-A';
+// Chave pública VAPID atualizada com o valor que você gerou.
+const VAPID_PUBLIC_KEY = 'BLltAUNXquk6T7RyOi-I2RrIGe_thoW9WEyB7PSAZJhQWSsNr0dJQcEJcfLkObjNdvLCUfekm2VOedmuehB8oic';
 
 let isSubscribed = false;
 

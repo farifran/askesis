@@ -12,7 +12,8 @@ import { setupEventListeners } from './listeners';
 import { initI18n } from './i18n';
 import { createDefaultHabit } from './habitActions';
 import { initSync } from './sync';
-import { fetchStateFromCloud, hasSyncKey } from './cloud';
+import { fetchStateFromCloud } from './cloud';
+import { hasSyncKey } from './sync';
 import { initNotifications } from './notifications';
 
 // --- INITIALIZATION ---

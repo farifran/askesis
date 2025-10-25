@@ -5,8 +5,7 @@
 import { AppState, STATE_STORAGE_KEY, loadState, state } from './state';
 import { ui } from './ui';
 import { t } from './i18n';
-// FIX: Correctly import `hasSyncKey` from './sync' and alias it to `hasLocalSyncKey` to resolve the compilation error.
-import { getSyncKey, getSyncKeyHash, hasSyncKey as hasLocalSyncKey } from './sync';
+import { getSyncKey, getSyncKeyHash, hasSyncKey } from './sync';
 import { renderApp } from './render';
 import { encrypt, decrypt } from './crypto';
 
@@ -34,10 +33,6 @@ const getApiUrl = (endpoint: string): string => {
 export function setSyncStatus(statusKey: 'syncSaving' | 'syncSynced' | 'syncError' | 'syncInitial') {
     state.syncState = statusKey;
     ui.syncStatus.textContent = t(statusKey);
-}
-
-export function hasSyncKey(): boolean {
-    return hasLocalSyncKey();
 }
 
 /**
