@@ -7,7 +7,7 @@ import { getTodayUTC } from './utils';
 import { ui } from './ui';
 import { t } from './i18n';
 import { getSyncKey, getSyncKeyHash, hasLocalSyncKey } from './sync';
-import { renderApp } from './render';
+import { renderApp, updateNotificationUI } from './render';
 import { encrypt, decrypt } from './crypto';
 
 // Debounce para evitar salvar na nuvem a cada pequena alteração.
@@ -257,35 +257,52 @@ export async function syncLocalStateToCloud() {
 
 // --- ONE SIGNAL NOTIFICATIONS ---
 
-/**
- * Atualiza as tags do usuário no OneSignal com base nos hábitos agendados para HOJE.
- * Isso permite o direcionamento para lembretes via campanhas automatizadas do OneSignal.
- */
 export function updateUserHabitTags() {
     window.OneSignal = window.OneSignal || [];
     window.OneSignal.push(async (OneSignal: any) => {
-        if (!await OneSignal.Notifications.isPushEnabled()) {
+        if (!await OneSignal.User.pushSubscription.get()) {
             return;
         }
 
         const today = getTodayUTC();
-        const tags: { [key: string]: string } = {};
+        const tagsToAdd: { [key: string]: string } = {};
+        const tagsToRemove: string[] = [
+            'lembrete_manha', 'lembrete_tarde', 'lembrete_noite',
+            'manha_habits', 'tarde_habits', 'noite_habits' // Limpa tags antigas
+        ];
 
         TIMES_OF_DAY.forEach(time => {
-            const hasHabitForTime = state.habits.some(habit => {
-                if (shouldHabitAppearOnDate(habit, today)) {
-                    const schedule = getScheduleForDate(habit, today);
-                    return schedule?.times.includes(time);
-                }
-                return false;
-            });
-            // Normaliza o nome do tempo para ser um nome de tag válido (ex: "Manhã" -> "manha")
-            const tagName = time.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-            tags[`${tagName}_habits`] = String(hasHabitForTime);
+            const timeKey = time.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+            const tagName = `lembrete_${timeKey}`;
+
+            const reminderTimesForPeriod = state.habits
+                .filter(habit => {
+                    if (shouldHabitAppearOnDate(habit, today)) {
+                        const schedule = getScheduleForDate(habit, today);
+                        return schedule?.times.includes(time) && habit.reminderTimes?.[time];
+                    }
+                    return false;
+                })
+                .map(habit => habit.reminderTimes![time]!);
+
+            if (reminderTimesForPeriod.length > 0) {
+                const earliestTime = reminderTimesForPeriod.sort()[0];
+                tagsToAdd[tagName] = earliestTime;
+            }
         });
 
-        console.log("Updating OneSignal tags for reminders:", tags);
-        await OneSignal.User.addTags(tags);
+        // Remove from tagsToRemove list the ones we are adding now.
+        const finalTagsToRemove = tagsToRemove.filter(tag => !Object.keys(tagsToAdd).includes(tag));
+
+        console.log("Updating OneSignal reminder tags:", tagsToAdd);
+        console.log("Removing OneSignal reminder tags:", finalTagsToRemove);
+        
+        if (Object.keys(tagsToAdd).length > 0) {
+            await OneSignal.User.addTags(tagsToAdd);
+        }
+        if (finalTagsToRemove.length > 0) {
+            await OneSignal.User.removeTags(finalTagsToRemove);
+        }
     });
 }
 
@@ -296,19 +313,18 @@ export function updateUserHabitTags() {
 export function initNotifications() {
     window.OneSignal = window.OneSignal || [];
     window.OneSignal.push(async (OneSignal: any) => {
-        // Sincroniza o estado do nosso toggle na UI com o estado real da permissão de notificação
-        OneSignal.Notifications.addEventListener('permissionChange', (permission: boolean) => {
-             ui.notificationToggleInput.checked = permission;
+        OneSignal.Notifications.addEventListener('permissionChange', async (isSubscribed: boolean) => {
+            await updateNotificationUI();
+            if (isSubscribed) {
+                updateUserHabitTags();
+            }
         });
 
-        // Configura o estado inicial do toggle no carregamento da página
-        const isEnabled = await OneSignal.Notifications.isPushEnabled();
-        ui.notificationToggleInput.checked = isEnabled;
+        const isEnabled = await OneSignal.User.pushSubscription.get();
         if (isEnabled) {
-            updateUserHabitTags(); // Atualiza as tags se as notificações já estiverem ativadas
+            updateUserHabitTags();
         }
     });
 
-    // Escuta por mudanças nos hábitos para manter as tags de notificação atualizadas
     document.addEventListener('habitsChanged', updateUserHabitTags);
 }

@@ -146,15 +146,19 @@
                         </div>
                     </div>
                 </div>
-                <div class="setting-item setting-item--toggle">
-                    <div class="setting-item-label">
-                        <label for="notification-toggle-input" id="label-notifications">Notificações</label>
-                        <span id="label-notifications-desc" class="setting-item-desc">Receba lembretes para seus hábitos.</span>
-                    </div>
-                    <div class="toggle-switch">
-                        <input type="checkbox" id="notification-toggle-input" aria-labelledby="label-notifications">
-                        <span class="slider"></span>
-                    </div>
+                <div class="setting-item setting-item--column">
+                     <label id="label-notifications">Notificações</label>
+                     <div id="notification-status-section">
+                         <div class="notification-status-item">
+                             <span id="notif-permission-label"></span>: <strong id="notif-permission-status"></strong>
+                         </div>
+                         <div class="notification-status-item">
+                             <span id="notif-subscription-label"></span>: <strong id="notif-subscription-status"></strong>
+                         </div>
+                         <p id="notification-status-desc" class="setting-item-desc"></p>
+                         <button id="test-notification-btn" class="btn" disabled></button>
+                         <button id="enable-notifications-btn" class="btn btn--primary" style="display: none;"></button>
+                     </div>
                 </div>
                 <div class="setting-item">
                     <label id="label-reset">Reinicialização</label>
@@ -246,6 +250,10 @@
                             <span data-i18n="filterEvening">Noite</span>
                         </label>
                     </div>
+                </div>
+                <div class="form-group" id="habit-reminders-group" style="display: none;">
+                     <label id="label-habit-reminders">Lembretes</label>
+                     <div id="habit-reminders-inputs"></div>
                 </div>
                 <div class="form-group form-group--inline">
                     <label id="label-frequency">Frequência</label>

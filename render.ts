@@ -435,45 +435,54 @@ export function renderStoicQuote() {
 }
 
 export async function updateNotificationUI() {
-    // Desativa o toggle inicialmente para evitar interação do usuário durante a verificação
-    ui.notificationToggleInput.disabled = true;
-    // Reseta a descrição para o padrão
-    ui.notificationToggleDesc.textContent = t('modalManageNotificationsDesc');
+    // Define strings for statuses
+    const statusMap = {
+        default: t('notifStatusDefault'),
+        granted: t('notifStatusGranted'),
+        denied: t('notifStatusDenied'),
+    };
+    const subStatusMap = {
+        subscribed: t('notifSubStatusSubscribed'),
+        unsubscribed: t('notifSubStatusUnsubscribed'),
+        unknown: t('notifSubStatusUnknown'),
+    };
+    
+    // Disable buttons while checking
+    ui.testNotificationBtn.disabled = true;
+    ui.enableNotificationsBtn.style.display = 'none';
 
     try {
-        // Aguarda o OneSignal estar pronto. Este é um padrão comum para SDKs que carregam de forma assíncrona.
         const OneSignal = await new Promise<any>((resolve, reject) => {
             window.OneSignal = window.OneSignal || [];
-            window.OneSignal.push((sdk: any) => {
-                if (sdk) {
-                    resolve(sdk);
-                } else {
-                    reject(new Error("OneSignal SDK failed to initialize."));
-                }
-            });
+            window.OneSignal.push((sdk: any) => sdk ? resolve(sdk) : reject(new Error("OneSignal SDK failed.")));
             setTimeout(() => reject(new Error("OneSignal SDK timed out.")), 3000);
         });
 
-        // Verifica a permissão nativa de notificação do navegador
         const permission = OneSignal.Notifications.getPermission();
+        ui.notifPermissionStatus.textContent = statusMap[permission as keyof typeof statusMap] || statusMap.default;
         
+        const isSubscribed = await OneSignal.User.pushSubscription.get();
+        ui.notifSubscriptionStatus.textContent = isSubscribed ? subStatusMap.subscribed : subStatusMap.unsubscribed;
+
         if (permission === 'denied') {
-            ui.notificationToggleInput.checked = false;
-            ui.notificationToggleInput.disabled = true;
-            ui.notificationToggleDesc.textContent = t('modalManageNotificationsBlocked');
-        } else {
-            // Se a permissão não for negada, verifica se o usuário está realmente inscrito
-            const isSubscribed = await OneSignal.User.pushSubscription.get();
-            ui.notificationToggleInput.checked = !!isSubscribed;
-            // Habilita o toggle apenas se a permissão não for negada
-            ui.notificationToggleInput.disabled = false;
+            ui.notificationStatusDesc.textContent = t('modalManageNotificationsBlocked');
+            ui.testNotificationBtn.disabled = true;
+            ui.enableNotificationsBtn.style.display = 'none';
+        } else if (permission === 'default') {
+            ui.notificationStatusDesc.textContent = t('modalManageNotificationsDefault');
+            ui.enableNotificationsBtn.style.display = 'block';
+            ui.testNotificationBtn.disabled = true;
+        } else { // granted
+            ui.notificationStatusDesc.textContent = t('modalManageNotificationsDesc');
+            ui.testNotificationBtn.disabled = !isSubscribed;
+            ui.enableNotificationsBtn.style.display = 'none';
         }
 
     } catch (error) {
         console.error("Error updating notification UI:", error);
-        ui.notificationToggleInput.checked = false;
-        ui.notificationToggleInput.disabled = true;
-        ui.notificationToggleDesc.textContent = t('modalManageNotificationsError');
+        ui.notifPermissionStatus.textContent = statusMap.default;
+        ui.notifSubscriptionStatus.textContent = subStatusMap.unknown;
+        ui.notificationStatusDesc.textContent = t('modalManageNotificationsError');
     }
 }
 

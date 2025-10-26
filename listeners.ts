@@ -143,14 +143,10 @@ const setupGlobalListeners = () => {
     });
 };
 
-const setupNotificationToggleListener = () => {
-    ui.notificationToggleInput.addEventListener('change', async (e) => {
-        const isEnabled = (e.target as HTMLInputElement).checked;
-        const toggleInput = e.target as HTMLInputElement;
-
-        // Desativa o toggle imediatamente para evitar múltiplos cliques e indicar que está processando
-        toggleInput.disabled = true;
-
+const setupNotificationListeners = () => {
+    ui.enableNotificationsBtn.addEventListener('click', async () => {
+        ui.enableNotificationsBtn.disabled = true;
+        
         try {
             const OneSignal = await new Promise<any>((resolve, reject) => {
                 window.OneSignal = window.OneSignal || [];
@@ -158,26 +154,34 @@ const setupNotificationToggleListener = () => {
                 setTimeout(() => reject(new Error("OneSignal SDK timed out.")), 3000);
             });
 
-            if (isEnabled) {
-                // Esta chamada única lida com o prompt de permissão do navegador e a inscrição.
-                await OneSignal.Notifications.requestPermission();
-                const permission = OneSignal.Notifications.getPermission();
-                
-                if (permission === 'granted') {
-                    await OneSignal.User.pushSubscription.optIn();
-                    updateUserHabitTags(); // Sincroniza novamente as tags após a ativação
-                }
-            } else {
-                await OneSignal.User.pushSubscription.optOut();
-                await OneSignal.User.removeTags(['manha_habits', 'tarde_habits', 'noite_habits']);
-            }
+            await OneSignal.Notifications.requestPermission();
+            // O listener 'permissionChange' em cloud.ts cuidará da atualização da UI.
         } catch (error) {
-            console.error('Failed to change notification subscription:', error);
-            // O erro é registrado, mas a UI será corrigida no bloco finally de qualquer maneira.
-        } finally {
-            // CRÍTICO: Sempre atualiza a UI para refletir o estado final real,
-            // independentemente do sucesso ou falha. Isso evita o toggle "piscando".
-            await updateNotificationUI();
+            console.error('Falha ao solicitar permissão de notificação:', error);
+            // Mesmo em caso de erro, atualiza a UI para refletir o estado atual.
+            await updateNotificationUI(); 
+        }
+    });
+
+    ui.testNotificationBtn.addEventListener('click', () => {
+        try {
+            window.OneSignal.push(function(OneSignal: any) {
+                const testTag = "test_notification_tag";
+                OneSignal.User.addTag(testTag, "true").then(() => {
+                    console.log("Tag para notificação de teste enviada.");
+                });
+
+                const originalText = ui.testNotificationBtn.textContent;
+                ui.testNotificationBtn.textContent = t('notifButtonTestSent');
+                ui.testNotificationBtn.disabled = true;
+                setTimeout(() => {
+                    ui.testNotificationBtn.textContent = originalText;
+                    updateNotificationUI(); 
+                    OneSignal.User.removeTag(testTag);
+                }, 4000);
+            });
+        } catch (error) {
+            console.error("Falha ao enviar tag de notificação de teste:", error);
         }
     });
 };
@@ -189,5 +193,5 @@ export const setupEventListeners = () => {
     setupHabitCardListeners();
     setupSwipeHandler(ui.habitContainer);
     setupDragAndDropHandler(ui.habitContainer);
-    setupNotificationToggleListener();
+    setupNotificationListeners();
 };

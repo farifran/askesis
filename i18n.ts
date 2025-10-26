@@ -92,11 +92,16 @@ function updateUIText() {
     ui.habitListTitle.textContent = t('modalManageHabitsSubtitle');
     document.getElementById('label-language')!.textContent = t('modalManageLanguage');
     document.getElementById('label-sync')!.textContent = t('syncLabel');
-    ui.notificationToggleLabel.textContent = t('modalManageNotifications');
-    ui.notificationToggleDesc.textContent = t('modalManageNotificationsDesc');
+    document.getElementById('label-notifications')!.textContent = t('modalManageNotifications');
     document.getElementById('label-reset')!.textContent = t('modalManageReset');
     ui.resetAppBtn.textContent = t('modalManageResetButton');
     ui.manageModal.querySelector('.modal-close-btn')!.textContent = t('closeButton');
+    
+    // Textos de Notificação
+    ui.notifPermissionLabel.textContent = t('notifPermissionLabel');
+    ui.notifSubscriptionLabel.textContent = t('notifSubscriptionLabel');
+    ui.testNotificationBtn.textContent = t('notifButtonTest');
+    ui.enableNotificationsBtn.textContent = t('notifButtonEnable');
 
     document.getElementById('sync-inactive-desc')!.textContent = t('syncInactiveDesc');
     ui.enableSyncBtn.textContent = t('syncEnable');

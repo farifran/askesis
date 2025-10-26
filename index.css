@@ -227,6 +227,11 @@ main {
     -webkit-tap-highlight-color: transparent; /* Remove o flash de toque no mobile */
 }
 .btn:hover { background: var(--border-color); }
+.btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    background-color: var(--surface-snoozed);
+}
 
 .btn--danger {
     background-color: var(--color-red);
@@ -987,67 +992,32 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 .setting-item.setting-item--column { flex-direction: column; align-items: stretch; }
 .setting-item label { font-size: 14px; color: var(--text-secondary); }
 
-/* --- COMPONENTES: Toggle Switch --- */
-.setting-item--toggle {
-    flex-direction: row;
-    align-items: center;
-}
-.setting-item-label {
+/* Seção de Status de Notificação */
+#notification-status-section {
+    background: var(--bg-color);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-base);
+    padding: var(--space-lg);
     display: flex;
     flex-direction: column;
-    flex-grow: 1;
+    gap: var(--space-md);
 }
-.setting-item-desc {
+.notification-status-item {
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+.notification-status-item strong {
+    color: var(--text-primary);
+}
+#notification-status-desc {
     font-size: 12px;
+    line-height: 1.5;
     color: var(--text-tertiary);
-    font-weight: 400;
 }
-.toggle-switch {
-    position: relative;
-    display: inline-block;
-    width: 50px;
-    height: 28px;
-    flex-shrink: 0;
+#test-notification-btn, #enable-notifications-btn {
+    width: 100%;
 }
-.toggle-switch input {
-    opacity: 0;
-    width: 0;
-    height: 0;
-}
-.toggle-switch .slider {
-    position: absolute;
-    cursor: pointer;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: var(--bg-color);
-    border: 1px solid var(--border-color);
-    transition: var(--transition-duration-slow);
-    border-radius: 28px;
-}
-.toggle-switch .slider:before {
-    position: absolute;
-    content: "";
-    height: 20px;
-    width: 20px;
-    left: 4px;
-    bottom: 3px;
-    background-color: var(--text-secondary);
-    transition: var(--transition-duration-slow);
-    border-radius: var(--border-radius-pill);
-}
-.toggle-switch input:checked + .slider {
-    background-color: var(--accent-blue);
-    border-color: var(--accent-blue);
-}
-.toggle-switch input:checked + .slider:before {
-    transform: translateX(20px);
-    background-color: white;
-}
-.toggle-switch input:focus-visible + .slider {
-    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent-blue) 30%, transparent);
-}
+
 
 /* Modal: Sincronização */
 #sync-section {
@@ -1140,6 +1110,33 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 
 /* Modal: Edição/Criação de Hábito */
 #edit-habit-modal .modal-content { max-width: 440px; }
+#habit-reminders-inputs {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+    margin-top: var(--space-xs);
+}
+.reminder-time-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background-color: var(--bg-color);
+    padding: var(--space-sm) var(--space-md);
+    border-radius: var(--border-radius-base);
+    border: 1px solid var(--border-color);
+}
+.reminder-time-row label {
+    font-size: 14px;
+    margin: 0;
+}
+.reminder-time-input {
+    background-color: var(--surface-color);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    border-radius: var(--border-radius-small);
+    padding: var(--space-xs) var(--space-sm);
+    font-size: 14px;
+}
 
 /* CORREÇÃO: Garante que o modal de confirmação apareça sobre outros modais */
 #confirm-modal {
