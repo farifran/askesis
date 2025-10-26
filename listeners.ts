@@ -1,8 +1,8 @@
 // FIX: Declare OneSignal to inform TypeScript that it exists in the global scope.
 declare var OneSignal: any;
 
-import { state, saveState } from './state';
-import { addDays, parseUTCIsoDate } from './utils';
+import { state, saveState, TIMES_OF_DAY } from './state';
+import { addDays, parseUTCIsoDate, toUTCIsoDateString } from './utils';
 import { ui } from './ui';
 import {
     renderHabits,
@@ -93,62 +93,107 @@ const setupGlobalListeners = () => {
     
     ui.calendarStrip.addEventListener('click', handleCalendarClick);
 
-    // Handler para "infinite scroll" do calendário
-    const handleCalendarScroll = () => {
-        const SCROLL_THRESHOLD = 200; // pixels da borda para acionar o carregamento
-        const calendar = ui.calendarStrip;
-        
-        // Carrega mais datas futuras
-        if (calendar.scrollLeft + calendar.clientWidth >= calendar.scrollWidth - SCROLL_THRESHOLD) {
-            const lastDate = state.calendarDates[state.calendarDates.length - 1];
-            const newDates = Array.from({ length: 30 }, (_, i) => addDays(lastDate, i + 1));
-            state.calendarDates.push(...newDates);
-            
-            // Adiciona apenas os novos dias ao DOM
-            const futureFragment = document.createDocumentFragment();
-            newDates.forEach(date => futureFragment.appendChild(createCalendarDayElement(date)));
-            calendar.appendChild(futureFragment);
-        }
-
-        // Carrega mais datas passadas
-        if (calendar.scrollLeft <= SCROLL_THRESHOLD) {
-            const firstDate = state.calendarDates[0];
-            const newDates = Array.from({ length: 30 }, (_, i) => addDays(firstDate, -(i + 1))).reverse();
-            
-            const oldScrollWidth = calendar.scrollWidth;
-            const oldScrollLeft = calendar.scrollLeft;
-
-            state.calendarDates.unshift(...newDates);
-            
-            // Adiciona apenas os novos dias ao DOM
-            const pastFragment = document.createDocumentFragment();
-            newDates.forEach(date => pastFragment.appendChild(createCalendarDayElement(date)));
-            calendar.prepend(pastFragment);
-
-            // Preserva a posição de rolagem após adicionar elementos no início
-            const newScrollWidth = calendar.scrollWidth;
-            calendar.scrollLeft = oldScrollLeft + (newScrollWidth - oldScrollWidth);
-        }
-    };
-
-    ui.calendarStrip.addEventListener('scroll', debounce(handleCalendarScroll, 100));
-
-
-    // Atualiza o título do cabeçalho se a janela for redimensionada
-    window.addEventListener('resize', updateHeaderTitle);
-
-    // Listener para o botão "Desfazer" no toast
     ui.undoBtn.addEventListener('click', handleUndoDelete);
 
-    // Garante que o estado seja salvo antes do usuário sair da página
-    window.addEventListener('beforeunload', () => saveState());
+    const debouncedResize = debounce(() => {
+        updateHeaderTitle();
+        renderChart();
+    }, 250);
+    window.addEventListener('resize', debouncedResize);
+
+    // Keyboard navigation for calendar strip
+    ui.calendarStrip.addEventListener('keydown', e => {
+        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+            const currentSelected = ui.calendarStrip.querySelector('.selected');
+            if (!currentSelected) return;
+
+            const direction = e.key === 'ArrowLeft' ? -1 : 1;
+            const newIndex = state.calendarDates.findIndex(d => toUTCIsoDateString(d) === state.selectedDate) + direction;
+            
+            if (newIndex >= 0 && newIndex < state.calendarDates.length) {
+                const newDate = state.calendarDates[newIndex];
+                state.selectedDate = toUTCIsoDateString(newDate);
+                renderCalendar();
+                updateHeaderTitle();
+                renderHabits();
+                renderStoicQuote();
+                renderChart();
+                const newSelectedEl = ui.calendarStrip.querySelector<HTMLElement>(`.day-item[data-date="${state.selectedDate}"]`);
+                newSelectedEl?.focus();
+            }
+        }
+    });
+
+    // Keyboard navigation for habit groups (collapsing)
+    ui.habitContainer.addEventListener('keydown', e => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            const target = e.target as HTMLElement;
+            const wrapper = target.closest<HTMLElement>('.habit-group-wrapper.is-collapsible');
+            if (wrapper) {
+                e.preventDefault();
+                wrapper.classList.toggle('is-collapsed');
+            }
+        }
+    });
+
+    ui.habitContainer.addEventListener('click', e => {
+        const target = e.target as HTMLElement;
+        const header = target.closest<HTMLElement>('.habit-group-wrapper.is-collapsible h2');
+        if (header) {
+            header.parentElement?.classList.toggle('is-collapsed');
+        }
+    });
+};
+
+const setupNotificationToggleListener = () => {
+    ui.notificationToggleInput.addEventListener('change', async (e) => {
+        const isEnabled = (e.target as HTMLInputElement).checked;
+
+        if (isEnabled) {
+            try {
+                // Solicita a permissão do navegador primeiro.
+                await OneSignal.Notifications.requestPermission();
+                const permission = OneSignal.Notifications.getPermission();
+                
+                // Só continua se a permissão for concedida.
+                if (permission === 'granted') {
+                    await OneSignal.User.pushSubscription.optIn();
+                    console.log('User opted in for notifications.');
+                    // Atualiza as tags para garantir que os lembretes sejam agendados corretamente.
+                    updateUserHabitTags();
+                } else {
+                    console.log('User denied notification permission.');
+                    // Se o usuário negar, reverte o toggle para o estado correto.
+                    (e.target as HTMLInputElement).checked = false;
+                }
+            } catch (error) {
+                console.error('Failed to opt in for notifications:', error);
+                // Em caso de erro, também reverte a UI.
+                (e.target as HTMLInputElement).checked = false;
+            }
+        } else {
+            try {
+                // Desativa as notificações no servidor do OneSignal.
+                await OneSignal.User.pushSubscription.optOut();
+                // Remove as tags, pois não são mais necessárias.
+                await OneSignal.User.removeTags(['manha_habits', 'tarde_habits', 'noite_habits']);
+                console.log('User opted out of notifications.');
+            } catch (error) {
+                console.error('Failed to opt out of notifications:', error);
+                // Se a desativação falhar (ex: offline), reverte o toggle
+                // para mostrar ao usuário que ele ainda está inscrito.
+                (e.target as HTMLInputElement).checked = true;
+            }
+        }
+    });
 };
 
 
 export const setupEventListeners = () => {
+    setupGlobalListeners();
+    setupModalListeners();
     setupHabitCardListeners();
     setupSwipeHandler(ui.habitContainer);
     setupDragAndDropHandler(ui.habitContainer);
-    setupModalListeners();
-    setupGlobalListeners();
+    setupNotificationToggleListener();
 };

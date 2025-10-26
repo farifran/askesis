@@ -13,7 +13,7 @@ declare global {
 }
 
 // FIX: Import getTodayUTC from utils.ts instead of state.ts
-import { AppState, STATE_STORAGE_KEY, loadState, state, shouldHabitAppearOnDate, getScheduleForDate, TIMES_OF_DAY, saveState } from './state';
+import { AppState, STATE_STORAGE_KEY, loadState, state, shouldHabitAppearOnDate, getScheduleForDate, TIMES_OF_DAY } from './state';
 import { getTodayUTC } from './utils';
 import { ui } from './ui';
 import { t } from './i18n';
@@ -274,55 +274,29 @@ export async function syncLocalStateToCloud() {
  */
 export function updateUserHabitTags() {
     OneSignal.push(async () => {
-        try {
-            if (!await OneSignal.Notifications.isPushEnabled()) {
-                return;
-            }
-
-            const today = getTodayUTC();
-            const tags: { [key: string]: string } = {};
-
-            TIMES_OF_DAY.forEach(time => {
-                const hasHabitForTime = state.habits.some(habit => {
-                    if (shouldHabitAppearOnDate(habit, today)) {
-                        const schedule = getScheduleForDate(habit, today);
-                        return schedule?.times.includes(time);
-                    }
-                    return false;
-                });
-                const tagName = time.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-                tags[`${tagName}_habits`] = String(hasHabitForTime);
-            });
-
-            console.log("Updating OneSignal tags for reminders:", tags);
-            await OneSignal.User.addTags(tags);
-        } catch (error) {
-            console.error("Failed to update OneSignal tags:", error);
+        if (!await OneSignal.Notifications.isPushEnabled()) {
+            return;
         }
+
+        const today = getTodayUTC();
+        const tags: { [key: string]: string } = {};
+
+        TIMES_OF_DAY.forEach(time => {
+            const hasHabitForTime = state.habits.some(habit => {
+                if (shouldHabitAppearOnDate(habit, today)) {
+                    const schedule = getScheduleForDate(habit, today);
+                    return schedule?.times.includes(time);
+                }
+                return false;
+            });
+            // Normaliza o nome do tempo para ser um nome de tag válido (ex: "Manhã" -> "manha")
+            const tagName = time.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+            tags[`${tagName}_habits`] = String(hasHabitForTime);
+        });
+
+        console.log("Updating OneSignal tags for reminders:", tags);
+        await OneSignal.User.addTags(tags);
     });
-}
-
-/**
- * Reconcilia a preferência de notificação do usuário (do estado do app) com
- * o status de inscrição real do dispositivo no OneSignal.
- */
-async function syncNotificationSubscription() {
-    const permission = OneSignal.Notifications.getPermission();
-    if (permission !== 'granted') {
-        // Se a permissão não for concedida, não podemos fazer nada. A UI já reflete isso.
-        return;
-    }
-
-    const isSubscribed = await OneSignal.Notifications.isPushEnabled();
-
-    if (state.notificationsEnabled && !isSubscribed) {
-        // O usuário quer notificações, mas não está inscrito: inscreve.
-        await OneSignal.User.pushSubscription.optIn();
-        updateUserHabitTags();
-    } else if (!state.notificationsEnabled && isSubscribed) {
-        // O usuário não quer notificações, mas está inscrito: cancela a inscrição.
-        await OneSignal.User.pushSubscription.optOut();
-    }
 }
 
 
@@ -330,54 +304,25 @@ async function syncNotificationSubscription() {
  * Inicializa o SDK do OneSignal e configura o estado inicial do toggle de notificação.
  */
 export function initNotifications() {
+    // A inicialização do OneSignal agora é tratada no index.html via OneSignalDeferred.
+    // Esta função agora apenas enfileira a configuração de nossos listeners e verificações de estado inicial.
     window.OneSignal = window.OneSignal || [];
-    OneSignal.push(async function() {
-        
-        // Esta função atualiza o ESTADO VISUAL do toggle com base na REALIDADE do dispositivo.
-        const updateToggleState = async () => {
-            ui.notificationToggleInput.disabled = true;
+    OneSignal.push(async () => {
+        // Este código será executado depois que o OneSignal for inicializado a partir do index.html.
 
-            const permission = OneSignal.Notifications.getPermission();
-            
-            if (permission === 'denied') {
-                ui.notificationToggleInput.checked = false;
-                ui.notificationToggleInput.disabled = true; 
-                ui.notificationToggleDesc.textContent = t('notificationsBlocked');
-            } else {
-                const isSubscribed = await OneSignal.Notifications.isPushEnabled();
-                ui.notificationToggleInput.checked = isSubscribed;
-                ui.notificationToggleInput.disabled = false; 
-                ui.notificationToggleDesc.textContent = t('modalManageNotificationsDesc');
-            }
-        };
-
-        // Mantém a UI em sincronia com quaisquer alterações de subscrição.
-        OneSignal.User.pushSubscription.addEventListener('change', updateToggleState);
-
-        // Lida com o clique do usuário em nosso toggle na UI.
-        ui.notificationToggleInput.addEventListener('change', async (e: Event) => {
-            const isEnabled = (e.target as HTMLInputElement).checked;
-            
-            // 1. Atualiza a PREFERÊNCIA do usuário no estado do app.
-            state.notificationsEnabled = isEnabled;
-            saveState(); // Salva a preferência para sincronização.
-
-            if (isEnabled) {
-                // 2. Se a permissão ainda não foi solicitada, solicita agora.
-                await OneSignal.Notifications.requestPermission();
-            }
-
-            // 3. Sincroniza a preferência com o estado de inscrição do dispositivo.
-            await syncNotificationSubscription();
+        // Sincroniza o estado do nosso toggle na UI com o estado real da permissão de notificação
+        OneSignal.Notifications.addEventListener('permissionChange', (permission: boolean) => {
+             ui.notificationToggleInput.checked = permission;
         });
 
-        // Garante que o estado inicial do toggle esteja correto no carregamento.
-        await updateToggleState();
-        
-        // Sincroniza a preferência carregada da nuvem com o dispositivo.
-        await syncNotificationSubscription();
+        // Configura o estado inicial do toggle no carregamento da página
+        const isEnabled = await OneSignal.Notifications.isPushEnabled();
+        ui.notificationToggleInput.checked = isEnabled;
+        if (isEnabled) {
+            updateUserHabitTags(); // Atualiza as tags se as notificações já estiverem ativadas
+        }
     });
 
-    // Garante que, se os hábitos mudarem, as tags para direcionamento de notificações sejam atualizadas.
+    // Escuta por mudanças nos hábitos para manter as tags de notificação atualizadas
     document.addEventListener('habitsChanged', updateUserHabitTags);
 }

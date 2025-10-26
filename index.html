@@ -141,16 +141,16 @@
                         </div>
                     </div>
                 </div>
-                <label class="setting-item setting-item--toggle" for="notification-toggle-input">
+                <div class="setting-item setting-item--toggle">
                     <div class="setting-item-label">
-                        <span id="label-notifications">Notificações</span>
+                        <label for="notification-toggle-input" id="label-notifications">Notificações</label>
                         <span id="label-notifications-desc" class="setting-item-desc">Receba lembretes para seus hábitos.</span>
                     </div>
                     <div class="toggle-switch">
-                        <input type="checkbox" id="notification-toggle-input">
+                        <input type="checkbox" id="notification-toggle-input" aria-labelledby="label-notifications">
                         <span class="slider"></span>
                     </div>
-                </label>
+                </div>
                 <div class="setting-item">
                     <label id="label-reset">Reinicialização</label>
                     <button id="reset-app-btn" class="btn btn--danger">Apagar dados</button>
