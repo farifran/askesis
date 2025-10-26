@@ -13,8 +13,9 @@ async function build() {
         // Copy static HTML file, which will be served alongside the bundles
         await fs.copyFile('index.html', path.join(outdir, 'index.html'));
 
-        // Copy OneSignal service worker to the root of the output directory
-        await fs.copyFile('OneSignalSDKWorker.js', path.join(outdir, 'OneSignalSDKWorker.js'));
+        // Create the OneSignal service worker file directly in the output directory
+        const oneSignalSWContent = "importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js');";
+        await fs.writeFile(path.join(outdir, 'OneSignalSDKWorker.js'), oneSignalSWContent);
 
         // Copy the new locales directory for i18n JSON files
         await fs.cp('locales', path.join(outdir, 'locales'), { recursive: true });
