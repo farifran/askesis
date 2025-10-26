@@ -38,7 +38,7 @@ export function initNotifications() {
 
     OneSignal.push(async () => {
         await OneSignal.init({
-            appId: "d4f3b7f1-c22c-42b7-8a4a-5f0e1a1b1c3d",
+            appId: "39454655-f1cd-4531-8ec5-d0f61eb1c478",
             promptOptions: {
                 slidedown: {
                     enabled: true,

@@ -13,6 +13,9 @@ async function build() {
         // Copy static HTML file, which will be served alongside the bundles
         await fs.copyFile('index.html', path.join(outdir, 'index.html'));
 
+        // Copy the OneSignal Service Worker to the output directory.
+        // This is essential for push notifications to work correctly.
+        await fs.copyFile('OneSignalSDKWorker.js', path.join(outdir, 'OneSignalSDKWorker.js'));
 
         // Copy the new locales directory for i18n JSON files
         await fs.cp('locales', path.join(outdir, 'locales'), { recursive: true });
