@@ -17,18 +17,19 @@
 <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
 <script>
   window.OneSignal = window.OneSignal || [];
-  window.OneSignal.push(async function(OneSignal) {
-    try {
-      await OneSignal.init({
-        appId: "39454655-f1cd-4531-8ec5-d0f61eb1c478",
-        autoResubscribe: true,
-        notifyButton: {
-          enable: false,
-        },
-      });
-    } catch (e) {
+  // REATORAÇÃO: Removido 'async' e adicionado 'serviceWorkerPath' para garantir uma inicialização robusta do SDK.
+  // Isso evita condições de corrida e timeouts, alinhando-se com as melhores práticas da documentação do OneSignal.
+  window.OneSignal.push(function(OneSignal) {
+    OneSignal.init({
+      appId: "39454655-f1cd-4531-8ec5-d0f61eb1c478",
+      serviceWorkerPath: "OneSignalSDKWorker.js",
+      autoResubscribe: true,
+      notifyButton: {
+        enable: false,
+      },
+    }).catch(e => {
         console.error("OneSignal init error:", e);
-    }
+    });
   });
 </script>
 </head>
