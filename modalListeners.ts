@@ -18,7 +18,6 @@ import {
     openEditModal,
     renderFrequencyFilter,
     updateNotificationUI,
-    renderHabitReminders,
 } from './render';
 import {
     saveHabitFromModal,
@@ -384,7 +383,7 @@ export const setupModalListeners = () => {
     });
 
 
-    ui.exploreHabitList.addEventListener('click', async e => {
+    ui.exploreHabitList.addEventListener('click', e => {
         const item = (e.target as HTMLElement).closest<HTMLElement>('.explore-habit-item');
         if (!item?.dataset.index) return;
         
@@ -397,15 +396,15 @@ export const setupModalListeners = () => {
         closeModal(ui.exploreModal);
         
         if (existingHabit) {
-            await openEditModal(existingHabit);
+            openEditModal(existingHabit);
         } else {
-            await openEditModal(predefinedHabit);
+            openEditModal(predefinedHabit);
         }
     });
 
-    ui.createCustomHabitBtn.addEventListener('click', async () => {
+    ui.createCustomHabitBtn.addEventListener('click', () => {
         closeModal(ui.exploreModal);
-        await openEditModal(null);
+        openEditModal(null);
     });
 
     ui.confirmModalConfirmBtn.addEventListener('click', () => {
@@ -415,9 +414,9 @@ export const setupModalListeners = () => {
         state.confirmEditAction = null;
     });
 
-    ui.confirmModalEditBtn.addEventListener('click', async () => {
+    ui.confirmModalEditBtn.addEventListener('click', () => {
         closeModal(ui.confirmModal);
-        await state.confirmEditAction?.();
+        state.confirmEditAction?.();
         state.confirmAction = null;
         state.confirmEditAction = null;
     });
@@ -428,15 +427,7 @@ export const setupModalListeners = () => {
         saveHabitFromModal();
     });
 
-    ui.editHabitForm.querySelector('#habit-time-checkboxes')!.addEventListener('change', async () => {
-        if (!state.editingHabit) return;
-        const selectedTimes = Array.from(ui.editHabitForm.querySelectorAll<HTMLInputElement>('input[name="habit-time"]:checked'))
-                                   .map(cb => cb.value as TimeOfDay);
-        state.editingHabit.formData.times = selectedTimes;
-        await renderHabitReminders(selectedTimes, state.editingHabit.formData.reminderTimes || {});
-    });
-
-    ui.habitList.addEventListener('click', async e => {
+    ui.habitList.addEventListener('click', e => {
         const target = e.target as HTMLElement;
         const btn = target.closest<HTMLButtonElement>('button');
         if (!btn?.dataset.habitId) return;
@@ -444,7 +435,7 @@ export const setupModalListeners = () => {
         const habitId = btn.dataset.habitId;
         if (btn.classList.contains('graduate-habit-btn')) graduateHabit(habitId);
         else if (btn.classList.contains('end-habit-btn')) requestHabitEndingFromModal(habitId);
-        else if (btn.classList.contains('edit-habit-btn')) await requestHabitEditingFromModal(habitId);
+        else if (btn.classList.contains('edit-habit-btn')) requestHabitEditingFromModal(habitId);
         else if (btn.classList.contains('permanent-delete-habit-btn')) requestHabitPermanentDeletion(habitId);
     });
 

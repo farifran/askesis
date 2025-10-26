@@ -98,8 +98,6 @@ function updateUIText() {
     ui.manageModal.querySelector('.modal-close-btn')!.textContent = t('closeButton');
     
     // Textos de Notificação
-    ui.notifPermissionLabel.textContent = t('notifPermissionLabel');
-    ui.notifSubscriptionLabel.textContent = t('notifSubscriptionLabel');
     ui.testNotificationBtn.textContent = t('notifButtonTest');
     ui.enableNotificationsBtn.textContent = t('notifButtonEnable');
 

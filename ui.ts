@@ -62,12 +62,7 @@ type UIElements = {
     syncActiveView: HTMLElement;
     viewKeyBtn: HTMLButtonElement;
     disableSyncBtn: HTMLButtonElement;
-    // NOVOS ELEMENTOS DE NOTIFICAÇÃO
     notificationStatusDesc: HTMLElement;
-    notifPermissionLabel: HTMLElement;
-    notifPermissionStatus: HTMLElement;
-    notifSubscriptionLabel: HTMLElement;
-    notifSubscriptionStatus: HTMLElement;
     testNotificationBtn: HTMLButtonElement;
     enableNotificationsBtn: HTMLButtonElement;
 };
@@ -139,10 +134,6 @@ export function initUI(): void {
         viewKeyBtn: document.getElementById('view-key-btn') as HTMLButtonElement,
         disableSyncBtn: document.getElementById('disable-sync-btn') as HTMLButtonElement,
         notificationStatusDesc: document.getElementById('notification-status-desc')!,
-        notifPermissionLabel: document.getElementById('notif-permission-label')!,
-        notifPermissionStatus: document.getElementById('notif-permission-status')!,
-        notifSubscriptionLabel: document.getElementById('notif-subscription-label')!,
-        notifSubscriptionStatus: document.getElementById('notif-subscription-status')!,
         testNotificationBtn: document.getElementById('test-notification-btn') as HTMLButtonElement,
         enableNotificationsBtn: document.getElementById('enable-notifications-btn') as HTMLButtonElement,
     });

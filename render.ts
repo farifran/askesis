@@ -435,21 +435,11 @@ export function renderStoicQuote() {
 }
 
 export async function updateNotificationUI() {
-    // Define strings for statuses
-    const statusMap = {
-        default: t('notifStatusDefault'),
-        granted: t('notifStatusGranted'),
-        denied: t('notifStatusDenied'),
-    };
-    const subStatusMap = {
-        subscribed: t('notifSubStatusSubscribed'),
-        unsubscribed: t('notifSubStatusUnsubscribed'),
-        unknown: t('notifSubStatusUnknown'),
-    };
-    
-    // Disable buttons while checking
+    // Desativa os botões e oculta o botão de ativação por padrão
     ui.testNotificationBtn.disabled = true;
     ui.enableNotificationsBtn.style.display = 'none';
+    // Define uma mensagem padrão de carregamento/erro
+    ui.notificationStatusDesc.textContent = t('modalManageNotificationsError');
 
     try {
         const OneSignal = await new Promise<any>((resolve, reject) => {
@@ -459,11 +449,7 @@ export async function updateNotificationUI() {
         });
 
         const permission = OneSignal.Notifications.getPermission();
-        ui.notifPermissionStatus.textContent = statusMap[permission as keyof typeof statusMap] || statusMap.default;
         
-        const isSubscribed = await OneSignal.User.pushSubscription.get();
-        ui.notifSubscriptionStatus.textContent = isSubscribed ? subStatusMap.subscribed : subStatusMap.unsubscribed;
-
         if (permission === 'denied') {
             ui.notificationStatusDesc.textContent = t('modalManageNotificationsBlocked');
             ui.testNotificationBtn.disabled = true;
@@ -472,17 +458,17 @@ export async function updateNotificationUI() {
             ui.notificationStatusDesc.textContent = t('modalManageNotificationsDefault');
             ui.enableNotificationsBtn.style.display = 'block';
             ui.testNotificationBtn.disabled = true;
-        } else { // granted
+        } else { // 'granted'
+            const isSubscribed = await OneSignal.User.pushSubscription.get();
             ui.notificationStatusDesc.textContent = t('modalManageNotificationsDesc');
-            ui.testNotificationBtn.disabled = !isSubscribed;
+            // O botão de teste só é ativado se o usuário tiver concedido permissão E estiver inscrito.
+            ui.testNotificationBtn.disabled = !isSubscribed; 
             ui.enableNotificationsBtn.style.display = 'none';
         }
 
     } catch (error) {
         console.error("Error updating notification UI:", error);
-        ui.notifPermissionStatus.textContent = statusMap.default;
-        ui.notifSubscriptionStatus.textContent = subStatusMap.unknown;
-        ui.notificationStatusDesc.textContent = t('modalManageNotificationsError');
+        // A mensagem de erro padrão definida no início da função será exibida.
     }
 }
 
@@ -622,7 +608,7 @@ export function showConfirmationModal(
     onConfirm: () => void,
     options?: {
         title?: string;
-        onEdit?: () => void | Promise<void>;
+        onEdit?: () => void;
         confirmText?: string;
         editText?: string;
         cancelText?: string;
@@ -671,46 +657,7 @@ export function openNotesModal(habitId: string, date: string, time: TimeOfDay) {
     ui.notesTextarea.focus();
 }
 
-export async function renderHabitReminders(selectedTimes: TimeOfDay[], currentReminders: Partial<Record<TimeOfDay, string>>) {
-    const remindersGroup = ui.editHabitForm.querySelector<HTMLElement>('#habit-reminders-group')!;
-    const remindersInputs = remindersGroup.querySelector<HTMLElement>('#habit-reminders-inputs')!;
-    remindersInputs.innerHTML = ''; // Limpa as entradas anteriores
-
-    // Atendendo ao pedido do usuário, esta seção agora está sempre visível se houver horários selecionados.
-    // O envio real da notificação em `cloud.ts` ainda respeita as permissões do usuário.
-    // A verificação do SDK é mantida para registrar erros, mas não para ocultar a UI.
-    try {
-        await new Promise<any>((resolve, reject) => {
-            window.OneSignal = window.OneSignal || [];
-            window.OneSignal.push((sdk: any) => sdk ? resolve(sdk) : reject(new Error("OneSignal SDK failed.")));
-            setTimeout(() => reject(new Error("OneSignal SDK timed out.")), 3000);
-        });
-    } catch (error) {
-        console.error("OneSignal SDK check failed in renderHabitReminders:", error);
-    }
-
-    if (selectedTimes.length === 0) {
-        remindersGroup.style.display = 'none';
-        return;
-    }
-
-    remindersGroup.style.display = 'block';
-    
-    const fragment = document.createDocumentFragment();
-    selectedTimes.sort((a,b) => TIMES_OF_DAY.indexOf(a) - TIMES_OF_DAY.indexOf(b)).forEach(time => {
-        const reminderValue = currentReminders[time] || '';
-        const row = document.createElement('div');
-        row.className = 'reminder-time-row';
-        row.innerHTML = `
-            <label for="reminder-time-${time}">${t(`filter${time}`)}</label>
-            <input type="time" class="reminder-time-input" id="reminder-time-${time}" data-time="${time}" value="${reminderValue}">
-        `;
-        fragment.appendChild(row);
-    });
-    remindersInputs.appendChild(fragment);
-}
-
-export async function openEditModal(habitOrTemplate: Habit | PredefinedHabit | null) {
+export function openEditModal(habitOrTemplate: Habit | PredefinedHabit | null) {
     const form = ui.editHabitForm;
     const nameInput = form.elements.namedItem('habit-name') as HTMLInputElement;
     const noticeEl = form.querySelector<HTMLElement>('.duplicate-habit-notice');
@@ -731,7 +678,6 @@ export async function openEditModal(habitOrTemplate: Habit | PredefinedHabit | n
                 times: ['Manhã'],
                 goal: { type: 'check', unitKey: 'unitCheck' },
                 frequency: { type: 'daily', interval: 1 },
-                reminderTimes: {},
             };
         } else { // Predefined habit
             formData = habitOrTemplate as PredefinedHabit;
@@ -750,7 +696,6 @@ export async function openEditModal(habitOrTemplate: Habit | PredefinedHabit | n
             times: latestSchedule.times,
             goal: originalHabit.goal,
             frequency: latestSchedule.frequency,
-            reminderTimes: originalHabit.reminderTimes || {},
         };
     }
 
@@ -767,7 +712,6 @@ export async function openEditModal(habitOrTemplate: Habit | PredefinedHabit | n
     });
 
     renderFrequencyFilter();
-    await renderHabitReminders(formData.times, formData.reminderTimes || {});
     
     nameInput.readOnly = false;
 
