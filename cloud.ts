@@ -355,7 +355,7 @@ export function initNotifications() {
          */
         const syncAppToReality = async () => {
             const isSubscribed = await OneSignal.Notifications.isPushEnabled();
-            const permission = OneSignal.Notifications.getPermission();
+            const permission = await OneSignal.Notifications.getPermission();
             let needsSave = false;
             
             // Atualiza o novo indicador de status do sistema.
