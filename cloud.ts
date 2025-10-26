@@ -269,6 +269,35 @@ export async function syncLocalStateToCloud() {
 // --- ONE SIGNAL NOTIFICATIONS ---
 
 /**
+ * Atualiza o indicador de status do sistema para refletir a realidade da permissão de notificação.
+ * @param permission O status da permissão ('granted', 'denied', 'default').
+ * @param isSubscribed Se o usuário está atualmente inscrito para receber notificações.
+ */
+function renderRealNotificationStatus(permission: string, isSubscribed: boolean) {
+    const statusEl = ui.notificationSystemStatus;
+    if (!statusEl) return;
+
+    statusEl.classList.remove('status-granted', 'status-denied', 'status-default');
+
+    if (permission === 'denied') {
+        statusEl.textContent = t('notificationStatusDenied');
+        statusEl.classList.add('status-denied');
+    } else if (permission === 'default') {
+        statusEl.textContent = t('notificationStatusDefault');
+        statusEl.classList.add('status-default');
+    } else if (permission === 'granted') {
+        if (isSubscribed) {
+            statusEl.textContent = t('notificationStatusGranted');
+            statusEl.classList.add('status-granted');
+        } else {
+            statusEl.textContent = t('notificationStatusDisabled');
+            statusEl.classList.add('status-default'); // Usa uma cor neutra
+        }
+    }
+}
+
+
+/**
  * Atualiza as tags do usuário no OneSignal com base nos hábitos agendados para HOJE.
  * Isso permite o direcionamento para lembretes via campanhas automatizadas do OneSignal.
  */
@@ -329,6 +358,9 @@ export function initNotifications() {
             const permission = OneSignal.Notifications.getPermission();
             let needsSave = false;
             
+            // Atualiza o novo indicador de status do sistema.
+            renderRealNotificationStatus(permission, isSubscribed);
+
             // Lida com o caso de permissão negada
             if (permission === 'denied') {
                 ui.notificationToggleInput.disabled = true;

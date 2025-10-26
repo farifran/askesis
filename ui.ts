@@ -65,6 +65,7 @@ type UIElements = {
     notificationToggleInput: HTMLInputElement;
     notificationToggleLabel: HTMLSpanElement;
     notificationToggleDesc: HTMLSpanElement;
+    notificationSystemStatus: HTMLElement;
 };
 
 export const ui = {} as UIElements;
@@ -136,5 +137,6 @@ export function initUI(): void {
         notificationToggleInput: document.getElementById('notification-toggle-input') as HTMLInputElement,
         notificationToggleLabel: document.getElementById('label-notifications') as HTMLSpanElement,
         notificationToggleDesc: document.getElementById('label-notifications-desc') as HTMLSpanElement,
+        notificationSystemStatus: document.getElementById('notification-system-status')!,
     });
 }
