@@ -143,55 +143,10 @@ const setupGlobalListeners = () => {
     });
 };
 
-const setupNotificationListeners = () => {
-    ui.enableNotificationsBtn.addEventListener('click', async () => {
-        ui.enableNotificationsBtn.disabled = true;
-        
-        try {
-            const OneSignal = await new Promise<any>((resolve, reject) => {
-                window.OneSignal = window.OneSignal || [];
-                window.OneSignal.push(resolve);
-                setTimeout(() => reject(new Error("OneSignal SDK timed out.")), 3000);
-            });
-
-            await OneSignal.Notifications.requestPermission();
-            // O listener 'permissionChange' em cloud.ts cuidará da atualização da UI.
-        } catch (error) {
-            console.error('Falha ao solicitar permissão de notificação:', error);
-            // Mesmo em caso de erro, atualiza a UI para refletir o estado atual.
-            await updateNotificationUI(); 
-        }
-    });
-
-    ui.testNotificationBtn.addEventListener('click', () => {
-        try {
-            window.OneSignal.push(function(OneSignal: any) {
-                const testTag = "test_notification_tag";
-                OneSignal.User.addTag(testTag, "true").then(() => {
-                    console.log("Tag para notificação de teste enviada.");
-                });
-
-                const originalText = ui.testNotificationBtn.textContent;
-                ui.testNotificationBtn.textContent = t('notifButtonTestSent');
-                ui.testNotificationBtn.disabled = true;
-                setTimeout(() => {
-                    ui.testNotificationBtn.textContent = originalText;
-                    updateNotificationUI(); 
-                    OneSignal.User.removeTag(testTag);
-                }, 4000);
-            });
-        } catch (error) {
-            console.error("Falha ao enviar tag de notificação de teste:", error);
-        }
-    });
-};
-
-
 export const setupEventListeners = () => {
     setupGlobalListeners();
     setupModalListeners();
     setupHabitCardListeners();
     setupSwipeHandler(ui.habitContainer);
     setupDragAndDropHandler(ui.habitContainer);
-    setupNotificationListeners();
 };

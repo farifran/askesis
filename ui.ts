@@ -63,8 +63,6 @@ type UIElements = {
     viewKeyBtn: HTMLButtonElement;
     disableSyncBtn: HTMLButtonElement;
     notificationStatusDesc: HTMLElement;
-    testNotificationBtn: HTMLButtonElement;
-    enableNotificationsBtn: HTMLButtonElement;
 };
 
 export const ui = {} as UIElements;
@@ -134,7 +132,5 @@ export function initUI(): void {
         viewKeyBtn: document.getElementById('view-key-btn') as HTMLButtonElement,
         disableSyncBtn: document.getElementById('disable-sync-btn') as HTMLButtonElement,
         notificationStatusDesc: document.getElementById('notification-status-desc')!,
-        testNotificationBtn: document.getElementById('test-notification-btn') as HTMLButtonElement,
-        enableNotificationsBtn: document.getElementById('enable-notifications-btn') as HTMLButtonElement,
     });
 }

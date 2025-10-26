@@ -97,10 +97,6 @@ function updateUIText() {
     ui.resetAppBtn.textContent = t('modalManageResetButton');
     ui.manageModal.querySelector('.modal-close-btn')!.textContent = t('closeButton');
     
-    // Textos de Notificação
-    ui.testNotificationBtn.textContent = t('notifButtonTest');
-    ui.enableNotificationsBtn.textContent = t('notifButtonEnable');
-
     document.getElementById('sync-inactive-desc')!.textContent = t('syncInactiveDesc');
     ui.enableSyncBtn.textContent = t('syncEnable');
     ui.enterKeyViewBtn.textContent = t('syncEnterKey');

@@ -434,42 +434,10 @@ export function renderStoicQuote() {
     }, 100);
 }
 
-export async function updateNotificationUI() {
-    // Desativa os botões e oculta o botão de ativação por padrão
-    ui.testNotificationBtn.disabled = true;
-    ui.enableNotificationsBtn.style.display = 'none';
-    // Define uma mensagem padrão de carregamento/erro
-    ui.notificationStatusDesc.textContent = t('modalManageNotificationsError');
-
-    try {
-        const OneSignal = await new Promise<any>((resolve, reject) => {
-            window.OneSignal = window.OneSignal || [];
-            window.OneSignal.push((sdk: any) => sdk ? resolve(sdk) : reject(new Error("OneSignal SDK failed.")));
-            setTimeout(() => reject(new Error("OneSignal SDK timed out.")), 3000);
-        });
-
-        const permission = OneSignal.Notifications.getPermission();
-        
-        if (permission === 'denied') {
-            ui.notificationStatusDesc.textContent = t('modalManageNotificationsBlocked');
-            ui.testNotificationBtn.disabled = true;
-            ui.enableNotificationsBtn.style.display = 'none';
-        } else if (permission === 'default') {
-            ui.notificationStatusDesc.textContent = t('modalManageNotificationsDefault');
-            ui.enableNotificationsBtn.style.display = 'block';
-            ui.testNotificationBtn.disabled = true;
-        } else { // 'granted'
-            const isSubscribed = await OneSignal.User.pushSubscription.get();
-            ui.notificationStatusDesc.textContent = t('modalManageNotificationsDesc');
-            // O botão de teste só é ativado se o usuário tiver concedido permissão E estiver inscrito.
-            ui.testNotificationBtn.disabled = !isSubscribed; 
-            ui.enableNotificationsBtn.style.display = 'none';
-        }
-
-    } catch (error) {
-        console.error("Error updating notification UI:", error);
-        // A mensagem de erro padrão definida no início da função será exibida.
-    }
+export function updateNotificationUI() {
+    // A UI agora é estática para informar ao usuário que o controle está no navegador,
+    // conforme solicitado, simplificando a lógica.
+    ui.notificationStatusDesc.textContent = t('modalManageNotificationsStaticDesc');
 }
 
 export function renderApp() {

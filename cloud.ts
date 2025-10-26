@@ -313,8 +313,8 @@ export function updateUserHabitTags() {
 export function initNotifications() {
     window.OneSignal = window.OneSignal || [];
     window.OneSignal.push(async (OneSignal: any) => {
-        OneSignal.Notifications.addEventListener('permissionChange', async (isSubscribed: boolean) => {
-            await updateNotificationUI();
+        OneSignal.Notifications.addEventListener('permissionChange', (isSubscribed: boolean) => {
+            updateNotificationUI();
             if (isSubscribed) {
                 updateUserHabitTags();
             }
