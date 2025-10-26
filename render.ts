@@ -436,16 +436,12 @@ export function renderStoicQuote() {
 
 export function renderNotificationToggleState(): Promise<void> {
     return new Promise((resolve, reject) => {
-        // Define um timeout para o caso de o SDK do OneSignal não carregar.
-        const timeoutId = setTimeout(() => {
-            console.error("OneSignal SDK timed out.");
-            // Rejeita a promessa para que o .catch() no listener seja acionado.
-            reject(new Error("OneSignal SDK timed out."));
-        }, 5000); // Timeout de 5 segundos
-
+        // CORREÇÃO: Removido o timeout manual. Se o SDK do OneSignal não carregar ou estiver bloqueado,
+        // a Promise simplesmente não será resolvida. O .catch() no listener só será
+        // acionado por um erro real do SDK, evitando erros de timeout no console
+        // e degradando a funcionalidade de forma silenciosa (o toggle permanece desativado).
         window.OneSignal = window.OneSignal || [];
         window.OneSignal.push(async (OneSignal: any) => {
-            clearTimeout(timeoutId); // Limpa o timeout pois o SDK carregou.
             try {
                 if (!OneSignal || !OneSignal.Notifications || typeof OneSignal.Notifications.isPushEnabled !== 'function') {
                     throw new Error("OneSignal SDK not available or initialized correctly.");
@@ -458,7 +454,7 @@ export function renderNotificationToggleState(): Promise<void> {
                 console.error("Error checking OneSignal notification status:", error);
                 ui.notificationToggleInput.checked = false;
                 ui.notificationToggleInput.disabled = true; // Mantém o toggle desativado em caso de erro.
-                reject(error); // Rejeita a promessa.
+                reject(error); // Rejeita a promessa em caso de erro real.
             }
         });
     });
