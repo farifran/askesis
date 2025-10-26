@@ -1,7 +1,7 @@
-// FIX: Add a global declaration for window.OneSignalDeferred to avoid TypeScript errors.
+// FIX: Add a global declaration for window.OneSignal to avoid TypeScript errors.
 declare global {
     interface Window {
-        OneSignalDeferred?: any[];
+        OneSignal?: any[];
     }
 }
 

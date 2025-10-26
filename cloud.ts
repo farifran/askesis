@@ -262,10 +262,8 @@ export async function syncLocalStateToCloud() {
  * Isso permite o direcionamento para lembretes via campanhas automatizadas do OneSignal.
  */
 export function updateUserHabitTags() {
-    // FIX: Always use window.OneSignalDeferred to queue commands.
-    window.OneSignalDeferred = window.OneSignalDeferred || [];
-    // FIX: Use window.OneSignalDeferred consistently to avoid global variable errors.
-    window.OneSignalDeferred.push(async (OneSignal: any) => {
+    window.OneSignal = window.OneSignal || [];
+    window.OneSignal.push(async (OneSignal: any) => {
         if (!await OneSignal.Notifications.isPushEnabled()) {
             return;
         }
@@ -296,10 +294,8 @@ export function updateUserHabitTags() {
  * Inicializa o SDK do OneSignal e configura o estado inicial do toggle de notificação.
  */
 export function initNotifications() {
-    // FIX: Use window.OneSignalDeferred to match index.html.
-    window.OneSignalDeferred = window.OneSignalDeferred || [];
-    // FIX: Use window.OneSignalDeferred consistently to avoid global variable errors.
-    window.OneSignalDeferred.push(async (OneSignal: any) => {
+    window.OneSignal = window.OneSignal || [];
+    window.OneSignal.push(async (OneSignal: any) => {
         // Sincroniza o estado do nosso toggle na UI com o estado real da permissão de notificação
         OneSignal.Notifications.addEventListener('permissionChange', (permission: boolean) => {
              ui.notificationToggleInput.checked = permission;

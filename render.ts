@@ -443,8 +443,8 @@ export function renderNotificationToggleState(): Promise<void> {
             reject(new Error("OneSignal SDK timed out."));
         }, 5000); // Timeout de 5 segundos
 
-        window.OneSignalDeferred = window.OneSignalDeferred || [];
-        window.OneSignalDeferred.push(async (OneSignal: any) => {
+        window.OneSignal = window.OneSignal || [];
+        window.OneSignal.push(async (OneSignal: any) => {
             clearTimeout(timeoutId); // Limpa o timeout pois o SDK carregou.
             try {
                 if (!OneSignal || !OneSignal.Notifications || typeof OneSignal.Notifications.isPushEnabled !== 'function') {

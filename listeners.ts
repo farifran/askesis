@@ -147,10 +147,8 @@ const setupNotificationToggleListener = () => {
         const isEnabled = (e.target as HTMLInputElement).checked;
         const toggleInput = e.target as HTMLInputElement;
 
-        // FIX: Use window.OneSignalDeferred to queue commands, matching index.html.
-        window.OneSignalDeferred = window.OneSignalDeferred || [];
-        // FIX: Use window.OneSignalDeferred consistently to avoid global variable errors.
-        window.OneSignalDeferred.push(async (OneSignal: any) => {
+        window.OneSignal = window.OneSignal || [];
+        window.OneSignal.push(async (OneSignal: any) => {
             if (isEnabled) {
                 try {
                     // Solicita a permissão do navegador primeiro.
