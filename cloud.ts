@@ -2,10 +2,22 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-import { AppState, STATE_STORAGE_KEY, loadState, state } from './state';
+// FIX: Declare OneSignal to inform TypeScript that it exists in the global scope.
+declare var OneSignal: any;
+
+// FIX: Add global declaration for OneSignal on the window object to fix TypeScript error.
+declare global {
+    interface Window {
+        OneSignal: any;
+    }
+}
+
+// FIX: Import getTodayUTC from utils.ts instead of state.ts
+import { AppState, STATE_STORAGE_KEY, loadState, state, shouldHabitAppearOnDate, getScheduleForDate, TIMES_OF_DAY } from './state';
+import { getTodayUTC } from './utils';
 import { ui } from './ui';
 import { t } from './i18n';
-import { getSyncKey, getSyncKeyHash, hasSyncKey } from './sync';
+import { getSyncKey, getSyncKeyHash, hasLocalSyncKey } from './sync';
 import { renderApp } from './render';
 import { encrypt, decrypt } from './crypto';
 
@@ -33,6 +45,10 @@ const getApiUrl = (endpoint: string): string => {
 export function setSyncStatus(statusKey: 'syncSaving' | 'syncSynced' | 'syncError' | 'syncInitial') {
     state.syncState = statusKey;
     ui.syncStatus.textContent = t(statusKey);
+}
+
+export function hasSyncKey(): boolean {
+    return hasLocalSyncKey();
 }
 
 /**
@@ -70,6 +86,7 @@ function resolveConflictWithServerState(serverPayload: ServerPayload) {
             
             // 6. Atualiza o status da UI para mostrar que a sincronização foi concluída.
             setSyncStatus('syncSynced');
+            document.dispatchEvent(new CustomEvent('habitsChanged')); // Dispara atualização de tags de notificação
         })
         .catch(error => {
             console.error("Failed to decrypt server state during conflict resolution:", error);
@@ -246,4 +263,66 @@ export async function syncLocalStateToCloud() {
         // Lança o erro para que a função chamadora (fetchStateFromCloud) possa pegá-lo.
         throw error;
     }
+}
+
+
+// --- ONE SIGNAL NOTIFICATIONS ---
+
+/**
+ * Atualiza as tags do usuário no OneSignal com base nos hábitos agendados para HOJE.
+ * Isso permite o direcionamento para lembretes via campanhas automatizadas do OneSignal.
+ */
+export function updateUserHabitTags() {
+    OneSignal.push(async () => {
+        if (!await OneSignal.Notifications.isPushEnabled()) {
+            return;
+        }
+
+        const today = getTodayUTC();
+        const tags: { [key: string]: string } = {};
+
+        TIMES_OF_DAY.forEach(time => {
+            const hasHabitForTime = state.habits.some(habit => {
+                if (shouldHabitAppearOnDate(habit, today)) {
+                    const schedule = getScheduleForDate(habit, today);
+                    return schedule?.times.includes(time);
+                }
+                return false;
+            });
+            // Normaliza o nome do tempo para ser um nome de tag válido (ex: "Manhã" -> "manha")
+            const tagName = time.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+            tags[`${tagName}_habits`] = String(hasHabitForTime);
+        });
+
+        console.log("Updating OneSignal tags for reminders:", tags);
+        await OneSignal.User.addTags(tags);
+    });
+}
+
+
+/**
+ * Inicializa o SDK do OneSignal e configura o estado inicial do toggle de notificação.
+ */
+export function initNotifications() {
+    // A inicialização do OneSignal agora é tratada no index.html via OneSignalDeferred.
+    // Esta função agora apenas enfileira a configuração de nossos listeners e verificações de estado inicial.
+    window.OneSignal = window.OneSignal || [];
+    OneSignal.push(async () => {
+        // Este código será executado depois que o OneSignal for inicializado a partir do index.html.
+
+        // Sincroniza o estado do nosso toggle na UI com o estado real da permissão de notificação
+        OneSignal.Notifications.addEventListener('permissionChange', (permission: boolean) => {
+             ui.notificationToggleInput.checked = permission;
+        });
+
+        // Configura o estado inicial do toggle no carregamento da página
+        const isEnabled = await OneSignal.Notifications.isPushEnabled();
+        ui.notificationToggleInput.checked = isEnabled;
+        if (isEnabled) {
+            updateUserHabitTags(); // Atualiza as tags se as notificações já estiverem ativadas
+        }
+    });
+
+    // Escuta por mudanças nos hábitos para manter as tags de notificação atualizadas
+    document.addEventListener('habitsChanged', updateUserHabitTags);
 }

@@ -79,6 +79,7 @@ function updateHabitSchedule(
     });
 
     saveState();
+    document.dispatchEvent(new CustomEvent('habitsChanged'));
     renderHabits();
     renderCalendar();
     renderChart();
@@ -108,6 +109,7 @@ export function addHabit(habitTemplate: HabitTemplate, startDate: string): Habit
     };
     state.habits.push(newHabit);
     saveState();
+    document.dispatchEvent(new CustomEvent('habitsChanged'));
     return newHabit;
 }
 
@@ -216,6 +218,7 @@ function endHabit(habit: Habit, endDate: string) {
         lastSchedule.endDate = endDate;
         state.lastEnded = { habitId: habit.id, lastSchedule: JSON.parse(JSON.stringify(lastSchedule)) };
         saveState();
+        document.dispatchEvent(new CustomEvent('habitsChanged'));
         renderHabits();
         renderCalendar();
         renderChart();
@@ -292,6 +295,7 @@ export function handleUndoDelete() {
             if (state.undoTimeout) clearTimeout(state.undoTimeout);
             ui.undoToast.classList.remove('visible');
             saveState();
+            document.dispatchEvent(new CustomEvent('habitsChanged'));
             renderHabits();
             renderCalendar();
             renderChart();
@@ -328,6 +332,7 @@ export function requestHabitPermanentDeletion(habitId: string) {
         });
 
         saveState();
+        document.dispatchEvent(new CustomEvent('habitsChanged'));
         renderHabits();
         renderChart();
         setupManageModal();
@@ -343,6 +348,7 @@ export function graduateHabit(habitId: string) {
     showConfirmationModal(confirmationText, () => {
         habit.graduatedOn = getTodayUTCIso();
         saveState();
+        document.dispatchEvent(new CustomEvent('habitsChanged'));
         renderHabits();
         renderCalendar();
         renderChart();
@@ -383,14 +389,7 @@ export async function resetApplicationData() {
     if ('caches' in window) {
         clearingPromises.push(caches.keys().then(keys => Promise.all(keys.map(key => caches.delete(key)))));
     }
-    if ('indexedDB' in window && (window.indexedDB as any).databases) {
-        clearingPromises.push((window.indexedDB as any).databases().then((databases: IDBDatabaseInfo[]) =>
-            Promise.all(databases.map(db => db.name ? window.indexedDB.deleteDatabase(db.name) : Promise.resolve()))
-        ));
-    }
-    if ('serviceWorker' in navigator) {
-        clearingPromises.push(navigator.serviceWorker.getRegistrations().then(regs => Promise.all(regs.map(reg => reg.unregister()))));
-    }
+    
     await Promise.all(clearingPromises);
     location.reload();
 }
@@ -460,6 +459,7 @@ export function saveHabitFromModal() {
                 existingEndedHabit.scheduleHistory.push(newSchedule);
                 
                 saveState();
+                document.dispatchEvent(new CustomEvent('habitsChanged'));
                 renderHabits();
                 renderChart();
                 setupManageModal();
@@ -588,6 +588,7 @@ export function handleHabitDrop(habitId: string, oldTime: TimeOfDay, newTime: Ti
         }
 
         saveState();
+        document.dispatchEvent(new CustomEvent('habitsChanged'));
         renderHabits();
         renderChart();
     };

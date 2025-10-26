@@ -1,3 +1,6 @@
+// FIX: Declare OneSignal to inform TypeScript that it exists in the global scope.
+declare var OneSignal: any;
+
 import { state, saveState } from './state';
 import { addDays, parseUTCIsoDate } from './utils';
 import { ui } from './ui';
@@ -16,6 +19,7 @@ import { setupDragAndDropHandler } from './dragAndDropHandler';
 import { handleUndoDelete, completeAllHabitsForDate, snoozeAllHabitsForDate } from './habitActions';
 import { t } from './i18n';
 import { renderChart } from './chart';
+import { updateUserHabitTags } from './cloud';
 
 /**
  * Cria uma função "debounced" que atrasa a invocação de `func` até que `wait`
@@ -140,6 +144,37 @@ const setupGlobalListeners = () => {
     window.addEventListener('beforeunload', () => saveState());
 };
 
+const setupNotificationListener = () => {
+    ui.notificationToggleInput.addEventListener('change', (e) => {
+        const isEnabled = (e.target as HTMLInputElement).checked;
+        
+        OneSignal.push(async () => {
+            if (isEnabled) {
+                // O OneSignal pode mostrar seu próprio pré-prompt (slidedown) se configurado.
+                // Se o usuário aceitar, o prompt nativo do navegador será exibido.
+                await OneSignal.Notifications.requestPermission();
+                
+                // Após a tentativa de permissão, verificamos o resultado real.
+                const permission = OneSignal.Notifications.getPermission();
+                if (permission === 'granted') {
+                    console.log("Push notifications enabled by user.");
+                    // Opta por receber notificações
+                    await OneSignal.User.pushSubscription.optIn();
+                    updateUserHabitTags();
+                } else {
+                     console.log("Push notifications permission was denied.");
+                     // Reverte o toggle se a permissão não foi concedida
+                     ui.notificationToggleInput.checked = false;
+                }
+            } else {
+                 console.log("User opted out of notifications in-app.");
+                 // Opta por não receber mais notificações
+                 await OneSignal.User.pushSubscription.optOut();
+            }
+        });
+    });
+};
+
 
 export const setupEventListeners = () => {
     setupHabitCardListeners();
@@ -147,4 +182,5 @@ export const setupEventListeners = () => {
     setupDragAndDropHandler(ui.habitContainer);
     setupModalListeners();
     setupGlobalListeners();
+    setupNotificationListener();
 };

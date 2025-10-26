@@ -50,24 +50,21 @@ async function hashKey(key: string): Promise<string> {
 
 // --- Lógica Principal ---
 
-async function storeKey(key: string) {
+function storeKey(key: string) {
     localSyncKey = key;
     keyHashCache = null; // Invalida o cache
     localStorage.setItem(SYNC_KEY_STORAGE_KEY, key);
-    const hash = await getSyncKeyHash(); // Isso irá re-hash e armazenar em cache
-    document.dispatchEvent(new CustomEvent('sync-key-changed', { detail: { keyHash: hash } }));
 }
 
 function clearKey() {
     localSyncKey = null;
     keyHashCache = null;
     localStorage.removeItem(SYNC_KEY_STORAGE_KEY);
-    document.dispatchEvent(new CustomEvent('sync-key-changed', { detail: { keyHash: null } }));
 }
 
 async function handleEnableSync() {
     const newKey = crypto.randomUUID();
-    await storeKey(newKey);
+    storeKey(newKey);
     ui.syncKeyText.textContent = newKey;
     showView('displayKey');
     // Faz o upload do estado local atual para a nuvem com a nova chave.
@@ -88,7 +85,7 @@ async function handleSubmitKey() {
     if (!key) return;
 
     const proceed = async () => {
-        await storeKey(key); // Armazena temporariamente a chave para tentar a sincronização
+        storeKey(key); // Armazena temporariamente a chave para tentar a sincronização
         try {
             const cloudState = await fetchStateFromCloud();
             if (cloudState) {
@@ -184,15 +181,13 @@ export async function initSync() {
     ui.enterKeyViewBtn.addEventListener('click', () => showView('enterKey'));
     ui.cancelEnterKeyBtn.addEventListener('click', () => showView('inactive'));
     ui.submitKeyBtn.addEventListener('click', handleSubmitKey);
-    ui.keySavedBtn.addEventListener('click', () => {
-        showView('active');
-    });
+    ui.keySavedBtn.addEventListener('click', () => showView('active'));
     ui.copyKeyBtn.addEventListener('click', handleCopyKey);
     ui.viewKeyBtn.addEventListener('click', handleViewKey);
     ui.disableSyncBtn.addEventListener('click', handleDisableSync);
 }
 
-export function hasSyncKey(): boolean {
+export function hasLocalSyncKey(): boolean {
     return localSyncKey !== null;
 }
 

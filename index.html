@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0, viewport-fit=cover">
     <title>Habit Tracker com IA</title>
     <link rel="stylesheet" href="bundle.css">
-    <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
 <script type="importmap">
 {
   "imports": {
@@ -15,6 +14,19 @@
   }
 }
 </script>
+<script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
+<script>
+  window.OneSignalDeferred = window.OneSignalDeferred || [];
+  OneSignalDeferred.push(async function(OneSignal) {
+    await OneSignal.init({
+      appId: "39454655-f1cd-4531-8ec5-d0f61eb1c478",
+      autoResubscribe: true,
+      notifyButton: {
+        enable: false,
+      },
+    });
+  });
+</script>
 </head>
 <body>
     <div class="app-container">
@@ -23,10 +35,10 @@
                 <button id="fab-add-habit" aria-label="Adicionar Hábito">+</button>
                 <div id="calendar-strip" class="calendar-strip"></div>
                 <div class="header-icon-stack">
-                    <button id="manage-habits-btn" class="icon-btn" aria-label="Configurações"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06-.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></button>
+                    <button id="manage-habits-btn" class="icon-btn" aria-label="Configurações"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06-.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></button>
                     <button id="ai-eval-btn" class="icon-btn" aria-label="Avaliação IA">
-                        <svg class="loading-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
-                        <svg class="default-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>
+                        <svg class="loading-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                        <svg class="default-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>
                     </button>
                 </div>
             </div>
@@ -75,6 +87,16 @@
         <div class="modal-content">
             <h2 id="manage-modal-title">Configurações Gerais</h2>
             <div class="modal-settings-section">
+                <div class="setting-item">
+                    <label id="label-language">Idioma</label>
+                    <div id="language-rotary" class="reel-rotary">
+                        <button id="language-prev" class="reel-btn" aria-label="Idioma anterior"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg></button>
+                        <div id="language-viewport" class="reel-viewport">
+                            <div id="language-reel" class="reel-reel"></div>
+                        </div>
+                        <button id="language-next" class="reel-btn" aria-label="Próximo idioma"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg></button>
+                    </div>
+                </div>
                  <div class="setting-item setting-item--column">
                     <div class="setting-item-header">
                          <label id="label-sync">Sincronização na Nuvem</label>
@@ -119,35 +141,19 @@
                         </div>
                     </div>
                 </div>
-                <div class="setting-item setting-item--column">
-                    <div class="setting-item-header">
-                        <label id="label-notifications">Notificações Push</label>
-                        <span id="notification-status" class="setting-status"></span>
+                <div class="setting-item setting-item--toggle">
+                    <div class="setting-item-label">
+                        <label for="notification-toggle-input" id="label-notifications">Notificações</label>
+                        <span id="label-notifications-desc" class="setting-item-desc">Receba lembretes para seus hábitos.</span>
                     </div>
-                    <div class="setting-item-content">
-                        <p id="notifications-desc" class="setting-desc"></p>
-                        <div class="toggle-switch-container">
-                            <label class="toggle-switch">
-                                <input type="checkbox" id="notification-toggle">
-                                <span class="slider"></span>
-                            </label>
-                        </div>
+                    <div class="toggle-switch">
+                        <input type="checkbox" id="notification-toggle-input" aria-labelledby="label-notifications">
+                        <span class="slider"></span>
                     </div>
-                    <div id="notification-details" class="setting-details" style="display: none;"></div>
                 </div>
                 <div class="setting-item">
                     <label id="label-reset">Reinicialização</label>
                     <button id="reset-app-btn" class="btn btn--danger">Apagar dados</button>
-                </div>
-                <div class="setting-item">
-                    <label id="label-language">Idioma</label>
-                    <div id="language-rotary" class="reel-rotary">
-                        <button id="language-prev" class="reel-btn" aria-label="Idioma anterior"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg></button>
-                        <div id="language-viewport" class="reel-viewport">
-                            <div id="language-reel" class="reel-reel"></div>
-                        </div>
-                        <button id="language-next" class="reel-btn" aria-label="Próximo idioma"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg></button>
-                    </div>
                 </div>
             </div>
             <h3 id="habit-list-title" class="modal-subtitle">Gerenciar Hábitos</h3>
@@ -239,11 +245,11 @@
                 <div class="form-group form-group--inline">
                     <label id="label-frequency">Frequência</label>
                     <div id="frequency-rotary" class="reel-rotary">
-                        <button type="button" id="frequency-prev" class="reel-btn" aria-label="Frequência anterior"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg></button>
+                        <button type="button" id="frequency-prev" class="reel-btn" aria-label="Frequência anterior"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg></button>
                         <div id="frequency-viewport" class="reel-viewport">
                             <div id="frequency-reel" class="reel-reel"></div>
                         </div>
-                        <button type="button" id="frequency-next" class="reel-btn" aria-label="Próxima frequência"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg></button>
+                        <button type="button" id="frequency-next" class="reel-btn" aria-label="Próxima frequência"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg></button>
                     </div>
                 </div>
                 <div class="modal-actions">

@@ -62,9 +62,9 @@ type UIElements = {
     syncActiveView: HTMLElement;
     viewKeyBtn: HTMLButtonElement;
     disableSyncBtn: HTMLButtonElement;
-    notificationToggle: HTMLInputElement;
-    notificationStatus: HTMLElement;
-    notificationDetails: HTMLElement;
+    notificationToggleInput: HTMLInputElement;
+    notificationToggleLabel: HTMLLabelElement;
+    notificationToggleDesc: HTMLSpanElement;
 };
 
 export const ui = {} as UIElements;
@@ -133,8 +133,8 @@ export function initUI(): void {
         syncActiveView: document.getElementById('sync-active-view')!,
         viewKeyBtn: document.getElementById('view-key-btn') as HTMLButtonElement,
         disableSyncBtn: document.getElementById('disable-sync-btn') as HTMLButtonElement,
-        notificationToggle: document.getElementById('notification-toggle') as HTMLInputElement,
-        notificationStatus: document.getElementById('notification-status')!,
-        notificationDetails: document.getElementById('notification-details')!,
+        notificationToggleInput: document.getElementById('notification-toggle-input') as HTMLInputElement,
+        notificationToggleLabel: document.getElementById('label-notifications') as HTMLLabelElement,
+        notificationToggleDesc: document.getElementById('label-notifications-desc') as HTMLSpanElement,
     });
 }

@@ -189,7 +189,6 @@ const showCelebrationModal = (titleKey: string, contentHTML: string, pendingList
     ui.aiResponse.innerHTML = contentHTML;
 
     const pendingHabits = state[pendingListKey];
-    // Fix: Uncomment to ensure notifications are marked as shown to prevent re-triggering.
     state.notificationsShown.push(...pendingHabits);
     state[pendingListKey] = [];
     saveState();
@@ -350,12 +349,8 @@ const closeAIModalAndReset = () => {
 export const setupModalListeners = () => {
     ui.manageHabitsBtn.addEventListener('click', () => {
         setupManageModal();
+        renderLanguageFilter();
         openModal(ui.manageModal);
-        // Garante que o seletor de idioma seja renderizado depois que o modal estiver visível,
-        // para calcular corretamente a largura dos itens.
-        requestAnimationFrame(() => {
-            renderLanguageFilter();
-        });
     });
     ui.fabAddHabit.addEventListener('click', () => {
         renderExploreHabits();
