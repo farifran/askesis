@@ -8,6 +8,7 @@ import {
     createCalendarDayElement,
     renderStoicQuote,
     showConfirmationModal,
+    updateNotificationUI,
 } from './render';
 import { setupModalListeners } from './modalListeners';
 import { setupHabitCardListeners } from './habitCardListeners';
@@ -143,49 +144,41 @@ const setupGlobalListeners = () => {
 };
 
 const setupNotificationToggleListener = () => {
-    ui.notificationToggleInput.addEventListener('change', (e) => {
+    ui.notificationToggleInput.addEventListener('change', async (e) => {
         const isEnabled = (e.target as HTMLInputElement).checked;
         const toggleInput = e.target as HTMLInputElement;
 
-        window.OneSignal = window.OneSignal || [];
-        window.OneSignal.push(async (OneSignal: any) => {
+        // Desativa o toggle imediatamente para evitar múltiplos cliques e indicar que está processando
+        toggleInput.disabled = true;
+
+        try {
+            const OneSignal = await new Promise<any>((resolve, reject) => {
+                window.OneSignal = window.OneSignal || [];
+                window.OneSignal.push(resolve);
+                setTimeout(() => reject(new Error("OneSignal SDK timed out.")), 3000);
+            });
+
             if (isEnabled) {
-                try {
-                    // Solicita a permissão do navegador primeiro.
-                    await OneSignal.Notifications.requestPermission();
-                    const permission = OneSignal.Notifications.getPermission();
-                    
-                    // Só continua se a permissão for concedida.
-                    if (permission === 'granted') {
-                        await OneSignal.User.pushSubscription.optIn();
-                        console.log('User opted in for notifications.');
-                        // Atualiza as tags para garantir que os lembretes sejam agendados corretamente.
-                        updateUserHabitTags();
-                    } else {
-                        console.log('User denied notification permission.');
-                        // Se o usuário negar, reverte o toggle para o estado correto.
-                        toggleInput.checked = false;
-                    }
-                } catch (error) {
-                    console.error('Failed to opt in for notifications:', error);
-                    // Em caso de erro, também reverte a UI.
-                    toggleInput.checked = false;
+                // Esta chamada única lida com o prompt de permissão do navegador e a inscrição.
+                await OneSignal.Notifications.requestPermission();
+                const permission = OneSignal.Notifications.getPermission();
+                
+                if (permission === 'granted') {
+                    await OneSignal.User.pushSubscription.optIn();
+                    updateUserHabitTags(); // Sincroniza novamente as tags após a ativação
                 }
             } else {
-                try {
-                    // Desativa as notificações no servidor do OneSignal.
-                    await OneSignal.User.pushSubscription.optOut();
-                    // Remove as tags, pois não são mais necessárias.
-                    await OneSignal.User.removeTags(['manha_habits', 'tarde_habits', 'noite_habits']);
-                    console.log('User opted out of notifications.');
-                } catch (error) {
-                    console.error('Failed to opt out of notifications:', error);
-                    // Se a desativação falhar (ex: offline), reverte o toggle
-                    // para mostrar ao usuário que ele ainda está inscrito.
-                    toggleInput.checked = true;
-                }
+                await OneSignal.User.pushSubscription.optOut();
+                await OneSignal.User.removeTags(['manha_habits', 'tarde_habits', 'noite_habits']);
             }
-        });
+        } catch (error) {
+            console.error('Failed to change notification subscription:', error);
+            // O erro é registrado, mas a UI será corrigida no bloco finally de qualquer maneira.
+        } finally {
+            // CRÍTICO: Sempre atualiza a UI para refletir o estado final real,
+            // independentemente do sucesso ou falha. Isso evita o toggle "piscando".
+            await updateNotificationUI();
+        }
     });
 };
 

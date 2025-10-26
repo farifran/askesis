@@ -434,30 +434,47 @@ export function renderStoicQuote() {
     }, 100);
 }
 
-export function renderNotificationToggleState(): Promise<void> {
-    return new Promise((resolve, reject) => {
-        // CORREÇÃO: Removido o timeout manual. Se o SDK do OneSignal não carregar ou estiver bloqueado,
-        // a Promise simplesmente não será resolvida. O .catch() no listener só será
-        // acionado por um erro real do SDK, evitando erros de timeout no console
-        // e degradando a funcionalidade de forma silenciosa (o toggle permanece desativado).
-        window.OneSignal = window.OneSignal || [];
-        window.OneSignal.push(async (OneSignal: any) => {
-            try {
-                if (!OneSignal || !OneSignal.Notifications || typeof OneSignal.Notifications.isPushEnabled !== 'function') {
-                    throw new Error("OneSignal SDK not available or initialized correctly.");
+export async function updateNotificationUI() {
+    // Desativa o toggle inicialmente para evitar interação do usuário durante a verificação
+    ui.notificationToggleInput.disabled = true;
+    // Reseta a descrição para o padrão
+    ui.notificationToggleDesc.textContent = t('modalManageNotificationsDesc');
+
+    try {
+        // Aguarda o OneSignal estar pronto. Este é um padrão comum para SDKs que carregam de forma assíncrona.
+        const OneSignal = await new Promise<any>((resolve, reject) => {
+            window.OneSignal = window.OneSignal || [];
+            window.OneSignal.push((sdk: any) => {
+                if (sdk) {
+                    resolve(sdk);
+                } else {
+                    reject(new Error("OneSignal SDK failed to initialize."));
                 }
-                const isEnabled = await OneSignal.Notifications.isPushEnabled();
-                ui.notificationToggleInput.checked = isEnabled;
-                ui.notificationToggleInput.disabled = false; // Habilita o toggle após a verificação bem-sucedida.
-                resolve();
-            } catch (error) {
-                console.error("Error checking OneSignal notification status:", error);
-                ui.notificationToggleInput.checked = false;
-                ui.notificationToggleInput.disabled = true; // Mantém o toggle desativado em caso de erro.
-                reject(error); // Rejeita a promessa em caso de erro real.
-            }
+            });
+            setTimeout(() => reject(new Error("OneSignal SDK timed out.")), 3000);
         });
-    });
+
+        // Verifica a permissão nativa de notificação do navegador
+        const permission = OneSignal.Notifications.getPermission();
+        
+        if (permission === 'denied') {
+            ui.notificationToggleInput.checked = false;
+            ui.notificationToggleInput.disabled = true;
+            ui.notificationToggleDesc.textContent = t('modalManageNotificationsBlocked');
+        } else {
+            // Se a permissão não for negada, verifica se o usuário está realmente inscrito
+            const isSubscribed = await OneSignal.User.pushSubscription.get();
+            ui.notificationToggleInput.checked = !!isSubscribed;
+            // Habilita o toggle apenas se a permissão não for negada
+            ui.notificationToggleInput.disabled = false;
+        }
+
+    } catch (error) {
+        console.error("Error updating notification UI:", error);
+        ui.notificationToggleInput.checked = false;
+        ui.notificationToggleInput.disabled = true;
+        ui.notificationToggleDesc.textContent = t('modalManageNotificationsError');
+    }
 }
 
 export function renderApp() {

@@ -17,7 +17,7 @@ import {
     showInlineNotice,
     openEditModal,
     renderFrequencyFilter,
-    renderNotificationToggleState,
+    updateNotificationUI,
 } from './render';
 import {
     saveHabitFromModal,
@@ -69,7 +69,7 @@ function generateDailyHabitSummary(date: Date): string | null {
             
             let detail = statusToSymbol[status];
             if (scheduleForDay.length > 1) {
-                detail = `${t(timeToKeyMap[time])}${detail}`;
+                detail = `${t(timeToKeyMap[time])}: ${detail}`;
             }
 
             if ((habit.goal.type === 'pages' || habit.goal.type === 'minutes') && instance?.status === 'completed' && instance.goalOverride !== undefined) {
@@ -356,16 +356,8 @@ export const setupModalListeners = () => {
         // Abre o modal imediatamente.
         openModal(ui.manageModal);
 
-        // Mostra um estado de "carregando" para o toggle enquanto verifica.
-        ui.notificationToggleInput.disabled = true;
-
-        // Atualiza o estado do toggle em segundo plano.
-        renderNotificationToggleState().catch(error => {
-            console.error("Failed to render notification toggle state:", error);
-            // Mantém o toggle desativado e talvez exiba uma mensagem de erro na UI.
-            ui.notificationToggleInput.checked = false; 
-            ui.notificationToggleInput.disabled = true;
-        });
+        // A nova função lida com seu próprio estado de carregamento e atualiza a UI completamente.
+        updateNotificationUI();
     });
 
     ui.fabAddHabit.addEventListener('click', () => {
