@@ -144,34 +144,6 @@ const setupGlobalListeners = () => {
     window.addEventListener('beforeunload', () => saveState());
 };
 
-const setupNotificationListener = () => {
-    ui.notificationToggleInput.addEventListener('change', (e) => {
-        if (ui.notificationToggleInput.disabled) {
-            e.preventDefault();
-            return;
-        }
-        
-        const isEnabled = (e.target as HTMLInputElement).checked;
-        
-        OneSignal.push(async () => {
-            if (isEnabled) {
-                await OneSignal.Notifications.requestPermission();
-                
-                const permission = OneSignal.Notifications.getPermission();
-                if (permission === 'granted') {
-                    console.log("Push notifications enabled by user.");
-                    await OneSignal.User.pushSubscription.optIn();
-                } else {
-                     console.log("Push notifications permission was not granted.");
-                }
-            } else {
-                 console.log("User opted out of notifications in-app.");
-                 await OneSignal.User.pushSubscription.optOut();
-            }
-        });
-    });
-};
-
 
 export const setupEventListeners = () => {
     setupHabitCardListeners();
@@ -179,5 +151,4 @@ export const setupEventListeners = () => {
     setupDragAndDropHandler(ui.habitContainer);
     setupModalListeners();
     setupGlobalListeners();
-    setupNotificationListener();
 };

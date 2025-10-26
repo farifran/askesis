@@ -307,36 +307,59 @@ export function updateUserHabitTags() {
  * Inicializa o SDK do OneSignal e configura o estado inicial do toggle de notificação.
  */
 export function initNotifications() {
-    // Desabilita o toggle inicialmente para indicar um estado de carregamento e evitar cliques prematuros.
-    ui.notificationToggleInput.disabled = true;
-
     window.OneSignal = window.OneSignal || [];
     OneSignal.push(async () => {
-        const updateToggleState = async () => {
+        
+        // Esta função se torna a única fonte da verdade para o estado da UI do toggle.
+        const updateToggleState = () => {
+            // Pode ser executado antes de o SDK estar totalmente pronto, então verificamos o objeto User.
+            if (!OneSignal.User || !OneSignal.User.pushSubscription) {
+                return;
+            }
+            
+            const isSubscribed = OneSignal.User.pushSubscription.optedIn;
             const permission = OneSignal.Notifications.getPermission();
-            const isEnabled = await OneSignal.Notifications.isPushEnabled();
 
             if (permission === 'denied') {
                 ui.notificationToggleInput.checked = false;
-                ui.notificationToggleInput.disabled = true;
+                ui.notificationToggleInput.disabled = true; // O usuário deve alterar nas configurações do navegador
                 ui.notificationToggleDesc.textContent = t('notificationsBlocked');
             } else {
-                // Reabilita o toggle assim que o estado é conhecido, a menos que a permissão seja negada.
                 ui.notificationToggleInput.disabled = false;
-                ui.notificationToggleInput.checked = isEnabled;
+                ui.notificationToggleInput.checked = isSubscribed;
                 ui.notificationToggleDesc.textContent = t('modalManageNotificationsDesc');
             }
+        };
+
+        // Este é o método mais confiável para manter a UI em sincronia.
+        OneSignal.User.pushSubscription.addEventListener('change', () => {
+            updateToggleState();
+        });
+
+        // Lida com a interação direta do usuário com nosso toggle na UI.
+        ui.notificationToggleInput.addEventListener('change', async (e) => {
+            const isEnabled = (e.target as HTMLInputElement).checked;
 
             if (isEnabled) {
-                updateUserHabitTags();
+                // Isso mostrará o prompt nativo do navegador se a permissão for 'default'.
+                await OneSignal.Notifications.requestPermission();
+                
+                if (OneSignal.Notifications.getPermission() === 'granted') {
+                    // O usuário concedeu permissão, então podemos inscrevê-lo.
+                    await OneSignal.User.pushSubscription.optIn();
+                    updateUserHabitTags();
+                }
+            } else {
+                // O usuário desmarcou a caixa, então cancelamos a inscrição.
+                await OneSignal.User.pushSubscription.optOut();
             }
-        };
-        
-        OneSignal.Notifications.addEventListener('permissionChange', updateToggleState);
-        
-        // Agora, isso será executado após a inicialização do SDK, atualizando a partir do estado inicial desabilitado.
-        await updateToggleState();
+            // O listener de 'change' acima será acionado e atualizará a UI.
+        });
+
+        // Define o estado inicial do toggle assim que o SDK estiver pronto.
+        updateToggleState();
     });
 
+    // Garante que, se os hábitos mudarem, as tags para direcionamento de notificações sejam atualizadas.
     document.addEventListener('habitsChanged', updateUserHabitTags);
 }

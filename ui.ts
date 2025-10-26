@@ -63,7 +63,7 @@ type UIElements = {
     viewKeyBtn: HTMLButtonElement;
     disableSyncBtn: HTMLButtonElement;
     notificationToggleInput: HTMLInputElement;
-    notificationToggleLabel: HTMLLabelElement;
+    notificationToggleLabel: HTMLSpanElement;
     notificationToggleDesc: HTMLSpanElement;
 };
 
@@ -134,7 +134,7 @@ export function initUI(): void {
         viewKeyBtn: document.getElementById('view-key-btn') as HTMLButtonElement,
         disableSyncBtn: document.getElementById('disable-sync-btn') as HTMLButtonElement,
         notificationToggleInput: document.getElementById('notification-toggle-input') as HTMLInputElement,
-        notificationToggleLabel: document.getElementById('label-notifications') as HTMLLabelElement,
+        notificationToggleLabel: document.getElementById('label-notifications') as HTMLSpanElement,
         notificationToggleDesc: document.getElementById('label-notifications-desc') as HTMLSpanElement,
     });
 }
