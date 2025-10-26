@@ -348,13 +348,25 @@ const closeAIModalAndReset = () => {
 };
 
 export const setupModalListeners = () => {
-    ui.manageHabitsBtn.addEventListener('click', async () => {
+    ui.manageHabitsBtn.addEventListener('click', () => {
         setupManageModal();
         renderLanguageFilter();
-        // Garante que o estado do toggle esteja correto ANTES de o modal abrir.
-        await renderNotificationToggleState();
+        
+        // Abre o modal imediatamente.
         openModal(ui.manageModal);
+
+        // Mostra um estado de "carregando" para o toggle enquanto verifica.
+        ui.notificationToggleInput.disabled = true;
+
+        // Atualiza o estado do toggle em segundo plano.
+        renderNotificationToggleState().catch(error => {
+            console.error("Failed to render notification toggle state:", error);
+            // Mantém o toggle desativado e talvez exiba uma mensagem de erro na UI.
+            ui.notificationToggleInput.checked = false; 
+            ui.notificationToggleInput.disabled = true;
+        });
     });
+
     ui.fabAddHabit.addEventListener('click', () => {
         renderExploreHabits();
         openModal(ui.exploreModal);

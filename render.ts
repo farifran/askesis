@@ -435,14 +435,31 @@ export function renderStoicQuote() {
 }
 
 export function renderNotificationToggleState(): Promise<void> {
-    return new Promise(resolve => {
-        // FIX: Use window.OneSignalDeferred to queue commands, matching index.html.
+    return new Promise((resolve, reject) => {
+        // Define um timeout para o caso de o SDK do OneSignal não carregar.
+        const timeoutId = setTimeout(() => {
+            console.error("OneSignal SDK timed out.");
+            // Rejeita a promessa para que o .catch() no listener seja acionado.
+            reject(new Error("OneSignal SDK timed out."));
+        }, 5000); // Timeout de 5 segundos
+
         window.OneSignalDeferred = window.OneSignalDeferred || [];
-        // FIX: Use window.OneSignalDeferred consistently to avoid global variable errors.
         window.OneSignalDeferred.push(async (OneSignal: any) => {
-            const isEnabled = await OneSignal.Notifications.isPushEnabled();
-            ui.notificationToggleInput.checked = isEnabled;
-            resolve();
+            clearTimeout(timeoutId); // Limpa o timeout pois o SDK carregou.
+            try {
+                if (!OneSignal || !OneSignal.Notifications || typeof OneSignal.Notifications.isPushEnabled !== 'function') {
+                    throw new Error("OneSignal SDK not available or initialized correctly.");
+                }
+                const isEnabled = await OneSignal.Notifications.isPushEnabled();
+                ui.notificationToggleInput.checked = isEnabled;
+                ui.notificationToggleInput.disabled = false; // Habilita o toggle após a verificação bem-sucedida.
+                resolve();
+            } catch (error) {
+                console.error("Error checking OneSignal notification status:", error);
+                ui.notificationToggleInput.checked = false;
+                ui.notificationToggleInput.disabled = true; // Mantém o toggle desativado em caso de erro.
+                reject(error); // Rejeita a promessa.
+            }
         });
     });
 }
