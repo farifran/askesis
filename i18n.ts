@@ -10,6 +10,21 @@ type PluralableTranslation = { one: string; other: string };
 type TranslationValue = string | PluralableTranslation;
 type Translations = Record<string, TranslationValue>;
 
+// A mapping from the hardcoded Portuguese values in TimeOfDay to the language-independent keys.
+const timeOfDayKeyMap: Record<string, 'Morning' | 'Afternoon' | 'Evening'> = {
+    'Manhã': 'Morning',
+    'Tarde': 'Afternoon',
+    'Noite': 'Evening',
+};
+
+export function getTimeOfDayName(time: string): string {
+    const keySuffix = timeOfDayKeyMap[time];
+    if (keySuffix) {
+        return t(`filter${keySuffix}`);
+    }
+    return time; // Fallback
+}
+
 const loadedTranslations: Record<string, Translations> = {};
 
 async function loadLanguage(langCode: 'pt' | 'en' | 'es'): Promise<void> {

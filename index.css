@@ -225,6 +225,10 @@ main {
     cursor: pointer;
     transition: background-color var(--transition-duration), border-color var(--transition-duration);
     -webkit-tap-highlight-color: transparent; /* Remove o flash de toque no mobile */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
 }
 .btn:hover { background: var(--border-color); }
 .btn:disabled {

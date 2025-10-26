@@ -440,8 +440,9 @@ export const setupModalListeners = () => {
     });
 
     ui.resetAppBtn.addEventListener('click', () => {
-        closeModal(ui.manageModal);
-        showConfirmationModal(t('confirmResetApp'), resetApplicationData);
+        showConfirmationModal(t('confirmResetApp'), () => {
+            resetApplicationData();
+        });
     });
 
     ui.aiWeeklyCheckinBtn.addEventListener('click', () => runAIEvaluation('weekly'));

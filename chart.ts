@@ -9,7 +9,7 @@ import { addDays, parseUTCIsoDate, toUTCIsoDateString } from './utils';
 
 const CHART_DAYS = 30;
 const INITIAL_SCORE = 100; // Pontuação inicial para o crescimento composto
-const MAX_DAILY_CHANGE_RATE = 0.02; // Mudança máxima de 2% por dia
+const MAX_DAILY_CHANGE_RATE = 0.015; // Mudança máxima de 1.5% por dia
 
 type ChartDataPoint = {
     date: string;

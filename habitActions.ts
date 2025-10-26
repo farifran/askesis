@@ -34,7 +34,7 @@ import {
     showInlineNotice,
     renderCalendar,
 } from './render';
-import { t, getHabitDisplayInfo } from './i18n';
+import { t, getHabitDisplayInfo, getTimeOfDayName } from './i18n';
 import { ui } from './ui';
 import { renderChart } from './chart';
 
@@ -262,7 +262,7 @@ export function requestHabitTimeRemoval(habitId: string, timeToRemove: TimeOfDay
     }
 
     const { name } = getHabitDisplayInfo(habit);
-    const timeName = t(`filter${timeToRemove}`);
+    const timeName = getTimeOfDayName(timeToRemove);
     const dateFormatted = parseUTCIsoDate(state.selectedDate).toLocaleDateString(state.activeLanguageCode, { day: 'numeric', month: 'long', timeZone: 'UTC' });
 
     const confirmationText = t('confirmRemoveTime', {
@@ -566,8 +566,8 @@ export function handleHabitDrop(habitId: string, oldTime: TimeOfDay, newTime: Ti
     if (!habit) return;
 
     const { name } = getHabitDisplayInfo(habit);
-    const oldTimeName = t(`filter${oldTime}`);
-    const newTimeName = t(`filter${newTime}`);
+    const oldTimeName = getTimeOfDayName(oldTime);
+    const newTimeName = getTimeOfDayName(newTime);
     
     const confirmationText = t('confirmHabitMove', {
         habitName: `<strong>${name}</strong>`,
