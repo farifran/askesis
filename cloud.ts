@@ -334,8 +334,8 @@ export function initNotifications() {
     OneSignal.push(async function() {
         
         // Esta função atualiza o ESTADO VISUAL do toggle com base na REALIDADE do dispositivo.
-        const updateToggleState = async () => {
-            ui.notificationToggleInput.disabled = true;
+        const updateToggleStateFromReality = async () => {
+            ui.notificationToggleInput.disabled = true; // Desabilita enquanto verifica
 
             const permission = OneSignal.Notifications.getPermission();
             
@@ -346,36 +346,44 @@ export function initNotifications() {
             } else {
                 const isSubscribed = await OneSignal.Notifications.isPushEnabled();
                 ui.notificationToggleInput.checked = isSubscribed;
-                ui.notificationToggleInput.disabled = false; 
+                ui.notificationToggleInput.disabled = false; // Habilita novamente
                 ui.notificationToggleDesc.textContent = t('modalManageNotificationsDesc');
             }
         };
 
-        // Mantém a UI em sincronia com quaisquer alterações de subscrição.
-        OneSignal.User.pushSubscription.addEventListener('change', updateToggleState);
+        // Mantém a UI em sincronia com quaisquer alterações de subscrição externas (ex: nas configurações do navegador).
+        OneSignal.User.pushSubscription.addEventListener('change', updateToggleStateFromReality);
 
-        // Lida com o clique do usuário em nosso toggle na UI.
+        // Este listener lida com a interação direta do usuário com o toggle.
+        // Ele segue o processo de 4 passos que você descreveu.
         ui.notificationToggleInput.addEventListener('change', async (e: Event) => {
             const isEnabled = (e.target as HTMLInputElement).checked;
             
-            // 1. Atualiza a PREFERÊNCIA do usuário no estado do app.
+            // Passo 1 & 2: Atualiza o estado do aplicativo com a preferência do usuário e o salva.
             state.notificationsEnabled = isEnabled;
-            saveState(); // Salva a preferência para sincronização.
+            saveState();
 
             if (isEnabled) {
-                // 2. Se a permissão ainda não foi solicitada, solicita agora.
+                // Se estiver ativando, solicita permissão. Isso é ignorado se já concedida.
                 await OneSignal.Notifications.requestPermission();
             }
 
-            // 3. Sincroniza a preferência com o estado de inscrição do dispositivo.
+            // Passo 4: Reconcilia a inscrição do dispositivo com a preferência do usuário.
             await syncNotificationSubscription();
         });
 
-        // Garante que o estado inicial do toggle esteja correto no carregamento.
-        await updateToggleState();
+        // --- LÓGICA DE INICIALIZAÇÃO DO APLICATIVO ---
+
+        // Ao carregar, primeiro, define o estado do toggle para corresponder à PREFERÊNCIA SALVA do usuário.
+        // Isso faz com que a UI reflita imediatamente a intenção do usuário.
+        ui.notificationToggleInput.checked = state.notificationsEnabled;
         
-        // Sincroniza a preferência carregada da nuvem com o dispositivo.
+        // Segundo, tenta fazer com que o status de inscrição real do dispositivo corresponda a essa preferência salva.
         await syncNotificationSubscription();
+        
+        // Finalmente, atualiza o toggle com base na REALIDADE após a tentativa de sincronização.
+        // Isso garante que a UI seja precisa, por exemplo, se a permissão acabou de ser negada.
+        await updateToggleStateFromReality();
     });
 
     // Garante que, se os hábitos mudarem, as tags para direcionamento de notificações sejam atualizadas.
