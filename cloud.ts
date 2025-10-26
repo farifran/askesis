@@ -308,56 +308,58 @@ export function updateUserHabitTags() {
  */
 export function initNotifications() {
     window.OneSignal = window.OneSignal || [];
-    OneSignal.push(async () => {
+    // A função enviada para o OneSignal agora é assíncrona para permitir o aguardo do estado inicial.
+    OneSignal.push(async function() {
         
-        // Esta função se torna a única fonte da verdade para o estado da UI do toggle.
-        const updateToggleState = () => {
-            // Pode ser executado antes de o SDK estar totalmente pronto, então verificamos o objeto User.
-            if (!OneSignal.User || !OneSignal.User.pushSubscription) {
-                return;
-            }
-            
-            const isSubscribed = OneSignal.User.pushSubscription.optedIn;
-            const permission = OneSignal.Notifications.getPermission();
+        // Esta função assíncrona é a única fonte da verdade para o estado da UI do toggle.
+        const updateToggleState = async () => {
+            // Desabilita temporariamente o toggle para evitar cliques do usuário enquanto determinamos o estado correto.
+            ui.notificationToggleInput.disabled = true;
 
+            const permission = OneSignal.Notifications.getPermission();
+            
             if (permission === 'denied') {
                 ui.notificationToggleInput.checked = false;
-                ui.notificationToggleInput.disabled = true; // O usuário deve alterar nas configurações do navegador
+                // Mantém desabilitado, pois o usuário deve alterar isso nas configurações do navegador.
+                ui.notificationToggleInput.disabled = true; 
                 ui.notificationToggleDesc.textContent = t('notificationsBlocked');
             } else {
-                ui.notificationToggleInput.disabled = false;
+                // Usa o método assíncrono confiável para obter o verdadeiro status da subscrição.
+                const isSubscribed = await OneSignal.Notifications.isPushEnabled();
                 ui.notificationToggleInput.checked = isSubscribed;
+                // Reabilita o toggle para interação do usuário.
+                ui.notificationToggleInput.disabled = false; 
                 ui.notificationToggleDesc.textContent = t('modalManageNotificationsDesc');
             }
         };
 
-        // Este é o método mais confiável para manter a UI em sincronia.
-        OneSignal.User.pushSubscription.addEventListener('change', () => {
-            updateToggleState();
-        });
+        // Esta é a maneira mais confiável de manter a UI em sincronia com quaisquer alterações de subscrição.
+        OneSignal.User.pushSubscription.addEventListener('change', updateToggleState);
 
-        // Lida com a interação direta do usuário com nosso toggle na UI.
-        ui.notificationToggleInput.addEventListener('change', async (e) => {
+        // Lida com o clique do usuário em nosso toggle na UI.
+        ui.notificationToggleInput.addEventListener('change', async (e: Event) => {
             const isEnabled = (e.target as HTMLInputElement).checked;
-
             if (isEnabled) {
                 // Isso mostrará o prompt nativo do navegador se a permissão for 'default'.
                 await OneSignal.Notifications.requestPermission();
                 
+                // Após a interação do usuário, se ele concedeu a permissão, podemos inscrevê-lo.
                 if (OneSignal.Notifications.getPermission() === 'granted') {
-                    // O usuário concedeu permissão, então podemos inscrevê-lo.
                     await OneSignal.User.pushSubscription.optIn();
                     updateUserHabitTags();
                 }
+                // Se a permissão não foi concedida, o listener de 'change' atualizará automaticamente
+                // o toggle para o estado correto (desligado).
             } else {
-                // O usuário desmarcou a caixa, então cancelamos a inscrição.
+                // Se o usuário desmarcar a caixa, cancelamos a inscrição.
                 await OneSignal.User.pushSubscription.optOut();
             }
-            // O listener de 'change' acima será acionado e atualizará a UI.
+            // O listener 'pushSubscription.change' será disparado após optIn/optOut,
+            // chamando 'updateToggleState' para refletir corretamente a nova realidade.
         });
 
-        // Define o estado inicial do toggle assim que o SDK estiver pronto.
-        updateToggleState();
+        // Aguarda a verificação do estado inicial para garantir que a UI esteja correta no carregamento.
+        await updateToggleState();
     });
 
     // Garante que, se os hábitos mudarem, as tags para direcionamento de notificações sejam atualizadas.
