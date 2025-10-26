@@ -22,9 +22,6 @@ const init = async () => {
     // A inicialização do i18n primeiro garante que o texto esteja disponível
     await initI18n(); 
 
-    // Inicializa as notificações APÓS o i18n, para que qualquer texto de prompt esteja traduzido
-    initNotifications();
-
     // A inicialização da sincronização configura a UI e a lógica da chave
     await initSync();
 
@@ -41,6 +38,9 @@ const init = async () => {
     }
     loadState(cloudState);
     
+    // Inicializa as notificações APÓS o carregamento do estado, para que a preferência do usuário seja respeitada
+    initNotifications();
+
     // Se for a primeira execução (sem hábitos), cria um padrão.
     if (state.habits.length === 0) {
         createDefaultHabit();
