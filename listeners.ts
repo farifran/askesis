@@ -1,6 +1,3 @@
-// FIX: Declare OneSignal to inform TypeScript that it exists in the global scope.
-declare var OneSignal: any;
-
 import { state, saveState, TIMES_OF_DAY } from './state';
 import { addDays, parseUTCIsoDate, toUTCIsoDateString } from './utils';
 import { ui } from './ui';
@@ -150,9 +147,10 @@ const setupNotificationToggleListener = () => {
         const isEnabled = (e.target as HTMLInputElement).checked;
         const toggleInput = e.target as HTMLInputElement;
 
-        // Enfileira a lógica para ser executada assim que o OneSignal SDK estiver pronto.
-        // Isso previne erros de 'undefined' se o usuário clicar antes da inicialização completa.
-        window.OneSignal.push(async (OneSignal: any) => {
+        // FIX: Use window.OneSignalDeferred to queue commands, matching index.html.
+        window.OneSignalDeferred = window.OneSignalDeferred || [];
+        // FIX: Use window.OneSignalDeferred consistently to avoid global variable errors.
+        window.OneSignalDeferred.push(async (OneSignal: any) => {
             if (isEnabled) {
                 try {
                     // Solicita a permissão do navegador primeiro.

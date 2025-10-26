@@ -434,6 +434,19 @@ export function renderStoicQuote() {
     }, 100);
 }
 
+export function renderNotificationToggleState(): Promise<void> {
+    return new Promise(resolve => {
+        // FIX: Use window.OneSignalDeferred to queue commands, matching index.html.
+        window.OneSignalDeferred = window.OneSignalDeferred || [];
+        // FIX: Use window.OneSignalDeferred consistently to avoid global variable errors.
+        window.OneSignalDeferred.push(async (OneSignal: any) => {
+            const isEnabled = await OneSignal.Notifications.isPushEnabled();
+            ui.notificationToggleInput.checked = isEnabled;
+            resolve();
+        });
+    });
+}
+
 export function renderApp() {
     renderHabits();
     renderCalendar();

@@ -1,3 +1,10 @@
+// FIX: Add a global declaration for window.OneSignalDeferred to avoid TypeScript errors.
+declare global {
+    interface Window {
+        OneSignalDeferred?: any[];
+    }
+}
+
 import { addDays, getTodayUTC, getTodayUTCIso, toUTCIsoDateString, parseUTCIsoDate } from './utils';
 import { icons } from './icons';
 import { syncStateWithCloud } from './cloud';

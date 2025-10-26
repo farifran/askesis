@@ -17,6 +17,7 @@ import {
     showInlineNotice,
     openEditModal,
     renderFrequencyFilter,
+    renderNotificationToggleState,
 } from './render';
 import {
     saveHabitFromModal,
@@ -347,9 +348,11 @@ const closeAIModalAndReset = () => {
 };
 
 export const setupModalListeners = () => {
-    ui.manageHabitsBtn.addEventListener('click', () => {
+    ui.manageHabitsBtn.addEventListener('click', async () => {
         setupManageModal();
         renderLanguageFilter();
+        // Garante que o estado do toggle esteja correto ANTES de o modal abrir.
+        await renderNotificationToggleState();
         openModal(ui.manageModal);
     });
     ui.fabAddHabit.addEventListener('click', () => {

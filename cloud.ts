@@ -2,17 +2,6 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// FIX: Declare OneSignal to inform TypeScript that it exists in the global scope.
-declare var OneSignal: any;
-
-// FIX: Add global declaration for OneSignal on the window object to fix TypeScript error.
-declare global {
-    interface Window {
-        OneSignal: any;
-    }
-}
-
-// FIX: Import getTodayUTC from utils.ts instead of state.ts
 import { AppState, STATE_STORAGE_KEY, loadState, state, shouldHabitAppearOnDate, getScheduleForDate, TIMES_OF_DAY } from './state';
 import { getTodayUTC } from './utils';
 import { ui } from './ui';
@@ -273,7 +262,10 @@ export async function syncLocalStateToCloud() {
  * Isso permite o direcionamento para lembretes via campanhas automatizadas do OneSignal.
  */
 export function updateUserHabitTags() {
-    OneSignal.push(async () => {
+    // FIX: Always use window.OneSignalDeferred to queue commands.
+    window.OneSignalDeferred = window.OneSignalDeferred || [];
+    // FIX: Use window.OneSignalDeferred consistently to avoid global variable errors.
+    window.OneSignalDeferred.push(async (OneSignal: any) => {
         if (!await OneSignal.Notifications.isPushEnabled()) {
             return;
         }
@@ -304,12 +296,10 @@ export function updateUserHabitTags() {
  * Inicializa o SDK do OneSignal e configura o estado inicial do toggle de notificação.
  */
 export function initNotifications() {
-    // A inicialização do OneSignal agora é tratada no index.html via OneSignalDeferred.
-    // Esta função agora apenas enfileira a configuração de nossos listeners e verificações de estado inicial.
-    window.OneSignal = window.OneSignal || [];
-    OneSignal.push(async () => {
-        // Este código será executado depois que o OneSignal for inicializado a partir do index.html.
-
+    // FIX: Use window.OneSignalDeferred to match index.html.
+    window.OneSignalDeferred = window.OneSignalDeferred || [];
+    // FIX: Use window.OneSignalDeferred consistently to avoid global variable errors.
+    window.OneSignalDeferred.push(async (OneSignal: any) => {
         // Sincroniza o estado do nosso toggle na UI com o estado real da permissão de notificação
         OneSignal.Notifications.addEventListener('permissionChange', (permission: boolean) => {
              ui.notificationToggleInput.checked = permission;
