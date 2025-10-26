@@ -28,14 +28,13 @@ async function build() {
         await fs.cp('locales', path.join(outdir, 'locales'), { recursive: true });
         console.log('Static assets copied.');
 
-        // --- 3. Criação Dinâmica do Service Worker ---
-        // Cria o Service Worker do OneSignal diretamente no diretório de saída.
-        // Isso resolve problemas de build em plataformas como o Vercel, onde o arquivo
-        // fonte pode não estar presente, garantindo que ele sempre exista na versão final.
-        console.log('Creating OneSignal service worker (onesignal-sw.js)...');
-        const oneSignalSWContent = "importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js');";
-        await fs.writeFile(path.join(outdir, 'onesignal-sw.js'), oneSignalSWContent);
-        console.log('Service worker (onesignal-sw.js) created.');
+        // --- 3. Cópia do Service Worker ---
+        // Copia o arquivo do service worker do OneSignal para o diretório de saída.
+        // Isso é mais simples e robusto do que gerar o arquivo dinamicamente,
+        // garantindo que o arquivo de origem seja o que é servido.
+        console.log('Copying OneSignal service worker (OneSignalSDKWorker.js -> onesignal-sw.js)...');
+        await fs.copyFile('OneSignalSDKWorker.js', path.join(outdir, 'onesignal-sw.js'));
+        console.log('Service worker (onesignal-sw.js) copied.');
         
         // --- 4. Compilação do Código TypeScript/CSS com esbuild ---
         // Este é o passo principal, onde o esbuild lê o ponto de entrada da aplicação,
