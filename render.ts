@@ -622,7 +622,7 @@ export function showConfirmationModal(
     onConfirm: () => void,
     options?: {
         title?: string;
-        onEdit?: () => void;
+        onEdit?: () => void | Promise<void>;
         confirmText?: string;
         editText?: string;
         cancelText?: string;
@@ -671,7 +671,46 @@ export function openNotesModal(habitId: string, date: string, time: TimeOfDay) {
     ui.notesTextarea.focus();
 }
 
-export function openEditModal(habitOrTemplate: Habit | PredefinedHabit | null) {
+export async function renderHabitReminders(selectedTimes: TimeOfDay[], currentReminders: Partial<Record<TimeOfDay, string>>) {
+    const remindersGroup = ui.editHabitForm.querySelector<HTMLElement>('#habit-reminders-group')!;
+    const remindersInputs = remindersGroup.querySelector<HTMLElement>('#habit-reminders-inputs')!;
+    remindersInputs.innerHTML = ''; // Limpa as entradas anteriores
+
+    // Atendendo ao pedido do usuário, esta seção agora está sempre visível se houver horários selecionados.
+    // O envio real da notificação em `cloud.ts` ainda respeita as permissões do usuário.
+    // A verificação do SDK é mantida para registrar erros, mas não para ocultar a UI.
+    try {
+        await new Promise<any>((resolve, reject) => {
+            window.OneSignal = window.OneSignal || [];
+            window.OneSignal.push((sdk: any) => sdk ? resolve(sdk) : reject(new Error("OneSignal SDK failed.")));
+            setTimeout(() => reject(new Error("OneSignal SDK timed out.")), 3000);
+        });
+    } catch (error) {
+        console.error("OneSignal SDK check failed in renderHabitReminders:", error);
+    }
+
+    if (selectedTimes.length === 0) {
+        remindersGroup.style.display = 'none';
+        return;
+    }
+
+    remindersGroup.style.display = 'block';
+    
+    const fragment = document.createDocumentFragment();
+    selectedTimes.sort((a,b) => TIMES_OF_DAY.indexOf(a) - TIMES_OF_DAY.indexOf(b)).forEach(time => {
+        const reminderValue = currentReminders[time] || '';
+        const row = document.createElement('div');
+        row.className = 'reminder-time-row';
+        row.innerHTML = `
+            <label for="reminder-time-${time}">${t(`filter${time}`)}</label>
+            <input type="time" class="reminder-time-input" id="reminder-time-${time}" data-time="${time}" value="${reminderValue}">
+        `;
+        fragment.appendChild(row);
+    });
+    remindersInputs.appendChild(fragment);
+}
+
+export async function openEditModal(habitOrTemplate: Habit | PredefinedHabit | null) {
     const form = ui.editHabitForm;
     const nameInput = form.elements.namedItem('habit-name') as HTMLInputElement;
     const noticeEl = form.querySelector<HTMLElement>('.duplicate-habit-notice');
@@ -692,6 +731,7 @@ export function openEditModal(habitOrTemplate: Habit | PredefinedHabit | null) {
                 times: ['Manhã'],
                 goal: { type: 'check', unitKey: 'unitCheck' },
                 frequency: { type: 'daily', interval: 1 },
+                reminderTimes: {},
             };
         } else { // Predefined habit
             formData = habitOrTemplate as PredefinedHabit;
@@ -710,6 +750,7 @@ export function openEditModal(habitOrTemplate: Habit | PredefinedHabit | null) {
             times: latestSchedule.times,
             goal: originalHabit.goal,
             frequency: latestSchedule.frequency,
+            reminderTimes: originalHabit.reminderTimes || {},
         };
     }
 
@@ -726,6 +767,7 @@ export function openEditModal(habitOrTemplate: Habit | PredefinedHabit | null) {
     });
 
     renderFrequencyFilter();
+    await renderHabitReminders(formData.times, formData.reminderTimes || {});
     
     nameInput.readOnly = false;
 

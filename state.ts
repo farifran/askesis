@@ -205,7 +205,7 @@ export const state: {
     pendingConsolidationHabitIds: string[];
     notificationsShown: string[];
     confirmAction: (() => void) | null;
-    confirmEditAction: (() => void) | null;
+    confirmEditAction: (() => void | Promise<void>) | null;
     editingNoteFor: { habitId: string; date: string; time: TimeOfDay; } | null;
     editingHabit: {
         isNew: boolean;

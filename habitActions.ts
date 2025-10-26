@@ -108,6 +108,7 @@ export function addHabit(habitTemplate: HabitTemplate, startDate: string): Habit
         color: habitTemplate.color,
         goal: habitTemplate.goal,
         scheduleHistory: [firstSchedule],
+        reminderTimes: habitTemplate.reminderTimes,
     };
     state.habits.push(newHabit);
     saveState();
@@ -401,11 +402,11 @@ export async function resetApplicationData() {
     location.reload();
 }
 
-export function requestHabitEditingFromModal(habitId: string) {
+export async function requestHabitEditingFromModal(habitId: string) {
     const habit = state.habits.find(h => h.id === habitId);
     if (!habit) return;
     closeModal(ui.manageModal);
-    openEditModal(habit);
+    await openEditModal(habit);
 }
 
 export function saveHabitFromModal() {
@@ -444,6 +445,15 @@ export function saveHabitFromModal() {
         if (noticeEl) showInlineNotice(noticeEl, t('errorSelectTime'));
         return;
     }
+    
+    const reminderInputs = form.querySelectorAll<HTMLInputElement>('.reminder-time-input');
+    const reminderTimes: Partial<Record<TimeOfDay, string>> = {};
+    reminderInputs.forEach(input => {
+        const time = input.dataset.time as TimeOfDay;
+        if (time && input.value) {
+            reminderTimes[time] = input.value;
+        }
+    });
 
     const currentFrequency = formData.frequency;
 
@@ -464,6 +474,7 @@ export function saveHabitFromModal() {
                     frequency: template.frequency,
                 };
                 existingEndedHabit.scheduleHistory.push(newSchedule);
+                existingEndedHabit.reminderTimes = template.reminderTimes;
                 
                 saveState();
                 document.dispatchEvent(new CustomEvent('habitsChanged'));
@@ -502,6 +513,7 @@ export function saveHabitFromModal() {
                     times: selectedTimes,
                     goal: formData.goal,
                     frequency: currentFrequency,
+                    reminderTimes: reminderTimes,
                 };
             } else {
                 // Name was NOT changed, create as a predefined habit
@@ -509,6 +521,7 @@ export function saveHabitFromModal() {
                     ...formData,
                     times: selectedTimes,
                     frequency: currentFrequency,
+                    reminderTimes: reminderTimes,
                 };
             }
         } else { // This is a fully custom habit from the "create custom" button
@@ -517,6 +530,7 @@ export function saveHabitFromModal() {
                 name: habitName,
                 times: selectedTimes,
                 frequency: currentFrequency,
+                reminderTimes: reminderTimes,
             };
         }
 
@@ -535,8 +549,9 @@ export function saveHabitFromModal() {
         const hasNameChanged = getHabitDisplayInfo(originalData).name !== habitName;
         const hasTimesChanged = lastSchedule.times.length !== selectedTimes.length || !lastSchedule.times.every(t => selectedTimes.includes(t));
         const hasFrequencyChanged = lastSchedule.frequency.type !== currentFrequency.type || lastSchedule.frequency.interval !== currentFrequency.interval;
+        const hasRemindersChanged = JSON.stringify(originalData.reminderTimes || {}) !== JSON.stringify(reminderTimes);
         
-        if (!hasNameChanged && !hasTimesChanged && !hasFrequencyChanged) {
+        if (!hasNameChanged && !hasTimesChanged && !hasFrequencyChanged && !hasRemindersChanged) {
             closeModal(ui.editHabitModal);
             state.editingHabit = null;
             return;
@@ -550,7 +565,25 @@ export function saveHabitFromModal() {
         showConfirmationModal(
             confirmationText,
             () => {
-                updateHabitSchedule(originalData, changeDateISO, { name: habitName, times: selectedTimes, frequency: currentFrequency });
+                const scheduleUpdated = hasNameChanged || hasTimesChanged || hasFrequencyChanged;
+        
+                if (scheduleUpdated) {
+                    updateHabitSchedule(originalData, changeDateISO, { 
+                        name: hasNameChanged ? habitName : undefined, 
+                        times: hasTimesChanged ? selectedTimes : undefined, 
+                        frequency: hasFrequencyChanged ? currentFrequency : undefined
+                    });
+                }
+                
+                if (hasRemindersChanged) {
+                    originalData.reminderTimes = reminderTimes;
+                    // se o agendamento NÃO foi atualizado, precisamos salvar e re-renderizar manualmente
+                    if (!scheduleUpdated) {
+                        saveState();
+                        document.dispatchEvent(new CustomEvent('habitsChanged'));
+                    }
+                }
+                
                 closeModal(ui.editHabitModal);
                 state.editingHabit = null;
             },

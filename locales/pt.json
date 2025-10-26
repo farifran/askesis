@@ -22,6 +22,7 @@
     "modalNotesSaveButton": "Salvar Nota", "modalEditTitle": "Editar Hábito", "modalAddTitle": "Adicionar Hábito",
     "modalAddHabitTitle": "Adicionar \"{habitName}\"", "modalEditFormNameLabel": "Nome", "modalEditFormTimeLabel": "Horário(s)",
     "modalEditFormFrequencyLabel": "Frequência", "modalEditSaveButton": "Salvar Hábito", "modalStatusEnded": "(Encerrado)", "modalStatusGraduated": "(Graduado)",
+    "label-habit-reminders": "Lembretes", "remindersNotGranted": "Para definir lembretes, por favor, ative as notificações nas configurações do aplicativo.",
     "modalAIOfflineTitle": "Modo Offline", "modalAIOfflineMessage": "A Avaliação da IA requer uma conexão com a internet. Por favor, conecte-se e tente novamente.",
     "modalAIError": "Desculpe, não foi possível obter la avaliação da IA. Verifique sua conexão ou tente novamente mais tarde.", "errorDetail": "Detalhe do Erro",
     "notificationPromptTitle": "Lembretes de Hábito", "notificationPromptMessage": "Gostaríamos de enviar notificações para ajudar você a se manter no caminho certo com seus hábitos.", "notificationHabitReminderTitle": "É hora do seu hábito!", "notificationHabitReminderBody": "Não se esqueça de completar: {habitName}",
