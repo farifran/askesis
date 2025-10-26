@@ -20,6 +20,7 @@
     "modalAIOfflineTitle": "Offline Mode", "modalAIOfflineMessage": "The AI Evaluation requires an internet connection. Please connect and try again.",
     "modalAIError": "Sorry, the AI evaluation could not be retrieved. Please check your connection or try again later.", "errorDetail": "Error Detail",
     "notificationPromptTitle": "Habit Reminders", "notificationPromptMessage": "We'd like to send you notifications to help you stay on track with your habits.", "notificationHabitReminderTitle": "Time for your habit!", "notificationHabitReminderBody": "Don't forget to complete: {habitName}",
+    "notificationsBlocked": "Notifications are blocked. Enable them in site settings.",
     "habitSnoozed": "Snoozed", "habitConsolidatedMessage": "✅ Habit consolidated!", "habitSemiConsolidatedMessage": "Habit semi-consolidated",
     "freqDaily": "Daily", "freqEvery2Days": "Every 2 days", "freqEvery3Days": "Every 3 days", "freqEvery4Days": "Every 4 days", "freqEvery5Days": "Every 5 days",
     "freqWeekly": "Weekly", "freqEvery2Weeks": "Every 2 weeks", "freqEvery3Weeks": "Every 3 weeks", "freqEvery4Weeks": "Every 4 weeks",

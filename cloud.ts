@@ -274,28 +274,31 @@ export async function syncLocalStateToCloud() {
  */
 export function updateUserHabitTags() {
     OneSignal.push(async () => {
-        if (!await OneSignal.Notifications.isPushEnabled()) {
-            return;
-        }
+        try {
+            if (!await OneSignal.Notifications.isPushEnabled()) {
+                return;
+            }
 
-        const today = getTodayUTC();
-        const tags: { [key: string]: string } = {};
+            const today = getTodayUTC();
+            const tags: { [key: string]: string } = {};
 
-        TIMES_OF_DAY.forEach(time => {
-            const hasHabitForTime = state.habits.some(habit => {
-                if (shouldHabitAppearOnDate(habit, today)) {
-                    const schedule = getScheduleForDate(habit, today);
-                    return schedule?.times.includes(time);
-                }
-                return false;
+            TIMES_OF_DAY.forEach(time => {
+                const hasHabitForTime = state.habits.some(habit => {
+                    if (shouldHabitAppearOnDate(habit, today)) {
+                        const schedule = getScheduleForDate(habit, today);
+                        return schedule?.times.includes(time);
+                    }
+                    return false;
+                });
+                const tagName = time.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+                tags[`${tagName}_habits`] = String(hasHabitForTime);
             });
-            // Normaliza o nome do tempo para ser um nome de tag válido (ex: "Manhã" -> "manha")
-            const tagName = time.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-            tags[`${tagName}_habits`] = String(hasHabitForTime);
-        });
 
-        console.log("Updating OneSignal tags for reminders:", tags);
-        await OneSignal.User.addTags(tags);
+            console.log("Updating OneSignal tags for reminders:", tags);
+            await OneSignal.User.addTags(tags);
+        } catch (error) {
+            console.error("Failed to update OneSignal tags:", error);
+        }
     });
 }
 
@@ -304,25 +307,36 @@ export function updateUserHabitTags() {
  * Inicializa o SDK do OneSignal e configura o estado inicial do toggle de notificação.
  */
 export function initNotifications() {
-    // A inicialização do OneSignal agora é tratada no index.html via OneSignalDeferred.
-    // Esta função agora apenas enfileira a configuração de nossos listeners e verificações de estado inicial.
+    // Desabilita o toggle inicialmente para indicar um estado de carregamento e evitar cliques prematuros.
+    ui.notificationToggleInput.disabled = true;
+
     window.OneSignal = window.OneSignal || [];
     OneSignal.push(async () => {
-        // Este código será executado depois que o OneSignal for inicializado a partir do index.html.
+        const updateToggleState = async () => {
+            const permission = OneSignal.Notifications.getPermission();
+            const isEnabled = await OneSignal.Notifications.isPushEnabled();
 
-        // Sincroniza o estado do nosso toggle na UI com o estado real da permissão de notificação
-        OneSignal.Notifications.addEventListener('permissionChange', (permission: boolean) => {
-             ui.notificationToggleInput.checked = permission;
-        });
+            if (permission === 'denied') {
+                ui.notificationToggleInput.checked = false;
+                ui.notificationToggleInput.disabled = true;
+                ui.notificationToggleDesc.textContent = t('notificationsBlocked');
+            } else {
+                // Reabilita o toggle assim que o estado é conhecido, a menos que a permissão seja negada.
+                ui.notificationToggleInput.disabled = false;
+                ui.notificationToggleInput.checked = isEnabled;
+                ui.notificationToggleDesc.textContent = t('modalManageNotificationsDesc');
+            }
 
-        // Configura o estado inicial do toggle no carregamento da página
-        const isEnabled = await OneSignal.Notifications.isPushEnabled();
-        ui.notificationToggleInput.checked = isEnabled;
-        if (isEnabled) {
-            updateUserHabitTags(); // Atualiza as tags se as notificações já estiverem ativadas
-        }
+            if (isEnabled) {
+                updateUserHabitTags();
+            }
+        };
+        
+        OneSignal.Notifications.addEventListener('permissionChange', updateToggleState);
+        
+        // Agora, isso será executado após a inicialização do SDK, atualizando a partir do estado inicial desabilitado.
+        await updateToggleState();
     });
 
-    // Escuta por mudanças nos hábitos para manter as tags de notificação atualizadas
     document.addEventListener('habitsChanged', updateUserHabitTags);
 }

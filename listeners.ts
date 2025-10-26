@@ -146,29 +146,26 @@ const setupGlobalListeners = () => {
 
 const setupNotificationListener = () => {
     ui.notificationToggleInput.addEventListener('change', (e) => {
+        if (ui.notificationToggleInput.disabled) {
+            e.preventDefault();
+            return;
+        }
+        
         const isEnabled = (e.target as HTMLInputElement).checked;
         
         OneSignal.push(async () => {
             if (isEnabled) {
-                // O OneSignal pode mostrar seu próprio pré-prompt (slidedown) se configurado.
-                // Se o usuário aceitar, o prompt nativo do navegador será exibido.
                 await OneSignal.Notifications.requestPermission();
                 
-                // Após a tentativa de permissão, verificamos o resultado real.
                 const permission = OneSignal.Notifications.getPermission();
                 if (permission === 'granted') {
                     console.log("Push notifications enabled by user.");
-                    // Opta por receber notificações
                     await OneSignal.User.pushSubscription.optIn();
-                    updateUserHabitTags();
                 } else {
-                     console.log("Push notifications permission was denied.");
-                     // Reverte o toggle se a permissão não foi concedida
-                     ui.notificationToggleInput.checked = false;
+                     console.log("Push notifications permission was not granted.");
                 }
             } else {
                  console.log("User opted out of notifications in-app.");
-                 // Opta por não receber mais notificações
                  await OneSignal.User.pushSubscription.optOut();
             }
         });
