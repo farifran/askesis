@@ -145,60 +145,10 @@ const setupGlobalListeners = () => {
     });
 };
 
-const setupNotificationToggleListener = () => {
-    ui.notificationToggleInput.addEventListener('change', (e) => {
-        const isEnabled = (e.target as HTMLInputElement).checked;
-        const toggleInput = e.target as HTMLInputElement;
-
-        // Enfileira a lógica para ser executada assim que o OneSignal SDK estiver pronto.
-        // Isso previne erros de 'undefined' se o usuário clicar antes da inicialização completa.
-        window.OneSignal.push(async (OneSignal: any) => {
-            if (isEnabled) {
-                try {
-                    // Solicita a permissão do navegador primeiro.
-                    await OneSignal.Notifications.requestPermission();
-                    const permission = OneSignal.Notifications.getPermission();
-                    
-                    // Só continua se a permissão for concedida.
-                    if (permission === 'granted') {
-                        await OneSignal.User.pushSubscription.optIn();
-                        console.log('User opted in for notifications.');
-                        // Atualiza as tags para garantir que os lembretes sejam agendados corretamente.
-                        updateUserHabitTags();
-                    } else {
-                        console.log('User denied notification permission.');
-                        // Se o usuário negar, reverte o toggle para o estado correto.
-                        toggleInput.checked = false;
-                    }
-                } catch (error) {
-                    console.error('Failed to opt in for notifications:', error);
-                    // Em caso de erro, também reverte a UI.
-                    toggleInput.checked = false;
-                }
-            } else {
-                try {
-                    // Desativa as notificações no servidor do OneSignal.
-                    await OneSignal.User.pushSubscription.optOut();
-                    // Remove as tags, pois não são mais necessárias.
-                    await OneSignal.User.removeTags(['manha_habits', 'tarde_habits', 'noite_habits']);
-                    console.log('User opted out of notifications.');
-                } catch (error) {
-                    console.error('Failed to opt out of notifications:', error);
-                    // Se a desativação falhar (ex: offline), reverte o toggle
-                    // para mostrar ao usuário que ele ainda está inscrito.
-                    toggleInput.checked = true;
-                }
-            }
-        });
-    });
-};
-
-
 export const setupEventListeners = () => {
     setupGlobalListeners();
     setupModalListeners();
     setupHabitCardListeners();
     setupSwipeHandler(ui.habitContainer);
     setupDragAndDropHandler(ui.habitContainer);
-    setupNotificationToggleListener();
 };
