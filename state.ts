@@ -98,6 +98,7 @@ export interface AppState {
     notificationsShown: string[];
     pending21DayHabitIds: string[];
     pendingConsolidationHabitIds: string[];
+    notificationsEnabled: boolean;
     // Propriedades do estado da IA
     aiState?: 'idle' | 'loading' | 'completed' | 'error';
     lastAIResult?: string | null;
@@ -195,6 +196,7 @@ export const state: {
     pending21DayHabitIds: string[];
     pendingConsolidationHabitIds: string[];
     notificationsShown: string[];
+    notificationsEnabled: boolean;
     confirmAction: (() => void) | null;
     confirmEditAction: (() => void) | null;
     editingNoteFor: { habitId: string; date: string; time: TimeOfDay; } | null;
@@ -222,6 +224,7 @@ export const state: {
     pending21DayHabitIds: [],
     pendingConsolidationHabitIds: [],
     notificationsShown: [],
+    notificationsEnabled: true,
     confirmAction: null,
     confirmEditAction: null,
     editingNoteFor: null,
@@ -474,6 +477,7 @@ export function saveState() {
         notificationsShown: state.notificationsShown,
         pending21DayHabitIds: state.pending21DayHabitIds,
         pendingConsolidationHabitIds: state.pendingConsolidationHabitIds,
+        notificationsEnabled: state.notificationsEnabled,
         // Propriedades do estado da IA
         aiState: state.aiState,
         lastAIResult: state.lastAIResult,
@@ -516,6 +520,7 @@ export function loadState(cloudState?: AppState) {
         state.notificationsShown = loadedAppState.notificationsShown || [];
         state.pending21DayHabitIds = loadedAppState.pending21DayHabitIds || [];
         state.pendingConsolidationHabitIds = loadedAppState.pendingConsolidationHabitIds || [];
+        state.notificationsEnabled = loadedAppState.notificationsEnabled ?? true;
         // Carrega o estado da IA, com padrões para versões antigas
         state.aiState = loadedAppState.aiState || 'idle';
         state.lastAIResult = loadedAppState.lastAIResult || null;
@@ -531,6 +536,7 @@ export function loadState(cloudState?: AppState) {
         state.notificationsShown = [];
         state.pending21DayHabitIds = [];
         state.pendingConsolidationHabitIds = [];
+        state.notificationsEnabled = true;
         // Define padrões para um estado novo
         state.aiState = 'idle';
         state.lastAIResult = null;
