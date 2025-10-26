@@ -27,8 +27,8 @@ const init = async () => {
     // A inicialização da sincronização configura a UI e a lógica da chave
     await initSync();
     
-    // Inicializa a UI e a lógica das notificações
-    await initNotifications();
+    // Inicializa a UI e a lógica das notificações com OneSignal
+    initNotifications();
 
     // Carrega os dados do estado, priorizando a nuvem se a sincronização estiver ativa
     let cloudState;

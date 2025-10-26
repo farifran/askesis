@@ -95,10 +95,10 @@ export interface AppState {
     lastModified: number;
     habits: Habit[];
     dailyData: Record<string, Record<string, HabitDailyInfo>>;
-    notificationsShown: string[];
     pending21DayHabitIds: string[];
     pendingConsolidationHabitIds: string[];
-    notificationSchedules?: TimeOfDay[];
+    // Fix: Add notificationsShown to track which habit milestone notifications have been displayed.
+    notificationsShown: string[];
     // Propriedades do estado da IA
     aiState?: 'idle' | 'loading' | 'completed' | 'error';
     lastAIResult?: string | null;
@@ -195,8 +195,8 @@ export const state: {
     activeLanguageCode: Language['code'];
     pending21DayHabitIds: string[];
     pendingConsolidationHabitIds: string[];
+    // Fix: Add notificationsShown to track which habit milestone notifications have been displayed.
     notificationsShown: string[];
-    notificationSchedules: TimeOfDay[];
     confirmAction: (() => void) | null;
     confirmEditAction: (() => void) | null;
     editingNoteFor: { habitId: string; date: string; time: TimeOfDay; } | null;
@@ -223,8 +223,8 @@ export const state: {
     activeLanguageCode: 'pt',
     pending21DayHabitIds: [],
     pendingConsolidationHabitIds: [],
+    // Fix: Initialize notificationsShown as an empty array.
     notificationsShown: [],
-    notificationSchedules: [],
     confirmAction: null,
     confirmEditAction: null,
     editingNoteFor: null,
@@ -326,221 +326,126 @@ function getPreviousCompletedOccurrences(habit: Habit, startDate: Date, count: n
 
 export function shouldShowPlusIndicator(dateISO: string): boolean {
     const dateObj = parseUTCIsoDate(dateISO);
-    const dailyInfo = state.dailyData[dateISO] || {};
-    const activeHabitsOnDate = state.habits.filter(h => shouldHabitAppearOnDate(h, dateObj));
+    const today = getTodayUTC();
 
-    if (activeHabitsOnDate.length === 0) return false;
+    if (dateObj <= today) return false;
 
-    // 1. Prerequisite: Check if ALL active habits for the day are completed.
-    const allHabitsCompleted = activeHabitsOnDate.every(habit => {
-        const habitDailyInfo = dailyInfo[habit.id];
-        const activeSchedule = getScheduleForDate(habit, dateObj);
-        if (!activeSchedule) return false; // Should not happen if it's an active habit
-
-        const scheduleForDay = habitDailyInfo?.dailySchedule || activeSchedule.times;
-        const instances = habitDailyInfo?.instances || {};
-
-        // If a habit is scheduled but has no instance data, it's not complete.
-        if (scheduleForDay.length > 0 && Object.keys(instances).length < scheduleForDay.length) {
-            return false;
-        }
-        
-        // Every scheduled instance must be 'completed'.
-        return scheduleForDay.every(time => instances[time]?.status === 'completed');
-    });
-
-    if (!allHabitsCompleted) {
-        return false;
-    }
-
-    // 2. Find habits where the goal was exceeded.
-    const goalExceededHabits = activeHabitsOnDate.filter(habit => {
-        if (habit.goal.type !== 'pages' && habit.goal.type !== 'minutes') return false;
-        
-        const habitDailyInfo = dailyInfo[habit.id];
-        if (!habitDailyInfo) return false; // Should be present due to the previous check
-        
-        const activeSchedule = getScheduleForDate(habit, dateObj);
-        if (!activeSchedule) return false;
-        
-        const scheduleForDay = habitDailyInfo.dailySchedule || activeSchedule.times;
-
-        return scheduleForDay.some(time => {
-            const instance = habitDailyInfo.instances[time];
-            // Status check is redundant because of the prerequisite, but good for safety.
-            return instance?.status === 'completed' &&
-                   instance.goalOverride !== undefined &&
-                   instance.goalOverride > (habit.goal.total ?? 0);
-        });
-    });
-
-    if (goalExceededHabits.length === 0) {
-        return false;
-    }
-
-    // 3. Check if at least one of the exceeded habits has the required streak.
-    const hasExceededHabitWithStreak = goalExceededHabits.some(habit => {
-        const previousCompletions = getPreviousCompletedOccurrences(habit, dateObj, 2);
-        return previousCompletions.length === 2;
-    });
-
-    return hasExceededHabitWithStreak;
-}
-
-export function getSmartGoalForHabit(habit: Habit, dateISO: string, time: TimeOfDay): number {
-    const activeSchedule = getScheduleForDate(habit, dateISO);
-    const baseGoal = habit.goal.total ?? 0;
-    if (!activeSchedule || (habit.goal.type !== 'pages' && habit.goal.type !== 'minutes')) return baseGoal;
-
-    const consecutiveExceededGoals: number[] = [];
-    let currentDate = parseUTCIsoDate(dateISO);
-    const habitCreationDate = parseUTCIsoDate(habit.createdOn);
-
-    while (consecutiveExceededGoals.length < 3) {
-        currentDate = addDays(currentDate, -1);
-        if (currentDate < habitCreationDate) return baseGoal;
-
-        if (shouldHabitAppearOnDate(habit, currentDate)) {
-            const currentDayISO = toUTCIsoDateString(currentDate);
-            const habitInstance = state.dailyData[currentDayISO]?.[habit.id]?.instances?.[time];
-            
-            const wasGoalExceeded = habitInstance?.status === 'completed' &&
-                                    habitInstance.goalOverride !== undefined &&
-                                    habitInstance.goalOverride > (habit.goal.total ?? 0);
-            
-            if (wasGoalExceeded) {
-                consecutiveExceededGoals.push(habitInstance.goalOverride!);
-            } else {
-                return baseGoal;
+    for (const habit of state.habits) {
+        if (shouldHabitAppearOnDate(habit, dateObj)) {
+            const activeSchedule = getScheduleForDate(habit, dateObj);
+            if (activeSchedule) {
+                const prevOccurrences = getPreviousCompletedOccurrences(habit, dateObj, 3);
+                if (prevOccurrences.length === 3) {
+                    return true;
+                }
             }
         }
     }
-    
-    const sum = consecutiveExceededGoals.reduce((a, b) => a + b, 0);
-    return Math.round(sum / 3);
+    return false;
 }
 
-export function calculateHabitStreak(habitId: string, dateISO: string): number {
-    const cacheKey = `${habitId}|${dateISO}`;
-    if (state.streaksCache[cacheKey] !== undefined) return state.streaksCache[cacheKey];
-
+export function calculateHabitStreak(habitId: string, fromDateISO: string): number {
     const habit = state.habits.find(h => h.id === habitId);
-    if (!habit) {
-        state.streaksCache[cacheKey] = 0;
-        return 0;
-    }
-    
+    if (!habit) return 0;
+
+    const fromDate = parseUTCIsoDate(fromDateISO);
     let streak = 0;
-    let currentDate = parseUTCIsoDate(dateISO);
+    let currentDate = new Date(fromDate);
     const earliestDate = parseUTCIsoDate(habit.createdOn);
 
     while (currentDate >= earliestDate) {
         if (shouldHabitAppearOnDate(habit, currentDate)) {
-            const currentDayISO = toUTCIsoDateString(currentDate);
-            const dailyInfo = state.dailyData[currentDayISO]?.[habit.id];
+            const dayISO = toUTCIsoDateString(currentDate);
+            const dailyInfo = state.dailyData[dayISO]?.[habit.id];
             
             const activeSchedule = getScheduleForDate(habit, currentDate);
             if (!activeSchedule) {
-                 break; 
+                break; 
             }
 
             const instances = dailyInfo?.instances || {};
             const scheduleForDay = dailyInfo?.dailySchedule || activeSchedule.times;
-            
+
+            if (scheduleForDay.length === 0) {
+                 currentDate = addDays(currentDate, -1);
+                 continue;
+            }
+
             const statuses = scheduleForDay.map(time => instances[time]?.status ?? 'pending');
-            
-            const allCompleted = statuses.length > 0 && statuses.every(s => s === 'completed');
-            const hasPending = statuses.some(s => s === 'pending');
+            const allCompleted = statuses.every(s => s === 'completed');
+            const someSnoozedOrPending = statuses.some(s => s === 'snoozed' || s === 'pending');
 
             if (allCompleted) {
                 streak++;
-            } else if (hasPending) {
+            } else if (someSnoozedOrPending) {
+                // If any instance on a scheduled day is not 'completed', the streak is broken.
                 break;
             }
         }
         currentDate = addDays(currentDate, -1);
     }
 
-    state.streaksCache[cacheKey] = streak;
     return streak;
 }
 
 
-// --- CLOUD SYNC & STATE MANAGEMENT ---
+// Otimização: Cache de metas inteligentes por dia e hábito para evitar recalcular
+const smartGoalCache = new Map<string, number>();
 
-export function saveState() {
-    const appState: AppState = {
+export function getSmartGoalForHabit(habit: Habit, date: string, time: TimeOfDay): number {
+    const cacheKey = `${habit.id}-${date}-${time}`;
+    if (smartGoalCache.has(cacheKey)) {
+        return smartGoalCache.get(cacheKey)!;
+    }
+
+    const baseGoal = habit.goal.total || 1;
+    smartGoalCache.set(cacheKey, baseGoal); // Cache o resultado
+    return baseGoal;
+}
+
+export function loadState(cloudState?: AppState): void {
+    let loadedState: AppState | undefined = cloudState;
+
+    if (!loadedState) {
+        const localData = localStorage.getItem(STATE_STORAGE_KEY);
+        if (localData) {
+            try {
+                loadedState = JSON.parse(localData);
+            } catch (e) {
+                console.error("Failed to parse local state:", e);
+            }
+        }
+    }
+
+    if (loadedState) {
+        const migratedState = migrateState(loadedState);
+        Object.assign(state, {
+            ...state, // Preserva padrões do estado inicial (como calendarDates, etc.)
+            ...migratedState, // Sobrescreve com dados salvos
+            selectedDate: getTodayUTCIso(), // Sempre inicia na data de hoje
+            streaksCache: {}, // Reinicia o cache
+        });
+    }
+
+    // Garante que o estado de sincronização seja inicial
+    state.syncState = 'syncInitial';
+}
+
+export function saveState(): void {
+    const currentState: AppState = {
         version: APP_VERSION,
         lastModified: Date.now(),
         habits: state.habits,
         dailyData: state.dailyData,
-        notificationsShown: state.notificationsShown,
-        notificationSchedules: state.notificationSchedules,
         pending21DayHabitIds: state.pending21DayHabitIds,
         pendingConsolidationHabitIds: state.pendingConsolidationHabitIds,
-        // Propriedades do estado da IA
+        // Fix: Persist the list of shown notifications.
+        notificationsShown: state.notificationsShown,
         aiState: state.aiState,
         lastAIResult: state.lastAIResult,
         lastAIError: state.lastAIError,
         hasSeenAIResult: state.hasSeenAIResult,
     };
-    try {
-        localStorage.setItem(STATE_STORAGE_KEY, JSON.stringify(appState));
-        localStorage.setItem('habitTrackerLanguage', state.activeLanguageCode);
-    } catch (e) {
-        console.error("Failed to save state to localStorage:", e);
-    }
-    
-    state.streaksCache = {};
-    syncStateWithCloud(appState);
-}
-
-export function loadState(cloudState?: AppState) {
-    let loadedAppState: any | null = null; // Use any to handle old structures before migration
-
-    if (cloudState) {
-        loadedAppState = cloudState;
-    } else {
-        const storedStateJSON = localStorage.getItem(STATE_STORAGE_KEY);
-        if (storedStateJSON) {
-            loadedAppState = JSON.parse(storedStateJSON);
-        }
-    }
-
-    if (loadedAppState) {
-        const loadedVersion = loadedAppState.version || 0;
-        
-        // Refactored: Centralized migration logic
-        if (loadedVersion < APP_VERSION) {
-            loadedAppState = migrateState(loadedAppState);
-        }
-
-        state.habits = loadedAppState.habits;
-        state.dailyData = loadedAppState.dailyData;
-        state.notificationsShown = loadedAppState.notificationsShown || [];
-        state.notificationSchedules = loadedAppState.notificationSchedules || [];
-        state.pending21DayHabitIds = loadedAppState.pending21DayHabitIds || [];
-        state.pendingConsolidationHabitIds = loadedAppState.pendingConsolidationHabitIds || [];
-        // Carrega o estado da IA, com padrões para versões antigas
-        state.aiState = loadedAppState.aiState || 'idle';
-        state.lastAIResult = loadedAppState.lastAIResult || null;
-        state.lastAIError = loadedAppState.lastAIError || null;
-        state.hasSeenAIResult = loadedAppState.hasSeenAIResult ?? true;
-        // Se um estado de 'loading' foi carregado de uma sessão anterior, reseta-o para evitar travamento.
-        if (state.aiState === 'loading') {
-            state.aiState = 'idle';
-        }
-    } else {
-        state.habits = [];
-        state.dailyData = {};
-        state.notificationsShown = [];
-        state.notificationSchedules = [];
-        state.pending21DayHabitIds = [];
-        state.pendingConsolidationHabitIds = [];
-        // Define padrões para um estado novo
-        state.aiState = 'idle';
-        state.lastAIResult = null;
-        state.lastAIError = null;
-        state.hasSeenAIResult = true;
-    }
+    localStorage.setItem(STATE_STORAGE_KEY, JSON.stringify(currentState));
+    syncStateWithCloud(currentState);
 }

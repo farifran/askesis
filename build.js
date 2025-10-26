@@ -12,7 +12,6 @@ async function build() {
 
         // Copy static HTML file, which will be served alongside the bundles
         await fs.copyFile('index.html', path.join(outdir, 'index.html'));
-        await fs.copyFile('service-worker.js', path.join(outdir, 'service-worker.js'));
 
 
         // Copy the new locales directory for i18n JSON files

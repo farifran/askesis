@@ -339,7 +339,7 @@ main {
     border: 1px solid var(--border-color);
     border-radius: var(--border-radius-base);
     overflow: hidden;
-    height: 28px;
+    height: 36px; /* Aumentado para melhor ergonomia */
 }
 
 .reel-viewport {
@@ -352,7 +352,9 @@ main {
     user-select: none;
     touch-action: none;
     width: var(--reel-item-width);
+    transition: background-color var(--transition-duration);
 }
+.reel-viewport:hover { background-color: var(--surface-hover); }
 .reel-viewport:active { cursor: grabbing; }
 
 .reel-reel {
@@ -367,10 +369,11 @@ main {
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 500;
     color: var(--text-secondary);
     width: var(--reel-item-width);
+    padding-inline: var(--space-sm);
 }
 
 .reel-btn {
@@ -378,29 +381,42 @@ main {
     border: none;
     color: var(--text-secondary);
     cursor: pointer;
-    width: 28px;
+    width: 36px; /* Igual à altura para ser quadrado */
     height: 100%;
     display: flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    transition: background-color var(--transition-duration);
+    transition: background-color var(--transition-duration), color var(--transition-duration);
+    border-inline: 1px solid var(--border-color);
 }
-.reel-btn:hover { background-color: var(--surface-hover); }
+.reel-btn:first-of-type {
+    border-inline-start: none;
+    border-inline-end: 1px solid var(--border-color);
+}
+.reel-btn:last-of-type {
+    border-inline-start: 1px solid var(--border-color);
+    border-inline-end: none;
+}
+.reel-btn:hover {
+    background-color: var(--surface-hover);
+    color: var(--text-primary);
+}
 .reel-btn svg {
-    stroke: var(--text-tertiary);
-    width: 16px;
-    height: 16px;
+    stroke: currentColor;
+    width: 18px;
+    height: 18px;
+    transition: transform var(--transition-duration-fast);
+}
+.reel-btn:hover svg {
+    transform: scale(1.1);
 }
 
 /* REATORAÇÃO: Centraliza a definição de largura usando variáveis locais. */
 #language-rotary { --reel-item-width: 95px; }
 #frequency-rotary { --reel-item-width: 125px; }
 
-#language-rotary .reel-btn {
-    position: relative;
-    top: -5px;
-}
+/* CORREÇÃO: A regra 'top: -5px' foi removida para garantir alinhamento correto via flexbox. */
 
 #frequency-rotary .reel-option {
     color: var(--text-primary);

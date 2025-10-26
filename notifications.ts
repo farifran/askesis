@@ -2,281 +2,89 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-import { ui } from './ui';
 import { t } from './i18n';
-import { getSyncKeyHash, hasSyncKey } from './sync';
-import { state, saveState, TimeOfDay } from './state';
-import { showInlineNotice } from './render';
+import { getSyncKeyHash } from './sync';
+import { ui } from './ui';
 
-// Chave pública VAPID atualizada com o valor que você gerou.
-const VAPID_PUBLIC_KEY = 'BLltAUNXquk6T7RyOi-I2RrIGe_thoW9WEyB7PSAZJhQWSsNr0dJQcEJcfLkObjNdvLCUfekm2VOedmuehB8oic';
-
-let isSubscribed = false;
-
-function urlBase64ToUint8Array(base64String: string): Uint8Array {
-    const padding = '='.repeat((4 - base64String.length % 4) % 4);
-    const base64 = (base64String + padding)
-        .replace(/-/g, '+')
-        .replace(/_/g, '/');
-    const rawData = window.atob(base64);
-    const outputArray = new Uint8Array(rawData.length);
-    for (let i = 0; i < rawData.length; ++i) {
-        outputArray[i] = rawData.charCodeAt(i);
+declare global {
+    interface Window {
+        OneSignal: any;
     }
-    return outputArray;
 }
 
-const getApiUrl = (endpoint: string): string => {
-    return new URL(endpoint, window.location.origin).toString();
-};
+async function syncNotificationUI() {
+    const OneSignal = window.OneSignal;
+    const permission = await OneSignal.getNotificationPermission();
+    const isSubscribed = await OneSignal.isPushNotificationsEnabled();
 
-async function sendSubscriptionToBackend(subscription: PushSubscription) {
-    const keyHash = await getSyncKeyHash();
-    if (!keyHash) {
-        console.error("Não é possível salvar a inscrição de push sem uma chave de sincronização.");
-        return;
+    if (permission === 'denied') {
+        ui.notificationToggle.checked = false;
+        ui.notificationToggle.disabled = true;
+        ui.notificationStatus.textContent = t('notificationStatusBlocked');
+        ui.notificationDetails.innerHTML = t('notificationDetailsBlocked');
+        ui.notificationDetails.style.display = 'block';
+    } else {
+        ui.notificationToggle.disabled = false;
+        ui.notificationToggle.checked = isSubscribed;
+        ui.notificationStatus.textContent = isSubscribed ? t('notificationStatusActive') : t('notificationStatusInactive');
+        ui.notificationDetails.style.display = 'none';
     }
-    try {
-        const payload = {
-            subscription,
-            lang: state.activeLanguageCode,
-        };
-        await fetch(getApiUrl('/api/subscribe'), {
-            method: 'POST',
-            body: JSON.stringify(payload),
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Sync-Key-Hash': keyHash,
+}
+
+
+export function initNotifications() {
+    window.OneSignal = window.OneSignal || [];
+    const OneSignal = window.OneSignal;
+
+    OneSignal.push(async () => {
+        await OneSignal.init({
+            appId: "d4f3b7f1-c22c-42b7-8a4a-5f0e1a1b1c3d",
+            promptOptions: {
+                slidedown: {
+                    enabled: true,
+                    actionMessage: t('oneSignalPromptActionMessage'),
+                    acceptButtonText: t('oneSignalPromptAcceptButton'),
+                    cancelButtonText: t('oneSignalPromptCancelButton'),
+                }
             },
+            welcomeNotification: {
+                "title": t('oneSignalWelcomeTitle'),
+                "message": t('oneSignalWelcomeMessage'),
+            }
         });
-    } catch (error) {
-        console.error('Erro ao enviar inscrição para o backend:', error);
-    }
-}
 
-async function removeSubscriptionFromBackend(subscription: PushSubscription) {
-    const keyHash = await getSyncKeyHash();
-    if (!keyHash) {
-        console.error("Não é possível remover a inscrição de push sem uma chave de sincronização.");
-        return;
-    }
-    try {
-        await fetch(getApiUrl('/api/unsubscribe'), {
-            method: 'POST',
-            body: JSON.stringify({ endpoint: subscription.endpoint }),
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Sync-Key-Hash': keyHash,
-            },
-        });
-    } catch (error) {
-        console.error('Erro ao remover inscrição do backend:', error);
-    }
-}
-
-async function sendSchedulesToBackend() {
-    const keyHash = await getSyncKeyHash();
-    if (!keyHash) {
-        console.warn("Não há chave de sincronização. Agendamentos de notificação não serão salvos no backend.");
-        return;
-    }
-    
-    try {
-        const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-        const payload = {
-            schedules: state.notificationSchedules,
-            timezone: timezone,
-        };
+        // Sincroniza a UI com o estado atual assim que o SDK estiver pronto.
+        await syncNotificationUI();
         
-        const response = await fetch(getApiUrl('/api/schedules'), {
-            method: 'POST',
-            body: JSON.stringify(payload),
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Sync-Key-Hash': keyHash,
-            },
+        // Mantém a UI sincronizada se o estado da assinatura mudar.
+        OneSignal.on('subscriptionChange', syncNotificationUI);
+
+        // Adiciona o listener para o interruptor (toggle).
+        ui.notificationToggle.addEventListener('change', async () => {
+            if (ui.notificationToggle.checked) {
+                // Solicita permissão se necessário, ou reativa as notificações.
+                await OneSignal.slidedown.promptPush();
+            } else {
+                // Desativa as notificações sem que o usuário precise revogar a permissão.
+                await OneSignal.disablePush(true);
+            }
         });
         
-        if (!response.ok) {
-            console.error('Falha ao enviar agendamentos para o backend:', response.statusText);
+        const keyHash = await getSyncKeyHash();
+        if (keyHash) {
+            OneSignal.login(keyHash);
         }
-    } catch (error) {
-        console.error('Erro ao enviar agendamentos para o backend:', error);
-    }
-}
 
-
-async function subscribeUser() {
-    try {
-        const registration = await navigator.serviceWorker.ready;
-        const subscription = await registration.pushManager.subscribe({
-            userVisibleOnly: true,
-            applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+        document.addEventListener('sync-key-changed', async (event: Event) => {
+            const customEvent = event as CustomEvent<{ keyHash: string | null }>;
+            const newKeyHash = customEvent.detail.keyHash;
+            if (newKeyHash) {
+                await OneSignal.login(newKeyHash);
+            } else {
+                if (await OneSignal.isPushNotificationsEnabled()) {
+                    await OneSignal.logout();
+                }
+            }
         });
-        await sendSubscriptionToBackend(subscription);
-        isSubscribed = true;
-        updateNotificationUI();
-        // Sincroniza os agendamentos atuais (mesmo que vazios) quando o usuário se inscreve.
-        await sendSchedulesToBackend();
-    } catch (err) {
-        console.error('Falha ao inscrever o usuário: ', err);
-        showInlineNotice(ui.notificationsFeedback, t('notificationSubscribeError'));
-        // Reverte o estado do toggle se a inscrição falhar
-        isSubscribed = false;
-        updateNotificationUI();
-    }
-}
-
-async function unsubscribeUser() {
-    try {
-        const registration = await navigator.serviceWorker.ready;
-        const subscription = await registration.pushManager.getSubscription();
-        if (subscription) {
-            await removeSubscriptionFromBackend(subscription);
-            await subscription.unsubscribe();
-        }
-        isSubscribed = false;
-        state.notificationSchedules = [];
-        saveState();
-        updateNotificationUI();
-        // Limpa os agendamentos no backend quando o usuário cancela a inscrição.
-        await sendSchedulesToBackend();
-    } catch (err) {
-        console.error('Erro ao cancelar a inscrição do usuário: ', err);
-        showInlineNotice(ui.notificationsFeedback, t('notificationUnsubscribeError'));
-    }
-}
-
-export function updateNotificationUI() {
-    // 1. Determina o estado geral das notificações
-    let statusKey: 'unsupported_insecure' | 'unsupported_api' | 'blocked' | 'granted' | 'default' | 'sync_required' = 'default';
-    let isEnabled = false;
-    const syncActive = hasSyncKey();
-
-    if (!syncActive) {
-        statusKey = 'sync_required';
-    } else if (!window.isSecureContext) {
-        statusKey = 'unsupported_insecure';
-    } else if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
-        statusKey = 'unsupported_api';
-    } else if (window.Notification.permission === 'denied') {
-        statusKey = 'blocked';
-    } else {
-        isEnabled = true;
-        if (isSubscribed) {
-            statusKey = 'granted';
-        }
-    }
-
-    // 2. Mapeia o estado para as chaves de tradução
-    const statusTextMap = {
-        unsupported_insecure: t('notificationsStatusInsecureContext'),
-        unsupported_api: t('notificationsStatusUnsupported'),
-        blocked: t('notificationsStatusBlocked'),
-        granted: t('notificationsStatusGranted'),
-        default: t('notificationsStatusDefault'),
-        sync_required: t('notificationsStatusSyncRequired')
-    };
-    
-    const descTextMap = {
-        unsupported_insecure: t('notificationsDesc'),
-        unsupported_api: t('notificationsDesc'),
-        blocked: t('notificationsDesc'),
-        granted: t('notificationsDesc'),
-        default: t('notificationsDesc'),
-        sync_required: t('notificationsDescSyncRequired')
-    };
-
-    // 3. Atualiza a UI com base no estado
-    ui.notificationsStatus.textContent = statusTextMap[statusKey];
-    ui.notificationsToggle.disabled = !isEnabled;
-    ui.notificationsToggle.checked = isSubscribed;
-    ui.notificationScheduleOptions.classList.toggle('visible', isSubscribed && isEnabled);
-    document.getElementById('notifications-desc')!.textContent = descTextMap[statusKey];
-
-    // 4. Sincroniza os checkboxes (sempre, para refletir o estado)
-    ui.notificationScheduleMorning.checked = state.notificationSchedules.includes('Manhã');
-    ui.notificationScheduleAfternoon.checked = state.notificationSchedules.includes('Tarde');
-    ui.notificationScheduleEvening.checked = state.notificationSchedules.includes('Noite');
-
-    // 5. Mostra ou esconde a mensagem de detalhes para o estado de "não suportado"
-    const detailsEl = document.getElementById('notifications-unsupported-details');
-    const detailsTextEl = document.getElementById('notifications-unsupported-text');
-
-    if (isEnabled || !detailsEl || !detailsTextEl) {
-        if (detailsEl) detailsEl.style.display = 'none';
-    } else {
-        let detailsKey = '';
-        if (statusKey === 'unsupported_insecure') {
-            detailsKey = 'notificationsUnsupportedInsecureBody';
-        } else if (statusKey === 'unsupported_api') {
-            detailsKey = 'notificationsUnsupportedApiBody';
-        } else if (statusKey === 'blocked') {
-            detailsKey = 'notificationsUnsupportedBlockedBody';
-        }
-
-        if (detailsKey) {
-            detailsTextEl.innerHTML = t(detailsKey); // Usa innerHTML porque as traduções podem conter links/tags
-            detailsEl.style.display = 'block';
-        } else {
-            detailsEl.style.display = 'none';
-        }
-    }
-}
-
-async function handleScheduleChange() {
-    const schedules: TimeOfDay[] = [];
-    if (ui.notificationScheduleMorning.checked) schedules.push('Manhã');
-    if (ui.notificationScheduleAfternoon.checked) schedules.push('Tarde');
-    if (ui.notificationScheduleEvening.checked) schedules.push('Noite');
-    
-    state.notificationSchedules = schedules;
-    saveState();
-    await sendSchedulesToBackend();
-}
-
-
-export async function handleNotificationToggle() {
-    // A lógica de verificação agora está centralizada em updateUI, então aqui apenas lidamos com a ação.
-    if (ui.notificationsToggle.disabled) {
-        return;
-    }
-
-    if (isSubscribed) {
-        await unsubscribeUser();
-    } else {
-        const permission = await window.Notification.requestPermission();
-        if (permission === 'granted') {
-            await subscribeUser();
-        } else {
-            // Se a permissão não foi concedida, garante que a UI reflita isso.
-            isSubscribed = false;
-            updateNotificationUI();
-        }
-    }
-}
-
-export async function initNotifications() {
-    // A lógica de detecção de recursos e registro agora vive aqui,
-    // e o resultado (isSubscribed) é usado por updateUI.
-    if (window.isSecureContext && 'serviceWorker' in navigator && 'PushManager' in window) {
-        try {
-            // Usar um caminho absoluto para o service worker é mais robusto.
-            const registration = await navigator.serviceWorker.register('/service-worker.js');
-            const subscription = await registration.pushManager.getSubscription();
-            isSubscribed = (subscription !== null);
-        } catch (error) {
-            console.error('Falha ao registrar o Service Worker:', error);
-            isSubscribed = false; // Garante que o estado esteja correto em caso de falha
-        }
-    } else {
-        isSubscribed = false; // Não pode estar inscrito se os recursos não estiverem disponíveis
-    }
-    
-    // Adiciona listeners para os checkboxes de agendamento
-    ui.notificationScheduleMorning.addEventListener('change', handleScheduleChange);
-    ui.notificationScheduleAfternoon.addEventListener('change', handleScheduleChange);
-    ui.notificationScheduleEvening.addEventListener('change', handleScheduleChange);
-
-    updateNotificationUI(); // Chama updateUI, que agora contém toda a lógica de exibição.
+    });
 }

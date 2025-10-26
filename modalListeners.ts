@@ -30,7 +30,6 @@ import {
 import { t, setLanguage, getHabitDisplayInfo } from './i18n';
 import { setupReelRotary } from './rotary';
 import { simpleMarkdownToHTML, addDays, getTodayUTC, toUTCIsoDateString, parseUTCIsoDate } from './utils';
-import { handleNotificationToggle } from "./notifications";
 
 // --- Lógica da IA centralizada, eliminando api.ts e /api/generate.ts ---
 
@@ -190,6 +189,7 @@ const showCelebrationModal = (titleKey: string, contentHTML: string, pendingList
     ui.aiResponse.innerHTML = contentHTML;
 
     const pendingHabits = state[pendingListKey];
+    // Fix: Uncomment to ensure notifications are marked as shown to prevent re-triggering.
     state.notificationsShown.push(...pendingHabits);
     state[pendingListKey] = [];
     saveState();
@@ -450,9 +450,6 @@ export const setupModalListeners = () => {
         closeAIModalAndReset();
         openModal(ui.aiOptionsModal);
     });
-    
-    ui.notificationsToggle.addEventListener('change', handleNotificationToggle);
-
 
     // REATORAÇÃO: Usa o módulo rotary reutilizável para ambos os seletores
     setupReelRotary({

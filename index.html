@@ -5,13 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0, viewport-fit=cover">
     <title>Habit Tracker com IA</title>
     <link rel="stylesheet" href="bundle.css">
+    <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
 <script type="importmap">
 {
   "imports": {
     "@google/genai": "https://aistudiocdn.com/@google/genai@^1.25.0",
     "@vercel/analytics": "https://aistudiocdn.com/@vercel/analytics@^1.5.0",
-    "@vercel/kv": "https://aistudiocdn.com/@vercel/kv@^3.0.0",
-    "web-push": "https://aistudiocdn.com/web-push@^3.6.7"
+    "@vercel/kv": "https://aistudiocdn.com/@vercel/kv@^3.0.0"
   }
 }
 </script>
@@ -121,36 +121,19 @@
                 </div>
                 <div class="setting-item setting-item--column">
                     <div class="setting-item-header">
-                        <label id="label-notifications" for="notifications-toggle">Notificações Push</label>
-                        <span id="notifications-status" class="setting-status"></span>
+                        <label id="label-notifications">Notificações Push</label>
+                        <span id="notification-status" class="setting-status"></span>
                     </div>
                     <div class="setting-item-content">
                         <p id="notifications-desc" class="setting-desc"></p>
                         <div class="toggle-switch-container">
                             <label class="toggle-switch">
-                                <input type="checkbox" id="notifications-toggle" role="switch">
+                                <input type="checkbox" id="notification-toggle">
                                 <span class="slider"></span>
                             </label>
                         </div>
                     </div>
-                    <div id="notifications-feedback" class="setting-notice"></div>
-                    <div id="notifications-unsupported-details" class="setting-details" style="display: none;">
-                        <p id="notifications-unsupported-text"></p>
-                    </div>
-                    <div id="notification-schedule-options" class="notification-schedule-options">
-                        <div class="setting-item">
-                            <label for="notification-schedule-morning" id="label-notification-schedule-morning"></label>
-                            <input type="checkbox" id="notification-schedule-morning" value="Manhã">
-                        </div>
-                        <div class="setting-item">
-                            <label for="notification-schedule-afternoon" id="label-notification-schedule-afternoon"></label>
-                            <input type="checkbox" id="notification-schedule-afternoon" value="Tarde">
-                        </div>
-                        <div class="setting-item">
-                            <label for="notification-schedule-evening" id="label-notification-schedule-evening"></label>
-                            <input type="checkbox" id="notification-schedule-evening" value="Noite">
-                        </div>
-                    </div>
+                    <div id="notification-details" class="setting-details" style="display: none;"></div>
                 </div>
                 <div class="setting-item">
                     <label id="label-reset">Reinicialização</label>
