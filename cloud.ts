@@ -359,8 +359,9 @@ export function initNotifications() {
         ui.notificationToggleInput.addEventListener('change', async (e: Event) => {
             const isEnabled = (e.target as HTMLInputElement).checked;
             
-            // Passo 1 & 2: Atualiza o estado do aplicativo com a preferência do usuário e o salva.
+            // Passo 2: Atualiza o estado do aplicativo com a preferência do usuário.
             state.notificationsEnabled = isEnabled;
+            // Passo 3: Salva a alteração localmente e aciona a sincronização com a nuvem.
             saveState();
 
             if (isEnabled) {
