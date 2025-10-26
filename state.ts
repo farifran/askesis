@@ -241,6 +241,27 @@ export const state: {
 };
 
 // --- STATE-DEPENDENT HELPERS ---
+/**
+ * Invalida o cache de streaks para um hábito específico a partir de uma data.
+ * Isso é necessário sempre que o status de um hábito muda, pois afeta o cálculo
+ * de streaks para todas as datas futuras.
+ * @param habitId O ID do hábito a ser invalidado.
+ * @param fromDateISO A data (string ISO) a partir da qual invalidar.
+ */
+export function invalidateStreakCache(habitId: string, fromDateISO: string) {
+    const fromDate = parseUTCIsoDate(fromDateISO);
+    for (const key in state.streaksCache) {
+        // A chave é no formato "habitId|dateISO"
+        if (key.startsWith(`${habitId}|`)) {
+            const cachedDateISO = key.substring(habitId.length + 1);
+            const cachedDate = parseUTCIsoDate(cachedDateISO);
+            if (cachedDate >= fromDate) {
+                delete state.streaksCache[key];
+            }
+        }
+    }
+}
+
 export function getScheduleForDate(habit: Habit, date: Date | string): HabitSchedule | null {
     const dateStr = typeof date === 'string' ? date : toUTCIsoDateString(date);
     const dateAsTime = parseUTCIsoDate(dateStr).getTime();
@@ -494,7 +515,6 @@ export function saveState() {
         console.error("Failed to save state to localStorage:", e);
     }
     
-    state.streaksCache = {};
     syncStateWithCloud(appState);
 }
 
@@ -532,6 +552,8 @@ export function loadState(cloudState?: AppState) {
         if (state.aiState === 'loading') {
             state.aiState = 'idle';
         }
+        // Limpa o cache ao carregar um novo estado para garantir consistência.
+        state.streaksCache = {};
     } else {
         state.habits = [];
         state.dailyData = {};
@@ -543,5 +565,7 @@ export function loadState(cloudState?: AppState) {
         state.lastAIResult = null;
         state.lastAIError = null;
         state.hasSeenAIResult = true;
+        // Limpa o cache ao criar um estado novo.
+        state.streaksCache = {};
     }
 }

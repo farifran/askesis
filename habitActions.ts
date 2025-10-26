@@ -22,6 +22,7 @@ import {
     getScheduleForDate,
     PREDEFINED_HABITS,
     getSmartGoalForHabit,
+    invalidateStreakCache,
 } from './state';
 import {
     renderHabits,
@@ -78,6 +79,7 @@ function updateHabitSchedule(
         }
     });
 
+    invalidateStreakCache(originalHabit.id, changeDateISO);
     saveState();
     document.dispatchEvent(new CustomEvent('habitsChanged'));
     renderHabits();
@@ -128,6 +130,7 @@ export function toggleHabitStatus(habitId: string, time: TimeOfDay) {
     const oldStatus = dayInstanceData.status;
     const newStatus = getNextStatus(oldStatus);
     dayInstanceData.status = newStatus;
+    invalidateStreakCache(habitId, state.selectedDate);
 
     if (newStatus === 'completed') {
         const streak = calculateHabitStreak(habitId, state.selectedDate);
@@ -185,7 +188,8 @@ function setAllHabitsStatusForDate(date: string, status: HabitStatus) {
     });
 
     if (changedHabits.size > 0) {
-        state.streaksCache = {};
+        changedHabits.forEach(habit => invalidateStreakCache(habit.id, date));
+        
         if (status === 'completed') {
             changedHabits.forEach(habit => {
                 const streak = calculateHabitStreak(habit.id, date);
@@ -217,6 +221,7 @@ function endHabit(habit: Habit, endDate: string) {
     if (lastSchedule && !lastSchedule.endDate) {
         lastSchedule.endDate = endDate;
         state.lastEnded = { habitId: habit.id, lastSchedule: JSON.parse(JSON.stringify(lastSchedule)) };
+        invalidateStreakCache(habit.id, endDate);
         saveState();
         document.dispatchEvent(new CustomEvent('habitsChanged'));
         renderHabits();
@@ -289,7 +294,9 @@ export function handleUndoDelete() {
             const lastSchedule = habit.scheduleHistory[habit.scheduleHistory.length - 1];
             // Only undo if the last schedule matches the one we stored
             if (lastSchedule.endDate === state.lastEnded.lastSchedule.endDate) {
+                 const endDate = lastSchedule.endDate;
                  delete lastSchedule.endDate;
+                 invalidateStreakCache(habit.id, endDate);
             }
             state.lastEnded = null;
             if (state.undoTimeout) clearTimeout(state.undoTimeout);
@@ -587,6 +594,7 @@ export function handleHabitDrop(habitId: string, oldTime: TimeOfDay, newTime: Ti
             delete state.dailyData[state.selectedDate][habitId].instances[oldTime];
         }
 
+        invalidateStreakCache(habitId, state.selectedDate);
         saveState();
         document.dispatchEvent(new CustomEvent('habitsChanged'));
         renderHabits();

@@ -127,6 +127,7 @@ const buildAIPrompt = (analysisType: 'weekly' | 'monthly' | 'general'): string =
         const allSummaries: string[] = [];
         
         for (let d = firstDateEver; d <= today; d = addDays(d, 1)) {
+            // FIX: The loop variable is `d`, not `date`.
             const summary = generateDailyHabitSummary(d);
             if (summary) {
                 allSummaries.push(summary);
