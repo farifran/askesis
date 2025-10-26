@@ -997,11 +997,6 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     flex-direction: column;
     flex-grow: 1;
 }
-.setting-item-label-header {
-    display: flex;
-    align-items: baseline;
-    gap: var(--space-sm);
-}
 .setting-item-desc {
     font-size: 12px;
     color: var(--text-tertiary);
@@ -1053,30 +1048,6 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 .toggle-switch input:focus-visible + .slider {
     box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent-blue) 30%, transparent);
 }
-#notification-system-status {
-    font-size: 11px;
-    font-weight: 500;
-    color: var(--text-tertiary);
-    background-color: var(--bg-color);
-    padding: 2px var(--space-sm);
-    border-radius: var(--border-radius-small);
-    border: 1px solid var(--border-color);
-    white-space: nowrap;
-    transition: color var(--transition-duration-slow), border-color var(--transition-duration-slow);
-}
-#notification-system-status.status-granted {
-    color: var(--accent-green);
-    border-color: color-mix(in srgb, var(--accent-green) 40%, transparent);
-}
-#notification-system-status.status-denied {
-    color: var(--color-red);
-    border-color: color-mix(in srgb, var(--color-red) 40%, transparent);
-}
-#notification-system-status.status-default {
-    color: var(--color-yellow);
-    border-color: color-mix(in srgb, var(--color-yellow) 40%, transparent);
-}
-
 
 /* Modal: Sincronização */
 #sync-section {

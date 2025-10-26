@@ -269,60 +269,19 @@ export async function syncLocalStateToCloud() {
 // --- ONE SIGNAL NOTIFICATIONS ---
 
 /**
- * Atualiza o indicador de status do sistema para refletir a realidade da permissão de notificação.
- * @param permission O status da permissão ('granted', 'denied', 'default').
- * @param isSubscribed Se o usuário está atualmente inscrito para receber notificações.
- */
-function renderRealNotificationStatus(permission: string, isSubscribed: boolean) {
-    const statusEl = ui.notificationSystemStatus;
-    if (!statusEl) return;
-
-    statusEl.classList.remove('status-granted', 'status-denied', 'status-default');
-
-    if (permission === 'denied') {
-        statusEl.textContent = t('notificationStatusDenied');
-        statusEl.classList.add('status-denied');
-    } else if (permission === 'default') {
-        statusEl.textContent = t('notificationStatusDefault');
-        statusEl.classList.add('status-default');
-    } else if (permission === 'granted') {
-        if (isSubscribed) {
-            statusEl.textContent = t('notificationStatusGranted');
-            statusEl.classList.add('status-granted');
-        } else {
-            statusEl.textContent = t('notificationStatusDisabled');
-            statusEl.classList.add('status-default'); // Usa uma cor neutra
-        }
-    }
-}
-
-
-/**
  * Atualiza as tags do usuário no OneSignal com base nos hábitos agendados para HOJE.
  * Isso permite o direcionamento para lembretes via campanhas automatizadas do OneSignal.
  */
 export function updateUserHabitTags() {
     OneSignal.push(async () => {
         try {
-            const tags: { [key: string]: string } = {};
-            const tagsToRemove: string[] = [];
-            
-            // Se as notificações estiverem desativadas no aplicativo ou se o usuário não estiver inscrito,
-            // removemos todas as tags de hábito.
-            if (!state.notificationsEnabled || !await OneSignal.Notifications.isPushEnabled()) {
-                TIMES_OF_DAY.forEach(time => {
-                    const tagName = time.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-                    tagsToRemove.push(`${tagName}_habits`);
-                });
-                if(tagsToRemove.length > 0) {
-                    await OneSignal.User.removeTags(tagsToRemove);
-                    console.log("Notifications disabled, removing habit tags:", tagsToRemove);
-                }
+            if (!await OneSignal.Notifications.isPushEnabled()) {
                 return;
             }
 
-            // Se as notificações estiverem ativas, calculamos as tags.
             const today = getTodayUTC();
+            const tags: { [key: string]: string } = {};
+
             TIMES_OF_DAY.forEach(time => {
                 const hasHabitForTime = state.habits.some(habit => {
                     if (shouldHabitAppearOnDate(habit, today)) {
@@ -344,79 +303,81 @@ export function updateUserHabitTags() {
 }
 
 /**
- * Inicializa o SDK do OneSignal e configura toda a lógica de notificação.
+ * Reconcilia a preferência de notificação do usuário (do estado do app) com
+ * o status de inscrição real do dispositivo no OneSignal.
+ */
+async function syncNotificationSubscription() {
+    const permission = OneSignal.Notifications.getPermission();
+    if (permission !== 'granted') {
+        // Se a permissão não for concedida, não podemos fazer nada. A UI já reflete isso.
+        return;
+    }
+
+    const isSubscribed = await OneSignal.Notifications.isPushEnabled();
+
+    if (state.notificationsEnabled && !isSubscribed) {
+        // O usuário quer notificações, mas não está inscrito: inscreve.
+        await OneSignal.User.pushSubscription.optIn();
+        updateUserHabitTags();
+    } else if (!state.notificationsEnabled && isSubscribed) {
+        // O usuário não quer notificações, mas está inscrito: cancela a inscrição.
+        await OneSignal.User.pushSubscription.optOut();
+    }
+}
+
+
+/**
+ * Inicializa o SDK do OneSignal e configura o estado inicial do toggle de notificação.
  */
 export function initNotifications() {
     window.OneSignal = window.OneSignal || [];
     OneSignal.push(async function() {
-        /**
-         * A FONTE ÚNICA DA VERDADE. Esta função lê o estado REAL do OneSignal
-         * e sincroniza o estado e a UI do nosso aplicativo para corresponder a ele.
-         */
-        const syncAppToReality = async () => {
-            const isSubscribed = await OneSignal.Notifications.isPushEnabled();
-            const permission = await OneSignal.Notifications.getPermission();
-            let needsSave = false;
-            
-            // Atualiza o novo indicador de status do sistema.
-            renderRealNotificationStatus(permission, isSubscribed);
+        
+        // Esta função atualiza o ESTADO VISUAL do toggle com base na REALIDADE do dispositivo.
+        const updateToggleState = async () => {
+            ui.notificationToggleInput.disabled = true;
 
-            // Lida com o caso de permissão negada
+            const permission = OneSignal.Notifications.getPermission();
+            
             if (permission === 'denied') {
-                ui.notificationToggleInput.disabled = true;
+                ui.notificationToggleInput.checked = false;
+                ui.notificationToggleInput.disabled = true; 
                 ui.notificationToggleDesc.textContent = t('notificationsBlocked');
-                if (state.notificationsEnabled) {
-                    state.notificationsEnabled = false;
-                    needsSave = true;
-                }
             } else {
-                ui.notificationToggleInput.disabled = false;
+                const isSubscribed = await OneSignal.Notifications.isPushEnabled();
+                ui.notificationToggleInput.checked = isSubscribed;
+                ui.notificationToggleInput.disabled = false; 
                 ui.notificationToggleDesc.textContent = t('modalManageNotificationsDesc');
             }
-
-            // Compara a realidade (isSubscribed) com o nosso estado salvo.
-            // Se houver uma discrepância, a realidade vence.
-            if (state.notificationsEnabled !== isSubscribed) {
-                state.notificationsEnabled = isSubscribed;
-                needsSave = true;
-            }
-
-            // Atualiza a UI para corresponder ao estado agora correto.
-            ui.notificationToggleInput.checked = state.notificationsEnabled;
-            
-            // Salva o estado se alguma correção foi feita.
-            if (needsSave) {
-                saveState(); // Isso também acionará a sincronização na nuvem
-            }
-            // Atualiza as tags do OneSignal para refletir o estado atual.
-            updateUserHabitTags();
         };
 
-        // --- Event Listeners ---
+        // Mantém a UI em sincronia com quaisquer alterações de subscrição.
+        OneSignal.User.pushSubscription.addEventListener('change', updateToggleState);
 
-        // Listener para o clique do usuário no botão.
-        // A única responsabilidade é FAZER O PEDIDO ao OneSignal.
+        // Lida com o clique do usuário em nosso toggle na UI.
         ui.notificationToggleInput.addEventListener('change', async (e: Event) => {
-            const wantsEnabled = (e.target as HTMLInputElement).checked;
+            const isEnabled = (e.target as HTMLInputElement).checked;
             
-            if (wantsEnabled) {
-                // Pede permissão. O resultado será tratado pelo listener 'change'.
+            // 1. Atualiza a PREFERÊNCIA do usuário no estado do app.
+            state.notificationsEnabled = isEnabled;
+            saveState(); // Salva a preferência para sincronização.
+
+            if (isEnabled) {
+                // 2. Se a permissão ainda não foi solicitada, solicita agora.
                 await OneSignal.Notifications.requestPermission();
-            } else {
-                // Pede para desativar. O resultado será tratado pelo listener 'change'.
-                await OneSignal.User.pushSubscription.optOut();
             }
+
+            // 3. Sincroniza a preferência com o estado de inscrição do dispositivo.
+            await syncNotificationSubscription();
         });
+
+        // Garante que o estado inicial do toggle esteja correto no carregamento.
+        await updateToggleState();
         
-        // Listener para MUDANÇAS REAIS na inscrição.
-        // Isso dispara quando optIn/optOut é concluído ou quando o usuário muda as permissões no navegador.
-        OneSignal.User.pushSubscription.addEventListener('change', syncAppToReality);
-        
-        // --- LÓGICA DE INICIALIZAÇÃO ---
-        
-        // Na primeira execução, sincroniza o estado do nosso aplicativo com a realidade atual.
-        await syncAppToReality();
+        // Sincroniza a preferência carregada da nuvem com o dispositivo.
+        await syncNotificationSubscription();
     });
 
+    // Garante que, se os hábitos mudarem, as tags para direcionamento de notificações sejam atualizadas.
     document.addEventListener('habitsChanged', updateUserHabitTags);
 }
