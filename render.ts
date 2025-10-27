@@ -434,33 +434,11 @@ export function renderStoicQuote() {
     }, 100);
 }
 
-// FIX: Interacts with the OneSignal SDK via the `push` method to avoid type errors
-// and ensure commands are queued until the SDK is fully loaded.
 export function updateNotificationUI() {
-    window.OneSignal = window.OneSignal || [];
-    window.OneSignal.push(async (OneSignal: any) => {
-        const permission = await OneSignal.Notifications.getPermission();
-        
-        if (permission === 'denied') {
-            ui.notificationsToggle.checked = false;
-            ui.notificationsToggle.disabled = true;
-            ui.notificationStatusDesc.textContent = t('notificationStatusDenied');
-            return;
-        }
-        
-        ui.notificationsToggle.disabled = false;
-        const isSubscribed = await OneSignal.User.pushSubscription.get();
-
-        ui.notificationsToggle.checked = !!isSubscribed;
-        
-        if (isSubscribed) {
-            ui.notificationStatusDesc.textContent = t('notificationStatusGranted');
-        } else {
-            ui.notificationStatusDesc.textContent = t('notificationStatusDefault');
-        }
-    });
+    // A UI agora é estática para informar ao usuário que o controle está no navegador,
+    // conforme solicitado, simplificando a lógica.
+    ui.notificationStatusDesc.textContent = t('modalManageNotificationsStaticDesc');
 }
-
 
 export function renderApp() {
     renderHabits();

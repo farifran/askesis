@@ -4,7 +4,7 @@
 */
 import { state, Habit, LANGUAGES, PredefinedHabit } from './state';
 import { ui } from './ui';
-import { renderApp, updateHeaderTitle, initFrequencyFilter, setupManageModal, initLanguageFilter, updateNotificationUI } from './render';
+import { renderApp, updateHeaderTitle, initFrequencyFilter, setupManageModal, initLanguageFilter } from './render';
 
 type PluralableTranslation = { one: string; other: string };
 type TranslationValue = string | PluralableTranslation;
@@ -108,7 +108,6 @@ function updateUIText() {
     document.getElementById('label-language')!.textContent = t('modalManageLanguage');
     document.getElementById('label-sync')!.textContent = t('syncLabel');
     document.getElementById('label-notifications')!.textContent = t('modalManageNotifications');
-    document.getElementById('label-notifications-toggle')!.textContent = t('label-notifications-toggle');
     document.getElementById('label-reset')!.textContent = t('modalManageReset');
     ui.resetAppBtn.textContent = t('modalManageResetButton');
     ui.manageModal.querySelector('.modal-close-btn')!.textContent = t('closeButton');
@@ -171,8 +170,7 @@ export async function setLanguage(langCode: 'pt' | 'en' | 'es') {
     if (ui.manageModal.classList.contains('visible')) {
         setupManageModal();
     }
-    // Atualiza a UI de notificação com o novo idioma
-    updateNotificationUI();
+
     renderApp();
     updateHeaderTitle();
 }

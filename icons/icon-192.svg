@@ -1,14 +1,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 24 24" fill="none">
     <rect width="24" height="24" rx="4" fill="#1e1e1e"/>
-    <!-- Helmet Crest -->
-    <path d="M6 5 C 8 3, 16 3, 18 5" stroke="#e5e5e5" stroke-width="1.5" stroke-linecap="round"/>
-    <path d="M7 5 V 2.5" stroke="#e5e5e5" stroke-width="1.5" stroke-linecap="round"/>
-    <path d="M9 4 V 2" stroke="#e5e5e5" stroke-width="1.5" stroke-linecap="round"/>
-    <path d="M12 3.5 V 1.5" stroke="#e5e5e5" stroke-width="1.5" stroke-linecap="round"/>
-    <path d="M15 4 V 2" stroke="#e5e5e5" stroke-width="1.5" stroke-linecap="round"/>
-    <path d="M17 5 V 2.5" stroke="#e5e5e5" stroke-width="1.5" stroke-linecap="round"/>
-    <!-- Helmet Body -->
-    <path d="M5 14 A 7 7 0 0 1 12 7 A 7 7 0 0 1 19 14 V 18 H 5 V 14 Z" stroke="#e5e5e5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-    <!-- Cheek Guard -->
-    <path d="M19 14 V 20 L 16 18 V 13" stroke="#e5e5e5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <g stroke="#e5e5e5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <!-- Pillar -->
+        <path d="M8 20V7"/>
+        <path d="M16 20V7"/>
+        <path d="M6 21h12"/>
+        <path d="M6 7h12"/>
+        <path d="M7 4h10"/>
+        <!-- Laurel Wreath -->
+        <path d="M12 9 a 5 5 0 0 0 -5 5 v 2"/>
+        <path d="M12 9 a 5 5 0 0 1 5 5 v 2"/>
+        <path d="M10 16 l 2 2 l 2 -2"/>
+    </g>
 </svg>

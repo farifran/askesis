@@ -63,7 +63,6 @@ type UIElements = {
     viewKeyBtn: HTMLButtonElement;
     disableSyncBtn: HTMLButtonElement;
     notificationStatusDesc: HTMLElement;
-    notificationsToggle: HTMLInputElement;
 };
 
 export const ui = {} as UIElements;
@@ -133,6 +132,5 @@ export function initUI(): void {
         viewKeyBtn: document.getElementById('view-key-btn') as HTMLButtonElement,
         disableSyncBtn: document.getElementById('disable-sync-btn') as HTMLButtonElement,
         notificationStatusDesc: document.getElementById('notification-status-desc')!,
-        notificationsToggle: document.getElementById('notifications-toggle') as HTMLInputElement,
     });
 }

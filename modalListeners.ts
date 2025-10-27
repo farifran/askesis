@@ -317,24 +317,6 @@ export const setupModalListeners = () => {
         openModal(ui.aiOptionsModal);
     });
 
-    // Adiciona o listener para o novo toggle de notificações
-    // FIX: Interacts with the OneSignal SDK via the `push` method to avoid type errors
-    // and ensure commands are queued until the SDK is fully loaded.
-    ui.notificationsToggle.addEventListener('change', async (e) => {
-        const isEnabled = (e.target as HTMLInputElement).checked;
-        window.OneSignal = window.OneSignal || [];
-        window.OneSignal.push(async (OneSignal: any) => {
-            if (isEnabled) {
-                // Solicita permissão. O SDK do OneSignal lida com a lógica de inscrição.
-                await OneSignal.Notifications.requestPermission();
-            } else {
-                // Desabilita as notificações (cancela a inscrição)
-                await OneSignal.User.pushSubscription.remove();
-            }
-        });
-        // A UI será atualizada automaticamente pelo listener 'permissionChange' em `cloud.ts`
-    });
-
     // REATORAÇÃO: Usa o módulo rotary reutilizável para ambos os seletores
     setupReelRotary({
         viewportEl: ui.languageViewport,
