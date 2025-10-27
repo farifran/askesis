@@ -25,7 +25,7 @@ async function build() {
         await fs.copyFile('index.html', path.join(outdir, 'index.html'));
         // Adiciona a cópia dos novos arquivos PWA
         await fs.copyFile('manifest.json', path.join(outdir, 'manifest.json'));
-        await fs.copyFile('sw.js', path.join(outdir, 'sw.js'));
+        await fs.copyFile('OneSignalSDKWorker.js', path.join(outdir, 'OneSignalSDKWorker.js'));
         await fs.cp('icons', path.join(outdir, 'icons'), { recursive: true });
 
 
@@ -33,10 +33,6 @@ async function build() {
         await fs.cp('locales', path.join(outdir, 'locales'), { recursive: true });
         console.log('Static assets copied.');
 
-        // REATORAÇÃO: O passo de cópia do worker do OneSignal foi removido.
-        // O service worker principal (`sw.js`) agora importa o script do OneSignal
-        // diretamente do CDN, o que simplifica o build e garante a versão mais recente.
-        
         // --- 3. Compilação do Código TypeScript/CSS com esbuild ---
         // Este é o passo principal, onde o esbuild lê o ponto de entrada da aplicação,
         // resolve todas as importações (TS, TSX, CSS) e as empacota em arquivos otimizados.
