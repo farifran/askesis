@@ -20,18 +20,10 @@
 <script>
   window.OneSignalDeferred = window.OneSignalDeferred || [];
   OneSignalDeferred.push(async function(OneSignal) {
-    try {
-        await OneSignal.init({
-          appId: "39454655-f1cd-4531-8ec5-d0f61eb1c478",
-          serviceWorkerPath: "sw.js", // Mantém o service worker PWA principal para unificar o registro.
-          autoResubscribe: true,
-          notifyButton: {
-            enable: false,
-          },
-        });
-    } catch (e) {
-        console.error("OneSignal init error:", e);
-    }
+    await OneSignal.init({
+      appId: "39454655-f1cd-4531-8ec5-d0f61eb1c478",
+      serviceWorkerPath: "sw.js"
+    });
   });
 </script>
 </head>
