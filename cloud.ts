@@ -5,7 +5,7 @@
 import { AppState, STATE_STORAGE_KEY, loadState, state, shouldHabitAppearOnDate, getScheduleForDate, TIMES_OF_DAY } from './state';
 import { getTodayUTC } from './utils';
 import { ui } from './ui';
-import { t } from './i18n';
+import { t, getHabitDisplayInfo } from './i18n';
 import { getSyncKey, getSyncKeyHash, hasLocalSyncKey } from './sync';
 import { renderApp, updateNotificationUI } from './render';
 import { encrypt, decrypt } from './crypto';
@@ -268,30 +268,41 @@ export function updateUserHabitTags() {
         const tagsToAdd: { [key: string]: string } = {};
         const tagsToRemove: string[] = [
             'lembrete_manha', 'lembrete_tarde', 'lembrete_noite',
-            'manha_habits', 'tarde_habits', 'noite_habits' // Limpa tags antigas
+            'manha_habits', 'tarde_habits', 'noite_habits'
         ];
 
         TIMES_OF_DAY.forEach(time => {
             const timeKey = time.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
             const tagName = `lembrete_${timeKey}`;
+            const habitNamesTagName = `${timeKey}_habits`;
 
-            const reminderTimesForPeriod = state.habits
+            const habitsForPeriodWithReminders = state.habits
                 .filter(habit => {
                     if (shouldHabitAppearOnDate(habit, today)) {
                         const schedule = getScheduleForDate(habit, today);
                         return schedule?.times.includes(time) && habit.reminderTimes?.[time];
                     }
                     return false;
-                })
-                .map(habit => habit.reminderTimes![time]!);
+                });
 
-            if (reminderTimesForPeriod.length > 0) {
-                const earliestTime = reminderTimesForPeriod.sort()[0];
+            if (habitsForPeriodWithReminders.length > 0) {
+                const reminderTimes = habitsForPeriodWithReminders.map(h => h.reminderTimes![time]!);
+                const earliestTime = reminderTimes.sort()[0];
                 tagsToAdd[tagName] = earliestTime;
+
+                // Envia os nomes dos hábitos para personalização da notificação
+                const habitNamesAtEarliestTime = habitsForPeriodWithReminders
+                    .filter(h => h.reminderTimes![time] === earliestTime)
+                    .map(h => getHabitDisplayInfo(h).name)
+                    .join(', ');
+                
+                if (habitNamesAtEarliestTime) {
+                    tagsToAdd[habitNamesTagName] = habitNamesAtEarliestTime;
+                }
             }
         });
 
-        // Remove from tagsToRemove list the ones we are adding now.
+        // Remove da lista de remoção as tags que estamos adicionando/atualizando agora.
         const finalTagsToRemove = tagsToRemove.filter(tag => !Object.keys(tagsToAdd).includes(tag));
 
         console.log("Updating OneSignal reminder tags:", tagsToAdd);

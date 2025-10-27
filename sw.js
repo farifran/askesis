@@ -1,8 +1,9 @@
 // sw.js
 
-// Importa o script do OneSignal para que as notificações push continuem funcionando.
-// Isso é crucial.
-importScripts('onesignal-sw.js');
+// REATORAÇÃO: Importa o script do OneSignal diretamente do CDN.
+// Isso simplifica a configuração, remove um arquivo local desnecessário (`onesignal-sw.js`)
+// e garante que sempre usamos a versão mais recente do worker do OneSignal.
+importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js');
 
 const CACHE_NAME = 'habit-tracker-cache-v1';
 const assetsToCache = [

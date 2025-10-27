@@ -557,7 +557,7 @@ export function saveHabitFromModal() {
         const hasFrequencyChanged = lastSchedule.frequency.type !== currentFrequency.type || lastSchedule.frequency.interval !== currentFrequency.interval;
         
         if (!hasNameChanged && !hasTimesChanged && !hasFrequencyChanged) {
-            // Se apenas os lembretes mudaram, basta salvar o estado
+            // Se apenas os lembretes mudaram, basta salvar o estado e acionar a atualização
             saveState();
             document.dispatchEvent(new CustomEvent('habitsChanged'));
             closeModal(ui.editHabitModal);

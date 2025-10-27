@@ -33,15 +33,11 @@ async function build() {
         await fs.cp('locales', path.join(outdir, 'locales'), { recursive: true });
         console.log('Static assets copied.');
 
-        // --- 3. Cópia do Service Worker ---
-        // Copia o arquivo do service worker do OneSignal para o diretório de saída.
-        // Isso é mais simples e robusto do que gerar o arquivo dinamicamente,
-        // garantindo que o arquivo de origem seja o que é servido.
-        console.log('Copying OneSignal service worker (OneSignalSDKWorker.js -> onesignal-sw.js)...');
-        await fs.copyFile('OneSignalSDKWorker.js', path.join(outdir, 'onesignal-sw.js'));
-        console.log('Service worker (onesignal-sw.js) copied.');
+        // REATORAÇÃO: O passo de cópia do worker do OneSignal foi removido.
+        // O service worker principal (`sw.js`) agora importa o script do OneSignal
+        // diretamente do CDN, o que simplifica o build e garante a versão mais recente.
         
-        // --- 4. Compilação do Código TypeScript/CSS com esbuild ---
+        // --- 3. Compilação do Código TypeScript/CSS com esbuild ---
         // Este é o passo principal, onde o esbuild lê o ponto de entrada da aplicação,
         // resolve todas as importações (TS, TSX, CSS) e as empacota em arquivos otimizados.
         console.log('Building application with esbuild...');
