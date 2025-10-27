@@ -1,15 +1,21 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 24 24" fill="none">
     <rect width="24" height="24" rx="4" fill="#1e1e1e"/>
     <g stroke="#e5e5e5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-        <!-- Pillar -->
-        <path d="M8 20V7"/>
-        <path d="M16 20V7"/>
-        <path d="M6 21h12"/>
-        <path d="M6 7h12"/>
-        <path d="M7 4h10"/>
-        <!-- Laurel Wreath -->
-        <path d="M12 9 a 5 5 0 0 0 -5 5 v 2"/>
-        <path d="M12 9 a 5 5 0 0 1 5 5 v 2"/>
-        <path d="M10 16 l 2 2 l 2 -2"/>
+        <!-- Laurel -->
+        <path d="M7.5 10 C 7 5, 17 5, 16.5 10" />
+        <path d="M9.5 7.5 L8.5 9" />
+        <path d="M11.5 6 L10.5 7.5" />
+        <path d="M13.5 6 L12.5 7.5" />
+        <path d="M15.5 7.5 L14.5 9" />
+
+        <!-- Head -->
+        <path d="M15.5 10.5 C 15.5 12, 15 13.5, 14.2 14.5" /> <!-- Back of head -->
+        <path d="M14.2 14.5 C 13.5 16, 12.5 17, 11 17 C 9.5 17, 9 16, 9 15" /> <!-- Neck and Chin -->
+        <path d="M9 15 L 9.5 13.5" /> <!-- Jaw Line -->
+        <path d="M9.5 13.5 L 10.5 12.5 L 9.7 11.5" /> <!-- Nose -->
+        
+        <!-- Base/Shoulder -->
+        <path d="M8 20 C 8 18, 16 18, 16 20" />
+        <path d="M11 17 v1.5" />
     </g>
 </svg>

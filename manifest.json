@@ -23,5 +23,6 @@
       "type": "image/svg+xml",
       "purpose": "maskable"
     }
-  ]
+  ],
+  "badge": "icons/badge.svg"
 }
