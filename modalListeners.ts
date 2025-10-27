@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 import { ui } from './ui';
-import { state, LANGUAGES, Habit, STREAK_SEMI_CONSOLIDATED, STREAK_CONSOLIDATED, PredefinedHabit, saveState, PREDEFINED_HABITS, FREQUENCIES } from './state';
+import { state, LANGUAGES, Habit, STREAK_SEMI_CONSOLIDATED, STREAK_CONSOLIDATED, PredefinedHabit, saveState, PREDEFINED_HABITS, FREQUENCIES, TimeOfDay } from './state';
 import {
     openModal,
     closeModal,
@@ -15,6 +15,7 @@ import {
     renderAINotificationState,
     openEditModal,
     updateNotificationUI,
+    renderHabitReminders,
     // FIX: Import 'renderFrequencyFilter' to resolve 'Cannot find name' error.
     renderFrequencyFilter,
 } from './render';
@@ -265,6 +266,28 @@ export const setupModalListeners = () => {
         e.preventDefault();
         saveHabitFromModal();
     });
+
+    // Listener para os checkboxes de horário para renderizar dinamicamente os lembretes
+    const timeCheckboxes = ui.editHabitForm.querySelector('#habit-time-checkboxes');
+    if (timeCheckboxes) {
+        timeCheckboxes.addEventListener('change', () => {
+            if (!state.editingHabit) return;
+
+            const selectedTimes = Array.from(ui.editHabitForm.querySelectorAll<HTMLInputElement>('input[name="habit-time"]:checked'))
+                .map(cb => cb.value as TimeOfDay);
+            
+            // Lê os valores atuais dos inputs de lembrete para não perdê-los
+            const currentReminderTimes: Habit['reminderTimes'] = {};
+            const reminderInputs = ui.editHabitForm.querySelectorAll<HTMLInputElement>('.reminder-time-input');
+            reminderInputs.forEach(input => {
+                if(input.value) {
+                    currentReminderTimes[input.dataset.time as TimeOfDay] = input.value;
+                }
+            });
+
+            renderHabitReminders(selectedTimes, currentReminderTimes);
+        });
+    }
 
     ui.habitList.addEventListener('click', e => {
         const target = e.target as HTMLElement;

@@ -29,7 +29,7 @@ import {
 } from './state';
 import { getTodayUTCIso, addDays, toUTCIsoDateString, parseUTCIsoDate, getTodayUTC } from './utils';
 import { ui } from './ui';
-import { t, getLocaleDayName, getHabitDisplayInfo } from './i18n';
+import { t, getLocaleDayName, getHabitDisplayInfo, getTimeOfDayName } from './i18n';
 import { STOIC_QUOTES } from './quotes';
 import { icons } from './icons';
 import { renderChart } from './chart';
@@ -625,6 +625,25 @@ export function openNotesModal(habitId: string, date: string, time: TimeOfDay) {
     ui.notesTextarea.focus();
 }
 
+export function renderHabitReminders(times: TimeOfDay[], reminderTimes: Habit['reminderTimes'] = {}) {
+    const container = document.getElementById('habit-reminders-inputs')!;
+    const group = document.getElementById('habit-reminders-group')!;
+
+    if (times.length === 0) {
+        group.style.display = 'none';
+        container.innerHTML = '';
+        return;
+    }
+    
+    group.style.display = 'flex';
+    container.innerHTML = times.map(time => `
+        <div class="reminder-time-row">
+            <label for="reminder-time-${time}">${getTimeOfDayName(time)}</label>
+            <input type="time" class="reminder-time-input" id="reminder-time-${time}" data-time="${time}" value="${reminderTimes?.[time] || ''}">
+        </div>
+    `).join('');
+}
+
 export function openEditModal(habitOrTemplate: Habit | PredefinedHabit | null) {
     const form = ui.editHabitForm;
     const nameInput = form.elements.namedItem('habit-name') as HTMLInputElement;
@@ -646,9 +665,10 @@ export function openEditModal(habitOrTemplate: Habit | PredefinedHabit | null) {
                 times: ['Manhã'],
                 goal: { type: 'check', unitKey: 'unitCheck' },
                 frequency: { type: 'daily', interval: 1 },
+                reminderTimes: {},
             };
         } else { // Predefined habit
-            formData = habitOrTemplate as PredefinedHabit;
+            formData = { ...(habitOrTemplate as PredefinedHabit), reminderTimes: {} };
         }
     } else { // Existing habit
         originalHabit = habitOrTemplate as Habit;
@@ -664,6 +684,7 @@ export function openEditModal(habitOrTemplate: Habit | PredefinedHabit | null) {
             times: latestSchedule.times,
             goal: originalHabit.goal,
             frequency: latestSchedule.frequency,
+            reminderTimes: originalHabit.reminderTimes || {},
         };
     }
 
@@ -678,7 +699,8 @@ export function openEditModal(habitOrTemplate: Habit | PredefinedHabit | null) {
     checkboxes.forEach(cb => {
         cb.checked = formData.times.includes(cb.value as TimeOfDay);
     });
-
+    
+    renderHabitReminders(formData.times, formData.reminderTimes);
     renderFrequencyFilter();
     
     nameInput.readOnly = false;

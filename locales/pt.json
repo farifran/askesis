@@ -15,7 +15,7 @@
     "modalAITitle": "Avaliação da IA", "modalAIOptionsTitle": "Opções de Análise da IA", "modalAILoading": "Analisando seus hábitos...", "modalConfirmTitle": "Confirmar Ação",
     "modalNotesTitle": "Adicionar Nota", "modalNotesTitleFor": "Nota para \"{habitName}\"", "modalNotesTextareaPlaceholder": "Digite sua nota sobre este hábito para o dia selecionado...",
     "modalNotesSaveButton": "Salvar Nota", "modalEditTitle": "Editar Hábito", "modalAddTitle": "Adicionar Hábito",
-    "modalAddHabitTitle": "Adicionar \"{habitName}\"", "modalEditFormNameLabel": "Nome", "modalEditFormTimeLabel": "Horário(s)",
+    "modalAddHabitTitle": "Adicionar \"{habitName}\"", "modalEditFormNameLabel": "Nome", "modalEditFormTimeLabel": "Horário(s)", "label-habit-reminders": "Lembretes",
     "modalEditFormFrequencyLabel": "Frequência", "modalEditSaveButton": "Salvar Hábito", "modalStatusEnded": "(Encerrado)", "modalStatusGraduated": "(Graduado)",
     "modalAIOfflineTitle": "Modo Offline", "modalAIOfflineMessage": "A Avaliação da IA requer uma conexão com a internet. Por favor, conecte-se e tente novamente.",
     "modalAIError": "Desculpe, não foi possível obter la avaliação da IA. Verifique sua conexão ou tente novamente mais tarde.", "errorDetail": "Detalhe do Erro",

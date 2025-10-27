@@ -145,6 +145,7 @@ function updateUIText() {
 
     document.getElementById('label-habit-name')!.textContent = t('modalEditFormNameLabel');
     document.getElementById('label-habit-time')!.textContent = t('modalEditFormTimeLabel');
+    document.getElementById('label-habit-reminders')!.textContent = t('label-habit-reminders');
     document.getElementById('label-frequency')!.textContent = t('modalEditFormFrequencyLabel');
     ui.editHabitForm.querySelector('.modal-close-btn')!.textContent = t('cancelButton');
     ui.editHabitForm.querySelector('button[type="submit"]')!.textContent = t('modalEditSaveButton');
