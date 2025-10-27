@@ -18,20 +18,20 @@
 </script>
 <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
 <script>
-  window.OneSignal = window.OneSignal || [];
-  // REATORAÇÃO: O SDK do OneSignal agora é configurado para registrar nosso service worker PWA principal ('sw.js'),
-  // que já importa o worker do OneSignal. Isso unifica o registro e evita conflitos.
-  window.OneSignal.push(function(OneSignal) {
-    OneSignal.init({
-      appId: "39454655-f1cd-4531-8ec5-d0f61eb1c478",
-      serviceWorkerPath: "sw.js", // Aponta para nosso SW combinado
-      autoResubscribe: true,
-      notifyButton: {
-        enable: false,
-      },
-    }).catch(e => {
+  window.OneSignalDeferred = window.OneSignalDeferred || [];
+  OneSignalDeferred.push(async function(OneSignal) {
+    try {
+        await OneSignal.init({
+          appId: "39454655-f1cd-4531-8ec5-d0f61eb1c478",
+          serviceWorkerPath: "sw.js", // Mantém o service worker PWA principal para unificar o registro.
+          autoResubscribe: true,
+          notifyButton: {
+            enable: false,
+          },
+        });
+    } catch (e) {
         console.error("OneSignal init error:", e);
-    });
+    }
   });
 </script>
 </head>
