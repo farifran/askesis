@@ -5,7 +5,7 @@
 importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js');
 
 // 2. Lógica de cache do PWA
-const CACHE_NAME = 'habit-tracker-ai-cache-v3'; // Versão incrementada para forçar a atualização do cache e do worker
+const CACHE_NAME = 'habit-tracker-ai-cache-v4'; // Aumenta a versão para garantir a atualização
 const URLS_TO_CACHE = [
     '/',
     'bundle.js',
@@ -21,8 +21,6 @@ const URLS_TO_CACHE = [
 
 // Evento de instalação: pré-cache do App Shell
 self.addEventListener('install', event => {
-    // Força o novo service worker a se tornar ativo imediatamente,
-    // garantindo que as atualizações sejam aplicadas rapidamente.
     self.skipWaiting(); 
     event.waitUntil(
         caches.open(CACHE_NAME)
@@ -35,11 +33,6 @@ self.addEventListener('install', event => {
 
 // Evento de ativação: limpeza de caches antigos
 self.addEventListener('activate', event => {
-    // Neste evento, nós apenas limpamos caches antigos.
-    // A chamada para self.clients.claim() é omitida de propósito.
-    // O script do OneSignal (importado acima) já lida com o 'claim',
-    // e remover a nossa chamada evita uma condição de corrida que poderia
-    // interferir na inicialização do listener de notificações.
     event.waitUntil(
         caches.keys().then(cacheNames => {
             return Promise.all(
@@ -54,42 +47,31 @@ self.addEventListener('activate', event => {
     );
 });
 
-// Evento de fetch: serve a partir do cache ou da rede
+// Evento de fetch: Estratégia "Network first, then cache"
 self.addEventListener('fetch', event => {
     // CRÍTICO: Ignora as requisições do OneSignal para evitar conflitos.
-    // Deixa o service worker do OneSignal lidar com elas.
     if (event.request.url.includes('onesignal.com')) {
         return;
     }
 
-    // Estratégia "Cache-first, caindo para a rede" para todas as outras requisições.
+    // Estratégia "Network-first": Tenta a rede primeiro, atualiza o cache e, se falhar, usa o cache.
     event.respondWith(
-        caches.match(event.request)
-            .then(response => {
-                // Se encontrarmos no cache, retorna a resposta do cache.
-                if (response) {
-                    return response;
+        fetch(event.request)
+            .then(networkResponse => {
+                // Se a requisição de rede for bem-sucedida, atualiza o cache.
+                // Verifica se a resposta é válida antes de armazenar em cache.
+                if (networkResponse && networkResponse.status === 200) {
+                    const responseToCache = networkResponse.clone();
+                    caches.open(CACHE_NAME)
+                        .then(cache => {
+                            cache.put(event.request, responseToCache);
+                        });
                 }
-
-                // Se não, busca na rede.
-                return fetch(event.request).then(
-                    networkResponse => {
-                        // Se a busca na rede for bem-sucedida, clona e armazena no cache para uso futuro.
-                        if (networkResponse && networkResponse.status === 200) {
-                            const responseToCache = networkResponse.clone();
-                            caches.open(CACHE_NAME)
-                                .then(cache => {
-                                    cache.put(event.request, responseToCache);
-                                });
-                        }
-                        return networkResponse;
-                    }
-                );
+                return networkResponse;
             })
-            .catch(error => {
-                 console.error('Fetch failed; returning offline page instead.', error);
-                 // Opcional: Retornar uma página offline genérica se a busca falhar totalmente.
-                 // return caches.match('/offline.html');
+            .catch(() => {
+                // Se a rede falhar, tenta responder com o que está no cache.
+                return caches.match(event.request);
             })
     );
 });
