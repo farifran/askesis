@@ -995,6 +995,13 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 .setting-item-header { display: flex; justify-content: space-between; align-items: baseline; width: 100%; margin-block-end: var(--space-sm); }
 .setting-item.setting-item--column { flex-direction: column; align-items: stretch; }
 .setting-item label { font-size: 14px; color: var(--text-secondary); }
+.setting-item-desc {
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--text-tertiary);
+    margin-top: var(--space-sm);
+    width: 100%;
+}
 
 /* Seção de Status de Notificação */
 #notification-status-section {
@@ -1006,22 +1013,52 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     flex-direction: column;
     gap: var(--space-md);
 }
-.notification-status-item {
-    font-size: 13px;
-    color: var(--text-secondary);
-}
-.notification-status-item strong {
-    color: var(--text-primary);
-}
-#notification-status-desc {
-    font-size: 12px;
-    line-height: 1.5;
-    color: var(--text-tertiary);
-}
-#test-notification-btn, #enable-notifications-btn {
-    width: 100%;
-}
 
+/* --- COMPONENTES: INTERRUPTOR (TOGGLE) --- */
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 44px;
+    height: 24px;
+    flex-shrink: 0;
+}
+.toggle-switch-checkbox {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+.toggle-switch-label {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: var(--surface-snoozed);
+    transition: var(--transition-duration);
+    border-radius: 24px;
+}
+.toggle-switch-label:before {
+    position: absolute;
+    content: "";
+    height: 20px;
+    width: 20px;
+    left: 2px;
+    bottom: 2px;
+    background-color: white;
+    transition: var(--transition-duration);
+    border-radius: 50%;
+}
+.toggle-switch-checkbox:checked + .toggle-switch-label {
+    background-color: var(--accent-green);
+}
+.toggle-switch-checkbox:checked + .toggle-switch-label:before {
+    transform: translateX(20px);
+}
+.toggle-switch-checkbox:disabled + .toggle-switch-label {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
 
 /* Modal: Sincronização */
 #sync-section {
