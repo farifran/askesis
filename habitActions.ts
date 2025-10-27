@@ -404,8 +404,7 @@ export async function resetApplicationData() {
 export function requestHabitEditingFromModal(habitId: string) {
     const habit = state.habits.find(h => h.id === habitId);
     if (!habit) return;
-    closeModal(ui.manageModal);
-    openEditModal(habit, 'manage');
+    openEditModal(habit);
 }
 
 export function saveHabitFromModal() {
@@ -538,7 +537,6 @@ export function saveHabitFromModal() {
         const hasFrequencyChanged = lastSchedule.frequency.type !== currentFrequency.type || lastSchedule.frequency.interval !== currentFrequency.interval;
         
         if (!hasNameChanged && !hasTimesChanged && !hasFrequencyChanged) {
-            // Se nada mudou, apenas fecha o modal
             closeModal(ui.editHabitModal);
             state.editingHabit = null;
             return;

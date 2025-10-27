@@ -211,7 +211,6 @@ export const state: {
         originalData?: Habit; // For comparing changes
         // A template-like object for the form
         formData: HabitTemplate;
-        sourceModal?: 'explore' | 'manage';
     } | null;
     aiState: 'idle' | 'loading' | 'completed' | 'error';
     hasSeenAIResult: boolean;

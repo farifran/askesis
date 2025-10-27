@@ -206,9 +206,9 @@ export const setupModalListeners = () => {
     ui.aiEvalBtn.addEventListener('click', handleAIEvaluationClick);
 
     // Initialize generic closing for modals that don't need special cleanup
-    [ui.manageModal, ui.exploreModal, ui.confirmModal, ui.notesModal, ui.aiOptionsModal].forEach(initializeModalClosing);
+    [ui.manageModal, ui.exploreModal, ui.confirmModal, ui.notesModal, ui.editHabitModal, ui.aiOptionsModal].forEach(initializeModalClosing);
 
-    // Custom closing for the AI modal
+    // Custom closing logic for the AI modal
     ui.aiModal.addEventListener('click', e => {
         if (e.target === ui.aiModal) {
              // Apenas fecha o modal, não reseta o estado, para que o usuário possa reabrir.
@@ -221,30 +221,6 @@ export const setupModalListeners = () => {
         closeModal(ui.aiModal);
     });
 
-    // Custom closing for edit habit modal to handle back navigation
-    const closeEditHabitModalWithBackNavigation = () => {
-        const source = state.editingHabit?.sourceModal;
-        
-        closeModal(ui.editHabitModal);
-        state.editingHabit = null; // Always clear state on close
-
-        if (source === 'explore') {
-            renderExploreHabits();
-            openModal(ui.exploreModal);
-        } else if (source === 'manage') {
-            setupManageModal();
-            openModal(ui.manageModal);
-        }
-    };
-
-    ui.editHabitModal.addEventListener('click', e => {
-        if (e.target === ui.editHabitModal) {
-            closeEditHabitModalWithBackNavigation();
-        }
-    });
-
-    ui.editHabitModal.querySelector<HTMLButtonElement>('.modal-close-btn')!.addEventListener('click', closeEditHabitModalWithBackNavigation);
-
 
     ui.exploreHabitList.addEventListener('click', e => {
         const item = (e.target as HTMLElement).closest<HTMLElement>('.explore-habit-item');
@@ -256,18 +232,15 @@ export const setupModalListeners = () => {
             return lastSchedule.nameKey === predefinedHabit.nameKey && !lastSchedule.endDate && !h.graduatedOn;
         });
         
-        closeModal(ui.exploreModal);
-        
         if (existingHabit) {
-            openEditModal(existingHabit, 'explore');
+            openEditModal(existingHabit);
         } else {
-            openEditModal(predefinedHabit, 'explore');
+            openEditModal(predefinedHabit);
         }
     });
 
     ui.createCustomHabitBtn.addEventListener('click', () => {
-        closeModal(ui.exploreModal);
-        openEditModal(null, 'explore');
+        openEditModal(null);
     });
 
     ui.confirmModalConfirmBtn.addEventListener('click', () => {
