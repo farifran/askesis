@@ -157,8 +157,8 @@ export function updateGoalOverride(habitId: string, date: string, time: TimeOfDa
     dayInstanceData.goalOverride = sanitizedGoal;
 
     saveState();
-    renderHabits();
-    renderCalendar();
+    // renderHabits() e renderCalendar() foram removidos para permitir que a animação da UI seja executada.
+    // A UI agora é atualizada manualmente no listener de eventos.
 }
 
 function setAllHabitsStatusForDate(date: string, status: HabitStatus) {

@@ -157,7 +157,7 @@ export function renderFrequencyFilter() {
     updateReelRotaryARIA(ui.frequencyViewport, Math.max(0, currentIndex), freqLabels, 'frequency_ariaLabel');
 }
 
-const getUnitString = (habit: Habit, value: number | undefined) => {
+export const getUnitString = (habit: Habit, value: number | undefined) => {
     const unitKey = habit.goal.unitKey || 'unitCheck';
     return t(unitKey, { count: value });
 };

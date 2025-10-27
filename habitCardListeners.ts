@@ -1,6 +1,6 @@
 import { ui } from './ui';
 import { state, Habit, getSmartGoalForHabit, TimeOfDay } from './state';
-import { openNotesModal } from './render';
+import { openNotesModal, formatGoalForDisplay, getUnitString } from './render';
 import {
     toggleHabitStatus,
     updateGoalOverride,
@@ -95,8 +95,11 @@ export function setupHabitCardListeners() {
                 newGoal = Math.max(1, currentGoal - GOAL_STEP);
             }
 
+            const wrapper = controlBtn.closest('.habit-goal-controls');
+            const progressEl = wrapper?.querySelector<HTMLElement>('.progress');
+            const unitEl = wrapper?.querySelector<HTMLElement>('.unit');
+
             // Animação da UI
-            const progressEl = controlBtn.parentElement?.querySelector<HTMLElement>('.progress');
             if (progressEl && newGoal !== currentGoal) {
                 const animClass = newGoal > currentGoal ? 'goal-increased' : 'goal-decreased';
                 progressEl.classList.add(animClass);
@@ -105,7 +108,17 @@ export function setupHabitCardListeners() {
                 }, { once: true });
             }
 
+            // Ação 1: Atualiza o estado sem re-renderizar
             updateGoalOverride(habitId, state.selectedDate, time, newGoal);
+            
+            // Ação 2: Atualiza manualmente a UI para refletir o novo valor
+            if (progressEl) {
+                progressEl.textContent = formatGoalForDisplay(newGoal);
+            }
+            if (unitEl) {
+                unitEl.textContent = getUnitString(habit, newGoal);
+            }
+
             return;
         }
 

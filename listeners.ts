@@ -35,6 +35,23 @@ function debounce<T extends (...args: any[]) => any>(func: T, wait: number): (..
     };
 }
 
+/**
+ * REATORAÇÃO: Centraliza a lógica para atualizar a data selecionada e renderizar a UI.
+ * Evita a duplicação de código entre os manipuladores de clique e de teclado.
+ * @param newDateISO A nova data selecionada como uma string ISO.
+ */
+function updateSelectedDateAndRender(newDateISO: string) {
+    if (state.selectedDate === newDateISO) {
+        return; // Nenhuma alteração necessária
+    }
+    state.selectedDate = newDateISO;
+    renderCalendar();
+    updateHeaderTitle();
+    renderHabits();
+    renderStoicQuote();
+    renderChart();
+}
+
 const setupGlobalListeners = () => {
     let clickTimeout: number | null = null;
     let clickCount = 0;
@@ -64,14 +81,7 @@ const setupGlobalListeners = () => {
 
         // Lida imediatamente com o primeiro clique para responsividade (seleção de dia)
         if (clickCount === 1) {
-            if (state.selectedDate !== date) {
-                state.selectedDate = date;
-                renderCalendar();
-                updateHeaderTitle();
-                renderHabits();
-                renderStoicQuote();
-                renderChart();
-            }
+            updateSelectedDateAndRender(date);
         }
         
         // Define um timeout para aguardar mais cliques antes de disparar ações em massa
@@ -110,14 +120,15 @@ const setupGlobalListeners = () => {
             
             if (newIndex >= 0 && newIndex < state.calendarDates.length) {
                 const newDate = state.calendarDates[newIndex];
-                state.selectedDate = toUTCIsoDateString(newDate);
-                renderCalendar();
-                updateHeaderTitle();
-                renderHabits();
-                renderStoicQuote();
-                renderChart();
-                const newSelectedEl = ui.calendarStrip.querySelector<HTMLElement>(`.day-item[data-date="${state.selectedDate}"]`);
-                newSelectedEl?.focus();
+                const newDateISO = toUTCIsoDateString(newDate);
+                
+                updateSelectedDateAndRender(newDateISO);
+                
+                // Adia a focagem para após a renderização para garantir que o elemento exista
+                requestAnimationFrame(() => {
+                    const newSelectedEl = ui.calendarStrip.querySelector<HTMLElement>(`.day-item[data-date="${state.selectedDate}"]`);
+                    newSelectedEl?.focus();
+                });
             }
         }
     });

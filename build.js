@@ -23,6 +23,11 @@ async function build() {
         // Copia o arquivo HTML principal para o diretório de saída.
         console.log('Copying static assets...');
         await fs.copyFile('index.html', path.join(outdir, 'index.html'));
+        // Adiciona a cópia dos novos arquivos PWA
+        await fs.copyFile('manifest.json', path.join(outdir, 'manifest.json'));
+        await fs.copyFile('sw.js', path.join(outdir, 'sw.js'));
+        await fs.cp('icons', path.join(outdir, 'icons'), { recursive: true });
+
 
         // Copia o diretório de internacionalização (i18n) com os arquivos JSON de tradução.
         await fs.cp('locales', path.join(outdir, 'locales'), { recursive: true });

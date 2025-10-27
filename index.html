@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0, viewport-fit=cover">
     <title>Habit Tracker com IA</title>
     <link rel="stylesheet" href="bundle.css">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#1e1e1e">
 <script type="importmap">
 {
   "imports": {
@@ -31,6 +33,17 @@
         console.error("OneSignal init error:", e);
     });
   });
+</script>
+<script>
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('/sw.js').then(registration => {
+                console.log('ServiceWorker registration successful with scope: ', registration.scope);
+            }, err => {
+                console.log('ServiceWorker registration failed: ', err);
+            });
+        });
+    }
 </script>
 </head>
 <body>
