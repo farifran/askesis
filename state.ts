@@ -57,7 +57,6 @@ export interface Habit {
     createdOn: string;
     graduatedOn?: string;
     scheduleHistory: HabitSchedule[];
-    reminderTimes?: Partial<Record<TimeOfDay, string>>; // ex: { 'Manhã': '08:30', 'Noite': '21:00' }
 }
 
 export type PredefinedHabit = {
@@ -84,7 +83,6 @@ export type HabitTemplate = {
     times: TimeOfDay[];
     goal: Habit['goal'];
     frequency: Frequency;
-    reminderTimes?: Habit['reminderTimes'];
 } & ({
     nameKey: string;
     subtitleKey: string;
@@ -213,6 +211,7 @@ export const state: {
         originalData?: Habit; // For comparing changes
         // A template-like object for the form
         formData: HabitTemplate;
+        sourceModal?: 'explore' | 'manage';
     } | null;
     aiState: 'idle' | 'loading' | 'completed' | 'error';
     hasSeenAIResult: boolean;

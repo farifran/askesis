@@ -108,7 +108,6 @@ export function addHabit(habitTemplate: HabitTemplate, startDate: string): Habit
         color: habitTemplate.color,
         goal: habitTemplate.goal,
         scheduleHistory: [firstSchedule],
-        reminderTimes: habitTemplate.reminderTimes,
     };
     state.habits.push(newHabit);
     saveState();
@@ -406,7 +405,7 @@ export function requestHabitEditingFromModal(habitId: string) {
     const habit = state.habits.find(h => h.id === habitId);
     if (!habit) return;
     closeModal(ui.manageModal);
-    openEditModal(habit);
+    openEditModal(habit, 'manage');
 }
 
 export function saveHabitFromModal() {
@@ -448,17 +447,6 @@ export function saveHabitFromModal() {
 
     const currentFrequency = formData.frequency;
 
-    // Coleta os horários dos lembretes
-    const reminderTimes: Partial<Record<TimeOfDay, string>> = {};
-    const reminderInputs = form.querySelectorAll<HTMLInputElement>('.reminder-time-input');
-    reminderInputs.forEach(input => {
-        if (input.value) {
-            const timeOfDay = input.dataset.time as TimeOfDay;
-            reminderTimes[timeOfDay] = input.value;
-        }
-    });
-
-
     const finalizeCreation = (template: HabitTemplate, startDate: string) => {
         if ('nameKey' in template) {
             const existingEndedHabit = state.habits.find(h => {
@@ -476,7 +464,6 @@ export function saveHabitFromModal() {
                     frequency: template.frequency,
                 };
                 existingEndedHabit.scheduleHistory.push(newSchedule);
-                existingEndedHabit.reminderTimes = template.reminderTimes;
                 
                 saveState();
                 document.dispatchEvent(new CustomEvent('habitsChanged'));
@@ -515,7 +502,6 @@ export function saveHabitFromModal() {
                     times: selectedTimes,
                     goal: formData.goal,
                     frequency: currentFrequency,
-                    reminderTimes: reminderTimes,
                 };
             } else {
                 // Name was NOT changed, create as a predefined habit
@@ -523,7 +509,6 @@ export function saveHabitFromModal() {
                     ...formData,
                     times: selectedTimes,
                     frequency: currentFrequency,
-                    reminderTimes: reminderTimes,
                 };
             }
         } else { // This is a fully custom habit from the "create custom" button
@@ -532,7 +517,6 @@ export function saveHabitFromModal() {
                 name: habitName,
                 times: selectedTimes,
                 frequency: currentFrequency,
-                reminderTimes: reminderTimes,
             };
         }
 
@@ -547,9 +531,6 @@ export function saveHabitFromModal() {
     } else { // Editing
         if (!originalData) return;
 
-        // Atualiza os lembretes diretamente no objeto do hábito
-        originalData.reminderTimes = reminderTimes;
-
         const lastSchedule = originalData.scheduleHistory[originalData.scheduleHistory.length - 1];
 
         const hasNameChanged = getHabitDisplayInfo(originalData).name !== habitName;
@@ -557,9 +538,7 @@ export function saveHabitFromModal() {
         const hasFrequencyChanged = lastSchedule.frequency.type !== currentFrequency.type || lastSchedule.frequency.interval !== currentFrequency.interval;
         
         if (!hasNameChanged && !hasTimesChanged && !hasFrequencyChanged) {
-            // Se apenas os lembretes mudaram, basta salvar o estado e acionar a atualização
-            saveState();
-            document.dispatchEvent(new CustomEvent('habitsChanged'));
+            // Se nada mudou, apenas fecha o modal
             closeModal(ui.editHabitModal);
             state.editingHabit = null;
             return;

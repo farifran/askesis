@@ -17,7 +17,6 @@ import { setupDragAndDropHandler } from './dragAndDropHandler';
 import { handleUndoDelete, completeAllHabitsForDate, snoozeAllHabitsForDate } from './habitActions';
 import { t } from './i18n';
 import { renderChart } from './chart';
-import { updateUserHabitTags } from './cloud';
 
 /**
  * Cria uma função "debounced" que atrasa a invocação de `func` até que `wait`

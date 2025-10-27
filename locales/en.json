@@ -15,7 +15,7 @@
     "modalAITitle": "AI Evaluation", "modalAIOptionsTitle": "AI Analysis Options", "modalAILoading": "Analyzing your habits...", "modalConfirmTitle": "Confirm Action",
     "modalNotesTitle": "Add Note", "modalNotesTitleFor": "Note for \"{habitName}\"", "modalNotesTextareaPlaceholder": "Enter your note about this habit for the selected day...",
     "modalNotesSaveButton": "Save Note", "modalEditTitle": "Edit Habit", "modalAddTitle": "Add Habit",
-    "modalAddHabitTitle": "Add \"{habitName}\"", "modalEditFormNameLabel": "Name", "modalEditFormTimeLabel": "Time(s)", "label-habit-reminders": "Reminders",
+    "modalAddHabitTitle": "Add \"{habitName}\"", "modalEditFormNameLabel": "Name", "modalEditFormTimeLabel": "Time(s)",
     "modalEditFormFrequencyLabel": "Frequency", "modalEditSaveButton": "Save Habit", "modalStatusEnded": "(Ended)", "modalStatusGraduated": "(Graduated)",
     "modalAIOfflineTitle": "Offline Mode", "modalAIOfflineMessage": "The AI Evaluation requires an internet connection. Please connect and try again.",
     "modalAIError": "Sorry, the AI evaluation could not be retrieved. Please check your connection or try again later.", "errorDetail": "Error Detail",

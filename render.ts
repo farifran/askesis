@@ -98,468 +98,187 @@ export function createCalendarDayElement(date: Date): HTMLElement {
     const { completedPercent, totalPercent } = calculateDayProgress(isoDate);
     const showPlus = shouldShowPlusIndicator(isoDate);
 
-    const dayItem = document.createElement('div');
-    dayItem.className = `day-item ${isoDate === state.selectedDate ? 'selected' : ''} ${isoDate === todayISO ? 'today' : ''}`;
-    dayItem.dataset.date = isoDate;
-    dayItem.setAttribute('role', 'button');
-    dayItem.setAttribute('aria-pressed', String(isoDate === state.selectedDate));
+    const dayEl = document.createElement('div');
+    dayEl.className = 'day-item';
+    dayEl.dataset.date = isoDate;
+    dayEl.setAttribute('role', 'button');
+    dayEl.setAttribute('tabindex', '0');
+    dayEl.setAttribute('aria-label', date.toLocaleDateString(state.activeLanguageCode, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' }));
 
-    const dayName = document.createElement('span');
-    dayName.className = 'day-name';
-    dayName.textContent = getLocaleDayName(date);
+    if (isoDate === state.selectedDate) dayEl.classList.add('selected');
+    if (isoDate === todayISO) dayEl.classList.add('today');
 
-    const dayProgressRing = document.createElement('div');
-    dayProgressRing.className = 'day-progress-ring';
-    dayProgressRing.style.setProperty('--completed-percent', `${completedPercent}%`);
-    dayProgressRing.style.setProperty('--total-percent', `${totalPercent}%`);
-
-    const dayNumber = document.createElement('span');
-    dayNumber.className = `day-number ${showPlus ? 'has-plus' : ''}`;
-    dayNumber.textContent = String(date.getUTCDate());
-
-    dayProgressRing.appendChild(dayNumber);
-    dayItem.appendChild(dayName);
-    dayItem.appendChild(dayProgressRing);
-
-    return dayItem;
+    dayEl.innerHTML = `
+        <span class="day-name">${getLocaleDayName(date)}</span>
+        <div class="day-progress-ring" style="--completed-percent: ${completedPercent}%; --total-percent: ${totalPercent}%;">
+            <span class="day-number ${showPlus ? 'has-plus' : ''}">${date.getUTCDate()}</span>
+        </div>
+    `;
+    return dayEl;
 }
 
 export function renderCalendar() {
-    ui.calendarStrip.innerHTML = ''; // Limpa os elementos existentes
-    const fragment = document.createDocumentFragment();
+    ui.calendarStrip.innerHTML = '';
     state.calendarDates.forEach(date => {
-        fragment.appendChild(createCalendarDayElement(date));
+        ui.calendarStrip.appendChild(createCalendarDayElement(date));
     });
-    ui.calendarStrip.appendChild(fragment);
 }
 
-export function renderLanguageFilter() {
-    const currentIndex = LANGUAGES.findIndex(l => l.code === state.activeLanguageCode);
-    const langNames = LANGUAGES.map(lang => t(lang.nameKey));
-    const firstOption = ui.languageReel.querySelector('.reel-option') as HTMLElement | null;
-    const itemWidth = firstOption?.offsetWidth || 95;
-    const transformX = -currentIndex * itemWidth;
-    ui.languageReel.style.transform = `translateX(${transformX}px)`;
-    updateReelRotaryARIA(ui.languageViewport, currentIndex, langNames, 'language_ariaLabel');
-}
+export function updateHeaderTitle() {
+    const today = getTodayUTC();
+    const selected = parseUTCIsoDate(state.selectedDate);
+    const diffDays = Math.round((selected.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 
-export function renderFrequencyFilter() {
-    if (!state.editingHabit) return;
-    const currentFrequency = state.editingHabit.formData.frequency;
-    const freqLabels = FREQUENCIES.map(f => t(f.labelKey));
-    const currentIndex = FREQUENCIES.findIndex(f => 
-        f.value.type === currentFrequency.type && f.value.interval === currentFrequency.interval
-    );
-    const firstOption = ui.frequencyReel.querySelector('.reel-option') as HTMLElement | null;
-    const itemWidth = firstOption?.offsetWidth || 125;
-    const transformX = -Math.max(0, currentIndex) * itemWidth;
-    ui.frequencyReel.style.transform = `translateX(${transformX}px)`;
-    updateReelRotaryARIA(ui.frequencyViewport, Math.max(0, currentIndex), freqLabels, 'frequency_ariaLabel');
-}
-
-export const getUnitString = (habit: Habit, value: number | undefined) => {
-    const unitKey = habit.goal.unitKey || 'unitCheck';
-    return t(unitKey, { count: value });
-};
-
-export const formatGoalForDisplay = (goal: number): string => {
-    if (goal < 5) return '< 5';
-    if (goal > 95) return '> 95';
-    return goal.toString();
-};
-
-function updateGoalContentElement(goalEl: HTMLElement, status: HabitStatus, habit: Habit, time: TimeOfDay, dayDataForInstance: HabitDayData | undefined) {
-    goalEl.innerHTML = ''; // Limpa o conteúdo
-
-    if (status === 'completed') {
-        if (habit.goal.type === 'pages' || habit.goal.type === 'minutes') {
-            const smartGoal = getSmartGoalForHabit(habit, state.selectedDate, time);
-            const completedGoal = dayDataForInstance?.goalOverride ?? smartGoal;
-            goalEl.innerHTML = `
-                <div class="goal-value-wrapper">
-                    <div class="progress" style="color: var(--accent-blue);">${formatGoalForDisplay(completedGoal)}</div>
-                    <div class="unit">${getUnitString(habit, completedGoal)}</div>
-                </div>`;
-        } else {
-            goalEl.innerHTML = `<div class="progress" style="color: var(--accent-blue);">✓</div><div class="unit">${getUnitString(habit, 1)}</div>`;
-        }
-    } else if (status === 'snoozed') {
-        goalEl.innerHTML = `
-            <div class="progress">
-                <svg class="snoozed-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="13 17 18 12 13 7"></polyline><polyline points="6 17 11 12 6 7"></polyline></svg>
-            </div>
-            <div class="unit snoozed-text">${t('habitSnoozed')}</div>`;
-    } else { // 'pending'
-        if (habit.goal.type === 'pages' || habit.goal.type === 'minutes') {
-            const smartGoal = getSmartGoalForHabit(habit, state.selectedDate, time);
-            const currentGoal = dayDataForInstance?.goalOverride ?? smartGoal;
-            goalEl.innerHTML = `
-                <div class="habit-goal-controls">
-                    <button class="goal-control-btn" data-habit-id="${habit.id}" data-time="${time}" data-action="decrement" aria-label="${t('habitGoalDecrement_ariaLabel')}">-</button>
-                    <div class="goal-value-wrapper">
-                        <div class="progress">${formatGoalForDisplay(currentGoal)}</div>
-                        <div class="unit">${getUnitString(habit, currentGoal)}</div>
-                    </div>
-                    <button class="goal-control-btn" data-habit-id="${habit.id}" data-time="${time}" data-action="increment" aria-label="${t('habitGoalIncrement_ariaLabel')}">+</button>
-                </div>`;
-        }
-    }
-}
-
-function getTimeOfDayIcon(time: TimeOfDay): string {
-    switch (time) {
-        case 'Manhã':
-            return '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L12 5"/><path d="M12 19L12 22"/><path d="M5 12L2 12"/><path d="M22 12L19 12"/><path d="M19.07 4.93L16.24 7.76"/><path d="M7.76 16.24L4.93 19.07"/><path d="M19.07 19.07L16.24 16.24"/><path d="M7.76 7.76L4.93 4.93"/><path d="M4 17h16"/></svg>'; // Sunrise-like icon
-        case 'Tarde':
-            return '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>'; // Full sun icon
-        case 'Noite':
-            return '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>'; // Moon icon
-        default:
-            return '';
-    }
-}
-
-export function createHabitCardElement(habit: Habit, time: TimeOfDay): HTMLElement {
-    const dailyInfo = getHabitDailyInfoForDate(state.selectedDate);
-    const habitInstanceData = dailyInfo[habit.id]?.instances?.[time];
-    const status = habitInstanceData?.status ?? 'pending';
-    const hasNote = habitInstanceData?.note && habitInstanceData.note.length > 0;
-    const streak = calculateHabitStreak(habit.id, state.selectedDate);
-    
-    const card = document.createElement('div');
-    card.className = `habit-card ${status}`;
-    card.dataset.habitId = habit.id;
-    card.dataset.time = time;
-
-    if (streak >= STREAK_CONSOLIDATED) card.classList.add('consolidated');
-    else if (streak >= STREAK_SEMI_CONSOLIDATED) card.classList.add('semi-consolidated');
-
-    const { name, subtitle } = getHabitDisplayInfo(habit);
-
-    const actionsLeft = document.createElement('div');
-    actionsLeft.className = 'habit-actions-left';
-    actionsLeft.innerHTML = `<button class="swipe-delete-btn" aria-label="${t('habitEnd_ariaLabel')}"></button>`;
-
-    const actionsRight = document.createElement('div');
-    actionsRight.className = 'habit-actions-right';
-    actionsRight.innerHTML = `<button class="swipe-note-btn ${hasNote ? 'has-note' : ''}" aria-label="${t(hasNote ? 'habitNoteEdit_ariaLabel' : 'habitNoteAdd_ariaLabel')}"></button>`;
-    
-    const contentWrapper = document.createElement('div');
-    contentWrapper.className = 'habit-content-wrapper';
-    contentWrapper.draggable = true;
-
-    const timeOfDayIcon = document.createElement('div');
-    timeOfDayIcon.className = 'time-of-day-icon';
-    timeOfDayIcon.innerHTML = getTimeOfDayIcon(time);
-    
-    const icon = document.createElement('div');
-    icon.className = 'habit-icon';
-    icon.style.backgroundColor = `${habit.color}30`;
-    icon.innerHTML = habit.icon;
-
-    const details = document.createElement('div');
-    details.className = 'habit-details';
-    const nameEl = document.createElement('div');
-    nameEl.className = 'name';
-    nameEl.textContent = name;
-    const subtitleEl = document.createElement('div');
-    subtitleEl.className = 'subtitle';
-    subtitleEl.textContent = subtitle;
-    details.append(nameEl, subtitleEl);
-    
-    if (streak >= STREAK_CONSOLIDATED) {
-        const msg = document.createElement('div');
-        msg.className = 'consolidation-message';
-        msg.textContent = t('habitConsolidatedMessage');
-        details.appendChild(msg);
-    } else if (streak >= STREAK_SEMI_CONSOLIDATED) {
-        const msg = document.createElement('div');
-        msg.className = 'consolidation-message';
-        msg.textContent = t('habitSemiConsolidatedMessage');
-        details.appendChild(msg);
-    }
-
-    const goal = document.createElement('div');
-    goal.className = 'habit-goal';
-    updateGoalContentElement(goal, status, habit, time, habitInstanceData);
-
-    contentWrapper.append(timeOfDayIcon, icon, details, goal);
-    card.append(actionsLeft, actionsRight, contentWrapper);
-    
-    return card;
-}
-
-export function renderHabits() {
-    const selectedDateObj = parseUTCIsoDate(state.selectedDate);
-    const dailyInfoByHabit = getHabitDailyInfoForDate(state.selectedDate);
-
-    const habitsByTime: Record<TimeOfDay, Habit[]> = { 'Manhã': [], 'Tarde': [], 'Noite': [] };
-    
-    state.habits.forEach(habit => {
-        if (shouldHabitAppearOnDate(habit, selectedDateObj)) {
-            const habitDailyInfo = dailyInfoByHabit[habit.id];
-            const activeSchedule = getScheduleForDate(habit, selectedDateObj);
-            if (!activeSchedule) return;
-
-            const scheduleForDay = habitDailyInfo?.dailySchedule || activeSchedule.times;
-            
-            scheduleForDay.forEach(time => {
-                if (habitsByTime[time]) {
-                    habitsByTime[time].push(habit);
-                }
-            });
-        }
-    });
-
-    const groupHasHabits: Record<TimeOfDay, boolean> = { 'Manhã': false, 'Tarde': false, 'Noite': false };
-    TIMES_OF_DAY.forEach(time => {
-        groupHasHabits[time] = habitsByTime[time].length > 0;
-    });
-
-    const emptyTimes = TIMES_OF_DAY.filter(time => !groupHasHabits[time]);
-    let targetTime: TimeOfDay | null = null;
-    if (groupHasHabits['Manhã'] && !groupHasHabits['Tarde'] && groupHasHabits['Noite']) {
-        targetTime = 'Tarde';
-    } else if (!groupHasHabits['Manhã']) {
-        targetTime = 'Manhã';
-    } else if (!groupHasHabits['Tarde']) {
-        targetTime = 'Tarde';
-    } else if (!groupHasHabits['Noite']) {
-        targetTime = 'Noite';
-    }
-
-    TIMES_OF_DAY.forEach(time => {
-        const wrapperEl = ui.habitContainer.querySelector(`.habit-group-wrapper[data-time-wrapper="${time}"]`);
-        const groupEl = wrapperEl?.querySelector<HTMLElement>(`.habit-group[data-time="${time}"]`);
-        const titleEl = wrapperEl?.querySelector('h2');
-        if (!wrapperEl || !groupEl || !titleEl) return;
-        
-        // REATORAÇÃO: Simplifica a renderização. Em vez de reconciliar o DOM,
-        // é mais simples, rápido e menos propenso a erros limpar e recriar.
-        const fragment = document.createDocumentFragment();
-        habitsByTime[time].forEach(habit => {
-            fragment.appendChild(createHabitCardElement(habit, time));
+    if (diffDays === 0) {
+        ui.headerTitle.textContent = t('headerTitleToday');
+    } else if (diffDays === -1) {
+        ui.headerTitle.textContent = t('headerTitleYesterday');
+    } else if (diffDays === 1) {
+        ui.headerTitle.textContent = t('headerTitleTomorrow');
+    } else {
+        ui.headerTitle.textContent = selected.toLocaleDateString(state.activeLanguageCode, {
+            day: 'numeric',
+            month: 'long',
+            timeZone: 'UTC'
         });
-        groupEl.innerHTML = ''; // Limpa o conteúdo antigo
-        groupEl.appendChild(fragment); // Adiciona o novo conteúdo
-        
-        // Update wrapper and placeholder state
-        const hasHabits = groupHasHabits[time];
-        const isSmartPlaceholder = time === targetTime;
-        
-        const timeToKeyMap: Record<TimeOfDay, string> = { 'Manhã': 'filterMorning', 'Tarde': 'filterAfternoon', 'Noite': 'filterEvening' };
-        titleEl.textContent = t(timeToKeyMap[time]);
-        
-        wrapperEl.classList.toggle('has-habits', hasHabits);
-        wrapperEl.classList.toggle('is-collapsible', !hasHabits && !isSmartPlaceholder);
-
-        let placeholder = groupEl.querySelector<HTMLElement>('.empty-group-placeholder');
-        if (!hasHabits) {
-            if (!placeholder) {
-                placeholder = document.createElement('div');
-                placeholder.className = 'empty-group-placeholder';
-                groupEl.appendChild(placeholder);
-            }
-            placeholder.classList.toggle('show-smart-placeholder', isSmartPlaceholder);
-            
-            const text = t('dragToAddHabit');
-            let iconHTML = '';
-
-            if (isSmartPlaceholder && emptyTimes.length > 1) {
-                const genericIconHTML = emptyTimes
-                    .map(getTimeOfDayIcon)
-                    .join('<span class="icon-separator">/</span>');
-                const specificIconHTML = getTimeOfDayIcon(time);
-                
-                iconHTML = `
-                    <span class="placeholder-icon-generic">${genericIconHTML}</span>
-                    <span class="placeholder-icon-specific">${specificIconHTML}</span>
-                `;
-            } else {
-                iconHTML = `<span class="placeholder-icon-specific">${getTimeOfDayIcon(time)}</span>`;
-            }
-            
-            placeholder.innerHTML = `<div class="time-of-day-icon">${iconHTML}</div><span>${text}</span>`;
-
-        } else if (placeholder) {
-            placeholder.remove();
-        }
-    });
-}
-
-export function renderExploreHabits() {
-    ui.exploreHabitList.innerHTML = PREDEFINED_HABITS.map((habit, index) => {
-        const name = t(habit.nameKey);
-        const subtitle = t(habit.subtitleKey);
-        return `
-            <div class="explore-habit-item" data-index="${index}" role="button">
-                <div class="explore-habit-icon" style="background-color: ${habit.color}30;">${habit.icon}</div>
-                <div class="explore-habit-details">
-                    <div class="name">${name}</div>
-                    <div class="subtitle">${subtitle}</div>
-                </div>
-            </div>`;
-    }).join('');
-}
-
-export function renderAINotificationState() {
-    const isLoading = state.aiState === 'loading';
-    const hasCelebrations = state.pending21DayHabitIds.length > 0 || state.pendingConsolidationHabitIds.length > 0;
-    // Um resultado não visto existe se o estado for concluído/erro E hasSeenAIResult for falso.
-    const hasUnseenResult = (state.aiState === 'completed' || state.aiState === 'error') && !state.hasSeenAIResult;
-
-    ui.aiEvalBtn.classList.toggle('loading', isLoading);
-    ui.aiEvalBtn.disabled = isLoading;
-    ui.aiEvalBtn.classList.toggle('has-notification', hasCelebrations || hasUnseenResult);
+    }
 }
 
 export function renderStoicQuote() {
-    const date = parseUTCIsoDate(state.selectedDate);
-    const startOfYear = new Date(date.getUTCFullYear(), 0, 0);
-    const diff = date.getTime() - startOfYear.getTime();
-    const oneDay = 1000 * 60 * 60 * 24;
-    const dayOfYear = Math.floor(diff / oneDay);
-    
+    const dayOfYear = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0).getTime()) / (1000 * 60 * 60 * 24));
     const quoteIndex = dayOfYear % STOIC_QUOTES.length;
-    const quote = STOIC_QUOTES[quoteIndex];
+    const quote = STOIC_QUOTES[quoteIndex][state.activeLanguageCode] || STOIC_QUOTES[quoteIndex]['en'];
+    ui.stoicQuoteDisplay.innerHTML = `&ldquo;${quote}&rdquo; &ndash; ${t('marcusAurelius')}`;
     
-    const lang = state.activeLanguageCode as keyof typeof quote;
-    const quoteText = quote[lang];
-    
+    // Animação de fade-in
     ui.stoicQuoteDisplay.classList.remove('visible');
-    
-    setTimeout(() => {
-        ui.stoicQuoteDisplay.textContent = `"${quoteText}" — ${t('marcusAurelius')}`;
-        ui.stoicQuoteDisplay.classList.add('visible');
-    }, 100);
+    setTimeout(() => ui.stoicQuoteDisplay.classList.add('visible'), 50);
 }
 
-export function updateNotificationUI() {
-    // A UI agora é estática para informar ao usuário que o controle está no navegador,
-    // conforme solicitado, simplificando a lógica.
-    ui.notificationStatusDesc.textContent = t('modalManageNotificationsStaticDesc');
-}
+export const formatGoalForDisplay = (goalValue?: number): string => {
+    if (goalValue === undefined) return '';
+    return goalValue.toLocaleString(state.activeLanguageCode);
+};
 
-export function renderApp() {
-    renderHabits();
-    renderCalendar();
-    renderAINotificationState();
-    renderStoicQuote();
-    renderChart();
-}
+export const getUnitString = (habit: Habit, goal: number): string => {
+    return t(habit.goal.unitKey, { count: goal });
+};
 
-const focusTrapListeners = new Map<HTMLElement, (e: KeyboardEvent) => void>();
+const createHabitElement = (habit: Habit, time: TimeOfDay): HTMLElement => {
+    const { name, subtitle } = getHabitDisplayInfo(habit);
+    const date = state.selectedDate;
+    const dayHabitData = state.dailyData[date]?.[habit.id]?.instances[time];
+    const status = dayHabitData?.status || 'pending';
+    const smartGoal = getSmartGoalForHabit(habit, date, time);
+    const goalOverride = dayHabitData?.goalOverride;
 
-export function openModal(modal: HTMLElement) {
-    modal.classList.add('visible');
-    
-    const focusableElements = modal.querySelectorAll<HTMLElement>(
-        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-    );
-    if (focusableElements.length === 0) return;
-
-    const firstFocusable = focusableElements[0];
-    const lastFocusable = focusableElements[focusableElements.length - 1];
-
-    firstFocusable.focus();
-
-    const trapListener = (e: KeyboardEvent) => {
-        if (e.key !== 'Tab') return;
-        
-        if (e.shiftKey) {
-            if (document.activeElement === firstFocusable) {
-                lastFocusable.focus();
-                e.preventDefault();
-            }
-        } else {
-            if (document.activeElement === lastFocusable) {
-                firstFocusable.focus();
-                e.preventDefault();
-            }
-        }
-    };
-    
-    modal.addEventListener('keydown', trapListener);
-    focusTrapListeners.set(modal, trapListener);
-}
-
-export function closeModal(modal: HTMLElement) {
-    modal.classList.remove('visible');
-    
-    const listener = focusTrapListeners.get(modal);
-    if (listener) {
-        modal.removeEventListener('keydown', listener);
-        focusTrapListeners.delete(modal);
-    }
-}
-
-export function initializeModalClosing(modal: HTMLElement) {
-    modal.addEventListener('click', e => {
-        if (e.target === modal) closeModal(modal);
-    });
-    modal.querySelectorAll<HTMLElement>('.modal-close-btn').forEach(btn => btn.addEventListener('click', () => closeModal(modal)));
-}
-
-export function showInlineNotice(element: HTMLElement, message: string) {
-    const existingTimeout = (element as any)._noticeTimeout;
-    if (existingTimeout) clearTimeout(existingTimeout);
-    element.textContent = message;
-    element.classList.add('visible');
-    const newTimeout = window.setTimeout(() => element.classList.remove('visible'), 2500);
-    (element as any)._noticeTimeout = newTimeout;
-}
-
-export function createManageHabitListItemHTML(habit: Habit): string {
-    const lastSchedule = habit.scheduleHistory[habit.scheduleHistory.length - 1];
-    const isEnded = !!lastSchedule.endDate;
-    const isGraduated = !!habit.graduatedOn;
-    const streak = calculateHabitStreak(habit.id, getTodayUTCIso());
+    const streak = calculateHabitStreak(habit.id, date);
+    const isSemiConsolidated = streak >= STREAK_SEMI_CONSOLIDATED && streak < STREAK_CONSOLIDATED;
     const isConsolidated = streak >= STREAK_CONSOLIDATED;
-    const { name } = getHabitDisplayInfo(habit);
+    // FIX: Corrected typo from `isSemi-consolidated` to `isSemiConsolidated`.
+    const consolidationMessage = isConsolidated ? t('habitConsolidatedMessage') : (isSemiConsolidated ? t('habitSemiConsolidatedMessage') : '');
 
-    let actionButtons = '', statusClass = '', statusText = '';
+    const card = document.createElement('div');
+    card.className = `habit-card ${status}`;
+    if (isSemiConsolidated) card.classList.add('semi-consolidated');
+    if (isConsolidated) card.classList.add('consolidated');
 
-    if (isGraduated) {
-        statusClass = 'graduated';
-        statusText = ` <span class="habit-name-status">${t('modalStatusGraduated')}</span>`;
-    } else if (isEnded) {
-        statusClass = 'ended';
-        statusText = ` <span class="habit-name-status">${t('modalStatusEnded')}</span>`;
-        actionButtons = `<button class="permanent-delete-habit-btn" data-habit-id="${habit.id}" aria-label="${t('aria_delete_permanent', { habitName: name })}"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>`;
-    } else {
-        const editButton = `<button class="edit-habit-btn" data-habit-id="${habit.id}" aria-label="${t('aria_edit', { habitName: name })}"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>`;
-        if (isConsolidated) {
-            actionButtons = `<button class="graduate-habit-btn" data-habit-id="${habit.id}" aria-label="${t('aria_graduate', { habitName: name })}"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v2"/><path d="M12 18v2a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2"/><path d="M6 12h12"/><path d="M18 12v6"/><path d="M18 6V4a2 2 0 0 0-2-2h-2"/><path d="M18 12h-6"/><path d="M12 12V6"/></svg></button>`;
-        } else {
-            actionButtons = `${editButton}<button class="end-habit-btn" data-habit-id="${habit.id}" aria-label="${t('aria_end', { habitName: name })}"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg></button>`;
-        }
+    card.dataset.habitId = habit.id;
+    card.dataset.time = time;
+
+    let goalHtml = '';
+    if (habit.goal.type === 'check') {
+        goalHtml = `<div class="habit-goal-controls"></div>`;
+    } else if (habit.goal.type === 'pages' || habit.goal.type === 'minutes') {
+        const displayGoal = goalOverride ?? smartGoal;
+        goalHtml = `
+            <div class="habit-goal-controls">
+                <button class="goal-control-btn" data-action="decrement" aria-label="${t('habitGoalDecrement_ariaLabel')}">-</button>
+                <div class="goal-value-wrapper">
+                    <span class="progress">${formatGoalForDisplay(displayGoal)}</span><br>
+                    <span class="unit">${getUnitString(habit, displayGoal)}</span>
+                </div>
+                <button class="goal-control-btn" data-action="increment" aria-label="${t('habitGoalIncrement_ariaLabel')}">+</button>
+            </div>`;
     }
 
-    return `
-        <li class="habit-list-item ${statusClass}" data-habit-id="${habit.id}">
-            <span>${habit.icon}<span class="habit-name">${name}</span>${statusText}</span>
-            <div class="habit-list-actions">${actionButtons}</div>
-        </li>`;
-}
+    card.innerHTML = `
+        <div class="habit-actions-left">
+             <button class="swipe-delete-btn" aria-label="${t('habitEnd_ariaLabel')}"></button>
+        </div>
+        <div class="habit-content-wrapper" draggable="true">
+            <div class="time-of-day-icon" style="opacity: 0;">
+                ${icons[time === 'Manhã' ? 'sunlight' : (time === 'Tarde' ? 'walk' : 'disconnect')].replace('stroke="#f39c12"', 'stroke="currentColor"').replace('stroke="#27ae60"', 'stroke="currentColor"').replace('stroke="#2980b9"', 'stroke="currentColor"')}
+            </div>
+            <div class="habit-icon">${habit.icon}</div>
+            <div class="habit-details">
+                <div class="name">${name}</div>
+                ${subtitle ? `<div class="subtitle">${subtitle}</div>` : ''}
+                ${consolidationMessage ? `<div class="consolidation-message">${consolidationMessage}</div>` : ''}
+            </div>
+            <div class="habit-goal">
+                ${goalHtml}
+            </div>
+        </div>
+        <div class="habit-actions-right">
+            <button class="swipe-note-btn ${dayHabitData?.note ? 'has-note' : ''}" aria-label="${dayHabitData?.note ? t('habitNoteEdit_ariaLabel') : t('habitNoteAdd_ariaLabel')}"></button>
+        </div>
+    `;
 
-export function setupManageModal() {
-    const habitsToDisplay = [...state.habits];
+    return card;
+};
 
-    habitsToDisplay.sort((a, b) => {
-        const aIsGraduated = !!a.graduatedOn;
-        const bIsGraduated = !!b.graduatedOn;
-        const aLastSchedule = a.scheduleHistory[a.scheduleHistory.length - 1];
-        const bLastSchedule = b.scheduleHistory[b.scheduleHistory.length - 1];
-        const aIsEnded = !!aLastSchedule.endDate;
-        const bIsEnded = !!bLastSchedule.endDate;
+export function renderHabits() {
+    const date = parseUTCIsoDate(state.selectedDate);
+    const dailyInfo = getHabitDailyInfoForDate(state.selectedDate);
+    const activeHabitsOnDate = state.habits.filter(h => shouldHabitAppearOnDate(h, date));
 
-        if (aIsGraduated !== bIsGraduated) return aIsGraduated ? 1 : -1;
-        if (aIsEnded !== bIsEnded) return aIsEnded ? 1 : -1;
-        
-        return getHabitDisplayInfo(a).name.localeCompare(getHabitDisplayInfo(b).name);
-    });
+    const timeGroups: Record<TimeOfDay, Habit[]> = { 'Manhã': [], 'Tarde': [], 'Noite': [] };
     
-    ui.habitList.innerHTML = habitsToDisplay.map(createManageHabitListItemHTML).join('');
+    activeHabitsOnDate.forEach(habit => {
+        const activeSchedule = getScheduleForDate(habit, date);
+        if (!activeSchedule) return;
+
+        const habitDailyInfo = dailyInfo[habit.id];
+        const scheduleForDay = habitDailyInfo?.dailySchedule || activeSchedule.times;
+
+        scheduleForDay.forEach(time => {
+            if (timeGroups[time]) {
+                timeGroups[time].push(habit);
+            }
+        });
+    });
+
+    const isDraggingActive = document.body.classList.contains('is-dragging-active');
+
+    TIMES_OF_DAY.forEach(time => {
+        const groupEl = ui.habitContainer.querySelector<HTMLElement>(`.habit-group[data-time="${time}"]`)!;
+        const wrapperEl = groupEl.closest<HTMLElement>('.habit-group-wrapper')!;
+        const placeholder = wrapperEl.querySelector<HTMLElement>('.empty-group-placeholder');
+        groupEl.innerHTML = '';
+
+        const habitsForTime = timeGroups[time];
+
+        if (habitsForTime.length > 0) {
+            wrapperEl.classList.add('has-habits');
+            habitsForTime.forEach(habit => {
+                const habitEl = createHabitElement(habit, time);
+                groupEl.appendChild(habitEl);
+            });
+        } else {
+            wrapperEl.classList.remove('has-habits');
+        }
+        
+        if (placeholder) {
+            const hasPredefinedHabitsForTime = PREDEFINED_HABITS.some(p => p.times.includes(time));
+            if (hasPredefinedHabitsForTime && !isDraggingActive) {
+                placeholder.classList.add('show-smart-placeholder');
+            } else {
+                placeholder.classList.remove('show-smart-placeholder');
+            }
+            placeholder.querySelector('.placeholder-text')!.textContent = t('dragToAddHabit');
+        }
+    });
 }
 
 export function showUndoToast() {
@@ -571,92 +290,154 @@ export function showUndoToast() {
     }, 5000);
 }
 
-export function showConfirmationModal(
-    text: string,
-    onConfirm: () => void,
-    options?: {
-        title?: string;
-        onEdit?: () => void;
-        confirmText?: string;
-        editText?: string;
-        cancelText?: string;
-    }
-) {
-    const titleEl = ui.confirmModal.querySelector('h2');
-    if (titleEl) {
-        titleEl.textContent = options?.title || t('modalConfirmTitle');
-    }
 
+// --- MODAL RENDERING AND MANAGEMENT ---
+
+export function openModal(modal: HTMLElement) {
+    modal.classList.add('visible');
+}
+
+export function closeModal(modal: HTMLElement) {
+    modal.classList.remove('visible');
+}
+
+export function initializeModalClosing(modal: HTMLElement) {
+    const closeBtn = modal.querySelector<HTMLButtonElement>('.modal-close-btn');
+    modal.addEventListener('click', e => {
+        if (e.target === modal) closeModal(modal);
+    });
+    closeBtn?.addEventListener('click', () => closeModal(modal));
+}
+
+export function showConfirmationModal(
+    text: string, 
+    onConfirm: () => void,
+    options: { onEdit?: () => void; title?: string, confirmText?: string; editText?: string, cancelText?: string } = {}
+) {
+    const { onEdit, title, confirmText, editText } = options;
+    
     ui.confirmModalText.innerHTML = text;
     state.confirmAction = onConfirm;
-    state.confirmEditAction = options?.onEdit || null;
-
-    const confirmBtn = ui.confirmModalConfirmBtn;
-    const editBtn = ui.confirmModalEditBtn;
-    const cancelBtn = ui.confirmModal.querySelector('.modal-close-btn') as HTMLButtonElement;
-
-    confirmBtn.textContent = options?.confirmText || t('confirmButton');
-    if (cancelBtn) {
-        cancelBtn.textContent = options?.cancelText || t('cancelButton');
+    state.confirmEditAction = onEdit || null;
+    
+    if (title) {
+        (ui.confirmModal.querySelector('h2') as HTMLElement).textContent = title;
     }
-
-    if (options?.onEdit) {
-        editBtn.style.display = 'inline-flex';
-        editBtn.textContent = options.editText || t('editButton');
+    
+    ui.confirmModalConfirmBtn.textContent = confirmText || t('confirmButton');
+    
+    if (onEdit) {
+        ui.confirmModalEditBtn.style.display = 'block';
+        ui.confirmModalEditBtn.textContent = editText || t('editButton');
     } else {
-        editBtn.style.display = 'none';
+        ui.confirmModalEditBtn.style.display = 'none';
     }
 
     openModal(ui.confirmModal);
 }
 
+export function renderExploreHabits() {
+    ui.exploreHabitList.innerHTML = PREDEFINED_HABITS.map((habit, index) => {
+        const { name, subtitle } = getHabitDisplayInfo(habit);
+        const isDisabled = state.habits.some(h => {
+            const lastSchedule = h.scheduleHistory[h.scheduleHistory.length - 1];
+            return lastSchedule.nameKey === habit.nameKey && !lastSchedule.endDate && !h.graduatedOn;
+        });
+
+        return `
+            <div class="explore-habit-item ${isDisabled ? 'disabled' : ''}" data-index="${index}" role="button" tabindex="0" aria-disabled="${isDisabled}">
+                <div class="explore-habit-icon">${habit.icon}</div>
+                <div class="explore-habit-details">
+                    <div class="name">${name}</div>
+                    <div class="subtitle">${subtitle}</div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+export function setupManageModal() {
+    const endedHabits: Habit[] = [];
+    const activeHabits: Habit[] = [];
+
+    state.habits.forEach(habit => {
+        const lastSchedule = habit.scheduleHistory[habit.scheduleHistory.length - 1];
+        if (lastSchedule.endDate || habit.graduatedOn) {
+            endedHabits.push(habit);
+        } else {
+            activeHabits.push(habit);
+        }
+    });
+
+    const createListItem = (habit: Habit) => {
+        const { name } = getHabitDisplayInfo(habit);
+        const isEnded = !!habit.scheduleHistory[habit.scheduleHistory.length - 1].endDate;
+        const isGraduated = !!habit.graduatedOn;
+
+        let statusText = '';
+        let itemClass = '';
+        if (isGraduated) {
+            statusText = `<span class="status-text">${t('modalStatusGraduated')}</span>`;
+            itemClass = 'graduated';
+        } else if (isEnded) {
+            statusText = `<span class="status-text">${t('modalStatusEnded')}</span>`;
+            itemClass = 'ended';
+        }
+        
+        const canGraduate = calculateHabitStreak(habit.id, getTodayUTCIso()) >= STREAK_CONSOLIDATED && !isGraduated;
+
+        return `
+            <li class="habit-list-item ${itemClass}">
+                <span>${habit.icon} ${name} ${statusText}</span>
+                <div class="habit-list-actions">
+                    ${!isEnded && !isGraduated ? `<button class="edit-habit-btn" data-habit-id="${habit.id}" aria-label="${t('aria_edit', { habitName: name })}"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></button>` : ''}
+                    ${canGraduate ? `<button class="graduate-habit-btn" data-habit-id="${habit.id}" aria-label="${t('aria_graduate', { habitName: name })}"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path></svg></button>` : ''}
+                    ${!isEnded && !isGraduated ? `<button class="end-habit-btn" data-habit-id="${habit.id}" aria-label="${t('aria_end', { habitName: name })}"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg></button>` : ''}
+                    ${isEnded && !isGraduated ? `<button class="permanent-delete-habit-btn" data-habit-id="${habit.id}" aria-label="${t('aria_delete_permanent', { habitName: name })}"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></button>` : ''}
+                </div>
+            </li>
+        `;
+    };
+
+    const activeListHtml = activeHabits.map(createListItem).join('');
+    const endedListHtml = endedHabits.map(createListItem).join('');
+    ui.habitList.innerHTML = activeListHtml + endedListHtml;
+}
 
 export function openNotesModal(habitId: string, date: string, time: TimeOfDay) {
     const habit = state.habits.find(h => h.id === habitId);
     if (!habit) return;
-    state.editingNoteFor = { habitId, date, time };
-    const habitNote = getHabitDailyInfoForDate(date)[habitId]?.instances?.[time]?.note || '';
+    
     const { name } = getHabitDisplayInfo(habit);
-    ui.notesModalTitle.textContent = name;
-    const dateObj = parseUTCIsoDate(date);
-    ui.notesModalSubtitle.textContent = dateObj.toLocaleDateString(state.activeLanguageCode, { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
-    ui.notesTextarea.value = habitNote;
+    const dayInstanceData = state.dailyData[date]?.[habit.id]?.instances[time];
+
+    state.editingNoteFor = { habitId, date, time };
+    ui.notesModalTitle.textContent = t('modalNotesTitleFor', { habitName: name });
+    ui.notesModalSubtitle.textContent = parseUTCIsoDate(date).toLocaleDateString(state.activeLanguageCode, { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
+    ui.notesTextarea.value = dayInstanceData?.note || '';
+    
     openModal(ui.notesModal);
     ui.notesTextarea.focus();
 }
 
-export function renderHabitReminders(times: TimeOfDay[], reminderTimes: Habit['reminderTimes'] = {}) {
-    const container = document.getElementById('habit-reminders-inputs')!;
-    const group = document.getElementById('habit-reminders-group')!;
+export function openEditModal(habitOrTemplate: Habit | PredefinedHabit | null, sourceModal?: 'explore' | 'manage') {
+    const isNew = !habitOrTemplate || 'nameKey' in habitOrTemplate || !('id' in habitOrTemplate);
 
-    if (times.length === 0) {
-        group.style.display = 'none';
-        container.innerHTML = '';
-        return;
-    }
-    
-    group.style.display = 'flex';
-    container.innerHTML = times.map(time => `
-        <div class="reminder-time-row">
-            <label for="reminder-time-${time}">${getTimeOfDayName(time)}</label>
-            <input type="time" class="reminder-time-input" id="reminder-time-${time}" data-time="${time}" value="${reminderTimes?.[time] || ''}">
-        </div>
-    `).join('');
-}
-
-export function openEditModal(habitOrTemplate: Habit | PredefinedHabit | null) {
-    const form = ui.editHabitForm;
-    const nameInput = form.elements.namedItem('habit-name') as HTMLInputElement;
-    const noticeEl = form.querySelector<HTMLElement>('.duplicate-habit-notice');
-
-    const isNew = habitOrTemplate === null || !('id' in habitOrTemplate);
-
-    let habitId: string | undefined;
-    let originalHabit: Habit | undefined;
     let formData: HabitTemplate;
-
+    
     if (isNew) {
-        if (habitOrTemplate === null) { // Custom new
+        if (habitOrTemplate) { // Predefined
+            formData = {
+                nameKey: (habitOrTemplate as PredefinedHabit).nameKey,
+                subtitleKey: (habitOrTemplate as PredefinedHabit).subtitleKey,
+                icon: habitOrTemplate.icon,
+                color: habitOrTemplate.color,
+                // FIX: Cast habitOrTemplate to PredefinedHabit to access the 'times' property, as the base 'Habit' type does not have it.
+                times: [...(habitOrTemplate as PredefinedHabit).times],
+                goal: { ...habitOrTemplate.goal },
+                frequency: { ...(habitOrTemplate as PredefinedHabit).frequency },
+            };
+        } else { // Custom
             formData = {
                 name: '',
                 subtitle: t('customHabitSubtitle'),
@@ -665,71 +446,138 @@ export function openEditModal(habitOrTemplate: Habit | PredefinedHabit | null) {
                 times: ['Manhã'],
                 goal: { type: 'check', unitKey: 'unitCheck' },
                 frequency: { type: 'daily', interval: 1 },
-                reminderTimes: {},
             };
-        } else { // Predefined habit
-            formData = { ...(habitOrTemplate as PredefinedHabit), reminderTimes: {} };
         }
-    } else { // Existing habit
-        originalHabit = habitOrTemplate as Habit;
-        habitId = originalHabit.id;
-        const latestSchedule = originalHabit.scheduleHistory[originalHabit.scheduleHistory.length - 1];
-        const displayInfo = getHabitDisplayInfo(originalHabit);
-        
+    } else { // Editing existing
+        const habit = habitOrTemplate as Habit;
+        const lastSchedule = habit.scheduleHistory[habit.scheduleHistory.length - 1];
+        const { name, subtitle } = getHabitDisplayInfo(habit);
         formData = {
-            name: displayInfo.name,
-            subtitle: displayInfo.subtitle,
-            icon: originalHabit.icon,
-            color: originalHabit.color,
-            times: latestSchedule.times,
-            goal: originalHabit.goal,
-            frequency: latestSchedule.frequency,
-            reminderTimes: originalHabit.reminderTimes || {},
+            name: name,
+            subtitle: subtitle,
+            icon: habit.icon,
+            color: habit.color,
+            times: [...lastSchedule.times],
+            goal: { ...habit.goal },
+            frequency: { ...lastSchedule.frequency },
         };
     }
-
-    state.editingHabit = { isNew, habitId, originalData: originalHabit, formData };
     
-    const habitDisplayName = 'name' in formData ? formData.name : t(formData.nameKey);
+    state.editingHabit = {
+        isNew: isNew,
+        habitId: isNew ? undefined : (habitOrTemplate as Habit).id,
+        originalData: isNew ? undefined : (habitOrTemplate as Habit),
+        formData: formData,
+        sourceModal: sourceModal,
+    };
     
-    ui.editHabitModalTitle.textContent = isNew ? t('modalAddTitle') : t('modalEditTitle');
-    nameInput.value = habitDisplayName;
+    const { name } = getHabitDisplayInfo({ 'scheduleHistory': [formData] } as any);
 
-    const checkboxes = form.querySelectorAll<HTMLInputElement>('input[name="habit-time"]');
-    checkboxes.forEach(cb => {
+    ui.editHabitModalTitle.textContent = isNew ? t('modalAddHabitTitle', { habitName: name }) : t('modalEditTitle');
+    
+    const form = ui.editHabitForm;
+    (form.elements.namedItem('habit-name') as HTMLInputElement).value = name;
+
+    const timeCheckboxes = form.querySelectorAll<HTMLInputElement>('input[name="habit-time"]');
+    timeCheckboxes.forEach(cb => {
         cb.checked = formData.times.includes(cb.value as TimeOfDay);
     });
-    
-    renderHabitReminders(formData.times, formData.reminderTimes);
-    renderFrequencyFilter();
-    
-    nameInput.readOnly = false;
 
-    if(noticeEl) noticeEl.classList.remove('visible');
+    renderFrequencyFilter();
+
+    // Limpa o aviso de duplicado ao abrir
+    const noticeEl = form.querySelector<HTMLElement>('.duplicate-habit-notice');
+    if (noticeEl) {
+        noticeEl.classList.remove('visible');
+        noticeEl.textContent = '';
+    }
+    
     openModal(ui.editHabitModal);
-    nameInput.focus();
-    nameInput.select();
 }
 
-export function updateHeaderTitle() {
-    const selectedDate = parseUTCIsoDate(state.selectedDate);
-    const today = getTodayUTC();
-    const yesterday = addDays(today, -1);
-    const tomorrow = addDays(today, 1);
-    const isMobile = window.innerWidth < 768;
+export function renderLanguageFilter() {
+    const currentIndex = LANGUAGES.findIndex(l => l.code === state.activeLanguageCode);
+    const itemWidth = ui.languageReel.firstElementChild?.clientWidth || 0;
+    ui.languageReel.style.transform = `translateX(-${currentIndex * itemWidth}px)`;
+    updateReelRotaryARIA(ui.languageViewport, currentIndex, LANGUAGES.map(l => t(l.nameKey)), 'language_ariaLabel');
+}
 
-    ui.headerTitle.style.display = 'block';
+export function renderFrequencyFilter() {
+    if (!state.editingHabit) return;
+    const currentFrequency = state.editingHabit.formData.frequency;
+    const currentIndex = FREQUENCIES.findIndex(f => f.value.type === currentFrequency.type && f.value.interval === currentFrequency.interval);
+    const itemWidth = ui.frequencyReel.firstElementChild?.clientWidth || 0;
+    ui.frequencyReel.style.transform = `translateX(-${Math.max(0, currentIndex) * itemWidth}px)`;
+    updateReelRotaryARIA(ui.frequencyViewport, Math.max(0, currentIndex), FREQUENCIES.map(f => t(f.labelKey)), 'frequency_ariaLabel');
+}
 
-    if (selectedDate.getTime() === today.getTime()) {
-        ui.headerTitle.textContent = t('headerTitleToday');
-    } else if (selectedDate.getTime() === yesterday.getTime()) {
-        ui.headerTitle.textContent = t('headerTitleYesterday');
-    } else if (selectedDate.getTime() === tomorrow.getTime()) {
-        ui.headerTitle.textContent = t('headerTitleTomorrow');
+export function renderAINotificationState() {
+    const hasUnseenResult = state.aiState === 'completed' && !state.hasSeenAIResult;
+    const hasPendingNotification = state.pending21DayHabitIds.length > 0 || state.pendingConsolidationHabitIds.length > 0;
+    
+    ui.aiEvalBtn.classList.toggle('has-notification', hasUnseenResult || hasPendingNotification);
+    
+    if (state.aiState === 'loading') {
+        ui.aiEvalBtn.classList.add('loading');
+        ui.aiEvalBtn.disabled = true;
     } else {
-        const formatOptions: Intl.DateTimeFormatOptions = isMobile 
-            ? { day: '2-digit', month: '2-digit', timeZone: 'UTC' }
-            : { day: 'numeric', month: 'long', timeZone: 'UTC' };
-        ui.headerTitle.textContent = selectedDate.toLocaleDateString(state.activeLanguageCode, formatOptions);
+        ui.aiEvalBtn.classList.remove('loading');
+        ui.aiEvalBtn.disabled = false;
     }
+}
+
+export async function updateNotificationUI() {
+    // FIX: Refactored to fix race condition and type errors.
+    // The logic now runs entirely within the OneSignal callback to ensure
+    // `permissionStatus` is available when the UI is built.
+    await window.OneSignal?.push(async (OneSignal: any) => {
+        const permissionStatus: 'default' | 'granted' | 'denied' = OneSignal.Notifications.permission;
+        let pushSubscriptionEnabled = false;
+        
+        if (permissionStatus === 'granted') {
+            pushSubscriptionEnabled = OneSignal.User.PushSubscription.optedIn;
+        }
+
+        const statusSection = document.getElementById('notification-status-section')!;
+        const descEl = ui.notificationStatusDesc;
+        let content = '';
+
+        if (permissionStatus === 'granted') {
+            if (pushSubscriptionEnabled) {
+                content = `<div class="notification-status-item"><strong>Status:</strong> Ativado</div>`;
+                descEl.textContent = t('modalManageNotificationsStaticDesc');
+            } else {
+                content = `<div class="notification-status-item"><strong>Status:</strong> Ativado, mas desativado no OneSignal.</div>`;
+                descEl.textContent = "Você permitiu notificações, mas pode tê-las desativado nas configurações do OneSignal ou do dispositivo.";
+            }
+        } else if (permissionStatus === 'denied') {
+            content = `<div class="notification-status-item"><strong>Status:</strong> Bloqueado</div>`;
+            descEl.textContent = "Você bloqueou as notificações. Para ativá-las, você precisará alterar as permissões para este site nas configurações do seu navegador.";
+        } else { // default
+            content = `<button id="enable-notifications-btn" class="btn">${t('notificationPromptTitle')}</button>`;
+            descEl.textContent = t('notificationPromptMessage');
+        }
+
+        statusSection.innerHTML = descEl.outerHTML + content;
+
+        const enableBtn = document.getElementById('enable-notifications-btn');
+        enableBtn?.addEventListener('click', async () => {
+            await OneSignal.Notifications.requestPermission();
+            updateNotificationUI(); // Re-renderiza a UI após a tentativa de permissão
+        });
+    });
+}
+
+export function showInlineNotice(element: HTMLElement, message: string) {
+    element.textContent = message;
+    element.classList.add('visible');
+    setTimeout(() => {
+        element.classList.remove('visible');
+    }, 3000);
+}
+
+export function renderApp() {
+    renderCalendar();
+    renderHabits();
+    renderChart();
 }

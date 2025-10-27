@@ -1114,33 +1114,6 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 
 /* Modal: Edição/Criação de Hábito */
 #edit-habit-modal .modal-content { max-width: 440px; }
-#habit-reminders-inputs {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-md);
-    margin-top: var(--space-xs);
-}
-.reminder-time-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    background-color: var(--bg-color);
-    padding: var(--space-sm) var(--space-md);
-    border-radius: var(--border-radius-base);
-    border: 1px solid var(--border-color);
-}
-.reminder-time-row label {
-    font-size: 14px;
-    margin: 0;
-}
-.reminder-time-input {
-    background-color: var(--surface-color);
-    border: 1px solid var(--border-color);
-    color: var(--text-primary);
-    border-radius: var(--border-radius-small);
-    padding: var(--space-xs) var(--space-sm);
-    font-size: 14px;
-}
 
 /* CORREÇÃO: Garante que o modal de confirmação apareça sobre outros modais */
 #confirm-modal {

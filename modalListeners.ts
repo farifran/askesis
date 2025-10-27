@@ -15,7 +15,6 @@ import {
     renderAINotificationState,
     openEditModal,
     updateNotificationUI,
-    renderHabitReminders,
     // FIX: Import 'renderFrequencyFilter' to resolve 'Cannot find name' error.
     renderFrequencyFilter,
 } from './render';
@@ -207,9 +206,9 @@ export const setupModalListeners = () => {
     ui.aiEvalBtn.addEventListener('click', handleAIEvaluationClick);
 
     // Initialize generic closing for modals that don't need special cleanup
-    [ui.manageModal, ui.exploreModal, ui.confirmModal, ui.notesModal, ui.editHabitModal, ui.aiOptionsModal].forEach(initializeModalClosing);
+    [ui.manageModal, ui.exploreModal, ui.confirmModal, ui.notesModal, ui.aiOptionsModal].forEach(initializeModalClosing);
 
-    // Custom closing logic for the AI modal
+    // Custom closing for the AI modal
     ui.aiModal.addEventListener('click', e => {
         if (e.target === ui.aiModal) {
              // Apenas fecha o modal, não reseta o estado, para que o usuário possa reabrir.
@@ -221,6 +220,30 @@ export const setupModalListeners = () => {
         // O botão 'Fechar' também apenas fecha o modal.
         closeModal(ui.aiModal);
     });
+
+    // Custom closing for edit habit modal to handle back navigation
+    const closeEditHabitModalWithBackNavigation = () => {
+        const source = state.editingHabit?.sourceModal;
+        
+        closeModal(ui.editHabitModal);
+        state.editingHabit = null; // Always clear state on close
+
+        if (source === 'explore') {
+            renderExploreHabits();
+            openModal(ui.exploreModal);
+        } else if (source === 'manage') {
+            setupManageModal();
+            openModal(ui.manageModal);
+        }
+    };
+
+    ui.editHabitModal.addEventListener('click', e => {
+        if (e.target === ui.editHabitModal) {
+            closeEditHabitModalWithBackNavigation();
+        }
+    });
+
+    ui.editHabitModal.querySelector<HTMLButtonElement>('.modal-close-btn')!.addEventListener('click', closeEditHabitModalWithBackNavigation);
 
 
     ui.exploreHabitList.addEventListener('click', e => {
@@ -236,15 +259,15 @@ export const setupModalListeners = () => {
         closeModal(ui.exploreModal);
         
         if (existingHabit) {
-            openEditModal(existingHabit);
+            openEditModal(existingHabit, 'explore');
         } else {
-            openEditModal(predefinedHabit);
+            openEditModal(predefinedHabit, 'explore');
         }
     });
 
     ui.createCustomHabitBtn.addEventListener('click', () => {
         closeModal(ui.exploreModal);
-        openEditModal(null);
+        openEditModal(null, 'explore');
     });
 
     ui.confirmModalConfirmBtn.addEventListener('click', () => {
@@ -266,28 +289,6 @@ export const setupModalListeners = () => {
         e.preventDefault();
         saveHabitFromModal();
     });
-
-    // Listener para os checkboxes de horário para renderizar dinamicamente os lembretes
-    const timeCheckboxes = ui.editHabitForm.querySelector('#habit-time-checkboxes');
-    if (timeCheckboxes) {
-        timeCheckboxes.addEventListener('change', () => {
-            if (!state.editingHabit) return;
-
-            const selectedTimes = Array.from(ui.editHabitForm.querySelectorAll<HTMLInputElement>('input[name="habit-time"]:checked'))
-                .map(cb => cb.value as TimeOfDay);
-            
-            // Lê os valores atuais dos inputs de lembrete para não perdê-los
-            const currentReminderTimes: Habit['reminderTimes'] = {};
-            const reminderInputs = ui.editHabitForm.querySelectorAll<HTMLInputElement>('.reminder-time-input');
-            reminderInputs.forEach(input => {
-                if(input.value) {
-                    currentReminderTimes[input.dataset.time as TimeOfDay] = input.value;
-                }
-            });
-
-            renderHabitReminders(selectedTimes, currentReminderTimes);
-        });
-    }
 
     ui.habitList.addEventListener('click', e => {
         const target = e.target as HTMLElement;
