@@ -50,9 +50,12 @@ self.addEventListener('activate', event => {
 // Implementa uma estratégia "cache-first": tenta servir do cache primeiro,
 // e se não encontrar, busca na rede e atualiza o cache.
 self.addEventListener('fetch', event => {
-    // Ignora requisições que não são GET e a API de sincronização para evitar problemas.
-    if (event.request.method !== 'GET' || event.request.url.includes('/api/sync')) {
-        return;
+    const url = new URL(event.request.url);
+
+    // Ignora requisições que não são GET, a API de sincronização, e requisições para o OneSignal.
+    // Isso garante que a lógica de cache não interfira com a comunicação do OneSignal.
+    if (event.request.method !== 'GET' || url.pathname.includes('/api/sync') || url.hostname.endsWith('onesignal.com')) {
+        return; // Deixa o navegador/outros listeners (do OneSignal) lidarem com a requisição.
     }
 
     event.respondWith(

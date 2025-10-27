@@ -1,12 +1,16 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 24 24">
     <rect width="24" height="24" fill="#1e1e1e"/>
-    <g transform="scale(0.7) translate(3.5 3.5)">
-        <path d="M5 21h14" stroke="#e5e5e5" stroke-width="2" stroke-linecap="round"/>
-        <path d="M6.5 21V6h11v15" stroke="#e5e5e5" stroke-width="2" stroke-linecap="round"/>
-        <path d="M5 6h14" stroke="#e5e5e5" stroke-width="2" stroke-linecap="round"/>
-        <path d="M5 4h14" stroke="#e5e5e5" stroke-width="2" stroke-linecap="round"/>
-        <path d="M9 9v9" stroke="#e5e5e5" stroke-width="1.5"/>
-        <path d="M12 9v9" stroke="#e5e5e5" stroke-width="1.5"/>
-        <path d="M15 9v9" stroke="#e5e5e5" stroke-width="1.5"/>
+    <g transform="scale(0.8) translate(2.5 2.5)">
+        <!-- Helmet Crest -->
+        <path d="M6 5 C 8 3, 16 3, 18 5" stroke="#e5e5e5" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+        <path d="M7 5 V 2.5" stroke="#e5e5e5" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+        <path d="M9 4 V 2" stroke="#e5e5e5" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+        <path d="M12 3.5 V 1.5" stroke="#e5e5e5" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+        <path d="M15 4 V 2" stroke="#e5e5e5" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+        <path d="M17 5 V 2.5" stroke="#e5e5e5" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+        <!-- Helmet Body -->
+        <path d="M5 14 A 7 7 0 0 1 12 7 A 7 7 0 0 1 19 14 V 18 H 5 V 14 Z" stroke="#e5e5e5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        <!-- Cheek Guard -->
+        <path d="M19 14 V 20 L 16 18 V 13" stroke="#e5e5e5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
     </g>
 </svg>
