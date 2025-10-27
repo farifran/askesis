@@ -19,12 +19,12 @@
 <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
 <script>
   window.OneSignal = window.OneSignal || [];
-  // REATORAÇÃO: Removido 'async' e adicionado 'serviceWorkerPath' para garantir uma inicialização robusta do SDK.
-  // Isso evita condições de corrida e timeouts, alinhando-se com as melhores práticas da documentação do OneSignal.
+  // REATORAÇÃO: O SDK do OneSignal agora é configurado para registrar nosso service worker PWA principal ('sw.js'),
+  // que já importa o worker do OneSignal. Isso unifica o registro e evita conflitos.
   window.OneSignal.push(function(OneSignal) {
     OneSignal.init({
       appId: "39454655-f1cd-4531-8ec5-d0f61eb1c478",
-      serviceWorkerPath: "onesignal-sw.js",
+      serviceWorkerPath: "sw.js", // Aponta para nosso SW combinado
       autoResubscribe: true,
       notifyButton: {
         enable: false,
@@ -33,17 +33,6 @@
         console.error("OneSignal init error:", e);
     });
   });
-</script>
-<script>
-    if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-            navigator.serviceWorker.register('/sw.js').then(registration => {
-                console.log('ServiceWorker registration successful with scope: ', registration.scope);
-            }, err => {
-                console.log('ServiceWorker registration failed: ', err);
-            });
-        });
-    }
 </script>
 </head>
 <body>
