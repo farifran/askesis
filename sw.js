@@ -5,7 +5,7 @@
 importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js');
 
 // 2. Lógica de cache do PWA
-const CACHE_NAME = 'habit-tracker-ai-cache-v2'; // Versão incrementada para forçar a atualização
+const CACHE_NAME = 'habit-tracker-ai-cache-v3'; // Versão incrementada para forçar a atualização do cache e do worker
 const URLS_TO_CACHE = [
     '/',
     'bundle.js',
@@ -21,6 +21,9 @@ const URLS_TO_CACHE = [
 
 // Evento de instalação: pré-cache do App Shell
 self.addEventListener('install', event => {
+    // Força o novo service worker a se tornar ativo imediatamente,
+    // garantindo que as atualizações sejam aplicadas rapidamente.
+    self.skipWaiting(); 
     event.waitUntil(
         caches.open(CACHE_NAME)
             .then(cache => {
@@ -32,6 +35,11 @@ self.addEventListener('install', event => {
 
 // Evento de ativação: limpeza de caches antigos
 self.addEventListener('activate', event => {
+    // Neste evento, nós apenas limpamos caches antigos.
+    // A chamada para self.clients.claim() é omitida de propósito.
+    // O script do OneSignal (importado acima) já lida com o 'claim',
+    // e remover a nossa chamada evita uma condição de corrida que poderia
+    // interferir na inicialização do listener de notificações.
     event.waitUntil(
         caches.keys().then(cacheNames => {
             return Promise.all(
@@ -44,8 +52,6 @@ self.addEventListener('activate', event => {
             );
         })
     );
-    // Garante que o novo service worker assuma o controle imediatamente.
-    return self.clients.claim();
 });
 
 // Evento de fetch: serve a partir do cache ou da rede
