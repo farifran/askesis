@@ -1,14 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-  <!-- Roman Column (simplified silhouette) -->
+  <!-- Roman Column (slightly more stylized) -->
   <g fill="white">
-    <path d="M38,95 h24 v-5 h-24 z M42,90 h16 v-70 h-16 z M38,20 h24 v-5 h-24 z"/>
+    <path d="M40,95 h20 v-5 h-20 z M43,90 h14 v-70 h-14 z M40,20 h20 v-5 h-20 z"/>
   </g>
 
-  <!-- Laurel Wreath (simplified, thicker stroke) -->
-  <g stroke="white" stroke-width="8" stroke-linecap="round" fill="none">
-      <!-- Left Branch -->
-      <path d="M50,90 C 15,75, 15,25, 48,12"/>
-      <!-- Right Branch -->
-      <path d="M50,90 C 85,75, 85,25, 52,12"/>
+  <!-- Laurel Wreath (thinner stroke for more detail) -->
+  <g stroke="white" stroke-width="6" stroke-linecap="round" fill="none">
+      <path d="M50,90 C 18,75, 18,25, 48,13"/>
+      <path d="M50,90 C 82,75, 82,25, 52,13"/>
   </g>
 </svg>
