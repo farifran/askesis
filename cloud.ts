@@ -263,6 +263,9 @@ export async function syncLocalStateToCloud() {
 export function initNotifications() {
     window.OneSignal = window.OneSignal || [];
     window.OneSignal.push(async (OneSignal: any) => {
+        // Adicionado: Define o idioma do usuário no OneSignal na inicialização
+        OneSignal.User.setLanguage(state.activeLanguageCode);
+
         OneSignal.Notifications.addEventListener('permissionChange', (isSubscribed: boolean) => {
             updateNotificationUI();
         });

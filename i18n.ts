@@ -108,6 +108,7 @@ function updateUIText() {
     document.getElementById('label-language')!.textContent = t('modalManageLanguage');
     document.getElementById('label-sync')!.textContent = t('syncLabel');
     document.getElementById('label-notifications')!.textContent = t('modalManageNotifications');
+    ui.notificationStatusDesc.textContent = t('modalManageNotificationsStaticDesc');
     document.getElementById('label-reset')!.textContent = t('modalManageReset');
     ui.resetAppBtn.textContent = t('modalManageResetButton');
     ui.manageModal.querySelector('.modal-close-btn')!.textContent = t('closeButton');
@@ -158,6 +159,13 @@ export async function setLanguage(langCode: 'pt' | 'en' | 'es') {
     state.activeLanguageCode = langCode;
     document.documentElement.lang = langCode;
     localStorage.setItem('habitTrackerLanguage', langCode);
+    
+    // Adicionado: Atualiza o idioma do usuário no OneSignal quando alterado no app
+    if (window.OneSignal) {
+        window.OneSignal.push((OneSignal: any) => {
+            OneSignal.User.setLanguage(langCode);
+        });
+    }
     
     initFrequencyFilter();
     initLanguageFilter();
