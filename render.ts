@@ -224,14 +224,10 @@ function updateGoalContentElement(goalEl: HTMLElement, status: HabitStatus, habi
 
 function getTimeOfDayIcon(time: TimeOfDay): string {
     switch (time) {
-        case 'Manhã':
-            return '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L12 5"/><path d="M12 19L12 22"/><path d="M5 12L2 12"/><path d="M22 12L19 12"/><path d="M19.07 4.93L16.24 7.76"/><path d="M7.76 16.24L4.93 19.07"/><path d="M19.07 19.07L16.24 16.24"/><path d="M7.76 7.76L4.93 4.93"/><path d="M4 17h16"/></svg>'; 
-        case 'Tarde':
-            return '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>'; 
-        case 'Noite':
-            return '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>'; 
-        default:
-            return '';
+        case 'Manhã': return icons.morning;
+        case 'Tarde': return icons.afternoon;
+        case 'Noite': return icons.evening;
+        default: return '';
     }
 }
 
