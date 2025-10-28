@@ -45,9 +45,6 @@ async function build() {
             format: 'esm',              // Formato de saída como Módulos ES, moderno e compatível com importações dinâmicas.
             platform: 'browser',        // Otimiza a saída para ser executada em navegadores.
             sourcemap: true,            // Gera source maps para facilitar a depuração em produção.
-            define: {
-                'GEMINI_API_KEY': JSON.stringify(process.env.API_KEY || ''),
-            },
         });
         console.log('Application built successfully.');
 

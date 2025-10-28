@@ -1,6 +1,6 @@
 import { ui } from './ui';
 import { state, Habit, getSmartGoalForHabit, TimeOfDay } from './state';
-import { openNotesModal, formatGoalForDisplay, getUnitString } from './render';
+import { openNotesModal, getUnitString, formatGoalForDisplay } from './render';
 import {
     toggleHabitStatus,
     updateGoalOverride,
@@ -88,18 +88,15 @@ export function setupHabitCardListeners() {
             const smartGoal = getSmartGoalForHabit(habit, state.selectedDate, time);
             const currentGoal = dayInstanceData?.goalOverride ?? smartGoal;
             
-            let newGoal;
-            if (action === 'increment') {
-                newGoal = currentGoal + GOAL_STEP;
-            } else {
-                newGoal = Math.max(1, currentGoal - GOAL_STEP);
-            }
+            const newGoal = (action === 'increment') 
+                ? currentGoal + GOAL_STEP 
+                : Math.max(1, currentGoal - GOAL_STEP);
 
             const wrapper = controlBtn.closest('.habit-goal-controls');
             const progressEl = wrapper?.querySelector<HTMLElement>('.progress');
             const unitEl = wrapper?.querySelector<HTMLElement>('.unit');
 
-            // Animação da UI
+            // Animação e atualização visual imediata
             if (progressEl && newGoal !== currentGoal) {
                 const animClass = newGoal > currentGoal ? 'goal-increased' : 'goal-decreased';
                 progressEl.classList.add(animClass);
@@ -107,17 +104,16 @@ export function setupHabitCardListeners() {
                     progressEl.classList.remove(animClass);
                 }, { once: true });
             }
-
-            // Ação 1: Atualiza o estado sem re-renderizar
-            updateGoalOverride(habitId, state.selectedDate, time, newGoal);
             
-            // Ação 2: Atualiza manualmente a UI para refletir o novo valor
             if (progressEl) {
                 progressEl.textContent = formatGoalForDisplay(newGoal);
             }
             if (unitEl) {
                 unitEl.textContent = getUnitString(habit, newGoal);
             }
+
+            // Ação: Atualiza o estado. A renderização agora é tratada dentro de updateGoalOverride.
+            updateGoalOverride(habitId, state.selectedDate, time, newGoal);
 
             return;
         }

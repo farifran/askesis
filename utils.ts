@@ -37,6 +37,19 @@ export function addDays(date: Date, days: number): Date {
 }
 
 // --- Formatting ---
+export function escapeHTML(str: string): string {
+    return str.replace(/[&<>"']/g, function (match) {
+        switch (match) {
+            case '&': return '&amp;';
+            case '<': return '&lt;';
+            case '>': return '&gt;';
+            case '"': return '&quot;';
+            case "'": return '&#39;';
+            default: return match;
+        }
+    });
+}
+
 export function simpleMarkdownToHTML(text: string): string {
     const lines = text.split('\n');
     let html = '';
@@ -54,10 +67,8 @@ export function simpleMarkdownToHTML(text: string): string {
         }
     };
 
-    // Função auxiliar para formatar elementos inline como negrito e itálico.
     const formatInline = (line: string): string => {
         return line
-            // IMPORTANTE: Processa o negrito primeiro para evitar conflitos com o itálico
             .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
             .replace(/\*(.*?)\*/g, '<em>$1</em>');
     };
@@ -65,7 +76,6 @@ export function simpleMarkdownToHTML(text: string): string {
     for (const line of lines) {
         const trimmedLine = line.trim();
 
-        // Títulos
         if (trimmedLine.startsWith('### ')) {
             closeLists();
             html += `<h3>${formatInline(line.substring(4))}</h3>`;
@@ -82,7 +92,6 @@ export function simpleMarkdownToHTML(text: string): string {
             continue;
         }
 
-        // Lista Não Ordenada
         if (trimmedLine.startsWith('* ') || trimmedLine.startsWith('- ')) {
             if (inOrderedList) closeLists();
             if (!inUnorderedList) {
@@ -93,7 +102,6 @@ export function simpleMarkdownToHTML(text: string): string {
             continue;
         }
 
-        // Lista Ordenada
         if (trimmedLine.match(/^\d+\.\s/)) {
             if (inUnorderedList) closeLists();
             if (!inOrderedList) {
@@ -104,13 +112,12 @@ export function simpleMarkdownToHTML(text: string): string {
             continue;
         }
         
-        // Parágrafo
         closeLists();
         if (trimmedLine.length > 0) {
             html += `<p>${formatInline(line)}</p>`;
         }
     }
 
-    closeLists(); // Fecha quaisquer listas abertas no final
+    closeLists();
     return html;
 }

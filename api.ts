@@ -2,13 +2,9 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-import { GoogleGenAI } from "@google/genai";
-import { state, getHabitDailyInfoForDate, shouldHabitAppearOnDate, getScheduleForDate, HabitStatus, TimeOfDay } from './state';
+import { state, getHabitDailyInfoForDate, shouldHabitAppearOnDate, HabitStatus, TimeOfDay, getEffectiveScheduleForHabitOnDate } from './state';
 import { getHabitDisplayInfo, t } from './i18n';
 import { addDays, getTodayUTC, toUTCIsoDateString, parseUTCIsoDate } from './utils';
-
-// Esta constante será definida pelo script de compilação (esbuild).
-declare const GEMINI_API_KEY: string;
 
 // --- Lógica de Construção de Prompt ---
 
@@ -33,12 +29,11 @@ function generateDailyHabitSummary(date: Date): string | null {
 
     const dayEntries = habitsOnThisDay.map(habit => {
         const dailyInfo = dailyInfoByHabit[habit.id];
-        const activeSchedule = getScheduleForDate(habit, date);
-        if (!activeSchedule) return '';
+        const scheduleForDay = getEffectiveScheduleForHabitOnDate(habit, isoDate);
+        if (scheduleForDay.length === 0) return '';
         
-        const { name } = getHabitDisplayInfo({ ...habit, scheduleHistory: [activeSchedule] });
+        const { name } = getHabitDisplayInfo(habit);
         const habitInstances = dailyInfo?.instances || {};
-        const scheduleForDay = dailyInfo?.dailySchedule || activeSchedule.times;
 
         const statusDetails = scheduleForDay.map(time => {
             const instance = habitInstances[time];
@@ -170,19 +165,35 @@ export async function fetchAIAnalysis(
     prompt: string,
     onStream: (accumulatedText: string) => void
 ): Promise<string> {
-    if (!GEMINI_API_KEY) {
-        throw new Error("API key is not configured.");
-    }
-    const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
-    const responseStream = await ai.models.generateContentStream({
-        model: 'gemini-2.5-flash',
-        contents: prompt,
+    const response = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ prompt }),
     });
 
-    let fullText = '';
-    for await (const chunk of responseStream) {
-        fullText += chunk.text;
-        onStream(fullText); // Passa o texto acumulado para o streamer
+    if (!response.ok) {
+        const errorBody = await response.json().catch(() => ({ error: 'Failed to parse error response' }));
+        throw new Error(`API request failed with status ${response.status}: ${errorBody.error || 'Unknown error'}`);
     }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+        throw new Error('Failed to get response reader');
+    }
+
+    const decoder = new TextDecoder();
+    let fullText = '';
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+            break;
+        }
+        const chunk = decoder.decode(value, { stream: true });
+        fullText += chunk;
+        onStream(fullText);
+    }
+    
     return fullText;
 }

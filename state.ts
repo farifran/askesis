@@ -277,6 +277,21 @@ export function getScheduleForDate(habit: Habit, date: Date | string): HabitSche
     return null;
 }
 
+/**
+ * Obtém o agendamento de horários efetivo para um hábito em uma data específica,
+ * considerando os agendamentos diários personalizados sobre o agendamento padrão.
+ * @param habit O objeto do hábito.
+ * @param dateISO A data no formato string ISO.
+ * @returns Um array de TimeOfDay representando os horários agendados.
+ */
+export function getEffectiveScheduleForHabitOnDate(habit: Habit, dateISO: string): TimeOfDay[] {
+    const dailyInfo = state.dailyData[dateISO]?.[habit.id];
+    const activeSchedule = getScheduleForDate(habit, parseUTCIsoDate(dateISO));
+    if (!activeSchedule) return [];
+    
+    return dailyInfo?.dailySchedule || activeSchedule.times;
+}
+
 export function getHabitDailyInfoForDate(date: string): Record<string, HabitDailyInfo> {
     return state.dailyData[date] || {};
 }
@@ -326,12 +341,8 @@ function getPreviousCompletedOccurrences(habit: Habit, startDate: Date, count: n
         if (shouldHabitAppearOnDate(habit, currentDate)) {
             const dayISO = toUTCIsoDateString(currentDate);
             const dailyInfo = state.dailyData[dayISO]?.[habit.id];
-            
-            const activeSchedule = getScheduleForDate(habit, currentDate);
-            if (!activeSchedule) continue;
-
             const instances = dailyInfo?.instances || {};
-            const scheduleForDay = dailyInfo?.dailySchedule || activeSchedule.times;
+            const scheduleForDay = getEffectiveScheduleForHabitOnDate(habit, dayISO);
 
             const statuses = scheduleForDay.map(time => instances[time]?.status ?? 'pending');
             
@@ -359,10 +370,7 @@ export function shouldShowPlusIndicator(dateISO: string): boolean {
     // 1. Prerequisite: Check if ALL active habits for the day are completed.
     const allHabitsCompleted = activeHabitsOnDate.every(habit => {
         const habitDailyInfo = dailyInfo[habit.id];
-        const activeSchedule = getScheduleForDate(habit, dateObj);
-        if (!activeSchedule) return false; // Should not happen if it's an active habit
-
-        const scheduleForDay = habitDailyInfo?.dailySchedule || activeSchedule.times;
+        const scheduleForDay = getEffectiveScheduleForHabitOnDate(habit, dateISO);
         const instances = habitDailyInfo?.instances || {};
 
         // If a habit is scheduled but has no instance data, it's not complete.
@@ -385,10 +393,7 @@ export function shouldShowPlusIndicator(dateISO: string): boolean {
         const habitDailyInfo = dailyInfo[habit.id];
         if (!habitDailyInfo) return false; // Should be present due to the previous check
         
-        const activeSchedule = getScheduleForDate(habit, dateObj);
-        if (!activeSchedule) return false;
-        
-        const scheduleForDay = habitDailyInfo.dailySchedule || activeSchedule.times;
+        const scheduleForDay = getEffectiveScheduleForHabitOnDate(habit, dateISO);
 
         return scheduleForDay.some(time => {
             const instance = habitDailyInfo.instances[time];
@@ -464,13 +469,8 @@ export function calculateHabitStreak(habitId: string, dateISO: string): number {
             const currentDayISO = toUTCIsoDateString(currentDate);
             const dailyInfo = state.dailyData[currentDayISO]?.[habit.id];
             
-            const activeSchedule = getScheduleForDate(habit, currentDate);
-            if (!activeSchedule) {
-                 break; 
-            }
-
             const instances = dailyInfo?.instances || {};
-            const scheduleForDay = dailyInfo?.dailySchedule || activeSchedule.times;
+            const scheduleForDay = getEffectiveScheduleForHabitOnDate(habit, currentDayISO);
             
             const statuses = scheduleForDay.map(time => instances[time]?.status ?? 'pending');
             

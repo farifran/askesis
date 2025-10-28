@@ -2,7 +2,7 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-import { generateUUID, getTodayUTCIso, parseUTCIsoDate, addDays } from './utils';
+import { generateUUID, getTodayUTCIso, parseUTCIsoDate, addDays, escapeHTML } from './utils';
 import {
     state,
     saveState,
@@ -23,6 +23,7 @@ import {
     PREDEFINED_HABITS,
     getSmartGoalForHabit,
     invalidateStreakCache,
+    getEffectiveScheduleForHabitOnDate,
 } from './state';
 import {
     renderHabits,
@@ -33,6 +34,8 @@ import {
     setupManageModal,
     showInlineNotice,
     renderCalendar,
+    updateHabitCardElement,
+    updateCalendarDayElement,
 } from './render';
 import { t, getHabitDisplayInfo, getTimeOfDayName } from './i18n';
 import { ui } from './ui';
@@ -142,8 +145,15 @@ export function toggleHabitStatus(habitId: string, time: TimeOfDay) {
     }
 
     saveState();
-    renderHabits();
-    renderCalendar();
+    
+    const cardElement = ui.habitContainer.querySelector<HTMLElement>(`.habit-card[data-habit-id="${habitId}"][data-time="${time}"]`);
+    if (cardElement) {
+        updateHabitCardElement(cardElement);
+    } else {
+        renderHabits();
+    }
+    
+    updateCalendarDayElement(state.selectedDate);
     renderChart();
 }
 
@@ -156,9 +166,14 @@ export function updateGoalOverride(habitId: string, date: string, time: TimeOfDa
     const dayInstanceData = ensureHabitInstanceData(date, habitId, time);
     dayInstanceData.goalOverride = sanitizedGoal;
 
+    // A lógica de alteração de status foi removida para separar a intenção de ajustar a meta
+    // da ação de completar o hábito. A conclusão é agora tratada exclusivamente por `toggleHabitStatus`.
     saveState();
-    // renderHabits() e renderCalendar() foram removidos para permitir que a animação da UI seja executada.
-    // A UI agora é atualizada manualmente no listener de eventos.
+
+    // A atualização de outros componentes da UI ainda é relevante caso eles dependam do valor da meta,
+    // mas não do status. O cartão em si é atualizado visualmente pelo listener.
+    updateCalendarDayElement(date);
+    renderChart();
 }
 
 function setAllHabitsStatusForDate(date: string, status: HabitStatus) {
@@ -166,13 +181,9 @@ function setAllHabitsStatusForDate(date: string, status: HabitStatus) {
     let changedHabits = new Set<Habit>();
     state.habits.forEach(habit => {
         if (shouldHabitAppearOnDate(habit, dateObj)) {
-            const habitDailyInfo = state.dailyData[date]?.[habit.id];
-            const activeSchedule = getScheduleForDate(habit, dateObj);
-            if (!activeSchedule) return;
-
-            const scheduleForDay = habitDailyInfo?.dailySchedule || activeSchedule.times;
+            const scheduleForDay = getEffectiveScheduleForHabitOnDate(habit, date);
             
-            let wasChanged = false; // Flag to see if this habit was modified at all
+            let wasChanged = false;
             scheduleForDay.forEach(time => {
                 const dayInstanceData = ensureHabitInstanceData(date, habit.id, time);
                 if (dayInstanceData.status !== status) {
@@ -203,7 +214,7 @@ function setAllHabitsStatusForDate(date: string, status: HabitStatus) {
         
         saveState();
         renderHabits();
-        renderCalendar();
+        updateCalendarDayElement(date);
         renderChart();
     }
 }
@@ -239,7 +250,7 @@ function requestHabitEnding(habitId: string, date: string) {
     const { name } = getHabitDisplayInfo(habit);
     const dateFormatted = parseUTCIsoDate(date).toLocaleDateString(state.activeLanguageCode, { day: 'numeric', month: 'long', timeZone: 'UTC' });
     const confirmationText = t('confirmEndHabit', { 
-        habitName: `<strong>${name}</strong>`,
+        habitName: `<strong>${escapeHTML(name)}</strong>`,
         date: `<strong>${dateFormatted}</strong>`
     });
 
@@ -266,7 +277,7 @@ export function requestHabitTimeRemoval(habitId: string, timeToRemove: TimeOfDay
     const dateFormatted = parseUTCIsoDate(state.selectedDate).toLocaleDateString(state.activeLanguageCode, { day: 'numeric', month: 'long', timeZone: 'UTC' });
 
     const confirmationText = t('confirmRemoveTime', {
-        habitName: `<strong>${name}</strong>`,
+        habitName: `<strong>${escapeHTML(name)}</strong>`,
         time: `<strong>${timeName}</strong>`,
         date: dateFormatted,
     });
@@ -292,7 +303,6 @@ export function handleUndoDelete() {
         const habit = state.habits.find(h => h.id === state.lastEnded!.habitId);
         if (habit) {
             const lastSchedule = habit.scheduleHistory[habit.scheduleHistory.length - 1];
-            // Only undo if the last schedule matches the one we stored
             if (lastSchedule.endDate === state.lastEnded.lastSchedule.endDate) {
                  const endDate = lastSchedule.endDate;
                  delete lastSchedule.endDate;
@@ -317,7 +327,7 @@ export function requestHabitEndingFromModal(habitId: string) {
     const { name } = getHabitDisplayInfo(habit);
     const dateFormatted = parseUTCIsoDate(getTodayUTCIso()).toLocaleDateString(state.activeLanguageCode, { day: 'numeric', month: 'long', timeZone: 'UTC' });
     const confirmationText = t('confirmEndHabit', { 
-        habitName: `<strong>${name}</strong>`,
+        habitName: `<strong>${escapeHTML(name)}</strong>`,
         date: `<strong>${dateFormatted}</strong>` 
     });
     showConfirmationModal(confirmationText, () => endHabit(habit, getTodayUTCIso()));
@@ -328,7 +338,7 @@ export function requestHabitPermanentDeletion(habitId: string) {
     if (!habit) return;
 
     const { name } = getHabitDisplayInfo(habit);
-    const confirmationText = t('confirmPermanentDelete', { habitName: `<strong>${name}</strong>` });
+    const confirmationText = t('confirmPermanentDelete', { habitName: `<strong>${escapeHTML(name)}</strong>` });
 
     showConfirmationModal(confirmationText, () => {
         state.habits = state.habits.filter(h => h.id !== habitId);
@@ -350,7 +360,7 @@ export function graduateHabit(habitId: string) {
     const habit = state.habits.find(h => h.id === habitId);
     if (!habit) return;
     const { name } = getHabitDisplayInfo(habit);
-    const confirmationText = t('confirmGraduateHabit', { habitName: `<strong>${name}</strong>` });
+    const confirmationText = t('confirmGraduateHabit', { habitName: `<strong>${escapeHTML(name)}</strong>` });
 
     showConfirmationModal(confirmationText, () => {
         habit.graduatedOn = getTodayUTCIso();
@@ -373,7 +383,7 @@ export function handleSaveNote() {
     dayInstanceData.note = noteText.trim();
     
     saveState();
-    renderHabits(); // A nota pode influenciar a renderização (ex: classe 'has-note')
+    renderHabits(); 
     closeModal(ui.notesModal);
     state.editingNoteFor = null;
 }
@@ -489,10 +499,9 @@ export function saveHabitFromModal() {
 
         let newHabitTemplate: HabitTemplate;
 
-        if ('nameKey' in formData) { // Based on a predefined habit template
+        if ('nameKey' in formData) { 
             const originalName = t(formData.nameKey);
             if (habitName !== originalName) {
-                // Name was changed, create as a new custom habit
                 newHabitTemplate = {
                     name: habitName,
                     subtitle: t('customHabitSubtitle'),
@@ -503,14 +512,13 @@ export function saveHabitFromModal() {
                     frequency: currentFrequency,
                 };
             } else {
-                // Name was NOT changed, create as a predefined habit
                 newHabitTemplate = {
                     ...formData,
                     times: selectedTimes,
                     frequency: currentFrequency,
                 };
             }
-        } else { // This is a fully custom habit from the "create custom" button
+        } else { 
             newHabitTemplate = {
                 ...formData,
                 name: habitName,
@@ -522,12 +530,12 @@ export function saveHabitFromModal() {
         if (parseUTCIsoDate(prospectiveStartDate) < parseUTCIsoDate(todayISO)) {
             const dateFormatted = parseUTCIsoDate(prospectiveStartDate).toLocaleDateString(state.activeLanguageCode, { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
             const habitDisplayName = 'nameKey' in newHabitTemplate ? t(newHabitTemplate.nameKey) : newHabitTemplate.name;
-            const confirmationText = t('confirmNewHabitPastDate', { habitName: `<strong>${habitDisplayName}</strong>`, date: `<strong>${dateFormatted}</strong>` });
+            const confirmationText = t('confirmNewHabitPastDate', { habitName: `<strong>${escapeHTML(habitDisplayName)}</strong>`, date: `<strong>${dateFormatted}</strong>` });
             showConfirmationModal(confirmationText, () => finalizeCreation(newHabitTemplate, prospectiveStartDate));
         } else {
             finalizeCreation(newHabitTemplate, prospectiveStartDate);
         }
-    } else { // Editing
+    } else { 
         if (!originalData) return;
 
         const lastSchedule = originalData.scheduleHistory[originalData.scheduleHistory.length - 1];
@@ -545,7 +553,7 @@ export function saveHabitFromModal() {
         const changeDateISO = state.selectedDate;
         const dateFormatted = parseUTCIsoDate(changeDateISO).toLocaleDateString(state.activeLanguageCode, { day: 'numeric', month: 'long', timeZone: 'UTC' });
         
-        const confirmationText = t('confirmScheduleChange', { habitName: `<strong>${habitName}</strong>`, date: dateFormatted });
+        const confirmationText = t('confirmScheduleChange', { habitName: `<strong>${escapeHTML(habitName)}</strong>`, date: dateFormatted });
         
         showConfirmationModal(
             confirmationText,
@@ -570,17 +578,13 @@ export function handleHabitDrop(habitId: string, oldTime: TimeOfDay, newTime: Ti
     const newTimeName = getTimeOfDayName(newTime);
     
     const confirmationText = t('confirmHabitMove', {
-        habitName: `<strong>${name}</strong>`,
+        habitName: `<strong>${escapeHTML(name)}</strong>`,
         oldTime: `<strong>${oldTimeName}</strong>`,
         newTime: `<strong>${newTimeName}</strong>`,
     });
 
     const onConfirmForToday = () => {
-        const activeSchedule = getScheduleForDate(habit, state.selectedDate);
-        if (!activeSchedule) return;
-
-        const dailyInfo = state.dailyData[state.selectedDate]?.[habitId];
-        const scheduleForDay = dailyInfo?.dailySchedule || activeSchedule.times;
+        const scheduleForDay = getEffectiveScheduleForHabitOnDate(habit, state.selectedDate);
 
         state.dailyData[state.selectedDate] ??= {};
         state.dailyData[state.selectedDate][habitId] ??= { instances: {} };
@@ -623,20 +627,16 @@ export function reorderHabit(draggedId: string, targetId: string, position: 'bef
 
     if (fromIndex === -1 || toIndex === -1) return;
 
-    // Remove o item de sua posição original
     const [movedItem] = state.habits.splice(fromIndex, 1);
 
-    // Se o item foi movido de antes do alvo, o índice do alvo terá mudado
     if (fromIndex < toIndex) {
         toIndex--;
     }
 
-    // Calcula o novo ponto de inserção
     const insertAtIndex = position === 'before' ? toIndex : toIndex + 1;
     
-    // Insere o item na nova posição
     state.habits.splice(insertAtIndex, 0, movedItem);
-
+    
     saveState();
     renderHabits();
 }

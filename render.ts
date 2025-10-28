@@ -24,10 +24,10 @@ import {
     PredefinedHabit,
     TimeOfDay,
     getScheduleForDate,
-    HabitSchedule,
     HabitTemplate,
+    getEffectiveScheduleForHabitOnDate,
 } from './state';
-import { getTodayUTCIso, addDays, toUTCIsoDateString, parseUTCIsoDate, getTodayUTC } from './utils';
+import { getTodayUTCIso, addDays, toUTCIsoDateString, parseUTCIsoDate, getTodayUTC, escapeHTML } from './utils';
 import { ui } from './ui';
 import { t, getLocaleDayName, getHabitDisplayInfo, getTimeOfDayName } from './i18n';
 import { STOIC_QUOTES } from './quotes';
@@ -42,7 +42,7 @@ function updateReelRotaryARIA(viewportEl: HTMLElement, currentIndex: number, opt
     viewportEl.setAttribute('aria-valuemax', String(options.length));
     viewportEl.setAttribute('aria-valuenow', String(currentIndex + 1));
     viewportEl.setAttribute('aria-valuetext', options[currentIndex]);
-    viewportEl.setAttribute('tabindex', '0'); // Torna o elemento focável
+    viewportEl.setAttribute('tabindex', '0');
 }
 
 export function initLanguageFilter() {
@@ -69,11 +69,8 @@ function calculateDayProgress(isoDate: string): { completedPercent: number, tota
 
     activeHabitsOnDate.forEach(habit => {
         const habitDailyInfo = dailyInfo[habit.id];
-        const activeSchedule = getScheduleForDate(habit, dateObj);
-        if (!activeSchedule) return;
-
+        const scheduleForDay = getEffectiveScheduleForHabitOnDate(habit, isoDate);
         const instances = habitDailyInfo?.instances || {};
-        const scheduleForDay = habitDailyInfo?.dailySchedule || activeSchedule.times;
         
         scheduleForDay.forEach(time => {
             totalInstances++;
@@ -125,12 +122,31 @@ export function createCalendarDayElement(date: Date): HTMLElement {
 }
 
 export function renderCalendar() {
-    ui.calendarStrip.innerHTML = ''; // Limpa os elementos existentes
+    ui.calendarStrip.innerHTML = '';
     const fragment = document.createDocumentFragment();
     state.calendarDates.forEach(date => {
         fragment.appendChild(createCalendarDayElement(date));
     });
     ui.calendarStrip.appendChild(fragment);
+}
+
+export function updateCalendarDayElement(isoDate: string) {
+    const dayItem = ui.calendarStrip.querySelector<HTMLElement>(`.day-item[data-date="${isoDate}"]`);
+    if (!dayItem) return;
+
+    const progressRing = dayItem.querySelector<HTMLElement>('.day-progress-ring');
+    const dayNumber = dayItem.querySelector<HTMLElement>('.day-number');
+
+    if (progressRing) {
+        const { completedPercent, totalPercent } = calculateDayProgress(isoDate);
+        progressRing.style.setProperty('--completed-percent', `${completedPercent}%`);
+        progressRing.style.setProperty('--total-percent', `${totalPercent}%`);
+    }
+
+    if (dayNumber) {
+        const showPlus = shouldShowPlusIndicator(isoDate);
+        dayNumber.classList.toggle('has-plus', showPlus);
+    }
 }
 
 export function renderLanguageFilter() {
@@ -169,7 +185,7 @@ export const formatGoalForDisplay = (goal: number): string => {
 };
 
 function updateGoalContentElement(goalEl: HTMLElement, status: HabitStatus, habit: Habit, time: TimeOfDay, dayDataForInstance: HabitDayData | undefined) {
-    goalEl.innerHTML = ''; // Limpa o conteúdo
+    goalEl.innerHTML = '';
 
     if (status === 'completed') {
         if (habit.goal.type === 'pages' || habit.goal.type === 'minutes') {
@@ -189,7 +205,7 @@ function updateGoalContentElement(goalEl: HTMLElement, status: HabitStatus, habi
                 <svg class="snoozed-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="13 17 18 12 13 7"></polyline><polyline points="6 17 11 12 6 7"></polyline></svg>
             </div>
             <div class="unit snoozed-text">${t('habitSnoozed')}</div>`;
-    } else { // 'pending'
+    } else { 
         if (habit.goal.type === 'pages' || habit.goal.type === 'minutes') {
             const smartGoal = getSmartGoalForHabit(habit, state.selectedDate, time);
             const currentGoal = dayDataForInstance?.goalOverride ?? smartGoal;
@@ -209,15 +225,48 @@ function updateGoalContentElement(goalEl: HTMLElement, status: HabitStatus, habi
 function getTimeOfDayIcon(time: TimeOfDay): string {
     switch (time) {
         case 'Manhã':
-            return '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L12 5"/><path d="M12 19L12 22"/><path d="M5 12L2 12"/><path d="M22 12L19 12"/><path d="M19.07 4.93L16.24 7.76"/><path d="M7.76 16.24L4.93 19.07"/><path d="M19.07 19.07L16.24 16.24"/><path d="M7.76 7.76L4.93 4.93"/><path d="M4 17h16"/></svg>'; // Sunrise-like icon
+            return '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L12 5"/><path d="M12 19L12 22"/><path d="M5 12L2 12"/><path d="M22 12L19 12"/><path d="M19.07 4.93L16.24 7.76"/><path d="M7.76 16.24L4.93 19.07"/><path d="M19.07 19.07L16.24 16.24"/><path d="M7.76 7.76L4.93 4.93"/><path d="M4 17h16"/></svg>'; 
         case 'Tarde':
-            return '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>'; // Full sun icon
+            return '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>'; 
         case 'Noite':
-            return '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>'; // Moon icon
+            return '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>'; 
         default:
             return '';
     }
 }
+
+export function updateHabitCardElement(card: HTMLElement) {
+    const habitId = card.dataset.habitId;
+    const time = card.dataset.time as TimeOfDay | undefined;
+
+    if (!habitId || !time) return;
+    
+    const habit = state.habits.find(h => h.id === habitId);
+    if (!habit) return;
+
+    const dailyInfo = getHabitDailyInfoForDate(state.selectedDate);
+    const habitInstanceData = dailyInfo[habit.id]?.instances?.[time];
+    const status = habitInstanceData?.status ?? 'pending';
+    const hasNote = !!(habitInstanceData?.note && habitInstanceData.note.length > 0);
+    const streak = calculateHabitStreak(habit.id, state.selectedDate);
+
+    card.classList.remove('completed', 'snoozed', 'pending');
+    card.classList.add(status);
+    card.classList.toggle('consolidated', streak >= STREAK_CONSOLIDATED);
+    card.classList.toggle('semi-consolidated', streak >= STREAK_SEMI_CONSOLIDATED && streak < STREAK_CONSOLIDATED);
+
+    const noteBtn = card.querySelector<HTMLButtonElement>('.swipe-note-btn');
+    if (noteBtn) {
+        noteBtn.classList.toggle('has-note', hasNote);
+        noteBtn.setAttribute('aria-label', t(hasNote ? 'habitNoteEdit_ariaLabel' : 'habitNoteAdd_ariaLabel'));
+    }
+
+    const goalEl = card.querySelector<HTMLElement>('.habit-goal');
+    if (goalEl) {
+        updateGoalContentElement(goalEl, status, habit, time, habitInstanceData);
+    }
+}
+
 
 export function createHabitCardElement(habit: Habit, time: TimeOfDay): HTMLElement {
     const dailyInfo = getHabitDailyInfoForDate(state.selectedDate);
@@ -297,11 +346,7 @@ export function renderHabits() {
     
     state.habits.forEach(habit => {
         if (shouldHabitAppearOnDate(habit, selectedDateObj)) {
-            const habitDailyInfo = dailyInfoByHabit[habit.id];
-            const activeSchedule = getScheduleForDate(habit, selectedDateObj);
-            if (!activeSchedule) return;
-
-            const scheduleForDay = habitDailyInfo?.dailySchedule || activeSchedule.times;
+            const scheduleForDay = getEffectiveScheduleForHabitOnDate(habit, state.selectedDate);
             
             scheduleForDay.forEach(time => {
                 if (habitsByTime[time]) {
@@ -334,16 +379,13 @@ export function renderHabits() {
         const titleEl = wrapperEl?.querySelector('h2');
         if (!wrapperEl || !groupEl || !titleEl) return;
         
-        // REATORAÇÃO: Simplifica a renderização. Em vez de reconciliar o DOM,
-        // é mais simples, rápido e menos propenso a erros limpar e recriar.
         const fragment = document.createDocumentFragment();
         habitsByTime[time].forEach(habit => {
             fragment.appendChild(createHabitCardElement(habit, time));
         });
-        groupEl.innerHTML = ''; // Limpa o conteúdo antigo
-        groupEl.appendChild(fragment); // Adiciona o novo conteúdo
+        groupEl.innerHTML = '';
+        groupEl.appendChild(fragment);
         
-        // Update wrapper and placeholder state
         const hasHabits = groupHasHabits[time];
         const isSmartPlaceholder = time === targetTime;
         
@@ -405,7 +447,6 @@ export function renderExploreHabits() {
 export function renderAINotificationState() {
     const isLoading = state.aiState === 'loading';
     const hasCelebrations = state.pending21DayHabitIds.length > 0 || state.pendingConsolidationHabitIds.length > 0;
-    // Um resultado não visto existe se o estado for concluído/erro E hasSeenAIResult for falso.
     const hasUnseenResult = (state.aiState === 'completed' || state.aiState === 'error') && !state.hasSeenAIResult;
 
     ui.aiEvalBtn.classList.toggle('loading', isLoading);
@@ -435,8 +476,6 @@ export function renderStoicQuote() {
 }
 
 export function updateNotificationUI() {
-    // A UI agora é estática para informar ao usuário que o controle está no navegador,
-    // conforme solicitado, simplificando a lógica.
     ui.notificationStatusDesc.textContent = t('modalManageNotificationsStaticDesc');
 }
 
@@ -537,7 +576,7 @@ export function createManageHabitListItemHTML(habit: Habit): string {
 
     return `
         <li class="habit-list-item ${statusClass}" data-habit-id="${habit.id}">
-            <span>${habit.icon}<span class="habit-name">${name}</span>${statusText}</span>
+            <span>${habit.icon}<span class="habit-name">${escapeHTML(name)}</span>${statusText}</span>
             <div class="habit-list-actions">${actionButtons}</div>
         </li>`;
 }
@@ -637,7 +676,7 @@ export function openEditModal(habitOrTemplate: Habit | PredefinedHabit | null) {
     let formData: HabitTemplate;
 
     if (isNew) {
-        if (habitOrTemplate === null) { // Custom new
+        if (habitOrTemplate === null) { 
             formData = {
                 name: '',
                 subtitle: t('customHabitSubtitle'),
@@ -647,10 +686,10 @@ export function openEditModal(habitOrTemplate: Habit | PredefinedHabit | null) {
                 goal: { type: 'check', unitKey: 'unitCheck' },
                 frequency: { type: 'daily', interval: 1 },
             };
-        } else { // Predefined habit
+        } else { 
             formData = { ...(habitOrTemplate as PredefinedHabit) };
         }
-    } else { // Existing habit
+    } else { 
         originalHabit = habitOrTemplate as Habit;
         habitId = originalHabit.id;
         const latestSchedule = originalHabit.scheduleHistory[originalHabit.scheduleHistory.length - 1];
@@ -701,7 +740,7 @@ export function updateHeaderTitle() {
     if (selectedDate.getTime() === today.getTime()) {
         ui.headerTitle.textContent = t('headerTitleToday');
     } else if (selectedDate.getTime() === yesterday.getTime()) {
-        ui.headerTitle.textContent = t('headerTitleTomorrow');
+        ui.headerTitle.textContent = t('headerTitleYesterday');
     } else if (selectedDate.getTime() === tomorrow.getTime()) {
         ui.headerTitle.textContent = t('headerTitleTomorrow');
     } else {

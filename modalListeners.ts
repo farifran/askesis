@@ -15,7 +15,6 @@ import {
     renderAINotificationState,
     openEditModal,
     updateNotificationUI,
-    // FIX: Import 'renderFrequencyFilter' to resolve 'Cannot find name' error.
     renderFrequencyFilter,
 } from './render';
 import {
@@ -29,7 +28,7 @@ import {
 } from './habitActions';
 import { t, setLanguage, getHabitDisplayInfo } from './i18n';
 import { setupReelRotary } from './rotary';
-import { simpleMarkdownToHTML } from './utils';
+import { simpleMarkdownToHTML, escapeHTML } from './utils';
 import { buildAIPrompt, fetchAIAnalysis } from './api';
 
 type PendingHabitKey = 'pending21DayHabitIds' | 'pendingConsolidationHabitIds';
@@ -60,7 +59,7 @@ const handleCelebrationCheck = (
         .filter((h): h is Habit => !!h);
     
     if (habitsToCelebrate.length > 0) {
-        const habitListHTML = habitsToCelebrate.map(h => `<li>${h.icon} ${getHabitDisplayInfo(h).name}</li>`).join('');
+        const habitListHTML = habitsToCelebrate.map(h => `<li>${h.icon} ${escapeHTML(getHabitDisplayInfo(h).name)}</li>`).join('');
         const content = t(bodyKey, { habitList: habitListHTML });
         showCelebrationModal(titleKey, content, pendingListKey);
         return true;
@@ -138,7 +137,6 @@ const runAIEvaluation = async (analysisType: 'weekly' | 'monthly' | 'general') =
 
 
 const handleAIEvaluationClick = async () => {
-    // As celebrações de marco têm prioridade sobre a exibição de resultados de IA.
     if (handleCelebrationCheck('pendingConsolidationHabitIds', 'celebrationConsolidatedTitle', 'celebrationConsolidatedBody')) return;
     if (handleCelebrationCheck('pending21DayHabitIds', 'celebrationSemiConsolidatedTitle', 'celebrationSemiConsolidatedBody')) return;
 
@@ -147,14 +145,13 @@ const handleAIEvaluationClick = async () => {
         if (isError) {
             ui.aiModalTitle.textContent = t('modalAIError');
             ui.aiResponse.innerHTML = state.lastAIError!;
-        } else { // 'completed'
+        } else { 
             ui.aiModalTitle.textContent = t('modalAITitle');
             ui.aiResponse.innerHTML = simpleMarkdownToHTML(state.lastAIResult!);
         }
         ui.aiNewAnalysisBtn.style.display = 'block';
         openModal(ui.aiModal);
         
-        // Marca como visto e remove a notificação
         if (!state.hasSeenAIResult) {
             state.hasSeenAIResult = true;
             saveState();
@@ -162,7 +159,6 @@ const handleAIEvaluationClick = async () => {
         }
     };
 
-    // Roteia a ação com base no estado atual da IA.
     switch (state.aiState) {
         case 'completed':
         case 'error':
@@ -172,7 +168,6 @@ const handleAIEvaluationClick = async () => {
             openModal(ui.aiOptionsModal);
             break;
         case 'loading':
-            // O botão está desativado, então esta ação não deve ser acionada.
             break;
     }
 };
@@ -182,8 +177,8 @@ const closeAIModalAndReset = () => {
     state.aiState = 'idle';
     state.lastAIResult = null;
     state.lastAIError = null;
-    state.hasSeenAIResult = true; // Garante que foi marcado como visto/resetado
-    saveState(); // Salva o estado resetado
+    state.hasSeenAIResult = true; 
+    saveState(); 
     renderAINotificationState();
 };
 
@@ -192,10 +187,8 @@ export const setupModalListeners = () => {
         setupManageModal();
         renderLanguageFilter();
         
-        // Abre o modal imediatamente.
         openModal(ui.manageModal);
 
-        // A nova função lida com seu próprio estado de carregamento e atualiza a UI completamente.
         updateNotificationUI();
     });
 
@@ -205,19 +198,15 @@ export const setupModalListeners = () => {
     });
     ui.aiEvalBtn.addEventListener('click', handleAIEvaluationClick);
 
-    // Initialize generic closing for modals that don't need special cleanup
     [ui.manageModal, ui.exploreModal, ui.confirmModal, ui.notesModal, ui.editHabitModal, ui.aiOptionsModal].forEach(initializeModalClosing);
 
-    // Custom closing logic for the AI modal
     ui.aiModal.addEventListener('click', e => {
         if (e.target === ui.aiModal) {
-             // Apenas fecha o modal, não reseta o estado, para que o usuário possa reabrir.
             closeModal(ui.aiModal);
         }
     });
 
     ui.aiModal.querySelector('.modal-close-btn')!.addEventListener('click', () => {
-        // O botão 'Fechar' também apenas fecha o modal.
         closeModal(ui.aiModal);
     });
 
@@ -285,13 +274,11 @@ export const setupModalListeners = () => {
     ui.aiMonthlyReviewBtn.addEventListener('click', () => runAIEvaluation('monthly'));
     ui.aiGeneralAnalysisBtn.addEventListener('click', () => runAIEvaluation('general'));
     
-    // O botão "Iniciar Nova Análise" agora reseta o estado da IA para permitir um novo ciclo.
     ui.aiNewAnalysisBtn.addEventListener('click', () => {
         closeAIModalAndReset();
         openModal(ui.aiOptionsModal);
     });
 
-    // REATORAÇÃO: Usa o módulo rotary reutilizável para ambos os seletores
     setupReelRotary({
         viewportEl: ui.languageViewport,
         reelEl: ui.languageReel,
