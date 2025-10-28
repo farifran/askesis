@@ -1,20 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-  <g transform="scale(0.95) translate(2.5, 2.5)">
-    <g stroke="white" stroke-width="5" stroke-linecap="round" fill="none">
-        <!-- Left Branch -->
-        <path d="M50,90 C 10,75, 10,25, 48,10"/>
-        <!-- Right Branch -->
-        <path d="M50,90 C 90,75, 90,25, 52,10"/>
-    </g>
-    <g fill="white">
-        <!-- Leaves on the Left -->
-        <g transform="translate(26 73) rotate(-65)"> <ellipse rx="9" ry="4.5"/> </g>
-        <g transform="translate(18 55) rotate(-50)"> <ellipse rx="9" ry="4.5"/> </g>
-        <g transform="translate(20 35) rotate(-35)"> <ellipse rx="9" ry="4.5"/> </g>
-        <!-- Leaves on the Right -->
-        <g transform="translate(74 73) rotate(65)"> <ellipse rx="9" ry="4.5"/> </g>
-        <g transform="translate(82 55) rotate(50)"> <ellipse rx="9" ry="4.5"/> </g>
-        <g transform="translate(80 35) rotate(35)"> <ellipse rx="9" ry="4.5"/> </g>
-    </g>
+  <!-- Roman Column (simplified silhouette) -->
+  <g fill="white">
+    <path d="M38,95 h24 v-5 h-24 z M42,90 h16 v-70 h-16 z M38,20 h24 v-5 h-24 z"/>
+  </g>
+
+  <!-- Laurel Wreath (simplified, thicker stroke) -->
+  <g stroke="white" stroke-width="8" stroke-linecap="round" fill="none">
+      <!-- Left Branch -->
+      <path d="M50,90 C 15,75, 15,25, 48,12"/>
+      <!-- Right Branch -->
+      <path d="M50,90 C 85,75, 85,25, 52,12"/>
   </g>
 </svg>
