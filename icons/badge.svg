@@ -1,8 +1,17 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-  <g fill="white" transform="scale(0.24)">
-    <!-- Helmet Crest (Plume) -->
-    <path d="M50,0 C27.9,0 10,17.9 10,40 C10,48.2 14.2,55.5 21,60 L21,50 C21,30.7 33.7,15 50,15 C66.3,15 79,30.7 79,50 L79,60 C85.8,55.5 90,48.2 90,40 C90,17.9 72.1,0 50,0Z" />
-    <!-- Helmet Body -->
-    <path d="M15,55 C15,45 25,48 25,60 L25,80 C25,90 20,95 20,95 L35,95 L35,80 C35,68 40,65 50,65 C60,65 65,68 65,80 L65,95 L80,95 C80,95 75,90 75,80 L75,60 C75,48 85,45 85,55 L85,65 C95,65 95,55 85,55 L80,55 A30,30 0,0,0 20,55 L15,55 C5,55 5,65 15,65 Z" />
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <g transform="translate(0, 5) scale(0.9)">
+    <!-- Branches -->
+    <path d="M50 90 C 20 70, 20 30, 45 10" stroke="white" stroke-width="4" fill="none" stroke-linecap="round"/>
+    <path d="M50 90 C 80 70, 80 30, 55 10" stroke="white" stroke-width="4" fill="none" stroke-linecap="round"/>
+    <!-- Leaves Left -->
+    <g fill="white" transform="translate(35 60) rotate(-60)"> <ellipse rx="9" ry="4.5"/> </g>
+    <g fill="white" transform="translate(28 45) rotate(-45)"> <ellipse rx="9" ry="4.5"/> </g>
+    <g fill="white" transform="translate(30 30) rotate(-30)"> <ellipse rx="9" ry="4.5"/> </g>
+    <g fill="white" transform="translate(38 18) rotate(-15)"> <ellipse rx="9" ry="4.5"/> </g>
+    <!-- Leaves Right -->
+    <g fill="white" transform="translate(65 60) rotate(60)"> <ellipse rx="9" ry="4.5"/> </g>
+    <g fill="white" transform="translate(72 45) rotate(45)"> <ellipse rx="9" ry="4.5"/> </g>
+    <g fill="white" transform="translate(70 30) rotate(30)"> <ellipse rx="9" ry="4.5"/> </g>
+    <g fill="white" transform="translate(62 18) rotate(15)"> <ellipse rx="9" ry="4.5"/> </g>
   </g>
 </svg>
