@@ -1,20 +1,29 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 100 100">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
   <rect width="100" height="100" fill="#000000"/>
-  <g transform="translate(0, 5) scale(0.9)">
-    <!-- Branches -->
-    <path d="M50 90 C 20 70, 20 30, 45 10" stroke="#27ae60" stroke-width="4" fill="none" stroke-linecap="round"/>
-    <path d="M50 90 C 80 70, 80 30, 55 10" stroke="#27ae60" stroke-width="4" fill="none" stroke-linecap="round"/>
 
-    <!-- Leaves Left -->
-    <g fill="#27ae60" transform="translate(35 60) rotate(-60)"> <ellipse rx="9" ry="4.5"/> </g>
-    <g fill="#27ae60" transform="translate(28 45) rotate(-45)"> <ellipse rx="9" ry="4.5"/> </g>
-    <g fill="#27ae60" transform="translate(30 30) rotate(-30)"> <ellipse rx="9" ry="4.5"/> </g>
-    <g fill="#27ae60" transform="translate(38 18) rotate(-15)"> <ellipse rx="9" ry="4.5"/> </g>
+  <!-- Roman Column -->
+  <g fill="white">
+    <path d="M32.5,95 h35 v-5 h-35 z M37.5,90 h25 v-70 h-25 z M32.5,20 h35 v-5 h-35 z"/>
+    <path d="M42.5,88 V22 M50,88 V22 M57.5,88 V22" stroke="#d0d0d0" stroke-width="1.5" fill="none"/>
+  </g>
 
-    <!-- Leaves Right -->
-    <g fill="#27ae60" transform="translate(65 60) rotate(60)"> <ellipse rx="9" ry="4.5"/> </g>
-    <g fill="#27ae60" transform="translate(72 45) rotate(45)"> <ellipse rx="9" ry="4.5"/> </g>
-    <g fill="#27ae60" transform="translate(70 30) rotate(30)"> <ellipse rx="9" ry="4.5"/> </g>
-    <g fill="#27ae60" transform="translate(62 18) rotate(15)"> <ellipse rx="9" ry="4.5"/> </g>
+  <!-- Laurel Wreath -->
+  <g transform="translate(0, -5)">
+    <g stroke="#27ae60" stroke-width="3.5" stroke-linecap="round" fill="none">
+      <path d="M50,75 C 25,65 30,30 46,15"/>
+      <path d="M50,75 C 75,65 70,30 54,15"/>
+    </g>
+    <g fill="#27ae60">
+      <!-- Left side -->
+      <g transform="translate(38 55) rotate(-55)"> <ellipse rx="7" ry="3.5"/> </g>
+      <g transform="translate(33 40) rotate(-45)"> <ellipse rx="7" ry="3.5"/> </g>
+      <g transform="translate(36 25) rotate(-30)"> <ellipse rx="7" ry="3.5"/> </g>
+      <g transform="translate(43 16) rotate(-15)"> <ellipse rx="7" ry="3.5"/> </g>
+      <!-- Right side -->
+      <g transform="translate(62 55) rotate(55)"> <ellipse rx="7" ry="3.5"/> </g>
+      <g transform="translate(67 40) rotate(45)"> <ellipse rx="7" ry="3.5"/> </g>
+      <g transform="translate(64 25) rotate(30)"> <ellipse rx="7" ry="3.5"/> </g>
+      <g transform="translate(57 16) rotate(15)"> <ellipse rx="7" ry="3.5"/> </g>
+    </g>
   </g>
 </svg>
