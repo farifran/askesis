@@ -46,7 +46,7 @@ async function build() {
             platform: 'browser',        // Otimiza a saída para ser executada em navegadores.
             sourcemap: true,            // Gera source maps para facilitar a depuração em produção.
             define: {
-                'process.env.API_KEY': JSON.stringify(process.env.API_KEY || ''),
+                'GEMINI_API_KEY': JSON.stringify(process.env.API_KEY || ''),
             },
         });
         console.log('Application built successfully.');

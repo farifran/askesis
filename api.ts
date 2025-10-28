@@ -7,6 +7,9 @@ import { state, getHabitDailyInfoForDate, shouldHabitAppearOnDate, getScheduleFo
 import { getHabitDisplayInfo, t } from './i18n';
 import { addDays, getTodayUTC, toUTCIsoDateString, parseUTCIsoDate } from './utils';
 
+// Esta constante será definida pelo script de compilação (esbuild).
+declare const GEMINI_API_KEY: string;
+
 // --- Lógica de Construção de Prompt ---
 
 const statusToSymbol: Record<HabitStatus, string> = {
@@ -167,10 +170,10 @@ export async function fetchAIAnalysis(
     prompt: string,
     onStream: (accumulatedText: string) => void
 ): Promise<string> {
-    if (!process.env.API_KEY) {
+    if (!GEMINI_API_KEY) {
         throw new Error("API key is not configured.");
     }
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
     const responseStream = await ai.models.generateContentStream({
         model: 'gemini-2.5-flash',
         contents: prompt,
