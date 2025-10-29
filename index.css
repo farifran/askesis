@@ -299,6 +299,7 @@ main {
     cursor: wait;
 }
 #ai-eval-btn .loading-icon { display: none; }
+#ai-eval-btn .offline-icon { display: none; }
 #ai-eval-btn.loading .loading-icon {
     display: block;
     animation: spin 1s linear infinite;
@@ -1212,29 +1213,20 @@ input:disabled + .slider {
 .duplicate-drop-notice.visible { padding-block-end: var(--space-sm); }
 
 /* --- PWA: OFFLINE INDICATOR --- */
-.offline-indicator {
-    display: none; /* Oculto por padrão */
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    background-color: var(--color-yellow);
-    color: var(--bg-color);
-    text-align: center;
-    padding: var(--space-xs) 0;
-    font-size: 12px;
-    font-weight: 600;
-    z-index: var(--z-index-offline-indicator);
-    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-}
-body.is-offline .offline-indicator {
-    display: block; /* Exibido quando o corpo tem a classe 'is-offline' */
-}
 body.is-offline #ai-eval-btn,
 body.is-offline #sync-section button {
     opacity: 0.5;
     pointer-events: none;
     cursor: not-allowed;
+}
+
+body.is-offline #ai-eval-btn .default-icon,
+body.is-offline #ai-eval-btn .loading-icon {
+    display: none;
+}
+
+body.is-offline #ai-eval-btn .offline-icon {
+    display: block;
 }
 
 

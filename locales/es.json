@@ -134,6 +134,5 @@
     "chartEmptyState": "Sigue registrando tus hábitos para ver tu progreso aquí.",
     "chartTooltipScore": "Puntuación Compuesta",
     "chartTooltipCompleted": "Completados: {completed}/{total}",
-    "chartEvolutionSince": "Evolución desde {date}",
-    "offlineIndicatorText": "Estás sin conexión"
+    "chartEvolutionSince": "Evolución desde {date}"
 }

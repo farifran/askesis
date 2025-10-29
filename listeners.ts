@@ -58,10 +58,6 @@ function updateSelectedDateAndRender(newDateISO: string) {
 const handleConnectionChange = () => {
     const isOffline = !navigator.onLine;
     document.body.classList.toggle('is-offline', isOffline);
-    const offlineIndicator = document.getElementById('offline-indicator');
-    if (offlineIndicator) {
-        offlineIndicator.textContent = t('offlineIndicatorText', { defaultValue: 'Você está offline' });
-    }
 };
 
 
