@@ -7,9 +7,9 @@
     <path d="M45,88 V22 M50,88 V22 M55,88 V22" stroke="#d0d0d0" stroke-width="1.2" fill="none"/>
   </g>
 
-  <!-- Laurel Wreath (Phi Shape) -->
-  <g transform="translate(0, 2)">
-    <g stroke="#27ae60" stroke-width="4" stroke-linecap="round" fill="none">
+  <!-- Laurel Wreath (Phi Shape) - Scaled and Centered -->
+  <g transform="translate(50 55) scale(0.5) translate(-50 -52)">
+    <g stroke="#27ae60" stroke-width="6" stroke-linecap="round" fill="none">
       <!-- Left Branch -->
       <path d="M50,90 C 10,75, 10,25, 48,10"/>
       <!-- Right Branch -->
