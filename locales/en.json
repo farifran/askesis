@@ -130,5 +130,6 @@
     "chartEmptyState": "Keep tracking your habits to see your progress here.",
     "chartTooltipScore": "Compound Score",
     "chartTooltipCompleted": "Completed: {completed}/{total}",
-    "chartEvolutionSince": "Evolution since {date}"
+    "chartEvolutionSince": "Evolution since {date}",
+    "offlineIndicatorText": "You are offline"
 }

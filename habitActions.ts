@@ -42,6 +42,7 @@ import {
 import { t, getHabitDisplayInfo, getTimeOfDayName } from './i18n';
 import { ui } from './ui';
 import { renderChart } from './chart';
+import { updateAppBadge } from './badge';
 
 /**
  * Atualiza o nome de um hábito em toda a sua história.
@@ -241,6 +242,7 @@ function finishSave() {
     renderHabits();
     renderCalendar();
     renderChart();
+    updateAppBadge();
     document.dispatchEvent(new CustomEvent('habitsChanged'));
 }
 
@@ -266,6 +268,7 @@ export function toggleHabitStatus(habitId: string, time: TimeOfDay) {
     renderChart();
     
     saveState();
+    updateAppBadge();
 
     const streak = calculateHabitStreak(habitId, state.selectedDate);
     if (streak === STREAK_SEMI_CONSOLIDATED) {
@@ -297,6 +300,7 @@ function endHabit(habit: Habit, dateISO: string) {
     renderHabits();
     renderCalendar();
     renderChart();
+    updateAppBadge();
     document.dispatchEvent(new CustomEvent('habitsChanged'));
     showUndoToast();
 }
@@ -316,6 +320,7 @@ export function handleUndoDelete() {
         renderHabits();
         renderCalendar();
         renderChart();
+        updateAppBadge();
         document.dispatchEvent(new CustomEvent('habitsChanged'));
     }
     
@@ -356,6 +361,7 @@ export function requestHabitPermanentDeletion(habitId: string) {
             saveState();
             setupManageModal();
             renderApp();
+            updateAppBadge();
             document.dispatchEvent(new CustomEvent('habitsChanged'));
         },
         { confirmText: t('modalManageResetButton'), title: t('aria_delete_permanent', { habitName: name }) }
@@ -420,6 +426,7 @@ function moveHabitSchedule(habitId: string, fromTime: TimeOfDay, toTime: TimeOfD
     renderHabits();
     renderCalendar();
     renderChart();
+    updateAppBadge();
 }
 
 export function handleHabitDrop(habitId: string, fromTime: TimeOfDay, toTime: TimeOfDay) {
@@ -526,6 +533,7 @@ export function completeAllHabitsForDate(date: string) {
     renderHabits();
     renderCalendar();
     renderChart();
+    updateAppBadge();
 }
 
 export function snoozeAllHabitsForDate(date: string) {
@@ -545,6 +553,7 @@ export function snoozeAllHabitsForDate(date: string) {
     renderHabits();
     renderCalendar();
     renderChart();
+    updateAppBadge();
 }
 
 export function handleSaveNote() {
@@ -577,6 +586,7 @@ export function resetApplicationData() {
     state.pendingConsolidationHabitIds = [];
     saveState();
     renderApp();
+    updateAppBadge();
     closeModal(ui.manageModal);
 }
 
@@ -591,6 +601,7 @@ export function graduateHabit(habitId: string) {
             saveState();
             setupManageModal();
             renderApp();
+            updateAppBadge();
             document.dispatchEvent(new CustomEvent('habitsChanged'));
         },
         { title: t('modalStatusGraduated'), confirmText: t('aria_graduate', { habitName: '' }) }

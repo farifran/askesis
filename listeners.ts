@@ -17,6 +17,7 @@ import { setupDragAndDropHandler } from './dragAndDropHandler';
 import { handleUndoDelete, completeAllHabitsForDate, snoozeAllHabitsForDate } from './habitActions';
 import { t } from './i18n';
 import { renderChart } from './chart';
+import { updateAppBadge } from './badge';
 
 /**
  * Cria uma função "debounced" que atrasa a invocação de `func` até que `wait`
@@ -50,6 +51,19 @@ function updateSelectedDateAndRender(newDateISO: string) {
     renderStoicQuote();
     renderChart();
 }
+
+/**
+ * Lida com mudanças no status da conexão de rede, atualizando a UI.
+ */
+const handleConnectionChange = () => {
+    const isOffline = !navigator.onLine;
+    document.body.classList.toggle('is-offline', isOffline);
+    const offlineIndicator = document.getElementById('offline-indicator');
+    if (offlineIndicator) {
+        offlineIndicator.textContent = t('offlineIndicatorText', { defaultValue: 'Você está offline' });
+    }
+};
+
 
 const setupGlobalListeners = () => {
     let clickTimeout: number | null = null;
@@ -107,6 +121,19 @@ const setupGlobalListeners = () => {
         renderChart();
     }, 250);
     window.addEventListener('resize', debouncedResize);
+
+    document.addEventListener('visibilitychange', () => {
+        // Atualiza o emblema quando o aplicativo se torna visível, pois o dia pode ter mudado.
+        if (document.visibilityState === 'visible') {
+            updateAppBadge();
+        }
+    });
+
+    // Listeners para o status da conexão
+    window.addEventListener('online', handleConnectionChange);
+    window.addEventListener('offline', handleConnectionChange);
+    // Verifica o estado inicial da conexão no carregamento
+    handleConnectionChange();
 
     // Keyboard navigation for calendar strip
     ui.calendarStrip.addEventListener('keydown', e => {

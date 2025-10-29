@@ -13,11 +13,29 @@ import { initI18n } from './i18n';
 import { createDefaultHabit } from './habitActions';
 import { initSync } from './sync';
 import { fetchStateFromCloud, hasSyncKey, initNotifications } from './cloud';
+import { updateAppBadge } from './badge';
+
+// --- SERVICE WORKER REGISTRATION ---
+const registerServiceWorker = () => {
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('/sw.js')
+                .then(registration => {
+                    console.log('ServiceWorker registration successful with scope: ', registration.scope);
+                })
+                .catch(err => {
+                    console.log('ServiceWorker registration failed: ', err);
+                });
+        });
+    }
+};
+
 
 // --- INITIALIZATION ---
 const init = async () => {
     inject(); // Habilita o Vercel Analytics
     initUI(); // Preenche as referências de elementos da UI agora que o DOM está pronto.
+    registerServiceWorker(); // Registra o Service Worker para PWA/offline
     
     // A inicialização do i18n primeiro garante que o texto esteja disponível
     await initI18n(); 
@@ -63,6 +81,7 @@ const init = async () => {
     });
     
     setupEventListeners();
+    updateAppBadge(); // Define o emblema inicial do ícone do aplicativo
 };
 
 document.addEventListener('DOMContentLoaded', init);

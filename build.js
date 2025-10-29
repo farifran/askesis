@@ -25,7 +25,7 @@ async function build() {
         await fs.copyFile('index.html', path.join(outdir, 'index.html'));
         // Adiciona a cópia dos novos arquivos PWA
         await fs.copyFile('manifest.json', path.join(outdir, 'manifest.json'));
-        await fs.copyFile('OneSignalSDKWorker.js', path.join(outdir, 'OneSignalSDKWorker.js'));
+        await fs.copyFile('sw.js', path.join(outdir, 'sw.js')); // Adiciona o Service Worker
         await fs.cp('icons', path.join(outdir, 'icons'), { recursive: true });
 
 
