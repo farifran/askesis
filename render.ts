@@ -515,8 +515,11 @@ export function renderApp() {
 }
 
 const focusTrapListeners = new Map<HTMLElement, (e: KeyboardEvent) => void>();
+const previouslyFocusedElements = new WeakMap<HTMLElement, HTMLElement>();
 
-export function openModal(modal: HTMLElement) {
+export function openModal(modal: HTMLElement, elementToFocus?: HTMLElement) {
+    previouslyFocusedElements.set(modal, document.activeElement as HTMLElement);
+
     modal.classList.add('visible');
     
     const focusableElements = modal.querySelectorAll<HTMLElement>(
@@ -527,7 +530,19 @@ export function openModal(modal: HTMLElement) {
     const firstFocusable = focusableElements[0];
     const lastFocusable = focusableElements[focusableElements.length - 1];
 
-    firstFocusable.focus();
+    const targetElement = elementToFocus || firstFocusable;
+    
+    // Usa um pequeno timeout para garantir que o elemento seja focável após a transição do modal.
+    setTimeout(() => {
+        if (targetElement && targetElement.isConnected) {
+            if (targetElement instanceof HTMLInputElement || targetElement instanceof HTMLTextAreaElement) {
+                targetElement.focus(); // Foca explicitamente primeiro
+                targetElement.select(); // Depois seleciona o conteúdo
+            } else {
+                targetElement.focus();
+            }
+        }
+    }, 100);
 
     const trapListener = (e: KeyboardEvent) => {
         if (e.key !== 'Tab') return;
@@ -556,6 +571,12 @@ export function closeModal(modal: HTMLElement) {
     if (listener) {
         modal.removeEventListener('keydown', listener);
         focusTrapListeners.delete(modal);
+    }
+
+    const elementToRestoreFocus = previouslyFocusedElements.get(modal);
+    if (elementToRestoreFocus) {
+        elementToRestoreFocus.focus();
+        previouslyFocusedElements.delete(modal);
     }
 }
 
@@ -673,7 +694,7 @@ export function showConfirmationModal(
         editBtn.style.display = 'none';
     }
 
-    openModal(ui.confirmModal);
+    openModal(ui.confirmModal, confirmBtn);
 }
 
 
@@ -687,8 +708,7 @@ export function openNotesModal(habitId: string, date: string, time: TimeOfDay) {
     const dateObj = parseUTCIsoDate(date);
     ui.notesModalSubtitle.textContent = dateObj.toLocaleDateString(state.activeLanguageCode, { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
     ui.notesTextarea.value = habitNote;
-    openModal(ui.notesModal);
-    ui.notesTextarea.focus();
+    openModal(ui.notesModal, ui.notesTextarea);
 }
 
 export function openEditModal(habitOrTemplate: Habit | PredefinedHabit | null) {
@@ -750,9 +770,7 @@ export function openEditModal(habitOrTemplate: Habit | PredefinedHabit | null) {
     nameInput.readOnly = false;
 
     if(noticeEl) noticeEl.classList.remove('visible');
-    openModal(ui.editHabitModal);
-    nameInput.focus();
-    nameInput.select();
+    openModal(ui.editHabitModal, nameInput);
 }
 
 export function updateHeaderTitle() {
