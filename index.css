@@ -1017,48 +1017,11 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     font-size: 12px;
     line-height: 1.5;
     color: var(--text-tertiary);
-    text-align: center;
 }
 #test-notification-btn, #enable-notifications-btn {
     width: 100%;
 }
 
-.onesignal-customlink-container {
-    margin-block-start: var(--space-lg);
-}
-
-/* --- OneSignal Custom Link --- */
-.onesignal-customlink-container button {
-    width: 100%;
-    /* Herda estilos de .btn e .btn--primary para consistência */
-    padding: var(--space-sm) var(--space-lg);
-    border: 1px solid var(--accent-blue);
-    border-radius: var(--border-radius-base);
-    background: var(--accent-blue);
-    color: white;
-    font-size: 14px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: background-color var(--transition-duration), border-color var(--transition-duration);
-    -webkit-tap-highlight-color: transparent;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
-}
-
-.onesignal-customlink-container button:hover {
-    background-color: var(--accent-blue-hover);
-    border-color: var(--accent-blue-hover);
-}
-
-.onesignal-customlink-container button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-    background-color: var(--surface-snoozed);
-    border-color: var(--border-color);
-    color: var(--text-secondary);
-}
 
 /* Modal: Sincronização */
 #sync-section {

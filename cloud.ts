@@ -261,27 +261,13 @@ export async function syncLocalStateToCloud() {
  * Inicializa o SDK do OneSignal e configura o estado inicial do toggle de notificação.
  */
 export function initNotifications() {
-    window.OneSignalDeferred?.push(async (OneSignal: any) => {
-        await OneSignal.init({
-          appId: "39454655-f1cd-4531-8ec5-d0f61eb1c478",
-          promptOptions: {
-            customlink: {
-                enabled: true,
-                text: {
-                    subscribe: t('onesignalSubscribe'),
-                    unsubscribe: t('onesignalUnsubscribe'),
-                    "permission.blocked": t('onesignalBlocked'),
-                },
-            },
-          },
-        });
-
+    window.OneSignal = window.OneSignal || [];
+    window.OneSignal.push(async (OneSignal: any) => {
+        // Adicionado: Define o idioma do usuário no OneSignal na inicialização
         OneSignal.User.setLanguage(state.activeLanguageCode);
 
         OneSignal.Notifications.addEventListener('permissionChange', (isSubscribed: boolean) => {
             updateNotificationUI();
         });
-
-        updateNotificationUI();
     });
 }
