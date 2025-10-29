@@ -65,9 +65,17 @@ self.addEventListener('activate', (event) => {
 // Evento de fetch: acionado para cada requisição feita pela página.
 // Isso permite interceptar a requisição e responder com dados do cache.
 self.addEventListener('fetch', (event) => {
-    // respondWith() intercepta a requisição e nos permite fornecer nossa própria resposta.
+    const url = new URL(event.request.url);
+
+    // Se for uma requisição de API, ignore o cache e vá direto para a rede.
+    // Isso permite que o código do cliente lide com falhas de rede (offline) corretamente.
+    if (url.pathname.startsWith('/api/')) {
+        event.respondWith(fetch(event.request));
+        return;
+    }
+
+    // Para todas as outras requisições (assets do app), use a estratégia cache-first.
     event.respondWith(
-        // Tenta encontrar uma resposta para a requisição no cache.
         caches.match(event.request)
             .then((response) => {
                 // Se uma resposta for encontrada no cache, a retorna.
@@ -77,8 +85,11 @@ self.addEventListener('fetch', (event) => {
                 // Se não for encontrada no cache, faz a requisição à rede.
                 return fetch(event.request);
             })
+            // O catch aqui é um último recurso para requisições de assets, mas não vai
+            // mais interferir com as requisições de API.
             .catch(error => {
-                console.error('Service Worker: Error fetching data', error);
+                console.error('Service Worker: Error fetching asset', error);
+                // Poderíamos retornar uma página de fallback offline aqui se quiséssemos.
             })
     );
 });
