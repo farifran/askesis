@@ -476,7 +476,19 @@ export function renderStoicQuote() {
 }
 
 export function updateNotificationUI() {
-    ui.notificationStatusDesc.textContent = t('modalManageNotificationsStaticDesc');
+    window.OneSignalDeferred?.push(async (OneSignal: any) => {
+        const permission = OneSignal.Notifications.permission;
+        let statusTextKey = 'notificationStatusDefault'; // Default
+
+        if (permission === 'granted') {
+            const isSubscribed = await OneSignal.Notifications.isPushEnabled();
+            statusTextKey = isSubscribed ? 'notificationStatusSubscribed' : 'notificationStatusEnabledNotSubscribed';
+        } else if (permission === 'denied') {
+            statusTextKey = 'notificationStatusDenied';
+        }
+        
+        ui.notificationStatusDesc.textContent = t(statusTextKey);
+    });
 }
 
 export function renderApp() {
