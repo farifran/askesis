@@ -17,15 +17,6 @@
 }
 </script>
 <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
-<script>
-  window.OneSignalDeferred = window.OneSignalDeferred || [];
-  OneSignalDeferred.push(async function(OneSignal) {
-    await OneSignal.init({
-      appId: "39454655-f1cd-4531-8ec5-d0f61eb1c478",
-      serviceWorkerPath: "sw.js"
-    });
-  });
-</script>
 </head>
 <body>
     <div id="offline-indicator" class="offline-indicator">Você está offline</div>
@@ -142,10 +133,14 @@
                     </div>
                 </div>
                 <div class="setting-item setting-item--column">
-                     <label id="label-notifications">Notificações</label>
-                     <div id="notification-status-section">
-                         <p id="notification-status-desc" class="setting-item-desc"></p>
-                     </div>
+                    <div class="setting-item">
+                        <label for="notification-toggle" id="label-notifications">Notificações</label>
+                        <label class="toggle-switch" for="notification-toggle" id="notification-toggle-label">
+                            <input type="checkbox" id="notification-toggle">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                    <p id="notification-status-desc" class="setting-item-desc"></p>
                 </div>
                 <div class="setting-item">
                     <label id="label-reset">Reinicialização</label>

@@ -2,8 +2,8 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-import { AppState, STATE_STORAGE_KEY, loadState, state, shouldHabitAppearOnDate, getScheduleForDate, TIMES_OF_DAY } from './state';
-import { getTodayUTC } from './utils';
+import { AppState, STATE_STORAGE_KEY, loadState, state, shouldHabitAppearOnDate, getScheduleForDate, TIMES_OF_DAY, getEffectiveScheduleForHabitOnDate } from './state';
+import { getTodayUTC, getTodayUTCIso } from './utils';
 import { ui } from './ui';
 import { t, getHabitDisplayInfo } from './i18n';
 import { getSyncKey, getSyncKeyHash, hasLocalSyncKey } from './sync';
@@ -256,18 +256,86 @@ export async function syncLocalStateToCloud() {
 
 
 // --- ONE SIGNAL NOTIFICATIONS ---
+export function updateOneSignalTags() {
+    window.OneSignalDeferred = window.OneSignalDeferred || [];
+    window.OneSignalDeferred.push((OneSignal: any) => {
+        // Só podemos enviar tags se o usuário tiver concedido permissão.
+        if (OneSignal.Notifications.permission !== 'granted') {
+            console.log('OneSignal: Permissão não concedida, pulando atualização de tags.');
+            return;
+        }
+
+        const today = getTodayUTC();
+        const todayISO = getTodayUTCIso();
+
+        const activeHabitsToday = state.habits.filter(h =>
+            !h.graduatedOn && shouldHabitAppearOnDate(h, today)
+        );
+
+        const tags: { [key: string]: boolean } = {
+            'has_habit_morning': false,
+            'has_habit_afternoon': false,
+            'has_habit_evening': false,
+        };
+
+        const timeToTagMap: Record<string, keyof typeof tags> = {
+            'Manhã': 'has_habit_morning',
+            'Tarde': 'has_habit_afternoon',
+            'Noite': 'has_habit_evening',
+        };
+
+        activeHabitsToday.forEach(habit => {
+            const scheduleForDay = getEffectiveScheduleForHabitOnDate(habit, todayISO);
+            scheduleForDay.forEach(time => {
+                const tagName = timeToTagMap[time];
+                if (tagName) {
+                    tags[tagName] = true;
+                }
+            });
+        });
+        
+        console.log('Atualizando tags do OneSignal:', tags);
+        OneSignal.User.addTags(tags);
+    });
+}
 
 /**
  * Inicializa o SDK do OneSignal e configura o estado inicial do toggle de notificação.
  */
 export function initNotifications() {
-    window.OneSignal = window.OneSignal || [];
-    window.OneSignal.push(async (OneSignal: any) => {
-        // Adicionado: Define o idioma do usuário no OneSignal na inicialização
-        OneSignal.User.setLanguage(state.activeLanguageCode);
+    window.OneSignalDeferred = window.OneSignalDeferred || [];
+    window.OneSignalDeferred.push(function(OneSignal: any) {
+        OneSignal.init({
+            appId: "39454655-f1cd-4531-8ec5-d0f61eb1c478",
+            serviceWorkerPath: "sw.js",
+            promptOptions: {
+                customlink: {
+                    enabled: true,
+                    style: "button",
+                    size: "medium",
+                    text: {
+                        "subscribe": t('notificationEnableButton'),
+                        "unsubscribe": t('notificationDisableButton'),
+                    },
+                    selector: ".onesignal-customlink-container"
+                }
+            }
+        }).then(() => {
+            // Após a inicialização, defina o idioma e adicione os listeners
+            OneSignal.User.setLanguage(state.activeLanguageCode);
 
-        OneSignal.Notifications.addEventListener('permissionChange', (isSubscribed: boolean) => {
+            OneSignal.Notifications.addEventListener('permissionChange', (isGranted: boolean) => {
+                updateNotificationUI();
+                if (isGranted) {
+                    updateOneSignalTags();
+                }
+            });
+
+            document.addEventListener('habitsChanged', updateOneSignalTags);
+            
+            // Atualização inicial da UI e sincronização de tags
             updateNotificationUI();
+            updateOneSignalTags();
         });
     });
 }

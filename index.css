@@ -994,35 +994,53 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 
 .setting-item { display: flex; justify-content: space-between; align-items: center; }
 .setting-item-header { display: flex; justify-content: space-between; align-items: baseline; width: 100%; margin-block-end: var(--space-sm); }
-.setting-item.setting-item--column { flex-direction: column; align-items: stretch; }
+.setting-item.setting-item--column { flex-direction: column; align-items: stretch; gap: var(--space-sm); }
 .setting-item label { font-size: 14px; color: var(--text-secondary); }
+.setting-item-desc { font-size: 13px; color: var(--text-secondary); line-height: 1.5; text-align: left; width: 100%; }
 
-/* Seção de Status de Notificação */
-#notification-status-section {
-    background: var(--bg-color);
-    border: 1px solid var(--border-color);
-    border-radius: var(--border-radius-base);
-    padding: var(--space-lg);
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-md);
-}
-.notification-status-item {
-    font-size: 13px;
-    color: var(--text-secondary);
-}
-.notification-status-item strong {
-    color: var(--text-primary);
-}
-#notification-status-desc {
-    font-size: 12px;
-    line-height: 1.5;
-    color: var(--text-tertiary);
-}
-#test-notification-btn, #enable-notifications-btn {
-    width: 100%;
-}
 
+/* Seção de Status de Notificação e Interruptor (Toggle) */
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 44px;
+    height: 24px;
+    flex-shrink: 0;
+}
+.toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+.slider {
+    position: absolute;
+    cursor: pointer;
+    inset: 0;
+    background-color: var(--surface-hover);
+    border-radius: 34px;
+    transition: background-color var(--transition-duration);
+}
+.slider:before {
+    position: absolute;
+    content: "";
+    height: 20px;
+    width: 20px;
+    left: 2px;
+    bottom: 2px;
+    background-color: white;
+    border-radius: var(--border-radius-pill);
+    transition: transform var(--transition-duration);
+}
+input:checked + .slider {
+    background-color: var(--accent-green);
+}
+input:checked + .slider:before {
+    transform: translateX(20px);
+}
+input:disabled + .slider {
+    cursor: not-allowed;
+    background-color: var(--surface-snoozed);
+}
 
 /* Modal: Sincronização */
 #sync-section {

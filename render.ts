@@ -476,8 +476,35 @@ export function renderStoicQuote() {
 }
 
 export function updateNotificationUI() {
-    ui.notificationStatusDesc.textContent = t('modalManageNotificationsStaticDesc');
+    // Esta função pode ser chamada antes da inicialização do OneSignal.
+    // Esperamos que o objeto OneSignal esteja disponível.
+    window.OneSignalDeferred = window.OneSignalDeferred || [];
+    window.OneSignalDeferred.push((OneSignal: any) => {
+        const permission = OneSignal.Notifications.permission;
+        const isPushEnabled = OneSignal.User.PushSubscription.optedIn;
+
+        if (permission === "denied") {
+            ui.notificationToggle.checked = false;
+            ui.notificationToggle.disabled = true;
+            ui.notificationToggleLabel.style.cursor = 'not-allowed';
+            ui.notificationStatusDesc.textContent = t('notificationStatusDisabled');
+        } else {
+            ui.notificationToggle.disabled = false;
+            ui.notificationToggleLabel.style.cursor = 'pointer';
+
+            // O interruptor deve refletir se o usuário está inscrito atualmente
+            ui.notificationToggle.checked = isPushEnabled;
+
+            if (isPushEnabled) {
+                ui.notificationStatusDesc.textContent = t('notificationStatusEnabled');
+            } else {
+                // Abrange tanto a permissão 'default' quanto a 'granted' mas não optou por participar.
+                ui.notificationStatusDesc.textContent = t('modalManageNotificationsStaticDesc');
+            }
+        }
+    });
 }
+
 
 export function renderApp() {
     renderHabits();

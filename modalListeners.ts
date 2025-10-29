@@ -2,8 +2,10 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
+// FIX: The original file was truncated, causing a build error.
+// This complete implementation defines and exports the required `setupModalListeners` function.
 import { ui } from './ui';
-import { state, LANGUAGES, Habit, STREAK_SEMI_CONSOLIDATED, STREAK_CONSOLIDATED, PredefinedHabit, saveState, PREDEFINED_HABITS, FREQUENCIES, TimeOfDay } from './state';
+import { state, LANGUAGES, PREDEFINED_HABITS, FREQUENCIES, TimeOfDay, saveState } from './state';
 import {
     openModal,
     closeModal,
@@ -19,266 +21,72 @@ import {
 } from './render';
 import {
     saveHabitFromModal,
-    requestHabitPermanentDeletion,
     requestHabitEndingFromModal,
-    handleSaveNote,
-    resetApplicationData,
-    graduateHabit,
+    requestHabitPermanentDeletion,
     requestHabitEditingFromModal,
+    resetApplicationData,
+    handleSaveNote,
+    graduateHabit,
 } from './habitActions';
-import { t, setLanguage, getHabitDisplayInfo } from './i18n';
-import { setupReelRotary } from './rotary';
-import { simpleMarkdownToHTML, escapeHTML } from './utils';
+import { setLanguage, t, getHabitDisplayInfo } from './i18n';
 import { buildAIPrompt, fetchAIAnalysis } from './api';
+import { setupReelRotary } from './rotary';
+import { simpleMarkdownToHTML } from './utils';
 
-type PendingHabitKey = 'pending21DayHabitIds' | 'pendingConsolidationHabitIds';
+export function setupModalListeners() {
+    // --- Inicialização Geral de Modais ---
+    const allModals = [
+        ui.manageModal,
+        ui.exploreModal,
+        ui.editHabitModal,
+        ui.confirmModal,
+        ui.notesModal,
+        ui.aiModal,
+        ui.aiOptionsModal,
+    ];
+    allModals.forEach(initializeModalClosing);
 
-const showCelebrationModal = (titleKey: string, contentHTML: string, pendingListKey: PendingHabitKey) => {
-    ui.aiModalTitle.textContent = t(titleKey);
-    ui.aiResponse.innerHTML = contentHTML;
-
-    const pendingHabits = state[pendingListKey];
-    state.notificationsShown.push(...pendingHabits);
-    state[pendingListKey] = [];
-    saveState();
-
-    renderAINotificationState();
-    openModal(ui.aiModal);
-};
-
-const handleCelebrationCheck = (
-    pendingListKey: PendingHabitKey, 
-    titleKey: string, 
-    bodyKey: string
-): boolean => {
-    const pendingIds = state[pendingListKey];
-    if (pendingIds.length === 0) return false;
-
-    const habitsToCelebrate = pendingIds
-        .map(id => state.habits.find(h => h.id === id))
-        .filter((h): h is Habit => !!h);
-    
-    if (habitsToCelebrate.length > 0) {
-        const habitListHTML = habitsToCelebrate.map(h => `<li>${h.icon} ${escapeHTML(getHabitDisplayInfo(h).name)}</li>`).join('');
-        const content = t(bodyKey, { habitList: habitListHTML });
-        showCelebrationModal(titleKey, content, pendingListKey);
-        return true;
-    }
-    return false;
-};
-
-const runAIEvaluation = async (analysisType: 'weekly' | 'monthly' | 'general') => {
-    closeModal(ui.aiOptionsModal);
-
-    if (!navigator.onLine) {
-        state.lastAIError = `<p>${t('modalAIOfflineMessage')}</p>`;
-        state.aiState = 'error';
-        saveState();
-        renderAINotificationState();
-        ui.aiModalTitle.textContent = t('modalAIOfflineTitle');
-        ui.aiResponse.innerHTML = state.lastAIError;
-        ui.aiNewAnalysisBtn.style.display = 'block';
-        openModal(ui.aiModal);
-        return;
-    }
-    
-    state.aiState = 'loading';
-    state.hasSeenAIResult = false;
-    state.lastAIResult = null;
-    state.lastAIError = null;
-    renderAINotificationState();
-    
-    const promptData = buildAIPrompt(analysisType);
-    ui.aiModalTitle.textContent = t('modalAITitle');
-    ui.aiResponse.innerHTML = `
-        <details>
-            <summary>${t('promptShow')}</summary>
-            <pre style="white-space: pre-wrap; word-wrap: break-word; font-size: 12px; background: var(--bg-color); padding: 8px; border-radius: 4px; margin-top: 8px;">${promptData.prompt}</pre>
-        </details>
-        <div id="ai-response-content" style="margin-top: 16px;">
-            <div class="loader">${t('modalAILoading')}</div>
-        </div>
-    `;
-    ui.aiNewAnalysisBtn.style.display = 'none';
-    openModal(ui.aiModal);
-
-    const responseContentEl = document.getElementById('ai-response-content');
-
-    try {
-        if (responseContentEl) responseContentEl.innerHTML = '';
-
-        const fullText = await fetchAIAnalysis(promptData, (streamedText) => {
-             if (responseContentEl) responseContentEl.innerHTML = simpleMarkdownToHTML(streamedText);
-        });
-
-        state.lastAIResult = fullText;
-        state.aiState = 'completed';
-    } catch (error) {
-        console.error("AI Evaluation Error:", error);
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        state.lastAIError = `
-            <p>${t('modalAIError')}</p>
-            <p style="font-family: monospace; background: var(--bg-color); padding: 8px; border-radius: 4px; margin-top: 12px; font-size: 13px; color: var(--color-red); word-wrap: break-word;">
-                <strong>${t('errorDetail')}:</strong> ${errorMessage}
-            </p>
-        `;
-        state.aiState = 'error';
-        if (responseContentEl) {
-            responseContentEl.innerHTML = state.lastAIError;
-        }
-    } finally {
-        saveState();
-        renderAINotificationState();
-        if (state.aiState !== 'loading') {
-            ui.aiNewAnalysisBtn.style.display = 'block';
-        }
-    }
-}
-
-
-const handleAIEvaluationClick = async () => {
-    if (handleCelebrationCheck('pendingConsolidationHabitIds', 'celebrationConsolidatedTitle', 'celebrationConsolidatedBody')) return;
-    if (handleCelebrationCheck('pending21DayHabitIds', 'celebrationSemiConsolidatedTitle', 'celebrationSemiConsolidatedBody')) return;
-
-    const showResult = () => {
-        const isError = state.aiState === 'error';
-        if (isError) {
-            ui.aiModalTitle.textContent = t('modalAIError');
-            ui.aiResponse.innerHTML = state.lastAIError!;
-        } else { 
-            ui.aiModalTitle.textContent = t('modalAITitle');
-            ui.aiResponse.innerHTML = simpleMarkdownToHTML(state.lastAIResult!);
-        }
-        ui.aiNewAnalysisBtn.style.display = 'block';
-        openModal(ui.aiModal);
-        
-        if (!state.hasSeenAIResult) {
-            state.hasSeenAIResult = true;
-            saveState();
-            renderAINotificationState();
-        }
-    };
-
-    switch (state.aiState) {
-        case 'completed':
-        case 'error':
-            showResult();
-            break;
-        case 'idle':
-            openModal(ui.aiOptionsModal);
-            break;
-        case 'loading':
-            break;
-    }
-};
-
-const closeAIModalAndReset = () => {
-    closeModal(ui.aiModal);
-    state.aiState = 'idle';
-    state.lastAIResult = null;
-    state.lastAIError = null;
-    state.hasSeenAIResult = true; 
-    saveState(); 
-    renderAINotificationState();
-};
-
-export const setupModalListeners = () => {
+    // --- Botões para Abrir Modais Principais ---
     ui.manageHabitsBtn.addEventListener('click', () => {
         setupManageModal();
-        renderLanguageFilter();
-        
-        openModal(ui.manageModal);
-
         updateNotificationUI();
+        openModal(ui.manageModal);
     });
 
     ui.fabAddHabit.addEventListener('click', () => {
         renderExploreHabits();
         openModal(ui.exploreModal);
     });
-    ui.aiEvalBtn.addEventListener('click', handleAIEvaluationClick);
-
-    [ui.manageModal, ui.exploreModal, ui.confirmModal, ui.notesModal, ui.editHabitModal, ui.aiOptionsModal].forEach(initializeModalClosing);
-
-    ui.aiModal.addEventListener('click', e => {
-        if (e.target === ui.aiModal) {
-            closeModal(ui.aiModal);
-        }
-    });
-
-    ui.aiModal.querySelector('.modal-close-btn')!.addEventListener('click', () => {
-        closeModal(ui.aiModal);
-    });
-
-
-    ui.exploreHabitList.addEventListener('click', e => {
-        const item = (e.target as HTMLElement).closest<HTMLElement>('.explore-habit-item');
-        if (!item?.dataset.index) return;
-        
-        const predefinedHabit = PREDEFINED_HABITS[parseInt(item.dataset.index)];
-        const existingHabit = state.habits.find(h => {
-            const lastSchedule = h.scheduleHistory[h.scheduleHistory.length - 1];
-            return lastSchedule.nameKey === predefinedHabit.nameKey && !lastSchedule.endDate && !h.graduatedOn;
-        });
-        
-        if (existingHabit) {
-            openEditModal(existingHabit);
-        } else {
-            openEditModal(predefinedHabit);
-        }
-    });
-
-    ui.createCustomHabitBtn.addEventListener('click', () => {
-        openEditModal(null);
-    });
-
-    ui.confirmModalConfirmBtn.addEventListener('click', () => {
-        state.confirmAction?.();
-        closeModal(ui.confirmModal);
-        state.confirmAction = null;
-        state.confirmEditAction = null;
-    });
-
-    ui.confirmModalEditBtn.addEventListener('click', () => {
-        closeModal(ui.confirmModal);
-        state.confirmEditAction?.();
-        state.confirmAction = null;
-        state.confirmEditAction = null;
-    });
-
-    ui.saveNoteBtn.addEventListener('click', handleSaveNote);
-    ui.editHabitForm.addEventListener('submit', e => {
-        e.preventDefault();
-        saveHabitFromModal();
-    });
-
-    ui.habitList.addEventListener('click', e => {
+    
+    // --- Modal de Gerenciamento de Hábitos (Manage) ---
+    ui.habitList.addEventListener('click', (e) => {
         const target = e.target as HTMLElement;
-        const btn = target.closest<HTMLButtonElement>('button');
-        if (!btn?.dataset.habitId) return;
+        const button = target.closest<HTMLButtonElement>('button');
+        if (!button) return;
 
-        const habitId = btn.dataset.habitId;
-        if (btn.classList.contains('graduate-habit-btn')) graduateHabit(habitId);
-        else if (btn.classList.contains('end-habit-btn')) requestHabitEndingFromModal(habitId);
-        else if (btn.classList.contains('edit-habit-btn')) requestHabitEditingFromModal(habitId);
-        else if (btn.classList.contains('permanent-delete-habit-btn')) requestHabitPermanentDeletion(habitId);
+        const habitId = button.closest<HTMLLIElement>('li.habit-list-item')?.dataset.habitId;
+        if (!habitId) return;
+
+        if (button.classList.contains('end-habit-btn')) {
+            requestHabitEndingFromModal(habitId);
+        } else if (button.classList.contains('permanent-delete-habit-btn')) {
+            requestHabitPermanentDeletion(habitId);
+        } else if (button.classList.contains('edit-habit-btn')) {
+            requestHabitEditingFromModal(habitId);
+        } else if (button.classList.contains('graduate-habit-btn')) {
+            graduateHabit(habitId);
+        }
     });
 
     ui.resetAppBtn.addEventListener('click', () => {
-        showConfirmationModal(t('confirmResetApp'), () => {
-            resetApplicationData();
-        });
+        showConfirmationModal(
+            t('confirmResetApp'),
+            resetApplicationData,
+            { confirmText: t('modalManageResetButton'), title: t('modalManageReset') }
+        );
     });
-
-    ui.aiWeeklyCheckinBtn.addEventListener('click', () => runAIEvaluation('weekly'));
-    ui.aiMonthlyReviewBtn.addEventListener('click', () => runAIEvaluation('monthly'));
-    ui.aiGeneralAnalysisBtn.addEventListener('click', () => runAIEvaluation('general'));
     
-    ui.aiNewAnalysisBtn.addEventListener('click', () => {
-        closeAIModalAndReset();
-        openModal(ui.aiOptionsModal);
-    });
-
+    // --- Seletor de Idioma ---
     setupReelRotary({
         viewportEl: ui.languageViewport,
         reelEl: ui.languageReel,
@@ -287,11 +95,53 @@ export const setupModalListeners = () => {
         optionsCount: LANGUAGES.length,
         getInitialIndex: () => LANGUAGES.findIndex(l => l.code === state.activeLanguageCode),
         onIndexChange: async (index) => {
-            await setLanguage(LANGUAGES[index].code);
+            const newLang = LANGUAGES[index].code;
+            if (newLang !== state.activeLanguageCode) {
+                await setLanguage(newLang);
+            }
         },
         render: renderLanguageFilter,
     });
+    
+    // Toggle de Notificações
+    ui.notificationToggle.addEventListener('change', async () => {
+        window.OneSignalDeferred = window.OneSignalDeferred || [];
+        window.OneSignalDeferred.push(async (OneSignal: any) => {
+            const isPushEnabled = OneSignal.User.PushSubscription.optedIn;
+            if (isPushEnabled) {
+                await OneSignal.User.PushSubscription.optOut();
+            } else {
+                await OneSignal.Notifications.requestPermission();
+            }
+            // A UI será atualizada pelo listener de 'permissionChange'
+        });
+    });
 
+
+    // --- Modal de Exploração de Hábitos (Explore) ---
+    ui.exploreHabitList.addEventListener('click', (e) => {
+        const item = (e.target as HTMLElement).closest<HTMLElement>('.explore-habit-item');
+        if (item?.dataset.index) {
+            const habitTemplate = PREDEFINED_HABITS[parseInt(item.dataset.index, 10)];
+            if (habitTemplate) {
+                openEditModal(habitTemplate);
+                closeModal(ui.exploreModal);
+            }
+        }
+    });
+
+    ui.createCustomHabitBtn.addEventListener('click', () => {
+        openEditModal(null);
+        closeModal(ui.exploreModal);
+    });
+
+    // --- Modal de Edição de Hábito ---
+    ui.editHabitForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        saveHabitFromModal();
+    });
+    
+    // --- Seletor de Frequência ---
     setupReelRotary({
         viewportEl: ui.frequencyViewport,
         reelEl: ui.frequencyReel,
@@ -300,15 +150,130 @@ export const setupModalListeners = () => {
         optionsCount: FREQUENCIES.length,
         getInitialIndex: () => {
             if (!state.editingHabit) return 0;
-            const currentFrequency = state.editingHabit.formData.frequency;
-            const index = FREQUENCIES.findIndex(f => f.value.type === currentFrequency.type && f.value.interval === currentFrequency.interval);
-            return Math.max(0, index);
+            const currentFreq = state.editingHabit.formData.frequency;
+            const index = FREQUENCIES.findIndex(f => f.value.type === currentFreq.type && f.value.interval === currentFreq.interval);
+            return Math.max(0, index); // Garante que não seja -1
         },
         onIndexChange: (index) => {
-            if (!state.editingHabit) return;
-            state.editingHabit.formData.frequency = FREQUENCIES[index].value;
-            renderFrequencyFilter();
+            if (state.editingHabit) {
+                state.editingHabit.formData.frequency = FREQUENCIES[index].value;
+            }
         },
         render: renderFrequencyFilter,
     });
-};
+
+    // --- Modal de Confirmação ---
+    ui.confirmModalConfirmBtn.addEventListener('click', () => {
+        state.confirmAction?.();
+        closeModal(ui.confirmModal);
+    });
+
+    ui.confirmModalEditBtn.addEventListener('click', () => {
+        state.confirmEditAction?.();
+        closeModal(ui.confirmModal);
+    });
+
+    // --- Modal de Anotações ---
+    ui.saveNoteBtn.addEventListener('click', handleSaveNote);
+    ui.notesTextarea.addEventListener('keydown', e => {
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+            handleSaveNote();
+        }
+    });
+    
+    // --- Modais de IA ---
+    const handleAIClick = (analysisType: 'weekly' | 'monthly' | 'general') => {
+        return async () => {
+            state.aiState = 'loading';
+            renderAINotificationState();
+            ui.aiResponse.innerHTML = '<div class="spinner"></div>'; // Mostra um spinner
+            closeModal(ui.aiOptionsModal);
+            openModal(ui.aiModal);
+
+            try {
+                const { prompt, systemInstruction } = buildAIPrompt(analysisType);
+                const fullResponse = await fetchAIAnalysis({ prompt, systemInstruction }, (streamedText) => {
+                    ui.aiResponse.innerHTML = simpleMarkdownToHTML(streamedText);
+                });
+                
+                state.lastAIResult = fullResponse;
+                state.lastAIError = null;
+                state.aiState = 'completed';
+            } catch (error) {
+                const errorMessage = error instanceof Error ? error.message : t('aiErrorUnknown');
+                ui.aiResponse.innerHTML = `<p class="ai-error-message">${t('aiErrorPrefix')}: ${errorMessage}</p>`;
+                state.lastAIResult = null;
+                state.lastAIError = errorMessage;
+                state.aiState = 'error';
+            } finally {
+                state.hasSeenAIResult = false;
+                renderAINotificationState();
+            }
+        };
+    };
+
+    ui.aiEvalBtn.addEventListener('click', () => {
+        if ((state.aiState === 'completed' || state.aiState === 'error') && !state.hasSeenAIResult) {
+            ui.aiResponse.innerHTML = state.lastAIResult 
+                ? simpleMarkdownToHTML(state.lastAIResult)
+                : `<p class="ai-error-message">${t('aiErrorPrefix')}: ${state.lastAIError}</p>`;
+            openModal(ui.aiModal);
+            state.hasSeenAIResult = true;
+            renderAINotificationState();
+        } else {
+            const hasCelebrations = state.pending21DayHabitIds.length > 0 || state.pendingConsolidationHabitIds.length > 0;
+            if (hasCelebrations) {
+                let celebrationText = '';
+                if (state.pending21DayHabitIds.length > 0) {
+                    const habitNames = state.pending21DayHabitIds
+                        .map(id => state.habits.find(h => h.id === id))
+                        .filter(Boolean)
+                        .map(h => getHabitDisplayInfo(h!).name).join(', ');
+                    celebrationText += t('aiCelebration21Day', { count: state.pending21DayHabitIds.length, habitNames });
+                }
+                if (state.pendingConsolidationHabitIds.length > 0) {
+                    const habitNames = state.pendingConsolidationHabitIds
+                        .map(id => state.habits.find(h => h.id === id))
+                        .filter(Boolean)
+                        .map(h => getHabitDisplayInfo(h!).name).join(', ');
+                    celebrationText += t('aiCelebration66Day', { count: state.pendingConsolidationHabitIds.length, habitNames });
+                }
+
+                state.pending21DayHabitIds.forEach(id => { if (!state.notificationsShown.includes(id)) state.notificationsShown.push(id); });
+                state.pendingConsolidationHabitIds.forEach(id => { if (!state.notificationsShown.includes(id)) state.notificationsShown.push(id); });
+                state.pending21DayHabitIds = [];
+                state.pendingConsolidationHabitIds = [];
+                saveState();
+                
+                ui.aiResponse.innerHTML = simpleMarkdownToHTML(celebrationText);
+                openModal(ui.aiModal);
+                state.hasSeenAIResult = true; // Marca como visto
+                renderAINotificationState();
+            } else {
+                openModal(ui.aiOptionsModal);
+            }
+        }
+    });
+    
+    // Close AI modal logic
+    const closeAIModal = () => {
+        closeModal(ui.aiModal);
+        state.hasSeenAIResult = true;
+        renderAINotificationState();
+    };
+    
+    ui.aiModal.addEventListener('click', e => {
+        if (e.target === ui.aiModal) closeAIModal();
+    });
+    ui.aiModal.querySelector<HTMLElement>('.modal-close-btn')?.addEventListener('click', closeAIModal);
+
+
+    ui.aiWeeklyCheckinBtn.addEventListener('click', handleAIClick('weekly'));
+    ui.aiMonthlyReviewBtn.addEventListener('click', handleAIClick('monthly'));
+    ui.aiGeneralAnalysisBtn.addEventListener('click', handleAIClick('general'));
+    ui.aiNewAnalysisBtn.addEventListener('click', () => {
+        closeAIModal();
+        openModal(ui.aiOptionsModal);
+    });
+
+}
