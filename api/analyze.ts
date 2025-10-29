@@ -26,7 +26,7 @@ export default async function handler(req: Request) {
     }
 
     try {
-        const { prompt } = await req.json();
+        const { prompt, systemInstruction } = await req.json();
 
         if (!prompt) {
             return new Response(JSON.stringify({ error: 'Prompt is required' }), {
@@ -38,6 +38,9 @@ export default async function handler(req: Request) {
         const responseStream = await ai.models.generateContentStream({
             model: 'gemini-2.5-flash',
             contents: prompt,
+            config: {
+                systemInstruction: systemInstruction
+            }
         });
 
         const stream = new ReadableStream({

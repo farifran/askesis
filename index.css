@@ -845,7 +845,7 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 }
 
 .snoozed-icon { width: 20px; height: 20px; stroke: var(--text-tertiary); }
-.snoozed-text { font-size: 14px !important; color: var(--text-tertiary); font-weight: 500; }
+.snoozed-text { font-size: 14px; color: var(--text-tertiary); font-weight: 500; }
 
 /* --- COMPONENTES: GRÁFICO DE EVOLUÇÃO --- */
 .chart-container {
@@ -1181,15 +1181,16 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 .duplicate-habit-notice, .duplicate-drop-notice {
     color: var(--color-red); font-size: 13px; font-weight: 500;
     opacity: 0; max-height: 0;
-    transition: opacity var(--transition-duration-slow), max-height var(--transition-duration-slow), padding var(--transition-duration-slow);
+    overflow: hidden;
+    transition: opacity var(--transition-duration-slow), max-height var(--transition-duration-slow), padding-block var(--transition-duration-slow);
     text-align: center; padding: 0; margin-block-start: var(--space-xs);
 }
-.duplicate-drop-notice { padding-block-end: var(--space-sm); }
 .duplicate-habit-notice.visible, .duplicate-drop-notice.visible {
     opacity: 1;
     max-height: 40px;
 }
 .duplicate-habit-notice.visible { padding-block: var(--space-sm); }
+.duplicate-drop-notice.visible { padding-block-end: var(--space-sm); }
 
 /* --- RESPONSIVIDADE --- */
 @media (max-width: 767px) {

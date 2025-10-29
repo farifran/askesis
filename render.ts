@@ -200,11 +200,15 @@ function updateGoalContentElement(goalEl: HTMLElement, status: HabitStatus, habi
             goalEl.innerHTML = `<div class="progress" style="color: var(--accent-blue);">✓</div><div class="unit">${getUnitString(habit, 1)}</div>`;
         }
     } else if (status === 'snoozed') {
-        goalEl.innerHTML = `
-            <div class="progress">
-                <svg class="snoozed-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="13 17 18 12 13 7"></polyline><polyline points="6 17 11 12 6 7"></polyline></svg>
-            </div>
-            <div class="unit snoozed-text">${t('habitSnoozed')}</div>`;
+        const progressDiv = document.createElement('div');
+        progressDiv.className = 'progress';
+        progressDiv.innerHTML = `<svg class="snoozed-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="13 17 18 12 13 7"></polyline><polyline points="6 17 11 12 6 7"></polyline></svg>`;
+
+        const unitDiv = document.createElement('div');
+        unitDiv.className = 'unit snoozed-text';
+        unitDiv.textContent = t('habitSnoozed');
+
+        goalEl.append(progressDiv, unitDiv);
     } else { 
         if (habit.goal.type === 'pages' || habit.goal.type === 'minutes') {
             const smartGoal = getSmartGoalForHabit(habit, state.selectedDate, time);

@@ -66,10 +66,9 @@ function generateDailyHabitSummary(date: Date): string | null {
     return null;
 }
 
-export const buildAIPrompt = (analysisType: 'weekly' | 'monthly' | 'general'): string => {
+export const buildAIPrompt = (analysisType: 'weekly' | 'monthly' | 'general'): { prompt: string, systemInstruction: string } => {
     let history = '';
     let promptTemplateKey = '';
-    const templateOptions: { [key: string]: string | undefined } = {};
     const daySummaries: string[] = [];
     const today = getTodayUTC();
 
@@ -145,24 +144,26 @@ export const buildAIPrompt = (analysisType: 'weekly' | 'monthly' | 'general'): s
         'es': 'Español'
     }[state.activeLanguageCode] || 'Português (Brasil)';
 
-    templateOptions.activeHabitList = activeHabitList;
-    templateOptions.graduatedHabitsSection = graduatedHabitsSection;
-    templateOptions.history = history;
-    templateOptions.languageName = languageName;
+    const systemInstruction = t('aiSystemInstruction', { languageName });
+    const prompt = t(promptTemplateKey, {
+        activeHabitList,
+        graduatedHabitsSection,
+        history,
+    });
     
-    return t(promptTemplateKey, templateOptions);
+    return { prompt, systemInstruction };
 };
 
 // --- Lógica de Chamada de API ---
 
 /**
  * Busca e transmite uma análise de IA da API Gemini.
- * @param prompt O prompt completo para enviar ao modelo.
+ * @param promptData O objeto contendo o prompt do usuário e a instrução de sistema.
  * @param onStream Uma função de callback que recebe o texto acumulado da resposta à medida que chega.
  * @returns O texto completo da resposta.
  */
 export async function fetchAIAnalysis(
-    prompt: string,
+    promptData: { prompt: string; systemInstruction: string },
     onStream: (accumulatedText: string) => void
 ): Promise<string> {
     const response = await fetch('/api/analyze', {
@@ -170,7 +171,7 @@ export async function fetchAIAnalysis(
         headers: {
             'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify(promptData),
     });
 
     if (!response.ok) {

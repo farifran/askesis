@@ -88,12 +88,12 @@ const runAIEvaluation = async (analysisType: 'weekly' | 'monthly' | 'general') =
     state.lastAIError = null;
     renderAINotificationState();
     
-    const prompt = buildAIPrompt(analysisType);
+    const promptData = buildAIPrompt(analysisType);
     ui.aiModalTitle.textContent = t('modalAITitle');
     ui.aiResponse.innerHTML = `
         <details>
             <summary>${t('promptShow')}</summary>
-            <pre style="white-space: pre-wrap; word-wrap: break-word; font-size: 12px; background: var(--bg-color); padding: 8px; border-radius: 4px; margin-top: 8px;">${prompt}</pre>
+            <pre style="white-space: pre-wrap; word-wrap: break-word; font-size: 12px; background: var(--bg-color); padding: 8px; border-radius: 4px; margin-top: 8px;">${promptData.prompt}</pre>
         </details>
         <div id="ai-response-content" style="margin-top: 16px;">
             <div class="loader">${t('modalAILoading')}</div>
@@ -107,7 +107,7 @@ const runAIEvaluation = async (analysisType: 'weekly' | 'monthly' | 'general') =
     try {
         if (responseContentEl) responseContentEl.innerHTML = '';
 
-        const fullText = await fetchAIAnalysis(prompt, (streamedText) => {
+        const fullText = await fetchAIAnalysis(promptData, (streamedText) => {
              if (responseContentEl) responseContentEl.innerHTML = simpleMarkdownToHTML(streamedText);
         });
 
