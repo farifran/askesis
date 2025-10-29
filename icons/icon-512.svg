@@ -1,27 +1,33 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
   <rect width="100" height="100" fill="#000000"/>
-
-  <!-- Laurel Wreath (Larger, more circular) -->
-  <g transform="translate(50 50) scale(0.95) translate(-50 -50)">
-    <g stroke="#27ae60" stroke-width="5" stroke-linecap="round" fill="none">
-        <path d="M50,95 C 15,80, 10,35, 50,5"/>
-        <path d="M50,95 C 85,80, 90,35, 50,5"/>
-    </g>
-    <g fill="#27ae60">
-        <g transform="translate(33 78) rotate(-60)"> <ellipse rx="10" ry="5"/> </g>
-        <g transform="translate(20 55) rotate(-45)"> <ellipse rx="10" ry="5"/> </g>
-        <g transform="translate(28 32) rotate(-30)"> <ellipse rx="10" ry="5"/> </g>
-        <g transform="translate(67 78) rotate(60)"> <ellipse rx="10" ry="5"/> </g>
-        <g transform="translate(80 55) rotate(45)"> <ellipse rx="10" ry="5"/> </g>
-        <g transform="translate(72 32) rotate(30)"> <ellipse rx="10" ry="5"/> </g>
-    </g>
+  <!-- Laurel Wreath (perfect circle) -->
+  <g transform="translate(50 50)">
+      <defs>
+          <path id="branch-path" d="M 0 48 A 48 48 0 0 1 48 0" fill="none" stroke="#27ae60" stroke-width="6" stroke-linecap="round"/>
+          <ellipse id="leaf-shape" rx="12" ry="6" fill="#27ae60"/>
+      </defs>
+      
+      <!-- Right Branch -->
+      <g transform="rotate(45)">
+          <use href="#branch-path"/>
+          <use href="#leaf-shape" transform="rotate(45) translate(34, 0) rotate(30)"/>
+          <use href="#leaf-shape" transform="rotate(75) translate(34, 0) rotate(20)"/>
+          <use href="#leaf-shape" transform="rotate(105) translate(34, 0) rotate(10)"/>
+      </g>
+      <!-- Left Branch -->
+      <g transform="rotate(-45) scale(-1, 1)">
+          <use href="#branch-path"/>
+          <use href="#leaf-shape" transform="rotate(45) translate(34, 0) rotate(30)"/>
+          <use href="#leaf-shape" transform="rotate(75) translate(34, 0) rotate(20)"/>
+          <use href="#leaf-shape" transform="rotate(105) translate(34, 0) rotate(10)"/>
+      </g>
   </g>
 
-  <!-- Roman Column (Smaller, inside wreath) -->
-  <g transform="translate(50 57) scale(0.4) translate(-50 -55)">
-    <g fill="white">
-        <path d="M35,95 h30 v-5 h-30 z M40,90 h20 v-70 h-20 z M35,20 h30 v-5 h-30 z"/>
-        <path d="M45,88 V22 M50,88 V22 M55,88 V22" stroke="#d0d0d0" stroke-width="1.8" fill="none"/>
-    </g>
+  <!-- Roman Column (centered and smaller) -->
+  <g transform="translate(50 55) scale(0.45) translate(-50 -55)">
+      <g fill="white">
+          <path d="M35,95 h30 v-5 h-30 z M40,90 h20 v-70 h-20 z M35,20 h30 v-5 h-30 z"/>
+          <path d="M45,88 V22 M50,88 V22 M55,88 V22" stroke="#d0d0d0" stroke-width="2" fill="none"/>
+      </g>
   </g>
 </svg>
