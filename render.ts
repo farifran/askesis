@@ -25,7 +25,7 @@ import {
     getScheduleForDate,
     HabitTemplate,
 } from './state';
-import { getTodayUTCIso, toUTCIsoDateString, parseUTCIsoDate, escapeHTML, pushToOneSignal, getActiveHabitsForDate } from './utils';
+import { getTodayUTCIso, toUTCIsoDateString, parseUTCIsoDate, escapeHTML, pushToOneSignal, getActiveHabitsForDate, addDays } from './utils';
 import { ui } from './ui';
 import { t, getLocaleDayName, getHabitDisplayInfo, getTimeOfDayName } from './i18n';
 import { STOIC_QUOTES } from './quotes';
@@ -424,15 +424,28 @@ export function renderStoicQuote() {
 
 // FIX: Add updateHeaderTitle function
 export function updateHeaderTitle() {
-    const date = parseUTCIsoDate(state.selectedDate);
-    const isSmallScreen = window.innerWidth < 768;
-    const formatOptions: Intl.DateTimeFormatOptions = {
-        weekday: isSmallScreen ? 'short' : 'long',
-        month: isSmallScreen ? 'short' : 'long',
-        day: 'numeric',
-        timeZone: 'UTC'
-    };
-    ui.headerTitle.textContent = date.toLocaleDateString(state.activeLanguageCode, formatOptions);
+    const todayISO = getTodayUTCIso();
+    const yesterdayISO = toUTCIsoDateString(addDays(parseUTCIsoDate(todayISO), -1));
+    const tomorrowISO = toUTCIsoDateString(addDays(parseUTCIsoDate(todayISO), 1));
+
+    let title: string;
+
+    if (state.selectedDate === todayISO) {
+        title = t('headerTitleToday');
+    } else if (state.selectedDate === yesterdayISO) {
+        title = t('headerTitleYesterday');
+    } else if (state.selectedDate === tomorrowISO) {
+        title = t('headerTitleTomorrow');
+    } else {
+        const date = parseUTCIsoDate(state.selectedDate);
+        const formatOptions: Intl.DateTimeFormatOptions = {
+            month: 'long',
+            day: 'numeric',
+            timeZone: 'UTC'
+        };
+        title = date.toLocaleDateString(state.activeLanguageCode, formatOptions);
+    }
+    ui.headerTitle.textContent = title;
 }
 
 

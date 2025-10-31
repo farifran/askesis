@@ -63,15 +63,14 @@ function commitStateAndRender() {
  * @param newName O novo nome para o hábito.
  */
 function updateHabitDetails(habit: Habit, newName: string) {
-    // BUGFIX [2024-08-01]: Corrige um bug de i18n onde o subtítulo traduzido era
-    // salvo no estado. Agora, a chave de tradução 'customHabitSubtitle' é salva,
-    // garantindo que o subtítulo seja sempre exibido no idioma correto do usuário.
+    // BUGFIX [2024-08-27]: Corrige um bug onde a renomeação de um hábito sobrescrevia
+    // seu subtítulo com um valor genérico. A função agora atualiza apenas o nome,
+    // preservando o subtítulo para manter a integridade dos dados.
     habit.scheduleHistory.forEach(schedule => {
-        // Se era um hábito predefinido, agora se torna personalizado.
+        // Se era um hábito predefinido, agora se torna personalizado, então removemos a chave.
         schedule.nameKey = undefined;
         schedule.name = newName;
-        schedule.subtitleKey = 'customHabitSubtitle';
-        schedule.subtitle = undefined; // Limpa a propriedade antiga para consistência.
+        // O subtítulo é gerenciado separadamente e não deve ser alterado aqui.
     });
 }
 
@@ -886,7 +885,9 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
     renderAINotificationState();
     // UX IMPROVEMENT [2024-08-04]: Exibe um indicador de carregamento imediatamente dentro do modal de IA
     // para fornecer feedback visual de que a solicitação está em andamento.
-    ui.aiResponse.innerHTML = `<div class="ai-response-loader"><svg class="loading-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg></div>`;
+    // BUGFIX [2024-09-01]: Reutiliza o SVG do ícone de carregamento do cabeçalho para garantir consistência visual e de animação.
+    const loadingIconHTML = ui.aiEvalBtn.querySelector('.loading-icon')?.outerHTML;
+    ui.aiResponse.innerHTML = `<div class="ai-response-loader">${loadingIconHTML || ''}</div>`;
     closeModal(ui.aiOptionsModal);
     openModal(ui.aiModal);
 

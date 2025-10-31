@@ -111,6 +111,7 @@ body {
     -moz-user-select: none;    /* Firefox */
     -ms-user-select: none;     /* IE/Edge */
     user-select: none;         /* Padrão */
+    touch-action: manipulation; /* BUGFIX [2024-08-29]: Desabilita o zoom por duplo toque em dispositivos móveis para melhorar a resposta de interações personalizadas. */
 }
 
 /* Permitir seleção em campos de texto e conteúdo onde é útil */
@@ -1115,8 +1116,9 @@ input:disabled + .slider {
     display: flex;
     justify-content: center;
     align-items: center;
-    min-height: 150px; /* Garante que o modal tenha uma altura mínima enquanto carrega */
+    min-height: 100px; /* BUGFIX [2024-08-29]: Reduz a altura mínima para um visual mais compacto. */
 }
+/* BUGFIX [2024-08-29]: Adiciona a animação de rotação ao ícone de carregamento do modal de IA para consistência. */
 .ai-response-loader .loading-icon {
     display: block;
     width: 32px;
