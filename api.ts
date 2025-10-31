@@ -5,7 +5,6 @@
 import { state, getHabitDailyInfoForDate, shouldHabitAppearOnDate, HabitStatus, TimeOfDay, getEffectiveScheduleForHabitOnDate } from './state';
 import { getHabitDisplayInfo, t } from './i18n';
 import { addDays, getTodayUTC, toUTCIsoDateString, parseUTCIsoDate } from './utils';
-import { GoogleGenAI } from '@google/genai';
 
 // --- Lógica de Construção de Prompt ---
 
@@ -159,33 +158,34 @@ export async function fetchAIAnalysisStream(
     analysisType: 'weekly' | 'monthly' | 'general',
     onChunk: (fullText: string) => void
 ): Promise<string> {
-    const { prompt, systemInstruction } = buildAIPrompt(analysisType);
+    const promptData = buildAIPrompt(analysisType);
+    
+    const response = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(promptData),
+    });
 
-    try {
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
-        const responseStream = await ai.models.generateContentStream({
-            model: 'gemini-2.5-flash',
-            contents: prompt,
-            config: {
-                systemInstruction: systemInstruction,
-            },
-        });
-
-        let fullText = '';
-        for await (const chunk of responseStream) {
-            const chunkText = chunk.text;
-            if (chunkText) {
-                fullText += chunkText;
-                onChunk(fullText); // Chama o callback com o texto acumulado
-            }
-        }
-        return fullText;
-
-    } catch (error) {
-        console.error("Gemini API request failed:", error);
-        if (error instanceof Error) {
-            throw new Error(`Gemini API Error: ${error.message}`);
-        }
-        throw new Error("An unknown error occurred with the Gemini API");
+    if (!response.ok) {
+        const errorBody = await response.json().catch(() => ({ error: 'Failed to parse error response' }));
+        throw new Error(`API request failed with status ${response.status}: ${errorBody.error || 'Unknown error'}`);
     }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+        throw new Error('Failed to get response reader');
+    }
+
+    const decoder = new TextDecoder();
+    let fullText = '';
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        
+        const chunk = decoder.decode(value, { stream: true });
+        fullText += chunk;
+        onChunk(fullText); // Chama o callback com o texto acumulado
+    }
+    
+    return fullText;
 }
