@@ -758,10 +758,7 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
     try {
         const { prompt, systemInstruction } = buildAIPrompt(analysisType);
         
-        let fullText = '';
-        
-        // REATORAÇÃO: A lógica de chamada da API foi movida diretamente para cá,
-        // eliminando a necessidade do arquivo `api.ts` do lado do cliente.
+        // A lógica de chamada da API foi refatorada para não usar mais streaming do lado do cliente.
         const response = await fetch('/api/analyze', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -769,36 +766,22 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
         });
 
         if (!response.ok) {
-            // Tenta analisar o corpo do erro como JSON, com um fallback.
             const errorBody = await response.json().catch(() => ({ 
                 error: 'Falha ao analisar a resposta de erro do servidor.', 
                 details: response.statusText 
             }));
-            // Constrói uma mensagem de erro mais informativa
             throw new Error(`[${response.status}] ${errorBody.error || 'Erro de API'}: ${errorBody.details || ''}`);
         }
 
-        if (!response.body) {
-            throw new Error('A resposta do servidor estava vazia.');
-        }
-
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            
-            const chunk = decoder.decode(value, { stream: true });
-            fullText += chunk;
-            ui.aiResponse.innerHTML = simpleMarkdownToHTML(fullText);
-        }
+        // Aguarda o texto completo em vez de ler um stream.
+        const fullText = await response.text();
+        ui.aiResponse.innerHTML = simpleMarkdownToHTML(fullText);
         
         state.lastAIResult = fullText;
         state.lastAIError = null;
         state.aiState = 'completed';
+
     } catch (error) {
-        // Agora, o erro lançado do bloco !response.ok será mais descritivo
         const errorMessage = error instanceof Error ? error.message : t('aiErrorUnknown');
         const displayError = `${t('aiErrorPrefix')}: ${errorMessage}`;
         ui.aiResponse.innerHTML = `<p class="ai-error-message">${displayError}</p>`;

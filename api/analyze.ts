@@ -41,7 +41,6 @@ export default async function handler(req: Request) {
         const apiKey = process.env.API_KEY;
         if (!apiKey) {
             console.error("[api/analyze] API_KEY environment variable not set.");
-            // Não exponha detalhes da chave de API no erro do cliente
             return createErrorResponse('Internal Server Error', 500, 'Server configuration error.');
         }
         
@@ -55,27 +54,18 @@ export default async function handler(req: Request) {
             },
         });
         
-        const stream = new ReadableStream({
-            async start(controller) {
-                const encoder = new TextEncoder();
-                try {
-                    for await (const chunk of geminiResponse.stream) {
-                        const text = chunk.text;
-                        if (text) {
-                            controller.enqueue(encoder.encode(text));
-                        }
-                    }
-                } catch (streamError) {
-                    console.error("Error during Gemini stream processing:", streamError);
-                    // Não podemos enviar um novo Response aqui pois os cabeçalhos já foram enviados.
-                    // controller.error() é a maneira correta de sinalizar uma falha no stream.
-                    controller.error(streamError instanceof Error ? streamError : new Error('Gemini stream failed'));
-                }
-                controller.close();
-            },
-        });
+        // REATORAÇÃO: Em vez de transmitir para o cliente, agregue a resposta aqui no servidor.
+        // Isso é mais robusto contra erros de rede intermediários que causam "Load failed" no cliente.
+        let fullText = '';
+        for await (const chunk of geminiResponse.stream) {
+            const text = chunk.text;
+            if (text) {
+                fullText += text;
+            }
+        }
         
-        return new Response(stream, {
+        // Envia a resposta completa como uma única carga útil.
+        return new Response(fullText, {
             headers: { ...corsHeaders, 'Content-Type': 'text/plain; charset=utf-8' },
         });
 
