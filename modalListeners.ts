@@ -2,8 +2,6 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// FIX: The original file was truncated, causing a build error.
-// This complete implementation defines and exports the required `setupModalListeners` function.
 import { ui } from './ui';
 import { state, LANGUAGES, PREDEFINED_HABITS, FREQUENCIES, TimeOfDay, saveState } from './state';
 import {

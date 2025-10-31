@@ -228,9 +228,9 @@ function updateGoalContentElement(goalEl: HTMLElement, status: HabitStatus, habi
 
 function getTimeOfDayIcon(time: TimeOfDay): string {
     switch (time) {
-        case 'Manhã': return icons.morning;
-        case 'Tarde': return icons.afternoon;
-        case 'Noite': return icons.evening;
+        case 'Morning': return icons.morning;
+        case 'Afternoon': return icons.afternoon;
+        case 'Evening': return icons.evening;
         default: return '';
     }
 }
@@ -342,7 +342,7 @@ export function renderHabits() {
     const selectedDateObj = parseUTCIsoDate(state.selectedDate);
     const dailyInfoByHabit = getHabitDailyInfoForDate(state.selectedDate);
 
-    const habitsByTime: Record<TimeOfDay, Habit[]> = { 'Manhã': [], 'Tarde': [], 'Noite': [] };
+    const habitsByTime: Record<TimeOfDay, Habit[]> = { 'Morning': [], 'Afternoon': [], 'Evening': [] };
     
     state.habits.forEach(habit => {
         if (shouldHabitAppearOnDate(habit, selectedDateObj)) {
@@ -356,28 +356,27 @@ export function renderHabits() {
         }
     });
 
-    const groupHasHabits: Record<TimeOfDay, boolean> = { 'Manhã': false, 'Tarde': false, 'Noite': false };
+    const groupHasHabits: Record<TimeOfDay, boolean> = { 'Morning': false, 'Afternoon': false, 'Evening': false };
     TIMES_OF_DAY.forEach(time => {
         groupHasHabits[time] = habitsByTime[time].length > 0;
     });
 
     const emptyTimes = TIMES_OF_DAY.filter(time => !groupHasHabits[time]);
     let targetTime: TimeOfDay | null = null;
-    if (groupHasHabits['Manhã'] && !groupHasHabits['Tarde'] && groupHasHabits['Noite']) {
-        targetTime = 'Tarde';
-    } else if (!groupHasHabits['Manhã']) {
-        targetTime = 'Manhã';
-    } else if (!groupHasHabits['Tarde']) {
-        targetTime = 'Tarde';
-    } else if (!groupHasHabits['Noite']) {
-        targetTime = 'Noite';
+    if (groupHasHabits['Morning'] && !groupHasHabits['Afternoon'] && groupHasHabits['Evening']) {
+        targetTime = 'Afternoon';
+    } else if (!groupHasHabits['Morning']) {
+        targetTime = 'Morning';
+    } else if (!groupHasHabits['Afternoon']) {
+        targetTime = 'Afternoon';
+    } else if (!groupHasHabits['Evening']) {
+        targetTime = 'Evening';
     }
 
     TIMES_OF_DAY.forEach(time => {
         const wrapperEl = ui.habitContainer.querySelector(`.habit-group-wrapper[data-time-wrapper="${time}"]`);
         const groupEl = wrapperEl?.querySelector<HTMLElement>(`.habit-group[data-time="${time}"]`);
-        const titleEl = wrapperEl?.querySelector('h2');
-        if (!wrapperEl || !groupEl || !titleEl) return;
+        if (!wrapperEl || !groupEl) return;
         
         const fragment = document.createDocumentFragment();
         habitsByTime[time].forEach(habit => {
@@ -388,9 +387,6 @@ export function renderHabits() {
         
         const hasHabits = groupHasHabits[time];
         const isSmartPlaceholder = time === targetTime;
-        
-        const timeToKeyMap: Record<TimeOfDay, string> = { 'Manhã': 'filterMorning', 'Tarde': 'filterAfternoon', 'Noite': 'filterEvening' };
-        titleEl.textContent = t(timeToKeyMap[time]);
         
         wrapperEl.classList.toggle('has-habits', hasHabits);
         wrapperEl.classList.toggle('is-collapsible', !hasHabits && !isSmartPlaceholder);
@@ -595,39 +591,6 @@ export function showInlineNotice(element: HTMLElement, message: string) {
     (element as any)._noticeTimeout = newTimeout;
 }
 
-export function createManageHabitListItemHTML(habit: Habit): string {
-    const lastSchedule = habit.scheduleHistory[habit.scheduleHistory.length - 1];
-    const isEnded = !!lastSchedule.endDate;
-    const isGraduated = !!habit.graduatedOn;
-    const streak = calculateHabitStreak(habit.id, getTodayUTCIso());
-    const isConsolidated = streak >= STREAK_CONSOLIDATED;
-    const { name } = getHabitDisplayInfo(habit);
-
-    let actionButtons = '', statusClass = '', statusText = '';
-
-    if (isGraduated) {
-        statusClass = 'graduated';
-        statusText = ` <span class="habit-name-status">${t('modalStatusGraduated')}</span>`;
-    } else if (isEnded) {
-        statusClass = 'ended';
-        statusText = ` <span class="habit-name-status">${t('modalStatusEnded')}</span>`;
-        actionButtons = `<button class="permanent-delete-habit-btn" data-habit-id="${habit.id}" aria-label="${t('aria_delete_permanent', { habitName: name })}"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>`;
-    } else {
-        const editButton = `<button class="edit-habit-btn" data-habit-id="${habit.id}" aria-label="${t('aria_edit', { habitName: name })}"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>`;
-        if (isConsolidated) {
-            actionButtons = `<button class="graduate-habit-btn" data-habit-id="${habit.id}" aria-label="${t('aria_graduate', { habitName: name })}"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v2"/><path d="M12 18v2a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2"/><path d="M6 12h12"/><path d="M18 12v6"/><path d="M18 6V4a2 2 0 0 0-2-2h-2"/><path d="M18 12h-6"/><path d="M12 12V6"/></svg></button>`;
-        } else {
-            actionButtons = `${editButton}<button class="end-habit-btn" data-habit-id="${habit.id}" aria-label="${t('aria_end', { habitName: name })}"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg></button>`;
-        }
-    }
-
-    return `
-        <li class="habit-list-item ${statusClass}" data-habit-id="${habit.id}">
-            <span>${habit.icon}<span class="habit-name">${escapeHTML(name)}</span>${statusText}</span>
-            <div class="habit-list-actions">${actionButtons}</div>
-        </li>`;
-}
-
 export function setupManageModal() {
     const habitsToDisplay = [...state.habits];
 
@@ -645,7 +608,37 @@ export function setupManageModal() {
         return getHabitDisplayInfo(a).name.localeCompare(getHabitDisplayInfo(b).name);
     });
     
-    ui.habitList.innerHTML = habitsToDisplay.map(createManageHabitListItemHTML).join('');
+    ui.habitList.innerHTML = habitsToDisplay.map(habit => {
+        const lastSchedule = habit.scheduleHistory[habit.scheduleHistory.length - 1];
+        const isEnded = !!lastSchedule.endDate;
+        const isGraduated = !!habit.graduatedOn;
+        const streak = calculateHabitStreak(habit.id, getTodayUTCIso());
+        const isConsolidated = streak >= STREAK_CONSOLIDATED;
+        const { name } = getHabitDisplayInfo(habit);
+
+        let actionButtons = '', statusClass = '', statusText = '';
+
+        if (isGraduated) {
+            statusClass = 'graduated';
+            statusText = ` <span class="habit-name-status">${t('modalStatusGraduated')}</span>`;
+        } else if (isEnded) {
+            statusClass = 'ended';
+            statusText = ` <span class="habit-name-status">${t('modalStatusEnded')}</span>`;
+            actionButtons = `<button class="permanent-delete-habit-btn" data-habit-id="${habit.id}" aria-label="${t('aria_delete_permanent', { habitName: name })}"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>`;
+        } else {
+            const editButton = `<button class="edit-habit-btn" data-habit-id="${habit.id}" aria-label="${t('aria_edit', { habitName: name })}"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>`;
+            if (isConsolidated) {
+                actionButtons = `<button class="graduate-habit-btn" data-habit-id="${habit.id}" aria-label="${t('aria_graduate', { habitName: name })}"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v2"/><path d="M12 18v2a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2"/><path d="M6 12h12"/><path d="M18 12v6"/><path d="M18 6V4a2 2 0 0 0-2-2h-2"/><path d="M18 12h-6"/><path d="M12 12V6"/></svg></button>`;
+            } else {
+                actionButtons = `${editButton}<button class="end-habit-btn" data-habit-id="${habit.id}" aria-label="${t('aria_end', { habitName: name })}"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg></button>`;
+            }
+        }
+
+        const innerHTML = `<span>${habit.icon}<span class="habit-name">${escapeHTML(name)}</span>${statusText}</span>
+            <div class="habit-list-actions">${actionButtons}</div>`;
+
+        return `<li class="habit-list-item ${statusClass}" data-habit-id="${habit.id}">${innerHTML}</li>`;
+    }).join('');
 }
 
 export function showUndoToast() {
@@ -728,7 +721,7 @@ export function openEditModal(habitOrTemplate: Habit | PredefinedHabit | null) {
                 subtitle: t('customHabitSubtitle'),
                 icon: icons.custom,
                 color: '#8e44ad',
-                times: ['Manhã'],
+                times: ['Morning'],
                 goal: { type: 'check', unitKey: 'unitCheck' },
                 frequency: { type: 'daily', interval: 1 },
             };
@@ -766,8 +759,6 @@ export function openEditModal(habitOrTemplate: Habit | PredefinedHabit | null) {
     
     renderFrequencyFilter();
     
-    nameInput.readOnly = false;
-
     if(noticeEl) noticeEl.classList.remove('visible');
     openModal(ui.editHabitModal, nameInput);
 }

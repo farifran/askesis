@@ -11,12 +11,13 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
     let draggedHabitId: string | null = null;
     let draggedHabitOriginalTime: TimeOfDay | null = null;
     let dropIndicator: HTMLElement | null = null;
+    let currentDropZoneTarget: HTMLElement | null = null; // Rastreia a zona de soltar atual para otimização
 
     const handleBodyDragOver = (e: DragEvent) => {
         e.preventDefault();
         const target = e.target as HTMLElement;
 
-        document.querySelectorAll('.drag-over, .invalid-drop').forEach(el => el.classList.remove('drag-over', 'invalid-drop'));
+        // Limpa o indicador de reordenação visual, se existir
         if (dropIndicator) {
             dropIndicator.classList.remove('visible');
             delete dropIndicator.dataset.targetId;
@@ -28,6 +29,13 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
         }
 
         const dropZone = target.closest<HTMLElement>('.drop-zone');
+
+        // OTIMIZAÇÃO: Limpa a classe da zona de soltar anterior apenas se tivermos movido para uma nova.
+        if (dropZone !== currentDropZoneTarget) {
+            currentDropZoneTarget?.classList.remove('drag-over', 'invalid-drop');
+        }
+        currentDropZoneTarget = dropZone;
+
         if (!dropZone) {
             e.dataTransfer!.dropEffect = 'none';
             return;
@@ -86,8 +94,6 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
     const handleBodyDrop = (e: DragEvent) => {
         e.preventDefault();
         
-        document.querySelectorAll('.drag-over, .invalid-drop').forEach(el => el.classList.remove('drag-over', 'invalid-drop'));
-        
         if (!draggedHabitId || !draggedHabitOriginalTime) return;
 
         // --- Soltar para Reordenar ---
@@ -131,7 +137,11 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
     const cleanupDrag = () => {
         draggedElement?.classList.remove('dragging');
         document.body.classList.remove('is-dragging-active');
-        document.querySelectorAll('.drag-over, .invalid-drop').forEach(el => el.classList.remove('drag-over', 'invalid-drop'));
+        
+        // Limpeza eficiente usando a referência em cache
+        currentDropZoneTarget?.classList.remove('drag-over', 'invalid-drop');
+        currentDropZoneTarget = null;
+        
         if (dropIndicator) {
             dropIndicator.remove();
             dropIndicator = null;

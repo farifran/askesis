@@ -1,7 +1,6 @@
 import { state, saveState, TIMES_OF_DAY } from './state';
 import { addDays, parseUTCIsoDate, toUTCIsoDateString } from './utils';
 import { ui } from './ui';
-// FIX: Removed unused and unexported import 'createCalendarDayElement'.
 import {
     renderHabits,
     renderCalendar,

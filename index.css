@@ -180,15 +180,6 @@ main {
     justify-content: space-between;
 }
 
-.title-container {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    position: relative;
-    top: -3px;
-    left: -2px;
-}
-
 .app-header h1 {
     font-size: 28px;
     font-weight: 700;
@@ -268,14 +259,6 @@ main {
     position: relative;
 }
 
-#ai-eval-btn {
-    width: calc(var(--space-xl) * 2);
-    height: calc(var(--space-xl) * 2);
-}
-#ai-eval-btn svg {
-    width: 28px;
-    height: 28px;
-}
 /* OTIMIZAÇÃO: Animação de brilho performática usando opacity em pseudo-elemento. */
 #ai-eval-btn.has-notification::after {
     content: '';
@@ -523,7 +506,6 @@ body.is-dragging-active .habit-group-wrapper.is-collapsible {
     max-height: 100px;
     margin-block-start: var(--space-md);
 }
-.habit-group-wrapper h2 { display: none; }
 
 .habit-group {
     position: relative; /* Necessário para o posicionamento do indicador de soltar */
@@ -1147,7 +1129,6 @@ input:disabled + .slider {
     padding: var(--space-md); color: var(--text-primary);
     font-size: 15px; height: 44px;
 }
-.form-control[readonly] { background-color: var(--surface-hover); cursor: not-allowed; }
 .form-row { display: flex; gap: var(--space-lg); align-items: flex-start; margin-block-end: var(--space-lg); }
 .form-row .form-group { flex-grow: 1; display: flex; flex-direction: column; align-items: center; margin-block-end: 0; }
 .form-group.form-group--inline { display: flex; justify-content: space-between; align-items: center; }

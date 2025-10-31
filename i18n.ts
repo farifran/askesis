@@ -2,7 +2,7 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-import { state, Habit, LANGUAGES, PredefinedHabit } from './state';
+import { state, Habit, LANGUAGES, PredefinedHabit, TimeOfDay } from './state';
 import { ui } from './ui';
 import { renderApp, updateHeaderTitle, initFrequencyFilter, setupManageModal, initLanguageFilter } from './render';
 
@@ -10,19 +10,8 @@ type PluralableTranslation = { one: string; other: string };
 type TranslationValue = string | PluralableTranslation;
 type Translations = Record<string, TranslationValue>;
 
-// A mapping from the hardcoded Portuguese values in TimeOfDay to the language-independent keys.
-const timeOfDayKeyMap: Record<string, 'Morning' | 'Afternoon' | 'Evening'> = {
-    'Manhã': 'Morning',
-    'Tarde': 'Afternoon',
-    'Noite': 'Evening',
-};
-
-export function getTimeOfDayName(time: string): string {
-    const keySuffix = timeOfDayKeyMap[time];
-    if (keySuffix) {
-        return t(`filter${keySuffix}`);
-    }
-    return time; // Fallback
+export function getTimeOfDayName(time: TimeOfDay): string {
+    return t(`filter${time}`);
 }
 
 const loadedTranslations: Record<string, Translations> = {};

@@ -15,9 +15,9 @@ const statusToSymbol: Record<HabitStatus, string> = {
 };
 
 const timeToKeyMap: Record<TimeOfDay, string> = {
-    'Manhã': 'filterMorning',
-    'Tarde': 'filterAfternoon',
-    'Noite': 'filterEvening'
+    'Morning': 'filterMorning',
+    'Afternoon': 'filterAfternoon',
+    'Evening': 'filterEvening'
 };
 
 function generateDailyHabitSummary(date: Date): string | null {

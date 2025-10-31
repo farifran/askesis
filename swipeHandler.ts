@@ -25,6 +25,33 @@ export function setupSwipeHandler(habitContainer: HTMLElement) {
     let dragEnableTimer: number | null = null;
     const SWIPE_INTENT_THRESHOLD = 10; // Um limiar baixo para detectar a intenção de deslizar.
 
+    const abortSwipe = () => {
+        if (!activeCard) return;
+        
+        // Remove todos os listeners de eventos globais
+        window.removeEventListener('pointermove', handlePointerMove);
+        window.removeEventListener('pointerup', cleanup);
+        window.removeEventListener('pointercancel', cleanup);
+
+        if (dragEnableTimer) {
+            clearTimeout(dragEnableTimer);
+        }
+
+        // Restaura o cartão para seu estado pré-interação.
+        activeCard.classList.remove('is-swiping');
+        const content = activeCard.querySelector<HTMLElement>('.habit-content-wrapper');
+        if (content) {
+            content.style.transform = '';
+            content.draggable = true;
+        }
+        
+        // Reseta todas as variáveis de estado para o handler de deslize.
+        activeCard = null;
+        isSwiping = false;
+        swipeDirection = 'none';
+        dragEnableTimer = null;
+    };
+
     const handlePointerMove = (e: PointerEvent) => {
         if (!activeCard) return;
 
@@ -51,7 +78,7 @@ export function setupSwipeHandler(habitContainer: HTMLElement) {
                     }
                 } else {
                     swipeDirection = 'vertical';
-                    cleanup(); // Permite a rolagem vertical
+                    abortSwipe(); // Permite a rolagem vertical
                     return;
                 }
             }
@@ -60,9 +87,6 @@ export function setupSwipeHandler(habitContainer: HTMLElement) {
         if (swipeDirection === 'horizontal') {
             currentX = e.clientX;
             const deltaX = currentX - startX;
-
-            const rootStyles = getComputedStyle(document.documentElement);
-            swipeActionWidth = parseInt(rootStyles.getPropertyValue('--swipe-action-width'), 10) || 60;
 
             let translateX = deltaX;
             if (wasOpenLeft) translateX += swipeActionWidth;
@@ -148,27 +172,7 @@ export function setupSwipeHandler(habitContainer: HTMLElement) {
         if (activeCard) {
             // Uma operação de arrastar teve precedência sobre um deslize.
             // Devemos abortar a interação de deslize completamente para evitar conflitos de estado.
-            window.removeEventListener('pointermove', handlePointerMove);
-            window.removeEventListener('pointerup', cleanup);
-            window.removeEventListener('pointercancel', cleanup);
-
-            if (dragEnableTimer) {
-                clearTimeout(dragEnableTimer);
-            }
-
-            // Restaura o cartão para seu estado pré-interação.
-            activeCard.classList.remove('is-swiping');
-            const content = activeCard.querySelector<HTMLElement>('.habit-content-wrapper');
-            if (content) {
-                content.style.transform = '';
-                content.draggable = true;
-            }
-            
-            // Reseta todas as variáveis de estado para o handler de deslize.
-            activeCard = null;
-            isSwiping = false;
-            swipeDirection = 'none';
-            dragEnableTimer = null;
+            abortSwipe();
         }
     });
 
@@ -194,6 +198,10 @@ export function setupSwipeHandler(habitContainer: HTMLElement) {
         currentX = startX;
         wasOpenLeft = activeCard.classList.contains('is-open-left');
         wasOpenRight = activeCard.classList.contains('is-open-right');
+
+        // OTIMIZAÇÃO: Calcula a largura da ação de deslize apenas uma vez no início do gesto.
+        const rootStyles = getComputedStyle(document.documentElement);
+        swipeActionWidth = parseInt(rootStyles.getPropertyValue('--swipe-action-width'), 10) || 60;
 
         const content = activeCard.querySelector<HTMLElement>('.habit-content-wrapper');
         if (content) {
