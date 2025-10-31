@@ -2,7 +2,7 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-import { generateUUID, getTodayUTCIso, parseUTCIsoDate, addDays, escapeHTML } from './utils';
+import { generateUUID, getTodayUTCIso, parseUTCIsoDate, addDays, escapeHTML, simpleMarkdownToHTML } from './utils';
 import {
     state,
     saveState,
@@ -35,11 +35,14 @@ import {
     renderCalendar,
     updateHabitCardElement,
     updateCalendarDayElement,
+    renderAINotificationState,
+    openModal,
 } from './render';
 import { t, getHabitDisplayInfo, getTimeOfDayName } from './i18n';
 import { ui } from './ui';
 import { renderChart } from './chart';
 import { updateAppBadge } from './badge';
+import { fetchAIAnalysisStream } from './api';
 
 /**
  * Commits the current state to storage and triggers a full UI re-render.
@@ -583,4 +586,35 @@ export function graduateHabit(habitId: string) {
         },
         { title: t('modalStatusGraduated'), confirmText: t('aria_graduate', { habitName: '' }) }
     );
+}
+
+/**
+ * Orquestra todo o processo de análise da IA, desde a UI até a atualização do estado.
+ * @param analysisType O tipo de análise a ser realizada.
+ */
+export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'general') {
+    state.aiState = 'loading';
+    renderAINotificationState();
+    ui.aiResponse.innerHTML = '<div class="spinner"></div>'; // Mostra um spinner
+    closeModal(ui.aiOptionsModal);
+    openModal(ui.aiModal);
+
+    try {
+        const fullText = await fetchAIAnalysisStream(analysisType, (streamedText) => {
+            ui.aiResponse.innerHTML = simpleMarkdownToHTML(streamedText);
+        });
+        
+        state.lastAIResult = fullText;
+        state.lastAIError = null;
+        state.aiState = 'completed';
+    } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : t('aiErrorUnknown');
+        ui.aiResponse.innerHTML = `<p class="ai-error-message">${t('aiErrorPrefix')}: ${errorMessage}</p>`;
+        state.lastAIResult = null;
+        state.lastAIError = errorMessage;
+        state.aiState = 'error';
+    } finally {
+        state.hasSeenAIResult = false;
+        renderAINotificationState();
+    }
 }

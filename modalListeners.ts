@@ -25,9 +25,9 @@ import {
     resetApplicationData,
     handleSaveNote,
     graduateHabit,
+    performAIAnalysis,
 } from './habitActions';
 import { setLanguage, t, getHabitDisplayInfo } from './i18n';
-import { fetchAIAnalysisStream } from './api';
 import { setupReelRotary } from './rotary';
 import { simpleMarkdownToHTML, pushToOneSignal } from './utils';
 
@@ -181,32 +181,7 @@ export function setupModalListeners() {
     
     // --- Modais de IA ---
     const handleAIClick = (analysisType: 'weekly' | 'monthly' | 'general') => {
-        return async () => {
-            state.aiState = 'loading';
-            renderAINotificationState();
-            ui.aiResponse.innerHTML = '<div class="spinner"></div>'; // Mostra um spinner
-            closeModal(ui.aiOptionsModal);
-            openModal(ui.aiModal);
-
-            try {
-                const fullText = await fetchAIAnalysisStream(analysisType, (streamedText) => {
-                    ui.aiResponse.innerHTML = simpleMarkdownToHTML(streamedText);
-                });
-                
-                state.lastAIResult = fullText;
-                state.lastAIError = null;
-                state.aiState = 'completed';
-            } catch (error) {
-                const errorMessage = error instanceof Error ? error.message : t('aiErrorUnknown');
-                ui.aiResponse.innerHTML = `<p class="ai-error-message">${t('aiErrorPrefix')}: ${errorMessage}</p>`;
-                state.lastAIResult = null;
-                state.lastAIError = errorMessage;
-                state.aiState = 'error';
-            } finally {
-                state.hasSeenAIResult = false;
-                renderAINotificationState();
-            }
-        };
+        return () => performAIAnalysis(analysisType);
     };
 
     ui.aiEvalBtn.addEventListener('click', () => {

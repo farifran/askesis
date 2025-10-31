@@ -158,34 +158,50 @@ export async function fetchAIAnalysisStream(
     analysisType: 'weekly' | 'monthly' | 'general',
     onChunk: (fullText: string) => void
 ): Promise<string> {
-    const promptData = buildAIPrompt(analysisType);
-    
-    const response = await fetch('/api/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(promptData),
-    });
+    const { prompt, systemInstruction } = buildAIPrompt(analysisType);
 
-    if (!response.ok) {
-        const errorBody = await response.json().catch(() => ({ error: 'Failed to parse error response' }));
-        throw new Error(`API request failed with status ${response.status}: ${errorBody.error || 'Unknown error'}`);
-    }
+    try {
+        const response = await fetch('/api/analyze', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ prompt, systemInstruction }),
+        });
 
-    const reader = response.body?.getReader();
-    if (!reader) {
-        throw new Error('Failed to get response reader');
-    }
-
-    const decoder = new TextDecoder();
-    let fullText = '';
-    while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ error: 'Failed to parse error response' }));
+            throw new Error(`API request failed with status ${response.status}: ${errorData.error || response.statusText}`);
+        }
         
-        const chunk = decoder.decode(value, { stream: true });
-        fullText += chunk;
-        onChunk(fullText); // Chama o callback com o texto acumulado
+        if (!response.body) {
+            throw new Error('Response body is null');
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let fullText = '';
+        
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) {
+                break;
+            }
+            const chunkText = decoder.decode(value, { stream: true });
+            fullText += chunkText;
+            onChunk(fullText);
+        }
+        
+        return fullText;
+
+    } catch (error) {
+        console.error("AI analysis request failed:", error);
+        if (error instanceof Error) {
+            if (!error.message.startsWith('API request failed')) {
+                 throw new Error(`Analysis Error: ${error.message}`);
+            }
+            throw error;
+        }
+        throw new Error("An unknown error occurred during AI analysis");
     }
-    
-    return fullText;
 }
