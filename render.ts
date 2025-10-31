@@ -235,39 +235,6 @@ function getTimeOfDayIcon(time: TimeOfDay): string {
     }
 }
 
-export function updateHabitCardElement(card: HTMLElement) {
-    const habitId = card.dataset.habitId;
-    const time = card.dataset.time as TimeOfDay | undefined;
-
-    if (!habitId || !time) return;
-    
-    const habit = state.habits.find(h => h.id === habitId);
-    if (!habit) return;
-
-    const dailyInfo = getHabitDailyInfoForDate(state.selectedDate);
-    const habitInstanceData = dailyInfo[habit.id]?.instances?.[time];
-    const status = habitInstanceData?.status ?? 'pending';
-    const hasNote = !!(habitInstanceData?.note && habitInstanceData.note.length > 0);
-    const streak = calculateHabitStreak(habit.id, state.selectedDate);
-
-    card.classList.remove('completed', 'snoozed', 'pending');
-    card.classList.add(status);
-    card.classList.toggle('consolidated', streak >= STREAK_CONSOLIDATED);
-    card.classList.toggle('semi-consolidated', streak >= STREAK_SEMI_CONSOLIDATED && streak < STREAK_CONSOLIDATED);
-
-    const noteBtn = card.querySelector<HTMLButtonElement>('.swipe-note-btn');
-    if (noteBtn) {
-        noteBtn.classList.toggle('has-note', hasNote);
-        noteBtn.setAttribute('aria-label', t(hasNote ? 'habitNoteEdit_ariaLabel' : 'habitNoteAdd_ariaLabel'));
-    }
-
-    const goalEl = card.querySelector<HTMLElement>('.habit-goal');
-    if (goalEl) {
-        updateGoalContentElement(goalEl, status, habit, time, habitInstanceData);
-    }
-}
-
-
 export function createHabitCardElement(habit: Habit, time: TimeOfDay): HTMLElement {
     const dailyInfo = getHabitDailyInfoForDate(state.selectedDate);
     const habitInstanceData = dailyInfo[habit.id]?.instances?.[time];

@@ -2,7 +2,8 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-import { generateUUID, getTodayUTCIso, parseUTCIsoDate, addDays, escapeHTML, simpleMarkdownToHTML } from './utils';
+import { GoogleGenAI } from '@google/genai';
+import { generateUUID, getTodayUTCIso, parseUTCIsoDate, addDays, escapeHTML, simpleMarkdownToHTML, getTodayUTC, toUTCIsoDateString } from './utils';
 import {
     state,
     saveState,
@@ -15,14 +16,13 @@ import {
     STREAK_SEMI_CONSOLIDATED,
     STREAK_CONSOLIDATED,
     calculateHabitStreak,
-    TIMES_OF_DAY,
-    Frequency,
     HabitTemplate,
     HabitSchedule,
     getScheduleForDate,
     PREDEFINED_HABITS,
     invalidateStreakCache,
     getEffectiveScheduleForHabitOnDate,
+    getHabitDailyInfoForDate,
 } from './state';
 import {
     renderHabits,
@@ -33,8 +33,6 @@ import {
     setupManageModal,
     showInlineNotice,
     renderCalendar,
-    updateHabitCardElement,
-    updateCalendarDayElement,
     renderAINotificationState,
     openModal,
 } from './render';
@@ -42,7 +40,6 @@ import { t, getHabitDisplayInfo, getTimeOfDayName } from './i18n';
 import { ui } from './ui';
 import { renderChart } from './chart';
 import { updateAppBadge } from './badge';
-import { fetchAIAnalysisStream } from './api';
 
 /**
  * Commits the current state to storage and triggers a full UI re-render.
@@ -542,15 +539,6 @@ export function handleSaveNote() {
     const dayData = ensureHabitInstanceData(date, habitId, time);
     dayData.note = noteText;
     
-    const card = document.querySelector<HTMLElement>(`.habit-card[data-habit-id="${habitId}"][data-time="${time}"]`);
-    if(card) {
-        const noteBtn = card.querySelector<HTMLButtonElement>('.swipe-note-btn');
-        if(noteBtn) {
-            noteBtn.classList.toggle('has-note', noteText.length > 0);
-            noteBtn.setAttribute('aria-label', t(noteText.length > 0 ? 'habitNoteEdit_ariaLabel' : 'habitNoteAdd_ariaLabel'));
-        }
-    }
-    
     closeModal(ui.notesModal);
     state.editingNoteFor = null;
     commitStateAndRender();
@@ -588,6 +576,156 @@ export function graduateHabit(habitId: string) {
     );
 }
 
+
+// --- Lógica de Construção de Prompt (Movida de api.ts) ---
+
+const statusToSymbol: Record<HabitStatus, string> = {
+    completed: '✅',
+    snoozed: '➡️',
+    pending: '⚪️'
+};
+
+const timeToKeyMap: Record<TimeOfDay, string> = {
+    'Morning': 'filterMorning',
+    'Afternoon': 'filterAfternoon',
+    'Evening': 'filterEvening'
+};
+
+function generateDailyHabitSummary(date: Date): string | null {
+    const isoDate = toUTCIsoDateString(date);
+    const dailyInfoByHabit = getHabitDailyInfoForDate(isoDate);
+    const habitsOnThisDay = state.habits.filter(h => shouldHabitAppearOnDate(h, date) && !h.graduatedOn);
+
+    if (habitsOnThisDay.length === 0) return null;
+
+    const dayEntries = habitsOnThisDay.map(habit => {
+        const dailyInfo = dailyInfoByHabit[habit.id];
+        const scheduleForDay = getEffectiveScheduleForHabitOnDate(habit, isoDate);
+        if (scheduleForDay.length === 0) return '';
+        
+        const { name } = getHabitDisplayInfo(habit);
+        const habitInstances = dailyInfo?.instances || {};
+
+        const statusDetails = scheduleForDay.map(time => {
+            const instance = habitInstances[time];
+            const status: HabitStatus = instance?.status || 'pending';
+            const note = instance?.note;
+            
+            let detail = statusToSymbol[status];
+            if (scheduleForDay.length > 1) {
+                detail = `${t(timeToKeyMap[time])}: ${detail}`;
+            }
+
+            if ((habit.goal.type === 'pages' || habit.goal.type === 'minutes') && instance?.status === 'completed' && instance.goalOverride !== undefined) {
+                const unit = t(habit.goal.unitKey, { count: instance.goalOverride });
+                detail += ` ${instance.goalOverride} ${unit}`;
+            }
+
+            if (note) {
+                detail += ` ("${note}")`;
+            }
+            return detail;
+        });
+        
+        return `- ${name}: ${statusDetails.join(', ')}`;
+    }).filter(Boolean);
+
+    if (dayEntries.length > 0) {
+        return `${isoDate}:\n${dayEntries.join('\n')}`;
+    }
+
+    return null;
+}
+
+function buildAIPrompt(analysisType: 'weekly' | 'monthly' | 'general'): { prompt: string, systemInstruction: string } {
+    let history = '';
+    let promptTemplateKey = '';
+    const daySummaries: string[] = [];
+    const today = getTodayUTC();
+
+    if (analysisType === 'weekly' || analysisType === 'monthly') {
+        const daysToScan = analysisType === 'weekly' ? 7 : 30;
+        promptTemplateKey = analysisType === 'weekly' ? 'aiPromptWeekly' : 'aiPromptMonthly';
+
+        for (let i = 0; i < daysToScan; i++) {
+            const date = addDays(today, -i);
+            const summary = generateDailyHabitSummary(date);
+            if (summary) {
+                daySummaries.push(summary);
+            }
+        }
+        history = daySummaries.join('\n\n');
+
+    } else if (analysisType === 'general') {
+        promptTemplateKey = 'aiPromptGeneral';
+        
+        let firstDateEver = today;
+        if (state.habits.length > 0) {
+            firstDateEver = state.habits.reduce((earliest, habit) => {
+                const habitStartDate = parseUTCIsoDate(habit.createdOn);
+                return habitStartDate < earliest ? habitStartDate : earliest;
+            }, today);
+        }
+        
+        const allSummaries: string[] = [];
+        
+        for (let d = firstDateEver; d <= today; d = addDays(d, 1)) {
+            const summary = generateDailyHabitSummary(d);
+            if (summary) {
+                allSummaries.push(summary);
+            }
+        }
+        
+        const summaryByMonth: Record<string, string[]> = {};
+        allSummaries.forEach(daySummary => {
+            const dateStr = daySummary.substring(0, 10);
+            const month = dateStr.substring(0, 7);
+            if (!summaryByMonth[month]) {
+                summaryByMonth[month] = [];
+            }
+            summaryByMonth[month].push(daySummary);
+        });
+
+        history = Object.entries(summaryByMonth)
+            .map(([month, entries]) => `${t('aiPromptMonthHeader', { month })}:\n${entries.join('\n')}`)
+            .join('\n\n');
+    }
+
+    if (!history.trim()) {
+        history = t('aiPromptNoData');
+    }
+
+    const activeHabits = state.habits.filter(h => {
+        const lastSchedule = h.scheduleHistory[h.scheduleHistory.length - 1];
+        return !lastSchedule.endDate && !h.graduatedOn;
+    });
+    const graduatedHabits = state.habits.filter(h => h.graduatedOn);
+
+    const activeHabitList = activeHabits.map(h => getHabitDisplayInfo(h).name).join(', ') || t('aiPromptNone');
+    
+    let graduatedHabitsSection = '';
+    if (graduatedHabits.length > 0) {
+        const graduatedHabitList = graduatedHabits.map(h => getHabitDisplayInfo(h).name).join(', ');
+        graduatedHabitsSection = t('aiPromptGraduatedSection', { graduatedHabitList });
+    }
+    
+    const languageName = {
+        'pt': 'Português (Brasil)',
+        'en': 'English',
+        'es': 'Español'
+    }[state.activeLanguageCode] || 'Português (Brasil)';
+
+    const systemInstruction = t('aiSystemInstruction', { languageName });
+    const prompt = t(promptTemplateKey, {
+        activeHabitList,
+        graduatedHabitsSection,
+        history,
+    });
+    
+    return { prompt, systemInstruction };
+};
+
+
 /**
  * Orquestra todo o processo de análise da IA, desde a UI até a atualização do estado.
  * @param analysisType O tipo de análise a ser realizada.
@@ -600,9 +738,26 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
     openModal(ui.aiModal);
 
     try {
-        const fullText = await fetchAIAnalysisStream(analysisType, (streamedText) => {
-            ui.aiResponse.innerHTML = simpleMarkdownToHTML(streamedText);
+        const { prompt, systemInstruction } = buildAIPrompt(analysisType);
+        
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+
+        const responseStream = await ai.models.generateContentStream({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+            config: {
+                systemInstruction: systemInstruction,
+            },
         });
+
+        let fullText = '';
+        for await (const chunk of responseStream) {
+            const chunkText = chunk.text;
+            if (chunkText) {
+                fullText += chunkText;
+                ui.aiResponse.innerHTML = simpleMarkdownToHTML(fullText);
+            }
+        }
         
         state.lastAIResult = fullText;
         state.lastAIError = null;
