@@ -25,24 +25,25 @@ import {
     resetApplicationData,
     handleSaveNote,
     graduateHabit,
+    performAIAnalysis,
 } from './habitActions';
 import { setLanguage, t, getHabitDisplayInfo } from './i18n';
-import { buildAIPrompt } from './api';
 import { setupReelRotary } from './rotary';
 import { simpleMarkdownToHTML, pushToOneSignal } from './utils';
 
 export function setupModalListeners() {
     // --- Inicialização Geral de Modais ---
-    const allModals = [
+    // REATORAÇÃO: O ui.aiModal foi removido desta lista. Ele tem sua própria lógica de fechamento customizada
+    // para garantir que o estado `hasSeenAIResult` seja sempre atualizado corretamente.
+    const modalsWithGenericClosing = [
         ui.manageModal,
         ui.exploreModal,
         ui.editHabitModal,
         ui.confirmModal,
         ui.notesModal,
-        ui.aiModal,
         ui.aiOptionsModal,
     ];
-    allModals.forEach(initializeModalClosing);
+    modalsWithGenericClosing.forEach(initializeModalClosing);
 
     // --- Botões para Abrir Modais Principais ---
     ui.manageHabitsBtn.addEventListener('click', () => {
@@ -180,58 +181,7 @@ export function setupModalListeners() {
     
     // --- Modais de IA ---
     const handleAIClick = (analysisType: 'weekly' | 'monthly' | 'general') => {
-        return async () => {
-            state.aiState = 'loading';
-            renderAINotificationState();
-            ui.aiResponse.innerHTML = '<div class="spinner"></div>'; // Mostra um spinner
-            closeModal(ui.aiOptionsModal);
-            openModal(ui.aiModal);
-
-            try {
-                const promptData = buildAIPrompt(analysisType);
-                
-                // Lógica de fetch in-line
-                const response = await fetch('/api/analyze', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(promptData),
-                });
-    
-                if (!response.ok) {
-                    const errorBody = await response.json().catch(() => ({ error: 'Failed to parse error response' }));
-                    throw new Error(`API request failed with status ${response.status}: ${errorBody.error || 'Unknown error'}`);
-                }
-    
-                const reader = response.body?.getReader();
-                if (!reader) {
-                    throw new Error('Failed to get response reader');
-                }
-    
-                const decoder = new TextDecoder();
-                let fullText = '';
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-                    
-                    const chunk = decoder.decode(value, { stream: true });
-                    fullText += chunk;
-                    ui.aiResponse.innerHTML = simpleMarkdownToHTML(fullText);
-                }
-                
-                state.lastAIResult = fullText;
-                state.lastAIError = null;
-                state.aiState = 'completed';
-            } catch (error) {
-                const errorMessage = error instanceof Error ? error.message : t('aiErrorUnknown');
-                ui.aiResponse.innerHTML = `<p class="ai-error-message">${t('aiErrorPrefix')}: ${errorMessage}</p>`;
-                state.lastAIResult = null;
-                state.lastAIError = errorMessage;
-                state.aiState = 'error';
-            } finally {
-                state.hasSeenAIResult = false;
-                renderAINotificationState();
-            }
-        };
+        return () => performAIAnalysis(analysisType);
     };
 
     ui.aiEvalBtn.addEventListener('click', () => {
@@ -277,7 +227,7 @@ export function setupModalListeners() {
         }
     });
     
-    // Close AI modal logic
+    // Lógica de fechamento específica para o Modal da IA
     const closeAIModal = () => {
         closeModal(ui.aiModal);
         state.hasSeenAIResult = true;

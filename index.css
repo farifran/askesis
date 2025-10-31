@@ -1186,13 +1186,6 @@ input:disabled + .slider {
 .duplicate-drop-notice.visible { padding-block-end: var(--space-sm); }
 
 /* --- PWA: OFFLINE INDICATOR --- */
-body.is-offline #ai-eval-btn,
-body.is-offline #sync-section button {
-    opacity: 0.5;
-    pointer-events: none;
-    cursor: not-allowed;
-}
-
 body.is-offline #ai-eval-btn .default-icon,
 body.is-offline #ai-eval-btn .loading-icon {
     display: none;

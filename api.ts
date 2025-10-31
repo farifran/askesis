@@ -5,6 +5,7 @@
 import { state, getHabitDailyInfoForDate, shouldHabitAppearOnDate, HabitStatus, TimeOfDay, getEffectiveScheduleForHabitOnDate } from './state';
 import { getHabitDisplayInfo, t } from './i18n';
 import { addDays, getTodayUTC, toUTCIsoDateString, parseUTCIsoDate } from './utils';
+import { GoogleGenAI } from '@google/genai';
 
 // --- Lógica de Construção de Prompt ---
 
@@ -66,7 +67,7 @@ function generateDailyHabitSummary(date: Date): string | null {
     return null;
 }
 
-export const buildAIPrompt = (analysisType: 'weekly' | 'monthly' | 'general'): { prompt: string, systemInstruction: string } => {
+function buildAIPrompt(analysisType: 'weekly' | 'monthly' | 'general'): { prompt: string, systemInstruction: string } {
     let history = '';
     let promptTemplateKey = '';
     const daySummaries: string[] = [];
@@ -153,3 +154,38 @@ export const buildAIPrompt = (analysisType: 'weekly' | 'monthly' | 'general'): {
     
     return { prompt, systemInstruction };
 };
+
+export async function fetchAIAnalysisStream(
+    analysisType: 'weekly' | 'monthly' | 'general',
+    onChunk: (fullText: string) => void
+): Promise<string> {
+    const { prompt, systemInstruction } = buildAIPrompt(analysisType);
+
+    try {
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+        const responseStream = await ai.models.generateContentStream({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+            config: {
+                systemInstruction: systemInstruction,
+            },
+        });
+
+        let fullText = '';
+        for await (const chunk of responseStream) {
+            const chunkText = chunk.text;
+            if (chunkText) {
+                fullText += chunkText;
+                onChunk(fullText); // Chama o callback com o texto acumulado
+            }
+        }
+        return fullText;
+
+    } catch (error) {
+        console.error("Gemini API request failed:", error);
+        if (error instanceof Error) {
+            throw new Error(`Gemini API Error: ${error.message}`);
+        }
+        throw new Error("An unknown error occurred with the Gemini API");
+    }
+}

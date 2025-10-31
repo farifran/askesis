@@ -41,6 +41,12 @@ function updateSelectedDateAndRender(newDateISO: string) {
 const handleConnectionChange = () => {
     const isOffline = !navigator.onLine;
     document.body.classList.toggle('is-offline', isOffline);
+
+    // Desabilita programaticamente os botões que dependem da rede
+    ui.aiEvalBtn.disabled = isOffline;
+    ui.syncSection.querySelectorAll('button').forEach(button => {
+        button.disabled = isOffline;
+    });
 };
 
 

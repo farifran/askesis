@@ -45,6 +45,7 @@ type UIElements = {
     frequencyReel: HTMLElement;
     frequencyNextBtn: HTMLButtonElement;
     syncStatus: HTMLElement;
+    syncSection: HTMLElement;
     syncInactiveView: HTMLElement;
     enableSyncBtn: HTMLButtonElement;
     enterKeyViewBtn: HTMLButtonElement;
@@ -113,6 +114,7 @@ export function initUI(): void {
         frequencyReel: document.getElementById('frequency-reel')!,
         frequencyNextBtn: document.getElementById('frequency-next') as HTMLButtonElement,
         syncStatus: document.getElementById('sync-status')!,
+        syncSection: document.getElementById('sync-section')!,
         syncInactiveView: document.getElementById('sync-inactive-view')!,
         enableSyncBtn: document.getElementById('enable-sync-btn') as HTMLButtonElement,
         enterKeyViewBtn: document.getElementById('enter-key-view-btn') as HTMLButtonElement,
