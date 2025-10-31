@@ -91,9 +91,9 @@ export type HabitTemplate = {
     subtitle?: never;
 } | {
     name: string;
-    subtitle: string;
+    subtitleKey: string;
     nameKey?: never;
-    subtitleKey?: never;
+    subtitle?: never;
 });
 
 

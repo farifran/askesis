@@ -103,11 +103,9 @@ function resolveConflictWithServerState(serverPayload: ServerPayload) {
         });
 }
 
-// FIX: Refactor sync logic into a reusable async function to allow for immediate sync.
 /**
- * Performs the actual network request to sync state to the cloud.
- * This is separated from syncStateWithCloud to allow for immediate, non-debounced syncs.
- * @param appState The application state to sync.
+ * Executa a requisição de rede real para sincronizar o estado com a nuvem.
+ * @param appState O estado da aplicação a ser sincronizado.
  */
 async function performSync(appState: AppState) {
     const syncKey = getSyncKey();
@@ -141,36 +139,20 @@ async function performSync(appState: AppState) {
         });
 
         if (response.status === 409) {
-            // Conflict: server has newer data.
+            // Conflito: o servidor tem dados mais recentes.
             const serverPayload: ServerPayload = await response.json();
             resolveConflictWithServerState(serverPayload);
         } else if (!response.ok) {
-            // Other server error.
+            // Outro erro do servidor.
             throw new Error(`Sync failed, status: ${response.status}`);
         } else {
-            // Success.
+            // Sucesso.
             setSyncStatus('syncSynced');
-            document.dispatchEvent(new CustomEvent('habitsChanged')); // Notify badge/etc to update
+            document.dispatchEvent(new CustomEvent('habitsChanged')); // Notifica o emblema/etc para atualizar
         }
     } catch (error) {
         console.error("Error syncing state to cloud:", error);
         setSyncStatus('syncError');
-    }
-}
-
-/**
- * Reads the current state from localStorage and triggers an immediate sync to the cloud.
- */
-async function syncLocalStateToCloud() {
-    const localData = localStorage.getItem(STATE_STORAGE_KEY);
-    if (localData) {
-        try {
-            const appState: AppState = JSON.parse(localData);
-            await performSync(appState);
-        } catch (e) {
-            console.error("Failed to parse local state for initial sync", e);
-            setSyncStatus('syncError');
-        }
     }
 }
 
@@ -206,11 +188,12 @@ export async function fetchStateFromCloud(): Promise<AppState | undefined> {
         } else {
             // Nenhum dado na nuvem (resposta foi 200 com corpo nulo)
             console.log("No state found in cloud for this sync key. Performing initial sync.");
-            const localData = localStorage.getItem(STATE_STORAGE_KEY);
-            if (localData) {
-                // Aguardamos para garantir que a sincronização inicial seja concluída e para tratar quaisquer erros.
-                // FIX: Call the newly created syncLocalStateToCloud function.
-                await syncLocalStateToCloud();
+            const localDataJSON = localStorage.getItem(STATE_STORAGE_KEY);
+            if (localDataJSON) {
+                // REFACTOR [2024-07-31]: A sincronização inicial agora usa a função unificada
+                // `syncStateWithCloud` com a opção `immediate`.
+                const localState = JSON.parse(localDataJSON) as AppState;
+                await syncStateWithCloud(localState, { immediate: true });
             }
             return undefined;
         }
@@ -222,7 +205,12 @@ export async function fetchStateFromCloud(): Promise<AppState | undefined> {
     }
 }
 
-export function syncStateWithCloud(appState: AppState) {
+
+// REFACTOR [2024-07-31]: Lógica de sincronização unificada. A função agora aceita uma
+// opção `immediate` para lidar tanto com salvamentos debounced (padrão) quanto com
+// sincronizações imediatas (necessárias durante a configuração inicial). Isso remove
+// a necessidade da função redundante `syncLocalStateToCloud`.
+export function syncStateWithCloud(appState: AppState, options: { immediate?: boolean } = {}) {
     if (!hasSyncKey()) {
         setSyncStatus('syncInitial');
         return;
@@ -234,8 +222,11 @@ export function syncStateWithCloud(appState: AppState) {
         clearTimeout(syncTimeout);
     }
 
-    // FIX: Use the refactored performSync function within the debounce timeout.
-    syncTimeout = window.setTimeout(() => {
+    if (options.immediate) {
         performSync(appState);
-    }, DEBOUNCE_DELAY);
+    } else {
+        syncTimeout = window.setTimeout(() => {
+            performSync(appState);
+        }, DEBOUNCE_DELAY);
+    }
 }

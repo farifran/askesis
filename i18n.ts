@@ -74,7 +74,7 @@ export function getHabitDisplayInfo(habit: Habit | PredefinedHabit): { name: str
     }
     return {
         name: source.name || '',
-        subtitle: source.subtitle || ''
+        subtitle: source.subtitleKey ? t(source.subtitleKey) : (source.subtitle || '')
     };
 }
 

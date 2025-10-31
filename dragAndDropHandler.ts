@@ -87,6 +87,9 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
         e.dataTransfer!.dropEffect = 'none';
     };
 
+    // REFACTOR [2024-08-02]: Unifica a lógica de soltura para usar a zona de soltura pré-validada
+    // de 'dragover'. Isso torna o código mais robusto e remove uma consulta redundante ao DOM,
+    // garantindo que a ação de soltura corresponda ao feedback visual que o usuário viu.
     const handleBodyDrop = (e: DragEvent) => {
         e.preventDefault();
         
@@ -102,11 +105,9 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
             return;
         }
 
-        // --- Soltar para Mover (lógica simplificada) ---
-        // A validação de 'duplicado' já foi feita em 'dragover'.
-        // Se o evento 'drop' é disparado, a soltura é considerada válida.
-        const target = e.target as HTMLElement;
-        const dropZone = target.closest<HTMLElement>('.drop-zone');
+        // --- Soltar para Mover ---
+        // Usa a zona de soltura validada e armazenada em cache do evento 'dragover'.
+        const dropZone = currentDropZoneTarget;
         if (dropZone?.dataset.time) {
             const newTime = dropZone.dataset.time as TimeOfDay;
             if (newTime !== draggedHabitOriginalTime) {

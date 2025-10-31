@@ -62,12 +62,15 @@ function commitStateAndRender() {
  * @param newName O novo nome para o hábito.
  */
 function updateHabitDetails(habit: Habit, newName: string) {
+    // BUGFIX [2024-08-01]: Corrige um bug de i18n onde o subtítulo traduzido era
+    // salvo no estado. Agora, a chave de tradução 'customHabitSubtitle' é salva,
+    // garantindo que o subtítulo seja sempre exibido no idioma correto do usuário.
     habit.scheduleHistory.forEach(schedule => {
         // Se era um hábito predefinido, agora se torna personalizado.
         schedule.nameKey = undefined;
-        schedule.subtitleKey = undefined;
         schedule.name = newName;
-        schedule.subtitle = t('customHabitSubtitle');
+        schedule.subtitleKey = 'customHabitSubtitle';
+        schedule.subtitle = undefined; // Limpa a propriedade antiga para consistência.
     });
 }
 
@@ -121,7 +124,7 @@ function addHabit(template: HabitTemplate) {
             scheduleAnchor: state.selectedDate,
             times: template.times,
             frequency: template.frequency,
-            ...('nameKey' in template && template.nameKey ? { nameKey: template.nameKey, subtitleKey: template.subtitleKey } : { name: template.name, subtitle: template.subtitle })
+            ...('nameKey' in template ? { nameKey: template.nameKey, subtitleKey: template.subtitleKey } : { name: template.name, subtitleKey: template.subtitleKey })
         }],
     };
     state.habits.push(newHabit);
@@ -191,7 +194,7 @@ function handleAddNewHabit(formData: HabitTemplate) {
             newSchedule.subtitleKey = formData.subtitleKey;
         } else {
             newSchedule.name = formData.name;
-            newSchedule.subtitle = formData.subtitle;
+            newSchedule.subtitleKey = formData.subtitleKey;
         }
         
         reusableHabit.scheduleHistory.push(newSchedule);
@@ -813,7 +816,9 @@ function buildAIPrompt(analysisType: 'weekly' | 'monthly' | 'general'): { prompt
 export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'general') {
     state.aiState = 'loading';
     renderAINotificationState();
-    ui.aiResponse.innerHTML = ''; // Limpa o conteúdo anterior
+    // UX IMPROVEMENT [2024-08-04]: Exibe um indicador de carregamento imediatamente dentro do modal de IA
+    // para fornecer feedback visual de que a solicitação está em andamento.
+    ui.aiResponse.innerHTML = `<div class="ai-response-loader"><svg class="loading-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg></div>`;
     closeModal(ui.aiOptionsModal);
     openModal(ui.aiModal);
 

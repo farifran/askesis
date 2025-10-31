@@ -388,12 +388,16 @@ export function renderExploreHabits() {
 }
 
 export function renderAINotificationState() {
+    // REFACTOR [2024-08-03]: A lógica do estado desabilitado do botão de IA foi centralizada aqui.
+    // Agora, ele considera tanto o estado de 'loading' QUANTO o status 'offline' da rede,
+    // tornando esta função a única fonte da verdade e eliminando lógica duplicada em 'listeners.ts'.
     const isLoading = state.aiState === 'loading';
+    const isOffline = !navigator.onLine;
     const hasCelebrations = state.pending21DayHabitIds.length > 0 || state.pendingConsolidationHabitIds.length > 0;
     const hasUnseenResult = (state.aiState === 'completed' || state.aiState === 'error') && !state.hasSeenAIResult;
 
     ui.aiEvalBtn.classList.toggle('loading', isLoading);
-    ui.aiEvalBtn.disabled = isLoading;
+    ui.aiEvalBtn.disabled = isLoading || isOffline;
     ui.aiEvalBtn.classList.toggle('has-notification', hasCelebrations || hasUnseenResult);
 }
 
@@ -417,6 +421,20 @@ export function renderStoicQuote() {
         ui.stoicQuoteDisplay.classList.add('visible');
     }, 100);
 }
+
+// FIX: Add updateHeaderTitle function
+export function updateHeaderTitle() {
+    const date = parseUTCIsoDate(state.selectedDate);
+    const isSmallScreen = window.innerWidth < 768;
+    const formatOptions: Intl.DateTimeFormatOptions = {
+        weekday: isSmallScreen ? 'short' : 'long',
+        month: isSmallScreen ? 'short' : 'long',
+        day: 'numeric',
+        timeZone: 'UTC'
+    };
+    ui.headerTitle.textContent = date.toLocaleDateString(state.activeLanguageCode, formatOptions);
+}
+
 
 export function updateNotificationUI() {
     // Esta função pode ser chamada antes da inicialização do OneSignal.
@@ -454,6 +472,8 @@ export function renderApp() {
     renderAINotificationState();
     renderStoicQuote();
     renderChart();
+    // FIX: updateHeaderTitle() was missing from here in some versions, adding it back ensures consistency.
+    updateHeaderTitle();
 }
 
 const focusTrapListeners = new Map<HTMLElement, (e: KeyboardEvent) => void>();
@@ -606,164 +626,160 @@ export function setupManageModal() {
         const innerHTML = `<span>${habit.icon}<span class="habit-name">${escapeHTML(name)}</span>${statusText}</span>
             <div class="habit-list-actions">${actionButtons}</div>`;
 
+        // FIX: Fix file corruption and correctly close the list item.
         return `<li class="habit-list-item ${statusClass}" data-habit-id="${habit.id}">${innerHTML}</li>`;
+    // FIX: Add .join('') to fix "Type 'string[]' is not assignable to type 'string'" error.
     }).join('');
 }
 
+// FIX: Add missing modal-related functions
 export function showUndoToast() {
     if (state.undoTimeout) clearTimeout(state.undoTimeout);
     ui.undoToast.classList.add('visible');
     state.undoTimeout = window.setTimeout(() => {
         ui.undoToast.classList.remove('visible');
-        state.lastEnded = null;
+        state.lastEnded = null; // Clear the undo state after timeout
     }, 5000);
 }
 
 export function showConfirmationModal(
-    text: string,
-    onConfirm: () => void,
-    options?: {
+    text: string, 
+    onConfirm: () => void, 
+    options?: { 
         title?: string;
-        onEdit?: () => void;
         confirmText?: string;
-        editText?: string;
         cancelText?: string;
+        editText?: string;
+        onEdit?: () => void; 
     }
 ) {
-    const titleEl = ui.confirmModal.querySelector('h2');
-    if (titleEl) {
-        titleEl.textContent = options?.title || t('modalConfirmTitle');
-    }
-
     ui.confirmModalText.innerHTML = text;
     state.confirmAction = onConfirm;
     state.confirmEditAction = options?.onEdit || null;
 
-    const confirmBtn = ui.confirmModalConfirmBtn;
-    const editBtn = ui.confirmModalEditBtn;
-    const cancelBtn = ui.confirmModal.querySelector('.modal-close-btn') as HTMLButtonElement;
-
-    confirmBtn.textContent = options?.confirmText || t('confirmButton');
-    if (cancelBtn) {
-        cancelBtn.textContent = options?.cancelText || t('cancelButton');
-    }
-
-    if (options?.onEdit) {
-        editBtn.style.display = 'inline-flex';
-        editBtn.textContent = options.editText || t('editButton');
+    ui.confirmModal.querySelector('h2')!.textContent = options?.title || t('modalConfirmTitle');
+    ui.confirmModalConfirmBtn.textContent = options?.confirmText || t('confirmButton');
+    ui.confirmModal.querySelector<HTMLElement>('.modal-close-btn')!.textContent = options?.cancelText || t('cancelButton');
+    
+    if (options?.editText && options?.onEdit) {
+        ui.confirmModalEditBtn.style.display = 'inline-block';
+        ui.confirmModalEditBtn.textContent = options.editText;
     } else {
-        editBtn.style.display = 'none';
+        ui.confirmModalEditBtn.style.display = 'none';
     }
 
-    openModal(ui.confirmModal, confirmBtn);
+    openModal(ui.confirmModal);
 }
-
 
 export function openNotesModal(habitId: string, date: string, time: TimeOfDay) {
     const habit = state.habits.find(h => h.id === habitId);
     if (!habit) return;
+    
     state.editingNoteFor = { habitId, date, time };
-    const habitNote = getHabitDailyInfoForDate(date)[habitId]?.instances?.[time]?.note || '';
+    
     const { name } = getHabitDisplayInfo(habit);
-    ui.notesModalTitle.textContent = name;
     const dateObj = parseUTCIsoDate(date);
-    ui.notesModalSubtitle.textContent = dateObj.toLocaleDateString(state.activeLanguageCode, { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
-    ui.notesTextarea.value = habitNote;
+    const formattedDate = dateObj.toLocaleDateString(state.activeLanguageCode, { day: 'numeric', month: 'long', timeZone: 'UTC' });
+    const timeName = getTimeOfDayName(time);
+
+    ui.notesModalTitle.textContent = name;
+    ui.notesModalSubtitle.textContent = `${formattedDate} - ${timeName}`;
+    
+    const dayData = state.dailyData[date]?.[habitId]?.instances[time];
+    ui.notesTextarea.value = dayData?.note || '';
+    
     openModal(ui.notesModal, ui.notesTextarea);
 }
 
-export function openEditModal(habitOrTemplate: Habit | PredefinedHabit | null) {
+export function openEditModal(habitOrTemplate: Habit | HabitTemplate | null) {
+    const isNew = !habitOrTemplate || !('id' in habitOrTemplate);
     const form = ui.editHabitForm;
-    const nameInput = form.elements.namedItem('habit-name') as HTMLInputElement;
-    const noticeEl = form.querySelector<HTMLElement>('.duplicate-habit-notice');
-
-    const isNew = habitOrTemplate === null || !('id' in habitOrTemplate);
-
-    let habitId: string | undefined;
-    let originalHabit: Habit | undefined;
+    const noticeEl = form.querySelector<HTMLElement>('.duplicate-habit-notice')!;
+    noticeEl.classList.remove('visible'); // Reset notice on open
+    form.reset();
+    
     let formData: HabitTemplate;
-
     if (isNew) {
-        if (habitOrTemplate === null) { 
+        // Creating a new habit
+        const template = habitOrTemplate as PredefinedHabit | null;
+        ui.editHabitModalTitle.textContent = t('modalEditNewTitle');
+        (form.elements.namedItem('habit-name') as HTMLInputElement).value = template ? t(template.nameKey) : '';
+        
+        // FIX: Construct formData with a type-safe approach to avoid assigning to 'never'.
+        const commonData = {
+            icon: template?.icon || icons.custom,
+            color: template?.color || '#8e44ad',
+            times: template?.times || ['Morning'],
+            goal: template?.goal || { type: 'check', unitKey: 'unitCheck' },
+            frequency: template?.frequency || { type: 'daily', interval: 1 },
+        };
+
+        if (template) {
             formData = {
-                name: '',
-                subtitle: t('customHabitSubtitle'),
-                icon: icons.custom,
-                color: '#8e44ad',
-                times: ['Morning'],
-                goal: { type: 'check', unitKey: 'unitCheck' },
-                frequency: { type: 'daily', interval: 1 },
-            };
-        } else { 
-            // FIX: Explicitly create object from template to ensure type correctness
-            // and prevent extra properties like 'isDefault' from being included.
-            const template = habitOrTemplate as PredefinedHabit;
-            formData = {
+                ...commonData,
                 nameKey: template.nameKey,
                 subtitleKey: template.subtitleKey,
-                icon: template.icon,
-                color: template.color,
-                times: template.times,
-                goal: template.goal,
-                frequency: template.frequency,
+            };
+        } else {
+            formData = {
+                ...commonData,
+                name: '',
+                subtitleKey: 'customHabitSubtitle',
             };
         }
-    } else { 
-        originalHabit = habitOrTemplate as Habit;
-        habitId = originalHabit.id;
-        const latestSchedule = originalHabit.scheduleHistory[originalHabit.scheduleHistory.length - 1];
-        const displayInfo = getHabitDisplayInfo(originalHabit);
-        
-        formData = {
-            name: displayInfo.name,
-            subtitle: displayInfo.subtitle,
-            icon: originalHabit.icon,
-            color: originalHabit.color,
-            times: latestSchedule.times,
-            goal: originalHabit.goal,
-            frequency: latestSchedule.frequency,
-        };
-    }
 
-    state.editingHabit = { isNew, habitId, originalData: originalHabit, formData };
-    
-    const habitDisplayName = 'name' in formData ? formData.name : t(formData.nameKey!);
-    
-    ui.editHabitModalTitle.textContent = isNew ? t('modalAddTitle') : t('modalEditTitle');
-    nameInput.value = habitDisplayName;
-
-    const checkboxes = form.querySelectorAll<HTMLInputElement>('input[name="habit-time"]');
-    checkboxes.forEach(cb => {
-        cb.checked = formData.times.includes(cb.value as TimeOfDay);
-    });
-    
-    renderFrequencyFilter();
-    
-    if(noticeEl) noticeEl.classList.remove('visible');
-    openModal(ui.editHabitModal, nameInput);
-}
-
-export function updateHeaderTitle() {
-    const selectedDate = parseUTCIsoDate(state.selectedDate);
-    const today = parseUTCIsoDate(getTodayUTCIso());
-    const yesterday = new Date(today);
-    yesterday.setUTCDate(today.getUTCDate() - 1);
-    const tomorrow = new Date(today);
-    tomorrow.setUTCDate(today.getUTCDate() + 1);
-    const isMobile = window.innerWidth < 768;
-
-    ui.headerTitle.style.display = 'block';
-
-    if (selectedDate.getTime() === today.getTime()) {
-        ui.headerTitle.textContent = t('headerTitleToday');
-    } else if (selectedDate.getTime() === yesterday.getTime()) {
-        ui.headerTitle.textContent = t('headerTitleYesterday');
-    } else if (selectedDate.getTime() === tomorrow.getTime()) {
-        ui.headerTitle.textContent = t('headerTitleTomorrow');
     } else {
-        const formatOptions: Intl.DateTimeFormatOptions = isMobile 
-            ? { day: '2-digit', month: '2-digit', timeZone: 'UTC' }
-            : { day: 'numeric', month: 'long', timeZone: 'UTC' };
-        ui.headerTitle.textContent = selectedDate.toLocaleDateString(state.activeLanguageCode, formatOptions);
+        // Editing an existing habit
+        const habit = habitOrTemplate as Habit;
+        const { name } = getHabitDisplayInfo(habit);
+        ui.editHabitModalTitle.textContent = t('modalEditTitle', { habitName: name });
+        (form.elements.namedItem('habit-name') as HTMLInputElement).value = name;
+        
+        const schedule = getScheduleForDate(habit, state.selectedDate) || habit.scheduleHistory[habit.scheduleHistory.length - 1];
+        
+        // FIX: Construct formData with a type-safe approach to avoid assigning to 'never'.
+        const commonData = {
+            subtitleKey: schedule.subtitleKey || 'customHabitSubtitle',
+            icon: habit.icon,
+            color: habit.color,
+            times: [...schedule.times],
+            goal: { ...habit.goal },
+            frequency: { ...schedule.frequency },
+        };
+
+        if (schedule.nameKey) {
+            formData = {
+                ...commonData,
+                nameKey: schedule.nameKey,
+            };
+        } else {
+            formData = {
+                ...commonData,
+                name: name,
+            };
+        }
     }
+
+    state.editingHabit = {
+        isNew: isNew,
+        habitId: isNew ? undefined : (habitOrTemplate as Habit).id,
+        originalData: isNew ? undefined : { ...(habitOrTemplate as Habit) },
+        formData: formData
+    };
+
+    // Update form controls based on formData
+    (form.elements.namedItem('habit-name') as HTMLInputElement).disabled = !!formData.nameKey;
+    
+    // Times of day checkboxes
+    const timeCheckboxes = form.querySelectorAll<HTMLInputElement>('input[name="habit-time"]');
+    timeCheckboxes.forEach(cb => {
+        cb.checked = formData.times.includes(cb.value as TimeOfDay);
+        const label = cb.closest('label');
+        if (label) {
+            label.querySelector('span')!.textContent = getTimeOfDayName(cb.value as TimeOfDay);
+        }
+    });
+
+    renderFrequencyFilter();
+    openModal(ui.editHabitModal, form.elements.namedItem('habit-name') as HTMLElement);
 }

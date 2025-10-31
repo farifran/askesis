@@ -1095,6 +1095,22 @@ input:disabled + .slider {
 #ai-response li svg { width: 20px; height: 20px; flex-shrink: 0; }
 #confirm-modal-text { color: var(--text-secondary); line-height: 1.6; margin-block-end: var(--space-sm); }
 
+/* UX IMPROVEMENT [2024-08-04]: Adiciona um indicador de carregamento para o modal de IA. */
+/* Garante que o usuário tenha um feedback visual imediato de que a solicitação está sendo processada. */
+.ai-response-loader {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 150px; /* Garante que o modal tenha uma altura mínima enquanto carrega */
+}
+.ai-response-loader .loading-icon {
+    display: block;
+    width: 32px;
+    height: 32px;
+    animation: spin 1s linear infinite;
+    stroke: var(--text-tertiary);
+}
+
 .ai-error-message {
     color: var(--color-red);
     font-weight: 500;
