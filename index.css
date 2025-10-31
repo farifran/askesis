@@ -75,12 +75,10 @@
     from {
       color: var(--accent-green);
       text-shadow: 0 0 8px var(--accent-green);
-      transform: scale(1.2);
     }
     to {
       color: var(--text-primary);
       text-shadow: none;
-      transform: scale(1);
     }
 }
   
@@ -88,12 +86,10 @@
     from {
       color: var(--color-red);
       text-shadow: 0 0 8px var(--color-red);
-      transform: scale(1.2);
     }
     to {
       color: var(--text-primary);
       text-shadow: none;
-      transform: scale(1);
     }
 }
 

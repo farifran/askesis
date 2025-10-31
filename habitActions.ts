@@ -22,6 +22,7 @@ import {
     invalidateStreakCache,
     getEffectiveScheduleForHabitOnDate,
     getHabitDailyInfoForDate,
+    getCurrentGoalForInstance,
 } from './state';
 import {
     renderHabits,
@@ -34,6 +35,8 @@ import {
     renderCalendar,
     renderAINotificationState,
     openModal,
+    formatGoalForDisplay,
+    getUnitString,
 } from './render';
 import { t, getHabitDisplayInfo, getTimeOfDayName } from './i18n';
 import { ui } from './ui';
@@ -274,9 +277,28 @@ export function toggleHabitStatus(habitId: string, time: TimeOfDay) {
 }
 
 export function updateGoalOverride(habitId: string, date: string, time: TimeOfDay, newGoal: number) {
+    // 1. Atualiza o estado
     const dayData = ensureHabitInstanceData(date, habitId, time);
     dayData.goalOverride = newGoal;
-    commitStateAndRender();
+    saveState();
+
+    // 2. Atualiza o DOM cirurgicamente para evitar o "flash" do cartão
+    const card = document.querySelector(`.habit-card[data-habit-id="${habitId}"][data-time="${time}"]`);
+    const habit = state.habits.find(h => h.id === habitId);
+    if (card && habit) {
+        const progressEl = card.querySelector<HTMLElement>('.goal-value-wrapper .progress');
+        const unitEl = card.querySelector<HTMLElement>('.goal-value-wrapper .unit');
+        if (progressEl && unitEl) {
+            progressEl.textContent = formatGoalForDisplay(newGoal);
+            unitEl.textContent = getUnitString(habit, newGoal);
+        }
+    }
+    
+    // 3. Renderiza outros componentes que dependem dos dados, mas que não piscam
+    renderCalendar();
+    renderChart();
+    updateAppBadge();
+    document.dispatchEvent(new CustomEvent('habitsChanged'));
 }
 
 function endHabit(habit: Habit, dateISO: string) {
@@ -611,9 +633,10 @@ function generateDailyHabitSummary(date: Date): string | null {
                 detail = `${t(timeToKeyMap[time])}: ${detail}`;
             }
 
-            if ((habit.goal.type === 'pages' || habit.goal.type === 'minutes') && instance?.status === 'completed' && instance.goalOverride !== undefined) {
-                const unit = t(habit.goal.unitKey, { count: instance.goalOverride });
-                detail += ` ${instance.goalOverride} ${unit}`;
+            if ((habit.goal.type === 'pages' || habit.goal.type === 'minutes') && instance?.status === 'completed') {
+                const goalValue = getCurrentGoalForInstance(habit, isoDate, time);
+                const unit = t(habit.goal.unitKey, { count: goalValue });
+                detail += ` ${goalValue} ${unit}`;
             }
 
             if (note) {
@@ -746,12 +769,17 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
         });
 
         if (!response.ok) {
-            const errorBody = await response.json().catch(() => ({ error: response.statusText, details: '' }));
-            throw new Error(`API error: ${response.status} ${errorBody.error} ${errorBody.details}`);
+            // Tenta analisar o corpo do erro como JSON, com um fallback.
+            const errorBody = await response.json().catch(() => ({ 
+                error: 'Falha ao analisar a resposta de erro do servidor.', 
+                details: response.statusText 
+            }));
+            // Constrói uma mensagem de erro mais informativa
+            throw new Error(`[${response.status}] ${errorBody.error || 'Erro de API'}: ${errorBody.details || ''}`);
         }
 
         if (!response.body) {
-            throw new Error('Response body is empty');
+            throw new Error('A resposta do servidor estava vazia.');
         }
 
         const reader = response.body.getReader();
@@ -770,8 +798,9 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
         state.lastAIError = null;
         state.aiState = 'completed';
     } catch (error) {
+        // Agora, o erro lançado do bloco !response.ok será mais descritivo
         const errorMessage = error instanceof Error ? error.message : t('aiErrorUnknown');
-        const displayError = `${t('aiErrorPrefix') ? t('aiErrorPrefix') + ': ' : ''}${errorMessage}`;
+        const displayError = `${t('aiErrorPrefix')}: ${errorMessage}`;
         ui.aiResponse.innerHTML = `<p class="ai-error-message">${displayError}</p>`;
         state.lastAIResult = null;
         state.lastAIError = errorMessage;

@@ -14,52 +14,40 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'Content-Type',
 };
 
-function createStreamingResponse(stream: AsyncGenerator<any, any, unknown>) {
-  const readableStream = new ReadableStream({
-    async start(controller) {
-      const encoder = new TextEncoder();
-      for await (const chunk of stream) {
-        const text = chunk.text;
-        if (text) {
-          controller.enqueue(encoder.encode(text));
-        }
-      }
-      controller.close();
-    },
-  });
-  return new Response(readableStream, {
-    headers: { ...corsHeaders, 'Content-Type': 'text/plain; charset=utf-8' },
-  });
-}
+// Helper para enviar uma resposta de erro JSON padronizada
+const createErrorResponse = (message: string, status: number, details = '') => {
+    return new Response(JSON.stringify({ error: message, details }), {
+        status,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+};
 
 export default async function handler(req: Request) {
     if (req.method === 'OPTIONS') {
         return new Response(null, { status: 204, headers: corsHeaders });
     }
-    
+
     if (req.method !== 'POST') {
-        return new Response('Method Not Allowed', { status: 405, headers: corsHeaders });
+        return createErrorResponse('Method Not Allowed', 405);
     }
 
     try {
         const { prompt, systemInstruction } = await req.json();
 
         if (!prompt || !systemInstruction) {
-            return new Response('Bad Request: Missing prompt or systemInstruction', { status: 400, headers: corsHeaders });
+            return createErrorResponse('Bad Request: Missing prompt or systemInstruction', 400);
         }
         
-        // Adiciona log para depuração
-        console.log(`[api/analyze] Received request. Prompt snippet: "${prompt.substring(0, 150)}..."`);
-
         const apiKey = process.env.API_KEY;
         if (!apiKey) {
             console.error("[api/analyze] API_KEY environment variable not set.");
-            throw new Error("API_KEY environment variable not set.");
+            // Não exponha detalhes da chave de API no erro do cliente
+            return createErrorResponse('Internal Server Error', 500, 'Server configuration error.');
         }
         
         const ai = new GoogleGenAI({ apiKey });
 
-        const response = await ai.models.generateContentStream({
+        const geminiResponse = await ai.models.generateContentStream({
             model: 'gemini-2.5-flash',
             contents: prompt,
             config: {
@@ -67,15 +55,33 @@ export default async function handler(req: Request) {
             },
         });
         
-        return createStreamingResponse(response.stream);
+        const stream = new ReadableStream({
+            async start(controller) {
+                const encoder = new TextEncoder();
+                try {
+                    for await (const chunk of geminiResponse.stream) {
+                        const text = chunk.text;
+                        if (text) {
+                            controller.enqueue(encoder.encode(text));
+                        }
+                    }
+                } catch (streamError) {
+                    console.error("Error during Gemini stream processing:", streamError);
+                    // Não podemos enviar um novo Response aqui pois os cabeçalhos já foram enviados.
+                    // controller.error() é a maneira correta de sinalizar uma falha no stream.
+                    controller.error(streamError instanceof Error ? streamError : new Error('Gemini stream failed'));
+                }
+                controller.close();
+            },
+        });
+        
+        return new Response(stream, {
+            headers: { ...corsHeaders, 'Content-Type': 'text/plain; charset=utf-8' },
+        });
 
     } catch (error) {
-        // Log do erro mais detalhado
-        console.error('Error in /api/analyze:', error instanceof Error ? error.stack : JSON.stringify(error));
+        console.error('Critical error in /api/analyze handler:', error);
         const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
-        return new Response(JSON.stringify({ error: 'Internal Server Error', details: errorMessage }), { 
-            status: 500,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
+        return createErrorResponse('Internal Server Error', 500, errorMessage);
     }
 }
