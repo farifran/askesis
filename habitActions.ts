@@ -2,7 +2,6 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-import { GoogleGenAI } from '@google/genai';
 import { generateUUID, getTodayUTCIso, parseUTCIsoDate, addDays, escapeHTML, simpleMarkdownToHTML, getTodayUTC, toUTCIsoDateString } from './utils';
 import {
     state,
@@ -40,6 +39,7 @@ import { t, getHabitDisplayInfo, getTimeOfDayName } from './i18n';
 import { ui } from './ui';
 import { renderChart } from './chart';
 import { updateAppBadge } from './badge';
+import { analyzeHabitData } from './api';
 
 /**
  * Commits the current state to storage and triggers a full UI re-render.
@@ -740,24 +740,11 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
     try {
         const { prompt, systemInstruction } = buildAIPrompt(analysisType);
         
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
-
-        const responseStream = await ai.models.generateContentStream({
-            model: 'gemini-2.5-flash',
-            contents: prompt,
-            config: {
-                systemInstruction: systemInstruction,
-            },
-        });
-
         let fullText = '';
-        for await (const chunk of responseStream) {
-            const chunkText = chunk.text;
-            if (chunkText) {
-                fullText += chunkText;
-                ui.aiResponse.innerHTML = simpleMarkdownToHTML(fullText);
-            }
-        }
+        await analyzeHabitData(prompt, systemInstruction, (chunk) => {
+            fullText += chunk;
+            ui.aiResponse.innerHTML = simpleMarkdownToHTML(fullText);
+        });
         
         state.lastAIResult = fullText;
         state.lastAIError = null;

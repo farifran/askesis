@@ -539,20 +539,37 @@ export function showInlineNotice(element: HTMLElement, message: string) {
     (element as any)._noticeTimeout = newTimeout;
 }
 
+/**
+ * Determina o status de um hábito para fins de ordenação na UI.
+ * @param habit O hábito a ser avaliado.
+ * @returns 'active', 'ended', ou 'graduated'.
+ */
+function getHabitStatusForSorting(habit: Habit): 'active' | 'ended' | 'graduated' {
+    if (habit.graduatedOn) {
+        return 'graduated';
+    }
+    const lastSchedule = habit.scheduleHistory[habit.scheduleHistory.length - 1];
+    if (lastSchedule.endDate) {
+        return 'ended';
+    }
+    return 'active';
+}
+
 export function setupManageModal() {
     const habitsToDisplay = [...state.habits];
 
+    const statusOrder = { 'active': 0, 'ended': 1, 'graduated': 2 };
+    
     habitsToDisplay.sort((a, b) => {
-        const aIsGraduated = !!a.graduatedOn;
-        const bIsGraduated = !!b.graduatedOn;
-        const aLastSchedule = a.scheduleHistory[a.scheduleHistory.length - 1];
-        const bLastSchedule = b.scheduleHistory[b.scheduleHistory.length - 1];
-        const aIsEnded = !!aLastSchedule.endDate;
-        const bIsEnded = !!bLastSchedule.endDate;
+        const statusA = getHabitStatusForSorting(a);
+        const statusB = getHabitStatusForSorting(b);
 
-        if (aIsGraduated !== bIsGraduated) return aIsGraduated ? 1 : -1;
-        if (aIsEnded !== bIsEnded) return aIsEnded ? 1 : -1;
+        const statusDifference = statusOrder[statusA] - statusOrder[statusB];
+        if (statusDifference !== 0) {
+            return statusDifference;
+        }
         
+        // Se os status forem os mesmos, ordena por nome.
         return getHabitDisplayInfo(a).name.localeCompare(getHabitDisplayInfo(b).name);
     });
     
