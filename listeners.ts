@@ -1,5 +1,5 @@
 import { state, saveState, TIMES_OF_DAY } from './state';
-import { addDays, parseUTCIsoDate, toUTCIsoDateString } from './utils';
+import { addDays, parseUTCIsoDate, toUTCIsoDateString, debounce } from './utils';
 import { ui } from './ui';
 import {
     renderHabits,
@@ -17,22 +17,6 @@ import { handleUndoDelete, completeAllHabitsForDate, snoozeAllHabitsForDate } fr
 import { t } from './i18n';
 import { renderChart } from './chart';
 import { updateAppBadge } from './badge';
-
-/**
- * Cria uma função "debounced" que atrasa a invocação de `func` até que `wait`
- * milissegundos tenham se passado desde a última vez que a função debounced foi invocada.
- */
-function debounce<T extends (...args: any[]) => any>(func: T, wait: number): (...args: Parameters<T>) => void {
-    let timeout: number | null = null;
-    return function(this: ThisParameterType<T>, ...args: Parameters<T>): void {
-        const context = this;
-        if (timeout !== null) clearTimeout(timeout);
-        timeout = window.setTimeout(() => {
-            timeout = null;
-            func.apply(context, args);
-        }, wait);
-    };
-}
 
 /**
  * REATORAÇÃO: Centraliza a lógica para atualizar a data selecionada e renderizar a UI.

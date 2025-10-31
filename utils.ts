@@ -130,3 +130,19 @@ export function pushToOneSignal(callback: (oneSignal: any) => void) {
     window.OneSignalDeferred = window.OneSignalDeferred || [];
     window.OneSignalDeferred.push(callback);
 }
+
+/**
+ * Cria uma função "debounced" que atrasa a invocação de `func` até que `wait`
+ * milissegundos tenham se passado desde a última vez que a função debounced foi invocada.
+ */
+export function debounce<T extends (...args: any[]) => any>(func: T, wait: number): (...args: Parameters<T>) => void {
+    let timeout: number | null = null;
+    return function(this: ThisParameterType<T>, ...args: Parameters<T>): void {
+        const context = this;
+        if (timeout !== null) clearTimeout(timeout);
+        timeout = window.setTimeout(() => {
+            timeout = null;
+            func.apply(context, args);
+        }, wait);
+    };
+}

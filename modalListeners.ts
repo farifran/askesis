@@ -27,7 +27,7 @@ import {
     graduateHabit,
 } from './habitActions';
 import { setLanguage, t, getHabitDisplayInfo } from './i18n';
-import { buildAIPrompt, fetchAIAnalysis } from './api';
+import { buildAIPrompt } from './api';
 import { setupReelRotary } from './rotary';
 import { simpleMarkdownToHTML, pushToOneSignal } from './utils';
 
@@ -188,12 +188,37 @@ export function setupModalListeners() {
             openModal(ui.aiModal);
 
             try {
-                const { prompt, systemInstruction } = buildAIPrompt(analysisType);
-                const fullResponse = await fetchAIAnalysis({ prompt, systemInstruction }, (streamedText) => {
-                    ui.aiResponse.innerHTML = simpleMarkdownToHTML(streamedText);
-                });
+                const promptData = buildAIPrompt(analysisType);
                 
-                state.lastAIResult = fullResponse;
+                // Lógica de fetch in-line
+                const response = await fetch('/api/analyze', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(promptData),
+                });
+    
+                if (!response.ok) {
+                    const errorBody = await response.json().catch(() => ({ error: 'Failed to parse error response' }));
+                    throw new Error(`API request failed with status ${response.status}: ${errorBody.error || 'Unknown error'}`);
+                }
+    
+                const reader = response.body?.getReader();
+                if (!reader) {
+                    throw new Error('Failed to get response reader');
+                }
+    
+                const decoder = new TextDecoder();
+                let fullText = '';
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    
+                    const chunk = decoder.decode(value, { stream: true });
+                    fullText += chunk;
+                    ui.aiResponse.innerHTML = simpleMarkdownToHTML(fullText);
+                }
+                
+                state.lastAIResult = fullText;
                 state.lastAIError = null;
                 state.aiState = 'completed';
             } catch (error) {

@@ -42,6 +42,19 @@ import { renderChart } from './chart';
 import { updateAppBadge } from './badge';
 
 /**
+ * Commits the current state to storage and triggers a full UI re-render.
+ * This is the centralized function for all state-mutating actions.
+ */
+function commitStateAndRender() {
+    saveState();
+    renderHabits();
+    renderCalendar();
+    renderChart();
+    updateAppBadge();
+    document.dispatchEvent(new CustomEvent('habitsChanged'));
+}
+
+/**
  * Atualiza o nome de um hábito em toda a sua história.
  * Esta é uma operação global, diferente das mudanças de agendamento.
  * @param habit O hábito a ser atualizado.
@@ -235,12 +248,7 @@ export function saveHabitFromModal() {
 function finishSave() {
     closeModal(ui.editHabitModal);
     state.editingHabit = null;
-    saveState();
-    renderHabits();
-    renderCalendar();
-    renderChart();
-    updateAppBadge();
-    document.dispatchEvent(new CustomEvent('habitsChanged'));
+    commitStateAndRender();
 }
 
 export function createDefaultHabit() {
@@ -255,17 +263,7 @@ export function toggleHabitStatus(habitId: string, time: TimeOfDay) {
     dayData.status = getNextStatus(dayData.status);
 
     invalidateStreakCache(habitId, state.selectedDate);
-
-    const habitCard = document.querySelector<HTMLElement>(`.habit-card[data-habit-id="${habitId}"][data-time="${time}"]`);
-    if (habitCard) {
-        updateHabitCardElement(habitCard);
-    }
-
-    updateCalendarDayElement(state.selectedDate);
-    renderChart();
-    
-    saveState();
-    updateAppBadge();
+    commitStateAndRender();
 
     const streak = calculateHabitStreak(habitId, state.selectedDate);
     if (streak === STREAK_SEMI_CONSOLIDATED) {
@@ -282,8 +280,7 @@ export function toggleHabitStatus(habitId: string, time: TimeOfDay) {
 export function updateGoalOverride(habitId: string, date: string, time: TimeOfDay, newGoal: number) {
     const dayData = ensureHabitInstanceData(date, habitId, time);
     dayData.goalOverride = newGoal;
-    
-    saveState();
+    commitStateAndRender();
 }
 
 function endHabit(habit: Habit, dateISO: string) {
@@ -292,13 +289,7 @@ function endHabit(habit: Habit, dateISO: string) {
     state.lastEnded = { habitId: habit.id, lastSchedule };
 
     invalidateStreakCache(habit.id, dateISO);
-    
-    saveState();
-    renderHabits();
-    renderCalendar();
-    renderChart();
-    updateAppBadge();
-    document.dispatchEvent(new CustomEvent('habitsChanged'));
+    commitStateAndRender();
     showUndoToast();
 }
 
@@ -312,13 +303,7 @@ export function handleUndoDelete() {
                 invalidateStreakCache(habit.id, lastSchedule.startDate);
             }
         }
-        
-        saveState();
-        renderHabits();
-        renderCalendar();
-        renderChart();
-        updateAppBadge();
-        document.dispatchEvent(new CustomEvent('habitsChanged'));
+        commitStateAndRender();
     }
     
     if (state.undoTimeout) clearTimeout(state.undoTimeout);
@@ -355,13 +340,8 @@ export function requestHabitPermanentDeletion(habitId: string) {
             Object.keys(state.dailyData).forEach(date => {
                 delete state.dailyData[date][habitId];
             });
-            saveState();
+            commitStateAndRender();
             setupManageModal();
-            renderHabits();
-            renderCalendar();
-            renderChart();
-            updateAppBadge();
-            document.dispatchEvent(new CustomEvent('habitsChanged'));
         },
         { confirmText: t('modalManageResetButton'), title: t('aria_delete_permanent', { habitName: name }) }
     );
@@ -420,12 +400,7 @@ function moveHabitSchedule(habitId: string, fromTime: TimeOfDay, toTime: TimeOfD
         Object.assign(toInstance, dataToMove);
         delete state.dailyData[changeDate][habitId].instances[fromTime];
     }
-
-    saveState();
-    renderHabits();
-    renderCalendar();
-    renderChart();
-    updateAppBadge();
+    commitStateAndRender();
 }
 
 export function handleHabitDrop(habitId: string, fromTime: TimeOfDay, toTime: TimeOfDay) {
@@ -466,11 +441,8 @@ export function requestHabitTimeRemoval(habitId: string, timeToRemove: TimeOfDay
                 endHabit(habit, state.selectedDate);
             } else {
                 updateHabitSchedule(habit, state.selectedDate, { times: newTimes });
+                commitStateAndRender();
             }
-            saveState();
-            renderHabits();
-            renderCalendar();
-            renderChart();
         },
         {
             title: t('modalRemoveTimeTitle'),
@@ -491,10 +463,7 @@ export function requestHabitTimeRemoval(habitId: string, timeToRemove: TimeOfDay
 
                 delete state.dailyData[state.selectedDate]?.[habitId]?.instances?.[timeToRemove];
                 
-                saveState();
-                renderHabits();
-                renderCalendar();
-                renderChart();
+                commitStateAndRender();
             }
         }
     );
@@ -511,48 +480,51 @@ export function reorderHabit(draggedId: string, targetId: string, position: 'bef
     
     state.habits.splice(insertIndex, 0, draggedHabit);
     
-    saveState();
-    renderHabits();
+    commitStateAndRender();
+}
+
+/**
+ * Função auxiliar refatorada para atualizar em massa os status dos hábitos para uma data.
+ * @param date A data (string ISO) para a qual os hábitos serão atualizados.
+ * @param newStatus O novo status a ser aplicado.
+ */
+function bulkUpdateHabitsForDate(date: string, newStatus: 'completed' | 'snoozed') {
+    const dateObj = parseUTCIsoDate(date);
+    const activeHabitsOnDate = state.habits.filter(h => shouldHabitAppearOnDate(h, dateObj));
+    let changed = false;
+
+    activeHabitsOnDate.forEach(habit => {
+        const scheduleForDay = getEffectiveScheduleForHabitOnDate(habit, date);
+        scheduleForDay.forEach(time => {
+            const dayData = ensureHabitInstanceData(date, habit.id, time);
+            let shouldUpdate = false;
+            if (newStatus === 'completed' && dayData.status === 'pending') {
+                shouldUpdate = true;
+            } else if (newStatus === 'snoozed' && (dayData.status === 'pending' || dayData.status === 'completed')) {
+                shouldUpdate = true;
+            }
+            
+            if (shouldUpdate) {
+                dayData.status = newStatus;
+                changed = true;
+            }
+        });
+        if (changed) {
+            invalidateStreakCache(habit.id, date);
+        }
+    });
+    
+    if (changed) {
+        commitStateAndRender();
+    }
 }
 
 export function completeAllHabitsForDate(date: string) {
-    const dateObj = parseUTCIsoDate(date);
-    const activeHabitsOnDate = state.habits.filter(h => shouldHabitAppearOnDate(h, dateObj));
-
-    activeHabitsOnDate.forEach(habit => {
-        const scheduleForDay = getEffectiveScheduleForHabitOnDate(habit, date);
-        scheduleForDay.forEach(time => {
-            const dayData = ensureHabitInstanceData(date, habit.id, time);
-            if(dayData.status === 'pending') dayData.status = 'completed';
-        });
-        invalidateStreakCache(habit.id, date);
-    });
-    
-    saveState();
-    renderHabits();
-    renderCalendar();
-    renderChart();
-    updateAppBadge();
+    bulkUpdateHabitsForDate(date, 'completed');
 }
 
 export function snoozeAllHabitsForDate(date: string) {
-    const dateObj = parseUTCIsoDate(date);
-    const activeHabitsOnDate = state.habits.filter(h => shouldHabitAppearOnDate(h, dateObj));
-
-    activeHabitsOnDate.forEach(habit => {
-        const scheduleForDay = getEffectiveScheduleForHabitOnDate(habit, date);
-        scheduleForDay.forEach(time => {
-            const dayData = ensureHabitInstanceData(date, habit.id, time);
-            if(dayData.status === 'pending' || dayData.status === 'completed') dayData.status = 'snoozed';
-        });
-        invalidateStreakCache(habit.id, date);
-    });
-    
-    saveState();
-    renderHabits();
-    renderCalendar();
-    renderChart();
-    updateAppBadge();
+    bulkUpdateHabitsForDate(date, 'snoozed');
 }
 
 export function handleSaveNote() {
@@ -573,7 +545,7 @@ export function handleSaveNote() {
     
     closeModal(ui.notesModal);
     state.editingNoteFor = null;
-    saveState();
+    commitStateAndRender();
 }
 
 export function resetApplicationData() {
@@ -583,17 +555,13 @@ export function resetApplicationData() {
     state.notificationsShown = [];
     state.pending21DayHabitIds = [];
     state.pendingConsolidationHabitIds = [];
-    saveState();
+    
     // Re-render the app with default state
     const waterHabitTemplate = PREDEFINED_HABITS.find(h => h.isDefault);
     if (waterHabitTemplate) {
         addHabit(waterHabitTemplate);
     }
-    saveState();
-    renderHabits();
-    renderCalendar();
-    renderChart();
-    updateAppBadge();
+    commitStateAndRender();
     closeModal(ui.manageModal);
 }
 
@@ -605,13 +573,8 @@ export function graduateHabit(habitId: string) {
         t('confirmGraduateHabit', { habitName: getHabitDisplayInfo(habit).name }),
         () => {
             habit.graduatedOn = getTodayUTCIso();
-            saveState();
+            commitStateAndRender();
             setupManageModal();
-            renderHabits();
-            renderCalendar();
-            renderChart();
-            updateAppBadge();
-            document.dispatchEvent(new CustomEvent('habitsChanged'));
         },
         { title: t('modalStatusGraduated'), confirmText: t('aria_graduate', { habitName: '' }) }
     );
