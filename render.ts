@@ -87,14 +87,10 @@ function calculateDayProgress(isoDate: string, activeHabitsOnDate: Habit[]): { c
 }
 
 
-function createCalendarDayElement(date: Date): HTMLElement {
+function createCalendarDayElement(date: Date, activeHabitsOnDate: Habit[]): HTMLElement {
     const todayISO = getTodayUTCIso();
     const isoDate = toUTCIsoDateString(date);
-    const dateObj = parseUTCIsoDate(isoDate);
     
-    // Otimização: Filtra os hábitos ativos para este dia apenas uma vez.
-    const activeHabitsOnDate = state.habits.filter(h => shouldHabitAppearOnDate(h, dateObj));
-
     const { completedPercent, totalPercent } = calculateDayProgress(isoDate, activeHabitsOnDate);
     const showPlus = shouldShowPlusIndicator(isoDate, activeHabitsOnDate);
 
@@ -128,7 +124,8 @@ export function renderCalendar() {
     ui.calendarStrip.innerHTML = '';
     const fragment = document.createDocumentFragment();
     state.calendarDates.forEach(date => {
-        fragment.appendChild(createCalendarDayElement(date));
+        const activeHabitsOnDate = state.habits.filter(h => shouldHabitAppearOnDate(h, date));
+        fragment.appendChild(createCalendarDayElement(date, activeHabitsOnDate));
     });
     ui.calendarStrip.appendChild(fragment);
 }
@@ -291,8 +288,6 @@ export function createHabitCardElement(habit: Habit, time: TimeOfDay): HTMLEleme
 
 export function renderHabits() {
     const selectedDateObj = parseUTCIsoDate(state.selectedDate);
-    const dailyInfoByHabit = getHabitDailyInfoForDate(state.selectedDate);
-
     const habitsByTime: Record<TimeOfDay, Habit[]> = { 'Morning': [], 'Afternoon': [], 'Evening': [] };
     
     state.habits.forEach(habit => {

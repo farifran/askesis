@@ -71,18 +71,6 @@
     to { transform: rotate(360deg); }
 }
 
-@keyframes value-change-up {
-    0% { transform: scale(1); color: var(--text-primary); }
-    50% { transform: scale(1.25); color: var(--accent-green); }
-    100% { transform: scale(1); color: var(--text-primary); }
-}
-
-@keyframes value-change-down {
-    0% { transform: scale(1); color: var(--text-primary); }
-    50% { transform: scale(0.85); color: var(--color-red); }
-    100% { transform: scale(1); color: var(--text-primary); }
-}
-
 
 /* --- RESET E ESTILOS GLOBAIS --- */
 * {
@@ -766,12 +754,6 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     color: var(--text-primary);
     transition: color var(--transition-duration-slow);
 }
-.goal-value-wrapper .progress.goal-increased {
-    animation: value-change-up 0.3s ease-in-out;
-}
-.goal-value-wrapper .progress.goal-decreased {
-    animation: value-change-down 0.3s ease-in-out;
-}
 
 /* --- COMPONENTES: AÇÕES DE DESLIZE --- */
 .habit-actions-left, .habit-actions-right {
@@ -1171,19 +1153,18 @@ input:disabled + .slider {
     font-weight: 600; font-size: 14px; cursor: pointer; padding: 0;
 }
 
-.duplicate-habit-notice, .duplicate-drop-notice {
+.duplicate-habit-notice {
     color: var(--color-red); font-size: 13px; font-weight: 500;
     opacity: 0; max-height: 0;
     overflow: hidden;
     transition: opacity var(--transition-duration-slow), max-height var(--transition-duration-slow), padding-block var(--transition-duration-slow);
     text-align: center; padding: 0; margin-block-start: var(--space-xs);
 }
-.duplicate-habit-notice.visible, .duplicate-drop-notice.visible {
+.duplicate-habit-notice.visible {
     opacity: 1;
     max-height: 40px;
+    padding-block: var(--space-sm);
 }
-.duplicate-habit-notice.visible { padding-block: var(--space-sm); }
-.duplicate-drop-notice.visible { padding-block-end: var(--space-sm); }
 
 /* --- PWA: OFFLINE INDICATOR --- */
 body.is-offline #ai-eval-btn .default-icon,

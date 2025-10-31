@@ -106,29 +106,14 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
             return;
         }
 
-        // --- Soltar para Mover (lógica existente) ---
+        // --- Soltar para Mover (lógica simplificada) ---
+        // A validação de 'duplicado' já foi feita em 'dragover'.
+        // Se o evento 'drop' é disparado, a soltura é considerada válida.
         const target = e.target as HTMLElement;
         const dropZone = target.closest<HTMLElement>('.drop-zone');
         if (dropZone?.dataset.time) {
             const newTime = dropZone.dataset.time as TimeOfDay;
-            const habit = state.habits.find(h => h.id === draggedHabitId);
-            if (!habit) return;
-            
-            const activeSchedule = getScheduleForDate(habit, state.selectedDate);
-            if (!activeSchedule) return;
-
-            const dailyInfo = state.dailyData[state.selectedDate]?.[draggedHabitId];
-            const scheduleForDay = dailyInfo?.dailySchedule || activeSchedule.times;
-            const isDuplicate = scheduleForDay.includes(newTime);
-            const isSameTime = newTime === draggedHabitOriginalTime;
-
-            if (isDuplicate && !isSameTime) {
-                const noticeEl = dropZone.closest('.habit-group-wrapper')?.querySelector<HTMLElement>('.duplicate-drop-notice');
-                if (noticeEl) {
-                    const habitName = getHabitDisplayInfo(habit).name;
-                    showInlineNotice(noticeEl, t('noticeDuplicateDrop', { habitName }));
-                }
-            } else if (!isSameTime) {
+            if (newTime !== draggedHabitOriginalTime) {
                 handleHabitDrop(draggedHabitId, draggedHabitOriginalTime, newTime);
             }
         }

@@ -6,7 +6,6 @@ import {
     updateGoalOverride,
     requestHabitTimeRemoval,
 } from './habitActions';
-import { isCurrentlySwiping } from './swipeHandler';
 
 const GOAL_STEP = 5;
 
