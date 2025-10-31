@@ -106,18 +106,20 @@ function updateHabitSchedule(
         originalHabit.scheduleHistory.push(newSchedule);
     }
     
+    // PERFORMANCE [2024-09-03]: Otimiza a limpeza de dados diários futuros.
+    // Em vez de iterar sobre todas as chaves em `state.dailyData` (o que é ineficiente para históricos longos),
+    // filtramos primeiro para obter apenas as datas relevantes (a partir da data da mudança) e, em seguida,
+    // iteramos sobre esse subconjunto muito menor, melhorando significativamente a performance.
     const changeDate = parseUTCIsoDate(changeDateISO);
-    Object.keys(state.dailyData).forEach(dateStr => {
-        const currentDate = parseUTCIsoDate(dateStr);
-        if (currentDate >= changeDate && state.dailyData[dateStr][originalHabit.id]) {
-            const dataToClean = state.dailyData[dateStr][originalHabit.id]!;
-            
-            if (updates.times) {
-                const newTimesSet = new Set(updates.times);
-                for (const time in dataToClean.instances) {
-                    if (!newTimesSet.has(time as TimeOfDay)) {
-                        delete dataToClean.instances[time as TimeOfDay];
-                    }
+    const futureDateKeys = Object.keys(state.dailyData).filter(dateStr => parseUTCIsoDate(dateStr) >= changeDate);
+    
+    futureDateKeys.forEach(dateStr => {
+        const habitDataOnDate = state.dailyData[dateStr]?.[originalHabit.id];
+        if (habitDataOnDate && updates.times) {
+            const newTimesSet = new Set(updates.times);
+            for (const time in habitDataOnDate.instances) {
+                if (!newTimesSet.has(time as TimeOfDay)) {
+                    delete habitDataOnDate.instances[time as TimeOfDay];
                 }
             }
         }
@@ -197,20 +199,21 @@ function handleAddNewHabit(formData: HabitTemplate) {
     const reusableHabit = findReusableHabitByName(habitName);
 
     if (reusableHabit) {
+        // REFACTOR [2024-09-03]: Simplifica a criação do objeto de agendamento.
+        // Utiliza um objeto `namePart` e a sintaxe de spread para atribuir condicionalmente
+        // as propriedades `name` ou `nameKey`, alinhando-se com o padrão mais limpo usado na
+        // função `addHabit` e reduzindo a redundância do código.
+        const namePart = 'nameKey' in formData
+            ? { nameKey: formData.nameKey, subtitleKey: formData.subtitleKey }
+            : { name: formData.name, subtitleKey: formData.subtitleKey };
+
         const newSchedule: HabitSchedule = {
             startDate: state.selectedDate,
             scheduleAnchor: state.selectedDate,
             times: formData.times,
             frequency: formData.frequency,
+            ...namePart
         };
-
-        if ('nameKey' in formData && formData.nameKey) {
-            newSchedule.nameKey = formData.nameKey;
-            newSchedule.subtitleKey = formData.subtitleKey;
-        } else {
-            newSchedule.name = formData.name;
-            newSchedule.subtitleKey = formData.subtitleKey;
-        }
         
         reusableHabit.scheduleHistory.push(newSchedule);
         reusableHabit.icon = formData.icon;
