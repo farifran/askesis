@@ -283,6 +283,49 @@ export function createHabitCardElement(habit: Habit, time: TimeOfDay): HTMLEleme
     return card;
 }
 
+/**
+ * Manages the creation, update, and removal of the placeholder element for an empty habit group.
+ * @param groupEl The habit group DOM element.
+ * @param time The time of day for this group.
+ * @param hasHabits Whether the group currently contains habits.
+ * @param isSmartPlaceholder Whether this placeholder should show icons for all empty slots.
+ * @param emptyTimes A list of all time slots that are currently empty.
+ */
+function updatePlaceholderForGroup(groupEl: HTMLElement, time: TimeOfDay, hasHabits: boolean, isSmartPlaceholder: boolean, emptyTimes: TimeOfDay[]) {
+    let placeholder = groupEl.querySelector<HTMLElement>('.empty-group-placeholder');
+    
+    if (!hasHabits) {
+        if (!placeholder) {
+            placeholder = document.createElement('div');
+            placeholder.className = 'empty-group-placeholder';
+            groupEl.appendChild(placeholder);
+        }
+        placeholder.classList.toggle('show-smart-placeholder', isSmartPlaceholder);
+        
+        const text = t('dragToAddHabit');
+        let iconHTML = '';
+
+        if (isSmartPlaceholder && emptyTimes.length > 1) {
+            const genericIconHTML = emptyTimes
+                .map(getTimeOfDayIcon)
+                .join('<span class="icon-separator">/</span>');
+            const specificIconHTML = getTimeOfDayIcon(time);
+            
+            iconHTML = `
+                <span class="placeholder-icon-generic">${genericIconHTML}</span>
+                <span class="placeholder-icon-specific">${specificIconHTML}</span>
+            `;
+        } else {
+            iconHTML = `<span class="placeholder-icon-specific">${getTimeOfDayIcon(time)}</span>`;
+        }
+        
+        placeholder.innerHTML = `<div class="time-of-day-icon">${iconHTML}</div><span>${text}</span>`;
+
+    } else if (placeholder) {
+        placeholder.remove();
+    }
+}
+
 export function renderHabits() {
     const selectedDateObj = parseUTCIsoDate(state.selectedDate);
     const activeHabitsData = getActiveHabitsForDate(selectedDateObj);
@@ -302,13 +345,14 @@ export function renderHabits() {
     });
 
     const emptyTimes = TIMES_OF_DAY.filter(time => !groupHasHabits[time]);
-    const targetTime: TimeOfDay | undefined = emptyTimes[0];
+    const smartPlaceholderTargetTime: TimeOfDay | undefined = emptyTimes[0];
 
     TIMES_OF_DAY.forEach(time => {
         const wrapperEl = ui.habitContainer.querySelector(`.habit-group-wrapper[data-time-wrapper="${time}"]`);
         const groupEl = wrapperEl?.querySelector<HTMLElement>(`.habit-group[data-time="${time}"]`);
         if (!wrapperEl || !groupEl) return;
         
+        // Renderiza os cartões de hábito
         const fragment = document.createDocumentFragment();
         habitsByTime[time].forEach(habit => {
             fragment.appendChild(createHabitCardElement(habit, time));
@@ -317,42 +361,14 @@ export function renderHabits() {
         groupEl.appendChild(fragment);
         
         const hasHabits = groupHasHabits[time];
-        const isSmartPlaceholder = time === targetTime;
+        const isSmartPlaceholder = time === smartPlaceholderTargetTime;
         
+        // Atualiza as classes do wrapper
         wrapperEl.classList.toggle('has-habits', hasHabits);
         wrapperEl.classList.toggle('is-collapsible', !hasHabits && !isSmartPlaceholder);
 
-        let placeholder = groupEl.querySelector<HTMLElement>('.empty-group-placeholder');
-        if (!hasHabits) {
-            if (!placeholder) {
-                placeholder = document.createElement('div');
-                placeholder.className = 'empty-group-placeholder';
-                groupEl.appendChild(placeholder);
-            }
-            placeholder.classList.toggle('show-smart-placeholder', isSmartPlaceholder);
-            
-            const text = t('dragToAddHabit');
-            let iconHTML = '';
-
-            if (isSmartPlaceholder && emptyTimes.length > 1) {
-                const genericIconHTML = emptyTimes
-                    .map(getTimeOfDayIcon)
-                    .join('<span class="icon-separator">/</span>');
-                const specificIconHTML = getTimeOfDayIcon(time);
-                
-                iconHTML = `
-                    <span class="placeholder-icon-generic">${genericIconHTML}</span>
-                    <span class="placeholder-icon-specific">${specificIconHTML}</span>
-                `;
-            } else {
-                iconHTML = `<span class="placeholder-icon-specific">${getTimeOfDayIcon(time)}</span>`;
-            }
-            
-            placeholder.innerHTML = `<div class="time-of-day-icon">${iconHTML}</div><span>${text}</span>`;
-
-        } else if (placeholder) {
-            placeholder.remove();
-        }
+        // Delega o gerenciamento do placeholder para a nova função auxiliar
+        updatePlaceholderForGroup(groupEl, time, hasHabits, isSmartPlaceholder, emptyTimes);
     });
 }
 

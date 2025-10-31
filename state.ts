@@ -195,6 +195,7 @@ export const state: {
     habits: Habit[];
     dailyData: Record<string, Record<string, HabitDailyInfo>>;
     streaksCache: Record<string, number>;
+    scheduleCache: Record<string, HabitSchedule | null>;
     lastEnded: { habitId: string, lastSchedule: HabitSchedule } | null;
     undoTimeout: number | null;
     calendarDates: Date[];
@@ -222,6 +223,7 @@ export const state: {
     habits: [],
     dailyData: {},
     streaksCache: {},
+    scheduleCache: {},
     lastEnded: null,
     undoTimeout: null,
     calendarDates: Array.from({ length: DAYS_IN_CALENDAR }, (_, i) => addDays(getTodayUTC(), i - 30)),
@@ -242,6 +244,14 @@ export const state: {
 };
 
 // --- STATE-DEPENDENT HELPERS ---
+
+/**
+ * Limpa o cache de agendamento. Chamado sempre que um `scheduleHistory` é modificado.
+ */
+export function clearScheduleCache() {
+    state.scheduleCache = {};
+}
+
 /**
  * Invalida o cache de streaks para um hábito específico a partir de uma data.
  * Isso é necessário sempre que o status de um hábito muda, pois afeta o cálculo
@@ -265,17 +275,26 @@ export function invalidateStreakCache(habitId: string, fromDateISO: string) {
 
 export function getScheduleForDate(habit: Habit, date: Date | string): HabitSchedule | null {
     const dateStr = typeof date === 'string' ? date : toUTCIsoDateString(date);
+    const cacheKey = `${habit.id}|${dateStr}`;
+    if (state.scheduleCache[cacheKey] !== undefined) {
+        return state.scheduleCache[cacheKey];
+    }
+    
     const dateAsTime = parseUTCIsoDate(dateStr).getTime();
+    let foundSchedule: HabitSchedule | null = null;
 
     for (const schedule of [...habit.scheduleHistory].reverse()) {
         const startAsTime = parseUTCIsoDate(schedule.startDate).getTime();
         const endAsTime = schedule.endDate ? parseUTCIsoDate(schedule.endDate).getTime() : Infinity;
 
         if (dateAsTime >= startAsTime && dateAsTime < endAsTime) {
-            return schedule;
+            foundSchedule = schedule;
+            break;
         }
     }
-    return null;
+    
+    state.scheduleCache[cacheKey] = foundSchedule;
+    return foundSchedule;
 }
 
 /**
@@ -526,6 +545,7 @@ export function loadState(cloudState?: AppState) {
         }
         // Limpa o cache ao carregar um novo estado para garantir consistência.
         state.streaksCache = {};
+        clearScheduleCache();
     } else {
         state.habits = [];
         state.dailyData = {};
@@ -539,5 +559,6 @@ export function loadState(cloudState?: AppState) {
         state.hasSeenAIResult = true;
         // Limpa o cache ao criar um estado novo.
         state.streaksCache = {};
+        clearScheduleCache();
     }
 }

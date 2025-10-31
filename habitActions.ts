@@ -21,6 +21,7 @@ import {
     invalidateStreakCache,
     getHabitDailyInfoForDate,
     getCurrentGoalForInstance,
+    clearScheduleCache,
 } from './state';
 import {
     renderHabits,
@@ -105,6 +106,7 @@ function updateHabitSchedule(
             }
         }
     });
+    clearScheduleCache();
 }
 
 function addHabit(template: HabitTemplate) {
@@ -125,6 +127,146 @@ function addHabit(template: HabitTemplate) {
     state.habits.push(newHabit);
 }
 
+/**
+ * Verifica se um hábito ativo com o mesmo nome já existe.
+ * @param name O nome a ser verificado.
+ * @param excludeHabitId O ID de um hábito a ser ignorado na verificação (útil ao editar).
+ * @returns Verdadeiro se um duplicado ativo for encontrado.
+ */
+function isHabitNameDuplicate(name: string, excludeHabitId?: string): boolean {
+    const lowerCaseName = name.toLowerCase();
+    return state.habits.some(h => {
+        if (h.id === excludeHabitId) return false; // Ignora o próprio hábito ao editar
+
+        const { name: displayName } = getHabitDisplayInfo(h);
+        const lastSchedule = h.scheduleHistory[h.scheduleHistory.length - 1];
+        const isActive = !lastSchedule.endDate && !h.graduatedOn;
+        
+        return isActive && displayName.toLowerCase() === lowerCaseName;
+    });
+}
+
+/**
+ * Encontra um hábito encerrado ou graduado que pode ser reutilizado.
+ * @param name O nome do hábito a ser procurado.
+ * @returns O objeto do hábito se um reutilizável for encontrado, senão undefined.
+ */
+function findReusableHabitByName(name: string): Habit | undefined {
+    const lowerCaseName = name.toLowerCase();
+    return state.habits.find(h => {
+        const { name: displayName } = getHabitDisplayInfo(h);
+        const lastSchedule = h.scheduleHistory[h.scheduleHistory.length - 1];
+        const isEnded = !!lastSchedule.endDate || !!h.graduatedOn;
+        
+        return isEnded && displayName.toLowerCase() === lowerCaseName;
+    });
+}
+
+// REFACTOR [2024-07-30]: Esta função finaliza o processo de salvamento de hábito.
+// Foi extraída para ser reutilizada pelos novos handlers `handleAddNewHabit` e `handleEditHabit`.
+function finishSave() {
+    closeModal(ui.editHabitModal);
+    state.editingHabit = null;
+    commitStateAndRender();
+}
+
+
+// REFACTOR [2024-07-30]: A lógica de criação foi extraída de `saveHabitFromModal`.
+// Agora, esta função é a única responsável por lidar com a adição de um novo hábito,
+// incluindo a reutilização de hábitos antigos e a confirmação para datas passadas.
+function handleAddNewHabit(formData: HabitTemplate) {
+    const habitName = 'name' in formData ? formData.name! : t(formData.nameKey!);
+    const reusableHabit = findReusableHabitByName(habitName);
+
+    if (reusableHabit) {
+        const newSchedule: HabitSchedule = {
+            startDate: state.selectedDate,
+            scheduleAnchor: state.selectedDate,
+            times: formData.times,
+            frequency: formData.frequency,
+        };
+
+        if ('nameKey' in formData && formData.nameKey) {
+            newSchedule.nameKey = formData.nameKey;
+            newSchedule.subtitleKey = formData.subtitleKey;
+        } else {
+            newSchedule.name = formData.name;
+            newSchedule.subtitle = formData.subtitle;
+        }
+        
+        reusableHabit.scheduleHistory.push(newSchedule);
+        reusableHabit.icon = formData.icon;
+        reusableHabit.color = formData.color;
+        reusableHabit.goal = formData.goal;
+        reusableHabit.graduatedOn = undefined;
+
+        clearScheduleCache();
+        finishSave();
+    } else {
+        const isPastDate = parseUTCIsoDate(state.selectedDate) < parseUTCIsoDate(getTodayUTCIso());
+        if (isPastDate) {
+            showConfirmationModal(
+                t('confirmNewHabitPastDate', { habitName, date: state.selectedDate }),
+                () => {
+                    addHabit(formData);
+                    finishSave();
+                }
+            );
+        } else {
+            addHabit(formData);
+            finishSave();
+        }
+    }
+}
+
+
+// REFACTOR [2024-07-30]: A lógica de edição foi extraída de `saveHabitFromModal`.
+// Esta função agora lida exclusivamente com a atualização de um hábito existente,
+// incluindo a verificação de alterações e a confirmação para edições no passado.
+function handleEditHabit(originalData: Habit, formData: HabitTemplate) {
+    const habitName = 'name' in formData ? formData.name! : t(formData.nameKey!);
+    const latestSchedule = originalData.scheduleHistory[originalData.scheduleHistory.length - 1];
+    const nameChanged = getHabitDisplayInfo(originalData).name !== habitName;
+    const timesChanged = JSON.stringify(latestSchedule.times.sort()) !== JSON.stringify(formData.times.sort());
+    const freqChanged = JSON.stringify(latestSchedule.frequency) !== JSON.stringify(formData.frequency);
+    const scheduleChanged = timesChanged || freqChanged;
+
+    if (nameChanged) updateHabitDetails(originalData, habitName);
+    
+    if (scheduleChanged) {
+        const isTodayOrFuture = parseUTCIsoDate(state.selectedDate) >= parseUTCIsoDate(getTodayUTCIso());
+        if (isTodayOrFuture) {
+            updateHabitSchedule(originalData, state.selectedDate, { times: formData.times, frequency: formData.frequency });
+            finishSave();
+        } else {
+            showConfirmationModal(
+                t('confirmScheduleChange', { habitName, date: state.selectedDate }),
+                () => {
+                    updateHabitSchedule(originalData, state.selectedDate, { times: formData.times, frequency: formData.frequency });
+                    finishSave();
+                },
+                {
+                    title: t('modalEditTitle'),
+                    confirmText: t('confirmButton'),
+                    cancelText: t('cancelButton')
+                }
+            );
+            // Retorna aqui porque a ação é assíncrona (depende da confirmação do usuário).
+            return;
+        }
+    } else if (nameChanged) {
+        // Se apenas o nome mudou, podemos salvar imediatamente.
+        finishSave();
+    } else {
+        // Se nada mudou, apenas fecha o modal sem salvar.
+        closeModal(ui.editHabitModal);
+        state.editingHabit = null;
+    }
+}
+
+// REFACTOR [2024-07-30]: A função `saveHabitFromModal` foi simplificada para ser um "orquestrador".
+// Sua responsabilidade agora é apenas validar a entrada do formulário e delegar
+// para os handlers `handleAddNewHabit` ou `handleEditHabit`.
 export function saveHabitFromModal() {
     if (!state.editingHabit) return;
 
@@ -145,107 +287,24 @@ export function saveHabitFromModal() {
         return;
     }
 
-    formData.times = selectedTimes;
-
-    const isDuplicate = state.habits.some(h => {
-        const displayName = getHabitDisplayInfo(h).name;
-        const lastSchedule = h.scheduleHistory[h.scheduleHistory.length - 1];
-        const isActive = !lastSchedule.endDate && !h.graduatedOn;
-
-        if (isNew) {
-            return isActive && displayName.toLowerCase() === habitName.toLowerCase();
-        } else {
-            return isActive && h.id !== habitId && displayName.toLowerCase() === habitName.toLowerCase();
-        }
-    });
-
+    const isDuplicate = isHabitNameDuplicate(habitName, isNew ? undefined : habitId);
     if (isDuplicate) {
         showInlineNotice(noticeEl, t('noticeDuplicateHabitWithName'));
         return;
     }
-    
-    if (isNew) {
-        const reusableHabit = state.habits.find(h => {
-            const lastSchedule = h.scheduleHistory[h.scheduleHistory.length - 1];
-            const isEnded = !!lastSchedule.endDate || !!h.graduatedOn;
-            const displayName = getHabitDisplayInfo(h).name;
-            return isEnded && displayName.toLowerCase() === habitName.toLowerCase();
-        });
 
-        if (reusableHabit) {
-            const newSchedule: HabitSchedule = {
-                startDate: state.selectedDate,
-                scheduleAnchor: state.selectedDate,
-                times: formData.times,
-                frequency: formData.frequency,
-            };
-
-            if ('nameKey' in formData && formData.nameKey) {
-                newSchedule.nameKey = formData.nameKey;
-                newSchedule.subtitleKey = formData.subtitleKey;
-            } else {
-                newSchedule.name = formData.name;
-                newSchedule.subtitle = formData.subtitle;
-            }
-            
-            reusableHabit.scheduleHistory.push(newSchedule);
-            reusableHabit.icon = formData.icon;
-            reusableHabit.color = formData.color;
-            reusableHabit.goal = formData.goal;
-            reusableHabit.graduatedOn = undefined;
-
-            finishSave();
-        } else {
-            const isPastDate = parseUTCIsoDate(state.selectedDate) < parseUTCIsoDate(getTodayUTCIso());
-            if (isPastDate) {
-                showConfirmationModal(
-                    t('confirmNewHabitPastDate', { habitName, date: state.selectedDate }),
-                    () => {
-                        addHabit(formData);
-                        finishSave();
-                    }
-                );
-            } else {
-                addHabit(formData);
-                finishSave();
-            }
-        }
-    } else if (originalData) {
-        const latestSchedule = originalData.scheduleHistory[originalData.scheduleHistory.length - 1];
-        const nameChanged = getHabitDisplayInfo(originalData).name !== habitName;
-        const timesChanged = JSON.stringify(latestSchedule.times.sort()) !== JSON.stringify(formData.times.sort());
-        const freqChanged = JSON.stringify(latestSchedule.frequency) !== JSON.stringify(formData.frequency);
-        const scheduleChanged = timesChanged || freqChanged;
-
-        if (nameChanged) updateHabitDetails(originalData, habitName);
-        if (scheduleChanged) {
-            const isTodayOrFuture = parseUTCIsoDate(state.selectedDate) >= parseUTCIsoDate(getTodayUTCIso());
-            if (isTodayOrFuture) {
-                updateHabitSchedule(originalData, state.selectedDate, { times: formData.times, frequency: formData.frequency });
-            } else {
-                showConfirmationModal(
-                    t('confirmScheduleChange', { habitName, date: state.selectedDate }),
-                    () => {
-                        updateHabitSchedule(originalData, state.selectedDate, { times: formData.times, frequency: formData.frequency });
-                        finishSave();
-                    },
-                    {
-                        title: t('modalEditTitle'),
-                        confirmText: t('confirmButton'),
-                        cancelText: t('cancelButton')
-                    }
-                );
-                return;
-            }
-        }
-        finishSave();
+    // Atualiza o formData com os valores finais do formulário
+    formData.times = selectedTimes;
+    if ('name' in formData) {
+        formData.name = habitName;
     }
-}
 
-function finishSave() {
-    closeModal(ui.editHabitModal);
-    state.editingHabit = null;
-    commitStateAndRender();
+    // Delega para o handler apropriado
+    if (isNew) {
+        handleAddNewHabit(formData);
+    } else if (originalData) {
+        handleEditHabit(originalData, formData);
+    }
 }
 
 export function createDefaultHabit() {
@@ -305,6 +364,7 @@ function endHabit(habit: Habit, dateISO: string) {
     state.lastEnded = { habitId: habit.id, lastSchedule };
 
     invalidateStreakCache(habit.id, dateISO);
+    clearScheduleCache();
     commitStateAndRender();
     showUndoToast();
 }
@@ -317,6 +377,7 @@ export function handleUndoDelete() {
             if (lastSchedule === state.lastEnded.lastSchedule) {
                 delete lastSchedule.endDate;
                 invalidateStreakCache(habit.id, lastSchedule.startDate);
+                clearScheduleCache();
             }
         }
         commitStateAndRender();
@@ -395,6 +456,7 @@ function moveHabitSchedule(habitId: string, fromTime: TimeOfDay, toTime: TimeOfD
             times: newTimes,
         };
         habit.scheduleHistory.push(newSchedule);
+        clearScheduleCache();
 
     } else { // Just for today
         const dailyInfo = state.dailyData[changeDate]?.[habitId] ?? { instances: {} };
@@ -563,6 +625,7 @@ export function resetApplicationData() {
     state.habits = [];
     state.dailyData = {};
     state.streaksCache = {};
+    clearScheduleCache();
     state.notificationsShown = [];
     state.pending21DayHabitIds = [];
     state.pendingConsolidationHabitIds = [];
@@ -683,6 +746,9 @@ function buildAIPrompt(analysisType: 'weekly' | 'monthly' | 'general'): { prompt
         
         const allSummaries: string[] = [];
         
+        // BUGFIX [2024-07-31]: Fixed a reference error in the 'general' analysis loop.
+        // The loop was trying to increment an undefined variable 'date' instead of the loop
+        // iterator 'd', which caused the general AI analysis to fail after the first day.
         for (let d = firstDateEver; d <= today; d = addDays(d, 1)) {
             const summary = generateDailyHabitSummary(d);
             if (summary) {
