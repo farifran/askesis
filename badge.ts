@@ -2,8 +2,8 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-import { state, getHabitDailyInfoForDate, shouldHabitAppearOnDate, getEffectiveScheduleForHabitOnDate } from './state';
-import { getTodayUTCIso, parseUTCIsoDate } from './utils';
+import { state, getHabitDailyInfoForDate } from './state';
+import { getTodayUTCIso, parseUTCIsoDate, getActiveHabitsForDate } from './utils';
 
 /**
  * Calcula o número de instâncias de hábitos pendentes para o dia atual.
@@ -16,17 +16,13 @@ function calculateTodayPendingCount(): number {
     
     let pendingCount = 0;
     
-    // Filtra por hábitos ativos, não graduados e agendados para hoje
-    const activeHabitsToday = state.habits.filter(h => 
-        !h.graduatedOn && shouldHabitAppearOnDate(h, todayObj)
-    );
+    // Usa a função auxiliar para obter hábitos ativos e seus agendamentos de uma só vez.
+    const activeHabitsToday = getActiveHabitsForDate(todayObj);
 
-    activeHabitsToday.forEach(habit => {
-        // Obtém o agendamento específico para hoje (pode ser uma substituição diária)
-        const scheduleForToday = getEffectiveScheduleForHabitOnDate(habit, todayISO);
+    activeHabitsToday.forEach(({ habit, schedule }) => {
         const instances = dailyInfo[habit.id]?.instances || {};
         
-        scheduleForToday.forEach(time => {
+        schedule.forEach(time => {
             const status = instances[time]?.status ?? 'pending';
             if (status === 'pending') {
                 pendingCount++;

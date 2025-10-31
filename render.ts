@@ -19,15 +19,13 @@ import {
     PREDEFINED_HABITS,
     STREAK_CONSOLIDATED,
     STREAK_SEMI_CONSOLIDATED,
-    shouldHabitAppearOnDate,
     Frequency,
     PredefinedHabit,
     TimeOfDay,
     getScheduleForDate,
     HabitTemplate,
-    getEffectiveScheduleForHabitOnDate,
 } from './state';
-import { getTodayUTCIso, toUTCIsoDateString, parseUTCIsoDate, escapeHTML, pushToOneSignal } from './utils';
+import { getTodayUTCIso, toUTCIsoDateString, parseUTCIsoDate, escapeHTML, pushToOneSignal, getActiveHabitsForDate } from './utils';
 import { ui } from './ui';
 import { t, getLocaleDayName, getHabitDisplayInfo, getTimeOfDayName } from './i18n';
 import { STOIC_QUOTES } from './quotes';
@@ -58,19 +56,17 @@ export function initFrequencyFilter() {
     updateReelRotaryARIA(ui.frequencyViewport, 0, freqLabels, 'frequency_ariaLabel');
 }
 
-function calculateDayProgress(isoDate: string, activeHabitsOnDate: Habit[]): { completedPercent: number, totalPercent: number } {
+function calculateDayProgress(isoDate: string, activeHabitsData: Array<{ habit: Habit; schedule: TimeOfDay[] }>): { completedPercent: number, totalPercent: number } {
     const dailyInfo = getHabitDailyInfoForDate(isoDate);
     
     let totalInstances = 0;
     let completedInstances = 0;
     let snoozedInstances = 0;
 
-    activeHabitsOnDate.forEach(habit => {
-        const habitDailyInfo = dailyInfo[habit.id];
-        const scheduleForDay = getEffectiveScheduleForHabitOnDate(habit, isoDate);
-        const instances = habitDailyInfo?.instances || {};
+    activeHabitsData.forEach(({ habit, schedule }) => {
+        const instances = dailyInfo[habit.id]?.instances || {};
         
-        scheduleForDay.forEach(time => {
+        schedule.forEach(time => {
             totalInstances++;
             const status = instances[time]?.status;
             if (status === 'completed') completedInstances++;
@@ -87,11 +83,12 @@ function calculateDayProgress(isoDate: string, activeHabitsOnDate: Habit[]): { c
 }
 
 
-function createCalendarDayElement(date: Date, activeHabitsOnDate: Habit[]): HTMLElement {
+function createCalendarDayElement(date: Date, activeHabitsData: Array<{ habit: Habit; schedule: TimeOfDay[] }>): HTMLElement {
     const todayISO = getTodayUTCIso();
     const isoDate = toUTCIsoDateString(date);
     
-    const { completedPercent, totalPercent } = calculateDayProgress(isoDate, activeHabitsOnDate);
+    const { completedPercent, totalPercent } = calculateDayProgress(isoDate, activeHabitsData);
+    const activeHabitsOnDate = activeHabitsData.map(data => data.habit);
     const showPlus = shouldShowPlusIndicator(isoDate, activeHabitsOnDate);
 
     const dayItem = document.createElement('div');
@@ -124,8 +121,8 @@ export function renderCalendar() {
     ui.calendarStrip.innerHTML = '';
     const fragment = document.createDocumentFragment();
     state.calendarDates.forEach(date => {
-        const activeHabitsOnDate = state.habits.filter(h => shouldHabitAppearOnDate(h, date));
-        fragment.appendChild(createCalendarDayElement(date, activeHabitsOnDate));
+        const activeHabitsData = getActiveHabitsForDate(date);
+        fragment.appendChild(createCalendarDayElement(date, activeHabitsData));
     });
     ui.calendarStrip.appendChild(fragment);
 }
@@ -288,18 +285,15 @@ export function createHabitCardElement(habit: Habit, time: TimeOfDay): HTMLEleme
 
 export function renderHabits() {
     const selectedDateObj = parseUTCIsoDate(state.selectedDate);
+    const activeHabitsData = getActiveHabitsForDate(selectedDateObj);
     const habitsByTime: Record<TimeOfDay, Habit[]> = { 'Morning': [], 'Afternoon': [], 'Evening': [] };
     
-    state.habits.forEach(habit => {
-        if (shouldHabitAppearOnDate(habit, selectedDateObj)) {
-            const scheduleForDay = getEffectiveScheduleForHabitOnDate(habit, state.selectedDate);
-            
-            scheduleForDay.forEach(time => {
-                if (habitsByTime[time]) {
-                    habitsByTime[time].push(habit);
-                }
-            });
-        }
+    activeHabitsData.forEach(({ habit, schedule }) => {
+        schedule.forEach(time => {
+            if (habitsByTime[time]) {
+                habitsByTime[time].push(habit);
+            }
+        });
     });
 
     const groupHasHabits: Record<TimeOfDay, boolean> = { 'Morning': false, 'Afternoon': false, 'Evening': false };
@@ -308,7 +302,6 @@ export function renderHabits() {
     });
 
     const emptyTimes = TIMES_OF_DAY.filter(time => !groupHasHabits[time]);
-    // Simplificado: seleciona o primeiro horário vazio disponível como o alvo inteligente.
     const targetTime: TimeOfDay | undefined = emptyTimes[0];
 
     TIMES_OF_DAY.forEach(time => {

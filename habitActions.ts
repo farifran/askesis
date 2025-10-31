@@ -2,7 +2,7 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-import { generateUUID, getTodayUTCIso, parseUTCIsoDate, addDays, escapeHTML, simpleMarkdownToHTML, getTodayUTC, toUTCIsoDateString } from './utils';
+import { generateUUID, getTodayUTCIso, parseUTCIsoDate, addDays, escapeHTML, simpleMarkdownToHTML, getTodayUTC, toUTCIsoDateString, getActiveHabitsForDate } from './utils';
 import {
     state,
     saveState,
@@ -11,7 +11,6 @@ import {
     HabitStatus,
     getNextStatus,
     ensureHabitInstanceData,
-    shouldHabitAppearOnDate,
     STREAK_SEMI_CONSOLIDATED,
     STREAK_CONSOLIDATED,
     calculateHabitStreak,
@@ -20,7 +19,6 @@ import {
     getScheduleForDate,
     PREDEFINED_HABITS,
     invalidateStreakCache,
-    getEffectiveScheduleForHabitOnDate,
     getHabitDailyInfoForDate,
     getCurrentGoalForInstance,
 } from './state';
@@ -508,14 +506,13 @@ export function reorderHabit(draggedId: string, targetId: string, position: 'bef
  */
 function bulkUpdateHabitsForDate(date: string, newStatus: 'completed' | 'snoozed') {
     const dateObj = parseUTCIsoDate(date);
-    const activeHabitsOnDate = state.habits.filter(h => shouldHabitAppearOnDate(h, dateObj));
+    const activeHabitsData = getActiveHabitsForDate(dateObj);
     let changed = false;
 
-    activeHabitsOnDate.forEach(habit => {
-        const scheduleForDay = getEffectiveScheduleForHabitOnDate(habit, date);
+    activeHabitsData.forEach(({ habit, schedule }) => {
         let habitSpecificChange = false;
         
-        scheduleForDay.forEach(time => {
+        schedule.forEach(time => {
             const dayData = ensureHabitInstanceData(date, habit.id, time);
             let shouldUpdate = false;
             
@@ -612,24 +609,23 @@ const timeToKeyMap: Record<TimeOfDay, string> = {
 function generateDailyHabitSummary(date: Date): string | null {
     const isoDate = toUTCIsoDateString(date);
     const dailyInfoByHabit = getHabitDailyInfoForDate(isoDate);
-    const habitsOnThisDay = state.habits.filter(h => shouldHabitAppearOnDate(h, date) && !h.graduatedOn);
+    const activeHabitsData = getActiveHabitsForDate(date);
 
-    if (habitsOnThisDay.length === 0) return null;
+    if (activeHabitsData.length === 0) return null;
 
-    const dayEntries = habitsOnThisDay.map(habit => {
-        const scheduleForDay = getEffectiveScheduleForHabitOnDate(habit, isoDate);
-        if (scheduleForDay.length === 0) return '';
+    const dayEntries = activeHabitsData.map(({ habit, schedule }) => {
+        if (schedule.length === 0) return '';
         
         const { name } = getHabitDisplayInfo(habit);
         const habitInstances = dailyInfoByHabit[habit.id]?.instances || {};
 
-        const statusDetails = scheduleForDay.map(time => {
+        const statusDetails = schedule.map(time => {
             const instance = habitInstances[time];
             const status: HabitStatus = instance?.status || 'pending';
             const note = instance?.note;
             
             let detail = statusToSymbol[status];
-            if (scheduleForDay.length > 1) {
+            if (schedule.length > 1) {
                 detail = `${t(timeToKeyMap[time])}: ${detail}`;
             }
 
@@ -755,31 +751,49 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
     closeModal(ui.aiOptionsModal);
     openModal(ui.aiModal);
 
+    const MAX_RETRIES = 3;
+    const INITIAL_BACKOFF_MS = 1000;
+
     try {
         const { prompt, systemInstruction } = buildAIPrompt(analysisType);
-        
-        // A lógica de chamada da API foi refatorada para não usar mais streaming do lado do cliente.
-        const response = await fetch('/api/analyze', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ prompt, systemInstruction }),
-        });
+        let lastError: Error | null = null;
 
-        if (!response.ok) {
-            const errorBody = await response.json().catch(() => ({ 
-                error: 'Falha ao analisar a resposta de erro do servidor.', 
-                details: response.statusText 
-            }));
-            throw new Error(`[${response.status}] ${errorBody.error || 'Erro de API'}: ${errorBody.details || ''}`);
+        for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+            try {
+                const response = await fetch('/api/analyze', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prompt, systemInstruction }),
+                });
+
+                if (!response.ok) {
+                    const errorBody = await response.json().catch(() => ({
+                        error: 'Falha ao analisar a resposta de erro do servidor.',
+                        details: response.statusText,
+                    }));
+                    throw new Error(`[${response.status}] ${errorBody.error || 'Erro de API'}: ${errorBody.details || ''}`);
+                }
+
+                const fullText = await response.text();
+                ui.aiResponse.innerHTML = simpleMarkdownToHTML(fullText);
+                state.lastAIResult = fullText;
+                state.lastAIError = null;
+                state.aiState = 'completed';
+                // Sucesso, sai do loop de tentativas
+                return; 
+            } catch (error) {
+                lastError = error instanceof Error ? error : new Error(String(error));
+                console.warn(`Attempt ${attempt + 1} failed:`, lastError.message);
+                
+                // Se for a última tentativa, o loop terminará e o erro será lançado
+                if (attempt < MAX_RETRIES - 1) {
+                    const delay = INITIAL_BACKOFF_MS * Math.pow(2, attempt);
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                }
+            }
         }
-
-        // Aguarda o texto completo em vez de ler um stream.
-        const fullText = await response.text();
-        ui.aiResponse.innerHTML = simpleMarkdownToHTML(fullText);
-        
-        state.lastAIResult = fullText;
-        state.lastAIError = null;
-        state.aiState = 'completed';
+        // Se o loop terminar sem sucesso, lança o último erro capturado
+        throw lastError;
 
     } catch (error) {
         const errorMessage = error instanceof Error ? error.message : t('aiErrorUnknown');

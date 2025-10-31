@@ -2,6 +2,7 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
+import { Habit, TimeOfDay, getEffectiveScheduleForHabitOnDate, shouldHabitAppearOnDate, state } from './state';
 
 // --- UUID ---
 export function generateUUID(): string {
@@ -145,4 +146,20 @@ export function debounce<T extends (...args: any[]) => any>(func: T, wait: numbe
             func.apply(context, args);
         }, wait);
     };
+}
+
+/**
+ * Retorna uma lista de hábitos que estão ativos e agendados para uma data específica.
+ * Centraliza a lógica de verificação de `shouldHabitAppearOnDate` e `getEffectiveScheduleForHabitOnDate`.
+ * @param date A data para a qual os hábitos ativos devem ser recuperados.
+ * @returns Um array de objetos, cada um contendo o hábito e seu agendamento efetivo para o dia.
+ */
+export function getActiveHabitsForDate(date: Date): Array<{ habit: Habit; schedule: TimeOfDay[] }> {
+    const dateISO = toUTCIsoDateString(date);
+    return state.habits
+        .filter(habit => !habit.graduatedOn && shouldHabitAppearOnDate(habit, date))
+        .map(habit => ({
+            habit,
+            schedule: getEffectiveScheduleForHabitOnDate(habit, dateISO),
+        }));
 }
