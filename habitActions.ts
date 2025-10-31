@@ -122,7 +122,7 @@ function addHabit(template: HabitTemplate) {
             scheduleAnchor: state.selectedDate,
             times: template.times,
             frequency: template.frequency,
-            ...('nameKey' in template ? { nameKey: template.nameKey, subtitleKey: template.subtitleKey } : { name: template.name, subtitle: template.subtitle })
+            ...('nameKey' in template && template.nameKey ? { nameKey: template.nameKey, subtitleKey: template.subtitleKey } : { name: template.name, subtitle: template.subtitle })
         }],
     };
     state.habits.push(newHabit);
@@ -183,7 +183,7 @@ export function saveHabitFromModal() {
                 frequency: formData.frequency,
             };
 
-            if ('nameKey' in formData) {
+            if ('nameKey' in formData && formData.nameKey) {
                 newSchedule.nameKey = formData.nameKey;
                 newSchedule.subtitleKey = formData.subtitleKey;
             } else {

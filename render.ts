@@ -130,25 +130,6 @@ export function renderCalendar() {
     ui.calendarStrip.appendChild(fragment);
 }
 
-export function updateCalendarDayElement(isoDate: string) {
-    const dayItem = ui.calendarStrip.querySelector<HTMLElement>(`.day-item[data-date="${isoDate}"]`);
-    if (!dayItem) return;
-
-    const progressRing = dayItem.querySelector<HTMLElement>('.day-progress-ring');
-    const dayNumber = dayItem.querySelector<HTMLElement>('.day-number');
-
-    if (progressRing) {
-        const { completedPercent, totalPercent } = calculateDayProgress(isoDate);
-        progressRing.style.setProperty('--completed-percent', `${completedPercent}%`);
-        progressRing.style.setProperty('--total-percent', `${totalPercent}%`);
-    }
-
-    if (dayNumber) {
-        const showPlus = shouldShowPlusIndicator(isoDate);
-        dayNumber.classList.toggle('has-plus', showPlus);
-    }
-}
-
 export function renderLanguageFilter() {
     const currentIndex = LANGUAGES.findIndex(l => l.code === state.activeLanguageCode);
     const langNames = LANGUAGES.map(lang => t(lang.nameKey));
@@ -693,7 +674,18 @@ export function openEditModal(habitOrTemplate: Habit | PredefinedHabit | null) {
                 frequency: { type: 'daily', interval: 1 },
             };
         } else { 
-            formData = { ...(habitOrTemplate as PredefinedHabit) };
+            // FIX: Explicitly create object from template to ensure type correctness
+            // and prevent extra properties like 'isDefault' from being included.
+            const template = habitOrTemplate as PredefinedHabit;
+            formData = {
+                nameKey: template.nameKey,
+                subtitleKey: template.subtitleKey,
+                icon: template.icon,
+                color: template.color,
+                times: template.times,
+                goal: template.goal,
+                frequency: template.frequency,
+            };
         }
     } else { 
         originalHabit = habitOrTemplate as Habit;
@@ -714,7 +706,7 @@ export function openEditModal(habitOrTemplate: Habit | PredefinedHabit | null) {
 
     state.editingHabit = { isNew, habitId, originalData: originalHabit, formData };
     
-    const habitDisplayName = 'name' in formData ? formData.name : t(formData.nameKey);
+    const habitDisplayName = 'name' in formData ? formData.name : t(formData.nameKey!);
     
     ui.editHabitModalTitle.textContent = isNew ? t('modalAddTitle') : t('modalEditTitle');
     nameInput.value = habitDisplayName;
