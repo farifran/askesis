@@ -40,6 +40,24 @@ export function hasSyncKey(): boolean {
     return hasLocalSyncKey();
 }
 
+// FIX: Add missing initNotifications function.
+/**
+ * Initializes the notification system listeners.
+ */
+export function initNotifications() {
+  pushToOneSignal((OneSignal: any) => {
+    // This listener ensures the UI is updated if the user changes
+    // notification permissions in the browser settings while the app is open.
+    OneSignal.Notifications.addEventListener('permissionChange', () => {
+        // Delay UI update to give the SDK time to update its internal state.
+        setTimeout(updateNotificationUI, 500);
+    });
+
+    // Update the UI on initial load in case the state is already set.
+    updateNotificationUI();
+  });
+}
+
 /**
  * Lida com um conflito de sincronização, onde o servidor tem uma versão mais recente dos dados.
  * Atualiza o estado local e a UI para corresponder à versão do servidor.
@@ -83,6 +101,76 @@ function resolveConflictWithServerState(serverPayload: ServerPayload) {
         });
 }
 
+// FIX: Refactor sync logic into a reusable async function to allow for immediate sync.
+/**
+ * Performs the actual network request to sync state to the cloud.
+ * This is separated from syncStateWithCloud to allow for immediate, non-debounced syncs.
+ * @param appState The application state to sync.
+ */
+async function performSync(appState: AppState) {
+    const syncKey = getSyncKey();
+    if (!syncKey) {
+        setSyncStatus('syncError');
+        console.error("Cannot sync without a sync key.");
+        return;
+    }
+
+    try {
+        const keyHash = await getSyncKeyHash();
+        if (!keyHash) {
+             throw new Error("Could not generate sync key hash for saving.");
+        }
+
+        const stateJSON = JSON.stringify(appState);
+        const encryptedState = await encrypt(stateJSON, syncKey);
+
+        const payload: ServerPayload = {
+            lastModified: appState.lastModified,
+            state: encryptedState,
+        };
+        
+        const response = await fetch(getApiUrl('/api/sync'), {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Sync-Key-Hash': keyHash
+            },
+            body: JSON.stringify(payload),
+        });
+
+        if (response.status === 409) {
+            // Conflict: server has newer data.
+            const serverPayload: ServerPayload = await response.json();
+            resolveConflictWithServerState(serverPayload);
+        } else if (!response.ok) {
+            // Other server error.
+            throw new Error(`Sync failed, status: ${response.status}`);
+        } else {
+            // Success.
+            setSyncStatus('syncSynced');
+            document.dispatchEvent(new CustomEvent('habitsChanged')); // Notify badge/etc to update
+        }
+    } catch (error) {
+        console.error("Error syncing state to cloud:", error);
+        setSyncStatus('syncError');
+    }
+}
+
+/**
+ * Reads the current state from localStorage and triggers an immediate sync to the cloud.
+ */
+async function syncLocalStateToCloud() {
+    const localData = localStorage.getItem(STATE_STORAGE_KEY);
+    if (localData) {
+        try {
+            const appState: AppState = JSON.parse(localData);
+            await performSync(appState);
+        } catch (e) {
+            console.error("Failed to parse local state for initial sync", e);
+            setSyncStatus('syncError');
+        }
+    }
+}
 
 export async function fetchStateFromCloud(): Promise<AppState | undefined> {
     if (!hasSyncKey()) return undefined;
@@ -119,6 +207,7 @@ export async function fetchStateFromCloud(): Promise<AppState | undefined> {
             const localData = localStorage.getItem(STATE_STORAGE_KEY);
             if (localData) {
                 // Aguardamos para garantir que a sincronização inicial seja concluída e para tratar quaisquer erros.
+                // FIX: Call the newly created syncLocalStateToCloud function.
                 await syncLocalStateToCloud();
             }
             return undefined;
@@ -136,13 +225,6 @@ export function syncStateWithCloud(appState: AppState) {
         setSyncStatus('syncInitial');
         return;
     }
-
-    const syncKey = getSyncKey();
-    if (!syncKey) {
-        setSyncStatus('syncError');
-        console.error("Cannot sync without a sync key.");
-        return;
-    }
     
     setSyncStatus('syncSaving');
 
@@ -150,190 +232,8 @@ export function syncStateWithCloud(appState: AppState) {
         clearTimeout(syncTimeout);
     }
 
-    syncTimeout = window.setTimeout(async () => {
-        try {
-            const keyHash = await getSyncKeyHash();
-            if (!keyHash) {
-                 throw new Error("Could not generate sync key hash for saving.");
-            }
-
-            const stateJSON = JSON.stringify(appState);
-            const encryptedState = await encrypt(stateJSON, syncKey);
-
-            const payload = {
-                lastModified: appState.lastModified,
-                state: encryptedState,
-            };
-            
-            const response = await fetch(getApiUrl('/api/sync'), {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Sync-Key-Hash': keyHash
-                },
-                body: JSON.stringify(payload),
-            });
-            
-            if (response.status === 409) {
-                const serverPayload = await response.json();
-                resolveConflictWithServerState(serverPayload);
-                return; // Para a execução após resolver o conflito.
-            }
-
-            if (response.ok) {
-                setSyncStatus('syncSynced');
-            } else {
-                throw new Error(`Failed to sync state, status: ${response.status}`);
-            }
-        } catch (error) {
-            console.error("Error syncing state to cloud:", error);
-            setSyncStatus('syncError');
-        }
+    // FIX: Use the refactored performSync function within the debounce timeout.
+    syncTimeout = window.setTimeout(() => {
+        performSync(appState);
     }, DEBOUNCE_DELAY);
-}
-
-// Função para fazer o upload único do estado local para a nuvem.
-export async function syncLocalStateToCloud() {
-    const localStateJSON = localStorage.getItem(STATE_STORAGE_KEY);
-    if (!localStateJSON) return;
-
-    const syncKey = getSyncKey();
-    if (!syncKey) {
-        throw new Error("Cannot perform initial sync without sync key.");
-    }
-
-    try {
-        const keyHash = await getSyncKeyHash();
-        if (!keyHash) {
-             throw new Error("Could not generate sync key hash for initial sync.");
-        }
-        
-        console.log("Found local state. Syncing to cloud...");
-        const localState: AppState = JSON.parse(localStateJSON);
-        
-        // Garante que o estado local tenha um timestamp antes de sincronizar, para compatibilidade com versões antigas
-        if (!localState.lastModified) {
-            localState.lastModified = Date.now();
-            localStorage.setItem(STATE_STORAGE_KEY, JSON.stringify(localState));
-        }
-
-        const stateJSON = JSON.stringify(localState);
-        const encryptedState = await encrypt(stateJSON, syncKey);
-
-        const payload = {
-            lastModified: localState.lastModified,
-            state: encryptedState,
-        };
-
-        const response = await fetch(getApiUrl('/api/sync'), {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Sync-Key-Hash': keyHash
-            },
-            body: JSON.stringify(payload),
-        });
-
-        if (response.status === 409) { // Lida com conflitos durante a sincronização inicial
-             const serverPayload = await response.json();
-             resolveConflictWithServerState(serverPayload);
-             return;
-        }
-
-        if (!response.ok) {
-            throw new Error(`Initial sync failed with status ${response.status}`);
-        }
-        console.log("Initial sync successful.");
-        setSyncStatus('syncSynced');
-
-    } catch (error) {
-        console.error("Error on initial sync to cloud:", error);
-        setSyncStatus('syncError');
-        // Lança o erro para que a função chamadora (fetchStateFromCloud) possa pegá-lo.
-        throw error;
-    }
-}
-
-
-// --- ONE SIGNAL NOTIFICATIONS ---
-export function updateOneSignalTags() {
-    pushToOneSignal((OneSignal: any) => {
-        // Só podemos enviar tags se o usuário tiver concedido permissão.
-        if (OneSignal.Notifications.permission !== 'granted') {
-            console.log('OneSignal: Permissão não concedida, pulando atualização de tags.');
-            return;
-        }
-
-        const today = getTodayUTC();
-        const todayISO = getTodayUTCIso();
-
-        const activeHabitsToday = state.habits.filter(h =>
-            !h.graduatedOn && shouldHabitAppearOnDate(h, today)
-        );
-
-        const tags: { [key: string]: boolean } = {
-            'has_habit_morning': false,
-            'has_habit_afternoon': false,
-            'has_habit_evening': false,
-        };
-
-        const timeToTagMap: Record<string, keyof typeof tags> = {
-            'Manhã': 'has_habit_morning',
-            'Tarde': 'has_habit_afternoon',
-            'Noite': 'has_habit_evening',
-        };
-
-        activeHabitsToday.forEach(habit => {
-            const scheduleForDay = getEffectiveScheduleForHabitOnDate(habit, todayISO);
-            scheduleForDay.forEach(time => {
-                const tagName = timeToTagMap[time];
-                if (tagName) {
-                    tags[tagName] = true;
-                }
-            });
-        });
-        
-        console.log('Atualizando tags do OneSignal:', tags);
-        OneSignal.User.addTags(tags);
-    });
-}
-
-/**
- * Inicializa o SDK do OneSignal e configura o estado inicial do toggle de notificação.
- */
-export function initNotifications() {
-    pushToOneSignal(function(OneSignal: any) {
-        OneSignal.init({
-            appId: "39454655-f1cd-4531-8ec5-d0f61eb1c478",
-            serviceWorkerPath: "sw.js",
-            promptOptions: {
-                customlink: {
-                    enabled: true,
-                    style: "button",
-                    size: "medium",
-                    text: {
-                        "subscribe": t('notificationEnableButton'),
-                        "unsubscribe": t('notificationDisableButton'),
-                    },
-                    selector: ".onesignal-customlink-container"
-                }
-            }
-        }).then(() => {
-            // Após a inicialização, defina o idioma e adicione os listeners
-            OneSignal.User.setLanguage(state.activeLanguageCode);
-
-            OneSignal.Notifications.addEventListener('permissionChange', (isGranted: boolean) => {
-                updateNotificationUI();
-                if (isGranted) {
-                    updateOneSignalTags();
-                }
-            });
-
-            document.addEventListener('habitsChanged', updateOneSignalTags);
-            
-            // Atualização inicial da UI e sincronização de tags
-            updateNotificationUI();
-            updateOneSignalTags();
-        });
-    });
 }

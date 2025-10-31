@@ -308,16 +308,8 @@ export function renderHabits() {
     });
 
     const emptyTimes = TIMES_OF_DAY.filter(time => !groupHasHabits[time]);
-    let targetTime: TimeOfDay | null = null;
-    if (groupHasHabits['Morning'] && !groupHasHabits['Afternoon'] && groupHasHabits['Evening']) {
-        targetTime = 'Afternoon';
-    } else if (!groupHasHabits['Morning']) {
-        targetTime = 'Morning';
-    } else if (!groupHasHabits['Afternoon']) {
-        targetTime = 'Afternoon';
-    } else if (!groupHasHabits['Evening']) {
-        targetTime = 'Evening';
-    }
+    // Simplificado: seleciona o primeiro horário vazio disponível como o alvo inteligente.
+    const targetTime: TimeOfDay | undefined = emptyTimes[0];
 
     TIMES_OF_DAY.forEach(time => {
         const wrapperEl = ui.habitContainer.querySelector(`.habit-group-wrapper[data-time-wrapper="${time}"]`);

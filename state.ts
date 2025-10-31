@@ -331,36 +331,6 @@ export function shouldHabitAppearOnDate(habit: Habit, date: Date): boolean {
     return true;
 }
 
-function getPreviousCompletedOccurrences(habit: Habit, startDate: Date, count: number): Date[] {
-    const dates: Date[] = [];
-    let currentDate = new Date(startDate);
-    const earliestDate = parseUTCIsoDate(habit.createdOn);
-
-    while (dates.length < count && currentDate > earliestDate) {
-        currentDate = addDays(currentDate, -1);
-
-        if (shouldHabitAppearOnDate(habit, currentDate)) {
-            const dayISO = toUTCIsoDateString(currentDate);
-            const dailyInfo = state.dailyData[dayISO]?.[habit.id];
-            const instances = dailyInfo?.instances || {};
-            const scheduleForDay = getEffectiveScheduleForHabitOnDate(habit, dayISO);
-
-            const statuses = scheduleForDay.map(time => instances[time]?.status ?? 'pending');
-            
-            const allCompleted = statuses.length > 0 && statuses.every(s => s === 'completed');
-            const hasPending = statuses.some(s => s === 'pending');
-
-            if (allCompleted) {
-                dates.push(new Date(currentDate));
-            } else if (hasPending) {
-                return []; // Streak broken
-            }
-        }
-    }
-    
-    return dates;
-}
-
 export function shouldShowPlusIndicator(dateISO: string, activeHabitsOnDate: Habit[]): boolean {
     const dailyInfo = state.dailyData[dateISO] || {};
 
@@ -393,8 +363,9 @@ export function shouldShowPlusIndicator(dateISO: string, activeHabitsOnDate: Hab
                 });
 
                 if (goalWasExceeded) {
-                    const previousCompletions = getPreviousCompletedOccurrences(habit, dateObj, 2);
-                    if (previousCompletions.length === 2) {
+                    const dayBefore = addDays(dateObj, -1);
+                    const streakBeforeToday = calculateHabitStreak(habit.id, toUTCIsoDateString(dayBefore));
+                    if (streakBeforeToday >= 2) {
                         hasExceededHabitWithStreak = true;
                     }
                 }

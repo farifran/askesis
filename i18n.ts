@@ -122,12 +122,12 @@ function updateUIText() {
     ui.aiModal.querySelector('.modal-close-btn')!.textContent = t('closeButton');
     
     ui.aiOptionsModal.querySelector('h2')!.textContent = t('modalAIOptionsTitle');
-    ui.aiOptionsModal.querySelector<HTMLSpanElement>('#ai-weekly-checkin-btn .ai-option-title')!.textContent = t('aiOptionWeeklyTitle');
-    ui.aiOptionsModal.querySelector<HTMLSpanElement>('#ai-weekly-checkin-btn .ai-option-desc')!.textContent = t('aiOptionWeeklyDesc');
-    ui.aiOptionsModal.querySelector<HTMLSpanElement>('#ai-monthly-review-btn .ai-option-title')!.textContent = t('aiOptionMonthlyTitle');
-    ui.aiOptionsModal.querySelector<HTMLSpanElement>('#ai-monthly-review-btn .ai-option-desc')!.textContent = t('aiOptionMonthlyDesc');
-    ui.aiOptionsModal.querySelector<HTMLSpanElement>('#ai-general-analysis-btn .ai-option-title')!.textContent = t('aiOptionGeneralTitle');
-    ui.aiOptionsModal.querySelector<HTMLSpanElement>('#ai-general-analysis-btn .ai-option-desc')!.textContent = t('aiOptionGeneralDesc');
+    ui.aiOptionsModal.querySelector<HTMLSpanElement>('[data-analysis-type="weekly"] .ai-option-title')!.textContent = t('aiOptionWeeklyTitle');
+    ui.aiOptionsModal.querySelector<HTMLSpanElement>('[data-analysis-type="weekly"] .ai-option-desc')!.textContent = t('aiOptionWeeklyDesc');
+    ui.aiOptionsModal.querySelector<HTMLSpanElement>('[data-analysis-type="monthly"] .ai-option-title')!.textContent = t('aiOptionMonthlyTitle');
+    ui.aiOptionsModal.querySelector<HTMLSpanElement>('[data-analysis-type="monthly"] .ai-option-desc')!.textContent = t('aiOptionMonthlyDesc');
+    ui.aiOptionsModal.querySelector<HTMLSpanElement>('[data-analysis-type="general"] .ai-option-title')!.textContent = t('aiOptionGeneralTitle');
+    ui.aiOptionsModal.querySelector<HTMLSpanElement>('[data-analysis-type="general"] .ai-option-desc')!.textContent = t('aiOptionGeneralDesc');
 
     ui.confirmModal.querySelector('h2')!.textContent = t('modalConfirmTitle');
     ui.confirmModal.querySelector('.modal-close-btn')!.textContent = t('cancelButton');

@@ -18,8 +18,6 @@
     "modalEditFormFrequencyLabel": "Frecuencia", "modalEditSaveButton": "Guardar Hábito", "modalStatusEnded": "(Finalizado)", "modalStatusGraduated": "(Graduado)",
     "notificationStatusEnabled": "Las notificaciones están activadas.",
     "notificationStatusDisabled": "Las notificaciones están bloqueadas. Debes cambiar los permisos en la configuración de tu navegador.",
-    "notificationEnableButton": "Activar Notificaciones",
-    "notificationDisableButton": "Desactivar Notificaciones",
     "habitSnoozed": "Pospuesto", "habitConsolidatedMessage": "¡✅ Hábito consolidado!", "habitSemiConsolidatedMessage": "Hábito semi-consolidado",
     "freqDaily": "Diario", "freqEvery2Days": "Cada 2 días", "freqEvery3Days": "Cada 3 días", "freqEvery4Days": "Cada 4 días", "freqEvery5Days": "Cada 5 días",
     "freqWeekly": "Semanal", "freqEvery2Weeks": "Cada 2 semanas", "freqEvery3Weeks": "Cada 3 semanas", "freqEvery4Weeks": "Cada 4 semanas",
