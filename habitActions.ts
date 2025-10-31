@@ -764,7 +764,8 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
         state.aiState = 'completed';
     } catch (error) {
         const errorMessage = error instanceof Error ? error.message : t('aiErrorUnknown');
-        ui.aiResponse.innerHTML = `<p class="ai-error-message">${t('aiErrorPrefix')}: ${errorMessage}</p>`;
+        const displayError = `${t('aiErrorPrefix') ? t('aiErrorPrefix') + ': ' : ''}${errorMessage}`;
+        ui.aiResponse.innerHTML = `<p class="ai-error-message">${displayError}</p>`;
         state.lastAIResult = null;
         state.lastAIError = errorMessage;
         state.aiState = 'error';
