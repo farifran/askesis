@@ -27,7 +27,7 @@ import {
     HabitTemplate,
     getEffectiveScheduleForHabitOnDate,
 } from './state';
-import { getTodayUTCIso, addDays, toUTCIsoDateString, parseUTCIsoDate, getTodayUTC, escapeHTML } from './utils';
+import { getTodayUTCIso, toUTCIsoDateString, parseUTCIsoDate, escapeHTML, pushToOneSignal } from './utils';
 import { ui } from './ui';
 import { t, getLocaleDayName, getHabitDisplayInfo, getTimeOfDayName } from './i18n';
 import { STOIC_QUOTES } from './quotes';
@@ -89,7 +89,7 @@ function calculateDayProgress(isoDate: string): { completedPercent: number, tota
 }
 
 
-export function createCalendarDayElement(date: Date): HTMLElement {
+function createCalendarDayElement(date: Date): HTMLElement {
     const todayISO = getTodayUTCIso();
     const isoDate = toUTCIsoDateString(date);
     const { completedPercent, totalPercent } = calculateDayProgress(isoDate);
@@ -478,8 +478,7 @@ export function renderStoicQuote() {
 export function updateNotificationUI() {
     // Esta função pode ser chamada antes da inicialização do OneSignal.
     // Esperamos que o objeto OneSignal esteja disponível.
-    window.OneSignalDeferred = window.OneSignalDeferred || [];
-    window.OneSignalDeferred.push((OneSignal: any) => {
+    pushToOneSignal((OneSignal: any) => {
         const permission = OneSignal.Notifications.permission;
         const isPushEnabled = OneSignal.User.PushSubscription.optedIn;
 
@@ -775,9 +774,11 @@ export function openEditModal(habitOrTemplate: Habit | PredefinedHabit | null) {
 
 export function updateHeaderTitle() {
     const selectedDate = parseUTCIsoDate(state.selectedDate);
-    const today = getTodayUTC();
-    const yesterday = addDays(today, -1);
-    const tomorrow = addDays(today, 1);
+    const today = parseUTCIsoDate(getTodayUTCIso());
+    const yesterday = new Date(today);
+    yesterday.setUTCDate(today.getUTCDate() - 1);
+    const tomorrow = new Date(today);
+    tomorrow.setUTCDate(today.getUTCDate() + 1);
     const isMobile = window.innerWidth < 768;
 
     ui.headerTitle.style.display = 'block';

@@ -106,6 +106,10 @@ function updateUIText() {
     ui.manageModalTitle.textContent = t('modalManageTitle');
     ui.habitListTitle.textContent = t('modalManageHabitsSubtitle');
     document.getElementById('label-language')!.textContent = t('modalManageLanguage');
+    ui.languagePrevBtn.setAttribute('aria-label', t('languagePrev_ariaLabel'));
+    ui.languageNextBtn.setAttribute('aria-label', t('languageNext_ariaLabel'));
+    ui.frequencyPrevBtn.setAttribute('aria-label', t('frequencyPrev_ariaLabel'));
+    ui.frequencyNextBtn.setAttribute('aria-label', t('frequencyNext_ariaLabel'));
     document.getElementById('label-sync')!.textContent = t('syncLabel');
     document.getElementById('label-notifications')!.textContent = t('modalManageNotifications');
     ui.notificationStatusDesc.textContent = t('modalManageNotificationsStaticDesc');
@@ -125,6 +129,7 @@ function updateUIText() {
     ui.viewKeyBtn.textContent = t('syncViewKey');
     ui.disableSyncBtn.textContent = t('syncDisable');
     
+    ui.aiModal.querySelector('h2')!.textContent = t('modalAITitle');
     ui.aiModal.querySelector('.modal-close-btn')!.textContent = t('closeButton');
     
     ui.aiOptionsModal.querySelector('h2')!.textContent = t('modalAIOptionsTitle');

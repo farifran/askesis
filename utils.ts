@@ -121,3 +121,12 @@ export function simpleMarkdownToHTML(text: string): string {
     closeLists();
     return html;
 }
+
+/**
+ * Encapsula a lógica para interagir com a API assíncrona do OneSignal.
+ * @param callback A função a ser executada assim que o SDK do OneSignal estiver pronto.
+ */
+export function pushToOneSignal(callback: (oneSignal: any) => void) {
+    window.OneSignalDeferred = window.OneSignalDeferred || [];
+    window.OneSignalDeferred.push(callback);
+}

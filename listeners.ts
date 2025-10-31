@@ -1,11 +1,11 @@
 import { state, saveState, TIMES_OF_DAY } from './state';
 import { addDays, parseUTCIsoDate, toUTCIsoDateString } from './utils';
 import { ui } from './ui';
+// FIX: Removed unused and unexported import 'createCalendarDayElement'.
 import {
     renderHabits,
     renderCalendar,
     updateHeaderTitle,
-    createCalendarDayElement,
     renderStoicQuote,
     showConfirmationModal,
     updateNotificationUI,
@@ -152,26 +152,6 @@ const setupGlobalListeners = () => {
                     newSelectedEl?.focus();
                 });
             }
-        }
-    });
-
-    // Keyboard navigation for habit groups (collapsing)
-    ui.habitContainer.addEventListener('keydown', e => {
-        if (e.key === 'Enter' || e.key === ' ') {
-            const target = e.target as HTMLElement;
-            const wrapper = target.closest<HTMLElement>('.habit-group-wrapper.is-collapsible');
-            if (wrapper) {
-                e.preventDefault();
-                wrapper.classList.toggle('is-collapsed');
-            }
-        }
-    });
-
-    ui.habitContainer.addEventListener('click', e => {
-        const target = e.target as HTMLElement;
-        const header = target.closest<HTMLElement>('.habit-group-wrapper.is-collapsible h2');
-        if (header) {
-            header.parentElement?.classList.toggle('is-collapsed');
         }
     });
 };

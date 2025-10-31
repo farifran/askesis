@@ -31,7 +31,7 @@ import {
 import { setLanguage, t, getHabitDisplayInfo } from './i18n';
 import { buildAIPrompt, fetchAIAnalysis } from './api';
 import { setupReelRotary } from './rotary';
-import { simpleMarkdownToHTML } from './utils';
+import { simpleMarkdownToHTML, pushToOneSignal } from './utils';
 
 export function setupModalListeners() {
     // --- Inicialização Geral de Modais ---
@@ -105,8 +105,7 @@ export function setupModalListeners() {
     
     // Toggle de Notificações
     ui.notificationToggle.addEventListener('change', async () => {
-        window.OneSignalDeferred = window.OneSignalDeferred || [];
-        window.OneSignalDeferred.push(async (OneSignal: any) => {
+        pushToOneSignal(async (OneSignal: any) => {
             const isPushEnabled = OneSignal.User.PushSubscription.optedIn;
             if (isPushEnabled) {
                 await OneSignal.User.PushSubscription.optOut();
@@ -271,9 +270,5 @@ export function setupModalListeners() {
     ui.aiWeeklyCheckinBtn.addEventListener('click', handleAIClick('weekly'));
     ui.aiMonthlyReviewBtn.addEventListener('click', handleAIClick('monthly'));
     ui.aiGeneralAnalysisBtn.addEventListener('click', handleAIClick('general'));
-    ui.aiNewAnalysisBtn.addEventListener('click', () => {
-        closeAIModal();
-        openModal(ui.aiOptionsModal);
-    });
 
 }

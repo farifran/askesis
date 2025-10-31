@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 import { AppState, STATE_STORAGE_KEY, loadState, state, shouldHabitAppearOnDate, getScheduleForDate, TIMES_OF_DAY, getEffectiveScheduleForHabitOnDate } from './state';
-import { getTodayUTC, getTodayUTCIso } from './utils';
+import { getTodayUTC, getTodayUTCIso, pushToOneSignal } from './utils';
 import { ui } from './ui';
 import { t, getHabitDisplayInfo } from './i18n';
 import { getSyncKey, getSyncKeyHash, hasLocalSyncKey } from './sync';
@@ -257,8 +257,7 @@ export async function syncLocalStateToCloud() {
 
 // --- ONE SIGNAL NOTIFICATIONS ---
 export function updateOneSignalTags() {
-    window.OneSignalDeferred = window.OneSignalDeferred || [];
-    window.OneSignalDeferred.push((OneSignal: any) => {
+    pushToOneSignal((OneSignal: any) => {
         // Só podemos enviar tags se o usuário tiver concedido permissão.
         if (OneSignal.Notifications.permission !== 'granted') {
             console.log('OneSignal: Permissão não concedida, pulando atualização de tags.');
@@ -303,8 +302,7 @@ export function updateOneSignalTags() {
  * Inicializa o SDK do OneSignal e configura o estado inicial do toggle de notificação.
  */
 export function initNotifications() {
-    window.OneSignalDeferred = window.OneSignalDeferred || [];
-    window.OneSignalDeferred.push(function(OneSignal: any) {
+    pushToOneSignal(function(OneSignal: any) {
         OneSignal.init({
             appId: "39454655-f1cd-4531-8ec5-d0f61eb1c478",
             serviceWorkerPath: "sw.js",

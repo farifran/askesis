@@ -26,9 +26,7 @@
     --color-red: #e74c3c;
     --color-red-hover: #c0392b;
     --color-yellow: #facc15;
-    --surface-light: #e0e0e0;
     --surface-light-hover: #d0d0d0;
-    --icon-dark: #333333;
 
     /* --- LAYOUT E ESPAÇAMENTO --- */
     --swipe-action-width: 60px;
@@ -57,7 +55,6 @@
     --z-index-content: 2;
     --z-index-indicator: 3;
     --z-index-tooltip: 10;
-    --z-index-offline-indicator: 500;
     --z-index-modal-overlay: 1000;
     --z-index-modal-content: 1001;
     --z-index-stacked-modal: 1010; /* Para modais que aparecem sobre outros modais */
@@ -111,8 +108,7 @@ body {
 #ai-response,
 #stoic-quote-display,
 #sync-key-text,
-#confirm-modal-text,
-#ai-response pre {
+#confirm-modal-text {
     -webkit-user-select: text;
     -moz-user-select: text;
     -ms-user-select: text;
@@ -1103,9 +1099,7 @@ input:disabled + .slider {
 #ai-response ul { list-style: none; padding-inline-start: 0; margin-block-start: var(--space-sm); }
 #ai-response li { margin-block-end: var(--space-sm); display: flex; align-items: center; gap: var(--space-sm); }
 #ai-response li svg { width: 20px; height: 20px; flex-shrink: 0; }
-#ai-new-analysis-btn { width: 100%; padding: var(--space-md); margin-block-start: var(--space-md); }
 #confirm-modal-text { color: var(--text-secondary); line-height: 1.6; margin-block-end: var(--space-sm); }
-.loader { text-align: center; padding: 20px; font-style: italic; color: var(--text-tertiary); }
 
 /* Modal: Opções da IA */
 #ai-options-modal .modal-content { gap: 20px; }

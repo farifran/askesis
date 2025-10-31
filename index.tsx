@@ -4,10 +4,9 @@
 */
 import { inject } from '@vercel/analytics';
 import './index.css';
-import { AppState, loadState, state } from './state';
-import { addDays, getTodayUTC } from './utils';
+import { loadState, state } from './state';
 import { ui, initUI } from './ui';
-import { renderApp, updateHeaderTitle, initLanguageFilter, renderLanguageFilter, renderAINotificationState, openModal, initFrequencyFilter } from './render';
+import { renderApp, updateHeaderTitle, initLanguageFilter, renderLanguageFilter, renderAINotificationState, initFrequencyFilter } from './render';
 import { setupEventListeners } from './listeners';
 import { initI18n } from './i18n';
 import { createDefaultHabit } from './habitActions';

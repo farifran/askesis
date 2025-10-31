@@ -21,11 +21,9 @@ import {
     HabitSchedule,
     getScheduleForDate,
     PREDEFINED_HABITS,
-    getSmartGoalForHabit,
     invalidateStreakCache,
     getEffectiveScheduleForHabitOnDate,
 } from './state';
-// FIX: Import `renderApp` to resolve "Cannot find name" errors.
 import {
     renderHabits,
     showUndoToast,
@@ -37,7 +35,6 @@ import {
     renderCalendar,
     updateHabitCardElement,
     updateCalendarDayElement,
-    renderApp,
 } from './render';
 import { t, getHabitDisplayInfo, getTimeOfDayName } from './i18n';
 import { ui } from './ui';
@@ -360,7 +357,9 @@ export function requestHabitPermanentDeletion(habitId: string) {
             });
             saveState();
             setupManageModal();
-            renderApp();
+            renderHabits();
+            renderCalendar();
+            renderChart();
             updateAppBadge();
             document.dispatchEvent(new CustomEvent('habitsChanged'));
         },
@@ -585,7 +584,15 @@ export function resetApplicationData() {
     state.pending21DayHabitIds = [];
     state.pendingConsolidationHabitIds = [];
     saveState();
-    renderApp();
+    // Re-render the app with default state
+    const waterHabitTemplate = PREDEFINED_HABITS.find(h => h.isDefault);
+    if (waterHabitTemplate) {
+        addHabit(waterHabitTemplate);
+    }
+    saveState();
+    renderHabits();
+    renderCalendar();
+    renderChart();
     updateAppBadge();
     closeModal(ui.manageModal);
 }
@@ -600,7 +607,9 @@ export function graduateHabit(habitId: string) {
             habit.graduatedOn = getTodayUTCIso();
             saveState();
             setupManageModal();
-            renderApp();
+            renderHabits();
+            renderCalendar();
+            renderChart();
             updateAppBadge();
             document.dispatchEvent(new CustomEvent('habitsChanged'));
         },

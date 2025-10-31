@@ -15,12 +15,10 @@ type UIElements = {
     createCustomHabitBtn: HTMLElement;
     aiEvalBtn: HTMLButtonElement;
     aiModal: HTMLElement;
-    aiModalTitle: HTMLElement;
     aiOptionsModal: HTMLElement;
     aiWeeklyCheckinBtn: HTMLButtonElement;
     aiMonthlyReviewBtn: HTMLButtonElement;
     aiGeneralAnalysisBtn: HTMLButtonElement;
-    aiNewAnalysisBtn: HTMLButtonElement;
     confirmModal: HTMLElement;
     habitList: HTMLElement;
     aiResponse: HTMLElement;
@@ -47,7 +45,6 @@ type UIElements = {
     frequencyReel: HTMLElement;
     frequencyNextBtn: HTMLButtonElement;
     syncStatus: HTMLElement;
-    syncSection: HTMLElement;
     syncInactiveView: HTMLElement;
     enableSyncBtn: HTMLButtonElement;
     enterKeyViewBtn: HTMLButtonElement;
@@ -86,12 +83,10 @@ export function initUI(): void {
         createCustomHabitBtn: document.getElementById('create-custom-habit-btn')!,
         aiEvalBtn: document.getElementById('ai-eval-btn') as HTMLButtonElement,
         aiModal: document.getElementById('ai-modal')!,
-        aiModalTitle: document.getElementById('ai-modal-title')!,
         aiOptionsModal: document.getElementById('ai-options-modal')!,
         aiWeeklyCheckinBtn: document.getElementById('ai-weekly-checkin-btn') as HTMLButtonElement,
         aiMonthlyReviewBtn: document.getElementById('ai-monthly-review-btn') as HTMLButtonElement,
         aiGeneralAnalysisBtn: document.getElementById('ai-general-analysis-btn') as HTMLButtonElement,
-        aiNewAnalysisBtn: document.getElementById('ai-new-analysis-btn') as HTMLButtonElement,
         confirmModal: document.getElementById('confirm-modal')!,
         habitList: document.getElementById('habit-list')!,
         aiResponse: document.getElementById('ai-response')!,
@@ -118,7 +113,6 @@ export function initUI(): void {
         frequencyReel: document.getElementById('frequency-reel')!,
         frequencyNextBtn: document.getElementById('frequency-next') as HTMLButtonElement,
         syncStatus: document.getElementById('sync-status')!,
-        syncSection: document.getElementById('sync-section')!,
         syncInactiveView: document.getElementById('sync-inactive-view')!,
         enableSyncBtn: document.getElementById('enable-sync-btn') as HTMLButtonElement,
         enterKeyViewBtn: document.getElementById('enter-key-view-btn') as HTMLButtonElement,
