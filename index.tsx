@@ -6,7 +6,7 @@ import { inject } from '@vercel/analytics';
 import './index.css';
 import { loadState, state } from './state';
 import { ui, initUI } from './ui';
-import { renderApp, updateHeaderTitle, initLanguageFilter, renderLanguageFilter, renderAINotificationState, initFrequencyFilter } from './render';
+import { renderApp, renderLanguageFilter } from './render';
 import { setupEventListeners } from './listeners';
 import { initI18n } from './i18n';
 import { createDefaultHabit } from './habitActions';
@@ -37,6 +37,7 @@ const init = async () => {
     registerServiceWorker(); // Registra o Service Worker para PWA/offline
     
     // A inicialização do i18n primeiro garante que o texto esteja disponível
+    // e também lida com a renderização inicial da UI.
     await initI18n(); 
 
     // Inicializa as notificações APÓS o i18n, para que qualquer texto de prompt esteja traduzido
@@ -63,12 +64,10 @@ const init = async () => {
         createDefaultHabit();
     }
     
-    initLanguageFilter();
-    initFrequencyFilter();
+    // As funções init* e updateHeaderTitle* já foram chamadas dentro de initI18n.
+    // renderApp() é chamado aqui para garantir que a UI seja renderizada com o estado carregado.
     renderLanguageFilter();
     renderApp();
-    updateHeaderTitle();
-    renderAINotificationState(); // Garante que o estado da notificação seja renderizado no carregamento
     
     // Usamos requestAnimationFrame para garantir que o navegador tenha concluído o layout
     // e a pintura antes de tentarmos rolar. Isso é mais confiável do que um setTimeout(0).

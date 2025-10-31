@@ -8,13 +8,13 @@
  * @param prompt The main prompt for the AI.
  * @param systemInstruction The system instruction for the AI.
  * @param onStreamUpdate A callback function that receives chunks of the response as they arrive.
- * @returns A promise that resolves with the full text of the AI's response.
+ * @returns A promise that resolves when the stream is complete.
  */
 export async function analyzeHabitData(
     prompt: string,
     systemInstruction: string,
     onStreamUpdate: (chunk: string) => void
-): Promise<string> {
+): Promise<void> {
     const response = await fetch('/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -33,16 +33,12 @@ export async function analyzeHabitData(
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
-    let fullText = '';
 
     while (true) {
         const { done, value } = await reader.read();
         if (done) break;
         
         const chunk = decoder.decode(value, { stream: true });
-        fullText += chunk;
         onStreamUpdate(chunk); // Callback for real-time UI updates
     }
-
-    return fullText;
 }

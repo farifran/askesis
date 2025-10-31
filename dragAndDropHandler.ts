@@ -1,10 +1,6 @@
-import { ui } from './ui';
-import { handleHabitDrop, reorderHabit } from './habitActions';
 import { isCurrentlySwiping } from './swipeHandler';
+import { handleHabitDrop, reorderHabit } from './habitActions';
 import { state, TimeOfDay, getScheduleForDate } from './state';
-import { getHabitDisplayInfo, t } from './i18n';
-import { showInlineNotice } from './render';
-import { parseUTCIsoDate } from './utils';
 
 export function setupDragAndDropHandler(habitContainer: HTMLElement) {
     let draggedElement: HTMLElement | null = null;

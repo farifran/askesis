@@ -1,20 +1,17 @@
-import { state, saveState, TIMES_OF_DAY } from './state';
-import { addDays, parseUTCIsoDate, toUTCIsoDateString, debounce } from './utils';
+import { state } from './state';
+import { toUTCIsoDateString, debounce } from './utils';
 import { ui } from './ui';
 import {
     renderHabits,
     renderCalendar,
     updateHeaderTitle,
     renderStoicQuote,
-    showConfirmationModal,
-    updateNotificationUI,
 } from './render';
 import { setupModalListeners } from './modalListeners';
 import { setupHabitCardListeners } from './habitCardListeners';
 import { setupSwipeHandler } from './swipeHandler';
 import { setupDragAndDropHandler } from './dragAndDropHandler';
 import { handleUndoDelete, completeAllHabitsForDate, snoozeAllHabitsForDate } from './habitActions';
-import { t } from './i18n';
 import { renderChart } from './chart';
 import { updateAppBadge } from './badge';
 

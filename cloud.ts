@@ -2,10 +2,10 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-import { AppState, STATE_STORAGE_KEY, loadState, state, shouldHabitAppearOnDate, getScheduleForDate, TIMES_OF_DAY, getEffectiveScheduleForHabitOnDate } from './state';
+import { AppState, STATE_STORAGE_KEY, loadState, state, shouldHabitAppearOnDate, getEffectiveScheduleForHabitOnDate } from './state';
 import { getTodayUTC, getTodayUTCIso, pushToOneSignal } from './utils';
 import { ui } from './ui';
-import { t, getHabitDisplayInfo } from './i18n';
+import { t } from './i18n';
 import { getSyncKey, getSyncKeyHash, hasLocalSyncKey } from './sync';
 import { renderApp, updateNotificationUI } from './render';
 import { encrypt, decrypt } from './crypto';
