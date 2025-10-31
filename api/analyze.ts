@@ -57,7 +57,7 @@ export default async function handler(req: Request) {
         // REATORAÇÃO: Em vez de transmitir para o cliente, agregue a resposta aqui no servidor.
         // Isso é mais robusto contra erros de rede intermediários que causam "Load failed" no cliente.
         let fullText = '';
-        for await (const chunk of geminiResponse.stream) {
+        for await (const chunk of geminiResponse) {
             const text = chunk.text;
             if (text) {
                 fullText += text;
