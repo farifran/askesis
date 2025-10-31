@@ -58,10 +58,8 @@ export function initFrequencyFilter() {
     updateReelRotaryARIA(ui.frequencyViewport, 0, freqLabels, 'frequency_ariaLabel');
 }
 
-function calculateDayProgress(isoDate: string): { completedPercent: number, totalPercent: number } {
+function calculateDayProgress(isoDate: string, activeHabitsOnDate: Habit[]): { completedPercent: number, totalPercent: number } {
     const dailyInfo = getHabitDailyInfoForDate(isoDate);
-    const dateObj = parseUTCIsoDate(isoDate);
-    const activeHabitsOnDate = state.habits.filter(h => shouldHabitAppearOnDate(h, dateObj));
     
     let totalInstances = 0;
     let completedInstances = 0;
@@ -92,8 +90,13 @@ function calculateDayProgress(isoDate: string): { completedPercent: number, tota
 function createCalendarDayElement(date: Date): HTMLElement {
     const todayISO = getTodayUTCIso();
     const isoDate = toUTCIsoDateString(date);
-    const { completedPercent, totalPercent } = calculateDayProgress(isoDate);
-    const showPlus = shouldShowPlusIndicator(isoDate);
+    const dateObj = parseUTCIsoDate(isoDate);
+    
+    // Otimização: Filtra os hábitos ativos para este dia apenas uma vez.
+    const activeHabitsOnDate = state.habits.filter(h => shouldHabitAppearOnDate(h, dateObj));
+
+    const { completedPercent, totalPercent } = calculateDayProgress(isoDate, activeHabitsOnDate);
+    const showPlus = shouldShowPlusIndicator(isoDate, activeHabitsOnDate);
 
     const dayItem = document.createElement('div');
     dayItem.className = `day-item ${isoDate === state.selectedDate ? 'selected' : ''} ${isoDate === todayISO ? 'today' : ''}`;
@@ -556,29 +559,32 @@ function getHabitStatusForSorting(habit: Habit): 'active' | 'ended' | 'graduated
 }
 
 export function setupManageModal() {
-    const habitsToDisplay = [...state.habits];
+    // Otimização: calcula status e nome de cada hábito uma única vez.
+    const habitsForModal = state.habits.map(habit => {
+        const { name } = getHabitDisplayInfo(habit);
+        return {
+            habit,
+            status: getHabitStatusForSorting(habit),
+            name: name
+        };
+    });
 
     const statusOrder = { 'active': 0, 'ended': 1, 'graduated': 2 };
-    
-    habitsToDisplay.sort((a, b) => {
-        const statusA = getHabitStatusForSorting(a);
-        const statusB = getHabitStatusForSorting(b);
 
-        const statusDifference = statusOrder[statusA] - statusOrder[statusB];
+    // Ordena o array com base no status pré-calculado e, em seguida, no nome.
+    habitsForModal.sort((a, b) => {
+        const statusDifference = statusOrder[a.status] - statusOrder[b.status];
         if (statusDifference !== 0) {
             return statusDifference;
         }
-        
-        // Se os status forem os mesmos, ordena por nome.
-        return getHabitDisplayInfo(a).name.localeCompare(getHabitDisplayInfo(b).name);
+        return a.name.localeCompare(b.name);
     });
-    
-    ui.habitList.innerHTML = habitsToDisplay.map(habit => {
-        const status = getHabitStatusForSorting(habit);
+
+    // Mapeia o array ordenado para gerar o HTML, reutilizando os dados pré-calculados.
+    ui.habitList.innerHTML = habitsForModal.map(({ habit, status, name }) => {
         const streak = calculateHabitStreak(habit.id, getTodayUTCIso());
         const isConsolidated = streak >= STREAK_CONSOLIDATED;
-        const { name } = getHabitDisplayInfo(habit);
-
+        
         let actionButtons = '', statusClass = '', statusText = '';
 
         switch(status) {

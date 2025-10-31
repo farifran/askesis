@@ -180,10 +180,6 @@ export function setupModalListeners() {
     });
     
     // --- Modais de IA ---
-    const handleAIClick = (analysisType: 'weekly' | 'monthly' | 'general') => {
-        return () => performAIAnalysis(analysisType);
-    };
-
     ui.aiEvalBtn.addEventListener('click', () => {
         if ((state.aiState === 'completed' || state.aiState === 'error') && !state.hasSeenAIResult) {
             ui.aiResponse.innerHTML = state.lastAIResult 
@@ -239,9 +235,13 @@ export function setupModalListeners() {
     });
     ui.aiModal.querySelector<HTMLElement>('.modal-close-btn')?.addEventListener('click', closeAIModal);
 
-
-    ui.aiWeeklyCheckinBtn.addEventListener('click', handleAIClick('weekly'));
-    ui.aiMonthlyReviewBtn.addEventListener('click', handleAIClick('monthly'));
-    ui.aiGeneralAnalysisBtn.addEventListener('click', handleAIClick('general'));
-
+    // REATORAÇÃO: Listener único para as opções de IA
+    const aiOptionsList = ui.aiOptionsModal.querySelector('.ai-options-list');
+    aiOptionsList?.addEventListener('click', (e) => {
+        const button = (e.target as HTMLElement).closest<HTMLButtonElement>('.ai-option-btn');
+        const analysisType = button?.dataset.analysisType as 'weekly' | 'monthly' | 'general' | undefined;
+        if (analysisType) {
+            performAIAnalysis(analysisType);
+        }
+    });
 }

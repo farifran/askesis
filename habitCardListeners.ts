@@ -1,5 +1,5 @@
 import { ui } from './ui';
-import { state, Habit, getSmartGoalForHabit, TimeOfDay } from './state';
+import { state, Habit, getCurrentGoalForInstance, TimeOfDay } from './state';
 import { openNotesModal, getUnitString, formatGoalForDisplay } from './render';
 import {
     toggleHabitStatus,
@@ -15,9 +15,7 @@ function createGoalInput(habit: Habit, time: TimeOfDay, wrapper: HTMLElement) {
     if (controls?.querySelector('input')) return; // Já está no modo de edição
 
     const habitId = habit.id;
-    const dayHabitData = state.dailyData[state.selectedDate]?.[habitId]?.instances[time];
-    const smartGoal = getSmartGoalForHabit(habit, state.selectedDate, time);
-    const currentGoal = dayHabitData?.goalOverride ?? smartGoal;
+    const currentGoal = getCurrentGoalForInstance(habit, state.selectedDate, time);
 
     const originalContent = wrapper.innerHTML;
     
@@ -49,12 +47,6 @@ function createGoalInput(habit: Habit, time: TimeOfDay, wrapper: HTMLElement) {
 
 export function setupHabitCardListeners() {
     ui.habitContainer.addEventListener('click', e => {
-        // Previne a ação de clique se um deslize (swipe) acabou de acontecer,
-        // evitando que a mudança de status seja acionada acidentalmente.
-        if (isCurrentlySwiping()) {
-            return;
-        }
-
         const target = e.target as HTMLElement;
         const card = target.closest<HTMLElement>('.habit-card');
         if (!card) return;
@@ -84,35 +76,13 @@ export function setupHabitCardListeners() {
             const habit = state.habits.find(h => h.id === habitId);
             if (!habit || (habit.goal.type !== 'pages' && habit.goal.type !== 'minutes')) return;
     
-            const dayInstanceData = state.dailyData[state.selectedDate]?.[habitId]?.instances[time];
-            const smartGoal = getSmartGoalForHabit(habit, state.selectedDate, time);
-            const currentGoal = dayInstanceData?.goalOverride ?? smartGoal;
+            const currentGoal = getCurrentGoalForInstance(habit, state.selectedDate, time);
             
             const newGoal = (action === 'increment') 
                 ? currentGoal + GOAL_STEP 
                 : Math.max(1, currentGoal - GOAL_STEP);
 
-            const wrapper = controlBtn.closest('.habit-goal-controls');
-            const progressEl = wrapper?.querySelector<HTMLElement>('.progress');
-            const unitEl = wrapper?.querySelector<HTMLElement>('.unit');
-
-            // Animação e atualização visual imediata
-            if (progressEl && newGoal !== currentGoal) {
-                const animClass = newGoal > currentGoal ? 'goal-increased' : 'goal-decreased';
-                progressEl.classList.add(animClass);
-                progressEl.addEventListener('animationend', () => {
-                    progressEl.classList.remove(animClass);
-                }, { once: true });
-            }
-            
-            if (progressEl) {
-                progressEl.textContent = formatGoalForDisplay(newGoal);
-            }
-            if (unitEl) {
-                unitEl.textContent = getUnitString(habit, newGoal);
-            }
-
-            // Ação: Atualiza o estado. A renderização agora é tratada dentro de updateGoalOverride.
+            // Ação: Atualiza o estado. A renderização é tratada dentro de updateGoalOverride.
             updateGoalOverride(habitId, state.selectedDate, time, newGoal);
 
             return;

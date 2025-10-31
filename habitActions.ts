@@ -79,14 +79,11 @@ function updateHabitSchedule(
     const lastSchedule = originalHabit.scheduleHistory[originalHabit.scheduleHistory.length - 1];
 
     const newSchedule: HabitSchedule = {
+        ...lastSchedule,
+        ...updates,
         startDate: changeDateISO,
         scheduleAnchor: changeDateISO,
-        name: lastSchedule.name,
-        subtitle: lastSchedule.subtitle,
-        nameKey: lastSchedule.nameKey,
-        subtitleKey: lastSchedule.subtitleKey,
-        times: updates.times ?? lastSchedule.times,
-        frequency: updates.frequency ?? lastSchedule.frequency,
+        endDate: undefined,
     };
     
     lastSchedule.endDate = changeDateISO;
@@ -599,12 +596,11 @@ function generateDailyHabitSummary(date: Date): string | null {
     if (habitsOnThisDay.length === 0) return null;
 
     const dayEntries = habitsOnThisDay.map(habit => {
-        const dailyInfo = dailyInfoByHabit[habit.id];
         const scheduleForDay = getEffectiveScheduleForHabitOnDate(habit, isoDate);
         if (scheduleForDay.length === 0) return '';
         
         const { name } = getHabitDisplayInfo(habit);
-        const habitInstances = dailyInfo?.instances || {};
+        const habitInstances = dailyInfoByHabit[habit.id]?.instances || {};
 
         const statusDetails = scheduleForDay.map(time => {
             const instance = habitInstances[time];
@@ -733,7 +729,7 @@ function buildAIPrompt(analysisType: 'weekly' | 'monthly' | 'general'): { prompt
 export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'general') {
     state.aiState = 'loading';
     renderAINotificationState();
-    ui.aiResponse.innerHTML = '<div class="spinner"></div>'; // Mostra um spinner
+    ui.aiResponse.innerHTML = ''; // Limpa o conteúdo anterior
     closeModal(ui.aiOptionsModal);
     openModal(ui.aiModal);
 

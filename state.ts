@@ -361,61 +361,48 @@ function getPreviousCompletedOccurrences(habit: Habit, startDate: Date, count: n
     return dates;
 }
 
-export function shouldShowPlusIndicator(dateISO: string): boolean {
-    const dateObj = parseUTCIsoDate(dateISO);
+export function shouldShowPlusIndicator(dateISO: string, activeHabitsOnDate: Habit[]): boolean {
     const dailyInfo = state.dailyData[dateISO] || {};
-    const activeHabitsOnDate = state.habits.filter(h => shouldHabitAppearOnDate(h, dateObj));
 
     if (activeHabitsOnDate.length === 0) return false;
 
-    // 1. Prerequisite: Check if ALL active habits for the day are completed.
-    const allHabitsCompleted = activeHabitsOnDate.every(habit => {
+    const dateObj = parseUTCIsoDate(dateISO);
+    let allHabitsCompleted = true; // Assume true until proven otherwise
+    let hasExceededHabitWithStreak = false; // Tracks if we found a valid candidate
+
+    for (const habit of activeHabitsOnDate) {
         const habitDailyInfo = dailyInfo[habit.id];
         const scheduleForDay = getEffectiveScheduleForHabitOnDate(habit, dateISO);
         const instances = habitDailyInfo?.instances || {};
 
-        // If a habit is scheduled but has no instance data, it's not complete.
-        if (scheduleForDay.length > 0 && Object.keys(instances).length < scheduleForDay.length) {
-            return false;
+        // Check if this habit is fully completed
+        const isHabitCompleted = scheduleForDay.length > 0 && scheduleForDay.every(time => instances[time]?.status === 'completed');
+
+        if (!isHabitCompleted) {
+            allHabitsCompleted = false;
+            break; // Prerequisite failed, no need to check other habits.
         }
-        
-        // Every scheduled instance must be 'completed'.
-        return scheduleForDay.every(time => instances[time]?.status === 'completed');
-    });
 
-    if (!allHabitsCompleted) {
-        return false;
+        // If the habit is completed, check if its goal was exceeded and if it has a streak.
+        // We only need to find one such habit.
+        if (!hasExceededHabitWithStreak) {
+            if (habit.goal.type === 'pages' || habit.goal.type === 'minutes') {
+                const goalWasExceeded = scheduleForDay.some(time => {
+                    const instance = instances[time];
+                    return instance?.goalOverride !== undefined && instance.goalOverride > (habit.goal.total ?? 0);
+                });
+
+                if (goalWasExceeded) {
+                    const previousCompletions = getPreviousCompletedOccurrences(habit, dateObj, 2);
+                    if (previousCompletions.length === 2) {
+                        hasExceededHabitWithStreak = true;
+                    }
+                }
+            }
+        }
     }
 
-    // 2. Find habits where the goal was exceeded.
-    const goalExceededHabits = activeHabitsOnDate.filter(habit => {
-        if (habit.goal.type !== 'pages' && habit.goal.type !== 'minutes') return false;
-        
-        const habitDailyInfo = dailyInfo[habit.id];
-        if (!habitDailyInfo) return false; // Should be present due to the previous check
-        
-        const scheduleForDay = getEffectiveScheduleForHabitOnDate(habit, dateISO);
-
-        return scheduleForDay.some(time => {
-            const instance = habitDailyInfo.instances[time];
-            // Status check is redundant because of the prerequisite, but good for safety.
-            return instance?.status === 'completed' &&
-                   instance.goalOverride !== undefined &&
-                   instance.goalOverride > (habit.goal.total ?? 0);
-        });
-    });
-
-    if (goalExceededHabits.length === 0) {
-        return false;
-    }
-
-    // 3. Check if at least one of the exceeded habits has the required streak.
-    const hasExceededHabitWithStreak = goalExceededHabits.some(habit => {
-        const previousCompletions = getPreviousCompletedOccurrences(habit, dateObj, 2);
-        return previousCompletions.length === 2;
-    });
-
-    return hasExceededHabitWithStreak;
+    return allHabitsCompleted && hasExceededHabitWithStreak;
 }
 
 export function getSmartGoalForHabit(habit: Habit, dateISO: string, time: TimeOfDay): number {
@@ -449,6 +436,19 @@ export function getSmartGoalForHabit(habit: Habit, dateISO: string, time: TimeOf
     
     const sum = consecutiveExceededGoals.reduce((a, b) => a + b, 0);
     return Math.round(sum / 3);
+}
+
+/**
+ * Retorna o valor da meta atual para uma instância de hábito, considerando substituições e metas inteligentes.
+ * @param habit O hábito em questão.
+ * @param date A data (string ISO) da instância.
+ * @param time O horário (TimeOfDay) da instância.
+ * @returns O valor numérico da meta atual.
+ */
+export function getCurrentGoalForInstance(habit: Habit, date: string, time: TimeOfDay): number {
+    const dayInstanceData = state.dailyData[date]?.[habit.id]?.instances[time];
+    const smartGoal = getSmartGoalForHabit(habit, date, time);
+    return dayInstanceData?.goalOverride ?? smartGoal;
 }
 
 export function calculateHabitStreak(habitId: string, dateISO: string): number {
