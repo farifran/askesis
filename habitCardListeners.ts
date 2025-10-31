@@ -3,7 +3,7 @@ import { state, Habit, getCurrentGoalForInstance, TimeOfDay } from './state';
 import { openNotesModal, getUnitString, formatGoalForDisplay } from './render';
 import {
     toggleHabitStatus,
-    updateGoalOverride,
+    setGoalOverride,
     requestHabitTimeRemoval,
 } from './habitActions';
 
@@ -26,7 +26,18 @@ function createGoalInput(habit: Habit, time: TimeOfDay, wrapper: HTMLElement) {
     const save = () => {
         const newGoal = parseInt(input.value, 10);
         if (!isNaN(newGoal) && newGoal > 0) {
-            updateGoalOverride(habitId, state.selectedDate, time, newGoal);
+            // A ação de estado agora só atualiza o estado, a UI será atualizada pelo listener.
+            setGoalOverride(habitId, state.selectedDate, time, newGoal);
+            // Atualiza a UI localmente após salvar.
+            const progressEl = wrapper.querySelector<HTMLElement>('.progress');
+            const unitEl = wrapper.querySelector<HTMLElement>('.unit');
+            if(progressEl && unitEl) {
+                progressEl.textContent = formatGoalForDisplay(newGoal);
+                unitEl.textContent = getUnitString(habit, newGoal);
+            } else {
+                // Se os elementos não existirem mais (caso raro), restaura o conteúdo.
+                 wrapper.innerHTML = originalContent;
+            }
         } else {
              // Se o valor for inválido, restaura o conteúdo original para evitar um estado vazio.
             wrapper.innerHTML = originalContent;
@@ -37,7 +48,7 @@ function createGoalInput(habit: Habit, time: TimeOfDay, wrapper: HTMLElement) {
     input.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
             e.preventDefault();
-            save();
+            input.blur(); // Aciona o evento 'blur' para salvar
         } else if (e.key === 'Escape') {
             wrapper.innerHTML = originalContent;
         }
@@ -70,39 +81,41 @@ export function setupHabitCardListeners() {
         const controlBtn = target.closest<HTMLElement>('.goal-control-btn');
         if (controlBtn && habitId && time) {
             e.stopPropagation(); // Impede que o clique se propague para o card
-            const action = controlBtn.dataset.action as 'increment' | 'decrement';
             
             const habit = state.habits.find(h => h.id === habitId);
             if (!habit || (habit.goal.type !== 'pages' && habit.goal.type !== 'minutes')) return;
-    
-            const currentGoal = getCurrentGoalForInstance(habit, state.selectedDate, time);
             
+            // REFACTOR [2024-08-25]: A lógica de UI (atualização de texto e animação) foi consolidada aqui.
+            // A função de ação agora apenas lida com o estado, melhorando a separação de responsabilidades.
+            const action = controlBtn.dataset.action as 'increment' | 'decrement';
+            const goalWrapper = controlBtn.closest('.habit-goal-controls')?.querySelector<HTMLElement>('.goal-value-wrapper');
+            if (!goalWrapper) return;
+
+            const currentGoal = getCurrentGoalForInstance(habit, state.selectedDate, time);
             const newGoal = (action === 'increment') 
                 ? currentGoal + GOAL_STEP 
                 : Math.max(1, currentGoal - GOAL_STEP);
 
-            // Ação: Atualiza o estado. A renderização é tratada dentro de updateGoalOverride.
-            updateGoalOverride(habitId, state.selectedDate, time, newGoal);
-
-            // Após a atualização do estado e a nova renderização, encontre o elemento novamente para aplicar a animação.
-            const updatedCard = ui.habitContainer.querySelector(`.habit-card[data-habit-id="${habitId}"][data-time="${time}"]`);
-            const goalWrapper = updatedCard?.querySelector<HTMLElement>('.goal-value-wrapper');
+            // Etapa 1: Chama a ação para atualizar o estado.
+            setGoalOverride(habitId, state.selectedDate, time, newGoal);
     
-            if (goalWrapper) {
-                const animationClass = action === 'increment' ? 'increase' : 'decrease';
-                
-                // Remove quaisquer classes de animação existentes para reiniciar a animação se for clicado rapidamente
-                goalWrapper.classList.remove('increase', 'decrease');
-                
-                // Precisamos de um pequeno atraso para permitir que o navegador remova a classe antes de adicioná-la novamente.
-                // requestAnimationFrame é uma boa maneira de esperar pelo próximo frame.
-                requestAnimationFrame(() => {
-                    goalWrapper.classList.add(animationClass);
-                    goalWrapper.addEventListener('animationend', () => {
-                        goalWrapper.classList.remove(animationClass);
-                    }, { once: true });
-                });
+            // Etapa 2: Atualiza cirurgicamente a UI neste listener.
+            const progressEl = goalWrapper.querySelector<HTMLElement>('.progress');
+            const unitEl = goalWrapper.querySelector<HTMLElement>('.unit');
+            if (progressEl && unitEl) {
+                progressEl.textContent = formatGoalForDisplay(newGoal);
+                unitEl.textContent = getUnitString(habit, newGoal);
             }
+            
+            // Etapa 3: Aplica a animação de feedback visual.
+            const animationClass = action === 'increment' ? 'increase' : 'decrease';
+            goalWrapper.classList.remove('increase', 'decrease');
+            requestAnimationFrame(() => {
+                goalWrapper.classList.add(animationClass);
+                goalWrapper.addEventListener('animationend', () => {
+                    goalWrapper.classList.remove(animationClass);
+                }, { once: true });
+            });
 
             return;
         }

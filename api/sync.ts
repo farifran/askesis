@@ -27,6 +27,16 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'Content-Type, X-Sync-Key-Hash',
 };
 
+// REFACTOR [2024-08-08]: Introduz a função createErrorResponse para centralizar
+// a criação de respostas de erro, melhorando a consistência do código e reduzindo a redundância,
+// alinhando-se com as práticas de outros endpoints da API como /api/analyze.
+const createErrorResponse = (message: string, status: number, details = '') => {
+    return new Response(JSON.stringify({ error: message, details }), {
+        status,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+};
+
 const getSyncKeyHash = (req: Request): string | null => {
     return req.headers.get('x-sync-key-hash');
 };
@@ -40,9 +50,7 @@ export default async function handler(req: Request) {
         const keyHash = getSyncKeyHash(req);
 
         if (!keyHash) {
-            return new Response(JSON.stringify({ error: 'Unauthorized: Missing sync key hash' }), {
-                status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            });
+            return createErrorResponse('Unauthorized: Missing sync key hash', 401);
         }
         
         const dataKey = `sync_data:${keyHash}`;
@@ -81,15 +89,11 @@ export default async function handler(req: Request) {
             });
         }
 
-        return new Response(JSON.stringify({ error: 'Method not allowed' }), {
-            status: 405, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+        return createErrorResponse('Method not allowed', 405);
 
     } catch (error) {
         console.error('Error in /api/sync:', error);
         const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
-        return new Response(JSON.stringify({ error: 'Internal Server Error', details: errorMessage }), {
-            status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+        return createErrorResponse('Internal Server Error', 500, errorMessage);
     }
 }

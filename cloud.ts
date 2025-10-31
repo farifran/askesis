@@ -31,6 +31,40 @@ const getApiUrl = (endpoint: string): string => {
     return new URL(endpoint, window.location.origin).toString();
 };
 
+
+/**
+ * REFACTOR [2024-08-13]: Wrapper centralizado para chamadas à API.
+ * Encapsula a construção da URL, a adição de cabeçalhos (como o de sincronização) e o tratamento
+ * básico de erros de rede, aderindo ao princípio DRY.
+ * @param endpoint O endpoint da API a ser chamado (ex: '/api/sync').
+ * @param options As opções de `fetch` (método, corpo, etc.).
+ * @returns Uma promessa que resolve para o objeto Response.
+ * @throws Lança um erro se a resposta não for 'ok'.
+ */
+async function apiFetch(endpoint: string, options: RequestInit = {}): Promise<Response> {
+    const url = getApiUrl(endpoint);
+    const keyHash = await getSyncKeyHash();
+
+    const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+        ...options.headers,
+    };
+
+    if (keyHash) {
+        headers['X-Sync-Key-Hash'] = keyHash;
+    }
+
+    const response = await fetch(url, { ...options, headers });
+
+    if (!response.ok && response.status !== 409) { // 409 é um estado de conflito esperado, tratado pelo chamador
+        const errorBody = await response.json().catch(() => ({ error: 'Falha ao analisar a resposta de erro', details: response.statusText }));
+        throw new Error(`[${response.status}] ${errorBody.error || 'Erro de API'}: ${errorBody.details || ''}`);
+    }
+
+    return response;
+}
+
+
 export function setSyncStatus(statusKey: 'syncSaving' | 'syncSynced' | 'syncError' | 'syncInitial') {
     state.syncState = statusKey;
     ui.syncStatus.textContent = t(statusKey);
@@ -116,11 +150,6 @@ async function performSync(appState: AppState) {
     }
 
     try {
-        const keyHash = await getSyncKeyHash();
-        if (!keyHash) {
-             throw new Error("Could not generate sync key hash for saving.");
-        }
-
         const stateJSON = JSON.stringify(appState);
         const encryptedState = await encrypt(stateJSON, syncKey);
 
@@ -129,12 +158,8 @@ async function performSync(appState: AppState) {
             state: encryptedState,
         };
         
-        const response = await fetch(getApiUrl('/api/sync'), {
+        const response = await apiFetch('/api/sync', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Sync-Key-Hash': keyHash
-            },
             body: JSON.stringify(payload),
         });
 
@@ -142,11 +167,8 @@ async function performSync(appState: AppState) {
             // Conflito: o servidor tem dados mais recentes.
             const serverPayload: ServerPayload = await response.json();
             resolveConflictWithServerState(serverPayload);
-        } else if (!response.ok) {
-            // Outro erro do servidor.
-            throw new Error(`Sync failed, status: ${response.status}`);
         } else {
-            // Sucesso.
+            // Sucesso (a verificação de response.ok já foi feita em apiFetch).
             setSyncStatus('syncSynced');
             document.dispatchEvent(new CustomEvent('habitsChanged')); // Notifica o emblema/etc para atualizar
         }
@@ -163,21 +185,7 @@ export async function fetchStateFromCloud(): Promise<AppState | undefined> {
     if (!syncKey) return undefined;
 
     try {
-        const keyHash = await getSyncKeyHash();
-        if (!keyHash) {
-            throw new Error("Could not generate sync key hash.");
-        };
-
-        const response = await fetch(getApiUrl('/api/sync'), {
-            headers: {
-                'X-Sync-Key-Hash': keyHash
-            }
-        });
-
-        if (!response.ok) {
-            throw new Error(`Failed to fetch state, status: ${response.status}`);
-        }
-
+        const response = await apiFetch('/api/sync');
         const data: ServerPayload | null = await response.json();
 
         if (data && data.state) {

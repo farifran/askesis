@@ -22,6 +22,7 @@ import {
     getHabitDailyInfoForDate,
     getCurrentGoalForInstance,
     clearScheduleCache,
+    clearActiveHabitsCache,
 } from './state';
 import {
     renderHabits,
@@ -82,17 +83,30 @@ function updateHabitSchedule(
 ): void {
     const lastSchedule = originalHabit.scheduleHistory[originalHabit.scheduleHistory.length - 1];
 
-    const newSchedule: HabitSchedule = {
-        ...lastSchedule,
-        ...updates,
-        startDate: changeDateISO,
-        scheduleAnchor: changeDateISO,
-        endDate: undefined,
-    };
+    // REFACTOR [2024-08-26]: Se uma mudança de agendamento ocorrer na mesma data em que o agendamento
+    // atual começou, modifica o agendamento existente em vez de criar um novo.
+    // Isso evita entradas de agendamento de "duração zero" e mantém o histórico mais limpo.
+    if (lastSchedule.startDate === changeDateISO) {
+        // Modifica o agendamento atual
+        Object.assign(lastSchedule, updates);
+        // Se a frequência mudar, o dia da mudança se torna a nova "âncora" para o cálculo do padrão.
+        if (updates.frequency) {
+            lastSchedule.scheduleAnchor = changeDateISO;
+        }
+    } else {
+        // Comportamento original: encerra o agendamento antigo e cria um novo.
+        const newSchedule: HabitSchedule = {
+            ...lastSchedule,
+            ...updates,
+            startDate: changeDateISO,
+            scheduleAnchor: changeDateISO, // Um novo período de agendamento sempre se ancora na data de início.
+            endDate: undefined,
+        };
+        
+        lastSchedule.endDate = changeDateISO;
+        originalHabit.scheduleHistory.push(newSchedule);
+    }
     
-    lastSchedule.endDate = changeDateISO;
-    originalHabit.scheduleHistory.push(newSchedule);
-
     const changeDate = parseUTCIsoDate(changeDateISO);
     Object.keys(state.dailyData).forEach(dateStr => {
         const currentDate = parseUTCIsoDate(dateStr);
@@ -110,6 +124,7 @@ function updateHabitSchedule(
         }
     });
     clearScheduleCache();
+    clearActiveHabitsCache();
 }
 
 function addHabit(template: HabitTemplate) {
@@ -128,6 +143,7 @@ function addHabit(template: HabitTemplate) {
         }],
     };
     state.habits.push(newHabit);
+    clearActiveHabitsCache();
 }
 
 /**
@@ -204,6 +220,7 @@ function handleAddNewHabit(formData: HabitTemplate) {
         reusableHabit.graduatedOn = undefined;
 
         clearScheduleCache();
+        clearActiveHabitsCache();
         finishSave();
     } else {
         const isPastDate = parseUTCIsoDate(state.selectedDate) < parseUTCIsoDate(getTodayUTCIso());
@@ -226,27 +243,49 @@ function handleAddNewHabit(formData: HabitTemplate) {
 // REFACTOR [2024-07-30]: A lógica de edição foi extraída de `saveHabitFromModal`.
 // Esta função agora lida exclusivamente com a atualização de um hábito existente,
 // incluindo a verificação de alterações e a confirmação para edições no passado.
+// REFACTOR [2024-08-11]: Simplifica a lógica de salvamento em handleEditHabit.
+// A função agora usa uma cláusula de guarda para sair mais cedo se não houver alterações,
+// e a estrutura condicional foi reorganizada para ser mais clara e menos repetitiva,
+// melhorando a legibilidade e a manutenibilidade.
+// REFACTOR [2024-08-24]: Simplifica a lógica de salvamento em handleEditHabit.
+// A função agora usa uma cláusula de guarda para sair mais cedo se não houver alterações,
+// e a estrutura condicional foi reorganizada para ser mais clara e menos repetitiva,
+// melhorando a legibilidade e a manutenibilidade.
 function handleEditHabit(originalData: Habit, formData: HabitTemplate) {
     const habitName = 'name' in formData ? formData.name! : t(formData.nameKey!);
     const latestSchedule = originalData.scheduleHistory[originalData.scheduleHistory.length - 1];
+    
     const nameChanged = getHabitDisplayInfo(originalData).name !== habitName;
     const timesChanged = JSON.stringify(latestSchedule.times.sort()) !== JSON.stringify(formData.times.sort());
     const freqChanged = JSON.stringify(latestSchedule.frequency) !== JSON.stringify(formData.frequency);
     const scheduleChanged = timesChanged || freqChanged;
 
-    if (nameChanged) updateHabitDetails(originalData, habitName);
-    
+    // 1. Cláusula de Guarda: Se nada mudou, apenas fecha o modal.
+    if (!nameChanged && !scheduleChanged) {
+        closeModal(ui.editHabitModal);
+        state.editingHabit = null;
+        return;
+    }
+
+    // 2. Aplica a mudança de nome se houver.
+    if (nameChanged) {
+        updateHabitDetails(originalData, habitName);
+        clearActiveHabitsCache();
+    }
+
+    // 3. Lida com a mudança de agendamento, que pode ser assíncrona.
     if (scheduleChanged) {
         const isTodayOrFuture = parseUTCIsoDate(state.selectedDate) >= parseUTCIsoDate(getTodayUTCIso());
+        
         if (isTodayOrFuture) {
             updateHabitSchedule(originalData, state.selectedDate, { times: formData.times, frequency: formData.frequency });
-            finishSave();
+            finishSave(); // Salva as alterações de nome e agendamento
         } else {
             showConfirmationModal(
                 t('confirmScheduleChange', { habitName, date: state.selectedDate }),
                 () => {
                     updateHabitSchedule(originalData, state.selectedDate, { times: formData.times, frequency: formData.frequency });
-                    finishSave();
+                    finishSave(); // Salva após a confirmação do usuário
                 },
                 {
                     title: t('modalEditTitle'),
@@ -254,16 +293,12 @@ function handleEditHabit(originalData: Habit, formData: HabitTemplate) {
                     cancelText: t('cancelButton')
                 }
             );
-            // Retorna aqui porque a ação é assíncrona (depende da confirmação do usuário).
+            // A ação é assíncrona, então retornamos aqui. `finishSave` será chamado no callback.
             return;
         }
-    } else if (nameChanged) {
-        // Se apenas o nome mudou, podemos salvar imediatamente.
-        finishSave();
     } else {
-        // Se nada mudou, apenas fecha o modal sem salvar.
-        closeModal(ui.editHabitModal);
-        state.editingHabit = null;
+        // Se apenas o nome mudou (scheduleChanged é falso), salva imediatamente.
+        finishSave();
     }
 }
 
@@ -317,44 +352,52 @@ export function createDefaultHabit() {
     }
 }
 
+// REFACTOR [2024-08-05]: A lógica de verificação de streak foi extraída para esta função
+// para evitar repetição de código e centralizar a regra de negócio de celebração.
+// Esta função é chamada sempre que o status de um hábito muda.
+function checkAndTriggerStreakCelebrations(habitId: string) {
+    const streak = calculateHabitStreak(habitId, state.selectedDate);
+
+    const addPendingCelebration = (id: string, pendingList: string[]) => {
+        // Uma celebração só é adicionada se o usuário ainda não a viu (notificationsShown)
+        // e se ela já não está na lista de pendentes.
+        if (!state.notificationsShown.includes(id) && !pendingList.includes(id)) {
+            pendingList.push(id);
+        }
+    };
+
+    if (streak === STREAK_SEMI_CONSOLIDATED) {
+        addPendingCelebration(habitId, state.pending21DayHabitIds);
+    } else if (streak === STREAK_CONSOLIDATED) {
+        addPendingCelebration(habitId, state.pendingConsolidationHabitIds);
+    }
+}
+
+
 export function toggleHabitStatus(habitId: string, time: TimeOfDay) {
     const dayData = ensureHabitInstanceData(state.selectedDate, habitId, time);
     dayData.status = getNextStatus(dayData.status);
 
+    // Invalida o cache de streaks para que o novo cálculo seja correto.
     invalidateStreakCache(habitId, state.selectedDate);
-    commitStateAndRender();
 
-    const streak = calculateHabitStreak(habitId, state.selectedDate);
-    if (streak === STREAK_SEMI_CONSOLIDATED) {
-        if (!state.notificationsShown.includes(habitId) && !state.pending21DayHabitIds.includes(habitId)) {
-            state.pending21DayHabitIds.push(habitId);
-        }
-    } else if (streak === STREAK_CONSOLIDATED) {
-        if (!state.notificationsShown.includes(habitId) && !state.pendingConsolidationHabitIds.includes(habitId)) {
-            state.pendingConsolidationHabitIds.push(habitId);
-        }
-    }
+    // Após a mudança de status, verifica se algum marco de streak foi atingido.
+    checkAndTriggerStreakCelebrations(habitId);
+    
+    commitStateAndRender();
 }
 
-export function updateGoalOverride(habitId: string, date: string, time: TimeOfDay, newGoal: number) {
+// REFACTOR [2024-08-25]: A função `updateGoalOverride` foi renomeada para `setGoalOverride` e simplificada.
+// A responsabilidade de atualizar a UI do cartão de hábito foi movida para o listener (`habitCardListeners.ts`)
+// para melhorar a coesão. Esta função agora se concentra exclusivamente na atualização do estado e na
+// renderização de componentes não-card (calendário, gráfico, emblema), preservando a performance.
+export function setGoalOverride(habitId: string, date: string, time: TimeOfDay, newGoal: number) {
     // 1. Atualiza o estado
     const dayData = ensureHabitInstanceData(date, habitId, time);
     dayData.goalOverride = newGoal;
     saveState();
 
-    // 2. Atualiza o DOM cirurgicamente para evitar o "flash" do cartão
-    const card = document.querySelector(`.habit-card[data-habit-id="${habitId}"][data-time="${time}"]`);
-    const habit = state.habits.find(h => h.id === habitId);
-    if (card && habit) {
-        const progressEl = card.querySelector<HTMLElement>('.goal-value-wrapper .progress');
-        const unitEl = card.querySelector<HTMLElement>('.goal-value-wrapper .unit');
-        if (progressEl && unitEl) {
-            progressEl.textContent = formatGoalForDisplay(newGoal);
-            unitEl.textContent = getUnitString(habit, newGoal);
-        }
-    }
-    
-    // 3. Renderiza outros componentes que dependem dos dados, mas que não piscam
+    // 2. Renderiza componentes dependentes, mas que não piscam (não a lista de hábitos).
     renderCalendar();
     renderChart();
     updateAppBadge();
@@ -368,6 +411,7 @@ function endHabit(habit: Habit, dateISO: string) {
 
     invalidateStreakCache(habit.id, dateISO);
     clearScheduleCache();
+    clearActiveHabitsCache();
     commitStateAndRender();
     showUndoToast();
 }
@@ -381,6 +425,7 @@ export function handleUndoDelete() {
                 delete lastSchedule.endDate;
                 invalidateStreakCache(habit.id, lastSchedule.startDate);
                 clearScheduleCache();
+                clearActiveHabitsCache();
             }
         }
         commitStateAndRender();
@@ -420,6 +465,7 @@ export function requestHabitPermanentDeletion(habitId: string) {
             Object.keys(state.dailyData).forEach(date => {
                 delete state.dailyData[date][habitId];
             });
+            clearActiveHabitsCache();
             commitStateAndRender();
             setupManageModal();
         },
@@ -440,39 +486,36 @@ function moveHabitSchedule(habitId: string, fromTime: TimeOfDay, toTime: TimeOfD
     if (!habit) return;
 
     const changeDate = state.selectedDate;
-    const changeDateObj = parseUTCIsoDate(changeDate);
 
     const dataToMove = state.dailyData[changeDate]?.[habitId]?.instances[fromTime];
     
     if (permanent) {
         const lastSchedule = habit.scheduleHistory[habit.scheduleHistory.length - 1];
-        lastSchedule.endDate = changeDate;
-
         const newTimes = lastSchedule.times.filter(t => t !== fromTime);
-        if (!newTimes.includes(toTime)) newTimes.push(toTime);
-
-        const newSchedule: HabitSchedule = {
-            ...lastSchedule,
-            startDate: changeDate,
-            scheduleAnchor: changeDate,
-            endDate: undefined,
-            times: newTimes,
-        };
-        habit.scheduleHistory.push(newSchedule);
-        clearScheduleCache();
+        if (!newTimes.includes(toTime)) {
+            newTimes.push(toTime);
+        }
+        
+        // REATORAÇÃO [2024-08-26]: Delega a lógica de atualização do agendamento para a função
+        // centralizada e aprimorada, que agora lida com edições no mesmo dia de forma inteligente.
+        updateHabitSchedule(habit, changeDate, { times: newTimes });
 
     } else { // Just for today
         const dailyInfo = state.dailyData[changeDate]?.[habitId] ?? { instances: {} };
-        const activeSchedule = getScheduleForDate(habit, changeDateObj);
+        const activeSchedule = getScheduleForDate(habit, changeDate);
         if (!activeSchedule) return;
 
         const originalTimes = dailyInfo.dailySchedule || activeSchedule.times;
         const newTimes = originalTimes.filter(t => t !== fromTime);
-        if (!newTimes.includes(toTime)) newTimes.push(toTime);
+        if (!newTimes.includes(toTime)) {
+            newTimes.push(toTime);
+        }
 
         dailyInfo.dailySchedule = newTimes;
         
-        if (!state.dailyData[changeDate]) state.dailyData[changeDate] = {};
+        if (!state.dailyData[changeDate]) {
+            state.dailyData[changeDate] = {};
+        }
         state.dailyData[changeDate][habitId] = dailyInfo;
     }
     
@@ -481,6 +524,7 @@ function moveHabitSchedule(habitId: string, fromTime: TimeOfDay, toTime: TimeOfD
         Object.assign(toInstance, dataToMove);
         delete state.dailyData[changeDate][habitId].instances[fromTime];
     }
+    clearActiveHabitsCache();
     commitStateAndRender();
 }
 
@@ -544,25 +588,39 @@ export function requestHabitTimeRemoval(habitId: string, timeToRemove: TimeOfDay
 
                 delete state.dailyData[state.selectedDate]?.[habitId]?.instances?.[timeToRemove];
                 
+                clearActiveHabitsCache();
                 commitStateAndRender();
             }
         }
     );
 }
 
+// REFACTOR [2024-08-20]: A lógica de reordenação foi otimizada para remover uma busca redundante
+// no array. Agora, os índices são encontrados uma vez, e o índice de destino é ajustado
+// manualmente após a remoção, tornando a função mais performática e robusta.
 export function reorderHabit(draggedId: string, targetId: string, position: 'before' | 'after') {
     const habitIndex = state.habits.findIndex(h => h.id === draggedId);
-    const targetIndex = state.habits.findIndex(h => h.id === targetId);
+    let targetIndex = state.habits.findIndex(h => h.id === targetId);
     if (habitIndex === -1 || targetIndex === -1) return;
 
+    // Remove o hábito arrastado, capturando-o.
     const [draggedHabit] = state.habits.splice(habitIndex, 1);
-    const newTargetIndex = state.habits.findIndex(h => h.id === targetId);
-    const insertIndex = position === 'before' ? newTargetIndex : newTargetIndex + 1;
+
+    // Ajusta o índice de destino se o item arrastado estava posicionado antes dele no array.
+    if (habitIndex < targetIndex) {
+        targetIndex--;
+    }
     
+    // Calcula o ponto de inserção final com base na posição ('antes' ou 'depois').
+    const insertIndex = position === 'before' ? targetIndex : targetIndex + 1;
+    
+    // Insere o hábito na sua nova posição.
     state.habits.splice(insertIndex, 0, draggedHabit);
     
+    clearActiveHabitsCache();
     commitStateAndRender();
 }
+
 
 /**
  * Função auxiliar refatorada para atualizar em massa os status dos hábitos para uma data.
@@ -595,6 +653,12 @@ function bulkUpdateHabitsForDate(date: string, newStatus: 'completed' | 'snoozed
         });
 
         if (habitSpecificChange) {
+            // BUGFIX [2024-08-06]: Garante que as celebrações de streak sejam acionadas
+            // também durante ações em massa (ex: clique duplo), mantendo a consistência
+            // com a ação de alternar individualmente.
+            if (newStatus === 'completed') {
+                checkAndTriggerStreakCelebrations(habit.id);
+            }
             invalidateStreakCache(habit.id, date);
         }
     });
@@ -629,6 +693,7 @@ export function resetApplicationData() {
     state.dailyData = {};
     state.streaksCache = {};
     clearScheduleCache();
+    clearActiveHabitsCache();
     state.notificationsShown = [];
     state.pending21DayHabitIds = [];
     state.pendingConsolidationHabitIds = [];
@@ -650,6 +715,7 @@ export function graduateHabit(habitId: string) {
         t('confirmGraduateHabit', { habitName: getHabitDisplayInfo(habit).name }),
         () => {
             habit.graduatedOn = getTodayUTCIso();
+            clearActiveHabitsCache();
             commitStateAndRender();
             setupManageModal();
         },
@@ -752,6 +818,8 @@ function buildAIPrompt(analysisType: 'weekly' | 'monthly' | 'general'): { prompt
         // BUGFIX [2024-07-31]: Fixed a reference error in the 'general' analysis loop.
         // The loop was trying to increment an undefined variable 'date' instead of the loop
         // iterator 'd', which caused the general AI analysis to fail after the first day.
+        // BUGFIX [2024-08-16]: Corrects a critical reference error in the general AI analysis prompt builder.
+        // The loop was using an out-of-scope 'date' variable instead of the correct iterator 'd', causing the analysis to fail.
         for (let d = firstDateEver; d <= today; d = addDays(d, 1)) {
             const summary = generateDailyHabitSummary(d);
             if (summary) {
@@ -818,7 +886,7 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
     renderAINotificationState();
     // UX IMPROVEMENT [2024-08-04]: Exibe um indicador de carregamento imediatamente dentro do modal de IA
     // para fornecer feedback visual de que a solicitação está em andamento.
-    ui.aiResponse.innerHTML = `<div class="ai-response-loader"><svg class="loading-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg></div>`;
+    ui.aiResponse.innerHTML = `<div class="ai-response-loader"><svg class="loading-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg></div>`;
     closeModal(ui.aiOptionsModal);
     openModal(ui.aiModal);
 

@@ -542,11 +542,19 @@ export function closeModal(modal: HTMLElement) {
     }
 }
 
-export function initializeModalClosing(modal: HTMLElement) {
+// REFACTOR [2024-08-18]: Modifica `initializeModalClosing` para aceitar um callback `onClose` opcional.
+// Isso centraliza a lógica de fechamento de modais (cliques no overlay e no botão) e a torna mais extensível,
+// permitindo que modais como o de IA se conectem ao evento de fechamento sem duplicar a lógica de listeners.
+export function initializeModalClosing(modal: HTMLElement, onClose?: () => void) {
+    const handleClose = () => {
+        closeModal(modal);
+        onClose?.();
+    };
+
     modal.addEventListener('click', e => {
-        if (e.target === modal) closeModal(modal);
+        if (e.target === modal) handleClose();
     });
-    modal.querySelectorAll<HTMLElement>('.modal-close-btn').forEach(btn => btn.addEventListener('click', () => closeModal(modal)));
+    modal.querySelectorAll<HTMLElement>('.modal-close-btn').forEach(btn => btn.addEventListener('click', handleClose));
 }
 
 export function showInlineNotice(element: HTMLElement, message: string) {
@@ -616,7 +624,9 @@ export function setupManageModal() {
             case 'active':
                 const editButton = `<button class="edit-habit-btn" data-habit-id="${habit.id}" aria-label="${t('aria_edit', { habitName: name })}"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>`;
                 if (isConsolidated) {
-                    actionButtons = `<button class="graduate-habit-btn" data-habit-id="${habit.id}" aria-label="${t('aria_graduate', { habitName: name })}"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v2"/><path d="M12 18v2a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2"/><path d="M6 12h12"/><path d="M18 12v6"/><path d="M18 6V4a2 2 0 0 0-2-2h-2"/><path d="M18 12h-6"/><path d="M12 12V6"/></svg></button>`;
+                    // BUGFIX [2024-08-07]: Permite a edição de hábitos consolidados.
+                    // Anteriormente, o botão de graduação substituía o de edição. Agora, ambos são exibidos para manter a consistência funcional.
+                    actionButtons = `${editButton}<button class="graduate-habit-btn" data-habit-id="${habit.id}" aria-label="${t('aria_graduate', { habitName: name })}"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v2"/><path d="M12 18v2a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2"/><path d="M6 12h12"/><path d="M18 12v6"/><path d="M18 6V4a2 2 0 0 0-2-2h-2"/><path d="M18 12h-6"/><path d="M12 12V6"/></svg></button>`;
                 } else {
                     actionButtons = `${editButton}<button class="end-habit-btn" data-habit-id="${habit.id}" aria-label="${t('aria_end', { habitName: name })}"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg></button>`;
                 }

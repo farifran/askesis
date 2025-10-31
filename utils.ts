@@ -156,10 +156,20 @@ export function debounce<T extends (...args: any[]) => any>(func: T, wait: numbe
  */
 export function getActiveHabitsForDate(date: Date): Array<{ habit: Habit; schedule: TimeOfDay[] }> {
     const dateISO = toUTCIsoDateString(date);
-    return state.habits
+    
+    // PERFORMANCE [2024-08-12]: Verifica o cache primeiro.
+    if (state.activeHabitsCache[dateISO]) {
+        return state.activeHabitsCache[dateISO];
+    }
+    
+    const result = state.habits
         .filter(habit => !habit.graduatedOn && shouldHabitAppearOnDate(habit, date))
         .map(habit => ({
             habit,
             schedule: getEffectiveScheduleForHabitOnDate(habit, dateISO),
         }));
+
+    // PERFORMANCE [2024-08-12]: Armazena o resultado no cache antes de retornar.
+    state.activeHabitsCache[dateISO] = result;
+    return result;
 }

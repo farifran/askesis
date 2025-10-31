@@ -196,6 +196,7 @@ export const state: {
     dailyData: Record<string, Record<string, HabitDailyInfo>>;
     streaksCache: Record<string, number>;
     scheduleCache: Record<string, HabitSchedule | null>;
+    activeHabitsCache: Record<string, Array<{ habit: Habit; schedule: TimeOfDay[] }>>;
     lastEnded: { habitId: string, lastSchedule: HabitSchedule } | null;
     undoTimeout: number | null;
     calendarDates: Date[];
@@ -224,6 +225,7 @@ export const state: {
     dailyData: {},
     streaksCache: {},
     scheduleCache: {},
+    activeHabitsCache: {},
     lastEnded: null,
     undoTimeout: null,
     calendarDates: Array.from({ length: DAYS_IN_CALENDAR }, (_, i) => addDays(getTodayUTC(), i - 30)),
@@ -251,6 +253,15 @@ export const state: {
 export function clearScheduleCache() {
     state.scheduleCache = {};
 }
+
+/**
+ * PERFORMANCE [2024-08-12]: Limpa o cache de hábitos ativos.
+ * Chamado sempre que um hábito ou seu agendamento é modificado.
+ */
+export function clearActiveHabitsCache() {
+    state.activeHabitsCache = {};
+}
+
 
 /**
  * Invalida o cache de streaks para um hábito específico a partir de uma data.
@@ -546,6 +557,7 @@ export function loadState(cloudState?: AppState) {
         // Limpa o cache ao carregar um novo estado para garantir consistência.
         state.streaksCache = {};
         clearScheduleCache();
+        clearActiveHabitsCache();
     } else {
         state.habits = [];
         state.dailyData = {};
@@ -560,5 +572,6 @@ export function loadState(cloudState?: AppState) {
         // Limpa o cache ao criar um estado novo.
         state.streaksCache = {};
         clearScheduleCache();
+        clearActiveHabitsCache();
     }
 }

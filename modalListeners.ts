@@ -33,9 +33,7 @@ import { simpleMarkdownToHTML, pushToOneSignal } from './utils';
 
 export function setupModalListeners() {
     // --- Inicialização Geral de Modais ---
-    // REATORAÇÃO: O ui.aiModal foi removido desta lista. Ele tem sua própria lógica de fechamento customizada
-    // para garantir que o estado `hasSeenAIResult` seja sempre atualizado corretamente.
-    const modalsWithGenericClosing = [
+    const modalsToInitialize = [
         ui.manageModal,
         ui.exploreModal,
         ui.editHabitModal,
@@ -43,7 +41,15 @@ export function setupModalListeners() {
         ui.notesModal,
         ui.aiOptionsModal,
     ];
-    modalsWithGenericClosing.forEach(initializeModalClosing);
+    // REFACTOR [2024-08-18]: Utiliza a função `initializeModalClosing` aprimorada para todos os modais,
+    // eliminando a lógica de fechamento duplicada para o modal de IA e centralizando o padrão de fechamento.
+    modalsToInitialize.forEach(modal => initializeModalClosing(modal));
+
+    // A lógica de fechamento customizada para o modal de IA agora é injetada como um callback.
+    initializeModalClosing(ui.aiModal, () => {
+        state.hasSeenAIResult = true;
+        renderAINotificationState();
+    });
 
     // --- Botões para Abrir Modais Principais ---
     ui.manageHabitsBtn.addEventListener('click', () => {
@@ -222,18 +228,6 @@ export function setupModalListeners() {
             }
         }
     });
-    
-    // Lógica de fechamento específica para o Modal da IA
-    const closeAIModal = () => {
-        closeModal(ui.aiModal);
-        state.hasSeenAIResult = true;
-        renderAINotificationState();
-    };
-    
-    ui.aiModal.addEventListener('click', e => {
-        if (e.target === ui.aiModal) closeAIModal();
-    });
-    ui.aiModal.querySelector<HTMLElement>('.modal-close-btn')?.addEventListener('click', closeAIModal);
 
     // REATORAÇÃO: Listener único para as opções de IA
     const aiOptionsList = ui.aiOptionsModal.querySelector('.ai-options-list');

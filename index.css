@@ -656,6 +656,20 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     user-select: none;
 }
 
+/* STYLE [2024-08-09]: Estiliza a imagem de arrasto personalizada. */
+.drag-image-ghost {
+    position: absolute;
+    top: -9999px; /* Posiciona fora da tela para não afetar o layout */
+    left: -9999px;
+    background-color: var(--surface-hover);
+    box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+    border-radius: 9px;
+    pointer-events: none; /* Garante que a imagem fantasma não intercepte eventos do mouse */
+    z-index: 9999;
+    opacity: 0.95;
+    transform: scale(1.02); /* Leve aumento para "levantar" da página */
+}
+
 .consolidation-message {
     font-size: 10px;
     font-weight: 500;
