@@ -44,26 +44,18 @@ export function hasSyncKey(): boolean {
  * Inicializa o SDK do OneSignal e configura os listeners de eventos relacionados a notificações.
  */
 export function initNotifications() {
-    // O script de nível de página do SDK do OneSignal já está incluído no index.html.
-    // Agora o inicializamos aqui.
+    // A inicialização do SDK do OneSignal agora é feita diretamente no index.html.
+    // Esta função apenas anexa os listeners de eventos necessários para a UI.
     pushToOneSignal((OneSignal: any) => {
-        OneSignal.init({
-            // IMPORTANTE: Substitua pelo seu App ID real do OneSignal.
-            // Este é um valor de espaço reservado e não funcionará em produção.
-            appId: "b2f7f966-d8cc-406a-a3a8-4c8d3d3a1e9c", // UUID de exemplo como placeholder
-            safari_web_id: "web.onesignal.auto.12345678-1234-1234-1234-123456789012", // Placeholder de exemplo
-            allowLocalhostAsSecureOrigin: true, // Útil para desenvolvimento local
-        }).then(() => {
-            // Este listener garante que a UI seja atualizada se o usuário alterar
-            // as permissões de notificação nas configurações do navegador enquanto o app estiver aberto.
-            OneSignal.Notifications.addEventListener('permissionChange', () => {
-                // Adia a atualização da UI para dar tempo ao SDK de atualizar seu estado interno.
-                setTimeout(updateNotificationUI, 500);
-            });
-
-            // Atualiza a UI no carregamento inicial, caso o estado já esteja definido.
-            updateNotificationUI();
+        // Este listener garante que a UI seja atualizada se o usuário alterar
+        // as permissões de notificação nas configurações do navegador enquanto o app estiver aberto.
+        OneSignal.Notifications.addEventListener('permissionChange', () => {
+            // Adia a atualização da UI para dar tempo ao SDK de atualizar seu estado interno.
+            setTimeout(updateNotificationUI, 500);
         });
+
+        // Atualiza a UI no carregamento inicial, caso o estado já esteja definido.
+        updateNotificationUI();
     });
 }
 
