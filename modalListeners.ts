@@ -31,6 +31,31 @@ import { setLanguage, t, getHabitDisplayInfo } from './i18n';
 import { setupReelRotary } from './rotary';
 import { simpleMarkdownToHTML, pushToOneSignal } from './utils';
 
+// REFACTOR [2024-09-02]: Centraliza a lógica de processamento e formatação de celebrações
+// para remover duplicação de código e melhorar a legibilidade no listener do botão de IA.
+const _processAndFormatCelebrations = (
+    pendingIds: string[], 
+    translationKey: 'aiCelebration21Day' | 'aiCelebration66Day'
+): string => {
+    if (pendingIds.length === 0) return '';
+    
+    const habitNames = pendingIds
+        .map(id => state.habits.find(h => h.id === id))
+        .filter(Boolean)
+        .map(h => getHabitDisplayInfo(h!).name)
+        .join(', ');
+        
+    // Marca as celebrações como "vistas"
+    pendingIds.forEach(id => {
+        if (!state.notificationsShown.includes(id)) {
+            state.notificationsShown.push(id);
+        }
+    });
+
+    return t(translationKey, { count: pendingIds.length, habitNames });
+};
+
+
 export function setupModalListeners() {
     // --- Inicialização Geral de Modais ---
     const modalsToInitialize = [
@@ -198,23 +223,10 @@ export function setupModalListeners() {
             const hasCelebrations = state.pending21DayHabitIds.length > 0 || state.pendingConsolidationHabitIds.length > 0;
             if (hasCelebrations) {
                 let celebrationText = '';
-                if (state.pending21DayHabitIds.length > 0) {
-                    const habitNames = state.pending21DayHabitIds
-                        .map(id => state.habits.find(h => h.id === id))
-                        .filter(Boolean)
-                        .map(h => getHabitDisplayInfo(h!).name).join(', ');
-                    celebrationText += t('aiCelebration21Day', { count: state.pending21DayHabitIds.length, habitNames });
-                }
-                if (state.pendingConsolidationHabitIds.length > 0) {
-                    const habitNames = state.pendingConsolidationHabitIds
-                        .map(id => state.habits.find(h => h.id === id))
-                        .filter(Boolean)
-                        .map(h => getHabitDisplayInfo(h!).name).join(', ');
-                    celebrationText += t('aiCelebration66Day', { count: state.pendingConsolidationHabitIds.length, habitNames });
-                }
+                celebrationText += _processAndFormatCelebrations(state.pending21DayHabitIds, 'aiCelebration21Day');
+                celebrationText += _processAndFormatCelebrations(state.pendingConsolidationHabitIds, 'aiCelebration66Day');
 
-                state.pending21DayHabitIds.forEach(id => { if (!state.notificationsShown.includes(id)) state.notificationsShown.push(id); });
-                state.pendingConsolidationHabitIds.forEach(id => { if (!state.notificationsShown.includes(id)) state.notificationsShown.push(id); });
+                // Limpa as listas de pendentes após o processamento
                 state.pending21DayHabitIds = [];
                 state.pendingConsolidationHabitIds = [];
                 saveState();

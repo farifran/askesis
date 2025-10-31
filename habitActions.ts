@@ -785,10 +785,10 @@ function generateDailyHabitSummary(date: Date): string | null {
 function buildAIPrompt(analysisType: 'weekly' | 'monthly' | 'general'): { prompt: string, systemInstruction: string } {
     let history = '';
     let promptTemplateKey = '';
-    const daySummaries: string[] = [];
     const today = getTodayUTC();
 
     if (analysisType === 'weekly' || analysisType === 'monthly') {
+        const daySummaries: string[] = [];
         const daysToScan = analysisType === 'weekly' ? 7 : 30;
         promptTemplateKey = analysisType === 'weekly' ? 'aiPromptWeekly' : 'aiPromptMonthly';
 
@@ -804,25 +804,21 @@ function buildAIPrompt(analysisType: 'weekly' | 'monthly' | 'general'): { prompt
     } else if (analysisType === 'general') {
         promptTemplateKey = 'aiPromptGeneral';
         
-        let firstDateEver = today;
-        if (state.habits.length > 0) {
-            firstDateEver = state.habits.reduce((earliest, habit) => {
-                const habitStartDate = parseUTCIsoDate(habit.createdOn);
-                return habitStartDate < earliest ? habitStartDate : earliest;
-            }, today);
-        }
-        
+        // PERFORMANCE [2024-09-02]: Otimiza a geração do prompt de análise geral.
+        // Em vez de iterar por cada dia desde o início, o que é ineficiente para longos períodos,
+        // agora iteramos diretamente sobre as chaves de `state.dailyData`. Isso processa
+        // apenas os dias que têm registros, melhorando drasticamente a performance.
         const allSummaries: string[] = [];
-        
-        // BUGFIX [2024-07-31]: Fixed a reference error in the 'general' analysis loop.
-        // The loop was trying to increment an undefined variable 'date' instead of the loop
-        // iterator 'd', which caused the general AI analysis to fail after the first day.
-        // BUGFIX [2024-08-16]: Corrects a critical reference error in the general AI analysis prompt builder.
-        // The loop was using an out-of-scope 'date' variable instead of the correct iterator 'd', causing the analysis to fail.
-        for (let d = firstDateEver; d <= today; d = addDays(d, 1)) {
-            const summary = generateDailyHabitSummary(d);
-            if (summary) {
-                allSummaries.push(summary);
+        const sortedDatesWithData = Object.keys(state.dailyData).sort();
+
+        for (const dateStr of sortedDatesWithData) {
+            const date = parseUTCIsoDate(dateStr);
+            // Garante que não incluímos datas futuras na análise, embora seja improvável.
+            if (date <= today) {
+                const summary = generateDailyHabitSummary(date);
+                if (summary) {
+                    allSummaries.push(summary);
+                }
             }
         }
         

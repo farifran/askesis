@@ -172,8 +172,9 @@ export async function setLanguage(langCode: 'pt' | 'en' | 'es') {
         setupManageModal();
     }
 
+    // REFACTOR [2024-09-02]: Remove a chamada redundante para `updateHeaderTitle`
+    // uma vez que `renderApp` já a executa internamente.
     renderApp();
-    updateHeaderTitle();
 }
 
 export async function initI18n() {
