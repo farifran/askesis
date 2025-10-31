@@ -41,9 +41,10 @@ export function hasSyncKey(): boolean {
 }
 
 /**
- * Inicializa o SDK do OneSignal e configura os listeners de eventos relacionados a notificações.
+ * Inicializa a funcionalidade de notificações, configurando listeners
+ * e atualizando a UI inicial.
  */
-export function initNotifications() {
+export function initializeNotifications() {
     // A inicialização do SDK do OneSignal agora é feita diretamente no index.html.
     // Esta função apenas anexa os listeners de eventos necessários para a UI.
     pushToOneSignal((OneSignal: any) => {
@@ -58,6 +59,7 @@ export function initNotifications() {
         updateNotificationUI();
     });
 }
+
 
 /**
  * Lida com um conflito de sincronização, onde o servidor tem uma versão mais recente dos dados.

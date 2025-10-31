@@ -11,7 +11,7 @@ import { setupEventListeners } from './listeners';
 import { initI18n } from './i18n';
 import { createDefaultHabit } from './habitActions';
 import { initSync } from './sync';
-import { fetchStateFromCloud, hasSyncKey, initNotifications } from './cloud';
+import { fetchStateFromCloud, hasSyncKey, initializeNotifications } from './cloud';
 import { updateAppBadge } from './badge';
 
 // --- SERVICE WORKER REGISTRATION ---
@@ -41,7 +41,7 @@ const init = async () => {
     await initI18n(); 
 
     // Inicializa as notificações APÓS o i18n, para que qualquer texto de prompt esteja traduzido
-    initNotifications();
+    initializeNotifications();
 
     // A inicialização da sincronização configura a UI e a lógica da chave
     await initSync();

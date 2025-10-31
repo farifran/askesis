@@ -46,7 +46,9 @@ export default async function handler(req: Request) {
         
         const ai = new GoogleGenAI({ apiKey });
 
-        const geminiResponse = await ai.models.generateContentStream({
+        // REATORAÇÃO: Usa a API não-streaming para simplificar o código, pois a resposta
+        // inteira é necessária antes de ser enviada ao cliente.
+        const geminiResponse = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
             contents: prompt,
             config: {
@@ -54,15 +56,7 @@ export default async function handler(req: Request) {
             },
         });
         
-        // REATORAÇÃO: Em vez de transmitir para o cliente, agregue a resposta aqui no servidor.
-        // Isso é mais robusto contra erros de rede intermediários que causam "Load failed" no cliente.
-        let fullText = '';
-        for await (const chunk of geminiResponse) {
-            const text = chunk.text;
-            if (text) {
-                fullText += text;
-            }
-        }
+        const fullText = geminiResponse.text;
         
         // Envia a resposta completa como uma única carga útil.
         return new Response(fullText, {
