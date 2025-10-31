@@ -84,6 +84,26 @@ export function setupHabitCardListeners() {
             // Ação: Atualiza o estado. A renderização é tratada dentro de updateGoalOverride.
             updateGoalOverride(habitId, state.selectedDate, time, newGoal);
 
+            // Após a atualização do estado e a nova renderização, encontre o elemento novamente para aplicar a animação.
+            const updatedCard = ui.habitContainer.querySelector(`.habit-card[data-habit-id="${habitId}"][data-time="${time}"]`);
+            const goalWrapper = updatedCard?.querySelector<HTMLElement>('.goal-value-wrapper');
+    
+            if (goalWrapper) {
+                const animationClass = action === 'increment' ? 'increase' : 'decrease';
+                
+                // Remove quaisquer classes de animação existentes para reiniciar a animação se for clicado rapidamente
+                goalWrapper.classList.remove('increase', 'decrease');
+                
+                // Precisamos de um pequeno atraso para permitir que o navegador remova a classe antes de adicioná-la novamente.
+                // requestAnimationFrame é uma boa maneira de esperar pelo próximo frame.
+                requestAnimationFrame(() => {
+                    goalWrapper.classList.add(animationClass);
+                    goalWrapper.addEventListener('animationend', () => {
+                        goalWrapper.classList.remove(animationClass);
+                    }, { once: true });
+                });
+            }
+
             return;
         }
 

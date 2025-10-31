@@ -39,7 +39,6 @@ import { t, getHabitDisplayInfo, getTimeOfDayName } from './i18n';
 import { ui } from './ui';
 import { renderChart } from './chart';
 import { updateAppBadge } from './badge';
-import { analyzeHabitData } from './api';
 
 /**
  * Commits the current state to storage and triggers a full UI re-render.
@@ -574,7 +573,7 @@ export function graduateHabit(habitId: string) {
 }
 
 
-// --- Lógica de Construção de Prompt (Movida de api.ts) ---
+// --- Lógica de Construção de Prompt ---
 
 const statusToSymbol: Record<HabitStatus, string> = {
     completed: '✅',
@@ -737,10 +736,35 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
         const { prompt, systemInstruction } = buildAIPrompt(analysisType);
         
         let fullText = '';
-        await analyzeHabitData(prompt, systemInstruction, (chunk) => {
+        
+        // REATORAÇÃO: A lógica de chamada da API foi movida diretamente para cá,
+        // eliminando a necessidade do arquivo `api.ts` do lado do cliente.
+        const response = await fetch('/api/analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt, systemInstruction }),
+        });
+
+        if (!response.ok) {
+            const errorBody = await response.json().catch(() => ({ error: response.statusText, details: '' }));
+            throw new Error(`API error: ${response.status} ${errorBody.error} ${errorBody.details}`);
+        }
+
+        if (!response.body) {
+            throw new Error('Response body is empty');
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            
+            const chunk = decoder.decode(value, { stream: true });
             fullText += chunk;
             ui.aiResponse.innerHTML = simpleMarkdownToHTML(fullText);
-        });
+        }
         
         state.lastAIResult = fullText;
         state.lastAIError = null;

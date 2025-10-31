@@ -40,22 +40,31 @@ export function hasSyncKey(): boolean {
     return hasLocalSyncKey();
 }
 
-// FIX: Add missing initNotifications function.
 /**
- * Initializes the notification system listeners.
+ * Inicializa o SDK do OneSignal e configura os listeners de eventos relacionados a notificações.
  */
 export function initNotifications() {
-  pushToOneSignal((OneSignal: any) => {
-    // This listener ensures the UI is updated if the user changes
-    // notification permissions in the browser settings while the app is open.
-    OneSignal.Notifications.addEventListener('permissionChange', () => {
-        // Delay UI update to give the SDK time to update its internal state.
-        setTimeout(updateNotificationUI, 500);
-    });
+    // O script de nível de página do SDK do OneSignal já está incluído no index.html.
+    // Agora o inicializamos aqui.
+    pushToOneSignal((OneSignal: any) => {
+        OneSignal.init({
+            // IMPORTANTE: Substitua pelo seu App ID real do OneSignal.
+            // Este é um valor de espaço reservado e não funcionará em produção.
+            appId: "b2f7f966-d8cc-406a-a3a8-4c8d3d3a1e9c", // UUID de exemplo como placeholder
+            safari_web_id: "web.onesignal.auto.12345678-1234-1234-1234-123456789012", // Placeholder de exemplo
+            allowLocalhostAsSecureOrigin: true, // Útil para desenvolvimento local
+        }).then(() => {
+            // Este listener garante que a UI seja atualizada se o usuário alterar
+            // as permissões de notificação nas configurações do navegador enquanto o app estiver aberto.
+            OneSignal.Notifications.addEventListener('permissionChange', () => {
+                // Adia a atualização da UI para dar tempo ao SDK de atualizar seu estado interno.
+                setTimeout(updateNotificationUI, 500);
+            });
 
-    // Update the UI on initial load in case the state is already set.
-    updateNotificationUI();
-  });
+            // Atualiza a UI no carregamento inicial, caso o estado já esteja definido.
+            updateNotificationUI();
+        });
+    });
 }
 
 /**

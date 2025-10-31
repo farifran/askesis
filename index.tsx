@@ -66,7 +66,6 @@ const init = async () => {
     
     // As funções init* e updateHeaderTitle* já foram chamadas dentro de initI18n.
     // renderApp() é chamado aqui para garantir que a UI seja renderizada com o estado carregado.
-    renderLanguageFilter();
     renderApp();
     
     // Usamos requestAnimationFrame para garantir que o navegador tenha concluído o layout

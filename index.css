@@ -71,6 +71,32 @@
     to { transform: rotate(360deg); }
 }
 
+@keyframes flash-green {
+    from {
+      color: var(--accent-green);
+      text-shadow: 0 0 8px var(--accent-green);
+      transform: scale(1.2);
+    }
+    to {
+      color: var(--text-primary);
+      text-shadow: none;
+      transform: scale(1);
+    }
+}
+  
+@keyframes flash-red {
+    from {
+      color: var(--color-red);
+      text-shadow: 0 0 8px var(--color-red);
+      transform: scale(1.2);
+    }
+    to {
+      color: var(--text-primary);
+      text-shadow: none;
+      transform: scale(1);
+    }
+}
+
 
 /* --- RESET E ESTILOS GLOBAIS --- */
 * {
@@ -753,6 +779,14 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 .goal-value-wrapper .progress {
     color: var(--text-primary);
     transition: color var(--transition-duration-slow);
+}
+
+.goal-value-wrapper.increase .progress {
+    animation: flash-green 0.7s ease-out;
+}
+  
+.goal-value-wrapper.decrease .progress {
+    animation: flash-red 0.7s ease-out;
 }
 
 /* --- COMPONENTES: AÇÕES DE DESLIZE --- */

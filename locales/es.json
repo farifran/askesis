@@ -120,6 +120,8 @@
     "chartTooltipCompleted": "Completados: {completed}/{total}",
     "chartEvolutionSince": "Evolución desde {date}",
     "modalNotesTextareaPlaceholder": "Escribe tu nota sobre este hábito para el día seleccionado...",
+    "aiErrorPrefix": "Error de IA",
+    "aiErrorUnknown": "Ocurrió un error desconocido.",
     "aiCelebration21Day": {
         "one": "### ¡Felicidades! 🎉\n\n¡Has mantenido el hábito **{habitNames}** durante 21 días consecutivos! Este es un hito crucial para que una acción se vuelva automática. ¡Sigue con el buen trabajo!",
         "other": "### ¡Felicidades! 🎉\n\n¡Has mantenido los hábitos **{habitNames}** durante 21 días consecutivos! Este es un hito crucial para que una acción se vuelva automática. ¡Sigue con el buen trabajo!"

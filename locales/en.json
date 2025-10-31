@@ -120,6 +120,8 @@
     "chartTooltipCompleted": "Completed: {completed}/{total}",
     "chartEvolutionSince": "Evolution since {date}",
     "modalNotesTextareaPlaceholder": "Enter your note about this habit for the selected day...",
+    "aiErrorPrefix": "AI Error",
+    "aiErrorUnknown": "An unknown error occurred.",
     "aiCelebration21Day": {
         "one": "### Congratulations! 🎉\n\nYou've maintained the habit **{habitNames}** for 21 consecutive days! This is a crucial milestone in making an action automatic. Keep up the great work!",
         "other": "### Congratulations! 🎉\n\nYou've maintained the habits **{habitNames}** for 21 consecutive days! This is a crucial milestone in making an action automatic. Keep up the great work!"
