@@ -85,8 +85,8 @@ export function setupHabitCardListeners() {
             const habit = state.habits.find(h => h.id === habitId);
             if (!habit || (habit.goal.type !== 'pages' && habit.goal.type !== 'minutes')) return;
             
-            // REFACTOR [2024-08-25]: A lógica de UI (atualização de texto e animação) foi consolidada aqui.
-            // A função de ação agora apenas lida com o estado, melhorando a separação de responsabilidades.
+            // REFACTOR [2024-09-05]: A lógica de UI (atualização de texto e animação) foi consolidada aqui.
+            // A função de ação agora lida apenas com o estado, melhorando a separação de responsabilidades e corrigindo o bug do "piscar".
             const action = controlBtn.dataset.action as 'increment' | 'decrement';
             const goalWrapper = controlBtn.closest('.habit-goal-controls')?.querySelector<HTMLElement>('.goal-value-wrapper');
             if (!goalWrapper) return;
@@ -96,10 +96,10 @@ export function setupHabitCardListeners() {
                 ? currentGoal + GOAL_STEP 
                 : Math.max(1, currentGoal - GOAL_STEP);
 
-            // Etapa 1: Chama a ação para atualizar o estado.
+            // Etapa 1: Chama a ação para atualizar o estado e os componentes não-card.
             setGoalOverride(habitId, state.selectedDate, time, newGoal);
     
-            // Etapa 2: Atualiza cirurgicamente a UI neste listener.
+            // Etapa 2: Atualiza cirurgicamente a UI do cartão neste listener.
             const progressEl = goalWrapper.querySelector<HTMLElement>('.progress');
             const unitEl = goalWrapper.querySelector<HTMLElement>('.unit');
             if (progressEl && unitEl) {
@@ -110,6 +110,7 @@ export function setupHabitCardListeners() {
             // Etapa 3: Aplica a animação de feedback visual.
             const animationClass = action === 'increment' ? 'increase' : 'decrease';
             goalWrapper.classList.remove('increase', 'decrease');
+            // Usar requestAnimationFrame garante que o navegador processe a remoção da classe antes de adicioná-la novamente, reiniciando a animação.
             requestAnimationFrame(() => {
                 goalWrapper.classList.add(animationClass);
                 goalWrapper.addEventListener('animationend', () => {

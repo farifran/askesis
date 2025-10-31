@@ -389,10 +389,10 @@ export function toggleHabitStatus(habitId: string, time: TimeOfDay) {
     commitStateAndRender();
 }
 
-// REFACTOR [2024-08-25]: A função `updateGoalOverride` foi renomeada para `setGoalOverride` e simplificada.
-// A responsabilidade de atualizar a UI do cartão de hábito foi movida para o listener (`habitCardListeners.ts`)
-// para melhorar a coesão. Esta função agora se concentra exclusivamente na atualização do estado e na
-// renderização de componentes não-card (calendário, gráfico, emblema), preservando a performance.
+// REFACTOR [2024-09-05]: A função foi refatorada para apenas atualizar o estado.
+// A responsabilidade de atualizar a UI do cartão de hábito foi movida para `habitCardListeners.ts`
+// para melhorar a coesão e corrigir o bug de "piscar". Esta função agora renderiza apenas
+// componentes não-card (calendário, gráfico, emblema) para manter a performance.
 export function setGoalOverride(habitId: string, date: string, time: TimeOfDay, newGoal: number) {
     // 1. Atualiza o estado
     const dayData = ensureHabitInstanceData(date, habitId, time);

@@ -30,17 +30,20 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
         }
 
         const dropZone = target.closest<HTMLElement>('.drop-zone');
-
-        // OTIMIZAÇÃO: Limpa a classe da zona de soltar anterior apenas se tivermos movido para uma nova.
+        
+        // BUGFIX [2024-09-05]: Limpa explicitamente a classe 'drag-over' quando o cursor sai de uma zona de soltura válida.
+        // Isso corrige o bug onde a borda azul ficava presa se o usuário arrastasse para fora da área de soltura.
         if (dropZone !== currentDropZoneTarget) {
             currentDropZoneTarget?.classList.remove('drag-over', 'invalid-drop');
         }
-        currentDropZoneTarget = dropZone;
-
+        
         if (!dropZone) {
+            currentDropZoneTarget = null;
             e.dataTransfer!.dropEffect = 'none';
             return;
         }
+
+        currentDropZoneTarget = dropZone;
 
         const newTime = dropZone.dataset.time as TimeOfDay;
         const cardTarget = target.closest<HTMLElement>('.habit-card');
@@ -89,32 +92,35 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
         }
     };
 
-    // REFACTOR [2024-08-02]: Unifica a lógica de soltura para usar a zona de soltura pré-validada
-    // de 'dragover'. Isso torna o código mais robusto e remove uma consulta redundante ao DOM,
-    // garantindo que a ação de soltura corresponda ao feedback visual que o usuário viu.
+    // REFACTOR [2024-09-06]: Lógica de soltura refatorada para maior clareza e correção de bug.
     const handleBodyDrop = (e: DragEvent) => {
         e.preventDefault();
         
-        if (!draggedHabitId || !draggedHabitOriginalTime) return;
+        // 1. Captura os dados necessários para a lógica de soltura antes de limpar a UI.
+        const reorderTargetId = dropIndicator?.dataset.targetId;
+        const reorderPosition = dropIndicator?.dataset.position as 'before' | 'after';
+        const isDropIndicatorVisible = dropIndicator?.classList.contains('visible');
+        const dropZone = currentDropZoneTarget;
+        const newTime = dropZone?.dataset.time as TimeOfDay | undefined;
 
-        // --- Soltar para Reordenar ---
-        if (dropIndicator?.classList.contains('visible') && dropIndicator.dataset.targetId) {
-            const targetId = dropIndicator.dataset.targetId;
-            const position = dropIndicator.dataset.position as 'before' | 'after';
-            if (draggedHabitId && targetId !== draggedHabitId) {
-                reorderHabit(draggedHabitId, targetId, position);
-            }
-            // A lógica para mover entre grupos será tratada a seguir se necessário
+        // 2. BUGFIX: Limpa o estado visual (borda azul) imediatamente no evento 'drop'.
+        // Isso previne uma condição de corrida onde a limpeza em 'dragend' ocorria após a
+        // re-renderização do DOM, deixando a referência ao elemento obsoleta e a borda azul presa.
+        dropZone?.classList.remove('drag-over', 'invalid-drop');
+        if (dropIndicator) {
+            dropIndicator.classList.remove('visible');
         }
 
-        // --- Soltar para Mover ---
-        // Usa a zona de soltura validada e armazenada em cache do evento 'dragover'.
-        const dropZone = currentDropZoneTarget;
-        if (dropZone?.dataset.time) {
-            const newTime = dropZone.dataset.time as TimeOfDay;
-            if (newTime !== draggedHabitOriginalTime) {
-                handleHabitDrop(draggedHabitId, draggedHabitOriginalTime, newTime);
-            }
+        if (!draggedHabitId || !draggedHabitOriginalTime || !newTime) return;
+        
+        // 3. Determina a ação: Mover para um novo grupo ou Reordenar dentro do mesmo grupo.
+        const isMovingGroup = newTime !== draggedHabitOriginalTime;
+        const isReordering = isDropIndicatorVisible && reorderTargetId && draggedHabitId !== reorderTargetId;
+
+        if (isMovingGroup) {
+            handleHabitDrop(draggedHabitId, draggedHabitOriginalTime, newTime);
+        } else if (isReordering) {
+            reorderHabit(draggedHabitId, reorderTargetId, reorderPosition);
         }
     };
     
@@ -122,8 +128,9 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
         draggedElement?.classList.remove('dragging');
         document.body.classList.remove('is-dragging-active');
         
-        // Limpeza eficiente usando a referência em cache
-        currentDropZoneTarget?.classList.remove('drag-over', 'invalid-drop');
+        // A limpeza visual principal agora ocorre em 'handleBodyDrop' para evitar race conditions.
+        // Esta função limpa as referências restantes e os listeners.
+        currentDropZoneTarget?.classList.remove('drag-over', 'invalid-drop'); // Redundante, mas seguro
         currentDropZoneTarget = null;
         
         if (dropIndicator) {

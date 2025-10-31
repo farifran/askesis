@@ -5,7 +5,7 @@
 import { state, getScheduleForDate, shouldHabitAppearOnDate } from './state';
 import { ui } from './ui';
 import { t, getHabitDisplayInfo } from './i18n';
-import { addDays, parseUTCIsoDate, toUTCIsoDateString } from './utils';
+import { addDays, getActiveHabitsForDate, parseUTCIsoDate, toUTCIsoDateString } from './utils';
 
 const CHART_DAYS = 30;
 const INITIAL_SCORE = 100; // Pontuação inicial para o crescimento composto
@@ -29,19 +29,16 @@ function calculateChartData(): ChartDataPoint[] {
         const currentDate = addDays(startDate, i);
         const currentDateISO = toUTCIsoDateString(currentDate);
 
-        const activeHabitsOnDate = state.habits.filter(h => shouldHabitAppearOnDate(h, currentDate) && !h.graduatedOn);
+        // PERFORMANCE [2024-09-04]: Substitui o filtro repetitivo de state.habits pela função em cache getActiveHabitsForDate.
+        // Isso evita a re-filtragem de toda a lista de hábitos para cada um dos 30 dias no gráfico, melhorando drasticamente a performance.
+        const activeHabitsData = getActiveHabitsForDate(currentDate);
         const dailyInfo = state.dailyData[currentDateISO] || {};
 
         let scheduledCount = 0;
         let completedCount = 0;
 
-        activeHabitsOnDate.forEach(habit => {
-            const habitDailyInfo = dailyInfo[habit.id];
-            const activeSchedule = getScheduleForDate(habit, currentDate);
-            if (!activeSchedule) return;
-
-            const scheduleForDay = habitDailyInfo?.dailySchedule || activeSchedule.times;
-            const instances = habitDailyInfo?.instances || {};
+        activeHabitsData.forEach(({ habit, schedule: scheduleForDay }) => {
+            const instances = dailyInfo[habit.id]?.instances || {};
 
             scheduledCount += scheduleForDay.length;
             scheduleForDay.forEach(time => {
