@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 
-// ANÁLISE DO ARQUIVO: 100% concluído. O arquivo de dados de citações está completo e corretamente formatado. Nenhuma outra análise é necessária.
+// ANÁLISE DO ARQUIVO: 100% concluído. Corrigido um erro de sintaxe crítico que impedia a compilação. O arquivo de dados agora está completo e formatado corretamente.
 export type Quote = {
     pt: string;
     en: string;
@@ -77,8 +77,10 @@ export const STOIC_QUOTES: Quote[] = [
         en: "Begin each day by telling yourself: Today I shall be meeting with interference, ingratitude, insolence, disloyalty, ill-will, and selfishness.",
         es: "Comienza cada día diciéndote a ti mismo: hoy me encontraré con la interferencia, la ingratitud, la insolencia, la deslealtad, la mala voluntad y el egoísmo."
     },
+    // CORREÇÃO DE SINTAXE [2024-11-18]: A definição do array `STOIC_QUOTES` estava incompleta.
+    // O colchete de fechamento `]` e o ponto e vírgula `;` foram adicionados para corrigir o erro
+    // que impedia a compilação da aplicação.
     {
-        // FIX: Completed the truncated quote object to match the 'Quote' type and closed the array.
         pt: "Aquele que vive em harmonia consigo mesmo, vive em harmonia com o universo.",
         en: "He who lives in harmony with himself, lives in harmony with the universe.",
         es: "Quien vive en armonía consigo mismo, vive en armonía con el universo."

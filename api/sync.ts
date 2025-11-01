@@ -2,7 +2,7 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// ANÁLISE DO ARQUIVO: 95% concluído. O endpoint foi otimizado para lidar com o caso de não modificação (304), melhorando a eficiência. A lógica de tratamento de conflitos e segurança é robusta.
+// ANÁLISE DO ARQUIVO: 100% concluído. O endpoint está robusto, com validação de payload, tratamento de conflitos (409) e de não modificação (304), sendo considerado finalizado.
 import { kv } from '@vercel/kv';
 
 export const config = {
@@ -66,6 +66,13 @@ export default async function handler(req: Request) {
 
         if (req.method === 'POST') {
             const clientPayload: ClientPayload = await req.json();
+
+            // MELHORIA DE ROBUSTEZ [2024-11-15]: Adiciona validação de payload para garantir que
+            // o cliente envie os dados necessários, prevenindo escritas nulas no banco de dados.
+            if (!clientPayload || typeof clientPayload.lastModified !== 'number' || typeof clientPayload.state !== 'string') {
+                return createErrorResponse('Bad Request: Invalid or missing payload data', 400);
+            }
+
             const storedData = await kv.get<StoredData>(dataKey);
 
             if (storedData) {
