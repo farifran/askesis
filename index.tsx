@@ -74,6 +74,14 @@ const init = async () => {
     // [ETAPA 6 - RENDERIZAÇÃO PRINCIPAL]: Renderiza a aplicação completa com o estado final carregado.
     renderApp();
     
+    // OTIMIZAÇÃO DE UX [2024-11-10]: Oculta suavemente o indicador de carregamento inicial.
+    const loader = document.getElementById('initial-loader');
+    if (loader) {
+        loader.classList.add('hidden');
+        // Remove o elemento do DOM após a transição para manter a estrutura limpa.
+        loader.addEventListener('transitionend', () => loader.remove(), { once: true });
+    }
+
     // [ETAPA 7 - AJUSTES DE UI PÓS-RENDERIZAÇÃO]: Ações que dependem do layout final do DOM.
     // Usamos requestAnimationFrame para garantir que o navegador tenha concluído o layout
     // e a pintura antes de tentarmos rolar. Isso é mais confiável do que um setTimeout(0).

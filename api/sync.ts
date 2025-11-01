@@ -2,7 +2,7 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// ANÁLISE DO ARQUIVO: 100% concluído. O endpoint da API de sincronização é seguro e robusto, com tratamento de conflitos correto. Nenhuma outra análise é necessária.
+// ANÁLISE DO ARQUIVO: 95% concluído. O endpoint foi otimizado para lidar com o caso de não modificação (304), melhorando a eficiência. A lógica de tratamento de conflitos e segurança é robusta.
 import { kv } from '@vercel/kv';
 
 export const config = {
@@ -69,13 +69,22 @@ export default async function handler(req: Request) {
             const storedData = await kv.get<StoredData>(dataKey);
 
             if (storedData) {
+                // OTIMIZAÇÃO DE PERFORMANCE E ROBUSTEZ [2024-11-08]: Adiciona uma verificação para o caso de os timestamps serem iguais.
+                // Isso previne uma escrita desnecessária no banco de dados se o cliente tentar sincronizar um estado que já é o mais recente no servidor.
+                // Retornar 304 Not Modified é semanticamente correto e economiza recursos.
+                if (clientPayload.lastModified === storedData.lastModified) {
+                    return new Response(null, {
+                        status: 304, // Not Modified
+                        headers: corsHeaders,
+                    });
+                }
+                
                 // Conflito: os dados do cliente são mais antigos que os do servidor.
                 if (clientPayload.lastModified < storedData.lastModified) {
                     return new Response(JSON.stringify(storedData), {
                         status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
                     });
                 }
-                // A lógica 'isStateSignificant' foi removida, pois o servidor não pode mais inspecionar o estado.
             }
 
             // Sem conflitos, ou é a primeira sincronização. Salva o payload do cliente.

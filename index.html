@@ -1,12 +1,64 @@
+<!-- ANÁLISE DO ARQUIVO: 95% concluído. Otimizações de PWA, SEO e pré-carregamento foram adicionadas. A próxima análise pode considerar o inlining de CSS crítico. -->
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0, viewport-fit=cover">
     <title>Habit Tracker com IA</title>
+    
+    <!-- MELHORIA DE PERFORMANCE E PWA [2024-11-12] -->
+    <!-- Pré-carregamento de ativos críticos -->
+    <link rel="preload" href="bundle.css" as="style">
+    <link rel="preload" href="bundle.js" as="script">
+
+    <!-- Metadados para PWA em iOS -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Habits AI">
+    <link rel="apple-touch-icon" href="icons/icon-192.svg">
+
+    <!-- Metadados para Compartilhamento Social (Open Graph) -->
+    <meta property="og:title" content="Habit Tracker com IA">
+    <meta property="og:description" content="A dynamic habit tracker with data visualization and personalized AI-powered feedback.">
+    <meta property="og:type" content="website">
+    <meta property="og:image" content="icons/icon-512.svg">
+    
     <link rel="stylesheet" href="bundle.css">
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#1e1e1e">
+    <!-- OTIMIZAÇÃO DE UX [2024-11-10]: Estilos embutidos para uma experiência de carregamento aprimorada. -->
+    <!-- 1. Define o fundo escuro imediatamente para evitar o "flash de conteúdo branco". -->
+    <!-- 2. Estiliza um indicador de carregamento inicial que é removido após a inicialização do app. -->
+    <style>
+        body {
+            background-color: #121212;
+            color: #e5e5e5;
+        }
+        .initial-loader {
+            position: fixed;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-color: #121212;
+            z-index: 9999;
+            opacity: 1;
+            transition: opacity 0.3s ease-out;
+        }
+        .initial-loader.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+        .initial-loader svg {
+            width: 48px;
+            height: 48px;
+            animation: spin 1s linear infinite;
+            stroke: #737373; /* Cor --text-tertiary */
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
 <script type="importmap">
 {
   "imports": {
@@ -28,6 +80,19 @@
 </script>
 </head>
 <body>
+    <!-- MELHORIA DE ACESSIBILIDADE [2024-11-12]: Fornece feedback para usuários sem JavaScript. -->
+    <noscript>
+        <div style="text-align: center; padding: 20px; font-family: sans-serif;">
+            <h1>JavaScript é necessário</h1>
+            <p>Este aplicativo requer JavaScript para funcionar. Por favor, habilite-o em seu navegador.</p>
+        </div>
+    </noscript>
+
+    <!-- OTIMIZAÇÃO DE UX [2024-11-10]: Indicador de carregamento inicial para fornecer feedback imediato ao usuário. -->
+    <div id="initial-loader" class="initial-loader">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+    </div>
+
     <div class="app-container">
         <header class="app-header">
             <div class="header-top">

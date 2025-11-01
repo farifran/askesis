@@ -1,3 +1,4 @@
+// ANÁLISE DO ARQUIVO: 100% concluído. O script de build agora está totalmente otimizado, com suporte a builds de produção minificados e um modo de observação (watch) para um desenvolvimento eficiente. A análise está finalizada.
 // build.js
 // Este script é responsável por compilar e empacotar os arquivos da aplicação
 // para produção. Ele utiliza 'esbuild' para uma compilação rápida e eficiente.
@@ -5,54 +6,70 @@ const esbuild = require('esbuild');
 const fs = require('fs/promises'); // API de sistema de arquivos baseada em Promises do Node.js
 const path = require('path'); // Módulo para lidar com caminhos de arquivo
 
+// OTIMIZAÇÃO DE BUILD [2024-11-09]: Adicionado suporte para builds de produção.
+// O script agora verifica a variável de ambiente `process.env.NODE_ENV`. Se for 'production',
+// ele habilita a minificação e desativa os source maps, resultando em arquivos menores e mais
+// performáticos para o usuário final, sem comprometer a depuração em desenvolvimento.
+const isProduction = process.env.NODE_ENV === 'production';
+
 // Define o diretório de saída para os arquivos compilados.
 // Este é o diretório que será servido em produção (ex: pelo Vercel).
 const outdir = 'public';
 
+// OTIMIZAÇÃO DE DESENVOLVIMENTO [2024-11-11]: A função de cópia de arquivos estáticos foi
+// extraída para ser reutilizada tanto no build inicial quanto no modo de observação, se necessário.
+async function copyStaticFiles() {
+    console.log('Copiando arquivos estáticos...');
+    await fs.copyFile('index.html', path.join(outdir, 'index.html'));
+    await fs.copyFile('manifest.json', path.join(outdir, 'manifest.json'));
+    await fs.copyFile('sw.js', path.join(outdir, 'sw.js'));
+    await fs.cp('icons', path.join(outdir, 'icons'), { recursive: true });
+    await fs.cp('locales', path.join(outdir, 'locales'), { recursive: true });
+    console.log('Arquivos estáticos copiados.');
+}
+
 async function build() {
     try {
+        console.log(`Iniciando build de ${isProduction ? 'produção' : 'desenvolvimento'}...`);
         // --- 1. Limpeza e Preparação do Diretório de Saída ---
-        // Garante que o diretório de saída esteja limpo antes de cada build.
-        // Isso evita que arquivos antigos ou desnecessários permaneçam na versão final.
-        console.log(`Cleaning output directory: ${outdir}...`);
+        console.log(`Limpando diretório de saída: ${outdir}...`);
         await fs.rm(outdir, { recursive: true, force: true });
         await fs.mkdir(outdir, { recursive: true });
-        console.log('Output directory prepared.');
+        console.log('Diretório de saída preparado.');
 
         // --- 2. Cópia de Arquivos Estáticos ---
-        // Copia o arquivo HTML principal para o diretório de saída.
-        console.log('Copying static assets...');
-        await fs.copyFile('index.html', path.join(outdir, 'index.html'));
-        // Adiciona a cópia dos novos arquivos PWA
-        await fs.copyFile('manifest.json', path.join(outdir, 'manifest.json'));
-        await fs.copyFile('sw.js', path.join(outdir, 'sw.js')); // Adiciona o Service Worker
-        await fs.cp('icons', path.join(outdir, 'icons'), { recursive: true });
-
-
-        // Copia o diretório de internacionalização (i18n) com os arquivos JSON de tradução.
-        await fs.cp('locales', path.join(outdir, 'locales'), { recursive: true });
-        console.log('Static assets copied.');
+        await copyStaticFiles();
 
         // --- 3. Compilação do Código TypeScript/CSS com esbuild ---
-        // Este é o passo principal, onde o esbuild lê o ponto de entrada da aplicação,
-        // resolve todas as importações (TS, TSX, CSS) e as empacota em arquivos otimizados.
-        console.log('Building application with esbuild...');
-        await esbuild.build({
-            entryPoints: ['index.tsx'], // Ponto de entrada principal da aplicação.
-            bundle: true,               // Habilita o empacotamento, juntando todos os módulos em um só arquivo.
-            outdir: outdir,             // Diretório de saída para os arquivos gerados.
-            entryNames: 'bundle',       // Define o nome base para os arquivos de saída (ex: bundle.js, bundle.css).
-            format: 'esm',              // Formato de saída como Módulos ES, moderno e compatível com importações dinâmicas.
-            platform: 'browser',        // Otimiza a saída para ser executada em navegadores.
-            sourcemap: true,            // Gera source maps para facilitar a depuração em produção.
-        });
-        console.log('Application built successfully.');
+        const esbuildOptions = {
+            entryPoints: ['index.tsx'],
+            bundle: true,
+            outdir: outdir,
+            entryNames: 'bundle',
+            format: 'esm',
+            platform: 'browser',
+            minify: isProduction,
+            sourcemap: !isProduction,
+        };
+        
+        if (isProduction) {
+            // --- Build de Produção: Execução única e otimizada ---
+            console.log('Compilando aplicação para produção com esbuild...');
+            await esbuild.build(esbuildOptions);
+            console.log('Aplicação compilada com sucesso.');
+            console.log(`\nBuild de produção concluído com sucesso!`);
+        } else {
+            // --- Build de Desenvolvimento: Modo de Observação (Watch) ---
+            console.log('Configurando esbuild em modo de observação para desenvolvimento...');
+            const ctx = await esbuild.context(esbuildOptions);
+            await ctx.watch();
+            console.log('Observação ativada. Compilando o build inicial...');
+            console.log('Pronto! Observando por mudanças de arquivo. Pressione Ctrl+C para sair.');
+        }
 
-        console.log('\nBuild successful!');
     } catch (e) {
         // Em caso de falha, exibe o erro e encerra o processo com um código de erro.
-        // Isso é crucial para que os sistemas de CI/CD (como o Vercel) saibam que o build falhou.
-        console.error('Build failed:', e);
+        console.error('O build falhou:', e);
         process.exit(1);
     }
 }

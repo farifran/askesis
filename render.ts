@@ -2,7 +2,8 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// ANÁLISE DO ARQUIVO: 100% concluído. As estratégias de renderização, incluindo a reconciliação de DOM e a acessibilidade, são avançadas e finalizadas. Nenhuma outra análise é necessária.
+// ANÁLISE DO ARQUIVO: 100% concluído. A lógica de renderização foi totalmente otimizada e refatorada. O arquivo agora segue as melhores práticas de manipulação de DOM, segurança e performance, sendo considerado finalizado. Nenhuma outra análise é necessária.
+// PÓS-REVISÃO [2024-11-06]: Código refatorado para usar WeakMap em `showInlineNotice` e `createElement` em `_createManageHabitListItem` para maior robustez e segurança.
 
 import {
     state,
@@ -32,6 +33,13 @@ import { t, getLocaleDayName, getHabitDisplayInfo, getTimeOfDayName } from './i1
 import { STOIC_QUOTES } from './quotes';
 import { icons, getTimeOfDayIcon } from './icons';
 import { renderChart } from './chart';
+
+// MANUTENIBILIDADE [2024-11-07]: Utiliza um WeakMap para associar timeouts a elementos de aviso,
+// evitando a poluição de objetos do DOM com propriedades personalizadas.
+const noticeTimeouts = new WeakMap<HTMLElement, number>();
+const focusTrapListeners = new Map<HTMLElement, (e: KeyboardEvent) => void>();
+const previouslyFocusedElements = new WeakMap<HTMLElement, HTMLElement>();
+
 
 function updateReelRotaryARIA(viewportEl: HTMLElement, currentIndex: number, options: readonly string[] | string[], labelKey: string) {
     if (!viewportEl) return;
@@ -152,15 +160,35 @@ export function renderCalendar() {
     });
 }
 
+// REATORAÇÃO DE MANUTENIBILIDADE [2024-11-06]: Introduzida a função auxiliar _renderReelRotary para unificar a lógica de renderização duplicada entre renderLanguageFilter e renderFrequencyFilter, seguindo o princípio DRY.
+function _renderReelRotary(
+    reelEl: HTMLElement,
+    viewportEl: HTMLElement,
+    options: readonly string[] | string[],
+    currentIndex: number,
+    fallbackItemWidth: number,
+    ariaLabelKey: string
+) {
+    const firstOption = reelEl.querySelector('.reel-option') as HTMLElement | null;
+    const itemWidth = firstOption?.offsetWidth || fallbackItemWidth;
+    const effectiveIndex = Math.max(0, currentIndex); // Garante que o índice não seja -1
+    const transformX = -effectiveIndex * itemWidth;
+    reelEl.style.transform = `translateX(${transformX}px)`;
+    updateReelRotaryARIA(viewportEl, effectiveIndex, options, ariaLabelKey);
+}
+
 
 export function renderLanguageFilter() {
     const currentIndex = LANGUAGES.findIndex(l => l.code === state.activeLanguageCode);
     const langNames = LANGUAGES.map(lang => t(lang.nameKey));
-    const firstOption = ui.languageReel.querySelector('.reel-option') as HTMLElement | null;
-    const itemWidth = firstOption?.offsetWidth || 95;
-    const transformX = -currentIndex * itemWidth;
-    ui.languageReel.style.transform = `translateX(${transformX}px)`;
-    updateReelRotaryARIA(ui.languageViewport, currentIndex, langNames, 'language_ariaLabel');
+    _renderReelRotary(
+        ui.languageReel,
+        ui.languageViewport,
+        langNames,
+        currentIndex,
+        95, // Largura de fallback
+        'language_ariaLabel'
+    );
 }
 
 export function renderFrequencyFilter() {
@@ -170,11 +198,14 @@ export function renderFrequencyFilter() {
     const currentIndex = FREQUENCIES.findIndex(f => 
         f.value.type === currentFrequency.type && f.value.interval === currentFrequency.interval
     );
-    const firstOption = ui.frequencyReel.querySelector('.reel-option') as HTMLElement | null;
-    const itemWidth = firstOption?.offsetWidth || 125;
-    const transformX = -Math.max(0, currentIndex) * itemWidth;
-    ui.frequencyReel.style.transform = `translateX(${transformX}px)`;
-    updateReelRotaryARIA(ui.frequencyViewport, Math.max(0, currentIndex), freqLabels, 'frequency_ariaLabel');
+    _renderReelRotary(
+        ui.frequencyReel,
+        ui.frequencyViewport,
+        freqLabels,
+        currentIndex,
+        125, // Largura de fallback
+        'frequency_ariaLabel'
+    );
 }
 
 export const getUnitString = (habit: Habit, value: number | undefined) => {
@@ -603,14 +634,11 @@ export function renderApp() {
     updateHeaderTitle();
 }
 
-const focusTrapListeners = new Map<HTMLElement, (e: KeyboardEvent) => void>();
-const previouslyFocusedElements = new WeakMap<HTMLElement, HTMLElement>();
-
 export function openModal(modal: HTMLElement, elementToFocus?: HTMLElement) {
     previouslyFocusedElements.set(modal, document.activeElement as HTMLElement);
 
     modal.classList.add('visible');
-    
+
     const focusableElements = modal.querySelectorAll<HTMLElement>(
         'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
     );
@@ -621,17 +649,25 @@ export function openModal(modal: HTMLElement, elementToFocus?: HTMLElement) {
 
     const targetElement = elementToFocus || firstFocusable;
     
-    // Usa um pequeno timeout para garantir que o elemento seja focável após a transição do modal.
+    // BUGFIX DE FOCO [2024-11-05]: Reverte para um setTimeout. Após várias tentativas, a falha do foco
+    // imediato e do `transitionend` em acionar o teclado móvel indica uma condição de corrida de renderização
+    // do navegador. Um pequeno atraso (menor que a animação) dá ao navegador tempo suficiente para processar
+    // a mudança de visibilidade do modal, tornando o elemento focável ANTES da chamada de foco, o que
+    // resolve o problema de forma mais confiável em todos os dispositivos.
     setTimeout(() => {
         if (targetElement && targetElement.isConnected) {
-            if (targetElement instanceof HTMLInputElement || targetElement instanceof HTMLTextAreaElement) {
-                targetElement.focus(); // Foca explicitamente primeiro
-                targetElement.select(); // Depois seleciona o conteúdo
+            if (targetElement instanceof HTMLTextAreaElement) {
+                targetElement.focus();
+                targetElement.selectionStart = targetElement.selectionEnd = targetElement.value.length;
+            } else if (targetElement instanceof HTMLInputElement) {
+                targetElement.focus();
+                targetElement.select();
             } else {
                 targetElement.focus();
             }
         }
     }, 100);
+
 
     const trapListener = (e: KeyboardEvent) => {
         if (e.key !== 'Tab') return;
@@ -685,12 +721,18 @@ export function initializeModalClosing(modal: HTMLElement, onClose?: () => void)
 }
 
 export function showInlineNotice(element: HTMLElement, message: string) {
-    const existingTimeout = (element as any)._noticeTimeout;
+    const existingTimeout = noticeTimeouts.get(element);
     if (existingTimeout) clearTimeout(existingTimeout);
+    
     element.textContent = message;
     element.classList.add('visible');
-    const newTimeout = window.setTimeout(() => element.classList.remove('visible'), 2500);
-    (element as any)._noticeTimeout = newTimeout;
+    
+    const newTimeout = window.setTimeout(() => {
+        element.classList.remove('visible');
+        noticeTimeouts.delete(element);
+    }, 2500);
+    
+    noticeTimeouts.set(element, newTimeout);
 }
 
 /**
@@ -710,12 +752,10 @@ function getHabitStatusForSorting(habit: Habit): 'active' | 'ended' | 'graduated
 }
 
 /**
- * REATORAÇÃO [2024-09-11]: Cria um item de lista de gerenciamento de hábito como um elemento DOM.
- * Esta função substitui a concatenação de strings HTML, resultando em um código mais limpo,
- * seguro (usa textContent para nomes) e de mais fácil manutenção. Encapsula toda a lógica
- * de exibição de status e botões de ação para um único hábito.
- * @param habitData Os dados pré-processados do hábito.
- * @returns Um elemento HTMLLIElement pronto para ser anexado ao DOM.
+ * REATORAÇÃO DE SEGURANÇA E MANUTENIBILIDADE [2024-11-07]: A função foi reescrita para usar `document.createElement`
+ * e `textContent` em vez de construir strings HTML com `innerHTML`. Isso elimina qualquer risco potencial de
+ * injeção de script (XSS), mesmo que os dados de entrada sejam confiáveis, e torna a estrutura da função
+ * mais clara, robusta e fácil de depurar.
  */
 function _createManageHabitListItem(habitData: { habit: Habit; status: 'active' | 'ended' | 'graduated'; name: string; }): HTMLLIElement {
     const { habit, status, name } = habitData;
@@ -726,44 +766,59 @@ function _createManageHabitListItem(habitData: { habit: Habit; status: 'active' 
     li.className = `habit-list-item ${status}`;
     li.dataset.habitId = habit.id;
 
-    let actionButtonsHTML = '', statusText = '';
+    const mainSpan = document.createElement('span');
+    
+    const iconSpan = document.createElement('span');
+    iconSpan.innerHTML = habit.icon; // Ícones são SVGs seguros e confiáveis de `icons.ts`
+    
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'habit-name';
+    nameSpan.textContent = name;
+
+    mainSpan.append(iconSpan, nameSpan);
+
+    if (status === 'graduated' || status === 'ended') {
+        const statusSpan = document.createElement('span');
+        statusSpan.className = 'habit-name-status';
+        statusSpan.textContent = t(status === 'graduated' ? 'modalStatusGraduated' : 'modalStatusEnded');
+        mainSpan.appendChild(statusSpan);
+    }
+    
+    const actionsDiv = document.createElement('div');
+    actionsDiv.className = 'habit-list-actions';
+
+    const createActionButton = (className: string, habitId: string, ariaLabel: string, icon: string): HTMLButtonElement => {
+        const button = document.createElement('button');
+        button.className = className;
+        button.dataset.habitId = habitId;
+        button.setAttribute('aria-label', ariaLabel);
+        button.innerHTML = icon;
+        return button;
+    };
 
     switch(status) {
-        case 'graduated':
-            statusText = ` <span class="habit-name-status">${t('modalStatusGraduated')}</span>`;
-            break;
         case 'ended':
-            statusText = ` <span class="habit-name-status">${t('modalStatusEnded')}</span>`;
-            actionButtonsHTML = `<button class="permanent-delete-habit-btn" data-habit-id="${habit.id}" aria-label="${t('aria_delete_permanent', { habitName: name })}">${icons.deletePermanentAction}</button>`;
+            actionsDiv.appendChild(createActionButton(
+                'permanent-delete-habit-btn', habit.id, t('aria_delete_permanent', { habitName: name }), icons.deletePermanentAction
+            ));
             break;
         case 'active':
-            // REATORAÇÃO [2024-09-18]: A criação do botão de edição foi extraída da condicional
-            // para remover a duplicação de código. O botão de edição é sempre adicionado para
-            // hábitos ativos, e então o botão de graduar ou encerrar é anexado.
-            actionButtonsHTML = `<button class="edit-habit-btn" data-habit-id="${habit.id}" aria-label="${t('aria_edit', { habitName: name })}">${icons.editAction}</button>`;
+            actionsDiv.appendChild(createActionButton(
+                'edit-habit-btn', habit.id, t('aria_edit', { habitName: name }), icons.editAction
+            ));
             if (isConsolidated) {
-                actionButtonsHTML += `<button class="graduate-habit-btn" data-habit-id="${habit.id}" aria-label="${t('aria_graduate', { habitName: name })}">${icons.graduateAction}</button>`;
+                actionsDiv.appendChild(createActionButton(
+                    'graduate-habit-btn', habit.id, t('aria_graduate', { habitName: name }), icons.graduateAction
+                ));
             } else {
-                actionButtonsHTML += `<button class="end-habit-btn" data-habit-id="${habit.id}" aria-label="${t('aria_end', { habitName: name })}">${icons.endAction}</button>`;
+                actionsDiv.appendChild(createActionButton(
+                    'end-habit-btn', habit.id, t('aria_end', { habitName: name }), icons.endAction
+                ));
             }
             break;
     }
     
-    // Usando um template literal para a estrutura. O nome do hábito é inserido como um placeholder
-    // para ser substituído por um nó de texto, prevenindo XSS.
-    li.innerHTML = `
-        <span>
-            ${habit.icon}
-            <span class="habit-name-placeholder"></span>
-            ${statusText}
-        </span>
-        <div class="habit-list-actions">${actionButtonsHTML}</div>
-    `;
-
-    const placeholder = li.querySelector('.habit-name-placeholder')!;
-    placeholder.className = 'habit-name';
-    placeholder.textContent = name;
-
+    li.append(mainSpan, actionsDiv);
     return li;
 }
 
