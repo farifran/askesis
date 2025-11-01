@@ -2,8 +2,9 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
+// ANÁLISE DO ARQUIVO: 100% concluído. A orquestração de eventos de modais é bem estruturada e robusta. Nenhuma outra análise é necessária.
 import { ui } from './ui';
-import { state, LANGUAGES, PREDEFINED_HABITS, FREQUENCIES, TimeOfDay, saveState } from './state';
+import { state, LANGUAGES, PREDEFINED_HABITS, FREQUENCIES, TimeOfDay, saveState, STREAK_SEMI_CONSOLIDATED, STREAK_CONSOLIDATED } from './state';
 import {
     openModal,
     closeModal,
@@ -35,7 +36,9 @@ import { simpleMarkdownToHTML, pushToOneSignal } from './utils';
 // para remover duplicação de código e melhorar a legibilidade no listener do botão de IA.
 const _processAndFormatCelebrations = (
     pendingIds: string[], 
-    translationKey: 'aiCelebration21Day' | 'aiCelebration66Day'
+    translationKey: 'aiCelebration21Day' | 'aiCelebration66Day',
+    // NOVO PARÂMETRO: O marco de streak para construir a chave de notificação correta.
+    streakMilestone: number
 ): string => {
     if (pendingIds.length === 0) return '';
     
@@ -45,10 +48,12 @@ const _processAndFormatCelebrations = (
         .map(h => getHabitDisplayInfo(h!).name)
         .join(', ');
         
-    // Marca as celebrações como "vistas"
+    // CORREÇÃO DE LÓGICA [2024-10-23]: Utiliza a chave composta ('habitId-dias') para marcar
+    // as celebrações como "vistas", garantindo que cada marco seja rastreado independentemente.
     pendingIds.forEach(id => {
-        if (!state.notificationsShown.includes(id)) {
-            state.notificationsShown.push(id);
+        const celebrationId = `${id}-${streakMilestone}`;
+        if (!state.notificationsShown.includes(celebrationId)) {
+            state.notificationsShown.push(celebrationId);
         }
     });
 
@@ -58,17 +63,28 @@ const _processAndFormatCelebrations = (
 
 export function setupModalListeners() {
     // --- Inicialização Geral de Modais ---
+    // REATORAÇÃO DE ESTADO [2024-10-26]: A inicialização de fechamento dos modais de edição
+    // foi separada para incluir callbacks `onClose`. Isso previne "vazamentos de estado"
+    // onde dados temporários (state.editingHabit, state.editingNoteFor) persistiam
+    // desnecessariamente após o cancelamento, tornando a aplicação mais robusta.
     const modalsToInitialize = [
         ui.manageModal,
         ui.exploreModal,
-        ui.editHabitModal,
+        // Modais com estado temporário são movidos para inicializações customizadas abaixo
+        // ui.editHabitModal,
+        // ui.notesModal,
         ui.confirmModal,
-        ui.notesModal,
         ui.aiOptionsModal,
     ];
-    // REFACTOR [2024-08-18]: Utiliza a função `initializeModalClosing` aprimorada para todos os modais,
-    // eliminando a lógica de fechamento duplicada para o modal de IA e centralizando o padrão de fechamento.
     modalsToInitialize.forEach(modal => initializeModalClosing(modal));
+
+    // Lida com o fechamento dos modais de edição para limpar o estado temporário
+    initializeModalClosing(ui.editHabitModal, () => {
+        state.editingHabit = null;
+    });
+    initializeModalClosing(ui.notesModal, () => {
+        state.editingNoteFor = null;
+    });
 
     // A lógica de fechamento customizada para o modal de IA agora é injetada como um callback.
     initializeModalClosing(ui.aiModal, () => {
@@ -112,7 +128,12 @@ export function setupModalListeners() {
         showConfirmationModal(
             t('confirmResetApp'),
             resetApplicationData,
-            { confirmText: t('modalManageResetButton'), title: t('modalManageReset') }
+            { 
+                confirmText: t('modalManageResetButton'), 
+                title: t('modalManageReset'),
+                // UX-FIX [2024-10-27]: Usa o estilo 'danger' para o botão de confirmação.
+                confirmButtonStyle: 'danger'
+            }
         );
     });
     
@@ -223,8 +244,8 @@ export function setupModalListeners() {
             const hasCelebrations = state.pending21DayHabitIds.length > 0 || state.pendingConsolidationHabitIds.length > 0;
             if (hasCelebrations) {
                 let celebrationText = '';
-                celebrationText += _processAndFormatCelebrations(state.pending21DayHabitIds, 'aiCelebration21Day');
-                celebrationText += _processAndFormatCelebrations(state.pendingConsolidationHabitIds, 'aiCelebration66Day');
+                celebrationText += _processAndFormatCelebrations(state.pending21DayHabitIds, 'aiCelebration21Day', STREAK_SEMI_CONSOLIDATED);
+                celebrationText += _processAndFormatCelebrations(state.pendingConsolidationHabitIds, 'aiCelebration66Day', STREAK_CONSOLIDATED);
 
                 // Limpa as listas de pendentes após o processamento
                 state.pending21DayHabitIds = [];

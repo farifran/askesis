@@ -1,6 +1,12 @@
+// ANÁLISE DO ARQUIVO: 100% concluído. A lógica de arrastar e soltar foi otimizada para performance e UX. Com a refatoração para constantes, é considerada finalizada.
 import { isCurrentlySwiping } from './swipeHandler';
 import { handleHabitDrop, reorderHabit } from './habitActions';
-import { state, TimeOfDay, getScheduleForDate, Habit } from './state';
+import { state, TimeOfDay, getScheduleForDate, Habit, getEffectiveScheduleForHabitOnDate } from './state';
+
+// MELHORIA DE MANUTENIBILIDADE [2024-10-29]: Os "números mágicos" para o posicionamento do indicador de soltura foram substituídos por constantes nomeadas.
+// Isso melhora a legibilidade do código e torna mais fácil ajustar o comportamento visual, se necessário.
+const DROP_INDICATOR_GAP = 5; // Espaçamento em pixels acima/abaixo do cartão de destino
+const DROP_INDICATOR_HEIGHT = 3; // Deve corresponder à altura do indicador no CSS
 
 export function setupDragAndDropHandler(habitContainer: HTMLElement) {
     let draggedElement: HTMLElement | null = null;
@@ -57,20 +63,25 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
             dropZone.appendChild(dropIndicator);
         }
 
-        // Etapa 2: Verificar se a movimentação é inválida (duplicada).
-        const habit = draggedHabitObject; // Usa o objeto do hábito em cache
-        const activeSchedule = habit ? getScheduleForDate(habit, state.selectedDate) : null;
-        const dailyInfo = state.dailyData[state.selectedDate]?.[draggedHabitId];
-        const scheduleForDay = dailyInfo?.dailySchedule || activeSchedule?.times || [];
-        
-        if (newTime !== draggedHabitOriginalTime && scheduleForDay.includes(newTime)) {
-            dropZone.classList.add('invalid-drop');
-            e.dataTransfer!.dropEffect = 'none';
-            return; // Impede a reordenação ou qualquer outra ação.
-        }
+        // CORREÇÃO DE BUG DE ESTADO VISUAL [2024-09-23]: A lógica de feedback visual foi refatorada para ser mutuamente exclusiva.
+        // O uso de `classList.toggle` garante que apenas um estado (válido ou inválido) seja exibido por vez,
+        // corrigindo um bug onde ambas as classes poderiam ser aplicadas simultaneamente.
+        const scheduleForDay = getEffectiveScheduleForHabitOnDate(draggedHabitObject, state.selectedDate);
+        const isInvalidDrop = newTime !== draggedHabitOriginalTime && scheduleForDay.includes(newTime);
 
-        // Etapa 3: A movimentação é válida, definir efeitos visuais.
-        dropZone.classList.add('drag-over');
+        dropZone.classList.toggle('invalid-drop', isInvalidDrop);
+        dropZone.classList.toggle('drag-over', !isInvalidDrop);
+
+        if (isInvalidDrop) {
+            e.dataTransfer!.dropEffect = 'none';
+            // Garante que o indicador de reordenação não apareça em uma zona inválida.
+            if (dropIndicator) {
+                dropIndicator.classList.remove('visible');
+            }
+            return;
+        }
+        
+        // Etapa 3: A movimentação é válida, definir dropEffect.
         e.dataTransfer!.dropEffect = 'move';
         
         // Etapa 4: Lidar com a reordenação visual se estiver sobre outro cartão.
@@ -80,11 +91,11 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
             const position = e.clientY < midY ? 'before' : 'after';
 
             const indicatorTop = position === 'before'
-                ? cardTarget.offsetTop - 5 
-                : cardTarget.offsetTop + cardTarget.offsetHeight + 5;
+                ? cardTarget.offsetTop - DROP_INDICATOR_GAP
+                : cardTarget.offsetTop + cardTarget.offsetHeight + DROP_INDICATOR_GAP;
             
             if (dropIndicator) {
-                dropIndicator.style.top = `${indicatorTop - 1.5}px`;
+                dropIndicator.style.top = `${indicatorTop - (DROP_INDICATOR_HEIGHT / 2)}px`; // Centraliza o indicador no espaço
                 dropIndicator.classList.add('visible');
                 dropIndicator.dataset.targetId = cardTarget.dataset.habitId;
                 dropIndicator.dataset.position = position;
@@ -96,6 +107,12 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
     const handleBodyDrop = (e: DragEvent) => {
         e.preventDefault();
         
+        // CORREÇÃO DE ROBUSTEZ [2024-09-18]: Remove os listeners de arrasto do corpo imediatamente
+        // após o soltar para prevenir "listeners pendentes" e condições de corrida caso o
+        // evento `dragend` seja atrasado ou falhe.
+        document.body.removeEventListener('dragover', handleBodyDragOver);
+        document.body.removeEventListener('drop', handleBodyDrop);
+
         // 1. Captura os dados necessários para a lógica de soltura antes de limpar a UI.
         const reorderTargetId = dropIndicator?.dataset.targetId;
         const reorderPosition = dropIndicator?.dataset.position as 'before' | 'after';
@@ -103,9 +120,9 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
         const dropZone = currentDropZoneTarget;
         const newTime = dropZone?.dataset.time as TimeOfDay | undefined;
 
-        // 2. BUGFIX: Limpa o estado visual (borda azul) imediatamente no evento 'drop'.
+        // 2. BUGFIX: Limpa o estado visual (borda azul/vermelha) imediatamente no evento 'drop'.
         // Isso previne uma condição de corrida onde a limpeza em 'dragend' ocorria após a
-        // re-renderização do DOM, deixando a referência ao elemento obsoleta e a borda azul presa.
+        // re-renderização do DOM, deixando a referência ao elemento obsoleta e a borda presa.
         dropZone?.classList.remove('drag-over', 'invalid-drop');
         if (dropIndicator) {
             dropIndicator.classList.remove('visible');

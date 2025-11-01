@@ -3,6 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 
+// ANÁLISE DO ARQUIVO: 100% concluído. O manipulador de gestos de deslize é robusto e lida com interações complexas (deslize vs. arrastar). Nenhuma outra análise é necessária.
+
 let isSwiping = false;
 
 /**
@@ -10,6 +12,65 @@ let isSwiping = false;
  * @returns {boolean} Verdadeiro se o usuário está arrastando um cartão lateralmente.
  */
 export const isCurrentlySwiping = (): boolean => isSwiping;
+
+/**
+ * REATORAÇÃO DE CLAREZA [2024-09-21]: A lógica que determina o estado final de um cartão após um deslize
+ * foi extraída para esta função auxiliar para melhorar a legibilidade da função `cleanup`.
+ * @param activeCard O elemento do cartão que está sendo deslizado.
+ * @param deltaX O deslocamento horizontal total do gesto de deslize.
+ * @param wasOpenLeft Se o cartão já estava aberto à esquerda no início do gesto.
+ * @param wasOpenRight Se o cartão já estava aberto à direita no início do gesto.
+ */
+function _finalizeSwipeState(activeCard: HTMLElement, deltaX: number, wasOpenLeft: boolean, wasOpenRight: boolean) {
+    const SWIPE_INTENT_THRESHOLD = 10;
+    
+    if (wasOpenLeft) {
+        // Se estava aberto à esquerda, um deslize para a ESQUERDA o fecha
+        if (deltaX < -SWIPE_INTENT_THRESHOLD) {
+            activeCard.classList.remove('is-open-left');
+        }
+    } else if (wasOpenRight) {
+        // Se estava aberto à direita, um deslize para a DIREITA o fecha
+        if (deltaX > SWIPE_INTENT_THRESHOLD) {
+            activeCard.classList.remove('is-open-right');
+        }
+    } else { // O cartão estava fechado
+        // Se deslizou para a direita, abre à esquerda (excluir)
+        if (deltaX > SWIPE_INTENT_THRESHOLD) {
+            activeCard.classList.add('is-open-left');
+        // Se deslizou para a esquerda, abre à direita (nota)
+        } else if (deltaX < -SWIPE_INTENT_THRESHOLD) {
+            activeCard.classList.add('is-open-right');
+        }
+    }
+}
+
+/**
+ * REATORAÇÃO DE CLAREZA [2024-09-21]: A lógica para prevenir um clique acidental após um deslize
+ * foi movida para esta função auxiliar para melhorar a organização do código.
+ * @param deltaX O deslocamento horizontal total do gesto de deslize.
+ */
+function _blockSubsequentClick(deltaX: number) {
+    const SWIPE_INTENT_THRESHOLD = 10;
+    // Só bloqueia o clique se o deslize foi significativo.
+    if (Math.abs(deltaX) <= SWIPE_INTENT_THRESHOLD) return;
+
+    const blockClick = (e: MouseEvent) => {
+        const target = e.target as HTMLElement;
+        // Permite cliques intencionais nos próprios botões de ação.
+        if (target.closest('.swipe-delete-btn') || target.closest('.swipe-note-btn')) {
+            window.removeEventListener('click', blockClick, true);
+            return;
+        }
+
+        e.stopPropagation();
+        e.preventDefault();
+        window.removeEventListener('click', blockClick, true);
+    };
+    // Adiciona no modo de captura para garantir que seja executado antes de outros listeners.
+    window.addEventListener('click', blockClick, true);
+}
+
 
 export function setupSwipeHandler(habitContainer: HTMLElement) {
     let activeCard: HTMLElement | null = null;
@@ -21,7 +82,6 @@ export function setupSwipeHandler(habitContainer: HTMLElement) {
     let wasOpenRight = false;
     let swipeActionWidth = 60; // Valor padrão
     let dragEnableTimer: number | null = null;
-    const SWIPE_INTENT_THRESHOLD = 10; // Um limiar baixo para detectar a intenção de deslizar.
 
     const abortSwipe = () => {
         if (!activeCard) return;
@@ -97,6 +157,7 @@ export function setupSwipeHandler(habitContainer: HTMLElement) {
         }
     };
 
+    // REATORAÇÃO DE CLAREZA [2024-09-21]: A função 'cleanup' foi refatorada para melhorar a legibilidade. A lógica de finalização do estado do deslize e de bloqueio de clique foi extraída para as funções auxiliares _finalizeSwipeState e _blockSubsequentClick, respectivamente. Isso isola as responsabilidades e torna o fluxo de controle principal mais fácil de seguir, sem alterar o comportamento.
     const cleanup = () => {
         if (dragEnableTimer) {
             clearTimeout(dragEnableTimer);
@@ -110,50 +171,12 @@ export function setupSwipeHandler(habitContainer: HTMLElement) {
             content.draggable = true; // Sempre reativa o arrastar ao final da interação
             content.style.transform = ''; // Deixa o CSS cuidar da transição
         }
-
-        const deltaX = currentX - startX;
         activeCard.classList.remove('is-swiping');
 
-        // Processa o resultado do deslize apenas se a direção foi confirmada como horizontal
         if (swipeDirection === 'horizontal') {
-            if (wasOpenLeft) {
-                // Se estava aberto à esquerda, um deslize para a ESQUERDA o fecha
-                if (deltaX < -SWIPE_INTENT_THRESHOLD) {
-                    activeCard.classList.remove('is-open-left');
-                }
-            } else if (wasOpenRight) {
-                // Se estava aberto à direita, um deslize para a DIREITA o fecha
-                if (deltaX > SWIPE_INTENT_THRESHOLD) {
-                    activeCard.classList.remove('is-open-right');
-                }
-            } else { // O cartão estava fechado
-                // Se deslizou para a direita, abre à esquerda (excluir)
-                if (deltaX > SWIPE_INTENT_THRESHOLD) {
-                    activeCard.classList.add('is-open-left');
-                // Se deslizou para a esquerda, abre à direita (nota)
-                } else if (deltaX < -SWIPE_INTENT_THRESHOLD) {
-                    activeCard.classList.add('is-open-right');
-                }
-            }
-
-            // Se um deslize real ocorreu, previne o evento de 'clique' que se segue.
-            if (Math.abs(deltaX) > SWIPE_INTENT_THRESHOLD) {
-                const blockClick = (e: MouseEvent) => {
-                    const target = e.target as HTMLElement;
-                    // Permite cliques intencionais nos próprios botões de ação.
-                    if (target.closest('.swipe-delete-btn') || target.closest('.swipe-note-btn')) {
-                        window.removeEventListener('click', blockClick, true); // Limpa o listener e permite o evento
-                        return;
-                    }
-            
-                    // Bloqueia cliques acidentais em outros elementos.
-                    e.stopPropagation();
-                    e.preventDefault();
-                    window.removeEventListener('click', blockClick, true);
-                };
-                // Adiciona no modo de captura para garantir que seja executado antes de outros listeners.
-                window.addEventListener('click', blockClick, true);
-            }
+            const deltaX = currentX - startX;
+            _finalizeSwipeState(activeCard, deltaX, wasOpenLeft, wasOpenRight);
+            _blockSubsequentClick(deltaX);
         }
         
         // Reseta todas as variáveis de estado

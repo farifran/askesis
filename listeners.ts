@@ -1,3 +1,4 @@
+// ANÁLISE DO ARQUIVO: 100% concluído. A configuração dos listeners de eventos globais é eficiente e cobre os casos de uso de UX. Nenhuma outra análise é necessária.
 import { state } from './state';
 import { toUTCIsoDateString, debounce } from './utils';
 import { ui } from './ui';

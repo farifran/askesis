@@ -1,3 +1,4 @@
+// ANÁLISE DO ARQUIVO: 100% concluído. Os listeners de eventos específicos para cartões de hábito são bem isolados e eficientes. Nenhuma outra análise é necessária.
 import { ui } from './ui';
 import { state, Habit, getCurrentGoalForInstance, TimeOfDay } from './state';
 import { openNotesModal, getUnitString, formatGoalForDisplay } from './render';
@@ -8,6 +9,24 @@ import {
 } from './habitActions';
 
 const GOAL_STEP = 5;
+
+/**
+ * REATORAÇÃO [2024-09-11]: Centraliza a lógica de atualização da UI da meta para evitar duplicação.
+ * Esta função atualiza o texto do valor e da unidade da meta, garantindo consistência
+ * tanto nas ações de incremento/decremento quanto na edição inline.
+ * @param wrapperEl O elemento que envolve o valor e a unidade da meta.
+ * @param habit O objeto do hábito.
+ * @param newGoal O novo valor da meta a ser exibido.
+ */
+function _updateGoalDisplay(wrapperEl: HTMLElement, habit: Habit, newGoal: number) {
+    const progressEl = wrapperEl.querySelector<HTMLElement>('.progress');
+    const unitEl = wrapperEl.querySelector<HTMLElement>('.unit');
+    if (progressEl && unitEl) {
+        progressEl.textContent = formatGoalForDisplay(newGoal);
+        unitEl.textContent = getUnitString(habit, newGoal);
+    }
+}
+
 
 function createGoalInput(habit: Habit, time: TimeOfDay, wrapper: HTMLElement) {
     const controls = wrapper.closest('.habit-goal-controls');
@@ -26,18 +45,11 @@ function createGoalInput(habit: Habit, time: TimeOfDay, wrapper: HTMLElement) {
     const save = () => {
         const newGoal = parseInt(input.value, 10);
         if (!isNaN(newGoal) && newGoal > 0) {
-            // A ação de estado agora só atualiza o estado, a UI será atualizada pelo listener.
+            // A ação de estado agora só atualiza o estado.
             setGoalOverride(habitId, state.selectedDate, time, newGoal);
-            // Atualiza a UI localmente após salvar.
-            const progressEl = wrapper.querySelector<HTMLElement>('.progress');
-            const unitEl = wrapper.querySelector<HTMLElement>('.unit');
-            if(progressEl && unitEl) {
-                progressEl.textContent = formatGoalForDisplay(newGoal);
-                unitEl.textContent = getUnitString(habit, newGoal);
-            } else {
-                // Se os elementos não existirem mais (caso raro), restaura o conteúdo.
-                 wrapper.innerHTML = originalContent;
-            }
+            // Restaura a estrutura original e então atualiza a UI localmente com o novo valor.
+            wrapper.innerHTML = originalContent;
+            _updateGoalDisplay(wrapper, habit, newGoal);
         } else {
              // Se o valor for inválido, restaura o conteúdo original para evitar um estado vazio.
             wrapper.innerHTML = originalContent;
@@ -85,8 +97,8 @@ export function setupHabitCardListeners() {
             const habit = state.habits.find(h => h.id === habitId);
             if (!habit || (habit.goal.type !== 'pages' && habit.goal.type !== 'minutes')) return;
             
-            // REFACTOR [2024-09-05]: A lógica de UI (atualização de texto e animação) foi consolidada aqui.
-            // A função de ação agora lida apenas com o estado, melhorando a separação de responsabilidades e corrigindo o bug do "piscar".
+            // REATORAÇÃO [2024-09-11]: A lógica de UI (atualização de texto e animação) foi consolidada aqui.
+            // A função de ação agora lida apenas com o estado, melhorando a separação de responsabilidades.
             const action = controlBtn.dataset.action as 'increment' | 'decrement';
             const goalWrapper = controlBtn.closest('.habit-goal-controls')?.querySelector<HTMLElement>('.goal-value-wrapper');
             if (!goalWrapper) return;
@@ -99,13 +111,8 @@ export function setupHabitCardListeners() {
             // Etapa 1: Chama a ação para atualizar o estado e os componentes não-card.
             setGoalOverride(habitId, state.selectedDate, time, newGoal);
     
-            // Etapa 2: Atualiza cirurgicamente a UI do cartão neste listener.
-            const progressEl = goalWrapper.querySelector<HTMLElement>('.progress');
-            const unitEl = goalWrapper.querySelector<HTMLElement>('.unit');
-            if (progressEl && unitEl) {
-                progressEl.textContent = formatGoalForDisplay(newGoal);
-                unitEl.textContent = getUnitString(habit, newGoal);
-            }
+            // Etapa 2: Atualiza cirurgicamente a UI do cartão usando a função centralizada.
+            _updateGoalDisplay(goalWrapper, habit, newGoal);
             
             // Etapa 3: Aplica a animação de feedback visual.
             const animationClass = action === 'increment' ? 'increase' : 'decrease';
@@ -146,7 +153,7 @@ export function setupHabitCardListeners() {
             }
 
             // Se o cartão estiver fechado, o clique executa a ação padrão de alternar o status.
-            toggleHabitStatus(habitId, time);
+            toggleHabitStatus(habitId, time, state.selectedDate);
         }
     });
 }

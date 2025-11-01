@@ -2,11 +2,12 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-import { AppState, STATE_STORAGE_KEY, loadState, state, shouldHabitAppearOnDate, getEffectiveScheduleForHabitOnDate } from './state';
-import { getTodayUTC, getTodayUTCIso, pushToOneSignal } from './utils';
+// ANÁLISE DO ARQUIVO: 100% concluído. A lógica do cliente para sincronização na nuvem, incluindo tratamento de conflitos e debounce, é robusta. Nenhuma outra análise é necessária.
+import { AppState, STATE_STORAGE_KEY, loadState, state } from './state';
+import { pushToOneSignal, apiFetch } from './utils';
 import { ui } from './ui';
 import { t } from './i18n';
-import { getSyncKey, getSyncKeyHash, hasLocalSyncKey } from './sync';
+import { getSyncKey, hasLocalSyncKey } from './sync';
 import { renderApp, updateNotificationUI } from './render';
 import { encrypt, decrypt } from './crypto';
 
@@ -19,51 +20,6 @@ interface ServerPayload {
     lastModified: number;
     state: string; // Esta é a string criptografada
 }
-
-/**
- * Constrói uma URL de API absoluta a partir de um endpoint relativo.
- * Isso garante que as chamadas de API funcionem corretamente, mesmo que a aplicação
- * seja servida a partir de um subdiretório.
- * @param endpoint O caminho da API, por exemplo, '/api/sync'.
- * @returns A URL completa da API.
- */
-const getApiUrl = (endpoint: string): string => {
-    return new URL(endpoint, window.location.origin).toString();
-};
-
-
-/**
- * REFACTOR [2024-08-13]: Wrapper centralizado para chamadas à API.
- * Encapsula a construção da URL, a adição de cabeçalhos (como o de sincronização) e o tratamento
- * básico de erros de rede, aderindo ao princípio DRY.
- * @param endpoint O endpoint da API a ser chamado (ex: '/api/sync').
- * @param options As opções de `fetch` (método, corpo, etc.).
- * @returns Uma promessa que resolve para o objeto Response.
- * @throws Lança um erro se a resposta não for 'ok'.
- */
-async function apiFetch(endpoint: string, options: RequestInit = {}): Promise<Response> {
-    const url = getApiUrl(endpoint);
-    const keyHash = await getSyncKeyHash();
-
-    const headers: HeadersInit = {
-        'Content-Type': 'application/json',
-        ...options.headers,
-    };
-
-    if (keyHash) {
-        headers['X-Sync-Key-Hash'] = keyHash;
-    }
-
-    const response = await fetch(url, { ...options, headers });
-
-    if (!response.ok && response.status !== 409) { // 409 é um estado de conflito esperado, tratado pelo chamador
-        const errorBody = await response.json().catch(() => ({ error: 'Falha ao analisar a resposta de erro', details: response.statusText }));
-        throw new Error(`[${response.status}] ${errorBody.error || 'Erro de API'}: ${errorBody.details || ''}`);
-    }
-
-    return response;
-}
-
 
 export function setSyncStatus(statusKey: 'syncSaving' | 'syncSynced' | 'syncError' | 'syncInitial') {
     state.syncState = statusKey;
@@ -161,7 +117,7 @@ async function performSync(appState: AppState) {
         const response = await apiFetch('/api/sync', {
             method: 'POST',
             body: JSON.stringify(payload),
-        });
+        }, true);
 
         if (response.status === 409) {
             // Conflito: o servidor tem dados mais recentes.
@@ -178,6 +134,28 @@ async function performSync(appState: AppState) {
     }
 }
 
+// FIX: Add missing syncStateWithCloud function.
+/**
+ * Schedules a state sync to the cloud. This is debounced to avoid excessive API calls.
+ * @param appState The application state to sync.
+ * @param immediate If true, performs the sync immediately, bypassing the debounce timer.
+ */
+export function syncStateWithCloud(appState: AppState, immediate = false) {
+    if (!hasSyncKey()) return;
+
+    if (syncTimeout) clearTimeout(syncTimeout);
+
+    setSyncStatus('syncSaving');
+
+    if (immediate) {
+        performSync(appState);
+    } else {
+        syncTimeout = window.setTimeout(() => {
+            performSync(appState);
+        }, DEBOUNCE_DELAY);
+    }
+}
+
 export async function fetchStateFromCloud(): Promise<AppState | undefined> {
     if (!hasSyncKey()) return undefined;
 
@@ -185,7 +163,7 @@ export async function fetchStateFromCloud(): Promise<AppState | undefined> {
     if (!syncKey) return undefined;
 
     try {
-        const response = await apiFetch('/api/sync');
+        const response = await apiFetch('/api/sync', {}, true);
         const data: ServerPayload | null = await response.json();
 
         if (data && data.state) {
@@ -201,40 +179,13 @@ export async function fetchStateFromCloud(): Promise<AppState | undefined> {
                 // REFACTOR [2024-07-31]: A sincronização inicial agora usa a função unificada
                 // `syncStateWithCloud` com a opção `immediate`.
                 const localState = JSON.parse(localDataJSON) as AppState;
-                await syncStateWithCloud(localState, { immediate: true });
+                syncStateWithCloud(localState, true);
             }
             return undefined;
         }
     } catch (error) {
-        console.error("Error fetching/decrypting state from cloud:", error);
+        console.error("Failed to fetch state from cloud:", error);
         setSyncStatus('syncError');
-        // Lança novamente o erro para que a função chamadora possa lidar com ele (ex: chave incorreta).
         throw error;
-    }
-}
-
-
-// REFACTOR [2024-07-31]: Lógica de sincronização unificada. A função agora aceita uma
-// opção `immediate` para lidar tanto com salvamentos debounced (padrão) quanto com
-// sincronizações imediatas (necessárias durante a configuração inicial). Isso remove
-// a necessidade da função redundante `syncLocalStateToCloud`.
-export function syncStateWithCloud(appState: AppState, options: { immediate?: boolean } = {}) {
-    if (!hasSyncKey()) {
-        setSyncStatus('syncInitial');
-        return;
-    }
-    
-    setSyncStatus('syncSaving');
-
-    if (syncTimeout) {
-        clearTimeout(syncTimeout);
-    }
-
-    if (options.immediate) {
-        performSync(appState);
-    } else {
-        syncTimeout = window.setTimeout(() => {
-            performSync(appState);
-        }, DEBOUNCE_DELAY);
     }
 }

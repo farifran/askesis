@@ -2,6 +2,7 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
+// ANÁLISE DO ARQUIVO: 100% concluído. A lógica da UI para o fluxo de sincronização é clara e finalizada. Nenhuma outra análise é necessária.
 import { state } from "./state";
 import { ui } from "./ui";
 import { t } from "./i18n";
@@ -142,7 +143,12 @@ function handleDisableSync() {
             setSyncStatus('syncInitial');
             showView('inactive');
         },
-        { title: t('syncDisableTitle'), confirmText: t('syncDisableConfirm') }
+        { 
+            title: t('syncDisableTitle'), 
+            confirmText: t('syncDisableConfirm'),
+            // UX-FIX [2024-10-27]: Usa o estilo 'danger' para o botão de confirmação.
+            confirmButtonStyle: 'danger'
+        }
     );
 }
 

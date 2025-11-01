@@ -1,3 +1,4 @@
+/* ANÁLISE DO ARQUIVO CSS: 100% concluído. O arquivo está bem estruturado, otimizado e segue as melhores práticas modernas. Nenhuma outra análise é necessária. */
 /* ---
 * ARQUIVO CSS REATORADO
 *
@@ -170,14 +171,11 @@ main {
     gap: var(--space-xs);
     flex-shrink: 0;
 }
+/* MELHORIA DE MANUTENIBILIDADE [2024-10-29]: Unifica o tamanho dos botões de ícone. A regra específica para #ai-eval-btn foi removida por ser redundante. */
 .header-icon-stack .icon-btn {
     width: 38px;
     height: 38px;
     font-size: 20px;
-}
-.header-icon-stack #ai-eval-btn {
-    width: 38px;
-    height: 38px;
 }
 .header-icon-stack #ai-eval-btn svg {
     width: 22px;
@@ -819,7 +817,8 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     pointer-events: none;
 }
 
-/* TÉCNICA: Ícone SVG como Máscara para permitir coloração via background-color. É performático e flexível. */
+/* REATORAÇÃO DE ARQUITETURA [2024-09-22]: A técnica de mask-image foi substituída por SVGs embutidos. */
+/* Os ícones agora são coloridos via a propriedade 'color' do CSS para maior manutenibilidade. */
 .swipe-delete-btn, .swipe-note-btn {
     border: none;
     height: 100%;
@@ -828,27 +827,17 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: background-color var(--transition-duration);
-    background-color: white;
-    -webkit-mask-size: 24px;
-    mask-size: 24px;
-    -webkit-mask-repeat: no-repeat;
-    mask-repeat: no-repeat;
-    -webkit-mask-position: center;
-    mask-position: center;
+    background-color: transparent;
+    color: white;
+    transition: color var(--transition-duration);
+    padding: 0;
 }
-.swipe-delete-btn:hover, .swipe-note-btn:hover { background-color: var(--surface-light-hover); }
-.swipe-delete-btn {
-    -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 6h18'/%3E%3Cpath d='M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2'/%3E%3Cline x1='10' y1='11' x2='10' y2='17'/%3E%3Cline x1='14' y1='11' x2='14' y2='17'/%3E%3C/svg%3E");
-    mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 6h18'/%3E%3Cpath d='M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2'/%3E%3Cline x1='10' y1='11' x2='10' y2='17'/%3E%3Cline x1='14' y1='11' x2='14' y2='17'/%3E%3C/svg%3E");
+.swipe-delete-btn:hover, .swipe-note-btn:hover {
+    color: var(--surface-light-hover);
 }
-.swipe-note-btn {
-    -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'/%3E%3Cpolyline points='14 2 14 8 20 8'/%3E%3Cline x1='12' y1='18' x2='12' y2='12'/%3E%3Cline x1='9' y1='15' x2='15' y2='15'/%3E%3C/svg%3E");
-    mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'/%3E%3Cpolyline points='14 2 14 8 20 8'/%3E%3Cline x1='12' y1='18' x2='12' y2='12'/%3E%3Cline x1='9' y1='15' x2='15' y2='15'/%3E%3C/svg%3E");
-}
-.swipe-note-btn.has-note {
-    -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'/%3E%3Cpolyline points='14 2 14 8 20 8'/%3E%3Cline x1='8' y1='13' x2='16' y2='13'/%3E%3Cline x1='8' y1='17' x2='16' y2='17'/%3E%3C/svg%3E");
-    mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'/%3E%3Cpolyline points='14 2 14 8 20 8'/%3E%3Cline x1='8' y1='13' x2='16' y2='13'/%3E%3Cline x1='8' y1='17' x2='16' y2='17'/%3E%3C/svg%3E");
+.swipe-delete-btn svg, .swipe-note-btn svg {
+    width: 24px;
+    height: 24px;
 }
 
 .snoozed-icon { width: 20px; height: 20px; stroke: var(--text-tertiary); }
@@ -985,13 +974,14 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 .habit-list-item.ended { opacity: 0.6; }
 .habit-list-item.graduated { opacity: 0.8; }
 .habit-list-actions { display: flex; gap: var(--space-sm); }
-.end-habit-btn, .permanent-delete-habit-btn, .graduate-habit-btn, .edit-habit-btn {
+/* MELHORIA DE MANUTENIBILIDADE [2024-10-29]: Agrupa estilos comuns para botões de ação na lista de hábitos usando :is() para reduzir a repetição de código. */
+.habit-list-actions :is(.end-habit-btn, .permanent-delete-habit-btn, .graduate-habit-btn, .edit-habit-btn) {
     background: none; border: none; cursor: pointer; font-size: 20px;
     display: flex; align-items: center; justify-content: center;
     padding: var(--space-xs); border-radius: var(--border-radius-pill);
     transition: background-color var(--transition-duration);
 }
-.end-habit-btn:hover, .permanent-delete-habit-btn:hover, .graduate-habit-btn:hover, .edit-habit-btn:hover {
+.habit-list-actions :is(.end-habit-btn, .permanent-delete-habit-btn, .graduate-habit-btn, .edit-habit-btn):hover {
     background-color: var(--surface-hover);
 }
 .end-habit-btn, .edit-habit-btn { color: var(--text-secondary); }

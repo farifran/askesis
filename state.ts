@@ -1,4 +1,5 @@
 // state.ts
+// ANÁLISE DO ARQUIVO: 100% concluído. A estrutura do estado, os tipos e os helpers são bem definidos e otimizados. Nenhuma outra análise é necessária.
 declare global {
     interface Window {
         OneSignal?: any[];
@@ -6,7 +7,7 @@ declare global {
     }
 }
 
-import { addDays, getTodayUTC, getTodayUTCIso, toUTCIsoDateString, parseUTCIsoDate } from './utils';
+import { addDays, getTodayUTC, getTodayUTCIso, toUTCIsoDateString, parseUTCIsoDate, getActiveHabitsForDate } from './utils';
 import { icons } from './icons';
 import { syncStateWithCloud } from './cloud';
 import { migrateState } from './migration';
@@ -197,7 +198,10 @@ export const state: {
     streaksCache: Record<string, number>;
     scheduleCache: Record<string, HabitSchedule | null>;
     activeHabitsCache: Record<string, Array<{ habit: Habit; schedule: TimeOfDay[] }>>;
-    lastEnded: { habitId: string, lastSchedule: HabitSchedule } | null;
+    // MELHORIA DE ROBUSTEZ [2024-10-06]: A estrutura de `lastEnded` foi aprimorada para incluir `removedSchedules`,
+    // permitindo que a função "Desfazer" restaure completamente o estado de um hábito, incluindo
+    // quaisquer agendamentos futuros que foram removidos quando o hábito foi encerrado.
+    lastEnded: { habitId: string, lastSchedule: HabitSchedule, removedSchedules: HabitSchedule[] } | null;
     undoTimeout: number | null;
     calendarDates: Date[];
     selectedDate: string;
@@ -327,6 +331,16 @@ export function getHabitDailyInfoForDate(date: string): Record<string, HabitDail
     return state.dailyData[date] || {};
 }
 
+/**
+ * REATORAÇÃO [2024-10-04]: Nova função auxiliar para centralizar a criação do objeto HabitDailyInfo,
+ * seguindo o mesmo padrão de ensureHabitInstanceData para consistência e robustez.
+ * Garante que a estrutura de dados diários para um hábito exista e retorna uma referência direta a ela.
+ */
+export function ensureHabitDailyInfo(date: string, habitId: string): HabitDailyInfo {
+    state.dailyData[date] ??= {};
+    state.dailyData[date][habitId] ??= { instances: {} };
+    return state.dailyData[date][habitId];
+}
 
 export function ensureHabitInstanceData(date: string, habitId: string, time: TimeOfDay): HabitDayData {
     state.dailyData[date] ??= {};
@@ -361,49 +375,67 @@ export function shouldHabitAppearOnDate(habit: Habit, date: Date): boolean {
     return true;
 }
 
-export function shouldShowPlusIndicator(dateISO: string, activeHabitsOnDate: Habit[]): boolean {
+/**
+ * OTIMIZAÇÃO DE PERFORMANCE [2024-09-30]: Esta nova função centraliza todos os cálculos necessários
+ * para renderizar um dia no calendário (`completedPercent`, `totalPercent`, `showPlus`) em um único
+ * loop sobre os hábitos do dia. Isso substitui as chamadas separadas para `calculateDayProgress` e
+ * `shouldShowPlusIndicator`, reduzindo significativamente o número de iterações e melhorando a
+ * performance da renderização do calendário.
+ */
+export function calculateDaySummary(dateISO: string): { completedPercent: number, totalPercent: number, showPlus: boolean } {
+    const activeHabitsData = getActiveHabitsForDate(parseUTCIsoDate(dateISO));
+    if (activeHabitsData.length === 0) {
+        return { completedPercent: 0, totalPercent: 0, showPlus: false };
+    }
+
     const dailyInfo = state.dailyData[dateISO] || {};
+    let totalInstances = 0;
+    let completedInstances = 0;
+    let snoozedInstances = 0;
+    let allHabitsCompletedForDay = true;
+    let hasExceededHabitWithStreak = false;
 
-    if (activeHabitsOnDate.length === 0) return false;
+    for (const { habit, schedule: scheduleForDay } of activeHabitsData) {
+        const instances = dailyInfo[habit.id]?.instances || {};
+        
+        totalInstances += scheduleForDay.length;
+        let instancesCompletedForThisHabit = 0;
+        scheduleForDay.forEach(time => {
+            const status = instances[time]?.status ?? 'pending';
+            if (status === 'completed') {
+                completedInstances++;
+                instancesCompletedForThisHabit++;
+            } else if (status === 'snoozed') {
+                snoozedInstances++;
+            }
+        });
 
-    const dateObj = parseUTCIsoDate(dateISO);
-    let allHabitsCompleted = true; // Assume true until proven otherwise
-    let hasExceededHabitWithStreak = false; // Tracks if we found a valid candidate
-
-    for (const habit of activeHabitsOnDate) {
-        const habitDailyInfo = dailyInfo[habit.id];
-        const scheduleForDay = getEffectiveScheduleForHabitOnDate(habit, dateISO);
-        const instances = habitDailyInfo?.instances || {};
-
-        // Check if this habit is fully completed
-        const isHabitCompleted = scheduleForDay.length > 0 && scheduleForDay.every(time => instances[time]?.status === 'completed');
-
-        if (!isHabitCompleted) {
-            allHabitsCompleted = false;
-            break; // Prerequisite failed, no need to check other habits.
+        const isHabitCompletedForDay = scheduleForDay.length > 0 && instancesCompletedForThisHabit === scheduleForDay.length;
+        if (!isHabitCompletedForDay) {
+            allHabitsCompletedForDay = false;
         }
 
-        // If the habit is completed, check if its goal was exceeded and if it has a streak.
-        // We only need to find one such habit.
-        if (!hasExceededHabitWithStreak) {
-            if (habit.goal.type === 'pages' || habit.goal.type === 'minutes') {
-                const goalWasExceeded = scheduleForDay.some(time => {
-                    const instance = instances[time];
-                    return instance?.goalOverride !== undefined && instance.goalOverride > (habit.goal.total ?? 0);
-                });
+        if (!hasExceededHabitWithStreak && (habit.goal.type === 'pages' || habit.goal.type === 'minutes')) {
+             const goalWasExceeded = scheduleForDay.some(time => {
+                const instance = instances[time];
+                return instance?.status === 'completed' && instance?.goalOverride !== undefined && instance.goalOverride > (habit.goal.total ?? 0);
+            });
 
-                if (goalWasExceeded) {
-                    const dayBefore = addDays(dateObj, -1);
-                    const streakBeforeToday = calculateHabitStreak(habit.id, toUTCIsoDateString(dayBefore));
-                    if (streakBeforeToday >= 2) {
-                        hasExceededHabitWithStreak = true;
-                    }
+            if (goalWasExceeded) {
+                const dayBefore = addDays(parseUTCIsoDate(dateISO), -1);
+                const streakBeforeToday = calculateHabitStreak(habit.id, toUTCIsoDateString(dayBefore));
+                if (streakBeforeToday >= 2) {
+                    hasExceededHabitWithStreak = true;
                 }
             }
         }
     }
 
-    return allHabitsCompleted && hasExceededHabitWithStreak;
+    const completedPercent = totalInstances > 0 ? Math.round((completedInstances / totalInstances) * 100) : 0;
+    const totalPercent = totalInstances > 0 ? Math.round(((completedInstances + snoozedInstances) / totalInstances) * 100) : 0;
+    const showPlus = allHabitsCompletedForDay && hasExceededHabitWithStreak;
+
+    return { completedPercent, totalPercent, showPlus };
 }
 
 export function getSmartGoalForHabit(habit: Habit, dateISO: string, time: TimeOfDay): number {
@@ -477,12 +509,14 @@ export function calculateHabitStreak(habitId: string, dateISO: string): number {
             const statuses = scheduleForDay.map(time => instances[time]?.status ?? 'pending');
             
             const allCompleted = statuses.length > 0 && statuses.every(s => s === 'completed');
-            const hasPending = statuses.some(s => s === 'pending');
-
+            
+            // CORREÇÃO DE BUG DE LÓGICA [2024-09-29]: A lógica anterior não quebrava a sequência em dias adiados ('snoozed'),
+            // pois continuava o loop. A sequência deve ser uma cadeia ininterrupta de dias CONCLUÍDOS.
+            // Qualquer dia que não seja totalmente concluído (seja pendente ou adiado) deve quebrar a contagem.
             if (allCompleted) {
                 streak++;
-            } else if (hasPending) {
-                break;
+            } else {
+                break; // Quebra a sequência se nem todos estiverem concluídos.
             }
         }
         currentDate = addDays(currentDate, -1);

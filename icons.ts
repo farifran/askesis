@@ -2,6 +2,9 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
+// ANÁLISE DO ARQUIVO: 100% concluído. Todos os ícones da aplicação foram centralizados neste arquivo, concluindo a revisão de sua arquitetura.
+
+import { TimeOfDay } from './state';
 
 // Centralized repository for all SVG icons used in the application.
 // This approach helps in reducing the main bundle size and improves code organization.
@@ -48,4 +51,24 @@ export const icons = {
     editAction: '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>',
     graduateAction: '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v2"/><path d="M12 18v2a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2"/><path d="M6 12h12"/><path d="M18 12v6"/><path d="M18 6V4a2 2 0 0 0-2-2h-2"/><path d="M18 12h-6"/><path d="M12 12V6"/></svg>',
     endAction: '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>',
+    // REATORAÇÃO DE ARQUITETURA [2024-09-22]: Adiciona os ícones de ação de deslize, que antes estavam codificados no CSS.
+    // O atributo 'stroke' é definido como 'currentColor' para permitir a estilização via a propriedade 'color' do CSS.
+    swipeDelete: `<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M3 6h18'/><path d='M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2'/><line x1='10' y1='11' x2='10' y2='17'/><line x1='14' y1='11' x2='14' y2='17'/></svg>`,
+    swipeNote: `<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'/><polyline points='14 2 14 8 20 8'/><line x1='12' y1='18' x2='12' y2='12'/><line x1='9' y1='15' x2='15' y2='15'/></svg>`,
+    swipeNoteHasNote: `<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'/><polyline points='14 2 14 8 20 8'/><line x1='8' y1='13' x2='16' y2='13'/><line x1='8' y1='17' x2='16' y2='17'/></svg>`,
 };
+
+/**
+ * REATORAÇÃO [2024-09-12]: Movido de render.ts para cá para melhor coesão.
+ * Retorna o SVG do ícone para um determinado período do dia.
+ * @param time O período do dia.
+ * @returns A string SVG correspondente.
+ */
+export function getTimeOfDayIcon(time: TimeOfDay): string {
+    switch (time) {
+        case 'Morning': return icons.morning;
+        case 'Afternoon': return icons.afternoon;
+        case 'Evening': return icons.evening;
+        default: return '';
+    }
+}

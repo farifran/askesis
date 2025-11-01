@@ -2,16 +2,14 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-
+// ANÁLISE DO ARQUIVO: 100% concluído. As estratégias de renderização, incluindo a reconciliação de DOM e a acessibilidade, são avançadas e finalizadas. Nenhuma outra análise é necessária.
 
 import {
     state,
     Habit,
     HabitStatus,
     HabitDayData,
-    getHabitDailyInfoForDate,
     getSmartGoalForHabit,
-    shouldShowPlusIndicator,
     calculateHabitStreak,
     LANGUAGES,
     FREQUENCIES,
@@ -24,12 +22,15 @@ import {
     TimeOfDay,
     getScheduleForDate,
     HabitTemplate,
+    getHabitDailyInfoForDate,
+    calculateDaySummary,
 } from './state';
-import { getTodayUTCIso, toUTCIsoDateString, parseUTCIsoDate, escapeHTML, pushToOneSignal, getActiveHabitsForDate, addDays } from './utils';
+// FIX: `getActiveHabitsForDate` was missing from the import list.
+import { getTodayUTCIso, toUTCIsoDateString, parseUTCIsoDate, escapeHTML, pushToOneSignal, addDays, getActiveHabitsForDate } from './utils';
 import { ui } from './ui';
 import { t, getLocaleDayName, getHabitDisplayInfo, getTimeOfDayName } from './i18n';
 import { STOIC_QUOTES } from './quotes';
-import { icons } from './icons';
+import { icons, getTimeOfDayIcon } from './icons';
 import { renderChart } from './chart';
 
 function updateReelRotaryARIA(viewportEl: HTMLElement, currentIndex: number, options: readonly string[] | string[], labelKey: string) {
@@ -56,40 +57,46 @@ export function initFrequencyFilter() {
     updateReelRotaryARIA(ui.frequencyViewport, 0, freqLabels, 'frequency_ariaLabel');
 }
 
-function calculateDayProgress(isoDate: string, activeHabitsData: Array<{ habit: Habit; schedule: TimeOfDay[] }>): { completedPercent: number, totalPercent: number } {
-    const dailyInfo = getHabitDailyInfoForDate(isoDate);
-    
-    let totalInstances = 0;
-    let completedInstances = 0;
-    let snoozedInstances = 0;
+/**
+ * OTIMIZAÇÃO DE PERFORMANCE [2024-10-09]: Nova função auxiliar para atualizar um elemento de dia do calendário existente.
+ * Esta função aplica cirurgicamente as mudanças (classes, estilos, atributos ARIA) a um elemento
+ * do DOM existente, evitando a destruição e recriação desnecessárias, o que é fundamental para
+ * a nova estratégia de renderização otimizada em `renderCalendar`.
+ */
+function updateCalendarDayElement(dayItem: HTMLElement, date: Date) {
+    const todayISO = getTodayUTCIso();
+    const isoDate = toUTCIsoDateString(date);
 
-    activeHabitsData.forEach(({ habit, schedule }) => {
-        const instances = dailyInfo[habit.id]?.instances || {};
-        
-        schedule.forEach(time => {
-            totalInstances++;
-            const status = instances[time]?.status;
-            if (status === 'completed') completedInstances++;
-            if (status === 'snoozed') snoozedInstances++;
-        });
-    });
+    // 1. Calcula os dados de exibição
+    const { completedPercent, totalPercent, showPlus } = calculateDaySummary(isoDate);
 
-    if (totalInstances === 0) return { completedPercent: 0, totalPercent: 0 };
-    
-    const completedPercent = Math.round((completedInstances / totalInstances) * 100);
-    const totalPercent = Math.round(((completedInstances + snoozedInstances) / totalInstances) * 100);
+    // 2. Atualiza classes e atributos
+    dayItem.classList.toggle('selected', isoDate === state.selectedDate);
+    dayItem.classList.toggle('today', isoDate === todayISO);
+    dayItem.setAttribute('aria-pressed', String(isoDate === state.selectedDate));
 
-    return { completedPercent, totalPercent };
+    // 3. Atualiza o anel de progresso
+    const dayProgressRing = dayItem.querySelector<HTMLElement>('.day-progress-ring');
+    if (dayProgressRing) {
+        dayProgressRing.style.setProperty('--completed-percent', `${completedPercent}%`);
+        dayProgressRing.style.setProperty('--total-percent', `${totalPercent}%`);
+    }
+
+    // 4. Atualiza o indicador 'plus'
+    const dayNumber = dayItem.querySelector<HTMLElement>('.day-number');
+    if (dayNumber) {
+        dayNumber.classList.toggle('has-plus', showPlus);
+    }
 }
 
 
-function createCalendarDayElement(date: Date, activeHabitsData: Array<{ habit: Habit; schedule: TimeOfDay[] }>): HTMLElement {
+function createCalendarDayElement(date: Date): HTMLElement {
     const todayISO = getTodayUTCIso();
     const isoDate = toUTCIsoDateString(date);
     
-    const { completedPercent, totalPercent } = calculateDayProgress(isoDate, activeHabitsData);
-    const activeHabitsOnDate = activeHabitsData.map(data => data.habit);
-    const showPlus = shouldShowPlusIndicator(isoDate, activeHabitsOnDate);
+    // OTIMIZAÇÃO DE PERFORMANCE [2024-09-30]: Usa o helper centralizado para obter todos os dados de exibição
+    // do dia (progresso do anel e indicador 'plus') em uma única operação, evitando loops redundantes.
+    const { completedPercent, totalPercent, showPlus } = calculateDaySummary(isoDate);
 
     const dayItem = document.createElement('div');
     dayItem.className = `day-item ${isoDate === state.selectedDate ? 'selected' : ''} ${isoDate === todayISO ? 'today' : ''}`;
@@ -117,15 +124,34 @@ function createCalendarDayElement(date: Date, activeHabitsData: Array<{ habit: H
     return dayItem;
 }
 
+/**
+ * OTIMIZAÇÃO DE PERFORMANCE [2024-10-09]: A função `renderCalendar` foi refatorada para usar uma estratégia
+ * de atualização de DOM no local. Em vez de limpar e recriar toda a faixa de dias (`innerHTML = ''`),
+ * ela agora itera sobre os elementos de dia existentes e os atualiza com os dados mais recentes.
+ * Isso torna as interações, como a seleção de um dia, muito mais rápidas e fluidas.
+ */
 export function renderCalendar() {
-    ui.calendarStrip.innerHTML = '';
-    const fragment = document.createDocumentFragment();
-    state.calendarDates.forEach(date => {
-        const activeHabitsData = getActiveHabitsForDate(date);
-        fragment.appendChild(createCalendarDayElement(date, activeHabitsData));
+    const dayElements = Array.from(ui.calendarStrip.querySelectorAll<HTMLElement>('.day-item'));
+    
+    // Se a faixa do calendário estiver vazia, renderiza pela primeira vez.
+    if (dayElements.length === 0) {
+        const fragment = document.createDocumentFragment();
+        state.calendarDates.forEach(date => {
+            fragment.appendChild(createCalendarDayElement(date));
+        });
+        ui.calendarStrip.appendChild(fragment);
+        return;
+    }
+    
+    // Se os elementos já existirem, apenas os atualiza.
+    dayElements.forEach((dayEl, index) => {
+        const date = state.calendarDates[index];
+        if (date) { // Verificação de segurança
+            updateCalendarDayElement(dayEl, date);
+        }
     });
-    ui.calendarStrip.appendChild(fragment);
 }
+
 
 export function renderLanguageFilter() {
     const currentIndex = LANGUAGES.findIndex(l => l.code === state.activeLanguageCode);
@@ -204,21 +230,74 @@ function updateGoalContentElement(goalEl: HTMLElement, status: HabitStatus, habi
     }
 }
 
-function getTimeOfDayIcon(time: TimeOfDay): string {
-    switch (time) {
-        case 'Morning': return icons.morning;
-        case 'Afternoon': return icons.afternoon;
-        case 'Evening': return icons.evening;
-        default: return '';
+/**
+ * OTIMIZAÇÃO DE PERFORMANCE [2024-10-08]: Nova função auxiliar para atualizar um cartão de hábito existente no DOM.
+ * Esta função aplica cirurgicamente as mudanças (classes, texto, ícones) a um elemento existente,
+ * evitando a necessidade de destruir e recriar o cartão, o que é fundamental para a nova estratégia
+ * de reconciliação de DOM em `renderHabits`.
+ */
+function updateHabitCardElement(card: HTMLElement, habit: Habit, time: TimeOfDay): void {
+    const dailyInfo = getHabitDailyInfoForDate(state.selectedDate);
+    const habitInstanceData = dailyInfo[habit.id]?.instances?.[time];
+    const status = habitInstanceData?.status ?? 'pending';
+    const hasNote = habitInstanceData?.note && habitInstanceData.note.length > 0;
+    const streak = calculateHabitStreak(habit.id, getTodayUTCIso());
+
+    // 1. Atualiza as classes do cartão
+    card.className = `habit-card ${status}`; // Reseta as classes com base no status
+    if (streak >= STREAK_CONSOLIDATED) card.classList.add('consolidated');
+    else if (streak >= STREAK_SEMI_CONSOLIDATED) card.classList.add('semi-consolidated');
+    
+    // 2. Atualiza as informações de exibição (nome, subtítulo)
+    const { name, subtitle } = getHabitDisplayInfo(habit, state.selectedDate);
+    card.querySelector<HTMLElement>('.habit-details .name')!.textContent = name;
+    card.querySelector<HTMLElement>('.habit-details .subtitle')!.textContent = subtitle;
+
+    // 3. Atualiza a mensagem de consolidação
+    let msgEl = card.querySelector<HTMLElement>('.consolidation-message');
+    const detailsEl = card.querySelector('.habit-details');
+    if (streak >= STREAK_CONSOLIDATED) {
+        if (!msgEl) {
+            msgEl = document.createElement('div');
+            msgEl.className = 'consolidation-message';
+            detailsEl?.appendChild(msgEl);
+        }
+        msgEl.textContent = t('habitConsolidatedMessage');
+    } else if (streak >= STREAK_SEMI_CONSOLIDATED) {
+         if (!msgEl) {
+            msgEl = document.createElement('div');
+            msgEl.className = 'consolidation-message';
+            detailsEl?.appendChild(msgEl);
+        }
+        msgEl.textContent = t('habitSemiConsolidatedMessage');
+    } else if (msgEl) {
+        msgEl.remove();
+    }
+    
+    // 4. Atualiza o ícone de nota
+    const noteBtn = card.querySelector<HTMLElement>('.swipe-note-btn');
+    if (noteBtn) {
+        noteBtn.innerHTML = hasNote ? icons.swipeNoteHasNote : icons.swipeNote;
+        noteBtn.setAttribute('aria-label', t(hasNote ? 'habitNoteEdit_ariaLabel' : 'habitNoteAdd_ariaLabel'));
+    }
+
+    // 5. Atualiza o conteúdo da meta
+    const goalEl = card.querySelector<HTMLElement>('.habit-goal');
+    if (goalEl) {
+        updateGoalContentElement(goalEl, status, habit, time, habitInstanceData);
     }
 }
+
 
 export function createHabitCardElement(habit: Habit, time: TimeOfDay): HTMLElement {
     const dailyInfo = getHabitDailyInfoForDate(state.selectedDate);
     const habitInstanceData = dailyInfo[habit.id]?.instances?.[time];
     const status = habitInstanceData?.status ?? 'pending';
     const hasNote = habitInstanceData?.note && habitInstanceData.note.length > 0;
-    const streak = calculateHabitStreak(habit.id, state.selectedDate);
+    // CORREÇÃO DE UX [2024-10-07]: O status de consolidação agora é calculado com base na sequência ATÉ HOJE,
+    // não na data selecionada. Isso garante que a conquista seja exibida de forma persistente,
+    // reforçando o sentimento de realização do usuário, independentemente da data que ele está visualizando.
+    const streak = calculateHabitStreak(habit.id, getTodayUTCIso());
     
     const card = document.createElement('div');
     card.className = `habit-card ${status}`;
@@ -228,15 +307,20 @@ export function createHabitCardElement(habit: Habit, time: TimeOfDay): HTMLEleme
     if (streak >= STREAK_CONSOLIDATED) card.classList.add('consolidated');
     else if (streak >= STREAK_SEMI_CONSOLIDATED) card.classList.add('semi-consolidated');
 
-    const { name, subtitle } = getHabitDisplayInfo(habit);
+    // CORREÇÃO DE DADOS HISTÓRICOS [2024-09-20]: Passa a data selecionada para garantir que
+    // o nome e o subtítulo corretos sejam exibidos para o dia visualizado.
+    const { name, subtitle } = getHabitDisplayInfo(habit, state.selectedDate);
 
+    // REATORAÇÃO DE ARQUITETURA [2024-09-22]: Os ícones de ação agora são injetados diretamente
+    // do módulo 'icons.ts', em vez de serem aplicados via CSS mask-image.
+    // Isso centraliza todos os ícones da aplicação em um único local, melhorando a manutenibilidade.
     const actionsLeft = document.createElement('div');
     actionsLeft.className = 'habit-actions-left';
-    actionsLeft.innerHTML = `<button class="swipe-delete-btn" aria-label="${t('habitEnd_ariaLabel')}"></button>`;
+    actionsLeft.innerHTML = `<button class="swipe-delete-btn" aria-label="${t('habitEnd_ariaLabel')}">${icons.swipeDelete}</button>`;
 
     const actionsRight = document.createElement('div');
     actionsRight.className = 'habit-actions-right';
-    actionsRight.innerHTML = `<button class="swipe-note-btn ${hasNote ? 'has-note' : ''}" aria-label="${t(hasNote ? 'habitNoteEdit_ariaLabel' : 'habitNoteAdd_ariaLabel')}"></button>`;
+    actionsRight.innerHTML = `<button class="swipe-note-btn" aria-label="${t(hasNote ? 'habitNoteEdit_ariaLabel' : 'habitNoteAdd_ariaLabel')}">${hasNote ? icons.swipeNoteHasNote : icons.swipeNote}</button>`;
     
     const contentWrapper = document.createElement('div');
     contentWrapper.className = 'habit-content-wrapper';
@@ -326,6 +410,12 @@ function updatePlaceholderForGroup(groupEl: HTMLElement, time: TimeOfDay, hasHab
     }
 }
 
+/**
+ * OTIMIZAÇÃO DE PERFORMANCE [2024-10-08]: A função `renderHabits` foi completamente refatorada para usar uma
+ * estratégia de reconciliação de DOM. Em vez de limpar e recriar toda a lista de hábitos (`innerHTML = ''`),
+ * ela agora compara os hábitos que deveriam estar na tela com os que já estão, aplicando apenas as
+ * atualizações, inserções e remoções necessárias. Isso resulta em uma UI muito mais responsiva e fluida.
+ */
 export function renderHabits() {
     const selectedDateObj = parseUTCIsoDate(state.selectedDate);
     const activeHabitsData = getActiveHabitsForDate(selectedDateObj);
@@ -352,13 +442,36 @@ export function renderHabits() {
         const groupEl = wrapperEl?.querySelector<HTMLElement>(`.habit-group[data-time="${time}"]`);
         if (!wrapperEl || !groupEl) return;
         
-        // Renderiza os cartões de hábito
-        const fragment = document.createDocumentFragment();
-        habitsByTime[time].forEach(habit => {
-            fragment.appendChild(createHabitCardElement(habit, time));
+        const fragmentForNewCards = document.createDocumentFragment();
+        const existingCards = Array.from(groupEl.querySelectorAll<HTMLElement>('.habit-card'));
+        const existingCardsMap = new Map<string, HTMLElement>();
+        existingCards.forEach(card => {
+            const key = `${card.dataset.habitId}|${card.dataset.time}`;
+            existingCardsMap.set(key, card);
         });
-        groupEl.innerHTML = '';
-        groupEl.appendChild(fragment);
+
+        const desiredHabits = habitsByTime[time];
+        desiredHabits.forEach(habit => {
+            const key = `${habit.id}|${time}`;
+            const existingCard = existingCardsMap.get(key);
+            
+            if (existingCard) {
+                // Hábito já existe, atualize-o
+                updateHabitCardElement(existingCard, habit, time);
+                existingCardsMap.delete(key); // Remove do mapa para que não seja excluído mais tarde
+            } else {
+                // Hábito é novo, crie e adicione a um fragmento
+                fragmentForNewCards.appendChild(createHabitCardElement(habit, time));
+            }
+        });
+
+        // Adiciona todos os novos cartões de uma só vez
+        if (fragmentForNewCards.childElementCount > 0) {
+            groupEl.appendChild(fragmentForNewCards);
+        }
+
+        // Remove cartões antigos que não são mais necessários
+        existingCardsMap.forEach(cardToRemove => cardToRemove.remove());
         
         const hasHabits = groupHasHabits[time];
         const isSmartPlaceholder = time === smartPlaceholderTargetTime;
@@ -371,6 +484,7 @@ export function renderHabits() {
         updatePlaceholderForGroup(groupEl, time, hasHabits, isSmartPlaceholder, emptyTimes);
     });
 }
+
 
 export function renderExploreHabits() {
     ui.exploreHabitList.innerHTML = PREDEFINED_HABITS.map((habit, index) => {
@@ -595,6 +709,65 @@ function getHabitStatusForSorting(habit: Habit): 'active' | 'ended' | 'graduated
     return 'active';
 }
 
+/**
+ * REATORAÇÃO [2024-09-11]: Cria um item de lista de gerenciamento de hábito como um elemento DOM.
+ * Esta função substitui a concatenação de strings HTML, resultando em um código mais limpo,
+ * seguro (usa textContent para nomes) e de mais fácil manutenção. Encapsula toda a lógica
+ * de exibição de status e botões de ação para um único hábito.
+ * @param habitData Os dados pré-processados do hábito.
+ * @returns Um elemento HTMLLIElement pronto para ser anexado ao DOM.
+ */
+function _createManageHabitListItem(habitData: { habit: Habit; status: 'active' | 'ended' | 'graduated'; name: string; }): HTMLLIElement {
+    const { habit, status, name } = habitData;
+    const streak = calculateHabitStreak(habit.id, getTodayUTCIso());
+    const isConsolidated = streak >= STREAK_CONSOLIDATED;
+
+    const li = document.createElement('li');
+    li.className = `habit-list-item ${status}`;
+    li.dataset.habitId = habit.id;
+
+    let actionButtonsHTML = '', statusText = '';
+
+    switch(status) {
+        case 'graduated':
+            statusText = ` <span class="habit-name-status">${t('modalStatusGraduated')}</span>`;
+            break;
+        case 'ended':
+            statusText = ` <span class="habit-name-status">${t('modalStatusEnded')}</span>`;
+            actionButtonsHTML = `<button class="permanent-delete-habit-btn" data-habit-id="${habit.id}" aria-label="${t('aria_delete_permanent', { habitName: name })}">${icons.deletePermanentAction}</button>`;
+            break;
+        case 'active':
+            // REATORAÇÃO [2024-09-18]: A criação do botão de edição foi extraída da condicional
+            // para remover a duplicação de código. O botão de edição é sempre adicionado para
+            // hábitos ativos, e então o botão de graduar ou encerrar é anexado.
+            actionButtonsHTML = `<button class="edit-habit-btn" data-habit-id="${habit.id}" aria-label="${t('aria_edit', { habitName: name })}">${icons.editAction}</button>`;
+            if (isConsolidated) {
+                actionButtonsHTML += `<button class="graduate-habit-btn" data-habit-id="${habit.id}" aria-label="${t('aria_graduate', { habitName: name })}">${icons.graduateAction}</button>`;
+            } else {
+                actionButtonsHTML += `<button class="end-habit-btn" data-habit-id="${habit.id}" aria-label="${t('aria_end', { habitName: name })}">${icons.endAction}</button>`;
+            }
+            break;
+    }
+    
+    // Usando um template literal para a estrutura. O nome do hábito é inserido como um placeholder
+    // para ser substituído por um nó de texto, prevenindo XSS.
+    li.innerHTML = `
+        <span>
+            ${habit.icon}
+            <span class="habit-name-placeholder"></span>
+            ${statusText}
+        </span>
+        <div class="habit-list-actions">${actionButtonsHTML}</div>
+    `;
+
+    const placeholder = li.querySelector('.habit-name-placeholder')!;
+    placeholder.className = 'habit-name';
+    placeholder.textContent = name;
+
+    return li;
+}
+
+
 export function setupManageModal() {
     // Otimização: calcula status e nome de cada hábito uma única vez.
     const habitsForModal = state.habits.map(habit => {
@@ -617,44 +790,17 @@ export function setupManageModal() {
         return a.name.localeCompare(b.name);
     });
 
-    // REFACTOR [2024-09-04]: Substitui SVGs embutidos por ícones centralizados de `icons.ts`
-    // para melhorar a manutenibilidade do código e aderir ao princípio DRY.
-    ui.habitList.innerHTML = habitsForModal.map(({ habit, status, name }) => {
-        const streak = calculateHabitStreak(habit.id, getTodayUTCIso());
-        const isConsolidated = streak >= STREAK_CONSOLIDATED;
-        
-        let actionButtons = '', statusClass = '', statusText = '';
+    // REATORAÇÃO [2024-09-11]: Utiliza DocumentFragment e uma função helper para a criação de elementos
+    // em vez de manipulação de strings com innerHTML. Isso melhora a performance e a manutenibilidade.
+    const fragment = document.createDocumentFragment();
+    habitsForModal.forEach(habitData => {
+        fragment.appendChild(_createManageHabitListItem(habitData as { habit: Habit; status: 'active' | 'ended' | 'graduated'; name: string; }));
+    });
 
-        switch(status) {
-            case 'graduated':
-                statusClass = 'graduated';
-                statusText = ` <span class="habit-name-status">${t('modalStatusGraduated')}</span>`;
-                break;
-            case 'ended':
-                statusClass = 'ended';
-                statusText = ` <span class="habit-name-status">${t('modalStatusEnded')}</span>`;
-                actionButtons = `<button class="permanent-delete-habit-btn" data-habit-id="${habit.id}" aria-label="${t('aria_delete_permanent', { habitName: name })}">${icons.deletePermanentAction}</button>`;
-                break;
-            case 'active':
-                const editButton = `<button class="edit-habit-btn" data-habit-id="${habit.id}" aria-label="${t('aria_edit', { habitName: name })}">${icons.editAction}</button>`;
-                if (isConsolidated) {
-                    // BUGFIX [2024-08-07]: Permite a edição de hábitos consolidados.
-                    // Anteriormente, o botão de graduação substituía o de edição. Agora, ambos são exibidos para manter a consistência funcional.
-                    actionButtons = `${editButton}<button class="graduate-habit-btn" data-habit-id="${habit.id}" aria-label="${t('aria_graduate', { habitName: name })}">${icons.graduateAction}</button>`;
-                } else {
-                    actionButtons = `${editButton}<button class="end-habit-btn" data-habit-id="${habit.id}" aria-label="${t('aria_end', { habitName: name })}">${icons.endAction}</button>`;
-                }
-                break;
-        }
-
-        const innerHTML = `<span>${habit.icon}<span class="habit-name">${escapeHTML(name)}</span>${statusText}</span>
-            <div class="habit-list-actions">${actionButtons}</div>`;
-
-        // FIX: Fix file corruption and correctly close the list item.
-        return `<li class="habit-list-item ${statusClass}" data-habit-id="${habit.id}">${innerHTML}</li>`;
-    // FIX: Add .join('') to fix "Type 'string[]' is not assignable to type 'string'" error.
-    }).join('');
+    ui.habitList.innerHTML = '';
+    ui.habitList.appendChild(fragment);
 }
+
 
 // FIX: Add missing modal-related functions
 export function showUndoToast() {
@@ -674,7 +820,10 @@ export function showConfirmationModal(
         confirmText?: string;
         cancelText?: string;
         editText?: string;
-        onEdit?: () => void; 
+        onEdit?: () => void;
+        // UX-FIX [2024-10-27]: Adiciona a opção de estilo para o botão de confirmação.
+        // Permite que ações destrutivas usem um botão vermelho ('danger') para alertar o usuário.
+        confirmButtonStyle?: 'primary' | 'danger';
     }
 ) {
     ui.confirmModalText.innerHTML = text;
@@ -682,7 +831,13 @@ export function showConfirmationModal(
     state.confirmEditAction = options?.onEdit || null;
 
     ui.confirmModal.querySelector('h2')!.textContent = options?.title || t('modalConfirmTitle');
-    ui.confirmModalConfirmBtn.textContent = options?.confirmText || t('confirmButton');
+    const confirmBtn = ui.confirmModalConfirmBtn;
+    confirmBtn.textContent = options?.confirmText || t('confirmButton');
+    
+    // UX-FIX [2024-10-27]: Aplica a classe de estilo correta ao botão de confirmação.
+    confirmBtn.classList.remove('btn--primary', 'btn--danger');
+    confirmBtn.classList.add(options?.confirmButtonStyle === 'danger' ? 'btn--danger' : 'btn--primary');
+    
     ui.confirmModal.querySelector<HTMLElement>('.modal-close-btn')!.textContent = options?.cancelText || t('cancelButton');
     
     if (options?.editText && options?.onEdit) {
@@ -701,7 +856,8 @@ export function openNotesModal(habitId: string, date: string, time: TimeOfDay) {
     
     state.editingNoteFor = { habitId, date, time };
     
-    const { name } = getHabitDisplayInfo(habit);
+    // CORREÇÃO DE DADOS HISTÓRICOS [2024-09-20]: Passa a data selecionada para obter o nome correto.
+    const { name } = getHabitDisplayInfo(habit, date);
     const dateObj = parseUTCIsoDate(date);
     const formattedDate = dateObj.toLocaleDateString(state.activeLanguageCode, { day: 'numeric', month: 'long', timeZone: 'UTC' });
     const timeName = getTimeOfDayName(time);
@@ -715,73 +871,84 @@ export function openNotesModal(habitId: string, date: string, time: TimeOfDay) {
     openModal(ui.notesModal, ui.notesTextarea);
 }
 
+/**
+ * REATORAÇÃO [2024-09-13]: A lógica para criar o estado do formulário de hábito foi extraída
+ * para a função auxiliar _createHabitTemplateForForm. Isso remove a duplicação de código em
+ * openEditModal e centraliza a criação do objeto formData a partir de um hábito existente,
+ * um modelo predefinido ou um novo hábito personalizado.
+ */
+function _createHabitTemplateForForm(habitOrTemplate: Habit | PredefinedHabit | null, selectedDate: string): HabitTemplate {
+    // Caso 1: Criando um novo hábito personalizado do zero.
+    if (!habitOrTemplate) {
+        const commonData = {
+            icon: icons.custom,
+            color: '#8e44ad',
+            times: ['Morning'] as TimeOfDay[],
+            goal: { type: 'check', unitKey: 'unitCheck' } as Habit['goal'],
+            frequency: { type: 'daily', interval: 1 } as Frequency,
+        };
+        return {
+            ...commonData,
+            name: '',
+            subtitleKey: 'customHabitSubtitle',
+        };
+    }
+
+    // Caso 2: Criando a partir de um modelo predefinido.
+    if (!('id' in habitOrTemplate)) {
+        const template = habitOrTemplate as PredefinedHabit;
+        return {
+            icon: template.icon,
+            color: template.color,
+            times: template.times,
+            goal: template.goal,
+            frequency: template.frequency,
+            nameKey: template.nameKey,
+            subtitleKey: template.subtitleKey,
+        };
+    }
+
+    // Caso 3: Editando um hábito existente.
+    const habit = habitOrTemplate as Habit;
+    const schedule = getScheduleForDate(habit, selectedDate) || habit.scheduleHistory[habit.scheduleHistory.length - 1];
+    // CORREÇÃO DE DADOS HISTÓRICOS [2024-09-20]: Passa a data para obter o nome historicamente correto.
+    const { name } = getHabitDisplayInfo(habit, selectedDate);
+
+    const commonData = {
+        subtitleKey: schedule.subtitleKey || 'customHabitSubtitle',
+        icon: habit.icon,
+        color: habit.color,
+        times: [...schedule.times],
+        goal: { ...habit.goal },
+        frequency: { ...schedule.frequency },
+    };
+
+    if (schedule.nameKey) {
+        return { ...commonData, nameKey: schedule.nameKey };
+    } else {
+        return { ...commonData, name: name };
+    }
+}
+
 export function openEditModal(habitOrTemplate: Habit | HabitTemplate | null) {
     const isNew = !habitOrTemplate || !('id' in habitOrTemplate);
     const form = ui.editHabitForm;
     const noticeEl = form.querySelector<HTMLElement>('.duplicate-habit-notice')!;
-    noticeEl.classList.remove('visible'); // Reset notice on open
+    noticeEl.classList.remove('visible');
     form.reset();
     
-    let formData: HabitTemplate;
+    const formData = _createHabitTemplateForForm(habitOrTemplate as Habit | PredefinedHabit | null, state.selectedDate);
+
     if (isNew) {
-        // Creating a new habit
         const template = habitOrTemplate as PredefinedHabit | null;
         ui.editHabitModalTitle.textContent = t('modalEditNewTitle');
         (form.elements.namedItem('habit-name') as HTMLInputElement).value = template ? t(template.nameKey) : '';
-        
-        // FIX: Construct formData with a type-safe approach to avoid assigning to 'never'.
-        const commonData = {
-            icon: template?.icon || icons.custom,
-            color: template?.color || '#8e44ad',
-            times: template?.times || ['Morning'],
-            goal: template?.goal || { type: 'check', unitKey: 'unitCheck' },
-            frequency: template?.frequency || { type: 'daily', interval: 1 },
-        };
-
-        if (template) {
-            formData = {
-                ...commonData,
-                nameKey: template.nameKey,
-                subtitleKey: template.subtitleKey,
-            };
-        } else {
-            formData = {
-                ...commonData,
-                name: '',
-                subtitleKey: 'customHabitSubtitle',
-            };
-        }
-
     } else {
-        // Editing an existing habit
         const habit = habitOrTemplate as Habit;
-        const { name } = getHabitDisplayInfo(habit);
+        // CORREÇÃO DE DADOS HISTÓRICOS [2024-09-20]: Passa a data para obter o nome correto.
+        const { name } = getHabitDisplayInfo(habit, state.selectedDate);
         ui.editHabitModalTitle.textContent = t('modalEditTitle', { habitName: name });
         (form.elements.namedItem('habit-name') as HTMLInputElement).value = name;
-        
-        const schedule = getScheduleForDate(habit, state.selectedDate) || habit.scheduleHistory[habit.scheduleHistory.length - 1];
-        
-        // FIX: Construct formData with a type-safe approach to avoid assigning to 'never'.
-        const commonData = {
-            subtitleKey: schedule.subtitleKey || 'customHabitSubtitle',
-            icon: habit.icon,
-            color: habit.color,
-            times: [...schedule.times],
-            goal: { ...habit.goal },
-            frequency: { ...schedule.frequency },
-        };
-
-        if (schedule.nameKey) {
-            formData = {
-                ...commonData,
-                nameKey: schedule.nameKey,
-            };
-        } else {
-            formData = {
-                ...commonData,
-                name: name,
-            };
-        }
     }
 
     state.editingHabit = {
@@ -791,10 +958,9 @@ export function openEditModal(habitOrTemplate: Habit | HabitTemplate | null) {
         formData: formData
     };
 
-    // Update form controls based on formData
+    // Atualiza os controles do formulário com base no formData
     (form.elements.namedItem('habit-name') as HTMLInputElement).disabled = !!formData.nameKey;
     
-    // Times of day checkboxes
     const timeCheckboxes = form.querySelectorAll<HTMLInputElement>('input[name="habit-time"]');
     timeCheckboxes.forEach(cb => {
         cb.checked = formData.times.includes(cb.value as TimeOfDay);

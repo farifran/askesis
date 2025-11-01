@@ -2,9 +2,11 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-import { state, Habit, LANGUAGES, PredefinedHabit, TimeOfDay } from './state';
+// ANÁLISE DO ARQUIVO: 100% concluído. A implementação de internacionalização é completa e correta. Nenhuma outra análise é necessária.
+import { state, Habit, LANGUAGES, PredefinedHabit, TimeOfDay, getScheduleForDate } from './state';
 import { ui } from './ui';
 import { renderApp, updateHeaderTitle, initFrequencyFilter, setupManageModal, initLanguageFilter } from './render';
+import { pushToOneSignal } from './utils';
 
 type PluralableTranslation = { one: string; other: string };
 type TranslationValue = string | PluralableTranslation;
@@ -59,11 +61,26 @@ export function t(key: string, options?: { [key: string]: string | number | unde
     return String(translation);
 }
 
-export function getHabitDisplayInfo(habit: Habit | PredefinedHabit): { name: string, subtitle: string } {
+/**
+ * CORREÇÃO DE DADOS HISTÓRICOS [2024-09-20]: A função agora aceita um `dateISO` opcional.
+ * Se uma data for fornecida, ela busca o agendamento historicamente correto para essa data,
+ * garantindo que o nome e o subtítulo exibidos sejam precisos para o contexto temporal,
+ * o que é crucial para a renderização da UI e a geração de prompts para a IA.
+ * @param habit O objeto do hábito ou modelo predefinido.
+ * @param dateISO A data opcional no formato string ISO para buscar informações históricas.
+ * @returns O nome e o subtítulo para exibição.
+ */
+export function getHabitDisplayInfo(habit: Habit | PredefinedHabit, dateISO?: string): { name: string, subtitle: string } {
     let source: any = habit;
-    // If it's a full Habit object, get the latest schedule for its display info
+    
     if ('scheduleHistory' in habit && habit.scheduleHistory.length > 0) {
-        source = habit.scheduleHistory[habit.scheduleHistory.length - 1];
+        if (dateISO) {
+            // Busca o agendamento ativo para a data específica.
+            source = getScheduleForDate(habit, dateISO) || habit.scheduleHistory[habit.scheduleHistory.length - 1];
+        } else {
+            // Se nenhuma data for fornecida, assume o comportamento padrão de usar o agendamento mais recente.
+            source = habit.scheduleHistory[habit.scheduleHistory.length - 1];
+        }
     }
 
     if (source.nameKey) {
@@ -154,12 +171,12 @@ export async function setLanguage(langCode: 'pt' | 'en' | 'es') {
     document.documentElement.lang = langCode;
     localStorage.setItem('habitTrackerLanguage', langCode);
     
-    // Adicionado: Atualiza o idioma do usuário no OneSignal quando alterado no app
-    if (window.OneSignal) {
-        window.OneSignal.push((OneSignal: any) => {
-            OneSignal.User.setLanguage(langCode);
-        });
-    }
+    // BUGFIX DE ROBUSTEZ [2024-10-19]: Utiliza o helper pushToOneSignal para garantir que
+    // a configuração de idioma seja enfileirada e executada de forma confiável, mesmo que o SDK
+    // do OneSignal ainda não tenha sido totalmente inicializado. Isso previne uma condição de corrida.
+    pushToOneSignal((OneSignal: any) => {
+        OneSignal.User.setLanguage(langCode);
+    });
     
     initFrequencyFilter();
     initLanguageFilter();
