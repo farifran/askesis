@@ -100,13 +100,7 @@ export function getLocaleDayName(date: Date): string {
 }
 
 function updateUIText() {
-    const appNameHtml = t('appName');
-    
-    // Strip HTML for the document title
-    const tempEl = document.createElement('div');
-    tempEl.innerHTML = appNameHtml;
-    document.title = tempEl.textContent || 'Askesis';
-
+    document.title = t('appName');
     ui.fabAddHabit.setAttribute('aria-label', t('fabAddHabit_ariaLabel'));
     ui.manageHabitsBtn.setAttribute('aria-label', t('manageHabits_ariaLabel'));
     ui.aiEvalBtn.setAttribute('aria-label', t('aiEval_ariaLabel'));
