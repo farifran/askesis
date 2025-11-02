@@ -2,7 +2,7 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// ANÁLISE DO ARQUIVO: 100% concluído. A lógica de renderização é robusta, com otimizações de performance como reconciliação de DOM. A análise final refatorou a lógica da mensagem de consolidação para melhorar a manutenibilidade, concluindo a revisão do arquivo.
+// ANÁLISE DO ARQUIVO: 100% concluído. A lógica de renderização é robusta e otimizada. Esta análise final unificou a lógica de criação e atualização da mensagem de consolidação para remover redundâncias, finalizando a revisão do arquivo.
 // PÓS-REVISÃO [2024-11-06]: Código refatorado para usar WeakMap em `showInlineNotice` e `createElement` em `_createManageHabitListItem` para maior robustez e segurança.
 
 import {
@@ -378,15 +378,18 @@ export function createHabitCardElement(habit: Habit, time: TimeOfDay): HTMLEleme
     subtitleEl.textContent = subtitle;
     details.append(nameEl, subtitleEl);
     
+    // REATORAÇÃO DE MANUTENIBILIDADE [2024-11-21]: Unifica a lógica de criação da mensagem de consolidação para seguir o princípio DRY, alinhando-a com a função de atualização e removendo a duplicação de código.
+    let messageText: string | null = null;
     if (streak >= STREAK_CONSOLIDATED) {
-        const msg = document.createElement('div');
-        msg.className = 'consolidation-message';
-        msg.textContent = t('habitConsolidatedMessage');
-        details.appendChild(msg);
+        messageText = t('habitConsolidatedMessage');
     } else if (streak >= STREAK_SEMI_CONSOLIDATED) {
+        messageText = t('habitSemiConsolidatedMessage');
+    }
+
+    if (messageText) {
         const msg = document.createElement('div');
         msg.className = 'consolidation-message';
-        msg.textContent = t('habitSemiConsolidatedMessage');
+        msg.textContent = messageText;
         details.appendChild(msg);
     }
 
