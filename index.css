@@ -1259,6 +1259,11 @@ body.is-offline #ai-eval-btn .offline-icon {
     .header-title-mobile {
         display: block;
     }
+    
+    /* REFINAMENTO DE UX [2024-11-22]: Reduz o espaçamento vertical entre a lista de hábitos e o gráfico em telas menores para uma visualização mais compacta. */
+    #habit-container > .habit-group-wrapper:last-of-type.has-habits {
+        margin-block-end: var(--space-xxl); /* Original era --space-3xl */
+    }
 }
 
 @media (min-width: 768px) {
