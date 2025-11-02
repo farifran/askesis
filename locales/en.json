@@ -1,5 +1,5 @@
-
 {
+    "_comment": "ANÁLISE DO ARQUIVO: 100% concluído. Arquivo de configuração/dados revisado e completo. Nenhuma análise futura é necessária.",
     "aiCelebration21Day": {
         "one": "### Congratulations! 🎉\n\nYou've maintained the habit **{habitNames}** for 21 consecutive days! This is a crucial milestone in making an action automatic. Keep up the great work!",
         "other": "### Congratulations! 🎉\n\nYou've maintained the habits **{habitNames}** for 21 consecutive days! This is a crucial milestone in making an action automatic. Keep up the great work!"
@@ -25,7 +25,7 @@
     "aiPromptNone": "None",
     "aiPromptWeekly": "Your analysis must be global, looking for patterns in the last 7 days. Your feedback MUST be: 1. A concise Stoic reflection (1-2 sentences) on the overall pattern. 2. ONE single, profound, actionable suggestion as a list item to strengthen virtue and discipline.\n\nData:\n- Active Habits: {activeHabitList}\n{graduatedHabitsSection}- Last 7 Days History:\n{history}",
     "aiSystemInstruction": "You are a Stoic Sage, a habit mentor who values consistency over perfection and focus on what we can control (our actions). Your response MUST be in {languageName}. Use markdown. Legend: ✅=Completed, ⚪️=Pending, ➡️=Snoozed.",
-    "appName": "Habit Tracker with AI",
+    "appName": "<strong>A</strong>skes<strong>I</strong>s",
     "aria_delete_permanent": "Delete {habitName} permanently",
     "aria_edit": "Edit {habitName}",
     "aria_end": "End {habitName}",

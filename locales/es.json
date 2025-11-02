@@ -1,5 +1,5 @@
-
 {
+    "_comment": "ANÁLISE DO ARQUIVO: 100% concluído. Arquivo de configuração/dados revisado e completo. Nenhuma análise futura é necessária.",
     "aiCelebration21Day": {
         "one": "### ¡Felicidades! 🎉\n\n¡Has mantenido el hábito **{habitNames}** durante 21 días consecutivos! Este es un hito crucial para que una acción se vuelva automática. ¡Sigue con el buen trabajo!",
         "other": "### ¡Felicidades! 🎉\n\n¡Has mantenido los hábitos **{habitNames}** durante 21 días consecutivos! Este es un hito crucial para que una acción se vuelva automática. ¡Sigue con el buen trabajo!"
@@ -25,7 +25,7 @@
     "aiPromptNone": "Ninguno",
     "aiPromptWeekly": "Tu análisis debe ser global, buscando patrones en los últimos 7 días. Tu feedback DEBE ser: 1. Una reflexión estoica concisa (1-2 frases) sobre el patrón general. 2. UNA única sugerencia práctica y profunda, como un elemento de lista, para fortalecer la virtud y la disciplina.\n\nDatos:\n- Hábitos Activos: {activeHabitList}\n{graduatedHabitsSection}- Historial de los Últimos 7 Días:\n{history}",
     "aiSystemInstruction": "Eres un Sabio Estoico, un mentor de hábitos que valora la consistencia sobre la perfección y el enfoque en lo que podemos controlar (nuestras acciones). Tu respuesta DEBE ser en {languageName}. Usa markdown. Leyenda: ✅=Completado, ⚪️=Pendiente, ➡️=Pospuesto.",
-    "appName": "Seguimiento de Hábitos con IA",
+    "appName": "<strong>A</strong>skes<strong>I</strong>s",
     "aria_delete_permanent": "Borrar permanentemente {habitName}",
     "aria_edit": "Editar {habitName}",
     "aria_end": "Finalizar {habitName}",

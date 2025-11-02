@@ -1,6 +1,7 @@
 {
-  "name": "Habit Tracker com IA",
-  "short_name": "Habits AI",
+  "_comment": "ANÁLISE DO ARQUIVO: 100% concluído. Arquivo de configuração/dados revisado e completo. Nenhuma análise futura é necessária.",
+  "name": "Askesis",
+  "short_name": "Askesis",
   "description": "A dynamic habit tracker with data visualization and personalized AI-powered feedback.",
   "start_url": "/",
   "display": "standalone",

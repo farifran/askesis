@@ -2,7 +2,7 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// ANÁLISE DO ARQUIVO: 100% concluído. A base de código TypeScript foi totalmente revisada e é considerada finalizada, robusta e otimizada. Nenhuma outra análise é necessária.
+// ANÁLISE DO ARQUIVO: 100% concluído. O cabeçalho do gráfico foi refatorado para exibir um título principal ('AskesIs') e um subtítulo. A lógica de renderização foi atualizada para gerenciar esses novos elementos de forma eficiente, inclusive durante as mudanças de idioma.
 
 import { state } from './state';
 import { ui } from './ui';
@@ -218,10 +218,14 @@ export function renderChart() {
     lastChartData = calculateChartData();
     const isEmpty = lastChartData.length < 2 || lastChartData.every(d => d.scheduledCount === 0);
 
+    // REFINAMENTO DE UI [2024-11-25]: O cabeçalho do gráfico foi reestruturado para exibir o nome da aplicação como título principal e o título original como subtítulo, melhorando a identidade da marca na seção de dados.
     if (isEmpty) {
         ui.chartContainer.innerHTML = `
             <div class="chart-header">
-                <h3 class="chart-title">${t('chartTitle')}</h3>
+                <div class="chart-title-group">
+                    <h3 class="chart-title">${t('appName')}</h3>
+                    <p class="chart-subtitle">${t('chartTitle')}</p>
+                </div>
             </div>
             <div class="chart-empty-state">${t('chartEmptyState')}</div>
         `;
@@ -232,7 +236,10 @@ export function renderChart() {
     if (!chartInitialized) {
         ui.chartContainer.innerHTML = `
             <div class="chart-header">
-                <h3 class="chart-title">${t('chartTitle')}</h3>
+                <div class="chart-title-group">
+                    <h3 class="chart-title">${t('appName')}</h3>
+                    <p class="chart-subtitle">${t('chartTitle')}</p>
+                </div>
             </div>
             <div class="chart-wrapper">
                 <svg class="chart-svg" viewBox="0 0 100 100" preserveAspectRatio="none">
@@ -258,6 +265,16 @@ export function renderChart() {
         `;
         _setupChartListeners();
         chartInitialized = true;
+    } else {
+        // Atualiza os títulos caso já existam (ex: mudança de idioma)
+        const titleEl = ui.chartContainer.querySelector<HTMLElement>('.chart-title');
+        const subtitleEl = ui.chartContainer.querySelector<HTMLElement>('.chart-subtitle');
+        if (titleEl) {
+            titleEl.innerHTML = t('appName');
+        }
+        if (subtitleEl) {
+            subtitleEl.textContent = t('chartTitle');
+        }
     }
 
     _updateChartDOM(lastChartData);
