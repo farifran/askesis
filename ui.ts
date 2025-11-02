@@ -2,7 +2,6 @@
 // ANÁLISE DO ARQUIVO: 100% concluído. As referências da UI foram atualizadas para mapear os novos elementos de título de data para desktop e mobile, refletindo a refatoração da estrutura HTML. O módulo permanece direto e finalizado.
 type UIElements = {
     calendarStrip: HTMLElement;
-    appTitle: HTMLElement;
     headerTitleDesktop: HTMLElement;
     headerTitleMobile: HTMLElement;
     stoicQuoteDisplay: HTMLElement;
@@ -70,7 +69,6 @@ export const ui = {} as UIElements;
 export function initUI(): void {
     Object.assign(ui, {
         calendarStrip: document.getElementById('calendar-strip')!,
-        appTitle: document.getElementById('app-title')!,
         headerTitleDesktop: document.querySelector('#header-title .header-title-desktop')!,
         headerTitleMobile: document.querySelector('#header-title .header-title-mobile')!,
         stoicQuoteDisplay: document.getElementById('stoic-quote-display')!,

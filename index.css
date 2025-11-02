@@ -1,4 +1,4 @@
-/* ANÁLISE DO ARQUIVO CSS: 100% concluído. Adicionadas regras de media query para controlar a visibilidade dos novos formatos de título de data (desktop vs. mobile), centralizando a lógica de responsividade visual. O arquivo está bem estruturado e segue as melhores práticas. */
+/* ANÁLISE DO ARQUIVO CSS: 100% concluído. Adicionados novos estilos para o cabeçalho do gráfico refatorado, que agora inclui um título principal e um subtítulo, mantendo a consistência visual da aplicação. */
 /* ---
 * ARQUIVO CSS REATORADO
 *
@@ -180,18 +180,6 @@ main {
 .header-icon-stack #ai-eval-btn svg {
     width: 22px;
     height: 22px;
-}
-
-#app-title {
-    font-size: 22px;
-    font-weight: 700;
-    text-align: right;
-    margin-block-start: var(--space-xxl);
-    margin-block-end: 0;
-}
-
-#app-title strong {
-    color: var(--accent-green);
 }
 
 .header-bottom {
@@ -875,7 +863,25 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     align-items: center;
     margin-block-end: var(--space-lg);
 }
-.chart-title { font-size: 12px; font-weight: 600; color: var(--text-secondary); }
+/* REFINAMENTO DE UI [2024-11-25]: Estilos atualizados para acomodar um novo cabeçalho de gráfico com título e subtítulo. */
+.chart-title-group {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.chart-title {
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1.2;
+}
+.chart-title strong {
+    color: var(--accent-green);
+}
+.chart-subtitle {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-secondary);
+}
 .chart-wrapper { position: relative; height: 100px; }
 .chart-svg { width: 100%; height: 100%; }
 .chart-area { fill: url(#chart-gradient); }
@@ -1260,7 +1266,6 @@ body.is-offline #ai-eval-btn .offline-icon {
         gap: var(--space-sm);
         margin-block-end: var(--space-xxl);
     }
-    #app-title { font-size: 20px; }
     .app-header h2 { font-size: 24px; }
     .stoic-quote { font-size: 12px; }
     .header-top { gap: var(--space-md); }
@@ -1284,7 +1289,6 @@ body.is-offline #ai-eval-btn .offline-icon {
 @media (min-width: 768px) {
     .app-container { padding-inline: var(--space-xl); }
     .app-header { padding-block: calc(var(--space-lg) * 2); margin-block-end: 0; }
-    #app-title { font-size: 25px; }
     .app-header h2 { font-size: 32px; }
 
     .habit-group {

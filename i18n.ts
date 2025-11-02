@@ -101,8 +101,7 @@ export function getLocaleDayName(date: Date): string {
 
 function updateUIText() {
     const appNameHtml = t('appName');
-    ui.appTitle.innerHTML = appNameHtml;
-
+    
     // Strip HTML for the document title
     const tempEl = document.createElement('div');
     tempEl.innerHTML = appNameHtml;
