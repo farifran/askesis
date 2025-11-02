@@ -2,7 +2,7 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// ANÁLISE DO ARQUIVO: 100% concluído. A lógica de renderização é robusta e otimizada. Esta análise final unificou a lógica de criação e atualização da mensagem de consolidação para remover redundâncias, finalizando a revisão do arquivo.
+// ANÁLISE DO ARQUIVO: 100% concluído. A lógica de renderização é robusta e otimizada. Esta análise final refatorou updateHeaderTitle para maior clareza e manutenibilidade.
 // PÓS-REVISÃO [2024-11-06]: Código refatorado para usar WeakMap em `showInlineNotice` e `createElement` em `_createManageHabitListItem` para maior robustez e segurança.
 
 import {
@@ -573,24 +573,25 @@ export function renderStoicQuote() {
 }
 
 // REATORAÇÃO [2024-11-19]: A função foi refatorada para preencher os elementos de título de desktop e mobile separadamente. A lógica de detecção de `window.innerWidth` foi removida, delegando a responsabilidade de exibição para o CSS.
+// REATORAÇÃO DE CLAREZA [2024-11-23]: A lógica if/else para datas especiais (Hoje, Ontem, Amanhã) foi substituída por um mapeamento de objetos. Isso reduz a repetição de código e torna a intenção mais clara, melhorando a manutenibilidade.
 export function updateHeaderTitle() {
     const todayISO = getTodayUTCIso();
     const yesterdayISO = toUTCIsoDateString(addDays(parseUTCIsoDate(todayISO), -1));
     const tomorrowISO = toUTCIsoDateString(addDays(parseUTCIsoDate(todayISO), 1));
 
+    const specialDateMap: Record<string, string> = {
+        [todayISO]: 'headerTitleToday',
+        [yesterdayISO]: 'headerTitleYesterday',
+        [tomorrowISO]: 'headerTitleTomorrow',
+    };
+
     let desktopTitle: string;
     let mobileTitle: string;
+    
+    const specialDateKey = specialDateMap[state.selectedDate];
 
-    if (state.selectedDate === todayISO) {
-        const title = t('headerTitleToday');
-        desktopTitle = title;
-        mobileTitle = title;
-    } else if (state.selectedDate === yesterdayISO) {
-        const title = t('headerTitleYesterday');
-        desktopTitle = title;
-        mobileTitle = title;
-    } else if (state.selectedDate === tomorrowISO) {
-        const title = t('headerTitleTomorrow');
+    if (specialDateKey) {
+        const title = t(specialDateKey);
         desktopTitle = title;
         mobileTitle = title;
     } else {
