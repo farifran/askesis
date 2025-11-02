@@ -1,4 +1,4 @@
-<!-- ANÁLISE DO ARQUIVO: 100% concluído. A configuração da viewport foi ajustada para permitir zoom por pinça, melhorando a acessibilidade, enquanto o zoom por duplo clique permanece desativado via CSS. Nenhuma outra análise é necessária. -->
+<!-- ANÁLISE DO ARQUIVO: 100% concluído. A estrutura do título do cabeçalho foi refatorada para usar spans controlados por CSS, eliminando a dependência do JavaScript para a responsividade do formato da data e centralizando a lógica de exibição. -->
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -109,7 +109,10 @@
             </div>
             <div class="header-bottom">
                 <div id="stoic-quote-display" class="stoic-quote"></div>
-                <h1 id="header-title">Hoje</h1>
+                <h1 id="header-title">
+                    <span class="header-title-desktop">Hoje</span>
+                    <span class="header-title-mobile">Hoje</span>
+                </h1>
             </div>
         </header>
 

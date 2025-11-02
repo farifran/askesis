@@ -361,6 +361,16 @@ export function saveHabitFromModal() {
         return;
     }
 
+    // MELHORIA DE UX: Se o nome de um hábito predefinido for alterado, ele se torna um hábito personalizado.
+    // Isso dá aos usuários a liberdade de usar modelos como ponto de partida sem ficarem presos a eles.
+    if ('nameKey' in formData && formData.nameKey && t(formData.nameKey) !== habitName) {
+        // Converte o modelo em um hábito personalizado, removendo a chave de tradução.
+        const customFormData = formData as any; // Usa 'any' para a transformação do tipo.
+        delete customFormData.nameKey;
+        customFormData.name = habitName;
+        customFormData.subtitleKey = 'customHabitSubtitle';
+    }
+
     // Atualiza o formData com os valores finais do formulário
     formData.times = selectedTimes;
     if ('name' in formData) {

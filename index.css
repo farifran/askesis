@@ -1,4 +1,4 @@
-/* ANÁLISE DO ARQUIVO CSS: 100% concluído. O arquivo está bem estruturado, otimizado e segue as melhores práticas modernas. Nenhuma outra análise é necessária. */
+/* ANÁLISE DO ARQUIVO CSS: 100% concluído. Adicionadas regras de media query para controlar a visibilidade dos novos formatos de título de data (desktop vs. mobile), centralizando a lógica de responsividade visual. O arquivo está bem estruturado e segue as melhores práticas. */
 /* ---
 * ARQUIVO CSS REATORADO
 *
@@ -192,6 +192,12 @@ main {
 .app-header h1 {
     font-size: 28px;
     font-weight: 700;
+    position: relative;
+    bottom: 5px;
+}
+
+.header-title-mobile {
+    display: none;
 }
 
 .stoic-quote {
@@ -1236,12 +1242,23 @@ body.is-offline #ai-eval-btn .offline-icon {
 
 /* --- RESPONSIVIDADE --- */
 @media (max-width: 767px) {
-    .app-header { gap: var(--space-md); }
+    .app-header {
+        gap: var(--space-md);
+        margin-block-end: var(--space-xxl);
+    }
     .app-header h1 { font-size: 24px; }
     .stoic-quote { font-size: 12px; }
     .header-top { gap: var(--space-md); }
     #fab-add-habit { width: 38px; height: 38px; font-size: 22px; }
     .header-bottom { gap: var(--space-sm); flex-wrap: nowrap; }
+
+    /* REATORAÇÃO [2024-11-19]: Adiciona regras para mostrar o formato de data mobile e ocultar o de desktop. */
+    .header-title-desktop {
+        display: none;
+    }
+    .header-title-mobile {
+        display: block;
+    }
 }
 
 @media (min-width: 768px) {

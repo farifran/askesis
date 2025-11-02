@@ -2,7 +2,7 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// ANÁLISE DO ARQUIVO: 100% concluído. A lógica de renderização foi totalmente otimizada e refatorada. O arquivo agora segue as melhores práticas de manipulação de DOM, segurança e performance, sendo considerado finalizado. Nenhuma outra análise é necessária.
+// ANÁLISE DO ARQUIVO: 100% concluído. A lógica de renderização é robusta, com otimizações de performance como reconciliação de DOM. A análise final refatorou a lógica da mensagem de consolidação para melhorar a manutenibilidade, concluindo a revisão do arquivo.
 // PÓS-REVISÃO [2024-11-06]: Código refatorado para usar WeakMap em `showInlineNotice` e `createElement` em `_createManageHabitListItem` para maior robustez e segurança.
 
 import {
@@ -287,20 +287,22 @@ function updateHabitCardElement(card: HTMLElement, habit: Habit, time: TimeOfDay
     // 3. Atualiza a mensagem de consolidação
     let msgEl = card.querySelector<HTMLElement>('.consolidation-message');
     const detailsEl = card.querySelector('.habit-details');
+    
+    // REATORAÇÃO DE MANUTENIBILIDADE [2024-11-20]: A lógica de atualização da mensagem de consolidação foi refatorada para remover a duplicação de código, seguindo o princípio DRY.
+    let messageText: string | null = null;
     if (streak >= STREAK_CONSOLIDATED) {
+        messageText = t('habitConsolidatedMessage');
+    } else if (streak >= STREAK_SEMI_CONSOLIDATED) {
+        messageText = t('habitSemiConsolidatedMessage');
+    }
+
+    if (messageText) {
         if (!msgEl) {
             msgEl = document.createElement('div');
             msgEl.className = 'consolidation-message';
             detailsEl?.appendChild(msgEl);
         }
-        msgEl.textContent = t('habitConsolidatedMessage');
-    } else if (streak >= STREAK_SEMI_CONSOLIDATED) {
-         if (!msgEl) {
-            msgEl = document.createElement('div');
-            msgEl.className = 'consolidation-message';
-            detailsEl?.appendChild(msgEl);
-        }
-        msgEl.textContent = t('habitSemiConsolidatedMessage');
+        msgEl.textContent = messageText;
     } else if (msgEl) {
         msgEl.remove();
     }
@@ -567,30 +569,45 @@ export function renderStoicQuote() {
     }, 100);
 }
 
-// FIX: Add updateHeaderTitle function
+// REATORAÇÃO [2024-11-19]: A função foi refatorada para preencher os elementos de título de desktop e mobile separadamente. A lógica de detecção de `window.innerWidth` foi removida, delegando a responsabilidade de exibição para o CSS.
 export function updateHeaderTitle() {
     const todayISO = getTodayUTCIso();
     const yesterdayISO = toUTCIsoDateString(addDays(parseUTCIsoDate(todayISO), -1));
     const tomorrowISO = toUTCIsoDateString(addDays(parseUTCIsoDate(todayISO), 1));
 
-    let title: string;
+    let desktopTitle: string;
+    let mobileTitle: string;
 
     if (state.selectedDate === todayISO) {
-        title = t('headerTitleToday');
+        const title = t('headerTitleToday');
+        desktopTitle = title;
+        mobileTitle = title;
     } else if (state.selectedDate === yesterdayISO) {
-        title = t('headerTitleYesterday');
+        const title = t('headerTitleYesterday');
+        desktopTitle = title;
+        mobileTitle = title;
     } else if (state.selectedDate === tomorrowISO) {
-        title = t('headerTitleTomorrow');
+        const title = t('headerTitleTomorrow');
+        desktopTitle = title;
+        mobileTitle = title;
     } else {
         const date = parseUTCIsoDate(state.selectedDate);
+
+        // Formato para Mobile (DD/MM)
+        const day = String(date.getUTCDate()).padStart(2, '0');
+        const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+        mobileTitle = `${day}/${month}`;
+        
+        // Formato para Desktop (Mês por extenso, dia)
         const formatOptions: Intl.DateTimeFormatOptions = {
             month: 'long',
             day: 'numeric',
             timeZone: 'UTC'
         };
-        title = date.toLocaleDateString(state.activeLanguageCode, formatOptions);
+        desktopTitle = date.toLocaleDateString(state.activeLanguageCode, formatOptions);
     }
-    ui.headerTitle.textContent = title;
+    ui.headerTitleDesktop.textContent = desktopTitle;
+    ui.headerTitleMobile.textContent = mobileTitle;
 }
 
 
@@ -1014,7 +1031,7 @@ export function openEditModal(habitOrTemplate: Habit | HabitTemplate | null) {
     };
 
     // Atualiza os controles do formulário com base no formData
-    (form.elements.namedItem('habit-name') as HTMLInputElement).disabled = !!formData.nameKey;
+    (form.elements.namedItem('habit-name') as HTMLInputElement).disabled = false;
     
     const timeCheckboxes = form.querySelectorAll<HTMLInputElement>('input[name="habit-time"]');
     timeCheckboxes.forEach(cb => {

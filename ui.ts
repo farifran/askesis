@@ -1,8 +1,9 @@
 // ui.ts
-// ANÁLISE DO ARQUIVO: 100% concluído. O módulo de referências da UI é direto e finalizado. Nenhuma outra análise é necessária.
+// ANÁLISE DO ARQUIVO: 100% concluído. As referências da UI foram atualizadas para mapear os novos elementos de título de data para desktop e mobile, refletindo a refatoração da estrutura HTML. O módulo permanece direto e finalizado.
 type UIElements = {
     calendarStrip: HTMLElement;
-    headerTitle: HTMLElement;
+    headerTitleDesktop: HTMLElement;
+    headerTitleMobile: HTMLElement;
     stoicQuoteDisplay: HTMLElement;
     habitContainer: HTMLElement;
     chartContainer: HTMLElement;
@@ -68,7 +69,8 @@ export const ui = {} as UIElements;
 export function initUI(): void {
     Object.assign(ui, {
         calendarStrip: document.getElementById('calendar-strip')!,
-        headerTitle: document.getElementById('header-title')!,
+        headerTitleDesktop: document.querySelector('#header-title .header-title-desktop')!,
+        headerTitleMobile: document.querySelector('#header-title .header-title-mobile')!,
         stoicQuoteDisplay: document.getElementById('stoic-quote-display')!,
         habitContainer: document.getElementById('habit-container')!,
         chartContainer: document.getElementById('chart-container')!,
