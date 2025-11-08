@@ -63,11 +63,18 @@ O projeto segue uma arquitetura modular com uma clara separação de responsabil
 
 *   **Integridade de Dados Históricos:** O uso de `scheduleHistory` para cada hábito é uma solução sofisticada que permite que as propriedades de um hábito (nome, frequência, etc.) mudem ao longo do tempo sem corromper os dados passados. Quando um hábito é editado, um novo "segmento" de agendamento é criado a partir da data da edição, preservando a precisão do histórico para o gráfico de progresso e as análises da IA.
 
-## 💡 Filosofia e Processo de Desenvolvimento
+## 💡 Um Paradigma de Desenvolvimento: Engenheiro Aumentado por IA
 
-**Askesis** representa um novo paradigma no desenvolvimento de software, onde a colaboração entre um engenheiro de sistemas e uma inteligência artificial avançada (Gemini) foi o motor central do projeto. Desde a concepção inicial da ideia até a implementação de cada funcionalidade, arquitetura de segurança e refinamento da UI/UX, o projeto foi inteiramente construído por esta parceria inovadora.
+**Askesis** representa mais do que um projeto de software; é um *case study* sobre um novo paradigma de desenvolvimento. O aplicativo foi inteiramente concebido, arquitetado e construído por um único engenheiro de sistemas em colaboração simbiótica com a IA Gemini.
 
-Este modelo de "Engenheiro Aumentado por IA" permitiu a criação de um produto complexo e de alta qualidade com a agilidade e o foco de um único desenvolvedor, demonstrando o potencial da colaboração humano-IA para acelerar a inovação e a engenharia de software de ponta.
+Nesta parceria, a IA transcendeu o papel de uma simples ferramenta de autocompletar, atuando como:
+
+*   **Arquiteto de Software:** Colaborou na definição da estrutura modular, na estratégia de gerenciamento de estado e na arquitetura de segurança, sugerindo padrões como o uso de `scheduleHistory` para garantir a integridade dos dados históricos.
+*   **Especialista em UI/UX:** Idealizou e refinou componentes da interface, desde o design do gráfico de crescimento composto até a implementação de microinterações, como o feedback visual animado nos cartões de hábito, visando uma experiência de usuário fluida e intuitiva.
+*   **Analista de Qualidade e Performance:** Analisou proativamente o código em busca de otimizações, como a substituição de manipulações de `innerHTML` por estratégias de reconciliação do DOM, e identificou bugs de lógica e condições de corrida, sugerindo correções robustas.
+*   **Especialista de Domínio:** Forneceu as citações estoicas, ajudou a estruturar os prompts para obter o máximo da API do Gemini e contribuiu com a lógica para as mensagens de celebração de marcos.
+
+Este modelo de "Engenheiro Aumentado por IA" permitiu que a visão complexa do projeto fosse executada com a agilidade e o foco de um único desenvolvedor, mas com a amplitude de conhecimento de uma equipe multidisciplinar. O resultado é um produto que demonstra não apenas a qualidade do código, mas também o potencial transformador da colaboração humano-IA na engenharia de software moderna.
 
 ## 📄 Licença
 
