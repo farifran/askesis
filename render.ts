@@ -425,7 +425,7 @@ function updatePlaceholderForGroup(groupEl: HTMLElement, time: TimeOfDay, hasHab
         const text = t('dragToAddHabit');
         let iconHTML = '';
 
-        if (isSmartPlaceholder && emptyTimes.length > 1) {
+        if (isSmartPlaceholder) {
             const genericIconHTML = emptyTimes
                 .map(getTimeOfDayIcon)
                 .join('<span class="icon-separator">/</span>');
