@@ -1,4 +1,4 @@
-// ANÁLISE DO ARQUIVO: 100% concluído. O módulo de utilitários contém helpers otimizados e bem definidos. Nenhuma outra análise é necessária.
+// ANÁLISE DO ARQUIVO: 100% concluído. Corrigido um bug de fuso horário na função getTodayUTC para garantir que a data seja baseada no dia local do usuário.
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -22,7 +22,9 @@ export function toUTCIsoDateString(date: Date): string {
 
 export function getTodayUTC(): Date {
     const today = new Date();
-    return new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+    // CORREÇÃO DE FUSO HORÁRIO [2024-11-26]: A determinação de "hoje" foi corrigida para usar os componentes da data local do usuário (`getFullYear`, `getMonth`, `getDate`) em vez dos componentes UTC.
+    // Isso garante que o dia da aplicação corresponda ao dia local do usuário (de meia-noite a meia-noite), corrigindo o bug onde o dia avançava prematuramente em fusos horários a oeste de UTC.
+    return new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
 }
 
 export function getTodayUTCIso(): string {
