@@ -16,11 +16,16 @@
 
 ## 🚀 Pilha Tecnológica (Tech Stack)
 
-*   **Frontend:** TypeScript, HTML5, CSS3 (Arquitetura "Vanilla" sem frameworks, focada em performance)
-*   **API/Backend:** Vercel Edge Functions, Gemini API
-*   **Armazenamento na Nuvem:** Vercel KV
-*   **Build Tool:** esbuild
-*   **Notificações Push:** OneSignal
+*   **Frontend:** TypeScript, HTML5, CSS3 (Arquitetura "Vanilla" sem frameworks, focada em performance).
+*   **Infraestrutura e Backend (Vercel):**
+    *   **Vercel Edge Functions:** Todo o backend, incluindo a comunicação com a API do Gemini e a lógica de sincronização, é executado em Edge Functions. Esta escolha oferece latência global ultrabaixa, escalabilidade automática e se encaixa perfeitamente no generoso plano gratuito da Vercel, eliminando custos de servidor.
+    *   **Vercel KV:** Utilizado como banco de dados serverless (baseado em Redis) para armazenar os dados criptografados dos usuários. Sua simplicidade, durabilidade e integração perfeita com o ecossistema Vercel o tornaram a escolha ideal, também coberta pelo plano gratuito.
+*   **Inteligência Artificial (Google Gemini):**
+    *   A API do Gemini é o cérebro por trás das análises e feedbacks personalizados, orquestrada através das Vercel Edge Functions.
+*   **Notificações Push (OneSignal):**
+    *   Responsável por gerenciar as inscrições e o envio de notificações push. Foi escolhido por sua robustez, facilidade de integração e, crucialmente, por um plano gratuito completo que atende a todas as necessidades do projeto sem nenhum custo.
+*   **Build Tool (esbuild):**
+    *   Garante um processo de compilação extremamente rápido, tanto para desenvolvimento quanto para produção.
 
 ## 📂 Estrutura do Projeto
 
@@ -57,6 +62,12 @@ O projeto segue uma arquitetura modular com uma clara separação de responsabil
 *   **Segurança e Privacidade por Design:** A implementação da criptografia de ponta a ponta (E2EE) é um diferencial crucial. A chave de sincronização do usuário nunca sai do dispositivo; ela é usada para derivar uma chave de criptografia (via PBKDF2) que criptografa os dados (via AES-GCM) antes de enviá-los para a nuvem. Isso garante que nem mesmo o servidor possa ler os dados do usuário.
 
 *   **Integridade de Dados Históricos:** O uso de `scheduleHistory` para cada hábito é uma solução sofisticada que permite que as propriedades de um hábito (nome, frequência, etc.) mudem ao longo do tempo sem corromper os dados passados. Quando um hábito é editado, um novo "segmento" de agendamento é criado a partir da data da edição, preservando a precisão do histórico para o gráfico de progresso e as análises da IA.
+
+## 💡 Filosofia e Processo de Desenvolvimento
+
+**Askesis** representa um novo paradigma no desenvolvimento de software, onde a colaboração entre um engenheiro de sistemas e uma inteligência artificial avançada (Gemini) foi o motor central do projeto. Desde a concepção inicial da ideia até a implementação de cada funcionalidade, arquitetura de segurança e refinamento da UI/UX, o projeto foi inteiramente construído por esta parceria inovadora.
+
+Este modelo de "Engenheiro Aumentado por IA" permitiu a criação de um produto complexo e de alta qualidade com a agilidade e o foco de um único desenvolvedor, demonstrando o potencial da colaboração humano-IA para acelerar a inovação e a engenharia de software de ponta.
 
 ## 📄 Licença
 
