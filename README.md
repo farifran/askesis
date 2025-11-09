@@ -43,6 +43,14 @@
 
 ## Pilha Tecnológica (Tech Stack)
 
+<div align="center">
+  <a href="https://vercel.com" target="_blank" rel="noreferrer"><img src="https://cdn.simpleicons.org/vercel/white" alt="Vercel" height="40" style="margin: 10px;"/></a>
+  <a href="https://deepmind.google/technologies/gemini/" target="_blank" rel="noreferrer"><img src="https://cdn.simpleicons.org/googlegemini/white" alt="Google Gemini" height="40" style="margin: 10px;"/></a>
+  <a href="https://onesignal.com" target="_blank" rel="noreferrer"><img src="https://cdn.simpleicons.org/onesignal/white" alt="OneSignal" height="40" style="margin: 10px;"/></a>
+  <a href="https://www.typescriptlang.org/" target="_blank" rel="noreferrer"><img src="https://cdn.simpleicons.org/typescript/white" alt="TypeScript" height="40" style="margin: 10px;"/></a>
+  <a href="https://esbuild.github.io/" target="_blank" rel="noreferrer"><img src="https://cdn.simpleicons.org/esbuild/white" alt="esbuild" height="40" style="margin: 10px;"/></a>
+</div>
+
 *   **Frontend:** TypeScript, HTML5, CSS3 (Arquitetura "Vanilla" sem frameworks, focada em performance).
 *   **Infraestrutura e Backend (Vercel):**
     *   **Vercel Edge Functions:** Todo o backend, incluindo a comunicação com a API do Gemini e a lógica de sincronização, é executado em Edge Functions. Esta escolha oferece latência global ultrabaixa, escalabilidade automática e se encaixa perfeitamente no generoso plano gratuito da Vercel, eliminando custos de servidor.
