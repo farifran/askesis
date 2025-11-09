@@ -222,6 +222,10 @@ export const state: {
     lastAIResult: string | null;
     lastAIError: string | null;
     syncState: 'syncSaving' | 'syncSynced' | 'syncError' | 'syncInitial';
+    fullCalendar: {
+        year: number;
+        month: number;
+    };
 } = {
     habits: [],
     dailyData: {},
@@ -245,6 +249,10 @@ export const state: {
     lastAIResult: null,
     lastAIError: null,
     syncState: 'syncInitial',
+    fullCalendar: {
+        year: new Date().getFullYear(),
+        month: new Date().getMonth(),
+    }
 };
 
 // --- STATE-DEPENDENT HELPERS ---

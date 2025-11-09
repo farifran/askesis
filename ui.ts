@@ -67,6 +67,13 @@ type UIElements = {
     colorPickerModal: HTMLElement;
     colorPickerGrid: HTMLElement;
     changeColorFromPickerBtn: HTMLButtonElement;
+    fullCalendarModal: HTMLElement;
+    fullCalendarHeader: HTMLElement;
+    fullCalendarMonthYear: HTMLElement;
+    fullCalendarPrevBtn: HTMLButtonElement;
+    fullCalendarNextBtn: HTMLButtonElement;
+    fullCalendarWeekdays: HTMLElement;
+    fullCalendarGrid: HTMLElement;
 };
 
 export const ui = {} as UIElements;
@@ -139,5 +146,12 @@ export function initUI(): void {
         colorPickerModal: document.getElementById('color-picker-modal')!,
         colorPickerGrid: document.getElementById('color-picker-grid')!,
         changeColorFromPickerBtn: document.getElementById('change-color-from-picker-btn') as HTMLButtonElement,
+        fullCalendarModal: document.getElementById('full-calendar-modal')!,
+        fullCalendarHeader: document.getElementById('full-calendar-header')!,
+        fullCalendarMonthYear: document.getElementById('full-calendar-month-year')!,
+        fullCalendarPrevBtn: document.getElementById('full-calendar-prev') as HTMLButtonElement,
+        fullCalendarNextBtn: document.getElementById('full-calendar-next') as HTMLButtonElement,
+        fullCalendarWeekdays: document.getElementById('full-calendar-weekdays')!,
+        fullCalendarGrid: document.getElementById('full-calendar-grid')!,
     });
 }

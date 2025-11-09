@@ -2,7 +2,7 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// ANÁLISE DO ARQUIVO: 100% concluído. A orquestração de eventos de modais é bem estruturada e robusta. Nenhuma outra análise é necessária.
+// ANÁLISE DO ARQUIVO: ANÁLISE PARCIAL. Adicionada nova funcionalidade de calendário completo (em desenvolvimento).
 import { ui } from './ui';
 import { state, LANGUAGES, PREDEFINED_HABITS, TimeOfDay, saveState, STREAK_SEMI_CONSOLIDATED, STREAK_CONSOLIDATED, Frequency, FREQUENCIES } from './state';
 import {
@@ -19,6 +19,8 @@ import {
     renderFrequencyOptions,
     renderIconPicker,
     renderColorPicker,
+    renderFullCalendar,
+    renderApp,
 } from './render';
 import {
     saveHabitFromModal,
@@ -75,6 +77,7 @@ export function setupModalListeners() {
         ui.exploreModal,
         ui.confirmModal,
         ui.aiOptionsModal,
+        ui.fullCalendarModal,
     ];
     modalsToInitialize.forEach(modal => initializeModalClosing(modal));
 
@@ -237,6 +240,35 @@ export function setupModalListeners() {
 
     // --- Modal de Notas ---
     ui.saveNoteBtn.addEventListener('click', handleSaveNote);
+
+    // --- Modal de Calendário Completo ---
+    ui.fullCalendarPrevBtn.addEventListener('click', () => {
+        state.fullCalendar.month--;
+        if (state.fullCalendar.month < 0) {
+            state.fullCalendar.month = 11;
+            state.fullCalendar.year--;
+        }
+        renderFullCalendar();
+    });
+
+    ui.fullCalendarNextBtn.addEventListener('click', () => {
+        state.fullCalendar.month++;
+        if (state.fullCalendar.month > 11) {
+            state.fullCalendar.month = 0;
+            state.fullCalendar.year++;
+        }
+        renderFullCalendar();
+    });
+
+    ui.fullCalendarGrid.addEventListener('click', (e) => {
+        const dayEl = (e.target as HTMLElement).closest<HTMLElement>('.full-calendar-day');
+        if (dayEl && dayEl.dataset.date) {
+            state.selectedDate = dayEl.dataset.date;
+            closeModal(ui.fullCalendarModal);
+            renderApp();
+        }
+    });
+
 
     // --- Modal de Edição/Criação de Hábito ---
     ui.editHabitSaveBtn.addEventListener('click', saveHabitFromModal);

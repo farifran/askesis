@@ -47,19 +47,19 @@ import { updateAppBadge } from './badge';
 // --- Habit Creation & Deletion ---
 
 function _createNewHabitFromTemplate(template: HabitTemplate): Habit {
-    const todayISO = getTodayUTCIso();
+    const startDate = state.selectedDate;
     const newHabit: Habit = {
         id: generateUUID(),
         icon: template.icon,
         color: template.color,
         goal: { ...template.goal },
-        createdOn: todayISO,
+        createdOn: startDate,
         scheduleHistory: [
             {
-                startDate: todayISO,
+                startDate: startDate,
                 times: template.times,
                 frequency: template.frequency,
-                scheduleAnchor: todayISO,
+                scheduleAnchor: startDate,
                 ...(template.nameKey ? { nameKey: template.nameKey, subtitleKey: template.subtitleKey } : { name: template.name, subtitleKey: template.subtitleKey })
             }
         ],

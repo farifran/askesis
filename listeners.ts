@@ -1,6 +1,6 @@
-// ANÁLISE DO ARQUIVO: 100% concluído. A configuração dos listeners de eventos globais é eficiente e cobre os casos de uso de UX. Nenhuma outra análise é necessária.
+// ANÁLISE DO ARQUIVO: ANÁLISE PARCIAL. Adicionada nova funcionalidade de calendário completo (em desenvolvimento).
 import { state } from './state';
-import { toUTCIsoDateString, debounce } from './utils';
+import { toUTCIsoDateString, parseUTCIsoDate, debounce } from './utils';
 import { ui } from './ui';
 import {
     renderHabits,
@@ -8,6 +8,8 @@ import {
     updateHeaderTitle,
     renderStoicQuote,
     renderAINotificationState,
+    openModal,
+    renderFullCalendar,
 } from './render';
 import { setupModalListeners } from './modalListeners';
 import { setupHabitCardListeners } from './habitCardListeners';
@@ -96,6 +98,68 @@ const setupGlobalListeners = () => {
     
     ui.calendarStrip.addEventListener('click', handleCalendarClick);
 
+    // Listener de Long-press para abrir o calendário completo
+    let longPressTimer: number | null = null;
+    let longPressStartX = 0;
+    let longPressStartY = 0;
+    let longPressFired = false;
+
+    const cancelLongPress = () => {
+        if (longPressTimer) {
+            clearTimeout(longPressTimer);
+            longPressTimer = null;
+        }
+        window.removeEventListener('pointermove', handlePointerMoveForLongPress);
+    };
+
+    const handlePointerMoveForLongPress = (e: PointerEvent) => {
+        if (Math.abs(e.clientX - longPressStartX) > 10 || Math.abs(e.clientY - longPressStartY) > 10) {
+            cancelLongPress();
+        }
+    };
+
+    ui.calendarStrip.addEventListener('pointerdown', (e) => {
+        if (e.button !== 0) return;
+        
+        longPressStartX = e.clientX;
+        longPressStartY = e.clientY;
+        longPressFired = false;
+        
+        const cleanup = () => {
+            cancelLongPress();
+            window.removeEventListener('pointerup', cleanup);
+            window.removeEventListener('pointerleave', cleanup);
+        };
+        
+        window.addEventListener('pointermove', handlePointerMoveForLongPress);
+        window.addEventListener('pointerup', cleanup);
+        window.addEventListener('pointerleave', cleanup);
+        
+        longPressTimer = window.setTimeout(() => {
+            longPressFired = true;
+            cleanup();
+            
+            // CORREÇÃO DE BUG [2024-12-10]: Faz o cast do elemento retornado por `closest` para `HTMLElement` para garantir que a propriedade `dataset` esteja acessível, resolvendo o erro de tipo do TypeScript.
+            const dayItem = (e.target as HTMLElement).closest<HTMLElement>('.day-item');
+            const dateToOpen = dayItem?.dataset.date ? parseUTCIsoDate(dayItem.dataset.date) : parseUTCIsoDate(state.selectedDate);
+            
+            state.fullCalendar.year = dateToOpen.getUTCFullYear();
+            state.fullCalendar.month = dateToOpen.getUTCMonth();
+            renderFullCalendar();
+            openModal(ui.fullCalendarModal);
+        }, 750);
+    });
+
+    // Impede o clique após um long-press bem-sucedido.
+    ui.calendarStrip.addEventListener('click', (e) => {
+        if (longPressFired) {
+            e.stopImmediatePropagation();
+        }
+    }, true);
+    
+    ui.calendarStrip.addEventListener('contextmenu', (e) => e.preventDefault());
+
+
     ui.undoBtn.addEventListener('click', handleUndoDelete);
 
     const debouncedResize = debounce(() => {
@@ -153,16 +217,16 @@ const setupGlobalListeners = () => {
         const openCard = document.querySelector('.habit-card.is-open-left, .habit-card.is-open-right');
         
         // Se houver um cartão aberto e o clique foi fora dele.
-        if (openCard && !openCard.contains(target)) {
+        if (openCard && !target.closest('.habit-card')) {
             openCard.classList.remove('is-open-left', 'is-open-right');
         }
     });
 };
 
-export const setupEventListeners = () => {
+export function setupEventListeners() {
     setupGlobalListeners();
     setupModalListeners();
     setupHabitCardListeners();
     setupSwipeHandler(ui.habitContainer);
     setupDragAndDropHandler(ui.habitContainer);
-};
+}

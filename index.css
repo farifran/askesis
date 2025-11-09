@@ -1,4 +1,4 @@
-/* ANÁLISE DO ARQUIVO CSS: 100% concluído. A base de código está bem estruturada, e a manutenibilidade foi aprimorada ao desacoplar a cor do tema de valores hardcoded em JavaScript. A análise está finalizada. */
+/* ANÁLISE DO ARQUIVO CSS: ANÁLISE PARCIAL. Adicionada nova funcionalidade de calendário completo (em desenvolvimento). Os estilos foram adicionados seguindo as convenções existentes. */
 /* ---
 * ARQUIVO CSS REATORADO
 *
@@ -1343,9 +1343,75 @@ input:disabled + .slider {
 
 
 /* CORREÇÃO: Garante que o modal de confirmação apareça sobre outros modais */
-#confirm-modal, #icon-picker-modal, #color-picker-modal {
+#confirm-modal, #icon-picker-modal, #color-picker-modal, #full-calendar-modal {
     z-index: var(--z-index-stacked-modal);
 }
+
+/* Modal: Calendário Completo */
+#full-calendar-modal .modal-content {
+    max-width: 500px;
+    gap: var(--space-lg);
+}
+#full-calendar-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-inline: var(--space-md);
+}
+#full-calendar-header h2 {
+    font-size: 18px;
+    font-weight: 600;
+    margin: 0;
+}
+#full-calendar-weekdays {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: var(--space-sm);
+    text-align: center;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+#full-calendar-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: var(--space-sm);
+}
+.full-calendar-day {
+    aspect-ratio: 1/1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    border-radius: var(--border-radius-pill);
+    transition: background-color var(--transition-duration);
+    position: relative;
+}
+.full-calendar-day:hover {
+    background-color: var(--surface-hover);
+}
+.full-calendar-day.other-month {
+    opacity: 0.3;
+    pointer-events: none;
+}
+.full-calendar-day.selected .day-progress-ring {
+    border: 2px solid var(--accent-blue);
+}
+.full-calendar-day.today .day-number {
+    background-color: transparent;
+    color: var(--accent-green);
+    font-weight: 700;
+}
+.full-calendar-day.today .day-progress-ring::after {
+    content: '';
+    position: absolute;
+    inset: -3px;
+    border-radius: var(--border-radius-pill);
+    box-shadow: 0 0 10px var(--accent-green);
+    animation: glow-pulse 2.5s infinite ease-in-out;
+}
+
 
 /* --- COMPONENTES: FORMULÁRIOS --- */
 .form-group { margin-block-end: var(--space-lg); }

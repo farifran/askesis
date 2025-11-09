@@ -2,7 +2,7 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// ANÁLISE DO ARQUIVO: 100% concluído. A lógica de renderização é robusta e foi fortalecida com correções de bugs pós-revisão.
+// ANÁLISE DO ARQUIVO: ANÁLISE PARCIAL. Adicionada nova funcionalidade de calendário completo (em desenvolvimento).
 // PÓS-REVISÃO [2024-11-06]: Código refatorado para usar WeakMap e createElement para maior robustez.
 // PÓS-REVISÃO [2024-12-09]: Corrigido um bug crítico de referência de elemento (`ui.aiEval-btn`) que impedia a renderização do estado de notificação da IA.
 
@@ -186,6 +186,88 @@ export function renderLanguageFilter() {
         'language_ariaLabel'
     );
 }
+
+/**
+ * NOVA FUNCIONALIDADE [EM DESENVOLVIMENTO]
+ * Renderiza a visualização do calendário mensal completo no modal.
+ * Esta função calcula todos os dias do mês selecionado, preenche os dias
+ * dos meses anterior e seguinte para completar a grade, e renderiza o anel de
+ * progresso para cada dia.
+ *
+ * Melhorias Futuras:
+ * - Acessibilidade: Adicionar atributos ARIA adequados à grade e aos dias.
+ * - Performance: Poderia ser otimizado para não recriar todos os dias ao navegar
+ *   entre os meses, mas a abordagem atual é simples e robusta.
+ * - Animações: Adicionar transições suaves ao navegar entre os meses.
+ */
+export function renderFullCalendar() {
+    const { year, month } = state.fullCalendar;
+    const todayISO = getTodayUTCIso();
+
+    const monthDate = new Date(Date.UTC(year, month, 1));
+    ui.fullCalendarMonthYear.textContent = monthDate.toLocaleDateString(state.activeLanguageCode, {
+        month: 'long',
+        year: 'numeric',
+        timeZone: 'UTC',
+    });
+
+    const firstDayOfMonth = new Date(Date.UTC(year, month, 1));
+    const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+    const startDayOfWeek = firstDayOfMonth.getUTCDay(); // 0 = Domingo, 1 = Segunda...
+
+    const grid = ui.fullCalendarGrid;
+    grid.innerHTML = '';
+    
+    // Renderiza cabeçalho dos dias da semana
+    if (ui.fullCalendarWeekdays.childElementCount === 0) {
+        const weekdaysFragment = document.createDocumentFragment();
+        for (let i = 0; i < 7; i++) {
+            const day = new Date(Date.UTC(2024, 0, 7 + i)); // Usa uma semana conhecida para obter os nomes
+            const weekdayEl = document.createElement('div');
+            weekdayEl.textContent = getLocaleDayName(day).substring(0, 1);
+            weekdaysFragment.appendChild(weekdayEl);
+        }
+        ui.fullCalendarWeekdays.appendChild(weekdaysFragment);
+    }
+    
+    const fragment = document.createDocumentFragment();
+
+    // Preenche os dias do mês anterior
+    for (let i = 0; i < startDayOfWeek; i++) {
+        const dayEl = document.createElement('div');
+        dayEl.className = 'full-calendar-day other-month';
+        fragment.appendChild(dayEl);
+    }
+
+    // Preenche os dias do mês atual
+    for (let day = 1; day <= daysInMonth; day++) {
+        const currentDate = new Date(Date.UTC(year, month, day));
+        const isoDate = toUTCIsoDateString(currentDate);
+        const { completedPercent, totalPercent } = calculateDaySummary(isoDate);
+
+        const dayEl = document.createElement('div');
+        dayEl.className = 'full-calendar-day';
+        dayEl.dataset.date = isoDate;
+        dayEl.classList.toggle('today', isoDate === todayISO);
+        dayEl.classList.toggle('selected', isoDate === state.selectedDate);
+
+        const ringEl = document.createElement('div');
+        ringEl.className = 'day-progress-ring';
+        ringEl.style.setProperty('--completed-percent', `${completedPercent}%`);
+        ringEl.style.setProperty('--total-percent', `${totalPercent}%`);
+
+        const numberEl = document.createElement('span');
+        numberEl.className = 'day-number';
+        numberEl.textContent = String(day);
+        
+        ringEl.appendChild(numberEl);
+        dayEl.appendChild(ringEl);
+        fragment.appendChild(dayEl);
+    }
+    
+    grid.appendChild(fragment);
+}
+
 
 export function renderFrequencyOptions() {
     if (!state.editingHabit) return;
