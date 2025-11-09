@@ -39,10 +39,9 @@ type UIElements = {
     editHabitModal: HTMLElement;
     editHabitModalTitle: HTMLElement;
     editHabitForm: HTMLFormElement;
-    frequencyPrevBtn: HTMLButtonElement;
-    frequencyViewport: HTMLElement;
-    frequencyReel: HTMLElement;
-    frequencyNextBtn: HTMLButtonElement;
+    editHabitSaveBtn: HTMLButtonElement;
+    habitTimeContainer: HTMLElement;
+    frequencyOptionsContainer: HTMLElement;
     syncStatus: HTMLElement;
     syncSection: HTMLElement;
     syncInactiveView: HTMLElement;
@@ -62,6 +61,12 @@ type UIElements = {
     notificationToggle: HTMLInputElement;
     notificationToggleLabel: HTMLLabelElement;
     notificationStatusDesc: HTMLElement;
+    iconPickerModal: HTMLElement;
+    iconPickerGrid: HTMLElement;
+    habitIconPickerBtn: HTMLButtonElement;
+    colorPickerModal: HTMLElement;
+    colorPickerGrid: HTMLElement;
+    changeColorFromPickerBtn: HTMLButtonElement;
 };
 
 export const ui = {} as UIElements;
@@ -106,10 +111,9 @@ export function initUI(): void {
         editHabitModal: document.getElementById('edit-habit-modal')!,
         editHabitModalTitle: document.getElementById('edit-habit-modal-title')!,
         editHabitForm: document.getElementById('edit-habit-form') as HTMLFormElement,
-        frequencyPrevBtn: document.getElementById('frequency-prev') as HTMLButtonElement,
-        frequencyViewport: document.getElementById('frequency-viewport')!,
-        frequencyReel: document.getElementById('frequency-reel')!,
-        frequencyNextBtn: document.getElementById('frequency-next') as HTMLButtonElement,
+        editHabitSaveBtn: document.getElementById('edit-habit-save-btn') as HTMLButtonElement,
+        habitTimeContainer: document.getElementById('habit-time-container')!,
+        frequencyOptionsContainer: document.getElementById('frequency-options-container')!,
         syncStatus: document.getElementById('sync-status')!,
         syncSection: document.getElementById('sync-section')!,
         syncInactiveView: document.getElementById('sync-inactive-view')!,
@@ -129,5 +133,11 @@ export function initUI(): void {
         notificationToggle: document.getElementById('notification-toggle') as HTMLInputElement,
         notificationToggleLabel: document.getElementById('notification-toggle-label') as HTMLLabelElement,
         notificationStatusDesc: document.getElementById('notification-status-desc')!,
+        iconPickerModal: document.getElementById('icon-picker-modal')!,
+        iconPickerGrid: document.getElementById('icon-picker-grid')!,
+        habitIconPickerBtn: document.getElementById('habit-icon-picker-btn') as HTMLButtonElement,
+        colorPickerModal: document.getElementById('color-picker-modal')!,
+        colorPickerGrid: document.getElementById('color-picker-grid')!,
+        changeColorFromPickerBtn: document.getElementById('change-color-from-picker-btn') as HTMLButtonElement,
     });
 }

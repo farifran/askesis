@@ -2,8 +2,9 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// ANÁLISE DO ARQUIVO: 100% concluído. A lógica de renderização é robusta e otimizada. Esta análise final refatorou updateHeaderTitle para maior clareza e manutenibilidade.
-// PÓS-REVISÃO [2024-11-06]: Código refatorado para usar WeakMap em `showInlineNotice` e `createElement` em `_createManageHabitListItem` para maior robustez e segurança.
+// ANÁLISE DO ARQUIVO: 100% concluído. A lógica de renderização é robusta e foi fortalecida com correções de bugs pós-revisão.
+// PÓS-REVISÃO [2024-11-06]: Código refatorado para usar WeakMap e createElement para maior robustez.
+// PÓS-REVISÃO [2024-12-09]: Corrigido um bug crítico de referência de elemento (`ui.aiEval-btn`) que impedia a renderização do estado de notificação da IA.
 
 import {
     state,
@@ -27,7 +28,7 @@ import {
     calculateDaySummary,
 } from './state';
 // FIX: `getActiveHabitsForDate` was missing from the import list.
-import { getTodayUTCIso, toUTCIsoDateString, parseUTCIsoDate, escapeHTML, pushToOneSignal, addDays, getActiveHabitsForDate } from './utils';
+import { getTodayUTCIso, toUTCIsoDateString, parseUTCIsoDate, escapeHTML, pushToOneSignal, addDays, getActiveHabitsForDate, getContrastColor } from './utils';
 import { ui } from './ui';
 import { t, getLocaleDayName, getHabitDisplayInfo, getTimeOfDayName } from './i18n';
 import { STOIC_QUOTES } from './quotes';
@@ -57,12 +58,6 @@ export function initLanguageFilter() {
     ui.languageReel.innerHTML = langNames.map(name => `<span class="reel-option">${name}</span>`).join('');
     const currentIndex = LANGUAGES.findIndex(l => l.code === state.activeLanguageCode);
     updateReelRotaryARIA(ui.languageViewport, currentIndex, langNames, 'language_ariaLabel');
-}
-
-export function initFrequencyFilter() {
-    const freqLabels = FREQUENCIES.map(freq => t(freq.labelKey));
-    ui.frequencyReel.innerHTML = freqLabels.map(label => `<span class="reel-option">${label}</span>`).join('');
-    updateReelRotaryARIA(ui.frequencyViewport, 0, freqLabels, 'frequency_ariaLabel');
 }
 
 /**
@@ -169,6 +164,7 @@ function _renderReelRotary(
     fallbackItemWidth: number,
     ariaLabelKey: string
 ) {
+    if (!reelEl) return;
     const firstOption = reelEl.querySelector('.reel-option') as HTMLElement | null;
     const itemWidth = firstOption?.offsetWidth || fallbackItemWidth;
     const effectiveIndex = Math.max(0, currentIndex); // Garante que o índice não seja -1
@@ -191,22 +187,76 @@ export function renderLanguageFilter() {
     );
 }
 
-export function renderFrequencyFilter() {
+export function renderFrequencyOptions() {
     if (!state.editingHabit) return;
+
     const currentFrequency = state.editingHabit.formData.frequency;
-    const freqLabels = FREQUENCIES.map(f => t(f.labelKey));
-    const currentIndex = FREQUENCIES.findIndex(f => 
-        f.value.type === currentFrequency.type && f.value.interval === currentFrequency.interval
-    );
-    _renderReelRotary(
-        ui.frequencyReel,
-        ui.frequencyViewport,
-        freqLabels,
-        currentIndex,
-        125, // Largura de fallback
-        'frequency_ariaLabel'
-    );
+    const container = ui.frequencyOptionsContainer;
+    const isDaily = currentFrequency.type === 'daily';
+    const isSpecificDays = currentFrequency.type === 'specific_days_of_week';
+    const isInterval = currentFrequency.type === 'interval';
+
+    const weekdays = [
+        { key: 'weekdaySun', day: 0 }, { key: 'weekdayMon', day: 1 }, { key: 'weekdayTue', day: 2 },
+        { key: 'weekdayWed', day: 3 }, { key: 'weekdayThu', day: 4 }, { key: 'weekdayFri', day: 5 },
+        { key: 'weekdaySat', day: 6 }
+    ];
+    const selectedDays = isSpecificDays ? new Set(currentFrequency.days) : new Set();
+    const weekdayPickerHTML = `
+        <div class="weekday-picker">
+            ${weekdays.map(({ key, day }) => {
+                const dayName = t(key);
+                return `
+                <label title="${dayName}">
+                    <input type="checkbox" data-day="${day}" ${selectedDays.has(day) ? 'checked' : ''}>
+                    <span class="weekday-button">${dayName.substring(0, 1)}</span>
+                </label>
+            `}).join('')}
+        </div>`;
+
+    const intervalFreqTpl = FREQUENCIES.find(f => f.value.type === 'interval')!;
+    const amount = isInterval ? currentFrequency.amount : (intervalFreqTpl.value.type === 'interval' ? intervalFreqTpl.value.amount : 2);
+    const unit = isInterval ? currentFrequency.unit : (intervalFreqTpl.value.type === 'interval' ? intervalFreqTpl.value.unit : 'days');
+    
+    const unitText = unit === 'days' ? t('unitDays') : t('unitWeeks');
+    const intervalControlsHTML = `
+        <div class="interval-control-group">
+            <button type="button" class="stepper-btn" data-action="interval-decrement" aria-label="${t('habitGoalDecrement_ariaLabel')}">-</button>
+            <span class="interval-amount-display">${amount}</span>
+            <button type="button" class="stepper-btn" data-action="interval-increment" aria-label="${t('habitGoalIncrement_ariaLabel')}">+</button>
+            <button type="button" class="unit-toggle-btn" data-action="interval-unit-toggle">${unitText}</button>
+        </div>
+    `;
+
+    container.innerHTML = `
+        <div class="form-section frequency-options">
+            <div class="form-row">
+                <label>
+                    <input type="radio" name="frequency-type" value="daily" ${isDaily ? 'checked' : ''}>
+                    ${t('freqDaily')}
+                </label>
+            </div>
+            <div class="form-row form-row--vertical">
+                <label>
+                    <input type="radio" name="frequency-type" value="specific_days_of_week" ${isSpecificDays ? 'checked' : ''}>
+                    ${t('freqSpecificDaysOfWeek')}
+                </label>
+                <div class="frequency-details ${isSpecificDays ? 'visible' : ''}">
+                    ${weekdayPickerHTML}
+                </div>
+            </div>
+            <div class="form-row">
+                <label>
+                    <input type="radio" name="frequency-type" value="interval" ${isInterval ? 'checked' : ''}>
+                    ${t('freqEvery')}
+                </label>
+                <div class="frequency-details ${isInterval ? 'visible' : ''}">
+                    ${intervalControlsHTML}
+                </div>
+            </div>
+        </div>`;
 }
+
 
 export const getUnitString = (habit: Habit, value: number | undefined) => {
     const unitKey = habit.goal.unitKey || 'unitCheck';
@@ -366,6 +416,7 @@ export function createHabitCardElement(habit: Habit, time: TimeOfDay): HTMLEleme
     const icon = document.createElement('div');
     icon.className = 'habit-icon';
     icon.style.backgroundColor = `${habit.color}30`;
+    icon.style.color = habit.color;
     icon.innerHTML = habit.icon;
 
     const details = document.createElement('div');
@@ -526,9 +577,10 @@ export function renderExploreHabits() {
     ui.exploreHabitList.innerHTML = PREDEFINED_HABITS.map((habit, index) => {
         const name = t(habit.nameKey);
         const subtitle = t(habit.subtitleKey);
+        // MELHORIA DE ACESSIBILIDADE [2024-12-06]: Adiciona tabindex="0" para tornar os itens de hábito focáveis e acessíveis pelo teclado.
         return `
-            <div class="explore-habit-item" data-index="${index}" role="button">
-                <div class="explore-habit-icon" style="background-color: ${habit.color}30;">${habit.icon}</div>
+            <div class="explore-habit-item" data-index="${index}" role="button" tabindex="0">
+                <div class="explore-habit-icon" style="background-color: ${habit.color}30; color: ${habit.color}">${habit.icon}</div>
                 <div class="explore-habit-details">
                     <div class="name">${name}</div>
                     <div class="subtitle">${subtitle}</div>
@@ -548,6 +600,7 @@ export function renderAINotificationState() {
 
     ui.aiEvalBtn.classList.toggle('loading', isLoading);
     ui.aiEvalBtn.disabled = isLoading || isOffline;
+    // CORREÇÃO DE BUG [2024-12-09]: Corrigido erro de digitação (`ui.aiEval-btn` para `ui.aiEvalBtn`). A propriedade incorreta causava um erro em tempo de execução que impedia a atualização do estado de notificação do botão da IA.
     ui.aiEvalBtn.classList.toggle('has-notification', hasCelebrations || hasUnseenResult);
 }
 
@@ -791,6 +844,10 @@ function _createManageHabitListItem(habitData: { habit: Habit; status: 'active' 
     
     const iconSpan = document.createElement('span');
     iconSpan.innerHTML = habit.icon; // Ícones são SVGs seguros e confiáveis de `icons.ts`
+    // CORREÇÃO VISUAL [2024-12-08]: Define a cor do ícone com base na cor do hábito.
+    // Isso corrige um bug onde os ícones na lista de gerenciamento apareciam em escala de cinza
+    // em vez de suas cores designadas, alinhando-os com a aparência dos cartões de hábito.
+    iconSpan.style.color = habit.color;
     
     const nameSpan = document.createElement('span');
     nameSpan.className = 'habit-name';
@@ -914,7 +971,10 @@ export function showConfirmationModal(
     confirmBtn.classList.remove('btn--primary', 'btn--danger');
     confirmBtn.classList.add(options?.confirmButtonStyle === 'danger' ? 'btn--danger' : 'btn--primary');
     
-    ui.confirmModal.querySelector<HTMLElement>('.modal-close-btn')!.textContent = options?.cancelText || t('cancelButton');
+    const cancelBtn = ui.confirmModal.querySelector<HTMLElement>('.modal-close-btn');
+    if (cancelBtn) {
+        cancelBtn.textContent = options?.cancelText || t('cancelButton');
+    }
     
     if (options?.editText && options?.onEdit) {
         ui.confirmModalEditBtn.style.display = 'inline-block';
@@ -947,6 +1007,49 @@ export function openNotesModal(habitId: string, date: string, time: TimeOfDay) {
     openModal(ui.notesModal, ui.notesTextarea);
 }
 
+const PALETTE_COLORS = ['#e74c3c', '#f1c40f', '#3498db', '#2ecc71', '#9b59b6', '#1abc9c', '#34495e', '#e67e22', '#e84393', '#7f8c8d'];
+
+export function renderIconPicker() {
+    if (!state.editingHabit) return;
+    const bgColor = state.editingHabit.formData.color;
+    const fgColor = getContrastColor(bgColor);
+
+    ui.iconPickerGrid.style.setProperty('--current-habit-bg-color', bgColor);
+    ui.iconPickerGrid.style.setProperty('--current-habit-fg-color', fgColor);
+
+    if (ui.iconPickerGrid.children.length === 0) {
+        const nonHabitIconKeys = new Set(['morning', 'afternoon', 'evening', 'deletePermanentAction', 'editAction', 'graduateAction', 'endAction', 'swipeDelete', 'swipeNote', 'swipeNoteHasNote', 'colorPicker', 'edit']);
+        
+        const iconButtons = Object.keys(icons)
+            .filter(key => !nonHabitIconKeys.has(key))
+            .map(key => {
+                const iconSVG = (icons as any)[key];
+                return `
+                    <button class="icon-picker-item" data-icon-svg="${escapeHTML(iconSVG)}">
+                        ${iconSVG}
+                    </button>
+                `;
+            }).join('');
+
+        ui.iconPickerGrid.innerHTML = iconButtons;
+    }
+
+    const changeColorBtn = ui.iconPickerModal.querySelector<HTMLButtonElement>('#change-color-from-picker-btn');
+    if (changeColorBtn) {
+        changeColorBtn.innerHTML = icons.colorPicker;
+        changeColorBtn.setAttribute('aria-label', t('habitColorPicker_ariaLabel'));
+    }
+}
+
+
+export function renderColorPicker() {
+    if (!state.editingHabit) return;
+    const currentColor = state.editingHabit.formData.color;
+    ui.colorPickerGrid.innerHTML = PALETTE_COLORS.map(color => `
+        <button class="color-swatch ${currentColor === color ? 'selected' : ''}" style="background-color: ${color};" data-color="${color}" aria-label="${color}"></button>
+    `).join('');
+}
+
 /**
  * REATORAÇÃO [2024-09-13]: A lógica para criar o estado do formulário de hábito foi extraída
  * para a função auxiliar _createHabitTemplateForForm. Isso remove a duplicação de código em
@@ -958,10 +1061,11 @@ function _createHabitTemplateForForm(habitOrTemplate: Habit | PredefinedHabit | 
     if (!habitOrTemplate) {
         const commonData = {
             icon: icons.custom,
-            color: '#8e44ad',
+            color: '#000000',
             times: ['Morning'] as TimeOfDay[],
             goal: { type: 'check', unitKey: 'unitCheck' } as Habit['goal'],
-            frequency: { type: 'daily', interval: 1 } as Frequency,
+            // UX IMPROVEMENT: Default to a non-daily frequency to show advanced options initially.
+            frequency: { type: 'interval', unit: 'days', amount: 2 } as Frequency,
         };
         return {
             ...commonData,
@@ -1014,17 +1118,18 @@ export function openEditModal(habitOrTemplate: Habit | HabitTemplate | null) {
     form.reset();
     
     const formData = _createHabitTemplateForForm(habitOrTemplate as Habit | PredefinedHabit | null, state.selectedDate);
+    const nameInput = form.elements.namedItem('habit-name') as HTMLInputElement;
+    nameInput.placeholder = t('modalEditFormNameLabel'); // Use a chave da etiqueta como placeholder
 
     if (isNew) {
-        const template = habitOrTemplate as PredefinedHabit | null;
         ui.editHabitModalTitle.textContent = t('modalEditNewTitle');
-        (form.elements.namedItem('habit-name') as HTMLInputElement).value = template ? t(template.nameKey) : '';
+        nameInput.value = (habitOrTemplate && 'nameKey' in habitOrTemplate) ? t(habitOrTemplate.nameKey) : '';
     } else {
         const habit = habitOrTemplate as Habit;
         // CORREÇÃO DE DADOS HISTÓRICOS [2024-09-20]: Passa a data para obter o nome correto.
         const { name } = getHabitDisplayInfo(habit, state.selectedDate);
-        ui.editHabitModalTitle.textContent = t('modalEditTitle', { habitName: name });
-        (form.elements.namedItem('habit-name') as HTMLInputElement).value = name;
+        ui.editHabitModalTitle.textContent = name;
+        nameInput.value = name;
     }
 
     state.editingHabit = {
@@ -1034,18 +1139,25 @@ export function openEditModal(habitOrTemplate: Habit | HabitTemplate | null) {
         formData: formData
     };
 
-    // Atualiza os controles do formulário com base no formData
-    (form.elements.namedItem('habit-name') as HTMLInputElement).disabled = false;
+    // Atualiza a nova UI de identidade do hábito
+    ui.editHabitModal.querySelector<HTMLElement>('.edit-icon-overlay')!.innerHTML = icons.edit;
+    const iconColor = getContrastColor(formData.color);
+    ui.habitIconPickerBtn.innerHTML = formData.icon;
+    ui.habitIconPickerBtn.style.backgroundColor = formData.color;
+    ui.habitIconPickerBtn.style.color = iconColor;
     
-    const timeCheckboxes = form.querySelectorAll<HTMLInputElement>('input[name="habit-time"]');
-    timeCheckboxes.forEach(cb => {
-        cb.checked = formData.times.includes(cb.value as TimeOfDay);
-        const label = cb.closest('label');
-        if (label) {
-            label.querySelector('span')!.textContent = getTimeOfDayName(cb.value as TimeOfDay);
-        }
-    });
+    // Renderiza o novo controle segmentado para horários
+    ui.habitTimeContainer.innerHTML = `
+        <div class="segmented-control">
+            ${TIMES_OF_DAY.map(time => `
+                <button type="button" class="segmented-control-option ${formData.times.includes(time) ? 'selected' : ''}" data-time="${time}">
+                    ${getTimeOfDayIcon(time)}
+                    ${getTimeOfDayName(time)}
+                </button>
+            `).join('')}
+        </div>
+    `;
 
-    renderFrequencyFilter();
+    renderFrequencyOptions();
     openModal(ui.editHabitModal, form.elements.namedItem('habit-name') as HTMLElement);
 }

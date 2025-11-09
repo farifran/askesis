@@ -4,7 +4,7 @@
 */
 // ANÁLISE DO ARQUIVO: 100% concluído. A orquestração de eventos de modais é bem estruturada e robusta. Nenhuma outra análise é necessária.
 import { ui } from './ui';
-import { state, LANGUAGES, PREDEFINED_HABITS, FREQUENCIES, TimeOfDay, saveState, STREAK_SEMI_CONSOLIDATED, STREAK_CONSOLIDATED } from './state';
+import { state, LANGUAGES, PREDEFINED_HABITS, TimeOfDay, saveState, STREAK_SEMI_CONSOLIDATED, STREAK_CONSOLIDATED, Frequency, FREQUENCIES } from './state';
 import {
     openModal,
     closeModal,
@@ -16,7 +16,9 @@ import {
     renderAINotificationState,
     openEditModal,
     updateNotificationUI,
-    renderFrequencyFilter,
+    renderFrequencyOptions,
+    renderIconPicker,
+    renderColorPicker,
 } from './render';
 import {
     saveHabitFromModal,
@@ -30,7 +32,8 @@ import {
 } from './habitActions';
 import { setLanguage, t, getHabitDisplayInfo } from './i18n';
 import { setupReelRotary } from './rotary';
-import { simpleMarkdownToHTML, pushToOneSignal } from './utils';
+import { simpleMarkdownToHTML, pushToOneSignal, getContrastColor } from './utils';
+import { icons } from './icons';
 
 // REFACTOR [2024-09-02]: Centraliza a lógica de processamento e formatação de celebrações
 // para remover duplicação de código e melhorar a legibilidade no listener do botão de IA.
@@ -70,9 +73,6 @@ export function setupModalListeners() {
     const modalsToInitialize = [
         ui.manageModal,
         ui.exploreModal,
-        // Modais com estado temporário são movidos para inicializações customizadas abaixo
-        // ui.editHabitModal,
-        // ui.notesModal,
         ui.confirmModal,
         ui.aiOptionsModal,
     ];
@@ -85,6 +85,12 @@ export function setupModalListeners() {
     initializeModalClosing(ui.notesModal, () => {
         state.editingNoteFor = null;
     });
+    initializeModalClosing(ui.iconPickerModal);
+    initializeModalClosing(ui.colorPickerModal, () => {
+        ui.iconPickerModal.classList.remove('is-picking-color');
+        renderIconPicker();
+    });
+
 
     // A lógica de fechamento customizada para o modal de IA agora é injetada como um callback.
     initializeModalClosing(ui.aiModal, () => {
@@ -171,104 +177,201 @@ export function setupModalListeners() {
     // --- Modal de Exploração de Hábitos (Explore) ---
     ui.exploreHabitList.addEventListener('click', (e) => {
         const item = (e.target as HTMLElement).closest<HTMLElement>('.explore-habit-item');
-        if (item?.dataset.index) {
-            const habitTemplate = PREDEFINED_HABITS[parseInt(item.dataset.index, 10)];
-            if (habitTemplate) {
-                openEditModal(habitTemplate);
-                closeModal(ui.exploreModal);
-            }
+        if (!item) return;
+        const index = parseInt(item.dataset.index!, 10);
+        const habitTemplate = PREDEFINED_HABITS[index];
+        if (habitTemplate) {
+            closeModal(ui.exploreModal);
+            openEditModal(habitTemplate);
         }
     });
 
     ui.createCustomHabitBtn.addEventListener('click', () => {
-        openEditModal(null);
         closeModal(ui.exploreModal);
+        openEditModal(null); // Abre sem template para um hábito personalizado
     });
 
-    // --- Modal de Edição de Hábito ---
-    ui.editHabitForm.addEventListener('submit', (e) => {
-        e.preventDefault();
-        saveHabitFromModal();
+    // --- Modal e Opções da IA ---
+    ui.aiEvalBtn.addEventListener('click', () => {
+        const celebration21DayText = _processAndFormatCelebrations(state.pending21DayHabitIds, 'aiCelebration21Day', STREAK_SEMI_CONSOLIDATED);
+        const celebration66DayText = _processAndFormatCelebrations(state.pendingConsolidationHabitIds, 'aiCelebration66Day', STREAK_CONSOLIDATED);
+        
+        const allCelebrations = [celebration66DayText, celebration21DayText].filter(Boolean).join('\n\n');
+
+        if (allCelebrations) {
+            ui.aiResponse.innerHTML = simpleMarkdownToHTML(allCelebrations);
+            openModal(ui.aiModal);
+            state.pending21DayHabitIds = [];
+            state.pendingConsolidationHabitIds = [];
+            saveState(); // Salva que as notificações foram vistas
+            renderAINotificationState();
+        } else if ((state.aiState === 'completed' || state.aiState === 'error') && !state.hasSeenAIResult && state.lastAIResult) {
+            ui.aiResponse.innerHTML = simpleMarkdownToHTML(state.lastAIResult);
+            openModal(ui.aiModal);
+        } else {
+            openModal(ui.aiOptionsModal);
+        }
     });
-    
-    // --- Seletor de Frequência ---
-    setupReelRotary({
-        viewportEl: ui.frequencyViewport,
-        reelEl: ui.frequencyReel,
-        prevBtn: ui.frequencyPrevBtn,
-        nextBtn: ui.frequencyNextBtn,
-        optionsCount: FREQUENCIES.length,
-        getInitialIndex: () => {
-            if (!state.editingHabit) return 0;
-            const currentFreq = state.editingHabit.formData.frequency;
-            const index = FREQUENCIES.findIndex(f => f.value.type === currentFreq.type && f.value.interval === currentFreq.interval);
-            return Math.max(0, index); // Garante que não seja -1
-        },
-        onIndexChange: (index) => {
-            if (state.editingHabit) {
-                state.editingHabit.formData.frequency = FREQUENCIES[index].value;
-            }
-        },
-        render: renderFrequencyFilter,
+
+    ui.aiOptionsModal.addEventListener('click', e => {
+        const button = (e.target as HTMLElement).closest<HTMLButtonElement>('.ai-option-btn');
+        if (!button) return;
+        const analysisType = button.dataset.analysisType as 'weekly' | 'monthly' | 'general';
+        performAIAnalysis(analysisType);
     });
 
     // --- Modal de Confirmação ---
     ui.confirmModalConfirmBtn.addEventListener('click', () => {
         state.confirmAction?.();
+        state.confirmAction = null;
+        state.confirmEditAction = null;
         closeModal(ui.confirmModal);
     });
-
+    
     ui.confirmModalEditBtn.addEventListener('click', () => {
         state.confirmEditAction?.();
+        state.confirmAction = null;
+        state.confirmEditAction = null;
         closeModal(ui.confirmModal);
     });
 
-    // --- Modal de Anotações ---
+    // --- Modal de Notas ---
     ui.saveNoteBtn.addEventListener('click', handleSaveNote);
-    ui.notesTextarea.addEventListener('keydown', e => {
-        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-            handleSaveNote();
+
+    // --- Modal de Edição/Criação de Hábito ---
+    ui.editHabitSaveBtn.addEventListener('click', saveHabitFromModal);
+
+    const habitNameInput = ui.editHabitForm.elements.namedItem('habit-name') as HTMLInputElement;
+    const duplicateNoticeEl = ui.editHabitForm.querySelector<HTMLElement>('.duplicate-habit-notice')!;
+
+    habitNameInput.addEventListener('input', () => {
+        if (!state.editingHabit) return;
+        
+        const newName = habitNameInput.value.trim();
+        state.editingHabit.formData.name = newName;
+        delete state.editingHabit.formData.nameKey; // Nome personalizado sobrescreve o predefinido
+
+        const isDuplicate = state.habits.some(h => {
+            const { name } = getHabitDisplayInfo(h, state.selectedDate);
+            return name.toLowerCase() === newName.toLowerCase() && h.id !== state.editingHabit?.habitId;
+        });
+
+        if (isDuplicate) {
+            duplicateNoticeEl.textContent = t('noticeDuplicateHabitWithName');
+            duplicateNoticeEl.classList.add('visible');
+        } else {
+            duplicateNoticeEl.classList.remove('visible');
+        }
+        ui.editHabitSaveBtn.disabled = isDuplicate || newName.length === 0;
+    });
+
+    // Seletor de Ícone
+    ui.habitIconPickerBtn.addEventListener('click', () => {
+        renderIconPicker();
+        openModal(ui.iconPickerModal);
+    });
+
+    ui.iconPickerGrid.addEventListener('click', e => {
+        const target = e.target as HTMLElement;
+        const item = target.closest<HTMLButtonElement>('.icon-picker-item');
+        if (item && state.editingHabit) {
+            const iconSVG = item.dataset.iconSvg!;
+            state.editingHabit.formData.icon = iconSVG;
+            ui.habitIconPickerBtn.innerHTML = iconSVG;
+            closeModal(ui.iconPickerModal);
         }
     });
     
-    // --- Modais de IA ---
-    ui.aiEvalBtn.addEventListener('click', () => {
-        if ((state.aiState === 'completed' || state.aiState === 'error') && !state.hasSeenAIResult) {
-            ui.aiResponse.innerHTML = state.lastAIResult 
-                ? simpleMarkdownToHTML(state.lastAIResult)
-                : `<p class="ai-error-message">${t('aiErrorPrefix')}: ${state.lastAIError}</p>`;
-            openModal(ui.aiModal);
-            state.hasSeenAIResult = true;
-            renderAINotificationState();
-        } else {
-            const hasCelebrations = state.pending21DayHabitIds.length > 0 || state.pendingConsolidationHabitIds.length > 0;
-            if (hasCelebrations) {
-                let celebrationText = '';
-                celebrationText += _processAndFormatCelebrations(state.pending21DayHabitIds, 'aiCelebration21Day', STREAK_SEMI_CONSOLIDATED);
-                celebrationText += _processAndFormatCelebrations(state.pendingConsolidationHabitIds, 'aiCelebration66Day', STREAK_CONSOLIDATED);
+    // --- Seletores de Cor e Ícone ---
+    ui.colorPickerGrid.addEventListener('click', e => {
+        const target = e.target as HTMLElement;
+        const swatch = target.closest<HTMLButtonElement>('.color-swatch');
+        if (swatch && state.editingHabit) {
+            const color = swatch.dataset.color!;
+            state.editingHabit.formData.color = color;
 
-                // Limpa as listas de pendentes após o processamento
-                state.pending21DayHabitIds = [];
-                state.pendingConsolidationHabitIds = [];
-                saveState();
-                
-                ui.aiResponse.innerHTML = simpleMarkdownToHTML(celebrationText);
-                openModal(ui.aiModal);
-                state.hasSeenAIResult = true; // Marca como visto
-                renderAINotificationState();
-            } else {
-                openModal(ui.aiOptionsModal);
-            }
+            const iconColor = getContrastColor(color);
+            ui.habitIconPickerBtn.style.backgroundColor = color;
+            ui.habitIconPickerBtn.style.color = iconColor;
+            
+            ui.colorPickerGrid.querySelector('.selected')?.classList.remove('selected');
+            swatch.classList.add('selected');
+
+            ui.iconPickerModal.classList.remove('is-picking-color');
+            renderIconPicker();
+            closeModal(ui.colorPickerModal);
         }
     });
 
-    // REATORAÇÃO: Listener único para as opções de IA
-    const aiOptionsList = ui.aiOptionsModal.querySelector('.ai-options-list');
-    aiOptionsList?.addEventListener('click', (e) => {
-        const button = (e.target as HTMLElement).closest<HTMLButtonElement>('.ai-option-btn');
-        const analysisType = button?.dataset.analysisType as 'weekly' | 'monthly' | 'general' | undefined;
-        if (analysisType) {
-            performAIAnalysis(analysisType);
+    ui.changeColorFromPickerBtn.addEventListener('click', () => {
+        renderColorPicker();
+        ui.iconPickerModal.classList.add('is-picking-color');
+        openModal(ui.colorPickerModal);
+    });
+
+    // Controle Segmentado de Horário
+    ui.habitTimeContainer.addEventListener('click', e => {
+        if (!state.editingHabit) return;
+        const button = (e.target as HTMLElement).closest<HTMLButtonElement>('.segmented-control-option');
+        if (!button) return;
+
+        const time = button.dataset.time as TimeOfDay;
+        const currentlySelected = state.editingHabit.formData.times.includes(time);
+
+        if (currentlySelected) {
+            if (state.editingHabit.formData.times.length > 1) {
+                state.editingHabit.formData.times = state.editingHabit.formData.times.filter(t => t !== time);
+                button.classList.remove('selected');
+            }
+        } else {
+            state.editingHabit.formData.times.push(time);
+            button.classList.add('selected');
+        }
+    });
+
+    // Opções de Frequência
+    ui.frequencyOptionsContainer.addEventListener('click', e => {
+        if (!state.editingHabit) return;
+        const target = e.target as HTMLElement;
+
+        const radio = target.closest<HTMLInputElement>('input[type="radio"]');
+        if (radio) {
+            const type = radio.value as 'daily' | 'interval' | 'specific_days_of_week';
+            if (type === 'daily') {
+                state.editingHabit.formData.frequency = { type: 'daily' };
+            } else if (type === 'specific_days_of_week') {
+                const days = Array.from(ui.frequencyOptionsContainer.querySelectorAll<HTMLInputElement>('.weekday-picker input:checked')).map(el => parseInt(el.dataset.day!, 10));
+                state.editingHabit.formData.frequency = { type: 'specific_days_of_week', days };
+            } else if (type === 'interval') {
+                const currentFreq = state.editingHabit.formData.frequency;
+                const intervalFreqTpl = FREQUENCIES.find(f => f.value.type === 'interval')!.value as { type: 'interval', unit: 'days' | 'weeks', amount: number };
+                const amount = (currentFreq.type === 'interval' ? currentFreq.amount : intervalFreqTpl.amount);
+                const unit = (currentFreq.type === 'interval' ? currentFreq.unit : intervalFreqTpl.unit);
+                state.editingHabit.formData.frequency = { type: 'interval', amount, unit };
+            }
+            renderFrequencyOptions();
+            return;
+        }
+
+        const dayCheckbox = target.closest<HTMLInputElement>('.weekday-picker input[type="checkbox"]');
+        if (dayCheckbox) {
+            const days = Array.from(ui.frequencyOptionsContainer.querySelectorAll<HTMLInputElement>('.weekday-picker input:checked')).map(el => parseInt(el.dataset.day!, 10));
+            state.editingHabit.formData.frequency = { type: 'specific_days_of_week', days };
+            return;
+        }
+
+        const stepperBtn = target.closest<HTMLButtonElement>('.stepper-btn, .unit-toggle-btn');
+        if (stepperBtn && state.editingHabit.formData.frequency.type === 'interval') {
+            const action = stepperBtn.dataset.action;
+            const currentFreq = state.editingHabit.formData.frequency;
+            let { amount, unit } = currentFreq;
+
+            if (action === 'interval-decrement') amount = Math.max(1, amount - 1);
+            if (action === 'interval-increment') amount = Math.min(99, amount + 1);
+            if (action === 'interval-unit-toggle') unit = unit === 'days' ? 'weeks' : 'days';
+            
+            state.editingHabit.formData.frequency = { type: 'interval', amount, unit };
+            renderFrequencyOptions(); // Re-render to show the new state
         }
     });
 }

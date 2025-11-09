@@ -1,4 +1,4 @@
-// ANÁLISE DO ARQUIVO: 100% concluído. Corrigido um bug de fuso horário na função getTodayUTC para garantir que a data seja baseada no dia local do usuário.
+// ANÁLISE DO ARQUIVO: 100% concluído. As funções utilitárias são eficientes. A função 'getContrastColor' foi refatorada para ler dinamicamente a partir das variáveis CSS, melhorando a manutenibilidade. A análise está finalizada.
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -242,4 +242,41 @@ export function getActiveHabitsForDate(date: Date): Array<{ habit: Habit; schedu
 
     state.activeHabitsCache[cacheKey] = activeHabits;
     return activeHabits;
+}
+
+// OTIMIZAÇÃO DE MANUTENIBILIDADE [2024-12-07]: O valor da cor de texto clara para contraste é lido e
+// armazenado em cache dinamicamente a partir das variáveis CSS, evitando a duplicação de valores e
+// garantindo que a lógica de contraste de cor se adapte automaticamente a mudanças no tema.
+let cachedLightContrastColor: string | null = null;
+
+/**
+ * Calculates a contrasting text color (black or light gray) for a given hex background color.
+ * @param hexColor The background color in hex format (e.g., "#RRGGBB").
+ * @returns The contrasting color ('#000000' for light backgrounds, or the theme's primary text color for dark).
+ */
+export function getContrastColor(hexColor: string): string {
+    if (!cachedLightContrastColor) {
+        try {
+            // Lê a cor clara diretamente das variáveis CSS para garantir a consistência do tema.
+            cachedLightContrastColor = getComputedStyle(document.documentElement).getPropertyValue('--text-primary').trim() || '#e5e5e5';
+        } catch (e) {
+            // Fallback para o caso de a função ser chamada em um ambiente sem DOM (improvável para este app).
+            cachedLightContrastColor = '#e5e5e5';
+        }
+    }
+
+    const lightColor = cachedLightContrastColor;
+    const darkColor = '#000000';
+
+    if (!hexColor || hexColor.length < 7) return lightColor;
+    try {
+        const r = parseInt(hexColor.slice(1, 3), 16);
+        const g = parseInt(hexColor.slice(3, 5), 16);
+        const b = parseInt(hexColor.slice(5, 7), 16);
+        // Formula to determine brightness (YIQ)
+        const yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000;
+        return (yiq >= 128) ? darkColor : lightColor;
+    } catch (e) {
+        return lightColor; // Fallback for invalid hex
+    }
 }

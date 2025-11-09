@@ -60,18 +60,11 @@
     "filterAfternoon": "Tarde",
     "filterEvening": "Noche",
     "filterMorning": "Mañana",
-    "freqDaily": "Diario",
-    "freqEvery2Days": "Cada 2 días",
-    "freqEvery2Weeks": "Cada 2 semanas",
-    "freqEvery3Days": "Cada 3 días",
-    "freqEvery3Weeks": "Cada 3 semanas",
-    "freqEvery4Days": "Cada 4 días",
-    "freqEvery4Weeks": "Cada 4 semanas",
-    "freqEvery5Days": "Cada 5 días",
-    "freqWeekly": "Semanal",
-    "frequencyNext_ariaLabel": "Próxima frecuencia",
-    "frequencyPrev_ariaLabel": "Frecuencia anterior",
+    "freqDaily": "Todos los días",
+    "freqEvery": "Cada",
+    "freqSpecificDaysOfWeek": "Días específicos de la semana",
     "frequency_ariaLabel": "Selector de frecuencia",
+    "habitColorPicker_ariaLabel": "Seleccionar color del hábito",
     "habitConsolidatedMessage": "¡✅ Hábito consolidado!",
     "habitEnd_ariaLabel": "Finalizar Hábito",
     "habitGoalDecrement_ariaLabel": "Disminuir meta",
@@ -94,9 +87,11 @@
     "modalAIOptionsTitle": "Opciones de Análisis de IA",
     "modalAITitle": "Evaluación de IA",
     "modalAddTitle": "Añadir Hábito",
+    "modalColorPickerTitle": "Seleccionar Color",
     "modalConfirmTitle": "Confirmar Acción",
     "modalEditFormFrequencyLabel": "Frecuencia",
     "modalEditFormNameLabel": "Nombre",
+    "modalEditFormNotice": "Por favor, dale un nombre al hábito y selecciona al menos un horario.",
     "modalEditFormTimeLabel": "Hora(s)",
     "modalEditNewTitle": "Añadir Nuevo Hábito",
     "modalEditSaveButton": "Guardar Hábito",
@@ -104,6 +99,7 @@
     "modalEndHabitTitle": "Finalizar Hábito",
     "modalExploreCreateCustom": "Crear hábito personalizado",
     "modalExploreTitle": "Explorar Hábitos",
+    "modalIconPickerTitle": "Seleccionar Ícono",
     "modalManageHabitsSubtitle": "Gestionar Hábitos",
     "modalManageLanguage": "Idioma",
     "modalManageNotifications": "Notificaciones",
@@ -119,6 +115,7 @@
     "modalStatusGraduated": "(Graduado)",
     "noticeDuplicateHabitWithName": "Ya existe un hábito con este nombre.",
     "noticeNameCannotBeEmpty": "El nombre del hábito no puede estar vacío.",
+    "noticeSelectAtLeastOneDay": "Por favor, seleccione al menos un día de la semana.",
     "noticeSelectAtLeastOneTime": "Por favor, seleccione al menos una hora del día.",
     "notificationStatusDisabled": "Las notificaciones están bloqueadas. Debes cambiar los permisos en la configuración de tu navegador.",
     "notificationStatusEnabled": "Las notificaciones están activadas.",
@@ -219,6 +216,7 @@
         "one": "vez",
         "other": "veces"
     },
+    "unitDays": "días",
     "unitMin": {
         "one": "min",
         "other": "min"
@@ -226,5 +224,13 @@
     "unitPage": {
         "one": "página",
         "other": "páginas"
-    }
+    },
+    "unitWeeks": "semanas",
+    "weekdayFri": "Viernes",
+    "weekdayMon": "Lunes",
+    "weekdaySat": "Sábado",
+    "weekdaySun": "Domingo",
+    "weekdayThu": "Jueves",
+    "weekdayTue": "Martes",
+    "weekdayWed": "Miércoles"
 }

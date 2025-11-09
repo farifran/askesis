@@ -5,7 +5,7 @@
 // ANÁLISE DO ARQUIVO: 100% concluído. A implementação de internacionalização é completa e correta. Nenhuma outra análise é necessária.
 import { state, Habit, LANGUAGES, PredefinedHabit, TimeOfDay, getScheduleForDate } from './state';
 import { ui } from './ui';
-import { renderApp, updateHeaderTitle, initFrequencyFilter, setupManageModal, initLanguageFilter } from './render';
+import { renderApp, updateHeaderTitle, setupManageModal, initLanguageFilter } from './render';
 import { pushToOneSignal } from './utils';
 
 type PluralableTranslation = { one: string; other: string };
@@ -120,8 +120,6 @@ function updateUIText() {
     document.getElementById('label-language')!.textContent = t('modalManageLanguage');
     ui.languagePrevBtn.setAttribute('aria-label', t('languagePrev_ariaLabel'));
     ui.languageNextBtn.setAttribute('aria-label', t('languageNext_ariaLabel'));
-    ui.frequencyPrevBtn.setAttribute('aria-label', t('frequencyPrev_ariaLabel'));
-    ui.frequencyNextBtn.setAttribute('aria-label', t('frequencyNext_ariaLabel'));
     document.getElementById('label-sync')!.textContent = t('syncLabel');
     document.getElementById('label-notifications')!.textContent = t('modalManageNotifications');
     ui.notificationStatusDesc.textContent = t('modalManageNotificationsStaticDesc');
@@ -161,11 +159,17 @@ function updateUIText() {
     ui.saveNoteBtn.textContent = t('modalNotesSaveButton');
     ui.notesTextarea.placeholder = t('modalNotesTextareaPlaceholder');
 
-    document.getElementById('label-habit-name')!.textContent = t('modalEditFormNameLabel');
-    document.getElementById('label-habit-time')!.textContent = t('modalEditFormTimeLabel');
-    document.getElementById('label-frequency')!.textContent = t('modalEditFormFrequencyLabel');
-    ui.editHabitForm.querySelector('.modal-close-btn')!.textContent = t('cancelButton');
-    ui.editHabitForm.querySelector('button[type="submit"]')!.textContent = t('modalEditSaveButton');
+    (document.getElementById('icon-picker-modal-title') as HTMLElement).textContent = t('modalIconPickerTitle');
+    ui.iconPickerModal.querySelector('.modal-close-btn')!.textContent = t('cancelButton');
+
+    (document.getElementById('color-picker-modal-title') as HTMLElement).textContent = t('modalColorPickerTitle');
+    ui.colorPickerModal.querySelector('.modal-close-btn')!.textContent = t('cancelButton');
+
+    const editModalActions = ui.editHabitModal.querySelector('.modal-actions');
+    if (editModalActions) {
+        editModalActions.querySelector('.modal-close-btn')!.textContent = t('cancelButton');
+        editModalActions.querySelector('#edit-habit-save-btn')!.textContent = t('modalEditSaveButton');
+    }
     
     ui.undoToast.firstElementChild!.textContent = t('undoToastText');
     ui.undoBtn.textContent = t('undoButton');
@@ -184,7 +188,6 @@ export async function setLanguage(langCode: 'pt' | 'en' | 'es') {
         OneSignal.User.setLanguage(langCode);
     });
     
-    initFrequencyFilter();
     initLanguageFilter();
 
     updateUIText();

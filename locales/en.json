@@ -60,18 +60,11 @@
     "filterAfternoon": "Afternoon",
     "filterEvening": "Night",
     "filterMorning": "Morning",
-    "freqDaily": "Daily",
-    "freqEvery2Days": "Every 2 days",
-    "freqEvery2Weeks": "Every 2 weeks",
-    "freqEvery3Days": "Every 3 days",
-    "freqEvery3Weeks": "Every 3 weeks",
-    "freqEvery4Days": "Every 4 days",
-    "freqEvery4Weeks": "Every 4 weeks",
-    "freqEvery5Days": "Every 5 days",
-    "freqWeekly": "Weekly",
-    "frequencyNext_ariaLabel": "Next frequency",
-    "frequencyPrev_ariaLabel": "Previous frequency",
+    "freqDaily": "Every day",
+    "freqEvery": "Every",
+    "freqSpecificDaysOfWeek": "Specific days of the week",
     "frequency_ariaLabel": "Frequency selector",
+    "habitColorPicker_ariaLabel": "Select habit color",
     "habitConsolidatedMessage": "✅ Habit consolidated!",
     "habitEnd_ariaLabel": "End Habit",
     "habitGoalDecrement_ariaLabel": "Decrease goal",
@@ -94,9 +87,11 @@
     "modalAIOptionsTitle": "AI Analysis Options",
     "modalAITitle": "AI Evaluation",
     "modalAddTitle": "Add Habit",
+    "modalColorPickerTitle": "Select Color",
     "modalConfirmTitle": "Confirm Action",
     "modalEditFormFrequencyLabel": "Frequency",
     "modalEditFormNameLabel": "Name",
+    "modalEditFormNotice": "Please name the habit and select at least one time slot.",
     "modalEditFormTimeLabel": "Time(s)",
     "modalEditNewTitle": "Add New Habit",
     "modalEditSaveButton": "Save Habit",
@@ -104,6 +99,7 @@
     "modalEndHabitTitle": "End Habit",
     "modalExploreCreateCustom": "Create custom habit",
     "modalExploreTitle": "Explore Habits",
+    "modalIconPickerTitle": "Select Icon",
     "modalManageHabitsSubtitle": "Manage Habits",
     "modalManageLanguage": "Language",
     "modalManageNotifications": "Notifications",
@@ -119,6 +115,7 @@
     "modalStatusGraduated": "(Graduated)",
     "noticeDuplicateHabitWithName": "A habit with this name already exists.",
     "noticeNameCannotBeEmpty": "The habit name cannot be empty.",
+    "noticeSelectAtLeastOneDay": "Please select at least one day of the week.",
     "noticeSelectAtLeastOneTime": "Please select at least one time of day.",
     "notificationStatusDisabled": "Notifications are blocked. You need to change the permissions in your browser settings.",
     "notificationStatusEnabled": "Notifications are enabled.",
@@ -219,6 +216,7 @@
         "one": "time",
         "other": "times"
     },
+    "unitDays": "days",
     "unitMin": {
         "one": "min",
         "other": "min"
@@ -226,5 +224,13 @@
     "unitPage": {
         "one": "page",
         "other": "pages"
-    }
+    },
+    "unitWeeks": "weeks",
+    "weekdayFri": "Friday",
+    "weekdayMon": "Monday",
+    "weekdaySat": "Saturday",
+    "weekdaySun": "Sunday",
+    "weekdayThu": "Thursday",
+    "weekdayTue": "Tuesday",
+    "weekdayWed": "Wednesday"
 }
