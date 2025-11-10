@@ -244,6 +244,27 @@ export function getActiveHabitsForDate(date: Date): Array<{ habit: Habit; schedu
     return activeHabits;
 }
 
+/**
+ * Determina o status de um hábito para fins de ordenação e lógica de negócio.
+ * @param habit O hábito a ser avaliado.
+ * @returns 'active', 'ended', ou 'graduated'.
+ */
+export function getHabitStatusForSorting(habit: Habit): 'active' | 'ended' | 'graduated' {
+    if (habit.graduatedOn) {
+        return 'graduated';
+    }
+    // Um hábito é considerado "encerrado" se seu histórico estiver vazio ou se a última entrada do agendamento tiver uma data de término.
+    if (habit.scheduleHistory.length === 0) {
+        return 'ended';
+    }
+    const lastSchedule = habit.scheduleHistory[habit.scheduleHistory.length - 1];
+    if (lastSchedule.endDate) {
+        return 'ended';
+    }
+    return 'active';
+}
+
+
 // OTIMIZAÇÃO DE MANUTENIBILIDADE [2024-12-07]: O valor da cor de texto clara para contraste é lido e
 // armazenado em cache dinamicamente a partir das variáveis CSS, evitando a duplicação de valores e
 // garantindo que a lógica de contraste de cor se adapte automaticamente a mudanças no tema.

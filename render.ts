@@ -28,7 +28,7 @@ import {
     calculateDaySummary,
 } from './state';
 // FIX: `getActiveHabitsForDate` was missing from the import list.
-import { getTodayUTCIso, toUTCIsoDateString, parseUTCIsoDate, escapeHTML, pushToOneSignal, addDays, getActiveHabitsForDate, getContrastColor } from './utils';
+import { getTodayUTCIso, toUTCIsoDateString, parseUTCIsoDate, escapeHTML, pushToOneSignal, addDays, getActiveHabitsForDate, getContrastColor, getHabitStatusForSorting } from './utils';
 import { ui } from './ui';
 import { t, getLocaleDayName, getHabitDisplayInfo, getTimeOfDayName } from './i18n';
 import { STOIC_QUOTES } from './quotes';
@@ -215,10 +215,11 @@ export function renderFullCalendar() {
     const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
     const startDayOfWeek = firstDayOfMonth.getUTCDay(); // 0 = Domingo, 1 = Segunda...
 
+    const daysInPrevMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+
     const grid = ui.fullCalendarGrid;
     grid.innerHTML = '';
     
-    // Renderiza cabeçalho dos dias da semana
     if (ui.fullCalendarWeekdays.childElementCount === 0) {
         const weekdaysFragment = document.createDocumentFragment();
         for (let i = 0; i < 7; i++) {
@@ -231,15 +232,24 @@ export function renderFullCalendar() {
     }
     
     const fragment = document.createDocumentFragment();
+    let totalGridCells = 0;
 
-    // Preenche os dias do mês anterior
+    // Dias do mês anterior
     for (let i = 0; i < startDayOfWeek; i++) {
+        const day = daysInPrevMonth - startDayOfWeek + 1 + i;
         const dayEl = document.createElement('div');
         dayEl.className = 'full-calendar-day other-month';
+        
+        const numberEl = document.createElement('span');
+        numberEl.className = 'day-number';
+        numberEl.textContent = String(day);
+        
+        dayEl.appendChild(numberEl);
         fragment.appendChild(dayEl);
+        totalGridCells++;
     }
 
-    // Preenche os dias do mês atual
+    // Dias do mês atual
     for (let day = 1; day <= daysInMonth; day++) {
         const currentDate = new Date(Date.UTC(year, month, day));
         const isoDate = toUTCIsoDateString(currentDate);
@@ -262,6 +272,22 @@ export function renderFullCalendar() {
         
         ringEl.appendChild(numberEl);
         dayEl.appendChild(ringEl);
+        fragment.appendChild(dayEl);
+        totalGridCells++;
+    }
+    
+    // Dias do próximo mês
+    const remainingCells = (7 - (totalGridCells % 7)) % 7;
+    for (let i = 1; i <= remainingCells; i++) {
+        const day = i;
+        const dayEl = document.createElement('div');
+        dayEl.className = 'full-calendar-day other-month';
+        
+        const numberEl = document.createElement('span');
+        numberEl.className = 'day-number';
+        numberEl.textContent = String(day);
+        
+        dayEl.appendChild(numberEl);
         fragment.appendChild(dayEl);
     }
     
@@ -553,27 +579,25 @@ function updatePlaceholderForGroup(groupEl: HTMLElement, time: TimeOfDay, hasHab
             placeholder.className = 'empty-group-placeholder';
             groupEl.appendChild(placeholder);
         }
+        
         placeholder.classList.toggle('show-smart-placeholder', isSmartPlaceholder);
         
-        const text = t('dragToAddHabit');
-        let iconHTML = '';
+        const text = t('dragHabitToTimeSlot');
 
-        if (isSmartPlaceholder) {
-            const genericIconHTML = emptyTimes
-                .map(getTimeOfDayIcon)
-                .join('<span class="icon-separator">/</span>');
-            const specificIconHTML = getTimeOfDayIcon(time);
-            
-            iconHTML = `
-                <span class="placeholder-icon-generic">${genericIconHTML}</span>
-                <span class="placeholder-icon-specific">${specificIconHTML}</span>
-            `;
-        } else {
-            iconHTML = `<span class="placeholder-icon-specific">${getTimeOfDayIcon(time)}</span>`;
-        }
+        // Combined icons for the smart/generic placeholder
+        const genericIconsHTML = emptyTimes
+            .map(t => getTimeOfDayIcon(t))
+            .join('<span class="icon-separator">/</span>');
+
+        // Single icon for the specific placeholder (used during drag)
+        const specificIconHTML = getTimeOfDayIcon(time);
         
-        placeholder.innerHTML = `<div class="time-of-day-icon">${iconHTML}</div><span>${text}</span>`;
-
+        // Use a consistent structure, and let CSS handle the display.
+        placeholder.innerHTML = `
+            <div class="placeholder-icon-group placeholder-generic-icons">${genericIconsHTML}</div>
+            <div class="placeholder-icon-group placeholder-specific-icon">${specificIconHTML}</div>
+            <span>${text}</span>
+        `;
     } else if (placeholder) {
         placeholder.remove();
     }
@@ -892,22 +916,6 @@ export function showInlineNotice(element: HTMLElement, message: string) {
 }
 
 /**
- * Determina o status de um hábito para fins de ordenação na UI.
- * @param habit O hábito a ser avaliado.
- * @returns 'active', 'ended', ou 'graduated'.
- */
-function getHabitStatusForSorting(habit: Habit): 'active' | 'ended' | 'graduated' {
-    if (habit.graduatedOn) {
-        return 'graduated';
-    }
-    const lastSchedule = habit.scheduleHistory[habit.scheduleHistory.length - 1];
-    if (lastSchedule.endDate) {
-        return 'ended';
-    }
-    return 'active';
-}
-
-/**
  * REATORAÇÃO DE SEGURANÇA E MANUTENIBILIDADE [2024-11-07]: A função foi reescrita para usar `document.createElement`
  * e `textContent` em vez de construir strings HTML com `innerHTML`. Isso elimina qualquer risco potencial de
  * injeção de script (XSS), mesmo que os dados de entrada sejam confiáveis, e torna a estrutura da função
@@ -984,8 +992,38 @@ function _createManageHabitListItem(habitData: { habit: Habit; status: 'active' 
 
 
 export function setupManageModal() {
-    // Otimização: calcula status e nome de cada hábito uma única vez.
-    const habitsForModal = state.habits.map(habit => {
+    // Agrupa hábitos pela identidade (nome) para evitar a exibição de duplicatas.
+    const habitsByIdentity = new Map<string, Habit[]>();
+
+    for (const habit of state.habits) {
+        const { name } = getHabitDisplayInfo(habit);
+        const identityKey = name.toLowerCase();
+
+        if (!habitsByIdentity.has(identityKey)) {
+            habitsByIdentity.set(identityKey, []);
+        }
+        habitsByIdentity.get(identityKey)!.push(habit);
+    }
+    
+    const uniqueHabits: Habit[] = [];
+    const statusOrder = { 'active': 0, 'graduated': 1, 'ended': 2 };
+
+    for (const group of habitsByIdentity.values()) {
+        if (group.length === 1) {
+            uniqueHabits.push(group[0]);
+        } else {
+            // Se houver duplicatas, escolhe o "melhor" para exibir.
+            // "Melhor" é definido como ativo > graduado > encerrado.
+            group.sort((a, b) => {
+                const statusA = getHabitStatusForSorting(a);
+                const statusB = getHabitStatusForSorting(b);
+                return statusOrder[statusA] - statusOrder[statusB];
+            });
+            uniqueHabits.push(group[0]);
+        }
+    }
+
+    const habitsForModal = uniqueHabits.map(habit => {
         const { name } = getHabitDisplayInfo(habit);
         return {
             habit,
@@ -994,9 +1032,7 @@ export function setupManageModal() {
         };
     });
 
-    const statusOrder = { 'active': 0, 'ended': 1, 'graduated': 2 };
-
-    // Ordena o array com base no status pré-calculado e, em seguida, no nome.
+    // Ordena a lista final e única para exibição.
     habitsForModal.sort((a, b) => {
         const statusDifference = statusOrder[a.status] - statusOrder[b.status];
         if (statusDifference !== 0) {
@@ -1005,8 +1041,6 @@ export function setupManageModal() {
         return a.name.localeCompare(b.name);
     });
 
-    // REATORAÇÃO [2024-09-11]: Utiliza DocumentFragment e uma função helper para a criação de elementos
-    // em vez de manipulação de strings com innerHTML. Isso melhora a performance e a manutenibilidade.
     const fragment = document.createDocumentFragment();
     habitsForModal.forEach(habitData => {
         fragment.appendChild(_createManageHabitListItem(habitData as { habit: Habit; status: 'active' | 'ended' | 'graduated'; name: string; }));

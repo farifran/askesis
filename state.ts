@@ -196,10 +196,8 @@ export const state: {
     streaksCache: Record<string, number>;
     scheduleCache: Record<string, HabitSchedule | null>;
     activeHabitsCache: Record<string, Array<{ habit: Habit; schedule: TimeOfDay[] }>>;
-    // MELHORIA DE ROBUSTEZ [2024-10-06]: A estrutura de `lastEnded` foi aprimorada para incluir `removedSchedules`,
-    // permitindo que a função "Desfazer" restaure completamente o estado de um hábito, incluindo
-    // quaisquer agendamentos futuros que foram removidos quando o hábito foi encerrado.
-    lastEnded: { habitId: string, lastSchedule: HabitSchedule, removedSchedules: HabitSchedule[] } | null;
+    // CODE HYGIENE [2024-12-11]: Removed the unused `removedSchedules` property from the `lastEnded` state type.
+    lastEnded: { habitId: string, lastSchedule: HabitSchedule } | null;
     undoTimeout: number | null;
     calendarDates: Date[];
     selectedDate: string;

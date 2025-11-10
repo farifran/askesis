@@ -572,12 +572,34 @@ body.is-dragging-active .habit-group-wrapper:not(.has-habits) .empty-group-place
     padding: 0;
     pointer-events: none;
 }
-.placeholder-icon-generic, .placeholder-icon-specific { display: flex; align-items: center; gap: var(--space-xs); }
-.placeholder-icon-generic .icon-separator { margin-inline: var(--space-xs); opacity: 0.5; }
-.placeholder-icon-generic { display: none; }
-.placeholder-icon-specific { display: flex; }
-body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .placeholder-icon-generic { display: flex; }
-body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .placeholder-icon-specific { display: none; }
+/* REATORAÇÃO DE UI [2024-12-15]: A lógica de exibição do placeholder foi simplificada para agrupar ícones. */
+.placeholder-icon-group {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+}
+.placeholder-icon-group svg {
+    width: 18px;
+    height: 18px;
+}
+.placeholder-icon-group .icon-separator {
+    color: var(--text-tertiary);
+    padding-inline: var(--space-xs);
+    opacity: 0.8;
+}
+
+/* Lógica de visibilidade para os ícones do placeholder */
+.placeholder-generic-icons { display: none; }
+.placeholder-specific-icon { display: flex; }
+
+body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .placeholder-generic-icons {
+    display: flex;
+}
+body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .placeholder-specific-icon {
+    display: none;
+}
+
+
 
 /* --- COMPONENTES: CARTÃO DE HÁBITO --- */
 .habit-card {
@@ -1392,7 +1414,7 @@ input:disabled + .slider {
     background-color: var(--surface-hover);
 }
 .full-calendar-day.other-month {
-    opacity: 0.3;
+    color: var(--text-tertiary);
     pointer-events: none;
 }
 .full-calendar-day.selected .day-progress-ring {
