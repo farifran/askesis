@@ -299,11 +299,8 @@ main {
 #ai-eval-btn .loading-icon { display: none; }
 #ai-eval-btn .offline-icon { display: none; }
 #ai-eval-btn.loading .loading-icon {
-    display: block;
+    display: inline;
     animation: spin 1s linear infinite;
-    /* CORREÇÃO DE UI: Garante que o ícone de carregamento tenha um tamanho explícito para evitar oscilações. */
-    width: 22px;
-    height: 22px;
 }
 #ai-eval-btn.loading .default-icon { display: none; }
 
@@ -1816,10 +1813,14 @@ body.is-offline #ai-eval-btn .offline-icon {
         margin-block-end: var(--space-xxl);
     }
     .app-header h2 { font-size: 24px; }
-    .stoic-quote { font-size: 12px; }
+    .stoic-quote { font-size: 12px; min-width: 0; }
     .header-top { gap: var(--space-md); }
     #fab-add-habit { width: 38px; height: 38px; font-size: 22px; }
     .header-bottom { gap: var(--space-sm); flex-wrap: nowrap; }
+    
+    #edit-habit-modal h2 { padding-inline: var(--space-lg); }
+    .weekday-picker { padding-inline: var(--space-md); }
+    .weekday-button { width: 32px; height: 32px; }
 
     /* REATORAÇÃO [2024-11-19]: Adiciona regras para mostrar o formato de data mobile e ocultar o de desktop. */
     .header-title-desktop {

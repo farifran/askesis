@@ -773,8 +773,13 @@ function generateHistoryForAI(days: number): string {
         activeHabitsForDate.forEach(({ habit, schedule }) => {
             const { name } = getHabitDisplayInfo(habit, dateISO);
             const statuses = schedule.map(time => {
-                const status = dailyInfo[habit.id]?.instances[time]?.status ?? 'pending';
-                return habitStatusSymbols[status];
+                const instance = dailyInfo[habit.id]?.instances[time];
+                const status = instance?.status ?? 'pending';
+                let output = habitStatusSymbols[status];
+                if (instance?.note) {
+                    output += ` (${t('aiPromptNotePrefix')}: ${instance.note})`;
+                }
+                return output;
             }).join(' ');
 
             history += `- ${name}: ${statuses}\n`;
