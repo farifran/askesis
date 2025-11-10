@@ -301,6 +301,9 @@ main {
 #ai-eval-btn.loading .loading-icon {
     display: block;
     animation: spin 1s linear infinite;
+    /* CORREÇÃO DE UI: Garante que o ícone de carregamento tenha um tamanho explícito para evitar oscilações. */
+    width: 24px;
+    height: 24px;
 }
 #ai-eval-btn.loading .default-icon { display: none; }
 
@@ -1611,7 +1614,7 @@ input:disabled + .slider {
 .weekday-picker {
     display: flex;
     justify-content: space-between;
-    gap: var(--space-sm);
+    gap: var(--space-xs);
     padding-top: var(--space-sm);
 }
 
@@ -1627,8 +1630,8 @@ input:disabled + .slider {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 36px;
-    height: 36px;
+    width: 32px;
+    height: 32px;
     border-radius: 50%;
     border: 2px solid var(--text-tertiary);
     color: var(--text-tertiary);

@@ -304,20 +304,28 @@ export function renderFrequencyOptions() {
     const isSpecificDays = currentFrequency.type === 'specific_days_of_week';
     const isInterval = currentFrequency.type === 'interval';
 
-    const weekdays = [
-        { key: 'weekdaySun', day: 0 }, { key: 'weekdayMon', day: 1 }, { key: 'weekdayTue', day: 2 },
-        { key: 'weekdayWed', day: 3 }, { key: 'weekdayThu', day: 4 }, { key: 'weekdayFri', day: 5 },
-        { key: 'weekdaySat', day: 6 }
-    ];
+    const weekdays = [0, 1, 2, 3, 4, 5, 6]; // Sun=0, Mon=1, ...
     const selectedDays = isSpecificDays ? new Set(currentFrequency.days) : new Set();
     const weekdayPickerHTML = `
         <div class="weekday-picker">
-            ${weekdays.map(({ key, day }) => {
-                const dayName = t(key);
+            ${weekdays.map(day => {
+                // Usa uma semana conhecida (ex: a partir de 7 de janeiro de 2024, que é um domingo) para obter objetos Date para cada dia
+                const date = new Date(Date.UTC(2024, 0, 7 + day));
+                const longName = date.toLocaleDateString(state.activeLanguageCode, { weekday: 'long', timeZone: 'UTC' });
+                // Usa 'narrow' para a letra única se disponível, com fallback para 'short'
+                let shortName;
+                try {
+                    // Tenta usar o formato 'narrow' para obter a letra única correta para o idioma (ex: 'T' para 'Terça')
+                    shortName = new Intl.DateTimeFormat(state.activeLanguageCode, { weekday: 'narrow', timeZone: 'UTC' }).format(date);
+                } catch (e) {
+                    // Fallback para ambientes que não suportam 'narrow'
+                    shortName = new Intl.DateTimeFormat(state.activeLanguageCode, { weekday: 'short', timeZone: 'UTC' }).format(date).substring(0, 1);
+                }
+
                 return `
-                <label title="${dayName}">
+                <label title="${longName}">
                     <input type="checkbox" data-day="${day}" ${selectedDays.has(day) ? 'checked' : ''}>
-                    <span class="weekday-button">${dayName.substring(0, 1)}</span>
+                    <span class="weekday-button">${shortName}</span>
                 </label>
             `}).join('')}
         </div>`;

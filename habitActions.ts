@@ -26,6 +26,7 @@ import {
     clearActiveHabitsCache,
     ensureHabitDailyInfo,
     getEffectiveScheduleForHabitOnDate,
+    LANGUAGES,
 } from './state';
 // FIX: Import the missing `openModal` function to display the AI results modal.
 import {
@@ -166,24 +167,7 @@ export function saveHabitFromModal() {
             closeModal(ui.editHabitModal);
         };
 
-        const todayISO = getTodayUTCIso();
-        const startDateForCheck = state.selectedDate;
-
-        // FEATURE [2024-12-14]: Implemented a confirmation dialog when creating a new habit on a past date.
-        // This safeguard prevents users from accidentally creating habits with a historical start date,
-        // which could affect streak calculations and data analysis, thereby improving data integrity and user experience.
-        if (startDateForCheck < todayISO) {
-            const habitName = formData.nameKey ? t(formData.nameKey) : (formData.name || '');
-            const dateObj = parseUTCIsoDate(startDateForCheck);
-            const formattedDate = dateObj.toLocaleDateString(state.activeLanguageCode, { day: 'numeric', month: 'long', timeZone: 'UTC' });
-            
-            showConfirmationModal(
-                t('confirmNewHabitPastDate', { habitName: escapeHTML(habitName), date: formattedDate }),
-                performCreation
-            );
-        } else {
-            performCreation();
-        }
+        performCreation();
     } else if (habitId) {
         const habit = state.habits.find(h => h.id === habitId);
         if (habit) {
@@ -846,8 +830,10 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
             graduatedHabitsSection: escapeHTML(graduatedHabitsSection),
             history: escapeHTML(history)
         });
-
-        const languageName = t('langEnglish');
+        
+        // CORREÇÃO DE BUG DE IDIOMA DA IA: Determina dinamicamente o nome do idioma atual para a instrução do sistema.
+        const currentLangInfo = LANGUAGES.find(lang => lang.code === state.activeLanguageCode);
+        const languageName = currentLangInfo ? t(currentLangInfo.nameKey) : t('langEnglish');
         const systemInstruction = t('aiSystemInstruction', { languageName });
         
         const response = await apiFetch('/api/analyze', {
