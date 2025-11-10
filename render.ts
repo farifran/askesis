@@ -2,7 +2,7 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// ANÁLISE DO ARQUIVO: ANÁLISE PARCIAL. Adicionada nova funcionalidade de calendário completo (em desenvolvimento).
+// ANÁLISE DO ARQUIVO: 100% concluído. A lógica de renderização foi refatorada para usar `data-attributes` para ações, desacoplando o comportamento das classes de estilo e melhorando a robustez do código.
 // PÓS-REVISÃO [2024-11-06]: Código refatorado para usar WeakMap e createElement para maior robustez.
 // PÓS-REVISÃO [2024-12-09]: Corrigido um bug crítico de referência de elemento (`ui.aiEval-btn`) que impedia a renderização do estado de notificação da IA.
 
@@ -990,10 +990,11 @@ function _createManageHabitListItem(habitData: { habit: Habit; status: 'active' 
     const actionsDiv = document.createElement('div');
     actionsDiv.className = 'habit-list-actions';
 
-    const createActionButton = (className: string, habitId: string, ariaLabel: string, icon: string): HTMLButtonElement => {
+    // REATORAÇÃO DE ARQUITETURA [2024-12-20]: A criação de botões foi atualizada para usar uma classe de estilo base e um atributo `data-action` para a lógica, desacoplando a apresentação do comportamento.
+    const createActionButton = (action: string, modifier: 'secondary' | 'danger' | 'warning', ariaLabel: string, icon: string): HTMLButtonElement => {
         const button = document.createElement('button');
-        button.className = className;
-        button.dataset.habitId = habitId;
+        button.className = `habit-list-action-btn habit-list-action-btn--${modifier}`;
+        button.dataset.action = action;
         button.setAttribute('aria-label', ariaLabel);
         button.innerHTML = icon;
         return button;
@@ -1002,20 +1003,20 @@ function _createManageHabitListItem(habitData: { habit: Habit; status: 'active' 
     switch(status) {
         case 'ended':
             actionsDiv.appendChild(createActionButton(
-                'permanent-delete-habit-btn', habit.id, t('aria_delete_permanent', { habitName: name }), icons.deletePermanentAction
+                'permanent-delete', 'danger', t('aria_delete_permanent', { habitName: name }), icons.deletePermanentAction
             ));
             break;
         case 'active':
             actionsDiv.appendChild(createActionButton(
-                'edit-habit-btn', habit.id, t('aria_edit', { habitName: name }), icons.editAction
+                'edit', 'secondary', t('aria_edit', { habitName: name }), icons.editAction
             ));
             if (isConsolidated) {
                 actionsDiv.appendChild(createActionButton(
-                    'graduate-habit-btn', habit.id, t('aria_graduate', { habitName: name }), icons.graduateAction
+                    'graduate', 'warning', t('aria_graduate', { habitName: name }), icons.graduateAction
                 ));
             } else {
                 actionsDiv.appendChild(createActionButton(
-                    'end-habit-btn', habit.id, t('aria_end', { habitName: name }), icons.endAction
+                    'end', 'secondary', t('aria_end', { habitName: name }), icons.endAction
                 ));
             }
             break;
