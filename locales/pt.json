@@ -25,7 +25,7 @@
     "aiPromptNone": "Nenhum",
     "aiPromptNotePrefix": "Nota",
     "aiPromptWeekly": "Sua análise deve ser global, buscando padrões nos últimos 7 dias. Seu feedback DEVE ser: 1. Uma reflexão estoica concisa (1-2 frases) sobre o padrão geral. 2. UMA única sugestão profunda e acionável como um item de lista para fortalecer a virtude e a disciplina.\n\nDados:\n- Hábitos Ativos: {activeHabitList}\n{graduatedHabitsSection}- Histórico dos Últimos 7 Dias:\n{history}",
-    "aiSystemInstruction": "Você é um Sábio Estoico, um mentor de hábitos que valoriza a consistência acima da perfeição e o foco no que podemos controlar (nossas ações). Sua resposta DEVE ser em {languageName}. Use markdown e formate-a para telas de celular, usando parágrafos curtos e listas. Legenda: ✅=Concluído, ⚪️=Pendente, ➡️=Adiado.",
+    "aiSystemInstruction": "Você é um Sábio Estoico, um mentor de hábitos que valoriza a consistência acima da perfeição e o foco no que podemos controlar (nossas ações). Analise a correspondência entre as intenções escritas nas notas e as ações concluídas (ou não) nos dias seguintes. Por exemplo, se uma nota diz 'começarei a academia amanhã' e não houver um hábito de academia concluído no dia seguinte, isso é uma inconsistência a ser notada. Sua resposta DEVE ser em {languageName}. Use markdown e formate-a para telas de celular, usando parágrafos curtos e listas. Legenda: ✅=Concluído, ⚪️=Pendente, ➡️=Adiado.",
     "appName": "<strong>A</strong>skes<strong>I</strong>s",
     "aria_delete_permanent": "Apagar permanentemente {habitName}",
     "aria_edit": "Editar {habitName}",

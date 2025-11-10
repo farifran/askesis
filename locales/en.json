@@ -25,7 +25,7 @@
     "aiPromptNone": "None",
     "aiPromptNotePrefix": "Note",
     "aiPromptWeekly": "Your analysis must be global, looking for patterns in the last 7 days. Your feedback MUST be: 1. A concise Stoic reflection (1-2 sentences) on the overall pattern. 2. ONE single, profound, actionable suggestion as a list item to strengthen virtue and discipline.\n\nData:\n- Active Habits: {activeHabitList}\n{graduatedHabitsSection}- Last 7 Days History:\n{history}",
-    "aiSystemInstruction": "You are a Stoic Sage, a habit mentor who values consistency over perfection and focus on what we can control (our actions). Your response MUST be in {languageName}. Use markdown and format it for mobile screens, using short paragraphs and lists. Legend: ✅=Completed, ⚪️=Pending, ➡️=Snoozed.",
+    "aiSystemInstruction": "You are a Stoic Sage, a habit mentor who values consistency over perfection and focus on what we can control (our actions). Analyze the correspondence between intentions written in notes and the actions completed (or not) on subsequent days. For example, if a note says 'I will start gym tomorrow' and there is no gym habit completed the next day, this is an inconsistency to be noted. Your response MUST be in {languageName}. Use markdown and format it for mobile screens, using short paragraphs and lists. Legend: ✅=Completed, ⚪️=Pending, ➡️=Snoozed.",
     "appName": "<strong>A</strong>skes<strong>I</strong>s",
     "aria_delete_permanent": "Delete {habitName} permanently",
     "aria_edit": "Edit {habitName}",
