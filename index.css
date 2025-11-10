@@ -302,8 +302,8 @@ main {
     display: block;
     animation: spin 1s linear infinite;
     /* CORREÇÃO DE UI: Garante que o ícone de carregamento tenha um tamanho explícito para evitar oscilações. */
-    width: 24px;
-    height: 24px;
+    width: 22px;
+    height: 22px;
 }
 #ai-eval-btn.loading .default-icon { display: none; }
 
@@ -1001,6 +1001,11 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     margin-block-end: var(--space-lg);
 }
 
+#edit-habit-modal h2 {
+    padding-top: var(--space-xl);
+    padding-inline: var(--space-xl);
+}
+
 #icon-picker-modal .modal-header h2 {
     padding: 0;
     text-align: center;
@@ -1630,8 +1635,8 @@ input:disabled + .slider {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 32px;
-    height: 32px;
+    width: 26px;
+    height: 26px;
     border-radius: 50%;
     border: 2px solid var(--text-tertiary);
     color: var(--text-tertiary);
@@ -1743,7 +1748,7 @@ input:disabled + .slider {
 /* Esconde as opções de frequência detalhadas */
 .frequency-details {
     display: none;
-    padding: var(--space-sm) var(--space-lg) var(--space-md);
+    padding: var(--space-sm) 0 var(--space-md);
     border-top: 1px solid var(--border-color);
 }
 .frequency-details.visible {

@@ -78,14 +78,20 @@ function updateCalendarDayElement(dayItem: HTMLElement, date: Date) {
     dayItem.classList.toggle('today', isoDate === todayISO);
     dayItem.setAttribute('aria-pressed', String(isoDate === state.selectedDate));
 
-    // 3. Atualiza o anel de progresso
+    // 3. Atualiza o nome do dia para localização
+    const dayName = dayItem.querySelector<HTMLElement>('.day-name');
+    if (dayName) {
+        dayName.textContent = getLocaleDayName(date);
+    }
+
+    // 4. Atualiza o anel de progresso
     const dayProgressRing = dayItem.querySelector<HTMLElement>('.day-progress-ring');
     if (dayProgressRing) {
         dayProgressRing.style.setProperty('--completed-percent', `${completedPercent}%`);
         dayProgressRing.style.setProperty('--total-percent', `${totalPercent}%`);
     }
 
-    // 4. Atualiza o indicador 'plus'
+    // 5. Atualiza o indicador 'plus'
     const dayNumber = dayItem.querySelector<HTMLElement>('.day-number');
     if (dayNumber) {
         dayNumber.classList.toggle('has-plus', showPlus);
@@ -215,28 +221,43 @@ export function renderFullCalendar() {
     const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
     const startDayOfWeek = firstDayOfMonth.getUTCDay(); // 0 = Domingo, 1 = Segunda...
 
+    // Lida com o início da semana de acordo com o local
+    const localeIsMonStart = state.activeLanguageCode === 'en' || state.activeLanguageCode === 'es';
+    const firstDayOfWeekForLocale = localeIsMonStart ? 1 : 0; // 1=Seg, 0=Dom
+    const paddingDays = (startDayOfWeek - firstDayOfWeekForLocale + 7) % 7;
+    
     const daysInPrevMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
 
     const grid = ui.fullCalendarGrid;
     grid.innerHTML = '';
     
-    if (ui.fullCalendarWeekdays.childElementCount === 0) {
-        const weekdaysFragment = document.createDocumentFragment();
-        for (let i = 0; i < 7; i++) {
-            const day = new Date(Date.UTC(2024, 0, 7 + i)); // Usa uma semana conhecida para obter os nomes
-            const weekdayEl = document.createElement('div');
-            weekdayEl.textContent = getLocaleDayName(day).substring(0, 1);
-            weekdaysFragment.appendChild(weekdayEl);
+    // Sempre re-renderiza os dias da semana para tradução e ordem correta
+    ui.fullCalendarWeekdays.innerHTML = '';
+    const weekdaysFragment = document.createDocumentFragment();
+    const weekDayOrder = localeIsMonStart
+        ? [1, 2, 3, 4, 5, 6, 0] // Seg -> Dom
+        : [0, 1, 2, 3, 4, 5, 6]; // Dom -> Sáb
+
+    for (const dayIndex of weekDayOrder) {
+        const day = new Date(Date.UTC(2024, 0, 7 + dayIndex)); // Usa uma semana conhecida para obter os nomes
+        const weekdayEl = document.createElement('div');
+        let shortName;
+        try {
+            shortName = new Intl.DateTimeFormat(state.activeLanguageCode, { weekday: 'narrow', timeZone: 'UTC' }).format(day);
+        } catch (e) {
+            shortName = new Intl.DateTimeFormat(state.activeLanguageCode, { weekday: 'short', timeZone: 'UTC' }).format(day).substring(0, 1);
         }
-        ui.fullCalendarWeekdays.appendChild(weekdaysFragment);
+        weekdayEl.textContent = shortName;
+        weekdaysFragment.appendChild(weekdayEl);
     }
+    ui.fullCalendarWeekdays.appendChild(weekdaysFragment);
     
     const fragment = document.createDocumentFragment();
     let totalGridCells = 0;
 
     // Dias do mês anterior
-    for (let i = 0; i < startDayOfWeek; i++) {
-        const day = daysInPrevMonth - startDayOfWeek + 1 + i;
+    for (let i = 0; i < paddingDays; i++) {
+        const day = daysInPrevMonth - paddingDays + 1 + i;
         const dayEl = document.createElement('div');
         dayEl.className = 'full-calendar-day other-month';
         
@@ -304,7 +325,13 @@ export function renderFrequencyOptions() {
     const isSpecificDays = currentFrequency.type === 'specific_days_of_week';
     const isInterval = currentFrequency.type === 'interval';
 
-    const weekdays = [0, 1, 2, 3, 4, 5, 6]; // Sun=0, Mon=1, ...
+    let weekdays: number[];
+    if (state.activeLanguageCode === 'en' || state.activeLanguageCode === 'es') {
+        weekdays = [1, 2, 3, 4, 5, 6, 0]; // Mon -> Sun
+    } else {
+        weekdays = [0, 1, 2, 3, 4, 5, 6]; // Sun -> Sat
+    }
+    
     const selectedDays = isSpecificDays ? new Set(currentFrequency.days) : new Set();
     const weekdayPickerHTML = `
         <div class="weekday-picker">
