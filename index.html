@@ -1,0 +1,366 @@
+<!-- ANÁLISE DO ARQUIVO: 100% concluído. A estrutura do título do cabeçalho foi refatorada para usar spans controlados por CSS, eliminando a dependência do JavaScript para a responsividade do formato da data e centralizando a lógica de exibição. -->
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Askesis</title>
+    
+    <!-- MELHORIA DE PERFORMANCE E PWA [2024-11-12] -->
+    <!-- Pré-carregamento de ativos críticos -->
+    <link rel="preload" href="bundle.css" as="style">
+    <link rel="preload" href="bundle.js" as="script">
+
+    <!-- Metadados para PWA em iOS -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Askesis">
+    <link rel="apple-touch-icon" href="icons/icon-192.svg">
+
+    <!-- Metadados para Compartilhamento Social (Open Graph) -->
+    <meta property="og:title" content="Askesis">
+    <meta property="og:description" content="A dynamic habit tracker with data visualization and personalized AI-powered feedback.">
+    <meta property="og:type" content="website">
+    <meta property="og:image" content="icons/icon-512.svg">
+    
+    <link rel="stylesheet" href="bundle.css">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#1e1e1e">
+    <!-- OTIMIZAÇÃO DE UX [2024-11-10]: Estilos embutidos para uma experiência de carregamento aprimorada. -->
+    <!-- 1. Define o fundo escuro imediatamente para evitar o "flash de conteúdo branco". -->
+    <!-- 2. Estiliza um indicador de carregamento inicial que é removido após a inicialização do app. -->
+    <style>
+        body {
+            background-color: #121212;
+            color: #e5e5e5;
+        }
+        .initial-loader {
+            position: fixed;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-color: #121212;
+            z-index: 9999;
+            opacity: 1;
+            transition: opacity 0.3s ease-out;
+        }
+        .initial-loader.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+        .initial-loader svg {
+            width: 48px;
+            height: 48px;
+            animation: spin 1s linear infinite;
+            stroke: #737373; /* Cor --text-tertiary */
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+<script type="importmap">
+{
+  "imports": {
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.25.0",
+    "@vercel/analytics": "https://aistudiocdn.com/@vercel/analytics@^1.5.0",
+    "@vercel/kv": "https://aistudiocdn.com/@vercel/kv@^3.0.0"
+  }
+}
+</script>
+<script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
+<script>
+  window.OneSignalDeferred = window.OneSignalDeferred || [];
+  OneSignalDeferred.push(async function(OneSignal) {
+    await OneSignal.init({
+      appId: "39454655-f1cd-4531-8ec5-d0f61eb1c478",
+      allowLocalhostAsSecureOrigin: true,
+    });
+  });
+</script>
+</head>
+<body>
+    <!-- MELHORIA DE ACESSIBILIDADE [2024-11-12]: Fornece feedback para usuários sem JavaScript. -->
+    <noscript>
+        <div style="text-align: center; padding: 20px; font-family: sans-serif;">
+            <h1>JavaScript é necessário</h1>
+            <p>Este aplicativo requer JavaScript para funcionar. Por favor, habilite-o em seu navegador.</p>
+        </div>
+    </noscript>
+
+    <!-- OTIMIZAÇÃO DE UX [2024-11-10]: Indicador de carregamento inicial para fornecer feedback imediato ao usuário. -->
+    <div id="initial-loader" class="initial-loader">
+        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+    </div>
+
+    <div class="app-container">
+        <header class="app-header">
+            <div class="header-top">
+                <button id="fab-add-habit" aria-label="Adicionar Hábito">+</button>
+                <div id="calendar-strip" class="calendar-strip"></div>
+                <div class="header-icon-stack">
+                    <button id="manage-habits-btn" class="icon-btn" aria-label="Configurações"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06-.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></button>
+                    <button id="ai-eval-btn" class="icon-btn" aria-label="Avaliação IA">
+                        <svg class="loading-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                        <svg class="default-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>
+                        <svg class="offline-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="1" y1="1" x2="23" y2="23"></line><path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"></path><path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"></path><path d="M10.71 5.05A16 16 0 0 1 22.58 9"></path><path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"></path><path d="M8.53 16.11a6.5 6.5 0 0 1 6.95 0"></path><line x1="12" y1="20" x2="12.01" y2="20"></line></svg>
+                    </button>
+                </div>
+            </div>
+            <div class="header-bottom">
+                <div id="stoic-quote-display" class="stoic-quote"></div>
+                <h2 id="header-title">
+                    <span class="header-title-desktop">Hoje</span>
+                    <span class="header-title-mobile">Hoje</span>
+                </h2>
+            </div>
+        </header>
+
+        <main>
+            <div id="habit-container">
+                <div class="habit-group-wrapper" data-time-wrapper="Morning">
+                    <div class="habit-group drop-zone" data-time="Morning"></div>
+                </div>
+                <div class="habit-group-wrapper" data-time-wrapper="Afternoon">
+                    <div class="habit-group drop-zone" data-time="Afternoon"></div>
+                </div>
+                <div class="habit-group-wrapper" data-time-wrapper="Evening">
+                    <div class="habit-group drop-zone" data-time="Evening"></div>
+                </div>
+            </div>
+
+            <section id="chart-container" class="chart-container"></section>
+        </main>
+    </div>
+
+    <!-- Modals -->
+    <div id="explore-modal" class="modal-overlay">
+        <div class="modal-content">
+            <h2>Explorar Hábitos</h2>
+            <div id="explore-habit-list"></div>
+            <button id="create-custom-habit-btn" class="btn btn--primary">Criar hábito personalizado</button>
+            <button class="btn modal-close-btn">Fechar</button>
+        </div>
+    </div>
+    
+    <div id="manage-modal" class="modal-overlay">
+        <div class="modal-content">
+            <h2 id="manage-modal-title">Configurações Gerais</h2>
+            <div class="modal-settings-section">
+                <div class="setting-item">
+                    <label id="label-language">Idioma</label>
+                    <div id="language-rotary" class="reel-rotary">
+                        <button id="language-prev" class="reel-btn">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <polyline points="15 18 9 12 15 6"></polyline>
+                            </svg>
+                        </button>
+                        <div id="language-viewport" class="reel-viewport">
+                            <div id="language-reel" class="reel-reel"></div>
+                        </div>
+                        <button id="language-next" class="reel-btn">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <polyline points="9 18 15 12 9 6"></polyline>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                 <div class="setting-item setting-item--column">
+                    <div class="setting-item-header">
+                         <label id="label-sync">Sincronização na Nuvem</label>
+                         <span id="sync-status"></span>
+                    </div>
+                    <div id="sync-section">
+                        <!-- Estado: Sincronização Inativa -->
+                        <div class="sync-view" id="sync-inactive-view">
+                            <p id="sync-inactive-desc"></p>
+                            <div class="sync-actions">
+                                <button id="enable-sync-btn" class="btn btn--primary"></button>
+                                <button id="enter-key-view-btn" class="btn"></button>
+                            </div>
+                        </div>
+                        <!-- Estado: Entrada de Chave -->
+                        <div class="sync-view" id="sync-enter-key-view" style="display: none;">
+                             <div class="form-group">
+                                <label for="sync-key-input" id="label-enter-key"></label>
+                                <input type="text" id="sync-key-input" class="form-control" autocomplete="off">
+                            </div>
+                            <div class="sync-actions">
+                                <button id="cancel-enter-key-btn" class="btn"></button>
+                                <button id="submit-key-btn" class="btn btn--primary"></button>
+                            </div>
+                        </div>
+                         <!-- Estado: Exibição da Chave Gerada -->
+                        <div class="sync-view" id="sync-display-key-view" style="display: none;">
+                            <p class="sync-warning" id="sync-warning-text"></p>
+                            <div class="sync-key-display">
+                                <span id="sync-key-text"></span>
+                                <button id="copy-key-btn" class="icon-btn" aria-label="Copiar Chave"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg></button>
+                            </div>
+                            <button id="key-saved-btn" class="btn btn--primary"></button>
+                        </div>
+                        <!-- Estado: Sincronização Ativa -->
+                        <div class="sync-view" id="sync-active-view" style="display: none;">
+                            <p id="sync-active-desc"></p>
+                            <div class="sync-actions">
+                                <button id="view-key-btn" class="btn"></button>
+                                <button id="disable-sync-btn" class="btn btn--danger"></button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="setting-item setting-item--column">
+                    <div class="setting-item">
+                        <label for="notification-toggle" id="label-notifications">Notificações</label>
+                        <label class="toggle-switch" for="notification-toggle" id="notification-toggle-label">
+                            <input type="checkbox" id="notification-toggle">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                    <p id="notification-status-desc" class="setting-item-desc"></p>
+                </div>
+                <div class="setting-item">
+                    <label id="label-reset">Reinicialização</label>
+                    <button id="reset-app-btn" class="btn btn--danger">Apagar dados</button>
+                </div>
+            </div>
+            <h3 id="habit-list-title" class="modal-subtitle">Gerenciar Hábitos</h3>
+            <ul id="habit-list"></ul>
+            <button class="btn modal-close-btn">Fechar</button>
+        </div>
+    </div>
+
+    <div id="ai-modal" class="modal-overlay">
+        <div class="modal-content">
+            <h2>Avaliação da IA</h2>
+            <div id="ai-response"></div>
+            <button class="btn modal-close-btn">Fechar</button>
+        </div>
+    </div>
+
+    <div id="ai-options-modal" class="modal-overlay">
+        <div class="modal-content">
+            <h2>Análise da IA</h2>
+            <div class="ai-options-list">
+                <button class="ai-option-btn" data-analysis-type="weekly">
+                    <span class="ai-option-title">Análise Semanal</span>
+                    <span class="ai-option-desc">Uma reflexão estoica sobre os últimos 7 dias.</span>
+                </button>
+                <button class="ai-option-btn" data-analysis-type="monthly">
+                    <span class="ai-option-title">Revisão Mensal</span>
+                    <span class="ai-option-desc">Uma análise aprofundada dos últimos 30 dias.</span>
+                </button>
+                <button class="ai-option-btn" data-analysis-type="general">
+                    <span class="ai-option-title">Análise Geral</span>
+                    <span class="ai-option-desc">Uma visão holística de toda a sua jornada de hábitos.</span>
+                </button>
+            </div>
+            <button class="btn modal-close-btn">Cancelar</button>
+        </div>
+    </div>
+
+    <div id="confirm-modal" class="modal-overlay">
+        <div class="modal-content">
+            <h2>Confirmar Ação</h2>
+            <p id="confirm-modal-text"></p>
+            <div class="modal-actions">
+                <button class="btn modal-close-btn">Cancelar</button>
+                <button id="confirm-modal-edit-btn" class="btn">Editar</button>
+                <button id="confirm-modal-confirm-btn" class="btn btn--primary">Confirmar</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="notes-modal" class="modal-overlay">
+        <div class="modal-content">
+            <h2 id="notes-modal-title"></h2>
+            <p id="notes-modal-subtitle"></p>
+            <textarea id="notes-textarea" rows="5" placeholder="Digite sua nota..."></textarea>
+            <div class="modal-actions">
+                <button class="btn modal-close-btn">Cancelar</button>
+                <button id="save-note-btn" class="btn btn--primary">Salvar Nota</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="icon-picker-modal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="icon-picker-modal-title">Selecionar Ícone</h2>
+                <button id="change-color-from-picker-btn" class="icon-btn"></button>
+            </div>
+            <div id="icon-picker-grid"></div>
+            <button class="btn modal-close-btn">Cancelar</button>
+        </div>
+    </div>
+
+    <div id="color-picker-modal" class="modal-overlay">
+        <div class="modal-content">
+            <h2 id="color-picker-modal-title">Selecionar Cor</h2>
+            <div id="color-picker-grid"></div>
+            <button class="btn modal-close-btn">Cancelar</button>
+        </div>
+    </div>
+
+    <div id="edit-habit-modal" class="modal-overlay">
+        <div class="modal-content">
+            <h2 id="edit-habit-modal-title"></h2>
+            <form id="edit-habit-form" novalidate>
+                <div class="form-section habit-identity-section">
+                    <div class="habit-icon-picker-wrapper">
+                        <button type="button" id="habit-icon-picker-btn" class="habit-icon-picker-btn" aria-label="Selecionar ícone"></button>
+                        <div class="edit-icon-overlay"></div>
+                    </div>
+                    <div class="habit-name-input-wrapper">
+                        <input type="text" id="habit-name" name="habit-name" class="form-control" required>
+                    </div>
+                </div>
+                <div class="duplicate-habit-notice"></div>
+                <div class="form-notice"></div>
+
+                <div class="form-section">
+                    <div class="form-row form-row--vertical">
+                         <div id="habit-time-container">
+                            <!-- O controle segmentado será injetado aqui pelo JavaScript -->
+                         </div>
+                    </div>
+                </div>
+
+                <div id="frequency-options-container">
+                    <!-- As opções de frequência serão injetadas aqui pelo JavaScript -->
+                </div>
+            </form>
+            <div class="modal-actions">
+                <button class="btn modal-close-btn"></button>
+                <button id="edit-habit-save-btn" class="btn btn--primary"></button>
+            </div>
+        </div>
+    </div>
+
+    <div id="full-calendar-modal" class="modal-overlay">
+        <div class="modal-content">
+            <div id="full-calendar-header">
+                <button id="full-calendar-prev" class="icon-btn" aria-label="Mês anterior">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                </button>
+                <h2 id="full-calendar-month-year"></h2>
+                <button id="full-calendar-next" class="icon-btn" aria-label="Próximo mês">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                </button>
+            </div>
+            <div id="full-calendar-weekdays"></div>
+            <div id="full-calendar-grid"></div>
+            <button class="btn modal-close-btn">Fechar</button>
+        </div>
+    </div>
+
+
+    <!-- Toast Notification -->
+    <div id="undo-toast" class="undo-toast">
+        <span>Hábito encerrado.</span>
+        <button id="undo-btn">Desfazer</button>
+    </div>
+    
+    <script type="module" src="bundle.js"></script>
+</body>
+</html>

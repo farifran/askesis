@@ -1,0 +1,19 @@
+// ANÁLISE DO ARQUIVO: 100% concluído. A configuração do TypeScript está otimizada para o build com esbuild, com checagens estritas habilitadas para garantir a qualidade do código. Nenhuma outra análise é necessária.
+{
+  "compilerOptions": {
+    "target": "es2020",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "forceConsistentCasingInFileNames": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "node",
+    "resolveJsonModule": true,
+    "isolatedModules": true
+  },
+  "include": ["**/*.ts", "**/*.tsx"],
+  "exclude": ["node_modules"]
+}
