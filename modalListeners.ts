@@ -2,7 +2,7 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// ANÁLISE DO ARQUIVO: ANÁLISE PARCIAL. Adicionada nova funcionalidade de calendário completo (em desenvolvimento).
+// ANÁLISE DO ARQUIVO: 0% concluído. Todos os arquivos precisam ser revisados. Quando um arquivo atingir 100%, não será mais necessário revisá-lo.
 import { ui } from './ui';
 import { state, LANGUAGES, PREDEFINED_HABITS, TimeOfDay, saveState, STREAK_SEMI_CONSOLIDATED, STREAK_CONSOLIDATED, Frequency, FREQUENCIES } from './state';
 import {
@@ -22,6 +22,7 @@ import {
     renderFullCalendar,
     renderApp,
 } from './render';
+// FIX: Corrected imports for functions that were missing exports.
 import {
     saveHabitFromModal,
     requestHabitEndingFromModal,
@@ -116,19 +117,20 @@ export function setupModalListeners() {
     // --- Modal de Gerenciamento de Hábitos (Manage) ---
     ui.habitList.addEventListener('click', (e) => {
         const target = e.target as HTMLElement;
-        const button = target.closest<HTMLButtonElement>('button');
+        const button = target.closest<HTMLButtonElement>('[data-action]');
         if (!button) return;
 
         const habitId = button.closest<HTMLLIElement>('li.habit-list-item')?.dataset.habitId;
         if (!habitId) return;
 
-        if (button.classList.contains('end-habit-btn')) {
+        const action = button.dataset.action;
+        if (action === 'end') {
             requestHabitEndingFromModal(habitId);
-        } else if (button.classList.contains('permanent-delete-habit-btn')) {
+        } else if (action === 'permanent-delete') {
             requestHabitPermanentDeletion(habitId);
-        } else if (button.classList.contains('edit-habit-btn')) {
+        } else if (action === 'edit') {
             requestHabitEditingFromModal(habitId);
-        } else if (button.classList.contains('graduate-habit-btn')) {
+        } else if (action === 'graduate') {
             graduateHabit(habitId);
         }
     });
@@ -177,233 +179,265 @@ export function setupModalListeners() {
     });
 
 
-    // --- Modal de Exploração de Hábitos (Explore) ---
+    // --- Modal de Explorar Hábitos (Explore) ---
     ui.exploreHabitList.addEventListener('click', (e) => {
-        const item = (e.target as HTMLElement).closest<HTMLElement>('.explore-habit-item');
-        if (!item) return;
-        const index = parseInt(item.dataset.index!, 10);
-        const habitTemplate = PREDEFINED_HABITS[index];
-        if (habitTemplate) {
-            closeModal(ui.exploreModal);
-            openEditModal(habitTemplate);
+        const target = e.target as HTMLElement;
+        const item = target.closest<HTMLElement>('.explore-habit-item');
+        if (item) {
+            const index = parseInt(item.dataset.index!, 10);
+            const habitTemplate = PREDEFINED_HABITS[index];
+            if (habitTemplate) {
+                closeModal(ui.exploreModal);
+                openEditModal(habitTemplate);
+            }
         }
     });
 
     ui.createCustomHabitBtn.addEventListener('click', () => {
         closeModal(ui.exploreModal);
-        openEditModal(null); // Abre sem template para um hábito personalizado
+        openEditModal(null);
     });
-
-    // --- Modal e Opções da IA ---
+    
+    // --- Modal de Avaliação/Opções da IA ---
     ui.aiEvalBtn.addEventListener('click', () => {
-        const celebration21DayText = _processAndFormatCelebrations(state.pending21DayHabitIds, 'aiCelebration21Day', STREAK_SEMI_CONSOLIDATED);
-        const celebration66DayText = _processAndFormatCelebrations(state.pendingConsolidationHabitIds, 'aiCelebration66Day', STREAK_CONSOLIDATED);
-        
-        const allCelebrations = [celebration66DayText, celebration21DayText].filter(Boolean).join('\n\n');
+        // 1. Verifica se há um resultado de análise não visto.
+        const hasUnseenResult = (state.aiState === 'completed' || state.aiState === 'error') && !state.hasSeenAIResult;
+        if (hasUnseenResult) {
+            ui.aiResponse.innerHTML = simpleMarkdownToHTML(state.lastAIResult || '');
+            openModal(ui.aiModal);
+            return;
+        }
 
-        if (allCelebrations) {
-            ui.aiResponse.innerHTML = simpleMarkdownToHTML(allCelebrations);
+        // 2. Se não, verifica se há celebrações de marcos (lógica existente).
+        const has21Day = state.pending21DayHabitIds.length > 0;
+        const has66Day = state.pendingConsolidationHabitIds.length > 0;
+
+        if (has21Day || has66Day) {
+            let celebrationHTML = '';
+            if (has21Day) {
+                celebrationHTML += _processAndFormatCelebrations(state.pending21DayHabitIds, 'aiCelebration21Day', STREAK_SEMI_CONSOLIDATED);
+                state.pending21DayHabitIds = [];
+            }
+            if (has66Day) {
+                celebrationHTML += _processAndFormatCelebrations(state.pendingConsolidationHabitIds, 'aiCelebration66Day', STREAK_CONSOLIDATED);
+                state.pendingConsolidationHabitIds = [];
+            }
+
+            ui.aiResponse.innerHTML = simpleMarkdownToHTML(celebrationHTML);
             openModal(ui.aiModal);
-            state.pending21DayHabitIds = [];
-            state.pendingConsolidationHabitIds = [];
-            saveState(); // Salva que as notificações foram vistas
             renderAINotificationState();
-        } else if ((state.aiState === 'completed' || state.aiState === 'error') && !state.hasSeenAIResult && state.lastAIResult) {
-            ui.aiResponse.innerHTML = simpleMarkdownToHTML(state.lastAIResult);
-            openModal(ui.aiModal);
+            saveState();
         } else {
+            // 3. Se não houver resultados não vistos nem celebrações, abre as opções para uma nova análise.
             openModal(ui.aiOptionsModal);
         }
     });
 
-    ui.aiOptionsModal.addEventListener('click', e => {
-        const button = (e.target as HTMLElement).closest<HTMLButtonElement>('.ai-option-btn');
-        if (!button) return;
-        const analysisType = button.dataset.analysisType as 'weekly' | 'monthly' | 'general';
-        performAIAnalysis(analysisType);
+
+    ui.aiOptionsModal.addEventListener('click', (e) => {
+        const target = e.target as HTMLElement;
+        const button = target.closest<HTMLButtonElement>('.ai-option-btn');
+        const analysisType = button?.dataset.analysisType as 'weekly' | 'monthly' | 'general' | undefined;
+        if (analysisType) {
+            performAIAnalysis(analysisType);
+        }
     });
 
     // --- Modal de Confirmação ---
     ui.confirmModalConfirmBtn.addEventListener('click', () => {
         state.confirmAction?.();
+        closeModal(ui.confirmModal);
         state.confirmAction = null;
         state.confirmEditAction = null;
-        closeModal(ui.confirmModal);
     });
     
     ui.confirmModalEditBtn.addEventListener('click', () => {
         state.confirmEditAction?.();
+        closeModal(ui.confirmModal);
         state.confirmAction = null;
         state.confirmEditAction = null;
-        closeModal(ui.confirmModal);
     });
 
     // --- Modal de Notas ---
     ui.saveNoteBtn.addEventListener('click', handleSaveNote);
 
-    // --- Modal de Calendário Completo ---
-    ui.fullCalendarPrevBtn.addEventListener('click', () => {
-        state.fullCalendar.month--;
-        if (state.fullCalendar.month < 0) {
-            state.fullCalendar.month = 11;
-            state.fullCalendar.year--;
-        }
-        renderFullCalendar();
-    });
-
-    ui.fullCalendarNextBtn.addEventListener('click', () => {
-        state.fullCalendar.month++;
-        if (state.fullCalendar.month > 11) {
-            state.fullCalendar.month = 0;
-            state.fullCalendar.year++;
-        }
-        renderFullCalendar();
-    });
-
-    ui.fullCalendarGrid.addEventListener('click', (e) => {
-        const dayEl = (e.target as HTMLElement).closest<HTMLElement>('.full-calendar-day');
-        if (dayEl && dayEl.dataset.date) {
-            state.selectedDate = dayEl.dataset.date;
-            closeModal(ui.fullCalendarModal);
-            renderApp();
-        }
-    });
-
-
     // --- Modal de Edição/Criação de Hábito ---
-    ui.editHabitSaveBtn.addEventListener('click', saveHabitFromModal);
-
-    const habitNameInput = ui.editHabitForm.elements.namedItem('habit-name') as HTMLInputElement;
-    const duplicateNoticeEl = ui.editHabitForm.querySelector<HTMLElement>('.duplicate-habit-notice')!;
-
-    habitNameInput.addEventListener('input', () => {
-        if (!state.editingHabit) return;
-        
-        const newName = habitNameInput.value.trim();
-        state.editingHabit.formData.name = newName;
-        delete state.editingHabit.formData.nameKey; // Nome personalizado sobrescreve o predefinido
-
-        const isDuplicate = state.habits.some(h => {
-            const { name } = getHabitDisplayInfo(h, state.selectedDate);
-            return name.toLowerCase() === newName.toLowerCase() && h.id !== state.editingHabit?.habitId;
-        });
-
-        if (isDuplicate) {
-            duplicateNoticeEl.textContent = t('noticeDuplicateHabitWithName');
-            duplicateNoticeEl.classList.add('visible');
-        } else {
-            duplicateNoticeEl.classList.remove('visible');
-        }
-        ui.editHabitSaveBtn.disabled = isDuplicate || newName.length === 0;
+    ui.editHabitSaveBtn.addEventListener('click', () => {
+        saveHabitFromModal();
     });
 
-    // Seletor de Ícone
+    ui.editHabitForm.addEventListener('input', (e) => {
+        if (!state.editingHabit) return;
+        const target = e.target as HTMLElement;
+        const noticeEl = ui.editHabitForm.querySelector<HTMLElement>('.duplicate-habit-notice')!;
+        
+        // Validação de nome duplicado em tempo real
+        if (target.id === 'habit-name') {
+            const habitName = (target as HTMLInputElement).value.trim();
+            const isDuplicate = state.habits.some(h => {
+                if (h.id === state.editingHabit?.habitId) return false;
+                const { name } = getHabitDisplayInfo(h);
+                return name.toLowerCase() === habitName.toLowerCase() && !h.scheduleHistory[h.scheduleHistory.length-1].endDate;
+            });
+            
+            const isNameEmpty = habitName.length === 0;
+
+            if (isDuplicate) {
+                noticeEl.textContent = t('noticeDuplicateHabitWithName');
+                noticeEl.classList.add('visible');
+                ui.editHabitSaveBtn.disabled = true;
+            } else if (isNameEmpty) {
+                noticeEl.textContent = t('noticeNameCannotBeEmpty');
+                noticeEl.classList.add('visible');
+                ui.editHabitSaveBtn.disabled = true;
+            } else {
+                noticeEl.classList.remove('visible');
+                ui.editHabitSaveBtn.disabled = false;
+            }
+        }
+    });
+
+    ui.editHabitForm.addEventListener('click', (e) => {
+        if (!state.editingHabit) return;
+        const target = e.target as HTMLElement;
+        
+        // Lógica do controle segmentado de horário
+        const timeButton = target.closest<HTMLButtonElement>('.segmented-control-option');
+        if (timeButton) {
+            const time = timeButton.dataset.time as TimeOfDay;
+            timeButton.classList.toggle('selected');
+            const selectedTimes = Array.from(ui.habitTimeContainer.querySelectorAll<HTMLButtonElement>('.segmented-control-option.selected'))
+                .map(btn => btn.dataset.time as TimeOfDay);
+            state.editingHabit.formData.times = selectedTimes;
+            return;
+        }
+
+        // Lógica do seletor de frequência (botões de rádio)
+        const radio = target.closest<HTMLInputElement>('input[name="frequency-type"]');
+        if (radio) {
+            const type = radio.value as Frequency['type'];
+            
+            // Atualiza a visibilidade dos detalhes
+            ui.frequencyOptionsContainer.querySelectorAll('.frequency-details').forEach(el => el.classList.remove('visible'));
+            const details = radio.closest('.form-row')?.querySelector('.frequency-details');
+            if (details) {
+                details.classList.add('visible');
+            }
+            
+            // Atualiza o estado
+            if (type === 'daily') {
+                state.editingHabit.formData.frequency = { type: 'daily' };
+            } else if (type === 'specific_days_of_week') {
+                const days = Array.from(ui.frequencyOptionsContainer.querySelectorAll<HTMLInputElement>('.weekday-picker input:checked')).map(input => parseInt(input.dataset.day!));
+                state.editingHabit.formData.frequency = { type: 'specific_days_of_week', days };
+            } else if (type === 'interval') {
+                const amount = parseInt(ui.frequencyOptionsContainer.querySelector('.interval-amount-display')!.textContent || '2');
+                const unit = ui.frequencyOptionsContainer.querySelector('.unit-toggle-btn')!.textContent === t('unitWeeks') ? 'weeks' : 'days';
+                state.editingHabit.formData.frequency = { type: 'interval', unit, amount };
+            }
+            return;
+        }
+
+        // Lógica para os detalhes da frequência (dias da semana, intervalo)
+        const dayCheckbox = target.closest<HTMLInputElement>('.weekday-picker input[type="checkbox"]');
+        if (dayCheckbox) {
+            const days = Array.from(ui.frequencyOptionsContainer.querySelectorAll<HTMLInputElement>('.weekday-picker input:checked')).map(input => parseInt(input.dataset.day!));
+            state.editingHabit.formData.frequency = { type: 'specific_days_of_week', days };
+            return;
+        }
+
+        const stepperBtn = target.closest<HTMLButtonElement>('.stepper-btn');
+        if (stepperBtn) {
+            const amountDisplay = ui.frequencyOptionsContainer.querySelector<HTMLElement>('.interval-amount-display')!;
+            let amount = parseInt(amountDisplay.textContent || '2');
+            const action = stepperBtn.dataset.action;
+
+            if (action === 'interval-increment') amount++;
+            else if (action === 'interval-decrement') amount = Math.max(1, amount - 1);
+
+            amountDisplay.textContent = String(amount);
+            (state.editingHabit.formData.frequency as { type: 'interval', amount: number }).amount = amount;
+            return;
+        }
+
+        const unitToggleBtn = target.closest<HTMLButtonElement>('.unit-toggle-btn');
+        if (unitToggleBtn) {
+            const currentUnit = (state.editingHabit.formData.frequency as { type: 'interval', unit: 'days' | 'weeks' }).unit;
+            const newUnit = currentUnit === 'days' ? 'weeks' : 'days';
+            unitToggleBtn.textContent = newUnit === 'days' ? t('unitDays') : t('unitWeeks');
+            (state.editingHabit.formData.frequency as { type: 'interval', unit: 'days' | 'weeks' }).unit = newUnit;
+        }
+    });
+
     ui.habitIconPickerBtn.addEventListener('click', () => {
         renderIconPicker();
         openModal(ui.iconPickerModal);
     });
 
-    ui.iconPickerGrid.addEventListener('click', e => {
+    // --- Modal de Seletor de Ícones ---
+    ui.iconPickerModal.addEventListener('click', e => {
+        if (!state.editingHabit) return;
         const target = e.target as HTMLElement;
-        const item = target.closest<HTMLButtonElement>('.icon-picker-item');
-        if (item && state.editingHabit) {
-            const iconSVG = item.dataset.iconSvg!;
-            state.editingHabit.formData.icon = iconSVG;
-            ui.habitIconPickerBtn.innerHTML = iconSVG;
+
+        const iconItem = target.closest<HTMLButtonElement>('.icon-picker-item');
+        if (iconItem) {
+            const newIcon = iconItem.dataset.iconSvg!;
+            state.editingHabit.formData.icon = newIcon;
+            ui.habitIconPickerBtn.innerHTML = newIcon;
+            closeModal(ui.iconPickerModal);
+            return;
+        }
+
+        const changeColorBtn = target.closest<HTMLButtonElement>('#change-color-from-picker-btn');
+        if (changeColorBtn) {
+            ui.iconPickerModal.classList.add('is-picking-color');
+            renderColorPicker();
+            openModal(ui.colorPickerModal);
+        }
+    });
+
+    // --- Modal de Seletor de Cores ---
+    ui.colorPickerModal.addEventListener('click', e => {
+        if (!state.editingHabit) return;
+        const swatch = (e.target as HTMLElement).closest<HTMLButtonElement>('.color-swatch');
+        if (swatch) {
+            const newColor = swatch.dataset.color!;
+            state.editingHabit.formData.color = newColor;
+
+            // Atualiza a visualização do botão de ícone no formulário principal
+            ui.habitIconPickerBtn.style.backgroundColor = newColor;
+            ui.habitIconPickerBtn.style.color = getContrastColor(newColor);
+            
+            closeModal(ui.colorPickerModal);
             closeModal(ui.iconPickerModal);
         }
     });
-    
-    // --- Seletores de Cor e Ícone ---
-    ui.colorPickerGrid.addEventListener('click', e => {
-        const target = e.target as HTMLElement;
-        const swatch = target.closest<HTMLButtonElement>('.color-swatch');
-        if (swatch && state.editingHabit) {
-            const color = swatch.dataset.color!;
-            state.editingHabit.formData.color = color;
 
-            const iconColor = getContrastColor(color);
-            ui.habitIconPickerBtn.style.backgroundColor = color;
-            ui.habitIconPickerBtn.style.color = iconColor;
-            
-            ui.colorPickerGrid.querySelector('.selected')?.classList.remove('selected');
-            swatch.classList.add('selected');
-
-            ui.iconPickerModal.classList.remove('is-picking-color');
-            renderIconPicker();
-            closeModal(ui.colorPickerModal);
+    // --- Modal de Calendário Completo ---
+    const updateFullCalendarMonth = (direction: -1 | 1) => {
+        let { year, month } = state.fullCalendar;
+        month += direction;
+        if (month > 11) {
+            month = 0;
+            year++;
+        } else if (month < 0) {
+            month = 11;
+            year--;
         }
-    });
+        state.fullCalendar.year = year;
+        state.fullCalendar.month = month;
+        renderFullCalendar();
+    };
 
-    ui.changeColorFromPickerBtn.addEventListener('click', () => {
-        renderColorPicker();
-        ui.iconPickerModal.classList.add('is-picking-color');
-        openModal(ui.colorPickerModal);
-    });
+    ui.fullCalendarPrevBtn.addEventListener('click', () => updateFullCalendarMonth(-1));
+    ui.fullCalendarNextBtn.addEventListener('click', () => updateFullCalendarMonth(1));
 
-    // Controle Segmentado de Horário
-    ui.habitTimeContainer.addEventListener('click', e => {
-        if (!state.editingHabit) return;
-        const button = (e.target as HTMLElement).closest<HTMLButtonElement>('.segmented-control-option');
-        if (!button) return;
-
-        const time = button.dataset.time as TimeOfDay;
-        const currentlySelected = state.editingHabit.formData.times.includes(time);
-
-        if (currentlySelected) {
-            if (state.editingHabit.formData.times.length > 1) {
-                state.editingHabit.formData.times = state.editingHabit.formData.times.filter(t => t !== time);
-                button.classList.remove('selected');
-            }
-        } else {
-            state.editingHabit.formData.times.push(time);
-            button.classList.add('selected');
-        }
-    });
-
-    // Opções de Frequência
-    ui.frequencyOptionsContainer.addEventListener('click', e => {
-        if (!state.editingHabit) return;
-        const target = e.target as HTMLElement;
-
-        const radio = target.closest<HTMLInputElement>('input[type="radio"]');
-        if (radio) {
-            const type = radio.value as 'daily' | 'interval' | 'specific_days_of_week';
-            if (type === 'daily') {
-                state.editingHabit.formData.frequency = { type: 'daily' };
-            } else if (type === 'specific_days_of_week') {
-                const days = Array.from(ui.frequencyOptionsContainer.querySelectorAll<HTMLInputElement>('.weekday-picker input:checked')).map(el => parseInt(el.dataset.day!, 10));
-                state.editingHabit.formData.frequency = { type: 'specific_days_of_week', days };
-            } else if (type === 'interval') {
-                const currentFreq = state.editingHabit.formData.frequency;
-                const intervalFreqTpl = FREQUENCIES.find(f => f.value.type === 'interval')!.value as { type: 'interval', unit: 'days' | 'weeks', amount: number };
-                const amount = (currentFreq.type === 'interval' ? currentFreq.amount : intervalFreqTpl.amount);
-                const unit = (currentFreq.type === 'interval' ? currentFreq.unit : intervalFreqTpl.unit);
-                state.editingHabit.formData.frequency = { type: 'interval', amount, unit };
-            }
-            renderFrequencyOptions();
-            return;
-        }
-
-        const dayCheckbox = target.closest<HTMLInputElement>('.weekday-picker input[type="checkbox"]');
-        if (dayCheckbox) {
-            const days = Array.from(ui.frequencyOptionsContainer.querySelectorAll<HTMLInputElement>('.weekday-picker input:checked')).map(el => parseInt(el.dataset.day!, 10));
-            state.editingHabit.formData.frequency = { type: 'specific_days_of_week', days };
-            return;
-        }
-
-        const stepperBtn = target.closest<HTMLButtonElement>('.stepper-btn, .unit-toggle-btn');
-        if (stepperBtn && state.editingHabit.formData.frequency.type === 'interval') {
-            const action = stepperBtn.dataset.action;
-            const currentFreq = state.editingHabit.formData.frequency;
-            let { amount, unit } = currentFreq;
-
-            if (action === 'interval-decrement') amount = Math.max(1, amount - 1);
-            if (action === 'interval-increment') amount = Math.min(99, amount + 1);
-            if (action === 'interval-unit-toggle') unit = unit === 'days' ? 'weeks' : 'days';
-            
-            state.editingHabit.formData.frequency = { type: 'interval', amount, unit };
-            renderFrequencyOptions(); // Re-render to show the new state
+    ui.fullCalendarGrid.addEventListener('click', e => {
+        const dayEl = (e.target as HTMLElement).closest<HTMLElement>('.full-calendar-day');
+        if (dayEl && dayEl.dataset.date) {
+            state.selectedDate = dayEl.dataset.date;
+            closeModal(ui.fullCalendarModal);
+            renderApp();
         }
     });
 }
