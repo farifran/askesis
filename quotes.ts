@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 
-// ANÁLISE DO ARQUIVO: 100% concluído. Corrigido um erro de sintaxe crítico que impedia a compilação. O arquivo de dados agora está completo e formatado corretamente.
+// ANÁLISE DO ARQUIVO: 0% concluído. Todos os arquivos precisam ser revisados. Quando um arquivo atingir 100%, não será mais necessário revisá-lo.
 export type Quote = {
     pt: string;
     en: string;

@@ -2,9 +2,22 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// ANÁLISE DO ARQUIVO: 100% concluído. A base de código TypeScript foi totalmente revisada e é considerada finalizada, robusta e otimizada. Nenhuma outra análise é necessária.
-import { state, getHabitDailyInfoForDate } from './state';
-import { getTodayUTCIso, parseUTCIsoDate, getActiveHabitsForDate } from './utils';
+// ANÁLISE DO ARQUIVO: 0% concluído. Todos os arquivos precisam ser revisados. Quando um arquivo atingir 100%, não será mais necessário revisá-lo.
+// MELHORIA DE TIPAGEM [2024-12-24]: Adicionada a declaração de tipo para a API de Badging, eliminando a necessidade de 'as any' e melhorando a segurança de tipos.
+
+import { state, getHabitDailyInfoForDate } from '../state';
+import { getTodayUTCIso, parseUTCIsoDate, getActiveHabitsForDate } from '../utils';
+
+// MELHORIA DE TIPAGEM [2024-12-24]: Estende a interface global do Navigator para incluir
+// a API de Badging, fornecendo segurança de tipos e autocompletar, e eliminando a
+// necessidade de coerções de tipo (as any).
+declare global {
+    interface Navigator {
+        setAppBadge?(count: number): Promise<void>;
+        clearAppBadge?(): Promise<void>;
+    }
+}
+
 
 /**
  * Calcula o número de instâncias de hábitos pendentes para o dia atual.
@@ -41,15 +54,15 @@ function calculateTodayPendingCount(): number {
  */
 export async function updateAppBadge() {
     // A API de Emblema é suportada no objeto navigator.
-    if ('setAppBadge' in navigator && 'clearAppBadge' in navigator) {
+    // MELHORIA DE TIPAGEM [2024-12-24]: A verificação de 'setAppBadge' e a chamada subsequente agora são
+    // totalmente seguras em termos de tipo, graças à declaração global.
+    if (navigator.setAppBadge && navigator.clearAppBadge) {
         try {
             const count = calculateTodayPendingCount();
             if (count > 0) {
-                // A API faz parte do padrão, mas o TS pode não tê-la.
-                // Usar 'as any' é uma forma segura de chamá-la.
-                await (navigator as any).setAppBadge(count);
+                await navigator.setAppBadge(count);
             } else {
-                await (navigator as any).clearAppBadge();
+                await navigator.clearAppBadge();
             }
         } catch (error) {
             console.error('Failed to set app badge:', error);

@@ -2,7 +2,7 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// ANÁLISE DO ARQUIVO: 100% concluído. O cabeçalho do gráfico foi refatorado para exibir um título principal ('AskesIs') e um subtítulo. A lógica de renderização foi atualizada para gerenciar esses novos elementos de forma eficiente, inclusive durante as mudanças de idioma.
+// ANÁLISE DO ARQUIVO: 0% concluído. Todos os arquivos precisam ser revisados. Quando um arquivo atingir 100%, não será mais necessário revisá-lo.
 
 import { state } from './state';
 import { ui } from './ui';

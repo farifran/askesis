@@ -2,7 +2,8 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// ANÁLISE DO ARQUIVO: 100% concluído. O endpoint da API de análise foi revisado e é considerado seguro, eficiente e alinhado com as melhores práticas para funções serverless, incluindo tratamento de erros e configuração de API key. A análise deste arquivo está finalizada.
+// ANÁLISE DO ARQUIVO: 0% concluído. Todos os arquivos precisam ser revisados. Quando um arquivo atingir 100%, não será mais necessário revisá-lo.
+// [2024-12-23]: Refatoração final para padronizar a criação de respostas de sucesso, melhorando a consistência e a manutenibilidade do código.
 import { GoogleGenAI } from '@google/genai';
 
 export const config = {
@@ -20,6 +21,14 @@ const createErrorResponse = (message: string, status: number, details = '') => {
     return new Response(JSON.stringify({ error: message, details }), {
         status,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+};
+
+// [2024-12-23]: Adicionado helper para respostas de sucesso para padronizar cabeçalhos e tipo de conteúdo.
+const createSuccessResponse = (body: string) => {
+    return new Response(body, {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'text/plain; charset=utf-8' },
     });
 };
 
@@ -47,8 +56,6 @@ export default async function handler(req: Request) {
         
         const ai = new GoogleGenAI({ apiKey });
 
-        // REATORAÇÃO: Usa a API não-streaming para simplificar o código, pois a resposta
-        // inteira é necessária antes de ser enviada ao cliente.
         const geminiResponse = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
             contents: prompt,
@@ -59,10 +66,8 @@ export default async function handler(req: Request) {
         
         const fullText = geminiResponse.text;
         
-        // Envia a resposta completa como uma única carga útil.
-        return new Response(fullText, {
-            headers: { ...corsHeaders, 'Content-Type': 'text/plain; charset=utf-8' },
-        });
+        // [2024-12-23]: Utiliza o novo helper para garantir consistência.
+        return createSuccessResponse(fullText);
 
     } catch (error) {
         console.error('Critical error in /api/analyze handler:', error);

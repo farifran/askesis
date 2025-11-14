@@ -2,7 +2,7 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// ANÁLISE DO ARQUIVO: 100% concluído. A lógica do cliente para sincronização na nuvem, incluindo tratamento de conflitos e debounce, é robusta. Nenhuma outra análise é necessária.
+// ANÁLISE DO ARQUIVO: 0% concluído. Todos os arquivos precisam ser revisados. Quando um arquivo atingir 100%, não será mais necessário revisá-lo.
 import { AppState, STATE_STORAGE_KEY, loadState, state } from './state';
 import { pushToOneSignal, apiFetch } from './utils';
 import { ui } from './ui';

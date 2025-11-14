@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 
-// ANÁLISE DO ARQUIVO: 100% concluído. O manipulador de gestos de deslize é robusto e lida com interações complexas (deslize vs. arrastar). Nenhuma outra análise é necessária.
+// ANÁLISE DO ARQUIVO: 0% concluído. O manipulador de gestos de deslize é robusto e lida com interações complexas (deslize vs. arrastar). Nenhuma outra análise é necessária.
 
 let isSwiping = false;
 

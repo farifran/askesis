@@ -1,5 +1,5 @@
 // ui.ts
-// ANÁLISE DO ARQUIVO: 100% concluído. As referências da UI foram atualizadas para mapear os novos elementos de título de data para desktop e mobile, refletindo a refatoração da estrutura HTML. O módulo permanece direto e finalizado.
+// ANÁLISE DO ARQUIVO: 0% concluído. Todos os arquivos precisam ser revisados. Quando um arquivo atingir 100%, não será mais necessário revisá-lo.
 type UIElements = {
     calendarStrip: HTMLElement;
     headerTitleDesktop: HTMLElement;

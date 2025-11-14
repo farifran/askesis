@@ -1,4 +1,4 @@
-/* ANÁLISE DO ARQUIVO CSS: 90% concluído. Os botões de ação da lista de hábitos foram refatorados para usar uma classe base e modificadores, melhorando a manutenibilidade e desacoplando o estilo da lógica. */
+/* ANÁLISE DO ARQUIVO CSS: ANÁLISE PARCIAL. Adicionada nova funcionalidade de calendário completo (em desenvolvimento). Os estilos foram adicionados seguindo as convenções existentes. */
 /* ---
 * ARQUIVO CSS REATORADO
 *
@@ -299,7 +299,7 @@ main {
 #ai-eval-btn .loading-icon { display: none; }
 #ai-eval-btn .offline-icon { display: none; }
 #ai-eval-btn.loading .loading-icon {
-    display: inline;
+    display: block;
     animation: spin 1s linear infinite;
 }
 #ai-eval-btn.loading .default-icon { display: none; }
@@ -426,6 +426,7 @@ main {
     cursor: pointer;
     transition: background-color var(--transition-duration);
     border: 2px solid transparent;
+    flex-shrink: 0; /* CORREÇÃO DE LAYOUT [2024-12-14]: Impede que os dias do calendário encolham em telas pequenas, garantindo que a faixa de rolagem funcione corretamente. */
 }
 .day-item:hover { background-color: var(--surface-hover); }
 .day-item.selected { background-color: var(--surface-color); }
@@ -572,34 +573,12 @@ body.is-dragging-active .habit-group-wrapper:not(.has-habits) .empty-group-place
     padding: 0;
     pointer-events: none;
 }
-/* REATORAÇÃO DE UI [2024-12-15]: A lógica de exibição do placeholder foi simplificada para agrupar ícones. */
-.placeholder-icon-group {
-    display: flex;
-    align-items: center;
-    gap: var(--space-sm);
-}
-.placeholder-icon-group svg {
-    width: 18px;
-    height: 18px;
-}
-.placeholder-icon-group .icon-separator {
-    color: var(--text-tertiary);
-    padding-inline: var(--space-xs);
-    opacity: 0.8;
-}
-
-/* Lógica de visibilidade para os ícones do placeholder */
-.placeholder-generic-icons { display: none; }
-.placeholder-specific-icon { display: flex; }
-
-body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .placeholder-generic-icons {
-    display: flex;
-}
-body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .placeholder-specific-icon {
-    display: none;
-}
-
-
+.placeholder-icon-generic, .placeholder-icon-specific { display: flex; align-items: center; gap: var(--space-xs); }
+.placeholder-icon-generic .icon-separator { margin-inline: var(--space-xs); opacity: 0.5; }
+.placeholder-icon-generic { display: none; }
+.placeholder-icon-specific { display: flex; }
+body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .placeholder-icon-generic { display: flex; }
+body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .placeholder-icon-specific { display: none; }
 
 /* --- COMPONENTES: CARTÃO DE HÁBITO --- */
 .habit-card {
@@ -998,11 +977,6 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     margin-block-end: var(--space-lg);
 }
 
-#edit-habit-modal h2 {
-    padding-top: var(--space-xl);
-    padding-inline: var(--space-xl);
-}
-
 #icon-picker-modal .modal-header h2 {
     padding: 0;
     text-align: center;
@@ -1102,19 +1076,19 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 .habit-list-item.ended { opacity: 0.6; }
 .habit-list-item.graduated { opacity: 0.8; }
 .habit-list-actions { display: flex; gap: var(--space-sm); }
-/* REATORAÇÃO DE ARQUITETURA [2024-12-20]: A estilização dos botões de ação da lista de hábitos foi refatorada para usar uma classe base (`habit-list-action-btn`) e modificadores de cor (`--secondary`, `--danger`). Isso desacopla a lógica (JavaScript) dos seletores de estilo, melhora a manutenibilidade e segue uma convenção semelhante ao BEM. */
-.habit-list-action-btn {
+/* MELHORIA DE MANUTENIBILIDADE [2024-10-29]: Agrupa estilos comuns para botões de ação na lista de hábitos usando :is() para reduzir a repetição de código. */
+.habit-list-actions :is(.end-habit-btn, .permanent-delete-habit-btn, .graduate-habit-btn, .edit-habit-btn) {
     background: none; border: none; cursor: pointer; font-size: 20px;
     display: flex; align-items: center; justify-content: center;
     padding: var(--space-xs); border-radius: var(--border-radius-pill);
-    transition: background-color var(--transition-duration), color var(--transition-duration);
+    transition: background-color var(--transition-duration);
 }
-.habit-list-action-btn:hover {
+.habit-list-actions :is(.end-habit-btn, .permanent-delete-habit-btn, .graduate-habit-btn, .edit-habit-btn):hover {
     background-color: var(--surface-hover);
 }
-.habit-list-action-btn--secondary { color: var(--text-secondary); }
-.habit-list-action-btn--danger { color: var(--color-red); }
-.habit-list-action-btn--warning { color: var(--color-yellow); }
+.end-habit-btn, .edit-habit-btn { color: var(--text-secondary); }
+.permanent-delete-habit-btn { color: var(--color-red); }
+.graduate-habit-btn { color: var(--color-yellow); }
 
 .setting-item { display: flex; justify-content: space-between; align-items: center; }
 .setting-item-header { display: flex; justify-content: space-between; align-items: baseline; width: 100%; margin-block-end: var(--space-sm); }
@@ -1615,8 +1589,8 @@ input:disabled + .slider {
 /* Picker de Dias da Semana (Estilo Moderno de Botão de Alternância) */
 .weekday-picker {
     display: flex;
-    justify-content: space-between;
-    gap: var(--space-xs);
+    justify-content: space-between; /* Garante espaçamento uniforme */
+    gap: var(--space-xs); /* Reduz o espaçamento para caber melhor */
     padding-top: var(--space-sm);
 }
 
@@ -1632,8 +1606,8 @@ input:disabled + .slider {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 26px;
-    height: 26px;
+    width: 36px;
+    height: 36px;
     border-radius: 50%;
     border: 2px solid var(--text-tertiary);
     color: var(--text-tertiary);
@@ -1745,7 +1719,7 @@ input:disabled + .slider {
 /* Esconde as opções de frequência detalhadas */
 .frequency-details {
     display: none;
-    padding: var(--space-sm) 0 var(--space-md);
+    padding: var(--space-sm) var(--space-lg) var(--space-md);
     border-top: 1px solid var(--border-color);
 }
 .frequency-details.visible {
@@ -1813,14 +1787,10 @@ body.is-offline #ai-eval-btn .offline-icon {
         margin-block-end: var(--space-xxl);
     }
     .app-header h2 { font-size: 24px; }
-    .stoic-quote { font-size: 12px; min-width: 0; }
+    .stoic-quote { font-size: 12px; }
     .header-top { gap: var(--space-md); }
     #fab-add-habit { width: 38px; height: 38px; font-size: 22px; }
     .header-bottom { gap: var(--space-sm); flex-wrap: nowrap; }
-    
-    #edit-habit-modal h2 { padding-inline: var(--space-lg); }
-    .weekday-picker { padding-inline: var(--space-md); }
-    .weekday-button { width: 32px; height: 32px; }
 
     /* REATORAÇÃO [2024-11-19]: Adiciona regras para mostrar o formato de data mobile e ocultar o de desktop. */
     .header-title-desktop {

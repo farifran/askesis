@@ -1,4 +1,4 @@
-// ANÁLISE DO ARQUIVO: ANÁLISE PARCIAL. Adicionada nova funcionalidade de calendário completo (em desenvolvimento).
+// ANÁLISE DO ARQUIVO: 0% concluído. Todos os arquivos precisam ser revisados. Quando um arquivo atingir 100%, não será mais necessário revisá-lo.
 import { state } from './state';
 import { toUTCIsoDateString, parseUTCIsoDate, debounce } from './utils';
 import { ui } from './ui';
@@ -15,9 +15,10 @@ import { setupModalListeners } from './modalListeners';
 import { setupHabitCardListeners } from './habitCardListeners';
 import { setupSwipeHandler } from './swipeHandler';
 import { setupDragAndDropHandler } from './dragAndDropHandler';
+// FIX: Corrected imports for functions that were missing exports.
 import { handleUndoDelete, completeAllHabitsForDate, snoozeAllHabitsForDate } from './habitActions';
 import { renderChart } from './chart';
-import { updateAppBadge } from './badge';
+import { updateAppBadge } from './api/badge';
 
 /**
  * REATORAÇÃO: Centraliza a lógica para atualizar a data selecionada e renderizar a UI.

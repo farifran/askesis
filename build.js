@@ -1,4 +1,4 @@
-// ANÁLISE DO ARQUIVO: 100% concluído. O script de build agora está totalmente otimizado, com suporte a builds de produção minificados e um modo de observação (watch) para um desenvolvimento eficiente. A análise está finalizada.
+// ANÁLISE DO ARQUIVO: 0% concluído. Todos os arquivos precisam ser revisados. Quando um arquivo atingir 100%, não será mais necessário revisá-lo.
 // build.js
 // Este script é responsável por compilar e empacotar os arquivos da aplicação
 // para produção. Ele utiliza 'esbuild' para uma compilação rápida e eficiente.

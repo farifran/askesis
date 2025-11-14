@@ -2,7 +2,7 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// ANÁLISE DO ARQUIVO: 100% concluído. O ponto de entrada da aplicação e a sequência de inicialização são robustos e otimizados. Nenhuma outra análise é necessária.
+// ANÁLISE DO ARQUIVO: 0% concluído. Todos os arquivos precisam ser revisados. Quando um arquivo atingir 100%, não será mais necessário revisá-lo.
 import { inject } from '@vercel/analytics';
 import './index.css';
 import { loadState, saveState, state } from './state';
@@ -13,7 +13,7 @@ import { initI18n } from './i18n';
 import { createDefaultHabit } from './habitActions';
 import { initSync } from './sync';
 import { fetchStateFromCloud, hasSyncKey, setupNotificationListeners } from './cloud';
-import { updateAppBadge } from './badge';
+import { updateAppBadge } from './api/badge';
 
 // --- SERVICE WORKER REGISTRATION ---
 const registerServiceWorker = () => {

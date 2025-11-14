@@ -1,4 +1,4 @@
-// ANÁLISE DO ARQUIVO: 100% concluído. As funções utilitárias são eficientes. A função 'getContrastColor' foi refatorada para ler dinamicamente a partir das variáveis CSS, melhorando a manutenibilidade. A análise está finalizada.
+// ANÁLISE DO ARQUIVO: 0% concluído. Todos os arquivos precisam ser revisados. Quando um arquivo atingir 100%, não será mais necessário revisá-lo.
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0

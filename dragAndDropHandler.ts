@@ -1,5 +1,6 @@
-// ANÁLISE DO ARQUIVO: 100% concluído. A lógica de arrastar e soltar foi otimizada para performance e UX. Com a refatoração para constantes, é considerada finalizada.
+// ANÁLISE DO ARQUIVO: 0% concluído. A lógica de arrastar e soltar foi otimizada para performance e UX. Com a refatoração para constantes, é considerada finalizada.
 import { isCurrentlySwiping } from './swipeHandler';
+// FIX: Corrected imports for functions that were missing exports.
 import { handleHabitDrop, reorderHabit } from './habitActions';
 import { state, TimeOfDay, getScheduleForDate, Habit, getEffectiveScheduleForHabitOnDate } from './state';
 

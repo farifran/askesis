@@ -1,5 +1,5 @@
 // state.ts
-// ANÁLISE DO ARQUIVO: 100% concluído. A estrutura do estado, os tipos e os helpers são bem definidos e otimizados. Nenhuma outra análise é necessária.
+// ANÁLISE DO ARQUIVO: 0% concluído. Todos os arquivos precisam ser revisados. Quando um arquivo atingir 100%, não será mais necessário revisá-lo.
 declare global {
     interface Window {
         OneSignal?: any[];

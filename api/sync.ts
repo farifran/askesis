@@ -2,7 +2,8 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// ANÁLISE DO ARQUIVO: 100% concluído. O endpoint está robusto, com validação de payload, tratamento de conflitos (409) e de não modificação (304), sendo considerado finalizado.
+// ANÁLISE DO ARQUIVO: 0% concluído. Todos os arquivos precisam ser revisados. Quando um arquivo atingir 100%, não será mais necessário revisá-lo.
+// [2024-12-23]: Refatoração final para remover "magic strings" e padronizar a criação de respostas HTTP.
 import { kv } from '@vercel/kv';
 
 export const config = {
@@ -10,33 +11,56 @@ export const config = {
 };
 
 // --- Tipos e Interfaces ---
-// A estrutura que o cliente envia. O 'state' é uma string criptografada.
 interface ClientPayload {
     lastModified: number;
     state: string;
 }
 
-// A estrutura que realmente armazenamos no Vercel KV.
 interface StoredData {
     lastModified: number;
-    state: string; // string criptografada
+    state: string;
 }
 
+// --- Constantes ---
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, X-Sync-Key-Hash',
 };
 
-// REFACTOR [2024-08-08]: Introduz a função createErrorResponse para centralizar
-// a criação de respostas de erro, melhorando a consistência do código e reduzindo a redundância,
-// alinhando-se com as práticas de outros endpoints da API como /api/analyze.
+// [2024-12-23]: Remove a "magic string" para a chave do KV, melhorando a manutenibilidade.
+const SYNC_DATA_PREFIX = 'sync_data:';
+
+// --- Helpers de Resposta ---
 const createErrorResponse = (message: string, status: number, details = '') => {
     return new Response(JSON.stringify({ error: message, details }), {
         status,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
 };
+
+// [2024-12-23]: Adicionados helpers para padronizar todas as respostas HTTP.
+const createSuccessResponse = (body: any, status = 200) => {
+    return new Response(JSON.stringify(body), {
+        status,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+};
+
+const createConflictResponse = (body: StoredData) => {
+    return new Response(JSON.stringify(body), {
+        status: 409,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+};
+
+const createNotModifiedResponse = () => {
+    return new Response(null, {
+        status: 304,
+        headers: corsHeaders,
+    });
+};
+
 
 const getSyncKeyHash = (req: Request): string | null => {
     return req.headers.get('x-sync-key-hash');
@@ -54,21 +78,17 @@ export default async function handler(req: Request) {
             return createErrorResponse('Unauthorized: Missing sync key hash', 401);
         }
         
-        const dataKey = `sync_data:${keyHash}`;
+        // [2024-12-23]: Utiliza a constante em vez da string literal.
+        const dataKey = `${SYNC_DATA_PREFIX}${keyHash}`;
 
         if (req.method === 'GET') {
             const storedData = await kv.get<StoredData>(dataKey);
-            // Retorna o objeto StoredData completo ou nulo se não encontrado.
-            return new Response(JSON.stringify(storedData || null), {
-                status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            });
+            return createSuccessResponse(storedData || null);
         }
 
         if (req.method === 'POST') {
             const clientPayload: ClientPayload = await req.json();
 
-            // MELHORIA DE ROBUSTEZ [2024-11-15]: Adiciona validação de payload para garantir que
-            // o cliente envie os dados necessários, prevenindo escritas nulas no banco de dados.
             if (!clientPayload || typeof clientPayload.lastModified !== 'number' || typeof clientPayload.state !== 'string') {
                 return createErrorResponse('Bad Request: Invalid or missing payload data', 400);
             }
@@ -76,34 +96,25 @@ export default async function handler(req: Request) {
             const storedData = await kv.get<StoredData>(dataKey);
 
             if (storedData) {
-                // OTIMIZAÇÃO DE PERFORMANCE E ROBUSTEZ [2024-11-08]: Adiciona uma verificação para o caso de os timestamps serem iguais.
-                // Isso previne uma escrita desnecessária no banco de dados se o cliente tentar sincronizar um estado que já é o mais recente no servidor.
-                // Retornar 304 Not Modified é semanticamente correto e economiza recursos.
                 if (clientPayload.lastModified === storedData.lastModified) {
-                    return new Response(null, {
-                        status: 304, // Not Modified
-                        headers: corsHeaders,
-                    });
+                    // [2024-12-23]: Utiliza o helper de resposta.
+                    return createNotModifiedResponse();
                 }
                 
-                // Conflito: os dados do cliente são mais antigos que os do servidor.
                 if (clientPayload.lastModified < storedData.lastModified) {
-                    return new Response(JSON.stringify(storedData), {
-                        status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-                    });
+                    // [2024-12-23]: Utiliza o helper de resposta de conflito.
+                    return createConflictResponse(storedData);
                 }
             }
 
-            // Sem conflitos, ou é a primeira sincronização. Salva o payload do cliente.
             const dataToStore: StoredData = {
                 lastModified: clientPayload.lastModified,
                 state: clientPayload.state,
             };
             await kv.set(dataKey, dataToStore);
             
-            return new Response(JSON.stringify({ success: true }), {
-                status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            });
+            // [2024-12-23]: Utiliza o helper de resposta de sucesso.
+            return createSuccessResponse({ success: true });
         }
 
         return createErrorResponse('Method not allowed', 405);

@@ -2,7 +2,7 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// ANÁLISE DO ARQUIVO: 100% concluído. A lógica da UI para o fluxo de sincronização é clara e finalizada. Nenhuma outra análise é necessária.
+// ANÁLISE DO ARQUIVO: 0% concluído. Todos os arquivos precisam ser revisados. Quando um arquivo atingir 100%, não será mais necessário revisá-lo.
 import { state } from "./state";
 import { ui } from "./ui";
 import { t } from "./i18n";

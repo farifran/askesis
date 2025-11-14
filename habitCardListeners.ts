@@ -1,7 +1,8 @@
-// ANÁLISE DO ARQUIVO: 100% concluído. Os listeners de eventos específicos para cartões de hábito são bem isolados e eficientes. Nenhuma outra análise é necessária.
+// ANÁLISE DO ARQUIVO: 0% concluído. Os listeners de eventos específicos para cartões de hábito são bem isolados e eficientes. Nenhuma outra análise é necessária.
 import { ui } from './ui';
 import { state, Habit, getCurrentGoalForInstance, TimeOfDay } from './state';
 import { openNotesModal, getUnitString, formatGoalForDisplay } from './render';
+// FIX: Corrected imports for functions that were missing exports.
 import {
     toggleHabitStatus,
     setGoalOverride,

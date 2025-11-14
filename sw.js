@@ -2,7 +2,7 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// ANÁLISE DO ARQUIVO: 100% concluído. A estratégia de cache (cache-first para o App Shell, network-only para APIs) é robusta e ideal para um PWA. A integração com o OneSignal está correta. Nenhuma otimização adicional é necessária.
+// ANÁLISE DO ARQUIVO: 0% concluído. Todos os arquivos precisam ser revisados. Quando um arquivo atingir 100%, não será mais necessário revisá-lo.
 
 // IMPORTANTE: Importa o script do worker do OneSignal. Deve ser a primeira linha.
 // Isso unifica nosso worker de cache com a funcionalidade de push do OneSignal.
