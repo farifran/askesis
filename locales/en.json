@@ -54,6 +54,7 @@
     "confirmSyncDisable": "Are you sure you want to disable sync? You will no longer be able to access your data on other devices and new data will not be saved to the cloud.",
     "confirmSyncOverwrite": "The data in the cloud is different from your local data. Do you want to overwrite your local data with the cloud data?",
     "customHabitSubtitle": "Custom habit",
+    "deleteButton": "Delete",
     "dragToAddHabit": "Drag a habit to this time slot.",
     "editButton": "Edit",
     "endButton": "End",

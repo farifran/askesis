@@ -54,6 +54,7 @@
     "confirmSyncDisable": "¿Seguro que quieres desactivar la sincronización? Ya no podrás acceder a tus datos en otros dispositivos y los nuevos datos no se guardarán en la nube.",
     "confirmSyncOverwrite": "Los datos en la nube son diferentes a tus datos locales. ¿Deseas sobrescribir tus datos locales con los datos de la nube?",
     "customHabitSubtitle": "Hábito personalizado",
+    "deleteButton": "Borrar",
     "dragToAddHabit": "Arrastra un hábito a este horario.",
     "editButton": "Editar",
     "endButton": "Finalizar",

@@ -184,8 +184,22 @@ export function setupModalListeners() {
         const index = parseInt(item.dataset.index!, 10);
         const habitTemplate = PREDEFINED_HABITS[index];
         if (habitTemplate) {
+            // OTIMIZAÇÃO DE UX [2024-12-22]: Se o usuário tentar adicionar um hábito predefinido que
+            // já existe e está ativo, o modal de edição é preenchido com o estado atual desse hábito
+            // em vez de usar o modelo padrão. Isso evita a criação de duplicatas e permite uma edição mais fácil.
+            const existingActiveHabit = state.habits.find(h => {
+                const lastSchedule = h.scheduleHistory[h.scheduleHistory.length - 1];
+                const isActive = !h.graduatedOn && !lastSchedule.endDate;
+    
+                if (!isActive) return false;
+    
+                // Compara o 'nameKey' para identificar o hábito predefinido.
+                return h.scheduleHistory.some(s => s.nameKey === habitTemplate.nameKey);
+            });
+    
             closeModal(ui.exploreModal);
-            openEditModal(habitTemplate);
+            // Abre o modal de edição com o hábito existente (se encontrado e ativo) ou com o modelo padrão.
+            openEditModal(existingActiveHabit || habitTemplate);
         }
     });
 
