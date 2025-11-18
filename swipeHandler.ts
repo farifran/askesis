@@ -2,8 +2,9 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-
-// ANÁLISE DO ARQUIVO: 0% concluído. O manipulador de gestos de deslize é robusto e lida com interações complexas (deslize vs. arrastar). Nenhuma outra análise é necessária.
+// ANÁLISE DO ARQUIVO: 100% concluído.
+// O que foi feito: A análise do manipulador de gestos de deslize foi finalizada. O código foi robustecido com a correção de um bug no evento `pointercancel`, que agora reverte corretamente o estado em vez de cometer uma mudança. Além disso, toda a lógica de limpeza (remoção de listeners, reset de estado) foi centralizada em uma função auxiliar `_cleanupAndReset`, eliminando redundância e melhorando a clareza e a manutenibilidade do módulo.
+// O que falta: Nenhuma análise futura é necessária. O módulo é considerado robusto e finalizado.
 
 let isSwiping = false;
 
@@ -82,32 +83,35 @@ export function setupSwipeHandler(habitContainer: HTMLElement) {
     let wasOpenRight = false;
     let swipeActionWidth = 60; // Valor padrão
     let dragEnableTimer: number | null = null;
-
-    const abortSwipe = () => {
-        if (!activeCard) return;
-        
-        // Remove todos os listeners de eventos globais
-        window.removeEventListener('pointermove', handlePointerMove);
-        window.removeEventListener('pointerup', cleanup);
-        window.removeEventListener('pointercancel', cleanup);
-
+    
+    // REATORAÇÃO DE DRY: Centraliza toda a lógica de limpeza e reset de estado.
+    const _cleanupAndReset = () => {
         if (dragEnableTimer) {
             clearTimeout(dragEnableTimer);
         }
-
-        // Restaura o cartão para seu estado pré-interação.
-        activeCard.classList.remove('is-swiping');
-        const content = activeCard.querySelector<HTMLElement>('.habit-content-wrapper');
-        if (content) {
-            content.style.transform = '';
-            content.draggable = true;
+    
+        if (activeCard) {
+            activeCard.classList.remove('is-swiping');
+            const content = activeCard.querySelector<HTMLElement>('.habit-content-wrapper');
+            if (content) {
+                content.style.transform = '';
+                content.draggable = true;
+            }
         }
         
-        // Reseta todas as variáveis de estado para o handler de deslize.
+        window.removeEventListener('pointermove', handlePointerMove);
+        window.removeEventListener('pointerup', handlePointerUp);
+        window.removeEventListener('pointercancel', _cleanupAndReset);
+        
         activeCard = null;
         isSwiping = false;
         swipeDirection = 'none';
         dragEnableTimer = null;
+    };
+
+    const abortSwipe = () => {
+        if (!activeCard) return;
+        _cleanupAndReset();
     };
 
     const handlePointerMove = (e: PointerEvent) => {
@@ -157,36 +161,16 @@ export function setupSwipeHandler(habitContainer: HTMLElement) {
         }
     };
 
-    // REATORAÇÃO DE CLAREZA [2024-09-21]: A função 'cleanup' foi refatorada para melhorar a legibilidade. A lógica de finalização do estado do deslize e de bloqueio de clique foi extraída para as funções auxiliares _finalizeSwipeState e _blockSubsequentClick, respectivamente. Isso isola as responsabilidades e torna o fluxo de controle principal mais fácil de seguir, sem alterar o comportamento.
-    const cleanup = () => {
-        if (dragEnableTimer) {
-            clearTimeout(dragEnableTimer);
-            dragEnableTimer = null;
-        }
-
+    const handlePointerUp = () => {
         if (!activeCard) return;
-
-        const content = activeCard.querySelector<HTMLElement>('.habit-content-wrapper');
-        if (content) {
-            content.draggable = true; // Sempre reativa o arrastar ao final da interação
-            content.style.transform = ''; // Deixa o CSS cuidar da transição
-        }
-        activeCard.classList.remove('is-swiping');
-
+    
         if (swipeDirection === 'horizontal') {
             const deltaX = currentX - startX;
             _finalizeSwipeState(activeCard, deltaX, wasOpenLeft, wasOpenRight);
             _blockSubsequentClick(deltaX);
         }
         
-        // Reseta todas as variáveis de estado
-        activeCard = null;
-        swipeDirection = 'none';
-        isSwiping = false; // Reseta o estado de deslize imediatamente para permitir o arrasto.
-        
-        window.removeEventListener('pointermove', handlePointerMove);
-        window.removeEventListener('pointerup', cleanup);
-        window.removeEventListener('pointercancel', cleanup);
+        _cleanupAndReset();
     };
 
     habitContainer.addEventListener('dragstart', () => {
@@ -237,7 +221,7 @@ export function setupSwipeHandler(habitContainer: HTMLElement) {
         }
 
         window.addEventListener('pointermove', handlePointerMove);
-        window.addEventListener('pointerup', cleanup);
-        window.addEventListener('pointercancel', cleanup);
+        window.addEventListener('pointerup', handlePointerUp);
+        window.addEventListener('pointercancel', _cleanupAndReset);
     });
 }

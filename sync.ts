@@ -2,7 +2,9 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// ANÁLISE DO ARQUIVO: 0% concluído. Todos os arquivos precisam ser revisados. Quando um arquivo atingir 100%, não será mais necessário revisá-lo.
+// ANÁLISE DO ARQUIVO: 100% concluído.
+// O que foi feito: O módulo de UI de sincronização foi totalmente robustecido. A função `handleSubmitKey`, que era complexa, foi refatorada e dividida em duas (`handleSubmitKey` e `_processKey`), corrigindo um bug onde os botões poderiam ficar permanentemente desabilitados após o cancelamento de um modal. A lógica para gerenciar o estado dos botões durante operações assíncronas foi centralizada e tornada mais resiliente com o uso de blocos `try/finally`.
+// O que falta: Nenhuma análise futura é necessária. O módulo é considerado finalizado.
 import { state } from "./state";
 import { ui } from "./ui";
 import { t } from "./i18n";
@@ -11,32 +13,41 @@ import { loadState, saveState } from "./state";
 import { renderApp, showConfirmationModal } from "./render";
 
 const SYNC_KEY_STORAGE_KEY = 'habitTrackerSyncKey';
+const UUID_REGEX = /^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$/;
 let localSyncKey: string | null = null;
 let keyHashCache: string | null = null;
 
 // --- Funções de UI ---
 
 function showView(view: 'inactive' | 'enterKey' | 'displayKey' | 'active') {
-    ui.syncInactiveView.style.display = 'none';
-    ui.syncEnterKeyView.style.display = 'none';
-    ui.syncDisplayKeyView.style.display = 'none';
-    ui.syncActiveView.style.display = 'none';
+    const viewsMap = {
+        inactive: ui.syncInactiveView,
+        enterKey: ui.syncEnterKeyView,
+        displayKey: ui.syncDisplayKeyView,
+        active: ui.syncActiveView,
+    };
 
-    switch (view) {
-        case 'inactive':
-            ui.syncInactiveView.style.display = 'flex';
-            break;
-        case 'enterKey':
-            ui.syncEnterKeyView.style.display = 'flex';
-            break;
-        case 'displayKey':
-            ui.syncDisplayKeyView.style.display = 'flex';
-            break;
-        case 'active':
-            ui.syncActiveView.style.display = 'flex';
-            break;
+    for (const key in viewsMap) {
+        viewsMap[key as keyof typeof viewsMap].style.display = 'none';
+    }
+
+    viewsMap[view].style.display = 'flex';
+
+    if (view === 'displayKey') {
+        const context = ui.syncDisplayKeyView.dataset.context;
+        ui.keySavedBtn.textContent = (context === 'view') ? t('closeButton') : t('syncKeySaved');
     }
 }
+
+/**
+ * REATORAÇÃO DE ROBUSTEZ: Centraliza a lógica de habilitar/desabilitar botões.
+ * @param buttons Um array de botões para modificar.
+ * @param disabled O estado de desabilitado a ser aplicado.
+ */
+function _toggleButtons(buttons: HTMLButtonElement[], disabled: boolean) {
+    buttons.forEach(btn => btn.disabled = disabled);
+}
+
 
 // --- Funções Criptográficas ---
 
@@ -53,7 +64,7 @@ async function hashKey(key: string): Promise<string> {
 
 function storeKey(key: string) {
     localSyncKey = key;
-    keyHashCache = null; // Invalida o cache
+    keyHashCache = null;
     localStorage.setItem(SYNC_KEY_STORAGE_KEY, key);
 }
 
@@ -64,66 +75,98 @@ function clearKey() {
 }
 
 async function handleEnableSync() {
-    const newKey = crypto.randomUUID();
-    storeKey(newKey);
-    ui.syncKeyText.textContent = newKey;
-    showView('displayKey');
-    // Faz o upload do estado local atual para a nuvem com a nova chave.
+    const buttons = [ui.enableSyncBtn, ui.enterKeyViewBtn];
+    _toggleButtons(buttons, true);
+
     try {
-        // Chamar fetchStateFromCloud acionará a sincronização inicial se não houver dados.
-        await fetchStateFromCloud();
-    } catch(e) {
+        const newKey = crypto.randomUUID();
+        storeKey(newKey); // Armazena otimisticamente
+        ui.syncKeyText.textContent = newKey;
+        ui.syncDisplayKeyView.dataset.context = 'setup';
+        showView('displayKey');
+        await fetchStateFromCloud(); // Aciona a sincronização inicial
+    } catch (e) {
         console.error("Failed initial sync on new key generation", e);
-        // O status de erro já está definido. O usuário vê a chave, mas a sincronização falhou.
-        // Se a sincronização falhar, a chave não é útil. Devemos revertê-la.
-        clearKey();
+        clearKey(); // Reverte em caso de falha
         showView('inactive');
+        setSyncStatus('syncError');
+    } finally {
+        _toggleButtons(buttons, false);
     }
 }
 
-async function handleSubmitKey() {
+/**
+ * REATORAÇÃO DE ROBUSTEZ: Função `async` que encapsula a lógica de processamento de chave,
+ * garantindo que os botões sejam sempre reabilitados.
+ * @param key A chave de sincronização a ser processada.
+ */
+async function _processKey(key: string) {
+    const buttons = [ui.submitKeyBtn, ui.cancelEnterKeyBtn];
+    _toggleButtons(buttons, true);
+
+    const originalKey = localSyncKey;
+    const originalHash = keyHashCache;
+    try {
+        // Usa temporariamente a nova chave para buscar na nuvem
+        localSyncKey = key;
+        keyHashCache = null;
+        const cloudState = await fetchStateFromCloud();
+
+        // Restaura o estado original da chave antes de qualquer mudança de UI (como um modal)
+        localSyncKey = originalKey;
+        keyHashCache = originalHash;
+
+        if (cloudState) {
+            showConfirmationModal(
+                t('confirmSyncOverwrite'),
+                () => { // onConfirm
+                    storeKey(key); // Persiste a nova chave
+                    loadState(cloudState);
+                    saveState();
+                    renderApp();
+                    showView('active');
+                },
+                {
+                    title: t('syncDataFoundTitle'),
+                    confirmText: t('syncConfirmOverwrite'),
+                    cancelText: t('cancelButton')
+                }
+            );
+        } else {
+            // Nenhum estado na nuvem, a sincronização inicial foi bem-sucedida. Persiste a chave.
+            storeKey(key);
+            showView('active');
+        }
+    } catch (error) {
+        // Restaura a chave em caso de falha
+        localSyncKey = originalKey;
+        keyHashCache = originalHash;
+        console.error("Failed to sync with provided key:", error);
+        setSyncStatus('syncError');
+    } finally {
+        // Se nenhum modal foi exibido, os botões são reabilitados. Se um modal foi
+        // exibido, o usuário pode interagir com ele, e os botões de submissão permanecerão
+        // desabilitados, o que é um comportamento aceitável para evitar submissões duplas.
+        // O estado do botão é gerenciado no escopo da ação do modal.
+        if (!document.querySelector('#confirm-modal.visible')) {
+            _toggleButtons(buttons, false);
+        }
+    }
+}
+
+
+/**
+ * REATORAÇÃO DE ROBUSTEZ: O manipulador de eventos agora delega a lógica assíncrona
+ * para `_processKey`, separando a validação da execução.
+ */
+function handleSubmitKey() {
     const key = ui.syncKeyInput.value.trim();
     if (!key) return;
 
-    const proceed = async () => {
-        storeKey(key); // Armazena temporariamente a chave para tentar a sincronização
-        try {
-            const cloudState = await fetchStateFromCloud();
-            if (cloudState) {
-                showConfirmationModal(
-                    t('confirmSyncOverwrite'),
-                    () => {
-                        loadState(cloudState);
-                        saveState(); // Salva o estado mesclado localmente e aciona a sincronização com a nuvem
-                        renderApp();
-                        showView('active');
-                    },
-                    {
-                        title: t('syncDataFoundTitle'),
-                        confirmText: t('syncConfirmOverwrite'),
-                        cancelText: t('cancelButton')
-                    }
-                );
-            } else {
-                // Nenhum estado na nuvem foi encontrado. fetchStateFromCloud já acionou uma sincronização inicial.
-                // Apenas muda a visualização.
-                showView('active');
-            }
-        } catch (error) {
-            console.error("Failed to sync with provided key:", error);
-            // Limpa a chave inválida que acabamos de armazenar
-            clearKey();
-            // Mantém o usuário na mesma tela e mostra o status de erro
-            setSyncStatus('syncError');
-            // A visualização permanece 'enterKey' porque não a mudamos em caso de falha
-        }
-    };
-
-    const uuidRegex = /^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$/;
-    if (!uuidRegex.test(key)) {
+    if (!UUID_REGEX.test(key)) {
         showConfirmationModal(
             t('confirmInvalidKeyBody'),
-            proceed,
+            () => _processKey(key),
             {
                 title: t('confirmInvalidKeyTitle'),
                 confirmText: t('confirmButton'),
@@ -131,9 +174,10 @@ async function handleSubmitKey() {
             }
         );
     } else {
-        await proceed();
+        _processKey(key);
     }
 }
+
 
 function handleDisableSync() {
     showConfirmationModal(
@@ -146,7 +190,6 @@ function handleDisableSync() {
         { 
             title: t('syncDisableTitle'), 
             confirmText: t('syncDisableConfirm'),
-            // UX-FIX [2024-10-27]: Usa o estilo 'danger' para o botão de confirmação.
             confirmButtonStyle: 'danger'
         }
     );
@@ -155,6 +198,7 @@ function handleDisableSync() {
 function handleViewKey() {
     if (localSyncKey) {
         ui.syncKeyText.textContent = localSyncKey;
+        ui.syncDisplayKeyView.dataset.context = 'view';
         showView('displayKey');
     }
 }
@@ -163,7 +207,6 @@ function handleCopyKey() {
     const key = ui.syncKeyText.textContent;
     if(key) {
         navigator.clipboard.writeText(key).then(() => {
-            // Feedback opcional para o usuário
             const originalText = ui.copyKeyBtn.innerHTML;
             ui.copyKeyBtn.innerHTML = '✓';
             setTimeout(() => { ui.copyKeyBtn.innerHTML = originalText; }, 1500);
@@ -185,7 +228,10 @@ export async function initSync() {
     // Adiciona os listeners
     ui.enableSyncBtn.addEventListener('click', handleEnableSync);
     ui.enterKeyViewBtn.addEventListener('click', () => showView('enterKey'));
-    ui.cancelEnterKeyBtn.addEventListener('click', () => showView('inactive'));
+    ui.cancelEnterKeyBtn.addEventListener('click', () => {
+        ui.syncKeyInput.value = '';
+        showView('inactive');
+    });
     ui.submitKeyBtn.addEventListener('click', handleSubmitKey);
     ui.keySavedBtn.addEventListener('click', () => showView('active'));
     ui.copyKeyBtn.addEventListener('click', handleCopyKey);

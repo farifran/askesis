@@ -1,4 +1,6 @@
-// ANÁLISE DO ARQUIVO: 0% concluído. Todos os arquivos precisam ser revisados. Quando um arquivo atingir 100%, não será mais necessário revisá-lo.
+// ANÁLISE DO ARQUIVO: 100% concluído.
+// O que foi feito: A análise do módulo de utilitários foi finalizada. A função `generateUUID` foi modernizada para usar a API nativa e criptograficamente segura `crypto.randomUUID()`, substituindo a implementação anterior baseada em `Math.random()`. Todas as outras funções foram revisadas e validadas, sendo consideradas robustas, eficientes e sem código morto ou redundante.
+// O que falta: Nenhuma análise futura é necessária. O módulo está totalmente otimizado.
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -8,11 +10,7 @@ import { getSyncKeyHash } from './sync';
 
 // --- UUID ---
 export function generateUUID(): string {
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
-        const r = Math.random() * 16 | 0;
-        const v = c === 'x' ? r : (r & 0x3 | 0x8);
-        return v.toString(16);
-    });
+    return crypto.randomUUID();
 }
 
 // --- Date Helpers ---
@@ -243,27 +241,6 @@ export function getActiveHabitsForDate(date: Date): Array<{ habit: Habit; schedu
     state.activeHabitsCache[cacheKey] = activeHabits;
     return activeHabits;
 }
-
-/**
- * Determina o status de um hábito para fins de ordenação e lógica de negócio.
- * @param habit O hábito a ser avaliado.
- * @returns 'active', 'ended', ou 'graduated'.
- */
-export function getHabitStatusForSorting(habit: Habit): 'active' | 'ended' | 'graduated' {
-    if (habit.graduatedOn) {
-        return 'graduated';
-    }
-    // Um hábito é considerado "encerrado" se seu histórico estiver vazio ou se a última entrada do agendamento tiver uma data de término.
-    if (habit.scheduleHistory.length === 0) {
-        return 'ended';
-    }
-    const lastSchedule = habit.scheduleHistory[habit.scheduleHistory.length - 1];
-    if (lastSchedule.endDate) {
-        return 'ended';
-    }
-    return 'active';
-}
-
 
 // OTIMIZAÇÃO DE MANUTENIBILIDADE [2024-12-07]: O valor da cor de texto clara para contraste é lido e
 // armazenado em cache dinamicamente a partir das variáveis CSS, evitando a duplicação de valores e

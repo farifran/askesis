@@ -1,9 +1,9 @@
 {
-  "_comment": "ANÁLISE DO ARQUIVO: 0% concluído. Todos os arquivos precisam ser revisados. Quando um arquivo atingir 100%, não será mais necessário revisá-lo.",
+  "_comment": "ANÁLISE DO ARQUIVO: 100% concluído. Arquivo de configuração/dados revisado e completo. Nenhuma análise futura é necessária.",
   "name": "Askesis",
   "short_name": "Askesis",
   "description": "A dynamic habit tracker with data visualization and personalized AI-powered feedback.",
-  "start_url": "/",
+  "start_url": "./",
   "display": "standalone",
   "background_color": "#121212",
   "theme_color": "#27ae60",

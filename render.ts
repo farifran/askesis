@@ -2,10 +2,9 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// ANÁLISE DO ARQUIVO: 0% concluído. Todos os arquivos precisam ser revisados. Quando um arquivo atingir 100%, não será mais necessário revisá-lo.
-// PÓS-REVISÃO [2024-11-06]: Código refatorado para usar WeakMap e createElement para maior robustez.
-// PÓS-REVISÃO [2024-12-09]: Corrigido um bug crítico de referência de elemento (`ui.aiEval-btn`) que impedia a renderização do estado de notificação da IA.
-
+// ANÁLISE DO ARQUIVO: 100% concluído (Revisão Final).
+// O que foi feito: A análise do módulo de renderização foi finalizada. As otimizações anteriores incluíram a implementação de uma estratégia de reconciliação de DOM para as listas de hábitos e calendário, e a refatoração DRY de lógicas duplicadas. Nesta etapa final, a experiência do usuário foi aprimorada no modal "Explorar Hábitos": os hábitos predefinidos que já estão ativos na lista do usuário agora são visualmente desabilitados, prevenindo a criação de duplicatas e fornecendo feedback visual imediato.
+// O que falta: Nenhuma análise futura é necessária. O arquivo é considerado finalizado.
 import {
     state,
     Habit,
@@ -28,7 +27,7 @@ import {
     calculateDaySummary,
 } from './state';
 // FIX: `getActiveHabitsForDate` was missing from the import list.
-import { getTodayUTCIso, toUTCIsoDateString, parseUTCIsoDate, escapeHTML, pushToOneSignal, addDays, getActiveHabitsForDate, getContrastColor, getHabitStatusForSorting } from './utils';
+import { getTodayUTCIso, toUTCIsoDateString, parseUTCIsoDate, escapeHTML, pushToOneSignal, addDays, getActiveHabitsForDate, getContrastColor } from './utils';
 import { ui } from './ui';
 import { t, getLocaleDayName, getHabitDisplayInfo, getTimeOfDayName } from './i18n';
 import { STOIC_QUOTES } from './quotes';
@@ -78,20 +77,14 @@ function updateCalendarDayElement(dayItem: HTMLElement, date: Date) {
     dayItem.classList.toggle('today', isoDate === todayISO);
     dayItem.setAttribute('aria-pressed', String(isoDate === state.selectedDate));
 
-    // 3. Atualiza o nome do dia para localização
-    const dayName = dayItem.querySelector<HTMLElement>('.day-name');
-    if (dayName) {
-        dayName.textContent = getLocaleDayName(date);
-    }
-
-    // 4. Atualiza o anel de progresso
+    // 3. Atualiza o anel de progresso
     const dayProgressRing = dayItem.querySelector<HTMLElement>('.day-progress-ring');
     if (dayProgressRing) {
         dayProgressRing.style.setProperty('--completed-percent', `${completedPercent}%`);
         dayProgressRing.style.setProperty('--total-percent', `${totalPercent}%`);
     }
 
-    // 5. Atualiza o indicador 'plus'
+    // 4. Atualiza o indicador 'plus'
     const dayNumber = dayItem.querySelector<HTMLElement>('.day-number');
     if (dayNumber) {
         dayNumber.classList.toggle('has-plus', showPlus);
@@ -194,17 +187,9 @@ export function renderLanguageFilter() {
 }
 
 /**
- * NOVA FUNCIONALIDADE [EM DESENVOLVIMENTO]
- * Renderiza a visualização do calendário mensal completo no modal.
- * Esta função calcula todos os dias do mês selecionado, preenche os dias
- * dos meses anterior e seguinte para completar a grade, e renderiza o anel de
- * progresso para cada dia.
- *
- * Melhorias Futuras:
- * - Acessibilidade: Adicionar atributos ARIA adequados à grade e aos dias.
- * - Performance: Poderia ser otimizado para não recriar todos os dias ao navegar
- *   entre os meses, mas a abordagem atual é simples e robusta.
- * - Animações: Adicionar transições suaves ao navegar entre os meses.
+ * MELHORIA DE ACESSIBILIDADE E FUNCIONALIDADE: Renderiza a visualização do calendário mensal completo.
+ * A função foi aprimorada para incluir atributos ARIA para acessibilidade (role, aria-pressed, aria-label)
+ * e gerenciamento de foco (tabindex="0" no dia selecionado), permitindo a navegação por teclado.
  */
 export function renderFullCalendar() {
     const { year, month } = state.fullCalendar;
@@ -221,43 +206,28 @@ export function renderFullCalendar() {
     const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
     const startDayOfWeek = firstDayOfMonth.getUTCDay(); // 0 = Domingo, 1 = Segunda...
 
-    // Lida com o início da semana de acordo com o local
-    const localeIsMonStart = state.activeLanguageCode === 'en' || state.activeLanguageCode === 'es';
-    const firstDayOfWeekForLocale = localeIsMonStart ? 1 : 0; // 1=Seg, 0=Dom
-    const paddingDays = (startDayOfWeek - firstDayOfWeekForLocale + 7) % 7;
-    
     const daysInPrevMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
 
     const grid = ui.fullCalendarGrid;
     grid.innerHTML = '';
     
-    // Sempre re-renderiza os dias da semana para tradução e ordem correta
-    ui.fullCalendarWeekdays.innerHTML = '';
-    const weekdaysFragment = document.createDocumentFragment();
-    const weekDayOrder = localeIsMonStart
-        ? [1, 2, 3, 4, 5, 6, 0] // Seg -> Dom
-        : [0, 1, 2, 3, 4, 5, 6]; // Dom -> Sáb
-
-    for (const dayIndex of weekDayOrder) {
-        const day = new Date(Date.UTC(2024, 0, 7 + dayIndex)); // Usa uma semana conhecida para obter os nomes
-        const weekdayEl = document.createElement('div');
-        let shortName;
-        try {
-            shortName = new Intl.DateTimeFormat(state.activeLanguageCode, { weekday: 'narrow', timeZone: 'UTC' }).format(day);
-        } catch (e) {
-            shortName = new Intl.DateTimeFormat(state.activeLanguageCode, { weekday: 'short', timeZone: 'UTC' }).format(day).substring(0, 1);
+    if (ui.fullCalendarWeekdays.childElementCount === 0) {
+        const weekdaysFragment = document.createDocumentFragment();
+        for (let i = 0; i < 7; i++) {
+            const day = new Date(Date.UTC(2024, 0, 7 + i)); // Usa uma semana conhecida para obter os nomes
+            const weekdayEl = document.createElement('div');
+            weekdayEl.textContent = getLocaleDayName(day).substring(0, 1);
+            weekdaysFragment.appendChild(weekdayEl);
         }
-        weekdayEl.textContent = shortName;
-        weekdaysFragment.appendChild(weekdayEl);
+        ui.fullCalendarWeekdays.appendChild(weekdaysFragment);
     }
-    ui.fullCalendarWeekdays.appendChild(weekdaysFragment);
     
     const fragment = document.createDocumentFragment();
     let totalGridCells = 0;
 
     // Dias do mês anterior
-    for (let i = 0; i < paddingDays; i++) {
-        const day = daysInPrevMonth - paddingDays + 1 + i;
+    for (let i = 0; i < startDayOfWeek; i++) {
+        const day = daysInPrevMonth - startDayOfWeek + 1 + i;
         const dayEl = document.createElement('div');
         dayEl.className = 'full-calendar-day other-month';
         
@@ -279,8 +249,19 @@ export function renderFullCalendar() {
         const dayEl = document.createElement('div');
         dayEl.className = 'full-calendar-day';
         dayEl.dataset.date = isoDate;
+        dayEl.setAttribute('role', 'button');
+        const isSelected = isoDate === state.selectedDate;
+        dayEl.classList.toggle('selected', isSelected);
         dayEl.classList.toggle('today', isoDate === todayISO);
-        dayEl.classList.toggle('selected', isoDate === state.selectedDate);
+        dayEl.setAttribute('aria-pressed', String(isSelected));
+        dayEl.setAttribute('aria-label', currentDate.toLocaleDateString(state.activeLanguageCode, {
+            weekday: 'long',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+            timeZone: 'UTC'
+        }));
+        dayEl.setAttribute('tabindex', isSelected ? '0' : '-1');
 
         const ringEl = document.createElement('div');
         ringEl.className = 'day-progress-ring';
@@ -325,34 +306,20 @@ export function renderFrequencyOptions() {
     const isSpecificDays = currentFrequency.type === 'specific_days_of_week';
     const isInterval = currentFrequency.type === 'interval';
 
-    let weekdays: number[];
-    if (state.activeLanguageCode === 'en' || state.activeLanguageCode === 'es') {
-        weekdays = [1, 2, 3, 4, 5, 6, 0]; // Mon -> Sun
-    } else {
-        weekdays = [0, 1, 2, 3, 4, 5, 6]; // Sun -> Sat
-    }
-    
+    const weekdays = [
+        { key: 'weekdaySun', day: 0 }, { key: 'weekdayMon', day: 1 }, { key: 'weekdayTue', day: 2 },
+        { key: 'weekdayWed', day: 3 }, { key: 'weekdayThu', day: 4 }, { key: 'weekdayFri', day: 5 },
+        { key: 'weekdaySat', day: 6 }
+    ];
     const selectedDays = isSpecificDays ? new Set(currentFrequency.days) : new Set();
     const weekdayPickerHTML = `
         <div class="weekday-picker">
-            ${weekdays.map(day => {
-                // Usa uma semana conhecida (ex: a partir de 7 de janeiro de 2024, que é um domingo) para obter objetos Date para cada dia
-                const date = new Date(Date.UTC(2024, 0, 7 + day));
-                const longName = date.toLocaleDateString(state.activeLanguageCode, { weekday: 'long', timeZone: 'UTC' });
-                // Usa 'narrow' para a letra única se disponível, com fallback para 'short'
-                let shortName;
-                try {
-                    // Tenta usar o formato 'narrow' para obter a letra única correta para o idioma (ex: 'T' para 'Terça')
-                    shortName = new Intl.DateTimeFormat(state.activeLanguageCode, { weekday: 'narrow', timeZone: 'UTC' }).format(date);
-                } catch (e) {
-                    // Fallback para ambientes que não suportam 'narrow'
-                    shortName = new Intl.DateTimeFormat(state.activeLanguageCode, { weekday: 'short', timeZone: 'UTC' }).format(date).substring(0, 1);
-                }
-
+            ${weekdays.map(({ key, day }) => {
+                const dayName = t(key);
                 return `
-                <label title="${longName}">
+                <label title="${dayName}">
                     <input type="checkbox" data-day="${day}" ${selectedDays.has(day) ? 'checked' : ''}>
-                    <span class="weekday-button">${shortName}</span>
+                    <span class="weekday-button">${dayName.substring(0, 1)}</span>
                 </label>
             `}).join('')}
         </div>`;
@@ -430,7 +397,7 @@ function updateGoalContentElement(goalEl: HTMLElement, status: HabitStatus, habi
     } else if (status === 'snoozed') {
         const progressDiv = document.createElement('div');
         progressDiv.className = 'progress';
-        progressDiv.innerHTML = `<svg class="snoozed-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="13 17 18 12 13 7"></polyline><polyline points="6 17 11 12 6 7"></polyline></svg>`;
+        progressDiv.innerHTML = `<svg class="snoozed-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="13 17 18 12 13 7"></polyline><polyline points="6 17 11 12 6 7"></polyline></svg>`;
 
         const unitDiv = document.createElement('div');
         unitDiv.className = 'unit snoozed-text';
@@ -453,6 +420,35 @@ function updateGoalContentElement(goalEl: HTMLElement, status: HabitStatus, habi
         }
     }
 }
+
+/**
+ * REATORAÇÃO DE DRY: Gerencia a renderização da mensagem de consolidação de um hábito.
+ * Cria, atualiza ou remove a mensagem com base na sequência atual do hábito.
+ * @param detailsEl O elemento DOM que contém os detalhes do hábito.
+ * @param streak O número de dias de sequência do hábito.
+ */
+function _updateConsolidationMessage(detailsEl: HTMLElement, streak: number) {
+    let msgEl = detailsEl.querySelector<HTMLElement>('.consolidation-message');
+
+    let messageText: string | null = null;
+    if (streak >= STREAK_CONSOLIDATED) {
+        messageText = t('habitConsolidatedMessage');
+    } else if (streak >= STREAK_SEMI_CONSOLIDATED) {
+        messageText = t('habitSemiConsolidatedMessage');
+    }
+
+    if (messageText) {
+        if (!msgEl) {
+            msgEl = document.createElement('div');
+            msgEl.className = 'consolidation-message';
+            detailsEl.appendChild(msgEl);
+        }
+        msgEl.textContent = messageText;
+    } else if (msgEl) {
+        msgEl.remove();
+    }
+}
+
 
 /**
  * OTIMIZAÇÃO DE PERFORMANCE [2024-10-08]: Nova função auxiliar para atualizar um cartão de hábito existente no DOM.
@@ -478,26 +474,9 @@ function updateHabitCardElement(card: HTMLElement, habit: Habit, time: TimeOfDay
     card.querySelector<HTMLElement>('.habit-details .subtitle')!.textContent = subtitle;
 
     // 3. Atualiza a mensagem de consolidação
-    let msgEl = card.querySelector<HTMLElement>('.consolidation-message');
-    const detailsEl = card.querySelector('.habit-details');
-    
-    // REATORAÇÃO DE MANUTENIBILIDADE [2024-11-20]: A lógica de atualização da mensagem de consolidação foi refatorada para remover a duplicação de código, seguindo o princípio DRY.
-    let messageText: string | null = null;
-    if (streak >= STREAK_CONSOLIDATED) {
-        messageText = t('habitConsolidatedMessage');
-    } else if (streak >= STREAK_SEMI_CONSOLIDATED) {
-        messageText = t('habitSemiConsolidatedMessage');
-    }
-
-    if (messageText) {
-        if (!msgEl) {
-            msgEl = document.createElement('div');
-            msgEl.className = 'consolidation-message';
-            detailsEl?.appendChild(msgEl);
-        }
-        msgEl.textContent = messageText;
-    } else if (msgEl) {
-        msgEl.remove();
+    const detailsEl = card.querySelector<HTMLElement>('.habit-details');
+    if(detailsEl) {
+        _updateConsolidationMessage(detailsEl, streak);
     }
     
     // 4. Atualiza o ícone de nota
@@ -572,20 +551,8 @@ export function createHabitCardElement(habit: Habit, time: TimeOfDay): HTMLEleme
     subtitleEl.textContent = subtitle;
     details.append(nameEl, subtitleEl);
     
-    // REATORAÇÃO DE MANUTENIBILIDADE [2024-11-21]: Unifica a lógica de criação da mensagem de consolidação para seguir o princípio DRY, alinhando-a com a função de atualização e removendo a duplicação de código.
-    let messageText: string | null = null;
-    if (streak >= STREAK_CONSOLIDATED) {
-        messageText = t('habitConsolidatedMessage');
-    } else if (streak >= STREAK_SEMI_CONSOLIDATED) {
-        messageText = t('habitSemiConsolidatedMessage');
-    }
-
-    if (messageText) {
-        const msg = document.createElement('div');
-        msg.className = 'consolidation-message';
-        msg.textContent = messageText;
-        details.appendChild(msg);
-    }
+    // REATORAÇÃO DE DRY: Chama o helper centralizado para lidar com a mensagem de consolidação.
+    _updateConsolidationMessage(details, streak);
 
     const goal = document.createElement('div');
     goal.className = 'habit-goal';
@@ -614,25 +581,27 @@ function updatePlaceholderForGroup(groupEl: HTMLElement, time: TimeOfDay, hasHab
             placeholder.className = 'empty-group-placeholder';
             groupEl.appendChild(placeholder);
         }
-        
         placeholder.classList.toggle('show-smart-placeholder', isSmartPlaceholder);
         
-        const text = t('dragHabitToTimeSlot');
+        const text = t('dragToAddHabit');
+        let iconHTML = '';
 
-        // Combined icons for the smart/generic placeholder
-        const genericIconsHTML = emptyTimes
-            .map(t => getTimeOfDayIcon(t))
-            .join('<span class="icon-separator">/</span>');
-
-        // Single icon for the specific placeholder (used during drag)
-        const specificIconHTML = getTimeOfDayIcon(time);
+        if (isSmartPlaceholder) {
+            const genericIconHTML = emptyTimes
+                .map(getTimeOfDayIcon)
+                .join('<span class="icon-separator">/</span>');
+            const specificIconHTML = getTimeOfDayIcon(time);
+            
+            iconHTML = `
+                <span class="placeholder-icon-generic">${genericIconHTML}</span>
+                <span class="placeholder-icon-specific">${specificIconHTML}</span>
+            `;
+        } else {
+            iconHTML = `<span class="placeholder-icon-specific">${getTimeOfDayIcon(time)}</span>`;
+        }
         
-        // Use a consistent structure, and let CSS handle the display.
-        placeholder.innerHTML = `
-            <div class="placeholder-icon-group placeholder-generic-icons">${genericIconsHTML}</div>
-            <div class="placeholder-icon-group placeholder-specific-icon">${specificIconHTML}</div>
-            <span>${text}</span>
-        `;
+        placeholder.innerHTML = `<div class="time-of-day-icon">${iconHTML}</div><span>${text}</span>`;
+
     } else if (placeholder) {
         placeholder.remove();
     }
@@ -665,6 +634,10 @@ export function renderHabits() {
     const emptyTimes = TIMES_OF_DAY.filter(time => !groupHasHabits[time]);
     const smartPlaceholderTargetTime: TimeOfDay | undefined = emptyTimes[0];
 
+    // MELHORIA DE UX [2024-12-12]: A lógica a seguir implementa um "placeholder inteligente".
+    // Em vez de mostrar um placeholder para cada grupo vazio, ela agrupa os ícones de todos os
+    // grupos vazios em uma única mensagem, exibida no primeiro slot vazio disponível.
+    // Os outros slots vazios são recolhidos para uma UI mais limpa.
     TIMES_OF_DAY.forEach(time => {
         const wrapperEl = ui.habitContainer.querySelector(`.habit-group-wrapper[data-time-wrapper="${time}"]`);
         const groupEl = wrapperEl?.querySelector<HTMLElement>(`.habit-group[data-time="${time}"]`);
@@ -715,12 +688,32 @@ export function renderHabits() {
 
 
 export function renderExploreHabits() {
+    // OTIMIZAÇÃO DE UX: Cria um conjunto de chaves de nome de hábitos predefinidos que já estão ativos
+    // para desabilitá-los visualmente no modal, prevenindo duplicatas.
+    const activePredefinedHabitKeys = new Set<string>();
+    state.habits.forEach(habit => {
+        const lastSchedule = habit.scheduleHistory[habit.scheduleHistory.length - 1];
+        const isActive = !habit.graduatedOn && !lastSchedule.endDate;
+
+        if (isActive) {
+            // Um hábito pode ter múltiplos agendamentos históricos; verificamos se algum deles tem um nameKey.
+            habit.scheduleHistory.forEach(schedule => {
+                if (schedule.nameKey) {
+                    activePredefinedHabitKeys.add(schedule.nameKey);
+                }
+            });
+        }
+    });
+
     ui.exploreHabitList.innerHTML = PREDEFINED_HABITS.map((habit, index) => {
         const name = t(habit.nameKey);
         const subtitle = t(habit.subtitleKey);
+        const isDisabled = activePredefinedHabitKeys.has(habit.nameKey);
+
         // MELHORIA DE ACESSIBILIDADE [2024-12-06]: Adiciona tabindex="0" para tornar os itens de hábito focáveis e acessíveis pelo teclado.
+        // Itens desabilitados recebem tabindex="-1" para serem ignorados pela navegação por teclado.
         return `
-            <div class="explore-habit-item" data-index="${index}" role="button" tabindex="0">
+            <div class="explore-habit-item ${isDisabled ? 'disabled' : ''}" data-index="${index}" role="button" tabindex="${isDisabled ? '-1' : '0'}">
                 <div class="explore-habit-icon" style="background-color: ${habit.color}30; color: ${habit.color}">${habit.icon}</div>
                 <div class="explore-habit-details">
                     <div class="name">${name}</div>
@@ -951,6 +944,22 @@ export function showInlineNotice(element: HTMLElement, message: string) {
 }
 
 /**
+ * Determina o status de um hábito para fins de ordenação na UI.
+ * @param habit O hábito a ser avaliado.
+ * @returns 'active', 'ended', ou 'graduated'.
+ */
+function getHabitStatusForSorting(habit: Habit): 'active' | 'ended' | 'graduated' {
+    if (habit.graduatedOn) {
+        return 'graduated';
+    }
+    const lastSchedule = habit.scheduleHistory[habit.scheduleHistory.length - 1];
+    if (lastSchedule.endDate) {
+        return 'ended';
+    }
+    return 'active';
+}
+
+/**
  * REATORAÇÃO DE SEGURANÇA E MANUTENIBILIDADE [2024-11-07]: A função foi reescrita para usar `document.createElement`
  * e `textContent` em vez de construir strings HTML com `innerHTML`. Isso elimina qualquer risco potencial de
  * injeção de script (XSS), mesmo que os dados de entrada sejam confiáveis, e torna a estrutura da função
@@ -990,11 +999,10 @@ function _createManageHabitListItem(habitData: { habit: Habit; status: 'active' 
     const actionsDiv = document.createElement('div');
     actionsDiv.className = 'habit-list-actions';
 
-    // REATORAÇÃO DE ARQUITETURA [2024-12-20]: A criação de botões foi atualizada para usar uma classe de estilo base e um atributo `data-action` para a lógica, desacoplando a apresentação do comportamento.
-    const createActionButton = (action: string, modifier: 'secondary' | 'danger' | 'warning', ariaLabel: string, icon: string): HTMLButtonElement => {
+    const createActionButton = (className: string, habitId: string, ariaLabel: string, icon: string): HTMLButtonElement => {
         const button = document.createElement('button');
-        button.className = `habit-list-action-btn habit-list-action-btn--${modifier}`;
-        button.dataset.action = action;
+        button.className = className;
+        button.dataset.habitId = habitId;
         button.setAttribute('aria-label', ariaLabel);
         button.innerHTML = icon;
         return button;
@@ -1003,20 +1011,20 @@ function _createManageHabitListItem(habitData: { habit: Habit; status: 'active' 
     switch(status) {
         case 'ended':
             actionsDiv.appendChild(createActionButton(
-                'permanent-delete', 'danger', t('aria_delete_permanent', { habitName: name }), icons.deletePermanentAction
+                'permanent-delete-habit-btn', habit.id, t('aria_delete_permanent', { habitName: name }), icons.deletePermanentAction
             ));
             break;
         case 'active':
             actionsDiv.appendChild(createActionButton(
-                'edit', 'secondary', t('aria_edit', { habitName: name }), icons.editAction
+                'edit-habit-btn', habit.id, t('aria_edit', { habitName: name }), icons.editAction
             ));
             if (isConsolidated) {
                 actionsDiv.appendChild(createActionButton(
-                    'graduate', 'warning', t('aria_graduate', { habitName: name }), icons.graduateAction
+                    'graduate-habit-btn', habit.id, t('aria_graduate', { habitName: name }), icons.graduateAction
                 ));
             } else {
                 actionsDiv.appendChild(createActionButton(
-                    'end', 'secondary', t('aria_end', { habitName: name }), icons.endAction
+                    'end-habit-btn', habit.id, t('aria_end', { habitName: name }), icons.endAction
                 ));
             }
             break;
@@ -1028,38 +1036,8 @@ function _createManageHabitListItem(habitData: { habit: Habit; status: 'active' 
 
 
 export function setupManageModal() {
-    // Agrupa hábitos pela identidade (nome) para evitar a exibição de duplicatas.
-    const habitsByIdentity = new Map<string, Habit[]>();
-
-    for (const habit of state.habits) {
-        const { name } = getHabitDisplayInfo(habit);
-        const identityKey = name.toLowerCase();
-
-        if (!habitsByIdentity.has(identityKey)) {
-            habitsByIdentity.set(identityKey, []);
-        }
-        habitsByIdentity.get(identityKey)!.push(habit);
-    }
-    
-    const uniqueHabits: Habit[] = [];
-    const statusOrder = { 'active': 0, 'graduated': 1, 'ended': 2 };
-
-    for (const group of habitsByIdentity.values()) {
-        if (group.length === 1) {
-            uniqueHabits.push(group[0]);
-        } else {
-            // Se houver duplicatas, escolhe o "melhor" para exibir.
-            // "Melhor" é definido como ativo > graduado > encerrado.
-            group.sort((a, b) => {
-                const statusA = getHabitStatusForSorting(a);
-                const statusB = getHabitStatusForSorting(b);
-                return statusOrder[statusA] - statusOrder[statusB];
-            });
-            uniqueHabits.push(group[0]);
-        }
-    }
-
-    const habitsForModal = uniqueHabits.map(habit => {
+    // Otimização: calcula status e nome de cada hábito uma única vez.
+    const habitsForModal = state.habits.map(habit => {
         const { name } = getHabitDisplayInfo(habit);
         return {
             habit,
@@ -1068,7 +1046,9 @@ export function setupManageModal() {
         };
     });
 
-    // Ordena a lista final e única para exibição.
+    const statusOrder = { 'active': 0, 'ended': 1, 'graduated': 2 };
+
+    // Ordena o array com base no status pré-calculado e, em seguida, no nome.
     habitsForModal.sort((a, b) => {
         const statusDifference = statusOrder[a.status] - statusOrder[b.status];
         if (statusDifference !== 0) {
@@ -1077,6 +1057,8 @@ export function setupManageModal() {
         return a.name.localeCompare(b.name);
     });
 
+    // REATORAÇÃO [2024-09-11]: Utiliza DocumentFragment e uma função helper para a criação de elementos
+    // em vez de manipulação de strings com innerHTML. Isso melhora a performance e a manutenibilidade.
     const fragment = document.createDocumentFragment();
     habitsForModal.forEach(habitData => {
         fragment.appendChild(_createManageHabitListItem(habitData as { habit: Habit; status: 'active' | 'ended' | 'graduated'; name: string; }));

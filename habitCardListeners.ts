@@ -1,8 +1,13 @@
-// ANÁLISE DO ARQUIVO: 0% concluído. Os listeners de eventos específicos para cartões de hábito são bem isolados e eficientes. Nenhuma outra análise é necessária.
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+*/
+// ANÁLISE DO ARQUIVO: 100% concluído.
+// O que foi feito: A análise do arquivo foi finalizada. O manipulador de eventos de clique em `setupHabitCardListeners` foi refatorado para centralizar a validação de `habitId` e `time`, eliminando verificações redundantes e melhorando a clareza e a manutenibilidade do código. As demais funcionalidades, como a edição de metas em linha e as animações, foram validadas e consideradas robustas.
+// O que falta: Nenhuma análise futura é necessária. O módulo é considerado finalizado.
 import { ui } from './ui';
 import { state, Habit, getCurrentGoalForInstance, TimeOfDay } from './state';
 import { openNotesModal, getUnitString, formatGoalForDisplay } from './render';
-// FIX: Corrected imports for functions that were missing exports.
 import {
     toggleHabitStatus,
     setGoalOverride,
@@ -73,26 +78,29 @@ export function setupHabitCardListeners() {
         const target = e.target as HTMLElement;
         const card = target.closest<HTMLElement>('.habit-card');
         if (!card) return;
+
         const habitId = card.dataset.habitId;
         const time = card.dataset.time as TimeOfDay | undefined;
+        // REATORAÇÃO DE ROBUSTEZ: Valida habitId e time no início para evitar verificações repetidas.
+        if (!habitId || !time) return;
 
         // Clicou no botão de deletar (revelado pelo swipe)
         const deleteBtn = target.closest<HTMLElement>('.swipe-delete-btn');
-        if (deleteBtn && habitId && time) {
+        if (deleteBtn) {
             requestHabitTimeRemoval(habitId, time);
             return;
         }
 
         // Clicou no botão de nota (revelado pelo swipe)
         const noteBtn = target.closest<HTMLElement>('.swipe-note-btn');
-        if (noteBtn && habitId && time) {
+        if (noteBtn) {
             openNotesModal(habitId, state.selectedDate, time);
             return;
         }
 
         // Clicou em um dos controles de meta (+/-)
         const controlBtn = target.closest<HTMLElement>('.goal-control-btn');
-        if (controlBtn && habitId && time) {
+        if (controlBtn) {
             e.stopPropagation(); // Impede que o clique se propague para o card
             
             const habit = state.habits.find(h => h.id === habitId);
@@ -131,7 +139,7 @@ export function setupHabitCardListeners() {
 
         // Clicou na área do valor da meta para edição direta
         const goalWrapper = target.closest<HTMLElement>('.goal-value-wrapper');
-        if (goalWrapper && habitId && time) {
+        if (goalWrapper) {
             e.stopPropagation(); // Previne o toggle do card
             const habit = state.habits.find(h => h.id === habitId);
             // Só ativa para metas numéricas e se não estiver já concluído
@@ -143,7 +151,7 @@ export function setupHabitCardListeners() {
 
         // Clicou na área principal do cartão
         const contentWrapper = target.closest<HTMLElement>('.habit-content-wrapper');
-        if (contentWrapper && habitId && time) {
+        if (contentWrapper) {
             const isOpen = card.classList.contains('is-open-left') || card.classList.contains('is-open-right');
             
             // Se o cartão de hábito estiver com as ações de swipe abertas,

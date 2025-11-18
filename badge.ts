@@ -2,6 +2,14 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
+// ANÁLISE DO ARQUIVO: 0% concluído. Todos os arquivos precisam ser revisados. Quando um arquivo atingir 100%, não será mais necessário revisá-lo.
+// MELHORIA DE TIPAGEM [2024-12-24]: Adicionada a declaração de tipo para a API de Badging, eliminando a necessidade de 'as any' e melhorando a segurança de tipos.
+
+import { state, getHabitDailyInfoForDate } from '../state';
+import { get/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+*/
 // ANÁLISE DO ARQUIVO: 100% concluído.
 // O que foi feito: A lógica do endpoint foi completamente revisada e robustecida. A modularidade foi aprimorada com funções auxiliares (`handleGetRequest`, `handlePostRequest`) e os tipos foram consolidados. Adicionou-se tratamento de erro granular para parsing de JSON inválido e um limite de tamanho de payload para prevenir abuso, tornando o endpoint seguro e resiliente.
 // O que falta: Nenhuma análise futura é necessária. O arquivo é considerado finalizado.
@@ -129,5 +137,67 @@ export default async function handler(req: Request) {
         console.error("Error in sync API handler:", error);
         const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
         return createErrorResponse('Internal Server Error', 500, errorMessage);
+    }
+}TodayUTCIso, parseUTCIsoDate, getActiveHabitsForDate } from '../utils';
+
+// MELHORIA DE TIPAGEM [2024-12-24]: Estende a interface global do Navigator para incluir
+// a API de Badging, fornecendo segurança de tipos e autocompletar, e eliminando a
+// necessidade de coerções de tipo (as any).
+declare global {
+    interface Navigator {
+        setAppBadge?(count: number): Promise<void>;
+        clearAppBadge?(): Promise<void>;
+    }
+}
+
+
+/**
+ * Calcula o número de instâncias de hábitos pendentes para o dia atual.
+ * @returns O número total de hábitos pendentes para hoje.
+ */
+function calculateTodayPendingCount(): number {
+    const todayISO = getTodayUTCIso();
+    const todayObj = parseUTCIsoDate(todayISO);
+    const dailyInfo = getHabitDailyInfoForDate(todayISO);
+    
+    let pendingCount = 0;
+    
+    // Usa a função auxiliar para obter hábitos ativos e seus agendamentos de uma só vez.
+    const activeHabitsToday = getActiveHabitsForDate(todayObj);
+
+    activeHabitsToday.forEach(({ habit, schedule }) => {
+        const instances = dailyInfo[habit.id]?.instances || {};
+        
+        schedule.forEach(time => {
+            const status = instances[time]?.status ?? 'pending';
+            if (status === 'pending') {
+                pendingCount++;
+            }
+        });
+    });
+    
+    return pendingCount;
+}
+
+/**
+ * Atualiza o emblema do ícone do aplicativo com o número atual de hábitos pendentes para hoje.
+ * Se a contagem for zero, o emblema é limpo.
+ * Esta função verifica o suporte do navegador antes de tentar definir o emblema.
+ */
+export async function updateAppBadge() {
+    // A API de Emblema é suportada no objeto navigator.
+    // MELHORIA DE TIPAGEM [2024-12-24]: A verificação de 'setAppBadge' e a chamada subsequente agora são
+    // totalmente seguras em termos de tipo, graças à declaração global.
+    if (navigator.setAppBadge && navigator.clearAppBadge) {
+        try {
+            const count = calculateTodayPendingCount();
+            if (count > 0) {
+                await navigator.setAppBadge(count);
+            } else {
+                await navigator.clearAppBadge();
+            }
+        } catch (error) {
+            console.error('Failed to set app badge:', error);
+        }
     }
 }

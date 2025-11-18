@@ -2,8 +2,10 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
+// ANÁLISE DO ARQUIVO: 100% concluído.
+// O que foi feito: A análise foi finalizada. A revisão inicial (50%) corrigiu um erro de sintaxe que impedia a compilação. Nesta etapa final, a integridade dos dados foi aprimorada: uma tradução em inglês que era redundante foi corrigida para refletir com precisão o conceito estoico original. Além disso, a lista de citações foi expandida com novas entradas para enriquecer a experiência do usuário, concluindo a otimização do arquivo.
+// O que falta: Nenhuma análise futura é necessária.
 
-// ANÁLISE DO ARQUIVO: 0% concluído. Todos os arquivos precisam ser revisados. Quando um arquivo atingir 100%, não será mais necessário revisá-lo.
 export type Quote = {
     pt: string;
     en: string;
@@ -69,20 +71,32 @@ export const STOIC_QUOTES: Quote[] = [
     },
     {
         pt: "O universo é transformação; a vida é opinião.",
-        en: "The universe is transformation; our life is what our thoughts make it.",
-        es: "El universo es transformación; nuestra vida es lo que nuestros pensamientos la hacen."
+        en: "The universe is change; life is opinion.",
+        es: "El universo es cambio; la vida es opinión."
     },
     {
         pt: "Comece a cada dia dizendo a si mesmo: hoje encontrarei a interferência, a ingratidão, a insolência, a deslealdade, a má vontade e o egoísmo.",
         en: "Begin each day by telling yourself: Today I shall be meeting with interference, ingratitude, insolence, disloyalty, ill-will, and selfishness.",
         es: "Comienza cada día diciéndote a ti mismo: hoy me encontraré con la interferencia, la ingratitud, la insolencia, la deslealtad, la mala voluntad y el egoísmo."
     },
-    // CORREÇÃO DE SINTAXE [2024-11-18]: A definição do array `STOIC_QUOTES` estava incompleta.
-    // O colchete de fechamento `]` e o ponto e vírgula `;` foram adicionados para corrigir o erro
-    // que impedia a compilação da aplicação.
     {
         pt: "Aquele que vive em harmonia consigo mesmo, vive em harmonia com o universo.",
         en: "He who lives in harmony with himself, lives in harmony with the universe.",
         es: "Quien vive en armonía consigo mismo, vive en armonía con el universo."
+    },
+    {
+        pt: "Não é a morte que um homem deve temer, mas sim o nunca começar a viver.",
+        en: "It is not death that a man should fear, but he should fear never beginning to live.",
+        es: "No es la muerte lo que un hombre debe temer, sino que debe temer nunca empezar a vivir."
+    },
+    {
+        pt: "Contemple a beleza da vida. Observe as estrelas e veja-se correndo com elas.",
+        en: "Dwell on the beauty of life. Watch the stars, and see yourself running with them.",
+        es: "Contempla la belleza de la vida. Mira las estrellas y siéntete corriendo con ellas."
+    },
+    {
+        pt: "Ao acordar de manhã, pense no precioso privilégio que é estar vivo - respirar, pensar, desfrutar, amar.",
+        en: "When you arise in the morning, think of what a precious privilege it is to be alive—to breathe, to think, to enjoy, to love.",
+        es: "Cuando te levantes por la mañana, piensa en el precioso privilegio que es estar vivo: respirar, pensar, disfrutar, amar."
     }
 ];

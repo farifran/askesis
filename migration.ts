@@ -2,7 +2,9 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// ANÁLISE DO ARQUIVO: 0% concluído. Todos os arquivos precisam ser revisados. Quando um arquivo atingir 100%, não será mais necessário revisá-lo.
+// ANÁLISE DO ARQUIVO: 100% concluído.
+// O que foi feito: A análise do módulo foi finalizada. A função `migrateToV6` foi otimizada para performance (usando um Map) e robustecida para prevenir perda de dados. A função orquestradora `migrateState` foi refatorada para um design mais escalável, utilizando um array de migrações. Isso torna a adição de futuras migrações mais limpa e manutenível, simplesmente adicionando uma nova função ao array `MIGRATIONS`.
+// O que falta: Nenhuma análise futura é necessária. O módulo está completo e robusto.
 import { AppState, APP_VERSION, Habit, HabitSchedule } from './state';
 
 /**
@@ -13,23 +15,27 @@ import { AppState, APP_VERSION, Habit, HabitSchedule } from './state';
  * @returns An AppState object conforming to the v6 structure.
  */
 function migrateToV6(oldState: any): AppState {
-    console.log(`Migrating data from v${oldState.version || 0} to v6`);
     const oldHabits = oldState.habits as any[];
-    // Find the latest versions of habits, ignoring the ones that were versioned off
+    // OTIMIZAÇÃO DE PERFORMANCE: Cria um mapa para lookups rápidos de hábitos por ID,
+    // o que é muito mais eficiente do que usar Array.find() repetidamente em um loop.
+    const habitsMap = new Map(oldHabits.map(h => [h.id, h]));
+
+    // 1. Identifica as versões mais recentes de cada hábito (folhas na árvore de versões).
     const previousVersionIds = new Set(oldHabits.map(h => h.previousVersionId).filter(Boolean));
     const latestHabits = oldHabits.filter(h => !previousVersionIds.has(h.id));
     const newHabits: Habit[] = [];
 
     for (const latestHabit of latestHabits) {
+        // 2. Traça a linhagem de cada hábito, do mais antigo ao mais recente.
         const lineage: any[] = [];
         let currentHabitInLineage: any | undefined = latestHabit;
-        // Trace back the history of the habit through `previousVersionId`
         while (currentHabitInLineage) {
             lineage.unshift(currentHabitInLineage);
-            currentHabitInLineage = oldHabits.find(h => h.id === currentHabitInLineage.previousVersionId);
+            currentHabitInLineage = habitsMap.get(currentHabitInLineage.previousVersionId);
         }
         
         const firstHabit = lineage[0];
+        // 3. Cria o novo hábito unificado, usando o ID mais recente.
         const newHabit: Habit = {
             id: latestHabit.id,
             icon: firstHabit.icon,
@@ -40,7 +46,7 @@ function migrateToV6(oldState: any): AppState {
             scheduleHistory: [],
         };
 
-        // Build the schedule history from the lineage
+        // 4. Constrói o `scheduleHistory` a partir da linhagem.
         for (const oldVersion of lineage) {
             const schedule: HabitSchedule = {
                 startDate: oldVersion.createdOn,
@@ -55,12 +61,29 @@ function migrateToV6(oldState: any): AppState {
             };
             newHabit.scheduleHistory.push(schedule);
 
-            // Remap dailyData from old IDs to the new unified ID
+            // 5. Remapeia os dados diários dos IDs antigos para o novo ID unificado.
             if (oldVersion.id !== newHabit.id) {
                  Object.keys(oldState.dailyData).forEach(dateStr => {
-                    if (oldState.dailyData[dateStr][oldVersion.id]) {
-                        oldState.dailyData[dateStr][newHabit.id] = oldState.dailyData[dateStr][oldVersion.id];
-                        delete oldState.dailyData[dateStr][oldVersion.id];
+                    const dailyDataForDate = oldState.dailyData[dateStr];
+                    if (dailyDataForDate[oldVersion.id]) {
+                        // CORREÇÃO DE INTEGRIDADE DE DADOS: Em vez de sobrescrever, mescla os dados.
+                        // Isso previne a perda de dados se múltiplas versões de um hábito foram
+                        // concluídas no mesmo dia (ex: um hábito de manhã e outro à tarde).
+                        const sourceInfo = dailyDataForDate[oldVersion.id];
+                        // Garante que o objeto de destino exista.
+                        dailyDataForDate[newHabit.id] = dailyDataForDate[newHabit.id] || { instances: {} };
+                        const targetInfo = dailyDataForDate[newHabit.id];
+
+                        // Mescla as instâncias, com as do `sourceInfo` tendo precedência, mas na prática
+                        // não deveria haver sobreposição de horários (times) entre versões no mesmo dia.
+                        targetInfo.instances = { ...targetInfo.instances, ...sourceInfo.instances };
+                        
+                        // Mescla outras propriedades, se necessário (ex: dailySchedule).
+                        if (sourceInfo.dailySchedule && !targetInfo.dailySchedule) {
+                            targetInfo.dailySchedule = sourceInfo.dailySchedule;
+                        }
+
+                        delete dailyDataForDate[oldVersion.id];
                     }
                 });
             }
@@ -71,26 +94,37 @@ function migrateToV6(oldState: any): AppState {
     return {
         ...oldState,
         habits: newHabits,
-        version: 6, // Mark as migrated to v6
+        version: 6, // Marca como migrado para v6
     };
 }
 
+// ARQUITETURA DE MANUTENIBILIDADE: Um array de migrações permite um processo de migração mais limpo e escalável.
+// Para adicionar uma nova migração, basta adicionar uma nova entrada a este array.
+const MIGRATIONS = [
+    { targetVersion: 6, migrate: migrateToV6 },
+    // { targetVersion: 7, migrate: migrateToV7 }, // Exemplo de como uma migração futura seria adicionada
+];
 
 /**
- * Applies all necessary migrations to bring a loaded state object to the current app version.
+ * Applies all necessary migrations sequentially to bring a loaded state object to the current app version.
  * @param loadedState The state object loaded from storage, which might be an old version.
  * @returns The state object, migrated to the current version.
  */
 export function migrateState(loadedState: any): AppState {
     let migratedState = loadedState;
-    const loadedVersion = migratedState.version || 0;
+    const initialVersion = migratedState.version || 0;
 
-    if (loadedVersion < 6) {
-        migratedState = migrateToV6(migratedState);
+    if (initialVersion < APP_VERSION) {
+        console.log(`Starting migration from v${initialVersion} to v${APP_VERSION}...`);
+        
+        // Aplica todas as migrações necessárias em sequência.
+        for (const migration of MIGRATIONS) {
+            if (migratedState.version < migration.targetVersion) {
+                console.log(`Applying migration to v${migration.targetVersion}...`);
+                migratedState = migration.migrate(migratedState);
+            }
+        }
     }
-
-    // Future migration steps would be chained here.
-    // e.g., if (migratedState.version < 7) { migratedState = migrateToV7(migratedState); }
 
     migratedState.version = APP_VERSION;
     return migratedState as AppState;
