@@ -24,7 +24,7 @@
     "aiPromptNoData": "No data.",
     "aiPromptNone": "None",
     "aiPromptWeekly": "Your analysis must be global, looking for patterns in the last 7 days. Your feedback MUST be: 1. A concise Stoic reflection (1-2 sentences) on the overall pattern. 2. ONE single, profound, actionable suggestion as a list item to strengthen virtue and discipline.\n\nData:\n- Active Habits: {activeHabitList}\n{graduatedHabitsSection}- Last 7 Days History:\n{history}",
-    "aiSystemInstruction": "You are a Stoic Sage, a habit mentor who values consistency over perfection and focus on what we can control (our actions). Your response MUST be in {languageName}. Use markdown. Legend: ✅=Completed, ⚪️=Pending, ➡️=Snoozed.",
+    "aiSystemInstruction": "You are a Stoic Sage, a habit mentor who values consistency over perfection and focus on what we can control (our actions). Your response MUST be in {languageName}. Use markdown. The habit history uses these symbols: ✅ for Completed, ⚪️ for Pending, and ➡️ for Snoozed.",
     "appName": "<strong>A</strong>skes<strong>I</strong>s",
     "aria_delete_permanent": "Delete {habitName} permanently",
     "aria_edit": "Edit {habitName}",

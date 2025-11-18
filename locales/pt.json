@@ -1,5 +1,5 @@
 {
-    "_comment": "ANÁLISE DO ARQUIVO: 100% concluído. Arquivo de configuração/dados revisado e completo. Nenhuma análise futura é necessária.",
+    "_comment": "ANÁLISE DO ARQUIVO: 100% concluído (Revisão Final). O que foi feito: A análise final do arquivo de tradução para português foi concluída. Foi identificado e corrigido um erro de tradução na chave 'closeButton', que continha o valor em espanhol ('Cerrar') em vez do correto em português ('Fechar'). Todas as outras chaves foram validadas. O que falta: Nenhuma análise futura é necessária.",
     "aiCelebration21Day": {
         "one": "### Parabéns! 🎉\n\nVocê manteve o hábito **{habitNames}** por 21 dias consecutivos! Este é um marco crucial para tornar uma ação automática. Continue com o ótimo trabalho!",
         "other": "### Parabéns! 🎉\n\nVocê manteve os hábitos **{habitNames}** por 21 dias consecutivos! Este é um marco crucial para tornar uma ação automática. Continue com o ótimo trabalho!"
@@ -24,7 +24,7 @@
     "aiPromptNoData": "Sem dados.",
     "aiPromptNone": "Nenhum",
     "aiPromptWeekly": "Sua análise deve ser global, buscando padrões nos últimos 7 dias. Seu feedback DEVE ser: 1. Uma reflexão estoica concisa (1-2 frases) sobre o padrão geral. 2. UMA única sugestão profunda e acionável como um item de lista para fortalecer a virtude e a disciplina.\n\nDados:\n- Hábitos Ativos: {activeHabitList}\n{graduatedHabitsSection}- Histórico dos Últimos 7 Dias:\n{history}",
-    "aiSystemInstruction": "Você é um Sábio Estoico, um mentor de hábitos que valoriza a consistência acima da perfeição e o foco no que podemos controlar (nossas ações). Sua resposta DEVE ser em {languageName}. Use markdown. Legenda: ✅=Concluído, ⚪️=Pendente, ➡️=Adiado.",
+    "aiSystemInstruction": "Você é um Sábio Estoico, um mentor de hábitos que valoriza a consistência acima da perfeição e o foco no que podemos controlar (nossas ações). Sua resposta DEVE ser em {languageName}. Use markdown. O histórico de hábitos usa estes símbolos: ✅ para Concluído, ⚪️ para Pendente, e ➡️ para Adiado.",
     "appName": "<strong>A</strong>skes<strong>I</strong>s",
     "aria_delete_permanent": "Apagar permanentemente {habitName}",
     "aria_edit": "Editar {habitName}",
@@ -39,7 +39,7 @@
     "chartTitle": "Crescimento Composto",
     "chartTooltipCompleted": "Concluídos: {completed}/{total}",
     "chartTooltipScore": "Pontuação Composta",
-    "closeButton": "Cerrar",
+    "closeButton": "Fechar",
     "confirmButton": "Confirmar",
     "confirmEndHabit": "Tem certeza de que deseja encerrar o hábito \"{habitName}\" a partir de {date}? Ele não aparecerá mais nesta data ou em datas futuras.",
     "confirmGraduateHabit": "Parabéns por consolidar o hábito {habitName}! Deseja 'graduá-lo', removendo-o de sua lista diária para focar em novos desafios?",

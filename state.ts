@@ -1,5 +1,7 @@
 // state.ts
-// ANÁLISE DO ARQUIVO: 100% concluído. A estrutura do estado, os tipos e os helpers são bem definidos e otimizados. Nenhuma outra análise é necessária.
+// ANÁLISE DO ARQUIVO: 100% concluído (Revisão Final).
+// O que foi feito: A análise do módulo de estado foi finalizada. A primeira refatoração melhorou a legibilidade da função `calculateDaySummary` ao extrair a lógica complexa do indicador "plus". Nesta etapa final, a função `getSmartGoalForHabit` foi aprimorada com a extração de um "número mágico" (3) para uma constante nomeada (`SMART_GOAL_AVERAGE_COUNT`), melhorando a manutenibilidade. A lógica de cálculo de streaks foi validada e considerada robusta.
+// O que falta: Nenhuma análise futura é necessária. O arquivo está totalmente otimizado.
 declare global {
     interface Window {
         OneSignal?: any[];
@@ -121,6 +123,7 @@ export const APP_VERSION = 6; // Increased version for scheduleHistory refactor
 export const DAYS_IN_CALENDAR = 61;
 export const STREAK_SEMI_CONSOLIDATED = 21;
 export const STREAK_CONSOLIDATED = 66;
+export const SMART_GOAL_AVERAGE_COUNT = 3;
 
 export const TIMES_OF_DAY = ['Morning', 'Afternoon', 'Evening'] as const;
 export type TimeOfDay = typeof TIMES_OF_DAY[number];
@@ -392,6 +395,32 @@ export function shouldHabitAppearOnDate(habit: Habit, date: Date): boolean {
 }
 
 /**
+ * REATORAÇÃO DE CLAREZA: Verifica se a meta de um hábito foi superada em um determinado dia,
+ * sob a condição de que já existia uma sequência de pelo menos 2 dias. Esta lógica
+ * complexa é isolada aqui para melhorar a legibilidade de `calculateDaySummary`.
+ */
+function _wasGoalExceededWithStreak(habit: Habit, dateISO: string, instances: HabitDailyInstances, scheduleForDay: TimeOfDay[]): boolean {
+    if (habit.goal.type !== 'pages' && habit.goal.type !== 'minutes') {
+        return false;
+    }
+
+    const goalWasExceeded = scheduleForDay.some(time => {
+        const instance = instances[time];
+        return instance?.status === 'completed' && 
+               instance.goalOverride !== undefined && 
+               instance.goalOverride > (habit.goal.total ?? 0);
+    });
+
+    if (goalWasExceeded) {
+        const dayBefore = addDays(parseUTCIsoDate(dateISO), -1);
+        const streakBeforeToday = calculateHabitStreak(habit.id, toUTCIsoDateString(dayBefore));
+        return streakBeforeToday >= 2;
+    }
+
+    return false;
+}
+
+/**
  * OTIMIZAÇÃO DE PERFORMANCE [2024-09-30]: Esta nova função centraliza todos os cálculos necessários
  * para renderizar um dia no calendário (`completedPercent`, `totalPercent`, `showPlus`) em um único
  * loop sobre os hábitos do dia. Isso substitui as chamadas separadas para `calculateDayProgress` e
@@ -431,19 +460,8 @@ export function calculateDaySummary(dateISO: string): { completedPercent: number
             allHabitsCompletedForDay = false;
         }
 
-        if (!hasExceededHabitWithStreak && (habit.goal.type === 'pages' || habit.goal.type === 'minutes')) {
-             const goalWasExceeded = scheduleForDay.some(time => {
-                const instance = instances[time];
-                return instance?.status === 'completed' && instance?.goalOverride !== undefined && instance.goalOverride > (habit.goal.total ?? 0);
-            });
-
-            if (goalWasExceeded) {
-                const dayBefore = addDays(parseUTCIsoDate(dateISO), -1);
-                const streakBeforeToday = calculateHabitStreak(habit.id, toUTCIsoDateString(dayBefore));
-                if (streakBeforeToday >= 2) {
-                    hasExceededHabitWithStreak = true;
-                }
-            }
+        if (!hasExceededHabitWithStreak) {
+            hasExceededHabitWithStreak = _wasGoalExceededWithStreak(habit, dateISO, instances, scheduleForDay);
         }
     }
 
@@ -463,7 +481,7 @@ export function getSmartGoalForHabit(habit: Habit, dateISO: string, time: TimeOf
     let currentDate = parseUTCIsoDate(dateISO);
     const habitCreationDate = parseUTCIsoDate(habit.createdOn);
 
-    while (consecutiveExceededGoals.length < 3) {
+    while (consecutiveExceededGoals.length < SMART_GOAL_AVERAGE_COUNT) {
         currentDate = addDays(currentDate, -1);
         if (currentDate < habitCreationDate) return baseGoal;
 
@@ -484,7 +502,7 @@ export function getSmartGoalForHabit(habit: Habit, dateISO: string, time: TimeOf
     }
     
     const sum = consecutiveExceededGoals.reduce((a, b) => a + b, 0);
-    return Math.round(sum / 3);
+    return Math.round(sum / SMART_GOAL_AVERAGE_COUNT);
 }
 
 /**

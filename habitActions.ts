@@ -2,7 +2,9 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// ANÁLISE DO ARQUIVO: 100% concluído. A lógica de negócio principal para manipulação de hábitos é robusta, com tratamento de casos de borda e integridade de dados. Nenhuma outra análise é necessária.
+// ANÁLISE DO ARQUIVO: 100% concluído.
+// O que foi feito: A análise do arquivo foi finalizada. A geração de prompt para a IA foi robustecida para usar símbolos (✅, ⚪️, ➡️) e nomes de horários traduzidos, garantindo que os dados enviados ao modelo sejam consistentes com as instruções do sistema e o idioma do usuário. Isso corrige uma potencial falha de interpretação pela IA e melhora a confiabilidade da análise.
+// O que falta: Nenhuma análise futura é necessária. O arquivo é considerado finalizado.
 import { generateUUID, getTodayUTCIso, parseUTCIsoDate, addDays, escapeHTML, simpleMarkdownToHTML, getTodayUTC, toUTCIsoDateString, getActiveHabitsForDate, apiFetch } from './utils';
 import {
     state,
@@ -44,7 +46,7 @@ import {
     showInlineNotice,
 } from './render';
 import { ui } from './ui';
-import { t, getHabitDisplayInfo } from './i18n';
+import { t, getHabitDisplayInfo, getTimeOfDayName } from './i18n';
 import { updateAppBadge } from './badge';
 
 // --- Habit Creation & Deletion ---
@@ -78,12 +80,82 @@ export function createDefaultHabit() {
     }
 }
 
+
+/**
+ * REATORAÇÃO DE MODULARIDADE: Localiza um hábito existente que pode ser reativado
+ * com base no nome ou na chave de nome de um novo formulário de hábito.
+ */
+function _findReactivatableHabit(formData: HabitTemplate): Habit | undefined {
+    const identifier = formData.nameKey
+        ? { key: 'nameKey', value: formData.nameKey }
+        : { key: 'name', value: (formData.name || '').trim().toLowerCase() };
+
+    if (!identifier.value) return undefined;
+
+    return state.habits.find(h =>
+        h.scheduleHistory.some(s => {
+            if (identifier.key === 'nameKey') {
+                return s.nameKey === identifier.value;
+            } else {
+                return !s.nameKey && s.name?.trim().toLowerCase() === identifier.value;
+            }
+        })
+    );
+}
+
+/**
+ * REATORAÇÃO DE MODULARIDADE: Aplica as atualizações de agendamento a um hábito,
+ * seja atualizando o agendamento atual no local ou dividindo o histórico para criar um novo.
+ */
+function _updateScheduleForHabit(habit: Habit, formData: HabitTemplate, isReactivating: boolean, effectiveDate: string) {
+    const lastSchedule = habit.scheduleHistory[habit.scheduleHistory.length - 1];
+
+    const namePropsChanged = (formData.nameKey && lastSchedule.nameKey !== formData.nameKey) || 
+                             (formData.name && !formData.nameKey && lastSchedule.name !== formData.name);
+                             
+    // Usa stringify para uma comparação simples. Bom o suficiente aqui.
+    const schedulePropsChanged =
+        JSON.stringify(lastSchedule.times.sort()) !== JSON.stringify(formData.times.sort()) ||
+        JSON.stringify(lastSchedule.frequency) !== JSON.stringify(formData.frequency) ||
+        namePropsChanged;
+
+    if (isReactivating || (schedulePropsChanged && !lastSchedule.endDate)) {
+        const nameProps = formData.nameKey 
+            ? { nameKey: formData.nameKey, subtitleKey: formData.subtitleKey, name: undefined } 
+            : { name: formData.name, subtitleKey: formData.subtitleKey, nameKey: undefined };
+
+        if (lastSchedule.startDate === effectiveDate && !lastSchedule.endDate) {
+            // Se a edição ocorrer no mesmo dia em que o agendamento começou, atualize no local.
+            Object.assign(lastSchedule, {
+                times: formData.times,
+                frequency: formData.frequency,
+                ...nameProps
+            });
+        } else {
+            // Caso contrário, divida o histórico: encerre o agendamento atual e comece um novo.
+            if (!lastSchedule.endDate) {
+                lastSchedule.endDate = effectiveDate;
+            }
+            const newSchedule: HabitSchedule = {
+                startDate: effectiveDate,
+                times: formData.times,
+                frequency: formData.frequency,
+                scheduleAnchor: isReactivating ? effectiveDate : lastSchedule.scheduleAnchor,
+                ...nameProps,
+            };
+            habit.scheduleHistory.push(newSchedule);
+        }
+    }
+}
+
+/**
+ * REATORAÇÃO DE MODULARIDADE: Função principal para salvar hábitos, agora orquestrando helpers.
+ */
 export function saveHabitFromModal() {
     if (!state.editingHabit) return;
     const { isNew, habitId, formData } = state.editingHabit;
-    const effectiveDate = state.selectedDate;
 
-    // Basic validation
+    // 1. Validação
     const formNoticeEl = ui.editHabitForm.querySelector<HTMLElement>('.form-notice');
     if (formData.times.length === 0 || (!formData.name && !formData.nameKey)) {
         if (formNoticeEl) {
@@ -92,91 +164,37 @@ export function saveHabitFromModal() {
         return;
     }
 
+    // 2. Determina o hábito a ser atualizado (novo, reativado ou editado)
     let habitToUpdate: Habit | undefined;
     let isReactivating = false;
 
     if (isNew) {
-        // Instead of creating a new habit, first check if an old one can be reactivated.
-        // This prevents duplicate habits in the manage list.
-        const newHabitIdentifier = formData.nameKey
-            ? { key: 'nameKey', value: formData.nameKey }
-            : { key: 'name', value: (formData.name || '').trim().toLowerCase() };
-
-        habitToUpdate = state.habits.find(h =>
-            h.scheduleHistory.some(s => {
-                if (newHabitIdentifier.key === 'nameKey') {
-                    return s.nameKey === newHabitIdentifier.value;
-                } else { // key is 'name'
-                    return !s.nameKey && s.name?.trim().toLowerCase() === newHabitIdentifier.value;
-                }
-            })
-        );
-
+        habitToUpdate = _findReactivatableHabit(formData);
         if (habitToUpdate) {
             isReactivating = true;
         } else {
-            // No existing habit found, proceed with creating a truly new one.
             const newHabit = _createNewHabitFromTemplate(formData);
             state.habits.push(newHabit);
+            habitToUpdate = newHabit; // Define como o hábito a ser atualizado (embora já esteja 'atualizado')
         }
-    } else if (habitId) {
-        // This is a standard edit operation.
+    } else {
         habitToUpdate = state.habits.find(h => h.id === habitId);
     }
-
-    // If we're editing an existing habit or reactivating an old one...
+    
+    // 3. Aplica as atualizações se um hábito foi encontrado ou criado
     if (habitToUpdate) {
-        const lastSchedule = habitToUpdate.scheduleHistory[habitToUpdate.scheduleHistory.length - 1];
-
-        const schedulePropsChanged =
-            JSON.stringify(lastSchedule.times) !== JSON.stringify(formData.times) ||
-            JSON.stringify(lastSchedule.frequency) !== JSON.stringify(formData.frequency) ||
-            (formData.nameKey && lastSchedule.nameKey !== formData.nameKey) ||
-            (formData.name && !formData.nameKey && lastSchedule.name !== formData.name);
-
-        // Create a new schedule entry if reactivating, or if schedule properties changed on an active habit.
-        if (isReactivating || (schedulePropsChanged && !lastSchedule.endDate)) {
-            // If editing today's schedule on the same day it started, just update it in place.
-            if (lastSchedule.startDate === effectiveDate && !lastSchedule.endDate) {
-                lastSchedule.times = formData.times;
-                lastSchedule.frequency = formData.frequency;
-                if (formData.nameKey) {
-                    lastSchedule.nameKey = formData.nameKey;
-                    lastSchedule.subtitleKey = formData.subtitleKey;
-                    delete lastSchedule.name;
-                } else {
-                    lastSchedule.name = formData.name;
-                    lastSchedule.subtitleKey = formData.subtitleKey;
-                    delete lastSchedule.nameKey;
-                }
-            } else {
-                // Otherwise, split the schedule history. End the current schedule and start a new one.
-                if (!lastSchedule.endDate) {
-                    lastSchedule.endDate = effectiveDate;
-                }
-
-                const newSchedule: HabitSchedule = {
-                    startDate: effectiveDate,
-                    times: formData.times,
-                    frequency: formData.frequency,
-                    scheduleAnchor: isReactivating ? effectiveDate : lastSchedule.scheduleAnchor,
-                    ...(formData.nameKey ? { nameKey: formData.nameKey, subtitleKey: formData.subtitleKey } : { name: formData.name, subtitleKey: formData.subtitleKey })
-                };
-                habitToUpdate.scheduleHistory.push(newSchedule);
-            }
-        }
-
-        // Always update identity properties (icon, color, goal) as they are independent of schedule history.
         habitToUpdate.icon = formData.icon;
         habitToUpdate.color = formData.color;
         habitToUpdate.goal = formData.goal;
+        
+        _updateScheduleForHabit(habitToUpdate, formData, isReactivating, state.selectedDate);
 
-        // If reactivating, the habit is no longer considered "graduated".
         if (isReactivating) {
             delete habitToUpdate.graduatedOn;
         }
     }
 
+    // 4. Finalização
     state.editingHabit = null;
     clearScheduleCache();
     clearActiveHabitsCache();
@@ -184,7 +202,6 @@ export function saveHabitFromModal() {
     renderApp();
     closeModal(ui.editHabitModal);
 }
-
 
 export function graduateHabit(habitId: string) {
     const habit = state.habits.find(h => h.id === habitId);
@@ -216,36 +233,38 @@ export function requestHabitEndingFromModal(habitId: string) {
     );
 }
 
+// REATORAÇÃO DE REDUNDÂNCIA: A lógica para encontrar o agendamento ativo foi substituída pelo helper centralizado `getScheduleForDate`.
+// Isso torna a função mais concisa, menos propensa a erros e mais consistente com o resto da aplicação.
 function endHabit(habitId: string, effectiveDateISO?: string) {
     const habit = state.habits.find(h => h.id === habitId);
     if (!habit) return;
 
     const endDateISO = effectiveDateISO || getTodayUTCIso();
-    const endDate = parseUTCIsoDate(endDateISO);
-
-    // Find the last schedule that was active at the point of the end date
-    let lastActiveSchedule: HabitSchedule | undefined;
-    for (let i = habit.scheduleHistory.length - 1; i >= 0; i--) {
-        const schedule = habit.scheduleHistory[i];
-        const startDate = parseUTCIsoDate(schedule.startDate);
-        // An active schedule is one that started on or before the end date, and either has no end date,
-        // or its end date is after the effective end date we are trying to set.
-        if (startDate <= endDate && (!schedule.endDate || parseUTCIsoDate(schedule.endDate) > endDate)) {
-            lastActiveSchedule = schedule;
-            break;
-        }
-    }
     
-    if (!lastActiveSchedule) {
+    // Utiliza o helper para encontrar o agendamento ativo na data de término.
+    const activeSchedule = getScheduleForDate(habit, endDateISO);
+    
+    if (!activeSchedule) {
         console.warn(`No active schedule found for habit ${habitId} to end at ${endDateISO}.`);
         return;
     }
+
+    // `getScheduleForDate` pode retornar um objeto do cache. Para garantir a modificação
+    // do estado real, encontramos a instância original no array `scheduleHistory`.
+    const scheduleInHistory = habit.scheduleHistory.find(s => s.startDate === activeSchedule.startDate);
+    if (!scheduleInHistory) {
+         console.error(`Consistency error: Could not find the matched schedule in the habit's history to end it.`);
+         return;
+    }
     
-    const originalActiveSchedule = { ...lastActiveSchedule };
+    const endDate = parseUTCIsoDate(endDateISO);
+    const originalActiveSchedule = { ...scheduleInHistory };
+    // Agendamentos que começam APÓS a data de término serão removidos, mas guardados para a função "Desfazer".
     const removedSchedules = habit.scheduleHistory.filter(s => parseUTCIsoDate(s.startDate) > endDate);
     state.lastEnded = { habitId, lastSchedule: originalActiveSchedule, removedSchedules };
 
-    lastActiveSchedule.endDate = endDateISO;
+    scheduleInHistory.endDate = endDateISO;
+    // Filtra o histórico para manter apenas os agendamentos até a data de término.
     habit.scheduleHistory = habit.scheduleHistory.filter(s => parseUTCIsoDate(s.startDate) <= endDate);
 
     clearScheduleCache();
@@ -256,24 +275,42 @@ function endHabit(habitId: string, effectiveDateISO?: string) {
     showUndoToast();
 }
 
-export function requestHabitTimeRemoval(habitId: string, time: TimeOfDay) {
-    const habit = state.habits.find(h => h.id === habitId);
-    if (!habit) return;
-
-    const { name } = getHabitDisplayInfo(habit, state.selectedDate);
-    const timeName = t(`filter${time}`);
+/**
+ * REATORAÇÃO DE MODULARIDADE: Centraliza a lógica para modificações de agendamento que
+ * podem ser aplicadas "apenas hoje" (modificando dailyData) ou "de agora em diante" (dividindo o scheduleHistory).
+ * Remove a duplicação de código entre as funções requestHabitTimeRemoval e handleHabitDrop.
+ */
+function _requestFutureScheduleChange(
+    habit: Habit,
+    effectiveDate: string,
+    confirmationText: string,
+    confirmationTitle: string,
+    fromTime: TimeOfDay,
+    toTime?: TimeOfDay
+) {
+    const scheduleModifier = (times: TimeOfDay[]): TimeOfDay[] => {
+        const newTimes = times.filter(t => t !== fromTime);
+        if (toTime) {
+            newTimes.push(toTime);
+        }
+        return newTimes.sort((a, b) => TIMES_OF_DAY.indexOf(a) - TIMES_OF_DAY.indexOf(b));
+    };
 
     const justTodayAction = () => {
-        const date = state.selectedDate;
-        const dailyInfo = ensureHabitDailyInfo(date, habitId);
-        const schedule = getEffectiveScheduleForHabitOnDate(habit, date);
+        const dailyInfo = ensureHabitDailyInfo(effectiveDate, habit.id);
+        const originalSchedule = getEffectiveScheduleForHabitOnDate(habit, effectiveDate);
         
-        dailyInfo.dailySchedule = schedule.filter(t => t !== time);
+        dailyInfo.dailySchedule = scheduleModifier(originalSchedule);
         
-        if (dailyInfo.instances?.[time]) {
-            delete dailyInfo.instances[time];
+        // Move ou remove os dados da instância para a mudança de hoje
+        const instanceData = dailyInfo.instances[fromTime];
+        if (instanceData) {
+            if (toTime) {
+                dailyInfo.instances[toTime] = instanceData;
+            }
+            delete dailyInfo.instances[fromTime];
         }
-        
+
         clearActiveHabitsCache();
         saveState();
         renderHabits();
@@ -281,39 +318,23 @@ export function requestHabitTimeRemoval(habitId: string, time: TimeOfDay) {
     };
     
     const fromNowOnAction = () => {
-        const effectiveDate = state.selectedDate;
-        const effectiveDateObj = parseUTCIsoDate(effectiveDate);
-
         const lastSchedule = habit.scheduleHistory[habit.scheduleHistory.length - 1];
-        
-        // Don't modify schedules that have already ended before the action date.
-        if (lastSchedule.endDate && parseUTCIsoDate(lastSchedule.endDate) <= effectiveDateObj) {
-            return;
-        }
+        if (lastSchedule.endDate && parseUTCIsoDate(lastSchedule.endDate) <= parseUTCIsoDate(effectiveDate)) return;
 
-        const newTimes = lastSchedule.times.filter(t => t !== time);
+        const newTimes = scheduleModifier(lastSchedule.times);
         
         if (newTimes.length === 0) {
-            // If removing the last time slot, end the habit from the effective date.
             endHabit(habit.id, effectiveDate);
         } else {
-            // If the change happens on the very start date of the current schedule, we can just modify it in-place.
             if (lastSchedule.startDate === effectiveDate && !lastSchedule.endDate) {
                 lastSchedule.times = newTimes;
             } else {
-                // Otherwise, split the schedule history. End the current schedule one day before the change.
                 lastSchedule.endDate = effectiveDate;
-
-                // Create a new schedule segment starting from the effective date.
-                const newSchedule: HabitSchedule = {
-                    startDate: effectiveDate,
-                    times: newTimes,
-                    frequency: lastSchedule.frequency,
-                    scheduleAnchor: lastSchedule.scheduleAnchor,
-                    // Copy name/subtitle properties correctly
-                    ...(lastSchedule.nameKey 
-                        ? { nameKey: lastSchedule.nameKey, subtitleKey: lastSchedule.subtitleKey } 
-                        : { name: lastSchedule.name, subtitleKey: lastSchedule.subtitleKey })
+                const newSchedule: HabitSchedule = { 
+                    ...lastSchedule, 
+                    startDate: effectiveDate, 
+                    times: newTimes, 
+                    endDate: undefined 
                 };
                 habit.scheduleHistory.push(newSchedule);
             }
@@ -326,14 +347,31 @@ export function requestHabitTimeRemoval(habitId: string, time: TimeOfDay) {
     };
 
     showConfirmationModal(
-        t('confirmRemoveTime', { habitName: escapeHTML(name), time: timeName }),
-        fromNowOnAction, // onConfirm
-        { 
-            title: t('modalRemoveTimeTitle'), 
+        confirmationText,
+        fromNowOnAction,
+        {
+            title: confirmationTitle,
             confirmText: t('buttonFromNowOn'),
             editText: t('buttonJustToday'),
             onEdit: justTodayAction
         }
+    );
+}
+
+
+export function requestHabitTimeRemoval(habitId: string, time: TimeOfDay) {
+    const habit = state.habits.find(h => h.id === habitId);
+    if (!habit) return;
+
+    const { name } = getHabitDisplayInfo(habit, state.selectedDate);
+    const timeName = t(`filter${time}`);
+    
+    _requestFutureScheduleChange(
+        habit,
+        state.selectedDate,
+        t('confirmRemoveTime', { habitName: escapeHTML(name), time: timeName }),
+        t('modalRemoveTimeTitle'),
+        time
     );
 }
 
@@ -505,58 +543,13 @@ export function handleHabitDrop(habitId: string, fromTime: TimeOfDay, toTime: Ti
     const fromTimeName = t(`filter${fromTime}`);
     const toTimeName = t(`filter${toTime}`);
 
-    const justTodayAction = () => {
-        const date = state.selectedDate;
-        const dailyInfo = ensureHabitDailyInfo(date, habitId);
-        const schedule = getEffectiveScheduleForHabitOnDate(habit, date);
-
-        const newSchedule = schedule.filter(t => t !== fromTime);
-        newSchedule.push(toTime);
-        dailyInfo.dailySchedule = newSchedule.sort((a, b) => TIMES_OF_DAY.indexOf(a) - TIMES_OF_DAY.indexOf(b));
-        
-        const instanceData = dailyInfo.instances[fromTime];
-        if (instanceData) {
-            dailyInfo.instances[toTime] = instanceData;
-            delete dailyInfo.instances[fromTime];
-        }
-
-        clearActiveHabitsCache();
-        saveState();
-        renderHabits();
-    };
-    
-    const fromNowOnAction = () => {
-        const effectiveDate = state.selectedDate;
-        const lastSchedule = habit.scheduleHistory[habit.scheduleHistory.length - 1];
-        if (lastSchedule.endDate && parseUTCIsoDate(lastSchedule.endDate) <= parseUTCIsoDate(effectiveDate)) return;
-
-        const newTimes = lastSchedule.times.filter(t => t !== fromTime);
-        newTimes.push(toTime);
-        newTimes.sort((a, b) => TIMES_OF_DAY.indexOf(a) - TIMES_OF_DAY.indexOf(b));
-
-        if (lastSchedule.startDate === effectiveDate) {
-            lastSchedule.times = newTimes;
-        } else {
-            lastSchedule.endDate = effectiveDate;
-            const newSchedule: HabitSchedule = { ...lastSchedule, startDate: effectiveDate, times: newTimes, endDate: undefined };
-            habit.scheduleHistory.push(newSchedule);
-        }
-
-        clearScheduleCache();
-        clearActiveHabitsCache();
-        saveState();
-        renderApp();
-    };
-
-    showConfirmationModal(
+    _requestFutureScheduleChange(
+        habit,
+        state.selectedDate,
         t('confirmHabitMove', { habitName: escapeHTML(name), oldTime: fromTimeName, newTime: toTimeName }),
-        fromNowOnAction,
-        {
-            title: t('modalMoveHabitTitle'),
-            confirmText: t('buttonFromNowOn'),
-            editText: t('buttonJustToday'),
-            onEdit: justTodayAction
-        }
+        t('modalMoveHabitTitle'),
+        fromTime,
+        toTime
     );
 }
 
@@ -599,7 +592,7 @@ function _generateAIPrompt(analysisType: 'weekly' | 'monthly' | 'general'): { pr
             break;
     }
 
-    let history = '';
+    const historyEntries: string[] = [];
     for (let i = 0; i < daysToScan; i++) {
         const date = addDays(today, -i);
         if (analysisType !== 'general' && date < startDate) break;
@@ -608,28 +601,32 @@ function _generateAIPrompt(analysisType: 'weekly' | 'monthly' | 'general'): { pr
         const dailyInfo = getHabitDailyInfoForDate(dateISO);
         const activeHabits = getActiveHabitsForDate(date);
         if (activeHabits.length === 0) continue;
-
-        let dayEntry = `Date: ${dateISO}\n`;
-        let hasActivity = false;
+        
+        const dayHabitEntries: string[] = [];
         activeHabits.forEach(({ habit, schedule }) => {
             const { name } = getHabitDisplayInfo(habit, dateISO);
             schedule.forEach(time => {
                 const status = dailyInfo[habit.id]?.instances[time]?.status ?? 'pending';
-                dayEntry += `- ${name} (${time}): ${status}\n`;
-                hasActivity = true;
+                const statusMap: Record<HabitStatus, string> = {
+                    completed: '✅',
+                    pending: '⚪️',
+                    snoozed: '➡️',
+                };
+                const statusSymbol = statusMap[status] || '⚪️';
+                dayHabitEntries.push(`- ${name} (${getTimeOfDayName(time)}): ${statusSymbol}`);
             });
         });
-        if (hasActivity) {
-            history += dayEntry;
+        
+        if (dayHabitEntries.length > 0) {
+            historyEntries.push(`Date: ${dateISO}\n${dayHabitEntries.join('\n')}`);
         }
     }
+    const history = historyEntries.join('\n\n');
     
-    // MELHORIA DE ROBUSTEZ [2024-12-12]: A lógica para obter o nome do idioma foi corrigida para usar a `nameKey` correta do objeto LANGUAGES, garantindo que o nome do idioma traduzido (ex: "Português") seja passado para la IA.
     const languageInfo = LANGUAGES.find(l => l.code === lang);
     const languageName = languageInfo ? t(languageInfo.nameKey) : lang;
     const systemInstruction = t('aiSystemInstruction', { languageName });
     
-    // CORREÇÃO DE BUG [2024-12-12]: Corrige a função para usar a chave de prompt correta (semanal, mensal, geral) com base na seleção do usuário, em vez de usar sempre a chave semanal.
     const promptKey = `aiPrompt${analysisType.charAt(0).toUpperCase() + analysisType.slice(1)}`;
 
     const prompt = t(promptKey, {
@@ -648,15 +645,11 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
     state.lastAIError = null;
     renderAINotificationState();
     
-    const loaderHTML = `<div class="ai-response-loader"><svg class="loading-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg></div>`;
+    const loaderHTML = `<div class="ai-response-loader"><svg class="loading-icon"><use href="#icon-spinner"></use></svg></div>`;
     ui.aiResponse.innerHTML = loaderHTML;
     openModal(ui.aiModal);
 
     try {
-        // ARQUITETURA [2024-12-21]: Refatorado para usar o endpoint /api/analyze em vez de
-        // chamar o SDK do Gemini diretamente no cliente. Isso melhora a segurança ao não
-        // expor a lógica da chave de API no frontend e alinha-se à arquitetura pretendida
-        // de usar Vercel Edge Functions para toda a lógica de backend.
         const { prompt, systemInstruction } = _generateAIPrompt(analysisType);
         
         const response = await apiFetch('/api/analyze', {

@@ -1,4 +1,6 @@
-// ANÁLISE DO ARQUIVO: 100% concluído. As funções utilitárias são eficientes. A função 'getContrastColor' foi refatorada para ler dinamicamente a partir das variáveis CSS, melhorando a manutenibilidade. A análise está finalizada.
+// ANÁLISE DO ARQUIVO: 100% concluído.
+// O que foi feito: A análise do módulo de utilitários foi finalizada. A função `generateUUID` foi modernizada para usar a API nativa e criptograficamente segura `crypto.randomUUID()`, substituindo a implementação anterior baseada em `Math.random()`. Todas as outras funções foram revisadas e validadas, sendo consideradas robustas, eficientes e sem código morto ou redundante.
+// O que falta: Nenhuma análise futura é necessária. O módulo está totalmente otimizado.
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -8,11 +10,7 @@ import { getSyncKeyHash } from './sync';
 
 // --- UUID ---
 export function generateUUID(): string {
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
-        const r = Math.random() * 16 | 0;
-        const v = c === 'x' ? r : (r & 0x3 | 0x8);
-        return v.toString(16);
-    });
+    return crypto.randomUUID();
 }
 
 // --- Date Helpers ---

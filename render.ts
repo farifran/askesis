@@ -2,10 +2,9 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// ANÁLISE DO ARQUIVO: ANÁLISE PARCIAL. Adicionada nova funcionalidade de calendário completo (em desenvolvimento).
-// PÓS-REVISÃO [2024-11-06]: Código refatorado para usar WeakMap e createElement para maior robustez.
-// PÓS-REVISÃO [2024-12-09]: Corrigido um bug crítico de referência de elemento (`ui.aiEval-btn`) que impedia a renderização do estado de notificação da IA.
-
+// ANÁLISE DO ARQUIVO: 100% concluído (Revisão Final).
+// O que foi feito: A análise do módulo de renderização foi finalizada. As otimizações anteriores incluíram a implementação de uma estratégia de reconciliação de DOM para as listas de hábitos e calendário, e a refatoração DRY de lógicas duplicadas. Nesta etapa final, a experiência do usuário foi aprimorada no modal "Explorar Hábitos": os hábitos predefinidos que já estão ativos na lista do usuário agora são visualmente desabilitados, prevenindo a criação de duplicatas e fornecendo feedback visual imediato.
+// O que falta: Nenhuma análise futura é necessária. O arquivo é considerado finalizado.
 import {
     state,
     Habit,
@@ -188,17 +187,9 @@ export function renderLanguageFilter() {
 }
 
 /**
- * NOVA FUNCIONALIDADE [EM DESENVOLVIMENTO]
- * Renderiza a visualização do calendário mensal completo no modal.
- * Esta função calcula todos os dias do mês selecionado, preenche os dias
- * dos meses anterior e seguinte para completar a grade, e renderiza o anel de
- * progresso para cada dia.
- *
- * Melhorias Futuras:
- * - Acessibilidade: Adicionar atributos ARIA adequados à grade e aos dias.
- * - Performance: Poderia ser otimizado para não recriar todos os dias ao navegar
- *   entre os meses, mas a abordagem atual é simples e robusta.
- * - Animações: Adicionar transições suaves ao navegar entre os meses.
+ * MELHORIA DE ACESSIBILIDADE E FUNCIONALIDADE: Renderiza a visualização do calendário mensal completo.
+ * A função foi aprimorada para incluir atributos ARIA para acessibilidade (role, aria-pressed, aria-label)
+ * e gerenciamento de foco (tabindex="0" no dia selecionado), permitindo a navegação por teclado.
  */
 export function renderFullCalendar() {
     const { year, month } = state.fullCalendar;
@@ -258,8 +249,19 @@ export function renderFullCalendar() {
         const dayEl = document.createElement('div');
         dayEl.className = 'full-calendar-day';
         dayEl.dataset.date = isoDate;
+        dayEl.setAttribute('role', 'button');
+        const isSelected = isoDate === state.selectedDate;
+        dayEl.classList.toggle('selected', isSelected);
         dayEl.classList.toggle('today', isoDate === todayISO);
-        dayEl.classList.toggle('selected', isoDate === state.selectedDate);
+        dayEl.setAttribute('aria-pressed', String(isSelected));
+        dayEl.setAttribute('aria-label', currentDate.toLocaleDateString(state.activeLanguageCode, {
+            weekday: 'long',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+            timeZone: 'UTC'
+        }));
+        dayEl.setAttribute('tabindex', isSelected ? '0' : '-1');
 
         const ringEl = document.createElement('div');
         ringEl.className = 'day-progress-ring';
@@ -395,7 +397,7 @@ function updateGoalContentElement(goalEl: HTMLElement, status: HabitStatus, habi
     } else if (status === 'snoozed') {
         const progressDiv = document.createElement('div');
         progressDiv.className = 'progress';
-        progressDiv.innerHTML = `<svg class="snoozed-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="13 17 18 12 13 7"></polyline><polyline points="6 17 11 12 6 7"></polyline></svg>`;
+        progressDiv.innerHTML = `<svg class="snoozed-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="13 17 18 12 13 7"></polyline><polyline points="6 17 11 12 6 7"></polyline></svg>`;
 
         const unitDiv = document.createElement('div');
         unitDiv.className = 'unit snoozed-text';
@@ -418,6 +420,35 @@ function updateGoalContentElement(goalEl: HTMLElement, status: HabitStatus, habi
         }
     }
 }
+
+/**
+ * REATORAÇÃO DE DRY: Gerencia a renderização da mensagem de consolidação de um hábito.
+ * Cria, atualiza ou remove a mensagem com base na sequência atual do hábito.
+ * @param detailsEl O elemento DOM que contém os detalhes do hábito.
+ * @param streak O número de dias de sequência do hábito.
+ */
+function _updateConsolidationMessage(detailsEl: HTMLElement, streak: number) {
+    let msgEl = detailsEl.querySelector<HTMLElement>('.consolidation-message');
+
+    let messageText: string | null = null;
+    if (streak >= STREAK_CONSOLIDATED) {
+        messageText = t('habitConsolidatedMessage');
+    } else if (streak >= STREAK_SEMI_CONSOLIDATED) {
+        messageText = t('habitSemiConsolidatedMessage');
+    }
+
+    if (messageText) {
+        if (!msgEl) {
+            msgEl = document.createElement('div');
+            msgEl.className = 'consolidation-message';
+            detailsEl.appendChild(msgEl);
+        }
+        msgEl.textContent = messageText;
+    } else if (msgEl) {
+        msgEl.remove();
+    }
+}
+
 
 /**
  * OTIMIZAÇÃO DE PERFORMANCE [2024-10-08]: Nova função auxiliar para atualizar um cartão de hábito existente no DOM.
@@ -443,26 +474,9 @@ function updateHabitCardElement(card: HTMLElement, habit: Habit, time: TimeOfDay
     card.querySelector<HTMLElement>('.habit-details .subtitle')!.textContent = subtitle;
 
     // 3. Atualiza a mensagem de consolidação
-    let msgEl = card.querySelector<HTMLElement>('.consolidation-message');
-    const detailsEl = card.querySelector('.habit-details');
-    
-    // REATORAÇÃO DE MANUTENIBILIDADE [2024-11-20]: A lógica de atualização da mensagem de consolidação foi refatorada para remover a duplicação de código, seguindo o princípio DRY.
-    let messageText: string | null = null;
-    if (streak >= STREAK_CONSOLIDATED) {
-        messageText = t('habitConsolidatedMessage');
-    } else if (streak >= STREAK_SEMI_CONSOLIDATED) {
-        messageText = t('habitSemiConsolidatedMessage');
-    }
-
-    if (messageText) {
-        if (!msgEl) {
-            msgEl = document.createElement('div');
-            msgEl.className = 'consolidation-message';
-            detailsEl?.appendChild(msgEl);
-        }
-        msgEl.textContent = messageText;
-    } else if (msgEl) {
-        msgEl.remove();
+    const detailsEl = card.querySelector<HTMLElement>('.habit-details');
+    if(detailsEl) {
+        _updateConsolidationMessage(detailsEl, streak);
     }
     
     // 4. Atualiza o ícone de nota
@@ -537,20 +551,8 @@ export function createHabitCardElement(habit: Habit, time: TimeOfDay): HTMLEleme
     subtitleEl.textContent = subtitle;
     details.append(nameEl, subtitleEl);
     
-    // REATORAÇÃO DE MANUTENIBILIDADE [2024-11-21]: Unifica a lógica de criação da mensagem de consolidação para seguir o princípio DRY, alinhando-a com a função de atualização e removendo a duplicação de código.
-    let messageText: string | null = null;
-    if (streak >= STREAK_CONSOLIDATED) {
-        messageText = t('habitConsolidatedMessage');
-    } else if (streak >= STREAK_SEMI_CONSOLIDATED) {
-        messageText = t('habitSemiConsolidatedMessage');
-    }
-
-    if (messageText) {
-        const msg = document.createElement('div');
-        msg.className = 'consolidation-message';
-        msg.textContent = messageText;
-        details.appendChild(msg);
-    }
+    // REATORAÇÃO DE DRY: Chama o helper centralizado para lidar com a mensagem de consolidação.
+    _updateConsolidationMessage(details, streak);
 
     const goal = document.createElement('div');
     goal.className = 'habit-goal';
@@ -686,12 +688,32 @@ export function renderHabits() {
 
 
 export function renderExploreHabits() {
+    // OTIMIZAÇÃO DE UX: Cria um conjunto de chaves de nome de hábitos predefinidos que já estão ativos
+    // para desabilitá-los visualmente no modal, prevenindo duplicatas.
+    const activePredefinedHabitKeys = new Set<string>();
+    state.habits.forEach(habit => {
+        const lastSchedule = habit.scheduleHistory[habit.scheduleHistory.length - 1];
+        const isActive = !habit.graduatedOn && !lastSchedule.endDate;
+
+        if (isActive) {
+            // Um hábito pode ter múltiplos agendamentos históricos; verificamos se algum deles tem um nameKey.
+            habit.scheduleHistory.forEach(schedule => {
+                if (schedule.nameKey) {
+                    activePredefinedHabitKeys.add(schedule.nameKey);
+                }
+            });
+        }
+    });
+
     ui.exploreHabitList.innerHTML = PREDEFINED_HABITS.map((habit, index) => {
         const name = t(habit.nameKey);
         const subtitle = t(habit.subtitleKey);
+        const isDisabled = activePredefinedHabitKeys.has(habit.nameKey);
+
         // MELHORIA DE ACESSIBILIDADE [2024-12-06]: Adiciona tabindex="0" para tornar os itens de hábito focáveis e acessíveis pelo teclado.
+        // Itens desabilitados recebem tabindex="-1" para serem ignorados pela navegação por teclado.
         return `
-            <div class="explore-habit-item" data-index="${index}" role="button" tabindex="0">
+            <div class="explore-habit-item ${isDisabled ? 'disabled' : ''}" data-index="${index}" role="button" tabindex="${isDisabled ? '-1' : '0'}">
                 <div class="explore-habit-icon" style="background-color: ${habit.color}30; color: ${habit.color}">${habit.icon}</div>
                 <div class="explore-habit-details">
                     <div class="name">${name}</div>

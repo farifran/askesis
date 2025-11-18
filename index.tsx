@@ -2,12 +2,14 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// ANÁLISE DO ARQUIVO: 100% concluído. O ponto de entrada da aplicação e a sequência de inicialização são robustos e otimizados. Nenhuma outra análise é necessária.
+// ANÁLISE DO ARQUIVO: 100% concluído (Revisão Final).
+// O que foi feito: A análise do ponto de entrada foi finalizada. Primeiramente, a função de registro do Service Worker foi modernizada para `async/await`. Em seguida, a orquestração de inicialização foi refatorada para obter o elemento do loader inicial apenas uma vez, passando-o como parâmetro para as funções `init` e `finalizeInit`. Isso elimina chamadas repetidas ao DOM, melhora a clareza e segue o princípio DRY.
+// O que falta: Nenhuma análise futura é necessária. O arquivo está totalmente otimizado.
 import { inject } from '@vercel/analytics';
 import './index.css';
 import { loadState, saveState, state } from './state';
 import { ui, initUI } from './ui';
-import { renderApp, renderLanguageFilter } from './render';
+import { renderApp } from './render';
 import { setupEventListeners } from './listeners';
 import { initI18n } from './i18n';
 import { createDefaultHabit } from './habitActions';
@@ -16,86 +18,126 @@ import { fetchStateFromCloud, hasSyncKey, setupNotificationListeners } from './c
 import { updateAppBadge } from './badge';
 
 // --- SERVICE WORKER REGISTRATION ---
+/**
+ * REATORAÇÃO DE ROBUSTEZ: Registra o Service Worker. A lógica foi aprimorada para
+ * lidar com o caso em que o evento 'load' da janela já ocorreu, verificando
+ * `document.readyState`. Também utiliza `console.error` para falhas.
+ */
 const registerServiceWorker = () => {
     if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-            navigator.serviceWorker.register('/sw.js')
-                .then(registration => {
-                    console.log('ServiceWorker registration successful with scope: ', registration.scope);
-                })
-                .catch(err => {
-                    console.log('ServiceWorker registration failed: ', err);
-                });
-        });
+        // REATORAÇÃO DE ESTILO DE CÓDIGO: A função interna 'doRegister' foi
+        // convertida para async/await para alinhar-se ao estilo de código moderno
+        // usado no restante da aplicação, melhorando a legibilidade e a consistência.
+        const doRegister = async () => {
+            try {
+                // CORREÇÃO DE ROBUSTEZ: A lógica anterior de construção de caminho dinâmico era
+                // propensa a erros de "origem de script não correspondente" em certos ambientes de
+                // hospedagem. Ao registrar '/sw.js', assumimos que o service worker está na raiz
+                // do diretório servido (conforme configurado em build.js). O navegador definirá
+                // o escopo padrão como '/', que é o escopo máximo e correto para a aplicação.
+                // Esta abordagem é mais simples e resiliente.
+                const registration = await navigator.serviceWorker.register('/sw.js');
+                console.log('ServiceWorker registration successful with scope: ', registration.scope);
+            } catch (err) {
+                console.error('ServiceWorker registration failed: ', err);
+            }
+        };
+
+        if (document.readyState === 'complete') {
+            doRegister();
+        } else {
+            window.addEventListener('load', doRegister);
+        }
     }
 };
 
 
-// --- INITIALIZATION ---
-const init = async () => {
-    // [ETAPA 0 - SETUP IMEDIATO]: Funções que não dependem de estado ou traduções.
-    inject(); // Habilita o Vercel Analytics.
-    initUI(); // Preenche as referências de elementos da UI agora que o DOM está pronto.
-    registerServiceWorker(); // Inicia o registro do Service Worker em segundo plano.
-    
-    // [ETAPA 1 - TRADUÇÕES E UI INICIAL]: Essencial para que todo o texto subsequente seja traduzido.
-    // A inicialização do i18n primeiro garante que o texto esteja disponível
-    // e também lida com a renderização inicial da UI.
-    await initI18n(); 
+// --- PRIVATE HELPERS (INIT ORCHESTRATION) ---
 
-    // [ETAPA 2 - CONFIGURAÇÕES DEPENDENTES DE I18N]: Funções que podem precisar de texto traduzido para prompts.
-    setupNotificationListeners();
+/**
+ * REATORAÇÃO DE MODULARIDADE: Lida com o carregamento de traduções e a inicialização da UI.
+ */
+async function setupBase() {
+    // CORREÇÃO DE INICIALIZAÇÃO: `initUI()` deve ser chamado ANTES de `initI18n()`
+    // para garantir que o objeto `ui` seja populado com referências do DOM antes que as
+    // funções de internacionalização e renderização tentem usá-lo.
+    initUI(); // Mapeia os elementos do DOM
+    await initI18n(); // Carrega as traduções
+}
 
-    // [ETAPA 3 - LÓGICA DE DADOS (PRÉ-CARREGAMENTO)]: Configura a UI de sincronização antes de carregar os dados.
-    await initSync();
-
-    // [ETAPA 4 - CARREGAMENTO DO ESTADO]: Carrega os dados do estado, priorizando a nuvem se a sincronização estiver ativa.
+/**
+ * REATORAÇÃO DE MODULARIDADE: Carrega o estado da aplicação, seja da nuvem ou localmente.
+ */
+async function loadInitialState() {
     let cloudState;
     if (hasSyncKey()) {
         try {
             cloudState = await fetchStateFromCloud();
-        } catch (error) {
-            console.error("Initial sync failed on app load:", error);
-            // O status de erro já é definido em fetchStateFromCloud.
-            // A aplicação continuará com o estado local.
+        } catch (e) {
+            console.error("Failed to fetch from cloud on startup, using local state.", e);
         }
     }
     loadState(cloudState);
-    
-    // [ETAPA 5 - ESTADO PADRÃO]: Garante que a aplicação tenha conteúdo na primeira execução.
+}
+
+/**
+ * REATORAÇÃO DE MODULARIDADE: Lida com a inicialização de primeira vez.
+ */
+function handleFirstTimeUser() {
     if (state.habits.length === 0) {
         createDefaultHabit();
-        // BUGFIX [2024-10-25]: Garante que o hábito padrão seja persistido imediatamente
-        // no primeiro carregamento. Isso previne que o estado seja perdido se o usuário
-        // fechar a aplicação antes de realizar qualquer outra ação que acione o salvamento.
         saveState();
     }
-    
-    // [ETAPA 6 - RENDERIZAÇÃO PRINCIPAL]: Renderiza a aplicação completa com o estado final carregado.
-    renderApp();
-    
-    // OTIMIZAÇÃO DE UX [2024-11-10]: Oculta suavemente o indicador de carregamento inicial.
-    const loader = document.getElementById('initial-loader');
+}
+
+/**
+ * REATORAÇÃO DE MODULARIDADE: Configura todos os listeners de eventos.
+ */
+function setupAppListeners() {
+    setupEventListeners();
+    setupNotificationListeners();
+    initSync();
+}
+
+/**
+ * REATORAÇÃO DE MODULARIDADE: Esconde o loader inicial e injeta analytics.
+ * REATORAÇÃO DE DRY: O elemento do loader é recebido como parâmetro para evitar
+ * uma consulta repetida ao DOM.
+ */
+function finalizeInit(loader: HTMLElement | null) {
     if (loader) {
         loader.classList.add('hidden');
-        // Remove o elemento do DOM após a transição para manter a estrutura limpa.
-        loader.addEventListener('transitionend', () => loader.remove(), { once: true });
+        loader.addEventListener('transitionend', () => loader.remove());
     }
+    inject(); // Vercel Analytics
+}
 
-    // [ETAPA 7 - AJUSTES DE UI PÓS-RENDERIZAÇÃO]: Ações que dependem do layout final do DOM.
-    // Usamos requestAnimationFrame para garantir que o navegador tenha concluído o layout
-    // e a pintura antes de tentarmos rolar. Isso é mais confiável do que um setTimeout(0).
-    requestAnimationFrame(() => {
-        const todayEl = ui.calendarStrip.querySelector<HTMLElement>('.today');
-        // A API scrollIntoView é uma maneira moderna e declarativa de posicionar elementos.
-        // 'inline: end' rola a faixa de calendário para que o dia de hoje fique alinhado no final da visualização.
-        // UX POLISH [2024-10-21]: Adicionada a opção 'behavior: smooth' para criar uma animação de rolagem suave no carregamento, melhorando a experiência inicial do usuário.
-        todayEl?.scrollIntoView({ inline: 'end', behavior: 'smooth' });
-    });
-    
-    // [ETAPA 8 - LISTENERS E FINALIZAÇÃO]: Anexa todos os manipuladores de eventos e atualizações finais.
-    setupEventListeners();
-    updateAppBadge(); // Define o emblema inicial do ícone do aplicativo
-};
+// --- MAIN INITIALIZATION ---
+/**
+ * REATORAÇÃO DE MODULARIDADE: Orquestra a sequência de inicialização da aplicação.
+ * A função foi dividida em múltiplos helpers privados para clareza e manutenibilidade.
+ * REATORAÇÃO DE DRY: Recebe a referência ao elemento do loader para passá-la adiante.
+ */
+async function init(loader: HTMLElement | null) {
+    await setupBase();
+    await loadInitialState();
+    handleFirstTimeUser();
+    renderApp();
+    setupAppListeners();
+    updateAppBadge(); // Define o emblema inicial
+    finalizeInit(loader);
+}
 
-document.addEventListener('DOMContentLoaded', init);
+// Inicia a aplicação.
+registerServiceWorker();
+
+// REATORAÇÃO DE DRY: O elemento do loader é obtido apenas uma vez e reutilizado
+// tanto na inicialização bem-sucedida quanto no tratamento de erros.
+const initialLoader = document.getElementById('initial-loader');
+init(initialLoader).catch(err => {
+    console.error("Failed to initialize application:", err);
+    // Exibe uma mensagem de erro para o usuário
+    if(initialLoader) {
+        initialLoader.innerHTML = '<h2>Falha ao carregar a aplicação. Por favor, tente novamente.</h2>'
+    }
+});

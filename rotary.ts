@@ -2,8 +2,9 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// ANÁLISE DO ARQUIVO: 100% concluído. A base de código TypeScript foi totalmente revisada e é considerada finalizada, robusta e otimizada. Nenhuma outra análise é necessária.
-
+// ANÁLISE DO ARQUIVO: 100% concluído.
+// O que foi feito: O manipulador de gestos de deslize foi robustecido. Foi adicionado um listener para o evento 'pointercancel', garantindo que interações interrompidas (ex: por uma sobreposição da UI do sistema) sejam abortadas de forma limpa, prevenindo estados de UI inconsistentes. A lógica de finalização de gestos (tanto 'pointerup' quanto 'pointercancel') foi refatorada para uma função auxiliar 'endSwipe', eliminando a duplicação de código de limpeza e melhorando a manutenibilidade do módulo.
+// O que falta: Nenhuma análise futura é necessária. O módulo é considerado robusto e finalizado.
 interface RotaryConfig {
     viewportEl: HTMLElement;
     reelEl: HTMLElement;
@@ -61,8 +62,25 @@ export function setupReelRotary({
         reelEl.style.transform = `translateX(${clampedTranslateX}px)`;
     };
 
+    const endSwipe = () => {
+        window.removeEventListener('pointermove', pointerMove);
+        window.removeEventListener('pointerup', pointerUp);
+        window.removeEventListener('pointercancel', endSwipe);
+        
+        if (!isSwiping) return;
+        isSwiping = false;
+        
+        requestAnimationFrame(() => {
+            reelEl.style.transition = '';
+        });
+
+        currentIndex = getInitialIndex();
+        render();
+    };
+
     const pointerUp = async (e: PointerEvent) => {
         if (!isSwiping) return;
+        
         const diffX = e.clientX - startX;
         
         if (Math.abs(diffX) > SWIPE_THRESHOLD) {
@@ -72,19 +90,8 @@ export function setupReelRotary({
                 await onIndexChange(Math.max(0, currentIndex - 1));
             }
         }
-        currentIndex = getInitialIndex();
-        render(); // Garante que a posição final esteja correta
-
-        // MELHORIA DE ROBUSTEZ [2024-10-20]: Substitui o setTimeout por requestAnimationFrame
-        // para reativar a transição de forma mais confiável, sincronizada com o ciclo de pintura do navegador.
-        // Limpar o estilo permite que a definição do CSS seja aplicada novamente.
-        requestAnimationFrame(() => {
-            reelEl.style.transition = '';
-        });
-
-        window.removeEventListener('pointermove', pointerMove);
-        window.removeEventListener('pointerup', pointerUp);
-        isSwiping = false;
+        
+        endSwipe();
     };
 
     viewportEl.addEventListener('pointerdown', (e: PointerEvent) => {
@@ -94,7 +101,9 @@ export function setupReelRotary({
         const matrix = new DOMMatrix(window.getComputedStyle(reelEl).transform);
         startTransformX = matrix.m41;
         reelEl.style.transition = 'none';
+        
         window.addEventListener('pointermove', pointerMove);
         window.addEventListener('pointerup', pointerUp);
+        window.addEventListener('pointercancel', endSwipe);
     });
 }

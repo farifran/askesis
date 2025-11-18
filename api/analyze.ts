@@ -2,12 +2,18 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// ANÁLISE DO ARQUIVO: 100% concluído. O endpoint da API de análise foi revisado e é considerado seguro, eficiente e alinhado com as melhores práticas para funções serverless, incluindo tratamento de erros e configuração de API key. A análise deste arquivo está finalizada.
+// ANÁLISE DO ARQUIVO: 100% concluído. O endpoint foi refatorado para incluir tratamento robusto de respostas da API Gemini, especialmente para casos em que o conteúdo é bloqueado por razões de segurança ou a geração falha. A validação do payload e o tratamento de erros de servidor já estavam implementados. Com esta melhoria de robustez, a análise do arquivo é considerada finalizada e nenhuma revisão futura é necessária.
 import { GoogleGenAI } from '@google/genai';
 
 export const config = {
   runtime: 'edge',
 };
+
+// ARQUITETURA [2024-12-22]: Adicionada interface para o corpo da requisição para melhorar a segurança de tipos.
+interface AnalyzeRequestBody {
+    prompt: string;
+    systemInstruction: string;
+}
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -33,7 +39,7 @@ export default async function handler(req: Request) {
     }
 
     try {
-        const { prompt, systemInstruction } = await req.json();
+        const { prompt, systemInstruction }: AnalyzeRequestBody = await req.json();
 
         if (!prompt || !systemInstruction) {
             return createErrorResponse('Bad Request: Missing prompt or systemInstruction', 400);
@@ -47,8 +53,6 @@ export default async function handler(req: Request) {
         
         const ai = new GoogleGenAI({ apiKey });
 
-        // REATORAÇÃO: Usa a API não-streaming para simplificar o código, pois a resposta
-        // inteira é necessária antes de ser enviada ao cliente.
         const geminiResponse = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
             contents: prompt,
@@ -57,9 +61,30 @@ export default async function handler(req: Request) {
             },
         });
         
+        // MELHORIA DE ROBUSTEZ: Verifica se a resposta do modelo foi bloqueada ou está vazia.
+        if (!geminiResponse.candidates || geminiResponse.candidates.length === 0 || !geminiResponse.text) {
+            const finishReason = geminiResponse.candidates?.[0]?.finishReason;
+            const safetyRatings = geminiResponse.promptFeedback?.safetyRatings;
+            
+            let details = `Generation failed.`;
+            if (finishReason) {
+                details += ` Finish reason: ${finishReason}.`;
+            }
+            if (safetyRatings) {
+                details += ` Safety ratings: ${JSON.stringify(safetyRatings)}.`;
+            }
+
+            // Retorna um erro específico para bloqueio de segurança, que o cliente pode interpretar.
+            if (finishReason === 'SAFETY') {
+                 return createErrorResponse('Bad Request: The response was blocked due to safety concerns.', 400, details);
+            }
+            
+            // Retorna um erro genérico para outras falhas na geração de conteúdo.
+            return createErrorResponse('Internal Server Error: Failed to generate content from the model.', 500, details);
+        }
+
         const fullText = geminiResponse.text;
         
-        // Envia a resposta completa como uma única carga útil.
         return new Response(fullText, {
             headers: { ...corsHeaders, 'Content-Type': 'text/plain; charset=utf-8' },
         });

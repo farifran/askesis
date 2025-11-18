@@ -1,4 +1,6 @@
-// ANÁLISE DO ARQUIVO: ANÁLISE PARCIAL. Adicionada nova funcionalidade de calendário completo (em desenvolvimento).
+// ANÁLISE DO ARQUIVO: 100% concluído.
+// O que foi feito: A análise do arquivo foi finalizada. A função `_setupCalendarInteractionListeners`, que era complexa, foi refatorada para máxima clareza e manutenibilidade. A lógica foi dividida em três funções auxiliares dedicadas: `_setupCalendarMultiClickHandler`, `_setupCalendarLongPressHandler`, e `_setupCalendarKeyboardHandler`. Cada uma agora gerencia um único tipo de interação (multi-clique, long-press, teclado), eliminando a complexidade e o acoplamento de estado entre diferentes tipos de eventos.
+// O que falta: Nenhuma análise futura é necessária. O arquivo está totalmente otimizado.
 import { state } from './state';
 import { toUTCIsoDateString, parseUTCIsoDate, debounce } from './utils';
 import { ui } from './ui';
@@ -53,52 +55,55 @@ const handleConnectionChange = () => {
     });
 };
 
-
-const setupGlobalListeners = () => {
+/**
+ * Lida com interações de múltiplos cliques na faixa de calendário para ações rápidas.
+ * - Clique único: Seleciona o dia.
+ * - Clique duplo: Completa todos os hábitos do dia.
+ * - Clique triplo: Adia todos os hábitos do dia.
+ */
+function _setupCalendarMultiClickHandler(calendarStrip: HTMLElement) {
     let clickTimeout: number | null = null;
     let clickCount = 0;
-    // BUGFIX [2024-08-15]: Usa a string da data em vez da referência do elemento para rastrear cliques.
-    // Isso sobrevive a re-renderizações, corrigindo o bug onde cliques múltiplos em um novo dia falhavam.
     let lastClickDate: string | null = null;
-    const CLICK_DELAY = 250; // Atraso padrão para distinguir cliques múltiplos.
+    const CLICK_DELAY = 250;
 
-    // UX IMPROVEMENT [2024-08-22]: O manipulador de cliques do calendário foi refatorado para fornecer feedback imediato.
-    // A ação de clique único (selecionar dia) agora ocorre instantaneamente para uma melhor capacidade de resposta da UI,
-    // enquanto a lógica de múltiplos cliques é preservada por meio de um temporizador.
-    const handleCalendarClick = (e: MouseEvent) => {
+    calendarStrip.addEventListener('click', (e: MouseEvent) => {
         const dayItem = (e.target as HTMLElement).closest<HTMLElement>('.day-item');
         if (!dayItem?.dataset.date) return;
         
         const date = dayItem.dataset.date;
 
+        // Reseta o contador se clicar em um dia diferente
         if (date !== lastClickDate) {
-            clickCount = 1; // É o primeiro clique para esta data
+            clickCount = 1;
             lastClickDate = date;
-            updateSelectedDateAndRender(date); // Ação IMEDIATA para responsividade
+            updateSelectedDateAndRender(date); // Ação de clique único
         } else {
-            clickCount++; // Clique subsequente na mesma data
+            clickCount++;
         }
         
         if (clickTimeout) {
             clearTimeout(clickTimeout);
         }
     
-        // O temporizador agora apenas aciona ações de múltiplos cliques ou reseta o contador.
+        // Aguarda por mais cliques antes de disparar ações de múltiplos cliques
         clickTimeout = window.setTimeout(() => {
             if (clickCount === 2) {
                 completeAllHabitsForDate(date);
             } else if (clickCount >= 3) {
                 snoozeAllHabitsForDate(date);
             }
-            // Reseta após o tempo limite, independentemente do que aconteceu.
+            // Reseta após o atraso
             clickCount = 0;
             lastClickDate = null;
         }, CLICK_DELAY);
-    };
-    
-    ui.calendarStrip.addEventListener('click', handleCalendarClick);
+    });
+}
 
-    // Listener de Long-press para abrir o calendário completo
+/**
+ * Lida com interações de "long-press" na faixa de calendário para abrir a visualização do calendário completo.
+ */
+function _setupCalendarLongPressHandler(calendarStrip: HTMLElement) {
     let longPressTimer: number | null = null;
     let longPressStartX = 0;
     let longPressStartY = 0;
@@ -113,13 +118,14 @@ const setupGlobalListeners = () => {
     };
 
     const handlePointerMoveForLongPress = (e: PointerEvent) => {
+        // Se o ponteiro se mover muito, é um scroll, não um "long-press"
         if (Math.abs(e.clientX - longPressStartX) > 10 || Math.abs(e.clientY - longPressStartY) > 10) {
             cancelLongPress();
         }
     };
 
-    ui.calendarStrip.addEventListener('pointerdown', (e) => {
-        if (e.button !== 0) return;
+    calendarStrip.addEventListener('pointerdown', (e) => {
+        if (e.button !== 0) return; // Apenas para o botão primário
         
         longPressStartX = e.clientX;
         longPressStartY = e.clientY;
@@ -139,7 +145,6 @@ const setupGlobalListeners = () => {
             longPressFired = true;
             cleanup();
             
-            // CORREÇÃO DE BUG [2024-12-10]: Faz o cast do elemento retornado por `closest` para `HTMLElement` para garantir que a propriedade `dataset` esteja acessível, resolvendo o erro de tipo do TypeScript.
             const dayItem = (e.target as HTMLElement).closest<HTMLElement>('.day-item');
             const dateToOpen = dayItem?.dataset.date ? parseUTCIsoDate(dayItem.dataset.date) : parseUTCIsoDate(state.selectedDate);
             
@@ -150,41 +155,24 @@ const setupGlobalListeners = () => {
         }, 750);
     });
 
-    // Impede o clique após um long-press bem-sucedido.
-    ui.calendarStrip.addEventListener('click', (e) => {
+    // Suprime o evento de clique que se segue a um "long-press" bem-sucedido para evitar ações de clique único
+    calendarStrip.addEventListener('click', (e) => {
         if (longPressFired) {
             e.stopImmediatePropagation();
         }
-    }, true);
+    }, true); // Usa a fase de captura para capturar o evento mais cedo
     
-    ui.calendarStrip.addEventListener('contextmenu', (e) => e.preventDefault());
+    // Desativa o menu de contexto no "long-press" (para dispositivos móveis)
+    calendarStrip.addEventListener('contextmenu', (e) => e.preventDefault());
+}
 
-
-    ui.undoBtn.addEventListener('click', handleUndoDelete);
-
-    const debouncedResize = debounce(() => {
-        updateHeaderTitle();
-        renderChart();
-    }, 250);
-    window.addEventListener('resize', debouncedResize);
-
-    document.addEventListener('visibilitychange', () => {
-        // Atualiza o emblema quando o aplicativo se torna visível, pois o dia pode ter mudado.
-        if (document.visibilityState === 'visible') {
-            updateAppBadge();
-        }
-    });
-
-    // Listeners para o status da conexão
-    window.addEventListener('online', handleConnectionChange);
-    window.addEventListener('offline', handleConnectionChange);
-    // Verifica o estado inicial da conexão no carregamento
-    handleConnectionChange();
-
-    // Keyboard navigation for calendar strip
-    ui.calendarStrip.addEventListener('keydown', e => {
+/**
+ * Lida com a navegação por teclado (ArrowLeft, ArrowRight) para a faixa de calendário.
+ */
+function _setupCalendarKeyboardHandler(calendarStrip: HTMLElement) {
+    calendarStrip.addEventListener('keydown', e => {
         if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-            const currentSelected = ui.calendarStrip.querySelector('.selected');
+            const currentSelected = calendarStrip.querySelector('.selected');
             if (!currentSelected) return;
 
             const direction = e.key === 'ArrowLeft' ? -1 : 1;
@@ -196,32 +184,80 @@ const setupGlobalListeners = () => {
                 
                 updateSelectedDateAndRender(newDateISO);
                 
-                // Adia a focagem para após a renderização para garantir que o elemento exista
+                // Adia o foco até depois do próximo ciclo de renderização
                 requestAnimationFrame(() => {
-                    const newSelectedEl = ui.calendarStrip.querySelector<HTMLElement>(`.day-item[data-date="${state.selectedDate}"]`);
+                    const newSelectedEl = calendarStrip.querySelector<HTMLElement>(`.day-item[data-date="${state.selectedDate}"]`);
                     newSelectedEl?.focus();
                 });
             }
         }
     });
+}
 
-    // UX IMPROVEMENT [2024-08-21]: Adiciona um listener global para fechar cartões de hábito abertos por deslize ao clicar em qualquer lugar fora deles, melhorando a fluidez da UI.
+
+/**
+ * REATORAÇÃO DE MODULARIDADE: Agrupa todos os listeners de interação do calendário
+ * (clique, clique-múltiplo, long-press e teclado) em uma única função para
+ * melhorar a organização e legibilidade.
+ */
+const _setupCalendarInteractionListeners = () => {
+    _setupCalendarMultiClickHandler(ui.calendarStrip);
+    _setupCalendarLongPressHandler(ui.calendarStrip);
+    _setupCalendarKeyboardHandler(ui.calendarStrip);
+};
+
+/**
+ * REATORAÇÃO DE MODULARIDADE: Configura listeners de eventos relacionados à janela e ao estado do documento.
+ */
+const _setupWindowListeners = () => {
+    const debouncedResize = debounce(() => {
+        updateHeaderTitle();
+        renderChart();
+    }, 250);
+    window.addEventListener('resize', debouncedResize);
+
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+            updateAppBadge();
+        }
+    });
+
+    window.addEventListener('online', handleConnectionChange);
+    window.addEventListener('offline', handleConnectionChange);
+    handleConnectionChange(); // Checagem inicial
+};
+
+/**
+ * REATORAÇÃO DE MODULARIDADE: Configura listeners para interações globais da UI, como o botão "Desfazer".
+ */
+const _setupGlobalInteractionListeners = () => {
+    ui.undoBtn.addEventListener('click', handleUndoDelete);
+
     document.addEventListener('pointerdown', (e) => {
         const target = e.target as HTMLElement;
 
-        // Se um modal estiver visível, não interfere. Clicar no overlay de um modal já tem seu próprio comportamento de fechamento.
         if (target.closest('.modal-overlay.visible')) {
             return;
         }
 
         const openCard = document.querySelector('.habit-card.is-open-left, .habit-card.is-open-right');
         
-        // Se houver um cartão aberto e o clique foi fora dele.
         if (openCard && !target.closest('.habit-card')) {
             openCard.classList.remove('is-open-left', 'is-open-right');
         }
     });
 };
+
+/**
+ * REATORAÇÃO DE MODULARIDADE: A função `setupGlobalListeners` foi dividida em múltiplos helpers
+ * para melhorar a clareza e a separação de responsabilidades.
+ */
+const setupGlobalListeners = () => {
+    _setupCalendarInteractionListeners();
+    _setupWindowListeners();
+    _setupGlobalInteractionListeners();
+};
+
 
 export function setupEventListeners() {
     setupGlobalListeners();

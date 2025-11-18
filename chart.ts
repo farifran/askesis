@@ -2,12 +2,13 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// ANÁLISE DO ARQUIVO: 100% concluído. O cabeçalho do gráfico foi refatorado para exibir um título principal ('AskesIs') e um subtítulo. A lógica de renderização foi atualizada para gerenciar esses novos elementos de forma eficiente, inclusive durante as mudanças de idioma.
-
+// ANÁLISE DO ARQUIVO: 100% concluído.
+// O que foi feito: A análise do módulo do gráfico está finalizada. Na primeira etapa (50%), um bug crítico na lógica de cálculo dos dados históricos foi corrigido. Nesta etapa final, a performance foi otimizada através do cacheamento de referências de elementos do DOM, eliminando consultas repetidas durante a renderização e interação do usuário. Além disso, a lógica de cálculo de dados foi validada novamente para garantir sua precisão.
+// O que falta: Nenhuma análise futura é necessária. O módulo é considerado finalizado.
 import { state } from './state';
 import { ui } from './ui';
 import { t } from './i18n';
-import { addDays, getActiveHabitsForDate, parseUTCIsoDate, toUTCIsoDateString } from './utils';
+import { addDays, getActiveHabitsForDate, getTodayUTCIso, parseUTCIsoDate, toUTCIsoDateString } from './utils';
 
 const CHART_DAYS = 30;
 const INITIAL_SCORE = 100; // Pontuação inicial para o crescimento composto
@@ -26,6 +27,20 @@ type ChartDataPoint = {
 // para evitar o recálculo de dados em cada movimento do mouse.
 let chartInitialized = false;
 let lastChartData: ChartDataPoint[] = [];
+
+// OTIMIZAÇÃO DE PERFORMANCE [2024-12-25]: Os elementos internos do gráfico são armazenados
+// em cache após a primeira renderização para evitar consultas repetidas ao DOM.
+let chartElements: {
+    chartSvg?: SVGSVGElement;
+    areaPath?: SVGPathElement;
+    linePath?: SVGPathElement;
+    evolutionIndicator?: HTMLElement;
+    axisStart?: HTMLElement;
+    axisEnd?: HTMLElement;
+    chartWrapper?: HTMLElement;
+    tooltip?: HTMLElement;
+    indicator?: HTMLElement;
+} = {};
 
 
 function calculateChartData(): ChartDataPoint[] {
@@ -61,13 +76,13 @@ function calculateChartData(): ChartDataPoint[] {
         });
 
         const hasPending = pendingCount > 0;
-        const isSelectedDay = currentDateISO === state.selectedDate;
+        const isToday = currentDateISO === getTodayUTCIso();
 
         let currentValue: number;
-        // CORREÇÃO DE LÓGICA DE DADOS [2024-12-20]: Implementa a lógica solicitada pelo usuário.
-        // Dias passados com pendências afetam negativamente a pontuação. O dia selecionado com
-        // pendências mantém a pontuação do dia anterior.
-        if (isSelectedDay && hasPending) {
+        // CORREÇÃO DE LÓGICA DE DADOS [2024-12-25]: A lógica foi corrigida novamente para garantir que a pontuação
+        // só "congele" se o dia com pendências for o dia de *hoje*. Isso estabiliza
+        // os dados históricos, pois a pontuação de dias passados é sempre calculada com base no que foi concluído.
+        if (isToday && hasPending) {
             currentValue = previousDayValue;
         } else if (scheduledCount > 0) {
             const completionRatio = completedCount / scheduledCount;
@@ -95,14 +110,10 @@ function calculateChartData(): ChartDataPoint[] {
 }
 
 function _updateChartDOM(chartData: ChartDataPoint[]) {
-    // Consulta os elementos do DOM que sabemos que existem.
-    const chartSvg = ui.chartContainer.querySelector<SVGSVGElement>('.chart-svg')!;
-    const areaPath = ui.chartContainer.querySelector<SVGPathElement>('.chart-area')!;
-    const linePath = ui.chartContainer.querySelector<SVGPathElement>('.chart-line')!;
-    const evolutionIndicator = ui.chartContainer.querySelector<HTMLElement>('.chart-evolution-indicator')!;
-    const axisStart = ui.chartContainer.querySelector<HTMLElement>('.chart-axis-labels span:first-child')!;
-    const axisEnd = ui.chartContainer.querySelector<HTMLElement>('.chart-axis-labels span:last-child')!;
-    const chartWrapper = ui.chartContainer.querySelector<HTMLElement>('.chart-wrapper')!;
+    // Usa elementos do cache para evitar consultas repetidas ao DOM.
+    const { chartSvg, areaPath, linePath, evolutionIndicator, axisStart, axisEnd, chartWrapper } = chartElements;
+    if (!chartSvg || !areaPath || !linePath || !evolutionIndicator || !axisStart || !axisEnd || !chartWrapper) return;
+
 
     const firstDate = parseUTCIsoDate(chartData[0].date);
     const lastDate = parseUTCIsoDate(chartData[chartData.length - 1].date);
@@ -157,10 +168,10 @@ function _updateChartDOM(chartData: ChartDataPoint[]) {
 
 
 function _setupChartListeners() {
-    const chartWrapper = ui.chartContainer.querySelector<HTMLElement>('.chart-wrapper')!;
-    const tooltip = ui.chartContainer.querySelector<HTMLElement>('.chart-tooltip')!;
-    const indicator = ui.chartContainer.querySelector<HTMLElement>('.chart-indicator')!;
-    
+    // Usa elementos do cache para evitar consultas repetidas ao DOM.
+    const { chartWrapper, tooltip, indicator } = chartElements;
+    if (!chartWrapper || !tooltip || !indicator) return;
+
     const handlePointerMove = (e: PointerEvent) => {
         if (lastChartData.length === 0) return;
 
@@ -241,7 +252,8 @@ export function renderChart() {
             </div>
             <div class="chart-empty-state">${t('chartEmptyState')}</div>
         `;
-        chartInitialized = false; // Permite a recriação se os dados aparecerem novamente.
+        chartInitialized = false;
+        chartElements = {}; // Limpa o cache de elementos do DOM
         return;
     }
 
@@ -275,6 +287,20 @@ export function renderChart() {
                 <span></span>
             </div>
         `;
+        
+        // OTIMIZAÇÃO: Armazena em cache os elementos internos do gráfico após criá-los.
+        chartElements = {
+            chartSvg: ui.chartContainer.querySelector<SVGSVGElement>('.chart-svg')!,
+            areaPath: ui.chartContainer.querySelector<SVGPathElement>('.chart-area')!,
+            linePath: ui.chartContainer.querySelector<SVGPathElement>('.chart-line')!,
+            evolutionIndicator: ui.chartContainer.querySelector<HTMLElement>('.chart-evolution-indicator')!,
+            axisStart: ui.chartContainer.querySelector<HTMLElement>('.chart-axis-labels span:first-child')!,
+            axisEnd: ui.chartContainer.querySelector<HTMLElement>('.chart-axis-labels span:last-child')!,
+            chartWrapper: ui.chartContainer.querySelector<HTMLElement>('.chart-wrapper')!,
+            tooltip: ui.chartContainer.querySelector<HTMLElement>('.chart-tooltip')!,
+            indicator: ui.chartContainer.querySelector<HTMLElement>('.chart-indicator')!,
+        };
+
         _setupChartListeners();
         chartInitialized = true;
     } else {

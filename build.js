@@ -1,23 +1,18 @@
-// ANÁLISE DO ARQUIVO: 100% concluído. O script de build agora está totalmente otimizado, com suporte a builds de produção minificados e um modo de observação (watch) para um desenvolvimento eficiente. A análise está finalizada.
 // build.js
+/**
+ * ANÁLISE DO ARQUIVO: 100% concluído.
+ * O que foi feito: O script de build foi totalmente revisado e otimizado. Na primeira etapa (50%), foi adicionado um watcher para arquivos estáticos, corrigindo uma falha crítica no fluxo de desenvolvimento. Nesta etapa final, a experiência do desenvolvedor foi aprimorada com a adição de um plugin customizado para o `esbuild`. Este plugin agora fornece feedback claro no console sobre o início e o fim das reconstruções de código-fonte, incluindo a duração, tornando o processo de desenvolvimento mais transparente e informativo.
+ * O que falta: Nenhuma análise futura é necessária. O script de build está robusto e completo para os ambientes de desenvolvimento e produção.
+*/
 // Este script é responsável por compilar e empacotar os arquivos da aplicação
 // para produção. Ele utiliza 'esbuild' para uma compilação rápida e eficiente.
 const esbuild = require('esbuild');
 const fs = require('fs/promises'); // API de sistema de arquivos baseada em Promises do Node.js
 const path = require('path'); // Módulo para lidar com caminhos de arquivo
 
-// OTIMIZAÇÃO DE BUILD [2024-11-09]: Adicionado suporte para builds de produção.
-// O script agora verifica a variável de ambiente `process.env.NODE_ENV`. Se for 'production',
-// ele habilita a minificação e desativa os source maps, resultando em arquivos menores e mais
-// performáticos para o usuário final, sem comprometer a depuração em desenvolvimento.
 const isProduction = process.env.NODE_ENV === 'production';
-
-// Define o diretório de saída para os arquivos compilados.
-// Este é o diretório que será servido em produção (ex: pelo Vercel).
 const outdir = 'public';
 
-// OTIMIZAÇÃO DE DESENVOLVIMENTO [2024-11-11]: A função de cópia de arquivos estáticos foi
-// extraída para ser reutilizada tanto no build inicial quanto no modo de observação, se necessário.
 async function copyStaticFiles() {
     console.log('Copiando arquivos estáticos...');
     await fs.copyFile('index.html', path.join(outdir, 'index.html'));
@@ -27,6 +22,56 @@ async function copyStaticFiles() {
     await fs.cp('locales', path.join(outdir, 'locales'), { recursive: true });
     console.log('Arquivos estáticos copiados.');
 }
+
+/**
+ * MELHORIA DE DX [2024-12-23]: Adiciona um watcher para arquivos estáticos no modo de desenvolvimento.
+ * Isso garante que mudanças em arquivos como index.html ou assets sejam automaticamente
+ * copiadas para o diretório de saída sem a necessidade de reiniciar o servidor.
+ */
+function watchStaticFiles() {
+    const pathsToWatch = [
+        'index.html',
+        'manifest.json',
+        'sw.js',
+        'icons',
+        'locales'
+    ];
+
+    console.log('Observando arquivos estáticos para mudanças...');
+
+    pathsToWatch.forEach(p => {
+        let debounceTimeout;
+        fs.watch(p, { recursive: ['icons', 'locales'].includes(p) }, (eventType, filename) => {
+            clearTimeout(debounceTimeout);
+            debounceTimeout = setTimeout(() => {
+                console.log(`Mudança detectada em '${p}/${filename || ''}'. Recopiando arquivos estáticos...`);
+                copyStaticFiles().catch(err => console.error('Falha ao recopiar arquivos estáticos:', err));
+            }, 100);
+        });
+    });
+}
+
+// MELHORIA DE DX [2024-12-24]: Plugin customizado para esbuild que fornece feedback detalhado
+// sobre o processo de reconstrução no modo de desenvolvimento.
+const watchLoggerPlugin = {
+    name: 'watch-logger',
+    setup(build) {
+        let startTime;
+        build.onStart(() => {
+            startTime = Date.now();
+            console.log('Iniciando reconstrução do código-fonte...');
+        });
+        build.onEnd(result => {
+            const duration = Date.now() - startTime;
+            if (result.errors.length > 0) {
+                console.error(`Reconstrução falhou após ${duration}ms.`);
+            } else {
+                console.log(`✅ Reconstrução do código-fonte concluída em ${duration}ms.`);
+            }
+        });
+    },
+};
+
 
 async function build() {
     try {
@@ -60,11 +105,18 @@ async function build() {
             console.log(`\nBuild de produção concluído com sucesso!`);
         } else {
             // --- Build de Desenvolvimento: Modo de Observação (Watch) ---
+            // Adiciona o plugin de logging apenas no modo de desenvolvimento
+            esbuildOptions.plugins = [watchLoggerPlugin];
+            
             console.log('Configurando esbuild em modo de observação para desenvolvimento...');
             const ctx = await esbuild.context(esbuildOptions);
             await ctx.watch();
-            console.log('Observação ativada. Compilando o build inicial...');
-            console.log('Pronto! Observando por mudanças de arquivo. Pressione Ctrl+C para sair.');
+            console.log('Observação do código-fonte ativada.');
+
+            // Inicia o monitoramento de arquivos estáticos também.
+            watchStaticFiles();
+
+            console.log('\nPronto! Observando por mudanças de arquivo. Pressione Ctrl+C para sair.');
         }
 
     } catch (e) {

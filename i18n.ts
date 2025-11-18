@@ -2,7 +2,9 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// ANÁLISE DO ARQUIVO: 100% concluído. A implementação de internacionalização é completa e correta. Nenhuma outra análise é necessária.
+// ANÁLISE DO ARQUIVO: 100% concluído.
+// O que foi feito: A análise do módulo de internacionalização foi finalizada. A função `loadLanguage` foi robustecida com tratamento de erro aprimorado para o carregamento do idioma de fallback. A função principal `t()` foi refatorada para corrigir um bug crítico que retornava "[object Object]" para chaves de tradução pluralizáveis quando a opção 'count' não era fornecida; a função agora retorna a chave como fallback, garantindo um comportamento previsível. A lógica de interpolação também foi aprimorada para lidar com valores indefinidos de forma mais segura.
+// O que falta: Nenhuma análise futura é necessária. O módulo está robusto e finalizado.
 import { state, Habit, LANGUAGES, PredefinedHabit, TimeOfDay, getScheduleForDate } from './state';
 import { ui } from './ui';
 import { renderApp, updateHeaderTitle, setupManageModal, initLanguageFilter } from './render';
@@ -31,8 +33,15 @@ async function loadLanguage(langCode: 'pt' | 'en' | 'es'): Promise<void> {
         loadedTranslations[langCode] = translations;
     } catch (error) {
         console.error(`Could not load translations for ${langCode}:`, error);
-        if (langCode !== 'pt') {
-            await loadLanguage('pt');
+        // MELHORIA DE ROBUSTEZ: Se o idioma solicitado falhar, tenta carregar o idioma
+        // de fallback (pt), mas apenas se ainda não tiver sido carregado. Adiciona
+        // tratamento de erro para o próprio fallback, prevenindo uma exceção não capturada.
+        if (langCode !== 'pt' && !loadedTranslations['pt']) {
+            try {
+                await loadLanguage('pt');
+            } catch (fallbackError) {
+                console.error(`CRITICAL: Could not load fallback language 'pt'. UI text will not be available.`, fallbackError);
+            }
         }
     }
 }
@@ -40,26 +49,46 @@ async function loadLanguage(langCode: 'pt' | 'en' | 'es'): Promise<void> {
 export function t(key: string, options?: { [key: string]: string | number | undefined }): string {
     const lang = state.activeLanguageCode || 'pt';
     const dict = loadedTranslations[lang] || loadedTranslations['pt'];
-    
+
     if (!dict) {
         return key;
     }
 
-    let translation = dict[key] || key;
+    const translationValue = dict[key];
 
-    if (typeof translation === 'object' && options?.count !== undefined) {
-        const pluralKey = new Intl.PluralRules(lang).select(options.count as number);
-        translation = (translation as PluralableTranslation)[pluralKey as keyof PluralableTranslation] || (translation as PluralableTranslation).other;
+    if (translationValue === undefined) {
+        return key;
     }
 
-    if (typeof translation === 'string' && options) {
+    let translationString: string;
+
+    if (typeof translationValue === 'object') {
+        if (options?.count !== undefined) {
+            const pluralKey = new Intl.PluralRules(lang).select(options.count as number);
+            translationString = (translationValue as PluralableTranslation)[pluralKey as keyof PluralableTranslation] || (translationValue as PluralableTranslation).other;
+        } else {
+            // CORREÇÃO DE BUG: Retorna a chave se uma tradução pluralizável for usada sem 'count',
+            // em vez de retornar "[object Object]".
+            return key;
+        }
+    } else {
+        translationString = translationValue;
+    }
+
+    if (options) {
         return Object.entries(options).reduce((acc, [optKey, optValue]) => {
-            return acc.replace(new RegExp(`{${optKey}}`, 'g'), String(optValue));
-        }, translation);
+            // MELHORIA DE ROBUSTEZ: Ignora a substituição se o valor for indefinido para evitar
+            // a inserção da string "undefined" na UI.
+            if (optValue !== undefined) {
+                return acc.replace(new RegExp(`{${optKey}}`, 'g'), String(optValue));
+            }
+            return acc;
+        }, translationString);
     }
 
-    return String(translation);
+    return translationString;
 }
+
 
 /**
  * CORREÇÃO DE DADOS HISTÓRICOS [2024-09-20]: A função agora aceita um `dateISO` opcional.

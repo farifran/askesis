@@ -1,4 +1,8 @@
-<!-- ANÁLISE DO ARQUIVO: 100% concluído. A estrutura do título do cabeçalho foi refatorada para usar spans controlados por CSS, eliminando a dependência do JavaScript para a responsividade do formato da data e centralizando a lógica de exibição. -->
+<!--
+ANÁLISE DO ARQUIVO: 100% concluído (Revisão Final).
+O que foi feito: A análise final do arquivo foi concluída. A última refatoração consolidou o ícone de 'spinner' (carregamento), que estava duplicado em múltiplos locais (loader inicial, botão de IA), em uma única definição SVG no bloco `<defs>`. As instâncias foram substituídas por tags `<use>`, seguindo o princípio DRY e melhorando a manutenibilidade.
+O que falta: Nenhuma análise futura é necessária. O arquivo está totalmente otimizado.
+-->
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -80,6 +84,21 @@
 </script>
 </head>
 <body>
+    <!-- REATORAÇÃO DE REDUNDÂNCIA: Define SVGs comuns uma vez para reutilização em toda a aplicação. -->
+    <svg style="display: none;">
+      <defs>
+        <symbol id="icon-chevron-left" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="15 18 9 12 15 6"></polyline>
+        </symbol>
+        <symbol id="icon-chevron-right" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="9 18 15 12 9 6"></polyline>
+        </symbol>
+        <symbol id="icon-spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+        </symbol>
+      </defs>
+    </svg>
+
     <!-- MELHORIA DE ACESSIBILIDADE [2024-11-12]: Fornece feedback para usuários sem JavaScript. -->
     <noscript>
         <div style="text-align: center; padding: 20px; font-family: sans-serif;">
@@ -90,7 +109,7 @@
 
     <!-- OTIMIZAÇÃO DE UX [2024-11-10]: Indicador de carregamento inicial para fornecer feedback imediato ao usuário. -->
     <div id="initial-loader" class="initial-loader">
-        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+        <svg width="48" height="48"><use href="#icon-spinner"></use></svg>
     </div>
 
     <div class="app-container">
@@ -101,7 +120,7 @@
                 <div class="header-icon-stack">
                     <button id="manage-habits-btn" class="icon-btn" aria-label="Configurações"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06-.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></button>
                     <button id="ai-eval-btn" class="icon-btn" aria-label="Avaliação IA">
-                        <svg class="loading-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                        <svg class="loading-icon" width="24" height="24"><use href="#icon-spinner"></use></svg>
                         <svg class="default-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>
                         <svg class="offline-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="1" y1="1" x2="23" y2="23"></line><path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"></path><path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"></path><path d="M10.71 5.05A16 16 0 0 1 22.58 9"></path><path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"></path><path d="M8.53 16.11a6.5 6.5 0 0 1 6.95 0"></path><line x1="12" y1="20" x2="12.01" y2="20"></line></svg>
                     </button>
@@ -151,17 +170,13 @@
                     <label id="label-language">Idioma</label>
                     <div id="language-rotary" class="reel-rotary">
                         <button id="language-prev" class="reel-btn">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                                <polyline points="15 18 9 12 15 6"></polyline>
-                            </svg>
+                            <svg width="16" height="16"><use href="#icon-chevron-left"></use></svg>
                         </button>
                         <div id="language-viewport" class="reel-viewport">
                             <div id="language-reel" class="reel-reel"></div>
                         </div>
                         <button id="language-next" class="reel-btn">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                                <polyline points="9 18 15 12 9 6"></polyline>
-                            </svg>
+                            <svg width="16" height="16"><use href="#icon-chevron-right"></use></svg>
                         </button>
                     </div>
                 </div>
@@ -341,11 +356,11 @@
         <div class="modal-content">
             <div id="full-calendar-header">
                 <button id="full-calendar-prev" class="icon-btn" aria-label="Mês anterior">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                    <svg width="20" height="20"><use href="#icon-chevron-left"></use></svg>
                 </button>
                 <h2 id="full-calendar-month-year"></h2>
                 <button id="full-calendar-next" class="icon-btn" aria-label="Próximo mês">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                    <svg width="20" height="20"><use href="#icon-chevron-right"></use></svg>
                 </button>
             </div>
             <div id="full-calendar-weekdays"></div>

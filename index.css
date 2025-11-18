@@ -1,4 +1,7 @@
-/* ANÁLISE DO ARQUIVO CSS: ANÁLISE PARCIAL. Adicionada nova funcionalidade de calendário completo (em desenvolvimento). Os estilos foram adicionados seguindo as convenções existentes. */
+/* ANÁLISE DO ARQUIVO CSS: 100% concluído.
+* O que foi feito: A análise do CSS foi finalizada. Foram aplicados refinamentos finais para melhorar a manutenibilidade, incluindo: a remoção de uma variável de cor não utilizada (`--accent-pink`), a eliminação de propriedades redundantes no estilo do campo de nome do hábito e botões de modal, e a generalização dos estilos para botões de ação secundários em modais para garantir consistência visual em toda a aplicação. O arquivo agora é considerado finalizado.
+* O que falta: Nenhuma análise futura é necessária.
+*/
 /* ---
 * ARQUIVO CSS REATORADO
 *
@@ -29,7 +32,6 @@
     --color-red-hover: #c0392b;
     --color-yellow: #facc15;
     --surface-light-hover: #d0d0d0;
-    --accent-pink: #e11d48; /* Cor de destaque da imagem de referência */
 
     /* --- LAYOUT E ESPAÇAMENTO --- */
     --swipe-action-width: 60px;
@@ -977,6 +979,12 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     margin-block-end: var(--space-lg);
 }
 
+/* CORREÇÃO VISUAL: Adiciona preenchimento ao título do modal de edição para consistência. */
+#edit-habit-modal h2 {
+    padding-inline: var(--space-xl);
+    padding-block-start: var(--space-xl);
+}
+
 #icon-picker-modal .modal-header h2 {
     padding: 0;
     text-align: center;
@@ -1046,22 +1054,13 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 #edit-habit-modal .modal-actions {
     margin-block-start: 0;
 }
-#edit-habit-modal .modal-actions .btn.modal-close-btn {
-    background: var(--surface-color);
+/* REATORAÇÃO DE CONSISTÊNCIA: Generaliza o estilo para botões secundários em modais (Cancelar, Editar) para um visual mais limpo e "sem bordas", unificando a aparência em toda a aplicação. */
+.modal-actions .btn:not(.btn--primary):not(.btn--danger) {
     border-color: var(--surface-color);
-    color: var(--text-primary);
 }
-#edit-habit-modal .modal-actions .btn.modal-close-btn:hover {
-    background: var(--surface-hover);
+.modal-actions .btn:not(.btn--primary):not(.btn--danger):hover {
+    background-color: var(--surface-hover);
 }
-#edit-habit-modal .modal-actions .btn--primary {
-    background-color: var(--accent-blue);
-    border-color: var(--accent-blue);
-}
-#edit-habit-modal .modal-actions .btn--primary:hover {
-    background-color: var(--accent-blue-hover);
-}
-
 
 
 /* Modal: Gerenciar Hábitos */
@@ -1437,12 +1436,8 @@ input:disabled + .slider {
     font-size: 15px; height: 44px;
 }
 #edit-habit-modal #habit-name {
-    background-color: var(--bg-color);
-    border: 1px solid var(--border-color);
     height: 48px;
     font-size: 18px;
-    color: var(--text-primary);
-    padding: var(--space-md);
     font-weight: 500;
 }
 #edit-habit-modal #habit-name:focus {
@@ -1460,7 +1455,8 @@ input:disabled + .slider {
     display: flex;
     flex-direction: column;
     gap: var(--space-lg);
-    padding: var(--space-xl) var(--space-xl) var(--space-xxl);
+    /* O preenchimento superior foi movido para o h2 para um espaçamento consistente. */
+    padding: 0 var(--space-xl) var(--space-xxl);
     flex-grow: 1;
     overflow-y: auto;
 }
