@@ -689,22 +689,6 @@ export function renderHabits() {
 
 
 export function renderExploreHabits() {
-    // OTIMIZAÇÃO DE UX: Cria um conjunto de chaves de nome de hábitos predefinidos que já estão ativos
-    // para desabilitá-los visualmente no modal, prevenindo duplicatas.
-    const activePredefinedHabitKeys = new Set<string>();
-    state.habits.forEach(habit => {
-        const lastSchedule = habit.scheduleHistory[habit.scheduleHistory.length - 1];
-        const isActive = !habit.graduatedOn && !lastSchedule.endDate;
-
-        if (isActive) {
-            habit.scheduleHistory.forEach(schedule => {
-                if (schedule.nameKey) {
-                    activePredefinedHabitKeys.add(schedule.nameKey);
-                }
-            });
-        }
-    });
-
     // OTIMIZAÇÃO DE PERFORMANCE [2024-12-26]: Uso de DocumentFragment e createElement
     // substitui a manipulação de strings innerHTML, melhorando a performance e segurança.
     const fragment = document.createDocumentFragment();
@@ -712,13 +696,12 @@ export function renderExploreHabits() {
     PREDEFINED_HABITS.forEach((habit, index) => {
         const name = t(habit.nameKey);
         const subtitle = t(habit.subtitleKey);
-        const isDisabled = activePredefinedHabitKeys.has(habit.nameKey);
 
         const itemEl = document.createElement('div');
-        itemEl.className = `explore-habit-item ${isDisabled ? 'disabled' : ''}`;
+        itemEl.className = 'explore-habit-item';
         itemEl.dataset.index = String(index);
         itemEl.setAttribute('role', 'button');
-        itemEl.setAttribute('tabindex', isDisabled ? '-1' : '0');
+        itemEl.setAttribute('tabindex', '0');
 
         const iconEl = document.createElement('div');
         iconEl.className = 'explore-habit-icon';
