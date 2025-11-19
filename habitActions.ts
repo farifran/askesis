@@ -575,26 +575,40 @@ function _generateAIPrompt(analysisType: 'weekly' | 'monthly' | 'general'): { pr
     const lang = state.activeLanguageCode;
     let startDate: Date;
     let daysToScan: number;
+    let historyLogDays: number; // Novos dias para incluir no log detalhado
 
     switch (analysisType) {
         case 'weekly':
             startDate = addDays(today, -7);
             daysToScan = 7;
+            historyLogDays = 7;
             break;
         case 'monthly':
             startDate = addDays(today, -30);
             daysToScan = 30;
+            historyLogDays = 30;
             break;
         case 'general':
         default:
-            startDate = new Date(0); // Epoch
-            daysToScan = 365; // Scan up to a year for general analysis
+            // OTIMIZAÇÃO [2024-12-26]: Para análise geral, limitamos o histórico detalhado (logs linha por linha)
+            // aos últimos 90 dias para economizar tokens e evitar timeouts, mas ainda permitimos que a IA
+            // tenha contexto suficiente para uma análise de tendências trimestrais.
+            startDate = new Date(0); // Epoch (para varredura conceitual)
+            daysToScan = 365; // Escaneia até um ano para estatísticas gerais, se necessário
+            historyLogDays = 90; // Envia apenas os últimos 90 dias de texto bruto
             break;
     }
+
+    // Calcula a data de corte para o log detalhado
+    const logCutoffDate = addDays(today, -historyLogDays);
 
     const historyEntries: string[] = [];
     for (let i = 0; i < daysToScan; i++) {
         const date = addDays(today, -i);
+        // Para 'general', paramos de escanear se passarmos da data de corte do log,
+        // a menos que implementemos estatísticas agregadas (que simplificaria ainda mais).
+        // Por enquanto, limitamos o loop à janela de log para manter a consistência do prompt.
+        if (date < logCutoffDate) break; 
         if (analysisType !== 'general' && date < startDate) break;
 
         const dateISO = toUTCIsoDateString(date);
@@ -652,9 +666,12 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
     try {
         const { prompt, systemInstruction } = _generateAIPrompt(analysisType);
         
+        // OTIMIZAÇÃO: Define um timeout de 60 segundos para a chamada da IA,
+        // permitindo que o modelo processe prompts mais complexos sem abortar prematuramente.
         const response = await apiFetch('/api/analyze', {
             method: 'POST',
             body: JSON.stringify({ prompt, systemInstruction }),
+            timeout: 60000,
         });
 
         const resultText = await response.text();

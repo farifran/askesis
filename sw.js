@@ -15,19 +15,21 @@ importScripts("https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js");
 const CACHE_NAME = 'habit-tracker-v1';
 
 // Lista de arquivos essenciais para o funcionamento do App Shell offline.
+// CORREÇÃO SPA: Caminhos absolutos (raiz) são usados para garantir que o cache funcione
+// em conjunto com a tag <base href="/"> e o registro absoluto do SW, prevenindo ambiguidades.
 const CACHE_FILES = [
-    './',
-    './index.html',
-    './bundle.js',
-    './bundle.css',
-    './manifest.json',
-    './locales/pt.json',
-    './locales/en.json',
-    './locales/es.json',
-    './icons/icon-192.svg',
-    './icons/icon-512.svg',
-    './icons/icon-maskable-512.svg',
-    './icons/badge.svg'
+    '/',
+    '/index.html',
+    '/bundle.js',
+    '/bundle.css',
+    '/manifest.json',
+    '/locales/pt.json',
+    '/locales/en.json',
+    '/locales/es.json',
+    '/icons/icon-192.svg',
+    '/icons/icon-512.svg',
+    '/icons/icon-maskable-512.svg',
+    '/icons/badge.svg'
 ];
 
 // Evento de instalação: acionado quando o Service Worker é instalado pela primeira vez.

@@ -1,6 +1,3 @@
-// ANÁLISE DO ARQUIVO: 100% concluído.
-// O que foi feito: A análise do módulo de utilitários foi finalizada. A função `generateUUID` foi modernizada para usar a API nativa e criptograficamente segura `crypto.randomUUID()`, substituindo a implementação anterior baseada em `Math.random()`. Todas as outras funções foram revisadas e validadas, sendo consideradas robustas, eficientes e sem código morto ou redundante.
-// O que falta: Nenhuma análise futura é necessária. O módulo está totalmente otimizado.
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -177,15 +174,53 @@ export function pushToOneSignal(callback: (oneSignal: any) => void) {
     }
 }
 
+/**
+ * UX IMPROVEMENT: Fornece feedback tátil para interações em dispositivos móveis.
+ * Envolvido em try-catch para evitar erros em ambientes onde a API não é totalmente suportada.
+ * @param type O tipo de feedback tátil desejado.
+ */
+export function triggerHaptic(type: 'selection' | 'light' | 'medium' | 'heavy' | 'success' | 'error') {
+    if (!navigator.vibrate) return;
+
+    try {
+        switch (type) {
+            case 'selection':
+            case 'light':
+                navigator.vibrate(10);
+                break;
+            case 'medium':
+                navigator.vibrate(25);
+                break;
+            case 'heavy':
+                navigator.vibrate(50);
+                break;
+            case 'success':
+                navigator.vibrate([50, 50, 50]);
+                break;
+            case 'error':
+                navigator.vibrate([50, 100, 50, 100, 50]);
+                break;
+        }
+    } catch (e) {
+        // Silencia erros de vibração para não interromper o fluxo da UI
+        console.warn('Haptic feedback failed:', e);
+    }
+}
+
+// Extensão da interface RequestInit para incluir o parâmetro timeout
+interface ExtendedRequestInit extends RequestInit {
+    timeout?: number;
+}
+
 // FIX: Add missing apiFetch function to resolve import errors.
 /**
- * Wrapper para a API fetch, que inclui o hash da chave de sincronização e lida com erros de rede.
+ * Wrapper para a API fetch, que inclui o hash da chave de sincronização e lida com erros de rede e timeout configurável.
  * @param endpoint O endpoint da API a ser chamado.
- * @param options As opções para a requisição fetch.
+ * @param options As opções para a requisição fetch, incluindo um 'timeout' opcional (padrão 15000ms).
  * @param includeSyncKey Se deve incluir o cabeçalho X-Sync-Key-Hash.
  * @returns A resposta da requisição.
  */
-export async function apiFetch(endpoint: string, options: RequestInit = {}, includeSyncKey = false): Promise<Response> {
+export async function apiFetch(endpoint: string, options: ExtendedRequestInit = {}, includeSyncKey = false): Promise<Response> {
     // FIX: The spread operator `...options.headers` is not type-safe for all
     // possible `HeadersInit` types (e.g., string[][]), causing a TypeScript error.
     // This logic is refactored to use the standard `Headers` object, which correctly
@@ -204,18 +239,35 @@ export async function apiFetch(endpoint: string, options: RequestInit = {}, incl
         }
     }
 
-    const response = await fetch(endpoint, {
-        ...options,
-        headers,
-    });
+    // OTIMIZAÇÃO DE ROBUSTEZ: Extrai o timeout das opções e remove-o antes de passar para o fetch nativo.
+    const { timeout = 15000, ...fetchOptions } = options;
 
-    if (!response.ok && response.status !== 409) { // 409 (Conflict) é tratado pelo chamador
-        const errorBody = await response.text();
-        console.error(`API request failed to ${endpoint}:`, errorBody);
-        throw new Error(`API request failed with status ${response.status}: ${errorBody}`);
+    const controller = new AbortController();
+    // Usa o timeout configurável ou o padrão de 15s
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+    try {
+        const response = await fetch(endpoint, {
+            ...fetchOptions,
+            headers,
+            signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+
+        if (!response.ok && response.status !== 409) { // 409 (Conflict) é tratado pelo chamador
+            const errorBody = await response.text();
+            console.error(`API request failed to ${endpoint}:`, errorBody);
+            throw new Error(`API request failed with status ${response.status}: ${errorBody}`);
+        }
+
+        return response;
+    } catch (error: any) {
+        clearTimeout(timeoutId);
+        if (error.name === 'AbortError') {
+            throw new Error(`API request to ${endpoint} timed out after ${timeout}ms.`);
+        }
+        throw error;
     }
-
-    return response;
 }
 
 // FIX: Add missing getActiveHabitsForDate function to resolve multiple import errors.

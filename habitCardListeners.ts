@@ -13,6 +13,7 @@ import {
     setGoalOverride,
     requestHabitTimeRemoval,
 } from './habitActions';
+import { triggerHaptic } from './utils';
 
 const GOAL_STEP = 5;
 
@@ -56,6 +57,7 @@ function createGoalInput(habit: Habit, time: TimeOfDay, wrapper: HTMLElement) {
             // Restaura a estrutura original e então atualiza a UI localmente com o novo valor.
             wrapper.innerHTML = originalContent;
             _updateGoalDisplay(wrapper, habit, newGoal);
+            triggerHaptic('success');
         } else {
              // Se o valor for inválido, restaura o conteúdo original para evitar um estado vazio.
             wrapper.innerHTML = originalContent;
@@ -87,6 +89,7 @@ export function setupHabitCardListeners() {
         // Clicou no botão de deletar (revelado pelo swipe)
         const deleteBtn = target.closest<HTMLElement>('.swipe-delete-btn');
         if (deleteBtn) {
+            triggerHaptic('medium');
             requestHabitTimeRemoval(habitId, time);
             return;
         }
@@ -94,6 +97,7 @@ export function setupHabitCardListeners() {
         // Clicou no botão de nota (revelado pelo swipe)
         const noteBtn = target.closest<HTMLElement>('.swipe-note-btn');
         if (noteBtn) {
+            triggerHaptic('light');
             openNotesModal(habitId, state.selectedDate, time);
             return;
         }
@@ -112,6 +116,7 @@ export function setupHabitCardListeners() {
             const goalWrapper = controlBtn.closest('.habit-goal-controls')?.querySelector<HTMLElement>('.goal-value-wrapper');
             if (!goalWrapper) return;
 
+            triggerHaptic('light');
             const currentGoal = getCurrentGoalForInstance(habit, state.selectedDate, time);
             const newGoal = (action === 'increment') 
                 ? currentGoal + GOAL_STEP 
@@ -141,6 +146,7 @@ export function setupHabitCardListeners() {
         const goalWrapper = target.closest<HTMLElement>('.goal-value-wrapper');
         if (goalWrapper) {
             e.stopPropagation(); // Previne o toggle do card
+            triggerHaptic('light');
             const habit = state.habits.find(h => h.id === habitId);
             // Só ativa para metas numéricas e se não estiver já concluído
             if (habit && (habit.goal.type === 'pages' || habit.goal.type === 'minutes') && !card.classList.contains('completed')) {
@@ -162,6 +168,7 @@ export function setupHabitCardListeners() {
             }
 
             // Se o cartão estiver fechado, o clique executa a ação padrão de alternar o status.
+            triggerHaptic('light');
             toggleHabitStatus(habitId, time, state.selectedDate);
         }
     });

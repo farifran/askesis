@@ -4,6 +4,7 @@
 import { isCurrentlySwiping } from './swipeHandler';
 import { handleHabitDrop, reorderHabit } from './habitActions';
 import { state, TimeOfDay, Habit, getEffectiveScheduleForHabitOnDate } from './state';
+import { triggerHaptic } from './utils';
 
 const DROP_INDICATOR_GAP = 5; // Espaçamento em pixels acima/abaixo do cartão de destino
 const DROP_INDICATOR_HEIGHT = 3; // Deve corresponder à altura do indicador no CSS
@@ -79,8 +80,10 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
         const isReordering = isDropIndicatorVisible && reorderTargetId && draggedHabitId !== reorderTargetId;
 
         if (isMovingGroup) {
+            triggerHaptic('medium');
             handleHabitDrop(draggedHabitId, draggedHabitOriginalTime, newTime);
         } else if (isReordering) {
+            triggerHaptic('medium');
             reorderHabit(draggedHabitId, reorderTargetId, reorderPosition);
         }
     }
@@ -173,6 +176,7 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
         const cardContent = (e.target as HTMLElement).closest<HTMLElement>('.habit-content-wrapper');
         const card = cardContent?.closest<HTMLElement>('.habit-card');
         if (card && cardContent && card.dataset.habitId && card.dataset.time) {
+            triggerHaptic('light');
             draggedElement = card;
             draggedHabitId = card.dataset.habitId;
             draggedHabitOriginalTime = card.dataset.time as TimeOfDay;

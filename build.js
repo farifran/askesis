@@ -1,8 +1,9 @@
 // build.js
 /**
  * ANÁLISE DO ARQUIVO: 100% concluído.
- * O que foi feito: O script de build foi totalmente revisado e otimizado. Na primeira etapa (50%), foi adicionado um watcher para arquivos estáticos, corrigindo uma falha crítica no fluxo de desenvolvimento. Nesta etapa final, a experiência do desenvolvedor foi aprimorada com a adição de um plugin customizado para o `esbuild`. Este plugin agora fornece feedback claro no console sobre o início e o fim das reconstruções de código-fonte, incluindo a duração, tornando o processo de desenvolvimento mais transparente e informativo.
- * O que falta: Nenhuma análise futura é necessária. O script de build está robusto e completo para os ambientes de desenvolvimento e produção.
+ * O que foi feito: O script de build foi aprimorado para incluir um servidor de desenvolvimento local.
+ * Problema resolvido: O erro "Script origin does not match" ocorria porque não havia um servidor servindo a pasta 'public' como raiz.
+ * Solução: Adicionado `ctx.serve({ servedir: outdir })`. Agora, ao rodar `npm run dev`, um servidor local é iniciado, garantindo que o Service Worker e o index.html compartilhem a mesma origem.
 */
 // Este script é responsável por compilar e empacotar os arquivos da aplicação
 // para produção. Ele utiliza 'esbuild' para uma compilação rápida e eficiente.
@@ -82,7 +83,9 @@ async function build() {
         await fs.mkdir(outdir, { recursive: true });
         console.log('Diretório de saída preparado.');
 
-        // --- 2. Cópia de Arquivos Estáticos ---
+        // --- 2. Cópia Inicial de Arquivos Estáticos ---
+        // CRÍTICO: Deve ocorrer antes de iniciar o servidor ou watch.
+        // Garante que sw.js exista quando o navegador o solicitar.
         await copyStaticFiles();
 
         // --- 3. Compilação do Código TypeScript/CSS com esbuild ---
@@ -104,19 +107,32 @@ async function build() {
             console.log('Aplicação compilada com sucesso.');
             console.log(`\nBuild de produção concluído com sucesso!`);
         } else {
-            // --- Build de Desenvolvimento: Modo de Observação (Watch) ---
+            // --- Build de Desenvolvimento: Modo de Observação (Watch) e Servidor ---
             // Adiciona o plugin de logging apenas no modo de desenvolvimento
             esbuildOptions.plugins = [watchLoggerPlugin];
             
             console.log('Configurando esbuild em modo de observação para desenvolvimento...');
             const ctx = await esbuild.context(esbuildOptions);
+            
+            // Ativa o watch mode
             await ctx.watch();
             console.log('Observação do código-fonte ativada.');
 
-            // Inicia o monitoramento de arquivos estáticos também.
+            // CORREÇÃO CRÍTICA: Inicia um servidor local servindo a pasta 'public'.
+            // Isso resolve o erro "ServiceWorker script origin does not match" garantindo
+            // que index.html e sw.js sejam servidos da mesma raiz (ex: localhost:8000).
+            const { host, port } = await ctx.serve({
+                servedir: outdir,
+                port: 8000, // Porta preferencial, fará fallback se ocupada
+                fallback: 'index.html' // Útil para SPA routing
+            });
+
+            // Inicia o monitoramento de arquivos estáticos para recópia automática.
             watchStaticFiles();
 
-            console.log('\nPronto! Observando por mudanças de arquivo. Pressione Ctrl+C para sair.');
+            console.log(`\n🚀 Servidor de desenvolvimento iniciado!`);
+            console.log(`👉 Abra no navegador: http://localhost:${port}`);
+            console.log('Pressione Ctrl+C para sair.');
         }
 
     } catch (e) {

@@ -24,19 +24,19 @@ import { updateAppBadge } from './badge';
  * `document.readyState`. Também utiliza `console.error` para falhas.
  */
 const registerServiceWorker = () => {
-    if ('serviceWorker' in navigator) {
+    // CORREÇÃO CRÍTICA: Service Workers exigem um contexto seguro (HTTPS) ou localhost.
+    // Eles não funcionam através do protocolo 'file://'. Esta verificação previne
+    // o erro de "Script origin does not match" ao abrir o arquivo localmente sem servidor.
+    if ('serviceWorker' in navigator && window.location.protocol.startsWith('http')) {
         // REATORAÇÃO DE ESTILO DE CÓDIGO: A função interna 'doRegister' foi
         // convertida para async/await para alinhar-se ao estilo de código moderno
         // usado no restante da aplicação, melhorando a legibilidade e a consistência.
         const doRegister = async () => {
             try {
-                // CORREÇÃO DE ROBUSTEZ: A lógica anterior de construção de caminho dinâmico era
-                // propensa a erros de "origem de script não correspondente" em certos ambientes de
-                // hospedagem. Ao registrar '/sw.js', assumimos que o service worker está na raiz
-                // do diretório servido (conforme configurado em build.js). O navegador definirá
-                // o escopo padrão como '/', que é o escopo máximo e correto para a aplicação.
-                // Esta abordagem é mais simples e resiliente.
-                const registration = await navigator.serviceWorker.register('/sw.js');
+                // CORREÇÃO SPA/PWA: Usamos '/sw.js' (absoluto) em conjunto com <base href="/">.
+                // Adicionalmente, definimos o escopo explicitamente como '/' para garantir
+                // que o navegador associe corretamente a origem do script à raiz da aplicação.
+                const registration = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
                 console.log('ServiceWorker registration successful with scope: ', registration.scope);
             } catch (err) {
                 console.error('ServiceWorker registration failed: ', err);
@@ -48,6 +48,8 @@ const registerServiceWorker = () => {
         } else {
             window.addEventListener('load', doRegister);
         }
+    } else if (window.location.protocol === 'file:') {
+        console.warn('Service Worker não suportado no protocolo file://. Por favor, use um servidor local (npm run dev).');
     }
 };
 

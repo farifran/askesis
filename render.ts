@@ -556,6 +556,7 @@ export function createHabitCardElement(habit: Habit, time: TimeOfDay): HTMLEleme
 
     const goal = document.createElement('div');
     goal.className = 'habit-goal';
+    goal.className = 'habit-goal';
     updateGoalContentElement(goal, status, habit, time, habitInstanceData);
 
     contentWrapper.append(timeOfDayIcon, icon, details, goal);
@@ -608,10 +609,12 @@ function updatePlaceholderForGroup(groupEl: HTMLElement, time: TimeOfDay, hasHab
 }
 
 /**
- * OTIMIZAÇÃO DE PERFORMANCE [2024-10-08]: A função `renderHabits` foi completamente refatorada para usar uma
- * estratégia de reconciliação de DOM. Em vez de limpar e recriar toda a lista de hábitos (`innerHTML = ''`),
- * ela agora compara os hábitos que deveriam estar na tela com os que já estão, aplicando apenas as
- * atualizações, inserções e remoções necessárias. Isso resulta em uma UI muito mais responsiva e fluida.
+ * OTIMIZAÇÃO DE PERFORMANCE E CORREÇÃO DE ORDEM [2024-12-26]: 
+ * A função `renderHabits` foi refatorada. A versão anterior usava reconciliação "in-place" que
+ * falhava em atualizar a *ordem visual* dos cartões se eles fossem reordenados no estado.
+ * Esta nova versão garante que a ordem DOM sempre corresponda à ordem do array `desiredHabits`,
+ * movendo os elementos existentes para a posição correta através de `appendChild` (que move nós
+ * existentes), garantindo a persistência correta de operações Drag & Drop.
  */
 export function renderHabits() {
     const selectedDateObj = parseUTCIsoDate(state.selectedDate);
@@ -634,16 +637,11 @@ export function renderHabits() {
     const emptyTimes = TIMES_OF_DAY.filter(time => !groupHasHabits[time]);
     const smartPlaceholderTargetTime: TimeOfDay | undefined = emptyTimes[0];
 
-    // MELHORIA DE UX [2024-12-12]: A lógica a seguir implementa um "placeholder inteligente".
-    // Em vez de mostrar um placeholder para cada grupo vazio, ela agrupa os ícones de todos os
-    // grupos vazios em uma única mensagem, exibida no primeiro slot vazio disponível.
-    // Os outros slots vazios são recolhidos para uma UI mais limpa.
     TIMES_OF_DAY.forEach(time => {
         const wrapperEl = ui.habitContainer.querySelector(`.habit-group-wrapper[data-time-wrapper="${time}"]`);
         const groupEl = wrapperEl?.querySelector<HTMLElement>(`.habit-group[data-time="${time}"]`);
         if (!wrapperEl || !groupEl) return;
         
-        const fragmentForNewCards = document.createDocumentFragment();
         const existingCards = Array.from(groupEl.querySelectorAll<HTMLElement>('.habit-card'));
         const existingCardsMap = new Map<string, HTMLElement>();
         existingCards.forEach(card => {
@@ -652,26 +650,30 @@ export function renderHabits() {
         });
 
         const desiredHabits = habitsByTime[time];
+        
+        // Itera sobre os hábitos desejados na ordem CORRETA do estado
         desiredHabits.forEach(habit => {
             const key = `${habit.id}|${time}`;
-            const existingCard = existingCardsMap.get(key);
+            let card = existingCardsMap.get(key);
             
-            if (existingCard) {
+            if (card) {
                 // Hábito já existe, atualize-o
-                updateHabitCardElement(existingCard, habit, time);
-                existingCardsMap.delete(key); // Remove do mapa para que não seja excluído mais tarde
+                updateHabitCardElement(card, habit, time);
+                existingCardsMap.delete(key); // Marca como processado
             } else {
-                // Hábito é novo, crie e adicione a um fragmento
-                fragmentForNewCards.appendChild(createHabitCardElement(habit, time));
+                // Hábito é novo, crie-o
+                card = createHabitCardElement(habit, time);
+            }
+            
+            // CRÍTICO: `appendChild` move o elemento se ele já estiver no DOM.
+            // Ao chamar isso sequencialmente na ordem de `desiredHabits`, garantimos
+            // que a ordem visual do DOM corresponda exatamente à ordem do array.
+            if (card) {
+                groupEl.appendChild(card);
             }
         });
 
-        // Adiciona todos os novos cartões de uma só vez
-        if (fragmentForNewCards.childElementCount > 0) {
-            groupEl.appendChild(fragmentForNewCards);
-        }
-
-        // Remove cartões antigos que não são mais necessários
+        // Remove cartões que não estão mais no estado atual
         existingCardsMap.forEach(cardToRemove => cardToRemove.remove());
         
         const hasHabits = groupHasHabits[time];
@@ -681,7 +683,6 @@ export function renderHabits() {
         wrapperEl.classList.toggle('has-habits', hasHabits);
         wrapperEl.classList.toggle('is-collapsible', !hasHabits && !isSmartPlaceholder);
 
-        // Delega o gerenciamento do placeholder para a nova função auxiliar
         updatePlaceholderForGroup(groupEl, time, hasHabits, isSmartPlaceholder, emptyTimes);
     });
 }
@@ -696,7 +697,6 @@ export function renderExploreHabits() {
         const isActive = !habit.graduatedOn && !lastSchedule.endDate;
 
         if (isActive) {
-            // Um hábito pode ter múltiplos agendamentos históricos; verificamos se algum deles tem um nameKey.
             habit.scheduleHistory.forEach(schedule => {
                 if (schedule.nameKey) {
                     activePredefinedHabitKeys.add(schedule.nameKey);
@@ -705,22 +705,49 @@ export function renderExploreHabits() {
         }
     });
 
-    ui.exploreHabitList.innerHTML = PREDEFINED_HABITS.map((habit, index) => {
+    // OTIMIZAÇÃO DE PERFORMANCE [2024-12-26]: Uso de DocumentFragment e createElement
+    // substitui a manipulação de strings innerHTML, melhorando a performance e segurança.
+    const fragment = document.createDocumentFragment();
+
+    PREDEFINED_HABITS.forEach((habit, index) => {
         const name = t(habit.nameKey);
         const subtitle = t(habit.subtitleKey);
         const isDisabled = activePredefinedHabitKeys.has(habit.nameKey);
 
-        // MELHORIA DE ACESSIBILIDADE [2024-12-06]: Adiciona tabindex="0" para tornar os itens de hábito focáveis e acessíveis pelo teclado.
-        // Itens desabilitados recebem tabindex="-1" para serem ignorados pela navegação por teclado.
-        return `
-            <div class="explore-habit-item ${isDisabled ? 'disabled' : ''}" data-index="${index}" role="button" tabindex="${isDisabled ? '-1' : '0'}">
-                <div class="explore-habit-icon" style="background-color: ${habit.color}30; color: ${habit.color}">${habit.icon}</div>
-                <div class="explore-habit-details">
-                    <div class="name">${name}</div>
-                    <div class="subtitle">${subtitle}</div>
-                </div>
-            </div>`;
-    }).join('');
+        const itemEl = document.createElement('div');
+        itemEl.className = `explore-habit-item ${isDisabled ? 'disabled' : ''}`;
+        itemEl.dataset.index = String(index);
+        itemEl.setAttribute('role', 'button');
+        itemEl.setAttribute('tabindex', isDisabled ? '-1' : '0');
+
+        const iconEl = document.createElement('div');
+        iconEl.className = 'explore-habit-icon';
+        iconEl.style.backgroundColor = `${habit.color}30`;
+        iconEl.style.color = habit.color;
+        iconEl.innerHTML = habit.icon;
+
+        const detailsEl = document.createElement('div');
+        detailsEl.className = 'explore-habit-details';
+
+        const nameEl = document.createElement('div');
+        nameEl.className = 'name';
+        nameEl.textContent = name;
+
+        const subtitleEl = document.createElement('div');
+        subtitleEl.className = 'subtitle';
+        subtitleEl.textContent = subtitle;
+
+        detailsEl.appendChild(nameEl);
+        detailsEl.appendChild(subtitleEl);
+
+        itemEl.appendChild(iconEl);
+        itemEl.appendChild(detailsEl);
+
+        fragment.appendChild(itemEl);
+    });
+
+    ui.exploreHabitList.innerHTML = '';
+    ui.exploreHabitList.appendChild(fragment);
 }
 
 export function renderAINotificationState() {
@@ -1048,7 +1075,7 @@ export function setupManageModal() {
 
     const statusOrder = { 'active': 0, 'ended': 1, 'graduated': 2 };
 
-    // Ordena o array com base no status pré-calculado e, em seguida, no nome.
+    // Ordena o array com base no status pré-calculado e, em seguida no nome.
     habitsForModal.sort((a, b) => {
         const statusDifference = statusOrder[a.status] - statusOrder[b.status];
         if (statusDifference !== 0) {
@@ -1180,7 +1207,7 @@ export function renderColorPicker() {
     if (!state.editingHabit) return;
     const currentColor = state.editingHabit.formData.color;
     ui.colorPickerGrid.innerHTML = PALETTE_COLORS.map(color => `
-        <button class="color-swatch ${currentColor === color ? 'selected' : ''}" style="background-color: ${color};" data-color="${color}" aria-label="${color}"></button>
+        <button class="color-swatch ${currentColor === color ? 'selected' : ''}" style="background-color: ${color}" data-color="${color}" aria-label="${color}"></button>
     `).join('');
 }
 

@@ -2,7 +2,7 @@
 // O que foi feito: A análise do arquivo foi finalizada. A função `_setupCalendarInteractionListeners`, que era complexa, foi refatorada para máxima clareza e manutenibilidade. A lógica foi dividida em três funções auxiliares dedicadas: `_setupCalendarMultiClickHandler`, `_setupCalendarLongPressHandler`, e `_setupCalendarKeyboardHandler`. Cada uma agora gerencia um único tipo de interação (multi-clique, long-press, teclado), eliminando a complexidade e o acoplamento de estado entre diferentes tipos de eventos.
 // O que falta: Nenhuma análise futura é necessária. O arquivo está totalmente otimizado.
 import { state } from './state';
-import { toUTCIsoDateString, parseUTCIsoDate, debounce } from './utils';
+import { toUTCIsoDateString, parseUTCIsoDate, debounce, triggerHaptic } from './utils';
 import { ui } from './ui';
 import {
     renderHabits,
@@ -77,6 +77,7 @@ function _setupCalendarMultiClickHandler(calendarStrip: HTMLElement) {
         if (date !== lastClickDate) {
             clickCount = 1;
             lastClickDate = date;
+            triggerHaptic('selection');
             updateSelectedDateAndRender(date); // Ação de clique único
         } else {
             clickCount++;
@@ -89,8 +90,10 @@ function _setupCalendarMultiClickHandler(calendarStrip: HTMLElement) {
         // Aguarda por mais cliques antes de disparar ações de múltiplos cliques
         clickTimeout = window.setTimeout(() => {
             if (clickCount === 2) {
+                triggerHaptic('medium');
                 completeAllHabitsForDate(date);
             } else if (clickCount >= 3) {
+                triggerHaptic('heavy');
                 snoozeAllHabitsForDate(date);
             }
             // Reseta após o atraso
@@ -141,9 +144,12 @@ function _setupCalendarLongPressHandler(calendarStrip: HTMLElement) {
         window.addEventListener('pointerup', cleanup);
         window.addEventListener('pointerleave', cleanup);
         
+        // UX-OPTIMIZATION [2024-12-26]: Tempo de long-press reduzido para 500ms.
+        // 750ms parecia muito lento e não responsivo.
         longPressTimer = window.setTimeout(() => {
             longPressFired = true;
             cleanup();
+            triggerHaptic('medium');
             
             const dayItem = (e.target as HTMLElement).closest<HTMLElement>('.day-item');
             const dateToOpen = dayItem?.dataset.date ? parseUTCIsoDate(dayItem.dataset.date) : parseUTCIsoDate(state.selectedDate);
@@ -152,7 +158,7 @@ function _setupCalendarLongPressHandler(calendarStrip: HTMLElement) {
             state.fullCalendar.month = dateToOpen.getUTCMonth();
             renderFullCalendar();
             openModal(ui.fullCalendarModal);
-        }, 750);
+        }, 500);
     });
 
     // Suprime o evento de clique que se segue a um "long-press" bem-sucedido para evitar ações de clique único
@@ -231,7 +237,10 @@ const _setupWindowListeners = () => {
  * REATORAÇÃO DE MODULARIDADE: Configura listeners para interações globais da UI, como o botão "Desfazer".
  */
 const _setupGlobalInteractionListeners = () => {
-    ui.undoBtn.addEventListener('click', handleUndoDelete);
+    ui.undoBtn.addEventListener('click', () => {
+        triggerHaptic('medium');
+        handleUndoDelete();
+    });
 
     document.addEventListener('pointerdown', (e) => {
         const target = e.target as HTMLElement;
