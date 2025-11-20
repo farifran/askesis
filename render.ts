@@ -3,7 +3,7 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// [ANALYSIS PROGRESS]: 100% - Análise concluída. O código utiliza técnicas avançadas de reconciliação de DOM para minimizar reflows e repaints, e faz uso eficiente de caches de elementos. A lógica de renderização do calendário e gráficos está otimizada.
+// [ANALYSIS PROGRESS]: 100% - Análise concluída. Implementada otimização visual na renderização da citação estoica para eliminar 'blinks' desnecessários e manter a estabilidade da UI.
 
 import {
     state,
@@ -773,10 +773,18 @@ export function renderStoicQuote() {
     const lang = state.activeLanguageCode as keyof typeof quote;
     const quoteText = quote[lang];
     
+    const fullText = `"${quoteText}" — ${t('marcusAurelius')}`;
+
+    // UX POLISH [2025-01-16]: Evita o "blink" da citação se o texto não mudou.
+    // Isso mantém a UI estável quando renderApp() é chamado por ações que não alteram a data.
+    if (ui.stoicQuoteDisplay.textContent === fullText && ui.stoicQuoteDisplay.classList.contains('visible')) {
+        return;
+    }
+
     ui.stoicQuoteDisplay.classList.remove('visible');
     
     setTimeout(() => {
-        setTextContent(ui.stoicQuoteDisplay, `"${quoteText}" — ${t('marcusAurelius')}`);
+        setTextContent(ui.stoicQuoteDisplay, fullText);
         ui.stoicQuoteDisplay.classList.add('visible');
     }, 100);
 }

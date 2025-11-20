@@ -274,6 +274,7 @@ export function setupModalListeners() {
 
 
     // --- Modal de Exploração de Hábitos (Explore) ---
+    // Lida com o clique do mouse
     ui.exploreHabitList.addEventListener('click', (e) => {
         const item = (e.target as HTMLElement).closest<HTMLElement>('.explore-habit-item');
         if (!item) return;
@@ -296,6 +297,18 @@ export function setupModalListeners() {
             closeModal(ui.exploreModal);
             // Abre o modal de edição com o hábito existente (se encontrado e ativo) ou com o modelo padrão.
             openEditModal(existingActiveHabit || habitTemplate);
+        }
+    });
+
+    // A11Y [2025-01-16]: Adiciona suporte a teclado (Enter/Space) para itens da lista de exploração.
+    // Como são divs com role="button", eles não disparam 'click' nativamente com teclas.
+    ui.exploreHabitList.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault(); // Previne rolagem com a barra de espaço
+            const item = (e.target as HTMLElement).closest<HTMLElement>('.explore-habit-item');
+            if (item) {
+                item.click(); // Dispara programaticamente o handler de clique existente
+            }
         }
     });
 
