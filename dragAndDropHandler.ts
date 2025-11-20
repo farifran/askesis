@@ -1,6 +1,10 @@
-// ANÁLISE DO ARQUIVO: 100% concluído.
-// O que foi feito: A análise do módulo de arrastar e soltar foi finalizada. A lógica das funções `handleBodyDrop` e `cleanupDrag` foi refatorada para maior clareza e modularidade, com a extração de funções auxiliares (`_determineAndExecuteDropAction`, `_resetDragState`). Isso isola as responsabilidades de manipulação de eventos, lógica de negócio e limpeza de estado, tornando o código mais robusto e de fácil manutenção.
-// O que falta: Nenhuma análise futura é necessária. O módulo é considerado finalizado.
+
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+*/
+// [ANALYSIS PROGRESS]: 100% - Análise concluída. Implementada otimização de renderização no evento 'dragover' para evitar layout thrashing e removida redundância na limpeza de listeners (DRY).
+
 import { isCurrentlySwiping } from './swipeHandler';
 import { handleHabitDrop, reorderHabit } from './habitActions';
 import { state, TimeOfDay, Habit, getEffectiveScheduleForHabitOnDate } from './state';
@@ -16,6 +20,9 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
     let draggedHabitOriginalTime: TimeOfDay | null = null;
     let dropIndicator: HTMLElement | null = null;
     let currentDropZoneTarget: HTMLElement | null = null;
+    
+    // PERFORMANCE [2025-01-16]: Cache da última posição top aplicada para evitar layout thrashing.
+    let lastIndicatorTop: string | null = null;
 
     /**
      * REATORAÇÃO DE MODULARIDADE: Atualiza os visuais da zona de soltura.
@@ -43,6 +50,7 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
 
     /**
      * REATORAÇÃO DE MODULARIDADE: Atualiza a posição e visibilidade do indicador de reordenação.
+     * OTIMIZAÇÃO [2025-01-16]: Evita reescrever o estilo do DOM se a posição não mudou.
      */
     function _updateReorderIndicator(e: DragEvent, cardTarget: HTMLElement | null) {
         if (!cardTarget || cardTarget === draggedElement || !dropIndicator) {
@@ -53,12 +61,22 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
         const midY = targetRect.top + targetRect.height / 2;
         const position = e.clientY < midY ? 'before' : 'after';
 
-        const indicatorTop = position === 'before'
+        const indicatorTopVal = position === 'before'
             ? cardTarget.offsetTop - DROP_INDICATOR_GAP
             : cardTarget.offsetTop + cardTarget.offsetHeight + DROP_INDICATOR_GAP;
 
-        dropIndicator.style.top = `${indicatorTop - (DROP_INDICATOR_HEIGHT / 2)}px`;
-        dropIndicator.classList.add('visible');
+        const newTopStyle = `${indicatorTopVal - (DROP_INDICATOR_HEIGHT / 2)}px`;
+
+        // PERFORMANCE: Só toca no DOM se o valor realmente mudou
+        if (lastIndicatorTop !== newTopStyle) {
+            dropIndicator.style.top = newTopStyle;
+            lastIndicatorTop = newTopStyle;
+        }
+
+        if (!dropIndicator.classList.contains('visible')) {
+            dropIndicator.classList.add('visible');
+        }
+        
         dropIndicator.dataset.targetId = cardTarget.dataset.habitId;
         dropIndicator.dataset.position = position;
     }
@@ -98,15 +116,16 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
         draggedHabitObject = null;
         dropIndicator = null;
         currentDropZoneTarget = null;
+        lastIndicatorTop = null;
     }
 
 
     const handleBodyDragOver = (e: DragEvent) => {
         e.preventDefault();
 
-        if (dropIndicator) {
-            dropIndicator.classList.remove('visible');
-            delete dropIndicator.dataset.targetId;
+        if (dropIndicator && !e.target) {
+             dropIndicator.classList.remove('visible');
+             delete dropIndicator.dataset.targetId;
         }
 
         if (!draggedHabitId) {
@@ -119,6 +138,7 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
         
         if (!dropZone) {
             e.dataTransfer!.dropEffect = 'none';
+             if (dropIndicator) dropIndicator.classList.remove('visible');
             return;
         }
         
@@ -128,6 +148,7 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
 
         if (!isValid) {
             e.dataTransfer!.dropEffect = 'none';
+            if (dropIndicator) dropIndicator.classList.remove('visible');
             return;
         }
 
@@ -139,15 +160,8 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
 
     const handleBodyDrop = (e: DragEvent) => {
         e.preventDefault();
-        
-        document.body.removeEventListener('dragover', handleBodyDragOver);
-        document.body.removeEventListener('drop', handleBodyDrop);
-
-        currentDropZoneTarget?.classList.remove('drag-over', 'invalid-drop');
-        if (dropIndicator) {
-            dropIndicator.classList.remove('visible');
-        }
-
+        // REFACTOR [2025-01-16]: A limpeza de listeners foi removida daqui e centralizada em cleanupDrag (dragend).
+        // Isso garante que a limpeza ocorra mesmo se a lógica de drop falhar ou se o drop for cancelado.
         _determineAndExecuteDropAction();
     };
     

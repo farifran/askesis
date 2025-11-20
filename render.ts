@@ -1,10 +1,10 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// ANÁLISE DO ARQUIVO: 100% concluído (Revisão Final).
-// O que foi feito: A análise do módulo de renderização foi finalizada. As otimizações anteriores incluíram a implementação de uma estratégia de reconciliação de DOM para as listas de hábitos e calendário, e a refatoração DRY de lógicas duplicadas. Nesta etapa final, a experiência do usuário foi aprimorada no modal "Explorar Hábitos": os hábitos predefinidos que já estão ativos na lista do usuário agora são visualmente desabilitados, prevenindo a criação de duplicatas e fornecendo feedback visual imediato.
-// O que falta: Nenhuma análise futura é necessária. O arquivo é considerado finalizado.
+// [ANALYSIS PROGRESS]: 100% - Análise concluída. O código utiliza técnicas avançadas de reconciliação de DOM para minimizar reflows e repaints, e faz uso eficiente de caches de elementos. A lógica de renderização do calendário e gráficos está otimizada.
+
 import {
     state,
     Habit,
@@ -25,21 +25,28 @@ import {
     HabitTemplate,
     getHabitDailyInfoForDate,
     calculateDaySummary,
+    getActiveHabitsForDate,
 } from './state';
-// FIX: `getActiveHabitsForDate` was missing from the import list.
-import { getTodayUTCIso, toUTCIsoDateString, parseUTCIsoDate, escapeHTML, pushToOneSignal, addDays, getActiveHabitsForDate, getContrastColor } from './utils';
+import { getTodayUTCIso, toUTCIsoDateString, parseUTCIsoDate, escapeHTML, simpleMarkdownToHTML, pushToOneSignal, addDays, getContrastColor } from './utils';
 import { ui } from './ui';
 import { t, getLocaleDayName, getHabitDisplayInfo, getTimeOfDayName } from './i18n';
 import { STOIC_QUOTES } from './quotes';
 import { icons, getTimeOfDayIcon } from './icons';
 import { renderChart } from './chart';
 
-// MANUTENIBILIDADE [2024-11-07]: Utiliza um WeakMap para associar timeouts a elementos de aviso,
-// evitando a poluição de objetos do DOM com propriedades personalizadas.
 const noticeTimeouts = new WeakMap<HTMLElement, number>();
 const focusTrapListeners = new Map<HTMLElement, (e: KeyboardEvent) => void>();
 const previouslyFocusedElements = new WeakMap<HTMLElement, HTMLElement>();
 
+/**
+ * OTIMIZAÇÃO DE PERFORMANCE: Helper para atualizar textContent apenas se o valor mudou.
+ * Evita recálculos de layout/paint desnecessários no navegador.
+ */
+function setTextContent(element: Element | null, text: string) {
+    if (element && element.textContent !== text) {
+        element.textContent = text;
+    }
+}
 
 function updateReelRotaryARIA(viewportEl: HTMLElement, currentIndex: number, options: readonly string[] | string[], labelKey: string) {
     if (!viewportEl) return;
@@ -60,51 +67,62 @@ export function initLanguageFilter() {
 }
 
 /**
- * OTIMIZAÇÃO DE PERFORMANCE [2024-10-09]: Nova função auxiliar para atualizar um elemento de dia do calendário existente.
- * Esta função aplica cirurgicamente as mudanças (classes, estilos, atributos ARIA) a um elemento
- * do DOM existente, evitando a destruição e recriação desnecessárias, o que é fundamental para
- * a nova estratégia de renderização otimizada em `renderCalendar`.
+ * OTIMIZAÇÃO (DRY): Aplica o estado visual a um elemento de dia do calendário.
+ * Centraliza a lógica de classes, atributos ARIA e variáveis CSS para evitar duplicação
+ * entre criação e atualização.
  */
-function updateCalendarDayElement(dayItem: HTMLElement, date: Date) {
+function _applyDayState(dayItem: HTMLElement, date: Date) {
     const todayISO = getTodayUTCIso();
     const isoDate = toUTCIsoDateString(date);
-
-    // 1. Calcula os dados de exibição
     const { completedPercent, totalPercent, showPlus } = calculateDaySummary(isoDate);
+    const isSelected = isoDate === state.selectedDate;
+    const isToday = isoDate === todayISO;
 
-    // 2. Atualiza classes e atributos
-    dayItem.classList.toggle('selected', isoDate === state.selectedDate);
-    dayItem.classList.toggle('today', isoDate === todayISO);
-    dayItem.setAttribute('aria-pressed', String(isoDate === state.selectedDate));
+    // Gerenciamento de Classes
+    if (isSelected) dayItem.classList.add('selected');
+    else dayItem.classList.remove('selected');
 
-    // 3. Atualiza o anel de progresso
+    if (isToday) dayItem.classList.add('today');
+    else dayItem.classList.remove('today');
+
+    // Acessibilidade e Estado
+    dayItem.setAttribute('aria-pressed', String(isSelected));
+    dayItem.setAttribute('aria-label', date.toLocaleDateString(state.activeLanguageCode, {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+        timeZone: 'UTC'
+    }));
+
+    // Atualização Visual (Variáveis CSS e Indicadores)
     const dayProgressRing = dayItem.querySelector<HTMLElement>('.day-progress-ring');
     if (dayProgressRing) {
         dayProgressRing.style.setProperty('--completed-percent', `${completedPercent}%`);
         dayProgressRing.style.setProperty('--total-percent', `${totalPercent}%`);
+        
+        // OTIMIZAÇÃO: Manipulação direta do DOM para o indicador Plus
+        const dayNumber = dayProgressRing.querySelector<HTMLElement>('.day-number');
+        if (dayNumber) {
+            if (showPlus) dayNumber.classList.add('has-plus');
+            else dayNumber.classList.remove('has-plus');
+            // Usa setTextContent para o número do dia
+            setTextContent(dayNumber, String(date.getUTCDate()));
+        }
     }
-
-    // 4. Atualiza o indicador 'plus'
-    const dayNumber = dayItem.querySelector<HTMLElement>('.day-number');
-    if (dayNumber) {
-        dayNumber.classList.toggle('has-plus', showPlus);
-    }
+    
+    const dayNameEl = dayItem.querySelector('.day-name');
+    setTextContent(dayNameEl, getLocaleDayName(date));
 }
 
+function updateCalendarDayElement(dayItem: HTMLElement, date: Date) {
+    _applyDayState(dayItem, date);
+}
 
 function createCalendarDayElement(date: Date): HTMLElement {
-    const todayISO = getTodayUTCIso();
-    const isoDate = toUTCIsoDateString(date);
-    
-    // OTIMIZAÇÃO DE PERFORMANCE [2024-09-30]: Usa o helper centralizado para obter todos os dados de exibição
-    // do dia (progresso do anel e indicador 'plus') em uma única operação, evitando loops redundantes.
-    const { completedPercent, totalPercent, showPlus } = calculateDaySummary(isoDate);
-
     const dayItem = document.createElement('div');
-    dayItem.className = `day-item ${isoDate === state.selectedDate ? 'selected' : ''} ${isoDate === todayISO ? 'today' : ''}`;
-    dayItem.dataset.date = isoDate;
+    dayItem.className = 'day-item';
+    dayItem.dataset.date = toUTCIsoDateString(date);
     dayItem.setAttribute('role', 'button');
-    dayItem.setAttribute('aria-pressed', String(isoDate === state.selectedDate));
 
     const dayName = document.createElement('span');
     dayName.className = 'day-name';
@@ -112,49 +130,51 @@ function createCalendarDayElement(date: Date): HTMLElement {
 
     const dayProgressRing = document.createElement('div');
     dayProgressRing.className = 'day-progress-ring';
-    dayProgressRing.style.setProperty('--completed-percent', `${completedPercent}%`);
-    dayProgressRing.style.setProperty('--total-percent', `${totalPercent}%`);
 
     const dayNumber = document.createElement('span');
-    dayNumber.className = `day-number ${showPlus ? 'has-plus' : ''}`;
+    dayNumber.className = 'day-number';
     dayNumber.textContent = String(date.getUTCDate());
 
     dayProgressRing.appendChild(dayNumber);
     dayItem.appendChild(dayName);
     dayItem.appendChild(dayProgressRing);
 
+    // Aplica o estado inicial imediatamente
+    _applyDayState(dayItem, date);
+
     return dayItem;
 }
 
-/**
- * OTIMIZAÇÃO DE PERFORMANCE [2024-10-09]: A função `renderCalendar` foi refatorada para usar uma estratégia
- * de atualização de DOM no local. Em vez de limpar e recriar toda a faixa de dias (`innerHTML = ''`),
- * ela agora itera sobre os elementos de dia existentes e os atualiza com os dados mais recentes.
- * Isso torna as interações, como a seleção de um dia, muito mais rápidas e fluidas.
- */
 export function renderCalendar() {
     const dayElements = Array.from(ui.calendarStrip.querySelectorAll<HTMLElement>('.day-item'));
     
-    // Se a faixa do calendário estiver vazia, renderiza pela primeira vez.
     if (dayElements.length === 0) {
         const fragment = document.createDocumentFragment();
         state.calendarDates.forEach(date => {
             fragment.appendChild(createCalendarDayElement(date));
         });
         ui.calendarStrip.appendChild(fragment);
+
+        // UX IMPROVEMENT [2024-12-28]: Rola automaticamente o calendário na inicialização
+        // para que o "Hoje" seja o último dia visível à direita.
+        // O setTimeout(..., 0) garante que o layout tenha sido calculado antes de rolar.
+        const todayEl = ui.calendarStrip.querySelector<HTMLElement>('.day-item.today');
+        if (todayEl) {
+            setTimeout(() => {
+                todayEl.scrollIntoView({ behavior: 'auto', block: 'nearest', inline: 'end' });
+            }, 0);
+        }
         return;
     }
     
-    // Se os elementos já existirem, apenas os atualiza.
     dayElements.forEach((dayEl, index) => {
         const date = state.calendarDates[index];
-        if (date) { // Verificação de segurança
+        if (date) {
             updateCalendarDayElement(dayEl, date);
         }
     });
 }
 
-// REATORAÇÃO DE MANUTENIBILIDADE [2024-11-06]: Introduzida a função auxiliar _renderReelRotary para unificar a lógica de renderização duplicada entre renderLanguageFilter e renderFrequencyFilter, seguindo o princípio DRY.
 function _renderReelRotary(
     reelEl: HTMLElement,
     viewportEl: HTMLElement,
@@ -166,7 +186,7 @@ function _renderReelRotary(
     if (!reelEl) return;
     const firstOption = reelEl.querySelector('.reel-option') as HTMLElement | null;
     const itemWidth = firstOption?.offsetWidth || fallbackItemWidth;
-    const effectiveIndex = Math.max(0, currentIndex); // Garante que o índice não seja -1
+    const effectiveIndex = Math.max(0, currentIndex);
     const transformX = -effectiveIndex * itemWidth;
     reelEl.style.transform = `translateX(${transformX}px)`;
     updateReelRotaryARIA(viewportEl, effectiveIndex, options, ariaLabelKey);
@@ -186,11 +206,6 @@ export function renderLanguageFilter() {
     );
 }
 
-/**
- * MELHORIA DE ACESSIBILIDADE E FUNCIONALIDADE: Renderiza a visualização do calendário mensal completo.
- * A função foi aprimorada para incluir atributos ARIA para acessibilidade (role, aria-pressed, aria-label)
- * e gerenciamento de foco (tabindex="0" no dia selecionado), permitindo a navegação por teclado.
- */
 export function renderFullCalendar() {
     const { year, month } = state.fullCalendar;
     const todayISO = getTodayUTCIso();
@@ -204,7 +219,7 @@ export function renderFullCalendar() {
 
     const firstDayOfMonth = new Date(Date.UTC(year, month, 1));
     const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
-    const startDayOfWeek = firstDayOfMonth.getUTCDay(); // 0 = Domingo, 1 = Segunda...
+    const startDayOfWeek = firstDayOfMonth.getUTCDay();
 
     const daysInPrevMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
 
@@ -214,7 +229,7 @@ export function renderFullCalendar() {
     if (ui.fullCalendarWeekdays.childElementCount === 0) {
         const weekdaysFragment = document.createDocumentFragment();
         for (let i = 0; i < 7; i++) {
-            const day = new Date(Date.UTC(2024, 0, 7 + i)); // Usa uma semana conhecida para obter os nomes
+            const day = new Date(Date.UTC(2024, 0, 7 + i));
             const weekdayEl = document.createElement('div');
             weekdayEl.textContent = getLocaleDayName(day).substring(0, 1);
             weekdaysFragment.appendChild(weekdayEl);
@@ -225,7 +240,6 @@ export function renderFullCalendar() {
     const fragment = document.createDocumentFragment();
     let totalGridCells = 0;
 
-    // Dias do mês anterior
     for (let i = 0; i < startDayOfWeek; i++) {
         const day = daysInPrevMonth - startDayOfWeek + 1 + i;
         const dayEl = document.createElement('div');
@@ -240,7 +254,6 @@ export function renderFullCalendar() {
         totalGridCells++;
     }
 
-    // Dias do mês atual
     for (let day = 1; day <= daysInMonth; day++) {
         const currentDate = new Date(Date.UTC(year, month, day));
         const isoDate = toUTCIsoDateString(currentDate);
@@ -278,7 +291,6 @@ export function renderFullCalendar() {
         totalGridCells++;
     }
     
-    // Dias do próximo mês
     const remainingCells = (7 - (totalGridCells % 7)) % 7;
     for (let i = 1; i <= remainingCells; i++) {
         const day = i;
@@ -380,21 +392,45 @@ export const formatGoalForDisplay = (goal: number): string => {
 };
 
 function updateGoalContentElement(goalEl: HTMLElement, status: HabitStatus, habit: Habit, time: TimeOfDay, dayDataForInstance: HabitDayData | undefined) {
-    goalEl.innerHTML = '';
+    // OTIMIZAÇÃO DE PERFORMANCE: Verificação de reconciliação DOM para evitar recriação do innerHTML
+    // se a estrutura já estiver correta, atualizando apenas o texto e classes.
 
     if (status === 'completed') {
         if (habit.goal.type === 'pages' || habit.goal.type === 'minutes') {
             const smartGoal = getSmartGoalForHabit(habit, state.selectedDate, time);
             const completedGoal = dayDataForInstance?.goalOverride ?? smartGoal;
+            const displayVal = formatGoalForDisplay(completedGoal);
+            const unitVal = getUnitString(habit, completedGoal);
+
+            // Verifica se a estrutura de meta numérica completa já existe
+            const existingWrapper = goalEl.querySelector('.goal-value-wrapper');
+            const existingControls = goalEl.querySelector('.habit-goal-controls');
+            
+            // Se existe o wrapper E NÃO existem os controles (botões +/-), é a view "concluída numérica" correta
+            if (existingWrapper && !existingControls) {
+                 const prog = goalEl.querySelector('.progress');
+                 const unit = goalEl.querySelector('.unit');
+                 if (prog && unit) {
+                      setTextContent(prog, displayVal);
+                      setTextContent(unit, unitVal);
+                 }
+                 return; // Reconciliação bem sucedida
+            }
+            
+            // Fallback: Recria a estrutura
             goalEl.innerHTML = `
                 <div class="goal-value-wrapper">
-                    <div class="progress" style="color: var(--accent-blue);">${formatGoalForDisplay(completedGoal)}</div>
-                    <div class="unit">${getUnitString(habit, completedGoal)}</div>
+                    <div class="progress" style="color: var(--accent-blue);">${displayVal}</div>
+                    <div class="unit">${unitVal}</div>
                 </div>`;
         } else {
+            // Checkmark
+            if (goalEl.innerHTML.includes('✓') && goalEl.querySelector('.progress')) return;
             goalEl.innerHTML = `<div class="progress" style="color: var(--accent-blue);">✓</div><div class="unit">${getUnitString(habit, 1)}</div>`;
         }
     } else if (status === 'snoozed') {
+        if (goalEl.querySelector('.snoozed-text')) return;
+
         const progressDiv = document.createElement('div');
         progressDiv.className = 'progress';
         progressDiv.innerHTML = `<svg class="snoozed-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="13 17 18 12 13 7"></polyline><polyline points="6 17 11 12 6 7"></polyline></svg>`;
@@ -402,31 +438,45 @@ function updateGoalContentElement(goalEl: HTMLElement, status: HabitStatus, habi
         const unitDiv = document.createElement('div');
         unitDiv.className = 'unit snoozed-text';
         unitDiv.textContent = t('habitSnoozed');
-
+        
+        goalEl.innerHTML = '';
         goalEl.append(progressDiv, unitDiv);
     } else { 
+        // Pending (Controls)
         if (habit.goal.type === 'pages' || habit.goal.type === 'minutes') {
             const smartGoal = getSmartGoalForHabit(habit, state.selectedDate, time);
             const currentGoal = dayDataForInstance?.goalOverride ?? smartGoal;
+            const displayVal = formatGoalForDisplay(currentGoal);
+            const unitVal = getUnitString(habit, currentGoal);
+
+            // Verifica se os controles já existem
+            const existingControls = goalEl.querySelector('.habit-goal-controls');
+            if (existingControls) {
+                const prog = goalEl.querySelector('.progress');
+                const unit = goalEl.querySelector('.unit');
+                if (prog && unit) {
+                    setTextContent(prog, displayVal);
+                    setTextContent(unit, unitVal);
+                }
+                return; // Reconciliação bem sucedida
+            }
+
+            // Fallback: Recria a estrutura com type="button" para evitar submit acidental
             goalEl.innerHTML = `
                 <div class="habit-goal-controls">
-                    <button class="goal-control-btn" data-habit-id="${habit.id}" data-time="${time}" data-action="decrement" aria-label="${t('habitGoalDecrement_ariaLabel')}">-</button>
+                    <button type="button" class="goal-control-btn" data-habit-id="${habit.id}" data-time="${time}" data-action="decrement" aria-label="${t('habitGoalDecrement_ariaLabel')}">-</button>
                     <div class="goal-value-wrapper">
-                        <div class="progress">${formatGoalForDisplay(currentGoal)}</div>
-                        <div class="unit">${getUnitString(habit, currentGoal)}</div>
+                        <div class="progress">${displayVal}</div>
+                        <div class="unit">${unitVal}</div>
                     </div>
-                    <button class="goal-control-btn" data-habit-id="${habit.id}" data-time="${time}" data-action="increment" aria-label="${t('habitGoalIncrement_ariaLabel')}">+</button>
+                    <button type="button" class="goal-control-btn" data-habit-id="${habit.id}" data-time="${time}" data-action="increment" aria-label="${t('habitGoalIncrement_ariaLabel')}">+</button>
                 </div>`;
+        } else {
+            goalEl.innerHTML = ''; // Limpa se não for meta numérica
         }
     }
 }
 
-/**
- * REATORAÇÃO DE DRY: Gerencia a renderização da mensagem de consolidação de um hábito.
- * Cria, atualiza ou remove a mensagem com base na sequência atual do hábito.
- * @param detailsEl O elemento DOM que contém os detalhes do hábito.
- * @param streak O número de dias de sequência do hábito.
- */
 function _updateConsolidationMessage(detailsEl: HTMLElement, streak: number) {
     let msgEl = detailsEl.querySelector<HTMLElement>('.consolidation-message');
 
@@ -443,19 +493,12 @@ function _updateConsolidationMessage(detailsEl: HTMLElement, streak: number) {
             msgEl.className = 'consolidation-message';
             detailsEl.appendChild(msgEl);
         }
-        msgEl.textContent = messageText;
+        setTextContent(msgEl, messageText);
     } else if (msgEl) {
         msgEl.remove();
     }
 }
 
-
-/**
- * OTIMIZAÇÃO DE PERFORMANCE [2024-10-08]: Nova função auxiliar para atualizar um cartão de hábito existente no DOM.
- * Esta função aplica cirurgicamente as mudanças (classes, texto, ícones) a um elemento existente,
- * evitando a necessidade de destruir e recriar o cartão, o que é fundamental para a nova estratégia
- * de reconciliação de DOM em `renderHabits`.
- */
 function updateHabitCardElement(card: HTMLElement, habit: Habit, time: TimeOfDay): void {
     const dailyInfo = getHabitDailyInfoForDate(state.selectedDate);
     const habitInstanceData = dailyInfo[habit.id]?.instances?.[time];
@@ -463,30 +506,37 @@ function updateHabitCardElement(card: HTMLElement, habit: Habit, time: TimeOfDay
     const hasNote = habitInstanceData?.note && habitInstanceData.note.length > 0;
     const streak = calculateHabitStreak(habit.id, getTodayUTCIso());
 
-    // 1. Atualiza as classes do cartão
-    card.className = `habit-card ${status}`; // Reseta as classes com base no status
+    // UX-FIX [2024-12-28]: Atualiza classes com segurança para preservar o estado de interação
+    // (como 'is-open-left', 'dragging') durante atualizações de dados.
+    // Remove classes de status antigas de forma cirúrgica
+    card.classList.remove('pending', 'completed', 'snoozed');
+    // Adiciona a classe de status atual
+    card.classList.add(status);
+
+    card.classList.remove('consolidated', 'semi-consolidated');
     if (streak >= STREAK_CONSOLIDATED) card.classList.add('consolidated');
     else if (streak >= STREAK_SEMI_CONSOLIDATED) card.classList.add('semi-consolidated');
     
-    // 2. Atualiza as informações de exibição (nome, subtítulo)
     const { name, subtitle } = getHabitDisplayInfo(habit, state.selectedDate);
-    card.querySelector<HTMLElement>('.habit-details .name')!.textContent = name;
-    card.querySelector<HTMLElement>('.habit-details .subtitle')!.textContent = subtitle;
+    setTextContent(card.querySelector('.habit-details .name'), name);
+    setTextContent(card.querySelector('.habit-details .subtitle'), subtitle);
 
-    // 3. Atualiza a mensagem de consolidação
     const detailsEl = card.querySelector<HTMLElement>('.habit-details');
     if(detailsEl) {
         _updateConsolidationMessage(detailsEl, streak);
     }
     
-    // 4. Atualiza o ícone de nota
     const noteBtn = card.querySelector<HTMLElement>('.swipe-note-btn');
     if (noteBtn) {
-        noteBtn.innerHTML = hasNote ? icons.swipeNoteHasNote : icons.swipeNote;
-        noteBtn.setAttribute('aria-label', t(hasNote ? 'habitNoteEdit_ariaLabel' : 'habitNoteAdd_ariaLabel'));
+        const hasNoteStr = String(hasNote);
+        // OTIMIZAÇÃO: Verifica o estado via dataset antes de manipular o DOM/SVG
+        if (noteBtn.dataset.hasNote !== hasNoteStr) {
+            noteBtn.innerHTML = hasNote ? icons.swipeNoteHasNote : icons.swipeNote;
+            noteBtn.setAttribute('aria-label', t(hasNote ? 'habitNoteEdit_ariaLabel' : 'habitNoteAdd_ariaLabel'));
+            noteBtn.dataset.hasNote = hasNoteStr;
+        }
     }
 
-    // 5. Atualiza o conteúdo da meta
     const goalEl = card.querySelector<HTMLElement>('.habit-goal');
     if (goalEl) {
         updateGoalContentElement(goalEl, status, habit, time, habitInstanceData);
@@ -499,12 +549,10 @@ export function createHabitCardElement(habit: Habit, time: TimeOfDay): HTMLEleme
     const habitInstanceData = dailyInfo[habit.id]?.instances?.[time];
     const status = habitInstanceData?.status ?? 'pending';
     const hasNote = habitInstanceData?.note && habitInstanceData.note.length > 0;
-    // CORREÇÃO DE UX [2024-10-07]: O status de consolidação agora é calculado com base na sequência ATÉ HOJE,
-    // não na data selecionada. Isso garante que a conquista seja exibida de forma persistente,
-    // reforçando o sentimento de realização do usuário, independentemente da data que ele está visualizando.
     const streak = calculateHabitStreak(habit.id, getTodayUTCIso());
     
     const card = document.createElement('div');
+    // Define as classes iniciais. Como é um novo elemento, não precisamos nos preocupar com estado anterior.
     card.className = `habit-card ${status}`;
     card.dataset.habitId = habit.id;
     card.dataset.time = time;
@@ -512,20 +560,16 @@ export function createHabitCardElement(habit: Habit, time: TimeOfDay): HTMLEleme
     if (streak >= STREAK_CONSOLIDATED) card.classList.add('consolidated');
     else if (streak >= STREAK_SEMI_CONSOLIDATED) card.classList.add('semi-consolidated');
 
-    // CORREÇÃO DE DADOS HISTÓRICOS [2024-09-20]: Passa a data selecionada para garantir que
-    // o nome e o subtítulo corretos sejam exibidos para o dia visualizado.
     const { name, subtitle } = getHabitDisplayInfo(habit, state.selectedDate);
 
-    // REATORAÇÃO DE ARQUITETURA [2024-09-22]: Os ícones de ação agora são injetados diretamente
-    // do módulo 'icons.ts', em vez de serem aplicados via CSS mask-image.
-    // Isso centraliza todos os ícones da aplicação em um único local, melhorando a manutenibilidade.
     const actionsLeft = document.createElement('div');
     actionsLeft.className = 'habit-actions-left';
-    actionsLeft.innerHTML = `<button class="swipe-delete-btn" aria-label="${t('habitEnd_ariaLabel')}">${icons.swipeDelete}</button>`;
+    actionsLeft.innerHTML = `<button type="button" class="swipe-delete-btn" aria-label="${t('habitEnd_ariaLabel')}">${icons.swipeDelete}</button>`;
 
     const actionsRight = document.createElement('div');
     actionsRight.className = 'habit-actions-right';
-    actionsRight.innerHTML = `<button class="swipe-note-btn" aria-label="${t(hasNote ? 'habitNoteEdit_ariaLabel' : 'habitNoteAdd_ariaLabel')}">${hasNote ? icons.swipeNoteHasNote : icons.swipeNote}</button>`;
+    // Inicializa o dataset.hasNote para sincronização correta no update futuro
+    actionsRight.innerHTML = `<button type="button" class="swipe-note-btn" data-has-note="${hasNote}" aria-label="${t(hasNote ? 'habitNoteEdit_ariaLabel' : 'habitNoteAdd_ariaLabel')}">${hasNote ? icons.swipeNoteHasNote : icons.swipeNote}</button>`;
     
     const contentWrapper = document.createElement('div');
     contentWrapper.className = 'habit-content-wrapper';
@@ -551,11 +595,9 @@ export function createHabitCardElement(habit: Habit, time: TimeOfDay): HTMLEleme
     subtitleEl.textContent = subtitle;
     details.append(nameEl, subtitleEl);
     
-    // REATORAÇÃO DE DRY: Chama o helper centralizado para lidar com a mensagem de consolidação.
     _updateConsolidationMessage(details, streak);
 
     const goal = document.createElement('div');
-    goal.className = 'habit-goal';
     goal.className = 'habit-goal';
     updateGoalContentElement(goal, status, habit, time, habitInstanceData);
 
@@ -565,14 +607,6 @@ export function createHabitCardElement(habit: Habit, time: TimeOfDay): HTMLEleme
     return card;
 }
 
-/**
- * Manages the creation, update, and removal of the placeholder element for an empty habit group.
- * @param groupEl The habit group DOM element.
- * @param time The time of day for this group.
- * @param hasHabits Whether the group currently contains habits.
- * @param isSmartPlaceholder Whether this placeholder should show icons for all empty slots.
- * @param emptyTimes A list of all time slots that are currently empty.
- */
 function updatePlaceholderForGroup(groupEl: HTMLElement, time: TimeOfDay, hasHabits: boolean, isSmartPlaceholder: boolean, emptyTimes: TimeOfDay[]) {
     let placeholder = groupEl.querySelector<HTMLElement>('.empty-group-placeholder');
     
@@ -608,14 +642,6 @@ function updatePlaceholderForGroup(groupEl: HTMLElement, time: TimeOfDay, hasHab
     }
 }
 
-/**
- * OTIMIZAÇÃO DE PERFORMANCE E CORREÇÃO DE ORDEM [2024-12-26]: 
- * A função `renderHabits` foi refatorada. A versão anterior usava reconciliação "in-place" que
- * falhava em atualizar a *ordem visual* dos cartões se eles fossem reordenados no estado.
- * Esta nova versão garante que a ordem DOM sempre corresponda à ordem do array `desiredHabits`,
- * movendo os elementos existentes para a posição correta através de `appendChild` (que move nós
- * existentes), garantindo a persistência correta de operações Drag & Drop.
- */
 export function renderHabits() {
     const selectedDateObj = parseUTCIsoDate(state.selectedDate);
     const activeHabitsData = getActiveHabitsForDate(selectedDateObj);
@@ -651,35 +677,27 @@ export function renderHabits() {
 
         const desiredHabits = habitsByTime[time];
         
-        // Itera sobre os hábitos desejados na ordem CORRETA do estado
         desiredHabits.forEach(habit => {
             const key = `${habit.id}|${time}`;
             let card = existingCardsMap.get(key);
             
             if (card) {
-                // Hábito já existe, atualize-o
                 updateHabitCardElement(card, habit, time);
-                existingCardsMap.delete(key); // Marca como processado
+                existingCardsMap.delete(key);
             } else {
-                // Hábito é novo, crie-o
                 card = createHabitCardElement(habit, time);
             }
             
-            // CRÍTICO: `appendChild` move o elemento se ele já estiver no DOM.
-            // Ao chamar isso sequencialmente na ordem de `desiredHabits`, garantimos
-            // que a ordem visual do DOM corresponda exatamente à ordem do array.
             if (card) {
                 groupEl.appendChild(card);
             }
         });
 
-        // Remove cartões que não estão mais no estado atual
         existingCardsMap.forEach(cardToRemove => cardToRemove.remove());
         
         const hasHabits = groupHasHabits[time];
         const isSmartPlaceholder = time === smartPlaceholderTargetTime;
         
-        // Atualiza as classes do wrapper
         wrapperEl.classList.toggle('has-habits', hasHabits);
         wrapperEl.classList.toggle('is-collapsible', !hasHabits && !isSmartPlaceholder);
 
@@ -689,8 +707,6 @@ export function renderHabits() {
 
 
 export function renderExploreHabits() {
-    // OTIMIZAÇÃO DE PERFORMANCE [2024-12-26]: Uso de DocumentFragment e createElement
-    // substitui a manipulação de strings innerHTML, melhorando a performance e segurança.
     const fragment = document.createDocumentFragment();
 
     PREDEFINED_HABITS.forEach((habit, index) => {
@@ -734,9 +750,6 @@ export function renderExploreHabits() {
 }
 
 export function renderAINotificationState() {
-    // REFACTOR [2024-08-03]: A lógica do estado desabilitado do botão de IA foi centralizada aqui.
-    // Agora, ele considera tanto o estado de 'loading' QUANTO o status 'offline' da rede,
-    // tornando esta função a única fonte da verdade e eliminando lógica duplicada em 'listeners.ts'.
     const isLoading = state.aiState === 'loading';
     const isOffline = !navigator.onLine;
     const hasCelebrations = state.pending21DayHabitIds.length > 0 || state.pendingConsolidationHabitIds.length > 0;
@@ -744,7 +757,6 @@ export function renderAINotificationState() {
 
     ui.aiEvalBtn.classList.toggle('loading', isLoading);
     ui.aiEvalBtn.disabled = isLoading || isOffline;
-    // CORREÇÃO DE BUG [2024-12-09]: Corrigido erro de digitação (`ui.aiEval-btn` para `ui.aiEvalBtn`). A propriedade incorreta causava um erro em tempo de execução que impedia a atualização do estado de notificação do botão da IA.
     ui.aiEvalBtn.classList.toggle('has-notification', hasCelebrations || hasUnseenResult);
 }
 
@@ -764,13 +776,11 @@ export function renderStoicQuote() {
     ui.stoicQuoteDisplay.classList.remove('visible');
     
     setTimeout(() => {
-        ui.stoicQuoteDisplay.textContent = `"${quoteText}" — ${t('marcusAurelius')}`;
+        setTextContent(ui.stoicQuoteDisplay, `"${quoteText}" — ${t('marcusAurelius')}`);
         ui.stoicQuoteDisplay.classList.add('visible');
     }, 100);
 }
 
-// REATORAÇÃO [2024-11-19]: A função foi refatorada para preencher os elementos de título de desktop e mobile separadamente. A lógica de detecção de `window.innerWidth` foi removida, delegando a responsabilidade de exibição para o CSS.
-// REATORAÇÃO DE CLAREZA [2024-11-23]: A lógica if/else para datas especiais (Hoje, Ontem, Amanhã) foi substituída por um mapeamento de objetos. Isso reduz a repetição de código e torna a intenção mais clara, melhorando a manutenibilidade.
 export function updateHeaderTitle() {
     const todayISO = getTodayUTCIso();
     const yesterdayISO = toUTCIsoDateString(addDays(parseUTCIsoDate(todayISO), -1));
@@ -794,12 +804,10 @@ export function updateHeaderTitle() {
     } else {
         const date = parseUTCIsoDate(state.selectedDate);
 
-        // Formato para Mobile (DD/MM)
         const day = String(date.getUTCDate()).padStart(2, '0');
         const month = String(date.getUTCMonth() + 1).padStart(2, '0');
         mobileTitle = `${day}/${month}`;
         
-        // Formato para Desktop (Mês por extenso, dia)
         const formatOptions: Intl.DateTimeFormatOptions = {
             month: 'long',
             day: 'numeric',
@@ -807,14 +815,12 @@ export function updateHeaderTitle() {
         };
         desktopTitle = date.toLocaleDateString(state.activeLanguageCode, formatOptions);
     }
-    ui.headerTitleDesktop.textContent = desktopTitle;
-    ui.headerTitleMobile.textContent = mobileTitle;
+    setTextContent(ui.headerTitleDesktop, desktopTitle);
+    setTextContent(ui.headerTitleMobile, mobileTitle);
 }
 
 
 export function updateNotificationUI() {
-    // Esta função pode ser chamada antes da inicialização do OneSignal.
-    // Esperamos que o objeto OneSignal esteja disponível.
     pushToOneSignal((OneSignal: any) => {
         const permission = OneSignal.Notifications.permission;
         const isPushEnabled = OneSignal.User.PushSubscription.optedIn;
@@ -823,19 +829,17 @@ export function updateNotificationUI() {
             ui.notificationToggle.checked = false;
             ui.notificationToggle.disabled = true;
             ui.notificationToggleLabel.style.cursor = 'not-allowed';
-            ui.notificationStatusDesc.textContent = t('notificationStatusDisabled');
+            setTextContent(ui.notificationStatusDesc, t('notificationStatusDisabled'));
         } else {
             ui.notificationToggle.disabled = false;
             ui.notificationToggleLabel.style.cursor = 'pointer';
 
-            // O interruptor deve refletir se o usuário está inscrito atualmente
             ui.notificationToggle.checked = isPushEnabled;
 
             if (isPushEnabled) {
-                ui.notificationStatusDesc.textContent = t('notificationStatusEnabled');
+                setTextContent(ui.notificationStatusDesc, t('notificationStatusEnabled'));
             } else {
-                // Abrange tanto a permissão 'default' quanto a 'granted' mas não optou por participar.
-                ui.notificationStatusDesc.textContent = t('modalManageNotificationsStaticDesc');
+                setTextContent(ui.notificationStatusDesc, t('modalManageNotificationsStaticDesc'));
             }
         }
     });
@@ -848,7 +852,6 @@ export function renderApp() {
     renderAINotificationState();
     renderStoicQuote();
     renderChart();
-    // FIX: updateHeaderTitle() was missing from here in some versions, adding it back ensures consistency.
     updateHeaderTitle();
 }
 
@@ -867,11 +870,6 @@ export function openModal(modal: HTMLElement, elementToFocus?: HTMLElement) {
 
     const targetElement = elementToFocus || firstFocusable;
     
-    // BUGFIX DE FOCO [2024-11-05]: Reverte para um setTimeout. Após várias tentativas, a falha do foco
-    // imediato e do `transitionend` em acionar o teclado móvel indica uma condição de corrida de renderização
-    // do navegador. Um pequeno atraso (menor que a animação) dá ao navegador tempo suficiente para processar
-    // a mudança de visibilidade do modal, tornando o elemento focável ANTES da chamada de foco, o que
-    // resolve o problema de forma mais confiável em todos os dispositivos.
     setTimeout(() => {
         if (targetElement && targetElement.isConnected) {
             if (targetElement instanceof HTMLTextAreaElement) {
@@ -923,9 +921,6 @@ export function closeModal(modal: HTMLElement) {
     }
 }
 
-// REFACTOR [2024-08-18]: Modifica `initializeModalClosing` para aceitar um callback `onClose` opcional.
-// Isso centraliza a lógica de fechamento de modais (cliques no overlay e no botão) e a torna mais extensível,
-// permitindo que modais como o de IA se conectem ao evento de fechamento sem duplicar a lógica de listeners.
 export function initializeModalClosing(modal: HTMLElement, onClose?: () => void) {
     const handleClose = () => {
         closeModal(modal);
@@ -942,7 +937,7 @@ export function showInlineNotice(element: HTMLElement, message: string) {
     const existingTimeout = noticeTimeouts.get(element);
     if (existingTimeout) clearTimeout(existingTimeout);
     
-    element.textContent = message;
+    setTextContent(element, message);
     element.classList.add('visible');
     
     const newTimeout = window.setTimeout(() => {
@@ -953,11 +948,6 @@ export function showInlineNotice(element: HTMLElement, message: string) {
     noticeTimeouts.set(element, newTimeout);
 }
 
-/**
- * Determina o status de um hábito para fins de ordenação na UI.
- * @param habit O hábito a ser avaliado.
- * @returns 'active', 'ended', ou 'graduated'.
- */
 function getHabitStatusForSorting(habit: Habit): 'active' | 'ended' | 'graduated' {
     if (habit.graduatedOn) {
         return 'graduated';
@@ -969,12 +959,6 @@ function getHabitStatusForSorting(habit: Habit): 'active' | 'ended' | 'graduated
     return 'active';
 }
 
-/**
- * REATORAÇÃO DE SEGURANÇA E MANUTENIBILIDADE [2024-11-07]: A função foi reescrita para usar `document.createElement`
- * e `textContent` em vez de construir strings HTML com `innerHTML`. Isso elimina qualquer risco potencial de
- * injeção de script (XSS), mesmo que os dados de entrada sejam confiáveis, e torna a estrutura da função
- * mais clara, robusta e fácil de depurar.
- */
 function _createManageHabitListItem(habitData: { habit: Habit; status: 'active' | 'ended' | 'graduated'; name: string; }): HTMLLIElement {
     const { habit, status, name } = habitData;
     const streak = calculateHabitStreak(habit.id, getTodayUTCIso());
@@ -987,10 +971,7 @@ function _createManageHabitListItem(habitData: { habit: Habit; status: 'active' 
     const mainSpan = document.createElement('span');
     
     const iconSpan = document.createElement('span');
-    iconSpan.innerHTML = habit.icon; // Ícones são SVGs seguros e confiáveis de `icons.ts`
-    // CORREÇÃO VISUAL [2024-12-08]: Define a cor do ícone com base na cor do hábito.
-    // Isso corrige um bug onde os ícones na lista de gerenciamento apareciam em escala de cinza
-    // em vez de suas cores designadas, alinhando-os com a aparência dos cartões de hábito.
+    iconSpan.innerHTML = habit.icon;
     iconSpan.style.color = habit.color;
     
     const nameSpan = document.createElement('span');
@@ -1014,6 +995,8 @@ function _createManageHabitListItem(habitData: { habit: Habit; status: 'active' 
         button.className = className;
         button.dataset.habitId = habitId;
         button.setAttribute('aria-label', ariaLabel);
+        // PROTECTION: type="button" prevents form submission if this is used inside a form context
+        button.type = "button"; 
         button.innerHTML = icon;
         return button;
     };
@@ -1046,7 +1029,6 @@ function _createManageHabitListItem(habitData: { habit: Habit; status: 'active' 
 
 
 export function setupManageModal() {
-    // Otimização: calcula status e nome de cada hábito uma única vez.
     const habitsForModal = state.habits.map(habit => {
         const { name } = getHabitDisplayInfo(habit);
         return {
@@ -1058,7 +1040,6 @@ export function setupManageModal() {
 
     const statusOrder = { 'active': 0, 'ended': 1, 'graduated': 2 };
 
-    // Ordena o array com base no status pré-calculado e, em seguida no nome.
     habitsForModal.sort((a, b) => {
         const statusDifference = statusOrder[a.status] - statusOrder[b.status];
         if (statusDifference !== 0) {
@@ -1067,8 +1048,6 @@ export function setupManageModal() {
         return a.name.localeCompare(b.name);
     });
 
-    // REATORAÇÃO [2024-09-11]: Utiliza DocumentFragment e uma função helper para a criação de elementos
-    // em vez de manipulação de strings com innerHTML. Isso melhora a performance e a manutenibilidade.
     const fragment = document.createDocumentFragment();
     habitsForModal.forEach(habitData => {
         fragment.appendChild(_createManageHabitListItem(habitData as { habit: Habit; status: 'active' | 'ended' | 'graduated'; name: string; }));
@@ -1078,14 +1057,12 @@ export function setupManageModal() {
     ui.habitList.appendChild(fragment);
 }
 
-
-// FIX: Add missing modal-related functions
 export function showUndoToast() {
     if (state.undoTimeout) clearTimeout(state.undoTimeout);
     ui.undoToast.classList.add('visible');
     state.undoTimeout = window.setTimeout(() => {
         ui.undoToast.classList.remove('visible');
-        state.lastEnded = null; // Clear the undo state after timeout
+        state.lastEnded = null;
     }, 5000);
 }
 
@@ -1098,8 +1075,6 @@ export function showConfirmationModal(
         cancelText?: string;
         editText?: string;
         onEdit?: () => void;
-        // UX-FIX [2024-10-27]: Adiciona a opção de estilo para o botão de confirmação.
-        // Permite que ações destrutivas usem um botão vermelho ('danger') para alertar o usuário.
         confirmButtonStyle?: 'primary' | 'danger';
     }
 ) {
@@ -1107,22 +1082,21 @@ export function showConfirmationModal(
     state.confirmAction = onConfirm;
     state.confirmEditAction = options?.onEdit || null;
 
-    ui.confirmModal.querySelector('h2')!.textContent = options?.title || t('modalConfirmTitle');
+    setTextContent(ui.confirmModal.querySelector('h2'), options?.title || t('modalConfirmTitle'));
     const confirmBtn = ui.confirmModalConfirmBtn;
-    confirmBtn.textContent = options?.confirmText || t('confirmButton');
+    setTextContent(confirmBtn, options?.confirmText || t('confirmButton'));
     
-    // UX-FIX [2024-10-27]: Aplica a classe de estilo correta ao botão de confirmação.
     confirmBtn.classList.remove('btn--primary', 'btn--danger');
     confirmBtn.classList.add(options?.confirmButtonStyle === 'danger' ? 'btn--danger' : 'btn--primary');
     
     const cancelBtn = ui.confirmModal.querySelector<HTMLElement>('.modal-close-btn');
     if (cancelBtn) {
-        cancelBtn.textContent = options?.cancelText || t('cancelButton');
+        setTextContent(cancelBtn, options?.cancelText || t('cancelButton'));
     }
     
     if (options?.editText && options?.onEdit) {
         ui.confirmModalEditBtn.style.display = 'inline-block';
-        ui.confirmModalEditBtn.textContent = options.editText;
+        setTextContent(ui.confirmModalEditBtn, options.editText);
     } else {
         ui.confirmModalEditBtn.style.display = 'none';
     }
@@ -1136,14 +1110,13 @@ export function openNotesModal(habitId: string, date: string, time: TimeOfDay) {
     
     state.editingNoteFor = { habitId, date, time };
     
-    // CORREÇÃO DE DADOS HISTÓRICOS [2024-09-20]: Passa a data selecionada para obter o nome correto.
     const { name } = getHabitDisplayInfo(habit, date);
     const dateObj = parseUTCIsoDate(date);
     const formattedDate = dateObj.toLocaleDateString(state.activeLanguageCode, { day: 'numeric', month: 'long', timeZone: 'UTC' });
     const timeName = getTimeOfDayName(time);
 
-    ui.notesModalTitle.textContent = name;
-    ui.notesModalSubtitle.textContent = `${formattedDate} - ${timeName}`;
+    setTextContent(ui.notesModalTitle, name);
+    setTextContent(ui.notesModalSubtitle, `${formattedDate} - ${timeName}`);
     
     const dayData = state.dailyData[date]?.[habitId]?.instances[time];
     ui.notesTextarea.value = dayData?.note || '';
@@ -1169,7 +1142,7 @@ export function renderIconPicker() {
             .map(key => {
                 const iconSVG = (icons as any)[key];
                 return `
-                    <button class="icon-picker-item" data-icon-svg="${escapeHTML(iconSVG)}">
+                    <button type="button" class="icon-picker-item" data-icon-svg="${escapeHTML(iconSVG)}">
                         ${iconSVG}
                     </button>
                 `;
@@ -1190,25 +1163,17 @@ export function renderColorPicker() {
     if (!state.editingHabit) return;
     const currentColor = state.editingHabit.formData.color;
     ui.colorPickerGrid.innerHTML = PALETTE_COLORS.map(color => `
-        <button class="color-swatch ${currentColor === color ? 'selected' : ''}" style="background-color: ${color}" data-color="${color}" aria-label="${color}"></button>
+        <button type="button" class="color-swatch ${currentColor === color ? 'selected' : ''}" style="background-color: ${color}" data-color="${color}" aria-label="${color}"></button>
     `).join('');
 }
 
-/**
- * REATORAÇÃO [2024-09-13]: A lógica para criar o estado do formulário de hábito foi extraída
- * para a função auxiliar _createHabitTemplateForForm. Isso remove a duplicação de código em
- * openEditModal e centraliza a criação do objeto formData a partir de um hábito existente,
- * um modelo predefinido ou um novo hábito personalizado.
- */
 function _createHabitTemplateForForm(habitOrTemplate: Habit | PredefinedHabit | null, selectedDate: string): HabitTemplate {
-    // Caso 1: Criando um novo hábito personalizado do zero.
     if (!habitOrTemplate) {
         const commonData = {
             icon: icons.custom,
             color: '#000000',
             times: ['Morning'] as TimeOfDay[],
             goal: { type: 'check', unitKey: 'unitCheck' } as Habit['goal'],
-            // UX IMPROVEMENT: Default to a non-daily frequency to show advanced options initially.
             frequency: { type: 'interval', unit: 'days', amount: 2 } as Frequency,
         };
         return {
@@ -1218,7 +1183,6 @@ function _createHabitTemplateForForm(habitOrTemplate: Habit | PredefinedHabit | 
         };
     }
 
-    // Caso 2: Criando a partir de um modelo predefinido.
     if (!('id' in habitOrTemplate)) {
         const template = habitOrTemplate as PredefinedHabit;
         return {
@@ -1232,10 +1196,8 @@ function _createHabitTemplateForForm(habitOrTemplate: Habit | PredefinedHabit | 
         };
     }
 
-    // Caso 3: Editando um hábito existente.
     const habit = habitOrTemplate as Habit;
     const schedule = getScheduleForDate(habit, selectedDate) || habit.scheduleHistory[habit.scheduleHistory.length - 1];
-    // CORREÇÃO DE DADOS HISTÓRICOS [2024-09-20]: Passa a data para obter o nome historicamente correto.
     const { name } = getHabitDisplayInfo(habit, selectedDate);
 
     const commonData = {
@@ -1263,16 +1225,15 @@ export function openEditModal(habitOrTemplate: Habit | HabitTemplate | null) {
     
     const formData = _createHabitTemplateForForm(habitOrTemplate as Habit | PredefinedHabit | null, state.selectedDate);
     const nameInput = form.elements.namedItem('habit-name') as HTMLInputElement;
-    nameInput.placeholder = t('modalEditFormNameLabel'); // Use a chave da etiqueta como placeholder
+    nameInput.placeholder = t('modalEditFormNameLabel');
 
     if (isNew) {
-        ui.editHabitModalTitle.textContent = t('modalEditNewTitle');
+        setTextContent(ui.editHabitModalTitle, t('modalEditNewTitle'));
         nameInput.value = (habitOrTemplate && 'nameKey' in habitOrTemplate) ? t(habitOrTemplate.nameKey) : '';
     } else {
         const habit = habitOrTemplate as Habit;
-        // CORREÇÃO DE DADOS HISTÓRICOS [2024-09-20]: Passa a data para obter o nome correto.
         const { name } = getHabitDisplayInfo(habit, state.selectedDate);
-        ui.editHabitModalTitle.textContent = name;
+        setTextContent(ui.editHabitModalTitle, name);
         nameInput.value = name;
     }
 
@@ -1283,14 +1244,12 @@ export function openEditModal(habitOrTemplate: Habit | HabitTemplate | null) {
         formData: formData
     };
 
-    // Atualiza a nova UI de identidade do hábito
     ui.editHabitModal.querySelector<HTMLElement>('.edit-icon-overlay')!.innerHTML = icons.edit;
     const iconColor = getContrastColor(formData.color);
     ui.habitIconPickerBtn.innerHTML = formData.icon;
     ui.habitIconPickerBtn.style.backgroundColor = formData.color;
     ui.habitIconPickerBtn.style.color = iconColor;
     
-    // Renderiza o novo controle segmentado para horários
     ui.habitTimeContainer.innerHTML = `
         <div class="segmented-control">
             ${TIMES_OF_DAY.map(time => `

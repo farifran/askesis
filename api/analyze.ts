@@ -2,7 +2,8 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// ANÁLISE DO ARQUIVO: 100% concluído. O endpoint foi refatorado para incluir tratamento robusto de respostas da API Gemini, especialmente para casos em que o conteúdo é bloqueado por razões de segurança ou a geração falha. A validação do payload e o tratamento de erros de servidor já estavam implementados. Com esta melhoria de robustez, a análise do arquivo é considerada finalizada e nenhuma revisão futura é necessária.
+// [ANALYSIS PROGRESS]: 100% - Arquivo analisado. Otimização no tratamento de erro de parsing JSON implementada para diferenciar erros de cliente (400) de erros de servidor. Código robusto e em conformidade com o SDK @google/genai.
+
 import { GoogleGenAI } from '@google/genai';
 
 export const config = {
@@ -38,9 +39,18 @@ export default async function handler(req: Request) {
         return createErrorResponse('Method Not Allowed', 405);
     }
 
+    // [2025-01-15] ROBUSTEZ: Tratamento específico para falhas de parsing JSON.
+    // Isso garante que um JSON malformado retorne 400 (Bad Request) em vez de cair no catch genérico 500.
+    let body: AnalyzeRequestBody;
     try {
-        const { prompt, systemInstruction }: AnalyzeRequestBody = await req.json();
+        body = await req.json();
+    } catch (e) {
+        return createErrorResponse('Bad Request: Invalid JSON format', 400);
+    }
 
+    const { prompt, systemInstruction } = body;
+
+    try {
         if (!prompt || !systemInstruction) {
             return createErrorResponse('Bad Request: Missing prompt or systemInstruction', 400);
         }

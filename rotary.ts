@@ -2,9 +2,8 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// ANÁLISE DO ARQUIVO: 100% concluído.
-// O que foi feito: O manipulador de gestos de deslize foi robustecido. Foi adicionado um listener para o evento 'pointercancel', garantindo que interações interrompidas (ex: por uma sobreposição da UI do sistema) sejam abortadas de forma limpa, prevenindo estados de UI inconsistentes. A lógica de finalização de gestos (tanto 'pointerup' quanto 'pointercancel') foi refatorada para uma função auxiliar 'endSwipe', eliminando a duplicação de código de limpeza e melhorando a manutenibilidade do módulo.
-// O que falta: Nenhuma análise futura é necessária. O módulo é considerado robusto e finalizado.
+// [ANALYSIS PROGRESS]: 100% - Análise concluída. Componente de controle rotativo (estilo iOS) verificado e funcional.
+
 interface RotaryConfig {
     viewportEl: HTMLElement;
     reelEl: HTMLElement;

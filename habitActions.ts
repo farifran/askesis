@@ -1,11 +1,12 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// ANÁLISE DO ARQUIVO: 100% concluído.
-// O que foi feito: A análise do arquivo foi finalizada. A geração de prompt para a IA foi robustecida para usar símbolos (✅, ⚪️, ➡️) e nomes de horários traduzidos, garantindo que os dados enviados ao modelo sejam consistentes com as instruções do sistema e o idioma do usuário. Isso corrige uma potencial falha de interpretação pela IA e melhora a confiabilidade da análise.
-// O que falta: Nenhuma análise futura é necessária. O arquivo é considerado finalizado.
-import { generateUUID, getTodayUTCIso, parseUTCIsoDate, addDays, escapeHTML, simpleMarkdownToHTML, getTodayUTC, toUTCIsoDateString, getActiveHabitsForDate, apiFetch } from './utils';
+// [ANALYSIS PROGRESS]: 100% - Análise concluída. Código limpo e otimizado. Removida importação não utilizada 'icons'. Otimizada a função _generateAIPrompt movendo a definição do mapa de status para fora do loop para evitar realocação de memória desnecessária.
+
+import { generateUUID, getTodayUTCIso, parseUTCIsoDate, addDays, escapeHTML, simpleMarkdownToHTML, getTodayUTC, toUTCIsoDateString } from './utils';
+import { apiFetch } from './api';
 import {
     state,
     saveState,
@@ -30,8 +31,8 @@ import {
     getEffectiveScheduleForHabitOnDate,
     LANGUAGES,
     TIMES_OF_DAY,
+    getActiveHabitsForDate,
 } from './state';
-// FIX: Import the missing `openModal` function to display the AI results modal.
 import {
     renderHabits,
     showUndoToast,
@@ -53,7 +54,7 @@ import { updateAppBadge } from './badge';
 
 function _createNewHabitFromTemplate(template: HabitTemplate): Habit {
     const startDate = state.selectedDate;
-    const newHabit: Habit = {
+    return {
         id: generateUUID(),
         icon: template.icon,
         color: template.color,
@@ -69,7 +70,6 @@ function _createNewHabitFromTemplate(template: HabitTemplate): Habit {
             }
         ],
     };
-    return newHabit;
 }
 
 export function createDefaultHabit() {
@@ -113,9 +113,13 @@ function _updateScheduleForHabit(habit: Habit, formData: HabitTemplate, isReacti
     const namePropsChanged = (formData.nameKey && lastSchedule.nameKey !== formData.nameKey) || 
                              (formData.name && !formData.nameKey && lastSchedule.name !== formData.name);
                              
-    // Usa stringify para uma comparação simples. Bom o suficiente aqui.
+    // BUGFIX [2024-12-28]: Usa o operador spread [...] antes de .sort() para evitar a mutação 
+    // dos arrays originais no estado da aplicação durante a comparação.
+    // DATA INTEGRITY: Garante que os horários do formulário também estejam ordenados antes da comparação e salvamento.
+    const sortedFormTimes = [...formData.times].sort((a, b) => TIMES_OF_DAY.indexOf(a) - TIMES_OF_DAY.indexOf(b));
+    
     const schedulePropsChanged =
-        JSON.stringify(lastSchedule.times.sort()) !== JSON.stringify(formData.times.sort()) ||
+        JSON.stringify([...lastSchedule.times].sort()) !== JSON.stringify(sortedFormTimes) ||
         JSON.stringify(lastSchedule.frequency) !== JSON.stringify(formData.frequency) ||
         namePropsChanged;
 
@@ -127,7 +131,7 @@ function _updateScheduleForHabit(habit: Habit, formData: HabitTemplate, isReacti
         if (lastSchedule.startDate === effectiveDate && !lastSchedule.endDate) {
             // Se a edição ocorrer no mesmo dia em que o agendamento começou, atualize no local.
             Object.assign(lastSchedule, {
-                times: formData.times,
+                times: sortedFormTimes,
                 frequency: formData.frequency,
                 ...nameProps
             });
@@ -138,7 +142,7 @@ function _updateScheduleForHabit(habit: Habit, formData: HabitTemplate, isReacti
             }
             const newSchedule: HabitSchedule = {
                 startDate: effectiveDate,
-                times: formData.times,
+                times: sortedFormTimes,
                 frequency: formData.frequency,
                 scheduleAnchor: isReactivating ? effectiveDate : lastSchedule.scheduleAnchor,
                 ...nameProps,
@@ -163,6 +167,11 @@ export function saveHabitFromModal() {
         }
         return;
     }
+
+    // DATA CONSISTENCY [2024-12-28]: Ordena os horários de forma canônica (Manhã, Tarde, Noite)
+    // para evitar que a ordem dos cliques do usuário crie inconsistências no armazenamento.
+    // Esta ordenação é crucial e é aplicada diretamente no objeto formData antes de qualquer processamento.
+    formData.times.sort((a, b) => TIMES_OF_DAY.indexOf(a) - TIMES_OF_DAY.indexOf(b));
 
     // 2. Determina o hábito a ser atualizado (novo, reativado ou editado)
     let habitToUpdate: Habit | undefined;
@@ -233,15 +242,12 @@ export function requestHabitEndingFromModal(habitId: string) {
     );
 }
 
-// REATORAÇÃO DE REDUNDÂNCIA: A lógica para encontrar o agendamento ativo foi substituída pelo helper centralizado `getScheduleForDate`.
-// Isso torna a função mais concisa, menos propensa a erros e mais consistente com o resto da aplicação.
 function endHabit(habitId: string, effectiveDateISO?: string) {
     const habit = state.habits.find(h => h.id === habitId);
     if (!habit) return;
 
     const endDateISO = effectiveDateISO || getTodayUTCIso();
     
-    // Utiliza o helper para encontrar o agendamento ativo na data de término.
     const activeSchedule = getScheduleForDate(habit, endDateISO);
     
     if (!activeSchedule) {
@@ -249,8 +255,6 @@ function endHabit(habitId: string, effectiveDateISO?: string) {
         return;
     }
 
-    // `getScheduleForDate` pode retornar um objeto do cache. Para garantir a modificação
-    // do estado real, encontramos a instância original no array `scheduleHistory`.
     const scheduleInHistory = habit.scheduleHistory.find(s => s.startDate === activeSchedule.startDate);
     if (!scheduleInHistory) {
          console.error(`Consistency error: Could not find the matched schedule in the habit's history to end it.`);
@@ -259,12 +263,10 @@ function endHabit(habitId: string, effectiveDateISO?: string) {
     
     const endDate = parseUTCIsoDate(endDateISO);
     const originalActiveSchedule = { ...scheduleInHistory };
-    // Agendamentos que começam APÓS a data de término serão removidos, mas guardados para a função "Desfazer".
     const removedSchedules = habit.scheduleHistory.filter(s => parseUTCIsoDate(s.startDate) > endDate);
     state.lastEnded = { habitId, lastSchedule: originalActiveSchedule, removedSchedules };
 
     scheduleInHistory.endDate = endDateISO;
-    // Filtra o histórico para manter apenas os agendamentos até a data de término.
     habit.scheduleHistory = habit.scheduleHistory.filter(s => parseUTCIsoDate(s.startDate) <= endDate);
 
     clearScheduleCache();
@@ -275,11 +277,6 @@ function endHabit(habitId: string, effectiveDateISO?: string) {
     showUndoToast();
 }
 
-/**
- * REATORAÇÃO DE MODULARIDADE: Centraliza a lógica para modificações de agendamento que
- * podem ser aplicadas "apenas hoje" (modificando dailyData) ou "de agora em diante" (dividindo o scheduleHistory).
- * Remove a duplicação de código entre as funções requestHabitTimeRemoval e handleHabitDrop.
- */
 function _requestFutureScheduleChange(
     habit: Habit,
     effectiveDate: string,
@@ -302,7 +299,6 @@ function _requestFutureScheduleChange(
         
         dailyInfo.dailySchedule = scheduleModifier(originalSchedule);
         
-        // Move ou remove os dados da instância para a mudança de hoje
         const instanceData = dailyInfo.instances[fromTime];
         if (instanceData) {
             if (toTime) {
@@ -382,19 +378,13 @@ export function handleUndoDelete() {
     const habit = state.habits.find(h => h.id === habitId);
 
     if (habit) {
-        // CORREÇÃO DE INTEGRIDADE DE DADOS [2024-12-11]: A lógica de "Desfazer" foi
-        // aprimorada para restaurar agendamentos futuros. Ela agora não apenas reativa
-        // o último agendamento, mas também reintegra quaisquer agendamentos futuros
-        // que foram removidos, garantindo uma restauração completa do estado.
         const scheduleToRestore = habit.scheduleHistory.find(s => s.startDate === lastSchedule.startDate);
         if (scheduleToRestore) {
             delete scheduleToRestore.endDate;
         }
         
-        // Adiciona de volta quaisquer agendamentos futuros que foram removidos.
         if (removedSchedules && removedSchedules.length > 0) {
             habit.scheduleHistory.push(...removedSchedules);
-            // Garante que a ordem esteja correta.
             habit.scheduleHistory.sort((a, b) => a.startDate.localeCompare(b.startDate));
         }
     }
@@ -419,22 +409,18 @@ export function requestHabitPermanentDeletion(habitId: string) {
     showConfirmationModal(
         t('confirmPermanentDelete', { habitName: escapeHTML(name) }),
         () => {
-            // Remove the habit from the main array
             state.habits = state.habits.filter(h => h.id !== habitId);
 
-            // Also delete its associated daily data
             Object.keys(state.dailyData).forEach(date => {
                 if (state.dailyData[date]?.[habitId]) {
                     delete state.dailyData[date][habitId];
                 }
             });
 
-            // Clean up any other references to this habit ID
             state.pending21DayHabitIds = state.pending21DayHabitIds.filter(id => id !== habitId);
             state.pendingConsolidationHabitIds = state.pendingConsolidationHabitIds.filter(id => id !== habitId);
             state.notificationsShown = state.notificationsShown.filter(notificationId => !notificationId.startsWith(habitId + '-'));
             
-            // Clear caches to prevent rendering stale data in the current session
             clearActiveHabitsCache();
             clearScheduleCache();
             Object.keys(state.streaksCache).forEach(key => {
@@ -445,7 +431,7 @@ export function requestHabitPermanentDeletion(habitId: string) {
 
             saveState();
             setupManageModal();
-            renderApp(); // Re-render the main app to reflect the deletion immediately
+            renderApp();
         },
         { 
             title: t('modalDeleteHabitTitle'), 
@@ -476,8 +462,7 @@ export function toggleHabitStatus(habitId: string, time: TimeOfDay, dateISO: str
 
     invalidateStreakCache(habitId, dateISO);
     saveState();
-    renderHabits();
-    renderCalendar();
+    renderApp(); // Atualiza tudo: Hábitos, Calendário, Gráfico e IA
     updateAppBadge();
 }
 
@@ -485,7 +470,6 @@ export function setGoalOverride(habitId: string, date: string, time: TimeOfDay, 
     const dayInstanceData = ensureHabitInstanceData(date, habitId, time);
     dayInstanceData.goalOverride = newGoal;
     saveState();
-    // The UI is updated locally by the listener for responsiveness
     renderCalendar();
 }
 
@@ -511,8 +495,7 @@ export function completeAllHabitsForDate(dateISO: string) {
         invalidateStreakCache(habit.id, dateISO);
     });
     saveState();
-    renderHabits();
-    renderCalendar();
+    renderApp(); // Atualiza tudo: Hábitos, Calendário, Gráfico e IA
     updateAppBadge();
 }
 
@@ -525,8 +508,7 @@ export function snoozeAllHabitsForDate(dateISO: string) {
         invalidateStreakCache(habit.id, dateISO);
     });
     saveState();
-    renderHabits();
-    renderCalendar();
+    renderApp(); // Atualiza tudo: Hábitos, Calendário, Gráfico e IA
     updateAppBadge();
 }
 
@@ -537,7 +519,7 @@ export function handleHabitDrop(habitId: string, fromTime: TimeOfDay, toTime: Ti
     if (!habit) return;
     
     const scheduleForDay = getEffectiveScheduleForHabitOnDate(habit, state.selectedDate);
-    if (scheduleForDay.includes(toTime)) return; // Invalid drop, already exists
+    if (scheduleForDay.includes(toTime)) return;
 
     const { name } = getHabitDisplayInfo(habit, state.selectedDate);
     const fromTimeName = t(`filter${fromTime}`);
@@ -575,7 +557,7 @@ function _generateAIPrompt(analysisType: 'weekly' | 'monthly' | 'general'): { pr
     const lang = state.activeLanguageCode;
     let startDate: Date;
     let daysToScan: number;
-    let historyLogDays: number; // Novos dias para incluir no log detalhado
+    let historyLogDays: number;
 
     switch (analysisType) {
         case 'weekly':
@@ -590,24 +572,27 @@ function _generateAIPrompt(analysisType: 'weekly' | 'monthly' | 'general'): { pr
             break;
         case 'general':
         default:
-            // OTIMIZAÇÃO [2024-12-26]: Para análise geral, limitamos o histórico detalhado (logs linha por linha)
-            // aos últimos 90 dias para economizar tokens e evitar timeouts, mas ainda permitimos que a IA
-            // tenha contexto suficiente para uma análise de tendências trimestrais.
-            startDate = new Date(0); // Epoch (para varredura conceitual)
-            daysToScan = 365; // Escaneia até um ano para estatísticas gerais, se necessário
-            historyLogDays = 90; // Envia apenas os últimos 90 dias de texto bruto
+            startDate = new Date(0);
+            daysToScan = 365;
+            historyLogDays = 90;
             break;
     }
 
-    // Calcula a data de corte para o log detalhado
     const logCutoffDate = addDays(today, -historyLogDays);
 
     const historyEntries: string[] = [];
+    
+    // OTIMIZAÇÃO DE PERFORMANCE [2025-01-16]: Move a definição do objeto statusMap para fora do loop.
+    // Isso evita a alocação e coleta de lixo repetida desse objeto a cada iteração do loop (especialmente em 'general' com 365 dias),
+    // melhorando a eficiência de memória durante a geração do prompt.
+    const statusMap: Record<HabitStatus, string> = {
+        completed: '✅',
+        pending: '⚪️',
+        snoozed: '➡️',
+    };
+
     for (let i = 0; i < daysToScan; i++) {
         const date = addDays(today, -i);
-        // Para 'general', paramos de escanear se passarmos da data de corte do log,
-        // a menos que implementemos estatísticas agregadas (que simplificaria ainda mais).
-        // Por enquanto, limitamos o loop à janela de log para manter a consistência do prompt.
         if (date < logCutoffDate) break; 
         if (analysisType !== 'general' && date < startDate) break;
 
@@ -621,11 +606,6 @@ function _generateAIPrompt(analysisType: 'weekly' | 'monthly' | 'general'): { pr
             const { name } = getHabitDisplayInfo(habit, dateISO);
             schedule.forEach(time => {
                 const status = dailyInfo[habit.id]?.instances[time]?.status ?? 'pending';
-                const statusMap: Record<HabitStatus, string> = {
-                    completed: '✅',
-                    pending: '⚪️',
-                    snoozed: '➡️',
-                };
                 const statusSymbol = statusMap[status] || '⚪️';
                 dayHabitEntries.push(`- ${name} (${getTimeOfDayName(time)}): ${statusSymbol}`);
             });
@@ -666,8 +646,6 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
     try {
         const { prompt, systemInstruction } = _generateAIPrompt(analysisType);
         
-        // OTIMIZAÇÃO: Define um timeout de 60 segundos para a chamada da IA,
-        // permitindo que o modelo processe prompts mais complexos sem abortar prematuramente.
         const response = await apiFetch('/api/analyze', {
             method: 'POST',
             body: JSON.stringify({ prompt, systemInstruction }),

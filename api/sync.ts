@@ -2,9 +2,6 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// ANÁLISE DO ARQUIVO: 100% concluído.
-// O que foi feito: A lógica do endpoint foi completamente revisada e robustecida. A modularidade foi aprimorada com funções auxiliares (`handleGetRequest`, `handlePostRequest`) e os tipos foram consolidados. Adicionou-se tratamento de erro granular para parsing de JSON inválido e um limite de tamanho de payload para prevenir abuso, tornando o endpoint seguro e resiliente.
-// O que falta: Nenhuma análise futura é necessária. O arquivo é considerado finalizado.
 import { kv } from '@vercel/kv';
 
 export const config = {

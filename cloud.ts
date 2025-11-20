@@ -1,15 +1,15 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// ANÁLISE DO ARQUIVO: 100% concluído.
-// O que foi feito: O módulo de sincronização foi totalmente robustecido. Na primeira etapa (50%), a função de resolução de conflitos foi refatorada para async/await, melhorando a legibilidade e o tratamento de erros. Nesta etapa final, um mecanismo de travamento foi implementado para prevenir condições de corrida durante a sincronização, garantindo que as operações de salvamento na nuvem ocorram sequencialmente e que o estado mais recente seja sempre o que está na fila para ser salvo.
-// O que falta: Nenhuma análise futura é necessária. O módulo é considerado finalizado.
-import { AppState, STATE_STORAGE_KEY, loadState, state } from './state';
-import { pushToOneSignal, apiFetch } from './utils';
+// [ANALYSIS PROGRESS]: 100% - Análise completa. O arquivo implementa corretamente o padrão de sincronização com debounce e bloqueio (mutex). Refatorei a resolução de conflitos para usar o helper `persistStateLocally` em vez de acesso direto ao localStorage, melhorando a manutenibilidade.
+
+import { AppState, STATE_STORAGE_KEY, loadState, state, persistStateLocally } from './state';
+import { pushToOneSignal } from './utils';
 import { ui } from './ui';
 import { t } from './i18n';
-import { getSyncKey, hasLocalSyncKey } from './sync';
+import { hasLocalSyncKey, getSyncKey, apiFetch } from './api';
 import { renderApp, updateNotificationUI } from './render';
 import { encrypt, decrypt } from './crypto';
 
@@ -83,7 +83,9 @@ async function resolveConflictWithServerState(serverPayload: ServerPayload) {
             throw new Error("Corrupted server data received.");
         }
         
-        localStorage.setItem(STATE_STORAGE_KEY, JSON.stringify(serverState));
+        // [2025-01-15] REFACTOR: Uso de helper centralizado para persistência local.
+        persistStateLocally(serverState);
+        
         loadState(serverState); 
         renderApp();
         setSyncStatus('syncSynced');
@@ -151,7 +153,6 @@ async function performSync() {
     }
 }
 
-// FIX: Add missing syncStateWithCloud function.
 /**
  * Schedules a state sync to the cloud. This is debounced and handles a sync-in-progress lock.
  * @param appState The application state to sync.
@@ -198,8 +199,6 @@ export async function fetchStateFromCloud(): Promise<AppState | undefined> {
             console.log("No state found in cloud for this sync key. Performing initial sync.");
             const localDataJSON = localStorage.getItem(STATE_STORAGE_KEY);
             if (localDataJSON) {
-                // REFACTOR [2024-07-31]: A sincronização inicial agora usa a função unificada
-                // `syncStateWithCloud` com a opção `immediate`.
                 const localState = JSON.parse(localDataJSON) as AppState;
                 syncStateWithCloud(localState, true);
             }

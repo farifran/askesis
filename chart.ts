@@ -2,13 +2,13 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// ANÁLISE DO ARQUIVO: 100% concluído.
-// O que foi feito: A análise do módulo do gráfico está finalizada. Na primeira etapa (50%), um bug crítico na lógica de cálculo dos dados históricos foi corrigido. Nesta etapa final, a performance foi otimizada através do cacheamento de referências de elementos do DOM, eliminando consultas repetidas durante a renderização e interação do usuário. Além disso, a lógica de cálculo de dados foi validada novamente para garantir sua precisão.
-// O que falta: Nenhuma análise futura é necessária. O módulo é considerado finalizado.
+// [ANALYSIS PROGRESS]: 100% - Análise completa. Otimização de performance implementada: caching de estatísticas de escala para evitar recálculos pesados no evento de 'pointermove' e hoisting de variáveis invariantes no loop de cálculo de dados.
+
 import { state } from './state';
 import { ui } from './ui';
 import { t } from './i18n';
-import { addDays, getActiveHabitsForDate, getTodayUTCIso, parseUTCIsoDate, toUTCIsoDateString } from './utils';
+import { addDays, getTodayUTCIso, parseUTCIsoDate, toUTCIsoDateString } from './utils';
+import { getActiveHabitsForDate } from './state';
 
 const CHART_DAYS = 30;
 const INITIAL_SCORE = 100; // Pontuação inicial para o crescimento composto
@@ -27,6 +27,14 @@ type ChartDataPoint = {
 // para evitar o recálculo de dados em cada movimento do mouse.
 let chartInitialized = false;
 let lastChartData: ChartDataPoint[] = [];
+
+// PERFORMANCE [2025-01-15]: Cache para metadados de escala (min/max/range).
+// Evita recalcular Math.min/max em todo o array de dados a cada evento de 'pointermove'.
+let chartMetadata = {
+    minVal: 0,
+    maxVal: 100,
+    valueRange: 100
+};
 
 // OTIMIZAÇÃO DE PERFORMANCE [2024-12-25]: Os elementos internos do gráfico são armazenados
 // em cache após a primeira renderização para evitar consultas repetidas ao DOM.
@@ -47,6 +55,7 @@ function calculateChartData(): ChartDataPoint[] {
     const data: ChartDataPoint[] = [];
     const endDate = parseUTCIsoDate(state.selectedDate);
     const startDate = addDays(endDate, -(CHART_DAYS - 1));
+    const todayISO = getTodayUTCIso(); // PERFORMANCE: Hoisted out of loop
 
     let previousDayValue = INITIAL_SCORE;
 
@@ -76,7 +85,7 @@ function calculateChartData(): ChartDataPoint[] {
         });
 
         const hasPending = pendingCount > 0;
-        const isToday = currentDateISO === getTodayUTCIso();
+        const isToday = currentDateISO === todayISO;
 
         let currentValue: number;
         // CORREÇÃO DE LÓGICA DE DADOS [2024-12-25]: A lógica foi corrigida novamente para garantir que a pontuação
@@ -132,9 +141,12 @@ function _updateChartDOM(chartData: ChartDataPoint[]) {
     const minVal = Math.min(...values) * 0.98;
     const maxVal = Math.max(...values) * 1.02;
     const valueRange = maxVal - minVal;
+    
+    // PERFORMANCE [2025-01-15]: Atualiza o cache de metadados para uso nos listeners
+    chartMetadata = { minVal, maxVal, valueRange: valueRange > 0 ? valueRange : 1 };
 
     const xScale = (index: number) => padding.left + (index / (chartData.length - 1)) * chartWidth;
-    const yScale = (value: number) => padding.top + chartHeight - ((value - minVal) / (valueRange > 0 ? valueRange : 1)) * chartHeight;
+    const yScale = (value: number) => padding.top + chartHeight - ((value - minVal) / chartMetadata.valueRange) * chartHeight;
 
     const pathData = chartData.map((point, i) => `${i === 0 ? 'M' : 'L'} ${xScale(i)} ${yScale(point.value)}`).join(' ');
     const areaPathData = `${pathData} V ${yScale(minVal)} L ${xScale(0)} ${yScale(minVal)} Z`;
@@ -190,13 +202,12 @@ function _setupChartListeners() {
         const point = lastChartData[pointIndex];
         if (!point) return;
 
-        const values = lastChartData.map(d => d.value);
-        const minVal = Math.min(...values) * 0.98;
-        const maxVal = Math.max(...values) * 1.02;
-        const valueRange = maxVal - minVal;
+        // PERFORMANCE [2025-01-15]: Utiliza os metadados calculados previamente em _updateChartDOM
+        // em vez de recalcular min/max/range a cada movimento do mouse (60fps).
+        const { minVal, valueRange } = chartMetadata;
        
         const xScale = (idx: number) => padding.left + (idx / (lastChartData.length - 1)) * chartWidth;
-        const yScale = (val: number) => padding.top + chartHeight - ((val - minVal) / (valueRange > 0 ? valueRange : 1)) * chartHeight;
+        const yScale = (val: number) => padding.top + chartHeight - ((val - minVal) / valueRange) * chartHeight;
 
         const pointX = xScale(pointIndex);
         const pointY = yScale(point.value);

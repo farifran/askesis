@@ -2,9 +2,8 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// ANÁLISE DO ARQUIVO: 100% concluído.
-// O que foi feito: A análise do arquivo foi finalizada. O manipulador de eventos de clique em `setupHabitCardListeners` foi refatorado para centralizar a validação de `habitId` e `time`, eliminando verificações redundantes e melhorando a clareza e a manutenibilidade do código. As demais funcionalidades, como a edição de metas em linha e as animações, foram validadas e consideradas robustas.
-// O que falta: Nenhuma análise futura é necessária. O módulo é considerado finalizado.
+// [ANALYSIS PROGRESS]: 100% - Análise concluída. O código utiliza delegação de eventos de forma eficiente. Refatorada a função 'createGoalInput' para garantir a remoção explícita de event listeners antes da manipulação do DOM, prevenindo vazamentos de memória (memory leaks) e referências circulares.
+
 import { ui } from './ui';
 import { state, Habit, getCurrentGoalForInstance, TimeOfDay } from './state';
 import { openNotesModal, getUnitString, formatGoalForDisplay } from './render';
@@ -49,8 +48,18 @@ function createGoalInput(habit: Habit, time: TimeOfDay, wrapper: HTMLElement) {
     input.focus();
     input.select();
 
+    // MEMORY MANAGEMENT [2025-01-16]: Funções de handler nomeadas para permitir a remoção explícita
+    // dos listeners. Isso previne vazamentos de memória em aplicações de longa duração,
+    // quebrando potenciais referências circulares antes de remover o elemento do DOM.
+    const cleanup = () => {
+        input.removeEventListener('blur', onBlur);
+        input.removeEventListener('keydown', onKeyDown);
+    };
+
     const save = () => {
         const newGoal = parseInt(input.value, 10);
+        cleanup(); // Limpa listeners antes de destruir o input
+
         if (!isNaN(newGoal) && newGoal > 0) {
             // A ação de estado agora só atualiza o estado.
             setGoalOverride(habitId, state.selectedDate, time, newGoal);
@@ -63,16 +72,23 @@ function createGoalInput(habit: Habit, time: TimeOfDay, wrapper: HTMLElement) {
             wrapper.innerHTML = originalContent;
         }
     };
+
+    const onBlur = () => {
+        save();
+    };
     
-    input.addEventListener('blur', save);
-    input.addEventListener('keydown', (e) => {
+    const onKeyDown = (e: KeyboardEvent) => {
         if (e.key === 'Enter') {
             e.preventDefault();
             input.blur(); // Aciona o evento 'blur' para salvar
         } else if (e.key === 'Escape') {
-            wrapper.innerHTML = originalContent;
+            cleanup(); // Limpa listeners
+            wrapper.innerHTML = originalContent; // Cancela edição
         }
-    });
+    };
+    
+    input.addEventListener('blur', onBlur);
+    input.addEventListener('keydown', onKeyDown);
 }
 
 export function setupHabitCardListeners() {

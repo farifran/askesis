@@ -1,9 +1,15 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-import { Habit, TimeOfDay, getEffectiveScheduleForHabitOnDate, shouldHabitAppearOnDate, state } from './state';
-import { getSyncKeyHash } from './sync';
+
+declare global {
+    interface Window {
+        OneSignal?: any[];
+        OneSignalDeferred?: any[];
+    }
+}
 
 // --- UUID ---
 export function generateUUID(): string {
@@ -17,8 +23,7 @@ export function toUTCIsoDateString(date: Date): string {
 
 export function getTodayUTC(): Date {
     const today = new Date();
-    // CORREÇÃO DE FUSO HORÁRIO [2024-11-26]: A determinação de "hoje" foi corrigida para usar os componentes da data local do usuário (`getFullYear`, `getMonth`, `getDate`) em vez dos componentes UTC.
-    // Isso garante que o dia da aplicação corresponda ao dia local do usuário (de meia-noite a meia-noite), corrigindo o bug onde o dia avançava prematuramente em fusos horários a oeste de UTC.
+    // CORREÇÃO DE FUSO HORÁRIO [2024-11-26]: Usa componentes locais para determinar o "hoje" do usuário.
     return new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
 }
 
@@ -50,14 +55,13 @@ export function escapeHTML(str: string): string {
     });
 }
 
-/**
- * REATORAÇÃO DE ROBUSTEZ [2024-09-20]: A lógica de parsing de listas foi refatorada para maior clareza.
- * O helper monolítico `closeLists` foi substituído por duas funções específicas (`closeUnorderedList` e `closeOrderedList`).
- * Isso torna a intenção do código explícita ao transicionar entre tipos de lista e elementos de bloco,
- * melhorando a manutenibilidade sem alterar o resultado final.
- * MANUTENIBILIDADE [2024-10-18]: Adicionado comentário de escopo. Este parser é projetado para o output confiável da IA,
- * não para entradas de usuário arbitrárias que poderiam conter vetores de XSS se o parser fosse mais complexo.
- */
+// OTIMIZAÇÃO DE PERFORMANCE [2024-12-28]: Expressões regulares movidas para o escopo do módulo
+// para serem compiladas apenas uma vez, em vez de a cada chamada da função formatInline.
+const MD_BOLD_ITALIC_REGEX = /\*\*\*(.*?)\*\*\*/g;
+const MD_BOLD_REGEX = /\*\*(.*?)\*\*/g;
+const MD_ITALIC_REGEX = /\*(.*?)\*/g;
+const MD_STRIKE_REGEX = /~~(.*?)~~/g;
+
 export function simpleMarkdownToHTML(text: string): string {
     const lines = text.split('\n');
     let html = '';
@@ -77,15 +81,12 @@ export function simpleMarkdownToHTML(text: string): string {
         }
     };
 
-    // MELHORIA DE ROBUSTEZ NO PARSER [2024-09-24]: A formatação inline foi corrigida para lidar
-    // com aninhamento de negrito/itálico e para adicionar suporte a texto tachado. A ordem das
-    // substituições agora prioriza os marcadores mais específicos, resolvendo bugs de renderização.
     const formatInline = (line: string): string => {
         return escapeHTML(line)
-            .replace(/\*\*\*(.*?)\*\*\*/g, '<strong><em>$1</em></strong>')
-            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-            .replace(/\*(.*?)\*/g, '<em>$1</em>')
-            .replace(/~~(.*?)~~/g, '<del>$1</del>');
+            .replace(MD_BOLD_ITALIC_REGEX, '<strong><em>$1</em></strong>')
+            .replace(MD_BOLD_REGEX, '<strong>$1</strong>')
+            .replace(MD_ITALIC_REGEX, '<em>$1</em>')
+            .replace(MD_STRIKE_REGEX, '<del>$1</del>');
     };
 
     for (const line of lines) {
@@ -111,7 +112,7 @@ export function simpleMarkdownToHTML(text: string): string {
         }
 
         if (trimmedLine.startsWith('* ') || trimmedLine.startsWith('- ')) {
-            closeOrderedList(); // Fecha a lista oposta se estiver aberta
+            closeOrderedList();
             if (!inUnorderedList) {
                 html += '<ul>';
                 inUnorderedList = true;
@@ -121,7 +122,7 @@ export function simpleMarkdownToHTML(text: string): string {
         }
 
         if (trimmedLine.match(/^\d+\.\s/)) {
-            closeUnorderedList(); // Fecha a lista oposta se estiver aberta
+            closeUnorderedList();
             if (!inOrderedList) {
                 html += '<ol>';
                 inOrderedList = true;
@@ -137,13 +138,11 @@ export function simpleMarkdownToHTML(text: string): string {
         }
     }
 
-    // FIX: Close any open lists at the end of the document.
     closeUnorderedList();
     closeOrderedList();
     return html;
 }
 
-// FIX: Add missing debounce function to resolve import error in listeners.ts.
 export function debounce<T extends (...args: any[]) => void>(func: T, wait: number): (...args: Parameters<T>) => void {
     let timeout: number | null;
     return function (...args: Parameters<T>) {
@@ -158,14 +157,7 @@ export function debounce<T extends (...args: any[]) => void>(func: T, wait: numb
     };
 }
 
-// FIX: Add missing pushToOneSignal function to resolve import errors.
-/**
- * Adiciona um callback a uma fila para ser executado quando o SDK do OneSignal estiver pronto.
- * @param callback A função a ser executada.
- */
 export function pushToOneSignal(callback: (oneSignal: any) => void) {
-    // A API OneSignal pode não estar imediatamente disponível.
-    // Usamos uma fila (array) para armazenar chamadas até que ela esteja pronta.
     if (typeof window.OneSignal === 'undefined') {
         window.OneSignalDeferred = window.OneSignalDeferred || [];
         window.OneSignalDeferred.push(callback);
@@ -174,11 +166,6 @@ export function pushToOneSignal(callback: (oneSignal: any) => void) {
     }
 }
 
-/**
- * UX IMPROVEMENT: Fornece feedback tátil para interações em dispositivos móveis.
- * Envolvido em try-catch para evitar erros em ambientes onde a API não é totalmente suportada.
- * @param type O tipo de feedback tátil desejado.
- */
 export function triggerHaptic(type: 'selection' | 'light' | 'medium' | 'heavy' | 'success' | 'error') {
     if (!navigator.vibrate) return;
 
@@ -202,115 +189,17 @@ export function triggerHaptic(type: 'selection' | 'light' | 'medium' | 'heavy' |
                 break;
         }
     } catch (e) {
-        // Silencia erros de vibração para não interromper o fluxo da UI
         console.warn('Haptic feedback failed:', e);
     }
 }
 
-// Extensão da interface RequestInit para incluir o parâmetro timeout
-interface ExtendedRequestInit extends RequestInit {
-    timeout?: number;
-}
-
-// FIX: Add missing apiFetch function to resolve import errors.
-/**
- * Wrapper para a API fetch, que inclui o hash da chave de sincronização e lida com erros de rede e timeout configurável.
- * @param endpoint O endpoint da API a ser chamado.
- * @param options As opções para a requisição fetch, incluindo um 'timeout' opcional (padrão 15000ms).
- * @param includeSyncKey Se deve incluir o cabeçalho X-Sync-Key-Hash.
- * @returns A resposta da requisição.
- */
-export async function apiFetch(endpoint: string, options: ExtendedRequestInit = {}, includeSyncKey = false): Promise<Response> {
-    // FIX: The spread operator `...options.headers` is not type-safe for all
-    // possible `HeadersInit` types (e.g., string[][]), causing a TypeScript error.
-    // This logic is refactored to use the standard `Headers` object, which correctly
-    // handles all `HeadersInit` types while preserving the intended override behavior.
-    const headers = new Headers({
-        'Content-Type': 'application/json',
-    });
-    if (options.headers) {
-        new Headers(options.headers).forEach((value, key) => headers.set(key, value));
-    }
-
-    if (includeSyncKey) {
-        const keyHash = await getSyncKeyHash();
-        if (keyHash) {
-            headers.set('X-Sync-Key-Hash', keyHash);
-        }
-    }
-
-    // OTIMIZAÇÃO DE ROBUSTEZ: Extrai o timeout das opções e remove-o antes de passar para o fetch nativo.
-    const { timeout = 15000, ...fetchOptions } = options;
-
-    const controller = new AbortController();
-    // Usa o timeout configurável ou o padrão de 15s
-    const timeoutId = setTimeout(() => controller.abort(), timeout);
-
-    try {
-        const response = await fetch(endpoint, {
-            ...fetchOptions,
-            headers,
-            signal: controller.signal,
-        });
-        clearTimeout(timeoutId);
-
-        if (!response.ok && response.status !== 409) { // 409 (Conflict) é tratado pelo chamador
-            const errorBody = await response.text();
-            console.error(`API request failed to ${endpoint}:`, errorBody);
-            throw new Error(`API request failed with status ${response.status}: ${errorBody}`);
-        }
-
-        return response;
-    } catch (error: any) {
-        clearTimeout(timeoutId);
-        if (error.name === 'AbortError') {
-            throw new Error(`API request to ${endpoint} timed out after ${timeout}ms.`);
-        }
-        throw error;
-    }
-}
-
-// FIX: Add missing getActiveHabitsForDate function to resolve multiple import errors.
-/**
- * PERFORMANCE [2024-08-12]: Nova função com cache para obter hábitos ativos e seus horários para uma data.
- * @param date A data para a qual obter os hábitos.
- * @returns Um array de objetos, cada um contendo o hábito e seu agendamento para o dia.
- */
-export function getActiveHabitsForDate(date: Date): Array<{ habit: Habit; schedule: TimeOfDay[] }> {
-    const dateStr = toUTCIsoDateString(date);
-    const cacheKey = dateStr;
-    if (state.activeHabitsCache[cacheKey]) {
-        return state.activeHabitsCache[cacheKey];
-    }
-    
-    const activeHabits = state.habits
-        .filter(habit => shouldHabitAppearOnDate(habit, date))
-        .map(habit => ({
-            habit,
-            schedule: getEffectiveScheduleForHabitOnDate(habit, dateStr),
-        }));
-
-    state.activeHabitsCache[cacheKey] = activeHabits;
-    return activeHabits;
-}
-
-// OTIMIZAÇÃO DE MANUTENIBILIDADE [2024-12-07]: O valor da cor de texto clara para contraste é lido e
-// armazenado em cache dinamicamente a partir das variáveis CSS, evitando a duplicação de valores e
-// garantindo que a lógica de contraste de cor se adapte automaticamente a mudanças no tema.
 let cachedLightContrastColor: string | null = null;
 
-/**
- * Calculates a contrasting text color (black or light gray) for a given hex background color.
- * @param hexColor The background color in hex format (e.g., "#RRGGBB").
- * @returns The contrasting color ('#000000' for light backgrounds, or the theme's primary text color for dark).
- */
 export function getContrastColor(hexColor: string): string {
     if (!cachedLightContrastColor) {
         try {
-            // Lê a cor clara diretamente das variáveis CSS para garantir a consistência do tema.
             cachedLightContrastColor = getComputedStyle(document.documentElement).getPropertyValue('--text-primary').trim() || '#e5e5e5';
         } catch (e) {
-            // Fallback para o caso de a função ser chamada em um ambiente sem DOM (improvável para este app).
             cachedLightContrastColor = '#e5e5e5';
         }
     }
@@ -323,10 +212,9 @@ export function getContrastColor(hexColor: string): string {
         const r = parseInt(hexColor.slice(1, 3), 16);
         const g = parseInt(hexColor.slice(3, 5), 16);
         const b = parseInt(hexColor.slice(5, 7), 16);
-        // Formula to determine brightness (YIQ)
         const yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000;
         return (yiq >= 128) ? darkColor : lightColor;
     } catch (e) {
-        return lightColor; // Fallback for invalid hex
+        return lightColor;
     }
 }

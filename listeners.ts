@@ -1,6 +1,4 @@
-// ANÁLISE DO ARQUIVO: 100% concluído.
-// O que foi feito: A análise do arquivo foi finalizada. A função `_setupCalendarInteractionListeners`, que era complexa, foi refatorada para máxima clareza e manutenibilidade. A lógica foi dividida em três funções auxiliares dedicadas: `_setupCalendarMultiClickHandler`, `_setupCalendarLongPressHandler`, e `_setupCalendarKeyboardHandler`. Cada uma agora gerencia um único tipo de interação (multi-clique, long-press, teclado), eliminando a complexidade e o acoplamento de estado entre diferentes tipos de eventos.
-// O que falta: Nenhuma análise futura é necessária. O arquivo está totalmente otimizado.
+
 import { state } from './state';
 import { toUTCIsoDateString, parseUTCIsoDate, debounce, triggerHaptic } from './utils';
 import { ui } from './ui';
@@ -111,19 +109,26 @@ function _setupCalendarLongPressHandler(calendarStrip: HTMLElement) {
     let longPressStartX = 0;
     let longPressStartY = 0;
     let longPressFired = false;
+    let pressedElement: HTMLElement | null = null;
 
-    const cancelLongPress = () => {
+    const cleanup = () => {
         if (longPressTimer) {
             clearTimeout(longPressTimer);
             longPressTimer = null;
         }
+        if (pressedElement) {
+            pressedElement.classList.remove('is-pressing');
+            pressedElement = null;
+        }
         window.removeEventListener('pointermove', handlePointerMoveForLongPress);
+        window.removeEventListener('pointerup', cleanup);
+        window.removeEventListener('pointerleave', cleanup);
     };
 
     const handlePointerMoveForLongPress = (e: PointerEvent) => {
         // Se o ponteiro se mover muito, é um scroll, não um "long-press"
         if (Math.abs(e.clientX - longPressStartX) > 10 || Math.abs(e.clientY - longPressStartY) > 10) {
-            cancelLongPress();
+            cleanup();
         }
     };
 
@@ -134,12 +139,11 @@ function _setupCalendarLongPressHandler(calendarStrip: HTMLElement) {
         longPressStartY = e.clientY;
         longPressFired = false;
         
-        const cleanup = () => {
-            cancelLongPress();
-            window.removeEventListener('pointerup', cleanup);
-            window.removeEventListener('pointerleave', cleanup);
-        };
-        
+        pressedElement = (e.target as HTMLElement).closest<HTMLElement>('.day-item');
+        if (pressedElement) {
+            pressedElement.classList.add('is-pressing');
+        }
+
         window.addEventListener('pointermove', handlePointerMoveForLongPress);
         window.addEventListener('pointerup', cleanup);
         window.addEventListener('pointerleave', cleanup);
@@ -148,16 +152,19 @@ function _setupCalendarLongPressHandler(calendarStrip: HTMLElement) {
         // 750ms parecia muito lento e não responsivo.
         longPressTimer = window.setTimeout(() => {
             longPressFired = true;
-            cleanup();
-            triggerHaptic('medium');
+            // Armazena a referência ao dia antes de cleanup remover a classe
+            const dayItem = pressedElement;
+            cleanup(); // Remove listeners e classe visual
             
-            const dayItem = (e.target as HTMLElement).closest<HTMLElement>('.day-item');
-            const dateToOpen = dayItem?.dataset.date ? parseUTCIsoDate(dayItem.dataset.date) : parseUTCIsoDate(state.selectedDate);
-            
-            state.fullCalendar.year = dateToOpen.getUTCFullYear();
-            state.fullCalendar.month = dateToOpen.getUTCMonth();
-            renderFullCalendar();
-            openModal(ui.fullCalendarModal);
+            if (dayItem) {
+                 triggerHaptic('medium');
+                 const dateToOpen = dayItem.dataset.date ? parseUTCIsoDate(dayItem.dataset.date) : parseUTCIsoDate(state.selectedDate);
+                 
+                 state.fullCalendar.year = dateToOpen.getUTCFullYear();
+                 state.fullCalendar.month = dateToOpen.getUTCMonth();
+                 renderFullCalendar();
+                 openModal(ui.fullCalendarModal);
+            }
         }, 500);
     });
 

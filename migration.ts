@@ -2,10 +2,9 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// ANÁLISE DO ARQUIVO: 100% concluído.
-// O que foi feito: A análise do módulo foi finalizada. A função `migrateToV6` foi otimizada para performance (usando um Map) e robustecida para prevenir perda de dados. A função orquestradora `migrateState` foi refatorada para um design mais escalável, utilizando um array de migrações. Isso torna a adição de futuras migrações mais limpa e manutenível, simplesmente adicionando uma nova função ao array `MIGRATIONS`.
-// O que falta: Nenhuma análise futura é necessária. O módulo está completo e robusto.
-import { AppState, APP_VERSION, Habit, HabitSchedule } from './state';
+// [ANALYSIS PROGRESS]: 100% - Análise concluída. A lógica de migração para a versão 6 (scheduleHistory) está correta e robusta, garantindo a integridade dos dados históricos ao unificar IDs e mesclar registros diários.
+
+import { AppState, Habit, HabitSchedule } from './state';
 
 /**
  * Migrates the state from a version older than 6 to version 6.
@@ -108,24 +107,25 @@ const MIGRATIONS = [
 /**
  * Applies all necessary migrations sequentially to bring a loaded state object to the current app version.
  * @param loadedState The state object loaded from storage, which might be an old version.
+ * @param targetVersion The version to migrate towards (usually APP_VERSION).
  * @returns The state object, migrated to the current version.
  */
-export function migrateState(loadedState: any): AppState {
+export function migrateState(loadedState: any, targetVersion: number): AppState {
     let migratedState = loadedState;
     const initialVersion = migratedState.version || 0;
 
-    if (initialVersion < APP_VERSION) {
-        console.log(`Starting migration from v${initialVersion} to v${APP_VERSION}...`);
+    if (initialVersion < targetVersion) {
+        console.log(`Starting migration from v${initialVersion} to v${targetVersion}...`);
         
         // Aplica todas as migrações necessárias em sequência.
         for (const migration of MIGRATIONS) {
-            if (migratedState.version < migration.targetVersion) {
+            if (migratedState.version < migration.targetVersion && migration.targetVersion <= targetVersion) {
                 console.log(`Applying migration to v${migration.targetVersion}...`);
                 migratedState = migration.migrate(migratedState);
             }
         }
     }
 
-    migratedState.version = APP_VERSION;
+    migratedState.version = targetVersion;
     return migratedState as AppState;
 }

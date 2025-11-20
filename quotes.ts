@@ -2,9 +2,7 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// ANÁLISE DO ARQUIVO: 100% concluído.
-// O que foi feito: A análise foi finalizada. A revisão inicial (50%) corrigiu um erro de sintaxe que impedia a compilação. Nesta etapa final, a integridade dos dados foi aprimorada: uma tradução em inglês que era redundante foi corrigida para refletir com precisão o conceito estoico original. Além disso, a lista de citações foi expandida com novas entradas para enriquecer a experiência do usuário, concluindo a otimização do arquivo.
-// O que falta: Nenhuma análise futura é necessária.
+// [ANALYSIS PROGRESS]: 100% - Análise concluída. Arquivo de dados estáticos (citações) verificado e correto.
 
 export type Quote = {
     pt: string;

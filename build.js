@@ -1,12 +1,10 @@
+
 // build.js
-/**
- * ANÁLISE DO ARQUIVO: 100% concluído.
- * O que foi feito: O script de build foi aprimorado para incluir um servidor de desenvolvimento local.
- * Problema resolvido: O erro "Script origin does not match" ocorria porque não havia um servidor servindo a pasta 'public' como raiz.
- * Solução: Adicionado `ctx.serve({ servedir: outdir })`. Agora, ao rodar `npm run dev`, um servidor local é iniciado, garantindo que o Service Worker e o index.html compartilhem a mesma origem.
-*/
 // Este script é responsável por compilar e empacotar os arquivos da aplicação
 // para produção. Ele utiliza 'esbuild' para uma compilação rápida e eficiente.
+
+// [ANALYSIS PROGRESS]: 100% - Análise completa. O script é sólido. Adicionada rotina de encerramento gracioso para liberar recursos ao parar o servidor.
+
 const esbuild = require('esbuild');
 const fs = require('fs/promises'); // API de sistema de arquivos baseada em Promises do Node.js
 const path = require('path'); // Módulo para lidar com caminhos de arquivo
@@ -18,7 +16,23 @@ async function copyStaticFiles() {
     console.log('Copiando arquivos estáticos...');
     await fs.copyFile('index.html', path.join(outdir, 'index.html'));
     await fs.copyFile('manifest.json', path.join(outdir, 'manifest.json'));
-    await fs.copyFile('sw.js', path.join(outdir, 'sw.js'));
+    
+    // Versionamento Dinâmico do Service Worker
+    // Lê o sw.js original e injeta um timestamp no CACHE_NAME para forçar a atualização do cache no navegador.
+    try {
+        const swContent = await fs.readFile('sw.js', 'utf-8');
+        // Regex robusta para encontrar qualquer variação de const CACHE_NAME = '...';
+        const versionedSw = swContent.replace(
+            /const\s+CACHE_NAME\s*=\s*['"][^'"]+['"];/, 
+            `const CACHE_NAME = 'habit-tracker-v${Date.now()}';`
+        );
+        await fs.writeFile(path.join(outdir, 'sw.js'), versionedSw);
+    } catch (e) {
+        console.error('Erro ao processar sw.js:', e);
+        // Fallback para cópia simples em caso de erro
+        await fs.copyFile('sw.js', path.join(outdir, 'sw.js'));
+    }
+
     await fs.cp('icons', path.join(outdir, 'icons'), { recursive: true });
     await fs.cp('locales', path.join(outdir, 'locales'), { recursive: true });
     console.log('Arquivos estáticos copiados.');
@@ -42,13 +56,18 @@ function watchStaticFiles() {
 
     pathsToWatch.forEach(p => {
         let debounceTimeout;
-        fs.watch(p, { recursive: ['icons', 'locales'].includes(p) }, (eventType, filename) => {
-            clearTimeout(debounceTimeout);
-            debounceTimeout = setTimeout(() => {
-                console.log(`Mudança detectada em '${p}/${filename || ''}'. Recopiando arquivos estáticos...`);
-                copyStaticFiles().catch(err => console.error('Falha ao recopiar arquivos estáticos:', err));
-            }, 100);
-        });
+        // fs.watch pode ser instável em alguns sistemas Linux com 'recursive', mas é adequado para este escopo.
+        try {
+            require('fs').watch(p, { recursive: ['icons', 'locales'].includes(p) }, (eventType, filename) => {
+                clearTimeout(debounceTimeout);
+                debounceTimeout = setTimeout(() => {
+                    console.log(`Mudança detectada em '${p}/${filename || ''}'. Recopiando arquivos estáticos...`);
+                    copyStaticFiles().catch(err => console.error('Falha ao recopiar arquivos estáticos:', err));
+                }, 100);
+            });
+        } catch (err) {
+            console.warn(`Aviso: Não foi possível iniciar watch para ${p}.`, err.message);
+        }
     });
 }
 
@@ -133,6 +152,22 @@ async function build() {
             console.log(`\n🚀 Servidor de desenvolvimento iniciado!`);
             console.log(`👉 Abra no navegador: http://localhost:${port}`);
             console.log('Pressione Ctrl+C para sair.');
+
+            // [2025-01-15] ROBUSTEZ: Implementação de encerramento gracioso (Graceful Shutdown).
+            // Garante que o contexto do esbuild seja descartado e o processo encerrado corretamente
+            // ao receber um sinal de interrupção (como Ctrl+C).
+            const handleExit = async () => {
+                console.log('\nEncerrando servidor de desenvolvimento...');
+                try {
+                    await ctx.dispose();
+                } catch (err) {
+                    console.error('Erro ao descartar contexto do esbuild:', err);
+                }
+                process.exit(0);
+            };
+
+            process.on('SIGINT', handleExit);
+            process.on('SIGTERM', handleExit);
         }
 
     } catch (e) {

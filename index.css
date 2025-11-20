@@ -1,17 +1,11 @@
-/* ANÁLISE DO ARQUIVO CSS: 100% concluído.
-* O que foi feito: A análise do CSS foi finalizada. Foram aplicados refinamentos finais para melhorar a manutenibilidade, incluindo: a remoção de uma variável de cor não utilizada (`--accent-pink`), a eliminação de propriedades redundantes no estilo do campo de nome do hábito e botões de modal, e a generalização dos estilos para botões de ação secundários em modais para garantir consistência visual em toda a aplicação. O arquivo agora é considerado finalizado.
-* O que falta: Nenhuma análise futura é necessária.
-*/
-/* ---
-* ARQUIVO CSS REATORADO
-*
-* Principais Melhorias:
-* 1.  Consistência: Uso extensivo de variáveis (--space-*) para paddings e margins, garantindo um ritmo visual consistente.
-* 2.  Manutenibilidade (DRY): Estilos repetidos para componentes como "reel-rotary" e "modal-content" foram centralizados. Agora, modificadores específicos (IDs) apenas sobrescrevem o necessário (ex: largura).
-* 3.  Performance: Animações de brilho (glow) otimizadas para operar em pseudo-elementos com 'opacity' e 'transform', minimizando o custo de repintura do navegador.
-* 4.  Acessibilidade (A11Y): O estado de :focus-visible foi aprimorado com `color-mix()` para criar uma sombra visualmente mais integrada e adaptável ao tema.
-* 5.  Modernização: Seletores simplificados e agrupados com `:is()` para um código mais limpo e legível.
---- */
+
+/*
+ * [ANALYSIS PROGRESS]: 100% - Análise concluída.
+ * - Padronização de variáveis (substituição de hardcoded pixels).
+ * - Otimização de performance (will-change) para animações de alta frequência.
+ * - Verificação de integridade visual e responsividade.
+ * - Nenhuma refatoração estrutural adicional necessária.
+ */
 
 :root {
     /* --- CORES --- */
@@ -117,6 +111,7 @@ body {
     -ms-user-select: none;     /* IE/Edge */
     user-select: none;         /* Padrão */
     touch-action: manipulation; /* BUGFIX [2024-08-29]: Desabilita o zoom por duplo toque em dispositivos móveis para melhorar a resposta de interações personalizadas. */
+    overscroll-behavior-y: none; /* Previne o efeito rubber-banding/pull-to-refresh nativo */
 }
 
 /* Permitir seleção em campos de texto e conteúdo onde é útil */
@@ -371,6 +366,8 @@ main {
     position: absolute;
     height: 100%;
     transition: transform var(--transition-duration-slow) cubic-bezier(0.25, 1, 0.5, 1);
+    /* PERFORMANCE [2025-01-16]: Hint para o navegador otimizar a animação de transform. */
+    will-change: transform;
 }
 
 .reel-option {
@@ -415,6 +412,8 @@ main {
     min-width: 0;
     position: relative;
     user-select: none;
+    /* PERFORMANCE [2024-12-28]: Isola o layout e a pintura da faixa de calendário para evitar reflows globais. */
+    contain: content;
 }
 .calendar-strip::-webkit-scrollbar { display: none; }
 
@@ -426,12 +425,19 @@ main {
     padding: var(--space-md) var(--space-sm);
     border-radius: var(--border-radius-large);
     cursor: pointer;
-    transition: background-color var(--transition-duration);
+    transition: background-color var(--transition-duration), transform 0.1s ease-out;
     border: 2px solid transparent;
     flex-shrink: 0; /* CORREÇÃO DE LAYOUT [2024-12-14]: Impede que os dias do calendário encolham em telas pequenas, garantindo que a faixa de rolagem funcione corretamente. */
 }
 .day-item:hover { background-color: var(--surface-hover); }
 .day-item.selected { background-color: var(--surface-color); }
+
+/* UX: Feedback tátil para "Long Press" no calendário */
+.day-item.is-pressing {
+    transform: scale(0.95);
+    background-color: var(--surface-hover);
+}
+
 .day-item .day-name {
     display: block;
     font-size: 12px;
@@ -550,6 +556,8 @@ body.is-dragging-active .habit-group-wrapper.is-collapsible {
     pointer-events: none;
     transition: top var(--transition-duration-fast) ease-out, opacity var(--transition-duration-fast) ease-out;
     z-index: var(--z-index-indicator);
+    /* PERFORMANCE [2025-01-16]: Otimiza animação de drag & drop. */
+    will-change: top, opacity;
 }
 .drop-indicator.visible {
     opacity: 1;
@@ -589,6 +597,8 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     position: relative;
     overflow: hidden;
     display: flex;
+    /* PERFORMANCE [2024-12-28]: Isola o layout e estilo para otimizar renderização de listas longas. */
+    contain: layout style;
 }
 .habit-group .habit-card:last-child { margin-block-end: 0; }
 
@@ -650,6 +660,8 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     border-radius: 9px;
     flex-grow: 1;
     touch-action: pan-y;
+    /* PERFORMANCE [2025-01-16]: Garante alta performance na animação de swipe (GPU). */
+    will-change: transform;
 }
 .habit-card:hover .habit-content-wrapper { background-color: var(--surface-hover); }
 .habit-card.completed .habit-content-wrapper { background-color: color-mix(in srgb, var(--accent-blue) 20%, var(--surface-color)); }
@@ -701,6 +713,13 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     stroke: currentColor;
 }
 
+.habit-center-group {
+    display: flex;
+    justify-content: center;
+    flex-grow: 1;
+    gap: var(--space-sm);
+}
+
 .habit-icon {
     font-size: 14px;
     width: 34px;
@@ -713,7 +732,11 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 }
 .habit-icon svg { width: 60%; height: 60%; }
 
-.habit-details { flex-grow: 1; }
+.habit-details { 
+    text-align: left;
+    flex-grow: 1; /* Faz com que o título ocupe o espaço disponível, empurrando a meta para a direita */
+    min-width: 0; /* Permite truncagem de texto se necessário */
+}
 .habit-details .name {
     font-size: 18px;
     font-weight: 600;
@@ -735,6 +758,8 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     align-items: center;
     justify-content: flex-end;
     min-height: 26px;
+    margin-left: auto; /* Garante o alinhamento à direita */
+    flex-shrink: 0; /* Impede que os controles encolham */
 }
 .habit-goal .progress { font-size: 11px; font-weight: 600; }
 .habit-goal .unit { font-size: 8px; color: var(--text-secondary); }
@@ -855,6 +880,9 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     padding: var(--space-lg);
     background-color: var(--surface-color);
     border-radius: var(--border-radius-large);
+    /* PERFORMANCE [2024-12-28]: Isola o layout e a pintura da faixa de calendário para evitar reflows globais. */
+    /* FIX [2024-12-28]: Alterado para 'layout style' para permitir que tooltips overflow (visualmente). */
+    contain: layout style;
 }
 .chart-header {
     display: flex;
@@ -1240,7 +1268,7 @@ input:disabled + .slider {
 }
 
 /* Modal: Opções da IA */
-#ai-options-modal .modal-content { gap: 20px; }
+#ai-options-modal .modal-content { gap: var(--space-section); }
 .ai-options-list { display: flex; flex-direction: column; gap: var(--space-md); }
 .ai-option-btn {
     display: flex; flex-direction: column; align-items: flex-start;

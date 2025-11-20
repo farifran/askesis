@@ -2,9 +2,6 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// ANÁLISE DO ARQUIVO: 100% concluído.
-// O que foi feito: A análise do manipulador de gestos de deslize foi finalizada. O código foi robustecido com a correção de um bug no evento `pointercancel`, que agora reverte corretamente o estado em vez de cometer uma mudança. Além disso, toda a lógica de limpeza (remoção de listeners, reset de estado) foi centralizada em uma função auxiliar `_cleanupAndReset`, eliminando redundância e melhorando a clareza e a manutenibilidade do módulo.
-// O que falta: Nenhuma análise futura é necessária. O módulo é considerado robusto e finalizado.
 
 let isSwiping = false;
 
@@ -83,6 +80,7 @@ export function setupSwipeHandler(habitContainer: HTMLElement) {
     let wasOpenRight = false;
     let swipeActionWidth = 60; // Valor padrão
     let dragEnableTimer: number | null = null;
+    let currentPointerId: number | null = null;
     
     // REATORAÇÃO DE DRY: Centraliza toda a lógica de limpeza e reset de estado.
     const _cleanupAndReset = () => {
@@ -91,6 +89,15 @@ export function setupSwipeHandler(habitContainer: HTMLElement) {
         }
     
         if (activeCard) {
+            // UX IMPROVEMENT: Release pointer capture to allow normal interaction again
+            if (currentPointerId !== null) {
+                try {
+                    activeCard.releasePointerCapture(currentPointerId);
+                } catch (e) {
+                    // Ignore errors if pointer was already released/lost
+                }
+            }
+
             activeCard.classList.remove('is-swiping');
             const content = activeCard.querySelector<HTMLElement>('.habit-content-wrapper');
             if (content) {
@@ -107,6 +114,7 @@ export function setupSwipeHandler(habitContainer: HTMLElement) {
         isSwiping = false;
         swipeDirection = 'none';
         dragEnableTimer = null;
+        currentPointerId = null;
     };
 
     const abortSwipe = () => {
@@ -138,6 +146,16 @@ export function setupSwipeHandler(habitContainer: HTMLElement) {
                     if (content) {
                         content.draggable = false;
                     }
+                    
+                    // UX IMPROVEMENT: Set pointer capture on the card to ensure consistent tracking
+                    // even if the pointer leaves the element boundaries.
+                    try {
+                        activeCard.setPointerCapture(e.pointerId);
+                        currentPointerId = e.pointerId;
+                    } catch (err) {
+                        console.warn('Failed to set pointer capture', err);
+                    }
+
                 } else {
                     swipeDirection = 'vertical';
                     abortSwipe(); // Permite a rolagem vertical

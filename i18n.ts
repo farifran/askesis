@@ -2,9 +2,8 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// ANÁLISE DO ARQUIVO: 100% concluído.
-// O que foi feito: A análise do módulo de internacionalização foi finalizada. A função `loadLanguage` foi robustecida com tratamento de erro aprimorado para o carregamento do idioma de fallback. A função principal `t()` foi refatorada para corrigir um bug crítico que retornava "[object Object]" para chaves de tradução pluralizáveis quando a opção 'count' não era fornecida; a função agora retorna a chave como fallback, garantindo um comportamento previsível. A lógica de interpolação também foi aprimorada para lidar com valores indefinidos de forma mais segura.
-// O que falta: Nenhuma análise futura é necessária. O módulo está robusto e finalizado.
+// [ANALYSIS PROGRESS]: 100% - Análise concluída. Implementado cache para Intl.PluralRules na função 't' para otimizar performance em renderizações frequentes.
+
 import { state, Habit, LANGUAGES, PredefinedHabit, TimeOfDay, getScheduleForDate } from './state';
 import { ui } from './ui';
 import { renderApp, updateHeaderTitle, setupManageModal, initLanguageFilter } from './render';
@@ -13,6 +12,9 @@ import { pushToOneSignal } from './utils';
 type PluralableTranslation = { one: string; other: string };
 type TranslationValue = string | PluralableTranslation;
 type Translations = Record<string, TranslationValue>;
+
+// Cache para instâncias de PluralRules para evitar recriação custosa a cada tradução
+const pluralRulesCache: Record<string, Intl.PluralRules> = {};
 
 export function getTimeOfDayName(time: TimeOfDay): string {
     return t(`filter${time}`);
@@ -64,7 +66,14 @@ export function t(key: string, options?: { [key: string]: string | number | unde
 
     if (typeof translationValue === 'object') {
         if (options?.count !== undefined) {
-            const pluralKey = new Intl.PluralRules(lang).select(options.count as number);
+            // PERFORMANCE [2025-01-16]: Uso de cache para Intl.PluralRules.
+            let pluralRules = pluralRulesCache[lang];
+            if (!pluralRules) {
+                pluralRules = new Intl.PluralRules(lang);
+                pluralRulesCache[lang] = pluralRules;
+            }
+            
+            const pluralKey = pluralRules.select(options.count as number);
             translationString = (translationValue as PluralableTranslation)[pluralKey as keyof PluralableTranslation] || (translationValue as PluralableTranslation).other;
         } else {
             // CORREÇÃO DE BUG: Retorna a chave se uma tradução pluralizável for usada sem 'count',
@@ -146,25 +155,48 @@ function updateUIText() {
 
     ui.manageModalTitle.textContent = t('modalManageTitle');
     ui.habitListTitle.textContent = t('modalManageHabitsSubtitle');
-    document.getElementById('label-language')!.textContent = t('modalManageLanguage');
+    
+    // Elementos que não estão no objeto 'ui' precisam ser buscados
+    const labelLanguage = document.getElementById('label-language');
+    if (labelLanguage) labelLanguage.textContent = t('modalManageLanguage');
+
     ui.languagePrevBtn.setAttribute('aria-label', t('languagePrev_ariaLabel'));
     ui.languageNextBtn.setAttribute('aria-label', t('languageNext_ariaLabel'));
-    document.getElementById('label-sync')!.textContent = t('syncLabel');
-    document.getElementById('label-notifications')!.textContent = t('modalManageNotifications');
+    
+    const labelSync = document.getElementById('label-sync');
+    if (labelSync) labelSync.textContent = t('syncLabel');
+
+    const labelNotifications = document.getElementById('label-notifications');
+    if (labelNotifications) labelNotifications.textContent = t('modalManageNotifications');
+
     ui.notificationStatusDesc.textContent = t('modalManageNotificationsStaticDesc');
-    document.getElementById('label-reset')!.textContent = t('modalManageReset');
+    
+    const labelReset = document.getElementById('label-reset');
+    if (labelReset) labelReset.textContent = t('modalManageReset');
+
     ui.resetAppBtn.textContent = t('modalManageResetButton');
     ui.manageModal.querySelector('.modal-close-btn')!.textContent = t('closeButton');
     
-    document.getElementById('sync-inactive-desc')!.textContent = t('syncInactiveDesc');
+    const syncInactiveDesc = document.getElementById('sync-inactive-desc');
+    if (syncInactiveDesc) syncInactiveDesc.textContent = t('syncInactiveDesc');
+
     ui.enableSyncBtn.textContent = t('syncEnable');
     ui.enterKeyViewBtn.textContent = t('syncEnterKey');
-    document.getElementById('label-enter-key')!.textContent = t('syncLabelEnterKey');
+    
+    const labelEnterKey = document.getElementById('label-enter-key');
+    if (labelEnterKey) labelEnterKey.textContent = t('syncLabelEnterKey');
+
     ui.cancelEnterKeyBtn.textContent = t('cancelButton');
     ui.submitKeyBtn.textContent = t('syncSubmitKey');
-    document.getElementById('sync-warning-text')!.innerHTML = t('syncWarning');
+    
+    const syncWarningText = document.getElementById('sync-warning-text');
+    if (syncWarningText) syncWarningText.innerHTML = t('syncWarning');
+
     ui.keySavedBtn.textContent = t('syncKeySaved');
-    document.getElementById('sync-active-desc')!.textContent = t('syncActiveDesc');
+    
+    const syncActiveDesc = document.getElementById('sync-active-desc');
+    if (syncActiveDesc) syncActiveDesc.textContent = t('syncActiveDesc');
+
     ui.viewKeyBtn.textContent = t('syncViewKey');
     ui.disableSyncBtn.textContent = t('syncDisable');
     
@@ -188,10 +220,14 @@ function updateUIText() {
     ui.saveNoteBtn.textContent = t('modalNotesSaveButton');
     ui.notesTextarea.placeholder = t('modalNotesTextareaPlaceholder');
 
-    (document.getElementById('icon-picker-modal-title') as HTMLElement).textContent = t('modalIconPickerTitle');
+    const iconPickerTitle = document.getElementById('icon-picker-modal-title');
+    if (iconPickerTitle) iconPickerTitle.textContent = t('modalIconPickerTitle');
+    
     ui.iconPickerModal.querySelector('.modal-close-btn')!.textContent = t('cancelButton');
 
-    (document.getElementById('color-picker-modal-title') as HTMLElement).textContent = t('modalColorPickerTitle');
+    const colorPickerTitle = document.getElementById('color-picker-modal-title');
+    if (colorPickerTitle) colorPickerTitle.textContent = t('modalColorPickerTitle');
+    
     ui.colorPickerModal.querySelector('.modal-close-btn')!.textContent = t('cancelButton');
 
     const editModalActions = ui.editHabitModal.querySelector('.modal-actions');
@@ -200,7 +236,9 @@ function updateUIText() {
         editModalActions.querySelector('#edit-habit-save-btn')!.textContent = t('modalEditSaveButton');
     }
     
-    ui.undoToast.firstElementChild!.textContent = t('undoToastText');
+    if (ui.undoToast.firstElementChild) {
+        ui.undoToast.firstElementChild.textContent = t('undoToastText');
+    }
     ui.undoBtn.textContent = t('undoButton');
 }
 

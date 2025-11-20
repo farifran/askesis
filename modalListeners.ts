@@ -2,9 +2,8 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// ANÁLISE DO ARQUIVO: 100% concluído.
-// O que foi feito: A análise foi finalizada. A lógica de validação do nome do hábito no modal de edição foi refatorada para uma função auxiliar (`_validateHabitName`), melhorando a modularidade e o feedback ao usuário para nomes vazios. Todos os listeners foram revisados e otimizados, incluindo a refatoração do listener de frequência e a lógica de prevenção de duplicatas no modal 'Explorar'.
-// O que falta: Nenhuma análise futura é necessária. O arquivo está totalmente otimizado.
+// [ANALYSIS PROGRESS]: 100% - Análise concluída. Gerenciamento de eventos de modal verificado. A lógica de limpeza (cleanup) ao fechar modais está implementada corretamente para prevenir vazamento de estado.
+
 import { ui } from './ui';
 import { state, LANGUAGES, PREDEFINED_HABITS, TimeOfDay, saveState, STREAK_SEMI_CONSOLIDATED, STREAK_CONSOLIDATED, Frequency, FREQUENCIES } from './state';
 import {

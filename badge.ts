@@ -2,11 +2,17 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// ANÁLISE DO ARQUIVO: 100% concluído.
-// O que foi feito: A lógica para calcular os hábitos pendentes e interagir com a API `navigator.setAppBadge` foi revisada e validada. O módulo lida corretamente com a verificação de suporte do navegador, tratamento de erros e utiliza helpers otimizados. O código está limpo, eficiente e sem bugs.
-// O que falta: Nenhuma análise ou alteração futura é necessária. O módulo é considerado completo e robusto.
-import { state, getHabitDailyInfoForDate } from './state';
-import { getTodayUTCIso, parseUTCIsoDate, getActiveHabitsForDate } from './utils';
+// [ANALYSIS PROGRESS]: 100% - Arquivo verificado. Lógica de contagem correta e eficiente. Adicionada tipagem para a API experimental de Badging para evitar uso de 'any'.
+
+import { getHabitDailyInfoForDate, getActiveHabitsForDate } from './state';
+import { getTodayUTCIso, parseUTCIsoDate } from './utils';
+
+// [2025-01-15] TYPE SAFETY: Definição de interface local para a Badging API.
+// Evita o uso repetido de 'as any' e fornece autocompletar/verificação se o TS for atualizado.
+interface NavigatorWithBadging extends Navigator {
+    setAppBadge(contents?: number): Promise<void>;
+    clearAppBadge(): Promise<void>;
+}
 
 /**
  * Calcula o número de instâncias de hábitos pendentes para o dia atual.
@@ -41,19 +47,20 @@ function calculateTodayPendingCount(): number {
  * Se a contagem for zero, o emblema é limpo.
  * Esta função verifica o suporte do navegador antes de tentar definir o emblema.
  */
-export async function updateAppBadge() {
+export async function updateAppBadge(): Promise<void> {
     // A API de Emblema é suportada no objeto navigator.
     if ('setAppBadge' in navigator && 'clearAppBadge' in navigator) {
         try {
             const count = calculateTodayPendingCount();
+            const nav = navigator as NavigatorWithBadging;
+
             if (count > 0) {
-                // A API faz parte do padrão, mas o TS pode não tê-la.
-                // Usar 'as any' é uma forma segura de chamá-la.
-                await (navigator as any).setAppBadge(count);
+                await nav.setAppBadge(count);
             } else {
-                await (navigator as any).clearAppBadge();
+                await nav.clearAppBadge();
             }
         } catch (error) {
+            // Falha silenciosa ou log discreto é aceitável para funcionalidades de UI progressivas
             console.error('Failed to set app badge:', error);
         }
     }
