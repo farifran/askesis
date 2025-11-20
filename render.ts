@@ -27,7 +27,7 @@ import {
     calculateDaySummary,
     getActiveHabitsForDate,
 } from './state';
-import { getTodayUTCIso, toUTCIsoDateString, parseUTCIsoDate, escapeHTML, simpleMarkdownToHTML, pushToOneSignal, addDays, getContrastColor } from './utils';
+import { getTodayUTCIso, toUTCIsoDateString, parseUTCIsoDate, escapeHTML, simpleMarkdownToHTML, pushToOneSignal, addDays, getContrastColor, getDateTimeFormat } from './utils';
 import { ui } from './ui';
 import { t, getLocaleDayName, getHabitDisplayInfo, getTimeOfDayName } from './i18n';
 import { STOIC_QUOTES } from './quotes';
@@ -87,12 +87,14 @@ function _applyDayState(dayItem: HTMLElement, date: Date) {
 
     // Acessibilidade e Estado
     dayItem.setAttribute('aria-pressed', String(isSelected));
-    dayItem.setAttribute('aria-label', date.toLocaleDateString(state.activeLanguageCode, {
+    // PERFORMANCE [2025-01-16]: Uso de cache para Intl.DateTimeFormat.
+    const ariaDate = getDateTimeFormat(state.activeLanguageCode, {
         weekday: 'long',
         day: 'numeric',
         month: 'long',
         timeZone: 'UTC'
-    }));
+    }).format(date);
+    dayItem.setAttribute('aria-label', ariaDate);
 
     // Atualização Visual (Variáveis CSS e Indicadores)
     const dayProgressRing = dayItem.querySelector<HTMLElement>('.day-progress-ring');
@@ -211,11 +213,12 @@ export function renderFullCalendar() {
     const todayISO = getTodayUTCIso();
 
     const monthDate = new Date(Date.UTC(year, month, 1));
-    ui.fullCalendarMonthYear.textContent = monthDate.toLocaleDateString(state.activeLanguageCode, {
+    // PERFORMANCE [2025-01-16]: Uso de cache para Intl.DateTimeFormat.
+    ui.fullCalendarMonthYear.textContent = getDateTimeFormat(state.activeLanguageCode, {
         month: 'long',
         year: 'numeric',
         timeZone: 'UTC',
-    });
+    }).format(monthDate);
 
     const firstDayOfMonth = new Date(Date.UTC(year, month, 1));
     const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
@@ -254,6 +257,15 @@ export function renderFullCalendar() {
         totalGridCells++;
     }
 
+    // Cache formatters fora do loop
+    const ariaDateFormatter = getDateTimeFormat(state.activeLanguageCode, {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        timeZone: 'UTC'
+    });
+
     for (let day = 1; day <= daysInMonth; day++) {
         const currentDate = new Date(Date.UTC(year, month, day));
         const isoDate = toUTCIsoDateString(currentDate);
@@ -267,13 +279,7 @@ export function renderFullCalendar() {
         dayEl.classList.toggle('selected', isSelected);
         dayEl.classList.toggle('today', isoDate === todayISO);
         dayEl.setAttribute('aria-pressed', String(isSelected));
-        dayEl.setAttribute('aria-label', currentDate.toLocaleDateString(state.activeLanguageCode, {
-            weekday: 'long',
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric',
-            timeZone: 'UTC'
-        }));
+        dayEl.setAttribute('aria-label', ariaDateFormatter.format(currentDate));
         dayEl.setAttribute('tabindex', isSelected ? '0' : '-1');
 
         const ringEl = document.createElement('div');
@@ -677,22 +683,44 @@ export function renderHabits() {
 
         const desiredHabits = habitsByTime[time];
         
+        // DOM RECONCILIATION STRATEGY:
+        // Iteramos pela lista de hábitos desejados na ordem correta.
+        // Mantemos um cursor (currentIndex) que aponta para a posição esperada no DOM.
+        // Se o elemento no cursor não for o card desejado, inserimos o card antes dele.
+        // Isso garante a ordem correta com o mínimo de movimentações e preserva o estado do DOM.
+        
+        let currentIndex = 0;
+
         desiredHabits.forEach(habit => {
             const key = `${habit.id}|${time}`;
             let card = existingCardsMap.get(key);
             
             if (card) {
                 updateHabitCardElement(card, habit, time);
-                existingCardsMap.delete(key);
+                existingCardsMap.delete(key); // Remove do mapa para sabermos quais sobraram (e devem ser deletados)
             } else {
                 card = createHabitCardElement(habit, time);
             }
             
             if (card) {
-                groupEl.appendChild(card);
+                const currentChildAtIndex = groupEl.children[currentIndex];
+                
+                // Se o card não estiver na posição exata que esperamos...
+                if (currentChildAtIndex !== card) {
+                    if (currentChildAtIndex) {
+                        // Insere antes do elemento que está ocupando o lugar errado
+                        groupEl.insertBefore(card, currentChildAtIndex);
+                    } else {
+                        // Se não há elemento na posição (fim da lista), apenas anexa
+                        groupEl.appendChild(card);
+                    }
+                }
+                // Avança o cursor apenas se inserimos ou confirmamos um card de hábito
+                currentIndex++;
             }
         });
 
+        // Remove quaisquer cards que sobraram no DOM mas não estão mais na lista ativa
         existingCardsMap.forEach(cardToRemove => cardToRemove.remove());
         
         const hasHabits = groupHasHabits[time];
@@ -781,6 +809,14 @@ export function renderStoicQuote() {
         return;
     }
 
+    // STARTUP OPTIMIZATION [2025-01-16]: Se for a primeira renderização (conteúdo vazio), mostra imediatamente.
+    // Isso melhora a percepção de velocidade inicial da app (LCP).
+    if (ui.stoicQuoteDisplay.textContent === '') {
+         setTextContent(ui.stoicQuoteDisplay, fullText);
+         ui.stoicQuoteDisplay.classList.add('visible');
+         return;
+    }
+
     ui.stoicQuoteDisplay.classList.remove('visible');
     
     setTimeout(() => {
@@ -816,12 +852,12 @@ export function updateHeaderTitle() {
         const month = String(date.getUTCMonth() + 1).padStart(2, '0');
         mobileTitle = `${day}/${month}`;
         
-        const formatOptions: Intl.DateTimeFormatOptions = {
+        // PERFORMANCE [2025-01-16]: Uso de cache para Intl.DateTimeFormat.
+        desktopTitle = getDateTimeFormat(state.activeLanguageCode, {
             month: 'long',
             day: 'numeric',
             timeZone: 'UTC'
-        };
-        desktopTitle = date.toLocaleDateString(state.activeLanguageCode, formatOptions);
+        }).format(date);
     }
     setTextContent(ui.headerTitleDesktop, desktopTitle);
     setTextContent(ui.headerTitleMobile, mobileTitle);
@@ -1120,7 +1156,8 @@ export function openNotesModal(habitId: string, date: string, time: TimeOfDay) {
     
     const { name } = getHabitDisplayInfo(habit, date);
     const dateObj = parseUTCIsoDate(date);
-    const formattedDate = dateObj.toLocaleDateString(state.activeLanguageCode, { day: 'numeric', month: 'long', timeZone: 'UTC' });
+    // PERFORMANCE [2025-01-16]: Uso de cache para Intl.DateTimeFormat.
+    const formattedDate = getDateTimeFormat(state.activeLanguageCode, { day: 'numeric', month: 'long', timeZone: 'UTC' }).format(dateObj);
     const timeName = getTimeOfDayName(time);
 
     setTextContent(ui.notesModalTitle, name);

@@ -414,6 +414,8 @@ main {
     user-select: none;
     /* PERFORMANCE [2024-12-28]: Isola o layout e a pintura da faixa de calendário para evitar reflows globais. */
     contain: content;
+    /* UX: Evita scroll chaining */
+    overscroll-behavior: contain;
 }
 .calendar-strip::-webkit-scrollbar { display: none; }
 
@@ -971,6 +973,8 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     opacity: 0;
     visibility: hidden;
     transition: opacity var(--transition-duration-slow), visibility var(--transition-duration-slow);
+    /* UX: Evita scroll chaining */
+    overscroll-behavior: contain;
 }
 .modal-overlay.visible { opacity: 1; visibility: visible; }
 
@@ -986,6 +990,8 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     padding: var(--space-xl);
     overflow-y: auto;
     z-index: var(--z-index-modal-content);
+    /* UX: Evita scroll chaining */
+    overscroll-behavior: contain;
 }
 #edit-habit-modal .modal-content {
     background-color: var(--bg-color);
@@ -1213,6 +1219,8 @@ input:disabled + .slider {
     gap: var(--space-sm);
     overflow-y: auto;
     margin-block-end: var(--space-lg);
+    /* UX: Evita scroll chaining */
+    overscroll-behavior: contain;
 }
 .explore-habit-item {
     display: flex; flex-direction: column; align-items: center;
@@ -1236,7 +1244,7 @@ input:disabled + .slider {
 #create-custom-habit-btn { width: 100%; padding: var(--space-md); }
 
 /* Modal: Resposta da IA e Confirmação */
-#ai-response { margin-block-end: var(--space-lg); max-height: 300px; overflow-y: auto; color: var(--text-secondary); line-height: 1.6; }
+#ai-response { margin-block-end: var(--space-lg); max-height: 300px; overflow-y: auto; color: var(--text-secondary); line-height: 1.6; overscroll-behavior: contain; }
 #ai-response strong { color: var(--text-primary); font-weight: 600; }
 #ai-response p { margin-block-end: var(--space-sm); }
 #ai-response p:last-child { margin-block-end: 0; }
@@ -1307,6 +1315,8 @@ input:disabled + .slider {
     padding-top: var(--space-md);
     --current-habit-bg-color: #000000;
     --current-habit-fg-color: #e5e5e5;
+    /* UX: Evita scroll chaining */
+    overscroll-behavior: contain;
 }
 .icon-picker-item {
     width: 100%;
@@ -1355,6 +1365,8 @@ input:disabled + .slider {
     max-height: 300px;
     overflow-y: auto;
     padding: var(--space-sm);
+    /* UX: Evita scroll chaining */
+    overscroll-behavior: contain;
 }
 .color-swatch {
     width: 100%;

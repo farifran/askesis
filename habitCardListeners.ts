@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -43,7 +44,10 @@ function createGoalInput(habit: Habit, time: TimeOfDay, wrapper: HTMLElement) {
 
     const originalContent = wrapper.innerHTML;
     
-    wrapper.innerHTML = `<input type="number" class="goal-input-inline" value="${currentGoal}" min="1" step="1" />`;
+    // UX IMPROVEMENT [2025-01-16]: Adicionado inputmode="numeric" e pattern="[0-9]*"
+    // Isso força a abertura do teclado numérico otimizado em dispositivos móveis (iOS/Android),
+    // melhorando significativamente a experiência de entrada de dados.
+    wrapper.innerHTML = `<input type="number" class="goal-input-inline" value="${currentGoal}" min="1" step="1" inputmode="numeric" pattern="[0-9]*" />`;
     const input = wrapper.querySelector('input')!;
     input.focus();
     input.select();

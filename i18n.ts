@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -7,7 +8,7 @@
 import { state, Habit, LANGUAGES, PredefinedHabit, TimeOfDay, getScheduleForDate } from './state';
 import { ui } from './ui';
 import { renderApp, updateHeaderTitle, setupManageModal, initLanguageFilter } from './render';
-import { pushToOneSignal } from './utils';
+import { pushToOneSignal, getDateTimeFormat } from './utils';
 
 type PluralableTranslation = { one: string; other: string };
 type TranslationValue = string | PluralableTranslation;
@@ -89,7 +90,7 @@ export function t(key: string, options?: { [key: string]: string | number | unde
             // MELHORIA DE ROBUSTEZ: Ignora a substituição se o valor for indefinido para evitar
             // a inserção da string "undefined" na UI.
             if (optValue !== undefined) {
-                return acc.replace(new RegExp(`{${optKey}}`, 'g'), String(optValue));
+                return acc.split(`{${optKey}}`).join(String(optValue));
             }
             return acc;
         }, translationString);
@@ -134,7 +135,8 @@ export function getHabitDisplayInfo(habit: Habit | PredefinedHabit, dateISO?: st
 }
 
 export function getLocaleDayName(date: Date): string {
-    return date.toLocaleDateString(state.activeLanguageCode, { weekday: 'short', timeZone: 'UTC' }).toUpperCase();
+    // PERFORMANCE [2025-01-16]: Uso de cache para Intl.DateTimeFormat para evitar recriação em loops de calendário.
+    return getDateTimeFormat(state.activeLanguageCode, { weekday: 'short', timeZone: 'UTC' }).format(date).toUpperCase();
 }
 
 function updateUIText() {

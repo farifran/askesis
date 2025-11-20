@@ -41,7 +41,30 @@ export function addDays(date: Date, days: number): Date {
     return result;
 }
 
-// --- Formatting ---
+// --- Formatting & Localization Performance ---
+
+// Cache para instâncias de Intl.DateTimeFormat.
+// A criação desses objetos é custosa, então reutilizá-los melhora significativamente a performance de renderização
+// em loops (como no calendário e gráficos).
+const dateTimeFormatCache = new Map<string, Intl.DateTimeFormat>();
+
+/**
+ * Obtém um formatador de data cacheado para o locale e opções especificados.
+ * @param locale O código do idioma (ex: 'pt-BR').
+ * @param options As opções de formatação do Intl.DateTimeFormat.
+ * @returns Uma instância de Intl.DateTimeFormat.
+ */
+export function getDateTimeFormat(locale: string, options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
+    // Cria uma chave única baseada no locale e nas opções ordenadas (para consistência).
+    const optionsKey = JSON.stringify(Object.entries(options).sort((a, b) => a[0].localeCompare(b[0])));
+    const key = `${locale}|${optionsKey}`;
+
+    if (!dateTimeFormatCache.has(key)) {
+        dateTimeFormatCache.set(key, new Intl.DateTimeFormat(locale, options));
+    }
+    return dateTimeFormatCache.get(key)!;
+}
+
 export function escapeHTML(str: string): string {
     return str.replace(/[&<>"']/g, function (match) {
         switch (match) {

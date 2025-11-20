@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -7,7 +8,7 @@
 import { state } from './state';
 import { ui } from './ui';
 import { t } from './i18n';
-import { addDays, getTodayUTCIso, parseUTCIsoDate, toUTCIsoDateString } from './utils';
+import { addDays, getTodayUTCIso, parseUTCIsoDate, toUTCIsoDateString, getDateTimeFormat } from './utils';
 import { getActiveHabitsForDate } from './state';
 
 const CHART_DAYS = 30;
@@ -126,7 +127,8 @@ function _updateChartDOM(chartData: ChartDataPoint[]) {
 
     const firstDate = parseUTCIsoDate(chartData[0].date);
     const lastDate = parseUTCIsoDate(chartData[chartData.length - 1].date);
-    const formatDate = (date: Date) => date.toLocaleDateString(state.activeLanguageCode, { month: 'short', day: 'numeric', timeZone: 'UTC' });
+    // PERFORMANCE [2025-01-16]: Uso de cache para Intl.DateTimeFormat.
+    const axisFormatter = getDateTimeFormat(state.activeLanguageCode, { month: 'short', day: 'numeric', timeZone: 'UTC' });
     
     // Recalcula escalas e caminhos com base nos novos dados e no tamanho do contêiner.
     const svgWidth = ui.chartContainer.clientWidth;
@@ -154,18 +156,18 @@ function _updateChartDOM(chartData: ChartDataPoint[]) {
     areaPath.setAttribute('d', areaPathData);
     linePath.setAttribute('d', pathData);
 
-    axisStart.textContent = formatDate(firstDate);
-    axisEnd.textContent = formatDate(lastDate);
+    axisStart.textContent = axisFormatter.format(firstDate);
+    axisEnd.textContent = axisFormatter.format(lastDate);
 
     // Atualiza o indicador de evolução.
     const lastPoint = chartData[chartData.length - 1];
     const referencePoint = chartData.find(d => d.scheduledCount > 0) || chartData[0];
     const evolution = ((lastPoint.value - referencePoint.value) / referencePoint.value) * 100;
     const evolutionString = `${evolution > 0 ? '+' : ''}${evolution.toFixed(1)}%`;
-    const referenceDate = parseUTCIsoDate(referencePoint.date).toLocaleDateString(state.activeLanguageCode, { month: 'short', day: 'numeric', timeZone: 'UTC' });
+    const referenceDate = parseUTCIsoDate(referencePoint.date);
     
     evolutionIndicator.className = `chart-evolution-indicator ${evolution >= 0 ? 'positive' : 'negative'}`;
-    evolutionIndicator.title = t('chartEvolutionSince', { date: referenceDate });
+    evolutionIndicator.title = t('chartEvolutionSince', { date: axisFormatter.format(referenceDate) });
     evolutionIndicator.textContent = evolutionString;
     
     const lastPointX = xScale(chartData.length - 1);
@@ -217,10 +219,14 @@ function _setupChartListeners() {
         const dot = indicator.querySelector<HTMLElement>('.chart-indicator-dot')!;
         dot.style.top = `${pointY}px`;
         
-        const date = parseUTCIsoDate(point.date).toLocaleDateString(state.activeLanguageCode, { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
+        const date = parseUTCIsoDate(point.date);
+        // PERFORMANCE [2025-01-16]: Uso de cache para Intl.DateTimeFormat no tooltip.
+        const formattedDate = getDateTimeFormat(state.activeLanguageCode, { 
+            weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' 
+        }).format(date);
         
         tooltip.innerHTML = `
-            <div class="tooltip-date">${date}</div>
+            <div class="tooltip-date">${formattedDate}</div>
             <div class="tooltip-score">
                 ${t('chartTooltipScore')}: 
                 <span class="tooltip-score-value">${point.value.toFixed(2)}</span>

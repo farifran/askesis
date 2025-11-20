@@ -40,10 +40,16 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
 
         const newTime = dropZone.dataset.time as TimeOfDay;
         const scheduleForDay = getEffectiveScheduleForHabitOnDate(draggedHabitObject, state.selectedDate);
-        const isInvalidDrop = newTime !== draggedHabitOriginalTime && scheduleForDay.includes(newTime);
+        
+        const isSameGroup = newTime === draggedHabitOriginalTime;
+        const isInvalidDrop = !isSameGroup && scheduleForDay.includes(newTime);
         
         dropZone.classList.toggle('invalid-drop', isInvalidDrop);
-        dropZone.classList.toggle('drag-over', !isInvalidDrop);
+        
+        // UX REFINEMENT [2025-01-16]: Só exibe o fundo de destaque (.drag-over) se o usuário
+        // estiver movendo o hábito para um grupo DIFERENTE (ex: Manhã -> Tarde).
+        // Para reordenação dentro do mesmo grupo, o indicador de linha azul é suficiente e menos ruidoso.
+        dropZone.classList.toggle('drag-over', !isInvalidDrop && !isSameGroup);
 
         return { dropZone, isValid: !isInvalidDrop };
     }
