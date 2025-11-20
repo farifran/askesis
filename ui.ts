@@ -1,6 +1,7 @@
 
 type UIElements = {
     calendarStrip: HTMLElement;
+    headerTitle: HTMLElement; // [2025-01-16] Added to allow click listener on the full title container
     headerTitleDesktop: HTMLElement;
     headerTitleMobile: HTMLElement;
     stoicQuoteDisplay: HTMLElement;
@@ -96,6 +97,7 @@ function queryElement<T extends HTMLElement>(selector: string): T {
 export function initUI(): void {
     Object.assign(ui, {
         calendarStrip: queryElement('#calendar-strip'),
+        headerTitle: queryElement('#header-title'), // [2025-01-16] Added
         headerTitleDesktop: queryElement('#header-title .header-title-desktop'),
         headerTitleMobile: queryElement('#header-title .header-title-mobile'),
         stoicQuoteDisplay: queryElement('#stoic-quote-display'),

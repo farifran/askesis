@@ -1,6 +1,6 @@
 
-import { state } from './state';
-import { toUTCIsoDateString, parseUTCIsoDate, debounce, triggerHaptic } from './utils';
+import { state, DAYS_IN_CALENDAR } from './state';
+import { toUTCIsoDateString, parseUTCIsoDate, debounce, triggerHaptic, getTodayUTCIso, addDays } from './utils';
 import { ui } from './ui';
 import {
     renderHabits,
@@ -10,6 +10,8 @@ import {
     renderAINotificationState,
     openModal,
     renderFullCalendar,
+    renderApp,
+    scrollToToday,
 } from './render';
 import { setupModalListeners } from './modalListeners';
 import { setupHabitCardListeners } from './habitCardListeners';
@@ -229,11 +231,45 @@ const _setupWindowListeners = () => {
     }, 250);
     window.addEventListener('resize', debouncedResize);
 
+    // Lógica de atualização de data (PWA Lifecycle & Heartbeat)
+    let lastSeenDay = getTodayUTCIso();
+
+    const checkAndRefreshDate = () => {
+        const currentDay = getTodayUTCIso();
+        if (currentDay !== lastSeenDay) {
+            console.log('Date changed. Refreshing view.');
+            lastSeenDay = currentDay;
+            // Atualiza os dados do calendário (desliza os dias)
+            // Usamos a constante DAYS_IN_CALENDAR importada para manter consistência.
+            state.calendarDates = Array.from({ length: DAYS_IN_CALENDAR }, (_, i) => addDays(parseUTCIsoDate(currentDay), i - 30));
+            
+            // Resetamos para "Hoje" para garantir consistência visual.
+            state.selectedDate = currentDay;
+            
+            // PERFORMANCE & UX: Removemos a limpeza destrutiva do DOM (innerHTML = '').
+            // O renderCalendar é capaz de reciclar nós.
+            renderApp();
+            
+            // Restaura a visualização para "Hoje" (posição inicial).
+            scrollToToday('auto');
+        }
+    };
+
+    // 1. Listener de Retorno ao App (PWA)
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') {
             updateAppBadge();
+            checkAndRefreshDate();
         }
     });
+
+    // 2. Timer de Meia-Noite (Heartbeat)
+    // Se o usuário deixar o app aberto, verifica a cada minuto se o dia virou.
+    setInterval(() => {
+        if (document.visibilityState === 'visible') {
+            checkAndRefreshDate();
+        }
+    }, 60000);
 
     window.addEventListener('online', handleConnectionChange);
     window.addEventListener('offline', handleConnectionChange);
@@ -247,6 +283,24 @@ const _setupGlobalInteractionListeners = () => {
     ui.undoBtn.addEventListener('click', () => {
         triggerHaptic('medium');
         handleUndoDelete();
+    });
+
+    // HEADER CLICK [2025-01-16]: Allows quick return to "Today".
+    ui.headerTitle.addEventListener('click', () => {
+        const today = getTodayUTCIso();
+        
+        // Sempre fornece feedback tátil para confirmar o reconhecimento do clique
+        triggerHaptic('light');
+
+        // Se não estiver selecionado, atualiza o estado e renderiza
+        if (state.selectedDate !== today) {
+            updateSelectedDateAndRender(today);
+        }
+        
+        // UX IMPROVEMENT: Força a rolagem do calendário para a posição inicial (final da lista),
+        // garantindo que o dia "Hoje" e o histórico recente estejam visíveis.
+        // Isso é útil mesmo se a data já estiver selecionada, mas o usuário tiver rolado para longe.
+        scrollToToday('smooth');
     });
 
     document.addEventListener('pointerdown', (e) => {

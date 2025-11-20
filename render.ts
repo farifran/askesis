@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -147,6 +146,21 @@ function createCalendarDayElement(date: Date): HTMLElement {
     return dayItem;
 }
 
+/**
+ * Helper centralizado para rolar o calendário para o dia "Hoje".
+ * Garante consistência visual (alinhamento ao final) em toda a aplicação.
+ */
+export function scrollToToday(behavior: ScrollBehavior = 'auto') {
+    // setTimeout com 0ms garante que o layout tenha sido calculado antes de rolar,
+    // especialmente útil quando chamado logo após atualizações do DOM.
+    setTimeout(() => {
+        const todayEl = ui.calendarStrip.querySelector<HTMLElement>('.day-item.today');
+        if (todayEl) {
+            todayEl.scrollIntoView({ behavior, block: 'nearest', inline: 'end' });
+        }
+    }, 0);
+}
+
 export function renderCalendar() {
     const dayElements = Array.from(ui.calendarStrip.querySelectorAll<HTMLElement>('.day-item'));
     
@@ -157,15 +171,8 @@ export function renderCalendar() {
         });
         ui.calendarStrip.appendChild(fragment);
 
-        // UX IMPROVEMENT [2024-12-28]: Rola automaticamente o calendário na inicialização
-        // para que o "Hoje" seja o último dia visível à direita.
-        // O setTimeout(..., 0) garante que o layout tenha sido calculado antes de rolar.
-        const todayEl = ui.calendarStrip.querySelector<HTMLElement>('.day-item.today');
-        if (todayEl) {
-            setTimeout(() => {
-                todayEl.scrollIntoView({ behavior: 'auto', block: 'nearest', inline: 'end' });
-            }, 0);
-        }
+        // UX IMPROVEMENT: Rola automaticamente o calendário na inicialização.
+        scrollToToday('auto');
         return;
     }
     
@@ -435,18 +442,17 @@ function updateGoalContentElement(goalEl: HTMLElement, status: HabitStatus, habi
             goalEl.innerHTML = `<div class="progress" style="color: var(--accent-blue);">✓</div><div class="unit">${getUnitString(habit, 1)}</div>`;
         }
     } else if (status === 'snoozed') {
-        if (goalEl.querySelector('.snoozed-text')) return;
+        // CORREÇÃO DE LAYOUT [2025-01-16]: Uso de wrapper específico para evitar sobreposição de ícone e texto.
+        if (goalEl.querySelector('.snoozed-wrapper')) return;
 
-        const progressDiv = document.createElement('div');
-        progressDiv.className = 'progress';
-        progressDiv.innerHTML = `<svg class="snoozed-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="13 17 18 12 13 7"></polyline><polyline points="6 17 11 12 6 7"></polyline></svg>`;
-
-        const unitDiv = document.createElement('div');
-        unitDiv.className = 'unit snoozed-text';
-        unitDiv.textContent = t('habitSnoozed');
-        
-        goalEl.innerHTML = '';
-        goalEl.append(progressDiv, unitDiv);
+        goalEl.innerHTML = `
+            <div class="snoozed-wrapper">
+                <svg class="snoozed-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="13 17 18 12 13 7"></polyline>
+                    <polyline points="6 17 11 12 6 7"></polyline>
+                </svg>
+                <span class="snoozed-text">${t('habitSnoozed')}</span>
+            </div>`;
     } else { 
         // Pending (Controls)
         if (habit.goal.type === 'pages' || habit.goal.type === 'minutes') {

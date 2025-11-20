@@ -112,6 +112,8 @@ body {
     user-select: none;         /* Padrão */
     touch-action: manipulation; /* BUGFIX [2024-08-29]: Desabilita o zoom por duplo toque em dispositivos móveis para melhorar a resposta de interações personalizadas. */
     overscroll-behavior-y: none; /* Previne o efeito rubber-banding/pull-to-refresh nativo */
+    /* UX: Evita scroll chaining */
+    overscroll-behavior: contain;
 }
 
 /* Permitir seleção em campos de texto e conteúdo onde é útil */
@@ -196,6 +198,10 @@ main {
     top: -5px;
     white-space: nowrap;
     flex-shrink: 0;
+    /* UX: Indica interatividade (retornar para Hoje) */
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
 }
 
 .header-title-mobile {
@@ -511,6 +517,8 @@ main {
 .habit-group-wrapper {
     margin-block-end: 0;
     transition: max-height var(--transition-duration-slow) ease-in-out, margin-block-start var(--transition-duration-slow) ease-in-out, margin-block-end var(--transition-duration-slow) ease-in-out;
+    /* UX: Evita scroll chaining */
+    overscroll-behavior: contain;
 }
 .habit-group-wrapper + .habit-group-wrapper {
     margin-block-start: var(--space-md);
@@ -709,6 +717,9 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     gap: var(--space-xs);
     transition: opacity var(--transition-duration-slow);
 }
+.habit-card .time-of-day-icon {
+    margin-inline-end: var(--space-xs);
+}
 .time-of-day-icon svg {
     width: 18px;
     height: 100%;
@@ -874,8 +885,30 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     height: 24px;
 }
 
-.snoozed-icon { width: 20px; height: 20px; stroke: var(--text-tertiary); }
-.snoozed-text { font-size: 14px; color: var(--text-tertiary); font-weight: 500; }
+/* REFINAMENTO VISUAL [2025-01-16]: Estilos do wrapper de status 'Adiado' para corrigir sobreposição e alinhar com o ícone. */
+.snoozed-wrapper {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    padding: 2px 6px;
+    border-radius: var(--border-radius-small);
+    background-color: rgba(0, 0, 0, 0.2); /* Contraste sutil sobre o fundo snoozed */
+}
+
+.snoozed-icon {
+    width: 16px;
+    height: 16px;
+    stroke: var(--text-tertiary);
+    display: block;
+}
+
+.snoozed-text {
+    font-size: 12px;
+    color: var(--text-tertiary);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
 
 /* --- COMPONENTES: GRÁFICO DE EVOLUÇÃO --- */
 .chart-container {
@@ -1882,4 +1915,29 @@ body.is-offline #ai-eval-btn .offline-icon {
         display: block; font-size: 11px;
         color: var(--text-secondary); line-height: 1.3;
     }
+}
+
+/* REFINAMENTO VISUAL [2025-01-16]: Estilos do wrapper de status 'Adiado' para corrigir sobreposição e alinhar com o ícone. */
+.snoozed-wrapper {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    padding: 2px 6px;
+    border-radius: var(--border-radius-small);
+    background-color: rgba(0, 0, 0, 0.2); /* Contraste sutil sobre o fundo snoozed */
+}
+
+.snoozed-icon {
+    width: 16px;
+    height: 16px;
+    stroke: var(--text-tertiary);
+    display: block;
+}
+
+.snoozed-text {
+    font-size: 12px;
+    color: var(--text-tertiary);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
 }

@@ -353,20 +353,28 @@ export function invalidateStreakCache(habitId: string, fromDateISO: string) {
 }
 
 export function getScheduleForDate(habit: Habit, date: Date | string): HabitSchedule | null {
+    // PERFORMANCE [2025-01-16]: String Comparison Optimization.
+    // Instead of converting to Date objects and getting timestamps, we use the fact that
+    // ISO 8601 strings (YYYY-MM-DD) are lexicographically comparable.
+    // This saves object allocation in the hot path.
     const dateStr = typeof date === 'string' ? date : toUTCIsoDateString(date);
+    
     const cacheKey = `${habit.id}|${dateStr}`;
     if (state.scheduleCache[cacheKey] !== undefined) {
         return state.scheduleCache[cacheKey];
     }
     
-    const dateAsTime = parseUTCIsoDate(dateStr).getTime();
     let foundSchedule: HabitSchedule | null = null;
 
-    for (const schedule of [...habit.scheduleHistory].reverse()) {
-        const startAsTime = parseUTCIsoDate(schedule.startDate).getTime();
-        const endAsTime = schedule.endDate ? parseUTCIsoDate(schedule.endDate).getTime() : Infinity;
+    // PERFORMANCE [2025-01-16]: Zero-allocation loop with string comparison.
+    for (let i = habit.scheduleHistory.length - 1; i >= 0; i--) {
+        const schedule = habit.scheduleHistory[i];
+        
+        // ISO Strings comparison works: '2024-01-02' > '2024-01-01'
+        const isAfterStart = dateStr >= schedule.startDate;
+        const isBeforeEnd = !schedule.endDate || dateStr < schedule.endDate;
 
-        if (dateAsTime >= startAsTime && dateAsTime < endAsTime) {
+        if (isAfterStart && isBeforeEnd) {
             foundSchedule = schedule;
             break;
         }
@@ -385,7 +393,8 @@ export function getScheduleForDate(habit: Habit, date: Date | string): HabitSche
  */
 export function getEffectiveScheduleForHabitOnDate(habit: Habit, dateISO: string): TimeOfDay[] {
     const dailyInfo = state.dailyData[dateISO]?.[habit.id];
-    const activeSchedule = getScheduleForDate(habit, parseUTCIsoDate(dateISO));
+    // PERFORMANCE: Pass string directly to avoid Date creation inside getScheduleForDate if not needed
+    const activeSchedule = getScheduleForDate(habit, dateISO);
     if (!activeSchedule) return [];
     
     return dailyInfo?.dailySchedule || activeSchedule.times;
@@ -413,10 +422,10 @@ export function ensureHabitInstanceData(date: string, habitId: string, time: Tim
     return state.dailyData[date][habitId].instances[time]!;
 }
 
-export function shouldHabitAppearOnDate(habit: Habit, date: Date): boolean {
+export function shouldHabitAppearOnDate(habit: Habit, date: Date, dateISO?: string): boolean {
     if (habit.graduatedOn) return false;
 
-    const activeSchedule = getScheduleForDate(habit, date);
+    const activeSchedule = getScheduleForDate(habit, dateISO || date);
     if (!activeSchedule) return false;
 
     const anchorDate = parseUTCIsoDate(activeSchedule.scheduleAnchor);
@@ -463,7 +472,7 @@ export function getActiveHabitsForDate(date: Date): Array<{ habit: Habit; schedu
     }
     
     const activeHabits = state.habits
-        .filter(habit => shouldHabitAppearOnDate(habit, date))
+        .filter(habit => shouldHabitAppearOnDate(habit, date, dateStr))
         .map(habit => ({
             habit,
             schedule: getEffectiveScheduleForHabitOnDate(habit, dateStr),
@@ -483,14 +492,20 @@ export function calculateHabitStreak(habitId: string, referenceDateISO: string):
     if (!habit) return 0;
 
     let streak = 0;
-    let date = parseUTCIsoDate(referenceDateISO);
+    
+    // PERFORMANCE [2025-01-16]: Optimization. Instead of creating a new Date object in every iteration
+    // via `addDays(date, -1)`, we create one date object and mutate it in-place using `setUTCDate`.
+    // This saves up to ~730 object allocations per habit per render when streak cache is cold.
+    const iteratorDate = parseUTCIsoDate(referenceDateISO);
     
     for (let i = 0; i < 365 * 2; i++) { // Check up to 2 years back
-        const dateStr = toUTCIsoDateString(date);
+        // PERFORMANCE [2025-01-16]: We generate dateStr once per iteration and pass it down.
+        // Previously it was generated again inside `getScheduleForDate` (called by shouldHabitAppearOnDate).
+        const dateStr = toUTCIsoDateString(iteratorDate);
         
         if (dateStr < habit.createdOn) break;
 
-        if (shouldHabitAppearOnDate(habit, date)) {
+        if (shouldHabitAppearOnDate(habit, iteratorDate, dateStr)) {
              const dailyInfo = state.dailyData[dateStr]?.[habitId];
              const schedule = getEffectiveScheduleForHabitOnDate(habit, dateStr);
              
@@ -514,7 +529,8 @@ export function calculateHabitStreak(habitId: string, referenceDateISO: string):
                  }
              }
         }
-        date = addDays(date, -1);
+        // Mutate date in-place for next iteration (Go to yesterday)
+        iteratorDate.setUTCDate(iteratorDate.getUTCDate() - 1);
     }
     
     state.streaksCache[cacheKey] = streak;
