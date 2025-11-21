@@ -3,6 +3,7 @@
 
 
 
+
 /*
  * [ANALYSIS PROGRESS]: 100% - Análise concluída.
  * - Padronização de variáveis (substituição de hardcoded pixels).
@@ -482,7 +483,10 @@ main {
     
     /* UX [2025-01-18]: Rolagem com snap para sensação mais precisa */
     scroll-snap-type: x proximity;
-    padding-inline: 4px; /* Area de respiro para o snap */
+    
+    /* FIX [2025-01-18]: Ajuste de padding para evitar corte do último item próximo aos ícones */
+    padding-inline-start: 4px;
+    padding-inline-end: var(--space-xl);
 }
 .calendar-strip::-webkit-scrollbar { display: none; }
 
