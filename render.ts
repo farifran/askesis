@@ -9,6 +9,10 @@
 // UPDATE [2025-01-18]: Implementação de Idle Deadline Scheduling para renderização pesada.
 // UPDATE [2025-01-19]: Surgical DOM Updates. Funções exportadas para atualização granular de UI.
 // UPDATE [2025-01-21]: CSS Dirty Checking. Evita style recalculations desnecessários.
+// UPDATE [2025-01-22]: DOM Reference Caching. Evita consultas DOM repetitivas.
+// UPDATE [2025-01-23]: Layout Thrashing Elimination. Uso de dataset como cache de estado visual.
+// OPTIMIZATION [2025-01-24]: Persistent Element Cache (Recycling) for Habit Cards. Eliminated querySelectorAll in hot-path.
+// OPTIMIZATION [2025-01-26]: UI Dirty State Implementation. Skipping render cycles for unchanged UI sections.
 
 import {
     state,
@@ -43,6 +47,28 @@ const noticeTimeouts = new WeakMap<HTMLElement, number>();
 const focusTrapListeners = new Map<HTMLElement, (e: KeyboardEvent) => void>();
 const previouslyFocusedElements = new WeakMap<HTMLElement, HTMLElement>();
 
+// OTIMIZAÇÃO [2025-01-22]: Cache de elementos do calendário para evitar querySelectorAll repetido.
+let cachedDayElements: HTMLElement[] = [];
+
+// OTIMIZAÇÃO [2025-01-24]: Cache persistente para cartões de hábitos.
+// Chave: `${habitId}|${time}`. Valor: HTMLElement.
+// Isso permite acesso O(1) para atualizações cirúrgicas e reciclagem de DOM na renderização de listas.
+const habitElementCache = new Map<string, HTMLElement>();
+
+export function getCachedHabitCard(habitId: string, time: TimeOfDay): HTMLElement | undefined {
+    return habitElementCache.get(`${habitId}|${time}`);
+}
+
+export function removeHabitFromCache(habitId: string) {
+    for (const key of habitElementCache.keys()) {
+        if (key.startsWith(`${habitId}|`)) {
+            const el = habitElementCache.get(key);
+            el?.remove(); // Garante remoção do DOM
+            habitElementCache.delete(key);
+        }
+    }
+}
+
 /**
  * OTIMIZAÇÃO DE PERFORMANCE: Helper para atualizar textContent apenas se o valor mudou.
  * Evita recálculos de layout/paint desnecessários no navegador.
@@ -75,7 +101,7 @@ export function initLanguageFilter() {
  * OTIMIZAÇÃO (DRY): Aplica o estado visual a um elemento de dia do calendário.
  * Centraliza a lógica de classes, atributos ARIA e variáveis CSS para evitar duplicação
  * entre criação e atualização.
- * UPDATE [2025-01-21]: Adicionado Dirty Checking rigoroso para evitar reescrita de variáveis CSS e Reflows.
+ * UPDATE [2025-01-23]: Substituição de getPropertyValue por dataset check para eliminar Layout Thrashing.
  */
 function _applyDayState(dayItem: HTMLElement, date: Date) {
     const todayISO = getTodayUTCIso();
@@ -121,13 +147,16 @@ function _applyDayState(dayItem: HTMLElement, date: Date) {
         const newCompleted = `${completedPercent}%`;
         const newTotal = `${totalPercent}%`;
         
-        // Dirty Checking para CSS Variables - CRÍTICO para performance de scroll
-        // Acessar getPropertyValue é rápido, setProperty força style recalc.
-        if (dayProgressRing.style.getPropertyValue('--completed-percent') !== newCompleted) {
+        // PERFORMANCE CRÍTICA [2025-01-23]: Uso de dataset para Dirty Checking.
+        // Ler `style.getPropertyValue` força o navegador a recalcular estilos (Reflow).
+        // Ler `dataset` é uma operação de leitura de propriedade JS barata.
+        if (dayProgressRing.dataset.completedPercent !== newCompleted) {
             dayProgressRing.style.setProperty('--completed-percent', newCompleted);
+            dayProgressRing.dataset.completedPercent = newCompleted;
         }
-        if (dayProgressRing.style.getPropertyValue('--total-percent') !== newTotal) {
+        if (dayProgressRing.dataset.totalPercent !== newTotal) {
             dayProgressRing.style.setProperty('--total-percent', newTotal);
+            dayProgressRing.dataset.totalPercent = newTotal;
         }
         
         // OTIMIZAÇÃO: Manipulação direta do DOM para o indicador Plus
@@ -178,6 +207,7 @@ function createCalendarDayElement(date: Date): HTMLElement {
 
     const dayNumber = document.createElement('span');
     dayNumber.className = 'day-number';
+    dayNumber.className = 'day-number';
     dayNumber.textContent = String(date.getUTCDate());
 
     dayProgressRing.appendChild(dayNumber);
@@ -216,26 +246,50 @@ export function scrollToToday(behavior: ScrollBehavior = 'auto') {
 }
 
 export function renderCalendar() {
-    const dayElements = Array.from(ui.calendarStrip.querySelectorAll<HTMLElement>('.day-item'));
+    // PERFORMANCE [2025-01-26]: DIRTY CHECK GUARD.
+    // Se o estado visual do calendário não mudou (datas e seleção são as mesmas), pulamos.
+    // Atualizações pontuais de progresso são tratadas por 'renderCalendarDayPartial'.
+    if (!state.uiDirtyState.calendarVisuals) {
+        return;
+    }
+
+    // OTIMIZAÇÃO [2025-01-22]: Usa cache de elementos para evitar querySelectorAll
+    // Se o cache estiver vazio ou dessincronizado (dias mudaram), reconstrói.
+    // A verificação de tamanho é uma heurística simples; se a data mudar, 'listeners.ts' recria o DOM.
+    const needsRebuild = cachedDayElements.length === 0 || cachedDayElements.length !== state.calendarDates.length;
     
-    if (dayElements.length === 0) {
+    if (needsRebuild) {
+        ui.calendarStrip.innerHTML = ''; // Limpa o DOM
+        cachedDayElements = []; // Reseta o cache
+        
         const fragment = document.createDocumentFragment();
         state.calendarDates.forEach(date => {
-            fragment.appendChild(createCalendarDayElement(date));
+            const el = createCalendarDayElement(date);
+            cachedDayElements.push(el);
+            fragment.appendChild(el);
         });
         ui.calendarStrip.appendChild(fragment);
 
         // UX IMPROVEMENT: Rola automaticamente o calendário na inicialização.
         scrollToToday('auto');
-        return;
+        // Nota: Não retornamos aqui, pois precisamos limpar o dirty flag
+    } else {
+        // Atualização em massa usando o cache (apenas se necessário para update de seleção/data)
+        cachedDayElements.forEach((dayEl, index) => {
+            const date = state.calendarDates[index];
+            if (date) {
+                // Update dataset date if shifted (should be handled by re-render but strictly safer)
+                const isoDate = toUTCIsoDateString(date);
+                if(dayEl.dataset.date !== isoDate) {
+                    dayEl.dataset.date = isoDate;
+                }
+                updateCalendarDayElement(dayEl, date);
+            }
+        });
     }
-    
-    dayElements.forEach((dayEl, index) => {
-        const date = state.calendarDates[index];
-        if (date) {
-            updateCalendarDayElement(dayEl, date);
-        }
-    });
+
+    // Reset the dirty flag
+    state.uiDirtyState.calendarVisuals = false;
 }
 
 function _renderReelRotary(
@@ -706,9 +760,11 @@ function updateHabitCardElement(card: HTMLElement, habit: Habit, time: TimeOfDay
 /**
  * SURGICAL UPDATE: Atualiza apenas o cartão de hábito especificado no DOM.
  * Evita renderizar toda a lista de hábitos.
+ * OTIMIZAÇÃO [2025-01-24]: Usa cache de elemento (O(1)) ao invés de querySelector (O(N)).
  */
 export function renderHabitCardState(habitId: string, time: TimeOfDay) {
-    const card = ui.habitContainer.querySelector<HTMLElement>(`.habit-card[data-habit-id="${habitId}"][data-time="${time}"]`);
+    // OTIMIZAÇÃO: Acesso direto via cache em vez de querySelector no DOM.
+    const card = getCachedHabitCard(habitId, time);
     const habit = state.habits.find(h => h.id === habitId);
     
     if (card && habit) {
@@ -786,6 +842,9 @@ export function createHabitCardElement(habit: Habit, time: TimeOfDay): HTMLEleme
     contentWrapper.append(timeOfDayIcon, icon, details, goal);
     card.append(actionsLeft, actionsRight, contentWrapper);
     
+    // OTIMIZAÇÃO: Registra no cache ao criar
+    habitElementCache.set(`${habit.id}|${time}`, card);
+
     return card;
 }
 
@@ -828,6 +887,13 @@ function updatePlaceholderForGroup(groupEl: HTMLElement, time: TimeOfDay, hasHab
 }
 
 export function renderHabits() {
+    // PERFORMANCE [2025-01-26]: DIRTY CHECK GUARD.
+    // Se a estrutura da lista não mudou (mesmos hábitos, mesma ordem), pulamos.
+    // Atualizações de status (check/uncheck) são tratadas por 'renderHabitCardState'.
+    if (!state.uiDirtyState.habitListStructure) {
+        return;
+    }
+
     const selectedDateObj = parseUTCIsoDate(state.selectedDate);
     const activeHabitsData = getActiveHabitsForDate(selectedDateObj);
     const habitsByTime: Record<TimeOfDay, Habit[]> = { 'Morning': [], 'Afternoon': [], 'Evening': [] };
@@ -856,35 +922,31 @@ export function renderHabits() {
         // A11Y: Define o rótulo ARIA para o grupo de hábitos com base no período do dia
         groupEl.setAttribute('aria-label', getTimeOfDayName(time));
 
-        const existingCards = Array.from(groupEl.querySelectorAll<HTMLElement>('.habit-card'));
-        const existingCardsMap = new Map<string, HTMLElement>();
-        existingCards.forEach(card => {
-            const key = `${card.dataset.habitId}|${card.dataset.time}`;
-            existingCardsMap.set(key, card);
-        });
-
         const desiredHabits = habitsByTime[time];
         
-        // DOM RECONCILIATION STRATEGY:
-        // Iteramos pela lista de hábitos desejados na ordem correta.
-        // Mantemos um cursor (currentIndex) que aponta para a posição esperada no DOM.
-        // Se o elemento no cursor não for o card desejado, inserimos o card antes dele.
-        // Isso garante a ordem correta com o mínimo de movimentações e preserva o estado do DOM.
+        // DOM RECONCILIATION STRATEGY [2025-01-24]:
+        // Utiliza o cache persistente `habitElementCache` para evitar `querySelectorAll` e recriação de DOM.
         
+        const activeKeysInGroup = new Set<string>();
         let currentIndex = 0;
 
         desiredHabits.forEach(habit => {
             const key = `${habit.id}|${time}`;
-            let card = existingCardsMap.get(key);
+            activeKeysInGroup.add(key);
+            
+            // 1. Busca no cache (O(1))
+            let card = habitElementCache.get(key);
             
             if (card) {
+                // 2. Atualiza estado se existir (Surgical)
                 updateHabitCardElement(card, habit, time);
-                existingCardsMap.delete(key); // Remove do mapa para sabermos quais sobraram (e devem ser deletados)
             } else {
+                // 3. Cria se não existir (Factory + Cache Registration)
                 card = createHabitCardElement(habit, time);
             }
             
             if (card) {
+                // 4. Garante ordem no DOM
                 const currentChildAtIndex = groupEl.children[currentIndex];
                 
                 // Se o card não estiver na posição exata que esperamos...
@@ -897,13 +959,19 @@ export function renderHabits() {
                         groupEl.appendChild(card);
                     }
                 }
-                // Avança o cursor apenas se inserimos ou confirmamos um card de hábito
                 currentIndex++;
             }
         });
 
-        // Remove quaisquer cards que sobraram no DOM mas não estão mais na lista ativa
-        existingCardsMap.forEach(cardToRemove => cardToRemove.remove());
+        // 5. Remove elementos que estão no DOM mas não deveriam estar neste grupo
+        // Nota: Não removemos do cache aqui, pois o hábito pode ter mudado de dia/grupo mas ainda ser válido.
+        // A remoção do cache ocorre apenas na exclusão definitiva.
+        // Porém, precisamos remover do DOM se sobrar.
+        while (groupEl.children.length > currentIndex) {
+            // O elemento sobrante é removido do DOM.
+            // Ele permanece no cache se não for explicitamente destruído, o que é bom para performance se o usuário voltar.
+            groupEl.lastChild?.remove();
+        }
         
         const hasHabits = groupHasHabits[time];
         const isSmartPlaceholder = time === smartPlaceholderTargetTime;
@@ -913,6 +981,9 @@ export function renderHabits() {
 
         updatePlaceholderForGroup(groupEl, time, hasHabits, isSmartPlaceholder, emptyTimes);
     });
+
+    // Reset the dirty flag
+    state.uiDirtyState.habitListStructure = false;
 }
 
 
@@ -1008,6 +1079,12 @@ export function renderStoicQuote() {
 }
 
 export function updateHeaderTitle() {
+    // Guard: Se o calendário não mudou visualmente, o título provavelmente também não.
+    // Mas como temos lógica de "Ontem/Hoje/Amanhã" baseada na data selecionada, usamos o mesmo flag.
+    if (!state.uiDirtyState.calendarVisuals) {
+       return;
+    }
+
     const todayISO = getTodayUTCIso();
     const yesterdayISO = toUTCIsoDateString(addDays(parseUTCIsoDate(todayISO), -1));
     const tomorrowISO = toUTCIsoDateString(addDays(parseUTCIsoDate(todayISO), 1));
@@ -1080,6 +1157,7 @@ export function updateNotificationUI() {
  */
 export function renderApp() {
     // Fase 1: Renderização Crítica (Interatividade Imediata)
+    // Os guards internos em renderHabits e renderCalendar evitarão trabalho se nada estiver sujo.
     renderHabits();
     renderCalendar();
     updateHeaderTitle();

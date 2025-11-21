@@ -119,8 +119,6 @@ export const STREAK_SEMI_CONSOLIDATED = 21;
 export const STREAK_CONSOLIDATED = 66;
 export const SMART_GOAL_AVERAGE_COUNT = 3;
 // MEMORY OPTIMIZATION [2025-01-21]: Max cache size aumented to 3000.
-// 1000 entries is roughly 15 habits * 60 days. Scrolling or using the chart quickly fills this,
-// causing cache thrashing (wipe & rebuild), which spikes CPU. 3000 is safe for modern low-end devices.
 const MAX_CACHE_SIZE = 3000;
 
 export const TIMES_OF_DAY = ['Morning', 'Afternoon', 'Evening'] as const;
@@ -233,6 +231,12 @@ export const state: {
     };
     // PERFORMANCE [2025-01-18]: Dirty flag para evitar recálculos desnecessários do gráfico.
     chartDataDirty: boolean;
+    // PERFORMANCE [2025-01-26]: Dirty flags para controle granular de renderização UI.
+    // Evita re-renderizações do calendário e lista de hábitos quando apenas estados internos (check/uncheck) mudam.
+    uiDirtyState: {
+        calendarVisuals: boolean; // Verdadeiro se a seleção de data ou o intervalo de dias mudou.
+        habitListStructure: boolean; // Verdadeiro se a ordem, quantidade ou conteúdo textual dos hábitos mudou.
+    };
 } = {
     habits: [],
     dailyData: {},
@@ -263,7 +267,38 @@ export const state: {
     },
     // PERFORMANCE: Inicializa como true para garantir que o gráfico seja calculado na primeira renderização.
     chartDataDirty: true,
+    // PERFORMANCE: Inicializa como true para garantir a primeira renderização completa.
+    uiDirtyState: {
+        calendarVisuals: true,
+        habitListStructure: true
+    }
 };
+
+// --- CACHE MANAGEMENT ---
+
+/**
+ * SENIOR ENGINEER OPTIMIZATION: Implements a "Partial Eviction" strategy (LRU Approximation).
+ * Instead of clearing the entire cache when it hits the limit (which causes CPU spikes due to massive rebuilding),
+ * we remove the oldest 20% of entries. Maps in JS iterate in insertion order, making this efficient.
+ * @param cache The Map cache to manage.
+ * @param limit The maximum allowable size.
+ */
+function manageCacheSize<K, V>(cache: Map<K, V>, limit: number) {
+    if (cache.size > limit) {
+        const deleteCount = Math.ceil(limit * 0.2); // Evict 20%
+        const keysToDelete = [];
+        let i = 0;
+        // The first keys yielded are the oldest inserted
+        for (const key of cache.keys()) {
+            keysToDelete.push(key);
+            i++;
+            if (i >= deleteCount) break;
+        }
+        for (const key of keysToDelete) {
+            cache.delete(key);
+        }
+    }
+}
 
 // --- STATE-DEPENDENT HELPERS ---
 
@@ -362,6 +397,10 @@ export function loadState(cloudState?: AppState) {
         state.habitAppearanceCache.clear();
         state.lastEnded = null;
         
+        // Force full UI refresh on load
+        state.uiDirtyState.calendarVisuals = true;
+        state.uiDirtyState.habitListStructure = true;
+        
         // Clear summary cache on load
         invalidateDaySummaryCache();
         invalidateChartCache(); // Dados novos exigem gráfico novo
@@ -401,11 +440,9 @@ export function clearActiveHabitsCache() {
  */
 export function invalidateStreakCache(habitId: string, fromDateISO: string) {
     const fromDate = parseUTCIsoDate(fromDateISO);
-    // SENIOR ENGINEER OPTIMIZATION: Clean entire cache if it gets too big.
     // Use Map.size for O(1) check.
     if (state.streaksCache.size > MAX_CACHE_SIZE) {
-        state.streaksCache.clear();
-        return;
+        manageCacheSize(state.streaksCache, MAX_CACHE_SIZE);
     }
 
     // Iterate using Map iterator
@@ -430,10 +467,8 @@ export function getScheduleForDate(habit: Habit, date: Date | string): HabitSche
         return state.scheduleCache.get(cacheKey)!;
     }
     
-    // Garbage collection for schedule cache using Map.size
-    if (state.scheduleCache.size > MAX_CACHE_SIZE) {
-        state.scheduleCache.clear();
-    }
+    // Smart Garbage collection
+    manageCacheSize(state.scheduleCache, MAX_CACHE_SIZE);
 
     let foundSchedule: HabitSchedule | null = null;
 
@@ -471,8 +506,13 @@ export function getEffectiveScheduleForHabitOnDate(habit: Habit, dateISO: string
     return dailyInfo?.dailySchedule || activeSchedule.times;
 }
 
+// GC OPTIMIZATION [2025-01-23]: Singleton empty object for daily info.
+// Returns a frozen empty object instead of creating a new one for dates without data.
+// This significantly reduces GC pressure when iterating over historical dates (e.g., in charts).
+const EMPTY_DAILY_INFO = Object.freeze({});
+
 export function getHabitDailyInfoForDate(date: string): Record<string, HabitDailyInfo> {
-    return state.dailyData[date] || {};
+    return state.dailyData[date] || (EMPTY_DAILY_INFO as Record<string, HabitDailyInfo>);
 }
 
 /**
@@ -510,11 +550,8 @@ export function shouldHabitAppearOnDate(habit: Habit, date: Date, dateISO?: stri
         return state.habitAppearanceCache.get(cacheKey)!;
     }
     
-    // Garbage collection for appearance cache
-    // Increased limit to prevent thrashing
-    if (state.habitAppearanceCache.size > MAX_CACHE_SIZE * 2) {
-        state.habitAppearanceCache.clear();
-    }
+    // Smart Garbage collection - Increased limit to prevent thrashing
+    manageCacheSize(state.habitAppearanceCache, MAX_CACHE_SIZE * 2);
 
     const activeSchedule = getScheduleForDate(habit, dateStr);
     if (!activeSchedule) {
@@ -586,10 +623,8 @@ export function getActiveHabitsForDate(dateOrIso: Date | string): Array<{ habit:
         return state.activeHabitsCache.get(cacheKey)!;
     }
     
-    // Garbage collection for active habits cache
-    if (state.activeHabitsCache.size > MAX_CACHE_SIZE) {
-        state.activeHabitsCache.clear();
-    }
+    // Smart Garbage collection
+    manageCacheSize(state.activeHabitsCache, MAX_CACHE_SIZE);
     
     // Fallback: precisamos do objeto Date para a lógica de agendamento se não estiver em cache
     const date = typeof dateOrIso === 'string' ? parseUTCIsoDate(dateOrIso) : dateOrIso;
@@ -656,6 +691,8 @@ export function calculateHabitStreak(habitId: string, referenceDateISO: string):
         iteratorDate.setUTCDate(iteratorDate.getUTCDate() - 1);
     }
     
+    // Smart garbage collection for streak cache
+    manageCacheSize(state.streaksCache, MAX_CACHE_SIZE);
     state.streaksCache.set(cacheKey, streak);
     return streak;
 }
@@ -718,10 +755,8 @@ export function calculateDaySummary(dateISO: string) {
         return daySummaryCache.get(dateISO)!;
     }
     
-    // Garbage collection for summary cache
-    if (daySummaryCache.size > DAYS_IN_CALENDAR * 2) {
-        daySummaryCache.clear();
-    }
+    // Smart garbage collection
+    manageCacheSize(daySummaryCache, DAYS_IN_CALENDAR * 2);
 
      // OTIMIZAÇÃO [2025-01-17]: Passa a string ISO diretamente para getActiveHabitsForDate.
      // Isso evita a criação de um objeto Date redundante se os dados já estiverem em cache em getActiveHabitsForDate.

@@ -7,6 +7,7 @@
 // UPDATE [2025-01-19]: Surgical UI updates. toggleHabitStatus now bypasses renderApp for immediate feedback.
 // UPDATE [2025-01-20]: Implemented RLE (Run-Length Encoding) for AI Prompt History.
 // PERFORMANCE FIX [2025-01-21]: Moved saveState() inside requestIdleCallback in toggleHabitStatus to ensure <16ms INP (Interaction to Next Paint).
+// UPDATE [2025-01-24]: Deferred Heavy Cleanup for habit deletion. UI updates instantly, DB cleanups happen in idle time.
 
 import { generateUUID, getTodayUTCIso, parseUTCIsoDate, addDays, escapeHTML, simpleMarkdownToHTML, getTodayUTC, toUTCIsoDateString, runIdle } from './utils';
 import { apiFetch } from './api';
@@ -52,6 +53,7 @@ import {
     showInlineNotice,
     renderHabitCardState,
     renderCalendarDayPartial,
+    removeHabitFromCache,
 } from './render';
 import { renderChart } from './chart';
 import { ui } from './ui';
@@ -86,6 +88,8 @@ export function createDefaultHabit() {
         const newHabit = _createNewHabitFromTemplate(defaultHabitTemplate);
         state.habits.push(newHabit);
         invalidateChartCache();
+        // PERFORMANCE: Marca a estrutura da lista como suja pois adicionamos um hábito
+        state.uiDirtyState.habitListStructure = true;
     }
 }
 
@@ -214,6 +218,10 @@ export function saveHabitFromModal() {
 
     // 4. Finalização
     state.editingHabit = null;
+    
+    // PERFORMANCE: Marca que a lista mudou estruturalmente (novo hábito ou mudança de horário/nome)
+    state.uiDirtyState.habitListStructure = true;
+    
     clearScheduleCache(); // Isso também limpará o cache de resumo diário e invalidará o gráfico
     clearActiveHabitsCache();
     saveState();
@@ -232,6 +240,8 @@ export function graduateHabit(habitId: string) {
     }
 
     habit.graduatedOn = getTodayUTCIso();
+    state.uiDirtyState.habitListStructure = true; // Hábito removido da visualização ativa
+    
     clearActiveHabitsCache(); // Limpa cache de agendamento e resumo e gráfico
     saveState();
     renderApp();
@@ -281,6 +291,8 @@ function endHabit(habitId: string, effectiveDateISO?: string) {
     scheduleInHistory.endDate = endDateISO;
     habit.scheduleHistory = habit.scheduleHistory.filter(s => parseUTCIsoDate(s.startDate) <= endDate);
 
+    state.uiDirtyState.habitListStructure = true; // Hábito removido da visualização ativa
+
     clearScheduleCache();
     clearActiveHabitsCache();
     saveState();
@@ -324,6 +336,8 @@ function _requestFutureScheduleChange(
             delete dailyInfo.instances[fromTime];
         }
 
+        state.uiDirtyState.habitListStructure = true; // Mudança de horário afeta a estrutura da lista hoje
+
         clearActiveHabitsCache();
         saveState();
         renderHabits();
@@ -355,6 +369,8 @@ function _requestFutureScheduleChange(
                 habit.scheduleHistory.push(newSchedule);
             }
             
+            state.uiDirtyState.habitListStructure = true; // Mudança de horário afeta a estrutura
+
             clearScheduleCache();
             clearActiveHabitsCache();
             saveState();
@@ -413,6 +429,8 @@ export function handleUndoDelete() {
     if (state.undoTimeout) clearTimeout(state.undoTimeout);
     ui.undoToast.classList.remove('visible');
     
+    state.uiDirtyState.habitListStructure = true; // Hábito restaurado
+
     clearScheduleCache();
     clearActiveHabitsCache();
     saveState();
@@ -434,34 +452,49 @@ export function requestHabitPermanentDeletion(habitId: string) {
     showConfirmationModal(
         t('confirmPermanentDelete', { habitName: escapeHTML(name) }),
         () => {
+            // FASE 1: ATUALIZAÇÃO SÍNCRONA DA UI
+            // Remove o hábito da lista ativa imediatamente para feedback instantâneo.
             state.habits = state.habits.filter(h => h.id !== habitId);
-
-            Object.keys(state.dailyData).forEach(date => {
-                if (state.dailyData[date]?.[habitId]) {
-                    delete state.dailyData[date][habitId];
-                }
-            });
-
-            state.pending21DayHabitIds = state.pending21DayHabitIds.filter(id => id !== habitId);
-            state.pendingConsolidationHabitIds = state.pendingConsolidationHabitIds.filter(id => id !== habitId);
-            state.notificationsShown = state.notificationsShown.filter(notificationId => !notificationId.startsWith(habitId + '-'));
             
+            // Atualiza caches críticos que afetam a renderização imediata
+            state.uiDirtyState.habitListStructure = true;
             clearActiveHabitsCache();
             clearScheduleCache();
-            invalidateDaySummaryCache(); // Limpa cache de resumo após exclusão
-            invalidateChartCache(); // Limpa cache de gráfico
+            invalidateChartCache();
             
-            // PERFORMANCE: Iteração direta sobre as chaves do Map para remoção seletiva
-            for (const key of state.streaksCache.keys()) {
-                if (key.startsWith(`${habitId}|`)) {
-                    state.streaksCache.delete(key);
-                }
-            }
+            // Remove do DOM Cache para evitar reuso indevido e liberar memória
+            removeHabitFromCache(habitId);
 
-            saveState();
-            // Exclusão permanente só ocorre dentro do modal, então a atualização é sempre necessária.
-            setupManageModal();
+            // Atualiza a UI imediatamente
             renderApp();
+            setupManageModal(); // O modal está aberto, precisa atualizar
+
+            // FASE 2: LIMPEZA PESADA DIFERIDA (DEEP CLEANUP)
+            // Move operações custosas (loop em dailyData e JSON.stringify) para o idle time.
+            // Isso evita que a animação de fechamento do modal ou renderização trave.
+            runIdle(() => {
+                // Limpeza profunda O(Days)
+                Object.keys(state.dailyData).forEach(date => {
+                    if (state.dailyData[date]?.[habitId]) {
+                        delete state.dailyData[date][habitId];
+                    }
+                });
+
+                state.pending21DayHabitIds = state.pending21DayHabitIds.filter(id => id !== habitId);
+                state.pendingConsolidationHabitIds = state.pendingConsolidationHabitIds.filter(id => id !== habitId);
+                state.notificationsShown = state.notificationsShown.filter(notificationId => !notificationId.startsWith(habitId + '-'));
+                
+                invalidateDaySummaryCache();
+                
+                for (const key of state.streaksCache.keys()) {
+                    if (key.startsWith(`${habitId}|`)) {
+                        state.streaksCache.delete(key);
+                    }
+                }
+
+                // Persistência (I/O Bloqueante)
+                saveState();
+            });
         },
         { 
             title: t('modalDeleteHabitTitle'), 
@@ -502,13 +535,18 @@ export function toggleHabitStatus(habitId: string, time: TimeOfDay, dateISO: str
     // `saveState` involves JSON.stringify(hugeState) and localStorage.setItem, which are blocking operations.
     // By deferring them, we ensure the checkbox "tick" appears in the very next frame (<16ms),
     // creating a "Zero Latency" feel, while data consistency is handled ~50ms later.
+    
+    // NOTE [2025-01-26]: We intentionally do NOT set uiDirtyState.calendarVisuals or habitListStructure to true.
+    // Since we handled the visual update surgically above, we want renderApp (called below)
+    // to skip the heavy lifting of iterating lists.
+    
     runIdle(() => {
         invalidateStreakCache(habitId, dateISO);
         invalidateDaySummaryCache(dateISO); // Invalida cache apenas para este dia
         invalidateChartCache(); // Mudança de status afeta o gráfico
         saveState(); // BLOCKING I/O - Safe to run here in background
         
-        renderChart();
+        renderChart(); // Gráfico precisa atualizar pois pontuação mudou
         renderAINotificationState();
         updateAppBadge();
     });
@@ -550,7 +588,10 @@ export function completeAllHabitsForDate(dateISO: string) {
     invalidateDaySummaryCache(dateISO);
     invalidateChartCache();
     saveState();
-    renderApp(); // Ação em massa ainda usa renderApp por simplicidade
+    // Em ações em massa, invalidamos tudo por simplicidade e consistência
+    state.uiDirtyState.calendarVisuals = true;
+    state.uiDirtyState.habitListStructure = true;
+    renderApp(); 
     updateAppBadge();
 }
 
@@ -565,7 +606,10 @@ export function snoozeAllHabitsForDate(dateISO: string) {
     invalidateDaySummaryCache(dateISO);
     invalidateChartCache();
     saveState();
-    renderApp(); // Ação em massa ainda usa renderApp por simplicidade
+    // Em ações em massa, invalidamos tudo por simplicidade e consistência
+    state.uiDirtyState.calendarVisuals = true;
+    state.uiDirtyState.habitListStructure = true;
+    renderApp(); 
     updateAppBadge();
 }
 
@@ -602,6 +646,8 @@ export function reorderHabit(habitIdToMove: string, targetHabitId: string, posit
     
     state.habits.splice(position === 'before' ? newToIndex : newToIndex + 1, 0, movedHabit);
     
+    state.uiDirtyState.habitListStructure = true; // Ordem mudou
+
     clearActiveHabitsCache();
     saveState();
     renderHabits();

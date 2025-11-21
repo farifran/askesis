@@ -32,8 +32,15 @@ function updateSelectedDateAndRender(newDateISO: string) {
         return; // Nenhuma alteração necessária
     }
     state.selectedDate = newDateISO;
+    
+    // PERFORMANCE: Marca que a visualização do calendário e a lista de hábitos precisam ser atualizadas.
+    state.uiDirtyState.calendarVisuals = true;
+    // A lista de hábitos depende da data selecionada para exibir os hábitos corretos do dia.
+    state.uiDirtyState.habitListStructure = true;
+    
     // PERFORMANCE [2025-01-18]: Se a data muda, o gráfico (que pode depender da data final) deve ser invalidado.
     invalidateChartCache();
+    
     renderCalendar();
     updateHeaderTitle();
     renderHabits();
@@ -246,6 +253,11 @@ const _setupWindowListeners = () => {
             
             // Resetamos para "Hoje" para garantir consistência visual.
             state.selectedDate = currentDay;
+            
+            // Dirty Flags
+            state.uiDirtyState.calendarVisuals = true;
+            state.uiDirtyState.habitListStructure = true;
+            
             invalidateChartCache(); // Invalida gráfico pois a janela de tempo mudou
             
             // PERFORMANCE & UX: Removemos a limpeza destrutiva do DOM (innerHTML = '').
