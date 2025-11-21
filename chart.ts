@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 // [ANALYSIS PROGRESS]: 100% - Análise completa. Otimização de performance implementada: caching de estatísticas de escala para evitar recálculos pesados no evento de 'pointermove' e hoisting de variáveis invariantes no loop de cálculo de dados.
+// UPDATE [2025-01-17]: Adicionado IntersectionObserver para evitar atualizações de DOM quando o gráfico está fora da viewport.
+// UPDATE [2025-01-17]: Otimização de pointermove para atualizar o DOM apenas quando o ponto de dados muda (lastPointIndex).
 
 import { state } from './state';
 import { ui } from './ui';
@@ -50,6 +52,11 @@ let chartElements: {
     tooltip?: HTMLElement;
     indicator?: HTMLElement;
 } = {};
+
+// LAZY RENDERING [2025-01-17]: Controle de visibilidade para evitar renderização desnecessária.
+let isChartVisible = true; // Assume visível inicialmente para garantir o primeiro paint (LCP)
+let isChartDirty = false;
+let chartObserver: IntersectionObserver | null = null;
 
 
 function calculateChartData(): ChartDataPoint[] {
@@ -186,6 +193,10 @@ function _setupChartListeners() {
     const { chartWrapper, tooltip, indicator } = chartElements;
     if (!chartWrapper || !tooltip || !indicator) return;
 
+    // TRACKER [2025-01-17]: Armazena o índice do último ponto destacado para evitar
+    // atualizações redundantes do DOM se o mouse se mover dentro da mesma área de dados.
+    let lastPointIndex = -1;
+
     const handlePointerMove = (e: PointerEvent) => {
         if (lastChartData.length === 0) return;
 
@@ -200,6 +211,11 @@ function _setupChartListeners() {
         
         const index = Math.round((x - padding.left) / chartWidth * (lastChartData.length - 1));
         const pointIndex = Math.max(0, Math.min(lastChartData.length - 1, index));
+
+        // PERFORMANCE [2025-01-17]: Se o ponto de dados focado não mudou, retorna imediatamente.
+        // Isso economiza recálculos de layout (offsetWidth/Height) e atualizações de innerHTML.
+        if (pointIndex === lastPointIndex) return;
+        lastPointIndex = pointIndex;
 
         const point = lastChartData[pointIndex];
         if (!point) return;
@@ -248,10 +264,30 @@ function _setupChartListeners() {
     const handlePointerLeave = () => {
         tooltip.classList.remove('visible');
         indicator.style.opacity = '0';
+        lastPointIndex = -1; // Reseta o rastreador ao sair
     };
 
     chartWrapper.addEventListener('pointermove', handlePointerMove);
     chartWrapper.addEventListener('pointerleave', handlePointerLeave);
+}
+
+function _initIntersectionObserver() {
+    if (chartObserver) return;
+
+    chartObserver = new IntersectionObserver((entries) => {
+        const entry = entries[0];
+        isChartVisible = entry.isIntersecting;
+
+        // Se tornou visível e tinha dados pendentes, renderiza agora.
+        if (isChartVisible && isChartDirty) {
+            isChartDirty = false;
+            _updateChartDOM(lastChartData);
+        }
+    }, { threshold: 0.1 }); // 10% visível é suficiente
+
+    if (ui.chartContainer) {
+        chartObserver.observe(ui.chartContainer);
+    }
 }
 
 export function renderChart() {
@@ -271,6 +307,10 @@ export function renderChart() {
         `;
         chartInitialized = false;
         chartElements = {}; // Limpa o cache de elementos do DOM
+        if (chartObserver) {
+            chartObserver.disconnect();
+            chartObserver = null;
+        }
         return;
     }
 
@@ -319,6 +359,7 @@ export function renderChart() {
         };
 
         _setupChartListeners();
+        _initIntersectionObserver();
         chartInitialized = true;
     } else {
         // Atualiza os títulos caso já existam (ex: mudança de idioma)
@@ -332,5 +373,11 @@ export function renderChart() {
         }
     }
 
-    _updateChartDOM(lastChartData);
+    // LAZY RENDERING CHECK
+    if (isChartVisible) {
+        _updateChartDOM(lastChartData);
+        isChartDirty = false;
+    } else {
+        isChartDirty = true; // Marca para atualização quando ficar visível
+    }
 }

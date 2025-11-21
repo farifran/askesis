@@ -32,6 +32,7 @@ import {
     LANGUAGES,
     TIMES_OF_DAY,
     getActiveHabitsForDate,
+    invalidateDaySummaryCache,
 } from './state';
 import {
     renderHabits,
@@ -205,7 +206,7 @@ export function saveHabitFromModal() {
 
     // 4. Finalização
     state.editingHabit = null;
-    clearScheduleCache();
+    clearScheduleCache(); // Isso também limpará o cache de resumo diário
     clearActiveHabitsCache();
     saveState();
     renderApp();
@@ -223,10 +224,13 @@ export function graduateHabit(habitId: string) {
     }
 
     habit.graduatedOn = getTodayUTCIso();
-    clearActiveHabitsCache();
+    clearActiveHabitsCache(); // Limpa cache de agendamento e resumo
     saveState();
     renderApp();
-    setupManageModal();
+    // PERFORMANCE: Só atualiza a lista do modal se ele estiver visível.
+    if (ui.manageModal.classList.contains('visible')) {
+        setupManageModal();
+    }
 }
 
 export function requestHabitEndingFromModal(habitId: string) {
@@ -273,7 +277,12 @@ function endHabit(habitId: string, effectiveDateISO?: string) {
     clearActiveHabitsCache();
     saveState();
     renderApp();
-    setupManageModal();
+    
+    // PERFORMANCE: Só regera a lista de gerenciamento se o modal estiver aberto.
+    // Importante para chamadas de endHabit via swipe na tela principal.
+    if (ui.manageModal.classList.contains('visible')) {
+        setupManageModal();
+    }
     showUndoToast();
 }
 
@@ -397,7 +406,12 @@ export function handleUndoDelete() {
     clearActiveHabitsCache();
     saveState();
     renderApp();
-    setupManageModal();
+    
+    // PERFORMANCE: Só regera a lista de gerenciamento se o modal estiver aberto.
+    // Evita processamento desnecessário quando o desfazer é acionado pelo Toast na tela principal.
+    if (ui.manageModal.classList.contains('visible')) {
+        setupManageModal();
+    }
 }
 
 export function requestHabitPermanentDeletion(habitId: string) {
@@ -423,6 +437,7 @@ export function requestHabitPermanentDeletion(habitId: string) {
             
             clearActiveHabitsCache();
             clearScheduleCache();
+            invalidateDaySummaryCache(); // Limpa cache de resumo após exclusão
             Object.keys(state.streaksCache).forEach(key => {
                 if (key.startsWith(`${habitId}|`)) {
                     delete state.streaksCache[key];
@@ -430,6 +445,7 @@ export function requestHabitPermanentDeletion(habitId: string) {
             });
 
             saveState();
+            // Exclusão permanente só ocorre dentro do modal, então a atualização é sempre necessária.
             setupManageModal();
             renderApp();
         },
@@ -461,6 +477,7 @@ export function toggleHabitStatus(habitId: string, time: TimeOfDay, dateISO: str
     habitDayData.status = getNextStatus(habitDayData.status);
 
     invalidateStreakCache(habitId, dateISO);
+    invalidateDaySummaryCache(dateISO); // Invalida cache apenas para este dia
     saveState();
     renderApp(); // Atualiza tudo: Hábitos, Calendário, Gráfico e IA
     updateAppBadge();
@@ -469,6 +486,7 @@ export function toggleHabitStatus(habitId: string, time: TimeOfDay, dateISO: str
 export function setGoalOverride(habitId: string, date: string, time: TimeOfDay, newGoal: number) {
     const dayInstanceData = ensureHabitInstanceData(date, habitId, time);
     dayInstanceData.goalOverride = newGoal;
+    invalidateDaySummaryCache(date); // Invalida cache apenas para este dia
     saveState();
     renderCalendar();
 }
@@ -494,6 +512,7 @@ export function completeAllHabitsForDate(dateISO: string) {
         });
         invalidateStreakCache(habit.id, dateISO);
     });
+    invalidateDaySummaryCache(dateISO); // Invalida cache apenas para este dia
     saveState();
     renderApp(); // Atualiza tudo: Hábitos, Calendário, Gráfico e IA
     updateAppBadge();
@@ -507,6 +526,7 @@ export function snoozeAllHabitsForDate(dateISO: string) {
         });
         invalidateStreakCache(habit.id, dateISO);
     });
+    invalidateDaySummaryCache(dateISO); // Invalida cache apenas para este dia
     saveState();
     renderApp(); // Atualiza tudo: Hábitos, Calendário, Gráfico e IA
     updateAppBadge();

@@ -207,7 +207,17 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
 
             const dragImage = cardContent.cloneNode(true) as HTMLElement;
             dragImage.classList.add('drag-image-ghost');
+            
+            // FIX [2025-01-17]: Copia estilos computados críticos para garantir que a imagem de arrasto
+            // mantenha a aparência visual exata (cor, bordas arredondadas), já que ao ser anexada
+            // ao body ela perde o contexto dos seletores CSS pais (ex: .habit-card.completed).
+            const computedStyle = window.getComputedStyle(cardContent);
             dragImage.style.width = `${cardContent.offsetWidth}px`;
+            dragImage.style.height = `${cardContent.offsetHeight}px`;
+            dragImage.style.backgroundColor = computedStyle.backgroundColor;
+            dragImage.style.borderRadius = computedStyle.borderRadius;
+            dragImage.style.color = computedStyle.color;
+
             document.body.appendChild(dragImage);
             e.dataTransfer!.setDragImage(dragImage, e.offsetX, e.offsetY);
             setTimeout(() => document.body.removeChild(dragImage), 0);

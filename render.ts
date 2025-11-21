@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -86,6 +87,10 @@ function _applyDayState(dayItem: HTMLElement, date: Date) {
 
     // Acessibilidade e Estado
     dayItem.setAttribute('aria-pressed', String(isSelected));
+    // A11Y [2025-01-17]: Implementação de Roving Tabindex.
+    // O dia selecionado recebe tabindex="0" para ser focável, outros recebem "-1".
+    dayItem.setAttribute('tabindex', isSelected ? '0' : '-1');
+
     // PERFORMANCE [2025-01-16]: Uso de cache para Intl.DateTimeFormat.
     const ariaDate = getDateTimeFormat(state.activeLanguageCode, {
         weekday: 'long',
@@ -124,6 +129,8 @@ function createCalendarDayElement(date: Date): HTMLElement {
     dayItem.className = 'day-item';
     dayItem.dataset.date = toUTCIsoDateString(date);
     dayItem.setAttribute('role', 'button');
+    // A11Y [2025-01-17]: Inicia com tabindex="-1" por padrão. _applyDayState ajustará se necessário.
+    dayItem.setAttribute('tabindex', '-1');
 
     const dayName = document.createElement('span');
     dayName.className = 'day-name';
@@ -517,19 +524,35 @@ function updateHabitCardElement(card: HTMLElement, habit: Habit, time: TimeOfDay
     const status = habitInstanceData?.status ?? 'pending';
     const hasNote = habitInstanceData?.note && habitInstanceData.note.length > 0;
     const streak = calculateHabitStreak(habit.id, getTodayUTCIso());
-
-    // UX-FIX [2024-12-28]: Atualiza classes com segurança para preservar o estado de interação
-    // (como 'is-open-left', 'dragging') durante atualizações de dados.
-    // Remove classes de status antigas de forma cirúrgica
-    card.classList.remove('pending', 'completed', 'snoozed');
-    // Adiciona a classe de status atual
-    card.classList.add(status);
-
-    card.classList.remove('consolidated', 'semi-consolidated');
-    if (streak >= STREAK_CONSOLIDATED) card.classList.add('consolidated');
-    else if (streak >= STREAK_SEMI_CONSOLIDATED) card.classList.add('semi-consolidated');
-    
     const { name, subtitle } = getHabitDisplayInfo(habit, state.selectedDate);
+
+    // PERFORMANCE [2025-01-17]: Otimização de layout. Verifica se a classe já está presente
+    // antes de adicionar/remover para evitar "style recalculation" desnecessário.
+    if (!card.classList.contains(status)) {
+        card.classList.remove('pending', 'completed', 'snoozed');
+        card.classList.add(status);
+    }
+
+    // Atualiza classes de consolidação
+    const isConsolidated = streak >= STREAK_CONSOLIDATED;
+    const isSemi = streak >= STREAK_SEMI_CONSOLIDATED && !isConsolidated;
+    
+    if (card.classList.contains('consolidated') !== isConsolidated) {
+        card.classList.toggle('consolidated', isConsolidated);
+    }
+    if (card.classList.contains('semi-consolidated') !== isSemi) {
+        card.classList.toggle('semi-consolidated', isSemi);
+    }
+    
+    // A11Y [2025-01-17]: Atualiza o aria-label para refletir o estado atual do hábito
+    const contentWrapper = card.querySelector<HTMLElement>('.habit-content-wrapper');
+    if (contentWrapper) {
+        const newLabel = `${name}, ${t(`filter${time}`)}, ${status}`;
+        if (contentWrapper.getAttribute('aria-label') !== newLabel) {
+            contentWrapper.setAttribute('aria-label', newLabel);
+        }
+    }
+    
     setTextContent(card.querySelector('.habit-details .name'), name);
     setTextContent(card.querySelector('.habit-details .subtitle'), subtitle);
 
@@ -586,6 +609,11 @@ export function createHabitCardElement(habit: Habit, time: TimeOfDay): HTMLEleme
     const contentWrapper = document.createElement('div');
     contentWrapper.className = 'habit-content-wrapper';
     contentWrapper.draggable = true;
+    
+    // A11Y [2025-01-17]: Torna o cartão acessível por teclado
+    contentWrapper.setAttribute('role', 'button');
+    contentWrapper.setAttribute('tabindex', '0');
+    contentWrapper.setAttribute('aria-label', `${name}, ${t(`filter${time}`)}, ${status}`);
 
     const timeOfDayIcon = document.createElement('div');
     timeOfDayIcon.className = 'time-of-day-icon';
@@ -905,10 +933,20 @@ export function renderApp() {
     updateHeaderTitle();
 }
 
+// HELPER [2025-01-17]: Container para aplicação de inert.
+const getMainContainer = (): HTMLElement | null => document.querySelector('.app-container');
+
 export function openModal(modal: HTMLElement, elementToFocus?: HTMLElement) {
     previouslyFocusedElements.set(modal, document.activeElement as HTMLElement);
 
     modal.classList.add('visible');
+
+    // A11Y [2025-01-17]: Isola a aplicação principal quando um modal está aberto.
+    // Isso previne que leitores de tela e navegação por teclado acessem o conteúdo de fundo.
+    const mainContainer = getMainContainer();
+    if (mainContainer) {
+        mainContainer.setAttribute('inert', '');
+    }
 
     const focusableElements = modal.querySelectorAll<HTMLElement>(
         'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
@@ -958,6 +996,12 @@ export function openModal(modal: HTMLElement, elementToFocus?: HTMLElement) {
 export function closeModal(modal: HTMLElement) {
     modal.classList.remove('visible');
     
+    // A11Y [2025-01-17]: Restaura a interatividade da aplicação principal.
+    const mainContainer = getMainContainer();
+    if (mainContainer) {
+        mainContainer.removeAttribute('inert');
+    }
+
     const listener = focusTrapListeners.get(modal);
     if (listener) {
         modal.removeEventListener('keydown', listener);

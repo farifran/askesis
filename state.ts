@@ -312,6 +312,9 @@ export function loadState(cloudState?: AppState) {
         state.scheduleCache = {};
         state.activeHabitsCache = {};
         state.lastEnded = null;
+        
+        // Clear summary cache on load
+        invalidateDaySummaryCache();
     }
 }
 
@@ -320,6 +323,8 @@ export function loadState(cloudState?: AppState) {
  */
 export function clearScheduleCache() {
     state.scheduleCache = {};
+    // Mudanças no agendamento afetam o resumo diário de todos os dias
+    invalidateDaySummaryCache();
 }
 
 /**
@@ -328,6 +333,8 @@ export function clearScheduleCache() {
  */
 export function clearActiveHabitsCache() {
     state.activeHabitsCache = {};
+    // Mudanças em hábitos ativos afetam o resumo diário
+    invalidateDaySummaryCache();
 }
 
 
@@ -422,14 +429,26 @@ export function ensureHabitInstanceData(date: string, habitId: string, time: Tim
     return state.dailyData[date][habitId].instances[time]!;
 }
 
+// PERFORMANCE [2025-01-16]: Cache para armazenar o timestamp da âncora de agendamento.
+// Evita parsear a string de data ISO repetidamente dentro do loop de streaks (hot-path).
+// WeakMap garante que se o objeto de agendamento for removido, o cache seja limpo.
+const anchorTimestampCache = new WeakMap<HabitSchedule, number>();
+
 export function shouldHabitAppearOnDate(habit: Habit, date: Date, dateISO?: string): boolean {
     if (habit.graduatedOn) return false;
 
     const activeSchedule = getScheduleForDate(habit, dateISO || date);
     if (!activeSchedule) return false;
 
-    const anchorDate = parseUTCIsoDate(activeSchedule.scheduleAnchor);
-    const daysDifference = Math.round((date.getTime() - anchorDate.getTime()) / (1000 * 60 * 60 * 24));
+    // OTIMIZAÇÃO [2025-01-16]: Uso de cache para o timestamp da âncora.
+    let anchorTime = anchorTimestampCache.get(activeSchedule);
+    if (anchorTime === undefined) {
+        anchorTime = parseUTCIsoDate(activeSchedule.scheduleAnchor).getTime();
+        anchorTimestampCache.set(activeSchedule, anchorTime);
+    }
+
+    // A diferença é calculada usando o timestamp cacheado, evitando alocação de 'new Date'.
+    const daysDifference = Math.round((date.getTime() - anchorTime) / (1000 * 60 * 60 * 24));
 
     if (daysDifference < 0) {
         return false;
@@ -445,6 +464,9 @@ export function shouldHabitAppearOnDate(habit: Habit, date: Date, dateISO?: stri
             return daysDifference % freq.amount === 0;
         }
         if (freq.unit === 'weeks') {
+            // Para semanas, ainda precisamos do getUTCDay da âncora, mas podemos derivá-lo do timestamp
+            // ou apenas aceitar o custo menor aqui (já que é menos comum).
+            const anchorDate = new Date(anchorTime); 
             if (date.getUTCDay() !== anchorDate.getUTCDay()) return false;
             const weeksDifference = Math.floor(daysDifference / 7);
             return weeksDifference % freq.amount === 0;
@@ -461,16 +483,21 @@ export function shouldHabitAppearOnDate(habit: Habit, date: Date, dateISO?: stri
 /**
  * PERFORMANCE [2024-08-12]: Moved from utils.ts to resolve circular dependency.
  * Obtém hábitos ativos e seus horários para uma data com cache.
- * @param date A data para a qual obter os hábitos.
+ * PERFORMANCE [2025-01-17]: Agora aceita `Date | string` para evitar alocações de Date desnecessárias
+ * quando o chamador já possui a string ISO e o cache está "quente".
+ * @param dateOrIso A data para a qual obter os hábitos.
  * @returns Um array de objetos, cada um contendo o hábito e seu agendamento para o dia.
  */
-export function getActiveHabitsForDate(date: Date): Array<{ habit: Habit; schedule: TimeOfDay[] }> {
-    const dateStr = toUTCIsoDateString(date);
+export function getActiveHabitsForDate(dateOrIso: Date | string): Array<{ habit: Habit; schedule: TimeOfDay[] }> {
+    const dateStr = typeof dateOrIso === 'string' ? dateOrIso : toUTCIsoDateString(dateOrIso);
     const cacheKey = dateStr;
     if (state.activeHabitsCache[cacheKey]) {
         return state.activeHabitsCache[cacheKey];
     }
     
+    // Fallback: precisamos do objeto Date para a lógica de agendamento se não estiver em cache
+    const date = typeof dateOrIso === 'string' ? parseUTCIsoDate(dateOrIso) : dateOrIso;
+
     const activeHabits = state.habits
         .filter(habit => shouldHabitAppearOnDate(habit, date, dateStr))
         .map(habit => ({
@@ -564,16 +591,40 @@ function _wasGoalExceededWithStreak(habit: Habit, instances: HabitDailyInstances
     return streak >= 2;
 }
 
+// PERFORMANCE [2025-01-17]: Cache para resultados de calculateDaySummary.
+// Evita o recálculo de progresso para todos os 61 dias do calendário a cada renderização.
+const daySummaryCache = new Map<string, { completedPercent: number, totalPercent: number, showPlus: boolean }>();
+
+/**
+ * Invalida o cache de resumo diário para uma data específica ou para todos os dias.
+ * Deve ser chamado sempre que dados que afetam o progresso diário (status de hábito, meta, agendamento) mudarem.
+ * @param dateISO A data para invalidar. Se omitido, limpa todo o cache.
+ */
+export function invalidateDaySummaryCache(dateISO?: string) {
+    if (dateISO) {
+        daySummaryCache.delete(dateISO);
+    } else {
+        daySummaryCache.clear();
+    }
+}
+
 /**
  * OTIMIZAÇÃO DE PERFORMANCE [2024-09-30]: Esta nova função centraliza todos os cálculos necessários
  * para renderizar um dia no calendário (`completedPercent`, `totalPercent`, `showPlus`) em um único
  * loop sobre os hábitos do dia. Isso substitui as chamadas separadas para `calculateDayProgress` e
  * `shouldShowPlusIndicator`, reduzindo significativamente o número de iterações e melhorando a
  * performance da renderização do calendário.
+ * 
+ * ATUALIZAÇÃO [2025-01-17]: Agora utiliza cache para evitar recálculos redundantes.
  */
 export function calculateDaySummary(dateISO: string) {
-     const date = parseUTCIsoDate(dateISO);
-     const activeHabits = getActiveHabitsForDate(date);
+    if (daySummaryCache.has(dateISO)) {
+        return daySummaryCache.get(dateISO)!;
+    }
+
+     // OTIMIZAÇÃO [2025-01-17]: Passa a string ISO diretamente para getActiveHabitsForDate.
+     // Isso evita a criação de um objeto Date redundante se os dados já estiverem em cache em getActiveHabitsForDate.
+     const activeHabits = getActiveHabitsForDate(dateISO);
      
      if (activeHabits.length === 0) return { completedPercent: 0, totalPercent: 0, showPlus: false };
      
@@ -603,7 +654,9 @@ export function calculateDaySummary(dateISO: string) {
      const completedPercent = effectiveTotal > 0 ? Math.round((completed / effectiveTotal) * 100) : 0;
      const totalPercent = total > 0 ? Math.round(((completed + snoozed) / total) * 100) : 0;
 
-     return { completedPercent, totalPercent, showPlus };
+     const result = { completedPercent, totalPercent, showPlus };
+     daySummaryCache.set(dateISO, result);
+     return result;
 }
 
 export function getSmartGoalForHabit(habit: Habit, dateISO: string, time: TimeOfDay): number {

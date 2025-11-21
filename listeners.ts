@@ -316,6 +316,20 @@ const _setupGlobalInteractionListeners = () => {
             openCard.classList.remove('is-open-left', 'is-open-right');
         }
     });
+
+    // [2025-01-16] SHORTCUT: Atalho global (Ctrl+Z / Cmd+Z) para desfazer ações.
+    // Melhora a usabilidade para usuários desktop ou com teclado físico.
+    document.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+            // Apenas previne o padrão se houver algo para desfazer, 
+            // permitindo o uso normal do navegador em outros contextos (ex: inputs de texto).
+            if (state.lastEnded) {
+                e.preventDefault();
+                handleUndoDelete();
+                triggerHaptic('medium');
+            }
+        }
+    });
 };
 
 /**
@@ -333,6 +347,20 @@ export function setupEventListeners() {
     setupGlobalListeners();
     setupModalListeners();
     setupHabitCardListeners();
+    // A11Y [2025-01-17]: Adiciona listener para teclas em cartões de hábito.
+    // Como não temos um setupHabitCardKeyboardListeners separado, injetamos aqui.
+    // Isso garante que Enter/Space no content-wrapper funcione.
+    ui.habitContainer.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            const contentWrapper = (e.target as HTMLElement).closest<HTMLElement>('.habit-content-wrapper');
+            if (contentWrapper) {
+                e.preventDefault(); // Previne scroll no espaço
+                // Dispara o clique programaticamente, reaproveitando a lógica de habitCardListeners
+                contentWrapper.click();
+            }
+        }
+    });
+
     setupSwipeHandler(ui.habitContainer);
     setupDragAndDropHandler(ui.habitContainer);
 }
