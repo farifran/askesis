@@ -1,7 +1,10 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
+
+import { triggerHaptic } from './utils';
 
 let isSwiping = false;
 
@@ -82,6 +85,10 @@ export function setupSwipeHandler(habitContainer: HTMLElement) {
     let dragEnableTimer: number | null = null;
     let currentPointerId: number | null = null;
     
+    // UX: Estado para rastrear se o haptic feedback já foi disparado neste gesto
+    let hasTriggeredHaptic = false;
+    const HAPTIC_THRESHOLD = 15; // Limiar ligeiramente maior que a ativação visual para feedback firme
+    
     // REATORAÇÃO DE DRY: Centraliza toda a lógica de limpeza e reset de estado.
     const _cleanupAndReset = () => {
         if (dragEnableTimer) {
@@ -115,6 +122,7 @@ export function setupSwipeHandler(habitContainer: HTMLElement) {
         swipeDirection = 'none';
         dragEnableTimer = null;
         currentPointerId = null;
+        hasTriggeredHaptic = false;
     };
 
     const abortSwipe = () => {
@@ -176,6 +184,15 @@ export function setupSwipeHandler(habitContainer: HTMLElement) {
             if (content) {
                 content.style.transform = `translateX(${translateX}px)`;
             }
+
+            // UX [2025-01-18]: Feedback tátil ao cruzar o limiar de ativação
+            if (!hasTriggeredHaptic && Math.abs(deltaX) > HAPTIC_THRESHOLD) {
+                triggerHaptic('light');
+                hasTriggeredHaptic = true;
+            } else if (hasTriggeredHaptic && Math.abs(deltaX) < HAPTIC_THRESHOLD) {
+                // Opcional: resetar se o usuário voltar antes de soltar, para permitir novo feedback
+                hasTriggeredHaptic = false;
+            }
         }
     };
 
@@ -221,6 +238,7 @@ export function setupSwipeHandler(habitContainer: HTMLElement) {
         currentX = startX;
         wasOpenLeft = activeCard.classList.contains('is-open-left');
         wasOpenRight = activeCard.classList.contains('is-open-right');
+        hasTriggeredHaptic = false;
 
         // OTIMIZAÇÃO: Calcula a largura da ação de deslize apenas uma vez no início do gesto.
         const rootStyles = getComputedStyle(document.documentElement);

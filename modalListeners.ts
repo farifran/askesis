@@ -135,15 +135,26 @@ function _handleIntervalControlChange(button: HTMLButtonElement) {
 function _validateHabitName(newName: string, currentHabitId?: string): boolean {
     const duplicateNoticeEl = ui.editHabitForm.querySelector<HTMLElement>('.duplicate-habit-notice')!;
     const formNoticeEl = ui.editHabitForm.querySelector<HTMLElement>('.form-notice')!;
+    const habitNameInput = ui.editHabitForm.elements.namedItem('habit-name') as HTMLInputElement;
 
-    // Reseta as notificações
+    // Reseta as notificações e animações
     duplicateNoticeEl.classList.remove('visible');
     formNoticeEl.classList.remove('visible');
+    habitNameInput.classList.remove('shake');
 
     // Verifica se está vazio
     if (newName.length === 0) {
         formNoticeEl.textContent = t('noticeNameCannotBeEmpty');
         formNoticeEl.classList.add('visible');
+        
+        // Trigger shake animation for visual feedback
+        requestAnimationFrame(() => {
+            habitNameInput.classList.add('shake');
+            habitNameInput.addEventListener('animationend', () => {
+                habitNameInput.classList.remove('shake');
+            }, { once: true });
+        });
+        
         return false;
     }
 
@@ -156,6 +167,15 @@ function _validateHabitName(newName: string, currentHabitId?: string): boolean {
     if (isDuplicate) {
         duplicateNoticeEl.textContent = t('noticeDuplicateHabitWithName');
         duplicateNoticeEl.classList.add('visible');
+        
+        // Trigger shake animation for visual feedback
+        requestAnimationFrame(() => {
+            habitNameInput.classList.add('shake');
+            habitNameInput.addEventListener('animationend', () => {
+                habitNameInput.classList.remove('shake');
+            }, { once: true });
+        });
+        
         return false;
     }
 

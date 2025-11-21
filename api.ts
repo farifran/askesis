@@ -3,7 +3,8 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// [ANALYSIS PROGRESS]: 100% - Arquivo revisado e otimizado. Tratamento de erros blindado e lógica de headers simplificada. Nenhuma ação pendente detectada.
+// [ANALYSIS PROGRESS]: 100% - Arquivo revisado e otimizado. Tratamento de erros blindado e lógica de headers simplificada.
+// UPDATE [2025-01-17]: Adicionada lógica de retry com backoff exponencial para maior robustez em rede.
 
 const SYNC_KEY_STORAGE_KEY = 'habitTrackerSyncKey';
 const UUID_REGEX = /^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$/;
@@ -65,11 +66,13 @@ export async function getSyncKeyHash(): Promise<string | null> {
 
 interface ExtendedRequestInit extends RequestInit {
     timeout?: number;
+    retries?: number; // Número máximo de tentativas
+    backoff?: number; // Delay inicial em ms
 }
 
 /**
- * Wrapper for the fetch API that includes the sync key hash and handles timeouts.
- * Moved from utils.ts to prevent circular dependencies.
+ * Wrapper for the fetch API that includes the sync key hash, handles timeouts,
+ * and implements exponential backoff retry logic for robust networking.
  */
 export async function apiFetch(endpoint: string, options: ExtendedRequestInit = {}, includeSyncKey = false): Promise<Response> {
     // [2024-01-16] REFACTOR: Uso da classe Headers para manipulação mais limpa e segura de headers.
@@ -88,42 +91,65 @@ export async function apiFetch(endpoint: string, options: ExtendedRequestInit = 
         }
     }
 
-    const { timeout = 15000, ...fetchOptions } = options;
+    const { 
+        timeout = 15000, 
+        retries = 2, // Padrão: tenta 3 vezes no total (1 inicial + 2 retries)
+        backoff = 500, // Padrão: espera 500ms antes do primeiro retry
+        ...fetchOptions 
+    } = options;
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeout);
+    const attemptFetch = async (attempt: number): Promise<Response> => {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeout);
 
-    try {
-        const response = await fetch(endpoint, {
-            ...fetchOptions,
-            headers,
-            signal: controller.signal,
-        });
-        clearTimeout(timeoutId);
+        try {
+            const response = await fetch(endpoint, {
+                ...fetchOptions,
+                headers,
+                signal: controller.signal,
+            });
+            clearTimeout(timeoutId);
 
-        // 409 (Conflict) é tratado especificamente pela lógica de sincronização (cloud.ts),
-        // então permitimos que ele passe sem lançar erro aqui.
-        if (!response.ok && response.status !== 409) {
-            let errorBody = '';
-            // [2024-01-16] ROBUSTNESS: Try/Catch no parsing do corpo do erro.
-            // Se a resposta não tiver corpo ou não for texto (ex: erro 500 fatal), 
-            // response.text() poderia falhar e mascarar o erro original.
-            try {
-                errorBody = await response.text();
-            } catch (e) {
-                errorBody = '[No response body or failed to parse]';
+            // Lógica de Retry para erros de servidor (5xx) ou falhas de rede.
+            // Erros de cliente (4xx) geralmente não devem ser retentados (exceto talvez 408/429, mas simplificamos aqui).
+            // 409 (Conflict) é uma resposta válida de lógica de negócios para sync, então retornamos.
+            if (!response.ok && response.status !== 409 && response.status >= 500 && attempt < retries) {
+                throw new Error(`Server error ${response.status}`);
             }
             
-            console.error(`API request failed to ${endpoint}:`, errorBody);
-            throw new Error(`API request failed with status ${response.status}: ${errorBody}`);
-        }
+            // Se for um erro não recuperável (4xx), processamos o erro e lançamos.
+            if (!response.ok && response.status !== 409) {
+                let errorBody = '';
+                try {
+                    errorBody = await response.text();
+                } catch (e) {
+                    errorBody = '[No response body or failed to parse]';
+                }
+                console.error(`API request failed to ${endpoint}:`, errorBody);
+                throw new Error(`API request failed with status ${response.status}: ${errorBody}`);
+            }
 
-        return response;
-    } catch (error: any) {
-        clearTimeout(timeoutId);
-        if (error.name === 'AbortError') {
-            throw new Error(`API request to ${endpoint} timed out after ${timeout}ms.`);
+            return response;
+
+        } catch (error: any) {
+            clearTimeout(timeoutId);
+            
+            const isAbortError = error.name === 'AbortError';
+            const isNetworkError = error instanceof TypeError || error.message.includes('Server error'); // TypeError geralmente é erro de rede no fetch
+
+            if (attempt < retries && (isAbortError || isNetworkError)) {
+                const delay = backoff * Math.pow(2, attempt); // Backoff exponencial: 500, 1000, 2000...
+                console.warn(`API attempt ${attempt + 1} failed. Retrying in ${delay}ms...`, error);
+                await new Promise(resolve => setTimeout(resolve, delay));
+                return attemptFetch(attempt + 1);
+            }
+
+            if (isAbortError) {
+                throw new Error(`API request to ${endpoint} timed out after ${timeout}ms.`);
+            }
+            throw error;
         }
-        throw error;
-    }
+    };
+
+    return attemptFetch(0);
 }

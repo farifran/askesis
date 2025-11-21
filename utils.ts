@@ -13,7 +13,32 @@ declare global {
 
 // --- UUID ---
 export function generateUUID(): string {
-    return crypto.randomUUID();
+    // ROBUSTEZ [2025-01-18]: Fallback para ambientes não seguros ou navegadores antigos
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+        try {
+            return crypto.randomUUID();
+        } catch (e) {
+            console.warn('crypto.randomUUID failed, using fallback', e);
+        }
+    }
+    
+    // Helper seguro para obter bytes aleatórios
+    const getRandomByte = () => {
+        if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+            try {
+                return crypto.getRandomValues(new Uint8Array(1))[0];
+            } catch (e) {
+                // Fallback se getRandomValues falhar (ex: contexto inseguro em alguns browsers)
+            }
+        }
+        // Último recurso: Math.random
+        return Math.floor(Math.random() * 256);
+    };
+
+    // Fallback compatível com RFC4122 v4
+    return '10000000-1000-4000-8000-100000000000'.replace(/[018]/g, c =>
+        (parseInt(c, 10) ^ (getRandomByte() & 15) >> (parseInt(c, 10) / 4)).toString(16)
+    );
 }
 
 // --- Date Helpers ---
@@ -192,23 +217,30 @@ export function pushToOneSignal(callback: (oneSignal: any) => void) {
 export function triggerHaptic(type: 'selection' | 'light' | 'medium' | 'heavy' | 'success' | 'error') {
     if (!navigator.vibrate) return;
 
+    // UX REFINEMENT [2025-01-17]: Micro-haptics mais nítidos e curtos.
+    // Em vez de vibrações longas (25-50ms), usamos pulsos ultracurtos (8-15ms) para interações de UI
+    // como seleção e toggle. Isso dá uma sensação mais "premium" e física, menos "zumbido".
     try {
         switch (type) {
             case 'selection':
+                navigator.vibrate(8); // Extremamente sutil para cliques em calendário/listas
+                break;
             case 'light':
-                navigator.vibrate(10);
+                navigator.vibrate(12); // Toggle de checkbox, botões menores
                 break;
             case 'medium':
-                navigator.vibrate(25);
+                navigator.vibrate(20); // Ações de swipe, botões principais
                 break;
             case 'heavy':
-                navigator.vibrate(50);
+                navigator.vibrate(40); // Ações destrutivas ou significativas
                 break;
             case 'success':
-                navigator.vibrate([50, 50, 50]);
+                // Padrão: Curto-pausa-Curto (Tick-Tick)
+                navigator.vibrate([15, 50, 15]);
                 break;
             case 'error':
-                navigator.vibrate([50, 100, 50, 100, 50]);
+                // Padrão: Longo-pausa-Curto (Buzz-Tick)
+                navigator.vibrate([40, 60, 15]);
                 break;
         }
     } catch (e) {

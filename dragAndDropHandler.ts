@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 // [ANALYSIS PROGRESS]: 100% - Análise concluída. Implementada otimização de renderização no evento 'dragover' para evitar layout thrashing e removida redundância na limpeza de listeners (DRY).
+// UX UPDATE [2025-01-17]: Adicionado Auto-Scroll suave para permitir arrastar itens para fora da área visível atual.
 
 import { isCurrentlySwiping } from './swipeHandler';
 import { handleHabitDrop, reorderHabit } from './habitActions';
@@ -12,6 +13,10 @@ import { triggerHaptic } from './utils';
 
 const DROP_INDICATOR_GAP = 5; // Espaçamento em pixels acima/abaixo do cartão de destino
 const DROP_INDICATOR_HEIGHT = 3; // Deve corresponder à altura do indicador no CSS
+
+// Constantes para Auto-Scroll
+const SCROLL_ZONE_SIZE = 60; // Pixels a partir da borda para ativar o scroll
+const SCROLL_SPEED = 12; // Pixels por frame
 
 export function setupDragAndDropHandler(habitContainer: HTMLElement) {
     let draggedElement: HTMLElement | null = null;
@@ -23,6 +28,36 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
     
     // PERFORMANCE [2025-01-16]: Cache da última posição top aplicada para evitar layout thrashing.
     let lastIndicatorTop: string | null = null;
+
+    // Variáveis de estado para Auto-Scroll
+    let scrollVelocity = 0;
+    let scrollFrameId: number | null = null;
+
+    /**
+     * UX: Inicia o loop de animação para rolagem automática da página.
+     */
+    function _startAutoScroll() {
+        if (scrollFrameId) return;
+        
+        const scrollLoop = () => {
+            if (scrollVelocity !== 0) {
+                window.scrollBy(0, scrollVelocity);
+            }
+            scrollFrameId = requestAnimationFrame(scrollLoop);
+        };
+        scrollFrameId = requestAnimationFrame(scrollLoop);
+    }
+
+    /**
+     * UX: Para o loop de animação e reseta a velocidade.
+     */
+    function _stopAutoScroll() {
+        if (scrollFrameId) {
+            cancelAnimationFrame(scrollFrameId);
+            scrollFrameId = null;
+        }
+        scrollVelocity = 0;
+    }
 
     /**
      * REATORAÇÃO DE MODULARIDADE: Atualiza os visuais da zona de soltura.
@@ -129,6 +164,18 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
     const handleBodyDragOver = (e: DragEvent) => {
         e.preventDefault();
 
+        // UX: Lógica de detecção de borda para Auto-Scroll
+        const { clientY } = e;
+        const { innerHeight } = window;
+        
+        if (clientY < SCROLL_ZONE_SIZE) {
+            scrollVelocity = -SCROLL_SPEED; // Rola para cima
+        } else if (clientY > innerHeight - SCROLL_ZONE_SIZE) {
+            scrollVelocity = SCROLL_SPEED; // Rola para baixo
+        } else {
+            scrollVelocity = 0; // Para de rolar
+        }
+
         if (dropIndicator && !e.target) {
              dropIndicator.classList.remove('visible');
              delete dropIndicator.dataset.targetId;
@@ -180,11 +227,14 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
         // 2. Remove elementos temporários do DOM
         dropIndicator?.remove();
         
-        // 3. Remove os listeners de eventos globais para evitar vazamentos de memória
+        // 3. Para o auto-scroll
+        _stopAutoScroll();
+        
+        // 4. Remove os listeners de eventos globais para evitar vazamentos de memória
         document.body.removeEventListener('dragover', handleBodyDragOver);
         document.body.removeEventListener('drop', handleBodyDrop);
 
-        // 4. Reseta todas as variáveis de estado internas para a próxima operação de arrasto
+        // 5. Reseta todas as variáveis de estado internas para a próxima operação de arrasto
         _resetDragState();
     };
 
@@ -231,6 +281,9 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
             document.body.addEventListener('dragover', handleBodyDragOver);
             document.body.addEventListener('drop', handleBodyDrop);
             document.body.addEventListener('dragend', cleanupDrag, { once: true });
+
+            // Inicia o monitoramento de Auto-Scroll
+            _startAutoScroll();
 
             setTimeout(() => {
                 card.classList.add('dragging');

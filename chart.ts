@@ -6,6 +6,7 @@
 // [ANALYSIS PROGRESS]: 100% - Análise completa. Otimização de performance implementada: caching de estatísticas de escala para evitar recálculos pesados no evento de 'pointermove' e hoisting de variáveis invariantes no loop de cálculo de dados.
 // UPDATE [2025-01-17]: Adicionado IntersectionObserver para evitar atualizações de DOM quando o gráfico está fora da viewport.
 // UPDATE [2025-01-17]: Otimização de pointermove para atualizar o DOM apenas quando o ponto de dados muda (lastPointIndex).
+// UPDATE [2025-01-17]: Adicionado ResizeObserver para redimensionamento independente e otimizado (evita recalculo de dados).
 
 import { state } from './state';
 import { ui } from './ui';
@@ -57,6 +58,7 @@ let chartElements: {
 let isChartVisible = true; // Assume visível inicialmente para garantir o primeiro paint (LCP)
 let isChartDirty = false;
 let chartObserver: IntersectionObserver | null = null;
+let resizeObserver: ResizeObserver | null = null;
 
 
 function calculateChartData(): ChartDataPoint[] {
@@ -290,6 +292,23 @@ function _initIntersectionObserver() {
     }
 }
 
+function _initResizeObserver() {
+    if (resizeObserver) return;
+
+    // ROBUSTEZ: ResizeObserver permite que o gráfico se adapte a qualquer mudança de tamanho
+    // do seu container, seja por redimensionamento da janela ou mudanças no layout da aplicação.
+    resizeObserver = new ResizeObserver(entries => {
+        if (!chartInitialized || !isChartVisible) return;
+        // PERFORMANCE: Chamamos apenas _updateChartDOM, que redesenha o SVG com os dados atuais.
+        // Evitamos chamar calculateChartData(), pois os dados históricos não mudam com o tamanho da tela.
+        _updateChartDOM(lastChartData);
+    });
+
+    if (ui.chartContainer) {
+        resizeObserver.observe(ui.chartContainer);
+    }
+}
+
 export function renderChart() {
     lastChartData = calculateChartData();
     const isEmpty = lastChartData.length < 2 || lastChartData.every(d => d.scheduledCount === 0);
@@ -310,6 +329,10 @@ export function renderChart() {
         if (chartObserver) {
             chartObserver.disconnect();
             chartObserver = null;
+        }
+        if (resizeObserver) {
+            resizeObserver.disconnect();
+            resizeObserver = null;
         }
         return;
     }
@@ -360,6 +383,7 @@ export function renderChart() {
 
         _setupChartListeners();
         _initIntersectionObserver();
+        _initResizeObserver();
         chartInitialized = true;
     } else {
         // Atualiza os títulos caso já existam (ex: mudança de idioma)

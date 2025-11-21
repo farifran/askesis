@@ -138,13 +138,13 @@
         <main>
             <div id="habit-container">
                 <div class="habit-group-wrapper" data-time-wrapper="Morning">
-                    <div class="habit-group drop-zone" data-time="Morning"></div>
+                    <ul class="habit-group drop-zone" data-time="Morning"></ul>
                 </div>
                 <div class="habit-group-wrapper" data-time-wrapper="Afternoon">
-                    <div class="habit-group drop-zone" data-time="Afternoon"></div>
+                    <ul class="habit-group drop-zone" data-time="Afternoon"></ul>
                 </div>
                 <div class="habit-group-wrapper" data-time-wrapper="Evening">
-                    <div class="habit-group drop-zone" data-time="Evening"></div>
+                    <ul class="habit-group drop-zone" data-time="Evening"></ul>
                 </div>
             </div>
 
@@ -198,7 +198,8 @@
                         <div class="sync-view" id="sync-enter-key-view" style="display: none;">
                              <div class="form-group">
                                 <label for="sync-key-input" id="label-enter-key"></label>
-                                <input type="text" id="sync-key-input" class="form-control" autocomplete="off">
+                                <!-- UX IMPROVEMENT [2025-01-18]: Desativa correções automáticas para chaves complexas (UUID) -->
+                                <input type="text" id="sync-key-input" class="form-control" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
                             </div>
                             <div class="sync-actions">
                                 <button id="cancel-enter-key-btn" class="btn"></button>
@@ -371,7 +372,7 @@
 
 
         <!-- Toast Notification -->
-        <div id="undo-toast" class="undo-toast">
+        <div id="undo-toast" class="undo-toast" role="status" aria-live="polite">
             <span>Hábito encerrado.</span>
             <button id="undo-btn">Desfazer</button>
         </div>

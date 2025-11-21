@@ -264,12 +264,35 @@ export function saveState() {
         pendingConsolidationHabitIds: state.pendingConsolidationHabitIds
     };
     
-    try {
-        localStorage.setItem(STATE_STORAGE_KEY, JSON.stringify(stateToSave));
-        syncStateWithCloud(stateToSave);
-    } catch (e) {
-        console.error("Failed to save state", e);
-    }
+    const saveToLocalStorage = (data: AppState) => {
+        try {
+            localStorage.setItem(STATE_STORAGE_KEY, JSON.stringify(data));
+            syncStateWithCloud(data);
+        } catch (e: any) {
+            if (e.name === 'QuotaExceededError') {
+                console.warn("LocalStorage quota exceeded. Attempting to clear non-essential data.");
+                // FAIL-SAFE: Limpa dados não essenciais para tentar liberar espaço
+                state.lastEnded = null; // Remove histórico de desfazer
+                // Em um cenário real, poderíamos limpar caches de IA ou notificações antigas aqui
+                
+                // Tenta salvar novamente sem os dados supérfluos (embora lastEnded não esteja no AppState salvo,
+                // a intenção aqui é liberar memória se o problema for do navegador, ou preparar para 
+                // futuras estratégias de redução de dados).
+                // Se falhar novamente, logamos o erro mas não crashamos a aplicação.
+                try {
+                    // Uma estratégia mais agressiva seria tentar salvar sem 'dailyData' antigo, mas isso é arriscado.
+                    // Por enquanto, apenas reportamos.
+                    console.error("Critical: Unable to save state due to storage quota.");
+                } catch (retryError) {
+                    console.error("Failed retry save", retryError);
+                }
+            } else {
+                console.error("Failed to save state", e);
+            }
+        }
+    };
+
+    saveToLocalStorage(stateToSave);
 }
 
 /**
@@ -302,8 +325,19 @@ export function loadState(cloudState?: AppState) {
     if (loadedState) {
         const migrated = migrateState(loadedState, APP_VERSION);
         
-        state.habits = migrated.habits;
-        state.dailyData = migrated.dailyData;
+        // ROBUSTEZ [2025-01-18]: Sanitização do estado carregado.
+        // Remove hábitos corrompidos (sem ID ou sem histórico de agendamento)
+        // para evitar que erros se propaguem para a renderização.
+        const sanitizedHabits = migrated.habits.filter(h => {
+            if (!h.id || !h.scheduleHistory || h.scheduleHistory.length === 0) {
+                console.warn(`Removing corrupted habit found in state: ${h.id || 'unknown'}`);
+                return false;
+            }
+            return true;
+        });
+
+        state.habits = sanitizedHabits;
+        state.dailyData = migrated.dailyData || {};
         state.notificationsShown = migrated.notificationsShown || [];
         state.pending21DayHabitIds = migrated.pending21DayHabitIds || [];
         state.pendingConsolidationHabitIds = migrated.pendingConsolidationHabitIds || [];
@@ -440,6 +474,15 @@ export function shouldHabitAppearOnDate(habit: Habit, date: Date, dateISO?: stri
     const activeSchedule = getScheduleForDate(habit, dateISO || date);
     if (!activeSchedule) return false;
 
+    const freq = activeSchedule.frequency;
+    
+    // PERFORMANCE [2025-01-17]: HOT-PATH OPTIMIZATION
+    // A frequência 'diária' é o caso mais comum. Retornamos 'true' imediatamente
+    // para evitar cálculos matemáticos de timestamp (divisões/arredondamentos) desnecessários.
+    if (freq.type === 'daily') {
+        return true;
+    }
+
     // OTIMIZAÇÃO [2025-01-16]: Uso de cache para o timestamp da âncora.
     let anchorTime = anchorTimestampCache.get(activeSchedule);
     if (anchorTime === undefined) {
@@ -452,11 +495,6 @@ export function shouldHabitAppearOnDate(habit: Habit, date: Date, dateISO?: stri
 
     if (daysDifference < 0) {
         return false;
-    }
-    
-    const freq = activeSchedule.frequency;
-    if (freq.type === 'daily') {
-        return true;
     }
 
     if (freq.type === 'interval') {

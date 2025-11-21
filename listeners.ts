@@ -225,11 +225,9 @@ const _setupCalendarInteractionListeners = () => {
  * REATORAÇÃO DE MODULARIDADE: Configura listeners de eventos relacionados à janela e ao estado do documento.
  */
 const _setupWindowListeners = () => {
-    const debouncedResize = debounce(() => {
-        updateHeaderTitle();
-        renderChart();
-    }, 250);
-    window.addEventListener('resize', debouncedResize);
+    // CLEANUP [2025-01-17]: O listener de redimensionamento global foi removido.
+    // O gráfico agora usa um ResizeObserver dedicado em chart.ts, que é mais performático e robusto.
+    // O título do cabeçalho é responsivo via CSS (display: none em classes desktop/mobile), não exigindo JS no resize.
 
     // Lógica de atualização de data (PWA Lifecycle & Heartbeat)
     let lastSeenDay = getTodayUTCIso();
@@ -275,6 +273,32 @@ const _setupWindowListeners = () => {
     window.addEventListener('offline', handleConnectionChange);
     handleConnectionChange(); // Checagem inicial
 };
+
+/**
+ * Configura a interação de clique para copiar a citação estoica.
+ */
+function _setupStoicQuoteInteraction() {
+    ui.stoicQuoteDisplay.addEventListener('click', async () => {
+        const text = ui.stoicQuoteDisplay.textContent;
+        if (text) {
+            try {
+                await navigator.clipboard.writeText(text);
+                triggerHaptic('success');
+                
+                // Feedback visual minimalista: altera a cor momentaneamente
+                ui.stoicQuoteDisplay.style.transition = 'color 0.2s';
+                const originalColor = ui.stoicQuoteDisplay.style.color;
+                ui.stoicQuoteDisplay.style.color = 'var(--accent-green)';
+                
+                setTimeout(() => {
+                    ui.stoicQuoteDisplay.style.color = originalColor || '';
+                }, 500);
+            } catch (err) {
+                console.error('Failed to copy quote', err);
+            }
+        }
+    });
+}
 
 /**
  * REATORAÇÃO DE MODULARIDADE: Configura listeners para interações globais da UI, como o botão "Desfazer".
@@ -330,6 +354,8 @@ const _setupGlobalInteractionListeners = () => {
             }
         }
     });
+    
+    _setupStoicQuoteInteraction();
 };
 
 /**

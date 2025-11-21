@@ -96,6 +96,40 @@ function createGoalInput(habit: Habit, time: TimeOfDay, wrapper: HTMLElement) {
 }
 
 export function setupHabitCardListeners() {
+    // A11Y [2025-01-18]: Navegação por teclado para ações de swipe.
+    ui.habitContainer.addEventListener('keydown', e => {
+        const card = (e.target as HTMLElement).closest('.habit-card');
+        if (!card) return;
+        
+        // Verifica se o foco está no wrapper de conteúdo (o elemento focável principal do cartão)
+        if (!e.target || !(e.target as HTMLElement).classList.contains('habit-content-wrapper')) return;
+
+        if (e.key === 'ArrowRight') {
+            // Seta Direita -> Desliza conteúdo para direita -> Revela ação da Esquerda (Deletar)
+            // Simula o swipe visualmente e torna o botão acessível
+            e.preventDefault();
+            if (card.classList.contains('is-open-right')) {
+                card.classList.remove('is-open-right');
+            } else {
+                card.classList.toggle('is-open-left');
+            }
+        } else if (e.key === 'ArrowLeft') {
+            // Seta Esquerda -> Desliza conteúdo para esquerda -> Revela ação da Direita (Notas)
+            e.preventDefault();
+            if (card.classList.contains('is-open-left')) {
+                card.classList.remove('is-open-left');
+            } else {
+                card.classList.toggle('is-open-right');
+            }
+        } else if (e.key === 'Escape') {
+            // Fecha qualquer ação aberta
+            if (card.classList.contains('is-open-left') || card.classList.contains('is-open-right')) {
+                e.preventDefault();
+                card.classList.remove('is-open-left', 'is-open-right');
+            }
+        }
+    });
+
     ui.habitContainer.addEventListener('click', e => {
         const target = e.target as HTMLElement;
         const card = target.closest<HTMLElement>('.habit-card');

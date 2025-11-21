@@ -3,7 +3,8 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// [ANALYSIS PROGRESS]: 100% - Análise concluída. Implementada otimização visual na renderização da citação estoica para eliminar 'blinks' desnecessários e manter a estabilidade da UI.
+// [ANALYSIS PROGRESS]: 100% - Análise concluída. Implementado cache para Intl.PluralRules na função 't' para otimizar performance em renderizações frequentes.
+// UPDATE [2025-01-17]: Implementada Renderização Progressiva (Critical Rendering Path optimization).
 
 import {
     state,
@@ -528,9 +529,24 @@ function updateHabitCardElement(card: HTMLElement, habit: Habit, time: TimeOfDay
 
     // PERFORMANCE [2025-01-17]: Otimização de layout. Verifica se a classe já está presente
     // antes de adicionar/remover para evitar "style recalculation" desnecessário.
+    const wasCompleted = card.classList.contains('completed');
     if (!card.classList.contains(status)) {
         card.classList.remove('pending', 'completed', 'snoozed');
         card.classList.add(status);
+    }
+
+    // UX [2025-01-18]: Feedback visual "Pop" ao completar um hábito.
+    // Se o status mudou para 'completed' e não estava antes, aciona a animação no ícone.
+    const isCompleted = status === 'completed';
+    if (!wasCompleted && isCompleted) {
+        const icon = card.querySelector<HTMLElement>('.habit-icon');
+        // Remove a classe primeiro (reinício forçado se necessário)
+        icon?.classList.remove('animate-pop');
+        // Força um reflow para garantir que o navegador registre a remoção antes da adição (restart animation)
+        void icon?.offsetWidth;
+        icon?.classList.add('animate-pop');
+        // Remove a classe após a animação para limpeza
+        icon?.addEventListener('animationend', () => icon.classList.remove('animate-pop'), { once: true });
     }
 
     // Atualiza classes de consolidação
@@ -586,7 +602,8 @@ export function createHabitCardElement(habit: Habit, time: TimeOfDay): HTMLEleme
     const hasNote = habitInstanceData?.note && habitInstanceData.note.length > 0;
     const streak = calculateHabitStreak(habit.id, getTodayUTCIso());
     
-    const card = document.createElement('div');
+    // A11Y: Elemento semântico <li> para listas de hábitos
+    const card = document.createElement('li');
     // Define as classes iniciais. Como é um novo elemento, não precisamos nos preocupar com estado anterior.
     card.className = `habit-card ${status}`;
     card.dataset.habitId = habit.id;
@@ -599,6 +616,9 @@ export function createHabitCardElement(habit: Habit, time: TimeOfDay): HTMLEleme
 
     const actionsLeft = document.createElement('div');
     actionsLeft.className = 'habit-actions-left';
+    // A11Y [2025-01-18]: Removido tabindex="-1". O foco é controlado via CSS visibility.
+    // Quando o cartão está fechado, visibility:hidden remove os botões da ordem de tabulação.
+    // Quando aberto, eles tornam-se visible e naturalmente focáveis.
     actionsLeft.innerHTML = `<button type="button" class="swipe-delete-btn" aria-label="${t('habitEnd_ariaLabel')}">${icons.swipeDelete}</button>`;
 
     const actionsRight = document.createElement('div');
@@ -708,6 +728,9 @@ export function renderHabits() {
         const groupEl = wrapperEl?.querySelector<HTMLElement>(`.habit-group[data-time="${time}"]`);
         if (!wrapperEl || !groupEl) return;
         
+        // A11Y: Define o rótulo ARIA para o grupo de hábitos com base no período do dia
+        groupEl.setAttribute('aria-label', getTimeOfDayName(time));
+
         const existingCards = Array.from(groupEl.querySelectorAll<HTMLElement>('.habit-card'));
         const existingCardsMap = new Map<string, HTMLElement>();
         existingCards.forEach(card => {
@@ -924,13 +947,29 @@ export function updateNotificationUI() {
 }
 
 
+/**
+ * RENDERIZAÇÃO PROGRESSIVA: A função renderApp foi otimizada para priorizar o conteúdo crítico.
+ * - Fase 1 (Síncrona): Renderiza Hábitos, Calendário e Cabeçalho. O usuário pode interagir imediatamente.
+ * - Fase 2 (Idle/Next Frame): Renderiza elementos informativos (Botão IA, Citação).
+ * - Fase 3 (Deferred): Renderiza o gráfico pesado em um timeout zero para não bloquear a thread principal.
+ */
 export function renderApp() {
+    // Fase 1: Renderização Crítica (Interatividade Imediata)
     renderHabits();
     renderCalendar();
-    renderAINotificationState();
-    renderStoicQuote();
-    renderChart();
     updateHeaderTitle();
+
+    // Fase 2 & 3: Renderização Não Crítica (Diferida)
+    // Usa requestAnimationFrame para garantir que o browser pintou o quadro crítico antes de processar o resto.
+    requestAnimationFrame(() => {
+        renderAINotificationState();
+        renderStoicQuote();
+        
+        // Adia o cálculo pesado do gráfico para o final da fila de tarefas
+        setTimeout(() => {
+            renderChart();
+        }, 0);
+    });
 }
 
 // HELPER [2025-01-17]: Container para aplicação de inert.

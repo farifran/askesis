@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -95,12 +96,18 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ESTRATÉGIA NETWORK-FIRST PARA O APP SHELL (HTML/Navegação)
-    // Garante que o usuário receba a versão mais recente se estiver online.
+    // ROBUSTEZ [2025-01-17]: Adicionado Timeout de 3s usando AbortController.
+    // Se a rede demorar mais que 3 segundos (Lie-Fi), cai para o cache imediatamente.
     if (event.request.mode === 'navigate') {
         event.respondWith((async () => {
             try {
-                // Tenta a rede primeiro
-                const networkResponse = await fetch(event.request);
+                // Configura um controlador de aborto para o timeout
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 3000);
+
+                // Tenta a rede primeiro com o sinal de aborto
+                const networkResponse = await fetch(event.request, { signal: controller.signal });
+                clearTimeout(timeoutId);
                 
                 // Atualiza o cache com a nova versão (em background)
                 const cache = await caches.open(CACHE_NAME);
@@ -108,8 +115,13 @@ self.addEventListener('fetch', (event) => {
                 
                 return networkResponse;
             } catch (error) {
-                console.log('Service Worker: Navigation offline, falling back to cache');
-                // Fallback para o cache se offline
+                if (error.name === 'AbortError') {
+                    console.log('Service Worker: Network timeout (3s), falling back to cache');
+                } else {
+                    console.log('Service Worker: Network offline or error, falling back to cache', error);
+                }
+                
+                // Fallback para o cache se offline ou timeout
                 const cachedResponse = await caches.match(event.request);
                 if (cachedResponse) {
                     return cachedResponse;

@@ -92,6 +92,35 @@
     }
 }
 
+/* UX [2025-01-18]: Animação de 'Pop' para feedback de conclusão */
+@keyframes icon-pop {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.3); }
+    100% { transform: scale(1); }
+}
+
+/* UX [2025-01-18]: Animação de 'Shake' para feedback de erro */
+@keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-5px); }
+    75% { transform: translateX(5px); }
+}
+
+.shake {
+    animation: shake 0.3s ease-in-out;
+    border-color: var(--color-red) !important;
+}
+
+/* A11Y & PERFORMANCE: Respeita a preferência do usuário por movimento reduzido. */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}
+
 
 /* --- RESET E ESTILOS GLOBAIS --- */
 * {
@@ -114,6 +143,12 @@ body {
     overscroll-behavior-y: none; /* Previne o efeito rubber-banding/pull-to-refresh nativo */
     /* UX: Evita scroll chaining */
     overscroll-behavior: contain;
+    
+    /* MODERN LAYOUT [2025-01-18]: Garante altura total em mobile ignorando a barra de endereços */
+    min-height: 100vh;
+    min-height: 100dvh;
+    /* UX: Previne o ajuste automático de texto em rotação no iOS */
+    -webkit-text-size-adjust: 100%;
 }
 
 /* Permitir seleção em campos de texto e conteúdo onde é útil */
@@ -134,6 +169,19 @@ body {
     outline: 2px solid var(--accent-blue);
     outline-offset: 2px;
     box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent-blue) 30%, transparent);
+}
+
+/* UTILITÁRIO A11Y [2025-01-18]: Esconde visualmente mas mantém acessível para leitores de tela e teclado */
+.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
 }
 
 
@@ -214,13 +262,18 @@ main {
     color: var(--text-secondary);
     min-height: 2.2em;
     line-height: 1.4;
-    transition: opacity 0.5s ease-in-out;
+    transition: opacity 0.5s ease-in-out, color var(--transition-duration);
     opacity: 0;
     text-align: left;
     margin-block-start: 0;
+    /* UX: Indica interatividade (clique para copiar) */
+    cursor: pointer;
 }
 .stoic-quote.visible {
     opacity: 1;
+}
+.stoic-quote:active {
+    opacity: 0.7;
 }
 
 /* --- COMPONENTES: BOTÕES --- */
@@ -422,6 +475,9 @@ main {
     contain: content;
     /* UX: Evita scroll chaining */
     overscroll-behavior: contain;
+    
+    /* UX [2025-01-18]: Rolagem com snap para sensação mais precisa */
+    scroll-snap-type: x proximity;
 }
 .calendar-strip::-webkit-scrollbar { display: none; }
 
@@ -436,6 +492,9 @@ main {
     transition: background-color var(--transition-duration), transform 0.1s ease-out;
     border: 2px solid transparent;
     flex-shrink: 0; /* CORREÇÃO DE LAYOUT [2024-12-14]: Impede que os dias do calendário encolham em telas pequenas, garantindo que a faixa de rolagem funcione corretamente. */
+    
+    /* UX [2025-01-18]: Alinhamento para scroll snap */
+    scroll-snap-align: start;
 }
 .day-item:hover { background-color: var(--surface-hover); }
 .day-item.selected { background-color: var(--surface-color); }
@@ -541,11 +600,15 @@ body.is-dragging-active .habit-group-wrapper.is-collapsible {
 
 .habit-group {
     position: relative; /* Necessário para o posicionamento do indicador de soltar */
-    padding: 0 var(--space-sm);
+    padding: 0;
+    margin: 0;
+    list-style: none;
     border-radius: var(--border-radius-large);
     border: 2px dashed transparent;
     transition: background-color var(--transition-duration), border-color var(--transition-duration);
     min-height: 40px;
+    /* PERFORMANCE [2025-01-18]: Isola o layout do grupo. Mudanças dentro do grupo não afetam o layout externo. */
+    contain: layout style;
 }
 .habit-group.drag-over {
     background-color: var(--surface-hover);
@@ -745,6 +808,11 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 }
 .habit-icon svg { width: 60%; height: 60%; }
 
+/* UX [2025-01-18]: Classe de animação para o ícone ao completar o hábito */
+.habit-icon.animate-pop {
+    animation: icon-pop 0.3s ease-out;
+}
+
 .habit-details { 
     text-align: left;
     flex-grow: 1; /* Faz com que o título ocupe o espaço disponível, empurrando a meta para a direita */
@@ -851,6 +919,10 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     display: flex;
     align-items: center;
     width: 200px; /* Largura grande para permitir um over-swipe */
+    
+    /* A11Y [2025-01-18]: Esconde do foco e leitura quando não ativos */
+    visibility: hidden;
+    transition: visibility 0s linear 0.2s; /* Atrasa o hide para permitir animação de slide */
 }
 .habit-actions-left { inset-inline-start: 0; background-color: var(--text-tertiary); }
 .habit-actions-right { inset-inline-end: 0; background-color: var(--accent-blue); justify-content: flex-end; }
@@ -860,6 +932,15 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 .habit-card:is(.is-open-left, .is-open-right) :is(.habit-goal-controls, .time-of-day-icon, .habit-icon) {
     opacity: 0;
     pointer-events: none;
+}
+
+/* A11Y [2025-01-18]: Torna visível quando aberto ou sendo arrastado */
+.habit-card.is-open-left .habit-actions-left,
+.habit-card.is-open-right .habit-actions-right,
+.habit-card.is-swiping .habit-actions-left,
+.habit-card.is-swiping .habit-actions-right {
+    visibility: visible;
+    transition-delay: 0s;
 }
 
 /* REATORAÇÃO DE ARQUITETURA [2024-09-22]: A técnica de mask-image foi substituída por SVGs embutidos. */
@@ -1254,6 +1335,9 @@ input:disabled + .slider {
     margin-block-end: var(--space-lg);
     /* UX: Evita scroll chaining */
     overscroll-behavior: contain;
+    /* PERFORMANCE [2025-01-17]: Otimização de renderização para listas longas em modais. */
+    content-visibility: auto;
+    contain-intrinsic-size: 100px 500px;
 }
 .explore-habit-item {
     display: flex; flex-direction: column; align-items: center;
@@ -1350,6 +1434,9 @@ input:disabled + .slider {
     --current-habit-fg-color: #e5e5e5;
     /* UX: Evita scroll chaining */
     overscroll-behavior: contain;
+    /* PERFORMANCE [2025-01-17]: Otimização de renderização para grids de ícones. */
+    content-visibility: auto;
+    contain-intrinsic-size: 100px 300px;
 }
 .icon-picker-item {
     width: 100%;
@@ -1677,7 +1764,16 @@ input:disabled + .slider {
 }
 
 .weekday-picker input[type="checkbox"] {
-    display: none; /* Esconde o checkbox real */
+    /* A11Y FIX [2025-01-18]: Usar .visually-hidden em vez de display:none para permitir foco por teclado */
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
 }
 
 .weekday-button {
@@ -1702,6 +1798,11 @@ input:disabled + .slider {
     background-color: var(--accent-blue);
     border-color: var(--accent-blue);
     color: white;
+}
+
+/* A11Y: Estado de foco visível para checkbox de dia da semana */
+.weekday-picker input[type="checkbox"]:focus-visible + .weekday-button {
+    box-shadow: 0 0 0 2px var(--bg-color), 0 0 0 4px var(--accent-blue);
 }
 
 
@@ -1737,6 +1838,12 @@ input:disabled + .slider {
     background-color: var(--accent-blue);
     border-radius: 50%;
     transform: translate(-50%, -50%);
+}
+
+/* A11Y: Estado de foco visível para botões de rádio customizados */
+.frequency-options input[type="radio"]:focus-visible {
+    outline: 2px solid var(--accent-blue);
+    outline-offset: 2px;
 }
 
 .interval-control-group {
@@ -1808,9 +1915,10 @@ input:disabled + .slider {
 /* --- UTILITÁRIOS --- */
 .undo-toast {
     position: fixed;
-    bottom: -100px;
+    bottom: var(--space-section);
+    bottom: calc(var(--space-section) + env(safe-area-inset-bottom));
     left: 50%;
-    transform: translateX(-50%);
+    transform: translate(-50%, 150%); /* PERFORMANCE [2025-01-18]: Uso de transform para animação em camada composta */
     background-color: #252525;
     color: var(--text-primary);
     padding: var(--space-lg) var(--space-section);
@@ -1820,12 +1928,11 @@ input:disabled + .slider {
     display: flex;
     align-items: center;
     gap: var(--space-lg);
-    transition: bottom 0.5s cubic-bezier(0.23, 1, 0.32, 1);
+    transition: transform 0.5s cubic-bezier(0.23, 1, 0.32, 1);
     z-index: var(--z-index-toast);
 }
 .undo-toast.visible {
-    bottom: var(--space-section);
-    bottom: calc(var(--space-section) + env(safe-area-inset-bottom));
+    transform: translate(-50%, 0);
 }
 .undo-toast button {
     background: none; border: none; color: var(--accent-blue);
