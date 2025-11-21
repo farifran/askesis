@@ -1,4 +1,8 @@
 
+
+
+
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -674,6 +678,9 @@ function updatePlaceholderForGroup(groupEl: HTMLElement, time: TimeOfDay, hasHab
         if (!placeholder) {
             placeholder = document.createElement('div');
             placeholder.className = 'empty-group-placeholder';
+            // A11Y: Torna o placeholder um elemento interativo acessível com comportamento de botão
+            placeholder.setAttribute('role', 'button');
+            placeholder.setAttribute('tabindex', '0');
             groupEl.appendChild(placeholder);
         }
         placeholder.classList.toggle('show-smart-placeholder', isSmartPlaceholder);

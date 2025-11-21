@@ -1,4 +1,9 @@
 
+
+
+
+
+
 import { state, DAYS_IN_CALENDAR } from './state';
 import { toUTCIsoDateString, parseUTCIsoDate, debounce, triggerHaptic, getTodayUTCIso, addDays } from './utils';
 import { ui } from './ui';
@@ -12,6 +17,7 @@ import {
     renderFullCalendar,
     renderApp,
     scrollToToday,
+    renderExploreHabits,
 } from './render';
 import { setupModalListeners } from './modalListeners';
 import { setupHabitCardListeners } from './habitCardListeners';
@@ -351,6 +357,31 @@ const _setupGlobalInteractionListeners = () => {
                 e.preventDefault();
                 handleUndoDelete();
                 triggerHaptic('medium');
+            }
+        }
+    });
+    
+    // UX [2025-01-18]: Torna o placeholder "vazio" interativo.
+    // Se o usuário clicar em "Adicione um hábito...", abrimos o modal de exploração.
+    ui.habitContainer.addEventListener('click', (e) => {
+        const target = e.target as HTMLElement;
+        const placeholder = target.closest('.empty-group-placeholder');
+        if (placeholder) {
+            triggerHaptic('light');
+            renderExploreHabits();
+            openModal(ui.exploreModal);
+        }
+    });
+
+    // A11Y [2025-01-18]: Suporte a teclado para o placeholder interativo.
+    ui.habitContainer.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            const target = e.target as HTMLElement;
+            if (target.classList.contains('empty-group-placeholder')) {
+                e.preventDefault();
+                triggerHaptic('light');
+                renderExploreHabits();
+                openModal(ui.exploreModal);
             }
         }
     });

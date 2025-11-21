@@ -51,7 +51,7 @@
     "confirmSyncOverwrite": "The data in the cloud is different from your local data. Do you want to overwrite your local data with the cloud data?",
     "customHabitSubtitle": "Custom habit",
     "deleteButton": "Delete",
-    "dragToAddHabit": "Drag a habit to this time slot.",
+    "dragToAddHabit": "Add a habit",
     "editButton": "Edit",
     "endButton": "End",
     "fabAddHabit_ariaLabel": "Add Habit",

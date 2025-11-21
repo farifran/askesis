@@ -1,4 +1,8 @@
 
+
+
+
+
 /*
  * [ANALYSIS PROGRESS]: 100% - Análise concluída.
  * - Padronização de variáveis (substituição de hardcoded pixels).
@@ -478,6 +482,7 @@ main {
     
     /* UX [2025-01-18]: Rolagem com snap para sensação mais precisa */
     scroll-snap-type: x proximity;
+    padding-inline: 4px; /* Area de respiro para o snap */
 }
 .calendar-strip::-webkit-scrollbar { display: none; }
 
@@ -637,16 +642,35 @@ body.is-dragging-active .habit-group-wrapper.is-collapsible {
 }
 
 .empty-group-placeholder {
-    padding: var(--space-sm);
+    padding: var(--space-lg);
     color: var(--text-tertiary);
-    font-style: italic;
+    font-style: normal;
+    font-weight: 500;
     font-size: 14px;
     display: none;
     align-items: center;
     justify-content: center;
     gap: var(--space-sm);
     transition: opacity var(--transition-duration);
+    
+    /* UX [2025-01-18]: Placeholder agora é um botão de ação interativo com visual de slot */
+    cursor: pointer;
+    border: 2px dashed var(--border-color);
+    border-radius: var(--border-radius-large);
+    background-color: transparent;
+    margin-block-end: var(--space-sm);
+    transition: color var(--transition-duration), transform var(--transition-duration), border-color var(--transition-duration), background-color var(--transition-duration);
 }
+.empty-group-placeholder:hover {
+    color: var(--text-primary);
+    border-color: var(--accent-blue);
+    background-color: var(--surface-hover);
+}
+.empty-group-placeholder:active {
+    transform: scale(0.98);
+    background-color: var(--surface-color);
+}
+
 .habit-group-wrapper:not(.has-habits) .empty-group-placeholder.show-smart-placeholder,
 body.is-dragging-active .habit-group-wrapper:not(.has-habits) .empty-group-placeholder {
     display: flex;

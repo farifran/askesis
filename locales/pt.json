@@ -51,7 +51,7 @@
     "confirmSyncOverwrite": "Os dados na nuvem são diferentes dos seus dados locais. Deseja sobrescrever seus dados locais com os dados da nuvem?",
     "customHabitSubtitle": "Hábito personalizado",
     "deleteButton": "Apagar",
-    "dragToAddHabit": "Arraste um hábito para este horário.",
+    "dragToAddHabit": "Adicione um hábito",
     "editButton": "Editar",
     "endButton": "Encerrar",
     "fabAddHabit_ariaLabel": "Adicionar Hábito",
