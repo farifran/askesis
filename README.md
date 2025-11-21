@@ -1,11 +1,6 @@
-<div align="center">
-  <img src="icons/icon-512.svg" alt="Askesis Logo" width="120" height="120" />
-  <h1><strong>A</strong>skes<strong>I</strong>s</h1>
-  <h3>Rastreador de Hábitos com IA</h3>
-  <p>
-    <em>Um rastreador de hábitos dinâmico, focado em privacidade, com visualização de dados e feedback personalizado impulsionado por IA, construído com uma arquitetura de alta performance.</em>
-  </p>
-</div>
+# Askesis: Rastreador de Hábitos com IA
+
+*Um rastreador de hábitos dinâmico, focado em privacidade, com visualização de dados e feedback personalizado impulsionado por IA, construído com uma arquitetura de alta performance.*
 
 <!-- Inserir aqui um GIF ou screenshot da aplicação -->
 

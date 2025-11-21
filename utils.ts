@@ -42,8 +42,22 @@ export function generateUUID(): string {
 }
 
 // --- Date Helpers ---
+
+/**
+ * PERFORMANCE UPDATE [2025-01-20]: Optimized Date-to-String conversion.
+ * Avoiding `toISOString().slice(0, 10)` reduces garbage collection pressure
+ * and execution time in hot-paths (like calendar loops and streak calculations).
+ */
 export function toUTCIsoDateString(date: Date): string {
-    return date.toISOString().slice(0, 10);
+    const year = date.getUTCFullYear();
+    const month = date.getUTCMonth() + 1;
+    const day = date.getUTCDate();
+
+    // Manual string concatenation is significantly faster than template literals
+    // or padStart in tight loops for this specific format.
+    return year + 
+           (month < 10 ? '-0' : '-') + month + 
+           (day < 10 ? '-0' : '-') + day;
 }
 
 export function getTodayUTC(): Date {

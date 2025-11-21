@@ -1,14 +1,12 @@
-
-
-
-
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
 // [ANALYSIS PROGRESS]: 100% - Análise concluída. Implementado cache para Intl.PluralRules na função 't' para otimizar performance em renderizações frequentes.
 // UPDATE [2025-01-17]: Implementada Renderização Progressiva (Critical Rendering Path optimization).
+// UPDATE [2025-01-18]: Otimização DOM (Zero innerHTML em updates frequentes).
+// UPDATE [2025-01-18]: Implementação de Idle Deadline Scheduling para renderização pesada.
+// UPDATE [2025-01-19]: Surgical DOM Updates. Funções exportadas para atualização granular de UI.
 
 import {
     state,
@@ -42,6 +40,21 @@ import { renderChart } from './chart';
 const noticeTimeouts = new WeakMap<HTMLElement, number>();
 const focusTrapListeners = new Map<HTMLElement, (e: KeyboardEvent) => void>();
 const previouslyFocusedElements = new WeakMap<HTMLElement, HTMLElement>();
+
+// Polyfill simples para requestIdleCallback se não existir no ambiente
+const requestIdleCallback = (window as any).requestIdleCallback || function(cb: Function) {
+    return setTimeout(() => {
+        const start = Date.now();
+        cb({
+            didTimeout: false,
+            timeRemaining: () => Math.max(0, 50 - (Date.now() - start))
+        });
+    }, 1);
+};
+
+const cancelIdleCallback = (window as any).cancelIdleCallback || function(id: number) {
+    clearTimeout(id);
+};
 
 /**
  * OTIMIZAÇÃO DE PERFORMANCE: Helper para atualizar textContent apenas se o valor mudou.
@@ -129,6 +142,18 @@ function updateCalendarDayElement(dayItem: HTMLElement, date: Date) {
     _applyDayState(dayItem, date);
 }
 
+/**
+ * SURGICAL UPDATE: Atualiza apenas o dia do calendário especificado no DOM.
+ * Evita renderizar toda a faixa de calendário.
+ */
+export function renderCalendarDayPartial(dateISO: string) {
+    const dayItem = ui.calendarStrip.querySelector<HTMLElement>(`.day-item[data-date="${dateISO}"]`);
+    if (dayItem) {
+        const dateObj = parseUTCIsoDate(dateISO);
+        _applyDayState(dayItem, dateObj);
+    }
+}
+
 function createCalendarDayElement(date: Date): HTMLElement {
     const dayItem = document.createElement('div');
     dayItem.className = 'day-item';
@@ -168,7 +193,16 @@ export function scrollToToday(behavior: ScrollBehavior = 'auto') {
     setTimeout(() => {
         const todayEl = ui.calendarStrip.querySelector<HTMLElement>('.day-item.today');
         if (todayEl) {
-            todayEl.scrollIntoView({ behavior, block: 'nearest', inline: 'end' });
+            // UX [2025-01-18]: Ao iniciar, mostra o dia atual como o penúltimo item visível.
+            // Para isso, rolamos o dia SEGUINTE ao dia atual para a borda final ('end').
+            // Isso garante visibilidade do histórico à esquerda e contexto futuro imediato à direita.
+            const nextDay = todayEl.nextElementSibling as HTMLElement;
+            if (nextDay) {
+                nextDay.scrollIntoView({ behavior, block: 'nearest', inline: 'end' });
+            } else {
+                // Fallback se for o último dia
+                todayEl.scrollIntoView({ behavior, block: 'nearest', inline: 'end' });
+            }
         }
     }, 0);
 }
@@ -417,86 +451,149 @@ export const formatGoalForDisplay = (goal: number): string => {
 };
 
 function updateGoalContentElement(goalEl: HTMLElement, status: HabitStatus, habit: Habit, time: TimeOfDay, dayDataForInstance: HabitDayData | undefined) {
-    // OTIMIZAÇÃO DE PERFORMANCE: Verificação de reconciliação DOM para evitar recriação do innerHTML
-    // se a estrutura já estiver correta, atualizando apenas o texto e classes.
+    // PERFORMANCE [2025-01-18]: Eliminação de innerHTML e Reconciliação DOM granular.
+    // Em vez de recriar strings HTML (o que força parsing), criamos e atualizamos elementos DOM diretamente.
+
+    // Limpa conteúdo se necessário, mas tenta reutilizar.
+    const hasNumericGoal = habit.goal.type === 'pages' || habit.goal.type === 'minutes';
 
     if (status === 'completed') {
-        if (habit.goal.type === 'pages' || habit.goal.type === 'minutes') {
+        if (hasNumericGoal) {
             const smartGoal = getSmartGoalForHabit(habit, state.selectedDate, time);
             const completedGoal = dayDataForInstance?.goalOverride ?? smartGoal;
             const displayVal = formatGoalForDisplay(completedGoal);
             const unitVal = getUnitString(habit, completedGoal);
 
-            // Verifica se a estrutura de meta numérica completa já existe
-            const existingWrapper = goalEl.querySelector('.goal-value-wrapper');
-            const existingControls = goalEl.querySelector('.habit-goal-controls');
-            
-            // Se existe o wrapper E NÃO existem os controles (botões +/-), é a view "concluída numérica" correta
-            if (existingWrapper && !existingControls) {
-                 const prog = goalEl.querySelector('.progress');
-                 const unit = goalEl.querySelector('.unit');
-                 if (prog && unit) {
-                      setTextContent(prog, displayVal);
-                      setTextContent(unit, unitVal);
-                 }
-                 return; // Reconciliação bem sucedida
+            // Verifica se já existe a estrutura correta
+            let wrapper = goalEl.querySelector('.goal-value-wrapper') as HTMLElement;
+            const controls = goalEl.querySelector('.habit-goal-controls');
+
+            // Se existe controls, precisamos remover, pois view completed é apenas texto
+            if (controls) {
+                goalEl.replaceChildren(); // Limpa tudo
+                wrapper = null as any;
             }
-            
-            // Fallback: Recria a estrutura
-            goalEl.innerHTML = `
-                <div class="goal-value-wrapper">
-                    <div class="progress" style="color: var(--accent-blue);">${displayVal}</div>
-                    <div class="unit">${unitVal}</div>
-                </div>`;
+
+            if (!wrapper) {
+                wrapper = document.createElement('div');
+                wrapper.className = 'goal-value-wrapper';
+                
+                const progDiv = document.createElement('div');
+                progDiv.className = 'progress';
+                progDiv.style.color = 'var(--accent-blue)';
+                
+                const unitDiv = document.createElement('div');
+                unitDiv.className = 'unit';
+                
+                wrapper.append(progDiv, unitDiv);
+                goalEl.appendChild(wrapper);
+            }
+
+            setTextContent(wrapper.querySelector('.progress'), displayVal);
+            setTextContent(wrapper.querySelector('.unit'), unitVal);
+
         } else {
             // Checkmark
-            if (goalEl.innerHTML.includes('✓') && goalEl.querySelector('.progress')) return;
-            goalEl.innerHTML = `<div class="progress" style="color: var(--accent-blue);">✓</div><div class="unit">${getUnitString(habit, 1)}</div>`;
+            // Verifica se já é um checkmark
+            if (goalEl.textContent?.includes('✓')) return; // Já está certo (simplificação, idealmente checaria estrutura)
+            
+            goalEl.replaceChildren(); // Limpa
+            
+            const progDiv = document.createElement('div');
+            progDiv.className = 'progress';
+            progDiv.style.color = 'var(--accent-blue)';
+            progDiv.textContent = '✓';
+            
+            const unitDiv = document.createElement('div');
+            unitDiv.className = 'unit';
+            unitDiv.textContent = getUnitString(habit, 1);
+            
+            goalEl.append(progDiv, unitDiv);
         }
     } else if (status === 'snoozed') {
-        // CORREÇÃO DE LAYOUT [2025-01-16]: Uso de wrapper específico para evitar sobreposição de ícone e texto.
+        // Snoozed View
         if (goalEl.querySelector('.snoozed-wrapper')) return;
 
-        goalEl.innerHTML = `
-            <div class="snoozed-wrapper">
-                <svg class="snoozed-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="13 17 18 12 13 7"></polyline>
-                    <polyline points="6 17 11 12 6 7"></polyline>
-                </svg>
-                <span class="snoozed-text">${t('habitSnoozed')}</span>
-            </div>`;
+        goalEl.replaceChildren();
+        
+        const wrapper = document.createElement('div');
+        wrapper.className = 'snoozed-wrapper';
+        
+        // Ícone SVG inline (ok usar innerHTML aqui pois é estático e SVG complexo de criar via DOM API manualmente)
+        wrapper.innerHTML = `
+            <svg class="snoozed-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="13 17 18 12 13 7"></polyline>
+                <polyline points="6 17 11 12 6 7"></polyline>
+            </svg>
+        `;
+        
+        const textSpan = document.createElement('span');
+        textSpan.className = 'snoozed-text';
+        textSpan.textContent = t('habitSnoozed');
+        
+        wrapper.appendChild(textSpan);
+        goalEl.appendChild(wrapper);
+
     } else { 
         // Pending (Controls)
-        if (habit.goal.type === 'pages' || habit.goal.type === 'minutes') {
+        if (hasNumericGoal) {
             const smartGoal = getSmartGoalForHabit(habit, state.selectedDate, time);
             const currentGoal = dayDataForInstance?.goalOverride ?? smartGoal;
             const displayVal = formatGoalForDisplay(currentGoal);
             const unitVal = getUnitString(habit, currentGoal);
 
-            // Verifica se os controles já existem
-            const existingControls = goalEl.querySelector('.habit-goal-controls');
-            if (existingControls) {
-                const prog = goalEl.querySelector('.progress');
-                const unit = goalEl.querySelector('.unit');
-                if (prog && unit) {
-                    setTextContent(prog, displayVal);
-                    setTextContent(unit, unitVal);
-                }
-                return; // Reconciliação bem sucedida
+            let controls = goalEl.querySelector('.habit-goal-controls');
+            
+            if (!controls) {
+                goalEl.replaceChildren();
+                controls = document.createElement('div');
+                controls.className = 'habit-goal-controls';
+                
+                // Botão Decrement
+                const decBtn = document.createElement('button');
+                decBtn.type = 'button';
+                decBtn.className = 'goal-control-btn';
+                decBtn.dataset.habitId = habit.id;
+                decBtn.dataset.time = time;
+                decBtn.dataset.action = 'decrement';
+                decBtn.setAttribute('aria-label', t('habitGoalDecrement_ariaLabel'));
+                decBtn.textContent = '-';
+                
+                // Wrapper Valor
+                const valWrapper = document.createElement('div');
+                valWrapper.className = 'goal-value-wrapper';
+                
+                const progDiv = document.createElement('div');
+                progDiv.className = 'progress';
+                
+                const unitDiv = document.createElement('div');
+                unitDiv.className = 'unit';
+                
+                valWrapper.append(progDiv, unitDiv);
+                
+                // Botão Increment
+                const incBtn = document.createElement('button');
+                incBtn.type = 'button';
+                incBtn.className = 'goal-control-btn';
+                incBtn.dataset.habitId = habit.id;
+                incBtn.dataset.time = time;
+                incBtn.dataset.action = 'increment';
+                incBtn.setAttribute('aria-label', t('habitGoalIncrement_ariaLabel'));
+                incBtn.textContent = '+';
+                
+                controls.append(decBtn, valWrapper, incBtn);
+                goalEl.appendChild(controls);
             }
 
-            // Fallback: Recria a estrutura com type="button" para evitar submit acidental
-            goalEl.innerHTML = `
-                <div class="habit-goal-controls">
-                    <button type="button" class="goal-control-btn" data-habit-id="${habit.id}" data-time="${time}" data-action="decrement" aria-label="${t('habitGoalDecrement_ariaLabel')}">-</button>
-                    <div class="goal-value-wrapper">
-                        <div class="progress">${displayVal}</div>
-                        <div class="unit">${unitVal}</div>
-                    </div>
-                    <button type="button" class="goal-control-btn" data-habit-id="${habit.id}" data-time="${time}" data-action="increment" aria-label="${t('habitGoalIncrement_ariaLabel')}">+</button>
-                </div>`;
+            // Atualiza valores
+            const prog = controls.querySelector('.progress');
+            const unit = controls.querySelector('.unit');
+            setTextContent(prog, displayVal);
+            setTextContent(unit, unitVal);
+
         } else {
-            goalEl.innerHTML = ''; // Limpa se não for meta numérica
+            // Pending simples (sem controles)
+            if (goalEl.hasChildNodes()) goalEl.replaceChildren();
         }
     }
 }
@@ -595,6 +692,19 @@ function updateHabitCardElement(card: HTMLElement, habit: Habit, time: TimeOfDay
     const goalEl = card.querySelector<HTMLElement>('.habit-goal');
     if (goalEl) {
         updateGoalContentElement(goalEl, status, habit, time, habitInstanceData);
+    }
+}
+
+/**
+ * SURGICAL UPDATE: Atualiza apenas o cartão de hábito especificado no DOM.
+ * Evita renderizar toda a lista de hábitos.
+ */
+export function renderHabitCardState(habitId: string, time: TimeOfDay) {
+    const card = ui.habitContainer.querySelector<HTMLElement>(`.habit-card[data-habit-id="${habitId}"][data-time="${time}"]`);
+    const habit = state.habits.find(h => h.id === habitId);
+    
+    if (card && habit) {
+        updateHabitCardElement(card, habit, time);
     }
 }
 
@@ -967,15 +1077,12 @@ export function renderApp() {
     updateHeaderTitle();
 
     // Fase 2 & 3: Renderização Não Crítica (Diferida)
-    // Usa requestAnimationFrame para garantir que o browser pintou o quadro crítico antes de processar o resto.
-    requestAnimationFrame(() => {
+    // Usa requestIdleCallback para processar tarefas pesadas ou não essenciais apenas quando o navegador estiver ocioso.
+    // Isso garante que a resposta ao toque (ex: marcar hábito) nunca seja bloqueada pelo redesenho do gráfico.
+    requestIdleCallback(() => {
         renderAINotificationState();
         renderStoicQuote();
-        
-        // Adia o cálculo pesado do gráfico para o final da fila de tarefas
-        setTimeout(() => {
-            renderChart();
-        }, 0);
+        renderChart();
     });
 }
 

@@ -1,10 +1,5 @@
 
-
-
-
-
-
-import { state, DAYS_IN_CALENDAR } from './state';
+import { state, DAYS_IN_CALENDAR, invalidateChartCache } from './state';
 import { toUTCIsoDateString, parseUTCIsoDate, debounce, triggerHaptic, getTodayUTCIso, addDays } from './utils';
 import { ui } from './ui';
 import {
@@ -37,6 +32,8 @@ function updateSelectedDateAndRender(newDateISO: string) {
         return; // Nenhuma alteração necessária
     }
     state.selectedDate = newDateISO;
+    // PERFORMANCE [2025-01-18]: Se a data muda, o gráfico (que pode depender da data final) deve ser invalidado.
+    invalidateChartCache();
     renderCalendar();
     updateHeaderTitle();
     renderHabits();
@@ -249,6 +246,7 @@ const _setupWindowListeners = () => {
             
             // Resetamos para "Hoje" para garantir consistência visual.
             state.selectedDate = currentDay;
+            invalidateChartCache(); // Invalida gráfico pois a janela de tempo mudou
             
             // PERFORMANCE & UX: Removemos a limpeza destrutiva do DOM (innerHTML = '').
             // O renderCalendar é capaz de reciclar nós.

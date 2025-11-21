@@ -190,6 +190,10 @@ export const state: {
     habits: Habit[];
     dailyData: Record<string, Record<string, HabitDailyInfo>>;
     streaksCache: Record<string, number>;
+    // PERFORMANCE [2025-01-20]: Cache determinístico para ocorrência de hábitos em datas específicas.
+    // Chave: `${habitId}|${dateISO}`. Valor: boolean.
+    // Substitui cálculos repetitivos em loops longos.
+    habitAppearanceCache: Map<string, boolean>;
     scheduleCache: Record<string, HabitSchedule | null>;
     activeHabitsCache: Record<string, Array<{ habit: Habit; schedule: TimeOfDay[] }>>;
     // MELHORIA DE ROBUSTEZ [2024-10-06]: A estrutura de `lastEnded` foi aprimorada para incluir `removedSchedules`,
@@ -222,10 +226,13 @@ export const state: {
         year: number;
         month: number;
     };
+    // PERFORMANCE [2025-01-18]: Dirty flag para evitar recálculos desnecessários do gráfico.
+    chartDataDirty: boolean;
 } = {
     habits: [],
     dailyData: {},
     streaksCache: {},
+    habitAppearanceCache: new Map(),
     scheduleCache: {},
     activeHabitsCache: {},
     lastEnded: null,
@@ -248,7 +255,9 @@ export const state: {
     fullCalendar: {
         year: new Date().getFullYear(),
         month: new Date().getMonth(),
-    }
+    },
+    // PERFORMANCE: Inicializa como true para garantir que o gráfico seja calculado na primeira renderização.
+    chartDataDirty: true,
 };
 
 // --- STATE-DEPENDENT HELPERS ---
@@ -308,6 +317,14 @@ export function persistStateLocally(appState: AppState) {
     }
 }
 
+/**
+ * Invalida o cache do gráfico, forçando um recálculo na próxima renderização.
+ * Deve ser chamado sempre que os dados históricos ou de hoje forem alterados.
+ */
+export function invalidateChartCache() {
+    state.chartDataDirty = true;
+}
+
 export function loadState(cloudState?: AppState) {
     let loadedState: AppState | null = cloudState || null;
 
@@ -345,10 +362,12 @@ export function loadState(cloudState?: AppState) {
         state.streaksCache = {};
         state.scheduleCache = {};
         state.activeHabitsCache = {};
+        state.habitAppearanceCache.clear(); // Limpa o cache de aparência
         state.lastEnded = null;
         
         // Clear summary cache on load
         invalidateDaySummaryCache();
+        invalidateChartCache(); // Dados novos exigem gráfico novo
     }
 }
 
@@ -357,8 +376,10 @@ export function loadState(cloudState?: AppState) {
  */
 export function clearScheduleCache() {
     state.scheduleCache = {};
+    state.habitAppearanceCache.clear(); // Agendamento mudou, invalidar aparência
     // Mudanças no agendamento afetam o resumo diário de todos os dias
     invalidateDaySummaryCache();
+    invalidateChartCache();
 }
 
 /**
@@ -367,8 +388,10 @@ export function clearScheduleCache() {
  */
 export function clearActiveHabitsCache() {
     state.activeHabitsCache = {};
+    state.habitAppearanceCache.clear(); // Mudanças ativas afetam aparência
     // Mudanças em hábitos ativos afetam o resumo diário
     invalidateDaySummaryCache();
+    invalidateChartCache();
 }
 
 
@@ -471,8 +494,20 @@ const anchorTimestampCache = new WeakMap<HabitSchedule, number>();
 export function shouldHabitAppearOnDate(habit: Habit, date: Date, dateISO?: string): boolean {
     if (habit.graduatedOn) return false;
 
-    const activeSchedule = getScheduleForDate(habit, dateISO || date);
-    if (!activeSchedule) return false;
+    // PERFORMANCE [2025-01-20]: Cache Determinístico de Aparência (Hot-Path Optimization).
+    // Esta função é chamada milhares de vezes durante o cálculo de streak.
+    // Se já sabemos que o Hábito X aparece na Data Y, retornamos o valor cacheado imediatamente.
+    const dateStr = dateISO || toUTCIsoDateString(date);
+    const cacheKey = `${habit.id}|${dateStr}`;
+    if (state.habitAppearanceCache.has(cacheKey)) {
+        return state.habitAppearanceCache.get(cacheKey)!;
+    }
+
+    const activeSchedule = getScheduleForDate(habit, dateStr);
+    if (!activeSchedule) {
+        state.habitAppearanceCache.set(cacheKey, false);
+        return false;
+    }
 
     const freq = activeSchedule.frequency;
     
@@ -480,6 +515,7 @@ export function shouldHabitAppearOnDate(habit: Habit, date: Date, dateISO?: stri
     // A frequência 'diária' é o caso mais comum. Retornamos 'true' imediatamente
     // para evitar cálculos matemáticos de timestamp (divisões/arredondamentos) desnecessários.
     if (freq.type === 'daily') {
+        state.habitAppearanceCache.set(cacheKey, true);
         return true;
     }
 
@@ -494,28 +530,32 @@ export function shouldHabitAppearOnDate(habit: Habit, date: Date, dateISO?: stri
     const daysDifference = Math.round((date.getTime() - anchorTime) / (1000 * 60 * 60 * 24));
 
     if (daysDifference < 0) {
+        state.habitAppearanceCache.set(cacheKey, false);
         return false;
     }
 
+    let result = false;
+
     if (freq.type === 'interval') {
         if (freq.unit === 'days') {
-            return daysDifference % freq.amount === 0;
-        }
-        if (freq.unit === 'weeks') {
-            // Para semanas, ainda precisamos do getUTCDay da âncora, mas podemos derivá-lo do timestamp
-            // ou apenas aceitar o custo menor aqui (já que é menos comum).
+            result = daysDifference % freq.amount === 0;
+        } else if (freq.unit === 'weeks') {
             const anchorDate = new Date(anchorTime); 
-            if (date.getUTCDay() !== anchorDate.getUTCDay()) return false;
-            const weeksDifference = Math.floor(daysDifference / 7);
-            return weeksDifference % freq.amount === 0;
+            if (date.getUTCDay() !== anchorDate.getUTCDay()) {
+                result = false;
+            } else {
+                const weeksDifference = Math.floor(daysDifference / 7);
+                result = weeksDifference % freq.amount === 0;
+            }
         }
+    } else if (freq.type === 'specific_days_of_week') {
+        result = freq.days.includes(date.getUTCDay());
+    } else {
+        result = true; // Fallback safe
     }
 
-    if (freq.type === 'specific_days_of_week') {
-        return freq.days.includes(date.getUTCDay());
-    }
-
-    return true;
+    state.habitAppearanceCache.set(cacheKey, result);
+    return result;
 }
 
 /**

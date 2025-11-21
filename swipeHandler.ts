@@ -48,7 +48,7 @@ function _finalizeSwipeState(activeCard: HTMLElement, deltaX: number, wasOpenLef
 
 /**
  * REATORAÇÃO DE CLAREZA [2024-09-21]: A lógica para prevenir um clique acidental após um deslize
- * foi movida para esta função auxiliar para melhorar a organização do código.
+ * foi movida para esta função auxiliar para mejorar a organização do código.
  * @param deltaX O deslocamento horizontal total do gesto de deslize.
  */
 function _blockSubsequentClick(deltaX: number) {
@@ -77,7 +77,10 @@ export function setupSwipeHandler(habitContainer: HTMLElement) {
     let activeCard: HTMLElement | null = null;
     let startX = 0;
     let startY = 0;
-    let currentX = 0;
+    
+    // Input coordinates (Updated by pointermove)
+    let inputCurrentX = 0;
+    
     let swipeDirection: 'horizontal' | 'vertical' | 'none' = 'none';
     let wasOpenLeft = false;
     let wasOpenRight = false;
@@ -89,10 +92,18 @@ export function setupSwipeHandler(habitContainer: HTMLElement) {
     let hasTriggeredHaptic = false;
     const HAPTIC_THRESHOLD = 15; // Limiar ligeiramente maior que a ativação visual para feedback firme
     
+    // PERFORMANCE [2025-01-20]: RAF ID for throttling
+    let rafId: number | null = null;
+
     // REATORAÇÃO DE DRY: Centraliza toda a lógica de limpeza e reset de estado.
     const _cleanupAndReset = () => {
         if (dragEnableTimer) {
             clearTimeout(dragEnableTimer);
+        }
+        
+        if (rafId) {
+            cancelAnimationFrame(rafId);
+            rafId = null;
         }
     
         if (activeCard) {
@@ -130,10 +141,40 @@ export function setupSwipeHandler(habitContainer: HTMLElement) {
         _cleanupAndReset();
     };
 
+    // PERFORMANCE [2025-01-20]: Separate visual update logic.
+    // This function runs aligned with the display refresh rate (60/120Hz).
+    const updateVisuals = () => {
+        if (!activeCard || swipeDirection !== 'horizontal') return;
+
+        const deltaX = inputCurrentX - startX;
+        let translateX = deltaX;
+        if (wasOpenLeft) translateX += swipeActionWidth;
+        if (wasOpenRight) translateX -= swipeActionWidth;
+
+        const content = activeCard.querySelector<HTMLElement>('.habit-content-wrapper');
+        if (content) {
+            // Using transform3d or simple translateX is standard for GPU acceleration
+            content.style.transform = `translateX(${translateX}px)`;
+        }
+
+        // UX [2025-01-18]: Feedback tátil ao cruzar o limiar de ativação
+        if (!hasTriggeredHaptic && Math.abs(deltaX) > HAPTIC_THRESHOLD) {
+            triggerHaptic('light');
+            hasTriggeredHaptic = true;
+        } else if (hasTriggeredHaptic && Math.abs(deltaX) < HAPTIC_THRESHOLD) {
+            hasTriggeredHaptic = false;
+        }
+        
+        rafId = null; // Allow scheduling next frame
+    };
+
     const handlePointerMove = (e: PointerEvent) => {
         if (!activeCard) return;
 
-        // Se a direção ainda não foi determinada
+        // Update input state immediately
+        inputCurrentX = e.clientX;
+
+        // Direction Locking Logic (executes once at start of gesture)
         if (swipeDirection === 'none') {
             const deltaX = Math.abs(e.clientX - startX);
             const deltaY = Math.abs(e.clientY - startY);
@@ -143,20 +184,14 @@ export function setupSwipeHandler(habitContainer: HTMLElement) {
                 if (deltaX > deltaY) {
                     swipeDirection = 'horizontal';
                     isSwiping = true;
-                    // Se um deslize começa, cancela o timer que reativaria o arrastar
                     if (dragEnableTimer) {
                         clearTimeout(dragEnableTimer);
                         dragEnableTimer = null;
                     }
                     activeCard.classList.add('is-swiping');
                     const content = activeCard.querySelector<HTMLElement>('.habit-content-wrapper');
-                    // Desativa explicitamente o arrastar ao iniciar o deslize
-                    if (content) {
-                        content.draggable = false;
-                    }
+                    if (content) content.draggable = false;
                     
-                    // UX IMPROVEMENT: Set pointer capture on the card to ensure consistent tracking
-                    // even if the pointer leaves the element boundaries.
                     try {
                         activeCard.setPointerCapture(e.pointerId);
                         currentPointerId = e.pointerId;
@@ -166,32 +201,16 @@ export function setupSwipeHandler(habitContainer: HTMLElement) {
 
                 } else {
                     swipeDirection = 'vertical';
-                    abortSwipe(); // Permite a rolagem vertical
+                    abortSwipe();
                     return;
                 }
             }
         }
 
+        // Throttled Visual Updates
         if (swipeDirection === 'horizontal') {
-            currentX = e.clientX;
-            const deltaX = currentX - startX;
-
-            let translateX = deltaX;
-            if (wasOpenLeft) translateX += swipeActionWidth;
-            if (wasOpenRight) translateX -= swipeActionWidth;
-
-            const content = activeCard.querySelector<HTMLElement>('.habit-content-wrapper');
-            if (content) {
-                content.style.transform = `translateX(${translateX}px)`;
-            }
-
-            // UX [2025-01-18]: Feedback tátil ao cruzar o limiar de ativação
-            if (!hasTriggeredHaptic && Math.abs(deltaX) > HAPTIC_THRESHOLD) {
-                triggerHaptic('light');
-                hasTriggeredHaptic = true;
-            } else if (hasTriggeredHaptic && Math.abs(deltaX) < HAPTIC_THRESHOLD) {
-                // Opcional: resetar se o usuário voltar antes de soltar, para permitir novo feedback
-                hasTriggeredHaptic = false;
+            if (!rafId) {
+                rafId = requestAnimationFrame(updateVisuals);
             }
         }
     };
@@ -200,7 +219,7 @@ export function setupSwipeHandler(habitContainer: HTMLElement) {
         if (!activeCard) return;
     
         if (swipeDirection === 'horizontal') {
-            const deltaX = currentX - startX;
+            const deltaX = inputCurrentX - startX;
             _finalizeSwipeState(activeCard, deltaX, wasOpenLeft, wasOpenRight);
             _blockSubsequentClick(deltaX);
         }
@@ -210,23 +229,19 @@ export function setupSwipeHandler(habitContainer: HTMLElement) {
 
     habitContainer.addEventListener('dragstart', () => {
         if (activeCard) {
-            // Uma operação de arrastar teve precedência sobre um deslize.
-            // Devemos abortar a interação de deslize completamente para evitar conflitos de estado.
             abortSwipe();
         }
     });
 
     habitContainer.addEventListener('pointerdown', e => {
-        if (activeCard || e.button !== 0) return; // Só permite um deslize por vez e o botão esquerdo do mouse
+        if (activeCard || e.button !== 0) return;
 
-        // O gesto de deslize deve se originar da área de conteúdo do cartão.
         const contentWrapper = (e.target as HTMLElement).closest<HTMLElement>('.habit-content-wrapper');
         if (!contentWrapper) return;
         
         const targetCard = contentWrapper.closest<HTMLElement>('.habit-card');
         if (!targetCard) return;
 
-        // Fecha qualquer outro cartão que possa estar aberto para garantir que apenas um esteja ativo por vez.
         const currentlyOpenCard = habitContainer.querySelector('.habit-card.is-open-left, .habit-card.is-open-right');
         if (currentlyOpenCard && currentlyOpenCard !== targetCard) {
             currentlyOpenCard.classList.remove('is-open-left', 'is-open-right');
@@ -235,19 +250,18 @@ export function setupSwipeHandler(habitContainer: HTMLElement) {
         activeCard = targetCard;
         startX = e.clientX;
         startY = e.clientY;
-        currentX = startX;
+        inputCurrentX = startX; // Initialize input X
+        
         wasOpenLeft = activeCard.classList.contains('is-open-left');
         wasOpenRight = activeCard.classList.contains('is-open-right');
         hasTriggeredHaptic = false;
 
-        // OTIMIZAÇÃO: Calcula a largura da ação de deslize apenas uma vez no início do gesto.
         const rootStyles = getComputedStyle(document.documentElement);
         swipeActionWidth = parseInt(rootStyles.getPropertyValue('--swipe-action-width'), 10) || 60;
 
         const content = activeCard.querySelector<HTMLElement>('.habit-content-wrapper');
         if (content) {
-            content.draggable = false; // Desativa o arrastar por padrão no início do toque
-            // Inicia um timer para reativar o arrastar se o toque for longo
+            content.draggable = false;
             dragEnableTimer = window.setTimeout(() => {
                 if (content && swipeDirection === 'none') {
                     content.draggable = true;

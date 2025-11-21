@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -63,11 +64,14 @@ export default async function handler(req: Request) {
         
         const ai = new GoogleGenAI({ apiKey });
 
+        // UPDATE [2025-01-18]: Enable Thinking Config for deeper insights.
+        // Using gemini-2.5-flash with a moderate thinking budget to balance quality and latency.
         const geminiResponse = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
             contents: prompt,
             config: {
                 systemInstruction: systemInstruction,
+                thinkingConfig: { thinkingBudget: 2048 } 
             },
         });
         

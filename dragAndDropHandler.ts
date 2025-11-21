@@ -5,6 +5,7 @@
 */
 // [ANALYSIS PROGRESS]: 100% - Análise concluída. Implementada otimização de renderização no evento 'dragover' para evitar layout thrashing e removida redundância na limpeza de listeners (DRY).
 // UX UPDATE [2025-01-17]: Adicionado Auto-Scroll suave para permitir arrastar itens para fora da área visível atual.
+// PERFORMANCE UPDATE [2025-01-20]: Decoupled Rendering. Visual updates now run in a rAF loop separate from the high-frequency dragover event.
 
 import { isCurrentlySwiping } from './swipeHandler';
 import { handleHabitDrop, reorderHabit } from './habitActions';
@@ -24,102 +25,153 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
     let draggedHabitObject: Habit | null = null; 
     let draggedHabitOriginalTime: TimeOfDay | null = null;
     let dropIndicator: HTMLElement | null = null;
-    let currentDropZoneTarget: HTMLElement | null = null;
     
-    // PERFORMANCE [2025-01-16]: Cache da última posição top aplicada para evitar layout thrashing.
-    let lastIndicatorTop: string | null = null;
+    // Render State Variables (Decoupled form DOM)
+    let nextDropZoneTarget: HTMLElement | null = null;
+    let currentRenderedDropZone: HTMLElement | null = null;
+    
+    let nextIndicatorTop: string | null = null;
+    let currentIndicatorTop: string | null = null;
+    
+    let nextReorderTargetId: string | null = null;
+    let nextReorderPosition: 'before' | 'after' | null = null;
+    let isDropValid = false;
 
     // Variáveis de estado para Auto-Scroll
     let scrollVelocity = 0;
-    let scrollFrameId: number | null = null;
+    let animationFrameId: number | null = null;
 
     /**
-     * UX: Inicia o loop de animação para rolagem automática da página.
+     * UX & PERFORMANCE: Loop de animação unificado para Auto-Scroll e Atualizações Visuais.
+     * Separa a leitura de eventos (input) da escrita no DOM (output).
      */
-    function _startAutoScroll() {
-        if (scrollFrameId) return;
+    function _animationLoop() {
+        // 1. Auto-Scroll Logic
+        if (scrollVelocity !== 0) {
+            window.scrollBy(0, scrollVelocity);
+        }
+
+        // 2. Visual Updates Logic (Dirty Checking)
         
-        const scrollLoop = () => {
-            if (scrollVelocity !== 0) {
-                window.scrollBy(0, scrollVelocity);
+        // Atualiza Drop Zone (Highlight)
+        if (nextDropZoneTarget !== currentRenderedDropZone) {
+            if (currentRenderedDropZone) {
+                currentRenderedDropZone.classList.remove('drag-over', 'invalid-drop');
             }
-            scrollFrameId = requestAnimationFrame(scrollLoop);
-        };
-        scrollFrameId = requestAnimationFrame(scrollLoop);
+            currentRenderedDropZone = nextDropZoneTarget;
+        }
+
+        if (currentRenderedDropZone) {
+            // Aplica classes de validação apenas se necessário
+            const shouldBeInvalid = !isDropValid;
+            const shouldBeDragOver = isDropValid && currentRenderedDropZone.dataset.time !== draggedHabitOriginalTime;
+
+            if (currentRenderedDropZone.classList.contains('invalid-drop') !== shouldBeInvalid) {
+                currentRenderedDropZone.classList.toggle('invalid-drop', shouldBeInvalid);
+            }
+            if (currentRenderedDropZone.classList.contains('drag-over') !== shouldBeDragOver) {
+                currentRenderedDropZone.classList.toggle('drag-over', shouldBeDragOver);
+            }
+            
+            // Garante que o indicador esteja no container correto
+            if (dropIndicator && dropIndicator.parentElement !== currentRenderedDropZone) {
+                currentRenderedDropZone.appendChild(dropIndicator);
+            }
+        } else {
+             if (dropIndicator && dropIndicator.parentElement) {
+                 dropIndicator.remove(); // Remove se não houver drop zone válida
+             }
+        }
+
+        // Atualiza Indicador de Posição
+        if (dropIndicator && currentRenderedDropZone) {
+            if (isDropValid) {
+                if (!dropIndicator.classList.contains('visible')) {
+                    dropIndicator.classList.add('visible');
+                }
+                // Só atualiza o estilo top se mudou
+                if (nextIndicatorTop !== currentIndicatorTop && nextIndicatorTop !== null) {
+                    dropIndicator.style.top = nextIndicatorTop;
+                    currentIndicatorTop = nextIndicatorTop;
+                }
+                // Atualiza datasets para lógica
+                if (nextReorderTargetId) dropIndicator.dataset.targetId = nextReorderTargetId;
+                if (nextReorderPosition) dropIndicator.dataset.position = nextReorderPosition;
+            } else {
+                if (dropIndicator.classList.contains('visible')) {
+                    dropIndicator.classList.remove('visible');
+                }
+            }
+        }
+
+        animationFrameId = requestAnimationFrame(_animationLoop);
     }
 
-    /**
-     * UX: Para o loop de animação e reseta a velocidade.
-     */
-    function _stopAutoScroll() {
-        if (scrollFrameId) {
-            cancelAnimationFrame(scrollFrameId);
-            scrollFrameId = null;
+    function _startAnimationLoop() {
+        if (!animationFrameId) {
+            animationFrameId = requestAnimationFrame(_animationLoop);
+        }
+    }
+
+    function _stopAnimationLoop() {
+        if (animationFrameId) {
+            cancelAnimationFrame(animationFrameId);
+            animationFrameId = null;
         }
         scrollVelocity = 0;
     }
 
     /**
-     * REATORAÇÃO DE MODULARIDADE: Atualiza os visuais da zona de soltura.
+     * Lógica de cálculo de estado ( executada no dragover).
+     * Não toca no DOM, apenas atualiza variáveis de estado.
      */
-    function _updateDropZoneVisuals(target: HTMLElement): { dropZone: HTMLElement | null; isValid: boolean } {
+    function _calculateDragState(e: DragEvent) {
+        const target = e.target as HTMLElement;
         const dropZone = target.closest<HTMLElement>('.drop-zone');
-
-        if (dropZone !== currentDropZoneTarget) {
-            currentDropZoneTarget?.classList.remove('drag-over', 'invalid-drop');
+        
+        // UX: Lógica de detecção de borda para Auto-Scroll
+        const { clientY } = e;
+        const { innerHeight } = window;
+        
+        if (clientY < SCROLL_ZONE_SIZE) {
+            scrollVelocity = -SCROLL_SPEED;
+        } else if (clientY > innerHeight - SCROLL_ZONE_SIZE) {
+            scrollVelocity = SCROLL_SPEED;
+        } else {
+            scrollVelocity = 0;
         }
 
         if (!draggedHabitObject || !draggedHabitOriginalTime || !dropZone) {
-            return { dropZone: null, isValid: false };
+            nextDropZoneTarget = null;
+            isDropValid = false;
+            return;
         }
 
+        nextDropZoneTarget = dropZone;
         const newTime = dropZone.dataset.time as TimeOfDay;
         const scheduleForDay = getEffectiveScheduleForHabitOnDate(draggedHabitObject, state.selectedDate);
         
         const isSameGroup = newTime === draggedHabitOriginalTime;
+        // É inválido se tentar mover para um grupo onde o hábito já existe (exceto se for o mesmo grupo, que é reordenação)
         const isInvalidDrop = !isSameGroup && scheduleForDay.includes(newTime);
         
-        dropZone.classList.toggle('invalid-drop', isInvalidDrop);
-        
-        // UX REFINEMENT [2025-01-16]: Só exibe o fundo de destaque (.drag-over) se o usuário
-        // estiver movendo o hábito para um grupo DIFERENTE (ex: Manhã -> Tarde).
-        // Para reordenação dentro do mesmo grupo, o indicador de linha azul é suficiente e menos ruidoso.
-        dropZone.classList.toggle('drag-over', !isInvalidDrop && !isSameGroup);
+        isDropValid = !isInvalidDrop;
 
-        return { dropZone, isValid: !isInvalidDrop };
-    }
+        // Cálculo da posição do indicador
+        const cardTarget = target.closest<HTMLElement>('.habit-card');
+        if (cardTarget && cardTarget !== draggedElement) {
+            const targetRect = cardTarget.getBoundingClientRect();
+            const midY = targetRect.top + targetRect.height / 2;
+            const position = e.clientY < midY ? 'before' : 'after';
 
-    /**
-     * REATORAÇÃO DE MODULARIDADE: Atualiza a posição e visibilidade do indicador de reordenação.
-     * OTIMIZAÇÃO [2025-01-16]: Evita reescrever o estilo do DOM se a posição não mudou.
-     */
-    function _updateReorderIndicator(e: DragEvent, cardTarget: HTMLElement | null) {
-        if (!cardTarget || cardTarget === draggedElement || !dropIndicator) {
-            return;
+            const indicatorTopVal = position === 'before'
+                ? cardTarget.offsetTop - DROP_INDICATOR_GAP
+                : cardTarget.offsetTop + cardTarget.offsetHeight + DROP_INDICATOR_GAP;
+
+            nextIndicatorTop = `${indicatorTopVal - (DROP_INDICATOR_HEIGHT / 2)}px`;
+            nextReorderTargetId = cardTarget.dataset.habitId || null;
+            nextReorderPosition = position;
         }
-
-        const targetRect = cardTarget.getBoundingClientRect();
-        const midY = targetRect.top + targetRect.height / 2;
-        const position = e.clientY < midY ? 'before' : 'after';
-
-        const indicatorTopVal = position === 'before'
-            ? cardTarget.offsetTop - DROP_INDICATOR_GAP
-            : cardTarget.offsetTop + cardTarget.offsetHeight + DROP_INDICATOR_GAP;
-
-        const newTopStyle = `${indicatorTopVal - (DROP_INDICATOR_HEIGHT / 2)}px`;
-
-        // PERFORMANCE: Só toca no DOM se o valor realmente mudou
-        if (lastIndicatorTop !== newTopStyle) {
-            dropIndicator.style.top = newTopStyle;
-            lastIndicatorTop = newTopStyle;
-        }
-
-        if (!dropIndicator.classList.contains('visible')) {
-            dropIndicator.classList.add('visible');
-        }
-        
-        dropIndicator.dataset.targetId = cardTarget.dataset.habitId;
-        dropIndicator.dataset.position = position;
     }
 
     /**
@@ -128,22 +180,22 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
     function _determineAndExecuteDropAction() {
         if (!draggedHabitId || !draggedHabitOriginalTime) return;
         
-        const reorderTargetId = dropIndicator?.dataset.targetId;
-        const reorderPosition = dropIndicator?.dataset.position as 'before' | 'after';
-        const isDropIndicatorVisible = dropIndicator?.classList.contains('visible');
-        const newTime = currentDropZoneTarget?.dataset.time as TimeOfDay | undefined;
+        // Lê o estado final das variáveis, não do DOM
+        const reorderTargetId = nextReorderTargetId;
+        const reorderPosition = nextReorderPosition;
+        const newTime = nextDropZoneTarget?.dataset.time as TimeOfDay | undefined;
 
-        if (!newTime) return;
+        if (!newTime || !isDropValid) return;
 
         const isMovingGroup = newTime !== draggedHabitOriginalTime;
-        const isReordering = isDropIndicatorVisible && reorderTargetId && draggedHabitId !== reorderTargetId;
+        const isReordering = reorderTargetId && draggedHabitId !== reorderTargetId;
 
         if (isMovingGroup) {
             triggerHaptic('medium');
             handleHabitDrop(draggedHabitId, draggedHabitOriginalTime, newTime);
         } else if (isReordering) {
             triggerHaptic('medium');
-            reorderHabit(draggedHabitId, reorderTargetId, reorderPosition);
+            reorderHabit(draggedHabitId, reorderTargetId!, reorderPosition!);
         }
     }
 
@@ -156,65 +208,30 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
         draggedHabitOriginalTime = null;
         draggedHabitObject = null;
         dropIndicator = null;
-        currentDropZoneTarget = null;
-        lastIndicatorTop = null;
+        
+        nextDropZoneTarget = null;
+        currentRenderedDropZone = null;
+        nextIndicatorTop = null;
+        currentIndicatorTop = null;
+        nextReorderTargetId = null;
+        nextReorderPosition = null;
+        isDropValid = false;
     }
 
 
     const handleBodyDragOver = (e: DragEvent) => {
-        e.preventDefault();
-
-        // UX: Lógica de detecção de borda para Auto-Scroll
-        const { clientY } = e;
-        const { innerHeight } = window;
+        e.preventDefault(); // Necessário para permitir drop
+        _calculateDragState(e);
         
-        if (clientY < SCROLL_ZONE_SIZE) {
-            scrollVelocity = -SCROLL_SPEED; // Rola para cima
-        } else if (clientY > innerHeight - SCROLL_ZONE_SIZE) {
-            scrollVelocity = SCROLL_SPEED; // Rola para baixo
+        if (isDropValid) {
+            e.dataTransfer!.dropEffect = 'move';
         } else {
-            scrollVelocity = 0; // Para de rolar
-        }
-
-        if (dropIndicator && !e.target) {
-             dropIndicator.classList.remove('visible');
-             delete dropIndicator.dataset.targetId;
-        }
-
-        if (!draggedHabitId) {
             e.dataTransfer!.dropEffect = 'none';
-            return;
         }
-
-        const { dropZone, isValid } = _updateDropZoneVisuals(e.target as HTMLElement);
-        currentDropZoneTarget = dropZone;
-        
-        if (!dropZone) {
-            e.dataTransfer!.dropEffect = 'none';
-             if (dropIndicator) dropIndicator.classList.remove('visible');
-            return;
-        }
-        
-        if (dropIndicator && dropIndicator.parentElement !== dropZone) {
-            dropZone.appendChild(dropIndicator);
-        }
-
-        if (!isValid) {
-            e.dataTransfer!.dropEffect = 'none';
-            if (dropIndicator) dropIndicator.classList.remove('visible');
-            return;
-        }
-
-        e.dataTransfer!.dropEffect = 'move';
-        
-        const cardTarget = (e.target as HTMLElement).closest<HTMLElement>('.habit-card');
-        _updateReorderIndicator(e, cardTarget);
     };
 
     const handleBodyDrop = (e: DragEvent) => {
         e.preventDefault();
-        // REFACTOR [2025-01-16]: A limpeza de listeners foi removida daqui e centralizada em cleanupDrag (dragend).
-        // Isso garante que a limpeza ocorra mesmo se a lógica de drop falhar ou se o drop for cancelado.
         _determineAndExecuteDropAction();
     };
     
@@ -222,13 +239,16 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
         // 1. Limpa os estilos visuais aplicados durante o arrasto
         draggedElement?.classList.remove('dragging');
         document.body.classList.remove('is-dragging-active');
-        currentDropZoneTarget?.classList.remove('drag-over', 'invalid-drop');
+        
+        if (currentRenderedDropZone) {
+            currentRenderedDropZone.classList.remove('drag-over', 'invalid-drop');
+        }
         
         // 2. Remove elementos temporários do DOM
         dropIndicator?.remove();
         
-        // 3. Para o auto-scroll
-        _stopAutoScroll();
+        // 3. Para o loop de animação
+        _stopAnimationLoop();
         
         // 4. Remove os listeners de eventos globais para evitar vazamentos de memória
         document.body.removeEventListener('dragover', handleBodyDragOver);
@@ -274,16 +294,15 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
             
             dropIndicator = document.createElement('div');
             dropIndicator.className = 'drop-indicator';
-            const groupEl = card.closest('.habit-group');
-            groupEl?.appendChild(dropIndicator);
+            // O indicador será anexado via loop de animação quando necessário
             
             document.body.classList.add('is-dragging-active');
             document.body.addEventListener('dragover', handleBodyDragOver);
             document.body.addEventListener('drop', handleBodyDrop);
             document.body.addEventListener('dragend', cleanupDrag, { once: true });
 
-            // Inicia o monitoramento de Auto-Scroll
-            _startAutoScroll();
+            // Inicia o loop de renderização desacoplado
+            _startAnimationLoop();
 
             setTimeout(() => {
                 card.classList.add('dragging');
