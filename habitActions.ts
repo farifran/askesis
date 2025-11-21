@@ -1,6 +1,4 @@
 
-
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -10,7 +8,7 @@
 // UPDATE [2025-01-20]: Implemented RLE (Run-Length Encoding) for AI Prompt History.
 // PERFORMANCE FIX [2025-01-21]: Moved saveState() inside requestIdleCallback in toggleHabitStatus to ensure <16ms INP (Interaction to Next Paint).
 
-import { generateUUID, getTodayUTCIso, parseUTCIsoDate, addDays, escapeHTML, simpleMarkdownToHTML, getTodayUTC, toUTCIsoDateString } from './utils';
+import { generateUUID, getTodayUTCIso, parseUTCIsoDate, addDays, escapeHTML, simpleMarkdownToHTML, getTodayUTC, toUTCIsoDateString, runIdle } from './utils';
 import { apiFetch } from './api';
 import {
     state,
@@ -59,17 +57,6 @@ import { renderChart } from './chart';
 import { ui } from './ui';
 import { t, getHabitDisplayInfo, getTimeOfDayName } from './i18n';
 import { updateAppBadge } from './badge';
-
-// Polyfill simples para requestIdleCallback
-const requestIdleCallback = (window as any).requestIdleCallback || function(cb: Function) {
-    return setTimeout(() => {
-        const start = Date.now();
-        cb({
-            didTimeout: false,
-            timeRemaining: () => Math.max(0, 50 - (Date.now() - start))
-        });
-    }, 1);
-};
 
 // --- Habit Creation & Deletion ---
 
@@ -463,11 +450,13 @@ export function requestHabitPermanentDeletion(habitId: string) {
             clearScheduleCache();
             invalidateDaySummaryCache(); // Limpa cache de resumo após exclusão
             invalidateChartCache(); // Limpa cache de gráfico
-            Object.keys(state.streaksCache).forEach(key => {
+            
+            // PERFORMANCE: Iteração direta sobre as chaves do Map para remoção seletiva
+            for (const key of state.streaksCache.keys()) {
                 if (key.startsWith(`${habitId}|`)) {
-                    delete state.streaksCache[key];
+                    state.streaksCache.delete(key);
                 }
-            });
+            }
 
             saveState();
             // Exclusão permanente só ocorre dentro do modal, então a atualização é sempre necessária.
@@ -513,7 +502,7 @@ export function toggleHabitStatus(habitId: string, time: TimeOfDay, dateISO: str
     // `saveState` involves JSON.stringify(hugeState) and localStorage.setItem, which are blocking operations.
     // By deferring them, we ensure the checkbox "tick" appears in the very next frame (<16ms),
     // creating a "Zero Latency" feel, while data consistency is handled ~50ms later.
-    requestIdleCallback(() => {
+    runIdle(() => {
         invalidateStreakCache(habitId, dateISO);
         invalidateDaySummaryCache(dateISO); // Invalida cache apenas para este dia
         invalidateChartCache(); // Mudança de status afeta o gráfico

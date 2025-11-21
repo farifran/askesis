@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -7,6 +8,7 @@
 // UPDATE [2025-01-18]: Otimização DOM (Zero innerHTML em updates frequentes).
 // UPDATE [2025-01-18]: Implementação de Idle Deadline Scheduling para renderização pesada.
 // UPDATE [2025-01-19]: Surgical DOM Updates. Funções exportadas para atualização granular de UI.
+// UPDATE [2025-01-21]: CSS Dirty Checking. Evita style recalculations desnecessários.
 
 import {
     state,
@@ -30,7 +32,7 @@ import {
     calculateDaySummary,
     getActiveHabitsForDate,
 } from './state';
-import { getTodayUTCIso, toUTCIsoDateString, parseUTCIsoDate, escapeHTML, simpleMarkdownToHTML, pushToOneSignal, addDays, getContrastColor, getDateTimeFormat } from './utils';
+import { getTodayUTCIso, toUTCIsoDateString, parseUTCIsoDate, escapeHTML, simpleMarkdownToHTML, pushToOneSignal, addDays, getContrastColor, getDateTimeFormat, runIdle } from './utils';
 import { ui } from './ui';
 import { t, getLocaleDayName, getHabitDisplayInfo, getTimeOfDayName } from './i18n';
 import { STOIC_QUOTES } from './quotes';
@@ -40,21 +42,6 @@ import { renderChart } from './chart';
 const noticeTimeouts = new WeakMap<HTMLElement, number>();
 const focusTrapListeners = new Map<HTMLElement, (e: KeyboardEvent) => void>();
 const previouslyFocusedElements = new WeakMap<HTMLElement, HTMLElement>();
-
-// Polyfill simples para requestIdleCallback se não existir no ambiente
-const requestIdleCallback = (window as any).requestIdleCallback || function(cb: Function) {
-    return setTimeout(() => {
-        const start = Date.now();
-        cb({
-            didTimeout: false,
-            timeRemaining: () => Math.max(0, 50 - (Date.now() - start))
-        });
-    }, 1);
-};
-
-const cancelIdleCallback = (window as any).cancelIdleCallback || function(id: number) {
-    clearTimeout(id);
-};
 
 /**
  * OTIMIZAÇÃO DE PERFORMANCE: Helper para atualizar textContent apenas se o valor mudou.
@@ -88,6 +75,7 @@ export function initLanguageFilter() {
  * OTIMIZAÇÃO (DRY): Aplica o estado visual a um elemento de dia do calendário.
  * Centraliza a lógica de classes, atributos ARIA e variáveis CSS para evitar duplicação
  * entre criação e atualização.
+ * UPDATE [2025-01-21]: Adicionado Dirty Checking rigoroso para evitar reescrita de variáveis CSS e Reflows.
  */
 function _applyDayState(dayItem: HTMLElement, date: Date) {
     const todayISO = getTodayUTCIso();
@@ -97,17 +85,23 @@ function _applyDayState(dayItem: HTMLElement, date: Date) {
     const isToday = isoDate === todayISO;
 
     // Gerenciamento de Classes
-    if (isSelected) dayItem.classList.add('selected');
-    else dayItem.classList.remove('selected');
-
-    if (isToday) dayItem.classList.add('today');
-    else dayItem.classList.remove('today');
+    if (dayItem.classList.contains('selected') !== isSelected) {
+        dayItem.classList.toggle('selected', isSelected);
+    }
+    if (dayItem.classList.contains('today') !== isToday) {
+        dayItem.classList.toggle('today', isToday);
+    }
 
     // Acessibilidade e Estado
-    dayItem.setAttribute('aria-pressed', String(isSelected));
+    if (dayItem.getAttribute('aria-pressed') !== String(isSelected)) {
+        dayItem.setAttribute('aria-pressed', String(isSelected));
+    }
+    
     // A11Y [2025-01-17]: Implementação de Roving Tabindex.
-    // O dia selecionado recebe tabindex="0" para ser focável, outros recebem "-1".
-    dayItem.setAttribute('tabindex', isSelected ? '0' : '-1');
+    const newTabIndex = isSelected ? '0' : '-1';
+    if (dayItem.getAttribute('tabindex') !== newTabIndex) {
+        dayItem.setAttribute('tabindex', newTabIndex);
+    }
 
     // PERFORMANCE [2025-01-16]: Uso de cache para Intl.DateTimeFormat.
     const ariaDate = getDateTimeFormat(state.activeLanguageCode, {
@@ -116,19 +110,32 @@ function _applyDayState(dayItem: HTMLElement, date: Date) {
         month: 'long',
         timeZone: 'UTC'
     }).format(date);
-    dayItem.setAttribute('aria-label', ariaDate);
+    
+    if (dayItem.getAttribute('aria-label') !== ariaDate) {
+        dayItem.setAttribute('aria-label', ariaDate);
+    }
 
     // Atualização Visual (Variáveis CSS e Indicadores)
     const dayProgressRing = dayItem.querySelector<HTMLElement>('.day-progress-ring');
     if (dayProgressRing) {
-        dayProgressRing.style.setProperty('--completed-percent', `${completedPercent}%`);
-        dayProgressRing.style.setProperty('--total-percent', `${totalPercent}%`);
+        const newCompleted = `${completedPercent}%`;
+        const newTotal = `${totalPercent}%`;
+        
+        // Dirty Checking para CSS Variables - CRÍTICO para performance de scroll
+        // Acessar getPropertyValue é rápido, setProperty força style recalc.
+        if (dayProgressRing.style.getPropertyValue('--completed-percent') !== newCompleted) {
+            dayProgressRing.style.setProperty('--completed-percent', newCompleted);
+        }
+        if (dayProgressRing.style.getPropertyValue('--total-percent') !== newTotal) {
+            dayProgressRing.style.setProperty('--total-percent', newTotal);
+        }
         
         // OTIMIZAÇÃO: Manipulação direta do DOM para o indicador Plus
         const dayNumber = dayProgressRing.querySelector<HTMLElement>('.day-number');
         if (dayNumber) {
-            if (showPlus) dayNumber.classList.add('has-plus');
-            else dayNumber.classList.remove('has-plus');
+            if (dayNumber.classList.contains('has-plus') !== showPlus) {
+                dayNumber.classList.toggle('has-plus', showPlus);
+            }
             // Usa setTextContent para o número do dia
             setTextContent(dayNumber, String(date.getUTCDate()));
         }
@@ -190,7 +197,8 @@ function createCalendarDayElement(date: Date): HTMLElement {
 export function scrollToToday(behavior: ScrollBehavior = 'auto') {
     // setTimeout com 0ms garante que o layout tenha sido calculado antes de rolar,
     // especialmente útil quando chamado logo após atualizações do DOM.
-    setTimeout(() => {
+    // PERFORMANCE [2025-01-21]: requestAnimationFrame é preferível a setTimeout para animações visuais
+    requestAnimationFrame(() => {
         const todayEl = ui.calendarStrip.querySelector<HTMLElement>('.day-item.today');
         if (todayEl) {
             // UX [2025-01-18]: Ao iniciar, mostra o dia atual como o penúltimo item visível.
@@ -204,7 +212,7 @@ export function scrollToToday(behavior: ScrollBehavior = 'auto') {
                 todayEl.scrollIntoView({ behavior, block: 'nearest', inline: 'end' });
             }
         }
-    }, 0);
+    });
 }
 
 export function renderCalendar() {
@@ -1077,9 +1085,9 @@ export function renderApp() {
     updateHeaderTitle();
 
     // Fase 2 & 3: Renderização Não Crítica (Diferida)
-    // Usa requestIdleCallback para processar tarefas pesadas ou não essenciais apenas quando o navegador estiver ocioso.
-    // Isso garante que a resposta ao toque (ex: marcar hábito) nunca seja bloqueada pelo redesenho do gráfico.
-    requestIdleCallback(() => {
+    // Usa requestIdleCallback (via polyfill runIdle) para processar tarefas pesadas ou não essenciais
+    // apenas quando o navegador estiver ocioso.
+    runIdle(() => {
         renderAINotificationState();
         renderStoicQuote();
         renderChart();

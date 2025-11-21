@@ -3,8 +3,6 @@
 
 
 
-
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -16,7 +14,6 @@
 // UPDATE [2025-01-18]: Otimização de Memória/CPU com Dirty Flag. Recálculo de dados agora é condicional.
 // UPDATE [2025-01-18]: Layout Thrashing Elimination. Tooltip positioning now relies on CSS transforms.
 // UPDATE [2025-01-18]: Geometry Caching. Eliminação de getBoundingClientRect no hot-path do pointermove.
-// UPDATE [2025-01-21]: Chart Header Refactor. Indicator moved to header flexbox to fix positioning bugs and remove layout thrashing.
 
 import { state } from './state';
 import { ui } from './ui';
@@ -194,10 +191,14 @@ function _updateChartDOM(chartData: ChartDataPoint[]) {
     evolutionIndicator.title = t('chartEvolutionSince', { date: axisFormatter.format(referenceDate) });
     evolutionIndicator.textContent = evolutionString;
     
-    // REFACTOR [2025-01-21]: Removido cálculo manual de posição. O indicador agora é um item Flexbox no cabeçalho.
-    // Isso elimina layout thrashing (leitura de offsetWidth) e glitches visuais em telas pequenas.
-    evolutionIndicator.style.top = '';
-    evolutionIndicator.style.left = '';
+    const lastPointX = xScale(chartData.length - 1);
+    const lastPointY = yScale(lastPoint.value);
+    evolutionIndicator.style.top = `${lastPointY}px`;
+    let indicatorX = lastPointX + 10;
+    if (indicatorX + evolutionIndicator.offsetWidth > chartWrapper.offsetWidth) {
+        indicatorX = lastPointX - evolutionIndicator.offsetWidth - 10;
+    }
+    evolutionIndicator.style.left = `${indicatorX}px`;
     
     // Atualiza o cache de geometria sempre que o DOM do gráfico é atualizado
     cachedChartRect = chartWrapper.getBoundingClientRect();
@@ -226,7 +227,8 @@ function _setupChartListeners() {
         const svgWidth = cachedChartRect.width;
         const padding = { top: 10, right: 10, bottom: 10, left: 10 };
         const chartWidth = svgWidth - padding.left - padding.right;
-        
+        const chartHeight = 100 - padding.top - padding.bottom;
+
         // Cálculo puramente matemático usando o cache
         const x = e.clientX - cachedChartRect.left;
         
@@ -244,7 +246,6 @@ function _setupChartListeners() {
         // PERFORMANCE [2025-01-15]: Utiliza os metadados calculados previamente em _updateChartDOM
         // em vez de recalcular min/max/range a cada movimento do mouse (60fps).
         const { minVal, valueRange } = chartMetadata;
-        const chartHeight = 100 - padding.top - padding.bottom;
        
         const xScale = (idx: number) => padding.left + (idx / (lastChartData.length - 1)) * chartWidth;
         const yScale = (val: number) => padding.top + chartHeight - ((val - minVal) / valueRange) * chartHeight;
@@ -387,15 +388,12 @@ export function renderChart() {
     }
 
     if (!chartInitialized) {
-        // LAYOUT REFACTOR [2025-01-21]: .chart-evolution-indicator movido para dentro de .chart-header.
-        // Isso corrige posicionamento e performance.
         ui.chartContainer.innerHTML = `
             <div class="chart-header">
                 <div class="chart-title-group">
                     <h3 class="chart-title">${t('appName')}</h3>
                     <p class="chart-subtitle">${t('chartTitle')}</p>
                 </div>
-                <div class="chart-evolution-indicator"></div>
             </div>
             <div class="chart-wrapper">
                 <svg class="chart-svg" viewBox="0 0 100 100" preserveAspectRatio="none">
@@ -412,6 +410,7 @@ export function renderChart() {
                 <div class="chart-indicator">
                     <div class="chart-indicator-dot"></div>
                 </div>
+                <div class="chart-evolution-indicator"></div>
             </div>
             <div class="chart-axis-labels">
                 <span></span>

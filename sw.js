@@ -96,14 +96,16 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ESTRATÉGIA NETWORK-FIRST PARA O APP SHELL (HTML/Navegação)
-    // ROBUSTEZ [2025-01-17]: Adicionado Timeout de 3s usando AbortController.
-    // Se a rede demorar mais que 3 segundos (Lie-Fi), cai para o cache imediatamente.
+    // ROBUSTEZ [2025-01-17]: Adicionado Timeout de 1.5s usando AbortController.
+    // [2025-01-21]: Reduzido de 3s para 1.5s para mitigar "Lie-Fi" (conectado mas sem dados).
+    // [2025-01-22]: Reduzido para 800ms para uma sensação ainda mais instantânea em redes ruins (Lie-Fi mitigation).
+    // Se a rede demorar mais que 800ms, cai para o cache imediatamente.
     if (event.request.mode === 'navigate') {
         event.respondWith((async () => {
             try {
                 // Configura um controlador de aborto para o timeout
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 3000);
+                const timeoutId = setTimeout(() => controller.abort(), 800);
 
                 // Tenta a rede primeiro com o sinal de aborto
                 const networkResponse = await fetch(event.request, { signal: controller.signal });
@@ -116,7 +118,7 @@ self.addEventListener('fetch', (event) => {
                 return networkResponse;
             } catch (error) {
                 if (error.name === 'AbortError') {
-                    console.log('Service Worker: Network timeout (3s), falling back to cache');
+                    console.log('Service Worker: Network timeout (800ms), falling back to cache');
                 } else {
                     console.log('Service Worker: Network offline or error, falling back to cache', error);
                 }

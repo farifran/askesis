@@ -118,6 +118,10 @@ export const DAYS_IN_CALENDAR = 61;
 export const STREAK_SEMI_CONSOLIDATED = 21;
 export const STREAK_CONSOLIDATED = 66;
 export const SMART_GOAL_AVERAGE_COUNT = 3;
+// MEMORY OPTIMIZATION [2025-01-21]: Max cache size aumented to 3000.
+// 1000 entries is roughly 15 habits * 60 days. Scrolling or using the chart quickly fills this,
+// causing cache thrashing (wipe & rebuild), which spikes CPU. 3000 is safe for modern low-end devices.
+const MAX_CACHE_SIZE = 3000;
 
 export const TIMES_OF_DAY = ['Morning', 'Afternoon', 'Evening'] as const;
 export type TimeOfDay = typeof TIMES_OF_DAY[number];
@@ -189,13 +193,14 @@ export function getNextStatus(currentStatus: HabitStatus): HabitStatus {
 export const state: {
     habits: Habit[];
     dailyData: Record<string, Record<string, HabitDailyInfo>>;
-    streaksCache: Record<string, number>;
-    // PERFORMANCE [2025-01-20]: Cache determinístico para ocorrência de hábitos em datas específicas.
+    // PERFORMANCE [2025-01-22]: Migração de Record para Map para caches.
+    // Maps oferecem acesso O(1) e .size em O(1), o que é crucial para verificações de limite
+    // de memória em loops quentes, evitando o custo O(n) de Object.keys().
+    streaksCache: Map<string, number>;
     // Chave: `${habitId}|${dateISO}`. Valor: boolean.
-    // Substitui cálculos repetitivos em loops longos.
     habitAppearanceCache: Map<string, boolean>;
-    scheduleCache: Record<string, HabitSchedule | null>;
-    activeHabitsCache: Record<string, Array<{ habit: Habit; schedule: TimeOfDay[] }>>;
+    scheduleCache: Map<string, HabitSchedule | null>;
+    activeHabitsCache: Map<string, Array<{ habit: Habit; schedule: TimeOfDay[] }>>;
     // MELHORIA DE ROBUSTEZ [2024-10-06]: A estrutura de `lastEnded` foi aprimorada para incluir `removedSchedules`,
     // permitindo que a função "Desfazer" restaure completamente o estado de um hábito, incluindo
     // quaisquer agendamentos futuros que foram removidos quando o hábito foi encerrado.
@@ -231,10 +236,10 @@ export const state: {
 } = {
     habits: [],
     dailyData: {},
-    streaksCache: {},
+    streaksCache: new Map(),
     habitAppearanceCache: new Map(),
-    scheduleCache: {},
-    activeHabitsCache: {},
+    scheduleCache: new Map(),
+    activeHabitsCache: new Map(),
     lastEnded: null,
     undoTimeout: null,
     calendarDates: Array.from({ length: DAYS_IN_CALENDAR }, (_, i) => addDays(getTodayUTC(), i - 30)),
@@ -282,15 +287,8 @@ export function saveState() {
                 console.warn("LocalStorage quota exceeded. Attempting to clear non-essential data.");
                 // FAIL-SAFE: Limpa dados não essenciais para tentar liberar espaço
                 state.lastEnded = null; // Remove histórico de desfazer
-                // Em um cenário real, poderíamos limpar caches de IA ou notificações antigas aqui
                 
-                // Tenta salvar novamente sem os dados supérfluos (embora lastEnded não esteja no AppState salvo,
-                // a intenção aqui é liberar memória se o problema for do navegador, ou preparar para 
-                // futuras estratégias de redução de dados).
-                // Se falhar novamente, logamos o erro mas não crashamos a aplicação.
                 try {
-                    // Uma estratégia mais agressiva seria tentar salvar sem 'dailyData' antigo, mas isso é arriscado.
-                    // Por enquanto, apenas reportamos.
                     console.error("Critical: Unable to save state due to storage quota.");
                 } catch (retryError) {
                     console.error("Failed retry save", retryError);
@@ -343,8 +341,6 @@ export function loadState(cloudState?: AppState) {
         const migrated = migrateState(loadedState, APP_VERSION);
         
         // ROBUSTEZ [2025-01-18]: Sanitização do estado carregado.
-        // Remove hábitos corrompidos (sem ID ou sem histórico de agendamento)
-        // para evitar que erros se propaguem para a renderização.
         const sanitizedHabits = migrated.habits.filter(h => {
             if (!h.id || !h.scheduleHistory || h.scheduleHistory.length === 0) {
                 console.warn(`Removing corrupted habit found in state: ${h.id || 'unknown'}`);
@@ -359,10 +355,11 @@ export function loadState(cloudState?: AppState) {
         state.pending21DayHabitIds = migrated.pending21DayHabitIds || [];
         state.pendingConsolidationHabitIds = migrated.pendingConsolidationHabitIds || [];
         
-        state.streaksCache = {};
-        state.scheduleCache = {};
-        state.activeHabitsCache = {};
-        state.habitAppearanceCache.clear(); // Limpa o cache de aparência
+        // Reinicializa caches como Maps
+        state.streaksCache = new Map();
+        state.scheduleCache = new Map();
+        state.activeHabitsCache = new Map();
+        state.habitAppearanceCache.clear();
         state.lastEnded = null;
         
         // Clear summary cache on load
@@ -375,7 +372,7 @@ export function loadState(cloudState?: AppState) {
  * Limpa o cache de agendamento. Chamado sempre que um `scheduleHistory` é modificado.
  */
 export function clearScheduleCache() {
-    state.scheduleCache = {};
+    state.scheduleCache.clear();
     state.habitAppearanceCache.clear(); // Agendamento mudou, invalidar aparência
     // Mudanças no agendamento afetam o resumo diário de todos os dias
     invalidateDaySummaryCache();
@@ -387,7 +384,7 @@ export function clearScheduleCache() {
  * Chamado sempre que um hábito ou seu agendamento é modificado.
  */
 export function clearActiveHabitsCache() {
-    state.activeHabitsCache = {};
+    state.activeHabitsCache.clear();
     state.habitAppearanceCache.clear(); // Mudanças ativas afetam aparência
     // Mudanças em hábitos ativos afetam o resumo diário
     invalidateDaySummaryCache();
@@ -404,13 +401,21 @@ export function clearActiveHabitsCache() {
  */
 export function invalidateStreakCache(habitId: string, fromDateISO: string) {
     const fromDate = parseUTCIsoDate(fromDateISO);
-    for (const key in state.streaksCache) {
+    // SENIOR ENGINEER OPTIMIZATION: Clean entire cache if it gets too big.
+    // Use Map.size for O(1) check.
+    if (state.streaksCache.size > MAX_CACHE_SIZE) {
+        state.streaksCache.clear();
+        return;
+    }
+
+    // Iterate using Map iterator
+    for (const key of state.streaksCache.keys()) {
         // A chave é no formato "habitId|dateISO"
         if (key.startsWith(`${habitId}|`)) {
             const cachedDateISO = key.substring(habitId.length + 1);
             const cachedDate = parseUTCIsoDate(cachedDateISO);
             if (cachedDate >= fromDate) {
-                delete state.streaksCache[key];
+                state.streaksCache.delete(key);
             }
         }
     }
@@ -418,16 +423,18 @@ export function invalidateStreakCache(habitId: string, fromDateISO: string) {
 
 export function getScheduleForDate(habit: Habit, date: Date | string): HabitSchedule | null {
     // PERFORMANCE [2025-01-16]: String Comparison Optimization.
-    // Instead of converting to Date objects and getting timestamps, we use the fact that
-    // ISO 8601 strings (YYYY-MM-DD) are lexicographically comparable.
-    // This saves object allocation in the hot path.
     const dateStr = typeof date === 'string' ? date : toUTCIsoDateString(date);
     
     const cacheKey = `${habit.id}|${dateStr}`;
-    if (state.scheduleCache[cacheKey] !== undefined) {
-        return state.scheduleCache[cacheKey];
+    if (state.scheduleCache.has(cacheKey)) {
+        return state.scheduleCache.get(cacheKey)!;
     }
     
+    // Garbage collection for schedule cache using Map.size
+    if (state.scheduleCache.size > MAX_CACHE_SIZE) {
+        state.scheduleCache.clear();
+    }
+
     let foundSchedule: HabitSchedule | null = null;
 
     // PERFORMANCE [2025-01-16]: Zero-allocation loop with string comparison.
@@ -444,7 +451,7 @@ export function getScheduleForDate(habit: Habit, date: Date | string): HabitSche
         }
     }
     
-    state.scheduleCache[cacheKey] = foundSchedule;
+    state.scheduleCache.set(cacheKey, foundSchedule);
     return foundSchedule;
 }
 
@@ -501,6 +508,12 @@ export function shouldHabitAppearOnDate(habit: Habit, date: Date, dateISO?: stri
     const cacheKey = `${habit.id}|${dateStr}`;
     if (state.habitAppearanceCache.has(cacheKey)) {
         return state.habitAppearanceCache.get(cacheKey)!;
+    }
+    
+    // Garbage collection for appearance cache
+    // Increased limit to prevent thrashing
+    if (state.habitAppearanceCache.size > MAX_CACHE_SIZE * 2) {
+        state.habitAppearanceCache.clear();
     }
 
     const activeSchedule = getScheduleForDate(habit, dateStr);
@@ -569,8 +582,13 @@ export function shouldHabitAppearOnDate(habit: Habit, date: Date, dateISO?: stri
 export function getActiveHabitsForDate(dateOrIso: Date | string): Array<{ habit: Habit; schedule: TimeOfDay[] }> {
     const dateStr = typeof dateOrIso === 'string' ? dateOrIso : toUTCIsoDateString(dateOrIso);
     const cacheKey = dateStr;
-    if (state.activeHabitsCache[cacheKey]) {
-        return state.activeHabitsCache[cacheKey];
+    if (state.activeHabitsCache.has(cacheKey)) {
+        return state.activeHabitsCache.get(cacheKey)!;
+    }
+    
+    // Garbage collection for active habits cache
+    if (state.activeHabitsCache.size > MAX_CACHE_SIZE) {
+        state.activeHabitsCache.clear();
     }
     
     // Fallback: precisamos do objeto Date para a lógica de agendamento se não estiver em cache
@@ -583,14 +601,14 @@ export function getActiveHabitsForDate(dateOrIso: Date | string): Array<{ habit:
             schedule: getEffectiveScheduleForHabitOnDate(habit, dateStr),
         }));
 
-    state.activeHabitsCache[cacheKey] = activeHabits;
+    state.activeHabitsCache.set(cacheKey, activeHabits);
     return activeHabits;
 }
 
 export function calculateHabitStreak(habitId: string, referenceDateISO: string): number {
     const cacheKey = `${habitId}|${referenceDateISO}`;
-    if (state.streaksCache[cacheKey] !== undefined) {
-        return state.streaksCache[cacheKey];
+    if (state.streaksCache.has(cacheKey)) {
+        return state.streaksCache.get(cacheKey)!;
     }
 
     const habit = state.habits.find(h => h.id === habitId);
@@ -638,7 +656,7 @@ export function calculateHabitStreak(habitId: string, referenceDateISO: string):
         iteratorDate.setUTCDate(iteratorDate.getUTCDate() - 1);
     }
     
-    state.streaksCache[cacheKey] = streak;
+    state.streaksCache.set(cacheKey, streak);
     return streak;
 }
 
@@ -698,6 +716,11 @@ export function invalidateDaySummaryCache(dateISO?: string) {
 export function calculateDaySummary(dateISO: string) {
     if (daySummaryCache.has(dateISO)) {
         return daySummaryCache.get(dateISO)!;
+    }
+    
+    // Garbage collection for summary cache
+    if (daySummaryCache.size > DAYS_IN_CALENDAR * 2) {
+        daySummaryCache.clear();
     }
 
      // OTIMIZAÇÃO [2025-01-17]: Passa a string ISO diretamente para getActiveHabitsForDate.
