@@ -2,9 +2,9 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// [ANALYSIS PROGRESS]: 100% - Otimização "Gold Master". Implementado Decoupled Render Loop. Input (pointermove) e Output (render) desacoplados. Atualizações de DOM estritamente via textContent (sem innerHTML) no loop de animação.
-// UPDATE [2025-01-28]: Added pointercancel handling for better touch physics. Optimized render loop math.
-// PERFORMANCE [2025-01-29]: Input Stasis Check added to stop math execution on static pointer.
+// [ANALYSIS PROGRESS]: 100% - Otimização "Platinum". Migração de "Game Loop" para "Event-Driven Throttling".
+// PERFORMANCE [2025-01-30]: True Zero-Cost Idle. O código só executa quando o evento pointermove dispara,
+// eliminado completamente o overhead de CPU quando o mouse está parado sobre o gráfico.
 
 import { state } from './state';
 import { ui } from './ui';
@@ -169,49 +169,34 @@ function _setupChartListeners() {
     const { chartWrapper, tooltip, indicator, tooltipDate, tooltipScoreLabel, tooltipScoreValue, tooltipHabits } = chartElements;
     if (!chartWrapper || !tooltip || !indicator || !tooltipDate || !tooltipScoreLabel || !tooltipScoreValue || !tooltipHabits) return;
 
-    // --- DECOUPLED RENDER LOOP ---
-    let isTracking = false;
+    // --- EVENT-DRIVEN THROTTLING ---
     let rafId: number | null = null;
-    let inputClientX = 0; // Estado de Input (atualizado pelo pointermove)
-    let lastRenderedPointIndex = -1; // Estado de Renderização
-    let lastProcessedClientX = -1; // Otimização: Rastreia se o input mudou desde o último quadro
+    let inputClientX = 0; 
+    let lastRenderedPointIndex = -1;
 
-    // Função de renderização sincronizada com V-Sync (requestAnimationFrame)
-    const renderLoop = () => {
-        // DEFENSIVE CHECK [2025-01-27]: Stop loop if elements are removed from DOM.
-        if (!isTracking || lastChartData.length === 0 || !chartWrapper.isConnected) {
-            rafId = null;
-            isTracking = false; // Ensure tracking stops
+    const renderFrame = () => {
+        rafId = null; // Clear flag to allow next frame request
+
+        if (lastChartData.length === 0 || !chartWrapper.isConnected) {
             return;
         }
-
-        // OPTIMIZATION [2025-01-29]: Input Stasis Check.
-        // Se a posição X do mouse não mudou, não há necessidade de recalcular geometria ou tocar no DOM.
-        // Apenas agendamos o próximo frame para manter o loop de rastreamento vivo.
-        if (inputClientX === lastProcessedClientX) {
-            rafId = requestAnimationFrame(renderLoop);
-            return;
-        }
-        lastProcessedClientX = inputClientX;
 
         if (!cachedChartRect) {
             cachedChartRect = chartWrapper.getBoundingClientRect();
         }
 
         const svgWidth = cachedChartRect.width;
-        if (svgWidth === 0) return; // Element hidden or collapsed
+        if (svgWidth === 0) return;
 
         const padding = { top: 10, right: 10, bottom: 10, left: 10 };
         const chartWidth = svgWidth - padding.left - padding.right;
         
-        // OPTIMIZATION [2025-01-28]: Pre-calculate stepX outside loop would be ideal, 
-        // but inside rAF we assume standard execution. We simplify math here.
-        // (x - offset) / width * totalItems
+        // Math optimization: Single calculation path
         const x = inputClientX - cachedChartRect.left;
         const index = Math.round((x - padding.left) / chartWidth * (lastChartData.length - 1));
         const pointIndex = Math.max(0, Math.min(lastChartData.length - 1, index));
 
-        // Dirty Check: Só toca no DOM se o ponto mudou
+        // Dirty Check: Surgical DOM update only on index change
         if (pointIndex !== lastRenderedPointIndex) {
             lastRenderedPointIndex = pointIndex;
             
@@ -219,12 +204,9 @@ function _setupChartListeners() {
             const { minVal, valueRange } = chartMetadata;
             const chartHeight = 100 - padding.top - padding.bottom;
         
-            // OPTIMIZATION [2025-01-28]: Avoid repeated function creation by inlining math or hoisting.
-            // Inline calc for speed in hot path.
             const pointX = padding.left + (pointIndex / (lastChartData.length - 1)) * chartWidth;
             const pointY = padding.top + chartHeight - ((point.value - minVal) / valueRange) * chartHeight;
 
-            // Atualizações Visuais (Output)
             indicator.style.opacity = '1';
             indicator.style.transform = `translateX(${pointX}px)`;
             const dot = indicator.querySelector<HTMLElement>('.chart-indicator-dot');
@@ -235,7 +217,6 @@ function _setupChartListeners() {
                 weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' 
             }).format(date);
             
-            // OPTIMIZATION: Surgical Text Updates (No innerHTML)
             tooltipDate.textContent = formattedDate;
             tooltipScoreLabel.textContent = t('chartTooltipScore') + ': ';
             tooltipScoreValue.textContent = point.value.toFixed(2);
@@ -249,24 +230,19 @@ function _setupChartListeners() {
             if (pointX < 50) translateX = '0%';
             else if (pointX > svgWidth - 50) translateX = '-100%';
 
-            // Uso de transform para posicionamento (Composite Layer)
             tooltip.style.transform = `translate3d(calc(${pointX}px + ${translateX}), calc(${pointY - 20}px - 100%), 0)`;
         }
-
-        rafId = requestAnimationFrame(renderLoop);
     };
 
-    // Handler de Input (Extremamente leve)
+    // Handler de Input: Solicita o frame APENAS se um não estiver pendente
     const handlePointerMove = (e: PointerEvent) => {
         inputClientX = e.clientX;
-        if (!isTracking) {
-            isTracking = true;
-            rafId = requestAnimationFrame(renderLoop);
+        if (!rafId) {
+            rafId = requestAnimationFrame(renderFrame);
         }
     };
 
     const handlePointerLeave = () => {
-        isTracking = false;
         if (rafId) {
             cancelAnimationFrame(rafId);
             rafId = null;
@@ -274,20 +250,16 @@ function _setupChartListeners() {
         tooltip.classList.remove('visible');
         indicator.style.opacity = '0';
         lastRenderedPointIndex = -1;
-        lastProcessedClientX = -1; // Reset stasis check
     };
 
     chartWrapper.addEventListener('pointermove', handlePointerMove);
-    chartWrapper.addEventListener('pointerenter', () => { isTracking = true; });
     chartWrapper.addEventListener('pointerleave', handlePointerLeave);
-    // UX FIX [2025-01-28]: Handle pointercancel (e.g., scrolling on mobile) to prevent stuck tooltips
     chartWrapper.addEventListener('pointercancel', handlePointerLeave);
 }
 
 function _initObservers() {
     if (!ui.chartContainer) return;
 
-    // Intersection Observer para Lazy Rendering
     if (!chartObserver) {
         chartObserver = new IntersectionObserver((entries) => {
             const entry = entries[0];
@@ -300,10 +272,10 @@ function _initObservers() {
         chartObserver.observe(ui.chartContainer);
     }
 
-    // Resize Observer para Responsividade
     if (!resizeObserver) {
         resizeObserver = new ResizeObserver(entries => {
             if (!chartInitialized || !isChartVisible) return;
+            // Invalida cache de geometria no resize
             if (entries[0]?.contentRect && chartElements.chartWrapper) {
                  cachedChartRect = chartElements.chartWrapper.getBoundingClientRect();
             }
@@ -357,7 +329,6 @@ export function renderChart() {
             <div class="chart-axis-labels"><span></span><span></span></div>
         `;
         
-        // Cache de Referências DOM para Surgical Updates
         chartElements = {
             chartSvg: ui.chartContainer.querySelector<SVGSVGElement>('.chart-svg')!,
             areaPath: ui.chartContainer.querySelector<SVGPathElement>('.chart-area')!,
@@ -368,7 +339,6 @@ export function renderChart() {
             chartWrapper: ui.chartContainer.querySelector<HTMLElement>('.chart-wrapper')!,
             tooltip: ui.chartContainer.querySelector<HTMLElement>('.chart-tooltip')!,
             indicator: ui.chartContainer.querySelector<HTMLElement>('.chart-indicator')!,
-            // Elementos internos
             tooltipDate: ui.chartContainer.querySelector<HTMLElement>('.tooltip-date')!,
             tooltipScoreLabel: ui.chartContainer.querySelector<HTMLElement>('.tooltip-score-label')!,
             tooltipScoreValue: ui.chartContainer.querySelector<HTMLElement>('.tooltip-score-value')!,

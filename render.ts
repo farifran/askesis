@@ -1247,10 +1247,17 @@ export function closeModal(modal: HTMLElement) {
     }
 
     const elementToRestoreFocus = previouslyFocusedElements.get(modal);
-    if (elementToRestoreFocus) {
+    
+    // A11Y [2025-01-30]: Secure focus restoration.
+    // If the element that opened the modal was removed (e.g., deleted habit),
+    // we must fallback to a safe container to prevent focus loss to body.
+    if (elementToRestoreFocus && elementToRestoreFocus.isConnected) {
         elementToRestoreFocus.focus();
-        previouslyFocusedElements.delete(modal);
+    } else {
+        // Fallback to the main habit container or another safe landmark
+        ui.habitContainer.focus();
     }
+    previouslyFocusedElements.delete(modal);
 }
 
 export function initializeModalClosing(modal: HTMLElement, onClose?: () => void) {

@@ -7,6 +7,8 @@
 import { triggerHaptic } from './utils';
 
 let isSwiping = false;
+// PERFORMANCE [2025-01-30]: Cache for the swipe action width to avoid getComputedStyle on every touch.
+let cachedSwipeActionWidth = 0;
 
 /**
  * Permite que outros módulos verifiquem se um gesto de deslize está em andamento.
@@ -48,7 +50,7 @@ function _finalizeSwipeState(activeCard: HTMLElement, deltaX: number, wasOpenLef
 
 /**
  * REATORAÇÃO DE CLAREZA [2024-09-21]: A lógica para prevenir um clique acidental após um deslize
- * foi movida para esta função auxiliar para mejorar a organização do código.
+ * foi movida para esta função auxiliar para mejorar a organización do código.
  * @param deltaX O deslocamento horizontal total do gesto de deslize.
  */
 function _blockSubsequentClick(deltaX: number) {
@@ -72,6 +74,11 @@ function _blockSubsequentClick(deltaX: number) {
     window.addEventListener('click', blockClick, true);
 }
 
+// PERFORMANCE: Helper to update cached layout values
+function updateCachedLayoutValues() {
+    const rootStyles = getComputedStyle(document.documentElement);
+    cachedSwipeActionWidth = parseInt(rootStyles.getPropertyValue('--swipe-action-width'), 10) || 60;
+}
 
 export function setupSwipeHandler(habitContainer: HTMLElement) {
     let activeCard: HTMLElement | null = null;
@@ -84,7 +91,7 @@ export function setupSwipeHandler(habitContainer: HTMLElement) {
     let swipeDirection: 'horizontal' | 'vertical' | 'none' = 'none';
     let wasOpenLeft = false;
     let wasOpenRight = false;
-    let swipeActionWidth = 60; // Valor padrão
+    let swipeActionWidth = 60; // Valor padrão local, atualizado via cache
     let dragEnableTimer: number | null = null;
     let currentPointerId: number | null = null;
     
@@ -94,6 +101,10 @@ export function setupSwipeHandler(habitContainer: HTMLElement) {
     
     // PERFORMANCE [2025-01-20]: RAF ID for throttling
     let rafId: number | null = null;
+
+    // Init layout cache
+    updateCachedLayoutValues();
+    window.addEventListener('resize', updateCachedLayoutValues);
 
     // REATORAÇÃO DE DRY: Centraliza toda a lógica de limpeza e reset de estado.
     const _cleanupAndReset = () => {
@@ -256,8 +267,8 @@ export function setupSwipeHandler(habitContainer: HTMLElement) {
         wasOpenRight = activeCard.classList.contains('is-open-right');
         hasTriggeredHaptic = false;
 
-        const rootStyles = getComputedStyle(document.documentElement);
-        swipeActionWidth = parseInt(rootStyles.getPropertyValue('--swipe-action-width'), 10) || 60;
+        // PERFORMANCE FIX [2025-01-30]: Use cached width instead of querying DOM
+        swipeActionWidth = cachedSwipeActionWidth || 60;
 
         const content = activeCard.querySelector<HTMLElement>('.habit-content-wrapper');
         if (content) {
