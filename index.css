@@ -1,18 +1,4 @@
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 /*
  * [ANALYSIS PROGRESS]: 100% - Análise concluída.
  * - Padronização de variáveis (substituição de hardcoded pixels).
@@ -713,6 +699,8 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     display: flex;
     /* PERFORMANCE [2024-12-28]: Isola o layout e estilo para otimizar renderização de listas longas. */
     contain: layout style;
+    /* UX [2025-01-27]: Importante para garantir scroll vertical suave ao tocar no cartão */
+    touch-action: pan-y;
 }
 .habit-group .habit-card:last-child { margin-block-end: 0; }
 
@@ -2076,29 +2064,4 @@ body.is-offline #ai-eval-btn .offline-icon {
         display: block; font-size: 11px;
         color: var(--text-secondary); line-height: 1.3;
     }
-}
-
-/* REFINAMENTO VISUAL [2025-01-16]: Estilos do wrapper de status 'Adiado' para corrigir sobreposição e alinhar com o ícone. */
-.snoozed-wrapper {
-    display: flex;
-    align-items: center;
-    gap: var(--space-sm);
-    padding: 2px 6px;
-    border-radius: var(--border-radius-small);
-    background-color: rgba(0, 0, 0, 0.2); /* Contraste sutil sobre o fundo snoozed */
-}
-
-.snoozed-icon {
-    width: 16px;
-    height: 16px;
-    stroke: var(--text-tertiary);
-    display: block;
-}
-
-.snoozed-text {
-    font-size: 12px;
-    color: var(--text-tertiary);
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
 }

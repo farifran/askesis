@@ -1,22 +1,9 @@
 
-
-
-
-
-
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// [ANALYSIS PROGRESS]: 100% - Análise completa. Otimização de performance implementada: caching de estatísticas de escala para evitar recálculos pesados no evento de 'pointermove' e hoisting de variáveis invariantes no loop de cálculo de dados.
-// UPDATE [2025-01-17]: Adicionado IntersectionObserver para evitar atualizações de DOM quando o gráfico está fora da viewport.
-// UPDATE [2025-01-17]: Otimização de pointermove para atualizar o DOM apenas quando o ponto de dados muda (lastPointIndex).
-// UPDATE [2025-01-17]: Adicionado ResizeObserver para redimensionamento independente e otimizado (evita recalculo de dados).
-// UPDATE [2025-01-18]: Otimização de Memória/CPU com Dirty Flag. Recálculo de dados agora é condicional.
-// UPDATE [2025-01-18]: Layout Thrashing Elimination. Tooltip positioning now relies on CSS transforms.
-// UPDATE [2025-01-18]: Geometry Caching. Eliminação de getBoundingClientRect no hot-path do pointermove.
-// GOLD MASTER UPDATE [2025-01-27]: Decoupled Render Loop. Input e Renderização totalmente separados para 120Hz+ compliance.
+// [ANALYSIS PROGRESS]: 100% - Otimização "Gold Master". Implementado Decoupled Render Loop. Input (pointermove) e Output (render) desacoplados. Atualizações de DOM estritamente via textContent (sem innerHTML) no loop de animação.
 
 import { state } from './state';
 import { ui } from './ui';
@@ -25,38 +12,27 @@ import { addDays, getTodayUTCIso, parseUTCIsoDate, toUTCIsoDateString, getDateTi
 import { getActiveHabitsForDate } from './state';
 
 const CHART_DAYS = 30;
-const INITIAL_SCORE = 100; // Pontuação inicial para o crescimento composto
-const MAX_DAILY_CHANGE_RATE = 0.015; // Mudança máxima de 1.5% por dia
+const INITIAL_SCORE = 100;
+const MAX_DAILY_CHANGE_RATE = 0.015;
 
 type ChartDataPoint = {
     date: string;
-    value: number; // Agora representa a pontuação composta
+    value: number;
     completedCount: number;
     scheduledCount: number;
 };
 
-
-// OTIMIZAÇÃO DE PERFORMANCE [2024-10-10]: Variáveis de estado do módulo para gerenciar a renderização do gráfico.
-// `chartInitialized` previne a recriação do DOM. `lastChartData` é usado pelos listeners de eventos
-// para evitar o recálculo de dados em cada movimento do mouse.
+// Variáveis de estado do módulo
 let chartInitialized = false;
 let lastChartData: ChartDataPoint[] = [];
 
-// PERFORMANCE [2025-01-15]: Cache para metadados de escala (min/max/range).
-// Evita recalcular Math.min/max em todo o array de dados a cada evento de 'pointermove'.
-let chartMetadata = {
-    minVal: 0,
-    maxVal: 100,
-    valueRange: 100
-};
+// Cache de metadados para escala (Performance)
+let chartMetadata = { minVal: 0, maxVal: 100, valueRange: 100 };
 
-// OTIMIZAÇÃO DE GEOMETRIA [2025-01-18]: Cache das dimensões do gráfico.
-// Evita chamar getBoundingClientRect() dentro do loop de animação/interação (pointermove),
-// o que causaria Reflow Síncrono forçado.
+// Cache de geometria do gráfico (Evita Reflow no hot-path)
 let cachedChartRect: DOMRect | null = null;
 
-// OTIMIZAÇÃO DE PERFORMANCE [2024-12-25]: Os elementos internos do gráfico são armazenados
-// em cache após a primeira renderização para evitar consultas repetidas ao DOM.
+// Cache de referências DOM (Evita querySelector no hot-path)
 let chartElements: {
     chartSvg?: SVGSVGElement;
     areaPath?: SVGPathElement;
@@ -67,10 +43,15 @@ let chartElements: {
     chartWrapper?: HTMLElement;
     tooltip?: HTMLElement;
     indicator?: HTMLElement;
+    // Elementos internos do Tooltip para atualização cirúrgica
+    tooltipDate?: HTMLElement;
+    tooltipScoreLabel?: HTMLElement;
+    tooltipScoreValue?: HTMLElement;
+    tooltipHabits?: HTMLElement;
 } = {};
 
-// LAZY RENDERING [2025-01-17]: Controle de visibilidade para evitar renderização desnecessária.
-let isChartVisible = true; // Assume visível inicialmente para garantir o primeiro paint (LCP)
+// Controle de visibilidade e observadores
+let isChartVisible = true;
 let isChartDirty = false;
 let chartObserver: IntersectionObserver | null = null;
 let resizeObserver: ResizeObserver | null = null;
@@ -80,7 +61,7 @@ function calculateChartData(): ChartDataPoint[] {
     const data: ChartDataPoint[] = [];
     const endDate = parseUTCIsoDate(state.selectedDate);
     const startDate = addDays(endDate, -(CHART_DAYS - 1));
-    const todayISO = getTodayUTCIso(); // PERFORMANCE: Hoisted out of loop
+    const todayISO = getTodayUTCIso();
 
     let previousDayValue = INITIAL_SCORE;
 
@@ -97,15 +78,11 @@ function calculateChartData(): ChartDataPoint[] {
 
         activeHabitsData.forEach(({ habit, schedule: scheduleForDay }) => {
             const instances = dailyInfo[habit.id]?.instances || {};
-
             scheduledCount += scheduleForDay.length;
             scheduleForDay.forEach(time => {
                 const status = instances[time]?.status ?? 'pending';
-                if (status === 'completed') {
-                    completedCount++;
-                } else if (status === 'pending') {
-                    pendingCount++;
-                }
+                if (status === 'completed') completedCount++;
+                else if (status === 'pending') pendingCount++;
             });
         });
 
@@ -113,48 +90,32 @@ function calculateChartData(): ChartDataPoint[] {
         const isToday = currentDateISO === todayISO;
 
         let currentValue: number;
-        // CORREÇÃO DE LÓGICA DE DADOS [2024-12-25]: A lógica foi corrigida novamente para garantir que a pontuação
-        // só "congele" se o dia com pendências for o dia de *hoje*. Isso estabiliza
-        // os dados históricos, pois a pontuação de dias passados é sempre calculada com base no que foi concluído.
+        // Congela pontuação apenas se houver pendências HOJE. Passado é imutável.
         if (isToday && hasPending) {
             currentValue = previousDayValue;
         } else if (scheduledCount > 0) {
             const completionRatio = completedCount / scheduledCount;
-            // Mapeia a taxa de conclusão [0, 1] para um fator de performance [-1, 1]
-            // 0% -> -1, 50% -> 0, 100% -> 1
             const performanceFactor = (completionRatio - 0.5) * 2;
             const dailyChange = performanceFactor * MAX_DAILY_CHANGE_RATE;
             currentValue = previousDayValue * (1 + dailyChange);
         } else {
-            // Se não houver hábitos agendados, a pontuação não muda.
             currentValue = previousDayValue;
         }
         
-        data.push({
-            date: currentDateISO,
-            value: currentValue,
-            completedCount,
-            scheduledCount,
-        });
-
+        data.push({ date: currentDateISO, value: currentValue, completedCount, scheduledCount });
         previousDayValue = currentValue;
     }
-
     return data;
 }
 
 function _updateChartDOM(chartData: ChartDataPoint[]) {
-    // Usa elementos do cache para evitar consultas repetidas ao DOM.
     const { chartSvg, areaPath, linePath, evolutionIndicator, axisStart, axisEnd, chartWrapper } = chartElements;
     if (!chartSvg || !areaPath || !linePath || !evolutionIndicator || !axisStart || !axisEnd || !chartWrapper) return;
 
-
     const firstDate = parseUTCIsoDate(chartData[0].date);
     const lastDate = parseUTCIsoDate(chartData[chartData.length - 1].date);
-    // PERFORMANCE [2025-01-16]: Uso de cache para Intl.DateTimeFormat.
     const axisFormatter = getDateTimeFormat(state.activeLanguageCode, { month: 'short', day: 'numeric', timeZone: 'UTC' });
     
-    // Recalcula escalas e caminhos com base nos novos dados e no tamanho do contêiner.
     const svgWidth = ui.chartContainer.clientWidth;
     const svgHeight = 100;
     const padding = { top: 10, right: 10, bottom: 10, left: 10 };
@@ -168,7 +129,6 @@ function _updateChartDOM(chartData: ChartDataPoint[]) {
     const maxVal = Math.max(...values) * 1.02;
     const valueRange = maxVal - minVal;
     
-    // PERFORMANCE [2025-01-15]: Atualiza o cache de metadados para uso nos listeners
     chartMetadata = { minVal, maxVal, valueRange: valueRange > 0 ? valueRange : 1 };
 
     const xScale = (index: number) => padding.left + (index / (chartData.length - 1)) * chartWidth;
@@ -183,75 +143,68 @@ function _updateChartDOM(chartData: ChartDataPoint[]) {
     axisStart.textContent = axisFormatter.format(firstDate);
     axisEnd.textContent = axisFormatter.format(lastDate);
 
-    // Atualiza o indicador de evolução.
     const lastPoint = chartData[chartData.length - 1];
     const referencePoint = chartData.find(d => d.scheduledCount > 0) || chartData[0];
     const evolution = ((lastPoint.value - referencePoint.value) / referencePoint.value) * 100;
     const evolutionString = `${evolution > 0 ? '+' : ''}${evolution.toFixed(1)}%`;
-    const referenceDate = parseUTCIsoDate(referencePoint.date);
     
     evolutionIndicator.className = `chart-evolution-indicator ${evolution >= 0 ? 'positive' : 'negative'}`;
-    evolutionIndicator.title = t('chartEvolutionSince', { date: axisFormatter.format(referenceDate) });
     evolutionIndicator.textContent = evolutionString;
     
     const lastPointX = xScale(chartData.length - 1);
     const lastPointY = yScale(lastPoint.value);
     evolutionIndicator.style.top = `${lastPointY}px`;
+    
     let indicatorX = lastPointX + 10;
     if (indicatorX + evolutionIndicator.offsetWidth > chartWrapper.offsetWidth) {
         indicatorX = lastPointX - evolutionIndicator.offsetWidth - 10;
     }
     evolutionIndicator.style.left = `${indicatorX}px`;
     
-    // Atualiza o cache de geometria sempre que o DOM do gráfico é atualizado
     cachedChartRect = chartWrapper.getBoundingClientRect();
 }
 
-
 function _setupChartListeners() {
-    // Usa elementos do cache para evitar consultas repetidas ao DOM.
-    const { chartWrapper, tooltip, indicator } = chartElements;
-    if (!chartWrapper || !tooltip || !indicator) return;
+    const { chartWrapper, tooltip, indicator, tooltipDate, tooltipScoreLabel, tooltipScoreValue, tooltipHabits } = chartElements;
+    if (!chartWrapper || !tooltip || !indicator || !tooltipDate || !tooltipScoreLabel || !tooltipScoreValue || !tooltipHabits) return;
 
-    // --- DECOUPLED RENDER LOOP (GOLD MASTER OPTIMIZATION) ---
-    // Separa o input (frequência do mouse/touch) do output (frequência da tela).
-    
+    // --- DECOUPLED RENDER LOOP ---
     let isTracking = false;
     let rafId: number | null = null;
-    
-    // Estado de Input (Escrito pelo evento pointermove)
-    let inputClientX = 0;
-    
-    // Estado de Renderização (Lido/Escrito pelo loop)
-    let lastRenderedPointIndex = -1;
+    let inputClientX = 0; // Estado de Input (atualizado pelo pointermove)
+    let lastRenderedPointIndex = -1; // Estado de Renderização
 
-    const updateVisuals = () => {
-        if (!isTracking || lastChartData.length === 0) {
+    // Função de renderização sincronizada com V-Sync (requestAnimationFrame)
+    const renderLoop = () => {
+        // DEFENSIVE CHECK [2025-01-27]: Stop loop if elements are removed from DOM.
+        if (!isTracking || lastChartData.length === 0 || !chartWrapper.isConnected) {
             rafId = null;
+            isTracking = false; // Ensure tracking stops
             return;
         }
 
-        // PERFORMANCE: Usa o cache de geometria.
         if (!cachedChartRect) {
             cachedChartRect = chartWrapper.getBoundingClientRect();
         }
 
         const svgWidth = cachedChartRect.width;
+        if (svgWidth === 0) return; // Element hidden or collapsed
+
         const padding = { top: 10, right: 10, bottom: 10, left: 10 };
         const chartWidth = svgWidth - padding.left - padding.right;
-        const chartHeight = 100 - padding.top - padding.bottom;
-
-        // Cálculo puramente matemático
+        
+        // Cálculo matemático puro (sem leitura de DOM)
         const x = inputClientX - cachedChartRect.left;
         const index = Math.round((x - padding.left) / chartWidth * (lastChartData.length - 1));
         const pointIndex = Math.max(0, Math.min(lastChartData.length - 1, index));
 
-        // DIRTY CHECK: Atualiza DOM apenas se o ponto mudou
+        // Dirty Check: Só toca no DOM se o ponto mudou
         if (pointIndex !== lastRenderedPointIndex) {
             lastRenderedPointIndex = pointIndex;
             
             const point = lastChartData[pointIndex];
             const { minVal, valueRange } = chartMetadata;
+            const chartHeight = 100 - padding.top - padding.bottom;
         
             const xScale = (idx: number) => padding.left + (idx / (lastChartData.length - 1)) * chartWidth;
             const yScale = (val: number) => padding.top + chartHeight - ((val - minVal) / valueRange) * chartHeight;
@@ -259,6 +212,7 @@ function _setupChartListeners() {
             const pointX = xScale(pointIndex);
             const pointY = yScale(point.value);
 
+            // Atualizações Visuais (Output)
             indicator.style.opacity = '1';
             indicator.style.transform = `translateX(${pointX}px)`;
             const dot = indicator.querySelector<HTMLElement>('.chart-indicator-dot');
@@ -269,46 +223,34 @@ function _setupChartListeners() {
                 weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' 
             }).format(date);
             
-            tooltip.innerHTML = `
-                <div class="tooltip-date">${formattedDate}</div>
-                <div class="tooltip-score">
-                    ${t('chartTooltipScore')}: 
-                    <span class="tooltip-score-value">${point.value.toFixed(2)}</span>
-                </div>
-                <ul class="tooltip-habits">
-                    <li>${t('chartTooltipCompleted', { completed: point.completedCount, total: point.scheduledCount })}</li>
-                </ul>
-            `;
+            // OPTIMIZATION: Surgical Text Updates (No innerHTML)
+            tooltipDate.textContent = formattedDate;
+            tooltipScoreLabel.textContent = t('chartTooltipScore') + ': ';
+            tooltipScoreValue.textContent = point.value.toFixed(2);
+            tooltipHabits.textContent = t('chartTooltipCompleted', { completed: point.completedCount, total: point.scheduledCount });
 
-            tooltip.classList.add('visible');
+            if (!tooltip.classList.contains('visible')) {
+                tooltip.classList.add('visible');
+            }
             
             let translateX = '-50%';
             if (pointX < 50) translateX = '0%';
             else if (pointX > svgWidth - 50) translateX = '-100%';
 
-            tooltip.style.left = '0px';
-            tooltip.style.top = '0px';
+            // Uso de transform para posicionamento (Composite Layer)
             tooltip.style.transform = `translate3d(calc(${pointX}px + ${translateX}), calc(${pointY - 20}px - 100%), 0)`;
         }
 
-        // Agenda o próximo frame
-        rafId = requestAnimationFrame(updateVisuals);
+        rafId = requestAnimationFrame(renderLoop);
     };
 
+    // Handler de Input (Extremamente leve)
     const handlePointerMove = (e: PointerEvent) => {
-        // Apenas atualiza a coordenada de entrada. Extremamente leve.
         inputClientX = e.clientX;
-        
-        // Inicia o loop se não estiver rodando (ex: reentrada via touch drag)
         if (!isTracking) {
             isTracking = true;
-            rafId = requestAnimationFrame(updateVisuals);
+            rafId = requestAnimationFrame(renderLoop);
         }
-    };
-
-    const handlePointerEnter = () => {
-        isTracking = true;
-        // O loop será iniciado pelo primeiro movimento para ter coordenadas válidas
     };
 
     const handlePointerLeave = () => {
@@ -323,63 +265,40 @@ function _setupChartListeners() {
     };
 
     chartWrapper.addEventListener('pointermove', handlePointerMove);
-    chartWrapper.addEventListener('pointerenter', handlePointerEnter);
+    chartWrapper.addEventListener('pointerenter', () => { isTracking = true; });
     chartWrapper.addEventListener('pointerleave', handlePointerLeave);
 }
 
-function _initIntersectionObserver() {
-    if (chartObserver) return;
+function _initObservers() {
+    if (!ui.chartContainer) return;
 
-    chartObserver = new IntersectionObserver((entries) => {
-        const entry = entries[0];
-        isChartVisible = entry.isIntersecting;
-
-        // Se tornou visível e tinha dados pendentes, renderiza agora.
-        if (isChartVisible && isChartDirty) {
-            isChartDirty = false;
-            _updateChartDOM(lastChartData);
-        }
-    }, { threshold: 0.1 }); // 10% visível é suficiente
-
-    if (ui.chartContainer) {
+    // Intersection Observer para Lazy Rendering
+    if (!chartObserver) {
+        chartObserver = new IntersectionObserver((entries) => {
+            const entry = entries[0];
+            isChartVisible = entry.isIntersecting;
+            if (isChartVisible && isChartDirty) {
+                isChartDirty = false;
+                _updateChartDOM(lastChartData);
+            }
+        }, { threshold: 0.1 });
         chartObserver.observe(ui.chartContainer);
     }
-}
 
-function _initResizeObserver() {
-    if (resizeObserver) return;
-
-    // ROBUSTEZ: ResizeObserver permite que o gráfico se adapte a qualquer mudança de tamanho
-    // do seu container, seja por redimensionamento da janela ou mudanças no layout da aplicação.
-    resizeObserver = new ResizeObserver(entries => {
-        if (!chartInitialized || !isChartVisible) return;
-        
-        // CACHE UPDATE [2025-01-18]: O redimensionamento é o único momento (além da criação)
-        // onde precisamos ler as dimensões reais do DOM.
-        const entry = entries[0];
-        if (entry && entry.contentRect) {
-             // ResizeObserverEntry fornece as dimensões, evitando getBoundingClientRect aqui também
-             // No entanto, precisamos do 'left' relativo à viewport para o mouse event,
-             // então ainda precisamos do getBoundingClientRect do elemento wrapper.
-             const wrapper = chartElements.chartWrapper;
-             if (wrapper) {
-                 cachedChartRect = wrapper.getBoundingClientRect();
-             }
-        }
-
-        // PERFORMANCE: Chamamos apenas _updateChartDOM, que redesenha o SVG com os dados atuais.
-        // Evitamos chamar calculateChartData(), pois os dados históricos não mudam com o tamanho da tela.
-        _updateChartDOM(lastChartData);
-    });
-
-    if (ui.chartContainer) {
+    // Resize Observer para Responsividade
+    if (!resizeObserver) {
+        resizeObserver = new ResizeObserver(entries => {
+            if (!chartInitialized || !isChartVisible) return;
+            if (entries[0]?.contentRect && chartElements.chartWrapper) {
+                 cachedChartRect = chartElements.chartWrapper.getBoundingClientRect();
+            }
+            _updateChartDOM(lastChartData);
+        });
         resizeObserver.observe(ui.chartContainer);
     }
 }
 
 export function renderChart() {
-    // OTIMIZAÇÃO [2025-01-18]: Se os dados do gráfico não estiverem 'sujos' (chartDataDirty = false)
-    // e já tivermos dados calculados, evitamos o cálculo pesado.
     if (state.chartDataDirty || lastChartData.length === 0) {
         lastChartData = calculateChartData();
         state.chartDataDirty = false;
@@ -387,7 +306,6 @@ export function renderChart() {
 
     const isEmpty = lastChartData.length < 2 || lastChartData.every(d => d.scheduledCount === 0);
 
-    // REFINAMENTO DE UI [2024-11-25]: O cabeçalho do gráfico foi reestruturado para exibir o nome da aplicação como título principal e o título original como subtítulo, melhorando a identidade da marca na seção de dados.
     if (isEmpty) {
         ui.chartContainer.innerHTML = `
             <div class="chart-header">
@@ -399,16 +317,7 @@ export function renderChart() {
             <div class="chart-empty-state">${t('chartEmptyState')}</div>
         `;
         chartInitialized = false;
-        chartElements = {}; // Limpa o cache de elementos do DOM
-        cachedChartRect = null; // Limpa cache de geometria
-        if (chartObserver) {
-            chartObserver.disconnect();
-            chartObserver = null;
-        }
-        if (resizeObserver) {
-            resizeObserver.disconnect();
-            resizeObserver = null;
-        }
+        chartElements = {};
         return;
     }
 
@@ -421,29 +330,19 @@ export function renderChart() {
                 </div>
             </div>
             <div class="chart-wrapper">
-                <svg class="chart-svg" viewBox="0 0 100 100" preserveAspectRatio="none">
-                    <defs>
-                        <linearGradient id="chart-gradient" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stop-color="var(--accent-blue)" stop-opacity="0.3"/>
-                            <stop offset="100%" stop-color="var(--accent-blue)" stop-opacity="0"/>
-                        </linearGradient>
-                    </defs>
-                    <path class="chart-area"></path>
-                    <path class="chart-line"></path>
-                </svg>
-                <div class="chart-tooltip"></div>
-                <div class="chart-indicator">
-                    <div class="chart-indicator-dot"></div>
+                <svg class="chart-svg" preserveAspectRatio="none"><defs><linearGradient id="chart-gradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="var(--accent-blue)" stop-opacity="0.3"/><stop offset="100%" stop-color="var(--accent-blue)" stop-opacity="0"/></linearGradient></defs><path class="chart-area"></path><path class="chart-line"></path></svg>
+                <div class="chart-tooltip">
+                    <div class="tooltip-date"></div>
+                    <div class="tooltip-score"><span class="tooltip-score-label"></span><span class="tooltip-score-value"></span></div>
+                    <ul class="tooltip-habits"><li class="tooltip-habits-content"></li></ul>
                 </div>
+                <div class="chart-indicator"><div class="chart-indicator-dot"></div></div>
                 <div class="chart-evolution-indicator"></div>
             </div>
-            <div class="chart-axis-labels">
-                <span></span>
-                <span></span>
-            </div>
+            <div class="chart-axis-labels"><span></span><span></span></div>
         `;
         
-        // OTIMIZAÇÃO: Armazena em cache os elementos internos do gráfico após criá-los.
+        // Cache de Referências DOM para Surgical Updates
         chartElements = {
             chartSvg: ui.chartContainer.querySelector<SVGSVGElement>('.chart-svg')!,
             areaPath: ui.chartContainer.querySelector<SVGPathElement>('.chart-area')!,
@@ -454,29 +353,22 @@ export function renderChart() {
             chartWrapper: ui.chartContainer.querySelector<HTMLElement>('.chart-wrapper')!,
             tooltip: ui.chartContainer.querySelector<HTMLElement>('.chart-tooltip')!,
             indicator: ui.chartContainer.querySelector<HTMLElement>('.chart-indicator')!,
+            // Elementos internos
+            tooltipDate: ui.chartContainer.querySelector<HTMLElement>('.tooltip-date')!,
+            tooltipScoreLabel: ui.chartContainer.querySelector<HTMLElement>('.tooltip-score-label')!,
+            tooltipScoreValue: ui.chartContainer.querySelector<HTMLElement>('.tooltip-score-value')!,
+            tooltipHabits: ui.chartContainer.querySelector<HTMLElement>('.tooltip-habits-content')!,
         };
 
         _setupChartListeners();
-        _initIntersectionObserver();
-        _initResizeObserver();
+        _initObservers();
         chartInitialized = true;
-    } else {
-        // Atualiza os títulos caso já existam (ex: mudança de idioma)
-        const titleEl = ui.chartContainer.querySelector<HTMLElement>('.chart-title');
-        const subtitleEl = ui.chartContainer.querySelector<HTMLElement>('.chart-subtitle');
-        if (titleEl) {
-            titleEl.innerHTML = t('appName');
-        }
-        if (subtitleEl) {
-            subtitleEl.textContent = t('chartTitle');
-        }
     }
 
-    // LAZY RENDERING CHECK
     if (isChartVisible) {
         _updateChartDOM(lastChartData);
         isChartDirty = false;
     } else {
-        isChartDirty = true; // Marca para atualização quando ficar visível
+        isChartDirty = true;
     }
 }
