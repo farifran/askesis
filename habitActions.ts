@@ -227,6 +227,16 @@ export function saveHabitFromModal() {
         if (isReactivating) {
             delete habitToUpdate.graduatedOn;
         }
+
+        // FIX [2025-02-06]: Limpeza de overrides "Just Today".
+        // Se o usuário salvou o hábito através do modal, devemos limpar qualquer 
+        // override de agendamento (dailySchedule) para a data alvo.
+        // Isso resolve o bug onde um hábito removido via "Apenas Hoje" não podia
+        // ser re-adicionado via edição, pois o override vazio persistia.
+        const dailyInfo = state.dailyData[targetDate]?.[habitToUpdate.id];
+        if (dailyInfo && dailyInfo.dailySchedule !== undefined) {
+            delete dailyInfo.dailySchedule;
+        }
     }
 
     // 4. Finalização

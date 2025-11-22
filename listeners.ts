@@ -344,6 +344,14 @@ const _setupGlobalInteractionListeners = () => {
         scrollToToday('smooth');
     });
 
+    // UX UPDATE [2025-02-07]: Fecha cartões abertos (swipe actions) ao rolar a página.
+    window.addEventListener('scroll', () => {
+        const openCard = document.querySelector('.habit-card.is-open-left, .habit-card.is-open-right');
+        if (openCard) {
+            openCard.classList.remove('is-open-left', 'is-open-right');
+        }
+    }, { passive: true });
+
     document.addEventListener('pointerdown', (e) => {
         const target = e.target as HTMLElement;
 
@@ -353,7 +361,9 @@ const _setupGlobalInteractionListeners = () => {
 
         const openCard = document.querySelector('.habit-card.is-open-left, .habit-card.is-open-right');
         
-        if (openCard && !target.closest('.habit-card')) {
+        // UX UPDATE [2025-02-07]: Fecha se clicar fora do cartão ABERTO.
+        // Isso inclui cliques no fundo e cliques em OUTROS cartões.
+        if (openCard && !openCard.contains(target)) {
             openCard.classList.remove('is-open-left', 'is-open-right');
         }
     });

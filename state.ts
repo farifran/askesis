@@ -506,7 +506,15 @@ export function getEffectiveScheduleForHabitOnDate(habit: Habit, dateISO: string
     const activeSchedule = getScheduleForDate(habit, dateISO);
     if (!activeSchedule) return [];
     
-    return dailyInfo?.dailySchedule || activeSchedule.times;
+    // BUGFIX [2025-02-07]: Explicit check for undefined on dailySchedule.
+    // This is critical because dailySchedule can be an empty array [], which is falsy.
+    // If the user removes a habit for "Just Today", dailySchedule becomes [].
+    // Without the strict check, `[] || activeSchedule.times` would fall back to the original schedule,
+    // preventing the removal of the habit for that day.
+    if (dailyInfo?.dailySchedule !== undefined) {
+        return dailyInfo.dailySchedule;
+    }
+    return activeSchedule.times;
 }
 
 // GC OPTIMIZATION [2025-01-23]: Singleton empty object for daily info.
