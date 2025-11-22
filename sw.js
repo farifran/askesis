@@ -95,40 +95,25 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    // ESTRATÉGIA NETWORK-FIRST PARA O APP SHELL (HTML/Navegação)
-    // ROBUSTEZ [2025-01-17]: Adicionado Timeout de 1.5s usando AbortController.
-    // [2025-01-21]: Reduzido de 3s para 1.5s para mitigar "Lie-Fi" (conectado mas sem dados).
-    // [2025-01-22]: Reduzido para 800ms para uma sensação ainda mais instantânea em redes ruins (Lie-Fi mitigation).
-    // Se a rede demorar mais que 800ms, cai para o cache imediatamente.
+    // ESTRATÉGIA CACHE-FIRST (APP SHELL & SPA NAVIGATION)
+    // OTIMIZAÇÃO "GOLD MASTER" [2025-01-27]: Mudança de Network-First para Cache-First para navegação.
+    // Para uma PWA (SPA), o HTML é o "App Shell" e raramente muda entre versões do SW.
+    // Servir do cache garante boot instantâneo (0ms latência) e funcionamento offline robusto.
+    // Se o SW for atualizado (byte-change), o novo App Shell será baixado no evento 'install'.
     if (event.request.mode === 'navigate') {
         event.respondWith((async () => {
+            // Tenta encontrar o request exato ou o index.html (App Shell)
+            const cachedResponse = await caches.match('/index.html');
+            if (cachedResponse) {
+                return cachedResponse;
+            }
+            
+            // Fallback de rede apenas se o cache estiver vazio (primeiro acesso ou cache limpo)
             try {
-                // Configura um controlador de aborto para o timeout
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 800);
-
-                // Tenta a rede primeiro com o sinal de aborto
-                const networkResponse = await fetch(event.request, { signal: controller.signal });
-                clearTimeout(timeoutId);
-                
-                // Atualiza o cache com a nova versão (em background)
-                const cache = await caches.open(CACHE_NAME);
-                cache.put(event.request, networkResponse.clone());
-                
-                return networkResponse;
+                return await fetch(event.request);
             } catch (error) {
-                if (error.name === 'AbortError') {
-                    console.log('Service Worker: Network timeout (800ms), falling back to cache');
-                } else {
-                    console.log('Service Worker: Network offline or error, falling back to cache', error);
-                }
-                
-                // Fallback para o cache se offline ou timeout
-                const cachedResponse = await caches.match(event.request);
-                if (cachedResponse) {
-                    return cachedResponse;
-                }
-                // Se não houver nada no cache, o navegador mostrará a página de erro padrão
+                console.error('Service Worker: Navigation failed', error);
+                // Opcional: Retornar página offline genérica aqui se necessário
                 throw error;
             }
         })());

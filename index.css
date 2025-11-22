@@ -11,6 +11,8 @@
 
 
 
+
+
 /*
  * [ANALYSIS PROGRESS]: 100% - Análise concluída.
  * - Padronização de variáveis (substituição de hardcoded pixels).
@@ -596,7 +598,8 @@ main {
     overscroll-behavior: contain;
     /* PERFORMANCE [2025-01-18]: Otimização para evitar renderização de conteúdo fora de tela em listas longas. */
     content-visibility: auto;
-    contain-intrinsic-size: 200px; /* Estimativa conservadora para evitar saltos */
+    /* PERFORMANCE "GOLD MASTER" [2025-01-27]: Ajuste para 80px para reduzir CLS */
+    contain-intrinsic-size: 80px;
 }
 .habit-group-wrapper + .habit-group-wrapper {
     margin-block-start: var(--space-md);
@@ -1069,8 +1072,8 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 .chart-wrapper { 
     position: relative; 
     height: 100px; 
-    /* UX [2025-01-24]: Impede rolagem da página ao interagir com o gráfico em mobile. */
-    touch-action: none; 
+    /* UX [2025-01-24]: Permite scroll vertical (pan-y) mas captura horizontal */
+    touch-action: pan-y; 
     user-select: none; 
 }
 .chart-svg { width: 100%; height: 100%; }

@@ -3,6 +3,8 @@
 
 
 
+
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -14,6 +16,7 @@
 // UPDATE [2025-01-18]: Otimização de Memória/CPU com Dirty Flag. Recálculo de dados agora é condicional.
 // UPDATE [2025-01-18]: Layout Thrashing Elimination. Tooltip positioning now relies on CSS transforms.
 // UPDATE [2025-01-18]: Geometry Caching. Eliminação de getBoundingClientRect no hot-path do pointermove.
+// GOLD MASTER UPDATE [2025-01-27]: Decoupled Render Loop. Input e Renderização totalmente separados para 120Hz+ compliance.
 
 import { state } from './state';
 import { ui } from './ui';
@@ -210,95 +213,117 @@ function _setupChartListeners() {
     const { chartWrapper, tooltip, indicator } = chartElements;
     if (!chartWrapper || !tooltip || !indicator) return;
 
-    // TRACKER [2025-01-17]: Armazena o índice do último ponto destacado para evitar
-    // atualizações redundantes do DOM se o mouse se mover dentro da mesma área de dados.
-    let lastPointIndex = -1;
+    // --- DECOUPLED RENDER LOOP (GOLD MASTER OPTIMIZATION) ---
+    // Separa o input (frequência do mouse/touch) do output (frequência da tela).
+    
+    let isTracking = false;
+    let rafId: number | null = null;
+    
+    // Estado de Input (Escrito pelo evento pointermove)
+    let inputClientX = 0;
+    
+    // Estado de Renderização (Lido/Escrito pelo loop)
+    let lastRenderedPointIndex = -1;
 
-    const handlePointerMove = (e: PointerEvent) => {
-        if (lastChartData.length === 0) return;
-        
-        // PERFORMANCE [2025-01-18]: Usa o cache de geometria.
-        // Se o cache estiver vazio (casos raros de inicialização), tenta obter.
+    const updateVisuals = () => {
+        if (!isTracking || lastChartData.length === 0) {
+            rafId = null;
+            return;
+        }
+
+        // PERFORMANCE: Usa o cache de geometria.
         if (!cachedChartRect) {
             cachedChartRect = chartWrapper.getBoundingClientRect();
         }
 
-        // OTIMIZAÇÃO: Largura derivada do cache, sem leitura de DOM
         const svgWidth = cachedChartRect.width;
         const padding = { top: 10, right: 10, bottom: 10, left: 10 };
         const chartWidth = svgWidth - padding.left - padding.right;
         const chartHeight = 100 - padding.top - padding.bottom;
 
-        // Cálculo puramente matemático usando o cache
-        const x = e.clientX - cachedChartRect.left;
-        
+        // Cálculo puramente matemático
+        const x = inputClientX - cachedChartRect.left;
         const index = Math.round((x - padding.left) / chartWidth * (lastChartData.length - 1));
         const pointIndex = Math.max(0, Math.min(lastChartData.length - 1, index));
 
-        // PERFORMANCE [2025-01-17]: Se o ponto de dados focado não mudou, retorna imediatamente.
-        // Isso economiza recálculos de layout (offsetWidth/Height) e atualizações de innerHTML.
-        if (pointIndex === lastPointIndex) return;
-        lastPointIndex = pointIndex;
-
-        const point = lastChartData[pointIndex];
-        if (!point) return;
-
-        // PERFORMANCE [2025-01-15]: Utiliza os metadados calculados previamente em _updateChartDOM
-        // em vez de recalcular min/max/range a cada movimento do mouse (60fps).
-        const { minVal, valueRange } = chartMetadata;
-       
-        const xScale = (idx: number) => padding.left + (idx / (lastChartData.length - 1)) * chartWidth;
-        const yScale = (val: number) => padding.top + chartHeight - ((val - minVal) / valueRange) * chartHeight;
-
-        const pointX = xScale(pointIndex);
-        const pointY = yScale(point.value);
-
-        indicator.style.opacity = '1';
-        // A11Y & PERF: Translate em pixels usando template string é performático
-        indicator.style.transform = `translateX(${pointX}px)`;
-        const dot = indicator.querySelector<HTMLElement>('.chart-indicator-dot')!;
-        dot.style.top = `${pointY}px`;
+        // DIRTY CHECK: Atualiza DOM apenas se o ponto mudou
+        if (pointIndex !== lastRenderedPointIndex) {
+            lastRenderedPointIndex = pointIndex;
+            
+            const point = lastChartData[pointIndex];
+            const { minVal, valueRange } = chartMetadata;
         
-        const date = parseUTCIsoDate(point.date);
-        // PERFORMANCE [2025-01-16]: Uso de cache para Intl.DateTimeFormat no tooltip.
-        const formattedDate = getDateTimeFormat(state.activeLanguageCode, { 
-            weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' 
-        }).format(date);
-        
-        tooltip.innerHTML = `
-            <div class="tooltip-date">${formattedDate}</div>
-            <div class="tooltip-score">
-                ${t('chartTooltipScore')}: 
-                <span class="tooltip-score-value">${point.value.toFixed(2)}</span>
-            </div>
-            <ul class="tooltip-habits">
-                <li>${t('chartTooltipCompleted', { completed: point.completedCount, total: point.scheduledCount })}</li>
-            </ul>
-        `;
+            const xScale = (idx: number) => padding.left + (idx / (lastChartData.length - 1)) * chartWidth;
+            const yScale = (val: number) => padding.top + chartHeight - ((val - minVal) / valueRange) * chartHeight;
 
-        tooltip.classList.add('visible');
-        
-        // PERFORMANCE [2025-01-18]: Eliminação de Layout Thrashing.
-        // O posicionamento não lê offsetWidth. Usa transform para centralizar e mover.
-        // translate3d força a GPU layer se possível.
-        let translateX = '-50%';
-        // Heurística simples para bordas baseada na largura cacheada
-        if (pointX < 50) translateX = '0%';
-        else if (pointX > svgWidth - 50) translateX = '-100%';
+            const pointX = xScale(pointIndex);
+            const pointY = yScale(point.value);
 
-        // Zera left/top no CSS e usa apenas transform para movimento.
-        tooltip.style.left = '0px';
-        tooltip.style.top = '0px';
-        tooltip.style.transform = `translate3d(calc(${pointX}px + ${translateX}), calc(${pointY - 20}px - 100%), 0)`;
+            indicator.style.opacity = '1';
+            indicator.style.transform = `translateX(${pointX}px)`;
+            const dot = indicator.querySelector<HTMLElement>('.chart-indicator-dot');
+            if (dot) dot.style.top = `${pointY}px`;
+            
+            const date = parseUTCIsoDate(point.date);
+            const formattedDate = getDateTimeFormat(state.activeLanguageCode, { 
+                weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' 
+            }).format(date);
+            
+            tooltip.innerHTML = `
+                <div class="tooltip-date">${formattedDate}</div>
+                <div class="tooltip-score">
+                    ${t('chartTooltipScore')}: 
+                    <span class="tooltip-score-value">${point.value.toFixed(2)}</span>
+                </div>
+                <ul class="tooltip-habits">
+                    <li>${t('chartTooltipCompleted', { completed: point.completedCount, total: point.scheduledCount })}</li>
+                </ul>
+            `;
+
+            tooltip.classList.add('visible');
+            
+            let translateX = '-50%';
+            if (pointX < 50) translateX = '0%';
+            else if (pointX > svgWidth - 50) translateX = '-100%';
+
+            tooltip.style.left = '0px';
+            tooltip.style.top = '0px';
+            tooltip.style.transform = `translate3d(calc(${pointX}px + ${translateX}), calc(${pointY - 20}px - 100%), 0)`;
+        }
+
+        // Agenda o próximo frame
+        rafId = requestAnimationFrame(updateVisuals);
+    };
+
+    const handlePointerMove = (e: PointerEvent) => {
+        // Apenas atualiza a coordenada de entrada. Extremamente leve.
+        inputClientX = e.clientX;
+        
+        // Inicia o loop se não estiver rodando (ex: reentrada via touch drag)
+        if (!isTracking) {
+            isTracking = true;
+            rafId = requestAnimationFrame(updateVisuals);
+        }
+    };
+
+    const handlePointerEnter = () => {
+        isTracking = true;
+        // O loop será iniciado pelo primeiro movimento para ter coordenadas válidas
     };
 
     const handlePointerLeave = () => {
+        isTracking = false;
+        if (rafId) {
+            cancelAnimationFrame(rafId);
+            rafId = null;
+        }
         tooltip.classList.remove('visible');
         indicator.style.opacity = '0';
-        lastPointIndex = -1; // Reseta o rastreador ao sair
+        lastRenderedPointIndex = -1;
     };
 
     chartWrapper.addEventListener('pointermove', handlePointerMove);
+    chartWrapper.addEventListener('pointerenter', handlePointerEnter);
     chartWrapper.addEventListener('pointerleave', handlePointerLeave);
 }
 
