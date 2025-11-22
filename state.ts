@@ -247,9 +247,9 @@ export const state: {
     activeHabitsCache: new Map(),
     lastEnded: null,
     undoTimeout: null,
-    // LOGIC UPDATE [2025-02-05]: Calendar range ends on "Today" (i.e., shows history + today).
-    // Subtracting (DAYS_IN_CALENDAR - 1) from 'i' ensures the last index (where i=60) results in addDays(Today, 0).
-    calendarDates: Array.from({ length: DAYS_IN_CALENDAR }, (_, i) => addDays(getTodayUTC(), i - (DAYS_IN_CALENDAR - 1))),
+    // LOGIC UPDATE [2025-02-05]: Calendar range centered on today (30 past + Today + 30 future).
+    // i=30 corresponds to Today (addDays(Today, 0)).
+    calendarDates: Array.from({ length: DAYS_IN_CALENDAR }, (_, i) => addDays(getTodayUTC(), i - 30)),
     selectedDate: getTodayUTCIso(),
     activeLanguageCode: 'pt',
     pending21DayHabitIds: [],

@@ -988,8 +988,8 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     visibility: hidden;
     transition: visibility 0s linear 0.2s; /* Atrasa o hide para permitir animação de slide */
 }
-/* UX [2025-02-05]: Mudança para vermelho para indicar ação destrutiva/reset */
-.habit-actions-left { inset-inline-start: 0; background-color: var(--color-red); }
+/* UX [2025-02-05]: Mudança para cinza para indicar ação destrutiva/reset menos agressiva */
+.habit-actions-left { inset-inline-start: 0; background-color: var(--text-tertiary); }
 .habit-actions-right { inset-inline-end: 0; background-color: var(--accent-blue); justify-content: flex-end; }
 
 .habit-card.is-open-left .habit-content-wrapper { transform: translateX(var(--swipe-action-width)); }

@@ -234,13 +234,10 @@ export function scrollToToday(behavior: ScrollBehavior = 'auto') {
             // UX [2025-01-18]: Ao iniciar, mostra o dia atual como o penúltimo item visível.
             // Para isso, rolamos o dia SEGUINTE ao dia atual para a borda final ('end').
             // Isso garante visibilidade do histórico à esquerda e contexto futuro imediato à direita.
-            const nextDay = todayEl.nextElementSibling as HTMLElement;
-            if (nextDay) {
-                nextDay.scrollIntoView({ behavior, block: 'nearest', inline: 'end' });
-            } else {
-                // Fallback se for o último dia
-                todayEl.scrollIntoView({ behavior, block: 'nearest', inline: 'end' });
-            }
+            // LOGIC UPDATE [2025-02-05]: Since future dates exist in the array now, 
+            // scrolling 'todayEl' to 'end' makes it the right-most visible element,
+            // effectively hiding future dates by default but allowing scroll.
+            todayEl.scrollIntoView({ behavior, block: 'nearest', inline: 'end' });
         }
     });
 }

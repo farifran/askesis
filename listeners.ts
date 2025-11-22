@@ -249,8 +249,8 @@ const _setupWindowListeners = () => {
             lastSeenDay = currentDay;
             // Atualiza os dados do calendário (desliza os dias)
             // Usamos a constante DAYS_IN_CALENDAR importada para manter consistência.
-            // LOGIC UPDATE [2025-02-05]: Refresh logic updated to end range on "Today" (history view).
-            state.calendarDates = Array.from({ length: DAYS_IN_CALENDAR }, (_, i) => addDays(parseUTCIsoDate(currentDay), i - (DAYS_IN_CALENDAR - 1)));
+            // LOGIC UPDATE [2025-02-05]: Refresh logic to maintain range centered on today (30 past + Today + 30 future).
+            state.calendarDates = Array.from({ length: DAYS_IN_CALENDAR }, (_, i) => addDays(parseUTCIsoDate(currentDay), i - 30));
             
             // Resetamos para "Hoje" para garantir consistência visual.
             state.selectedDate = currentDay;

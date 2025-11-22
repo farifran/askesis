@@ -7,6 +7,7 @@
 // PERFORMANCE [2025-01-30]: True Zero-Cost Idle. O código só executa quando o evento pointermove dispara,
 // eliminado completamente o overhead de CPU quando o mouse está parado sobre o gráfico.
 // BUGFIX [2025-02-02]: Tooltip Stale Data fix. Ensures tooltip updates immediately when data changes even if mouse is stationary.
+// BUGFIX [2025-02-05]: Future Date Projection. Fixes chart score dropping to zero when scrolling to future dates.
 
 import { state } from './state';
 import { ui } from './ui';
@@ -98,10 +99,16 @@ function calculateChartData(): ChartDataPoint[] {
 
         const hasPending = pendingCount > 0;
         const isToday = currentDateISO === todayISO;
+        // CORREÇÃO [2025-02-05]: Identifica se a data é futura (maior que hoje).
+        const isFuture = currentDateISO > todayISO;
 
         let currentValue: number;
-        // Congela pontuação apenas se houver pendências HOJE. Passado é imutável.
-        if (isToday && hasPending) {
+        
+        // LÓGICA DE PROJEÇÃO:
+        // 1. Futuro: Congela a pontuação (não penaliza dias que ainda não chegaram).
+        // 2. Hoje com pendências: Congela a pontuação (dá chance de completar).
+        // 3. Passado ou Hoje completo: Calcula a variação baseada no desempenho.
+        if (isFuture || (isToday && hasPending)) {
             currentValue = previousDayValue;
         } else if (scheduledCount > 0) {
             const completionRatio = completedCount / scheduledCount;
