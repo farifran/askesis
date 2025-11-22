@@ -502,7 +502,7 @@ export function renderFrequencyOptions() {
                     ${weekdayPickerHTML}
                 </div>
             </div>
-            <div class="form-row">
+            <div class="form-row form-row--vertical">
                 <label>
                     <input type="radio" name="frequency-type" value="interval" ${isInterval ? 'checked' : ''}>
                     ${t('freqEvery')}
