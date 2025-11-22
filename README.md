@@ -107,6 +107,4 @@ Este projeto é open-source e está licenciado sob a [Licença ISC](LICENSE).
 
 ---
 
-<p align="center">
-  Feito com 🖤 e Estoicismo.
 </p>
