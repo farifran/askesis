@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -686,7 +687,9 @@ function updateHabitCardElement(card: HTMLElement, habit: Habit, time: TimeOfDay
     const habitInstanceData = dailyInfo[habit.id]?.instances?.[time];
     const status = habitInstanceData?.status ?? 'pending';
     const hasNote = habitInstanceData?.note && habitInstanceData.note.length > 0;
-    const streak = calculateHabitStreak(habit.id, getTodayUTCIso());
+    // UX FIX [2025-02-02]: Calculate streak relative to the selected date context, not strictly "Today".
+    // This ensures that browsing history shows the correct streak status for that point in time.
+    const streak = calculateHabitStreak(habit.id, state.selectedDate);
     const { name, subtitle } = getHabitDisplayInfo(habit, state.selectedDate);
 
     // PERFORMANCE [2025-01-17]: Otimização de layout. Verifica se a classe já está presente
@@ -777,7 +780,8 @@ export function createHabitCardElement(habit: Habit, time: TimeOfDay): HTMLEleme
     const habitInstanceData = dailyInfo[habit.id]?.instances?.[time];
     const status = habitInstanceData?.status ?? 'pending';
     const hasNote = habitInstanceData?.note && habitInstanceData.note.length > 0;
-    const streak = calculateHabitStreak(habit.id, getTodayUTCIso());
+    // UX FIX [2025-02-02]: Use selected date context for streak consistency
+    const streak = calculateHabitStreak(habit.id, state.selectedDate);
     
     // A11Y: Elemento semântico <li> para listas de hábitos
     const card = document.createElement('li');
@@ -1300,6 +1304,7 @@ function getHabitStatusForSorting(habit: Habit): 'active' | 'ended' | 'graduated
 
 function _createManageHabitListItem(habitData: { habit: Habit; status: 'active' | 'ended' | 'graduated'; name: string; }): HTMLLIElement {
     const { habit, status, name } = habitData;
+    // Streak for management context is always "Current Status"
     const streak = calculateHabitStreak(habit.id, getTodayUTCIso());
     const isConsolidated = streak >= STREAK_CONSOLIDATED;
 
@@ -1584,7 +1589,12 @@ export function openEditModal(habitOrTemplate: Habit | HabitTemplate | null) {
         isNew: isNew,
         habitId: isNew ? undefined : (habitOrTemplate as Habit).id,
         originalData: isNew ? undefined : { ...(habitOrTemplate as Habit) },
-        formData: formData
+        formData: formData,
+        // FIX [2025-02-04]: Snapshot the current selected date.
+        // This effectively "locks" the context. If the user keeps the modal open
+        // past midnight and the app updates 'state.selectedDate', saving this form
+        // will still apply changes to the *originally intended* date, preserving data integrity.
+        targetDate: state.selectedDate
     };
 
     ui.editHabitModal.querySelector<HTMLElement>('.edit-icon-overlay')!.innerHTML = icons.edit;

@@ -6,7 +6,7 @@
 // [ANALYSIS PROGRESS]: 100% - Análise concluída. O código utiliza delegação de eventos de forma eficiente. Refatorada a função 'createGoalInput' para garantir a remoção explícita de event listeners antes da manipulação do DOM, prevenindo vazamentos de memória (memory leaks) e referências circulares.
 
 import { ui } from './ui';
-import { state, Habit, getCurrentGoalForInstance, TimeOfDay } from './state';
+import { state, Habit, getCurrentGoalForInstance, TimeOfDay, getSmartGoalForHabit } from './state';
 import { openNotesModal, getUnitString, formatGoalForDisplay } from './render';
 import {
     toggleHabitStatus,
@@ -70,6 +70,10 @@ function createGoalInput(habit: Habit, time: TimeOfDay, wrapper: HTMLElement) {
             // Restaura a estrutura original e então atualiza a UI localmente com o novo valor.
             wrapper.innerHTML = originalContent;
             _updateGoalDisplay(wrapper, habit, newGoal);
+            
+            // UX CHANGE [2025-02-05]: Auto-complete removido a pedido do usuário.
+            // Apenas feedback tátil é disparado.
+            
             triggerHaptic('success');
         } else {
              // Se o valor for inválido, restaura o conteúdo original para evitar um estado vazio.
@@ -182,7 +186,10 @@ export function setupHabitCardListeners() {
             // Etapa 2: Atualiza cirurgicamente a UI do cartão usando a função centralizada.
             _updateGoalDisplay(goalWrapper, habit, newGoal);
             
-            // Etapa 3: Aplica a animação de feedback visual.
+            // UX CHANGE [2025-02-05]: Auto-complete removido a pedido do usuário.
+            // O hábito não muda mais para 'completed' automaticamente.
+
+            // Etapa 3: Aplica a animação de feedback visual (Verde para increase, Vermelho para decrease).
             const animationClass = action === 'increment' ? 'increase' : 'decrease';
             goalWrapper.classList.remove('increase', 'decrease');
             // Usar requestAnimationFrame garante que o navegador processe a remoção da classe antes de adicioná-la novamente, reiniciando a animação.
@@ -221,8 +228,15 @@ export function setupHabitCardListeners() {
                 return;
             }
 
-            // Se o cartão estiver fechado, o clique executa a ação padrão de alternar o status.
-            triggerHaptic('light');
+            // UX FIX [2025-02-05]: Predict next status for appropriate haptic feedback
+            const currentStatus = card.classList.contains('completed') ? 'completed' : (card.classList.contains('snoozed') ? 'snoozed' : 'pending');
+            
+            if (currentStatus === 'pending') {
+                triggerHaptic('success');
+            } else {
+                triggerHaptic('light');
+            }
+            
             toggleHabitStatus(habitId, time, state.selectedDate);
         }
     });

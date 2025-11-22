@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -8,6 +9,8 @@
 // PERFORMANCE FIX [2025-01-21]: Moved saveState() inside requestIdleCallback in toggleHabitStatus to ensure <16ms INP (Interaction to Next Paint).
 // UPDATE [2025-01-24]: Deferred Heavy Cleanup for habit deletion. UI updates instantly, DB cleanups happen in idle time.
 // ROBUSTNESS [2025-01-29]: saveState() moved to setTimeout(0) to ensure persistence on quick tab close while keeping UI responsive.
+// BUGFIX [2025-02-01]: Fixed "Stale Cache Render" race condition. Critical caches must be invalidated BEFORE surgical rendering.
+// BUGFIX [2025-02-02]: Fixed data loss when moving habits "From Now On". Daily progress is now migrated to the new time slot.
 
 import { generateUUID, getTodayUTCIso, parseUTCIsoDate, addDays, escapeHTML, simpleMarkdownToHTML, getTodayUTC, toUTCIsoDateString, runIdle } from './utils';
 import { apiFetch } from './api';
@@ -62,8 +65,7 @@ import { updateAppBadge } from './badge';
 
 // --- Habit Creation & Deletion ---
 
-function _createNewHabitFromTemplate(template: HabitTemplate): Habit {
-    const startDate = state.selectedDate;
+function _createNewHabitFromTemplate(template: HabitTemplate, startDate: string): Habit {
     return {
         id: generateUUID(),
         icon: template.icon,
@@ -85,7 +87,7 @@ function _createNewHabitFromTemplate(template: HabitTemplate): Habit {
 export function createDefaultHabit() {
     const defaultHabitTemplate = PREDEFINED_HABITS.find(h => h.isDefault);
     if (defaultHabitTemplate) {
-        const newHabit = _createNewHabitFromTemplate(defaultHabitTemplate);
+        const newHabit = _createNewHabitFromTemplate(defaultHabitTemplate, state.selectedDate);
         state.habits.push(newHabit);
         
         // ROBUSTEZ [2025-02-01]: Limpa explicitamente os caches para garantir que o novo hábito
@@ -177,7 +179,10 @@ function _updateScheduleForHabit(habit: Habit, formData: HabitTemplate, isReacti
  */
 export function saveHabitFromModal() {
     if (!state.editingHabit) return;
-    const { isNew, habitId, formData } = state.editingHabit;
+    // DATA INTEGRITY FIX [2025-02-04]: Use targetDate instead of state.selectedDate.
+    // This ensures edits apply to the date the user was viewing when they opened the modal,
+    // preventing "midnight bugs" where the background date updates while editing.
+    const { isNew, habitId, formData, targetDate } = state.editingHabit;
 
     // 1. Validação
     const formNoticeEl = ui.editHabitForm.querySelector<HTMLElement>('.form-notice')!;
@@ -202,7 +207,7 @@ export function saveHabitFromModal() {
         if (habitToUpdate) {
             isReactivating = true;
         } else {
-            const newHabit = _createNewHabitFromTemplate(formData);
+            const newHabit = _createNewHabitFromTemplate(formData, targetDate);
             state.habits.push(newHabit);
             habitToUpdate = newHabit; // Define como o hábito a ser atualizado (embora já esteja 'atualizado')
         }
@@ -216,7 +221,7 @@ export function saveHabitFromModal() {
         habitToUpdate.color = formData.color;
         habitToUpdate.goal = formData.goal;
         
-        _updateScheduleForHabit(habitToUpdate, formData, isReactivating, state.selectedDate);
+        _updateScheduleForHabit(habitToUpdate, formData, isReactivating, targetDate);
 
         if (isReactivating) {
             delete habitToUpdate.graduatedOn;
@@ -374,6 +379,19 @@ function _requestFutureScheduleChange(
                     endDate: undefined 
                 };
                 habit.scheduleHistory.push(newSchedule);
+            }
+
+            // DATA INTEGRITY [2025-02-02]: Migrate daily data for the effective date.
+            // If the user is moving a habit 'From Now On' starting today, we must preserve 
+            // the status (e.g., completed) by moving the instance data to the new time slot.
+            const dailyInfo = ensureHabitDailyInfo(effectiveDate, habit.id);
+            const instanceData = dailyInfo.instances[fromTime];
+            if (instanceData) {
+                if (toTime) {
+                    dailyInfo.instances[toTime] = instanceData;
+                }
+                // Clean up the old time slot data as it's no longer valid for this schedule
+                delete dailyInfo.instances[fromTime];
             }
             
             state.uiDirtyState.habitListStructure = true; // Mudança de horário afeta a estrutura
@@ -533,25 +551,31 @@ export function toggleHabitStatus(habitId: string, time: TimeOfDay, dateISO: str
     const habitDayData = ensureHabitInstanceData(dateISO, habitId, time);
     habitDayData.status = getNextStatus(habitDayData.status);
 
-    // 2. Visual Update (Synchronous & Immediate)
+    // 2. Critical Cache Invalidation (Synchronous & Immediate)
+    // CORREÇÃO DE RACE CONDITION [2025-02-01]: 
+    // Invalida caches que afetam o visual IMEDIATO (bordas de streak, anel de progresso)
+    // ANTES de chamar as funções de renderização. Se isso ficar no runIdle, a renderização
+    // lerá dados antigos do cache e a UI não refletirá o novo estado corretamente.
+    invalidateStreakCache(habitId, dateISO);
+    invalidateDaySummaryCache(dateISO); 
+
+    // 3. Visual Update (Synchronous & Immediate)
     // PERFORMANCE [2025-01-19]: Surgical Update Strategy.
     // We update only the specific card and calendar day affected.
     renderHabitCardState(habitId, time);
     renderCalendarDayPartial(dateISO);
     
-    // 3. Persistence & Heavy Processing (Deferred/Asynchronous)
+    // 4. Persistence & Heavy Processing (Deferred/Asynchronous)
     // REFACTOR [2025-01-29]: Hybrid Persistence Strategy.
     // Use setTimeout(0) for saveState() to ensure it runs as a high-priority macro-task,
     // preventing data loss if the user closes the tab immediately (<10ms) after clicking.
-    // Use runIdle for truly optional tasks (analytics, caching).
     
     setTimeout(() => {
         saveState(); // BLOCKING I/O but scheduled after current frame render
     }, 0);
 
+    // Use runIdle for truly optional tasks (analytics, charts, background jobs)
     runIdle(() => {
-        invalidateStreakCache(habitId, dateISO);
-        invalidateDaySummaryCache(dateISO); // Invalida cache apenas para este dia
         invalidateChartCache(); // Mudança de status afeta o gráfico
         
         renderChart(); // Gráfico precisa atualizar pois pontuação mudou
@@ -563,9 +587,17 @@ export function toggleHabitStatus(habitId: string, time: TimeOfDay, dateISO: str
 export function setGoalOverride(habitId: string, date: string, time: TimeOfDay, newGoal: number) {
     const dayInstanceData = ensureHabitInstanceData(date, habitId, time);
     dayInstanceData.goalOverride = newGoal;
+    
     invalidateDaySummaryCache(date);
-    saveState();
-    renderCalendarDayPartial(date); // Update only current day in calendar
+    
+    // PERFORMANCE [2025-02-04]: Hybrid Persistence Pattern.
+    // Updates UI immediately to prevent jank on rapid tapping (+/-),
+    // defers blocking I/O (saveState) to the next macrotask.
+    renderCalendarDayPartial(date); 
+    
+    setTimeout(() => {
+        saveState();
+    }, 0);
 }
 
 export function handleSaveNote() {

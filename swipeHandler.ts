@@ -138,6 +138,8 @@ export function setupSwipeHandler(habitContainer: HTMLElement) {
         window.removeEventListener('pointermove', handlePointerMove);
         window.removeEventListener('pointerup', handlePointerUp);
         window.removeEventListener('pointercancel', _cleanupAndReset);
+        // Clean up contextmenu listener to prevent leaks
+        window.removeEventListener('contextmenu', _cleanupAndReset);
         
         activeCard = null;
         isSwiping = false;
@@ -284,5 +286,7 @@ export function setupSwipeHandler(habitContainer: HTMLElement) {
         window.addEventListener('pointermove', handlePointerMove);
         window.addEventListener('pointerup', handlePointerUp);
         window.addEventListener('pointercancel', _cleanupAndReset);
+        // UX FIX [2025-02-02]: Cancel swipe on contextmenu (prevents stuck cards on mobile long-press)
+        window.addEventListener('contextmenu', _cleanupAndReset);
     });
 }

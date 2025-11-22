@@ -1,5 +1,5 @@
 
-import { state, DAYS_IN_CALENDAR, invalidateChartCache } from './state';
+import { state, DAYS_IN_CALENDAR, invalidateChartCache, getNextStatus } from './state';
 import { toUTCIsoDateString, parseUTCIsoDate, debounce, triggerHaptic, getTodayUTCIso, addDays } from './utils';
 import { ui } from './ui';
 import {
@@ -18,7 +18,7 @@ import { setupModalListeners } from './modalListeners';
 import { setupHabitCardListeners } from './habitCardListeners';
 import { setupSwipeHandler } from './swipeHandler';
 import { setupDragAndDropHandler } from './dragAndDropHandler';
-import { handleUndoDelete, completeAllHabitsForDate, snoozeAllHabitsForDate } from './habitActions';
+import { handleUndoDelete, completeAllHabitsForDate, snoozeAllHabitsForDate, toggleHabitStatus } from './habitActions';
 import { renderChart } from './chart';
 import { updateAppBadge } from './badge';
 

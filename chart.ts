@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -5,6 +6,7 @@
 // [ANALYSIS PROGRESS]: 100% - Otimização "Platinum". Migração de "Game Loop" para "Event-Driven Throttling".
 // PERFORMANCE [2025-01-30]: True Zero-Cost Idle. O código só executa quando o evento pointermove dispara,
 // eliminado completamente o overhead de CPU quando o mouse está parado sobre o gráfico.
+// BUGFIX [2025-02-02]: Tooltip Stale Data fix. Ensures tooltip updates immediately when data changes even if mouse is stationary.
 
 import { state } from './state';
 import { ui } from './ui';
@@ -33,6 +35,9 @@ let chartMetadata = { minVal: 0, maxVal: 100, valueRange: 100 };
 // Cache de geometria do gráfico (Evita Reflow no hot-path)
 let cachedChartRect: DOMRect | null = null;
 
+// BUGFIX: Módulo-scoped para permitir reset externo quando os dados mudam
+let lastRenderedPointIndex = -1;
+
 // Cache de referências DOM (Evita querySelector no hot-path)
 let chartElements: {
     chartSvg?: SVGSVGElement;
@@ -56,6 +61,10 @@ let isChartVisible = true;
 let isChartDirty = false;
 let chartObserver: IntersectionObserver | null = null;
 let resizeObserver: ResizeObserver | null = null;
+
+// INTERACTION STATE [2025-02-02]: Hoisted to module scope to allow external re-render triggers.
+let rafId: number | null = null;
+let inputClientX = 0;
 
 
 function calculateChartData(): ChartDataPoint[] {
@@ -115,7 +124,18 @@ function _updateChartDOM(chartData: ChartDataPoint[]) {
 
     const firstDate = parseUTCIsoDate(chartData[0].date);
     const lastDate = parseUTCIsoDate(chartData[chartData.length - 1].date);
-    const axisFormatter = getDateTimeFormat(state.activeLanguageCode, { month: 'short', day: 'numeric', timeZone: 'UTC' });
+    
+    // UX FIX [2025-02-05]: Show year if range spans across different years.
+    const startYear = firstDate.getUTCFullYear();
+    const endYear = lastDate.getUTCFullYear();
+    const showYear = startYear !== endYear;
+    
+    const axisFormatter = getDateTimeFormat(state.activeLanguageCode, { 
+        month: 'short', 
+        day: 'numeric', 
+        timeZone: 'UTC',
+        year: showYear ? '2-digit' : undefined
+    });
     
     const svgWidth = ui.chartContainer.clientWidth;
     const svgHeight = 100;
@@ -165,80 +185,76 @@ function _updateChartDOM(chartData: ChartDataPoint[]) {
     cachedChartRect = chartWrapper.getBoundingClientRect();
 }
 
-function _setupChartListeners() {
+// CORE RENDER LOGIC [2025-02-02]: Extracted for re-use.
+function updateTooltipPosition() {
+    rafId = null; // Clear flag to allow next frame request
     const { chartWrapper, tooltip, indicator, tooltipDate, tooltipScoreLabel, tooltipScoreValue, tooltipHabits } = chartElements;
+
     if (!chartWrapper || !tooltip || !indicator || !tooltipDate || !tooltipScoreLabel || !tooltipScoreValue || !tooltipHabits) return;
+    if (lastChartData.length === 0 || !chartWrapper.isConnected) return;
 
-    // --- EVENT-DRIVEN THROTTLING ---
-    let rafId: number | null = null;
-    let inputClientX = 0; 
-    let lastRenderedPointIndex = -1;
+    if (!cachedChartRect) {
+        cachedChartRect = chartWrapper.getBoundingClientRect();
+    }
 
-    const renderFrame = () => {
-        rafId = null; // Clear flag to allow next frame request
+    const svgWidth = cachedChartRect.width;
+    if (svgWidth === 0) return;
 
-        if (lastChartData.length === 0 || !chartWrapper.isConnected) {
-            return;
-        }
+    const padding = { top: 10, right: 10, bottom: 10, left: 10 };
+    const chartWidth = svgWidth - padding.left - padding.right;
+    
+    // Math optimization: Single calculation path
+    const x = inputClientX - cachedChartRect.left;
+    const index = Math.round((x - padding.left) / chartWidth * (lastChartData.length - 1));
+    const pointIndex = Math.max(0, Math.min(lastChartData.length - 1, index));
 
-        if (!cachedChartRect) {
-            cachedChartRect = chartWrapper.getBoundingClientRect();
-        }
-
-        const svgWidth = cachedChartRect.width;
-        if (svgWidth === 0) return;
-
-        const padding = { top: 10, right: 10, bottom: 10, left: 10 };
-        const chartWidth = svgWidth - padding.left - padding.right;
+    // Dirty Check: Surgical DOM update only on index change
+    if (pointIndex !== lastRenderedPointIndex) {
+        lastRenderedPointIndex = pointIndex;
         
-        // Math optimization: Single calculation path
-        const x = inputClientX - cachedChartRect.left;
-        const index = Math.round((x - padding.left) / chartWidth * (lastChartData.length - 1));
-        const pointIndex = Math.max(0, Math.min(lastChartData.length - 1, index));
+        const point = lastChartData[pointIndex];
+        const { minVal, valueRange } = chartMetadata;
+        const chartHeight = 100 - padding.top - padding.bottom;
+    
+        const pointX = padding.left + (pointIndex / (lastChartData.length - 1)) * chartWidth;
+        const pointY = padding.top + chartHeight - ((point.value - minVal) / valueRange) * chartHeight;
 
-        // Dirty Check: Surgical DOM update only on index change
-        if (pointIndex !== lastRenderedPointIndex) {
-            lastRenderedPointIndex = pointIndex;
-            
-            const point = lastChartData[pointIndex];
-            const { minVal, valueRange } = chartMetadata;
-            const chartHeight = 100 - padding.top - padding.bottom;
+        indicator.style.opacity = '1';
+        indicator.style.transform = `translateX(${pointX}px)`;
+        const dot = indicator.querySelector<HTMLElement>('.chart-indicator-dot');
+        if (dot) dot.style.top = `${pointY}px`;
         
-            const pointX = padding.left + (pointIndex / (lastChartData.length - 1)) * chartWidth;
-            const pointY = padding.top + chartHeight - ((point.value - minVal) / valueRange) * chartHeight;
+        const date = parseUTCIsoDate(point.date);
+        const formattedDate = getDateTimeFormat(state.activeLanguageCode, { 
+            weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' 
+        }).format(date);
+        
+        tooltipDate.textContent = formattedDate;
+        tooltipScoreLabel.textContent = t('chartTooltipScore') + ': ';
+        tooltipScoreValue.textContent = point.value.toFixed(2);
+        tooltipHabits.textContent = t('chartTooltipCompleted', { completed: point.completedCount, total: point.scheduledCount });
 
-            indicator.style.opacity = '1';
-            indicator.style.transform = `translateX(${pointX}px)`;
-            const dot = indicator.querySelector<HTMLElement>('.chart-indicator-dot');
-            if (dot) dot.style.top = `${pointY}px`;
-            
-            const date = parseUTCIsoDate(point.date);
-            const formattedDate = getDateTimeFormat(state.activeLanguageCode, { 
-                weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' 
-            }).format(date);
-            
-            tooltipDate.textContent = formattedDate;
-            tooltipScoreLabel.textContent = t('chartTooltipScore') + ': ';
-            tooltipScoreValue.textContent = point.value.toFixed(2);
-            tooltipHabits.textContent = t('chartTooltipCompleted', { completed: point.completedCount, total: point.scheduledCount });
-
-            if (!tooltip.classList.contains('visible')) {
-                tooltip.classList.add('visible');
-            }
-            
-            let translateX = '-50%';
-            if (pointX < 50) translateX = '0%';
-            else if (pointX > svgWidth - 50) translateX = '-100%';
-
-            tooltip.style.transform = `translate3d(calc(${pointX}px + ${translateX}), calc(${pointY - 20}px - 100%), 0)`;
+        if (!tooltip.classList.contains('visible')) {
+            tooltip.classList.add('visible');
         }
-    };
+        
+        let translateX = '-50%';
+        if (pointX < 50) translateX = '0%';
+        else if (pointX > svgWidth - 50) translateX = '-100%';
+
+        tooltip.style.transform = `translate3d(calc(${pointX}px + ${translateX}), calc(${pointY - 20}px - 100%), 0)`;
+    }
+}
+
+function _setupChartListeners() {
+    const { chartWrapper, tooltip, indicator } = chartElements;
+    if (!chartWrapper || !tooltip || !indicator) return;
 
     // Handler de Input: Solicita o frame APENAS se um não estiver pendente
     const handlePointerMove = (e: PointerEvent) => {
         inputClientX = e.clientX;
         if (!rafId) {
-            rafId = requestAnimationFrame(renderFrame);
+            rafId = requestAnimationFrame(updateTooltipPosition);
         }
     };
 
@@ -289,6 +305,8 @@ export function renderChart() {
     if (state.chartDataDirty || lastChartData.length === 0) {
         lastChartData = calculateChartData();
         state.chartDataDirty = false;
+        // BUGFIX: Reset rendered index to force tooltip update even if mouse didn't move
+        lastRenderedPointIndex = -1; 
     }
 
     const isEmpty = lastChartData.length < 2 || lastChartData.every(d => d.scheduledCount === 0);
@@ -352,6 +370,14 @@ export function renderChart() {
 
     if (isChartVisible) {
         _updateChartDOM(lastChartData);
+        
+        // REACTIVE TOOLTIP UPDATE [2025-02-02]:
+        // If the tooltip is currently visible, force an immediate position/content update.
+        // This fixes the issue where checking a habit via keyboard didn't update the tooltip value instantly.
+        if (chartElements.tooltip && chartElements.tooltip.classList.contains('visible')) {
+            updateTooltipPosition();
+        }
+        
         isChartDirty = false;
     } else {
         isChartDirty = true;

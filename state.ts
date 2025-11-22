@@ -219,6 +219,7 @@ export const state: {
         originalData?: Habit; // For comparing changes
         // A template-like object for the form
         formData: HabitTemplate;
+        targetDate: string; // [2025-02-04] Snapshot of the date being edited to prevent context drift
     } | null;
     aiState: 'idle' | 'loading' | 'completed' | 'error';
     hasSeenAIResult: boolean;
@@ -539,12 +540,17 @@ export function ensureHabitInstanceData(date: string, habitId: string, time: Tim
 const anchorTimestampCache = new WeakMap<HabitSchedule, number>();
 
 export function shouldHabitAppearOnDate(habit: Habit, date: Date, dateISO?: string): boolean {
-    if (habit.graduatedOn) return false;
-
     // PERFORMANCE [2025-01-20]: Cache Determinístico de Aparência (Hot-Path Optimization).
     // Esta função é chamada milhares de vezes durante o cálculo de streak.
-    // Se já sabemos que o Hábito X aparece na Data Y, retornamos o valor cacheado imediatamente.
     const dateStr = dateISO || toUTCIsoDateString(date);
+
+    // FIX [2025-02-02]: Integrity check for graduated habits.
+    // Habits should only disappear on or AFTER their graduation date, not before.
+    // This allows graduated habits to remain visible in historical charts and data.
+    if (habit.graduatedOn && dateStr >= habit.graduatedOn) {
+        return false;
+    }
+
     const cacheKey = `${habit.id}|${dateStr}`;
     if (state.habitAppearanceCache.has(cacheKey)) {
         return state.habitAppearanceCache.get(cacheKey)!;
