@@ -180,7 +180,7 @@ export function saveHabitFromModal() {
     const { isNew, habitId, formData } = state.editingHabit;
 
     // 1. Validação
-    const formNoticeEl = ui.editHabitForm.querySelector<HTMLElement>('.form-notice');
+    const formNoticeEl = ui.editHabitForm.querySelector<HTMLElement>('.form-notice')!;
     if (formData.times.length === 0 || (!formData.name && !formData.nameKey)) {
         if (formNoticeEl) {
             showInlineNotice(formNoticeEl, t('modalEditFormNotice'));
