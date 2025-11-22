@@ -436,11 +436,28 @@ export function renderFrequencyOptions() {
     const isSpecificDays = currentFrequency.type === 'specific_days_of_week';
     const isInterval = currentFrequency.type === 'interval';
 
-    const weekdays = [
+    const rawWeekdays = [
         { key: 'weekdaySun', day: 0 }, { key: 'weekdayMon', day: 1 }, { key: 'weekdayTue', day: 2 },
         { key: 'weekdayWed', day: 3 }, { key: 'weekdayThu', day: 4 }, { key: 'weekdayFri', day: 5 },
         { key: 'weekdaySat', day: 6 }
     ];
+
+    // REATORAÇÃO DE LOCALIZAÇÃO [2025-02-06]: Ajusta a ordem dos dias da semana.
+    // Solicitação: Inglês e Espanhol devem começar na Segunda-feira.
+    // Português mantém o padrão de Domingo (índice 0).
+    let weekdays = rawWeekdays;
+    if (state.activeLanguageCode === 'es' || state.activeLanguageCode === 'en') {
+        weekdays = [
+            rawWeekdays[1], // Mon
+            rawWeekdays[2], // Tue
+            rawWeekdays[3], // Wed
+            rawWeekdays[4], // Thu
+            rawWeekdays[5], // Fri
+            rawWeekdays[6], // Sat
+            rawWeekdays[0]  // Sun
+        ];
+    }
+
     const selectedDays = isSpecificDays ? new Set(currentFrequency.days) : new Set();
     const weekdayPickerHTML = `
         <div class="weekday-picker">

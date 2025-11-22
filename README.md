@@ -12,59 +12,57 @@
   <a href="https://askesis-psi.vercel.app/">
     <img src="https://img.shields.io/badge/LIVE_DEMO-Acessar_App-27ae60?style=for-the-badge&logo=vercel&logoColor=white" alt="Acessar Aplicação">
   </a>
-</p>
-
-<p align="center">
-  <img src="https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript" />
-  <img src="https://img.shields.io/badge/Google_Gemini-8E75B2?style=for-the-badge&logo=google-gemini&logoColor=white" alt="Gemini AI" />
-  <img src="https://img.shields.io/badge/Vercel-000000?style=for-the-badge&logo=vercel&logoColor=white" alt="Vercel" />
-  <img src="https://img.shields.io/badge/PWA-5A0FC8?style=for-the-badge&logo=pwa&logoColor=white" alt="PWA" />
+  <a href="https://askesis-psi.vercel.app/">
+    <img src="https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript" />
+  </a>
+  <a href="https://askesis-psi.vercel.app/">
+    <img src="https://img.shields.io/badge/Google_Gemini-8E75B2?style=for-the-badge&logo=google-gemini&logoColor=white" alt="Gemini AI" />
+  </a>
+  <a href="https://askesis-psi.vercel.app/">
+    <img src="https://img.shields.io/badge/Vercel-000000?style=for-the-badge&logo=vercel&logoColor=white" alt="Vercel" />
+  </a>
+  <a href="https://askesis-psi.vercel.app/">
+    <img src="https://img.shields.io/badge/PWA-5A0FC8?style=for-the-badge&logo=pwa&logoColor=white" alt="PWA" />
+  </a>
 </p>
 
 ---
 
-## 🏛️ A Filosofia
+## 🏛️ A Filosofia: O que é Askesis?
 
-**Askesis** (do grego *ἄσκησις*) significa "treinamento". Na filosofia estoica, não se trata de sofrimento, mas do **treinamento rigoroso da mente e do caráter**.
+**Askesis** (do grego *ἄσκησις*) é a raiz da palavra "ascetismo", mas seu significado original é muito mais prático: significa **"treinamento"** ou **"exercício"**.
 
-A maioria dos apps de hábitos foca em "não quebrar a corrente". O Askesis foca na **virtude da consistência**. Ele usa Inteligência Artificial para atuar como um "Sábio Estoico", analisando seus dados não para julgar, mas para oferecer conselhos sobre como fortalecer sua vontade.
+Na filosofia estoica, *askesis* não se trata de sofrimento ou privação sem sentido, mas do **treinamento rigoroso e atlético da mente e do caráter**. Assim como um atleta treina o corpo para a competição, o estoico treina a mente para lidar com as adversidades da vida com virtude e tranquilidade.
+
+A maioria dos apps de hábitos foca em gamificação superficial ou em "não quebrar a corrente". O Askesis foca na **virtude da consistência**. Ele usa Inteligência Artificial para atuar como um "Sábio Estoico", analisando seus dados não para julgar, mas para oferecer conselhos sobre como fortalecer sua vontade.
 
 ---
 
-## ✨ Funcionalidades Principais
+## 📱 Como Usar o Askesis
 
-<table>
-  <tr>
-    <td width="50%">
-      <h3>🎯 Gestão de Hábitos Fluida</h3>
-      <p>Crie hábitos personalizados ou escolha modelos predefinidos. Defina frequências flexíveis (diária, dias da semana ou intervalos).</p>
-    </td>
-    <td width="50%">
-      <h3>👆 Interações Gestuais (Swipe)</h3>
-      <p>Interface inspirada em apps nativos. Deslize para <strong>Adiar</strong>, <strong>Excluir</strong> ou adicionar <strong>Notas</strong> contextuais ao seu dia.</p>
-    </td>
-  </tr>
-  <tr>
-    <td width="50%">
-      <h3>🧠 Mentoria com IA (Gemini)</h3>
-      <p>Receba feedback personalizado baseado na filosofia estoica. A IA analisa seus padrões e celebra marcos (21 e 66 dias).</p>
-    </td>
-    <td width="50%">
-      <h3>📈 Crescimento Composto</h3>
-      <p>Um gráfico exclusivo que visualiza a consistência como juros compostos. Seus esforços diários se acumulam visualmente.</p>
-    </td>
-  </tr>
-  <tr>
-    <td width="50%">
-      <h3>🔒 Privacidade Absoluta (E2EE)</h3>
-      <p>Seus dados são criptografados no seu dispositivo (AES-GCM) antes de tocar a nuvem. Nem nós podemos lê-los.</p>
-    </td>
-    <td width="50%">
-      <h3>⚡ 100% Offline & PWA</h3>
-      <p>Funciona sem internet. Instale no seu celular como um aplicativo nativo.</p>
-    </td>
-  </tr>
-</table>
+O Askesis foi desenhado para ser intuitivo, rápido e focado na ação.
+
+### 1. Adicionando Hábitos
+*   **Botão FAB (+):** Clique no botão verde flutuante no canto superior esquerdo para abrir o menu de exploração.
+*   **Explorar & Personalizar:** Escolha entre hábitos predefinidos (como "Meditar", "Ler", "Exercício") ou crie um totalmente personalizado.
+*   **Definição:** Escolha o ícone, cor, horário (Manhã, Tarde, Noite) e a frequência desejada.
+
+### 2. Interações Gestuais (Swipe)
+Inspirado em interfaces móveis nativas, a interação principal é feita através de gestos nos cartões de hábito:
+*   **Deslizar para a Direita (Fundo Verde/Azul):** Marca o hábito como **Concluído**. Se já estiver concluído, volta para pendente.
+*   **Deslizar para a Esquerda (Fundo Amarelo/Cinza):** Revela opções secundárias.
+    *   **Adiar (Snooze):** Move o hábito para um estado de "Adiado" (não conta como falha, mas não soma pontos).
+    *   **Notas:** Adicione uma reflexão curta sobre aquele hábito específico no dia.
+
+### 3. Gráfico de Crescimento Composto
+Diferente de gráficos lineares simples, o gráfico do Askesis visualiza a **consistência como juros compostos**.
+*   **Lógica:** Cada dia concluído com sucesso aumenta sua "pontuação composta". Dias perdidos penalizam levemente o crescimento, mas a consistência a longo prazo gera uma curva exponencial.
+*   **Objetivo:** Ver visualmente como pequenos esforços diários se acumulam em grandes resultados ao longo do tempo.
+
+### 4. Mentoria com IA
+*   Clique no ícone do "cérebro" no topo da tela.
+*   A IA (Google Gemini) analisará seu histórico recente.
+*   Você receberá um feedback personalizado, estoico e acionável sobre seus padrões, celebrando marcos (como 21 ou 66 dias) e sugerindo correções de curso.
 
 ---
 
@@ -75,7 +73,7 @@ Este projeto rejeita a complexidade desnecessária dos frameworks modernos em fa
 ### Estrutura do Projeto
 
 ```text
-/
+.
 ├── api/                 # Vercel Edge Functions (Backend Serverless)
 ├── locales/             # Arquivos de Tradução (i18n)
 ├── index.html           # App Shell (Critical Render Path)
