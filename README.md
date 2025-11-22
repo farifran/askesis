@@ -1,30 +1,36 @@
-<p align="center">
-  <img src="icons/icon-512.svg" width="120" alt="Askesis Logo" style="border-radius: 24px; box-shadow: 0 8px 24px rgba(0,0,0,0.2);">
-</p>
-
-<h1 align="center">Askesis</h1>
-
-<p align="center">
-  <em>O Rastreador de Hábitos Estoico. Minimalista. Focado em Privacidade. Impulsionado por IA.</em>
-</p>
-
-<p align="center">
-  <a href="https://askesis-psi.vercel.app/">
-    <img src="https://img.shields.io/badge/LIVE_DEMO-Acessar_App-27ae60?style=for-the-badge&logo=vercel&logoColor=white" alt="Acessar Aplicação">
-  </a>
-  <a href="https://askesis-psi.vercel.app/">
-    <img src="https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript" />
-  </a>
-  <a href="https://askesis-psi.vercel.app/">
-    <img src="https://img.shields.io/badge/Google_Gemini-8E75B2?style=for-the-badge&logo=google-gemini&logoColor=white" alt="Gemini AI" />
-  </a>
-  <a href="https://askesis-psi.vercel.app/">
-    <img src="https://img.shields.io/badge/Vercel-000000?style=for-the-badge&logo=vercel&logoColor=white" alt="Vercel" />
-  </a>
-  <a href="https://askesis-psi.vercel.app/">
-    <img src="https://img.shields.io/badge/PWA-5A0FC8?style=for-the-badge&logo=pwa&logoColor=white" alt="PWA" />
-  </a>
-</p>
+<div align="center">
+  <table border="0">
+    <tr>
+      <td width="160" align="center" valign="middle">
+        <img src="icons/icon-512.svg" width="120" alt="Askesis Logo" style="border-radius: 24px;">
+      </td>
+      <td align="left" valign="middle">
+        <h1>Askesis</h1>
+        <p><em>O Rastreador de Hábitos Estoico. Minimalista. Focado em Privacidade. Impulsionado por IA.</em></p>
+        <!-- Linha 1 -->
+        <a href="https://askesis-psi.vercel.app/">
+          <img src="https://img.shields.io/badge/LIVE_DEMO-Acessar_App-27ae60?style=for-the-badge&logo=vercel&logoColor=white" alt="Acessar Aplicação">
+        </a>
+        <br>
+        <!-- Linha 2 -->
+        <a href="https://askesis-psi.vercel.app/">
+          <img src="https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript" />
+        </a>
+        <a href="https://askesis-psi.vercel.app/">
+          <img src="https://img.shields.io/badge/Google_Gemini-8E75B2?style=for-the-badge&logo=google-gemini&logoColor=white" alt="Gemini AI" />
+        </a>
+        <br>
+        <!-- Linha 3 -->
+        <a href="https://askesis-psi.vercel.app/">
+          <img src="https://img.shields.io/badge/Vercel-000000?style=for-the-badge&logo=vercel&logoColor=white" alt="Vercel" />
+        </a>
+        <a href="https://askesis-psi.vercel.app/">
+          <img src="https://img.shields.io/badge/PWA-5A0FC8?style=for-the-badge&logo=pwa&logoColor=white" alt="PWA" />
+        </a>
+      </td>
+    </tr>
+  </table>
+</div>
 
 ---
 
