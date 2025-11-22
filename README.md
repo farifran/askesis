@@ -1,13 +1,14 @@
 <div align="center" style="background-color: #121212; color: #e5e5e5; padding: 20px; border-radius: 12px;">
-  <table border="0" style="background-color: #121212; color: #e5e5e5;">
+  <table border="0" cellspacing="0" cellpadding="0" style="border-collapse: collapse; border: none; background-color: #121212; color: #e5e5e5;">
     <tr>
-      <td width="160" align="center" valign="middle">
+      <td width="160" align="center" valign="middle" style="border: none;">
         <img src="icons/icon-512.svg" width="120" alt="Askesis Logo" style="border-radius: 24px;">
       </td>
-      <td align="left" valign="middle" style="color: #e5e5e5;">
-        <h1 style="color: #e5e5e5;">Askesis</h1>
-        <p style="color: #b3b3b3;"><em>O Rastreador de Hábitos Estoico. Minimalista. Focado em Privacidade. Impulsionado por IA.</em></p>
-        <a href="https://askesis-psi.vercel.app/"><img src="https://img.shields.io/badge/Acessar_App-27ae60?style=for-the-badge&logo=vercel&logoColor=white" alt="Acessar Aplicação"></a><a href="https://askesis-psi.vercel.app/"><img src="https://img.shields.io/badge/Google_Gemini-001e4d?style=for-the-badge&logo=google-gemini&logoColor=white" alt="Gemini AI" /></a><a href="https://askesis-psi.vercel.app/"><img src="https://img.shields.io/badge/TypeScript-000000?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript" /></a><a href="https://askesis-psi.vercel.app/"><img src="https://img.shields.io/badge/Vercel-000000?style=for-the-badge&logo=vercel&logoColor=white" alt="Vercel" /></a><a href="https://askesis-psi.vercel.app/"><img src="https://img.shields.io/badge/PWA-000000?style=for-the-badge&logo=pwa&logoColor=white" alt="PWA" /></a>
+      <td align="left" valign="middle" style="border: none; color: #e5e5e5; padding-left: 20px;">
+        <h1 style="color: #e5e5e5; margin-bottom: 10px; margin-top: 0;">Askesis</h1>
+        <a href="https://askesis-psi.vercel.app/"><img src="https://img.shields.io/badge/Acessar_App-27ae60?style=for-the-badge&logo=vercel&logoColor=white" alt="Acessar Aplicação"></a><a href="https://askesis-psi.vercel.app/"><img src="https://img.shields.io/badge/Google_Gemini-4285F4?style=for-the-badge&logo=google-gemini&logoColor=white" alt="Gemini AI" /></a><a href="https://askesis-psi.vercel.app/"><img src="https://img.shields.io/badge/TypeScript-000000?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript" /></a><a href="https://askesis-psi.vercel.app/"><img src="https://img.shields.io/badge/Vercel-555555?style=for-the-badge&logo=vercel&logoColor=white" alt="Vercel" /></a><a href="https://askesis-psi.vercel.app/"><img src="https://img.shields.io/badge/PWA-000000?style=for-the-badge&logo=pwa&logoColor=white" alt="PWA" /></a>
+        <br><br>
+        <p style="color: #b3b3b3; margin: 0;"><em>O Rastreador de Hábitos Estoico. Minimalista. Focado em Privacidade. Impulsionado por IA.</em></p>
       </td>
     </tr>
   </table>
