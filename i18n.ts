@@ -5,7 +5,7 @@
 */
 // [ANALYSIS PROGRESS]: 100% - Análise concluída. Implementado cache para Intl.PluralRules na função 't' para otimizar performance em renderizações frequentes.
 
-import { state, Habit, LANGUAGES, PredefinedHabit, TimeOfDay, getScheduleForDate } from './state';
+import { state, Habit, LANGUAGES, PredefinedHabit, TimeOfDay, getScheduleForDate, invalidateChartCache } from './state';
 import { ui } from './ui';
 import { renderApp, updateHeaderTitle, setupManageModal, initLanguageFilter } from './render';
 import { pushToOneSignal, getDateTimeFormat } from './utils';
@@ -258,6 +258,14 @@ export async function setLanguage(langCode: 'pt' | 'en' | 'es') {
     });
     
     initLanguageFilter();
+
+    // CRITICAL FIX [2025-02-05]: Invalidação de cache de UI (Dirty Checking).
+    // Ao trocar o idioma, a lógica de renderApp() normalmente pularia a renderização
+    // porque os dados em si não mudaram. Aqui forçamos as flags de 'dirty' para true,
+    // obrigando o redesenho imediato do calendário, lista de hábitos e gráficos com o novo idioma.
+    state.uiDirtyState.calendarVisuals = true;
+    state.uiDirtyState.habitListStructure = true;
+    invalidateChartCache();
 
     updateUIText();
     // Garante que o status de sincronização dinâmico seja re-traduzido a partir do estado.
