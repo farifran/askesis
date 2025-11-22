@@ -787,7 +787,10 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 }
 
 .habit-card:hover .habit-content-wrapper { background-color: var(--surface-hover); }
-.habit-card.completed .habit-content-wrapper { background-color: color-mix(in srgb, var(--accent-blue) 20%, var(--surface-color)); }
+.habit-card.completed .habit-content-wrapper { 
+    background-color: color-mix(in srgb, var(--accent-blue) 20%, var(--surface-color));
+    opacity: 0.75; /* UX: De-emphasize completed items */
+}
 .habit-card.snoozed .habit-content-wrapper {
     background-color: var(--surface-snoozed);
 }
@@ -926,9 +929,11 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     line-height: 1;
     padding: 0;
     flex-shrink: 0;
+    transition: opacity 0.2s, background-color 0.2s;
 }
 .goal-control-btn:hover { background-color: var(--surface-hover); }
 .goal-control-btn:active { transform: scale(0.95); }
+.goal-control-btn:disabled { opacity: 0.3; cursor: default; background-color: transparent; }
 
 .goal-value-wrapper {
     text-align: center;
@@ -942,7 +947,7 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 
 .goal-input-inline {
     width: calc(var(--space-section) * 2);
-    background: var(--bg-color);
+    background: transparent; /* UX FIX: Blend with card background */
     border: 1px solid var(--accent-blue);
     color: var(--text-primary);
     font-size: 14px;
@@ -1036,7 +1041,8 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     background-color: rgba(0, 0, 0, 0.2); /* Contraste sutil sobre o fundo snoozed */
 }
 
-.snoozed-icon {
+/* Generic SVG styling for snoozed icon inside wrapper */
+.snoozed-wrapper svg {
     width: 16px;
     height: 16px;
     stroke: var(--text-tertiary);

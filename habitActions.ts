@@ -11,6 +11,7 @@
 // ROBUSTNESS [2025-01-29]: saveState() moved to setTimeout(0) to ensure persistence on quick tab close while keeping UI responsive.
 // BUGFIX [2025-02-01]: Fixed "Stale Cache Render" race condition. Critical caches must be invalidated BEFORE surgical rendering.
 // BUGFIX [2025-02-02]: Fixed data loss when moving habits "From Now On". Daily progress is now migrated to the new time slot.
+// ROBUSTNESS [2025-02-05]: Added visibilitychange listener to flush pending debounced saves.
 
 import { generateUUID, getTodayUTCIso, parseUTCIsoDate, addDays, escapeHTML, simpleMarkdownToHTML, getTodayUTC, toUTCIsoDateString, runIdle } from './utils';
 import { apiFetch } from './api';
@@ -584,6 +585,19 @@ export function toggleHabitStatus(habitId: string, time: TimeOfDay, dateISO: str
     });
 }
 
+let goalSaveTimeout: number | null = null;
+
+// SAFETY [2025-02-05]: Flush debounced saves on visibility change.
+// This ensures that if the user taps quickly and then closes the app/tab,
+// the pending save happens immediately instead of being lost.
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden' && goalSaveTimeout) {
+        clearTimeout(goalSaveTimeout);
+        saveState();
+        goalSaveTimeout = null;
+    }
+});
+
 export function setGoalOverride(habitId: string, date: string, time: TimeOfDay, newGoal: number) {
     const dayInstanceData = ensureHabitInstanceData(date, habitId, time);
     dayInstanceData.goalOverride = newGoal;
@@ -591,13 +605,19 @@ export function setGoalOverride(habitId: string, date: string, time: TimeOfDay, 
     invalidateDaySummaryCache(date);
     
     // PERFORMANCE [2025-02-04]: Hybrid Persistence Pattern.
-    // Updates UI immediately to prevent jank on rapid tapping (+/-),
-    // defers blocking I/O (saveState) to the next macrotask.
+    // Updates UI immediately to prevent jank on rapid tapping (+/-).
     renderCalendarDayPartial(date); 
     
-    setTimeout(() => {
+    // DEBOUNCE PERSISTENCE [2025-02-05]: 
+    // Delay blocking saveState() by 500ms to handle bursts of clicks.
+    // This significantly improves responsiveness during rapid increments.
+    if (goalSaveTimeout) {
+        clearTimeout(goalSaveTimeout);
+    }
+    goalSaveTimeout = window.setTimeout(() => {
         saveState();
-    }, 0);
+        goalSaveTimeout = null;
+    }, 500);
 }
 
 export function handleSaveNote() {

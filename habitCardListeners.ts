@@ -32,6 +32,13 @@ function _updateGoalDisplay(wrapperEl: HTMLElement, habit: Habit, newGoal: numbe
         progressEl.textContent = formatGoalForDisplay(newGoal);
         unitEl.textContent = getUnitString(habit, newGoal);
     }
+    
+    // UX FIX [2025-02-05]: Update decrement button state based on value
+    const controls = wrapperEl.closest('.habit-goal-controls');
+    const decBtn = controls?.querySelector<HTMLButtonElement>('.goal-control-btn[data-action="decrement"]');
+    if (decBtn) {
+        decBtn.disabled = newGoal <= 1;
+    }
 }
 
 
@@ -73,8 +80,15 @@ function createGoalInput(habit: Habit, time: TimeOfDay, wrapper: HTMLElement) {
             
             // UX CHANGE [2025-02-05]: Auto-complete removido a pedido do usuário.
             // Apenas feedback tátil é disparado.
-            
             triggerHaptic('success');
+
+            // UX IMPROVEMENT: Fornece feedback visual (flash verde) para confirmar a edição manual
+            requestAnimationFrame(() => {
+                wrapper.classList.add('increase');
+                wrapper.addEventListener('animationend', () => {
+                    wrapper.classList.remove('increase');
+                }, { once: true });
+            });
         } else {
              // Se o valor for inválido, restaura o conteúdo original para evitar um estado vazio.
             wrapper.innerHTML = originalContent;

@@ -125,10 +125,11 @@ function _updateChartDOM(chartData: ChartDataPoint[]) {
     const firstDate = parseUTCIsoDate(chartData[0].date);
     const lastDate = parseUTCIsoDate(chartData[chartData.length - 1].date);
     
-    // UX FIX [2025-02-05]: Show year if range spans across different years.
+    // UX FIX [2025-02-05]: Show year if range spans across different years OR if not current year.
+    const currentYear = new Date().getUTCFullYear();
     const startYear = firstDate.getUTCFullYear();
     const endYear = lastDate.getUTCFullYear();
-    const showYear = startYear !== endYear;
+    const showYear = startYear !== endYear || endYear !== currentYear;
     
     const axisFormatter = getDateTimeFormat(state.activeLanguageCode, { 
         month: 'short', 

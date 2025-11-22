@@ -581,13 +581,9 @@ function updateGoalContentElement(goalEl: HTMLElement, status: HabitStatus, habi
         const wrapper = document.createElement('div');
         wrapper.className = 'snoozed-wrapper';
         
-        // Ícone SVG inline (ok usar innerHTML aqui pois é estático e SVG complexo de criar via DOM API manualmente)
-        wrapper.innerHTML = `
-            <svg class="snoozed-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="13 17 18 12 13 7"></polyline>
-                <polyline points="6 17 11 12 6 7"></polyline>
-            </svg>
-        `;
+        // DRY REFACTOR: Use centralized icon string from icons.ts
+        // We add the SVG string directly. The CSS targeting '.snoozed-wrapper svg' handles styling.
+        wrapper.innerHTML = icons.snoozed;
         
         const textSpan = document.createElement('span');
         textSpan.className = 'snoozed-text';
@@ -647,11 +643,17 @@ function updateGoalContentElement(goalEl: HTMLElement, status: HabitStatus, habi
                 goalEl.appendChild(controls);
             }
 
-            // Atualiza valores
+            // Atualiza valores e estado dos botões
             const prog = controls.querySelector('.progress');
             const unit = controls.querySelector('.unit');
             setTextContent(prog, displayVal);
             setTextContent(unit, unitVal);
+            
+            // UX FIX [2025-02-05]: Disable decrement button if value reaches 1 to prevent useless clicks
+            const decBtn = controls.querySelector<HTMLButtonElement>('.goal-control-btn[data-action="decrement"]');
+            if (decBtn) {
+                decBtn.disabled = currentGoal <= 1;
+            }
 
         } else {
             // Pending simples (sem controles)
@@ -1483,7 +1485,7 @@ export function renderIconPicker() {
     ui.iconPickerGrid.style.setProperty('--current-habit-fg-color', fgColor);
 
     if (ui.iconPickerGrid.children.length === 0) {
-        const nonHabitIconKeys = new Set(['morning', 'afternoon', 'evening', 'deletePermanentAction', 'editAction', 'graduateAction', 'endAction', 'swipeDelete', 'swipeNote', 'swipeNoteHasNote', 'colorPicker', 'edit']);
+        const nonHabitIconKeys = new Set(['morning', 'afternoon', 'evening', 'deletePermanentAction', 'editAction', 'graduateAction', 'endAction', 'swipeDelete', 'swipeNote', 'swipeNoteHasNote', 'colorPicker', 'edit', 'snoozed']);
         
         const iconButtons = Object.keys(icons)
             .filter(key => !nonHabitIconKeys.has(key))
