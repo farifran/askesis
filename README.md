@@ -1,76 +1,50 @@
 <p align="center">
-  <img src="icons/icon-512.svg" width="120" alt="Askesis Logo" style="border-radius: 24px; box-shadow: 0 8px 24px rgba(0,0,0,0.2);">
+  <img src="icons/icon-512.svg" width="100" alt="Askesis Logo" style="border-radius: 20px;">
 </p>
 
 <h1 align="center">Askesis</h1>
 
 <p align="center">
-  <em>O Rastreador de Hábitos Estoico. Minimalista. Focado em Privacidade. Impulsionado por IA.</em>
+  Rastreador de Hábitos Estoico. Minimalista. Focado em Privacidade. Impulsionado por IA.
 </p>
 
 <p align="center">
-  <a href="https://askesis-psi.vercel.app/">
-    <img src="https://img.shields.io/badge/LIVE_DEMO-Acessar_App-27ae60?style=for-the-badge&logo=vercel&logoColor=white" alt="Acessar Aplicação">
-  </a>
-</p>
-
-<p align="center">
-  <img src="https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript" />
-  <img src="https://img.shields.io/badge/Google_Gemini-8E75B2?style=for-the-badge&logo=google-gemini&logoColor=white" alt="Gemini AI" />
-  <img src="https://img.shields.io/badge/Vercel-000000?style=for-the-badge&logo=vercel&logoColor=white" alt="Vercel" />
-  <img src="https://img.shields.io/badge/PWA-5A0FC8?style=for-the-badge&logo=pwa&logoColor=white" alt="PWA" />
+  <strong>URL de Produção:</strong> <a href="https://askesis-psi.vercel.app/">https://askesis-psi.vercel.app/</a>
 </p>
 
 ---
 
-## 🏛️ A Filosofia
+## A Filosofia
 
-**Askesis** (do grego *ἄσκησις*) significa "treinamento". Na filosofia estoica, não se trata de sofrimento, mas do **treinamento rigoroso da mente e do caráter**.
+Askesis (do grego *ἄσκησις*) significa "treinamento". Na filosofia estoica, refere-se não ao sofrimento físico, mas ao treinamento rigoroso da mente e do caráter.
 
-A maioria dos apps de hábitos foca em "não quebrar a corrente". O Askesis foca na **virtude da consistência**. Ele usa Inteligência Artificial para atuar como um "Sábio Estoico", analisando seus dados não para julgar, mas para oferecer conselhos sobre como fortalecer sua vontade.
+A maioria das aplicações de rastreamento foca na manutenção de sequências ininterruptas ("streaks"). O Askesis foca na virtude da consistência. O sistema utiliza Inteligência Artificial para atuar como um mentor estoico, analisando padrões de comportamento para oferecer orientações sobre o fortalecimento da disciplina e da vontade, em vez de apenas métricas binárias de sucesso ou falha.
 
----
+## Funcionalidades Principais
 
-## ✨ Funcionalidades Principais
+### Gestão de Hábitos
+O sistema permite a criação de hábitos personalizados ou a seleção a partir de modelos predefinidos. A configuração de frequência é flexível, suportando periodicidade diária, dias específicos da semana ou intervalos numéricos.
 
-<table>
-  <tr>
-    <td width="50%">
-      <h3>🎯 Gestão de Hábitos Fluida</h3>
-      <p>Crie hábitos personalizados ou escolha modelos predefinidos. Defina frequências flexíveis (diária, dias da semana ou intervalos).</p>
-    </td>
-    <td width="50%">
-      <h3>👆 Interações Gestuais (Swipe)</h3>
-      <p>Interface inspirada em apps nativos. Deslize para <strong>Adiar</strong>, <strong>Excluir</strong> ou adicionar <strong>Notas</strong> contextuais ao seu dia.</p>
-    </td>
-  </tr>
-  <tr>
-    <td width="50%">
-      <h3>🧠 Mentoria com IA (Gemini)</h3>
-      <p>Receba feedback personalizado baseado na filosofia estoica. A IA analisa seus padrões e celebra marcos (21 e 66 dias).</p>
-    </td>
-    <td width="50%">
-      <h3>📈 Crescimento Composto</h3>
-      <p>Um gráfico exclusivo que visualiza a consistência como juros compostos. Seus esforços diários se acumulam visualmente.</p>
-    </td>
-  </tr>
-  <tr>
-    <td width="50%">
-      <h3>🔒 Privacidade Absoluta (E2EE)</h3>
-      <p>Seus dados são criptografados no seu dispositivo (AES-GCM) antes de tocar a nuvem. Nem nós podemos lê-los.</p>
-    </td>
-    <td width="50%">
-      <h3>⚡ 100% Offline & PWA</h3>
-      <p>Funciona sem internet. Instale no seu celular como um aplicativo nativo.</p>
-    </td>
-  </tr>
-</table>
+### Interações Gestuais
+A interface utiliza padrões de interação nativos móveis. O gesto de deslizar (swipe) permite adiar, excluir ou adicionar notas contextuais aos registros diários, proporcionando uma experiência de uso fluida e eficiente.
+
+### Mentoria com IA (Gemini)
+Feedback personalizado baseado na filosofia estoica. O sistema analisa os dados do usuário para celebrar marcos de consolidação (21 e 66 dias) e oferecer insights qualitativos sobre o progresso.
+
+### Crescimento Composto
+Visualização de dados que interpreta a consistência como juros compostos. O gráfico demonstra o acúmulo de esforço diário ao longo do tempo, incentivando a persistência a longo prazo.
+
+### Privacidade e Segurança (E2EE)
+Implementação de criptografia de ponta a ponta (Client-Side Encryption). Os dados são criptografados localmente utilizando AES-GCM antes da sincronização com a nuvem, garantindo que o servidor não tenha acesso ao conteúdo em texto plano.
+
+### Arquitetura Offline-First (PWA)
+A aplicação opera integralmente sem conexão com a internet, sincronizando dados quando a conectividade é restabelecida. Pode ser instalada em dispositivos móveis como um aplicativo nativo.
 
 ---
 
-## 🏗️ Arquitetura e Engenharia
+## Arquitetura e Engenharia
 
-Este projeto rejeita a complexidade desnecessária dos frameworks modernos em favor de **Performance Nativa** e **JavaScript Moderno (ESNext)**.
+Este projeto prioriza princípios de engenharia de software robusta, evitando a complexidade de frameworks de frontend em favor de performance nativa e JavaScript moderno (ESNext).
 
 ### Estrutura do Projeto
 
@@ -82,45 +56,41 @@ Este projeto rejeita a complexidade desnecessária dos frameworks modernos em fa
 ├── index.css            # CSS Variável e Responsivo
 ├── index.tsx            # Ponto de Entrada
 ├── state.ts             # Gerenciamento de Estado Reativo
-├── render.ts            # Motor de Renderização Cirúrgica (DOM Updates)
-├── cloud.ts             # Camada de Sincronização e Resolução de Conflitos
-├── crypto.ts            # Criptografia AES-GCM no lado do cliente
+├── render.ts            # Motor de Renderização (DOM Updates)
+├── cloud.ts             # Sincronização e Resolução de Conflitos
+├── crypto.ts            # Criptografia AES-GCM
 ├── habitActions.ts      # Lógica de Negócios
 ├── swipeHandler.ts      # Física de Gestos Manuais
-└── sw.js                # Service Worker (Cache Strategy)
+└── sw.js                # Service Worker (Estratégia de Cache)
 ```
 
-### Decisões Técnicas de Alto Nível
+### Decisões Técnicas
 
-1.  **Performance Extrema ("Vanilla Speed"):**
-    *   Sem React/Vue/Angular. Manipulação direta e cirúrgica do DOM.
-    *   **Dirty Checking:** O sistema sabe exatamente o que mudou e atualiza apenas o texto ou classe necessária.
-    *   **Zero-Cost Idle:** Tarefas pesadas (analytics, salvamento) rodam via `requestIdleCallback`, garantindo que a UI nunca trave.
+**1. Performance**
+A aplicação não utiliza frameworks como React ou Vue. A manipulação do DOM é direta e otimizada.
+*   **Dirty Checking:** O sistema identifica alterações de estado e atualiza apenas os nós do DOM necessários.
+*   **Zero-Cost Idle:** Processos intensivos (análise de dados, persistência) são executados via `requestIdleCallback` para não bloquear a thread principal da interface.
 
-2.  **Engenharia de IA (Context Compression):**
-    *   Para enviar meses de histórico para a IA sem estourar o limite de tokens ou custos, utilizamos **RLE (Run-Length Encoding)**.
-    *   O histórico `[Feito, Feito, Feito, Pendente]` vira `3xFeito, 1xPendente` antes de ir para o prompt.
+**2. Engenharia de Prompt (Otimização de Contexto)**
+Para viabilizar a análise de longos históricos de dados pela IA dentro dos limites de tokens, utiliza-se RLE (Run-Length Encoding). Sequências de dados repetitivos são comprimidas antes do envio para a API.
 
-3.  **Segurança (Client-Side Encryption):**
-    *   Utilizamos **PBKDF2** para derivar chaves e **AES-GCM** para criptografar o payload JSON.
-    *   O servidor Vercel KV atua apenas como um depósito cego de dados criptografados.
+**3. Segurança**
+A segurança dos dados é garantida por criptografia simétrica no cliente.
+*   **PBKDF2:** Utilizado para derivação de chaves a partir da senha do usuário.
+*   **AES-GCM:** Utilizado para criptografar o payload JSON.
+*   **Vercel KV:** Utilizado exclusivamente como armazenamento de dados cifrados (blob storage).
 
 ---
 
-## 🚀 Deploy
+## Licença
 
-Você pode implantar sua própria instância do Askesis na Vercel com um clique:
-
-<a href="https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fseu-usuario%2Faskesis&env=API_KEY,KV_URL,KV_REST_API_URL,KV_REST_API_TOKEN,KV_REST_API_READ_ONLY_TOKEN&project-name=askesis-habit-tracker&repository-name=askesis-habit-tracker">
-  <img src="https://vercel.com/button" alt="Deploy with Vercel"/>
-</a>
-
-## 📄 Licença
-
-Este projeto é open-source e está licenciado sob a [Licença ISC](LICENSE).
+Este projeto é open-source e está licenciado sob a Licença ISC.
 
 ---
 
 <p align="center">
-  Feito com 🖤 e Estoicismo.
+  <img src="https://img.shields.io/badge/TypeScript-007ACC?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" />
+  <img src="https://img.shields.io/badge/Google_Gemini-8E75B2?style=flat-square&logo=google-gemini&logoColor=white" alt="Gemini AI" />
+  <img src="https://img.shields.io/badge/Vercel-000000?style=flat-square&logo=vercel&logoColor=white" alt="Vercel" />
+  <img src="https://img.shields.io/badge/PWA-5A0FC8?style=flat-square&logo=pwa&logoColor=white" alt="PWA" />
 </p>
