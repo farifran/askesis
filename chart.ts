@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 // [ANALYSIS PROGRESS]: 100% - Otimização "Gold Master". Implementado Decoupled Render Loop. Input (pointermove) e Output (render) desacoplados. Atualizações de DOM estritamente via textContent (sem innerHTML) no loop de animação.
+// UPDATE [2025-01-28]: Added pointercancel handling for better touch physics. Optimized render loop math.
+// PERFORMANCE [2025-01-29]: Input Stasis Check added to stop math execution on static pointer.
 
 import { state } from './state';
 import { ui } from './ui';
@@ -173,6 +175,7 @@ function _setupChartListeners() {
     let rafId: number | null = null;
     let inputClientX = 0; // Estado de Input (atualizado pelo pointermove)
     let lastRenderedPointIndex = -1; // Estado de Renderização
+    let lastProcessedClientX = -1; // Otimização: Rastreia se o input mudou desde o último quadro
 
     // Função de renderização sincronizada com V-Sync (requestAnimationFrame)
     const renderLoop = () => {
@@ -182,6 +185,15 @@ function _setupChartListeners() {
             isTracking = false; // Ensure tracking stops
             return;
         }
+
+        // OPTIMIZATION [2025-01-29]: Input Stasis Check.
+        // Se a posição X do mouse não mudou, não há necessidade de recalcular geometria ou tocar no DOM.
+        // Apenas agendamos o próximo frame para manter o loop de rastreamento vivo.
+        if (inputClientX === lastProcessedClientX) {
+            rafId = requestAnimationFrame(renderLoop);
+            return;
+        }
+        lastProcessedClientX = inputClientX;
 
         if (!cachedChartRect) {
             cachedChartRect = chartWrapper.getBoundingClientRect();
@@ -193,7 +205,9 @@ function _setupChartListeners() {
         const padding = { top: 10, right: 10, bottom: 10, left: 10 };
         const chartWidth = svgWidth - padding.left - padding.right;
         
-        // Cálculo matemático puro (sem leitura de DOM)
+        // OPTIMIZATION [2025-01-28]: Pre-calculate stepX outside loop would be ideal, 
+        // but inside rAF we assume standard execution. We simplify math here.
+        // (x - offset) / width * totalItems
         const x = inputClientX - cachedChartRect.left;
         const index = Math.round((x - padding.left) / chartWidth * (lastChartData.length - 1));
         const pointIndex = Math.max(0, Math.min(lastChartData.length - 1, index));
@@ -206,11 +220,10 @@ function _setupChartListeners() {
             const { minVal, valueRange } = chartMetadata;
             const chartHeight = 100 - padding.top - padding.bottom;
         
-            const xScale = (idx: number) => padding.left + (idx / (lastChartData.length - 1)) * chartWidth;
-            const yScale = (val: number) => padding.top + chartHeight - ((val - minVal) / valueRange) * chartHeight;
-
-            const pointX = xScale(pointIndex);
-            const pointY = yScale(point.value);
+            // OPTIMIZATION [2025-01-28]: Avoid repeated function creation by inlining math or hoisting.
+            // Inline calc for speed in hot path.
+            const pointX = padding.left + (pointIndex / (lastChartData.length - 1)) * chartWidth;
+            const pointY = padding.top + chartHeight - ((point.value - minVal) / valueRange) * chartHeight;
 
             // Atualizações Visuais (Output)
             indicator.style.opacity = '1';
@@ -262,11 +275,14 @@ function _setupChartListeners() {
         tooltip.classList.remove('visible');
         indicator.style.opacity = '0';
         lastRenderedPointIndex = -1;
+        lastProcessedClientX = -1; // Reset stasis check
     };
 
     chartWrapper.addEventListener('pointermove', handlePointerMove);
     chartWrapper.addEventListener('pointerenter', () => { isTracking = true; });
     chartWrapper.addEventListener('pointerleave', handlePointerLeave);
+    // UX FIX [2025-01-28]: Handle pointercancel (e.g., scrolling on mobile) to prevent stuck tooltips
+    chartWrapper.addEventListener('pointercancel', handlePointerLeave);
 }
 
 function _initObservers() {

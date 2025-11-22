@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -1409,6 +1408,7 @@ export function showConfirmationModal(
         editText?: string;
         onEdit?: () => void;
         confirmButtonStyle?: 'primary' | 'danger';
+        hideCancel?: boolean; // UX OPTION [2025-02-01]: Permite ocultar o botão cancelar para modais com duas opções afirmativas.
     }
 ) {
     ui.confirmModalText.innerHTML = text;
@@ -1425,6 +1425,8 @@ export function showConfirmationModal(
     const cancelBtn = ui.confirmModal.querySelector<HTMLElement>('.modal-close-btn');
     if (cancelBtn) {
         setTextContent(cancelBtn, options?.cancelText || t('cancelButton'));
+        // Aplica a visibilidade baseada na opção hideCancel
+        cancelBtn.style.display = options?.hideCancel ? 'none' : '';
     }
     
     if (options?.editText && options?.onEdit) {

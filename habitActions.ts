@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -8,6 +7,7 @@
 // UPDATE [2025-01-20]: Implemented RLE (Run-Length Encoding) for AI Prompt History.
 // PERFORMANCE FIX [2025-01-21]: Moved saveState() inside requestIdleCallback in toggleHabitStatus to ensure <16ms INP (Interaction to Next Paint).
 // UPDATE [2025-01-24]: Deferred Heavy Cleanup for habit deletion. UI updates instantly, DB cleanups happen in idle time.
+// ROBUSTNESS [2025-01-29]: saveState() moved to setTimeout(0) to ensure persistence on quick tab close while keeping UI responsive.
 
 import { generateUUID, getTodayUTCIso, parseUTCIsoDate, addDays, escapeHTML, simpleMarkdownToHTML, getTodayUTC, toUTCIsoDateString, runIdle } from './utils';
 import { apiFetch } from './api';
@@ -87,6 +87,13 @@ export function createDefaultHabit() {
     if (defaultHabitTemplate) {
         const newHabit = _createNewHabitFromTemplate(defaultHabitTemplate);
         state.habits.push(newHabit);
+        
+        // ROBUSTEZ [2025-02-01]: Limpa explicitamente os caches para garantir que o novo hábito
+        // seja reconhecido imediatamente pela lógica de renderização (getActiveHabitsForDate).
+        // Isso corrige o bug onde hábitos padrão não apareciam após um reset.
+        clearActiveHabitsCache();
+        clearScheduleCache();
+        
         invalidateChartCache();
         // PERFORMANCE: Marca a estrutura da lista como suja pois adicionamos um hábito
         state.uiDirtyState.habitListStructure = true;
@@ -385,7 +392,9 @@ function _requestFutureScheduleChange(
             title: confirmationTitle,
             confirmText: t('buttonFromNowOn'),
             editText: t('buttonJustToday'),
-            onEdit: justTodayAction
+            onEdit: justTodayAction,
+            // UX [2025-02-01]: Oculta o botão cancelar para simplificar a decisão.
+            hideCancel: true 
         }
     );
 }
@@ -531,20 +540,19 @@ export function toggleHabitStatus(habitId: string, time: TimeOfDay, dateISO: str
     renderCalendarDayPartial(dateISO);
     
     // 3. Persistence & Heavy Processing (Deferred/Asynchronous)
-    // PERFORMANCE FIX [2025-01-21]: We push saveState() and cache invalidation to the idle callback.
-    // `saveState` involves JSON.stringify(hugeState) and localStorage.setItem, which are blocking operations.
-    // By deferring them, we ensure the checkbox "tick" appears in the very next frame (<16ms),
-    // creating a "Zero Latency" feel, while data consistency is handled ~50ms later.
+    // REFACTOR [2025-01-29]: Hybrid Persistence Strategy.
+    // Use setTimeout(0) for saveState() to ensure it runs as a high-priority macro-task,
+    // preventing data loss if the user closes the tab immediately (<10ms) after clicking.
+    // Use runIdle for truly optional tasks (analytics, caching).
     
-    // NOTE [2025-01-26]: We intentionally do NOT set uiDirtyState.calendarVisuals or habitListStructure to true.
-    // Since we handled the visual update surgically above, we want renderApp (called below)
-    // to skip the heavy lifting of iterating lists.
-    
+    setTimeout(() => {
+        saveState(); // BLOCKING I/O but scheduled after current frame render
+    }, 0);
+
     runIdle(() => {
         invalidateStreakCache(habitId, dateISO);
         invalidateDaySummaryCache(dateISO); // Invalida cache apenas para este dia
         invalidateChartCache(); // Mudança de status afeta o gráfico
-        saveState(); // BLOCKING I/O - Safe to run here in background
         
         renderChart(); // Gráfico precisa atualizar pois pontuação mudou
         renderAINotificationState();

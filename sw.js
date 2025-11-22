@@ -1,12 +1,16 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
 // [ANALYSIS PROGRESS]: 100% - Análise concluída. Estratégia Cache-First implementada para navegação instantânea (0ms latência no boot). Fallback de rede robusto.
 // OPTIMIZATION [2025-01-27]: Added ignoreSearch to cache match to support deep linking/UTM parameters offline.
+// ROBUSTNESS [2025-01-28]: Wrapped importScripts in try-catch. Core PWA functionality must survive external script failures (e.g., AdBlockers or partial offline state).
 
-importScripts("https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js");
+try {
+    importScripts("https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js");
+} catch (e) {
+    console.warn("Failed to load OneSignal SDK in Service Worker. Push notifications might not work.", e);
+}
 
 const CACHE_NAME = 'habit-tracker-v1';
 

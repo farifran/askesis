@@ -45,7 +45,7 @@
     "confirmInvalidKeyBody": "A chave inserida não parece ser um UUID válido. Chaves de sincronização geralmente têm um formato como '123e4567-e89b-12d3-a456-426614174000'. Deseja continuar mesmo assim?",
     "confirmInvalidKeyTitle": "Formato de Chave Inválido",
     "confirmPermanentDelete": "Isso excluirá permanentemente o hábito '{habitName}' e todo o seu histórico. Esta ação não pode ser desfeita. Deseja continuar?",
-    "confirmRemoveTime": "Deseja remover \"{habitName}\" do horário da <strong>{time}</strong> apenas por hoje ou de agora em diante?",
+    "confirmRemoveTime": "Deseja remover \"{habitName}\" do horário da <strong>{time}</strong>?",
     "confirmResetApp": "Isso excluirá permanentemente TODOS os seus hábitos e dados de progresso. Esta ação não pode ser desfeita. Deseja continuar?",
     "confirmSyncDisable": "Tem certeza de que deseja desativar a sincronização? Você não poderá mais acessar seus dados em outros dispositivos e os novos dados não serão salvos na nuvem.",
     "confirmSyncOverwrite": "Os dados na nuvem são diferentes dos seus dados locais. Deseja sobrescrever seus dados locais com os dados da nuvem?",

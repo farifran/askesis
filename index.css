@@ -514,7 +514,7 @@ main {
     font-size: 12px;
     color: var(--text-secondary);
     font-weight: 500;
-    transform: translateZ(0); /* Promove para camada de composição para rolagem suave */
+    /* MEMORY OPTIMIZATION [2025-01-29]: Removed transform: translateZ(0) to reduce compositor layer count in large lists. 'contain: content' on parent handles performance. */
 }
 
 .day-progress-ring {
@@ -587,6 +587,17 @@ main {
     /* PERFORMANCE "GOLD MASTER" [2025-01-27]: Ajuste para 80px para reduzir CLS */
     contain-intrinsic-size: 80px;
 }
+
+/* ROBUSTEZ [2025-01-28]: Desativa content-visibility durante drag-and-drop.
+ * O navegador precisa calcular o layout de todos os grupos (mesmo vazios/fora da tela)
+ * para determinar corretamente as zonas de soltura (drop-zones). Sem isso,
+ * a transição de max-height pode falhar ou pular.
+ */
+body.is-dragging-active .habit-group-wrapper {
+    content-visibility: visible;
+    contain-intrinsic-size: auto;
+}
+
 .habit-group-wrapper + .habit-group-wrapper {
     margin-block-start: var(--space-md);
 }
@@ -618,6 +629,11 @@ body.is-dragging-active .habit-group-wrapper.is-collapsible {
     /* PERFORMANCE [2025-01-18]: Isola o layout do grupo. Mudanças dentro do grupo não afetam o layout externo. */
     contain: layout style;
 }
+/* Quando arrastando, relaxamos o containment para permitir que o indicador e o placeholder fluam */
+body.is-dragging-active .habit-group {
+    contain: style; 
+}
+
 .habit-group.drag-over {
     background-color: var(--surface-hover);
     border-color: var(--accent-blue);
@@ -762,9 +778,14 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     border-radius: 9px;
     flex-grow: 1;
     touch-action: pan-y;
-    /* PERFORMANCE [2025-01-16]: Garante alta performance na animação de swipe (GPU). */
+    /* MEMORY OPTIMIZATION [2025-01-29]: Removed global will-change: transform. Apply it contextually during interactions (swipe/drag) via classes to save VRAM. */
+}
+/* Only use will-change during interaction to save memory */
+.habit-card.is-swiping .habit-content-wrapper,
+.habit-card.dragging .habit-content-wrapper {
     will-change: transform;
 }
+
 .habit-card:hover .habit-content-wrapper { background-color: var(--surface-hover); }
 .habit-card.completed .habit-content-wrapper { background-color: color-mix(in srgb, var(--accent-blue) 20%, var(--surface-color)); }
 .habit-card.snoozed .habit-content-wrapper {
