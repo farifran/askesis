@@ -9,11 +9,10 @@
 // BUGFIX [2025-02-02]: Tooltip Stale Data fix. Ensures tooltip updates immediately when data changes even if mouse is stationary.
 // BUGFIX [2025-02-05]: Future Date Projection. Fixes chart score dropping to zero when scrolling to future dates.
 
-import { state } from './state';
+import { state, getActiveHabitsForDate } from './state';
 import { ui } from './ui';
 import { t } from './i18n';
 import { addDays, getTodayUTCIso, parseUTCIsoDate, toUTCIsoDateString, getDateTimeFormat } from './utils';
-import { getActiveHabitsForDate } from './state';
 
 const CHART_DAYS = 30;
 const INITIAL_SCORE = 100;

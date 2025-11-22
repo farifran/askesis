@@ -55,13 +55,31 @@ O projeto segue uma arquitetura modular com uma clara separação de responsabil
     ```
     O script de build (`build.js`) irá compilar os arquivos, copiá-los para a pasta `public/` e iniciar um servidor no modo de observação (watch). Para visualizar o projeto, você precisará servir a pasta `public/` com um servidor local.
 
-## 🏛️ Destaques da Arquitetura
+## 🏛️ Engenharia e Design de Software
 
-*   **Performance-First:** A UI utiliza uma estratégia de reconciliação do DOM (similar ao React, mas implementada manualmente) que evita re-renderizações completas. Em vez de reconstruir o HTML, o código atualiza cirurgicamente os atributos e o texto dos elementos existentes, resultando em uma experiência de usuário extremamente rápida e fluida.
+O Askesis foi projetado seguindo princípios de engenharia de software de classe mundial, priorizando a experiência do usuário, performance e privacidade.
 
-*   **Segurança e Privacidade por Design:** A implementação da criptografia de ponta a ponta (E2EE) é um diferencial crucial. A chave de sincronização do usuário nunca sai do dispositivo; ela é usada para derivar uma chave de criptografia (via PBKDF2) que criptografa os dados (via AES-GCM) antes de enviá-los para a nuvem. Isso garante que nem mesmo o servidor possa ler os dados do usuário.
+### 1. Performance Extrema ("Performance-First")
+O código evita o peso desnecessário de frameworks (bloat), implementando otimizações manuais para garantir 60fps:
+*   **Renderização Cirúrgica (Surgical DOM Updates):** Utiliza um sistema de "Dirty Checking" para atualizar apenas os nós do DOM que realmente mudaram, evitando recriações custosas de HTML.
+*   **Zero-Cost Idle:** Tarefas pesadas (cálculo de gráficos, persistência) são agendadas para momentos de ociosidade do navegador (`requestIdleCallback`), garantindo que a interface nunca trave.
+*   **Prevenção de Layout Thrashing:** Leituras e escritas no DOM são estrategicamente separadas ou cacheadas para evitar reflows forçados.
 
-*   **Integridade de Dados Históricos:** O uso de `scheduleHistory` para cada hábito é uma solução sofisticada que permite que as propriedades de um hábito (nome, frequência, etc.) mudem ao longo do tempo sem corromper os dados passados. Quando um hábito é editado, um novo "segmento" de agendamento é criado a partir da data da edição, preservando a precisão do histórico para o gráfico de progresso e as análises da IA.
+### 2. Arquitetura Offline-First (PWA Real)
+Desenhado assumindo que a rede é instável:
+*   **Cache-First:** O Service Worker serve o App Shell instantaneamente (0ms de latência de rede).
+*   **Sincronização Resiliente:** Implementa um sistema de fila com *debounce* e travamento (mutex). Alterações offline persistem localmente e sincronizam silenciosamente quando a conexão retorna.
+
+### 3. Segurança e Privacidade por Design (E2EE)
+*   **Criptografia Ponta-a-Ponta:** A chave de sincronização do usuário nunca é enviada "pura" para o servidor. Ela é usada para derivar uma chave criptográfica (PBKDF2) que cifra os dados (AES-GCM) no cliente. O servidor armazena apenas um blob criptografado que ele não consegue ler.
+
+### 4. Otimização de IA e Custos
+*   **Edge Computing:** O backend roda em Vercel Edge Functions para menor latência global.
+*   **Engenharia de Prompt com Compressão:** O histórico de hábitos é enviado para a IA usando uma técnica de compressão (Run-Length Encoding) contextual (ex: "Dia 1 a 10: [Feito]"), reduzindo drasticamente o consumo de tokens e custos da API Gemini sem perder informação.
+
+### 5. UX/UI Nativa
+*   **Feedback Tátil (Haptics):** Uso preciso da API de vibração para dar peso físico às ações digitais.
+*   **Interações Gestuais:** Física de arrastar (Swipe) e Drag-and-Drop implementadas manualmente para máxima fluidez.
 
 ## 💡 Filosofia e Processo de Desenvolvimento
 
