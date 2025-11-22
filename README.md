@@ -6,7 +6,7 @@
       </td>
       <td align="left" valign="middle" style="border: none; color: #e5e5e5; padding-left: 20px;">
         <h1 style="color: #e5e5e5; margin-bottom: 10px; margin-top: 0;">Askesis</h1>
-        <a href="https://askesis-psi.vercel.app/"><img src="https://img.shields.io/badge/Acessar_App-27ae60?style=for-the-badge&logo=vercel&logoColor=white" alt="Acessar Aplicação"></a><a href="https://askesis-psi.vercel.app/"><img src="https://img.shields.io/badge/Google_Gemini-4285F4?style=for-the-badge&logo=google-gemini&logoColor=white" alt="Gemini AI" /></a><a href="https://askesis-psi.vercel.app/"><img src="https://img.shields.io/badge/TypeScript-000000?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript" /></a><a href="https://askesis-psi.vercel.app/"><img src="https://img.shields.io/badge/Vercel-555555?style=for-the-badge&logo=vercel&logoColor=white" alt="Vercel" /></a><a href="https://askesis-psi.vercel.app/"><img src="https://img.shields.io/badge/PWA-000000?style=for-the-badge&logo=pwa&logoColor=white" alt="PWA" /></a>
+        <a href="https://askesis-psi.vercel.app/"><img src="https://img.shields.io/badge/Acessar_App-27ae60?style=for-the-badge&logo=vercel&logoColor=white" alt="Acessar Aplicação"></a><img src="https://img.shields.io/badge/Google_Gemini-174EA6?style=for-the-badge&logo=google-gemini&logoColor=white" alt="Gemini AI" /><img src="https://img.shields.io/badge/TypeScript-000000?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript" /><img src="https://img.shields.io/badge/Vercel-555555?style=for-the-badge&logo=vercel&logoColor=white" alt="Vercel" /><img src="https://img.shields.io/badge/PWA-5A0FC8?style=for-the-badge&logo=pwa&logoColor=white" alt="PWA" />
         <br><br>
         <p style="color: #b3b3b3; margin: 0;"><em>O Rastreador de Hábitos Estoico. Minimalista. Focado em Privacidade. Impulsionado por IA.</em></p>
       </td>
@@ -16,7 +16,7 @@
 
 ---
 
-## 🏛️ A Filosofia: O que é Askesis?
+<h2>A Filosofia: O que é Askesis?</h2>
 
 **Askesis** (do grego *ἄσκησις*) é a raiz da palavra "ascetismo", mas seu significado original é muito mais prático: significa **"treinamento"** ou **"exercício"**.
 
@@ -26,39 +26,39 @@ A maioria dos apps de hábitos foca em gamificação superficial ou em "não que
 
 ---
 
-## 📱 Como Usar o Askesis
+<h2>Como Usar o Askesis</h2>
 
 O Askesis foi desenhado para ser intuitivo, rápido e focado na ação.
 
-### 1. Adicionando Hábitos
+<h3>1. Adicionando Hábitos</h3>
 *   **Botão FAB (+):** Clique no botão verde flutuante no canto superior esquerdo para abrir o menu de exploração.
 *   **Explorar & Personalizar:** Escolha entre hábitos predefinidos (como "Meditar", "Ler", "Exercício") ou crie um totalmente personalizado.
 *   **Definição:** Escolha o ícone, cor, horário (Manhã, Tarde, Noite) e a frequência desejada.
 
-### 2. Interações Gestuais (Swipe)
+<h3>2. Interações Gestuais (Swipe)</h3>
 Inspirado em interfaces móveis nativas, a interação principal é feita através de gestos nos cartões de hábito:
 *   **Deslizar para a Direita (Fundo Verde/Azul):** Marca o hábito como **Concluído**. Se já estiver concluído, volta para pendente.
 *   **Deslizar para a Esquerda (Fundo Amarelo/Cinza):** Revela opções secundárias.
     *   **Adiar (Snooze):** Move o hábito para um estado de "Adiado" (não conta como falha, mas não soma pontos).
     *   **Notas:** Adicione uma reflexão curta sobre aquele hábito específico no dia.
 
-### 3. Gráfico de Crescimento Composto
+<h3>3. Gráfico de Crescimento Composto</h3>
 Diferente de gráficos lineares simples, o gráfico do Askesis visualiza a **consistência como juros compostos**.
 *   **Lógica:** Cada dia concluído com sucesso aumenta sua "pontuação composta". Dias perdidos penalizam levemente o crescimento, mas a consistência a longo prazo gera uma curva exponencial.
 *   **Objetivo:** Ver visualmente como pequenos esforços diários se acumulam em grandes resultados ao longo do tempo.
 
-### 4. Mentoria com IA
+<h3>4. Mentoria com IA</h3>
 *   Clique no ícone do "cérebro" no topo da tela.
 *   A IA (Google Gemini) analisará seu histórico recente.
 *   Você receberá um feedback personalizado, estoico e acionável sobre seus padrões, celebrando marcos (como 21 ou 66 dias) e sugerindo correções de curso.
 
 ---
 
-## 🏗️ Arquitetura e Engenharia
+<h2>Arquitetura e Engenharia</h2>
 
 Este projeto rejeita a complexidade desnecessária dos frameworks modernos em favor de **Performance Nativa** e **JavaScript Moderno (ESNext)**.
 
-### Estrutura do Projeto
+<h3>Estrutura do Projeto</h3>
 
 ```text
 .
@@ -76,7 +76,7 @@ Este projeto rejeita a complexidade desnecessária dos frameworks modernos em fa
 └── sw.js                # Service Worker (Cache Strategy)
 ```
 
-### Decisões Técnicas de Alto Nível
+<h3>Decisões Técnicas de Alto Nível</h3>
 
 1.  **Performance Extrema ("Vanilla Speed"):**
     *   Sem React/Vue/Angular. Manipulação direta e cirúrgica do DOM.
@@ -93,7 +93,7 @@ Este projeto rejeita a complexidade desnecessária dos frameworks modernos em fa
 
 ---
 
-## 🚀 Deploy
+<h2>Deploy</h2>
 
 Você pode implantar sua própria instância do Askesis na Vercel com um clique:
 
@@ -101,7 +101,7 @@ Você pode implantar sua própria instância do Askesis na Vercel com um clique:
   <img src="https://vercel.com/button" alt="Deploy with Vercel"/>
 </a>
 
-## 📄 Licença
+<h2>Licença</h2>
 
 Este projeto é open-source e está licenciado sob a [Licença ISC](LICENSE).
 
