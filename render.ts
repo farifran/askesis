@@ -957,6 +957,11 @@ export function renderHabits() {
             let card = habitElementCache.get(key);
             
             if (card) {
+                // BUGFIX [2025-02-07]: Reset swipe state when reusing cached element.
+                // If a habit was removed via swipe (leaving it in 'is-open' state in cache) 
+                // and then re-added, it would reappear open. This forces it closed.
+                card.classList.remove('is-open-left', 'is-open-right', 'is-swiping');
+
                 // 2. Atualiza estado se existir (Surgical)
                 updateHabitCardElement(card, habit, time);
             } else {
