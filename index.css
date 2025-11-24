@@ -755,7 +755,7 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     position: absolute;
     inset: 0;
     border-radius: var(--border-radius-large);
-    border: 1px solid rgba(255, 255, 255, 0.15);
+    border: 1px solid rgba(255, 255, 255, 0.3);
     pointer-events: none;
     z-index: var(--z-index-indicator);
     transition: border-color var(--transition-duration);
