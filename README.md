@@ -7,7 +7,6 @@
       <td align="left" valign="middle" style="border: none; color: #e5e5e5; padding-left: 20px;">
         <h1 style="color: #e5e5e5; margin-bottom: 4px; margin-top: 0;">Askesis</h1>
         <div>
-          <a href="https://askesis-psi.vercel.app/"><img src="https://img.shields.io/badge/Acessar_App-27ae60?style=for-the-badge&logo=vercel&logoColor=white" alt="Acessar Aplicação"></a>
           <img src="https://img.shields.io/badge/Google_Gemini-174EA6?style=for-the-badge&logo=google-gemini&logoColor=white" alt="Gemini AI" />
           <img src="https://img.shields.io/badge/TypeScript-000000?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript" />
           <img src="https://img.shields.io/badge/PWA-5A0FC8?style=for-the-badge&logo=pwa&logoColor=white" alt="PWA" />
@@ -102,7 +101,7 @@ Através do **Google AI Studio**, a barreira técnica foi dissolvida. O papel hu
 
 Isso permitiu que uma única pessoa construísse uma aplicação com a complexidade e polimento de um *squad* inteiro:
 
-*   **O Humano como Beta Tester e Pesquisador:** Além de definir a visão, o papel humano foi fundamental como um **validar ágil**. Houve um ciclo contínuo de testes onde o humano confrontava sua visão com o resultado produzido pela IA, iterando prompts para aperfeiçoar o código até sua melhor versão. Além disso, o humano atuou ativamente pesquisando os **requerimentos mais modernos** (state-of-the-art) — como criptografia nativa, PWA offline e service workers avançados — instruindo a IA a implementar soluções de ponta em vez de abordagens genéricas.
+*   **O Humano como Beta Tester e Pesquisador:** Além de definir a visão, o papel humano foi fundamental como um **beta tester contínuo**. Houve um ciclo constante de validação onde o humano confrontava sua visão com o resultado produzido pela IA, testando exaustivamente e iterando os prompts para aperfeiçoar o código até sua melhor versão. Além disso, o humano atuou ativamente pesquisando os **requerimentos mais modernos** (state-of-the-art) — como criptografia nativa no navegador, PWA offline e service workers avançados — instruindo a IA a implementar soluções de ponta em vez de abordagens genéricas.
 *   **A IA como Engenheiro Sênior:** Os modelos Gemini atuaram na implementação técnica pesada, escrevendo linhas complexas de código, sugerindo otimizações de performance e resolvendo bugs lógicos.
 
 O resultado dessa simbiose:
