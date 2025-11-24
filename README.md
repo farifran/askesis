@@ -32,6 +32,27 @@ A maioria dos apps de hábitos foca em gamificação superficial ou em "não que
 
 ---
 
+<h2>🤖 O Poder do Google AI Studio: Desenvolvimento Assistido</h2>
+
+Este projeto representa uma mudança de paradigma no desenvolvimento de software. O **Askesis** não foi apenas codificado; foi orquestrado.
+
+Através do **Google AI Studio**, a barreira técnica foi dissolvida. O papel humano evoluiu de "programador braçal" para **Arquiteto de Software e Gerente de Produto**, definindo a visão, as regras de negócio e a estética, enquanto os modelos Gemini atuaram como um **Engenheiro Sênior Full-Stack**, escrevendo a implementação linha por linha.
+
+Isso permitiu que uma única pessoa construísse uma aplicação com a complexidade e polimento de um *squad* inteiro:
+
+*   **Volume e Estrutura:** Mais de 15 módulos TypeScript interconectados e ~3.000 linhas de código limpo e tipado.
+*   **Engenharia Avançada:**
+    *   Criptografia Militar (AES-GCM/PBKDF2) rodando inteiramente no navegador.
+    *   Motor de Sincronização Bidirecional com resolução de conflitos e trava otimista (mutex).
+    *   Algoritmos de Cache LRU (Least Recently Used) e estruturas de dados `Map` para performance O(1).
+*   **UX Nativa & Complexa:**
+    *   Sistema de gestos (Swipe) com física personalizada.
+    *   Drag-and-drop fluido com auto-scroll e zonas de soltura dinâmicas.
+    *   Renderização progressiva e loops de animação desacoplados (requestAnimationFrame/requestIdleCallback) para 60fps cravados.
+*   **PWA Completo:** Funcionamento 100% offline com estratégias de cache avançadas (Cache-First com revalidação background).
+
+---
+
 <h2>Como Usar o Askesis</h2>
 
 O Askesis foi desenhado para ser intuitivo, rápido e focado na ação.
@@ -58,8 +79,8 @@ Diferente de gráficos lineares simples, o gráfico do Askesis visualiza a **con
 
 <h3>4. Mentoria com IA</h3>
 
-*   Clique no ícone do "cérebro" no topo da tela.
-*   A IA (Google Gemini) analisará seu histórico recente.
+*   Clique no ícone do **Google Gemini** (✨) no topo da tela.
+*   A IA analisará seu histórico recente.
 *   Você receberá um feedback personalizado, estoico e acionável sobre seus padrões, celebrando marcos (como 21 ou 66 dias) e sugerindo correções de curso.
 
 ---
@@ -138,7 +159,7 @@ O projeto utiliza serviços modernos para garantir que o app seja rápido e conf
 ---
 
 <h2>
-  <img src="https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Hand%20gestures/Hand%20with%20Money.png" height="30" style="vertical-align: bottom; margin-right: 8px;" alt="Zero Cost Icon" />
+  <img src="https://img.icons8.com/fluency/48/hand-holding-dollar.png" height="30" style="vertical-align: bottom; margin-right: 8px;" alt="Zero Cost Icon" />
   Arquitetura Zero Cost & Sustentabilidade
 </h2>
 
