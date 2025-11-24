@@ -164,7 +164,7 @@ A arquitetura é leve e eficiente. Como o consumo de dados cresce de forma muito
 ---
 
 <h2>
-  <img src="https://www.gstatic.com/lamda/images/gemini_sparkle_v002_d4735304ff6292a690345.svg" height="30" style="vertical-align: bottom; margin-right: 8px;" alt="Google AI Studio Logo" />
+  <img src="https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Objects/Robot.png" height="30" style="vertical-align: bottom; margin-right: 8px;" alt="Robot Icon" />
   O Poder do Google AI Studio: Desenvolvimento Assistido
 </h2>
 
