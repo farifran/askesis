@@ -1,27 +1,27 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <defs>
-    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#d53f8c;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#667eea;stop-opacity:1" />
+    <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#9b59b6;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#e84393;stop-opacity:1" />
     </linearGradient>
-    <filter id="glow">
-      <feGaussianBlur stdDeviation="2.5" result="coloredBlur"/>
-      <feMerge>
-        <feMergeNode in="coloredBlur"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
-    </filter>
   </defs>
-  <g fill="url(#grad)" filter="url(#glow)">
-    <!-- Bottom Coin Stack -->
-    <path d="M32 56c14 0 26-4 26-9v-5c0 5-12 9-26 9S6 47 6 42v5c0 5 12 9 26 9z" opacity="0.8"/>
-    <!-- Middle Coin Stack -->
-    <path d="M32 44c14 0 26-4 26-9v-5c0 5-12 9-26 9S6 35 6 30v5c0 5 12 9 26 9z" opacity="0.9"/>
-    <!-- Top Coin Body -->
-    <path d="M32 32c14 0 26-4 26-9v-4c0 5-12 9-26 9S6 23 6 19v4c0 5 12 9 26 9z"/>
-    <!-- Top Coin Face -->
-    <ellipse cx="32" cy="19" rx="26" ry="9" fill="#ed64a6"/>
-  </g>
-  <!-- Symbol -->
-  <path d="M32 12v14M27 15h5a4 4 0 0 1 0 8h-2a4 4 0 0 0 0 8h7" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  
+  <!-- Hand Silhouette -->
+  <path fill="url(#grad1)" d="M23.2,419.8c22.6-25.3,63.5-62.4,104.2-84.6c28.9-15.8,66.2-26.1,98.3-26.1c16.5,0,32.7,2.7,48.2,8
+	c18.2,6.2,37.7,15.1,54.9,25.7c23.6,14.6,45.3,31.8,64.9,51.5c29.2,29.4,53.6,63.9,72.1,101.7c3.4,7,1.5,15.4-4.5,20.1
+	c-5.9,4.6-14.2,4.2-19.8-1c-19.5-18.3-41.3-34.1-64.8-47.1c-15.6-8.6-32-15.9-48.9-21.9c-17.8-6.3-36.6-10.1-55.5-11.2
+	c-47.2-2.7-93.5,11.5-133.6,40.9c-30.9,22.7-58.7,50.3-83.2,82.1c-4.8,6.2-13.7,7.3-19.9,2.5C9.4,555.3,8.3,546.4,13.1,540.2
+	L23.2,419.8z M60,380c0,0,80,60,220,60s180-80,180-80"/>
+  
+  <!-- Hand Base -->
+  <path fill="url(#grad1)" d="M490,420c0,0-40,60-120,80s-180,0-240-60L40,380c0,0,20,100,140,120s240-20,280-60"/>
+
+  <!-- Coin Back (Top Right) -->
+  <circle cx="360" cy="140" r="70" fill="url(#grad1)" stroke="#121212" stroke-width="8"/>
+  <text x="360" y="165" font-family="sans-serif" font-size="80" text-anchor="middle" fill="white" font-weight="bold">$</text>
+
+  <!-- Coin Front (Bottom Left) -->
+  <circle cx="260" cy="210" r="80" fill="url(#grad1)" stroke="#121212" stroke-width="8"/>
+  <text x="260" y="240" font-family="sans-serif" font-size="90" text-anchor="middle" fill="white" font-weight="bold">$</text>
+  
 </svg>
