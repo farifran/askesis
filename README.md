@@ -32,7 +32,10 @@ A maioria dos apps de hábitos foca em gamificação superficial ou em "não que
 
 ---
 
-<h2>🤖 O Poder do Google AI Studio: Desenvolvimento Assistido</h2>
+<h2>
+  <img src="https://www.gstatic.com/lamda/images/gemini_sparkle_v002_d4735304ff6292a690345.svg" height="30" style="vertical-align: bottom; margin-right: 8px;" alt="Google AI Studio Icon" />
+  O Poder do Google AI Studio: Desenvolvimento Assistido
+</h2>
 
 Este projeto representa uma mudança de paradigma no desenvolvimento de software. O **Askesis** não foi apenas codificado; foi orquestrado.
 
@@ -159,7 +162,7 @@ O projeto utiliza serviços modernos para garantir que o app seja rápido e conf
 ---
 
 <h2>
-  <img src="https://img.icons8.com/fluency/48/hand-holding-dollar.png" height="30" style="vertical-align: bottom; margin-right: 8px;" alt="Zero Cost Icon" />
+  <img src="https://icons.iconarchive.com/icons/iconsmind/outline/512/Money-Hand-icon.png" height="30" style="vertical-align: bottom; margin-right: 8px;" alt="Zero Cost Icon" />
   Arquitetura Zero Cost & Sustentabilidade
 </h2>
 
