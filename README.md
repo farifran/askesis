@@ -42,52 +42,57 @@ A criação do Askesis nasceu de duas necessidades pessoais fundamentais que nã
 
 <h2>Guia Completo: Como Usar o Askesis</h2>
 
-O Askesis foi desenhado com camadas de profundidade: simples para o iniciante, poderoso para o usuário avançado.
+O Askesis foi desenhado em camadas: intuitivo na superfície, mas repleto de ferramentas poderosas para quem busca profundidade.
 
-<h3>1. Criando sua Rotina (Adicionar Hábitos)</h3>
+<h3>1. O Fundamento: Adicionando Hábitos</h3>
 
-Para começar, clique no botão flutuante **(+)** no canto inferior direito. Você tem duas rotas:
+O hábito é a unidade fundamental da aplicação. O sistema permite rastrear não apenas a conclusão ("check"), mas também a quantidade e intensidade (páginas lidas, minutos meditados).
 
-*   **Galeria "Explorar" (Recomendado):** Uma coleção curada de hábitos estoicos e modernos (ex: "Meditar", "Ler", "Exercício"). Eles já vêm configurados com ícones, cores e metas ideais para começar. Basta clicar para adicionar.
-*   **Criar Personalizado:** Para total controle. Defina:
-    *   **Identidade:** Nome, ícone e cor.
-    *   **Horário:** Em qual turno (Manhã, Tarde, Noite) o hábito deve aparecer. Você pode selecionar múltiplos turnos.
-    *   **Frequência:** Diária, Intervalo (ex: a cada 2 dias) ou Dias da Semana Específicos (ex: Seg, Qua, Sex).
-    *   **Meta:** Simples (Check), Tempo (Minutos) ou Quantidade (Páginas).
+Para começar a construir sua rotina, você tem dois caminhos:
+*   **Botão Verde Brilhante (+):** O ponto de partida principal no canto inferior.
+*   **O "Placeholder" (Espaço dos Cartões):** Se um período do dia (Manhã, Tarde, Noite) estiver vazio, você verá uma área convidativa ("Adicione um hábito") que permite a criação rápida direto no contexto temporal.
 
-<h3>2. O Fluxo Diário: Registrando o Progresso</h3>
+<h3>2. O Tempo e os Anéis (O Calendário)</h3>
 
-Existem múltiplas formas de interagir com os cartões de hábitos para se adequar ao seu contexto:
+Se o hábito é o fundamento, o **Tempo** é o que dá sentido ao todo. A faixa de calendário no topo não é apenas decorativa; é a sua bússola de progresso.
 
-*   **Toque no Cartão:** A forma mais rápida. Alterna o status ciclicamente:
-    *   ⚪️ **Pendente** -> ✅ **Concluído** -> ➡️ **Adiado** -> ⚪️ **Pendente**.
-*   **Gestos de Deslize (Swipe):** Inspirado em apps nativos.
-    *   **Deslizar p/ Direita:** Marca imediatamente como **Concluído** (Feedback Tátil Suave).
-    *   **Deslizar p/ Esquerda:** Revela opções avançadas.
-        *   🗑️ **Remover:** Remove o hábito daquele horário específico (pergunta se é só hoje ou para sempre).
-        *   📝 **Notas:** Adiciona uma observação ao hábito naquele dia (ex: "Corri 5km, me senti bem"). O ícone muda para indicar que há uma nota.
-*   **Controles de Meta (Numéricos):** Para hábitos com metas (ex: Ler 10 páginas):
-    *   Use os botões **(+)** e **(-)** para ajustar o progresso.
-    *   **Dica Pro:** Clique diretamente no número para digitar o valor exato (abre o teclado numérico).
+Os dias são representados por **Anéis de Progresso**, que simbolizam a simbiose entre o hábito e o tempo. Eles mostram visualmente a evolução do seu dia:
+*   A parte preenchida indica os hábitos **Feitos**.
+*   O espaço restante mostra o que falta.
+*   O sistema entende nuances: hábitos **Adiados** (por força maior) não quebram visualmente o anel da mesma forma que hábitos esquecidos.
 
-<h3>3. O Calendário: Navegação e Poderes Ocultos</h3>
+**Micro-ações do Calendário (Power User):**
+A faixa de calendário possui atalhos ocultos para facilitar a gestão em massa:
+*   **1 Clique:** Seleciona a data para visualizar o histórico.
+*   **2 Cliques Rápidos no dia:** Marca **TODOS** os hábitos daquele dia como **Feitos** (para dias perfeitos).
+*   **3 Cliques Rápidos no dia:** Marca **TODOS** os hábitos como **Adiados** (ideal para dias de férias ou doença).
+*   **Pressionar e Segurar (Long Press):** Abre o **Calendário Mensal Completo**, permitindo saltar para qualquer data do ano rapidamente.
 
-A faixa de calendário no topo não serve apenas para ver a data. É uma central de comando:
+<h3>3. O Cartão de Hábito: Interação Diária</h3>
 
-*   **Navegação no Tempo:** Deslize a faixa horizontalmente para ver seu histórico passado ou planejar dias futuros. Clique em qualquer dia para visualizar os hábitos daquela data.
-*   **Retornar ao Presente:** Clique no título **"Hoje"** (ou na data no cabeçalho) para rolar instantaneamente de volta para o dia atual.
-*   **Ações em Massa (Power User):**
-    *   **Duplo Clique no Dia:** Marca **TODOS** os hábitos daquele dia como Concluídos (útil para dias perfeitos).
-    *   **Triplo Clique no Dia:** Marca **TODOS** os hábitos daquele dia como Adiados (útil para dias de pausa/férias).
-    *   **Pressionar e Segurar (Long Press):** Abre a visualização de **Calendário Mensal Completo**, permitindo saltar rapidamente para qualquer data do ano.
+O cartão é a representação visual do seu dever no dia. Ele responde a diferentes tipos de interação:
 
-<h3>4. Mentoria com IA</h3>
+*   **Cliques (Status):**
+    *   **1 Clique:** Marca como ✅ **Feito**.
+    *   **2 Cliques:** Marca como ➡️ **Adiado** (passa para o próximo estado).
+    *   **3 Cliques:** Retorna para ⚪️ **Pendente**.
+*   **Deslizar (Swipe - Opções Adicionais):**
+    *   Ao deslizar o cartão para os lados, você revela ferramentas de contexto:
+    *   **Criar Nota:** Adicione uma observação estoica sobre a execução daquele hábito no dia.
+    *   **Apagar:** Permite remover o hábito. O sistema perguntará inteligentemente se você quer remover **"Apenas Hoje"** (ex: um imprevisto) ou **"Para Sempre"** (encerrar o hábito).
 
-*   Clique no ícone do **Google Gemini** (<img src="https://www.gstatic.com/lamda/images/gemini_sparkle_v002_d4735304ff6292a690345.svg" height="16" alt="Gemini Icon" style="vertical-align: text-bottom;" />) no topo.
-*   A IA lê seu histórico criptografado e oferece 3 modos de análise:
-    *   **Semanal:** Uma reflexão rápida sobre os últimos 7 dias.
-    *   **Mensal:** Uma análise profunda de tendências e consistência.
-    *   **Geral:** Uma visão holística da sua jornada.
+<h3>4. Navegação e Sabedoria</h3>
+
+*   **"Hoje":** Ao navegar pelo passado ou futuro, o título "Hoje" (ou a data) no topo funciona como um botão de retorno imediato ao presente.
+*   **Frases Estoicas:** No topo da tela, você encontrará reflexões de Marco Aurélio e outros estoicos. Clique na frase para copiá-la para sua área de transferência.
+
+<h3>5. A Engrenagem: Configurações e Resgate</h3>
+
+O ícone de engrenagem no canto superior guarda as ferramentas de gestão do seu sistema pessoal:
+
+*   **Resgate de Perfil (Sincronização):** Aqui você encontra sua **Chave de Sincronização**. Guarde-a com segurança. Ela é a única forma de acessar seus dados em outros dispositivos ou recuperar seu progresso caso troque de celular.
+*   **Gerenciar Hábitos:** Uma visão de lista para editar, pausar ou graduar seus hábitos.
+*   **Idioma e Notificações:** Ajuste a aplicação para português, inglês ou espanhol e configure seus lembretes.
 
 ---
 
