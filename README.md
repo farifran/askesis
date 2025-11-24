@@ -119,34 +119,70 @@ O projeto utiliza serviços modernos para garantir que o app seja rápido e conf
 
 <h4>
   <img src="https://cdn.svgporn.com/logos/vercel-icon.svg" height="24" alt="Vercel Logo" style="vertical-align: bottom; margin-right: 8px;" />
-  Vercel (O Motor e o Cofre)
+  Velocidade Global (Vercel)
 </h4>
 
-*   **Velocidade Global:** O site não fica em apenas um computador; ele é distribuído por uma rede mundial (CDN). Isso garante que o app carregue instantaneamente, esteja você no Brasil ou no Japão.
-*   **Cérebro Ágil (Edge Functions):** As partes "inteligentes" do sistema (como conectar com a IA ou criptografar seus dados) rodam na "borda" da rede, fisicamente próximas ao usuário, eliminando esperas.
-*   **Cofre Cego (Vercel KV):** Usamos um banco de dados de alta performance para a sincronização. O diferencial de segurança: o servidor atua como um "cofre cego". Ele guarda seus dados criptografados, mas não tem a chave para lê-los. Apenas seu dispositivo pode abrir esse cofre.
+O site não fica em apenas um computador; ele é distribuído por uma rede mundial (CDN). Isso garante que o app carregue instantaneamente, esteja você no Brasil ou no Japão.
+
+<h4>
+  <img src="https://cdn.svgporn.com/logos/vercel-icon.svg" height="24" alt="Edge Functions" style="vertical-align: bottom; margin-right: 8px;" />
+  Cérebro Ágil (Edge Functions)
+</h4>
+
+As partes "inteligentes" do sistema (como conectar com a IA ou criptografar seus dados) rodam na "borda" da rede, fisicamente próximas ao usuário, eliminando esperas.
+
+<h4>
+  <img src="https://cdn.svgporn.com/logos/redis.svg" height="24" alt="Vercel KV" style="vertical-align: bottom; margin-right: 8px;" />
+  Cofre Cego (Vercel KV)
+</h4>
+
+Usamos um banco de dados de alta performance para a sincronização. O diferencial de segurança: o servidor atua como um "cofre cego". Ele guarda seus dados criptografados, mas não tem a chave para lê-los (Zero Knowledge). Apenas seu dispositivo pode abrir esse cofre.
 
 <h4>
   <img src="https://cdn.svgporn.com/logos/onesignal.svg" height="24" alt="OneSignal Logo" style="vertical-align: bottom; margin-right: 8px;" />
-  OneSignal (O Aliado da Consistência)
+  Lembretes Inteligentes (OneSignal)
 </h4>
 
-*   **Lembretes, não SPAM:** O sistema de notificações foi desenhado para ajudar você a manter o foco ("Lembre-se de beber água"), respeitando seu tempo.
-*   **Funciona Fechado:** Graças à integração profunda com o navegador (Service Worker), você recebe lembretes importantes mesmo se o aplicativo não estiver aberto na tela do celular.
-*   **Sincronia Real:** Se você desativa as notificações nas configurações do celular, o app entende imediatamente e atualiza o botão na interface. Sem menus confusos.
+O sistema de notificações ajuda a manter o foco ("Lembre-se de beber água") respeitando seu tempo. Graças à integração profunda com o navegador, você recebe lembretes mesmo se o aplicativo estiver fechado.
 
 ---
 
-<h2>💰 Arquitetura Zero Cost & Sustentabilidade</h2>
+<h2>
+  <img src="https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Hand%20gestures/Hand%20with%20Money.png" height="30" style="vertical-align: bottom; margin-right: 8px;" alt="Zero Cost Icon" />
+  Arquitetura Zero Cost & Sustentabilidade
+</h2>
 
 Este projeto foi desenhado com uma engenharia inteligente para operar com **Custo Zero ($0)**, aproveitando os planos gratuitos de serviços modernos sem perder qualidade.
 
 *   **Armazenamento Ultraleve:** Em vez de salvar dados pesados, salvamos apenas texto criptografado e comprimido. Para se ter ideia: **5 anos** de histórico diário de um usuário ocupam menos espaço digital (KB) do que uma única foto de baixa qualidade. Isso significa que o espaço gratuito do servidor é virtualmente infinito para uso pessoal.
 *   **O Celular Trabalha:** A maior parte do "pensamento" (criptografia, geração de gráficos, cálculos) é feita pelo seu próprio dispositivo, não pelo servidor. Isso poupa recursos da nuvem, garantindo que nunca ultrapassemos os limites gratuitos.
-*   **Notificações Gratuitas:** Utilizamos o plano de comunidade do OneSignal, que permite até 10.000 usuários Web gratuitamente. Para um app focado em desenvolvimento pessoal, isso é mais do que suficiente.
+*   **Notificações Gratuitas:** Utilizamos o **OneSignal**, que oferece um plano gratuito generoso (até 10.000 usuários Web e ilimitado para Mobile). Isso garante que a funcionalidade de lembretes permaneça ativa sem custos.
 
-**Veredito de Sustentabilidade:**
-A arquitetura é leve e eficiente. Como o consumo de dados cresce de forma muito lenta (apenas texto), **não há previsão de custos futuros**. O aplicativo foi construído para funcionar gratuitamente por tempo indeterminado.
+**Análise de Viabilidade Futura:**
+A arquitetura é leve e eficiente. Como o consumo de dados cresce de forma muito lenta (apenas texto comprimido), **não há previsão de custos futuros**. O aplicativo foi construído para funcionar gratuitamente por tempo indeterminado, sem necessidade de migrações ou upgrades pagos.
+
+---
+
+<h2>
+  <img src="https://www.gstatic.com/lamda/images/gemini_sparkle_v002_d4735304ff6292a690345.svg" height="30" style="vertical-align: bottom; margin-right: 8px;" alt="Google AI Studio Logo" />
+  O Poder do Google AI Studio: Desenvolvimento Assistido
+</h2>
+
+Este projeto é um estudo de caso sobre o potencial do **Google AI Studio** e dos modelos Gemini 2.0 na aceleração de desenvolvimento de software.
+
+O Askesis não foi criado por uma equipe inteira, mas por **uma única pessoa** atuando como Arquiteto/PM, utilizando a IA como um "Engenheiro de Software Sênior" incansável.
+
+Através dessa colaboração Homem-Máquina, foi possível construir em tempo recorde uma aplicação com complexidade de nível empresarial que normalmente exigiria um *squad* completo (Frontend, Backend, DevOps, QA).
+
+**O que uma única pessoa conseguiu construir com a IA:**
+
+*   **Volume e Escala:** +15 módulos TypeScript interconectados e ~3.000 linhas de código limpo e documentado.
+*   **Engenharia Avançada:** Implementação manual de **Criptografia AES-GCM** e **PBKDF2** no navegador, algo raramente visto em projetos individuais devido à complexidade matemática.
+*   **Lógica de Nuvem:** Sistema de **Sincronização Bidirecional** com tratamento de conflitos ("Merge" de dados) e armazenamento criptografado.
+*   **Experiência Nativa (UX):** Gestos físicos (Swipe), Drag-and-Drop com auto-scroll, Feedback Tátil (Haptics) e animações a 60fps, tudo feito com **Matemática Pura e DOM**, sem depender de bibliotecas de UI pesadas.
+*   **PWA Completo:** Funcionamento 100% offline, instalação na home screen e atualizações em background.
+
+O Google AI Studio permitiu transformar uma visão complexa em código de produção, provando que a barreira entre a "ideia" e a "execução" nunca foi tão baixa.
 
 ---
 
