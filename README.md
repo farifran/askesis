@@ -10,7 +10,6 @@
           <a href="https://askesis-psi.vercel.app/"><img src="https://img.shields.io/badge/Acessar_App-27ae60?style=for-the-badge&logo=vercel&logoColor=white" alt="Acessar Aplicação"></a>
           <img src="https://img.shields.io/badge/Google_Gemini-174EA6?style=for-the-badge&logo=google-gemini&logoColor=white" alt="Gemini AI" />
           <img src="https://img.shields.io/badge/TypeScript-000000?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript" />
-          <img src="https://img.shields.io/badge/Vercel-555555?style=for-the-badge&logo=vercel&logoColor=white" alt="Vercel" />
           <img src="https://img.shields.io/badge/PWA-5A0FC8?style=for-the-badge&logo=pwa&logoColor=white" alt="PWA" />
         </div>
         <br>
@@ -36,40 +35,59 @@ A maioria dos apps de hábitos foca em gamificação superficial ou em "não que
 
 A criação do Askesis nasceu de duas necessidades pessoais fundamentais que não encontrei em outras soluções de mercado:
 
-1.  **Soberania e Privacidade de Dados:** O registro de hábitos é, por natureza, um diário íntimo da vida pessoal. Eu precisava de uma garantia absoluta de que essas informações não seriam compartilhadas, vendidas ou analisadas por terceiros. No Askesis, a prioridade é o controle total: os dados pertencem exclusivamente ao usuário e residem no seu dispositivo (ou no seu cofre pessoal criptografado).
-2.  **Autonomia Tecnológica:** Em uma era dominada por modelos de assinatura (SaaS), eu me recusei a pagar aluguel mensal por um software que poderia ser construído com a tecnologia web moderna disponível. Este projeto é a prova de que é possível ter uma ferramenta profissional, robusta e gratuita, utilizando os recursos que a tecnologia atual nos oferece, sem barreiras financeiras para o auto-aperfeiçoamento.
+1.  **Soberania e Privacidade de Dados:** O registro de hábitos é, por natureza, um diário íntimo da vida pessoal. Eu precisava de uma garantia absoluta de que essas informações não seriam compartilhadas, vendidas ou analisadas por terceiros. No Askesis, a prioridade é o controle da informação: os dados pertencem exclusivamente ao usuário e residem no seu dispositivo (ou no seu cofre pessoal criptografado).
+2.  **Autonomia Tecnológica:** Em uma era dominada por modelos de assinatura (SaaS), recusei-me a pagar aluguel mensal por um software que poderia ser construído com a tecnologia web moderna disponível. Este projeto é a prova de que é possível ter uma ferramenta profissional, robusta e gratuita, utilizando os recursos que a tecnologia atual nos oferece, sem barreiras financeiras para o auto-aperfeiçoamento.
 
 ---
 
-<h2>Como Usar o Askesis</h2>
+<h2>Guia Completo: Como Usar o Askesis</h2>
 
-O Askesis foi desenhado para ser intuitivo, rápido e focado na ação.
+O Askesis foi desenhado com camadas de profundidade: simples para o iniciante, poderoso para o usuário avançado.
 
-<h3>1. Adicionando Hábitos</h3>
+<h3>1. Criando sua Rotina (Adicionar Hábitos)</h3>
 
-*   **Botão FAB (+):** Clique no botão verde flutuante no canto superior esquerdo para abrir o menu de exploração.
-*   **Explorar & Personalizar:** Escolha entre hábitos predefinidos (como "Meditar", "Ler", "Exercício") ou crie um totalmente personalizado.
-*   **Definição:** Escolha o ícone, cor, horário (Manhã, Tarde, Noite) e a frequência desejada.
+Para começar, clique no botão flutuante **(+)** no canto inferior direito. Você tem duas rotas:
 
-<h3>2. Interações Gestuais (Swipe)</h3>
+*   **Galeria "Explorar" (Recomendado):** Uma coleção curada de hábitos estoicos e modernos (ex: "Meditar", "Ler", "Exercício"). Eles já vêm configurados com ícones, cores e metas ideais para começar. Basta clicar para adicionar.
+*   **Criar Personalizado:** Para total controle. Defina:
+    *   **Identidade:** Nome, ícone e cor.
+    *   **Horário:** Em qual turno (Manhã, Tarde, Noite) o hábito deve aparecer. Você pode selecionar múltiplos turnos.
+    *   **Frequência:** Diária, Intervalo (ex: a cada 2 dias) ou Dias da Semana Específicos (ex: Seg, Qua, Sex).
+    *   **Meta:** Simples (Check), Tempo (Minutos) ou Quantidade (Páginas).
 
-Inspirado em interfaces móveis nativas, a interação principal é feita através de gestos nos cartões de hábito:
-*   **Deslizar para a Direita (Fundo Verde/Azul):** Marca o hábito como **Concluído**. Se já estiver concluído, volta para pendente.
-*   **Deslizar para a Esquerda (Fundo Amarelo/Cinza):** Revela opções secundárias.
-    *   **Adiar (Snooze):** Move o hábito para um estado de "Adiado" (não conta como falha, mas não soma pontos).
-    *   **Notas:** Adicione uma reflexão curta sobre aquele hábito específico no dia.
+<h3>2. O Fluxo Diário: Registrando o Progresso</h3>
 
-<h3>3. Gráfico de Crescimento Composto</h3>
+Existem múltiplas formas de interagir com os cartões de hábitos para se adequar ao seu contexto:
 
-Diferente de gráficos lineares simples, o gráfico do Askesis visualiza a **consistência como juros compostos**.
-*   **Lógica:** Cada dia concluído com sucesso aumenta sua "pontuação composta". Dias perdidos penalizam levemente o crescimento, mas a consistência a longo prazo gera uma curva exponencial.
-*   **Objetivo:** Ver visualmente como pequenos esforços diários se acumulam em grandes resultados ao longo do tempo.
+*   **Toque no Cartão:** A forma mais rápida. Alterna o status ciclicamente:
+    *   ⚪️ **Pendente** -> ✅ **Concluído** -> ➡️ **Adiado** -> ⚪️ **Pendente**.
+*   **Gestos de Deslize (Swipe):** Inspirado em apps nativos.
+    *   **Deslizar p/ Direita:** Marca imediatamente como **Concluído** (Feedback Tátil Suave).
+    *   **Deslizar p/ Esquerda:** Revela opções avançadas.
+        *   🗑️ **Remover:** Remove o hábito daquele horário específico (pergunta se é só hoje ou para sempre).
+        *   📝 **Notas:** Adiciona uma observação ao hábito naquele dia (ex: "Corri 5km, me senti bem"). O ícone muda para indicar que há uma nota.
+*   **Controles de Meta (Numéricos):** Para hábitos com metas (ex: Ler 10 páginas):
+    *   Use os botões **(+)** e **(-)** para ajustar o progresso.
+    *   **Dica Pro:** Clique diretamente no número para digitar o valor exato (abre o teclado numérico).
+
+<h3>3. O Calendário: Navegação e Poderes Ocultos</h3>
+
+A faixa de calendário no topo não serve apenas para ver a data. É uma central de comando:
+
+*   **Navegação no Tempo:** Deslize a faixa horizontalmente para ver seu histórico passado ou planejar dias futuros. Clique em qualquer dia para visualizar os hábitos daquela data.
+*   **Retornar ao Presente:** Clique no título **"Hoje"** (ou na data no cabeçalho) para rolar instantaneamente de volta para o dia atual.
+*   **Ações em Massa (Power User):**
+    *   **Duplo Clique no Dia:** Marca **TODOS** os hábitos daquele dia como Concluídos (útil para dias perfeitos).
+    *   **Triplo Clique no Dia:** Marca **TODOS** os hábitos daquele dia como Adiados (útil para dias de pausa/férias).
+    *   **Pressionar e Segurar (Long Press):** Abre a visualização de **Calendário Mensal Completo**, permitindo saltar rapidamente para qualquer data do ano.
 
 <h3>4. Mentoria com IA</h3>
 
-*   Clique no ícone do **Google Gemini** (✨) no topo da tela.
-*   A IA analisará seu histórico recente.
-*   Você receberá um feedback personalizado, estoico e acionável sobre seus padrões, celebrando marcos (como 21 ou 66 dias) e sugerindo correções de curso.
+*   Clique no ícone do **Google Gemini** (<img src="https://www.gstatic.com/lamda/images/gemini_sparkle_v002_d4735304ff6292a690345.svg" height="16" alt="Gemini Icon" style="vertical-align: text-bottom;" />) no topo.
+*   A IA lê seu histórico criptografado e oferece 3 modos de análise:
+    *   **Semanal:** Uma reflexão rápida sobre os últimos 7 dias.
+    *   **Mensal:** Uma análise profunda de tendências e consistência.
+    *   **Geral:** Uma visão holística da sua jornada.
 
 ---
 
@@ -80,9 +98,14 @@ Diferente de gráficos lineares simples, o gráfico do Askesis visualiza a **con
 
 Este projeto representa uma mudança de paradigma no desenvolvimento de software. O **Askesis** não foi apenas codificado; foi orquestrado.
 
-Através do **Google AI Studio**, a barreira técnica foi dissolvida. O papel humano evoluiu de "programador braçal" para **Arquiteto de Software e Gerente de Produto**, definindo a visão, as regras de negócio e a estética, enquanto os modelos Gemini atuaram como um **Engenheiro Sênior Full-Stack**, escrevendo a implementação linha por linha.
+Através do **Google AI Studio**, a barreira técnica foi dissolvida. O papel humano evoluiu de "programador braçal" para **Arquiteto de Software, Gerente de Produto e Lead Tester**.
 
 Isso permitiu que uma única pessoa construísse uma aplicação com a complexidade e polimento de um *squad* inteiro:
+
+*   **O Humano como Beta Tester e Pesquisador:** Além de definir a visão, o papel humano foi fundamental como um **validar ágil**. Houve um ciclo contínuo de testes onde o humano confrontava sua visão com o resultado produzido pela IA, iterando prompts para aperfeiçoar o código até sua melhor versão. Além disso, o humano atuou ativamente pesquisando os **requerimentos mais modernos** (state-of-the-art) — como criptografia nativa, PWA offline e service workers avançados — instruindo a IA a implementar soluções de ponta em vez de abordagens genéricas.
+*   **A IA como Engenheiro Sênior:** Os modelos Gemini atuaram na implementação técnica pesada, escrevendo linhas complexas de código, sugerindo otimizações de performance e resolvendo bugs lógicos.
+
+O resultado dessa simbiose:
 
 *   **Volume e Estrutura:** Mais de 15 módulos TypeScript interconectados e ~3.000 linhas de código limpo e tipado.
 *   **Engenharia Avançada:**
