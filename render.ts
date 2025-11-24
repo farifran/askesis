@@ -1075,10 +1075,11 @@ export function renderStoicQuote() {
     const quoteIndex = dayOfYear % STOIC_QUOTES.length;
     const quote = STOIC_QUOTES[quoteIndex];
     
-    const lang = state.activeLanguageCode as keyof typeof quote;
+    const lang = state.activeLanguageCode as keyof Omit<typeof quote, 'author'>;
     const quoteText = quote[lang];
+    const authorName = t(quote.author);
     
-    const fullText = `"${quoteText}" — ${t('marcusAurelius')}`;
+    const fullText = `"${quoteText}" — ${authorName}`;
 
     // UX POLISH [2025-01-16]: Evita o "blink" da citação se o texto não mudou.
     // Isso mantém a UI estável quando renderApp() é chamado por ações que não alteram a data.
