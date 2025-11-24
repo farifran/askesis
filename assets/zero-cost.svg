@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#d53f8c;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#667eea;stop-opacity:1" />
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="2.5" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <g fill="url(#grad)" filter="url(#glow)">
+    <!-- Bottom Coin Stack -->
+    <path d="M32 56c14 0 26-4 26-9v-5c0 5-12 9-26 9S6 47 6 42v5c0 5 12 9 26 9z" opacity="0.8"/>
+    <!-- Middle Coin Stack -->
+    <path d="M32 44c14 0 26-4 26-9v-5c0 5-12 9-26 9S6 35 6 30v5c0 5 12 9 26 9z" opacity="0.9"/>
+    <!-- Top Coin Body -->
+    <path d="M32 32c14 0 26-4 26-9v-4c0 5-12 9-26 9S6 23 6 19v4c0 5 12 9 26 9z"/>
+    <!-- Top Coin Face -->
+    <ellipse cx="32" cy="19" rx="26" ry="9" fill="#ed64a6"/>
+  </g>
+  <!-- Symbol -->
+  <path d="M32 12v14M27 15h5a4 4 0 0 1 0 8h-2a4 4 0 0 0 0 8h7" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+</svg>
