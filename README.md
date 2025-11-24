@@ -108,7 +108,7 @@ Este projeto rejeita a complexidade desnecessária dos frameworks modernos em fa
 O projeto utiliza serviços modernos para garantir escalabilidade e engajamento sem gerenciar servidores tradicionais.
 
 <h4>
-  <img src="https://upload.wikimedia.org/wikipedia/commons/5/5e/Vercel_logo_black.svg" height="24" alt="Vercel Logo" style="vertical-align: bottom; margin-right: 8px;" />
+  <img src="https://cdn.svgporn.com/logos/vercel-icon.svg" height="24" alt="Vercel Logo" style="vertical-align: bottom; margin-right: 8px;" />
   Vercel (Serverless & Storage)
 </h4>
 *   **Hospedagem & CI/CD:** O frontend é compilado e distribuído globalmente pela Vercel CDN.
@@ -116,7 +116,7 @@ O projeto utiliza serviços modernos para garantir escalabilidade e engajamento 
 *   **Vercel KV (Redis):** A sincronização de dados utiliza o Vercel KV. O servidor atua como um "cofre burro": ele recebe e entrega blobs JSON criptografados (AES-GCM), sem nunca ter acesso às chaves de descriptografia ou aos dados reais do usuário (Zero-Knowledge Storage).
 
 <h4>
-  <img src="https://upload.wikimedia.org/wikipedia/commons/2/28/OneSignal_Logo.svg" height="24" alt="OneSignal Logo" style="vertical-align: bottom; margin-right: 8px;" />
+  <img src="https://cdn.svgporn.com/logos/onesignal.svg" height="24" alt="OneSignal Logo" style="vertical-align: bottom; margin-right: 8px;" />
   OneSignal (Push Notifications)
 </h4>
 *   **Integração PWA:** O OneSignal foi integrado diretamente no Service Worker (`sw.js`), permitindo o envio de notificações de reengajamento ("Complete seus hábitos da tarde!") mesmo com o aplicativo fechado.
