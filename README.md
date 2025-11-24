@@ -37,11 +37,13 @@ A maioria dos apps de hábitos foca em gamificação superficial ou em "não que
 O Askesis foi desenhado para ser intuitivo, rápido e focado na ação.
 
 <h3>1. Adicionando Hábitos</h3>
+
 *   **Botão FAB (+):** Clique no botão verde flutuante no canto superior esquerdo para abrir o menu de exploração.
 *   **Explorar & Personalizar:** Escolha entre hábitos predefinidos (como "Meditar", "Ler", "Exercício") ou crie um totalmente personalizado.
 *   **Definição:** Escolha o ícone, cor, horário (Manhã, Tarde, Noite) e a frequência desejada.
 
 <h3>2. Interações Gestuais (Swipe)</h3>
+
 Inspirado em interfaces móveis nativas, a interação principal é feita através de gestos nos cartões de hábito:
 *   **Deslizar para a Direita (Fundo Verde/Azul):** Marca o hábito como **Concluído**. Se já estiver concluído, volta para pendente.
 *   **Deslizar para a Esquerda (Fundo Amarelo/Cinza):** Revela opções secundárias.
@@ -49,11 +51,13 @@ Inspirado em interfaces móveis nativas, a interação principal é feita atrav�
     *   **Notas:** Adicione uma reflexão curta sobre aquele hábito específico no dia.
 
 <h3>3. Gráfico de Crescimento Composto</h3>
+
 Diferente de gráficos lineares simples, o gráfico do Askesis visualiza a **consistência como juros compostos**.
 *   **Lógica:** Cada dia concluído com sucesso aumenta sua "pontuação composta". Dias perdidos penalizam levemente o crescimento, mas a consistência a longo prazo gera uma curva exponencial.
 *   **Objetivo:** Ver visualmente como pequenos esforços diários se acumulam em grandes resultados ao longo do tempo.
 
 <h3>4. Mentoria com IA</h3>
+
 *   Clique no ícone do "cérebro" no topo da tela.
 *   A IA (Google Gemini) analisará seu histórico recente.
 *   Você receberá um feedback personalizado, estoico e acionável sobre seus padrões, celebrando marcos (como 21 ou 66 dias) e sugerindo correções de curso.
@@ -111,24 +115,48 @@ Este projeto rejeita a complexidade desnecessária dos frameworks modernos em fa
 
 <h3>Infraestrutura e Integrações Externas</h3>
 
-O projeto utiliza serviços modernos para garantir escalabilidade e engajamento sem gerenciar servidores tradicionais.
+O projeto utiliza serviços modernos para garantir que o app seja rápido e confiável, sem custos de manutenção.
 
 <h4>
   <img src="https://cdn.svgporn.com/logos/vercel-icon.svg" height="24" alt="Vercel Logo" style="vertical-align: bottom; margin-right: 8px;" />
-  Vercel (Serverless & Storage)
+  Vercel (O Motor e o Cofre)
 </h4>
-*   **Hospedagem & CI/CD:** O frontend é compilado e distribuído globalmente pela Vercel CDN.
-*   **Edge Functions:** A lógica de backend reside em `api/`, rodando no runtime Edge da Vercel. Isso permite processar requisições de IA e criptografia de sincronização com latência próxima de zero, sem "cold starts" pesados de lambdas tradicionais.
-*   **Vercel KV (Redis):** A sincronização de dados utiliza o Vercel KV. O servidor atua como um "cofre burro": ele recebe e entrega blobs JSON criptografados (AES-GCM), sem nunca ter acesso às chaves de descriptografia ou aos dados reais do usuário (Zero-Knowledge Storage).
+
+*   **Velocidade Global:** O site não fica em apenas um computador; ele é distribuído por uma rede mundial (CDN). Isso garante que o app carregue instantaneamente, esteja você no Brasil ou no Japão.
+*   **Cérebro Ágil (Edge Functions):** As partes "inteligentes" do sistema (como conectar com a IA ou criptografar seus dados) rodam na "borda" da rede, fisicamente próximas ao usuário, eliminando esperas.
+*   **Cofre Cego (Vercel KV):** Usamos um banco de dados de alta performance para a sincronização. O diferencial de segurança: o servidor atua como um "cofre cego". Ele guarda seus dados criptografados, mas não tem a chave para lê-los. Apenas seu dispositivo pode abrir esse cofre.
 
 <h4>
   <img src="https://cdn.svgporn.com/logos/onesignal.svg" height="24" alt="OneSignal Logo" style="vertical-align: bottom; margin-right: 8px;" />
-  OneSignal (Push Notifications)
+  OneSignal (O Aliado da Consistência)
 </h4>
-*   **Integração PWA:** O OneSignal foi integrado diretamente no Service Worker (`sw.js`), permitindo o envio de notificações de reengajamento ("Complete seus hábitos da tarde!") mesmo com o aplicativo fechado.
-*   **Gestão de Estado:** A interface do usuário sincroniza bidirecionalmente com o estado de inscrição do OneSignal. Se o usuário bloqueia notificações no navegador, o "toggle" no app reflete isso instantaneamente; se ele ativa no app, o SDK gerencia o "handshake" de permissão nativa.
+
+*   **Lembretes, não SPAM:** O sistema de notificações foi desenhado para ajudar você a manter o foco ("Lembre-se de beber água"), respeitando seu tempo.
+*   **Funciona Fechado:** Graças à integração profunda com o navegador (Service Worker), você recebe lembretes importantes mesmo se o aplicativo não estiver aberto na tela do celular.
+*   **Sincronia Real:** Se você desativa as notificações nas configurações do celular, o app entende imediatamente e atualiza o botão na interface. Sem menus confusos.
 
 ---
+
+<h2>💰 Arquitetura Zero Cost & Sustentabilidade</h2>
+
+Este projeto foi desenhado com uma engenharia inteligente para operar com **Custo Zero ($0)**, aproveitando os planos gratuitos de serviços modernos sem perder qualidade.
+
+*   **Armazenamento Ultraleve:** Em vez de salvar dados pesados, salvamos apenas texto criptografado e comprimido. Para se ter ideia: **5 anos** de histórico diário de um usuário ocupam menos espaço digital (KB) do que uma única foto de baixa qualidade. Isso significa que o espaço gratuito do servidor é virtualmente infinito para uso pessoal.
+*   **O Celular Trabalha:** A maior parte do "pensamento" (criptografia, geração de gráficos, cálculos) é feita pelo seu próprio dispositivo, não pelo servidor. Isso poupa recursos da nuvem, garantindo que nunca ultrapassemos os limites gratuitos.
+*   **Notificações Gratuitas:** Utilizamos o plano de comunidade do OneSignal, que permite até 10.000 usuários Web gratuitamente. Para um app focado em desenvolvimento pessoal, isso é mais do que suficiente.
+
+**Veredito de Sustentabilidade:**
+A arquitetura é leve e eficiente. Como o consumo de dados cresce de forma muito lenta (apenas texto), **não há previsão de custos futuros**. O aplicativo foi construído para funcionar gratuitamente por tempo indeterminado.
+
+---
+
+<h2>Deploy</h2>
+
+Você pode implantar sua própria instância do Askesis na Vercel com um clique:
+
+<a href="https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fseu-usuario%2Faskesis&env=API_KEY,KV_URL,KV_REST_API_URL,KV_REST_API_TOKEN,KV_REST_API_READ_ONLY_TOKEN&project-name=askesis-habit-tracker&repository-name=askesis-habit-tracker">
+  <img src="https://vercel.com/button" alt="Deploy with Vercel"/>
+</a>
 
 <h2>Licença</h2>
 
