@@ -5,23 +5,17 @@
       <stop offset="100%" style="stop-color:#e84393;stop-opacity:1" />
     </linearGradient>
   </defs>
-  
+
+  <!-- Coin 1 (Back/Top Right) -->
+  <circle cx="360" cy="130" r="75" fill="url(#grad1)"/>
+  <path d="M360,95 v70 M340,110 h35 c10,0 10,15 0,15 h-25 c-10,0 -10,15 0,15 h35" stroke="#ffffff" stroke-width="10" stroke-linecap="round" fill="none"/>
+
+  <!-- Coin 2 (Front/Center) -->
+  <!-- Thick stroke matches background color to create a 'cutout' effect -->
+  <circle cx="240" cy="210" r="85" fill="url(#grad1)" stroke="#121212" stroke-width="16"/>
+  <path d="M240,165 v90 M215,185 h40 c12,0 12,18 0,18 h-30 c-12,0 -12,18 0,18 h40" stroke="#ffffff" stroke-width="12" stroke-linecap="round" fill="none"/>
+
   <!-- Hand Silhouette -->
-  <path fill="url(#grad1)" d="M23.2,419.8c22.6-25.3,63.5-62.4,104.2-84.6c28.9-15.8,66.2-26.1,98.3-26.1c16.5,0,32.7,2.7,48.2,8
-	c18.2,6.2,37.7,15.1,54.9,25.7c23.6,14.6,45.3,31.8,64.9,51.5c29.2,29.4,53.6,63.9,72.1,101.7c3.4,7,1.5,15.4-4.5,20.1
-	c-5.9,4.6-14.2,4.2-19.8-1c-19.5-18.3-41.3-34.1-64.8-47.1c-15.6-8.6-32-15.9-48.9-21.9c-17.8-6.3-36.6-10.1-55.5-11.2
-	c-47.2-2.7-93.5,11.5-133.6,40.9c-30.9,22.7-58.7,50.3-83.2,82.1c-4.8,6.2-13.7,7.3-19.9,2.5C9.4,555.3,8.3,546.4,13.1,540.2
-	L23.2,419.8z M60,380c0,0,80,60,220,60s180-80,180-80"/>
-  
-  <!-- Hand Base -->
-  <path fill="url(#grad1)" d="M490,420c0,0-40,60-120,80s-180,0-240-60L40,380c0,0,20,100,140,120s240-20,280-60"/>
-
-  <!-- Coin Back (Top Right) -->
-  <circle cx="360" cy="140" r="70" fill="url(#grad1)" stroke="#121212" stroke-width="8"/>
-  <text x="360" y="165" font-family="sans-serif" font-size="80" text-anchor="middle" fill="white" font-weight="bold">$</text>
-
-  <!-- Coin Front (Bottom Left) -->
-  <circle cx="260" cy="210" r="80" fill="url(#grad1)" stroke="#121212" stroke-width="8"/>
-  <text x="260" y="240" font-family="sans-serif" font-size="90" text-anchor="middle" fill="white" font-weight="bold">$</text>
-  
+  <!-- Designed to look like it's supporting the coins -->
+  <path fill="url(#grad1)" stroke="#121212" stroke-width="16" d="M-20,520 L60,400 C100,340 180,360 240,380 L460,270 C500,250 520,290 490,330 C460,370 300,480 240,520 Z"/>
 </svg>
