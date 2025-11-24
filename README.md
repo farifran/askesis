@@ -32,27 +32,12 @@ A maioria dos apps de hábitos foca em gamificação superficial ou em "não que
 
 ---
 
-<h2>
-  <img src="https://www.gstatic.com/lamda/images/gemini_sparkle_v002_d4735304ff6292a690345.svg" height="30" style="vertical-align: bottom; margin-right: 8px;" alt="Google AI Studio Icon" />
-  O Poder do Google AI Studio: Desenvolvimento Assistido
-</h2>
+<h2>A Motivação: Por que construir?</h2>
 
-Este projeto representa uma mudança de paradigma no desenvolvimento de software. O **Askesis** não foi apenas codificado; foi orquestrado.
+A criação do Askesis nasceu de duas necessidades pessoais fundamentais que não encontrei em outras soluções de mercado:
 
-Através do **Google AI Studio**, a barreira técnica foi dissolvida. O papel humano evoluiu de "programador braçal" para **Arquiteto de Software e Gerente de Produto**, definindo a visão, as regras de negócio e a estética, enquanto os modelos Gemini atuaram como um **Engenheiro Sênior Full-Stack**, escrevendo a implementação linha por linha.
-
-Isso permitiu que uma única pessoa construísse uma aplicação com a complexidade e polimento de um *squad* inteiro:
-
-*   **Volume e Estrutura:** Mais de 15 módulos TypeScript interconectados e ~3.000 linhas de código limpo e tipado.
-*   **Engenharia Avançada:**
-    *   Criptografia Militar (AES-GCM/PBKDF2) rodando inteiramente no navegador.
-    *   Motor de Sincronização Bidirecional com resolução de conflitos e trava otimista (mutex).
-    *   Algoritmos de Cache LRU (Least Recently Used) e estruturas de dados `Map` para performance O(1).
-*   **UX Nativa & Complexa:**
-    *   Sistema de gestos (Swipe) com física personalizada.
-    *   Drag-and-drop fluido com auto-scroll e zonas de soltura dinâmicas.
-    *   Renderização progressiva e loops de animação desacoplados (requestAnimationFrame/requestIdleCallback) para 60fps cravados.
-*   **PWA Completo:** Funcionamento 100% offline com estratégias de cache avançadas (Cache-First com revalidação background).
+1.  **Soberania e Privacidade de Dados:** O registro de hábitos é, por natureza, um diário íntimo da vida pessoal. Eu precisava de uma garantia absoluta de que essas informações não seriam compartilhadas, vendidas ou analisadas por terceiros. No Askesis, a prioridade é o controle total: os dados pertencem exclusivamente ao usuário e residem no seu dispositivo (ou no seu cofre pessoal criptografado).
+2.  **Autonomia Tecnológica:** Em uma era dominada por modelos de assinatura (SaaS), eu me recusei a pagar aluguel mensal por um software que poderia ser construído com a tecnologia web moderna disponível. Este projeto é a prova de que é possível ter uma ferramenta profissional, robusta e gratuita, utilizando os recursos que a tecnologia atual nos oferece, sem barreiras financeiras para o auto-aperfeiçoamento.
 
 ---
 
@@ -85,6 +70,30 @@ Diferente de gráficos lineares simples, o gráfico do Askesis visualiza a **con
 *   Clique no ícone do **Google Gemini** (✨) no topo da tela.
 *   A IA analisará seu histórico recente.
 *   Você receberá um feedback personalizado, estoico e acionável sobre seus padrões, celebrando marcos (como 21 ou 66 dias) e sugerindo correções de curso.
+
+---
+
+<h2>
+  <img src="https://www.gstatic.com/lamda/images/gemini_sparkle_v002_d4735304ff6292a690345.svg" height="30" style="vertical-align: bottom; margin-right: 8px;" alt="Google AI Studio Icon" />
+  O Poder do Google AI Studio: Desenvolvimento Assistido
+</h2>
+
+Este projeto representa uma mudança de paradigma no desenvolvimento de software. O **Askesis** não foi apenas codificado; foi orquestrado.
+
+Através do **Google AI Studio**, a barreira técnica foi dissolvida. O papel humano evoluiu de "programador braçal" para **Arquiteto de Software e Gerente de Produto**, definindo a visão, as regras de negócio e a estética, enquanto os modelos Gemini atuaram como um **Engenheiro Sênior Full-Stack**, escrevendo a implementação linha por linha.
+
+Isso permitiu que uma única pessoa construísse uma aplicação com a complexidade e polimento de um *squad* inteiro:
+
+*   **Volume e Estrutura:** Mais de 15 módulos TypeScript interconectados e ~3.000 linhas de código limpo e tipado.
+*   **Engenharia Avançada:**
+    *   Criptografia Militar (AES-GCM/PBKDF2) rodando inteiramente no navegador.
+    *   Motor de Sincronização Bidirecional com resolução de conflitos e trava otimista (mutex).
+    *   Algoritmos de Cache LRU (Least Recently Used) e estruturas de dados `Map` para performance O(1).
+*   **UX Nativa & Complexa:**
+    *   Sistema de gestos (Swipe) com física personalizada.
+    *   Drag-and-drop fluido com auto-scroll e zonas de soltura dinâmicas.
+    *   Renderização progressiva e loops de animação desacoplados (requestAnimationFrame/requestIdleCallback) para 60fps cravados.
+*   **PWA Completo:** Funcionamento 100% offline com estratégias de cache avançadas (Cache-First com revalidação background).
 
 ---
 
@@ -175,22 +184,6 @@ Este projeto foi desenhado com uma engenharia inteligente para operar com **Cust
 **Veredito de Sustentabilidade:**
 A arquitetura é leve e eficiente. Como o consumo de dados cresce de forma muito lenta (apenas texto), **não há previsão de custos futuros**. O aplicativo foi construído para funcionar gratuitamente por tempo indeterminado.
 
----
-
-<h2>Deploy</h2>
-
-Você pode implantar sua própria instância do Askesis na Vercel com um clique:
-
-<a href="https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fseu-usuario%2Faskesis&env=API_KEY,KV_URL,KV_REST_API_URL,KV_REST_API_TOKEN,KV_REST_API_READ_ONLY_TOKEN&project-name=askesis-habit-tracker&repository-name=askesis-habit-tracker">
-  <img src="https://vercel.com/button" alt="Deploy with Vercel"/>
-</a>
-
 <h2>Licença</h2>
 
 Este projeto é open-source e está licenciado sob a [Licença ISC](LICENSE).
-
----
-
-<p align="center">
-  Feito com 🖤 e Estoicismo.
-</p>
