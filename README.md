@@ -107,12 +107,18 @@ Este projeto rejeita a complexidade desnecessária dos frameworks modernos em fa
 
 O projeto utiliza serviços modernos para garantir escalabilidade e engajamento sem gerenciar servidores tradicionais.
 
-<h4>Vercel (Serverless & Storage)</h4>
+<h4>
+  <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/5/5e/Vercel_logo_black.svg/512px-Vercel_logo_black.svg.png" height="24" alt="Vercel Logo" style="vertical-align: bottom; margin-right: 8px;" />
+  Vercel (Serverless & Storage)
+</h4>
 *   **Hospedagem & CI/CD:** O frontend é compilado e distribuído globalmente pela Vercel CDN.
 *   **Edge Functions:** A lógica de backend reside em `api/`, rodando no runtime Edge da Vercel. Isso permite processar requisições de IA e criptografia de sincronização com latência próxima de zero, sem "cold starts" pesados de lambdas tradicionais.
 *   **Vercel KV (Redis):** A sincronização de dados utiliza o Vercel KV. O servidor atua como um "cofre burro": ele recebe e entrega blobs JSON criptografados (AES-GCM), sem nunca ter acesso às chaves de descriptografia ou aos dados reais do usuário (Zero-Knowledge Storage).
 
-<h4>OneSignal (Push Notifications)</h4>
+<h4>
+  <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/2/28/OneSignal_Logo.svg/512px-OneSignal_Logo.svg.png" height="24" alt="OneSignal Logo" style="vertical-align: bottom; margin-right: 8px;" />
+  OneSignal (Push Notifications)
+</h4>
 *   **Integração PWA:** O OneSignal foi integrado diretamente no Service Worker (`sw.js`), permitindo o envio de notificações de reengajamento ("Complete seus hábitos da tarde!") mesmo com o aplicativo fechado.
 *   **Gestão de Estado:** A interface do usuário sincroniza bidirecionalmente com o estado de inscrição do OneSignal. Se o usuário bloqueia notificações no navegador, o "toggle" no app reflete isso instantaneamente; se ele ativa no app, o SDK gerencia o "handshake" de permissão nativa.
 

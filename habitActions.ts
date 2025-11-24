@@ -383,8 +383,8 @@ export function requestHabitTimeRemoval(habitId: string, time: TimeOfDay) {
     _requestFutureScheduleChange(
         habit,
         date,
-        t('confirmDeleteTimeBody', { habitName: name, time: t(`filter${time}`) }),
-        t('confirmDeleteTimeTitle'),
+        t('confirmRemoveTime', { habitName: name, time: t(`filter${time}`) }),
+        t('modalRemoveTimeTitle'),
         time
     );
 }
@@ -721,8 +721,8 @@ export function handleHabitDrop(habitId: string, fromTime: TimeOfDay, toTime: Ti
     _requestFutureScheduleChange(
         habit,
         date,
-        t('confirmMoveTimeBody', { habitName: name, from: t(`filter${fromTime}`), to: t(`filter${toTime}`) }),
-        t('confirmMoveTimeTitle'),
+        t('confirmHabitMove', { habitName: name, oldTime: t(`filter${fromTime}`), newTime: t(`filter${toTime}`) }),
+        t('modalMoveHabitTitle'),
         fromTime,
         toTime
     );
