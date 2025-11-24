@@ -103,6 +103,19 @@ Este projeto rejeita a complexidade desnecessária dos frameworks modernos em fa
     *   O estado da aplicação é versionado rigorosamente.
     *   Implementamos um motor de **Migração Sequencial** (`migration.ts`) que transforma automaticamente dados legados para o novo esquema estrutural (ex: adoção de `scheduleHistory`) sem perda de histórico ao atualizar o app.
 
+<h3>Infraestrutura e Integrações Externas</h3>
+
+O projeto utiliza serviços modernos para garantir escalabilidade e engajamento sem gerenciar servidores tradicionais.
+
+<h4>Vercel (Serverless & Storage)</h4>
+*   **Hospedagem & CI/CD:** O frontend é compilado e distribuído globalmente pela Vercel CDN.
+*   **Edge Functions:** A lógica de backend reside em `api/`, rodando no runtime Edge da Vercel. Isso permite processar requisições de IA e criptografia de sincronização com latência próxima de zero, sem "cold starts" pesados de lambdas tradicionais.
+*   **Vercel KV (Redis):** A sincronização de dados utiliza o Vercel KV. O servidor atua como um "cofre burro": ele recebe e entrega blobs JSON criptografados (AES-GCM), sem nunca ter acesso às chaves de descriptografia ou aos dados reais do usuário (Zero-Knowledge Storage).
+
+<h4>OneSignal (Push Notifications)</h4>
+*   **Integração PWA:** O OneSignal foi integrado diretamente no Service Worker (`sw.js`), permitindo o envio de notificações de reengajamento ("Complete seus hábitos da tarde!") mesmo com o aplicativo fechado.
+*   **Gestão de Estado:** A interface do usuário sincroniza bidirecionalmente com o estado de inscrição do OneSignal. Se o usuário bloqueia notificações no navegador, o "toggle" no app reflete isso instantaneamente; se ele ativa no app, o SDK gerencia o "handshake" de permissão nativa.
+
 ---
 
 <h2>Deploy</h2>
