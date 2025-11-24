@@ -83,13 +83,25 @@ Este projeto rejeita a complexidade desnecessária dos frameworks modernos em fa
     *   **Dirty Checking:** O sistema sabe exatamente o que mudou e atualiza apenas o texto ou classe necessária.
     *   **Zero-Cost Idle:** Tarefas pesadas (analytics, salvamento) rodam via `requestIdleCallback`, garantindo que a UI nunca trave.
 
-2.  **Engenharia de IA (Context Compression):**
-    *   Para enviar meses de histórico para a IA sem estourar o limite de tokens ou custos, utilizamos **RLE (Run-Length Encoding)**.
-    *   O histórico `[Feito, Feito, Feito, Pendente]` vira `3xFeito, 1xPendente` antes de ir para o prompt.
+2.  **Confiabilidade de Dados e Offline-First:**
+    *   **Service Worker:** Estratégia *Cache-First* para o App Shell garante carregamento instantâneo (0ms latência) e funcionamento total offline.
+    *   **Sincronização Resiliente:** Utiliza *Optimistic UI* (a interface atualiza antes do servidor). A sincronização com a nuvem (Vercel KV) inclui lógica de retry com backoff exponencial e resolução de conflitos para garantir consistência entre múltiplos dispositivos.
 
-3.  **Segurança (Client-Side Encryption):**
-    *   Utilizamos **PBKDF2** para derivar chaves e **AES-GCM** para criptografar o payload JSON.
-    *   O servidor Vercel KV atua apenas como um depósito cego de dados criptografados.
+3.  **Engajamento e Notificações:**
+    *   **OneSignal SDK:** Gerenciamento robusto de Web Push Notifications.
+    *   **Badging API:** Integração com a API nativa de Badging do navegador para exibir o número de hábitos pendentes ("3") diretamente no ícone do aplicativo na tela inicial/dock, aumentando a retenção.
+
+4.  **Engenharia de IA (Context Compression):**
+    *   Para enviar meses de histórico para a IA sem estourar o limite de tokens ou custos, utilizamos estratégias de sumarização de dados.
+    *   Os prompts são engenheirados para fornecer contexto estoico ("Persona Sábia") e dados estruturados compactos.
+
+5.  **Segurança (Client-Side Encryption):**
+    *   Utilizamos **PBKDF2** para derivar chaves e **AES-GCM** para criptografar o payload JSON no cliente antes do envio.
+    *   O servidor Vercel KV atua apenas como um depósito cego de dados criptografados (Zero Knowledge Architecture).
+
+6.  **Integridade de Estado e Migrações:**
+    *   O estado da aplicação é versionado rigorosamente.
+    *   Implementamos um motor de **Migração Sequencial** (`migration.ts`) que transforma automaticamente dados legados para o novo esquema estrutural (ex: adoção de `scheduleHistory`) sem perda de histórico ao atualizar o app.
 
 ---
 
