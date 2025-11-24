@@ -130,14 +130,6 @@ O projeto utiliza serviços modernos para garantir escalabilidade e engajamento 
 
 ---
 
-<h2>Deploy</h2>
-
-Você pode implantar sua própria instância do Askesis na Vercel com um clique:
-
-<a href="https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fseu-usuario%2Faskesis&env=API_KEY,KV_URL,KV_REST_API_URL,KV_REST_API_TOKEN,KV_REST_API_READ_ONLY_TOKEN&project-name=askesis-habit-tracker&repository-name=askesis-habit-tracker">
-  <img src="https://vercel.com/button" alt="Deploy with Vercel"/>
-</a>
-
 <h2>Licença</h2>
 
 Este projeto é open-source e está licenciado sob a [Licença ISC](LICENSE).
