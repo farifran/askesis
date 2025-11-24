@@ -162,7 +162,7 @@ O projeto utiliza serviços modernos para garantir que o app seja rápido e conf
 ---
 
 <h2>
-  <img src="https://icons.iconarchive.com/icons/iconsmind/outline/512/Money-Hand-icon.png" height="30" style="vertical-align: bottom; margin-right: 8px;" alt="Zero Cost Icon" />
+  <img src="https://img.icons8.com/nolan/64/stack-of-money.png" height="30" style="vertical-align: bottom; margin-right: 8px;" alt="Zero Cost Icon" />
   Arquitetura Zero Cost & Sustentabilidade
 </h2>
 
