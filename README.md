@@ -13,7 +13,7 @@
           <img src="https://img.shields.io/badge/PWA-5A0FC8?style=for-the-badge&logo=pwa&logoColor=white" alt="PWA" />
         </div>
         <br>
-        <p style="color: #b3b3b3; margin: 0;"><em>O Rastreador de Hábitos Estoico. Minimalista. Privado. Impulsionado por IA.</em></p>
+        <p style="color: #b3b3b3; margin: 0;"><em>O Rastreador de Hábitos Estoico. Minimalista. Focado em Privacidade. Impulsionado por IA.</em></p>
       </td>
     </tr>
   </table>
@@ -21,99 +21,218 @@
 
 ---
 
-## 🏛️ A Filosofia
+<h2>A Filosofia: O que é Askesis?</h2>
 
-**Askesis** (do grego *ἄσκησις*) significa "treinamento" ou "exercício". Na filosofia estoica, não se trata de sofrimento, mas do **treinamento atlético da mente e do caráter**.
+**Askesis** (do grego *ἄσκησις*) é a raiz da palavra "ascetismo", mas seu significado original é muito mais prático: significa **"treinamento"** ou **"exercício"**.
 
-A maioria dos apps foca em gamificação superficial. O Askesis foca na **virtude da consistência**. Ele utiliza Inteligência Artificial para atuar como um "Sábio Estoico", analisando seus dados não para julgar, mas para oferecer conselhos sobre como fortalecer sua vontade.
+Na filosofia estoica, *askesis* não se trata de sofrimento ou privação sem sentido, mas do **treinamento rigoroso e atlético da mente e do caráter**. Assim como um atleta treina o corpo para a competição, o estoico treina a mente para lidar com as adversidades da vida com virtude e tranquilidade.
 
-### Os Pilares do Projeto
-1.  **Soberania de Dados:** Seus hábitos são um diário íntimo. No Askesis, os dados pertencem a você e residem no seu dispositivo (ou no seu cofre pessoal criptografado na nuvem). Nada é vendido ou analisado por terceiros.
-2.  **Autonomia Tecnológica:** Uma ferramenta profissional e robusta, livre de assinaturas mensais, provando que o auto-aperfeiçoamento não deve ter barreiras financeiras.
+A maioria dos apps de hábitos foca em gamificação superficial ou em "não quebrar a corrente". O Askesis foca na **virtude da consistência**. Ele usa Inteligência Artificial para atuar como um "Sábio Estoico", analisando seus dados não para julgar, mas para oferecer conselhos sobre como fortalecer sua vontade.
 
 ---
 
-## ✨ Funcionalidades Principais
+<h2>A Motivação: Por que construir?</h2>
 
-O Askesis foi desenhado em camadas: intuitivo na superfície, mas profundo para quem busca controle total.
+A criação do Askesis nasceu de duas necessidades pessoais fundamentais que não encontrei em outras soluções de mercado:
 
-### 📅 O Calendário de Evolução
-A faixa de calendário no topo é sua bússola.
-*   **Anéis de Progresso:** Visualização imediata do dia (Preenchido = Feito / Vazio = Pendente).
-*   **Gestão em Massa:** 
-    *   *Duplo clique no dia:* Marca tudo como **Feito**.
-    *   *Triplo clique no dia:* Marca tudo como **Adiado**.
-    *   *Pressionar (Long Press):* Abre o calendário mensal completo.
-
-### 🃏 Cartões de Hábito Interativos
-A unidade fundamental da sua rotina.
-*   **Rastreamento Rico:** Suporte para metas binárias ("check"), quantitativas ("10 páginas") ou temporais ("15 minutos").
-*   **Gestos Naturais (Swipe):** Deslize um cartão para revelar opções contextuais como **Adicionar Nota** (diário estoico) ou **Apagar** (apenas hoje ou para sempre).
-*   **Status Inteligentes:** Pendente, Feito e Adiado (para imprevistos, sem quebrar a corrente visualmente).
-
-### 🤖 O Mentor Estoico (IA)
-Não é apenas um gráfico; é um conselheiro.
-*   **Análise Semanal/Mensal:** A IA analisa seus padrões de comportamento.
-*   **Feedback Qualitativo:** Receba conselhos baseados em Sêneca, Marco Aurélio e Epicteto sobre sua consistência, não apenas estatísticas frias.
-
-### ☁️ Sincronização Criptografada
-*   **Cofre Cego:** Seus dados são criptografados no seu dispositivo (AES-GCM) antes de subir para a nuvem. O servidor apenas armazena o "lixo digital" ilegível. Apenas sua Chave de Sincronização pode abri-lo.
+1.  **Soberania e Privacidade de Dados:** O registro de hábitos é, por natureza, um diário íntimo da vida pessoal. Eu precisava de uma garantia absoluta de que essas informações não seriam compartilhadas, vendidas ou analisadas por terceiros. No Askesis, a prioridade é o controle da informação: os dados pertencem exclusivamente ao usuário e residem no seu dispositivo (ou no seu cofre pessoal criptografado).
+2.  **Autonomia Tecnológica:** Em uma era dominada por modelos de assinatura (SaaS), recusei-me a pagar aluguel mensal por um software que poderia ser construído com a tecnologia web moderna disponível. Este projeto é a prova de que é possível ter uma ferramenta profissional, robusta e gratuita, utilizando os recursos que a tecnologia atual nos oferece, sem barreiras financeiras para o auto-aperfeiçoamento.
 
 ---
 
-## 📱 Experiência Universal (PWA & Acessibilidade)
+<h2>Guia Completo: Como Usar o Askesis</h2>
 
-O Askesis segue a premissa de que a tecnologia deve se adaptar ao usuário.
+O Askesis foi desenhado em camadas: intuitivo na superfície, mas repleto de ferramentas poderosas para quem busca profundidade.
 
-### Progressive Web App (PWA)
-*   **Instalável:** Funciona como app nativo no iOS, Android, Windows e Mac.
-*   **Offline-First:** Graças a *Service Workers* avançados, o app carrega instantaneamente e é **totalmente funcional sem internet**.
-*   **Sensação Nativa:** Haptics (vibração), gestos fluidos e 60fps.
+<h3>1. O Fundamento: Adicionando Hábitos</h3>
 
-### Acessibilidade (A11y)
-A disciplina estoica é para todos.
-*   **Leitores de Tela:** Semântica HTML rigorosa e atributos ARIA completos.
-*   **Navegação por Teclado:** Todo o app é operável sem mouse/toque, com *Focus Traps* em modais.
-*   **Movimento Reduzido:** Respeita as configurações do sistema do usuário para reduzir animações.
+O hábito é a unidade fundamental da aplicação. O sistema permite rastrear não apenas a conclusão ("check"), mas também a quantidade e intensidade (páginas lidas, minutos meditados).
+
+Para começar a construir sua rotina, você tem dois caminhos:
+*   **Botão Verde Brilhante (+):** O ponto de partida principal no canto inferior.
+*   **O "Placeholder" (Espaço dos Cartões):** Se um período do dia (Manhã, Tarde, Noite) estiver vazio, você verá uma área convidativa ("Adicione um hábito") que permite a criação rápida direto no contexto temporal.
+
+<h3>2. O Tempo e os Anéis (O Calendário)</h3>
+
+Se o hábito é o fundamento, o **Tempo** é o que dá sentido ao todo. A faixa de calendário no topo não é apenas decorativa; é a sua bússola de progresso.
+
+Os dias são representados por **Anéis de Progresso**, que simbolizam a simbiose entre o hábito e o tempo. Eles mostram visualmente a evolução do seu dia:
+*   A parte preenchida indica os hábitos **Feitos**.
+*   O espaço restante mostra o que falta.
+*   O sistema entende nuances: hábitos **Adiados** (por força maior) não quebram visualmente o anel da mesma forma que hábitos esquecidos.
+
+**Micro-ações do Calendário (Power User):**
+A faixa de calendário possui atalhos ocultos para facilitar a gestão em massa:
+*   **1 Clique:** Seleciona a data para visualizar o histórico.
+*   **2 Cliques Rápidos no dia:** Marca **TODOS** os hábitos daquele dia como **Feitos** (para dias perfeitos).
+*   **3 Cliques Rápidos no dia:** Marca **TODOS** os hábitos como **Adiados** (ideal para dias de férias ou doença).
+*   **Pressionar e Segurar (Long Press):** Abre o **Calendário Mensal Completo**, permitindo saltar para qualquer data do ano rapidamente.
+
+<h3>3. O Cartão de Hábito: Interação Diária</h3>
+
+O cartão é a representação visual do seu dever no dia. Ele responde a diferentes tipos de interação:
+
+*   **Cliques (Status):**
+    *   **1 Clique:** Marca como ✅ **Feito**.
+    *   **2 Cliques:** Marca como ➡️ **Adiado** (passa para o próximo estado).
+    *   **3 Cliques:** Retorna para ⚪️ **Pendente**.
+*   **Deslizar (Swipe - Opções Adicionais):**
+    *   Ao deslizar o cartão para os lados, você revela ferramentas de contexto:
+    *   **Criar Nota:** Adicione uma observação estoica sobre a execução daquele hábito no dia.
+    *   **Apagar:** Permite remover o hábito. O sistema perguntará inteligentemente se você quer remover **"Apenas Hoje"** (ex: um imprevisto) ou **"Para Sempre"** (encerrar o hábito).
+
+<h3>4. Navegação e Sabedoria</h3>
+
+*   **"Hoje":** Ao navegar pelo passado ou futuro, o título "Hoje" (ou a data) no topo funciona como um botão de retorno imediato ao presente.
+*   **Frases Estoicas:** No topo da tela, você encontrará reflexões de Marco Aurélio e outros estoicos. Clique na frase para copiá-la para sua área de transferência.
+
+<h3>5. A Engrenagem: Configurações e Resgate</h3>
+
+O ícone de engrenagem no canto superior guarda as ferramentas de gestão do seu sistema pessoal:
+
+*   **Resgate de Perfil (Sincronização):** Aqui você encontra sua **Chave de Sincronização**. Guarde-a com segurança. Ela é a única forma de acessar seus dados em outros dispositivos ou recuperar seu progresso caso troque de celular.
+*   **Gerenciar Hábitos:** Uma visão de lista para editar, pausar ou graduar seus hábitos.
+*   **Idioma e Notificações:** Ajuste a aplicação para português, inglês ou espanhol e configure seus lembretes.
 
 ---
 
-## 🛠️ Arquitetura e Engenharia
+<h2>Experiência Universal: PWA e Acessibilidade</h2>
 
-Este projeto rejeita a complexidade desnecessária de frameworks pesados em favor de **Performance Nativa** e **JavaScript Moderno (ESNext)**.
+O Askesis foi construído com a premissa de que a tecnologia deve se adaptar ao usuário, não o contrário.
 
-### Stack Tecnológica
-*   **Frontend:** Vanilla TypeScript (sem React/Vue). Manipulação cirúrgica do DOM para performance extrema.
-*   **Estilização:** CSS Variables moderno (Dark Mode nativo e responsividade fluida).
-*   **Backend:** Vercel Edge Functions (Serverless).
-*   **Banco de Dados:** Vercel KV (Redis) para armazenamento do blob criptografado.
-*   **IA:** Google Gemini API (via SDK oficial `@google/genai`).
+<h3>📱 Multiplataforma por Natureza (PWA)</h3>
+O Askesis é um **Progressive Web App (PWA)** de última geração. Isso significa que ele combina a ubiquidade da web com a performance de aplicativos nativos.
 
-### Decisões Técnicas de Destaque
-1.  **Zero-Cost Idle:** Tarefas pesadas rodam via `requestIdleCallback`, garantindo que a interface nunca trave.
-2.  **Optimistic UI:** A interface responde instantaneamente; a sincronização ocorre em segundo plano com resolução de conflitos e *backoff* exponencial.
-3.  **State Management:** Um store reativo próprio, leve e tipado, com persistência local e migração automática de versão de dados.
+*   **Instalável:** Adicione à tela inicial do iOS, Android, Windows ou Mac. Ele se comporta como um app nativo, removendo a barra do navegador e integrando-se ao sistema operacional.
+*   **Offline-First:** Graças a uma estratégia avançada de *Service Workers*, o aplicativo carrega instantaneamente e é **totalmente funcional sem internet**. Você pode marcar hábitos, ver gráficos e editar notas no meio de um voo ou no metrô.
+*   **Sensação Nativa:** Implementação de feedback tátil (Haptics) em micro-interações, gestos de deslize (swipe) fluídos e animações de 60fps garantem uma experiência tátil e responsiva.
 
----
+<h3>♿ Acessibilidade e Design Inclusivo (A11y)</h3>
+A disciplina estoica é para todos. O código do Askesis segue rigorosos padrões de acessibilidade (WCAG) para garantir que pessoas com diferentes necessidades possam usar a ferramenta plenamente.
 
-## 🤖 Desenvolvimento Assistido por IA
-
-Este projeto representa um novo paradigma. O **Askesis** foi orquestrado através do **Google AI Studio**.
-
-*   **O Humano:** Atuou como Arquiteto de Software e Product Manager, definindo requisitos de segurança (criptografia militar), performance (offline-first) e UX.
-*   **A IA (Gemini):** Atuou como Engenheiro Sênior, implementando algoritmos complexos (PBKDF2, AES-GCM, Service Workers), otimizando renderização e garantindo a tipagem estrita do TypeScript.
-
-O resultado é uma aplicação com complexidade de *squad* inteiro, construída por uma única pessoa.
+*   **Semântica Robusta:** Uso correto de elementos HTML semânticos e atributos ARIA (`aria-label`, `role`, `aria-live`) para garantir que **Leitores de Tela** interpretem a interface corretamente.
+*   **Navegação por Teclado:** Todo o aplicativo é navegável sem mouse. Modais possuem "Focus Traps" para evitar que o foco se perca, e atalhos (como `Enter` e `Espaço`) funcionam em todos os elementos interativos.
+*   **Respeito ao Usuário:** O aplicativo detecta e respeita a preferência do sistema por **Movimento Reduzido** (`prefers-reduced-motion`), desativando animações complexas para evitar desconforto vestibular.
+*   **Legibilidade:** Contraste de cores calculado dinamicamente para garantir legibilidade em qualquer tema escolhido pelo usuário.
 
 ---
 
-## 🍃 Sustentabilidade e Zero Cost
+<h2>
+  <img src="https://www.gstatic.com/lamda/images/gemini_sparkle_v002_d4735304ff6292a690345.svg" height="30" style="vertical-align: bottom; margin-right: 8px;" alt="Google AI Studio Icon" />
+  O Poder do Google AI Studio: Desenvolvimento Assistido
+</h2>
 
-Uma arquitetura desenhada para operar com **Custo Zero ($0)** indefinidamente.
+Este projeto representa uma mudança de paradigma no desenvolvimento de software. O **Askesis** não foi apenas codificado; foi orquestrado.
 
-*   **Armazenamento Ultraleve:** Salvamos apenas texto comprimido e criptografado. 5 anos de histórico ocupam menos espaço que uma foto.
-*   **Processamento no Edge:** A maior parte do "pensamento" (criptografia, gráficos) ocorre no dispositivo do usuário, poupando recursos do servidor.
+Através do **Google AI Studio**, a barreira técnica foi dissolvida. O papel humano evoluiu de "programador braçal" para **Arquiteto de Software, Gerente de Produto e Lead Tester**.
 
-## Licença
+Isso permitiu que uma única pessoa construísse uma aplicação com a complexidade e polimento de um *squad* inteiro:
+
+*   **O Humano como Beta Tester e Pesquisador:** Além de definir a visão, o papel humano foi fundamental como um **validar ágil**. Houve um ciclo contínuo de testes onde o humano confrontava sua visão com o resultado produzido pela IA, iterando prompts para aperfeiçoar o código até sua melhor versão. Além disso, o humano atuou ativamente pesquisando os **requerimentos mais modernos** (state-of-the-art) — como criptografia nativa, PWA offline e service workers avançados — instruindo a IA a implementar soluções de ponta em vez de abordagens genéricas.
+*   **A IA como Engenheiro Sênior:** Os modelos Gemini atuaram na implementação técnica pesada, escrevendo linhas complexas de código, sugerindo otimizações de performance e resolvendo bugs lógicos.
+
+O resultado dessa simbiose:
+
+*   **Volume e Estrutura:** Mais de 15 módulos TypeScript interconectados e ~3.000 linhas de código limpo e tipado.
+*   **Engenharia Avançada:**
+    *   Criptografia Militar (AES-GCM/PBKDF2) rodando inteiramente no navegador.
+    *   Motor de Sincronização Bidirecional com resolução de conflitos e trava otimista (mutex).
+    *   Algoritmos de Cache LRU (Least Recently Used) e estruturas de dados `Map` para performance O(1).
+*   **UX Nativa & Complexa:**
+    *   Sistema de gestos (Swipe) com física personalizada.
+    *   Drag-and-drop fluido com auto-scroll e zonas de soltura dinâmicas.
+    *   Renderização progressiva e loops de animação desacoplados (requestAnimationFrame/requestIdleCallback) para 60fps cravados.
+*   **PWA Completo:** Funcionamento 100% offline com estratégias de cache avançadas (Cache-First com revalidação background).
+
+---
+
+<h2>Arquitetura e Engenharia</h2>
+
+Este projeto rejeita a complexidade desnecessária dos frameworks modernos em favor de **Performance Nativa** e **JavaScript Moderno (ESNext)**.
+
+<h3>Estrutura do Projeto</h3>
+
+```text
+.
+├── api/                 # Vercel Edge Functions (Backend Serverless)
+├── locales/             # Arquivos de Tradução (i18n)
+├── index.html           # App Shell (Critical Render Path)
+├── index.css            # CSS Variável e Responsivo
+├── index.tsx            # Ponto de Entrada
+├── state.ts             # Gerenciamento de Estado Reativo
+├── render.ts            # Motor de Renderização Cirúrgica (DOM Updates)
+├── cloud.ts             # Camada de Sincronização e Resolução de Conflitos
+├── crypto.ts            # Criptografia AES-GCM no lado do cliente
+├── habitActions.ts      # Lógica de Negócios
+├── swipeHandler.ts      # Física de Gestos Manuais
+└── sw.js                # Service Worker (Cache Strategy)
+```
+
+<h3>Decisões Técnicas de Alto Nível</h3>
+
+1.  **Performance Extrema ("Vanilla Speed"):**
+    *   Sem React/Vue/Angular. Manipulação direta e cirúrgica do DOM.
+    *   **Dirty Checking:** O sistema sabe exatamente o que mudou e atualiza apenas o texto ou classe necessária.
+    *   **Zero-Cost Idle:** Tarefas pesadas (analytics, salvamento) rodam via `requestIdleCallback`, garantindo que a UI nunca trave.
+
+2.  **Confiabilidade de Dados e Offline-First:**
+    *   **Service Worker:** Estratégia *Cache-First* para o App Shell garante carregamento instantâneo (0ms latência) e funcionamento total offline.
+    *   **Sincronização Resiliente:** Utiliza *Optimistic UI* (a interface atualiza antes do servidor). A sincronização com a nuvem (Vercel KV) inclui lógica de retry com backoff exponencial e resolução de conflitos para garantir consistência entre múltiplos dispositivos.
+
+3.  **Engajamento e Notificações:**
+    *   **OneSignal SDK:** Gerenciamento robusto de Web Push Notifications.
+    *   **Badging API:** Integração com a API nativa de Badging do navegador para exibir o número de hábitos pendentes ("3") diretamente no ícone do aplicativo na tela inicial/dock, aumentando a retenção.
+
+4.  **Engenharia de IA (Context Compression):**
+    *   Para enviar meses de histórico para a IA sem estourar o limite de tokens ou custos, utilizamos estratégias de sumarização de dados.
+    *   Os prompts são engenheirados para fornecer contexto estoico ("Persona Sábia") e dados estruturados compactos.
+
+5.  **Segurança (Client-Side Encryption):**
+    *   Utilizamos **PBKDF2** para derivar chaves e **AES-GCM** para criptografar o payload JSON no cliente antes do envio.
+    *   O servidor Vercel KV atua apenas como um depósito cego de dados criptografados (Zero Knowledge Architecture).
+
+6.  **Integridade de Estado e Migrações:**
+    *   O estado da aplicação é versionado rigorosamente.
+    *   Implementamos um motor de **Migração Sequencial** (`migration.ts`) que transforma automaticamente dados legados para o novo esquema estrutural (ex: adoção de `scheduleHistory`) sem perda de histórico ao atualizar o app.
+
+<h3>Infraestrutura e Integrações Externas</h3>
+
+O projeto utiliza serviços modernos para garantir que o app seja rápido e confiável, sem custos de manutenção.
+
+<h4>
+  <img src="https://cdn.svgporn.com/logos/vercel-icon.svg" height="24" alt="Vercel Logo" style="vertical-align: bottom; margin-right: 8px;" />
+  Vercel (O Motor e o Cofre)
+</h4>
+
+*   **Velocidade Global:** O site não fica em apenas um computador; ele é distribuído por uma rede mundial (CDN). Isso garante que o app carregue instantaneamente, esteja você no Brasil ou no Japão.
+*   **Cérebro Ágil (Edge Functions):** As partes "inteligentes" do sistema (como conectar com a IA ou criptografar seus dados) rodam na "borda" da rede, fisicamente próximas ao usuário, eliminando esperas.
+*   **Cofre Cego (Vercel KV):** Usamos um banco de dados de alta performance para a sincronização. O diferencial de segurança: o servidor atua como um "cofre cego". Ele guarda seus dados criptografados, mas não tem a chave para lê-los. Apenas seu dispositivo pode abrir esse cofre.
+
+<h4>
+  <img src="https://cdn.svgporn.com/logos/onesignal.svg" height="24" alt="OneSignal Logo" style="vertical-align: bottom; margin-right: 8px;" />
+  OneSignal (O Aliado da Consistência)
+</h4>
+
+*   **Lembretes, não SPAM:** O sistema de notificações foi desenhado para ajudar você a manter o foco ("Lembre-se de beber água"), respeitando seu tempo.
+*   **Funciona Fechado:** Graças à integração profunda com o navegador (Service Worker), você recebe lembretes importantes mesmo se o aplicativo não estiver aberto na tela do celular.
+*   **Sincronia Real:** Se você desativa as notificações nas configurações do celular, o app entende imediatamente e atualiza o botão na interface. Sem menus confusos.
+
+---
+
+<h2>
+  <img src="https://fonts.gstatic.com/s/i/materialicons/sell/v6/24px.svg" height="30" style="vertical-align: bottom; margin-right: 8px;" alt="Zero Cost Icon" />
+  Arquitetura Zero Cost & Sustentabilidade
+</h2>
+
+Este projeto foi desenhado com uma engenharia inteligente para operar com **Custo Zero ($0)**, aproveitando os planos gratuitos de serviços modernos sem perder qualidade.
+
+*   **Armazenamento Ultraleve:** Em vez de salvar dados pesados, salvamos apenas texto criptografado e comprimido. Para se ter ideia: **5 anos** de histórico diário de um usuário ocupam menos espaço digital (KB) do que uma única foto de baixa qualidade. Isso significa que o espaço gratuito do servidor é virtualmente infinito para uso pessoal.
+*   **O Celular Trabalha:** A maior parte do "pensamento" (criptografia, geração de gráficos, cálculos) é feita pelo seu próprio dispositivo, não pelo servidor. Isso poupa recursos da nuvem, garantindo que nunca ultrapassemos os limites gratuitos.
+*   **Notificações Gratuitas:** Utilizamos o plano de comunidade do OneSignal, que permite até 10.000 usuários Web gratuitamente. Para um app focado em desenvolvimento pessoal, isso é mais do que suficiente.
+
+**Veredito de Sustentabilidade:**
+A arquitetura é leve e eficiente. Como o consumo de dados cresce de forma muito lenta (apenas texto), **não há previsão de custos futuros**. O aplicativo foi construído para funcionar gratuitamente por tempo indeterminado.
+
+<h2>Licença</h2>
 
 Este projeto é open-source e está licenciado sob a [Licença ISC](LICENSE).
