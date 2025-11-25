@@ -6,7 +6,7 @@
   "start_url": "/",
   "display": "standalone",
   "background_color": "#121212",
-  "theme_color": "#121212",
+  "theme_color": "#27ae60",
   "icons": [
     {
       "src": "icons/icon-192.svg",
@@ -23,13 +23,6 @@
       "sizes": "512x512",
       "type": "image/svg+xml",
       "purpose": "maskable"
-    }
-  ],
-  "shortcuts": [
-    {
-      "name": "Hoje",
-      "url": "/",
-      "icons": [{ "src": "icons/icon-192.svg", "sizes": "192x192" }]
     }
   ],
   "badge": "icons/badge.svg"

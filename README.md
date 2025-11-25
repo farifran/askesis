@@ -1,77 +1,118 @@
 <div align="center" style="background-color: #121212; color: #e5e5e5; padding: 20px; border-radius: 12px;">
-  <img src="./icons/icon-512.svg" width="120" alt="Askesis Logo" style="border-radius: 24px; margin-bottom: 10px;">
-  <h1 style="color: #e5e5e5; margin: 0;">Askesis</h1>
-  <p style="color: #b3b3b3; margin-top: 10px; font-style: italic;">O Rastreador de Hábitos Estoico. Minimalista. Privado. Impulsionado por IA.</p>
-  
-  <div style="margin-top: 20px;">
-    <a href="https://askesis-psi.vercel.app/"><img src="https://img.shields.io/badge/Acessar_App-27ae60?style=for-the-badge&logo=vercel&logoColor=white" alt="Acessar Aplicação"></a>
-    <img src="https://img.shields.io/badge/Google_Gemini-174EA6?style=for-the-badge&logo=google-gemini&logoColor=white" alt="Gemini AI" />
-    <img src="https://img.shields.io/badge/TypeScript-000000?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript" />
-  </div>
+  <table border="0" cellspacing="0" cellpadding="0" style="border-collapse: collapse; border: none; background-color: #121212; color: #e5e5e5;">
+    <tr>
+      <td width="160" align="center" valign="middle" style="border: none;">
+        <img src="icons/icon-512.svg" width="120" alt="Askesis Logo" style="border-radius: 24px;">
+      </td>
+      <td align="left" valign="middle" style="border: none; color: #e5e5e5; padding-left: 20px;">
+        <h1 style="color: #e5e5e5; margin-bottom: 4px; margin-top: 0;">Askesis</h1>
+        <div>
+          <a href="https://askesis-psi.vercel.app/"><img src="https://img.shields.io/badge/Acessar_App-27ae60?style=for-the-badge&logo=vercel&logoColor=white" alt="Acessar Aplicação"></a>
+          <img src="https://img.shields.io/badge/Google_Gemini-174EA6?style=for-the-badge&logo=google-gemini&logoColor=white" alt="Gemini AI" />
+          <img src="https://img.shields.io/badge/TypeScript-000000?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript" />
+          <img src="https://img.shields.io/badge/PWA-5A0FC8?style=for-the-badge&logo=pwa&logoColor=white" alt="PWA" />
+        </div>
+        <br>
+        <p style="color: #b3b3b3; margin: 0;"><em>O Rastreador de Hábitos Estoico. Minimalista. Privado. Impulsionado por IA.</em></p>
+      </td>
+    </tr>
+  </table>
 </div>
 
 ---
 
-## A Filosofia
+## 🏛️ A Filosofia
 
 **Askesis** (do grego *ἄσκησις*) significa "treinamento" ou "exercício". Na filosofia estoica, não se trata de sofrimento, mas do **treinamento atlético da mente e do caráter**.
 
-Este software rejeita a gamificação superficial em favor da **virtude da consistência**. Ele utiliza Inteligência Artificial para atuar como um mentor, analisando dados brutos para oferecer conselhos sobre como fortalecer a vontade humana.
+A maioria dos apps foca em gamificação superficial. O Askesis foca na **virtude da consistência**. Ele utiliza Inteligência Artificial para atuar como um "Sábio Estoico", analisando seus dados não para julgar, mas para oferecer conselhos sobre como fortalecer sua vontade.
 
-### Pilares
-1.  **Soberania de Dados:** Os dados pertencem ao usuário e residem no dispositivo (ou num cofre pessoal criptografado na nuvem). Sem rastreamento, sem venda de dados.
-2.  **Autonomia Tecnológica:** Uma ferramenta robusta, livre de assinaturas, provando que o auto-aperfeiçoamento não deve ter barreiras financeiras.
-
----
-
-## Funcionalidades
-
-*   **Calendário de Evolução:** Visualização imediata da consistência diária com anéis de progresso e gestão em massa de hábitos.
-*   **Cartões de Hábito:** Rastreamento rico (metas binárias, quantitativas ou temporais) com suporte a gestos (swipe) para ações rápidas.
-*   **Mentor Estoico (IA):** Análise semanal e mensal dos padrões de comportamento, fornecendo feedback qualitativo baseado nos escritos de Sêneca, Marco Aurélio e Epicteto.
-*   **Sincronização Criptografada:** Arquitetura "Zero-Knowledge". Os dados são criptografados no cliente antes de qualquer transmissão.
+### Os Pilares do Projeto
+1.  **Soberania de Dados:** Seus hábitos são um diário íntimo. No Askesis, os dados pertencem a você e residem no seu dispositivo (ou no seu cofre pessoal criptografado na nuvem). Nada é vendido ou analisado por terceiros.
+2.  **Autonomia Tecnológica:** Uma ferramenta profissional e robusta, livre de assinaturas mensais, provando que o auto-aperfeiçoamento não deve ter barreiras financeiras.
 
 ---
 
-## Deep Dive Técnico: Engenharia Web Platform
+## ✨ Funcionalidades Principais
 
-Este projeto demonstra o poder da **Plataforma Web Moderna**, rejeitando a complexidade acidental de frameworks pesados em favor de APIs nativas do navegador para atingir performance e segurança de nível nativo.
+O Askesis foi desenhado em camadas: intuitivo na superfície, mas profundo para quem busca controle total.
 
-### 1. Criptografia Militar no Navegador (Web Crypto API)
-Não dependemos de segurança no servidor. Utilizamos a **Web Crypto API** nativa para implementar criptografia ponta-a-ponta (E2EE).
-*   **PBKDF2:** Derivação de chave robusta a partir da senha do usuário, com 100.000 iterações para prevenir ataques de força bruta.
-*   **AES-GCM:** Criptografia autenticada. O servidor recebe apenas um blob binário ilegível. A descriptografia ocorre exclusivamente na memória do dispositivo do usuário.
+### 📅 O Calendário de Evolução
+A faixa de calendário no topo é sua bússola.
+*   **Anéis de Progresso:** Visualização imediata do dia (Preenchido = Feito / Vazio = Pendente).
+*   **Gestão em Massa:** 
+    *   *Duplo clique no dia:* Marca tudo como **Feito**.
+    *   *Triplo clique no dia:* Marca tudo como **Adiado**.
+    *   *Pressionar (Long Press):* Abre o calendário mensal completo.
 
-### 2. Renderização Não-Bloqueante (requestIdleCallback)
-Para garantir 60fps constantes, tarefas computacionalmente intensivas não competem com a thread principal de UI.
-*   **Scheduling Inteligente:** Cálculos de estatísticas, parsing de respostas da IA e renderização de gráficos complexos são delegados via `requestIdleCallback`. O navegador executa essas tarefas apenas nos milissegundos ociosos entre frames de renderização.
+### 🃏 Cartões de Hábito Interativos
+A unidade fundamental da sua rotina.
+*   **Rastreamento Rico:** Suporte para metas binárias ("check"), quantitativas ("10 páginas") ou temporais ("15 minutos").
+*   **Gestos Naturais (Swipe):** Deslize um cartão para revelar opções contextuais como **Adicionar Nota** (diário estoico) ou **Apagar** (apenas hoje ou para sempre).
+*   **Status Inteligentes:** Pendente, Feito e Adiado (para imprevistos, sem quebrar a corrente visualmente).
 
-### 3. Observadores de Alta Performance (IntersectionObserver & ResizeObserver)
-Eliminamos listeners de eventos "scroll" e "resize" que causam *layout thrashing*.
-*   **Gráficos Responsivos:** O `ResizeObserver` monitora o container do gráfico e dispara o redesenho apenas quando as dimensões físicas mudam, sem polling.
-*   **Lazy Loading Lógico:** O `IntersectionObserver` pausa atualizações de componentes que não estão na viewport.
+### 🤖 O Mentor Estoico (IA)
+Não é apenas um gráfico; é um conselheiro.
+*   **Análise Semanal/Mensal:** A IA analisa seus padrões de comportamento.
+*   **Feedback Qualitativo:** Receba conselhos baseados em Sêneca, Marco Aurélio e Epicteto sobre sua consistência, não apenas estatísticas frias.
 
-### 4. Internacionalização Nativa (Intl API)
-Zero dependências externas para formatação.
-*   **Intl.DateTimeFormat & Intl.PluralRules:** Toda a formatação de datas, moedas e regras de pluralização utiliza as bibliotecas C++ subjacentes do navegador, garantindo precisão linguística com custo zero de bundle size.
+### ☁️ Sincronização Criptografada
+*   **Cofre Cego:** Seus dados são criptografados no seu dispositivo (AES-GCM) antes de subir para a nuvem. O servidor apenas armazena o "lixo digital" ilegível. Apenas sua Chave de Sincronização pode abri-lo.
 
-### 5. Progressive Web App (Service Workers)
-*   **Cache-First Strategy:** O App Shell é servido instantaneamente do cache local, permitindo inicialização em 0ms mesmo offline.
-*   **Sincronização em Background:** A lógica de rede possui *retry* exponencial e detecção de conectividade para garantir integridade de dados em redes instáveis.
+---
+
+## 📱 Experiência Universal (PWA & Acessibilidade)
+
+O Askesis segue a premissa de que a tecnologia deve se adaptar ao usuário.
+
+### Progressive Web App (PWA)
+*   **Instalável:** Funciona como app nativo no iOS, Android, Windows e Mac.
+*   **Offline-First:** Graças a *Service Workers* avançados, o app carrega instantaneamente e é **totalmente funcional sem internet**.
+*   **Sensação Nativa:** Haptics (vibração), gestos fluidos e 60fps.
+
+### Acessibilidade (A11y)
+A disciplina estoica é para todos.
+*   **Leitores de Tela:** Semântica HTML rigorosa e atributos ARIA completos.
+*   **Navegação por Teclado:** Todo o app é operável sem mouse/toque, com *Focus Traps* em modais.
+*   **Movimento Reduzido:** Respeita as configurações do sistema do usuário para reduzir animações.
 
 ---
 
-## Roadmap
+## 🛠️ Arquitetura e Engenharia
 
-O futuro do Askesis foca na integração profunda com o sistema operacional, mantendo a base web.
+Este projeto rejeita a complexidade desnecessária de frameworks pesados em favor de **Performance Nativa** e **JavaScript Moderno (ESNext)**.
 
-### Versão Nativa Android
-O objetivo é oferecer uma experiência indistinguível de um app nativo, distribuído via Play Store.
-*   **Trusted Web Activity (TWA):** Empacotamento do PWA para execução em contexto nativo sem a barra de navegação do browser.
-*   **Widgets na Tela Inicial:** Desenvolvimento de widgets nativos Android que leem o estado local para exibir o progresso diário sem abrir o app.
-*   **Health Connect:** Integração bidirecional para ler dados de exercícios e sono automaticamente, alimentando os hábitos de saúde.
+### Stack Tecnológica
+*   **Frontend:** Vanilla TypeScript (sem React/Vue). Manipulação cirúrgica do DOM para performance extrema.
+*   **Estilização:** CSS Variables moderno (Dark Mode nativo e responsividade fluida).
+*   **Backend:** Vercel Edge Functions (Serverless).
+*   **Banco de Dados:** Vercel KV (Redis) para armazenamento do blob criptografado.
+*   **IA:** Google Gemini API (via SDK oficial `@google/genai`).
+
+### Decisões Técnicas de Destaque
+1.  **Zero-Cost Idle:** Tarefas pesadas rodam via `requestIdleCallback`, garantindo que a interface nunca trave.
+2.  **Optimistic UI:** A interface responde instantaneamente; a sincronização ocorre em segundo plano com resolução de conflitos e *backoff* exponencial.
+3.  **State Management:** Um store reativo próprio, leve e tipado, com persistência local e migração automática de versão de dados.
 
 ---
+
+## 🤖 Desenvolvimento Assistido por IA
+
+Este projeto representa um novo paradigma. O **Askesis** foi orquestrado através do **Google AI Studio**.
+
+*   **O Humano:** Atuou como Arquiteto de Software e Product Manager, definindo requisitos de segurança (criptografia militar), performance (offline-first) e UX.
+*   **A IA (Gemini):** Atuou como Engenheiro Sênior, implementando algoritmos complexos (PBKDF2, AES-GCM, Service Workers), otimizando renderização e garantindo a tipagem estrita do TypeScript.
+
+O resultado é uma aplicação com complexidade de *squad* inteiro, construída por uma única pessoa.
+
+---
+
+## 🍃 Sustentabilidade e Zero Cost
+
+Uma arquitetura desenhada para operar com **Custo Zero ($0)** indefinidamente.
+
+*   **Armazenamento Ultraleve:** Salvamos apenas texto comprimido e criptografado. 5 anos de histórico ocupam menos espaço que uma foto.
+*   **Processamento no Edge:** A maior parte do "pensamento" (criptografia, gráficos) ocorre no dispositivo do usuário, poupando recursos do servidor.
 
 ## Licença
 
