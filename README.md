@@ -19,6 +19,14 @@
   </table>
 </div>
 
+<br>
+
+<p align="center">
+  <img src="assets/app-preview.jpg" alt="Interface do Askesis" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
+</p>
+
+<br>
+
 ---
 
 <h2>A Filosofia: O que é Askesis?</h2>
