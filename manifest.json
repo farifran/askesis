@@ -1,12 +1,13 @@
+
 {
-  "_comment": "[ANALYSIS PROGRESS]: 100% - Manifesto PWA validado e completo.",
   "name": "Askesis",
   "short_name": "Askesis",
   "description": "A dynamic habit tracker with data visualization and personalized AI-powered feedback.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#121212",
-  "theme_color": "#27ae60",
+  "theme_color": "#121212",
+  "orientation": "portrait",
   "icons": [
     {
       "src": "icons/icon-192.svg",
@@ -23,6 +24,14 @@
       "sizes": "512x512",
       "type": "image/svg+xml",
       "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Hoje",
+      "short_name": "Hoje",
+      "url": "/",
+      "icons": [{ "src": "icons/icon-192.svg", "sizes": "192x192" }]
     }
   ],
   "badge": "icons/badge.svg"

@@ -1,113 +1,79 @@
-<div align="center" style="background-color: #121212; color: #e5e5e5; padding: 40px; border-radius: 20px;">
-  <img src="icons/icon-512.svg" width="120" alt="Askesis Logo" style="border-radius: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
-  <h1 style="font-size: 3em; margin-bottom: 10px; margin-top: 20px;">Askesis</h1>
-  <p style="font-size: 1.2em; color: #b3b3b3; max-width: 600px; margin: 0 auto;">
-    <em>O Rastreador de Hábitos Estoico. Minimalista. Focado em Privacidade. Impulsionado por IA.</em>
-  </p>
-  <br>
-  
-  <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
-    <a href="https://askesis-psi.vercel.app/">
-      <img src="https://img.shields.io/badge/Acessar_Aplicação-27ae60?style=for-the-badge&logo=vercel&logoColor=white" alt="Acessar App" height="40">
-    </a>
-  </div>
-  
-  <br>
 
-  <!-- BADGES TÉCNICAS -->
-  <div>
-    <img src="https://img.shields.io/badge/Google_Gemini-174EA6?style=flat-square&logo=google-gemini&logoColor=white" alt="Gemini AI" />
-    <img src="https://img.shields.io/badge/TypeScript-007ACC?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" />
-    <img src="https://img.shields.io/badge/PWA-5A0FC8?style=flat-square&logo=pwa&logoColor=white" alt="PWA" />
-    <img src="https://img.shields.io/badge/Vercel_KV-000000?style=flat-square&logo=vercel&logoColor=white" alt="Vercel KV" />
-    <img src="https://img.shields.io/badge/Zero_Dependencies-FF5733?style=flat-square" alt="Zero Dependencies (Runtime)" />
-  </div>
+<div align="center">
+  <img src="./icons/icon-512.svg" width="120" alt="Askesis Logo" style="border-radius: 24px;">
+  <h1>Askesis</h1>
+  
+  <p>
+    <a href="https://askesis-psi.vercel.app/"><img src="https://img.shields.io/badge/Acessar_App-27ae60?style=for-the-badge&logo=vercel&logoColor=white" alt="Acessar Aplicação"></a>
+    <img src="https://img.shields.io/badge/Google_Gemini-174EA6?style=for-the-badge&logo=google-gemini&logoColor=white" alt="Gemini AI" />
+    <img src="https://img.shields.io/badge/TypeScript-000000?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript" />
+    <img src="https://img.shields.io/badge/PWA-5A0FC8?style=for-the-badge&logo=pwa&logoColor=white" alt="PWA" />
+  </p>
+
+  <p><em>O Rastreador de Hábitos Estoico. Minimalista. Privado. Impulsionado por IA.</em></p>
 </div>
 
 ---
 
 ## 🏛️ A Filosofia
 
-**Askesis** (do grego *ἄσκησις*) significa **"treinamento"**. Não se trata de sofrimento, mas do treinamento rigoroso do caráter. 
+**Askesis** (do grego *ἄσκησις*) significa "treinamento". Na filosofia estoica, não se trata de sofrimento, mas do **treinamento atlético da mente e do caráter**.
 
-Diferente de apps focados em gamificação superficial, o Askesis utiliza **Inteligência Artificial (Google Gemini)** atuando como um "Sábio Estoico". Ele analisa seus dados não para gerar gráficos coloridos sem sentido, mas para oferecer conselhos filosóficos personalizados sobre consistência, virtude e força de vontade.
+A maioria dos apps foca em gamificação superficial. O Askesis foca na **virtude da consistência**. Ele utiliza Inteligência Artificial para atuar como um "Sábio Estoico", analisando seus dados não para julgar, mas para oferecer conselhos sobre como fortalecer sua vontade.
 
-> *"Nós somos o que repetidamente fazemos. A excelência, portanto, não é um ato, mas um hábito."* — Aristóteles (frequentemente citado pelos Estoicos)
-
----
-
-## ✨ Interface & Experiência
-
-<!-- 
-  PLACEHOLDER PARA IMAGENS:
-  Substitua os caminhos abaixo pelos seus arquivos reais na pasta 'assets'.
-  Se não tiver as imagens ainda, esta seção ficará oculta ou mostrará o texto alternativo.
--->
-
-O design segue os princípios do **Brutalismo Utilitário**: alto contraste, tipografia forte e foco absoluto no conteúdo.
-
-### Gestos Naturais
-Interações fluídas inspiradas em sistemas nativos. Deslize para editar, segure para ver detalhes.
-
-<!-- Exemplo: ![Demo do Swipe](assets/swipe-demo.gif) -->
-
-### O Anel de Progresso
-Uma visualização imediata do dia. O anel se completa conforme a virtude é exercitada.
-
-<!-- Exemplo: ![Screenshot Mobile](assets/mobile-view.png) -->
+### Os Pilares
+1.  **Soberania de Dados:** Seus dados residem no seu dispositivo. A sincronização na nuvem utiliza um "Cofre Cego" (Criptografia de Ponta-a-Ponta), garantindo que nem o servidor possa ler seus hábitos.
+2.  **Engenharia de Elite:** Uma demonstração técnica de que a Web Platform é capaz de performance nativa (60 FPS) sem o peso de frameworks modernos.
 
 ---
 
-## 🛠️ Engenharia "World-Class"
+## 🔬 Deep Dive Técnico (Showcase)
 
-Este projeto rejeita frameworks pesados em favor de **Performance Nativa** e **JavaScript Moderno (ESNext)**. É uma demonstração de como construir software complexo, performático e acessível utilizando apenas os padrões da Web Plataform.
+Este projeto rejeita a complexidade acidental em favor de **Performance Nativa** e **JavaScript Moderno (ESNext)**. A engenharia foca no uso cirúrgico de Web APIs padrão.
 
-### Core Tech Stack
-*   **Frontend:** Vanilla TypeScript (Sem React, Vue ou Angular). Manipulação cirúrgica do DOM.
-*   **Estado:** Gerenciamento de estado reativo customizado com persistência local.
-*   **Build:** `esbuild` para compilação ultra-rápida.
+### Stack Tecnológica
+*   **Frontend:** Vanilla TypeScript (Zero-Bundle-Overhead).
+*   **Backend:** Vercel Edge Functions (Serverless).
+*   **Banco de Dados:** Vercel KV (Redis) para blobs criptografados.
+*   **IA:** Google Gemini API (via SDK oficial).
 
-### Uso Avançado de Web APIs
-O diferencial técnico do projeto reside no uso profundo de APIs do navegador:
+### Domínio da Plataforma Web (Native APIs)
+Em vez de bibliotecas externas pesadas, o Askesis extrai o máximo do navegador:
 
-1.  **Performance & Rendering**
-    *   `requestIdleCallback`: Tarefas pesadas (como análise de dados e logs) são agendadas para momentos de ociosidade da CPU, garantindo que a interface nunca trave (60fps cravados).
-    *   `IntersectionObserver`: Renderização eficiente de listas longas e gráficos, carregando conteúdo apenas quando visível.
-    *   `CSS Containment`: Uso da propriedade `contain: content` para isolar cálculos de layout e pintura, otimizando a renderização do calendário.
-
-2.  **Segurança (Criptografia Militar no Cliente)**
-    *   `Web Crypto API`: Implementação nativa de **AES-GCM** para criptografar dados e **PBKDF2** para derivação de chaves.
-    *   **Zero-Knowledge:** O servidor (Vercel KV) armazena apenas *blobs* criptografados. A chave de descriptografia nunca sai do dispositivo do usuário.
-
-3.  **Progressive Web App (PWA)**
-    *   `Service Workers`: Estratégia **Cache-First** para o App Shell, garantindo carregamento instantâneo (0ms de latência de rede) e funcionamento **100% Offline**.
-    *   `Badging API`: Integração com o sistema operacional para exibir contadores de notificação no ícone do app.
-    *   `Web Share API` & `Clipboard API`: Integração nativa para compartilhamento de citações e chaves.
-
-4.  **UX Tátil**
-    *   `Vibration API`: Feedback háptico (tátil) preciso para micro-interações (sucesso, erro, seleção), aumentando a imersão.
-    *   `Pointer Events`: Lógica física personalizada para gestos de "Swipe" e "Drag-and-Drop".
+*   **`requestIdleCallback` (Scheduler):** Orquestração de tarefas não urgentes (como renderizar citações ou verificar notificações) para momentos de ociosidade da CPU, garantindo que a thread principal (UI) nunca trave.
+*   **`Web Crypto API` (Security):** Implementação manual de **PBKDF2** (derivação de chaves) e **AES-GCM** (criptografia autenticada) rodando no cliente. Segurança de nível militar sem dependências npm.
+*   **`IntersectionObserver` & `ResizeObserver` (Performance):** Virtualização de listas e gráficos responsivos que pausam a renderização quando fora da tela, eliminando *Layout Thrashing*.
+*   **`Intl.DateTimeFormat` & `Intl.PluralRules` (i18n):** Internacionalização robusta e leve, usando as APIs nativas do motor V8 em vez de bibliotecas como `moment.js` ou `i18next`.
+*   **`Navigator.vibrate` (Haptics):** Feedback tátil preciso (micro-pulsos de 8-15ms) para simular a "textura" de botões físicos em dispositivos móveis.
+*   **`Service Workers` (Offline-First):** Estratégia de cache agressiva ("Cache-First") para o App Shell, permitindo carregamento instantâneo (0ms) e funcionamento pleno sem rede.
 
 ---
 
-## 🔐 Privacidade e Soberania
+## ✨ Funcionalidades
 
-*   **Seus Dados, Seu Controle:** Os dados residem primariamente no `localStorage` do seu dispositivo.
-*   **Sincronização Opcional:** A nuvem é usada apenas como backup criptografado. Sem rastreadores, sem venda de dados, sem análise de terceiros.
+### 📅 Calendário de Evolução
+*   **Anéis de Progresso:** Visualização imediata da consistência diária.
+*   **Gestão em Massa:** Duplo-clique para completar tudo, triplo-clique para adiar.
 
----
+### 🤖 O Mentor Estoico (IA)
+*   **Análise Semanal/Mensal:** Detecta padrões de comportamento e oferece conselhos baseados em Sêneca, Marco Aurélio e Epicteto.
 
-## 🚀 Roadmap (O Futuro)
-
-O desenvolvimento do Askesis é contínuo, focado em aprofundar a integração com a rotina do usuário.
-
-- [ ] **Comandos de Voz:** Integração com *Web Speech API* para registrar hábitos via voz ("Askesis, marque Leitura como feito").
-- [ ] **Modo Foco:** Um timer Pomodoro integrado com citações estoicas durante os intervalos.
-- [ ] **Versão Nativa Android:** Desenvolvimento de um aplicativo nativo (Kotlin/Jetpack Compose) para integração profunda com o sistema operacional (Widgets de tela inicial, Quick Settings Tiles).
+### ☁️ Sincronização Segura
+*   **Criptografia Client-Side:** Seus dados saem do seu dispositivo já ilegíveis. Sua chave de sincronização é a única forma de decifrá-los.
 
 ---
 
-<div align="center">
-  <p>Construído com 🧠 e 💻.</p>
-  <p><em>© 2025 Askesis Project</em></p>
-</div>
+## 🚀 Roadmap
+
+O desenvolvimento do Askesis é contínuo, visando integração profunda com o sistema operacional.
+
+*   **Versão Nativa Android:**
+    *   Empacotamento TWA (Trusted Web Activity) para publicação na Play Store.
+    *   Widgets de tela inicial para check-in rápido.
+    *   Integração com Health Connect para marcar hábitos automaticamente (ex: "Caminhar 10min").
+
+---
+
+## Licença
+
+Este projeto é open-source e está licenciado sob a [Licença ISC](LICENSE).
