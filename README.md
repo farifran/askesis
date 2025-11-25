@@ -1,76 +1,75 @@
-
-<div align="center">
-  <img src="./icons/icon-512.svg" width="120" alt="Askesis Logo" style="border-radius: 24px;">
-  <h1>Askesis</h1>
+<div align="center" style="background-color: #121212; color: #e5e5e5; padding: 20px; border-radius: 12px;">
+  <img src="./icons/icon-512.svg" width="120" alt="Askesis Logo" style="border-radius: 24px; margin-bottom: 10px;">
+  <h1 style="color: #e5e5e5; margin: 0;">Askesis</h1>
+  <p style="color: #b3b3b3; margin-top: 10px; font-style: italic;">O Rastreador de Hábitos Estoico. Minimalista. Privado. Impulsionado por IA.</p>
   
-  <p>
+  <div style="margin-top: 20px;">
     <a href="https://askesis-psi.vercel.app/"><img src="https://img.shields.io/badge/Acessar_App-27ae60?style=for-the-badge&logo=vercel&logoColor=white" alt="Acessar Aplicação"></a>
     <img src="https://img.shields.io/badge/Google_Gemini-174EA6?style=for-the-badge&logo=google-gemini&logoColor=white" alt="Gemini AI" />
     <img src="https://img.shields.io/badge/TypeScript-000000?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript" />
-    <img src="https://img.shields.io/badge/PWA-5A0FC8?style=for-the-badge&logo=pwa&logoColor=white" alt="PWA" />
-  </p>
-
-  <p><em>O Rastreador de Hábitos Estoico. Minimalista. Privado. Impulsionado por IA.</em></p>
+  </div>
 </div>
 
 ---
 
-## 🏛️ A Filosofia
+## A Filosofia
 
-**Askesis** (do grego *ἄσκησις*) significa "treinamento". Na filosofia estoica, não se trata de sofrimento, mas do **treinamento atlético da mente e do caráter**.
+**Askesis** (do grego *ἄσκησις*) significa "treinamento" ou "exercício". Na filosofia estoica, não se trata de sofrimento, mas do **treinamento atlético da mente e do caráter**.
 
-A maioria dos apps foca em gamificação superficial. O Askesis foca na **virtude da consistência**. Ele utiliza Inteligência Artificial para atuar como um "Sábio Estoico", analisando seus dados não para julgar, mas para oferecer conselhos sobre como fortalecer sua vontade.
+Este software rejeita a gamificação superficial em favor da **virtude da consistência**. Ele utiliza Inteligência Artificial para atuar como um mentor, analisando dados brutos para oferecer conselhos sobre como fortalecer a vontade humana.
 
-### Os Pilares
-1.  **Soberania de Dados:** Seus dados residem no seu dispositivo. A sincronização na nuvem utiliza um "Cofre Cego" (Criptografia de Ponta-a-Ponta), garantindo que nem o servidor possa ler seus hábitos.
-2.  **Engenharia de Elite:** Uma demonstração técnica de que a Web Platform é capaz de performance nativa (60 FPS) sem o peso de frameworks modernos.
-
----
-
-## 🔬 Deep Dive Técnico (Showcase)
-
-Este projeto rejeita a complexidade acidental em favor de **Performance Nativa** e **JavaScript Moderno (ESNext)**. A engenharia foca no uso cirúrgico de Web APIs padrão.
-
-### Stack Tecnológica
-*   **Frontend:** Vanilla TypeScript (Zero-Bundle-Overhead).
-*   **Backend:** Vercel Edge Functions (Serverless).
-*   **Banco de Dados:** Vercel KV (Redis) para blobs criptografados.
-*   **IA:** Google Gemini API (via SDK oficial).
-
-### Domínio da Plataforma Web (Native APIs)
-Em vez de bibliotecas externas pesadas, o Askesis extrai o máximo do navegador:
-
-*   **`requestIdleCallback` (Scheduler):** Orquestração de tarefas não urgentes (como renderizar citações ou verificar notificações) para momentos de ociosidade da CPU, garantindo que a thread principal (UI) nunca trave.
-*   **`Web Crypto API` (Security):** Implementação manual de **PBKDF2** (derivação de chaves) e **AES-GCM** (criptografia autenticada) rodando no cliente. Segurança de nível militar sem dependências npm.
-*   **`IntersectionObserver` & `ResizeObserver` (Performance):** Virtualização de listas e gráficos responsivos que pausam a renderização quando fora da tela, eliminando *Layout Thrashing*.
-*   **`Intl.DateTimeFormat` & `Intl.PluralRules` (i18n):** Internacionalização robusta e leve, usando as APIs nativas do motor V8 em vez de bibliotecas como `moment.js` ou `i18next`.
-*   **`Navigator.vibrate` (Haptics):** Feedback tátil preciso (micro-pulsos de 8-15ms) para simular a "textura" de botões físicos em dispositivos móveis.
-*   **`Service Workers` (Offline-First):** Estratégia de cache agressiva ("Cache-First") para o App Shell, permitindo carregamento instantâneo (0ms) e funcionamento pleno sem rede.
+### Pilares
+1.  **Soberania de Dados:** Os dados pertencem ao usuário e residem no dispositivo (ou num cofre pessoal criptografado na nuvem). Sem rastreamento, sem venda de dados.
+2.  **Autonomia Tecnológica:** Uma ferramenta robusta, livre de assinaturas, provando que o auto-aperfeiçoamento não deve ter barreiras financeiras.
 
 ---
 
-## ✨ Funcionalidades
+## Funcionalidades
 
-### 📅 Calendário de Evolução
-*   **Anéis de Progresso:** Visualização imediata da consistência diária.
-*   **Gestão em Massa:** Duplo-clique para completar tudo, triplo-clique para adiar.
-
-### 🤖 O Mentor Estoico (IA)
-*   **Análise Semanal/Mensal:** Detecta padrões de comportamento e oferece conselhos baseados em Sêneca, Marco Aurélio e Epicteto.
-
-### ☁️ Sincronização Segura
-*   **Criptografia Client-Side:** Seus dados saem do seu dispositivo já ilegíveis. Sua chave de sincronização é a única forma de decifrá-los.
+*   **Calendário de Evolução:** Visualização imediata da consistência diária com anéis de progresso e gestão em massa de hábitos.
+*   **Cartões de Hábito:** Rastreamento rico (metas binárias, quantitativas ou temporais) com suporte a gestos (swipe) para ações rápidas.
+*   **Mentor Estoico (IA):** Análise semanal e mensal dos padrões de comportamento, fornecendo feedback qualitativo baseado nos escritos de Sêneca, Marco Aurélio e Epicteto.
+*   **Sincronização Criptografada:** Arquitetura "Zero-Knowledge". Os dados são criptografados no cliente antes de qualquer transmissão.
 
 ---
 
-## 🚀 Roadmap
+## Deep Dive Técnico: Engenharia Web Platform
 
-O desenvolvimento do Askesis é contínuo, visando integração profunda com o sistema operacional.
+Este projeto demonstra o poder da **Plataforma Web Moderna**, rejeitando a complexidade acidental de frameworks pesados em favor de APIs nativas do navegador para atingir performance e segurança de nível nativo.
 
-*   **Versão Nativa Android:**
-    *   Empacotamento TWA (Trusted Web Activity) para publicação na Play Store.
-    *   Widgets de tela inicial para check-in rápido.
-    *   Integração com Health Connect para marcar hábitos automaticamente (ex: "Caminhar 10min").
+### 1. Criptografia Militar no Navegador (Web Crypto API)
+Não dependemos de segurança no servidor. Utilizamos a **Web Crypto API** nativa para implementar criptografia ponta-a-ponta (E2EE).
+*   **PBKDF2:** Derivação de chave robusta a partir da senha do usuário, com 100.000 iterações para prevenir ataques de força bruta.
+*   **AES-GCM:** Criptografia autenticada. O servidor recebe apenas um blob binário ilegível. A descriptografia ocorre exclusivamente na memória do dispositivo do usuário.
+
+### 2. Renderização Não-Bloqueante (requestIdleCallback)
+Para garantir 60fps constantes, tarefas computacionalmente intensivas não competem com a thread principal de UI.
+*   **Scheduling Inteligente:** Cálculos de estatísticas, parsing de respostas da IA e renderização de gráficos complexos são delegados via `requestIdleCallback`. O navegador executa essas tarefas apenas nos milissegundos ociosos entre frames de renderização.
+
+### 3. Observadores de Alta Performance (IntersectionObserver & ResizeObserver)
+Eliminamos listeners de eventos "scroll" e "resize" que causam *layout thrashing*.
+*   **Gráficos Responsivos:** O `ResizeObserver` monitora o container do gráfico e dispara o redesenho apenas quando as dimensões físicas mudam, sem polling.
+*   **Lazy Loading Lógico:** O `IntersectionObserver` pausa atualizações de componentes que não estão na viewport.
+
+### 4. Internacionalização Nativa (Intl API)
+Zero dependências externas para formatação.
+*   **Intl.DateTimeFormat & Intl.PluralRules:** Toda a formatação de datas, moedas e regras de pluralização utiliza as bibliotecas C++ subjacentes do navegador, garantindo precisão linguística com custo zero de bundle size.
+
+### 5. Progressive Web App (Service Workers)
+*   **Cache-First Strategy:** O App Shell é servido instantaneamente do cache local, permitindo inicialização em 0ms mesmo offline.
+*   **Sincronização em Background:** A lógica de rede possui *retry* exponencial e detecção de conectividade para garantir integridade de dados em redes instáveis.
+
+---
+
+## Roadmap
+
+O futuro do Askesis foca na integração profunda com o sistema operacional, mantendo a base web.
+
+### Versão Nativa Android
+O objetivo é oferecer uma experiência indistinguível de um app nativo, distribuído via Play Store.
+*   **Trusted Web Activity (TWA):** Empacotamento do PWA para execução em contexto nativo sem a barra de navegação do browser.
+*   **Widgets na Tela Inicial:** Desenvolvimento de widgets nativos Android que leem o estado local para exibir o progresso diário sem abrir o app.
+*   **Health Connect:** Integração bidirecional para ler dados de exercícios e sono automaticamente, alimentando os hábitos de saúde.
 
 ---
 
