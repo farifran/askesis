@@ -135,6 +135,7 @@ function _setupCalendarLongPressHandler(calendarStrip: HTMLElement) {
         window.removeEventListener('pointermove', handlePointerMoveForLongPress);
         window.removeEventListener('pointerup', cleanup);
         window.removeEventListener('pointerleave', cleanup);
+        window.removeEventListener('pointercancel', cleanup);
     };
 
     const handlePointerMoveForLongPress = (e: PointerEvent) => {
@@ -159,6 +160,7 @@ function _setupCalendarLongPressHandler(calendarStrip: HTMLElement) {
         window.addEventListener('pointermove', handlePointerMoveForLongPress);
         window.addEventListener('pointerup', cleanup);
         window.addEventListener('pointerleave', cleanup);
+        window.addEventListener('pointercancel', cleanup);
         
         // UX-OPTIMIZATION [2024-12-26]: Tempo de long-press reduzido para 500ms.
         // 750ms parecia muito lento e não responsivo.
