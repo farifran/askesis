@@ -1,4 +1,3 @@
-
 // state.ts
 
 // [ANALYSIS PROGRESS]: 100% - Análise concluída. O estado da aplicação está bem estruturado. A lógica de cálculo de streaks e agendamento (scheduleHistory) está sólida e cobre os requisitos complexos de histórico.
@@ -742,7 +741,7 @@ function _wasGoalExceededWithStreak(habit: Habit, instances: HabitDailyInstances
 
 // PERFORMANCE [2025-01-17]: Cache para resultados de calculateDaySummary.
 // Evita o recálculo de progresso para todos os 61 dias do calendário a cada renderização.
-const daySummaryCache = new Map<string, { completedPercent: number, totalPercent: number, showPlus: boolean }>();
+const daySummaryCache = new Map<string, { completedPercent: number, snoozedPercent: number, totalPercent: number, showPlus: boolean }>();
 
 /**
  * Invalida o cache de resumo diário para uma data específica ou para todos os dias.
@@ -765,6 +764,7 @@ export function invalidateDaySummaryCache(dateISO?: string) {
  * performance da renderização do calendário.
  * 
  * ATUALIZAÇÃO [2025-01-17]: Agora utiliza cache para evitar recálculos redundantes.
+ * ATUALIZAÇÃO [2025-02-08]: Atualizado para calcular 'snoozedPercent' e usar 'total absoluto' para o anel.
  */
 export function calculateDaySummary(dateISO: string) {
     if (daySummaryCache.has(dateISO)) {
@@ -778,7 +778,7 @@ export function calculateDaySummary(dateISO: string) {
      // Isso evita a criação de um objeto Date redundante se os dados já estiverem em cache em getActiveHabitsForDate.
      const activeHabits = getActiveHabitsForDate(dateISO);
      
-     if (activeHabits.length === 0) return { completedPercent: 0, totalPercent: 0, showPlus: false };
+     if (activeHabits.length === 0) return { completedPercent: 0, snoozedPercent: 0, totalPercent: 0, showPlus: false };
      
      let total = 0;
      let completed = 0;
@@ -802,11 +802,12 @@ export function calculateDaySummary(dateISO: string) {
          }
      }
      
-     const effectiveTotal = total - snoozed;
-     const completedPercent = effectiveTotal > 0 ? Math.round((completed / effectiveTotal) * 100) : 0;
-     const totalPercent = total > 0 ? Math.round(((completed + snoozed) / total) * 100) : 0;
+     // LOGIC CHANGE [2025-02-08]: Calculate percentages based on absolute total to show gray segment for snoozed.
+     const completedPercent = total > 0 ? Math.round((completed / total) * 100) : 0;
+     const snoozedPercent = total > 0 ? Math.round((snoozed / total) * 100) : 0;
+     const totalPercent = total > 0 ? Math.round(((completed + snoozed) / total) * 100) : 0; // Keeping for reference if needed
 
-     const result = { completedPercent, totalPercent, showPlus };
+     const result = { completedPercent, snoozedPercent, totalPercent, showPlus };
      daySummaryCache.set(dateISO, result);
      return result;
 }

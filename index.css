@@ -536,8 +536,8 @@ main {
     background: conic-gradient(
         from -90deg,
         var(--accent-blue) 0% var(--completed-percent, 0%),
-        var(--text-primary) var(--completed-percent, 0%) var(--total-percent, 0%),
-        transparent var(--total-percent, 0%) 100%
+        #ffffff var(--completed-percent, 0%) calc(var(--completed-percent, 0%) + var(--snoozed-percent, 0%)),
+        transparent calc(var(--completed-percent, 0%) + var(--snoozed-percent, 0%)) 100%
     );
     -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
     mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);

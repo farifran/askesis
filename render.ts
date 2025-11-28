@@ -1,4 +1,5 @@
 
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -106,7 +107,7 @@ export function initLanguageFilter() {
 function _applyDayState(dayItem: HTMLElement, date: Date) {
     const todayISO = getTodayUTCIso();
     const isoDate = toUTCIsoDateString(date);
-    const { completedPercent, totalPercent, showPlus } = calculateDaySummary(isoDate);
+    const { completedPercent, snoozedPercent, showPlus } = calculateDaySummary(isoDate);
     const isSelected = isoDate === state.selectedDate;
     const isToday = isoDate === todayISO;
 
@@ -145,7 +146,7 @@ function _applyDayState(dayItem: HTMLElement, date: Date) {
     const dayProgressRing = dayItem.querySelector<HTMLElement>('.day-progress-ring');
     if (dayProgressRing) {
         const newCompleted = `${completedPercent}%`;
-        const newTotal = `${totalPercent}%`;
+        const newSnoozed = `${snoozedPercent}%`;
         
         // PERFORMANCE CRÍTICA [2025-01-23]: Uso de dataset para Dirty Checking.
         // Ler `style.getPropertyValue` força o navegador a recalcular estilos (Reflow).
@@ -154,9 +155,9 @@ function _applyDayState(dayItem: HTMLElement, date: Date) {
             dayProgressRing.style.setProperty('--completed-percent', newCompleted);
             dayProgressRing.dataset.completedPercent = newCompleted;
         }
-        if (dayProgressRing.dataset.totalPercent !== newTotal) {
-            dayProgressRing.style.setProperty('--total-percent', newTotal);
-            dayProgressRing.dataset.totalPercent = newTotal;
+        if (dayProgressRing.dataset.snoozedPercent !== newSnoozed) {
+            dayProgressRing.style.setProperty('--snoozed-percent', newSnoozed);
+            dayProgressRing.dataset.snoozedPercent = newSnoozed;
         }
         
         // OTIMIZAÇÃO: Manipulação direta do DOM para o indicador Plus
@@ -381,7 +382,7 @@ export function renderFullCalendar() {
     for (let day = 1; day <= daysInMonth; day++) {
         const currentDate = new Date(Date.UTC(year, month, day));
         const isoDate = toUTCIsoDateString(currentDate);
-        const { completedPercent, totalPercent } = calculateDaySummary(isoDate);
+        const { completedPercent, snoozedPercent } = calculateDaySummary(isoDate);
 
         const dayEl = document.createElement('div');
         dayEl.className = 'full-calendar-day';
@@ -397,7 +398,7 @@ export function renderFullCalendar() {
         const ringEl = document.createElement('div');
         ringEl.className = 'day-progress-ring';
         ringEl.style.setProperty('--completed-percent', `${completedPercent}%`);
-        ringEl.style.setProperty('--total-percent', `${totalPercent}%`);
+        ringEl.style.setProperty('--snoozed-percent', `${snoozedPercent}%`);
 
         const numberEl = document.createElement('span');
         numberEl.className = 'day-number';
