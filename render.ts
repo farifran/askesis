@@ -1638,5 +1638,6 @@ export function openEditModal(habitOrTemplate: Habit | HabitTemplate | null) {
     `;
 
     renderFrequencyOptions();
-    openModal(ui.editHabitModal, form.elements.namedItem('habit-name') as HTMLElement);
+    // UX FIX [2025-02-08]: Removido foco automático no input para evitar abrir teclado em mobile.
+    openModal(ui.editHabitModal);
 }
