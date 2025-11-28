@@ -127,6 +127,8 @@
     margin: 0;
     padding: 0;
     box-sizing: border-box;
+    /* UX FIX: Remove o flash azul de toque em dispositivos móveis (Android/iOS) para sensação nativa */
+    -webkit-tap-highlight-color: transparent;
 }
 
 body {
