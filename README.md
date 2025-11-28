@@ -22,7 +22,7 @@
 <br>
 
 <p align="center">
-  <img src="/assets/app-preview.jpg" alt="Interface do Askesis" width="50%" height="auto">
+  <img src="/assets/IA.jpeg" alt="Interface do Askesis" width="50%" height="auto">
 </p>
 
 <br>
