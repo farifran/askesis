@@ -2,7 +2,7 @@
   <table border="0" cellspacing="0" cellpadding="0" style="border-collapse: collapse; border: none; background-color: #121212; color: #e5e5e5;">
     <tr>
       <td width="160" align="center" valign="middle" style="border: none;">
-        <img src="./icons/icon-512.svg" width="120" alt="Askesis Logo" style="border-radius: 24px;">
+        <img src="icons/icon-512.svg" width="120" alt="Askesis Logo" style="border-radius: 24px;">
       </td>
       <td align="left" valign="middle" style="border: none; color: #e5e5e5; padding-left: 20px;">
         <h1 style="color: #e5e5e5; margin-bottom: 4px; margin-top: 0;">Askesis</h1>
@@ -22,7 +22,7 @@
 <br>
 
 <p align="center">
-  <img src="./assets/IA.jpeg" alt="Interface do Askesis" width="50%" height="auto">
+  <img src="assets/app-preview.jpg" alt="Interface do Askesis" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
 </p>
 
 <br>
@@ -228,7 +228,7 @@ O projeto utiliza serviços modernos para garantir que o app seja rápido e conf
 ---
 
 <h2>
-  <img src="./assets/zero-cost.svg" height="30" style="vertical-align: bottom; margin-right: 8px;" alt="Zero Cost Icon" />
+  <img src="assets/zero-cost.svg" height="30" style="vertical-align: bottom; margin-right: 8px;" alt="Zero Cost Icon" />
   Arquitetura Zero Cost & Sustentabilidade
 </h2>
 
