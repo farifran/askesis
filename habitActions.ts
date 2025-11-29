@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -676,6 +675,13 @@ const IMPLEMENTATION_TEMPLATES = {
     es: "Cuando [DESENCADENANTE], haré [ACCIÓN]."
 };
 
+// GOAL REDUCTION TEMPLATES [2025-02-09]: Used when Reality Gap is detected
+const RECALIBRATION_TEMPLATES = {
+    pt: "Nova Meta: [NÚMERO] [UNIDADE] por dia.",
+    en: "New Goal: [NUMBER] [UNIT] per day.",
+    es: "Nueva Meta: [NÚMERO] [UNIDAD] por día."
+};
+
 // TIME-SPECIFIC ANCHOR EXAMPLES (Contextual Relevance)
 const TIME_ANCHORS = {
     Morning: {
@@ -728,7 +734,10 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
     const langMap: Record<string, string> = { 'pt': 'Portuguese', 'es': 'Spanish', 'en': 'English' };
     const targetLang = langMap[langCode];
     const headers = PROMPT_HEADERS[langCode as keyof typeof PROMPT_HEADERS] || PROMPT_HEADERS['pt'];
-    const implTemplate = IMPLEMENTATION_TEMPLATES[langCode as keyof typeof IMPLEMENTATION_TEMPLATES] || IMPLEMENTATION_TEMPLATES['en'];
+    
+    // Default templates
+    let implTemplate = IMPLEMENTATION_TEMPLATES[langCode as keyof typeof IMPLEMENTATION_TEMPLATES] || IMPLEMENTATION_TEMPLATES['en'];
+    const recalibrationTemplate = RECALIBRATION_TEMPLATES[langCode as keyof typeof RECALIBRATION_TEMPLATES] || RECALIBRATION_TEMPLATES['en'];
 
     // Data Calculation structures
     // OPTIMIZATION: Use string array for semantic log instead of heavy object array
@@ -909,7 +918,9 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
             // RED FLAG DAY DETECTION: If > 50% failed/snoozed, mark this specific date for AI.
             if (dayScheduled > 0) {
                 const successRate = dayCompleted / dayScheduled;
-                if (successRate < 0.5 && !redFlagDay) { // Capture the first (or most recent if rewritten) collapse
+                // RECENCY BIAS FIX [2025-02-12]: We removed the check `!redFlagDay` to allow overwriting.
+                // This ensures `redFlagDay` holds the MOST RECENT day of collapse.
+                if (successRate < 0.5) {
                      redFlagDay = `${dayName} (${dateISO.substring(5)})`;
                 }
                 
@@ -926,6 +937,11 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
                     });
                 }
             }
+        } else {
+             // LOG INTEGRITY FIX [2025-02-09]: Explicitly log days with no scheduled habits.
+             // The symbol ▪️ allows the AI to distinguish "Rest Day" from "Failure".
+             const dayName = dayFormatter.format(currentDate);
+             semanticLog.push(`${dateISO.substring(5)} (${dayName}): ▪️ (No habits scheduled)`);
         }
         currentDate = addDays(currentDate, 1);
         dayIndex++;
@@ -981,6 +997,10 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
             }
         }
     });
+    
+    if (!statsSummary) {
+        statsSummary = "No active habits tracked yet.";
+    }
 
     const nemesisInfo = nemesisName && highestSnoozeRate > 0.2 
         ? `The Nemesis: **${nemesisName}** (Snoozed ${Math.round(highestSnoozeRate * 100)}% of the time).` 
@@ -1038,7 +1058,11 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
     else seasonalPhase = "AUTUMN (Turbulence) - Declining momentum.";
 
     let projectionInfo = "No active streaks.";
-    if (highestStreakValue > 0) {
+    
+    // PROJECTION SUPPRESSION [2025-02-12]: If user is crashing (Winter/Low Rate), suppress dates.
+    if (globalRate < 50) {
+        projectionInfo = "Current trajectory is unstable. The path forward requires stabilizing ONE habit before projecting future milestones.";
+    } else if (highestStreakValue > 0) {
         const nextMilestone = highestStreakValue < 21 ? 21 : (highestStreakValue < 66 ? 66 : (highestStreakValue < 100 ? 100 : 365));
         const daysRemaining = nextMilestone - highestStreakValue;
         const projectedDate = addDays(today, daysRemaining);
@@ -1059,7 +1083,8 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
     } else if (weekendRate > weekdayRate + 20) {
         archetype = "The Weekend Warrior";
         archetypeReason = `Weekend performance (${weekendRate}%) significantly exceeds weekdays (${weekdayRate}%).`;
-        identityStrategy = "Encourage bringing weekend energy to weekdays. Bridge the gap.";
+        // STRATEGIC FIX [2025-02-09]: The Weekend Warrior needs load distribution, not just encouragement.
+        identityStrategy = "Redistribute the load. Move one weekend habit to Tuesday/Thursday to bridge the gap.";
     } else if (weekdayRate > weekendRate + 20) {
         archetype = "The Grinder (Structure Dependent)";
         archetypeReason = `Weekday performance (${weekdayRate}%) significantly exceeds weekends (${weekendRate}%).`;
@@ -1077,31 +1102,52 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
         archetypeReason = "New journey with positive momentum.";
         identityStrategy = "Validate the start. Reinforce the new identity.";
     }
+    
+    // SHADOW WORK FIX [2025-02-09]: Add suffix for negative archetypes
+    if (archetype === "The Drifter" || archetype === "The Weekend Warrior" || archetype === "The Sprinter") {
+        archetype += " (Shadow State)";
+    }
 
-    // --- SMART QUOTE SELECTION (Contextual Filtering) ---
+    // --- SMART QUOTE SELECTION (Contextual Filtering by TAGS) ---
     let quoteFilterFn = (q: any) => true; // Default to all
-    let quoteReason = "General Wisdom"; // The specific problem this quote solves
+    let quoteReason = "General Wisdom"; 
 
+    // LOGIC UPDATE [2025-02-13]: Shift from Author-based to Tag-based filtering for better semantic match.
     if (highestSnoozeRate > 0.15) {
         // PROBLEM: Procrastination / Delay
-        // REMEDY: Seneca (Time/Life is short) or Epictetus (Action/Now)
-        quoteFilterFn = (q) => q.author === 'seneca' || q.author === 'epictetus';
-        quoteReason = "overcoming the friction of starting (Procrastination)";
+        // TAGS: Action, Time
+        quoteFilterFn = (q) => q.tags.includes('action') || q.tags.includes('time');
+        quoteReason = "overcoming the inertia of procrastination";
     } else if (realityGapWarning.length > 0) {
         // PROBLEM: Delusion / Unrealistic Goals
-        // REMEDY: Epictetus (Control/Reality)
-        quoteFilterFn = (q) => q.author === 'epictetus';
+        // TAGS: Control, Reality
+        quoteFilterFn = (q) => q.tags.includes('control') || q.tags.includes('reality');
         quoteReason = "aligning ambition with reality";
     } else if (seasonalPhase.includes("WINTER") || seasonalPhase.includes("AUTUMN")) {
         // PROBLEM: Hardship / Low Energy
-        // REMEDY: Marcus Aurelius (Inner Strength/Resilience)
-        quoteFilterFn = (q) => q.author === 'marcusAurelius';
+        // TAGS: Resilience, Suffering
+        quoteFilterFn = (q) => q.tags.includes('resilience') || q.tags.includes('suffering');
         quoteReason = "finding strength in adversity";
     } else if (seasonalPhase.includes("SUMMER")) {
         // PROBLEM: Success / Complacency / Arrogance
-        // REMEDY: Marcus Aurelius (Transience/Nature) to stay humble, or Seneca (Service)
-        quoteFilterFn = (q) => q.author === 'marcusAurelius';
+        // TAGS: Nature, Humility
+        quoteFilterFn = (q) => q.tags.includes('nature') || q.tags.includes('humility');
         quoteReason = "maintaining humility in success";
+    } else if (archetype.includes("Drifter")) {
+        // PROBLEM: Lack of Focus
+        // TAGS: Discipline
+        quoteFilterFn = (q) => q.tags.includes('discipline');
+        quoteReason = "building the foundation of discipline";
+    } else if (lowestPerfRate < 0.6) {
+        // NEW [2025-02-14]: Chronobiological Targeting
+        // If failing specifically in Morning or Evening, look for matching tags
+        if (lowestPerfTime === 'Morning') {
+            quoteFilterFn = (q) => q.tags.includes('time') || q.tags.includes('action') || q.tags.includes('morning'); // Fallback to time/action if no explicit morning tag yet
+            quoteReason = "conquering the morning resistance";
+        } else if (lowestPerfTime === 'Evening') {
+            quoteFilterFn = (q) => q.tags.includes('reflection') || q.tags.includes('evening') || q.tags.includes('gratitude');
+            quoteReason = "closing the day with purpose";
+        }
     }
 
     const quotePool = STOIC_QUOTES.filter(quoteFilterFn);
@@ -1119,10 +1165,16 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
     
     // REFINE [2025-02-09]: 'Gateway Habit' terminology for low performance
     // BEHAVIORAL UPDATE [2025-02-09]: Require Biological/Mechanical Anchors.
+    // CRITICAL UPDATE [2025-02-12]: Moved TIMING RULE here to make it dynamic.
     let actionInstructionText = `One tiny, 'Gateway Habit' (less than 2 min). A physical movement that initiates the flow. Link it to a PRECISE BIOLOGICAL/MECHANICAL ANCHOR (e.g. 'Feet hit floor', 'Turn off shower', 'Close laptop') suitable for the user's struggle time (${lowestPerfTime}). Avoid time-based anchors (e.g. 'At 8am'). Time Horizon: NOW or TONIGHT. Never Tomorrow.`;
     
+    // If we have morning failure, enforce the Night Before rule.
+    if (lowestPerfTime === 'Morning' && lowestPerfRate < 0.6) {
+        actionInstructionText += " TIMING RULE: Since the failure happens in the Morning, the Trigger MUST happen the **Night Before** (Preparation) OR **Immediately upon Waking** (if prep is impossible).";
+    }
+    
     let socraticInstruction = "Ask about FRICTION (What stands in the way? Is it fatigue or fear?).";
-    let patternInstruction = "Use the Semantic Log to find the **'Turning Point'** (the specific day/moment where the streak broke or the victory was secured). Mention it explicitly. Scan Vertically (Habit Consistency) and Horizontally (Day Collapse).";
+    let patternInstruction = "Use the Semantic Log. Scan the **LAST 3 DAYS** specifically (Recency Bias). Identify the **'Turning Point'** (the specific day/moment where the streak broke or the victory was secured). Mention it explicitly. Scan Vertically (Habit Consistency) and Horizontally (Day Collapse).";
     
     let tweaksExamples = `
     Examples of System Tweaks (Low Friction):
@@ -1133,7 +1185,7 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
     let headerSystem = headers.system_low;
     let headerAction = headers.action_low;
     
-    let insightPlaceholder = "[Synthesize the struggle or victory regarding the PRIMARY FOCUS. USE MENTAL CONTRASTING: Compare current reality vs desired identity. 2-3 sentences. NARRATIVE FLOW. NO LISTS. NO QUESTIONS.]";
+    let insightPlaceholder = "[Synthesize the struggle or victory regarding the PRIMARY FOCUS. USE MENTAL CONTRASTING: Compare current reality vs desired identity. 2-3 sentences. WRITE AS A PARAGRAPH. NO LISTS.]";
     let actionPlaceholder = "[One tiny 'Gateway Habit' step (< 2 min). Focus on MISE-EN-PLACE (Preparation) linked to an ANCHOR.]";
 
 
@@ -1155,7 +1207,17 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
              if (name === nemesisName) sparklineHabitId = id;
         }
     }
-    if (realityGapWarning.length > 0) focusTarget = "the Reality Gap (Goal Reduction) - Source of the problem";
+    
+    // FIX [2025-02-09]: Reality Gap Overrides
+    if (realityGapWarning.length > 0) {
+        focusTarget = "the Reality Gap (Goal Reduction) - Source of the problem";
+        // Override system instruction for Reality Gap
+        systemInstructionText = "Your 'System Tweak' MUST be a direct command to reduce the numeric goal to match reality. Do NOT use the 'When/Then' template. Just stating the new goal is enough.";
+        implTemplate = recalibrationTemplate; // Use "New Goal: X" instead of "When X..."
+        // Override the time restriction for Reality Gap (since it's a goal change, not a trigger)
+        actionInstructionText = "Commit to the new, smaller number immediately. The action is 'Mental Acceptance'.";
+    }
+    
     // NEW [2025-02-09]: Prioritize the Red Flag Day (Day Collapse)
     if (redFlagDay) focusTarget = `The Collapse on ${redFlagDay} - Analyze why this specific day failed.`;
 
@@ -1198,6 +1260,9 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
 
 
     let taskDescription = `Write a structured, soulful Stoic mentorship reflection based on the user's evidence (${periodName})`;
+    
+    // MASKING DATA FOR COLD START (Prevent Hallucination)
+    let logContent = semanticLog.join('\n');
 
     // --- COLD START / ONBOARDING MODE ---
     // Detects new users with very little data to prevent hallucinated pattern recognition.
@@ -1209,33 +1274,52 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
         systemInstructionText = "Suggest a very small, almost ridiculous starting step to build momentum.";
         socraticInstruction = "Ask what is the smallest version of this habit they can do even on their worst day.";
         patternInstruction = "Do NOT look for trends yet. Validate the courage of the first step.";
-        insightPlaceholder = "[Welcome them to the Stoic path. Validate the difficulty of starting. Focus on the courage to begin. NO QUESTIONS.]";
+        insightPlaceholder = "[Welcome them to the Stoic path. Validate the difficulty of starting. Focus on the courage to begin.]";
         taskDescription = "Write a welcoming and foundational Stoic mentorship letter for a beginner.";
         sparkline = ""; // No sparkline for beginners
-    } else if (globalRate > 80 || seasonalPhase.includes("SUMMER")) {
-        systemInstructionText = "Suggest a method to increase difficulty (Progressive Overload) or efficiency. Challenge them.";
+        // MASKING: Clear the log to stop AI from reading non-existent patterns
+        logContent = "(Insufficient data for pattern recognition - Focus solely on the virtue of starting.)";
+    } else {
+        // --- ARCHETYPE-SPECIFIC OVERRIDES ---
         
-        // REFINE [2025-02-09]: High Performance Action Instruction
-        actionInstructionText = "A specific experimental step to Challenge Limits, Teach Others, or Vary the Context (Anti-fragility). Link to an Anchor.";
-        
-        socraticInstruction = "Use 'Eternal Recurrence' (Amor Fati). Ask: 'Would you be willing to live this exact week again for eternity?'";
-        
-        // NEW [2025-02-09]: High Streak Anxiety Logic
-        if (highestStreakValue > 30) {
-            socraticInstruction = "Deconstruct the fear of losing the streak. Ask: 'Does the value lie in the number (external) or the character you are building (internal)?'";
+        if (archetype.includes("Perfectionist")) {
+             // Perfectionists snooze because they fear doing it imperfectly.
+             // Tactic: Permission to fail / Minimum Viable Habit.
+             systemInstructionText = "The user suffers from Perfectionism (High Snooze). Suggest a 'Minimum Viable Action' rule. e.g., 'I will read for just 2 minutes, even if I do it badly'. Do not focus on triggers, focus on LOWERING STANDARDS.";
+             socraticInstruction = "Ask: 'Are you delaying this because you want to do it perfectly, instead of just doing it?'";
+             actionInstructionText = "A 'Shitty First Draft' action. Something so small it's impossible to fail.";
+        } else if (archetype.includes("Weekend Warrior")) {
+             // Warriors do too much on weekends, nothing on weekdays.
+             // Tactic: Load Redistribution.
+             systemInstructionText = "The user is a Weekend Warrior (High Weekend / Low Weekday). Suggest moving ONE small habit from the weekend to a Tuesday or Thursday. 'Redistribute the load'.";
+             socraticInstruction = "Ask: 'Are you treating the week as a waiting room for the weekend?'";
         }
         
-        tweaksExamples = `
-        Examples of System Tweaks (High Performance):
-        - Bad: "Keep going." -> Good: "When I finish the set, I will add 5 minutes."
-        - Bad: "Good job." -> Good: "When I master this, I will teach it to someone else."
-        `;
+        if (globalRate > 80 || seasonalPhase.includes("SUMMER")) {
+            systemInstructionText = "Suggest a method to increase difficulty (Progressive Overload) or efficiency. Challenge them.";
+            
+            // REFINE [2025-02-09]: High Performance Action Instruction
+            actionInstructionText = "A specific experimental step to Challenge Limits, Teach Others, or Vary the Context (Anti-fragility). Link to an Anchor.";
+            
+            socraticInstruction = "Use 'Eternal Recurrence' (Amor Fati). Ask: 'Would you be willing to live this exact week again for eternity?'";
+            
+            // NEW [2025-02-09]: High Streak Anxiety Logic
+            if (highestStreakValue > 30) {
+                socraticInstruction = "Deconstruct the fear of losing the streak. Ask: 'Does the value lie in the number (external) or the character you are building (internal)?'";
+            }
+            
+            tweaksExamples = `
+            Examples of System Tweaks (High Performance):
+            - Bad: "Keep going." -> Good: "When I finish the set, I will add 5 minutes."
+            - Bad: "Good job." -> Good: "When I master this, I will teach it to someone else."
+            `;
 
-        // SWITCH TO HIGH PERF HEADERS & PLACEHOLDERS
-        headerSystem = headers.system_high;
-        headerAction = headers.action_high;
-        insightPlaceholder = "[Synthesize the victory. Analyze what makes their consistency possible and where the next plateau lies. 2-3 sentences. NO LISTS. NO QUESTIONS.]";
-        actionPlaceholder = "[A specific constraint or added difficulty to test their mastery (Progressive Overload).]";
+            // SWITCH TO HIGH PERF HEADERS & PLACEHOLDERS
+            headerSystem = headers.system_high;
+            headerAction = headers.action_high;
+            insightPlaceholder = "[Synthesize the victory. Analyze what makes their consistency possible and where the next plateau lies. 2-3 sentences. NO LISTS.]";
+            actionPlaceholder = "[A specific constraint or added difficulty to test their mastery (Progressive Overload).]";
+        }
     }
 
     // LANGUAGE SPECIFIC FORBIDDEN WORDS
@@ -1245,12 +1329,16 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
         es: '"Por qué"'
     };
     const forbiddenWhy = forbiddenWhyMap[langCode as 'pt'|'en'|'es'] || '"Why"';
+    
+    // CURRENT DATE FOR CONTEXT
+    const currentDateStr = toUTCIsoDateString(today);
 
 
     const prompt = `
         ### THE COMPASS (Primary Focus):
         PRIMARY FOCUS: ${focusTarget}
         PATTERN: ${sparkline}
+        REFERENCE DATE (TODAY): ${currentDateStr}
         (The Title, Insight, and System Tweak MUST revolve around this focus.)
 
         ### 1. THE CONTEXT (Data)
@@ -1276,24 +1364,26 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
 
         ### SEMANTIC LOG (The User's Week):
         (Legend: ✅=Success, ❌=Pending/Fail, ⏸️=Snoozed, "Text"=User Note. Ordered by time of day.)
-        ${semanticLog.join('\n')}
+        ${logContent}
 
         INSTRUCTIONS:
-        1. **BENEVOLENT DETACHMENT:** Do NOT praise ("Good job") or scold ("Do better"). Be an observant mirror. Firm but warm. Do NOT write "Based on the data". Speak naturally, like a mentor writing a letter. Use PARAGRAPHS, NOT LISTS for text sections.
+        1. **BENEVOLENT DETACHMENT:** Do NOT praise ("Good job") or scold ("Do better"). Be an observant mirror. Firm but warm. Do NOT write "Based on the data". Speak naturally, like a mentor writing a letter. Use PARAGRAPHS, NOT LISTS for text sections. NO GREETINGS. NO SIGNATURES. Start directly with the Title.
         2. **BE SOCRATIC:** ${socraticInstruction}
-           - **CONSTRAINT:** One single, piercing sentence. DO NOT use the word ${forbiddenWhy} (or its translations). Use "What" or "How".
-        3. **PATTERN RECOGNITION:** ${patternInstruction}
+           - **CONSTRAINT:** One single, piercing sentence. DO NOT use the word ${forbiddenWhy} (or its translations). AVOID YES/NO questions (e.g. "Are you commited?"). Force deep processing.
+        3. **PATTERN RECOGNITION:** ${patternInstruction} STRICT DATA FIDELITY: Do not invent streaks or failures not shown in the Semantic Log.
         4. **THE PROTOCOL (SYSTEM):** 
            - ${systemInstructionText}
-           - **SYNTAX:** Use EXACTLY this template: "${implTemplate}" (REMOVE BRACKETS when filling).
+           - **SYNTAX:** Use EXACTLY this template: "${implTemplate}" (REMOVE BRACKETS when filling). (Output ONLY the sentence, no intro/outro)
            - **FOCUS:** Focus on the PRIMARY FOCUS defined above. ZERO COST.
            - **CONSTRAINT:** ACTION must be a single, binary event (e.g. 'open book', 'put on shoes'). Forbidden verbs: try, attempt, focus, aim, should.
         5. **CONNECT WISDOM:** Use the provided quote ("${quoteText}"). Do NOT explain the quote itself. Use the quote's concept to illuminate the user's specific struggle/victory.
         6. **INTERPRET LOG:** 
            - ✅ = Success.
            - ⏸️ = **Resistance** (User saw it but delayed). REMEDY: Lower the bar. 
-           - **NOTE HANDLING:** If a "Note" is present with ⏸️ or ❌, analyze the sentiment. If it's an External Blocker (Sick, Emergency), treat as Amor Fati (Acceptance). If it's Internal (Lazy, Bored), treat as Resistance (Action required).
+           - **NOTE HANDLING:** If a "Note" is present with ⏸️ or ❌, analyze the sentiment. If it's Internal (Lazy, Bored), treat as Resistance (Action required). If it's External (Sick, Emergency), treat as Amor Fati (Acceptance).
            - ❌ = **Neglect** (User forgot). REMEDY: Increase Visibility / Better Trigger.
+           - ▪️ = **Rest/No Schedule** (Not a failure).
+           - **NUMBERS (e.g. 5/10):** Partial Success. If Actual < Target, acknowledge effort but note the gap.
         7. **THE TRIGGER (PHYSICS):** ${actionInstructionText}
 
         OUTPUT STRUCTURE (Markdown in ${targetLang}):
@@ -1301,7 +1391,7 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
         ### 🏛️ [Title: Format "On [Concept]" or Abstract Noun. NO CHEESY TITLES.]
 
         **🆔 ${headers.archetype}**
-        [Contextualize the '${archetype}' identity. Translate the identity term to ${targetLang} culturally. Apply Strategy: "${identityStrategy}". Do not name the strategy, embody it. 1 sentence.]
+        [Contextualize the '${archetype}' identity. Translate the identity term to ${targetLang} culturally. Apply the Strategy implicitly (DO NOT quote the strategy name). 1 sentence.]
 
         **🔮 ${headers.projection}**
         [Frame the projection date as a logical consequence (Cause & Effect). "The path leads to..."]
@@ -1332,6 +1422,7 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
                 
                 STYLE: Epistolary (Letter-like), concise, grave but kind. Benevolent Detachment.
                 FORBIDDEN: "Based on the data", "Here is the analysis", "According to the stats", "Why", "Amor Fati", "Mise-en-place". (Apply the concepts, do not name them).
+                STRUCTURE: Do NOT use greetings ("Hello", "Dear User") or sign-offs ("Best regards"). Start directly with the Title.
                 GOLDEN RULE: Never advise "trying harder" or "being more disciplined". Advise "changing the method" or "altering the environment".
                 
                 FOCUS:

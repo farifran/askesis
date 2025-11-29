@@ -110,6 +110,7 @@
     "modalRemoveTimeTitle": "Remover Horário",
     "modalStatusEnded": "(Encerrado)",
     "modalStatusGraduated": "(Graduado)",
+    "musoniusRufus": "Musônio Rufo",
     "noticeDuplicateHabitWithName": "Já existe um hábito com este nome.",
     "noticeNameCannotBeEmpty": "O nome do hábito não pode estar vazio.",
     "notificationStatusDisabled": "As notificações estão bloqueadas. É necessário alterar as permissões nas configurações do seu navegador.",
@@ -193,7 +194,7 @@
     "syncDisable": "Desativar",
     "syncDisableConfirm": "Desativar",
     "syncDisableTitle": "Desativar Sincronização",
-    "syncEnable": "Ativar Sincronização",
+    "syncEnable": "Ativar Sincronización",
     "syncEnterKey": "Digitar Chave",
     "syncError": "Erro de sincronização",
     "syncInactiveDesc": "Salve seus dados na nuvem para acessá-los em qualquer dispositivo.",
@@ -228,5 +229,6 @@
     "weekdaySun": "Domingo",
     "weekdayThu": "Quinta-feira",
     "weekdayTue": "Terça-feira",
-    "weekdayWed": "Quarta-feira"
+    "weekdayWed": "Quarta-feira",
+    "zeno": "Zenão de Cítio"
 }

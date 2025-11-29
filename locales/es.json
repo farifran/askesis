@@ -20,7 +20,7 @@
     "aiPromptGeneral": "Realiza un análisis general de todo el historial de hábitos proporcionado. Tu feedback DEBE centrarse en: 1. Una reflexión estoica profunda sobre la trayectoria general del usuario. 2. Identificar el hábito más consistente (la mayor fortaleza). 3. Identificar el hábito más desafiante. 4. UN consejo de alto nivel para la mejora continua de la disciplina.\n\nDatos:\n- Hábitos Activos: {activeHabitList}\n{graduatedHabitsSection}- Historial Completo:\n{history}",
     "aiPromptGraduatedSection": "- Hábitos Graduados: {graduatedHabitList}\n",
     "aiPromptMonthHeader": "Datos para el Mes de {month}",
-    "aiPromptMonthly": "Realiza una revisión de rendimiento del último mes (30 días). Tu feedback DEBE centrarse en: 1. Una reflexión sobre la consistencia general y las tendencias observadas. 2. Identificar qué hábito fue el mayor desafío y por qué. 3. Dar UNA sugerencia práctica para mejorar la consistencia el próximo mes.\n\nDatos:\n- Hábitos Activos: {activeHabitList}\n{graduatedHabitsSection}- Historial de los Últimos 30 Días:\n{history}",
+    "aiPromptMonthly": "Realiza una revisión de rendimiento del último mes (30 dias). Tu feedback DEBE centrarse en: 1. Una reflexión sobre la consistencia general y las tendencias observadas. 2. Identificar qué hábito fue el mayor desafío y por qué. 3. Dar UNA sugerencia práctica para mejorar la consistencia el próximo mes.\n\nDatos:\n- Hábitos Activos: {activeHabitList}\n{graduatedHabitsSection}- Historial de los Últimos 30 Días:\n{history}",
     "aiPromptNoData": "Sin datos.",
     "aiPromptNone": "Ninguno",
     "aiPromptWeekly": "Tu análisis debe ser global, buscando padrões en los últimos 7 días. Tu feedback DEBE ser: 1. Una reflexión estoica concisa (1-2 frases) sobre el patrón general. 2. UNA única sugerencia práctica y profunda, como un elemento de lista, para fortalecer la virtud y la disciplina.\n\nDatos:\n- Hábitos Activos: {activeHabitList}\n{graduatedHabitsSection}- Historial de los Últimos 7 Días:\n{history}",
@@ -110,6 +110,7 @@
     "modalRemoveTimeTitle": "Quitar Horario",
     "modalStatusEnded": "(Finalizado)",
     "modalStatusGraduated": "(Graduado)",
+    "musoniusRufus": "Musonio Rufo",
     "noticeDuplicateHabitWithName": "Ya existe un hábito con este nombre.",
     "noticeNameCannotBeEmpty": "El nombre del hábito no puede estar vacío.",
     "notificationStatusDisabled": "Las notificaciones están bloqueadas. Debes cambiar los permisos en la configuración de tu navegador.",
@@ -228,5 +229,6 @@
     "weekdaySun": "Domingo",
     "weekdayThu": "Jueves",
     "weekdayTue": "Martes",
-    "weekdayWed": "Miércoles"
+    "weekdayWed": "Miércoles",
+    "zeno": "Zenón de Citio"
 }

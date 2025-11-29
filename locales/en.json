@@ -110,6 +110,7 @@
     "modalRemoveTimeTitle": "Remove Time Slot",
     "modalStatusEnded": "(Ended)",
     "modalStatusGraduated": "(Graduated)",
+    "musoniusRufus": "Musonius Rufus",
     "noticeDuplicateHabitWithName": "A habit with this name already exists.",
     "noticeNameCannotBeEmpty": "The habit name cannot be empty.",
     "notificationStatusDisabled": "Notifications are blocked. You need to change the permissions in your browser settings.",
@@ -228,5 +229,6 @@
     "weekdaySun": "Sunday",
     "weekdayThu": "Thursday",
     "weekdayTue": "Tuesday",
-    "weekdayWed": "Wednesday"
+    "weekdayWed": "Wednesday",
+    "zeno": "Zeno of Citium"
 }
