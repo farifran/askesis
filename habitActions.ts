@@ -14,7 +14,8 @@ import {
     calculateDaySummary,
     invalidateDaySummaryCache,
     getActiveHabitsForDate,
-    AppState
+    AppState,
+    getHabitDailyInfoForDate
 } from './state';
 import { ui } from './ui';
 import { 
@@ -25,7 +26,7 @@ import {
 import { t, getHabitDisplayInfo } from './i18n';
 import { 
     toUTCIsoDateString, parseUTCIsoDate, generateUUID, 
-    getTodayUTCIso, addDays, simpleMarkdownToHTML
+    getTodayUTCIso, addDays, simpleMarkdownToHTML, getDateTimeFormat
 } from './utils';
 import { apiFetch } from './api';
 
@@ -625,57 +626,420 @@ export function handleSaveNote() {
     renderHabitCardState(habitId, time);
 }
 
+// DEFINIÇÃO DE CABEÇALHOS PRE-TRADUZIDOS (PROMPT ENGINEERING)
+// Isso evita alucinações da IA e garante que a UI exiba os títulos corretos.
+const PROMPT_HEADERS = {
+    pt: {
+        archetype: "Arquétipo Comportamental",
+        projection: "A Projeção do Oráculo",
+        insight: "Análise Profunda",
+        system: "Ajuste de Sistema (Ambiente)",
+        socratic: "Reflexão Socrática",
+        connection: "A Conexão Ancestral",
+        action: "Micro-Ação (Mise-en-place)"
+    },
+    en: {
+        archetype: "Behavioral Archetype",
+        projection: "The Oracle's Projection",
+        insight: "Deep Insight",
+        system: "System Tweak (Environment)",
+        socratic: "Socratic Reflection",
+        connection: "The Ancient Connection",
+        action: "Micro-Action (Mise-en-place)"
+    },
+    es: {
+        archetype: "Arquetipo de Comportamiento",
+        projection: "La Proyección del Oráculo",
+        insight: "Análisis Profundo",
+        system: "Ajuste de Sistema (Entorno)",
+        socratic: "Reflexión Socrática",
+        connection: "La Conexión Ancestral",
+        action: "Micro-Acción (Mise-en-place)"
+    }
+};
+
 export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'general') {
     closeModal(ui.aiOptionsModal);
     
     state.aiState = 'loading';
     state.hasSeenAIResult = false;
-    // Opcional: Atualizar UI para loading state no botão
     renderAINotificationState();
 
     const today = parseUTCIsoDate(getTodayUTCIso());
     let startDate: Date;
-    let periodName: string;
+    let periodNameKey: string;
+    let daysCount = 0;
 
     if (analysisType === 'weekly') {
         startDate = addDays(today, -7);
-        periodName = t('aiPeriodWeekly');
+        periodNameKey = 'aiPeriodWeekly';
+        daysCount = 7;
     } else if (analysisType === 'monthly') {
         startDate = addDays(today, -30);
-        periodName = t('aiPeriodMonthly');
+        periodNameKey = 'aiPeriodMonthly';
+        daysCount = 30;
     } else {
-        startDate = addDays(today, -14); // General = last 2 weeks default context
-        periodName = t('aiPeriodGeneral');
+        startDate = addDays(today, -14); // General context
+        periodNameKey = 'aiPeriodGeneral';
+        daysCount = 14;
     }
 
-    // Coleta dados
-    const habitsSummary = state.habits.map(h => {
-        const { name } = getHabitDisplayInfo(h);
-        return { id: h.id, name };
-    });
+    const periodName = t(periodNameKey);
 
-    const performanceData = [];
+    const langCode = state.activeLanguageCode || 'pt';
+    const langMap: Record<string, string> = { 'pt': 'Portuguese', 'es': 'Spanish', 'en': 'English' };
+    const targetLang = langMap[langCode];
+    const headers = PROMPT_HEADERS[langCode as keyof typeof PROMPT_HEADERS] || PROMPT_HEADERS['pt'];
+
+    // Data Calculation structures
+    // OPTIMIZATION: Use string array for semantic log instead of heavy object array
+    const semanticLog: string[] = [];
+    
+    // Stats per Habit
+    const statsMap = new Map<string, { 
+        scheduled: number, 
+        completed: number, 
+        snoozed: number, 
+        notesCount: number, 
+        habit: Habit,
+        extraMiles: number, 
+        bounces: number,
+        accumulatedValue: number, 
+        valueCount: number 
+    }>();
+    
+    // Stats per Time of Day (Chronobiology)
+    const timeOfDayStats = {
+        Morning: { scheduled: 0, completed: 0 },
+        Afternoon: { scheduled: 0, completed: 0 },
+        Evening: { scheduled: 0, completed: 0 }
+    };
+
+    // Trend Analysis
+    const midPoint = Math.floor(daysCount / 2);
+    const trendStats = {
+        firstHalf: { scheduled: 0, completed: 0 },
+        secondHalf: { scheduled: 0, completed: 0 }
+    };
+
+    // Contextual Variance
+    const contextStats = {
+        weekday: { scheduled: 0, completed: 0 },
+        weekend: { scheduled: 0, completed: 0 }
+    };
+
+    // Bad Day Analysis
+    const failedHabitsOnBadDays: Record<string, number> = {};
+    const previousDayStatus: Record<string, string> = {}; 
+
+    let totalLogs = 0;
+    let totalNotes = 0;
+
     let currentDate = startDate;
+    let dayIndex = 0;
+    
     while (currentDate <= today) {
         const dateISO = toUTCIsoDateString(currentDate);
-        const daySummary = calculateDaySummary(dateISO);
-        performanceData.push({
-            date: dateISO,
-            completed: daySummary.completedPercent,
-            total: daySummary.totalPercent // Approximation
-        });
+        const activeHabits = getActiveHabitsForDate(dateISO);
+        const dailyInfo = getHabitDailyInfoForDate(dateISO);
+        
+        let dayScheduled = 0;
+        let dayCompleted = 0;
+        let dayLog = ""; // Build string for semantic log
+        
+        // 0 = Sunday, 6 = Saturday
+        const dayOfWeek = currentDate.getUTCDay();
+        const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+
+        if (activeHabits.length > 0) {
+            // Setup habit stats
+            activeHabits.forEach(({ habit }) => {
+                if (!statsMap.has(habit.id)) {
+                    statsMap.set(habit.id, { 
+                        scheduled: 0, completed: 0, snoozed: 0, notesCount: 0, 
+                        habit, extraMiles: 0, bounces: 0,
+                        accumulatedValue: 0, valueCount: 0
+                    });
+                }
+            });
+
+            const dayEntriesStrings: string[] = [];
+
+            // Get aggregate status
+            activeHabits.forEach(({ habit, schedule }) => {
+                const stats = statsMap.get(habit.id)!;
+                const { name } = getHabitDisplayInfo(habit, dateISO);
+
+                schedule.forEach(time => {
+                    const instance = dailyInfo[habit.id]?.instances?.[time];
+                    const status = instance?.status || 'pending';
+                    const hasNote = instance?.note && instance.note.trim().length > 0;
+                    
+                    // Update Habit Stats
+                    totalLogs++;
+                    stats.scheduled++;
+                    dayScheduled++;
+                    
+                    if (isWeekend) contextStats.weekend.scheduled++;
+                    else contextStats.weekday.scheduled++;
+
+                    if (hasNote) {
+                        totalNotes++;
+                        stats.notesCount++;
+                    }
+                    
+                    timeOfDayStats[time].scheduled++;
+
+                    if (dayIndex < midPoint) {
+                        trendStats.firstHalf.scheduled++;
+                    } else {
+                        trendStats.secondHalf.scheduled++;
+                    }
+
+                    const target = habit.goal.total || 0;
+                    const actual = instance?.goalOverride ?? (status === 'completed' ? target : 0);
+                    
+                    if (status === 'completed' && actual > target && target > 0) {
+                        stats.extraMiles++;
+                    }
+                    
+                    if (actual > 0) {
+                        stats.accumulatedValue += actual;
+                        stats.valueCount++;
+                    }
+
+                    if (status === 'completed') {
+                        stats.completed++;
+                        dayCompleted++;
+                        timeOfDayStats[time].completed++;
+                        if (dayIndex < midPoint) trendStats.firstHalf.completed++;
+                        else trendStats.secondHalf.completed++;
+                        
+                        if (isWeekend) contextStats.weekend.completed++;
+                        else contextStats.weekday.completed++;
+
+                        if (previousDayStatus[habit.id] && previousDayStatus[habit.id] !== 'completed') {
+                            stats.bounces++;
+                        }
+                        previousDayStatus[habit.id] = 'completed';
+                    }
+                    else {
+                        if (status === 'snoozed') stats.snoozed++;
+                        previousDayStatus[habit.id] = status; 
+                        
+                        // Track failures for bad day analysis
+                        if (status !== 'snoozed') {
+                             // Only pending counts as "failure" for this metric? Or both?
+                             // Let's count pending as strict failure for the "bad day" culprit.
+                        }
+                    }
+
+                    // SEMANTIC LOG BUILDING (Token efficient)
+                    // Symbol mapping: Completed=✅, Snoozed=⏸️, Pending=❌
+                    let symbol = '❌';
+                    if (status === 'completed') symbol = '✅';
+                    if (status === 'snoozed') symbol = '⏸️';
+                    
+                    let valStr = '';
+                    if (actual > 0 && (habit.goal.type === 'pages' || habit.goal.type === 'minutes')) {
+                        valStr = ` ${actual}/${target}`;
+                    }
+                    
+                    // Include note text if present for deeper context
+                    let noteStr = '';
+                    if (hasNote) {
+                        noteStr = ` "${instance!.note}"`;
+                    }
+                    
+                    dayEntriesStrings.push(`${name}(${symbol}${valStr}${noteStr})`);
+                });
+            });
+
+            // LOCALIZATION FIX: Use active language for weekday name
+            const dayName = getDateTimeFormat(state.activeLanguageCode, { weekday: 'short' }).format(currentDate);
+            // TOKEN EFFICIENCY: Strip the year from the ISO date (YYYY-MM-DD -> MM-DD)
+            dayLog = `${dateISO.substring(5)} (${dayName}): ${dayEntriesStrings.join(', ')}`;
+            semanticLog.push(dayLog);
+
+            // Bad Day Logic
+            if (dayScheduled > 0 && (dayCompleted / dayScheduled) < 0.5) {
+                // If it was a bad day, identify which habits were NOT completed
+                activeHabits.forEach(({ habit, schedule }) => {
+                    const daily = dailyInfo[habit.id]?.instances;
+                    schedule.forEach(time => {
+                        const s = daily?.[time]?.status || 'pending';
+                        if (s !== 'completed' && s !== 'snoozed') {
+                             failedHabitsOnBadDays[getHabitDisplayInfo(habit, dateISO).name] = (failedHabitsOnBadDays[getHabitDisplayInfo(habit, dateISO).name] || 0) + 1;
+                        }
+                    });
+                });
+            }
+        }
         currentDate = addDays(currentDate, 1);
+        dayIndex++;
+    }
+
+    // Build Statistics
+    let statsSummary = "";
+    const mysteryHabits: string[] = []; 
+    let totalExtraMiles = 0;
+    let totalBounces = 0;
+    
+    let highestStreakHabitName = "";
+    let highestStreakValue = 0;
+    let nemesisName = "";
+    let highestSnoozeRate = -1;
+    let realityGapWarning = "";
+    
+    statsMap.forEach((data, id) => {
+        const { name } = getHabitDisplayInfo(data.habit, toUTCIsoDateString(today));
+        const rate = data.scheduled > 0 ? (data.completed / data.scheduled) : 0;
+        const snoozeRate = data.scheduled > 0 ? (data.snoozed / data.scheduled) : 0;
+        const streak = calculateHabitStreak(id, toUTCIsoDateString(today));
+        const noteInfo = data.notesCount > 0 ? `${data.notesCount} notes` : "NO NOTES";
+        
+        totalExtraMiles += data.extraMiles;
+        totalBounces += data.bounces;
+
+        statsSummary += `- **${name}**: ${Math.round(rate * 100)}% Success. Streak: ${streak}. (Snoozed: ${Math.round(snoozeRate * 100)}%). Notes: ${noteInfo}\n`;
+
+        if (rate < 0.6 && data.notesCount === 0) {
+            mysteryHabits.push(name);
+        }
+        
+        if (streak > highestStreakValue) {
+            highestStreakValue = streak;
+            highestStreakHabitName = name;
+        }
+
+        if (snoozeRate > highestSnoozeRate && data.scheduled > 3) { 
+            highestSnoozeRate = snoozeRate;
+            nemesisName = name;
+        }
+
+        // CALCULATED REALITY GAP (Math done in code, not AI)
+        if (data.habit.goal.type === 'pages' || data.habit.goal.type === 'minutes') {
+            const target = data.habit.goal.total || 0;
+            if (target > 0 && data.valueCount > 0) {
+                const avgActual = data.accumulatedValue / data.valueCount;
+                if (avgActual < target * 0.7) { 
+                    const suggested = Math.floor(avgActual);
+                    realityGapWarning += `Habit '${name}': Target ${target}, Avg Actual ${Math.round(avgActual)}. -> SUGGESTION: Lower goal to ${suggested}.\n`;
+                }
+            }
+        }
+    });
+
+    const nemesisInfo = nemesisName && highestSnoozeRate > 0.2 
+        ? `The Nemesis: **${nemesisName}** (Snoozed ${Math.round(highestSnoozeRate * 100)}% of the time).` 
+        : "No significant Nemesis.";
+
+    let temporalSummary = "";
+    Object.entries(timeOfDayStats).forEach(([time, data]) => {
+        const rate = data.scheduled > 0 ? Math.round((data.completed / data.scheduled) * 100) : 0;
+        if (data.scheduled > 0) {
+            temporalSummary += `- **${time}**: ${rate}% Success Rate (${data.completed}/${data.scheduled})\n`;
+        }
+    });
+
+    const firstHalfRate = trendStats.firstHalf.scheduled > 0 ? Math.round((trendStats.firstHalf.completed / trendStats.firstHalf.scheduled) * 100) : 0;
+    const secondHalfRate = trendStats.secondHalf.scheduled > 0 ? Math.round((trendStats.secondHalf.completed / trendStats.secondHalf.scheduled) * 100) : 0;
+    const trendDiff = secondHalfRate - firstHalfRate;
+    const trendDescription = trendDiff > 5 ? "RISING MOMENTUM 🚀" : (trendDiff < -5 ? "LOSING MOMENTUM 📉" : "STABLE ➖");
+    
+    const weekdayRate = contextStats.weekday.scheduled > 0 ? Math.round((contextStats.weekday.completed / contextStats.weekday.scheduled) * 100) : 0;
+    const weekendRate = contextStats.weekend.scheduled > 0 ? Math.round((contextStats.weekend.completed / contextStats.weekend.scheduled) * 100) : 0;
+    const contextDescription = `Weekday Success: ${weekdayRate}% vs Weekend Success: ${weekendRate}%`;
+
+    const culpritEntry = Object.entries(failedHabitsOnBadDays).sort((a, b) => b[1] - a[1])[0];
+    const culpritInfo = culpritEntry ? `Habit most often associated with 'Bad Days': **${culpritEntry[0]}**` : "None.";
+
+    const noteDensity = totalLogs > 0 ? Math.round((totalNotes / totalLogs) * 100) : 0;
+    const dataQualityWarning = mysteryHabits.length > 0 
+        ? `MISSING CONTEXT: User is failing at ${mysteryHabits.join(', ')} but has written ZERO notes.`
+        : "Good context.";
+
+    const globalRate = (firstHalfRate + secondHalfRate) / 2;
+    let seasonalPhase = "";
+    if (globalRate > 85 && trendDiff >= -2) seasonalPhase = "SUMMER (Harvest/Flow) - High performance.";
+    else if (globalRate < 50) seasonalPhase = "WINTER (The Citadel) - Low performance, focus on resilience.";
+    else if (trendDiff > 5) seasonalPhase = "SPRING (Ascent) - Growing momentum.";
+    else seasonalPhase = "AUTUMN (Turbulence) - Declining momentum.";
+
+    let projectionInfo = "No active streaks.";
+    if (highestStreakValue > 0) {
+        const nextMilestone = highestStreakValue < 21 ? 21 : (highestStreakValue < 66 ? 66 : (highestStreakValue < 100 ? 100 : 365));
+        const daysRemaining = nextMilestone - highestStreakValue;
+        const projectedDate = addDays(today, daysRemaining);
+        // FIX [2025-02-08]: Date Localization Bug. Use activeLanguageCode instead of 'en-US'.
+        const dateStr = getDateTimeFormat(state.activeLanguageCode, { month: 'long', day: 'numeric' }).format(projectedDate);
+        projectionInfo = `Best Habit: ${highestStreakHabitName} (Streak: ${highestStreakValue}). Next milestone (${nextMilestone} days) on: ${dateStr}.`;
     }
 
     const prompt = `
-        Analyze the user's habit tracking data for the ${periodName}.
-        Habits: ${JSON.stringify(habitsSummary)}
-        Daily Performance (Date, Completed %, Total %): ${JSON.stringify(performanceData)}
-        
-        Provide a concise, motivating summary of their progress. 
-        Highlight streaks, improvements, and areas to focus on. 
-        Keep it under 150 words. Use Markdown for formatting.
-        Tone: Stoic, encouraging, direct.
+        ROLE: Askesis AI (Stoic Mentor & Data Scientist).
+        TASK: Analyze user data for the "${periodName}" and provide high-impact feedback in ${targetLang}.
+
+        ### 1. THE ANALYST (Quant/Facts)
+        - **Stats:** \n${statsSummary}
+        - **Gaps:** Note Density: ${noteDensity}%. ${dataQualityWarning}
+        - **Trend:** Momentum: ${trendDescription}. Keystone Failure: ${culpritInfo}
+        - **Friction:** ${nemesisInfo}
+
+        ### 2. THE STRATEGIST (Systems/Time)
+        - **Bio-rhythm:** \n${temporalSummary}
+        - **Reality Check (Math Calculated):** \n${realityGapWarning || "Goals are realistic."}
+        - **Metrics:** Extra Miles: ${totalExtraMiles}. Bounce Backs: ${totalBounces}.
+
+        ### 3. THE PHILOSOPHER (Identity/Future)
+        - **Season:** ${seasonalPhase}
+        - **Projection:** ${projectionInfo}
+        - **Identity:** ${contextDescription} (Structure vs Freedom)
+
+        ### ARCHETYPE LOGIC (Mental Mapping):
+        - **The Consistent Stoic:** Global Rate > 80%.
+        - **The Weekend Warrior:** Weekend > Weekday (+20% diff).
+        - **The Grinder (Structure Dependent):** Weekday > Weekend (+20% diff).
+        - **The Perfectionist:** High Snooze Rate (> 20%) OR High Extra Miles but Low Consistency.
+        - **The Starter:** Streak < 7 but Rising Momentum.
+        - **The Drifter:** Low Momentum, Random patterns.
+
+        ### SEMANTIC LOG (Patterns):
+        ${semanticLog.join('\n')}
+
+        INSTRUCTIONS:
+        1. **NO REPORTING:** Do NOT list the stats. Use them to form INSIGHTS.
+        2. **BE SOCRATIC:** Ask a question that forces reflection.
+        3. **SYSTEM TWEAKS:** Suggest ENVIRONMENTAL changes (e.g. "Place the book on pillow").
+        4. **QUOTE:** Pick a quote from Seneca, Epictetus, or Aurelius that matches the *Season*.
+        5. **SUCCESS HANDLING:** If performance is high (Summer/Spring), do NOT invent problems. Focus on Optimization (Progressive Overload).
+        6. **INTERPRET LOG:** ✅=Success, ❌=Pending/Fail, ⏸️=Snoozed, "Text"=User Note.
+
+        OUTPUT STRUCTURE (Markdown in ${targetLang}):
+
+        ### 🏛️ [Stoic Title]
+
+        **🆔 ${headers.archetype}**
+        [Select the ONE matching Archetype from the LOGIC list above. Explain why in 1 sentence.]
+
+        **🔮 ${headers.projection}**
+        [Motivate them with the Projection date. 1-2 sentences.]
+
+        **📊 ${headers.insight}**
+        [Synthesize the data. Connect friction to reality gaps. 2-3 sentences.]
+
+        **⚙️ ${headers.system}**
+        [A specific architectural change to their routine. Focus on reducing friction.]
+
+        **❓ ${headers.socratic}**
+        [Ask ONE deep question about their pattern.]
+
+        **🏛️ ${headers.connection}**
+        [Quote]
+        [Why this quote applies to their *specific* data.]
+
+        **🎯 ${headers.action}**
+        [One tiny step (< 2 min). Focus on MISE-EN-PLACE (Preparation/Environment).]
     `;
 
     try {
@@ -683,7 +1047,14 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
             method: 'POST',
             body: JSON.stringify({
                 prompt,
-                systemInstruction: "You are a Stoic habit coach."
+                systemInstruction: `You are Askesis AI. Answer in ${targetLang}. Start the response immediately with the Title. Do not write "Here is the analysis" or "Based on the data". Be concise, profound, and analytical. DO NOT repeat stats. Focus on behavioral psychology and Stoicism.
+                
+                Examples of System Tweaks:
+                - Bad: "Read more."
+                - Good: "Put the book on your pillow before leaving for work."
+                - Bad: "Drink water."
+                - Good: "Fill two bottles at night and place one on your desk."
+                `
             })
         });
 
@@ -693,9 +1064,7 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
         state.lastAIResult = text;
         state.aiState = 'completed';
         
-        // Abre modal automaticamente
         ui.aiResponse.innerHTML = simpleMarkdownToHTML(text);
-        
         openModal(ui.aiModal);
 
     } catch (error) {
