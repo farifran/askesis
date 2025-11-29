@@ -29,6 +29,7 @@ import {
     getTodayUTCIso, addDays, simpleMarkdownToHTML, getDateTimeFormat
 } from './utils';
 import { apiFetch } from './api';
+import { STOIC_QUOTES } from './quotes';
 
 // --- HELPERS ---
 
@@ -738,6 +739,9 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
     let currentDate = startDate;
     let dayIndex = 0;
     
+    // OPTIMIZATION [2025-02-09]: Instantiate formatters outside loop
+    const dayFormatter = getDateTimeFormat(state.activeLanguageCode, { weekday: 'short' });
+
     while (currentDate <= today) {
         const dateISO = toUTCIsoDateString(currentDate);
         const activeHabits = getActiveHabitsForDate(dateISO);
@@ -856,7 +860,7 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
             });
 
             // LOCALIZATION FIX: Use active language for weekday name
-            const dayName = getDateTimeFormat(state.activeLanguageCode, { weekday: 'short' }).format(currentDate);
+            const dayName = dayFormatter.format(currentDate);
             // TOKEN EFFICIENCY: Strip the year from the ISO date (YYYY-MM-DD -> MM-DD)
             dayLog = `${dateISO.substring(5)} (${dayName}): ${dayEntriesStrings.join(', ')}`;
             semanticLog.push(dayLog);
@@ -976,70 +980,119 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
         projectionInfo = `Best Habit: ${highestStreakHabitName} (Streak: ${highestStreakValue}). Next milestone (${nextMilestone} days) on: ${dateStr}.`;
     }
 
-    const prompt = `
-        ROLE: Askesis AI (Stoic Mentor & Data Scientist).
-        TASK: Analyze user data for the "${periodName}" and provide high-impact feedback in ${targetLang}.
+    // --- ARCHETYPE CALCULATION (Deterministic Logic) ---
+    // Moved from Prompt to Code to prevent hallucinations and save tokens.
+    let archetype = "The Drifter";
+    let archetypeReason = "Patterns are inconsistent.";
 
-        ### 1. THE ANALYST (Quant/Facts)
+    if (globalRate >= 80) {
+        archetype = "The Consistent Stoic";
+        archetypeReason = `Global success rate is high (${globalRate}%).`;
+    } else if (weekendRate > weekdayRate + 20) {
+        archetype = "The Weekend Warrior";
+        archetypeReason = `Weekend performance (${weekendRate}%) significantly exceeds weekdays (${weekdayRate}%).`;
+    } else if (weekdayRate > weekendRate + 20) {
+        archetype = "The Grinder (Structure Dependent)";
+        archetypeReason = `Weekday performance (${weekdayRate}%) significantly exceeds weekends (${weekendRate}%).`;
+    } else if (highestSnoozeRate > 0.20) {
+        archetype = "The Perfectionist (Avoidant)";
+        archetypeReason = `High snooze rate detected on key habits.`;
+    } else if (totalExtraMiles > 5 && globalRate < 60) {
+        archetype = "The Sprinter";
+        archetypeReason = "High intensity bursts (Extra Miles) but lower consistency.";
+    } else if (totalLogs < 20 && trendDiff > 0) {
+        archetype = "The Starter";
+        archetypeReason = "New journey with positive momentum.";
+    }
+
+    // --- SMART QUOTE SELECTION (Contextual Filtering) ---
+    let quoteFilterFn = (q: any) => true; // Default to all
+
+    if (highestSnoozeRate > 0.15) {
+        // PROBLEM: Procrastination / Delay
+        // REMEDY: Seneca (Time/Life is short) or Epictetus (Action/Now)
+        quoteFilterFn = (q) => q.author === 'seneca' || q.author === 'epictetus';
+    } else if (realityGapWarning.length > 0) {
+        // PROBLEM: Delusion / Unrealistic Goals
+        // REMEDY: Epictetus (Control/Reality)
+        quoteFilterFn = (q) => q.author === 'epictetus';
+    } else if (seasonalPhase.includes("WINTER") || seasonalPhase.includes("AUTUMN")) {
+        // PROBLEM: Hardship / Low Energy
+        // REMEDY: Marcus Aurelius (Inner Strength/Resilience)
+        quoteFilterFn = (q) => q.author === 'marcusAurelius';
+    } else if (seasonalPhase.includes("SUMMER")) {
+        // PROBLEM: Success / Complacency / Arrogance
+        // REMEDY: Marcus Aurelius (Transience/Nature) to stay humble, or Seneca (Service)
+        quoteFilterFn = (q) => q.author === 'marcusAurelius';
+    }
+
+    const quotePool = STOIC_QUOTES.filter(quoteFilterFn);
+    // Fallback if filter is too strict (shouldn't happen given the broad categories)
+    const finalPool = quotePool.length > 0 ? quotePool : STOIC_QUOTES;
+    
+    const selectedQuote = finalPool[Math.floor(Math.random() * finalPool.length)];
+    const quoteText = selectedQuote[langCode as 'pt'|'en'|'es'] || selectedQuote['en'];
+    const quoteAuthor = t(selectedQuote.author);
+
+
+    const prompt = `
+        ROLE: Askesis AI (A wise, observant, and deeply human Stoic companion).
+        TASK: Write a structured, soulful Stoic reflection based on the user's evidence (${periodName}) in ${targetLang}.
+
+        ### 1. THE CONTEXT (Data)
         - **Stats:** \n${statsSummary}
         - **Gaps:** Note Density: ${noteDensity}%. ${dataQualityWarning}
         - **Trend:** Momentum: ${trendDescription}. Keystone Failure: ${culpritInfo}
         - **Friction:** ${nemesisInfo}
 
-        ### 2. THE STRATEGIST (Systems/Time)
+        ### 2. THE STRATEGY
         - **Bio-rhythm:** \n${temporalSummary}
         - **Reality Check (Math Calculated):** \n${realityGapWarning || "Goals are realistic."}
         - **Metrics:** Extra Miles: ${totalExtraMiles}. Bounce Backs: ${totalBounces}.
 
-        ### 3. THE PHILOSOPHER (Identity/Future)
+        ### 3. THE PHILOSOPHY
         - **Season:** ${seasonalPhase}
         - **Projection:** ${projectionInfo}
-        - **Identity:** ${contextDescription} (Structure vs Freedom)
+        - **Identity (Calculated):** ${archetype} (${archetypeReason})
+        - **Selected Wisdom:** "${quoteText}" - ${quoteAuthor}
 
-        ### ARCHETYPE LOGIC (Mental Mapping):
-        - **The Consistent Stoic:** Global Rate > 80%.
-        - **The Weekend Warrior:** Weekend > Weekday (+20% diff).
-        - **The Grinder (Structure Dependent):** Weekday > Weekend (+20% diff).
-        - **The Perfectionist:** High Snooze Rate (> 20%) OR High Extra Miles but Low Consistency.
-        - **The Starter:** Streak < 7 but Rising Momentum.
-        - **The Drifter:** Low Momentum, Random patterns.
-
-        ### SEMANTIC LOG (Patterns):
+        ### SEMANTIC LOG (The User's Week):
+        (Legend: ✅=Success, ❌=Pending/Fail, ⏸️=Snoozed, "Text"=User Note)
         ${semanticLog.join('\n')}
 
         INSTRUCTIONS:
-        1. **NO REPORTING:** Do NOT list the stats. Use them to form INSIGHTS.
-        2. **BE SOCRATIC:** Ask a question that forces reflection.
-        3. **SYSTEM TWEAKS:** Suggest ENVIRONMENTAL changes (e.g. "Place the book on pillow").
-        4. **QUOTE:** Pick a quote from Seneca, Epictetus, or Aurelius that matches the *Season*.
-        5. **SUCCESS HANDLING:** If performance is high (Summer/Spring), do NOT invent problems. Focus on Optimization (Progressive Overload).
-        6. **INTERPRET LOG:** ✅=Success, ❌=Pending/Fail, ⏸️=Snoozed, "Text"=User Note.
+        1. **NO ROBOTIC REPORTING:** Do NOT write "Based on the data" or "Analysis complete". Do not list statistics unless necessary to prove a point. Speak naturally, like a mentor writing a letter.
+        2. **BE SOCRATIC:** Ask a BINARY or CHOICE-BASED question to force a decision. e.g., "Are you tired, or are you bored?", "Is this habit serving you, or are you serving it?". Avoid open "Why" questions.
+        3. **PATTERN RECOGNITION:** Look at the Semantic Log. Identify the *rhythm* of their week. Do they fail on specific days?
+        4. **ARCHITECTURAL SYSTEM TWEAK:** Suggest a specific "Implementation Intention" using the syntax: **"When [TRIGGER] happens, I will [ACTION]"**. Focus on Environmental Design (Mise-en-place). Constraint: ZERO COST.
+        5. **CONNECT WISDOM:** Use the provided quote ("${quoteText}") to bridge the gap between their modern struggle and ancient wisdom.
+        6. **GROWTH MINDSET:** If the "Identity" is negative, frame it as a *current state* they are passing through.
 
         OUTPUT STRUCTURE (Markdown in ${targetLang}):
 
-        ### 🏛️ [Stoic Title]
+        ### 🏛️ [A Short, Profound Stoic Title]
 
         **🆔 ${headers.archetype}**
-        [Select the ONE matching Archetype from the LOGIC list above. Explain why in 1 sentence.]
+        [Define their current state based on the calculated Archetype. Use a growth mindset. 1 sentence.]
 
         **🔮 ${headers.projection}**
-        [Motivate them with the Projection date. 1-2 sentences.]
+        [A motivational projection of their path. 1-2 sentences.]
 
         **📊 ${headers.insight}**
-        [Synthesize the data. Connect friction to reality gaps. 2-3 sentences.]
+        [Synthesize the struggle or victory. Connect the "Nemesis" to the "Reality Gap". Hypothesize *why* based on the log.]
 
         **⚙️ ${headers.system}**
-        [A specific architectural change to their routine. Focus on reducing friction.]
+        [A specific 'When/Then' implementation intention. Focus on Architecture of Choice. ZERO COST.]
 
         **❓ ${headers.socratic}**
-        [Ask ONE deep question about their pattern.]
+        [One deep, binary/choice-based question.]
 
         **🏛️ ${headers.connection}**
-        [Quote]
-        [Why this quote applies to their *specific* data.]
+        [Quote provided above]
+        [Explain why this ancient text solves their specific modern blockage.]
 
         **🎯 ${headers.action}**
-        [One tiny step (< 2 min). Focus on MISE-EN-PLACE (Preparation/Environment).]
+        [One tiny step (< 2 min). Focus on MISE-EN-PLACE (Preparation).]
     `;
 
     try {
@@ -1047,13 +1100,21 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
             method: 'POST',
             body: JSON.stringify({
                 prompt,
-                systemInstruction: `You are Askesis AI. Answer in ${targetLang}. Start the response immediately with the Title. Do not write "Here is the analysis" or "Based on the data". Be concise, profound, and analytical. DO NOT repeat stats. Focus on behavioral psychology and Stoicism.
+                systemInstruction: `You are Askesis AI, a wise Stoic companion. You are NOT a robot generating a report. You are a mentor writing to a student.
                 
-                Examples of System Tweaks:
+                TONE: Deep, calm, observant, warm, but firm. NO FLUFF. Be concise like Seneca.
+                FORBIDDEN: "Based on the data", "Here is the analysis", "According to the stats".
+                
+                FOCUS:
+                1. Identity (Who they are becoming).
+                2. Environment (How to change the room, not the will).
+                3. The Why (Deep understanding of patterns).
+                
+                Examples of System Tweaks (Environmental/Zero Cost):
                 - Bad: "Read more."
-                - Good: "Put the book on your pillow before leaving for work."
-                - Bad: "Drink water."
-                - Good: "Fill two bottles at night and place one on your desk."
+                - Good: "When I pour my morning coffee, Then I will open the book on the table."
+                - Bad: "Buy a new alarm."
+                - Good: "When I enter the bedroom, Then I will charge my phone in the kitchen."
                 `
             })
         });
