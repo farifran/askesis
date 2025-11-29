@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -675,6 +676,26 @@ const IMPLEMENTATION_TEMPLATES = {
     es: "Cuando [DESENCADENANTE], haré [ACCIÓN]."
 };
 
+// TIME-SPECIFIC ANCHOR EXAMPLES (Contextual Relevance)
+const TIME_ANCHORS = {
+    Morning: {
+        pt: "Ao acordar, Depois de escovar os dentes, Com o café",
+        en: "Upon waking, After brushing teeth, With coffee",
+        es: "Al despertar, Después de cepillarse, Con el café"
+    },
+    Afternoon: {
+        pt: "Após o almoço, Ao fechar o laptop, Chegando em casa",
+        en: "After lunch, Closing laptop, Arriving home",
+        es: "Después del almuerzo, Al cerrar la laptop, Llegando a casa"
+    },
+    Evening: {
+        pt: "Após o jantar, Colocando pijama, Antes de escovar os dentes",
+        en: "After dinner, Putting on pajamas, Before brushing teeth",
+        es: "Después de cenar, Poniéndose el pijama, Antes de cepillarse"
+    }
+};
+
+
 export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'general') {
     closeModal(ui.aiOptionsModal);
     
@@ -755,6 +776,8 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
 
     let currentDate = startDate;
     let dayIndex = 0;
+    let redFlagDay = ""; // Specific day of collapse
+    let sparklineHabitId: string | null = null;
     
     // OPTIMIZATION [2025-02-09]: Instantiate formatters outside loop
     const dayFormatter = getDateTimeFormat(state.activeLanguageCode, { weekday: 'short' });
@@ -883,17 +906,25 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
             semanticLog.push(dayLog);
 
             // Bad Day Logic
-            if (dayScheduled > 0 && (dayCompleted / dayScheduled) < 0.5) {
-                // If it was a bad day, identify which habits were NOT completed
-                activeHabits.forEach(({ habit, schedule }) => {
-                    const daily = dailyInfo[habit.id]?.instances;
-                    schedule.forEach(time => {
-                        const s = daily?.[time]?.status || 'pending';
-                        if (s !== 'completed' && s !== 'snoozed') {
-                             failedHabitsOnBadDays[getHabitDisplayInfo(habit, dateISO).name] = (failedHabitsOnBadDays[getHabitDisplayInfo(habit, dateISO).name] || 0) + 1;
-                        }
+            // RED FLAG DAY DETECTION: If > 50% failed/snoozed, mark this specific date for AI.
+            if (dayScheduled > 0) {
+                const successRate = dayCompleted / dayScheduled;
+                if (successRate < 0.5 && !redFlagDay) { // Capture the first (or most recent if rewritten) collapse
+                     redFlagDay = `${dayName} (${dateISO.substring(5)})`;
+                }
+                
+                if (successRate < 0.5) {
+                    // If it was a bad day, identify which habits were NOT completed
+                    activeHabits.forEach(({ habit, schedule }) => {
+                        const daily = dailyInfo[habit.id]?.instances;
+                        schedule.forEach(time => {
+                            const s = daily?.[time]?.status || 'pending';
+                            if (s !== 'completed' && s !== 'snoozed') {
+                                 failedHabitsOnBadDays[getHabitDisplayInfo(habit, dateISO).name] = (failedHabitsOnBadDays[getHabitDisplayInfo(habit, dateISO).name] || 0) + 1;
+                            }
+                        });
                     });
-                });
+                }
             }
         }
         currentDate = addDays(currentDate, 1);
@@ -956,12 +987,25 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
         : "No significant Nemesis.";
 
     let temporalSummary = "";
+    let lowestPerfTime: TimeOfDay = 'Morning';
+    let lowestPerfRate = 1.0;
+
     Object.entries(timeOfDayStats).forEach(([time, data]) => {
         const rate = data.scheduled > 0 ? Math.round((data.completed / data.scheduled) * 100) : 0;
         if (data.scheduled > 0) {
             temporalSummary += `- **${time}**: ${rate}% Success Rate (${data.completed}/${data.scheduled})\n`;
+            
+            // Find struggling time
+            if ((data.completed / data.scheduled) < lowestPerfRate) {
+                lowestPerfRate = data.completed / data.scheduled;
+                lowestPerfTime = time as TimeOfDay;
+            }
         }
     });
+
+    // Determine anchors based on struggling time
+    const timeAnchors = TIME_ANCHORS[lowestPerfTime][langCode as keyof typeof TIME_ANCHORS.Morning] || TIME_ANCHORS.Morning.en;
+
 
     const firstHalfRate = trendStats.firstHalf.scheduled > 0 ? Math.round((trendStats.firstHalf.completed / trendStats.firstHalf.scheduled) * 100) : 0;
     const secondHalfRate = trendStats.secondHalf.scheduled > 0 ? Math.round((trendStats.secondHalf.completed / trendStats.secondHalf.scheduled) * 100) : 0;
@@ -979,7 +1023,7 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
     
     const globalRate = (firstHalfRate + secondHalfRate) / 2;
 
-    // FIX [2025-02-09]: Logic Refinement - Only complain about notes if performance is low
+    // Logic Refinement - Only complain about notes if performance is low
     let dataQualityWarning = "Good context.";
     if (globalRate < 80 && mysteryHabits.length > 0) {
          dataQualityWarning = `MISSING CONTEXT: User is failing at ${mysteryHabits.join(', ')} but has written ZERO notes.`;
@@ -1004,15 +1048,14 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
     }
 
     // --- ARCHETYPE CALCULATION (Deterministic Logic) ---
-    // Moved from Prompt to Code to prevent hallucinations and save tokens.
     let archetype = "The Drifter";
     let archetypeReason = "Patterns are inconsistent.";
-    let identityStrategy = "Establish a baseline."; // Strategy injected into prompt
+    let identityStrategy = "Radical Simplification. Focus on ONE habit anchored to a biological trigger."; 
 
     if (globalRate >= 80) {
         archetype = "The Consistent Stoic";
         archetypeReason = `Global success rate is high (${globalRate}%).`;
-        identityStrategy = "Normalize excellence. Warn against complacency.";
+        identityStrategy = "Normalize excellence. Warn against complacency. Vigilance is the price of mastery.";
     } else if (weekendRate > weekdayRate + 20) {
         archetype = "The Weekend Warrior";
         archetypeReason = `Weekend performance (${weekendRate}%) significantly exceeds weekdays (${weekdayRate}%).`;
@@ -1073,40 +1116,126 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
     // Instead of complex IF/ELSE inside the prompt text, we inject the specific instruction
     // based on the user's state (Winter vs Summer). This reduces token usage and cognitive load on the AI.
     let systemInstructionText = "Suggest a specific 'Implementation Intention' to reduce friction (Mise-en-place).";
-    let actionInstructionText = "One tiny, ATOMIC PHYSICAL MOVEMENT (Mise-en-place) to make the habit inevitable (e.g. 'Open notebook').";
-    let socraticInstruction = "Ask about FRICTION (What stands in the way? Is it fatigue or fear?).";
     
-    // DYNAMIC FEW-SHOT EXAMPLES (System Instruction)
-    // Prevents the "Beginner Advice for Advanced Users" hallucination.
+    // REFINE [2025-02-09]: 'Gateway Habit' terminology for low performance
+    // BEHAVIORAL UPDATE [2025-02-09]: Require Biological/Mechanical Anchors.
+    let actionInstructionText = `One tiny, 'Gateway Habit' (less than 2 min). A physical movement that initiates the flow. Link it to a PRECISE BIOLOGICAL/MECHANICAL ANCHOR (e.g. 'Feet hit floor', 'Turn off shower', 'Close laptop') suitable for the user's struggle time (${lowestPerfTime}). Avoid time-based anchors (e.g. 'At 8am'). Time Horizon: NOW or TONIGHT. Never Tomorrow.`;
+    
+    let socraticInstruction = "Ask about FRICTION (What stands in the way? Is it fatigue or fear?).";
+    let patternInstruction = "Use the Semantic Log to find the **'Turning Point'** (the specific day/moment where the streak broke or the victory was secured). Mention it explicitly. Scan Vertically (Habit Consistency) and Horizontally (Day Collapse).";
+    
     let tweaksExamples = `
     Examples of System Tweaks (Low Friction):
-    - Bad: "Read more." -> Good: "Place book on pillow."
-    - Bad: "Workout." -> Good: "Put gym clothes next to bed."
+    - Bad: "Read more." -> Good: "When I drink coffee, I will open the book."
+    - Bad: "Workout." -> Good: "When I wake up, I will put on gym shoes."
     `;
 
-    // DYNAMIC HEADERS SELECTION
     let headerSystem = headers.system_low;
     let headerAction = headers.action_low;
+    
+    let insightPlaceholder = "[Synthesize the struggle or victory regarding the PRIMARY FOCUS. USE MENTAL CONTRASTING: Compare current reality vs desired identity. 2-3 sentences. NARRATIVE FLOW. NO LISTS. NO QUESTIONS.]";
+    let actionPlaceholder = "[One tiny 'Gateway Habit' step (< 2 min). Focus on MISE-EN-PLACE (Preparation) linked to an ANCHOR.]";
 
-    // FIX [2025-02-09]: Priority Logic. Reality Gap (Delusion) > Nemesis (Friction) > Keystone (Identity).
-    let focusTarget = highestStreakHabitName ? `'Keystone Habit' (${highestStreakHabitName})` : "the morning routine";
-    if (nemesisName) focusTarget = `'Nemesis' (${nemesisName}) - Source of the problem`;
+
+    // FOCUS LOGIC & SPARKLINE GENERATION
+    let focusTarget = "Sustainability & Burnout Prevention (Maintenance)";
+    
+    if (highestStreakHabitName) {
+         focusTarget = `'Keystone Habit' (${highestStreakHabitName})`;
+         // Find ID of highest streak habit for sparkline
+         for (const [id, data] of statsMap.entries()) {
+             const { name } = getHabitDisplayInfo(data.habit, toUTCIsoDateString(today));
+             if (name === highestStreakHabitName) sparklineHabitId = id;
+         }
+    }
+    if (nemesisName) {
+        focusTarget = `'Nemesis' (${nemesisName}) - Source of the problem`;
+        for (const [id, data] of statsMap.entries()) {
+             const { name } = getHabitDisplayInfo(data.habit, toUTCIsoDateString(today));
+             if (name === nemesisName) sparklineHabitId = id;
+        }
+    }
     if (realityGapWarning.length > 0) focusTarget = "the Reality Gap (Goal Reduction) - Source of the problem";
+    // NEW [2025-02-09]: Prioritize the Red Flag Day (Day Collapse)
+    if (redFlagDay) focusTarget = `The Collapse on ${redFlagDay} - Analyze why this specific day failed.`;
 
-    if (globalRate > 80 || seasonalPhase.includes("SUMMER")) {
+    // SPARKLINE GENERATOR (Visual Pattern)
+    let sparkline = "";
+    if (sparklineHabitId) {
+        const habit = state.habits.find(h => h.id === sparklineHabitId);
+        if (habit) {
+            const days: string[] = [];
+            // Last 7 days
+            for (let i = 6; i >= 0; i--) {
+                const d = addDays(today, -i);
+                const dISO = toUTCIsoDateString(d);
+                const daily = state.dailyData[dISO]?.[sparklineHabitId]?.instances || {};
+                
+                const schedule = getEffectiveScheduleForHabitOnDate(habit, dISO);
+                if (schedule.length === 0) {
+                     days.push('▪️'); // No schedule
+                     continue;
+                }
+                
+                let dayStatus = '❌';
+                let hasCompleted = false;
+                let hasSnoozed = false;
+                
+                for (const time of schedule) {
+                    const s = daily[time]?.status;
+                    if (s === 'completed') hasCompleted = true;
+                    if (s === 'snoozed') hasSnoozed = true;
+                }
+                
+                if (hasCompleted) dayStatus = '✅';
+                else if (hasSnoozed) dayStatus = '⏸️';
+                
+                days.push(dayStatus);
+            }
+            sparkline = days.join(' ');
+        }
+    }
+
+
+    let taskDescription = `Write a structured, soulful Stoic mentorship reflection based on the user's evidence (${periodName})`;
+
+    // --- COLD START / ONBOARDING MODE ---
+    // Detects new users with very little data to prevent hallucinated pattern recognition.
+    if (totalLogs < 5) {
+        seasonalPhase = "THE BEGINNING (Day 1)";
+        archetype = "The Initiate";
+        archetypeReason = "Just started the journey.";
+        focusTarget = "Building the Foundation (Start Small)";
+        systemInstructionText = "Suggest a very small, almost ridiculous starting step to build momentum.";
+        socraticInstruction = "Ask what is the smallest version of this habit they can do even on their worst day.";
+        patternInstruction = "Do NOT look for trends yet. Validate the courage of the first step.";
+        insightPlaceholder = "[Welcome them to the Stoic path. Validate the difficulty of starting. Focus on the courage to begin. NO QUESTIONS.]";
+        taskDescription = "Write a welcoming and foundational Stoic mentorship letter for a beginner.";
+        sparkline = ""; // No sparkline for beginners
+    } else if (globalRate > 80 || seasonalPhase.includes("SUMMER")) {
         systemInstructionText = "Suggest a method to increase difficulty (Progressive Overload) or efficiency. Challenge them.";
-        actionInstructionText = "A specific step to challenge their limit, teach others, or refine the technique.";
-        socraticInstruction = "Use 'Premeditatio Malorum'. Ask what they would do if they lost the ability to perform this habit tomorrow.";
+        
+        // REFINE [2025-02-09]: High Performance Action Instruction
+        actionInstructionText = "A specific experimental step to Challenge Limits, Teach Others, or Vary the Context (Anti-fragility). Link to an Anchor.";
+        
+        socraticInstruction = "Use 'Eternal Recurrence' (Amor Fati). Ask: 'Would you be willing to live this exact week again for eternity?'";
+        
+        // NEW [2025-02-09]: High Streak Anxiety Logic
+        if (highestStreakValue > 30) {
+            socraticInstruction = "Deconstruct the fear of losing the streak. Ask: 'Does the value lie in the number (external) or the character you are building (internal)?'";
+        }
         
         tweaksExamples = `
         Examples of System Tweaks (High Performance):
-        - Bad: "Keep going." -> Good: "Add 5 minutes to the timer."
-        - Bad: "Good job." -> Good: "Teach this habit to someone else to master it."
+        - Bad: "Keep going." -> Good: "When I finish the set, I will add 5 minutes."
+        - Bad: "Good job." -> Good: "When I master this, I will teach it to someone else."
         `;
 
-        // SWITCH TO HIGH PERF HEADERS
+        // SWITCH TO HIGH PERF HEADERS & PLACEHOLDERS
         headerSystem = headers.system_high;
         headerAction = headers.action_high;
+        insightPlaceholder = "[Synthesize the victory. Analyze what makes their consistency possible and where the next plateau lies. 2-3 sentences. NO LISTS. NO QUESTIONS.]";
+        actionPlaceholder = "[A specific constraint or added difficulty to test their mastery (Progressive Overload).]";
     }
 
     // LANGUAGE SPECIFIC FORBIDDEN WORDS
@@ -1121,6 +1250,7 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
     const prompt = `
         ### THE COMPASS (Primary Focus):
         PRIMARY FOCUS: ${focusTarget}
+        PATTERN: ${sparkline}
         (The Title, Insight, and System Tweak MUST revolve around this focus.)
 
         ### 1. THE CONTEXT (Data)
@@ -1128,6 +1258,8 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
         - **Gaps:** Note Density: ${noteDensity}%. ${dataQualityWarning}
         - **Trend:** Momentum: ${trendDescription}. Keystone Failure: ${culpritInfo}
         - **Friction:** ${nemesisInfo}
+        - **Red Flag Day (Collapse):** ${redFlagDay || "None"}
+        - **Struggling Time:** ${lowestPerfTime}
 
         ### 2. THE STRATEGY
         - **Bio-rhythm:** \n${temporalSummary}
@@ -1147,47 +1279,48 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
         ${semanticLog.join('\n')}
 
         INSTRUCTIONS:
-        1. **ZERO SUGAR:** Do NOT praise or scold. Be an observant mirror. Do NOT write "Based on the data". Speak naturally, like a mentor writing a letter. Use PARAGRAPHS, NOT LISTS for text sections.
+        1. **BENEVOLENT DETACHMENT:** Do NOT praise ("Good job") or scold ("Do better"). Be an observant mirror. Firm but warm. Do NOT write "Based on the data". Speak naturally, like a mentor writing a letter. Use PARAGRAPHS, NOT LISTS for text sections.
         2. **BE SOCRATIC:** ${socraticInstruction}
            - **CONSTRAINT:** One single, piercing sentence. DO NOT use the word ${forbiddenWhy} (or its translations). Use "What" or "How".
-        3. **PATTERN RECOGNITION:** Use the Semantic Log. Mention specific days or sequences.
+        3. **PATTERN RECOGNITION:** ${patternInstruction}
         4. **THE PROTOCOL (SYSTEM):** 
            - ${systemInstructionText}
-           - **SYNTAX:** Use EXACTLY this template: "${implTemplate}"
+           - **SYNTAX:** Use EXACTLY this template: "${implTemplate}" (REMOVE BRACKETS when filling).
            - **FOCUS:** Focus on the PRIMARY FOCUS defined above. ZERO COST.
-        5. **CONNECT WISDOM:** Use the provided quote ("${quoteText}"). Explain specifically how it helps with: **${quoteReason}**. Don't lecture; apply it.
+           - **CONSTRAINT:** ACTION must be a single, binary event (e.g. 'open book', 'put on shoes'). Forbidden verbs: try, attempt, focus, aim, should.
+        5. **CONNECT WISDOM:** Use the provided quote ("${quoteText}"). Do NOT explain the quote itself. Use the quote's concept to illuminate the user's specific struggle/victory.
         6. **INTERPRET LOG:** 
            - ✅ = Success.
-           - ⏸️ = **Resistance** (User saw it but delayed). REMEDY: Lower the bar. *EXCEPTION:* If there is a "Note" (e.g. 'Sick'), assume External Fate (Amor Fati) and advise Acceptance, not Resistance.
+           - ⏸️ = **Resistance** (User saw it but delayed). REMEDY: Lower the bar. 
+           - **NOTE HANDLING:** If a "Note" is present with ⏸️ or ❌, analyze the sentiment. If it's an External Blocker (Sick, Emergency), treat as Amor Fati (Acceptance). If it's Internal (Lazy, Bored), treat as Resistance (Action required).
            - ❌ = **Neglect** (User forgot). REMEDY: Increase Visibility / Better Trigger.
         7. **THE TRIGGER (PHYSICS):** ${actionInstructionText}
-           - **TIMING RULE:** If the failure happens in the 'Morning' (based on log), the Trigger MUST happen the **Night Before**.
 
         OUTPUT STRUCTURE (Markdown in ${targetLang}):
 
         ### 🏛️ [Title: Format "On [Concept]" or Abstract Noun. NO CHEESY TITLES.]
 
         **🆔 ${headers.archetype}**
-        [Contextualize the '${archetype}' identity. Translate the identity term to ${targetLang} culturally. Apply Strategy: "${identityStrategy}". 1 sentence.]
+        [Contextualize the '${archetype}' identity. Translate the identity term to ${targetLang} culturally. Apply Strategy: "${identityStrategy}". Do not name the strategy, embody it. 1 sentence.]
 
         **🔮 ${headers.projection}**
         [Frame the projection date as a logical consequence (Cause & Effect). "The path leads to..."]
 
         **📊 ${headers.insight}**
-        [Synthesize the struggle or victory regarding the PRIMARY FOCUS. CITE SPECIFIC EVIDENCE from the Semantic Log. 2-3 sentences. WRITE AS A PARAGRAPH. NO LISTS.]
+        ${insightPlaceholder}
 
         **⚙️ ${headerSystem}**
-        [The Implementation Intention using the template: "${implTemplate}". Zero cost. The Rule.]
+        [The Implementation Intention using the template: "${implTemplate}". Zero cost. The Rule. REMOVE BRACKETS.]
 
         **❓ ${headers.socratic}**
         [One deep, single-sentence question.]
 
         **🏛️ ${headers.connection}**
         [Quote provided above]
-        [Why this specific ancient text is the antidote to their current week's data.]
+        [Connect the wisdom to the data.]
 
         **🎯 ${headerAction}**
-        [One tiny step (< 2 min). Focus on MISE-EN-PLACE (Preparation).]
+        ${actionPlaceholder}
     `;
 
     try {
@@ -1195,10 +1328,11 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
             method: 'POST',
             body: JSON.stringify({
                 prompt,
-                systemInstruction: `You are Askesis AI, a wise Stoic companion. You write "Micro-Essays" - dense, profound, and direct blocks of wisdom.
+                systemInstruction: `You are Askesis AI, a wise Stoic companion. ${taskDescription}. You write "Stoic Letters" - dense, profound, and direct blocks of wisdom.
                 
-                STYLE: Epistolary (Letter-like), concise, grave but kind. Zero sugar coating.
-                FORBIDDEN: "Based on the data", "Here is the analysis", "According to the stats", "Why".
+                STYLE: Epistolary (Letter-like), concise, grave but kind. Benevolent Detachment.
+                FORBIDDEN: "Based on the data", "Here is the analysis", "According to the stats", "Why", "Amor Fati", "Mise-en-place". (Apply the concepts, do not name them).
+                GOLDEN RULE: Never advise "trying harder" or "being more disciplined". Advise "changing the method" or "altering the environment".
                 
                 FOCUS:
                 1. Identity (Who they are becoming).
@@ -1207,6 +1341,10 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
                 4. Amor Fati (Accept failure as data, not sin).
                 
                 ${tweaksExamples}
+
+                FORBIDDEN VERBS (Action): try, attempt, focus, aim, should, must, will try.
+                REQUIRED VERBS: open, put, write, step, walk, turn off.
+                TIME HORIZON: Actions must be doable NOW or TONIGHT. Never "Tomorrow".
                 `
             })
         });
