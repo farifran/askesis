@@ -634,29 +634,45 @@ const PROMPT_HEADERS = {
         archetype: "Arquétipo Comportamental",
         projection: "A Projeção do Oráculo",
         insight: "Análise Profunda",
-        system: "Ajuste de Sistema (Ambiente)",
+        system_low: "Ajuste de Sistema (Reparo)",
+        system_high: "Protocolo de Expansão (Desafio)",
+        action_low: "Micro-Ação (Mise-en-place)",
+        action_high: "Micro-Ação (O Próximo Nível)",
+        
         socratic: "Reflexão Socrática",
-        connection: "A Conexão Ancestral",
-        action: "Micro-Ação (Mise-en-place)"
+        connection: "A Conexão Ancestral"
     },
     en: {
         archetype: "Behavioral Archetype",
         projection: "The Oracle's Projection",
         insight: "Deep Insight",
-        system: "System Tweak (Environment)",
+        system_low: "System Tweak (Repair)",
+        system_high: "Expansion Protocol (Challenge)",
+        action_low: "Micro-Action (Mise-en-place)",
+        action_high: "Micro-Action (The Next Level)",
+        
         socratic: "Socratic Reflection",
-        connection: "The Ancient Connection",
-        action: "Micro-Action (Mise-en-place)"
+        connection: "The Ancient Connection"
     },
     es: {
         archetype: "Arquetipo de Comportamiento",
         projection: "La Proyección del Oráculo",
         insight: "Análisis Profundo",
-        system: "Ajuste de Sistema (Entorno)",
+        system_low: "Ajuste de Sistema (Reparación)",
+        system_high: "Protocolo de Expansión (Desafío)",
+        action_low: "Micro-Acción (Mise-en-place)",
+        action_high: "Micro-Acción (El Siguiente Nivel)",
+        
         socratic: "Reflexión Socrática",
-        connection: "La Conexión Ancestral",
-        action: "Micro-Acción (Mise-en-place)"
+        connection: "La Conexión Ancestral"
     }
+};
+
+// IMPLEMENTATION INTENTION TEMPLATES (Forcing Native Syntax)
+const IMPLEMENTATION_TEMPLATES = {
+    pt: "Quando [GATILHO], eu farei [AÇÃO].",
+    en: "When [TRIGGER], I will [ACTION].",
+    es: "Cuando [DESENCADENANTE], haré [ACCIÓN]."
 };
 
 export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'general') {
@@ -691,6 +707,7 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
     const langMap: Record<string, string> = { 'pt': 'Portuguese', 'es': 'Spanish', 'en': 'English' };
     const targetLang = langMap[langCode];
     const headers = PROMPT_HEADERS[langCode as keyof typeof PROMPT_HEADERS] || PROMPT_HEADERS['pt'];
+    const implTemplate = IMPLEMENTATION_TEMPLATES[langCode as keyof typeof IMPLEMENTATION_TEMPLATES] || IMPLEMENTATION_TEMPLATES['en'];
 
     // Data Calculation structures
     // OPTIMIZATION: Use string array for semantic log instead of heavy object array
@@ -959,11 +976,17 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
     const culpritInfo = culpritEntry ? `Habit most often associated with 'Bad Days': **${culpritEntry[0]}**` : "None.";
 
     const noteDensity = totalLogs > 0 ? Math.round((totalNotes / totalLogs) * 100) : 0;
-    const dataQualityWarning = mysteryHabits.length > 0 
-        ? `MISSING CONTEXT: User is failing at ${mysteryHabits.join(', ')} but has written ZERO notes.`
-        : "Good context.";
-
+    
     const globalRate = (firstHalfRate + secondHalfRate) / 2;
+
+    // FIX [2025-02-09]: Logic Refinement - Only complain about notes if performance is low
+    let dataQualityWarning = "Good context.";
+    if (globalRate < 80 && mysteryHabits.length > 0) {
+         dataQualityWarning = `MISSING CONTEXT: User is failing at ${mysteryHabits.join(', ')} but has written ZERO notes.`;
+    } else if (globalRate >= 80) {
+         dataQualityWarning = "High performance; notes are optional.";
+    }
+
     let seasonalPhase = "";
     if (globalRate > 85 && trendDiff >= -2) seasonalPhase = "SUMMER (Harvest/Flow) - High performance.";
     else if (globalRate < 50) seasonalPhase = "WINTER (The Citadel) - Low performance, focus on resilience.";
@@ -984,46 +1007,58 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
     // Moved from Prompt to Code to prevent hallucinations and save tokens.
     let archetype = "The Drifter";
     let archetypeReason = "Patterns are inconsistent.";
+    let identityStrategy = "Establish a baseline."; // Strategy injected into prompt
 
     if (globalRate >= 80) {
         archetype = "The Consistent Stoic";
         archetypeReason = `Global success rate is high (${globalRate}%).`;
+        identityStrategy = "Normalize excellence. Warn against complacency.";
     } else if (weekendRate > weekdayRate + 20) {
         archetype = "The Weekend Warrior";
         archetypeReason = `Weekend performance (${weekendRate}%) significantly exceeds weekdays (${weekdayRate}%).`;
+        identityStrategy = "Encourage bringing weekend energy to weekdays. Bridge the gap.";
     } else if (weekdayRate > weekendRate + 20) {
         archetype = "The Grinder (Structure Dependent)";
         archetypeReason = `Weekday performance (${weekdayRate}%) significantly exceeds weekends (${weekendRate}%).`;
+        identityStrategy = "Develop internal discipline independent of external structure.";
     } else if (highestSnoozeRate > 0.20) {
         archetype = "The Perfectionist (Avoidant)";
         archetypeReason = `High snooze rate detected on key habits.`;
+        identityStrategy = "Teach that 'Done is better than perfect'. Encourage partial efforts.";
     } else if (totalExtraMiles > 5 && globalRate < 60) {
         archetype = "The Sprinter";
         archetypeReason = "High intensity bursts (Extra Miles) but lower consistency.";
+        identityStrategy = "Shift focus from Intensity to Consistency. Lower the bar to raise the floor.";
     } else if (totalLogs < 20 && trendDiff > 0) {
         archetype = "The Starter";
         archetypeReason = "New journey with positive momentum.";
+        identityStrategy = "Validate the start. Reinforce the new identity.";
     }
 
     // --- SMART QUOTE SELECTION (Contextual Filtering) ---
     let quoteFilterFn = (q: any) => true; // Default to all
+    let quoteReason = "General Wisdom"; // The specific problem this quote solves
 
     if (highestSnoozeRate > 0.15) {
         // PROBLEM: Procrastination / Delay
         // REMEDY: Seneca (Time/Life is short) or Epictetus (Action/Now)
         quoteFilterFn = (q) => q.author === 'seneca' || q.author === 'epictetus';
+        quoteReason = "overcoming the friction of starting (Procrastination)";
     } else if (realityGapWarning.length > 0) {
         // PROBLEM: Delusion / Unrealistic Goals
         // REMEDY: Epictetus (Control/Reality)
         quoteFilterFn = (q) => q.author === 'epictetus';
+        quoteReason = "aligning ambition with reality";
     } else if (seasonalPhase.includes("WINTER") || seasonalPhase.includes("AUTUMN")) {
         // PROBLEM: Hardship / Low Energy
         // REMEDY: Marcus Aurelius (Inner Strength/Resilience)
         quoteFilterFn = (q) => q.author === 'marcusAurelius';
+        quoteReason = "finding strength in adversity";
     } else if (seasonalPhase.includes("SUMMER")) {
         // PROBLEM: Success / Complacency / Arrogance
         // REMEDY: Marcus Aurelius (Transience/Nature) to stay humble, or Seneca (Service)
         quoteFilterFn = (q) => q.author === 'marcusAurelius';
+        quoteReason = "maintaining humility in success";
     }
 
     const quotePool = STOIC_QUOTES.filter(quoteFilterFn);
@@ -1034,10 +1069,59 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
     const quoteText = selectedQuote[langCode as 'pt'|'en'|'es'] || selectedQuote['en'];
     const quoteAuthor = t(selectedQuote.author);
 
+    // --- DYNAMIC INSTRUCTION INJECTION (Prompt Engineering) ---
+    // Instead of complex IF/ELSE inside the prompt text, we inject the specific instruction
+    // based on the user's state (Winter vs Summer). This reduces token usage and cognitive load on the AI.
+    let systemInstructionText = "Suggest a specific 'Implementation Intention' to reduce friction (Mise-en-place).";
+    let actionInstructionText = "One tiny, ATOMIC PHYSICAL MOVEMENT (Mise-en-place) to make the habit inevitable (e.g. 'Open notebook').";
+    let socraticInstruction = "Ask about FRICTION (What stands in the way? Is it fatigue or fear?).";
+    
+    // DYNAMIC FEW-SHOT EXAMPLES (System Instruction)
+    // Prevents the "Beginner Advice for Advanced Users" hallucination.
+    let tweaksExamples = `
+    Examples of System Tweaks (Low Friction):
+    - Bad: "Read more." -> Good: "Place book on pillow."
+    - Bad: "Workout." -> Good: "Put gym clothes next to bed."
+    `;
+
+    // DYNAMIC HEADERS SELECTION
+    let headerSystem = headers.system_low;
+    let headerAction = headers.action_low;
+
+    // FIX [2025-02-09]: Priority Logic. Reality Gap (Delusion) > Nemesis (Friction) > Keystone (Identity).
+    let focusTarget = highestStreakHabitName ? `'Keystone Habit' (${highestStreakHabitName})` : "the morning routine";
+    if (nemesisName) focusTarget = `'Nemesis' (${nemesisName}) - Source of the problem`;
+    if (realityGapWarning.length > 0) focusTarget = "the Reality Gap (Goal Reduction) - Source of the problem";
+
+    if (globalRate > 80 || seasonalPhase.includes("SUMMER")) {
+        systemInstructionText = "Suggest a method to increase difficulty (Progressive Overload) or efficiency. Challenge them.";
+        actionInstructionText = "A specific step to challenge their limit, teach others, or refine the technique.";
+        socraticInstruction = "Use 'Premeditatio Malorum'. Ask what they would do if they lost the ability to perform this habit tomorrow.";
+        
+        tweaksExamples = `
+        Examples of System Tweaks (High Performance):
+        - Bad: "Keep going." -> Good: "Add 5 minutes to the timer."
+        - Bad: "Good job." -> Good: "Teach this habit to someone else to master it."
+        `;
+
+        // SWITCH TO HIGH PERF HEADERS
+        headerSystem = headers.system_high;
+        headerAction = headers.action_high;
+    }
+
+    // LANGUAGE SPECIFIC FORBIDDEN WORDS
+    const forbiddenWhyMap = {
+        pt: '"Por que"',
+        en: '"Why"',
+        es: '"Por qué"'
+    };
+    const forbiddenWhy = forbiddenWhyMap[langCode as 'pt'|'en'|'es'] || '"Why"';
+
 
     const prompt = `
-        ROLE: Askesis AI (A wise, observant, and deeply human Stoic companion).
-        TASK: Write a structured, soulful Stoic reflection based on the user's evidence (${periodName}) in ${targetLang}.
+        ### THE COMPASS (Primary Focus):
+        PRIMARY FOCUS: ${focusTarget}
+        (The Title, Insight, and System Tweak MUST revolve around this focus.)
 
         ### 1. THE CONTEXT (Data)
         - **Stats:** \n${statsSummary}
@@ -1054,44 +1138,55 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
         - **Season:** ${seasonalPhase}
         - **Projection:** ${projectionInfo}
         - **Identity (Calculated):** ${archetype} (${archetypeReason})
+        - **Identity Strategy:** ${identityStrategy}
         - **Selected Wisdom:** "${quoteText}" - ${quoteAuthor}
+        - **Wisdom Intent:** Chosen to address: ${quoteReason}
 
         ### SEMANTIC LOG (The User's Week):
-        (Legend: ✅=Success, ❌=Pending/Fail, ⏸️=Snoozed, "Text"=User Note)
+        (Legend: ✅=Success, ❌=Pending/Fail, ⏸️=Snoozed, "Text"=User Note. Ordered by time of day.)
         ${semanticLog.join('\n')}
 
         INSTRUCTIONS:
-        1. **NO ROBOTIC REPORTING:** Do NOT write "Based on the data" or "Analysis complete". Do not list statistics unless necessary to prove a point. Speak naturally, like a mentor writing a letter.
-        2. **BE SOCRATIC:** Ask a BINARY or CHOICE-BASED question to force a decision. e.g., "Are you tired, or are you bored?", "Is this habit serving you, or are you serving it?". Avoid open "Why" questions.
-        3. **PATTERN RECOGNITION:** Look at the Semantic Log. Identify the *rhythm* of their week. Do they fail on specific days?
-        4. **ARCHITECTURAL SYSTEM TWEAK:** Suggest a specific "Implementation Intention" using the syntax: **"When [TRIGGER] happens, I will [ACTION]"**. Focus on Environmental Design (Mise-en-place). Constraint: ZERO COST.
-        5. **CONNECT WISDOM:** Use the provided quote ("${quoteText}") to bridge the gap between their modern struggle and ancient wisdom.
-        6. **GROWTH MINDSET:** If the "Identity" is negative, frame it as a *current state* they are passing through.
+        1. **ZERO SUGAR:** Do NOT praise or scold. Be an observant mirror. Do NOT write "Based on the data". Speak naturally, like a mentor writing a letter. Use PARAGRAPHS, NOT LISTS for text sections.
+        2. **BE SOCRATIC:** ${socraticInstruction}
+           - **CONSTRAINT:** One single, piercing sentence. DO NOT use the word ${forbiddenWhy} (or its translations). Use "What" or "How".
+        3. **PATTERN RECOGNITION:** Use the Semantic Log. Mention specific days or sequences.
+        4. **THE PROTOCOL (SYSTEM):** 
+           - ${systemInstructionText}
+           - **SYNTAX:** Use EXACTLY this template: "${implTemplate}"
+           - **FOCUS:** Focus on the PRIMARY FOCUS defined above. ZERO COST.
+        5. **CONNECT WISDOM:** Use the provided quote ("${quoteText}"). Explain specifically how it helps with: **${quoteReason}**. Don't lecture; apply it.
+        6. **INTERPRET LOG:** 
+           - ✅ = Success.
+           - ⏸️ = **Resistance** (User saw it but delayed). REMEDY: Lower the bar. *EXCEPTION:* If there is a "Note" (e.g. 'Sick'), assume External Fate (Amor Fati) and advise Acceptance, not Resistance.
+           - ❌ = **Neglect** (User forgot). REMEDY: Increase Visibility / Better Trigger.
+        7. **THE TRIGGER (PHYSICS):** ${actionInstructionText}
+           - **TIMING RULE:** If the failure happens in the 'Morning' (based on log), the Trigger MUST happen the **Night Before**.
 
         OUTPUT STRUCTURE (Markdown in ${targetLang}):
 
-        ### 🏛️ [A Short, Profound Stoic Title]
+        ### 🏛️ [Title: Format "On [Concept]" or Abstract Noun. NO CHEESY TITLES.]
 
         **🆔 ${headers.archetype}**
-        [Define their current state based on the calculated Archetype. Use a growth mindset. 1 sentence.]
+        [Contextualize the '${archetype}' identity. Translate the identity term to ${targetLang} culturally. Apply Strategy: "${identityStrategy}". 1 sentence.]
 
         **🔮 ${headers.projection}**
-        [A motivational projection of their path. 1-2 sentences.]
+        [Frame the projection date as a logical consequence (Cause & Effect). "The path leads to..."]
 
         **📊 ${headers.insight}**
-        [Synthesize the struggle or victory. Connect the "Nemesis" to the "Reality Gap". Hypothesize *why* based on the log.]
+        [Synthesize the struggle or victory regarding the PRIMARY FOCUS. CITE SPECIFIC EVIDENCE from the Semantic Log. 2-3 sentences. WRITE AS A PARAGRAPH. NO LISTS.]
 
-        **⚙️ ${headers.system}**
-        [A specific 'When/Then' implementation intention. Focus on Architecture of Choice. ZERO COST.]
+        **⚙️ ${headerSystem}**
+        [The Implementation Intention using the template: "${implTemplate}". Zero cost. The Rule.]
 
         **❓ ${headers.socratic}**
-        [One deep, binary/choice-based question.]
+        [One deep, single-sentence question.]
 
         **🏛️ ${headers.connection}**
         [Quote provided above]
-        [Explain why this ancient text solves their specific modern blockage.]
+        [Why this specific ancient text is the antidote to their current week's data.]
 
-        **🎯 ${headers.action}**
+        **🎯 ${headerAction}**
         [One tiny step (< 2 min). Focus on MISE-EN-PLACE (Preparation).]
     `;
 
@@ -1100,21 +1195,18 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
             method: 'POST',
             body: JSON.stringify({
                 prompt,
-                systemInstruction: `You are Askesis AI, a wise Stoic companion. You are NOT a robot generating a report. You are a mentor writing to a student.
+                systemInstruction: `You are Askesis AI, a wise Stoic companion. You write "Micro-Essays" - dense, profound, and direct blocks of wisdom.
                 
-                TONE: Deep, calm, observant, warm, but firm. NO FLUFF. Be concise like Seneca.
-                FORBIDDEN: "Based on the data", "Here is the analysis", "According to the stats".
+                STYLE: Epistolary (Letter-like), concise, grave but kind. Zero sugar coating.
+                FORBIDDEN: "Based on the data", "Here is the analysis", "According to the stats", "Why".
                 
                 FOCUS:
                 1. Identity (Who they are becoming).
                 2. Environment (How to change the room, not the will).
                 3. The Why (Deep understanding of patterns).
+                4. Amor Fati (Accept failure as data, not sin).
                 
-                Examples of System Tweaks (Environmental/Zero Cost):
-                - Bad: "Read more."
-                - Good: "When I pour my morning coffee, Then I will open the book on the table."
-                - Bad: "Buy a new alarm."
-                - Good: "When I enter the bedroom, Then I will charge my phone in the kitchen."
+                ${tweaksExamples}
                 `
             })
         });
