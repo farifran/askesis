@@ -368,18 +368,32 @@ export function setupModalListeners() {
     });
 
     // --- Modal de Confirmação ---
+    // UX FIX [2025-02-15]: "Close-First" Pattern.
+    // O modal deve ser fechado ANTES de executar a ação. Isso previne problemas em fluxos
+    // onde a ação abre *outro* modal (Nested Modals), garantindo que o novo modal não seja
+    // fechado acidentalmente pela limpeza do antigo.
     ui.confirmModalConfirmBtn.addEventListener('click', () => {
-        state.confirmAction?.();
+        const action = state.confirmAction;
+        
+        // Limpa o estado e fecha o modal primeiro
         state.confirmAction = null;
         state.confirmEditAction = null;
         closeModal(ui.confirmModal);
+        
+        // Executa a ação (se houver)
+        action?.();
     });
     
     ui.confirmModalEditBtn.addEventListener('click', () => {
-        state.confirmEditAction?.();
+        const editAction = state.confirmEditAction;
+        
+        // Limpa o estado e fecha o modal primeiro
         state.confirmAction = null;
         state.confirmEditAction = null;
         closeModal(ui.confirmModal);
+        
+        // Executa a ação de edição (se houver)
+        editAction?.();
     });
 
     // --- Modal de Notas ---
