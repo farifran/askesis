@@ -3,18 +3,18 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// [ANALYSIS PROGRESS]: 100% - Análise concluída. O arquivo serve como ponto de entrada e orquestrador da aplicação. A importação não utilizada 'ui' foi removida. A lógica de inicialização, registro do Service Worker e tratamento de erros está robusta.
+// [ANALYSIS PROGRESS]: 100% - Análise concluída. O arquivo serve como ponto de entrada e orquestrador da aplicação. A lógica de inicialização foi reforçada para priorizar dados locais se forem mais recentes que a nuvem (Offline Recovery).
 
 import { inject } from '@vercel/analytics';
 import './index.css';
-import { loadState, saveState, state, persistStateLocally } from './state';
+import { loadState, saveState, state, persistStateLocally, STATE_STORAGE_KEY, AppState } from './state';
 import { initUI } from './ui';
 import { renderApp } from './render';
 import { setupEventListeners } from './listeners';
 import { initI18n } from './i18n';
 import { createDefaultHabit } from './habitActions';
 import { initSync } from './sync';
-import { fetchStateFromCloud, setupNotificationListeners } from './cloud';
+import { fetchStateFromCloud, setupNotificationListeners, syncStateWithCloud } from './cloud';
 import { hasLocalSyncKey, initAuth } from './api';
 import { updateAppBadge } from './badge';
 
@@ -51,20 +51,62 @@ async function setupBase() {
 }
 
 async function loadInitialState() {
-    let cloudState;
-    if (hasLocalSyncKey()) {
+    // 1. Snapshot do estado local antes de qualquer operação de rede
+    // Isso é crucial para garantir que edições offline não sejam sobrescritas.
+    const localStr = localStorage.getItem(STATE_STORAGE_KEY);
+    let localState: AppState | null = null;
+    if (localStr) {
         try {
-            cloudState = await fetchStateFromCloud();
-            if (cloudState) {
-                // Sincroniza o armazenamento local com a nuvem sem alterar o lastModified
-                // e sem disparar um novo upload (loop de sincronização).
-                persistStateLocally(cloudState);
-            }
+            localState = JSON.parse(localStr);
         } catch (e) {
-            console.error("Failed to fetch from cloud on startup, using local state.", e);
+            console.error("Startup: Failed to parse local state", e);
         }
     }
-    loadState(cloudState);
+
+    let stateToLoad: AppState | null = localState; // Padrão: Confia no local
+
+    if (hasLocalSyncKey()) {
+        try {
+            const cloudState = await fetchStateFromCloud();
+            
+            if (cloudState) {
+                // LÓGICA DEFENSIVA: Comparação Estrita de Timestamps
+                // Se o local for mais novo (ex: editado offline), ele deve vencer.
+                if (localState && localState.lastModified > cloudState.lastModified) {
+                    console.log(`Startup: Local state (${localState.lastModified}) is newer than cloud (${cloudState.lastModified}). Pushing local changes.`);
+                    
+                    // CRÍTICO: Atualiza o timestamp para "agora".
+                    // Isso garante que este estado seja considerado a "nova verdade" pelo servidor
+                    // e previne conflitos de hash se o conteúdo divergir sutilmente.
+                    localState.lastModified = Date.now();
+                    
+                    // Persiste o novo timestamp localmente imediatamente
+                    persistStateLocally(localState);
+                    stateToLoad = localState;
+                    
+                    // Força o envio imediato para a nuvem para sincronizar os outros dispositivos
+                    syncStateWithCloud(localState, true);
+                } else {
+                    console.log("Startup: Cloud state is newer or equal. Syncing local with cloud.");
+                    // Nuvem vence (ou é igual). Persiste localmente para manter a consistência.
+                    // ATENÇÃO: persistStateLocally não altera lastModified, apenas salva o blob.
+                    persistStateLocally(cloudState);
+                    stateToLoad = cloudState;
+                }
+            } else {
+                // Chave existe, mas sem dados na nuvem (ou fetch retornou undefined/vazio).
+                // Mantém o local. A lógica interna do fetchStateFromCloud já pode ter tentado iniciar o push,
+                // mas garantimos que o loadState use o que temos em mãos.
+                console.log("Startup: No cloud data found, using local.");
+            }
+        } catch (e) {
+            console.error("Startup: Failed to fetch from cloud, falling back to local state.", e);
+            // Em caso de erro de rede, stateToLoad continua sendo localState (o padrão definido acima)
+        }
+    }
+    
+    // Carrega o estado vencedor na memória da aplicação
+    loadState(stateToLoad);
 }
 
 function handleFirstTimeUser() {
