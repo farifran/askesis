@@ -1,5 +1,5 @@
 
-import { state, DAYS_IN_CALENDAR, invalidateChartCache, getNextStatus } from './state';
+import { state, DAYS_IN_CALENDAR, invalidateChartCache, getNextStatus, STATE_STORAGE_KEY } from './state';
 import { toUTCIsoDateString, parseUTCIsoDate, debounce, triggerHaptic, getTodayUTCIso, addDays } from './utils';
 import { ui } from './ui';
 import {
@@ -21,6 +21,7 @@ import { setupDragAndDropHandler } from './dragAndDropHandler';
 import { handleUndoDelete, completeAllHabitsForDate, snoozeAllHabitsForDate, toggleHabitStatus } from './habitActions';
 import { renderChart } from './chart';
 import { updateAppBadge } from './badge';
+import { syncStateWithCloud, hasSyncKey } from './cloud';
 
 /**
  * REATORAÇÃO: Centraliza a lógica para atualizar a data selecionada e renderizar a UI.
@@ -49,7 +50,7 @@ function updateSelectedDateAndRender(newDateISO: string) {
 }
 
 /**
- * Lida com mudanças no status da conexão de rede, atualizando a UI.
+ * Lida com mudanças no status da conexão de rede, atualizando a UI e sincronizando dados pendentes.
  */
 const handleConnectionChange = () => {
     const isOffline = !navigator.onLine;
@@ -63,6 +64,22 @@ const handleConnectionChange = () => {
     ui.syncSection.querySelectorAll('button').forEach(button => {
         button.disabled = isOffline;
     });
+
+    // FIX [2025-02-15]: Auto-Sync ao reconectar.
+    // Se o usuário fez alterações offline, elas estão salvas no LocalStorage.
+    // Ao voltar online, forçamos o envio desses dados locais para a nuvem imediatamente.
+    if (!isOffline && hasSyncKey()) {
+        const localData = localStorage.getItem(STATE_STORAGE_KEY);
+        if (localData) {
+            try {
+                const appState = JSON.parse(localData);
+                console.log('Connection restored. Attempting to sync pending local changes.');
+                syncStateWithCloud(appState, true); // true = immediate sync (no debounce)
+            } catch (e) {
+                console.error("Auto-sync on reconnect failed to parse local state", e);
+            }
+        }
+    }
 };
 
 /**

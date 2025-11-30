@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 
-export type StoicTag = 'action' | 'resilience' | 'control' | 'time' | 'gratitude' | 'discipline' | 'temperance' | 'nature' | 'learning' | 'humility' | 'reality' | 'suffering' | 'focus' | 'virtue' | 'death' | 'anxiety' | 'community' | 'perception' | 'change' | 'wisdom' | 'perspective' | 'responsibility' | 'morning' | 'evening' | 'reflection' | 'duty' | 'rest' | 'consistency' | 'presence' | 'fate' | 'simplicity' | 'healing' | 'mindset' | 'life' | 'love' | 'laziness' | 'preparation' | 'prudence' | 'peace' | 'courage' | 'confidence' | 'growth' | 'character' | 'solitude' | 'justice' | 'silence' | 'optimism' | 'creativity' | 'passion' | 'reason' | 'history' | 'wealth' | 'happiness' | 'leadership' | 'truth' | 'freedom' | 'acceptance' | 'integrity' | 'minimalism' | 'purpose' | 'legacy' | 'fear' | 'belief' | 'identity' | 'practice' | 'authenticity' | 'example' | 'desire' | 'habit' | 'listening' | 'values' | 'criticism' | 'urgency' | 'patience' | 'strength' | 'honor' | 'essentialism' | 'flow' | 'health' | 'hope' | 'speech' | 'body' | 'mindfulness';
+export type StoicTag = 'action' | 'resilience' | 'control' | 'time' | 'gratitude' | 'discipline' | 'temperance' | 'nature' | 'learning' | 'humility' | 'reality' | 'suffering' | 'focus' | 'virtue' | 'death' | 'anxiety' | 'community' | 'perception' | 'change' | 'wisdom' | 'perspective' | 'responsibility' | 'morning' | 'evening' | 'reflection' | 'duty' | 'rest' | 'consistency' | 'presence' | 'fate' | 'simplicity' | 'healing' | 'mindset' | 'life' | 'love' | 'laziness' | 'preparation' | 'prudence' | 'peace' | 'courage' | 'confidence' | 'growth' | 'character' | 'solitude' | 'justice' | 'silence' | 'optimism' | 'creativity' | 'passion' | 'reason' | 'history' | 'wealth' | 'happiness' | 'leadership' | 'truth' | 'freedom' | 'acceptance' | 'integrity' | 'minimalism' | 'purpose' | 'legacy' | 'fear' | 'belief' | 'identity' | 'practice' | 'authenticity' | 'example' | 'desire' | 'habit' | 'listening' | 'values' | 'criticism' | 'urgency' | 'patience' | 'strength' | 'honor' | 'essentialism' | 'flow' | 'health' | 'hope' | 'speech' | 'body' | 'mindfulness' | 'friendship' | 'anger' | 'kindness';
 
 export type Quote = {
     pt: string;
@@ -101,7 +101,7 @@ export const STOIC_QUOTES: Quote[] = [
         tags: ['freedom', 'reason', 'discipline']
     },
 
-    // --- ZENO OF CITIUM (The Founder - Focus on Wisdom) ---
+    // --- ZENO OF CITIUM (The Founder) ---
     {
         pt: "O bem-estar é alcançado através de pequenos passos, mas não é uma coisa pequena.",
         en: "Well-being is realized by small steps, but is truly no small thing.",
@@ -236,7 +236,7 @@ export const STOIC_QUOTES: Quote[] = [
         tags: ['virtue', 'happiness', 'simplicity']
     },
 
-    // --- MUSONIUS RUFUS (The Teacher - Practice) ---
+    // --- MUSONIUS RUFUS (The Teacher) ---
     {
         pt: "A teoria é boa, mas a prática é melhor. Nós não aprendemos a virtude apenas lendo, mas fazendo.",
         en: "Theory is good, but practice is better. We do not learn virtue by reading, but by doing.",
@@ -849,7 +849,7 @@ export const STOIC_QUOTES: Quote[] = [
         tags: ['truth', 'humility', 'growth', 'learning']
     },
 
-    // --- SÊNECA ---
+    // --- SÊNECA (EXPANDED) ---
     {
         pt: "Sofremos mais na imaginação do que na realidade.",
         en: "We suffer more often in imagination than in reality.",
@@ -1333,7 +1333,7 @@ export const STOIC_QUOTES: Quote[] = [
         author: "seneca",
         tags: ['time', 'action', 'presence']
     },
-    // --- NEW SENECA QUOTES ---
+    // --- NEW SENECA QUOTES (DOUBLING) ---
     {
         pt: "O que pode acontecer a qualquer momento pode acontecer hoje.",
         en: "Whatever can happen at any time can happen today.",

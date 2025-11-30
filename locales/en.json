@@ -38,6 +38,7 @@
     "chartTitle": "Compound Growth",
     "chartTooltipCompleted": "Completed: {completed}/{total}",
     "chartTooltipScore": "Compound Score",
+    "cleanthes": "Cleanthes",
     "closeButton": "Close",
     "confirmButton": "Confirm",
     "confirmEndHabit": "Are you sure you want to end the habit \"{habitName}\" starting from {date}? It will no longer appear on this or any future dates.",

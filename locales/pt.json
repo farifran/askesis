@@ -38,6 +38,7 @@
     "chartTitle": "Crescimento Composto",
     "chartTooltipCompleted": "Concluídos: {completed}/{total}",
     "chartTooltipScore": "Pontuação Composta",
+    "cleanthes": "Cleantes",
     "closeButton": "Fechar",
     "confirmButton": "Confirmar",
     "confirmEndHabit": "Tem certeza de que deseja encerrar o hábito \"{habitName}\" a partir de {date}? Ele não aparecerá mais nesta data ou em datas futuras.",
