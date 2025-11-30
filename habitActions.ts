@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -384,15 +385,20 @@ export function requestHabitTimeRemoval(habitId: string, time: TimeOfDay) {
     const { name } = getHabitDisplayInfo(habit, date);
     const schedule = getEffectiveScheduleForHabitOnDate(habit, date);
 
-    // Se houver apenas 1 horário, o comportamento é de exclusão total (igual ao modal de gerenciamento)
-    if (schedule.length <= 1) {
-        requestHabitPermanentDeletion(habitId);
-        return;
-    }
+    // LÓGICA ATUALIZADA [2025-02-15]:
+    // Anteriormente, se houvesse apenas 1 horário, forçávamos a exclusão permanente.
+    // Agora, permitimos que o usuário escolha entre "Apagar Hábito" (Destrutivo/Histórico) 
+    // ou "Remover Horário" (Que leva ao fluxo de "Apenas Hoje" ou "Encerrar/Arquivar").
+    
+    const isSingleSchedule = schedule.length <= 1;
+    
+    const bodyText = isSingleSchedule
+        ? t('confirmRemoveTime', { habitName: name, time: t(`filter${time}`) })
+        : t('confirmRemoveTimeMulti', { time: t(`filter${time}`) });
     
     // Se houver múltiplos horários, oferece a escolha
     showConfirmationModal(
-        t('confirmRemoveTimeMulti', { time: t(`filter${time}`) }),
+        bodyText,
         () => {
             // Ação Principal: Apagar Tudo (Cuidado, isso é destrutivo)
             requestHabitPermanentDeletion(habitId);
