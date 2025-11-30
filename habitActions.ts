@@ -382,13 +382,39 @@ export function requestHabitTimeRemoval(habitId: string, time: TimeOfDay) {
     
     const date = state.selectedDate;
     const { name } = getHabitDisplayInfo(habit, date);
+    const schedule = getEffectiveScheduleForHabitOnDate(habit, date);
+
+    // Se houver apenas 1 horário, o comportamento é de exclusão total (igual ao modal de gerenciamento)
+    if (schedule.length <= 1) {
+        requestHabitPermanentDeletion(habitId);
+        return;
+    }
     
-    _requestFutureScheduleChange(
-        habit,
-        date,
-        t('confirmRemoveTime', { habitName: name, time: t(`filter${time}`) }),
-        t('modalRemoveTimeTitle'),
-        time
+    // Se houver múltiplos horários, oferece a escolha
+    showConfirmationModal(
+        t('confirmRemoveTimeMulti', { time: t(`filter${time}`) }),
+        () => {
+            // Ação Principal: Apagar Tudo (Cuidado, isso é destrutivo)
+            requestHabitPermanentDeletion(habitId);
+        },
+        {
+            title: t('modalRemoveTimeTitle'),
+            confirmText: t('btnRemoveHabit'), // "Apagar Hábito"
+            confirmButtonStyle: 'danger',
+            
+            // Ação de Edição: Remover apenas este horário
+            editText: t('btnRemoveTimeOnly', { time: t(`filter${time}`) }),
+            onEdit: () => {
+                 // Inicia o fluxo de alteração de agendamento (Só hoje vs Para sempre)
+                 _requestFutureScheduleChange(
+                    habit,
+                    date,
+                    t('confirmRemoveTime', { habitName: name, time: t(`filter${time}`) }),
+                    t('modalRemoveTimeTitle'),
+                    time
+                );
+            }
+        }
     );
 }
 
@@ -568,7 +594,7 @@ export function requestHabitPermanentDeletion(habitId: string) {
     const { name } = getHabitDisplayInfo(habit);
 
     showConfirmationModal(
-        t('confirmDeleteHabitBody', { habitName: name }),
+        t('confirmPermanentDelete', { habitName: name }),
         () => {
             state.habits = state.habits.filter(h => h.id !== habitId);
             // Limpa dados diários órfãos? Opcional, mas bom para limpeza.
@@ -584,8 +610,8 @@ export function requestHabitPermanentDeletion(habitId: string) {
             renderApp();
         },
         {
-            title: t('confirmDeleteHabitTitle'),
-            confirmText: t('modalManageDeleteButton'),
+            title: t('modalDeleteHabitTitle'),
+            confirmText: t('deleteButton'),
             confirmButtonStyle: 'danger'
         }
     );
@@ -1393,7 +1419,7 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
         1. **BENEVOLENT DETACHMENT:** Do NOT praise ("Good job") or scold ("Do better"). Be an observant mirror. Firm but warm. Do NOT write "Based on the data". Speak naturally, like a mentor writing a letter. Use PARAGRAPHS, NOT LISTS for text sections. NO GREETINGS. NO SIGNATURES. Start directly with the Title.
         2. **BE SOCRATIC:** ${socraticInstruction}
            - **CONSTRAINT:** One single, piercing sentence. DO NOT use the word ${forbiddenWhy} (or its translations). AVOID YES/NO questions (e.g. "Are you commited?"). Force deep processing.
-        3. **PATTERN RECOGNITION:** ${patternInstruction} STRICT DATA FIDELITY: Do not invent streaks or failures not shown in the Semantic Log.
+        3. **PATTERN RECOGNITION:** ${patternInstruction}
         4. **THE PROTOCOL (SYSTEM):** 
            - ${systemInstructionText}
            - **SYNTAX:** Use EXACTLY this template: "${implTemplate}" (REMOVE BRACKETS when filling). (Output ONLY the sentence, no intro/outro)
