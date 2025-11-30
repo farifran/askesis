@@ -1,5 +1,5 @@
 
-import { state, DAYS_IN_CALENDAR, invalidateChartCache, getNextStatus, STATE_STORAGE_KEY } from './state';
+import { state, DAYS_IN_CALENDAR, invalidateChartCache, getNextStatus, STATE_STORAGE_KEY, AppState } from './state';
 import { toUTCIsoDateString, parseUTCIsoDate, debounce, triggerHaptic, getTodayUTCIso, addDays } from './utils';
 import { ui } from './ui';
 import {
@@ -21,7 +21,7 @@ import { setupDragAndDropHandler } from './dragAndDropHandler';
 import { handleUndoDelete, completeAllHabitsForDate, snoozeAllHabitsForDate, toggleHabitStatus } from './habitActions';
 import { renderChart } from './chart';
 import { updateAppBadge } from './badge';
-import { syncStateWithCloud, hasSyncKey } from './cloud';
+import { syncStateWithCloud } from './cloud';
 
 /**
  * REATORAÇÃO: Centraliza a lógica para atualizar a data selecionada e renderizar a UI.
@@ -50,7 +50,7 @@ function updateSelectedDateAndRender(newDateISO: string) {
 }
 
 /**
- * Lida com mudanças no status da conexão de rede, atualizando a UI e sincronizando dados pendentes.
+ * Lida com mudanças no status da conexão de rede, atualizando a UI.
  */
 const handleConnectionChange = () => {
     const isOffline = !navigator.onLine;
@@ -65,19 +65,20 @@ const handleConnectionChange = () => {
         button.disabled = isOffline;
     });
 
-    // FIX [2025-02-15]: Auto-Sync ao reconectar.
-    // Se o usuário fez alterações offline, elas estão salvas no LocalStorage.
-    // Ao voltar online, forçamos o envio desses dados locais para a nuvem imediatamente.
-    if (!isOffline && hasSyncKey()) {
-        const localData = localStorage.getItem(STATE_STORAGE_KEY);
-        if (localData) {
-            try {
-                const appState = JSON.parse(localData);
-                console.log('Connection restored. Attempting to sync pending local changes.');
-                syncStateWithCloud(appState, true); // true = immediate sync (no debounce)
-            } catch (e) {
-                console.error("Auto-sync on reconnect failed to parse local state", e);
+    // AUTO-SYNC RECOVERY [2025-02-10]:
+    // Quando a conexão é restaurada, devemos tentar enviar quaisquer alterações locais
+    // para a nuvem imediatamente. Lemos do localStorage para obter o estado persistente
+    // mais recente (que contém o timestamp lastModified correto das edições offline).
+    if (!isOffline) {
+        try {
+            const localData = localStorage.getItem(STATE_STORAGE_KEY);
+            if (localData) {
+                const localState = JSON.parse(localData) as AppState;
+                console.log("Connection restored. Attempting to sync local state.");
+                syncStateWithCloud(localState, true);
             }
+        } catch (e) {
+            console.error("Failed to trigger auto-sync on connection restore:", e);
         }
     }
 };
