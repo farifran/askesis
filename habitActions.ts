@@ -340,10 +340,11 @@ function _requestFutureScheduleChange(
             }
         }
 
-        // Limpa overrides diários que poderiam conflitar.
-        // Importante fazer isso DEPOIS de analisar o dailyInfo acima.
+        // CORREÇÃO [2025-02-15]: Preserva exceções "Apenas Hoje" ao mover.
+        // Se o usuário excluiu um horário "Apenas Hoje" e agora está movendo outro horário "De Agora em Diante",
+        // não devemos apagar o override do dia. Devemos atualizá-lo para refletir a mudança de horário.
         if (dailyInfo.dailySchedule) {
-            delete dailyInfo.dailySchedule;
+            dailyInfo.dailySchedule = scheduleModifier(dailyInfo.dailySchedule);
         }
         
         // Move dados de instância do dia se necessário
@@ -424,6 +425,15 @@ export function saveHabitFromModal() {
     } else {
         const habit = state.habits.find(h => h.id === habitId);
         if (habit) {
+            // LOGIC FIX [2025-02-15]: Priority Clean-up.
+            // When editing an existing habit for a specific date, we MUST remove any daily override
+            // (like 'deleted just for today') to ensure the new edits (time/goal) are actually applied and visible.
+            // The user's latest intent via the modal supercedes the previous "skip/delete" intent.
+            const dailyInfo = state.dailyData[targetDate]?.[habit.id];
+            if (dailyInfo && dailyInfo.dailySchedule !== undefined) {
+                delete dailyInfo.dailySchedule;
+            }
+
             // Atualiza propriedades visuais globais
             habit.icon = formData.icon;
             habit.color = formData.color;
@@ -790,6 +800,9 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
     
     // OPTIMIZATION [2025-02-09]: Instantiate formatters outside loop
     const dayFormatter = getDateTimeFormat(state.activeLanguageCode, { weekday: 'short' });
+    
+    // [2025-02-14] New Metric: Active Habits Count for Burnout Detection
+    const activeHabitsCount = state.habits.filter(h => !h.graduatedOn && !h.scheduleHistory[h.scheduleHistory.length-1].endDate).length;
 
     while (currentDate <= today) {
         const dateISO = toUTCIsoDateString(currentDate);
@@ -1112,8 +1125,18 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
     let quoteFilterFn = (q: any) => true; // Default to all
     let quoteReason = "General Wisdom"; 
 
-    // LOGIC UPDATE [2025-02-13]: Shift from Author-based to Tag-based filtering for better semantic match.
-    if (highestSnoozeRate > 0.15) {
+    // NEW [2025-02-14]: Burnout / Overwhelm Detection
+    const isBurnout = activeHabitsCount > 6 && trendDiff < 0;
+    
+    // NEW [2025-02-14]: Drifter / Lack of Focus Detection
+    const isDrifter = archetype.includes("Drifter");
+
+    if (isBurnout) {
+        // PROBLEM: Too many habits, performance dropping.
+        // REMEDY: Seneca/Cleanthes (Simplicity, Rest, Essentialism)
+        quoteFilterFn = (q) => q.tags.includes('simplicity') || q.tags.includes('rest') || q.tags.includes('essentialism');
+        quoteReason = "simplifying your routine to prevent burnout (Essentialism)";
+    } else if (highestSnoozeRate > 0.15) {
         // PROBLEM: Procrastination / Delay
         // TAGS: Action, Time
         quoteFilterFn = (q) => q.tags.includes('action') || q.tags.includes('time');
@@ -1133,10 +1156,10 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
         // TAGS: Nature, Humility
         quoteFilterFn = (q) => q.tags.includes('nature') || q.tags.includes('humility');
         quoteReason = "maintaining humility in success";
-    } else if (archetype.includes("Drifter")) {
+    } else if (isDrifter) {
         // PROBLEM: Lack of Focus
-        // TAGS: Discipline
-        quoteFilterFn = (q) => q.tags.includes('discipline');
+        // TAGS: Discipline, Focus
+        quoteFilterFn = (q) => q.tags.includes('discipline') || q.tags.includes('focus');
         quoteReason = "building the foundation of discipline";
     } else if (lowestPerfRate < 0.6) {
         // NEW [2025-02-14]: Chronobiological Targeting
@@ -1148,6 +1171,16 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
             quoteFilterFn = (q) => q.tags.includes('reflection') || q.tags.includes('evening') || q.tags.includes('gratitude');
             quoteReason = "closing the day with purpose";
         }
+    } else if (redFlagDay) {
+        // PROBLEM: Specific Day Collapse
+        // TAGS: Acceptance, Fate
+        quoteFilterFn = (q) => q.tags.includes('acceptance') || q.tags.includes('fate');
+        quoteReason = "accepting the chaos of a bad day (Amor Fati)";
+    } else if (archetype.includes("Initiate") || archetype.includes("Starter")) {
+        // PROBLEM: Fear of starting
+        // TAGS: Courage, Preparation
+        quoteFilterFn = (q) => q.tags.includes('courage') || q.tags.includes('preparation');
+        quoteReason = "finding the courage to begin";
     }
 
     const quotePool = STOIC_QUOTES.filter(quoteFilterFn);
@@ -1220,6 +1253,13 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
     
     // NEW [2025-02-09]: Prioritize the Red Flag Day (Day Collapse)
     if (redFlagDay) focusTarget = `The Collapse on ${redFlagDay} - Analyze why this specific day failed.`;
+    
+    // NEW [2025-02-14]: Prioritize Burnout if detected
+    if (isBurnout) {
+        focusTarget = "BURNOUT RISK (Too many habits, dropping trend). Priority: Simplicity.";
+        systemInstructionText = "Suggest PAUSING or ARCHIVING one habit to save the others. The system is overloaded.";
+        actionInstructionText = "A specific action to Rest or Simplify. e.g. 'Delete one task from to-do list'.";
+    }
 
     // SPARKLINE GENERATOR (Visual Pattern)
     let sparkline = "";
@@ -1279,47 +1319,30 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
         sparkline = ""; // No sparkline for beginners
         // MASKING: Clear the log to stop AI from reading non-existent patterns
         logContent = "(Insufficient data for pattern recognition - Focus solely on the virtue of starting.)";
-    } else {
-        // --- ARCHETYPE-SPECIFIC OVERRIDES ---
+    } else if (globalRate > 80 || seasonalPhase.includes("SUMMER")) {
+        systemInstructionText = "Suggest a method to increase difficulty (Progressive Overload) or efficiency. Challenge them.";
         
-        if (archetype.includes("Perfectionist")) {
-             // Perfectionists snooze because they fear doing it imperfectly.
-             // Tactic: Permission to fail / Minimum Viable Habit.
-             systemInstructionText = "The user suffers from Perfectionism (High Snooze). Suggest a 'Minimum Viable Action' rule. e.g., 'I will read for just 2 minutes, even if I do it badly'. Do not focus on triggers, focus on LOWERING STANDARDS.";
-             socraticInstruction = "Ask: 'Are you delaying this because you want to do it perfectly, instead of just doing it?'";
-             actionInstructionText = "A 'Shitty First Draft' action. Something so small it's impossible to fail.";
-        } else if (archetype.includes("Weekend Warrior")) {
-             // Warriors do too much on weekends, nothing on weekdays.
-             // Tactic: Load Redistribution.
-             systemInstructionText = "The user is a Weekend Warrior (High Weekend / Low Weekday). Suggest moving ONE small habit from the weekend to a Tuesday or Thursday. 'Redistribute the load'.";
-             socraticInstruction = "Ask: 'Are you treating the week as a waiting room for the weekend?'";
+        // REFINE [2025-02-09]: High Performance Action Instruction
+        actionInstructionText = "A specific experimental step to Challenge Limits, Teach Others, or Vary the Context (Anti-fragility). Link to an Anchor.";
+        
+        socraticInstruction = "Use 'Eternal Recurrence' (Amor Fati). Ask: 'Would you be willing to live this exact week again for eternity?'";
+        
+        // NEW [2025-02-09]: High Streak Anxiety Logic
+        if (highestStreakValue > 30) {
+            socraticInstruction = "Deconstruct the fear of losing the streak. Ask: 'Does the value lie in the number (external) or the character you are building (internal)?'";
         }
         
-        if (globalRate > 80 || seasonalPhase.includes("SUMMER")) {
-            systemInstructionText = "Suggest a method to increase difficulty (Progressive Overload) or efficiency. Challenge them.";
-            
-            // REFINE [2025-02-09]: High Performance Action Instruction
-            actionInstructionText = "A specific experimental step to Challenge Limits, Teach Others, or Vary the Context (Anti-fragility). Link to an Anchor.";
-            
-            socraticInstruction = "Use 'Eternal Recurrence' (Amor Fati). Ask: 'Would you be willing to live this exact week again for eternity?'";
-            
-            // NEW [2025-02-09]: High Streak Anxiety Logic
-            if (highestStreakValue > 30) {
-                socraticInstruction = "Deconstruct the fear of losing the streak. Ask: 'Does the value lie in the number (external) or the character you are building (internal)?'";
-            }
-            
-            tweaksExamples = `
-            Examples of System Tweaks (High Performance):
-            - Bad: "Keep going." -> Good: "When I finish the set, I will add 5 minutes."
-            - Bad: "Good job." -> Good: "When I master this, I will teach it to someone else."
-            `;
+        tweaksExamples = `
+        Examples of System Tweaks (High Performance):
+        - Bad: "Keep going." -> Good: "When I finish the set, I will add 5 minutes."
+        - Bad: "Good job." -> Good: "When I master this, I will teach it to someone else."
+        `;
 
-            // SWITCH TO HIGH PERF HEADERS & PLACEHOLDERS
-            headerSystem = headers.system_high;
-            headerAction = headers.action_high;
-            insightPlaceholder = "[Synthesize the victory. Analyze what makes their consistency possible and where the next plateau lies. 2-3 sentences. NO LISTS.]";
-            actionPlaceholder = "[A specific constraint or added difficulty to test their mastery (Progressive Overload).]";
-        }
+        // SWITCH TO HIGH PERF HEADERS & PLACEHOLDERS
+        headerSystem = headers.system_high;
+        headerAction = headers.action_high;
+        insightPlaceholder = "[Synthesize the victory. Analyze what makes their consistency possible and where the next plateau lies. 2-3 sentences. NO LISTS.]";
+        actionPlaceholder = "[A specific constraint or added difficulty to test their mastery (Progressive Overload).]";
     }
 
     // LANGUAGE SPECIFIC FORBIDDEN WORDS
@@ -1391,7 +1414,7 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
         ### 🏛️ [Title: Format "On [Concept]" or Abstract Noun. NO CHEESY TITLES.]
 
         **🆔 ${headers.archetype}**
-        [Contextualize the '${archetype}' identity. Translate the identity term to ${targetLang} culturally. Apply the Strategy implicitly (DO NOT quote the strategy name). 1 sentence.]
+        [Contextualize the '${archetype}' identity. Translate the identity term to ${targetLang} culturally. Apply Strategy: "${identityStrategy}". Do not name the strategy, embody it. 1 sentence.]
 
         **🔮 ${headers.projection}**
         [Frame the projection date as a logical consequence (Cause & Effect). "The path leads to..."]
