@@ -5,12 +5,12 @@
 */
 // [ANALYSIS PROGRESS]: 100% - Análise completa. O arquivo implementa corretamente o padrão de sincronização com debounce e bloqueio (mutex). Refatorei a resolução de conflitos para usar o helper `persistStateLocally` em vez de acesso direto ao localStorage, melhorando a manutenibilidade.
 
-import { AppState, STATE_STORAGE_KEY, loadState, state, persistStateLocally } from './state';
+import { AppState, STATE_STORAGE_KEY, loadState, state, persistStateLocally, saveState, APP_VERSION } from './state';
 import { pushToOneSignal } from './utils';
 import { ui } from './ui';
 import { t } from './i18n';
 import { hasLocalSyncKey, getSyncKey, apiFetch } from './api';
-import { renderApp, updateNotificationUI } from './render';
+import { renderApp, updateNotificationUI, showConfirmationModal } from './render';
 import { encrypt, decrypt } from './crypto';
 
 // Debounce para evitar salvar na nuvem a cada pequena alteração.
@@ -63,7 +63,7 @@ export function setupNotificationListeners() {
  * @param serverPayload O payload autoritativo (e criptografado) recebido do servidor.
  */
 async function resolveConflictWithServerState(serverPayload: ServerPayload) {
-    console.warn("Sync conflict detected. Resolving with server data.");
+    console.warn("Sync conflict detected. Prompting user for resolution.");
     
     const syncKey = getSyncKey();
     if (!syncKey) {
@@ -82,14 +82,49 @@ async function resolveConflictWithServerState(serverPayload: ServerPayload) {
             console.error("Failed to parse decrypted server state during conflict resolution:", e);
             throw new Error("Corrupted server data received.");
         }
+
+        // IMPLEMENTAÇÃO DE SEGURANÇA OFFLINE [2025-02-10]:
+        // Em vez de sobrescrever automaticamente, perguntamos ao usuário.
+        // Isso previne que o trabalho offline (que tem um timestamp mais antigo que o servidor
+        // se houve uma edição concorrente) seja perdido.
+        showConfirmationModal(
+            t('syncConflictDescription'),
+            () => {
+                // Opção "Confirmar" (Danger) -> Usar Nuvem (Sobrescreve Local)
+                console.log("User chose to overwrite local with cloud data.");
+                persistStateLocally(serverState);
+                loadState(serverState);
+                renderApp();
+                setSyncStatus('syncSynced');
+                document.dispatchEvent(new CustomEvent('habitsChanged'));
+            },
+            {
+                title: t('syncConflictTitle'),
+                confirmText: t('syncUseCloud'), // "Baixar da Nuvem"
+                editText: t('syncKeepLocal'), // "Manter Local"
+                onEdit: () => {
+                    // Opção "Editar" (Neutro) -> Manter Local (Sobrescreve Nuvem)
+                    console.log("User chose to keep local data. Forcing push.");
+                    
+                    // Construct explicit AppState to satisfy type checker and include version/lastModified
+                    const appState: AppState = {
+                        version: APP_VERSION,
+                        lastModified: Date.now(),
+                        habits: state.habits,
+                        dailyData: state.dailyData,
+                        notificationsShown: state.notificationsShown,
+                        pending21DayHabitIds: state.pending21DayHabitIds,
+                        pendingConsolidationHabitIds: state.pendingConsolidationHabitIds
+                    };
+
+                    persistStateLocally(appState); // Persiste o novo timestamp
+                    syncStateWithCloud(appState, true); // Força o envio imediato
+                },
+                hideCancel: true, // Oculta o "Cancelar" padrão para forçar uma escolha binária
+                confirmButtonStyle: 'danger' // Destaca que sobrescrever o local é destrutivo
+            }
+        );
         
-        // [2025-01-15] REFACTOR: Uso de helper centralizado para persistência local.
-        persistStateLocally(serverState);
-        
-        loadState(serverState); 
-        renderApp();
-        setSyncStatus('syncSynced');
-        document.dispatchEvent(new CustomEvent('habitsChanged'));
     } catch (error) {
         console.error("Failed to resolve conflict with server state:", error);
         setSyncStatus('syncError');
