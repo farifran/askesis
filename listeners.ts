@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -5,7 +6,7 @@
 import { ui } from './ui';
 import { state, invalidateChartCache } from './state';
 import { renderApp, renderFullCalendar, openModal } from './render';
-import { parseUTCIsoDate, triggerHaptic } from './utils';
+import { parseUTCIsoDate, triggerHaptic, getTodayUTCIso } from './utils';
 import { setupModalListeners } from './modalListeners';
 import { setupHabitCardListeners } from './habitCardListeners';
 import { setupDragAndDropHandler } from './dragAndDropHandler';
@@ -83,11 +84,12 @@ export function setupEventListeners() {
         }
     });
 
-    // Header Title Listener (Open Full Calendar)
+    // Header Title Listener (Go to Today)
     if (ui.headerTitle) {
         ui.headerTitle.addEventListener('click', () => {
             triggerHaptic('light');
-            openAlmanac();
+            // CHANGE [2025-02-16]: Header click now resets view to "Today" instead of opening calendar
+            updateSelectedDateAndRender(getTodayUTCIso());
         });
     }
 }

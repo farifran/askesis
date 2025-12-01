@@ -718,40 +718,40 @@ export function handleSaveNote() {
 // Isso evita alucinações da IA e garante que a UI exiba os títulos corretos.
 const PROMPT_HEADERS = {
     pt: {
-        archetype: "Arquétipo Comportamental",
-        projection: "A Projeção do Oráculo",
-        insight: "Análise Profunda",
-        system_low: "Ajuste de Sistema (Reparo)",
-        system_high: "Protocolo de Expansão (Desafio)",
+        // removed archetype
+        projection: "O Horizonte (Praemeditatio)",
+        insight: "O Diagnóstico Filosófico", // Renamed for depth
+        system_low: "O Protocolo de Ação (Algoritmo)",
+        system_high: "O Desafio da Excelência",
         action_low: "Micro-Ação (Mise-en-place)",
         action_high: "Micro-Ação (O Próximo Nível)",
         
-        socratic: "Reflexão Socrática",
-        connection: "A Conexão Ancestral"
+        socratic: "A Questão Cortante",
+        connection: "A Voz dos Antigos"
     },
     en: {
-        archetype: "Behavioral Archetype",
-        projection: "The Oracle's Projection",
-        insight: "Deep Insight",
-        system_low: "System Tweak (Repair)",
-        system_high: "Expansion Protocol (Challenge)",
+        // removed archetype
+        projection: "The Horizon (Praemeditatio)",
+        insight: "Philosophical Diagnosis",
+        system_low: "Action Protocol (Algorithm)",
+        system_high: "The Challenge of Excellence",
         action_low: "Micro-Action (Mise-en-place)",
         action_high: "Micro-Action (The Next Level)",
         
-        socratic: "Socratic Reflection",
-        connection: "The Ancient Connection"
+        socratic: "The Cutting Question",
+        connection: "Voice of the Ancients"
     },
     es: {
-        archetype: "Arquetipo de Comportamiento",
-        projection: "La Proyección del Oráculo",
-        insight: "Análisis Profundo",
-        system_low: "Ajuste de Sistema (Reparación)",
-        system_high: "Protocolo de Expansión (Desafío)",
+        // removed archetype
+        projection: "El Horizonte (Praemeditatio)",
+        insight: "Diagnóstico Filosófico",
+        system_low: "Protocolo de Acción (Algoritmo)",
+        system_high: "El Desafío de la Excelencia",
         action_low: "Micro-Acción (Mise-en-place)",
         action_high: "Micro-Acción (El Siguiente Nivel)",
         
-        socratic: "Reflexión Socrática",
-        connection: "La Conexión Ancestral"
+        socratic: "La Cuestión Cortante",
+        connection: "La Voz de los Antiguos"
     }
 };
 
@@ -1193,56 +1193,27 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
     else if (trendDiff > 5) seasonalPhase = "SPRING (Ascent) - Growing momentum.";
     else seasonalPhase = "AUTUMN (Turbulence) - Declining momentum.";
 
-    let projectionInfo = "No active streaks.";
+    // REFACTOR [2025-02-16]: Projection is no longer just a date. It's a Stoic Extrapolation.
+    let projectionInfo = "Trajectory is unclear.";
     
-    // PROJECTION SUPPRESSION [2025-02-12]: If user is crashing (Winter/Low Rate), suppress dates.
     if (globalRate < 50) {
-        projectionInfo = "Current trajectory is unstable. The path forward requires stabilizing ONE habit before projecting future milestones.";
-    } else if (highestStreakValue > 0) {
-        const nextMilestone = highestStreakValue < 21 ? 21 : (highestStreakValue < 66 ? 66 : (highestStreakValue < 100 ? 100 : 365));
+        projectionInfo = "ENTROPY WARNING: If current habits continue, the result is not just missed goals, but a weakening of the Will (Prohairesis). The future holds Chaos.";
+    } else if (trendDiff < -5) {
+        projectionInfo = "SLIDING: The user is losing grip. The immediate future predicts a return to baseline or failure if 'Gravity' isn't countered today.";
+    } else if (highestStreakValue > 20) {
+        const nextMilestone = highestStreakValue < 66 ? 66 : (highestStreakValue < 100 ? 100 : 365);
         const daysRemaining = nextMilestone - highestStreakValue;
         const projectedDate = addDays(today, daysRemaining);
-        // FIX [2025-02-08]: Date Localization Bug. Use activeLanguageCode instead of 'en-US'.
         const dateStr = getDateTimeFormat(state.activeLanguageCode, { month: 'long', day: 'numeric' }).format(projectedDate);
-        projectionInfo = `Best Habit: ${highestStreakHabitName} (Streak: ${highestStreakValue}). Next milestone (${nextMilestone} days) on: ${dateStr}.`;
+        projectionInfo = `COMPOUNDING: If consistency holds, the Milestone of ${nextMilestone} days arrives on ${dateStr}. The character is hardening into diamond.`;
+    } else {
+        projectionInfo = "STASIS: Neither growing nor dying. A dangerous place for a Stoic. The future is a repetition of the same unless Force is applied.";
     }
 
-    // --- ARCHETYPE CALCULATION (Deterministic Logic) ---
-    let archetype = "The Drifter";
-    let archetypeReason = "Patterns are inconsistent.";
-    let identityStrategy = "Radical Simplification. Focus on ONE habit anchored to a biological trigger."; 
-
-    if (globalRate >= 80) {
-        archetype = "The Consistent Stoic";
-        archetypeReason = `Global success rate is high (${globalRate}%).`;
-        identityStrategy = "Normalize excellence. Warn against complacency. Vigilance is the price of mastery.";
-    } else if (weekendRate > weekdayRate + 20) {
-        archetype = "The Weekend Warrior";
-        archetypeReason = `Weekend performance (${weekendRate}%) significantly exceeds weekdays (${weekdayRate}%).`;
-        // STRATEGIC FIX [2025-02-09]: The Weekend Warrior needs load distribution, not just encouragement.
-        identityStrategy = "Redistribute the load. Move one weekend habit to Tuesday/Thursday to bridge the gap.";
-    } else if (weekdayRate > weekendRate + 20) {
-        archetype = "The Grinder (Structure Dependent)";
-        archetypeReason = `Weekday performance (${weekdayRate}%) significantly exceeds weekends (${weekendRate}%).`;
-        identityStrategy = "Develop internal discipline independent of external structure.";
-    } else if (highestSnoozeRate > 0.20) {
-        archetype = "The Perfectionist (Avoidant)";
-        archetypeReason = `High snooze rate detected on key habits.`;
-        identityStrategy = "Teach that 'Done is better than perfect'. Encourage partial efforts.";
-    } else if (totalExtraMiles > 5 && globalRate < 60) {
-        archetype = "The Sprinter";
-        archetypeReason = "High intensity bursts (Extra Miles) but lower consistency.";
-        identityStrategy = "Shift focus from Intensity to Consistency. Lower the bar to raise the floor.";
-    } else if (totalLogs < 20 && trendDiff > 0) {
-        archetype = "The Starter";
-        archetypeReason = "New journey with positive momentum.";
-        identityStrategy = "Validate the start. Reinforce the new identity.";
-    }
+    // REMOVED: ARCHETYPE CALCULATION
+    // The user requested to remove the "Behavioral Archetype" as it adds no value.
     
-    // SHADOW WORK FIX [2025-02-09]: Add suffix for negative archetypes
-    if (archetype === "The Drifter" || archetype === "The Weekend Warrior" || archetype === "The Sprinter") {
-        archetype += " (Shadow State)";
-    }
+    // SHADOW WORK FIX [2025-02-09]: Removed.
 
     // --- SMART QUOTE SELECTION (Contextual Filtering by TAGS) ---
     let quoteFilterFn = (q: any) => true; // Default to all
@@ -1252,7 +1223,8 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
     const isBurnout = activeHabitsCount > 6 && trendDiff < 0;
     
     // NEW [2025-02-14]: Drifter / Lack of Focus Detection
-    const isDrifter = archetype.includes("Drifter");
+    // Replaced explicit archetype check with logic
+    const isDrifter = globalRate < 50 && trendDiff <= 0;
 
     if (isBurnout) {
         // PROBLEM: Too many habits, performance dropping.
@@ -1299,7 +1271,7 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
         // TAGS: Acceptance, Fate
         quoteFilterFn = (q) => q.tags.includes('acceptance') || q.tags.includes('fate');
         quoteReason = "accepting the chaos of a bad day (Amor Fati)";
-    } else if (archetype.includes("Initiate") || archetype.includes("Starter")) {
+    } else if (totalLogs < 20) { // Was archetype.includes("Initiate")
         // PROBLEM: Fear of starting
         // TAGS: Courage, Preparation
         quoteFilterFn = (q) => q.tags.includes('courage') || q.tags.includes('preparation');
@@ -1344,10 +1316,11 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
     let patternInstruction = `Use the Semantic Log. ${correlationInfo} Scan for other subtle links. Does a specific success trigger a streak?`;
     
     // DEEPENING ANALYSIS [2025-02-15]: Benefit Reinforcement Logic.
-    // If a Nemesis exists, we must explain WHY overcoming it matters to the user's specific Archetype.
+    // If a Nemesis exists, we must explain WHY overcoming it matters.
+    // REFACTOR [2025-02-16]: Removed dependency on 'archetype'.
     let teleologyInstruction = "";
     if (nemesisName) {
-        teleologyInstruction = `**CRITICAL:** The user is struggling with '${nemesisName}'. In the 'Hidden Virtue' section, do NOT scold. Instead, SELL THE BENEFIT. Explain the deep, philosophical, or psychological reward of '${nemesisName}' that the user is missing out on. Frame it as the antidote to their current 'Archetype' (${archetype}). e.g., If drifting, the benefit is Anchoring. If anxious, the benefit is Clarity.`;
+        teleologyInstruction = `**CRITICAL:** The user is struggling with '${nemesisName}'. In the 'Hidden Virtue' section, do NOT scold. Instead, SELL THE BENEFIT. Explain the deep, philosophical, or psychological reward of '${nemesisName}' that the user is missing out on. Frame it as the specific antidote to their current struggle. e.g., If drifting, the benefit is Anchoring. If anxious, the benefit is Clarity.`;
     } else {
         teleologyInstruction = `The user is consistent. In the 'Hidden Virtue' section, reinforce the COMPOUND INTEREST of their 'Keystone Habit' (${highestStreakHabitName || 'consistency'}). Explain what character trait they are forging by not quitting.`;
     }
@@ -1361,7 +1334,8 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
     let headerSystem = headers.system_low;
     let headerAction = headers.action_low;
     
-    let insightPlaceholder = "[Synthesize the struggle or victory regarding the PRIMARY FOCUS. USE MENTAL CONTRASTING: Compare current reality vs desired identity. 2-3 sentences. WRITE AS A PARAGRAPH. NO LISTS.]";
+    // Updated placeholders for depth
+    let insightPlaceholder = "[A surgical analysis of the current state. Don't just list data; interpret the CAUSE of the friction or the SOURCE of the flow. Use Stoic physics: Cause and Effect.]";
     let actionPlaceholder = "[One tiny 'Gateway Habit' step (< 2 min). Focus on MISE-EN-PLACE (Preparation) linked to an ANCHOR.]";
 
 
@@ -1451,8 +1425,7 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
     // Detects new users with very little data to prevent hallucinated pattern recognition.
     if (totalLogs < 5) {
         seasonalPhase = "THE BEGINNING (Day 1)";
-        archetype = "The Initiate";
-        archetypeReason = "Just started the journey.";
+        // Removed Archetype reference
         focusTarget = "Building the Foundation (Start Small)";
         systemInstructionText = "Suggest a very small, almost ridiculous starting step to build momentum.";
         socraticInstruction = "Ask what is the smallest version of this habit they can do even on their worst day.";
@@ -1523,9 +1496,7 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
 
         ### 3. THE PHILOSOPHY
         - **Season:** ${seasonalPhase}
-        - **Projection:** ${projectionInfo}
-        - **Identity (Calculated):** ${archetype} (${archetypeReason})
-        - **Identity Strategy:** ${identityStrategy}
+        - **Projection (Stoic View):** ${projectionInfo}
         - **Selected Wisdom:** "${quoteText}" - ${quoteAuthor}
         - **Wisdom Intent:** Chosen to address: ${quoteReason}
 
@@ -1558,11 +1529,8 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
 
         ### 🏛️ [Title: Format "On [Concept]" or Abstract Noun. NO CHEESY TITLES.]
 
-        **🆔 ${headers.archetype}**
-        [Contextualize the '${archetype}' identity. Translate the identity term to ${targetLang} culturally. Apply Strategy: "${identityStrategy}". Do not name the strategy, embody it. 1 sentence.]
-
         **🔮 ${headers.projection}**
-        [Frame the projection date as a logical consequence (Cause & Effect). "The path leads to..."]
+        [Provide a Stoic Forecast. Don't just give a date. Interpret the trajectory. Is the user building a fortress or letting the walls crumble? 2-3 sentences.]
 
         **📊 ${headers.insight}**
         ${insightPlaceholder}
@@ -1617,14 +1585,19 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
         state.lastAIResult = text;
         state.aiState = 'completed';
         
-        ui.aiResponse.innerHTML = simpleMarkdownToHTML(text);
-        openModal(ui.aiModal);
+        // REFACTOR [2025-02-16]: Do not open modal automatically.
+        // Instead, mark as unseen and update the UI (notification dot).
+        state.hasSeenAIResult = false;
+        
+        // Removed: ui.aiResponse.innerHTML = simpleMarkdownToHTML(text);
+        // Removed: openModal(ui.aiModal);
 
     } catch (error) {
         console.error("AI Analysis failed", error);
         state.aiState = 'error';
         state.lastAIResult = t('aiErrorGeneric');
         state.lastAIError = error instanceof Error ? error.message : String(error);
+        state.hasSeenAIResult = false; // Even error should notify
     } finally {
         renderAINotificationState();
         saveState();
