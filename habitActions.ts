@@ -16,7 +16,8 @@ import {
     invalidateDaySummaryCache,
     getActiveHabitsForDate,
     AppState,
-    getHabitDailyInfoForDate
+    getHabitDailyInfoForDate,
+    HabitDailyInfo // Required for correlation helper
 } from './state';
 import { ui } from './ui';
 import { 
@@ -33,6 +34,50 @@ import { apiFetch } from './api';
 import { STOIC_QUOTES } from './quotes';
 
 // --- HELPERS ---
+
+// NEW [2025-02-15]: Calculates conditional probability of failure.
+// "If TriggerHabit fails, how often does TargetHabit fail?"
+function calculateCorrelation(
+    triggerHabitId: string, 
+    targetHabitId: string, 
+    dailyData: Record<string, Record<string, HabitDailyInfo>>, 
+    daysToCheck: string[]
+): number {
+    let triggerFailures = 0;
+    let jointFailures = 0;
+
+    for (const date of daysToCheck) {
+        const dayData = dailyData[date];
+        if (!dayData) continue;
+
+        const triggerInstances = dayData[triggerHabitId]?.instances || {};
+        const triggerHasInstances = Object.keys(triggerInstances).length > 0;
+
+        // Skip days where the trigger habit wasn't tracked/scheduled
+        if (!triggerHasInstances) continue;
+
+        // Check if trigger failed (Absence of 'completed' status in any slot)
+        const triggerCompleted = Object.values(triggerInstances).some(i => i.status === 'completed');
+
+        if (!triggerCompleted) {
+            triggerFailures++;
+            
+            const targetInstances = dayData[targetHabitId]?.instances || {};
+            const targetHasInstances = Object.keys(targetInstances).length > 0;
+            
+            // Check if target also failed (and was tracked)
+            if (targetHasInstances) {
+                const targetCompleted = Object.values(targetInstances).some(i => i.status === 'completed');
+                
+                if (!targetCompleted) {
+                    jointFailures++;
+                }
+            }
+        }
+    }
+
+    return triggerFailures > 0 ? (jointFailures / triggerFailures) : 0;
+}
 
 function _createDefaultSchedule(startDate: string): HabitSchedule {
     return {
@@ -782,14 +827,15 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
     const recalibrationTemplate = RECALIBRATION_TEMPLATES[langCode as keyof typeof RECALIBRATION_TEMPLATES] || RECALIBRATION_TEMPLATES['en'];
 
     // Data Calculation structures
-    // OPTIMIZATION: Use string array for semantic log instead of heavy object array
     const semanticLog: string[] = [];
+    const dateList: string[] = []; // Track dates for correlation calc
     
     // Stats per Habit
     const statsMap = new Map<string, { 
         scheduled: number, 
         completed: number, 
         snoozed: number, 
+        missed: number, // Explicitly track simple failures
         notesCount: number, 
         habit: Habit,
         extraMiles: number, 
@@ -838,6 +884,8 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
 
     while (currentDate <= today) {
         const dateISO = toUTCIsoDateString(currentDate);
+        dateList.push(dateISO);
+        
         const activeHabits = getActiveHabitsForDate(dateISO);
         const dailyInfo = getHabitDailyInfoForDate(dateISO);
         
@@ -854,7 +902,7 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
             activeHabits.forEach(({ habit }) => {
                 if (!statsMap.has(habit.id)) {
                     statsMap.set(habit.id, { 
-                        scheduled: 0, completed: 0, snoozed: 0, notesCount: 0, 
+                        scheduled: 0, completed: 0, snoozed: 0, missed: 0, notesCount: 0, 
                         habit, extraMiles: 0, bounces: 0,
                         accumulatedValue: 0, valueCount: 0
                     });
@@ -923,6 +971,8 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
                     }
                     else {
                         if (status === 'snoozed') stats.snoozed++;
+                        else stats.missed++; // Track pure misses
+                        
                         previousDayStatus[habit.id] = status; 
                         
                         // Track failures for bad day analysis
@@ -1001,13 +1051,17 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
     let highestStreakHabitName = "";
     let highestStreakValue = 0;
     let nemesisName = "";
+    let nemesisId = "";
     let highestSnoozeRate = -1;
+    let highestMissRate = -1;
     let realityGapWarning = "";
     
     statsMap.forEach((data, id) => {
         const { name } = getHabitDisplayInfo(data.habit, toUTCIsoDateString(today));
         const rate = data.scheduled > 0 ? (data.completed / data.scheduled) : 0;
         const snoozeRate = data.scheduled > 0 ? (data.snoozed / data.scheduled) : 0;
+        const missRate = data.scheduled > 0 ? (data.missed / data.scheduled) : 0;
+        
         const streak = calculateHabitStreak(id, toUTCIsoDateString(today));
         const noteInfo = data.notesCount > 0 ? `${data.notesCount} notes` : "NO NOTES";
         
@@ -1025,9 +1079,13 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
             highestStreakHabitName = name;
         }
 
-        if (snoozeRate > highestSnoozeRate && data.scheduled > 3) { 
+        // Determine Nemesis: The one with high snoozes OR high misses
+        // Prioritize Snoozes as "Resistance", Misses as "Neglect"
+        if ((snoozeRate + missRate) > (highestSnoozeRate + highestMissRate) && data.scheduled > 3) { 
             highestSnoozeRate = snoozeRate;
+            highestMissRate = missRate;
             nemesisName = name;
+            nemesisId = id;
         }
 
         // CALCULATED REALITY GAP (Math done in code, not AI)
@@ -1043,12 +1101,45 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
         }
     });
     
+    // --- ADVANCED ANALYSIS: CORRELATION & FRICTION ---
+    let correlationInfo = "No clear dependencies found.";
+    let frictionDiagnosis = "";
+
+    if (nemesisId) {
+        // 1. Friction Type Diagnosis
+        // If > 20% Snooze: Resistance (Psychological). If > 20% Miss: Neglect (Logistical).
+        if (highestSnoozeRate > 0.2) {
+            frictionDiagnosis = `DIAGNOSIS: The user struggles with **Internal Resistance** (Fear/Procrastination) on '${nemesisName}'. They see the task but delay it (Snooze). ADVICE: Lower the emotional barrier. The goal is too scary.`;
+        } else if (highestMissRate > 0.2) {
+            frictionDiagnosis = `DIAGNOSIS: The user struggles with **Neglect/Visibility** on '${nemesisName}'. They forget or run out of time (Miss). ADVICE: Increase visibility or change the trigger time. The prompt is too weak.`;
+        }
+
+        // 2. Domino Effect Analysis
+        // Check correlations between Nemesis failure and other habits
+        let dominoEffectFound = false;
+        statsMap.forEach((data, otherId) => {
+            if (otherId !== nemesisId && data.scheduled > 3) {
+                // Calculate P(Other Fails | Nemesis Fails)
+                const correlation = calculateCorrelation(nemesisId, otherId, state.dailyData, dateList);
+                if (correlation > 0.75) {
+                    const { name: otherName } = getHabitDisplayInfo(data.habit, toUTCIsoDateString(today));
+                    correlationInfo = `**CRITICAL CHAIN REACTION DETECTED:** When the user fails '${nemesisName}', there is a ${Math.round(correlation * 100)}% chance they will ALSO fail '${otherName}'. Fix '${nemesisName}' to save the day.`;
+                    dominoEffectFound = true;
+                }
+            }
+        });
+        
+        if (!dominoEffectFound) {
+            correlationInfo = "Failures appear isolated. No strong domino effect detected.";
+        }
+    }
+
     if (!statsSummary) {
         statsSummary = "No active habits tracked yet.";
     }
 
-    const nemesisInfo = nemesisName && highestSnoozeRate > 0.2 
-        ? `The Nemesis: **${nemesisName}** (Snoozed ${Math.round(highestSnoozeRate * 100)}% of the time).` 
+    const nemesisInfo = nemesisName 
+        ? `The Nemesis: **${nemesisName}**. ${frictionDiagnosis}` 
         : "No significant Nemesis.";
 
     let temporalSummary = "";
@@ -1239,8 +1330,28 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
     }
     
     let socraticInstruction = "Ask about FRICTION (What stands in the way? Is it fatigue or fear?).";
-    let patternInstruction = "Use the Semantic Log. Scan the **LAST 3 DAYS** specifically (Recency Bias). Identify the **'Turning Point'** (the specific day/moment where the streak broke or the victory was secured). Mention it explicitly. Scan Vertically (Habit Consistency) and Horizontally (Day Collapse).";
     
+    // Determine dynamic Action Instruction based on Friction Diagnosis
+    if (highestSnoozeRate > 0.2) {
+        actionInstructionText += " **FOCUS: The problem is Fear.** The Action must be laughably easy to bypass the amygdala. (e.g. 'Put on one shoe').";
+    } else if (highestMissRate > 0.2) {
+        actionInstructionText += " **FOCUS: The problem is Forgetting.** The Action must include a physical reminder or alarm setup.";
+    }
+
+    // DEEPENING ANALYSIS [2025-02-15]: "Domino Effect" Detection.
+    // Instead of just identifying a turning point, ask the AI to look for causal links between Morning failures and Evening collapses.
+    // UPDATE: We now pass the pre-calculated correlation info.
+    let patternInstruction = `Use the Semantic Log. ${correlationInfo} Scan for other subtle links. Does a specific success trigger a streak?`;
+    
+    // DEEPENING ANALYSIS [2025-02-15]: Benefit Reinforcement Logic.
+    // If a Nemesis exists, we must explain WHY overcoming it matters to the user's specific Archetype.
+    let teleologyInstruction = "";
+    if (nemesisName) {
+        teleologyInstruction = `**CRITICAL:** The user is struggling with '${nemesisName}'. In the 'Hidden Virtue' section, do NOT scold. Instead, SELL THE BENEFIT. Explain the deep, philosophical, or psychological reward of '${nemesisName}' that the user is missing out on. Frame it as the antidote to their current 'Archetype' (${archetype}). e.g., If drifting, the benefit is Anchoring. If anxious, the benefit is Clarity.`;
+    } else {
+        teleologyInstruction = `The user is consistent. In the 'Hidden Virtue' section, reinforce the COMPOUND INTEREST of their 'Keystone Habit' (${highestStreakHabitName || 'consistency'}). Explain what character trait they are forging by not quitting.`;
+    }
+
     let tweaksExamples = `
     Examples of System Tweaks (Low Friction):
     - Bad: "Read more." -> Good: "When I drink coffee, I will open the book."
@@ -1400,7 +1511,8 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
         - **Stats:** \n${statsSummary}
         - **Gaps:** Note Density: ${noteDensity}%. ${dataQualityWarning}
         - **Trend:** Momentum: ${trendDescription}. Keystone Failure: ${culpritInfo}
-        - **Friction:** ${nemesisInfo}
+        - **Friction Diagnosis:** ${nemesisInfo}
+        - **Chain Reaction (Domino):** ${correlationInfo}
         - **Red Flag Day (Collapse):** ${redFlagDay || "None"}
         - **Struggling Time:** ${lowestPerfTime}
 
@@ -1426,20 +1538,21 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
         2. **BE SOCRATIC:** ${socraticInstruction}
            - **CONSTRAINT:** One single, piercing sentence. DO NOT use the word ${forbiddenWhy} (or its translations). AVOID YES/NO questions (e.g. "Are you commited?"). Force deep processing.
         3. **PATTERN RECOGNITION:** ${patternInstruction}
-        4. **THE PROTOCOL (SYSTEM):** 
+        4. **THE TELEOLOGY (THE REWARD):** ${teleologyInstruction}
+        5. **THE PROTOCOL (SYSTEM):** 
            - ${systemInstructionText}
            - **SYNTAX:** Use EXACTLY this template: "${implTemplate}" (REMOVE BRACKETS when filling). (Output ONLY the sentence, no intro/outro)
            - **FOCUS:** Focus on the PRIMARY FOCUS defined above. ZERO COST.
            - **CONSTRAINT:** ACTION must be a single, binary event (e.g. 'open book', 'put on shoes'). Forbidden verbs: try, attempt, focus, aim, should.
-        5. **CONNECT WISDOM:** Use the provided quote ("${quoteText}"). Do NOT explain the quote itself. Use the quote's concept to illuminate the user's specific struggle/victory.
-        6. **INTERPRET LOG:** 
+        6. **CONNECT WISDOM:** Use the provided quote ("${quoteText}"). Do NOT explain the quote itself. Use the quote's concept to illuminate the user's specific struggle/victory.
+        7. **INTERPRET LOG:** 
            - ✅ = Success.
            - ⏸️ = **Resistance** (User saw it but delayed). REMEDY: Lower the bar. 
            - **NOTE HANDLING:** If a "Note" is present with ⏸️ or ❌, analyze the sentiment. If it's Internal (Lazy, Bored), treat as Resistance (Action required). If it's External (Sick, Emergency), treat as Amor Fati (Acceptance).
            - ❌ = **Neglect** (User forgot). REMEDY: Increase Visibility / Better Trigger.
            - ▪️ = **Rest/No Schedule** (Not a failure).
            - **NUMBERS (e.g. 5/10):** Partial Success. If Actual < Target, acknowledge effort but note the gap.
-        7. **THE TRIGGER (PHYSICS):** ${actionInstructionText}
+        8. **THE TRIGGER (PHYSICS):** ${actionInstructionText}
 
         OUTPUT STRUCTURE (Markdown in ${targetLang}):
 
@@ -1453,6 +1566,9 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
 
         **📊 ${headers.insight}**
         ${insightPlaceholder}
+
+        **💎 [Title about the Virtue/Benefit of the Struggle]**
+        [The 'Teleology' section. Explain the deep benefit of the struggling habit. Why is this specific pain necessary for the user's growth right now?]
 
         **⚙️ ${headerSystem}**
         [The Implementation Intention using the template: "${implTemplate}". Zero cost. The Rule. REMOVE BRACKETS.]

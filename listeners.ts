@@ -1,464 +1,93 @@
-
-import { state, DAYS_IN_CALENDAR, invalidateChartCache, getNextStatus, STATE_STORAGE_KEY, AppState } from './state';
-import { toUTCIsoDateString, parseUTCIsoDate, debounce, triggerHaptic, getTodayUTCIso, addDays } from './utils';
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+*/
 import { ui } from './ui';
-import {
-    renderHabits,
-    renderCalendar,
-    updateHeaderTitle,
-    renderStoicQuote,
-    renderAINotificationState,
-    openModal,
-    renderFullCalendar,
-    renderApp,
-    scrollToToday,
-    renderExploreHabits,
-} from './render';
+import { state, invalidateChartCache } from './state';
+import { renderApp, renderFullCalendar, openModal } from './render';
+import { parseUTCIsoDate, triggerHaptic } from './utils';
 import { setupModalListeners } from './modalListeners';
 import { setupHabitCardListeners } from './habitCardListeners';
-import { setupSwipeHandler } from './swipeHandler';
 import { setupDragAndDropHandler } from './dragAndDropHandler';
-import { handleUndoDelete, completeAllHabitsForDate, snoozeAllHabitsForDate, toggleHabitStatus } from './habitActions';
-import { renderChart } from './chart';
-import { updateAppBadge } from './badge';
-import { syncStateWithCloud } from './cloud';
+import { setupSwipeHandler } from './swipeHandler';
 
-/**
- * REATORAÇÃO: Centraliza a lógica para atualizar a data selecionada e renderizar a UI.
- * Evita a duplicação de código entre os manipuladores de clique e de teclado.
- * @param newDateISO A nova data selecionada como uma string ISO.
- */
-function updateSelectedDateAndRender(newDateISO: string) {
-    if (state.selectedDate === newDateISO) {
-        return; // Nenhuma alteração necessária
-    }
-    state.selectedDate = newDateISO;
-    
-    // PERFORMANCE: Marca que a visualização do calendário e a lista de hábitos precisam ser atualizadas.
+function updateSelectedDateAndRender(date: string) {
+    state.selectedDate = date;
+    // UX UPDATE [2025-02-15]: Força a atualização da UI.
+    // Como a navegação ou seleção mudou a data, precisamos garantir que o renderApp 
+    // saiba que a estrutura da lista de hábitos mudou.
     state.uiDirtyState.calendarVisuals = true;
-    // A lista de hábitos depende da data selecionada para exibir os hábitos corretos do dia.
     state.uiDirtyState.habitListStructure = true;
-    
-    // PERFORMANCE [2025-01-18]: Se a data muda, o gráfico (que pode depender da data final) deve ser invalidado.
     invalidateChartCache();
-    
-    renderCalendar();
-    updateHeaderTitle();
-    renderHabits();
-    renderStoicQuote();
-    renderChart();
+    renderApp();
 }
 
-/**
- * Lida com mudanças no status da conexão de rede, atualizando a UI.
- */
-const handleConnectionChange = () => {
-    const isOffline = !navigator.onLine;
-    document.body.classList.toggle('is-offline', isOffline);
+export function setupEventListeners() {
+    setupModalListeners();
+    setupHabitCardListeners();
+    setupDragAndDropHandler(ui.habitContainer);
+    setupSwipeHandler(ui.habitContainer);
 
-    // REATORAÇÃO [2024-08-17]: Delega a atualização do estado do botão de IA
-    // para a função de renderização centralizada, garantindo consistência.
-    renderAINotificationState();
-
-    // Desabilita outros botões dependentes da rede.
-    ui.syncSection.querySelectorAll('button').forEach(button => {
-        button.disabled = isOffline;
-    });
-
-    // AUTO-SYNC RECOVERY [2025-02-10]:
-    // Quando a conexão é restaurada, devemos tentar enviar quaisquer alterações locais
-    // para a nuvem imediatamente. Lemos do localStorage para obter o estado persistente
-    // mais recente (que contém o timestamp lastModified correto das edições offline).
-    if (!isOffline) {
-        try {
-            const localData = localStorage.getItem(STATE_STORAGE_KEY);
-            if (localData) {
-                const localState = JSON.parse(localData) as AppState;
-                console.log("Connection restored. Attempting to sync local state.");
-                syncStateWithCloud(localState, true);
-            }
-        } catch (e) {
-            console.error("Failed to trigger auto-sync on connection restore:", e);
-        }
-    }
-};
-
-/**
- * Lida com interações de múltiplos cliques na faixa de calendário para ações rápidas.
- * - Clique único: Seleciona o dia.
- * - Clique duplo: Completa todos os hábitos do dia.
- * - Clique triplo: Adia todos os hábitos do dia.
- */
-function _setupCalendarMultiClickHandler(calendarStrip: HTMLElement) {
-    let clickTimeout: number | null = null;
-    let clickCount = 0;
-    let lastClickDate: string | null = null;
-    const CLICK_DELAY = 250;
-
-    calendarStrip.addEventListener('click', (e: MouseEvent) => {
-        const dayItem = (e.target as HTMLElement).closest<HTMLElement>('.day-item');
-        if (!dayItem?.dataset.date) return;
-        
-        const date = dayItem.dataset.date;
-
-        // Reseta o contador se clicar em um dia diferente
-        if (date !== lastClickDate) {
-            clickCount = 1;
-            lastClickDate = date;
-            triggerHaptic('selection');
-            updateSelectedDateAndRender(date); // Ação de clique único
-        } else {
-            clickCount++;
-        }
-        
-        if (clickTimeout) {
-            clearTimeout(clickTimeout);
-        }
-    
-        // Aguarda por mais cliques antes de disparar ações de múltiplos cliques
-        clickTimeout = window.setTimeout(() => {
-            if (clickCount === 2) {
-                triggerHaptic('medium');
-                completeAllHabitsForDate(date);
-            } else if (clickCount >= 3) {
-                triggerHaptic('heavy');
-                snoozeAllHabitsForDate(date);
-            }
-            // Reseta após o atraso
-            clickCount = 0;
-            lastClickDate = null;
-        }, CLICK_DELAY);
-    });
-}
-
-/**
- * Lida com interações de "long-press" na faixa de calendário para abrir a visualização do calendário completo.
- */
-function _setupCalendarLongPressHandler(calendarStrip: HTMLElement) {
+    // --- Calendar Strip Logic (Long Press & Click) ---
     let longPressTimer: number | null = null;
-    let longPressStartX = 0;
-    let longPressStartY = 0;
-    let longPressFired = false;
-    let pressedElement: HTMLElement | null = null;
+    let isLongPress = false;
+    const LONG_PRESS_DURATION = 500;
 
-    const cleanup = () => {
+    const openAlmanac = () => {
+        state.fullCalendar = {
+            year: parseUTCIsoDate(state.selectedDate).getUTCFullYear(),
+            month: parseUTCIsoDate(state.selectedDate).getUTCMonth()
+        };
+        renderFullCalendar();
+        openModal(ui.fullCalendarModal);
+    };
+
+    const clearTimer = () => {
         if (longPressTimer) {
             clearTimeout(longPressTimer);
             longPressTimer = null;
         }
-        if (pressedElement) {
-            pressedElement.classList.remove('is-pressing');
-            pressedElement = null;
-        }
-        window.removeEventListener('pointermove', handlePointerMoveForLongPress);
-        window.removeEventListener('pointerup', cleanup);
-        window.removeEventListener('pointerleave', cleanup);
-        window.removeEventListener('pointercancel', cleanup);
     };
 
-    const handlePointerMoveForLongPress = (e: PointerEvent) => {
-        // Se o ponteiro se mover muito, é um scroll, não um "long-press"
-        if (Math.abs(e.clientX - longPressStartX) > 10 || Math.abs(e.clientY - longPressStartY) > 10) {
-            cleanup();
-        }
-    };
+    ui.calendarStrip.addEventListener('pointerdown', (e) => {
+        if (e.button !== 0) return; // Only left click/touch
+        const dayItem = (e.target as HTMLElement).closest('.day-item');
+        if (!dayItem) return;
 
-    calendarStrip.addEventListener('pointerdown', (e) => {
-        if (e.button !== 0) return; // Apenas para o botão primário
-        
-        longPressStartX = e.clientX;
-        longPressStartY = e.clientY;
-        longPressFired = false;
-        
-        pressedElement = (e.target as HTMLElement).closest<HTMLElement>('.day-item');
-        if (pressedElement) {
-            pressedElement.classList.add('is-pressing');
-        }
-
-        window.addEventListener('pointermove', handlePointerMoveForLongPress);
-        window.addEventListener('pointerup', cleanup);
-        window.addEventListener('pointerleave', cleanup);
-        window.addEventListener('pointercancel', cleanup);
-        
-        // UX-OPTIMIZATION [2024-12-26]: Tempo de long-press reduzido para 500ms.
-        // 750ms parecia muito lento e não responsivo.
+        isLongPress = false;
         longPressTimer = window.setTimeout(() => {
-            longPressFired = true;
-            // Armazena a referência ao dia antes de cleanup remover a classe
-            const dayItem = pressedElement;
-            cleanup(); // Remove listeners e classe visual
-            
-            if (dayItem) {
-                 triggerHaptic('medium');
-                 const dateToOpen = dayItem.dataset.date ? parseUTCIsoDate(dayItem.dataset.date) : parseUTCIsoDate(state.selectedDate);
-                 
-                 state.fullCalendar.year = dateToOpen.getUTCFullYear();
-                 state.fullCalendar.month = dateToOpen.getUTCMonth();
-                 renderFullCalendar();
-                 openModal(ui.fullCalendarModal);
-            }
-        }, 500);
+            isLongPress = true;
+            triggerHaptic('medium');
+            openAlmanac();
+        }, LONG_PRESS_DURATION);
     });
 
-    // Suprime o evento de clique que se segue a um "long-press" bem-sucedido para evitar ações de clique único
-    calendarStrip.addEventListener('click', (e) => {
-        if (longPressFired) {
-            e.stopImmediatePropagation();
-        }
-    }, true); // Usa a fase de captura para capturar o evento mais cedo
-    
-    // Desativa o menu de contexto no "long-press" (para dispositivos móveis)
-    calendarStrip.addEventListener('contextmenu', (e) => e.preventDefault());
-}
+    ui.calendarStrip.addEventListener('pointerup', clearTimer);
+    ui.calendarStrip.addEventListener('pointercancel', clearTimer);
+    ui.calendarStrip.addEventListener('pointerleave', clearTimer);
+    ui.calendarStrip.addEventListener('scroll', clearTimer); // Safety: scroll cancels long press
 
-/**
- * Lida com a navegação por teclado (ArrowLeft, ArrowRight) para a faixa de calendário.
- */
-function _setupCalendarKeyboardHandler(calendarStrip: HTMLElement) {
-    calendarStrip.addEventListener('keydown', e => {
-        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-            const currentSelected = calendarStrip.querySelector('.selected');
-            if (!currentSelected) return;
-
-            const direction = e.key === 'ArrowLeft' ? -1 : 1;
-            const newIndex = state.calendarDates.findIndex(d => toUTCIsoDateString(d) === state.selectedDate) + direction;
-            
-            if (newIndex >= 0 && newIndex < state.calendarDates.length) {
-                const newDate = state.calendarDates[newIndex];
-                const newDateISO = toUTCIsoDateString(newDate);
-                
-                updateSelectedDateAndRender(newDateISO);
-                
-                // Adia o foco até depois do próximo ciclo de renderização
-                requestAnimationFrame(() => {
-                    const newSelectedEl = calendarStrip.querySelector<HTMLElement>(`.day-item[data-date="${state.selectedDate}"]`);
-                    newSelectedEl?.focus();
-                });
-            }
-        }
-    });
-}
-
-
-/**
- * REATORAÇÃO DE MODULARIDADE: Agrupa todos os listeners de interação do calendário
- * (clique, clique-múltiplo, long-press e teclado) em uma única função para
- * melhorar a organização e legibilidade.
- */
-const _setupCalendarInteractionListeners = () => {
-    _setupCalendarMultiClickHandler(ui.calendarStrip);
-    _setupCalendarLongPressHandler(ui.calendarStrip);
-    _setupCalendarKeyboardHandler(ui.calendarStrip);
-};
-
-/**
- * REATORAÇÃO DE MODULARIDADE: Configura listeners de eventos relacionados à janela e ao estado do documento.
- */
-const _setupWindowListeners = () => {
-    // CLEANUP [2025-01-17]: O listener de redimensionamento global foi removido.
-    // O gráfico agora usa um ResizeObserver dedicado em chart.ts, que é mais performático e robusto.
-    // O título do cabeçalho é responsivo via CSS (display: none em classes desktop/mobile), não exigindo JS no resize.
-
-    // Lógica de atualização de data (PWA Lifecycle & Heartbeat)
-    let lastSeenDay = getTodayUTCIso();
-
-    const checkAndRefreshDate = () => {
-        const currentDay = getTodayUTCIso();
-        if (currentDay !== lastSeenDay) {
-            console.log('Date changed. Refreshing view.');
-            lastSeenDay = currentDay;
-            // Atualiza os dados do calendário (desliza os dias)
-            // Usamos a constante DAYS_IN_CALENDAR importada para manter consistência.
-            // LOGIC UPDATE [2025-02-05]: Refresh logic to maintain range centered on today (30 past + Today + 30 future).
-            state.calendarDates = Array.from({ length: DAYS_IN_CALENDAR }, (_, i) => addDays(parseUTCIsoDate(currentDay), i - 30));
-            
-            // Resetamos para "Hoje" para garantir consistência visual.
-            state.selectedDate = currentDay;
-            
-            // Dirty Flags
-            state.uiDirtyState.calendarVisuals = true;
-            state.uiDirtyState.habitListStructure = true;
-            
-            invalidateChartCache(); // Invalida gráfico pois a janela de tempo mudou
-            
-            // PERFORMANCE & UX: Removemos a limpeza destrutiva do DOM (innerHTML = '').
-            // O renderCalendar é capaz de reciclar nós.
-            renderApp();
-            
-            // Restaura a visualização para "Hoje" (posição inicial).
-            scrollToToday('auto');
-        }
-    };
-
-    // 1. Listener de Retorno ao App (PWA)
-    document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'visible') {
-            updateAppBadge();
-            checkAndRefreshDate();
-        }
-    });
-
-    // 2. Timer de Meia-Noite (Heartbeat)
-    // Se o usuário deixar o app aberto, verifica a cada minuto se o dia virou.
-    setInterval(() => {
-        if (document.visibilityState === 'visible') {
-            checkAndRefreshDate();
-        }
-    }, 60000);
-
-    window.addEventListener('online', handleConnectionChange);
-    window.addEventListener('offline', handleConnectionChange);
-    handleConnectionChange(); // Checagem inicial
-};
-
-/**
- * Configura a interação de clique para copiar a citação estoica.
- */
-function _setupStoicQuoteInteraction() {
-    ui.stoicQuoteDisplay.addEventListener('click', async () => {
-        const text = ui.stoicQuoteDisplay.textContent;
-        if (text) {
-            try {
-                await navigator.clipboard.writeText(text);
-                triggerHaptic('success');
-                
-                // Feedback visual minimalista: altera a cor momentaneamente
-                ui.stoicQuoteDisplay.style.transition = 'color 0.2s';
-                const originalColor = ui.stoicQuoteDisplay.style.color;
-                ui.stoicQuoteDisplay.style.color = 'var(--accent-green)';
-                
-                setTimeout(() => {
-                    ui.stoicQuoteDisplay.style.color = originalColor || '';
-                }, 500);
-            } catch (err) {
-                console.error('Failed to copy quote', err);
-            }
-        }
-    });
-}
-
-/**
- * REATORAÇÃO DE MODULARIDADE: Configura listeners para interações globais da UI, como o botão "Desfazer".
- */
-const _setupGlobalInteractionListeners = () => {
-    ui.undoBtn.addEventListener('click', () => {
-        triggerHaptic('medium');
-        handleUndoDelete();
-    });
-
-    // HEADER CLICK [2025-01-16]: Allows quick return to "Today".
-    ui.headerTitle.addEventListener('click', () => {
-        const today = getTodayUTCIso();
-        
-        // Sempre fornece feedback tátil para confirmar o reconhecimento do clique
-        triggerHaptic('light');
-
-        // Se não estiver selecionado, atualiza o estado e renderiza
-        if (state.selectedDate !== today) {
-            updateSelectedDateAndRender(today);
-        }
-        
-        // UX IMPROVEMENT: Força a rolagem do calendário para a posição inicial (final da lista),
-        // garantindo que o dia "Hoje" e o histórico recente estejam visíveis.
-        // Isso é útil mesmo se a data já estiver selecionada, mas o usuário tiver rolado para longe.
-        scrollToToday('smooth');
-    });
-
-    // UX UPDATE [2025-02-07]: Fecha cartões abertos (swipe actions) ao rolar a página.
-    window.addEventListener('scroll', () => {
-        const openCard = document.querySelector('.habit-card.is-open-left, .habit-card.is-open-right');
-        if (openCard) {
-            openCard.classList.remove('is-open-left', 'is-open-right');
-        }
-    }, { passive: true });
-
-    document.addEventListener('pointerdown', (e) => {
-        const target = e.target as HTMLElement;
-
-        if (target.closest('.modal-overlay.visible')) {
+    ui.calendarStrip.addEventListener('click', e => {
+        // Prevent selection if it was a long press (Almanac trigger)
+        if (isLongPress) {
+            e.preventDefault();
+            e.stopPropagation();
+            isLongPress = false;
             return;
         }
 
-        const openCard = document.querySelector('.habit-card.is-open-left, .habit-card.is-open-right');
-        
-        // UX UPDATE [2025-02-07]: Fecha se clicar fora do cartão ABERTO.
-        // Isso inclui cliques no fundo e cliques em OUTROS cartões.
-        if (openCard && !openCard.contains(target)) {
-            openCard.classList.remove('is-open-left', 'is-open-right');
+        const dayItem = (e.target as HTMLElement).closest<HTMLElement>('.day-item');
+        if (dayItem && dayItem.dataset.date) {
+            triggerHaptic('selection');
+            updateSelectedDateAndRender(dayItem.dataset.date);
         }
     });
 
-    // [2025-01-16] SHORTCUT: Atalho global (Ctrl+Z / Cmd+Z) para desfazer ações.
-    // Melhora a usabilidade para usuários desktop ou com teclado físico.
-    document.addEventListener('keydown', (e) => {
-        if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
-            // Apenas previne o padrão se houver algo para desfazer, 
-            // permitindo o uso normal do navegador em outros contextos (ex: inputs de texto).
-            if (state.lastEnded) {
-                e.preventDefault();
-                handleUndoDelete();
-                triggerHaptic('medium');
-            }
-        }
-    });
-    
-    // UX [2025-01-18]: Torna o placeholder "vazio" interativo.
-    // Se o usuário clicar em "Adicione um hábito...", abrimos o modal de exploração.
-    ui.habitContainer.addEventListener('click', (e) => {
-        const target = e.target as HTMLElement;
-        const placeholder = target.closest('.empty-group-placeholder');
-        if (placeholder) {
+    // Header Title Listener (Open Full Calendar)
+    if (ui.headerTitle) {
+        ui.headerTitle.addEventListener('click', () => {
             triggerHaptic('light');
-            renderExploreHabits();
-            openModal(ui.exploreModal);
-        }
-    });
-
-    // A11Y [2025-01-18]: Suporte a teclado para o placeholder interativo.
-    ui.habitContainer.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-            const target = e.target as HTMLElement;
-            if (target.classList.contains('empty-group-placeholder')) {
-                e.preventDefault();
-                triggerHaptic('light');
-                renderExploreHabits();
-                openModal(ui.exploreModal);
-            }
-        }
-    });
-    
-    _setupStoicQuoteInteraction();
-};
-
-/**
- * REATORAÇÃO DE MODULARIDADE: A função `setupGlobalListeners` foi dividida em múltiplos helpers
- * para melhorar a clareza e a separação de responsabilidades.
- */
-const setupGlobalListeners = () => {
-    _setupCalendarInteractionListeners();
-    _setupWindowListeners();
-    _setupGlobalInteractionListeners();
-};
-
-
-export function setupEventListeners() {
-    setupGlobalListeners();
-    setupModalListeners();
-    setupHabitCardListeners();
-    // A11Y [2025-01-17]: Adiciona listener para teclas em cartões de hábito.
-    // Como não temos um setupHabitCardKeyboardListeners separado, injetamos aqui.
-    // Isso garante que Enter/Space no content-wrapper funcione.
-    ui.habitContainer.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-            const contentWrapper = (e.target as HTMLElement).closest<HTMLElement>('.habit-content-wrapper');
-            if (contentWrapper) {
-                e.preventDefault(); // Previne scroll no espaço
-                // Dispara o clique programaticamente, reaproveitando a lógica de habitCardListeners
-                contentWrapper.click();
-            }
-        }
-    });
-
-    setupSwipeHandler(ui.habitContainer);
-    setupDragAndDropHandler(ui.habitContainer);
+            openAlmanac();
+        });
+    }
 }

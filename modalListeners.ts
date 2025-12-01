@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -6,7 +5,7 @@
 // [ANALYSIS PROGRESS]: 100% - Análise concluída. Gerenciamento de eventos de modal verificado. A lógica de limpeza (cleanup) ao fechar modais está implementada corretamente para prevenir vazamento de estado.
 
 import { ui } from './ui';
-import { state, LANGUAGES, PREDEFINED_HABITS, TimeOfDay, saveState, STREAK_SEMI_CONSOLIDATED, STREAK_CONSOLIDATED, Frequency, FREQUENCIES } from './state';
+import { state, LANGUAGES, PREDEFINED_HABITS, TimeOfDay, saveState, STREAK_SEMI_CONSOLIDATED, STREAK_CONSOLIDATED, Frequency, FREQUENCIES, invalidateChartCache, DAYS_IN_CALENDAR } from './state';
 import {
     openModal,
     closeModal,
@@ -422,8 +421,28 @@ export function setupModalListeners() {
         const dayEl = (e.target as HTMLElement).closest<HTMLElement>('.full-calendar-day');
         if (dayEl && dayEl.dataset.date) {
             state.selectedDate = dayEl.dataset.date;
+            
+            // UX UPDATE [2025-02-16]: Recentraliza a faixa de calendário.
+            // Ao saltar para uma data distante via almanaque, a faixa horizontal (calendarStrip)
+            // deve ser regenerada para mostrar a data selecionada no centro/foco.
+            const newDate = parseUTCIsoDate(state.selectedDate);
+            state.calendarDates = Array.from({ length: DAYS_IN_CALENDAR }, (_, i) => 
+                addDays(newDate, i - 30) // 30 dias atrás, 30 dias à frente
+            );
+
             closeModal(ui.fullCalendarModal);
+            
+            state.uiDirtyState.calendarVisuals = true;
+            state.uiDirtyState.habitListStructure = true;
+            invalidateChartCache();
+            
             renderApp();
+
+            // Force scroll to the new selection
+            requestAnimationFrame(() => {
+                const selectedEl = ui.calendarStrip.querySelector('.day-item.selected');
+                selectedEl?.scrollIntoView({ behavior: 'auto', block: 'nearest', inline: 'center' });
+            });
         }
     });
 
@@ -435,7 +454,23 @@ export function setupModalListeners() {
     
         if (e.key === 'Enter' || e.key === ' ') {
             closeModal(ui.fullCalendarModal);
+            
+            // Também regenera a faixa no enter para consistência
+            const newDate = parseUTCIsoDate(state.selectedDate);
+            state.calendarDates = Array.from({ length: DAYS_IN_CALENDAR }, (_, i) => 
+                addDays(newDate, i - 30)
+            );
+
+            state.uiDirtyState.calendarVisuals = true;
+            state.uiDirtyState.habitListStructure = true;
+            invalidateChartCache();
+            
             renderApp();
+            
+            requestAnimationFrame(() => {
+                const selectedEl = ui.calendarStrip.querySelector('.day-item.selected');
+                selectedEl?.scrollIntoView({ behavior: 'auto', block: 'nearest', inline: 'center' });
+            });
             return;
         }
     
