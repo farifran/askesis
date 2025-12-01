@@ -3,462 +3,459 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 
-import {
-    state,
-    saveState,
-    Habit,
-    TimeOfDay,
-    Frequency,
-    HabitSchedule,
-    HabitDailyInfo,
-    calculateHabitStreak,
-    invalidateChartCache,
-    getEffectiveScheduleForHabitOnDate,
-    ensureHabitInstanceData,
-    getNextStatus,
-    HabitStatus,
-    ensureHabitDailyInfo,
-    PREDEFINED_HABITS,
-    getHabitDailyInfoForDate,
-    getActiveHabitsForDate,
-    clearScheduleCache,
-    clearActiveHabitsCache,
-    STREAK_CONSOLIDATED,
-    STREAK_SEMI_CONSOLIDATED,
+import { 
+    state, Habit, HabitSchedule, TimeOfDay, Frequency, 
+    saveState, getScheduleForDate, 
+    clearActiveHabitsCache, clearScheduleCache, invalidateChartCache,
+    ensureHabitDailyInfo, getEffectiveScheduleForHabitOnDate,
+    PREDEFINED_HABITS, TIMES_OF_DAY, 
+    ensureHabitInstanceData, getNextStatus, calculateHabitStreak,
     invalidateStreakCache,
-    invalidateDaySummaryCache
+    invalidateDaySummaryCache,
+    getActiveHabitsForDate,
+    AppState,
+    getHabitDailyInfoForDate,
+    HabitDailyInfo // Required for correlation helper
 } from './state';
-import {
-    renderApp,
-    closeModal,
-    openModal,
-    showConfirmationModal,
-    renderHabitCardState,
-    setupManageModal,
-    updateNotificationUI,
-    openEditModal,
-    renderAINotificationState,
-    showUndoToast,
-    renderCalendarDayPartial
-} from './render';
 import { ui } from './ui';
+import { 
+    renderApp, renderHabits, openEditModal, 
+    closeModal, showConfirmationModal, showUndoToast, renderAINotificationState, renderHabitCardState,
+    renderCalendarDayPartial, setupManageModal, removeHabitFromCache
+} from './render';
 import { t, getHabitDisplayInfo } from './i18n';
-import {
-    generateUUID,
-    getTodayUTCIso,
-    toUTCIsoDateString,
-    addDays,
-    parseUTCIsoDate,
-    triggerHaptic,
-    getTodayUTC
+import { 
+    toUTCIsoDateString, parseUTCIsoDate, generateUUID, 
+    getTodayUTCIso, addDays, getDateTimeFormat
 } from './utils';
 import { apiFetch } from './api';
 import { STOIC_QUOTES } from './quotes';
-import { icons } from './icons';
-import { updateAppBadge } from './badge';
 
-// --- CREATE & EDIT ---
+// --- HELPERS ---
+
+// NEW [2025-02-15]: Calculates conditional probability of failure.
+// "If TriggerHabit fails, how often does TargetHabit fail?"
+function calculateCorrelation(
+    triggerHabitId: string, 
+    targetHabitId: string, 
+    dailyData: Record<string, Record<string, HabitDailyInfo>>, 
+    daysToCheck: string[]
+): number {
+    let triggerFailures = 0;
+    let jointFailures = 0;
+
+    for (const date of daysToCheck) {
+        const dayData = dailyData[date];
+        if (!dayData) continue;
+
+        const triggerInstances = dayData[triggerHabitId]?.instances || {};
+        const triggerHasInstances = Object.keys(triggerInstances).length > 0;
+
+        // Skip days where the trigger habit wasn't tracked/scheduled
+        if (!triggerHasInstances) continue;
+
+        // Check if trigger failed (Absence of 'completed' status in any slot)
+        const triggerCompleted = Object.values(triggerInstances).some(i => i.status === 'completed');
+
+        if (!triggerCompleted) {
+            triggerFailures++;
+            
+            const targetInstances = dayData[targetHabitId]?.instances || {};
+            const targetHasInstances = Object.keys(targetInstances).length > 0;
+            
+            // Check if target also failed (and was tracked)
+            if (targetHasInstances) {
+                const targetCompleted = Object.values(targetInstances).some(i => i.status === 'completed');
+                
+                if (!targetCompleted) {
+                    jointFailures++;
+                }
+            }
+        }
+    }
+
+    return triggerFailures > 0 ? (jointFailures / triggerFailures) : 0;
+}
+
+function _createDefaultSchedule(startDate: string): HabitSchedule {
+    return {
+        startDate,
+        times: ['Morning'],
+        frequency: { type: 'daily' },
+        scheduleAnchor: startDate
+    };
+}
+
+// --- ACTIONS ---
 
 export function createDefaultHabit() {
     const defaultTemplate = PREDEFINED_HABITS.find(h => h.isDefault) || PREDEFINED_HABITS[0];
+    const today = getTodayUTCIso();
+    
     const newHabit: Habit = {
         id: generateUUID(),
         icon: defaultTemplate.icon,
         color: defaultTemplate.color,
         goal: defaultTemplate.goal,
-        createdOn: getTodayUTCIso(),
+        createdOn: today,
         scheduleHistory: [{
-            startDate: getTodayUTCIso(),
-            times: defaultTemplate.times,
-            frequency: defaultTemplate.frequency,
+            startDate: today,
             nameKey: defaultTemplate.nameKey,
             subtitleKey: defaultTemplate.subtitleKey,
-            scheduleAnchor: getTodayUTCIso()
+            times: defaultTemplate.times,
+            frequency: defaultTemplate.frequency,
+            scheduleAnchor: today
         }]
     };
+    
     state.habits.push(newHabit);
-    // No saveState() called here typically, caller handles it or we add it. 
-    // index.tsx calls saveState() manually after this.
-}
-
-export function saveHabitFromModal() {
-    if (!state.editingHabit) return;
-
-    const { isNew, habitId, originalData, formData, targetDate } = state.editingHabit;
-    
-    // Validation
-    if (formData.name && formData.name.trim().length === 0) {
-        // UI handling for validation is done in listeners, but double check here
-        return;
-    }
-
-    // Determine basic properties
-    const nowISO = getTodayUTCIso();
-    // Use targetDate (snapshot when modal opened) to ensure consistency, 
-    // but for schedule start date we usually want "today" or "targetDate" depending on logic.
-    // If editing past, usually we want changes to apply from now on, or split history.
-    // For simplicity in this app version, we apply schedule changes from targetDate.
-    const startDate = targetDate || nowISO;
-
-    let habitToSave: Habit;
-
-    if (isNew) {
-        habitToSave = {
-            id: generateUUID(),
-            icon: formData.icon,
-            color: formData.color,
-            goal: formData.goal,
-            createdOn: startDate,
-            scheduleHistory: [{
-                startDate: startDate,
-                times: formData.times,
-                frequency: formData.frequency,
-                name: formData.name,
-                nameKey: formData.nameKey,
-                subtitle: formData.subtitle,
-                subtitleKey: formData.subtitleKey,
-                scheduleAnchor: startDate
-            }]
-        };
-        state.habits.push(habitToSave);
-    } else {
-        const existingHabit = state.habits.find(h => h.id === habitId);
-        if (!existingHabit) return;
-
-        // Visual properties update globally
-        existingHabit.icon = formData.icon;
-        existingHabit.color = formData.color;
-        existingHabit.goal = formData.goal; // Goal changes apply globally for simplicity in this version
-
-        // Schedule Logic
-        // We compare with the *current effective schedule* for the target date
-        // If critical properties changed, we add a new schedule entry to history
-        const lastSchedule = existingHabit.scheduleHistory[existingHabit.scheduleHistory.length - 1];
-        
-        const hasScheduleChanged = 
-            JSON.stringify(lastSchedule.times) !== JSON.stringify(formData.times) ||
-            JSON.stringify(lastSchedule.frequency) !== JSON.stringify(formData.frequency) ||
-            lastSchedule.name !== formData.name ||
-            lastSchedule.subtitle !== formData.subtitle ||
-            lastSchedule.nameKey !== formData.nameKey;
-
-        if (hasScheduleChanged) {
-            // End previous schedule
-            if (!lastSchedule.endDate) {
-                 // Technically we should check if start date is same to avoid 0-day spans, 
-                 // but simplified logic:
-                 // If the change is happening "today", we might overwrite the last schedule if it also started "today"
-                 if (lastSchedule.startDate === startDate) {
-                     // Update in place
-                     Object.assign(lastSchedule, {
-                        times: formData.times,
-                        frequency: formData.frequency,
-                        name: formData.name,
-                        subtitle: formData.subtitle,
-                        nameKey: formData.nameKey,
-                        subtitleKey: formData.subtitleKey
-                     });
-                 } else {
-                     // Close old, start new
-                     // The old one ends yesterday relative to new start
-                     // But if startDate is today, endDate is yesterday.
-                     // Helper: simple approach, create new entry.
-                     lastSchedule.endDate = startDate; // Overlap logic handled by getScheduleForDate (start inclusive, end exclusive usually, or strictly ordered)
-                     // Actually state.ts logic: dateStr < schedule.endDate. So setting endDate = startDate makes it end *before* today.
-                     
-                     existingHabit.scheduleHistory.push({
-                         startDate: startDate,
-                         times: formData.times,
-                         frequency: formData.frequency,
-                         name: formData.name,
-                         nameKey: formData.nameKey,
-                         subtitle: formData.subtitle,
-                         subtitleKey: formData.subtitleKey,
-                         scheduleAnchor: startDate
-                     });
-                 }
-            }
-        }
-    }
-
-    saveState();
-    clearScheduleCache(); // Important!
-    clearActiveHabitsCache();
-    
-    closeModal(ui.editHabitModal);
-    
-    // Refresh UI
-    state.uiDirtyState.calendarVisuals = true;
     state.uiDirtyState.habitListStructure = true;
-    renderApp();
-    triggerHaptic('success');
-}
-
-// --- DELETE / END / GRADUATE ---
-
-export function requestHabitEndingFromModal(habitId: string) {
-    const habit = state.habits.find(h => h.id === habitId);
-    if (!habit) return;
-    const { name } = getHabitDisplayInfo(habit);
-
-    showConfirmationModal(
-        t('confirmEndHabitBody', { habitName: name }),
-        () => endHabit(habitId),
-        {
-            title: t('confirmEndHabitTitle'),
-            confirmText: t('confirmEndHabitBtn'),
-            confirmButtonStyle: 'danger'
-        }
-    );
-}
-
-function endHabit(habitId: string) {
-    const habit = state.habits.find(h => h.id === habitId);
-    if (!habit) return;
-
-    const todayISO = getTodayUTCIso();
-    const lastSchedule = habit.scheduleHistory[habit.scheduleHistory.length - 1];
-    
-    // Store for undo
-    state.lastEnded = {
-        habitId,
-        lastSchedule: JSON.parse(JSON.stringify(lastSchedule)),
-        removedSchedules: []
-    };
-
-    // Set end date to today (effectively ends start of today, or tomorrow? 
-    // Usually "End Habit" means "I stop doing it now". So endDate = today.
-    // getScheduleForDate checks `date < endDate`. So if endDate == Today, it won't appear Today.
-    // If we want it to appear today but stop tomorrow, endDate should be Tomorrow.
-    // Let's assume End means "stop appearing from today onwards".
-    lastSchedule.endDate = todayISO;
-
     saveState();
-    clearScheduleCache();
-    clearActiveHabitsCache();
-    
-    closeModal(ui.manageModal); // Close manager if open
-    setupManageModal(); // Refresh manager list if needed
-    
-    showUndoToast();
-    state.uiDirtyState.habitListStructure = true;
-    state.uiDirtyState.calendarVisuals = true;
-    renderApp();
 }
-
-export function requestHabitPermanentDeletion(habitId: string) {
-    const habit = state.habits.find(h => h.id === habitId);
-    if (!habit) return;
-    const { name } = getHabitDisplayInfo(habit);
-
-    showConfirmationModal(
-        t('confirmDeleteHabitBody', { habitName: name }),
-        () => deleteHabit(habitId),
-        {
-            title: t('confirmDeleteHabitTitle'),
-            confirmText: t('confirmDeleteHabitBtn'),
-            confirmButtonStyle: 'danger'
-        }
-    );
-}
-
-function deleteHabit(habitId: string) {
-    state.habits = state.habits.filter(h => h.id !== habitId);
-    // Cleanup daily data
-    Object.keys(state.dailyData).forEach(date => {
-        if (state.dailyData[date][habitId]) {
-            delete state.dailyData[date][habitId];
-        }
-    });
-
-    saveState();
-    clearScheduleCache();
-    clearActiveHabitsCache();
-    
-    // Update manage modal list if open
-    setupManageModal();
-    
-    state.uiDirtyState.habitListStructure = true;
-    state.uiDirtyState.calendarVisuals = true;
-    renderApp();
-    triggerHaptic('medium');
-}
-
-export function requestHabitEditingFromModal(habitId: string) {
-    const habit = state.habits.find(h => h.id === habitId);
-    if (habit) {
-        openEditModal(habit);
-    }
-}
-
-export function graduateHabit(habitId: string) {
-    const habit = state.habits.find(h => h.id === habitId);
-    if (!habit) return;
-
-    habit.graduatedOn = getTodayUTCIso();
-    saveState();
-    clearScheduleCache();
-    clearActiveHabitsCache();
-    
-    setupManageModal();
-    renderApp();
-    triggerHaptic('success');
-}
-
-// --- DATA MANAGEMENT ---
-
-export function resetApplicationData() {
-    localStorage.removeItem('habitTrackerState_v1');
-    state.habits = [];
-    state.dailyData = {};
-    state.notificationsShown = [];
-    state.pending21DayHabitIds = [];
-    state.pendingConsolidationHabitIds = [];
-    
-    createDefaultHabit();
-    saveState();
-    
-    // Clear caches
-    clearScheduleCache();
-    clearActiveHabitsCache();
-    invalidateChartCache();
-    
-    state.uiDirtyState.habitListStructure = true;
-    state.uiDirtyState.calendarVisuals = true;
-    renderApp();
-}
-
-// --- NOTES ---
-
-export function handleSaveNote() {
-    if (!state.editingNoteFor) return;
-    const { habitId, date, time } = state.editingNoteFor;
-    const noteContent = ui.notesTextarea.value.trim();
-    
-    const instance = ensureHabitInstanceData(date, habitId, time);
-    instance.note = noteContent;
-
-    saveState();
-    closeModal(ui.notesModal);
-    
-    // Update specific card UI
-    renderHabitCardState(habitId, time);
-}
-
-// --- DRAG & DROP & SWIPE ACTIONS ---
-
-export function handleHabitDrop(habitId: string, sourceTime: TimeOfDay, targetTime: TimeOfDay) {
-    // This action changes the time of day for the habit.
-    // If it's a specific day, we should probably add a daily override.
-    // But Drag&Drop usually implies a permanent schedule change or a "do it later" for today.
-    // For this app, let's assume it updates the schedule moving forward (or for today if we had that granularity).
-    // Given the complexity, let's update the schedule anchor to today and modify the times.
-    
-    const habit = state.habits.find(h => h.id === habitId);
-    if (!habit) return;
-
-    const todayISO = getTodayUTCIso();
-    const lastSchedule = habit.scheduleHistory[habit.scheduleHistory.length - 1];
-
-    // Simple logic: If dragging to a different time, update the times array in the schedule.
-    // We remove sourceTime and add targetTime.
-    
-    // Check if we need to split history
-    if (lastSchedule.startDate !== todayISO) {
-        // Create new schedule starting today
-        const newTimes = lastSchedule.times.filter(t => t !== sourceTime);
-        if (!newTimes.includes(targetTime)) newTimes.push(targetTime);
-        
-        lastSchedule.endDate = todayISO;
-        habit.scheduleHistory.push({
-            ...JSON.parse(JSON.stringify(lastSchedule)),
-            startDate: todayISO,
-            endDate: undefined,
-            times: newTimes,
-            scheduleAnchor: todayISO
-        });
-    } else {
-        // Just update current schedule
-        const newTimes = lastSchedule.times.filter(t => t !== sourceTime);
-        if (!newTimes.includes(targetTime)) newTimes.push(targetTime);
-        lastSchedule.times = newTimes;
-    }
-
-    saveState();
-    clearScheduleCache();
-    clearActiveHabitsCache();
-    
-    state.uiDirtyState.habitListStructure = true; // Order changed
-    renderApp();
-}
-
-export function reorderHabit(habitId: string, targetHabitId: string, position: 'before' | 'after') {
-    // Reordering is tricky with the current state structure (array of habits).
-    // We just move the habit in the `state.habits` array.
-    const fromIndex = state.habits.findIndex(h => h.id === habitId);
-    const toIndex = state.habits.findIndex(h => h.id === targetHabitId);
-    
-    if (fromIndex === -1 || toIndex === -1) return;
-    
-    const [habit] = state.habits.splice(fromIndex, 1);
-    const newIndex = position === 'before' ? toIndex : toIndex + 1;
-    // Adjust index if we removed an element before the target
-    const adjustedIndex = (fromIndex < toIndex) ? newIndex - 1 : newIndex;
-    
-    state.habits.splice(adjustedIndex, 0, habit);
-    
-    saveState();
-    state.uiDirtyState.habitListStructure = true;
-    renderApp();
-}
-
-// --- HABIT INTERACTION ---
 
 export function toggleHabitStatus(habitId: string, time: TimeOfDay, date: string) {
-    const instance = ensureHabitInstanceData(date, habitId, time);
-    const next = getNextStatus(instance.status);
-    instance.status = next;
+    const instanceData = ensureHabitInstanceData(date, habitId, time);
+    const oldStatus = instanceData.status;
+    const newStatus = getNextStatus(oldStatus);
     
-    // Check milestones if completed
-    if (next === 'completed') {
-        const streak = calculateHabitStreak(habitId, date); // This calc happens *after* status update in memory? 
-        // No, calculateHabitStreak reads from state. If we just updated state, it reads new state.
-        // But we need to invalidate cache first.
-        invalidateChartCache();
-        
-        // We can't easily calc new streak without clearing cache first.
-        // Let's rely on the rendering loop or calculate manually.
-        // For simplicity:
-        // if (streak === 21) state.pending21DayHabitIds.push(habitId);
-        // if (streak === 66) state.pendingConsolidationHabitIds.push(habitId);
-        // But calculateHabitStreak uses cache.
+    instanceData.status = newStatus;
+    
+    // Se completou, define o valor padrão se não houver override
+    if (newStatus === 'completed' && instanceData.goalOverride === undefined) {
+        // Opcional: definir um valor padrão aqui se necessário, 
+        // mas o render já trata undefined usando getSmartGoalForHabit
     }
 
-    saveState();
-    // Invalidate streaks for this habit from this date onwards
     invalidateStreakCache(habitId, date);
+    invalidateChartCache(); // Status mudou, gráfico muda
     
-    // Also daily summary cache
-    invalidateDaySummaryCache(date);
-    
-    invalidateChartCache();
-    
-    // Surgical update
+    // Atualiza apenas o cartão específico e o resumo do dia
     renderHabitCardState(habitId, time);
     
-    // Update calendar day partial
-    renderCalendarDayPartial(date);
+    // Atualiza o dia no calendário (progresso)
+    const dayItem = ui.calendarStrip.querySelector<HTMLElement>(`.day-item[data-date="${date}"]`);
+    if (dayItem) {
+        // Precisamos recalcular o summary e forçar update visual
+        invalidateDaySummaryCache(date);
+        
+        renderCalendarDayPartial(date);
+    }
     
-    // Check for badge update
-    updateAppBadge();
+    saveState();
+    
+    // Check for celebrations
+    if (newStatus === 'completed') {
+        const streak = calculateHabitStreak(habitId, date);
+        if (streak === 21 && !state.pending21DayHabitIds.includes(habitId)) {
+            state.pending21DayHabitIds.push(habitId);
+            renderAINotificationState();
+        } else if (streak === 66 && !state.pendingConsolidationHabitIds.includes(habitId)) {
+            state.pendingConsolidationHabitIds.push(habitId);
+            renderAINotificationState();
+        }
+    }
 }
 
-export function setGoalOverride(habitId: string, date: string, time: TimeOfDay, val: number) {
-    const instance = ensureHabitInstanceData(date, habitId, time);
-    instance.goalOverride = val;
+export function setGoalOverride(habitId: string, date: string, time: TimeOfDay, value: number) {
+    const instanceData = ensureHabitInstanceData(date, habitId, time);
+    instanceData.goalOverride = value;
+    
+    // Se alterou a meta, e estava pendente, talvez devesse completar?
+    // Por enquanto, apenas salva o valor. O usuário clica para completar.
+    
+    invalidateChartCache();
     saveState();
-    // UI update handled by caller (habitCardListeners) usually, but we should ensure consistency
-    // No visual side effects here other than saving data.
+}
+
+export function completeAllHabitsForDate(date: string) {
+    const activeHabits = getActiveHabitsForDate(date);
+    
+    let changed = false;
+    activeHabits.forEach(({ habit, schedule }: { habit: Habit, schedule: TimeOfDay[] }) => {
+        schedule.forEach((time: TimeOfDay) => {
+            const instance = ensureHabitInstanceData(date, habit.id, time);
+            if (instance.status !== 'completed') {
+                instance.status = 'completed';
+                changed = true;
+                invalidateStreakCache(habit.id, date);
+            }
+        });
+    });
+
+    if (changed) {
+        invalidateDaySummaryCache(date);
+        invalidateChartCache();
+        saveState();
+        renderApp(); // Render completo é mais seguro para atualização em massa
+    }
+}
+
+export function snoozeAllHabitsForDate(date: string) {
+    const activeHabits = getActiveHabitsForDate(date);
+    
+    let changed = false;
+    activeHabits.forEach(({ habit, schedule }: { habit: Habit, schedule: TimeOfDay[] }) => {
+        schedule.forEach((time: TimeOfDay) => {
+            const instance = ensureHabitInstanceData(date, habit.id, time);
+            if (instance.status !== 'snoozed' && instance.status !== 'completed') {
+                instance.status = 'snoozed';
+                changed = true;
+            }
+        });
+    });
+
+    if (changed) {
+        invalidateDaySummaryCache(date);
+        invalidateChartCache();
+        saveState();
+        renderApp();
+    }
+}
+
+export function handleUndoDelete() {
+    if (!state.lastEnded) return;
+
+    const { habitId, lastSchedule, removedSchedules } = state.lastEnded;
+    const habit = state.habits.find(h => h.id === habitId);
+
+    if (habit) {
+        // Reverte a alteração no último agendamento
+        // Localiza o agendamento correspondente (deve ser o último ou o que foi modificado)
+        const scheduleToRestore = habit.scheduleHistory.find(s => 
+            s.startDate === lastSchedule.startDate && s.scheduleAnchor === lastSchedule.scheduleAnchor
+        );
+
+        if (scheduleToRestore) {
+            // Restaura propriedades
+            scheduleToRestore.endDate = lastSchedule.endDate;
+            scheduleToRestore.times = [...lastSchedule.times]; // Deep copy array
+        } else {
+            // Se não encontrou (foi removido completamente?), readiciona
+            habit.scheduleHistory.push(lastSchedule);
+            habit.scheduleHistory.sort((a, b) => a.startDate.localeCompare(b.startDate));
+        }
+        
+        // Re-adiciona agendamentos futuros que foram removidos
+        if (removedSchedules && removedSchedules.length > 0) {
+            habit.scheduleHistory.push(...removedSchedules);
+            habit.scheduleHistory.sort((a, b) => a.startDate.localeCompare(b.startDate));
+        }
+
+        // Limpa estado de graduação se foi uma ação de graduação desfeita
+        if (habit.graduatedOn) {
+            habit.graduatedOn = undefined;
+        }
+
+        clearScheduleCache();
+        clearActiveHabitsCache();
+        invalidateChartCache();
+        
+        state.uiDirtyState.habitListStructure = true;
+        state.uiDirtyState.calendarVisuals = true;
+        
+        saveState();
+        renderApp();
+        
+        // Remove toast e estado
+        state.lastEnded = null;
+        if (ui.undoToast.classList.contains('visible')) {
+            ui.undoToast.classList.remove('visible');
+        }
+    }
+}
+
+/**
+ * HELPER: Remove a specific time from the schedule starting from a specific date (Future Scope).
+ * This logic replaces the "From Now On" branch of _requestFutureScheduleChange.
+ */
+function _removeTimeFromSchedule(habit: Habit, effectiveDate: string, timeToRemove: TimeOfDay) {
+    let targetScheduleIndex = habit.scheduleHistory.findIndex(s => {
+            const startOk = s.startDate <= effectiveDate;
+            const endOk = !s.endDate || s.endDate > effectiveDate;
+            return startOk && endOk;
+    });
+
+    if (targetScheduleIndex === -1) {
+        targetScheduleIndex = habit.scheduleHistory.length - 1;
+    }
+
+    const activeSchedule = habit.scheduleHistory[targetScheduleIndex];
+    
+    // Helper to filter times
+    const filterTimes = (times: TimeOfDay[]) => times.filter(t => t !== timeToRemove);
+
+    // Se a mudança é no mesmo dia de início, apenas atualiza
+    if (activeSchedule.startDate === effectiveDate) {
+        activeSchedule.times = filterTimes(activeSchedule.times);
+        if (activeSchedule.times.length === 0) {
+                // Se removeu todos os horários, encerra o hábito
+                endHabit(habit.id, effectiveDate);
+                return;
+        }
+    } else {
+        // Split do agendamento
+        activeSchedule.endDate = effectiveDate;
+        
+        const newTimes = filterTimes(activeSchedule.times);
+        if (newTimes.length > 0) {
+            const newSchedule: HabitSchedule = {
+                ...activeSchedule,
+                startDate: effectiveDate,
+                endDate: undefined,
+                times: newTimes,
+            };
+            delete (newSchedule as any).endDate;
+            habit.scheduleHistory.push(newSchedule);
+        } else {
+            // If no times left, we are effectively ending the habit, which assumes
+            // the user intended to delete the whole habit from this point on.
+            // Since activeSchedule.endDate is already set, we just finish.
+        }
+    }
+
+    // CLEANUP OVERRIDES [2025-02-15]: If we are removing a time "From Now On",
+    // we should check if there was a "Just Today" override that might conflict or be redundant.
+    const dailyInfo = state.dailyData[effectiveDate]?.[habit.id];
+    if (dailyInfo && dailyInfo.dailySchedule) {
+        // Remove the time from the daily override as well to be consistent
+        dailyInfo.dailySchedule = dailyInfo.dailySchedule.filter(t => t !== timeToRemove);
+        if (dailyInfo.dailySchedule.length === 0 && activeSchedule.times.length === 0) {
+            // Clean up empty daily schedule
+            delete dailyInfo.dailySchedule;
+        }
+    }
+    
+    // Remove instance data for that time
+    if (dailyInfo && dailyInfo.instances[timeToRemove]) {
+        delete dailyInfo.instances[timeToRemove];
+    }
+
+    // Cache cleanup
+    removeHabitFromCache(habit.id); // Ensure DOM element is recreated clean
+    state.uiDirtyState.habitListStructure = true;
+    clearScheduleCache();
+    clearActiveHabitsCache();
+    saveState();
+    renderApp();
+}
+
+// Kept for Drag & Drop functionality (Move Habit)
+function _requestFutureScheduleChange(
+    habit: Habit,
+    effectiveDate: string,
+    confirmationText: string,
+    confirmationTitle: string,
+    fromTime: TimeOfDay,
+    toTime?: TimeOfDay
+) {
+    const scheduleModifier = (times: TimeOfDay[]): TimeOfDay[] => {
+        const newTimes = times.filter(t => t !== fromTime);
+        if (toTime) {
+            newTimes.push(toTime);
+        }
+        return newTimes.sort((a, b) => TIMES_OF_DAY.indexOf(a) - TIMES_OF_DAY.indexOf(b));
+    };
+
+    const justTodayAction = () => {
+        const dailyInfo = ensureHabitDailyInfo(effectiveDate, habit.id);
+        const originalSchedule = getEffectiveScheduleForHabitOnDate(habit, effectiveDate);
+        dailyInfo.dailySchedule = scheduleModifier(originalSchedule);
+        
+        const instanceData = dailyInfo.instances[fromTime];
+        if (instanceData) {
+            if (toTime) {
+                dailyInfo.instances[toTime] = instanceData;
+            }
+            delete dailyInfo.instances[fromTime];
+        }
+
+        state.uiDirtyState.habitListStructure = true; 
+        clearActiveHabitsCache();
+        saveState();
+        renderApp();
+    };
+    
+    // For "From Now On" moves, we reuse the logic structure but with Add + Remove
+    const fromNowOnAction = () => {
+        // This is complex because it's a move (Remove + Add), not just Remove.
+        // We will keep the original implementation logic here for Move.
+        let targetScheduleIndex = habit.scheduleHistory.findIndex(s => {
+             const startOk = s.startDate <= effectiveDate;
+             const endOk = !s.endDate || s.endDate > effectiveDate;
+             return startOk && endOk;
+        });
+
+        if (targetScheduleIndex === -1) {
+            targetScheduleIndex = habit.scheduleHistory.length - 1;
+        }
+
+        const activeSchedule = habit.scheduleHistory[targetScheduleIndex];
+        
+        const applyChangeToTimes = (times: TimeOfDay[]): TimeOfDay[] => {
+            const newTimes = times.filter(t => t !== fromTime);
+            if (toTime) {
+                newTimes.push(toTime);
+            }
+            return newTimes.sort((a, b) => TIMES_OF_DAY.indexOf(a) - TIMES_OF_DAY.indexOf(b));
+        };
+        
+        if (activeSchedule.startDate === effectiveDate) {
+            activeSchedule.times = applyChangeToTimes(activeSchedule.times);
+            if (activeSchedule.times.length === 0) {
+                 endHabit(habit.id, effectiveDate);
+                 return;
+            }
+        } else {
+            activeSchedule.endDate = effectiveDate;
+            const newTimes = applyChangeToTimes(activeSchedule.times);
+            if (newTimes.length > 0) {
+                const newSchedule: HabitSchedule = {
+                    ...activeSchedule,
+                    startDate: effectiveDate,
+                    endDate: undefined,
+                    times: newTimes,
+                };
+                delete (newSchedule as any).endDate;
+                habit.scheduleHistory.push(newSchedule);
+            }
+        }
+
+        if (state.dailyData[effectiveDate]?.[habit.id]?.dailySchedule) {
+             const dailyInfo = ensureHabitDailyInfo(effectiveDate, habit.id);
+             if (dailyInfo.dailySchedule) {
+                dailyInfo.dailySchedule = scheduleModifier(dailyInfo.dailySchedule);
+             }
+        }
+        
+        const dailyInfo = state.dailyData[effectiveDate]?.[habit.id];
+        if (dailyInfo) {
+            const instanceData = dailyInfo.instances[fromTime];
+            if (instanceData) {
+                if (toTime) {
+                    dailyInfo.instances[toTime] = instanceData;
+                }
+                delete dailyInfo.instances[fromTime];
+            }
+        }
+        
+        state.uiDirtyState.habitListStructure = true;
+        clearScheduleCache();
+        clearActiveHabitsCache();
+        saveState();
+        renderApp();
+    };
+
+    showConfirmationModal(
+        confirmationText,
+        fromNowOnAction,
+        {
+            title: confirmationTitle,
+            confirmText: t('buttonFromNowOn'),
+            editText: t('buttonJustToday'),
+            onEdit: justTodayAction,
+            hideCancel: true
+        }
+    );
 }
 
 export function requestHabitTimeRemoval(habitId: string, time: TimeOfDay) {
@@ -467,182 +464,318 @@ export function requestHabitTimeRemoval(habitId: string, time: TimeOfDay) {
     
     const date = state.selectedDate;
     const { name } = getHabitDisplayInfo(habit, date);
-    const schedule = getEffectiveScheduleForHabitOnDate(habit, date);
-
-    // LÓGICA ATUALIZADA [2025-02-15]:
-    // Anteriormente, se houvesse apenas 1 horário, forçávamos a exclusão permanente.
-    // Agora, permitimos que o usuário escolha entre "Apagar Hábito" (Destrutivo/Histórico) 
-    // ou "Remover Horário" (Que leva ao fluxo de "Apenas Hoje" ou "Encerrar/Arquivar").
     
-    const isSingleSchedule = schedule.length <= 1;
+    // UX UPDATE [2025-02-17]: Simplificação radical do fluxo de exclusão via Swipe.
+    // O botão principal agora remove apenas o horário (slot) específico daqui para frente.
     
-    const bodyText = isSingleSchedule
-        ? t('confirmRemoveTime', { habitName: name, time: t(`filter${time}`) })
-        : t('confirmRemoveTimeMulti', { time: t(`filter${time}`) });
+    const bodyText = t('confirmRemoveTime', { habitName: name, time: t(`filter${time}`) });
     
-    // Se houver múltiplos horários, oferece a escolha
     showConfirmationModal(
         bodyText,
         () => {
-            // Ação Principal: Apagar Tudo (Cuidado, isso é destrutivo)
-            requestHabitPermanentDeletion(habitId);
+            // Ação Principal: Remover este horário específico de agora em diante.
+            _removeTimeFromSchedule(habit, date, time);
         },
         {
             title: t('modalRemoveTimeTitle'),
-            confirmText: t('btnRemoveHabit'), // "Apagar Hábito"
-            confirmButtonStyle: 'danger',
-            
-            // Ação de Edição: Remover apenas este horário
-            editText: t('btnRemoveTimeOnly', { time: t(`filter${time}`) }),
-            onEdit: () => {
-                 // UPDATE [2025-02-17]: Simplified flow. 
-                 // Removing the time slot is now implicitly "From Now On" (Future).
-                 // Skips the secondary modal asking "Just Today" vs "Future".
-                 _removeTimeFromSchedule(habit, date, time, 'future');
-            }
+            confirmText: t('deleteButton'), // "Apagar"
+            confirmButtonStyle: 'danger'
         }
     );
 }
 
-function _requestFutureScheduleChange(habit: Habit, date: string, text: string, title: string, timeToRemove: TimeOfDay) {
-    // This is the "Just Today" vs "From Now On" logic
-    showConfirmationModal(
-        text, // Reuse text
-        () => {
-            // From Now On (or "Remove Time" general)
-            _removeTimeFromSchedule(habit, date, timeToRemove, 'future');
-        },
-        {
-            title: title,
-            confirmText: t('buttonFromNowOn'),
-            editText: t('buttonJustToday'),
-            onEdit: () => {
-                _removeTimeFromSchedule(habit, date, timeToRemove, 'today');
-            }
-        }
-    );
-}
 
-function _removeTimeFromSchedule(habit: Habit, date: string, timeToRemove: TimeOfDay, mode: 'today' | 'future') {
-    if (mode === 'today') {
-        const effectiveSchedule = getEffectiveScheduleForHabitOnDate(habit, date);
-        const newTimes = effectiveSchedule.filter(t => t !== timeToRemove);
-        
-        const dailyInfo = ensureHabitDailyInfo(date, habit.id);
-        dailyInfo.dailySchedule = newTimes;
+export function saveHabitFromModal() {
+    if (!state.editingHabit) return;
+
+    const { isNew, habitId, formData, targetDate } = state.editingHabit;
+    
+    // Validação básica
+    if (!formData.name && !formData.nameKey) {
+        alert(t('noticeNameCannotBeEmpty'));
+        return;
+    }
+
+    if (isNew) {
+        const newHabit: Habit = {
+            id: generateUUID(),
+            icon: formData.icon,
+            color: formData.color,
+            goal: formData.goal,
+            createdOn: targetDate, // Cria a partir da data que estava vendo
+            scheduleHistory: [{
+                startDate: targetDate,
+                times: formData.times,
+                frequency: formData.frequency,
+                name: formData.name,
+                nameKey: formData.nameKey,
+                subtitleKey: formData.subtitleKey,
+                scheduleAnchor: targetDate
+            }]
+        };
+        state.habits.push(newHabit);
     } else {
-        // Future / Permanent Change
-        const todayISO = getTodayUTCIso();
-        const lastSchedule = habit.scheduleHistory[habit.scheduleHistory.length - 1];
-        
-        // If startDate is already today, just update it.
-        // Otherwise, split history.
-        // Simplified:
-        if (lastSchedule.startDate !== date) { // Assuming 'date' is today or we treat it as effective change date
-             const effectiveSchedule = getEffectiveScheduleForHabitOnDate(habit, date); // Base on current state
-             const newTimes = effectiveSchedule.filter(t => t !== timeToRemove);
-             
-             lastSchedule.endDate = date;
-             habit.scheduleHistory.push({
-                 ...JSON.parse(JSON.stringify(lastSchedule)),
-                 startDate: date,
-                 endDate: undefined,
-                 times: newTimes,
-                 scheduleAnchor: date
-             });
-        } else {
-            lastSchedule.times = lastSchedule.times.filter(t => t !== timeToRemove);
+        const habit = state.habits.find(h => h.id === habitId);
+        if (habit) {
+            // LOGIC FIX [2025-02-15]: Priority Clean-up.
+            const dailyInfo = state.dailyData[targetDate]?.[habit.id];
+            if (dailyInfo && dailyInfo.dailySchedule !== undefined) {
+                delete dailyInfo.dailySchedule;
+            }
+
+            // Atualiza propriedades visuais globais
+            habit.icon = formData.icon;
+            habit.color = formData.color;
+            habit.goal = formData.goal;
+            
+            // Lógica de agendamento
+            const currentSchedule = getScheduleForDate(habit, targetDate) 
+                || habit.scheduleHistory[habit.scheduleHistory.length - 1];
+                
+            const hasScheduleChanges = 
+                JSON.stringify(currentSchedule.times.sort()) !== JSON.stringify(formData.times.sort()) ||
+                JSON.stringify(currentSchedule.frequency) !== JSON.stringify(formData.frequency) ||
+                currentSchedule.name !== formData.name;
+
+            if (hasScheduleChanges) {
+                // Simplificação: Se a data alvo é o início do agendamento atual, atualiza in-place.
+                if (currentSchedule.startDate === targetDate) {
+                    currentSchedule.times = formData.times;
+                    currentSchedule.frequency = formData.frequency;
+                    currentSchedule.name = formData.name;
+                    currentSchedule.nameKey = formData.nameKey;
+                    currentSchedule.subtitleKey = formData.subtitleKey;
+                } else {
+                    // Fork schedule
+                    currentSchedule.endDate = targetDate;
+                    const newSchedule: HabitSchedule = {
+                        startDate: targetDate,
+                        times: formData.times,
+                        frequency: formData.frequency,
+                        name: formData.name,
+                        nameKey: formData.nameKey,
+                        subtitleKey: formData.subtitleKey,
+                        scheduleAnchor: targetDate // Reancora para cálculo de frequência
+                    };
+                    habit.scheduleHistory.push(newSchedule);
+                    // Ordena histórico
+                    habit.scheduleHistory.sort((a, b) => a.startDate.localeCompare(b.startDate));
+                }
+                clearScheduleCache();
+            } else {
+                currentSchedule.name = formData.name;
+                currentSchedule.nameKey = formData.nameKey;
+            }
         }
     }
 
-    saveState();
-    clearScheduleCache();
-    clearActiveHabitsCache();
-    
+    state.editingHabit = null;
     state.uiDirtyState.habitListStructure = true;
+    
+    // Invalida caches globais
+    clearActiveHabitsCache();
+    invalidateChartCache();
+    
+    saveState();
+    closeModal(ui.editHabitModal);
     renderApp();
 }
 
+export function endHabit(habitId: string, dateISO: string) {
+    const habit = state.habits.find(h => h.id === habitId);
+    if (!habit) return;
 
-// --- AI ANALYSIS ---
+    // Localiza o agendamento ativo nesta data
+    const activeSchedule = getScheduleForDate(habit, dateISO);
+    if (!activeSchedule) return;
+
+    // Salva estado para undo
+    const removedSchedules = habit.scheduleHistory.filter(s => s.startDate > dateISO);
+    
+    state.lastEnded = {
+        habitId,
+        lastSchedule: JSON.parse(JSON.stringify(activeSchedule)), // Snapshot
+        removedSchedules: JSON.parse(JSON.stringify(removedSchedules)) // Snapshot
+    };
+
+    // Remove agendamentos futuros
+    habit.scheduleHistory = habit.scheduleHistory.filter(s => s.startDate <= dateISO);
+    
+    // Encerra ao final do dia ANTERIOR se a intenção é não fazer mais a partir de hoje
+    activeSchedule.endDate = dateISO;
+
+    clearScheduleCache();
+    clearActiveHabitsCache();
+    invalidateChartCache();
+    state.uiDirtyState.habitListStructure = true;
+    
+    saveState();
+    renderApp();
+    showUndoToast();
+}
+
+export function requestHabitEndingFromModal(habitId: string) {
+    const habit = state.habits.find(h => h.id === habitId);
+    if (!habit) return;
+    const { name } = getHabitDisplayInfo(habit, state.selectedDate);
+    
+    showConfirmationModal(
+        t('confirmEndHabitBody', { habitName: name }),
+        () => {
+            endHabit(habitId, state.selectedDate);
+            closeModal(ui.manageModal);
+        },
+        {
+            title: t('confirmEndHabitTitle'),
+            confirmText: t('modalManageEndButton'),
+            confirmButtonStyle: 'danger'
+        }
+    );
+}
+
+export function requestHabitPermanentDeletion(habitId: string) {
+    const habit = state.habits.find(h => h.id === habitId);
+    if (!habit) return;
+    const { name } = getHabitDisplayInfo(habit);
+
+    showConfirmationModal(
+        t('confirmPermanentDelete', { habitName: name }),
+        () => {
+            state.habits = state.habits.filter(h => h.id !== habitId);
+            
+            // Remove do cache de elementos também para evitar reuso acidental
+            removeHabitFromCache(habitId);
+
+            state.uiDirtyState.habitListStructure = true;
+            clearActiveHabitsCache();
+            invalidateChartCache();
+            saveState();
+            
+            // Re-render modal list
+            setupManageModal();
+            renderApp();
+        },
+        {
+            title: t('modalDeleteHabitTitle'),
+            confirmText: t('deleteButton'),
+            confirmButtonStyle: 'danger'
+        }
+    );
+}
+
+export function requestHabitEditingFromModal(habitId: string) {
+    const habit = state.habits.find(h => h.id === habitId);
+    if (habit) {
+        closeModal(ui.manageModal);
+        openEditModal(habit);
+    }
+}
+
+export function graduateHabit(habitId: string) {
+    const habit = state.habits.find(h => h.id === habitId);
+    if (habit) {
+        const today = getTodayUTCIso();
+        habit.graduatedOn = today;
+        
+        state.uiDirtyState.habitListStructure = true;
+        saveState();
+        
+        // Re-render manage list if open
+        if (ui.manageModal.classList.contains('visible')) {
+            setupManageModal();
+        }
+        renderApp();
+    }
+}
+
+export function resetApplicationData() {
+    localStorage.clear();
+    // Recarrega a página para reset limpo
+    window.location.reload();
+}
+
+export function handleSaveNote() {
+    if (!state.editingNoteFor) return;
+    const { habitId, date, time } = state.editingNoteFor;
+    const note = ui.notesTextarea.value.trim();
+
+    const instanceData = ensureHabitInstanceData(date, habitId, time);
+    instanceData.note = note;
+
+    saveState();
+    closeModal(ui.notesModal);
+    
+    // Atualiza UI
+    renderHabitCardState(habitId, time);
+}
 
 // DEFINIÇÃO DE CABEÇALHOS PRE-TRADUZIDOS (PROMPT ENGINEERING)
-// Isso evita alucinações da IA e garante que a UI exiba os títulos corretos.
 const PROMPT_HEADERS = {
     pt: {
         projection: "O Horizonte (Praemeditatio)",
-        insight: "O Diagnóstico Filosófico", 
+        insight: "O Diagnóstico Filosófico",
         system_low: "O Protocolo de Ação (Algoritmo)",
         system_high: "O Desafio da Excelência",
+        action_low: "Micro-Ação (Mise-en-place)",
+        action_high: "Micro-Ação (O Próximo Nível)",
         socratic: "A Questão Cortante",
-        connection: "A Voz dos Antigos",
-        action_low: "Ação Imediata",
-        archetype: "Arquétipo"
+        connection: "A Voz dos Antigos"
     },
     en: {
         projection: "The Horizon (Praemeditatio)",
         insight: "Philosophical Diagnosis",
         system_low: "Action Protocol (Algorithm)",
         system_high: "The Challenge of Excellence",
+        action_low: "Micro-Action (Mise-en-place)",
+        action_high: "Micro-Action (The Next Level)",
         socratic: "The Cutting Question",
-        connection: "Voice of the Ancients",
-        action_low: "Immediate Action",
-        archetype: "Archetype"
+        connection: "Voice of the Ancients"
     },
     es: {
         projection: "El Horizonte (Praemeditatio)",
         insight: "Diagnóstico Filosófico",
         system_low: "Protocolo de Acción (Algoritmo)",
         system_high: "El Desafío de la Excelencia",
+        action_low: "Micro-Acción (Mise-en-place)",
+        action_high: "Micro-Acción (El Siguiente Nivel)",
         socratic: "La Cuestión Cortante",
-        connection: "La Voz de los Antiguos",
-        action_low: "Acción Inmediata",
-        archetype: "Arquetipo"
+        connection: "La Voz de los Antiguos"
     }
 };
 
+// IMPLEMENTATION INTENTION TEMPLATES
 const IMPLEMENTATION_TEMPLATES = {
-    pt: "Quando [Gatilho], eu vou [Ação].",
-    en: "When [Trigger], I will [Action].",
-    es: "Cuando [Desencadenante], haré [Acción]."
+    pt: "Quando [GATILHO], eu farei [AÇÃO].",
+    en: "When [TRIGGER], I will [ACTION].",
+    es: "Cuando [DESENCADENANTE], haré [ACCIÓN]."
 };
 
+// GOAL REDUCTION TEMPLATES
 const RECALIBRATION_TEMPLATES = {
-    pt: "Eu ajusto minha meta de [Meta Antiga] para [Nova Meta] para garantir consistência.",
-    en: "I adjust my goal from [Old Goal] to [New Goal] to ensure consistency.",
-    es: "Ajusto mi objetivo de [Meta Antigua] a [Nueva Meta] para asegurar la consistencia."
+    pt: "Nova Meta: [NÚMERO] [UNIDADE] por dia.",
+    en: "New Goal: [NUMBER] [UNIT] per day.",
+    es: "Nueva Meta: [NÚMERO] [UNIDAD] por día."
 };
 
-// NEW [2025-02-15]: Calculates conditional probability of failure.
-// "If TriggerHabit fails, how often does TargetHabit fail?"
-function calculateCorrelation(
-    triggerHabitId: string, 
-    targetHabitId: string, 
-    dailyData: Record<string, Record<string, any>>, 
-    daysToCheck: string[]
-): number {
-    let triggerFailures = 0;
-    let jointFailures = 0;
-
-    for (const date of daysToCheck) {
-        const triggerStatus = dailyData[date]?.[triggerHabitId]?.instances || {};
-        // Check if trigger failed (assuming only 1 schedule for simplicity or ANY failure in day)
-        // We look for Absence of 'completed' status in any slot of the day for the trigger
-        const triggerDayFailed = !Object.values(triggerStatus).some((i: any) => i.status === 'completed');
-
-        if (triggerDayFailed) {
-            triggerFailures++;
-            const targetStatus = dailyData[date]?.[targetHabitId]?.instances || {};
-            const targetDayFailed = !Object.values(targetStatus).some((i: any) => i.status === 'completed');
-            
-            if (targetDayFailed) {
-                jointFailures++;
-            }
-        }
+// TIME-SPECIFIC ANCHOR EXAMPLES
+const TIME_ANCHORS = {
+    Morning: {
+        pt: "Ao acordar, Depois de escovar os dentes, Com o café",
+        en: "Upon waking, After brushing teeth, With coffee",
+        es: "Al despertar, Después de cepillarse, Con el café"
+    },
+    Afternoon: {
+        pt: "Após o almoço, Ao fechar o laptop, Chegando em casa",
+        en: "After lunch, Closing laptop, Arriving home",
+        es: "Después del almuerzo, Al cerrar la laptop, Llegando a casa"
+    },
+    Evening: {
+        pt: "Após o jantar, Colocando pijama, Antes de escovar os dentes",
+        en: "After dinner, Putting on pajamas, Before brushing teeth",
+        es: "Después de cenar, Poniéndose el pijama, Antes de cepillarse"
     }
+};
 
-    return triggerFailures > 0 ? (jointFailures / triggerFailures) : 0;
-}
 
 export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'general') {
     closeModal(ui.aiOptionsModal);
@@ -653,18 +786,24 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
 
     const today = parseUTCIsoDate(getTodayUTCIso());
     let startDate: Date;
+    let periodNameKey: string;
     let daysCount = 0;
 
     if (analysisType === 'weekly') {
         startDate = addDays(today, -7);
+        periodNameKey = 'aiPeriodWeekly';
         daysCount = 7;
     } else if (analysisType === 'monthly') {
         startDate = addDays(today, -30);
+        periodNameKey = 'aiPeriodMonthly';
         daysCount = 30;
     } else {
         startDate = addDays(today, -14); // General context
+        periodNameKey = 'aiPeriodGeneral';
         daysCount = 14;
     }
+
+    const periodName = t(periodNameKey);
 
     const langCode = state.activeLanguageCode || 'pt';
     const langMap: Record<string, string> = { 'pt': 'Portuguese', 'es': 'Spanish', 'en': 'English' };
@@ -673,10 +812,11 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
     
     // Default templates
     let implTemplate = IMPLEMENTATION_TEMPLATES[langCode as keyof typeof IMPLEMENTATION_TEMPLATES] || IMPLEMENTATION_TEMPLATES['en'];
+    const recalibrationTemplate = RECALIBRATION_TEMPLATES[langCode as keyof typeof RECALIBRATION_TEMPLATES] || RECALIBRATION_TEMPLATES['en'];
 
     // Data Calculation structures
     const semanticLog: string[] = [];
-    const dateList: string[] = []; // Track dates for correlation calc
+    const dateList: string[] = [];
     
     // Stats per Habit
     const statsMap = new Map<string, { 
@@ -692,7 +832,7 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
         valueCount: number 
     }>();
     
-    // Stats per Time of Day (Chronobiology)
+    // Stats per Time of Day
     const timeOfDayStats = {
         Morning: { scheduled: 0, completed: 0 },
         Afternoon: { scheduled: 0, completed: 0 },
@@ -721,13 +861,11 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
 
     let currentDate = startDate;
     let dayIndex = 0;
-    let redFlagDay = ""; // Specific day of collapse
+    let redFlagDay = ""; 
     let sparklineHabitId: string | null = null;
     
-    // OPTIMIZATION [2025-02-09]: Instantiate formatters outside loop
-    const dayFormatter = new Intl.DateTimeFormat(state.activeLanguageCode, { weekday: 'short' });
+    const dayFormatter = getDateTimeFormat(state.activeLanguageCode, { weekday: 'short' });
     
-    // [2025-02-14] New Metric: Active Habits Count for Burnout Detection
     const activeHabitsCount = state.habits.filter(h => !h.graduatedOn && !h.scheduleHistory[h.scheduleHistory.length-1].endDate).length;
 
     while (currentDate <= today) {
@@ -739,9 +877,7 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
         
         let dayScheduled = 0;
         let dayCompleted = 0;
-        let dayLog = ""; // Build string for semantic log
         
-        // 0 = Sunday, 6 = Saturday
         const dayOfWeek = currentDate.getUTCDay();
         const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
 
@@ -819,13 +955,11 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
                     }
                     else {
                         if (status === 'snoozed') stats.snoozed++;
-                        else stats.missed++; // Track pure misses
+                        else stats.missed++; 
                         
                         previousDayStatus[habit.id] = status; 
                     }
 
-                    // SEMANTIC LOG BUILDING (Token efficient)
-                    // Symbol mapping: Completed=✅, Snoozed=⏸️, Pending=❌
                     let symbol = '❌';
                     if (status === 'completed') symbol = '✅';
                     if (status === 'snoozed') symbol = '⏸️';
@@ -845,8 +979,7 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
             });
 
             const dayName = dayFormatter.format(currentDate);
-            dayLog = `${dateISO.substring(5)} (${dayName}): ${dayEntriesStrings.join(', ')}`;
-            semanticLog.push(dayLog);
+            semanticLog.push(`${dateISO.substring(5)} (${dayName}): ${dayEntriesStrings.join(', ')}`);
 
             // Bad Day Logic
             if (dayScheduled > 0) {
@@ -912,8 +1045,6 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
             highestStreakHabitName = name;
         }
 
-        // Determine Nemesis: The one with high snoozes OR high misses
-        // Prioritize Snoozes as "Resistance", Misses as "Neglect"
         if ((snoozeRate + missRate) > (highestSnoozeRate + highestMissRate) && data.scheduled > 3) { 
             highestSnoozeRate = snoozeRate;
             highestMissRate = missRate;
@@ -938,20 +1069,17 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
     let frictionDiagnosis = "";
 
     if (nemesisId) {
-        // 1. Friction Type Diagnosis
-        // If > 20% Snooze: Resistance (Psychological). If > 20% Miss: Neglect (Logistical).
+        // Friction Type Diagnosis
         if (highestSnoozeRate > 0.2) {
             frictionDiagnosis = `DIAGNOSIS: The user struggles with **Internal Resistance** (Fear/Procrastination) on '${nemesisName}'. They see the task but delay it (Snooze). ADVICE: Lower the emotional barrier. The goal is too scary.`;
         } else if (highestMissRate > 0.2) {
             frictionDiagnosis = `DIAGNOSIS: The user struggles with **Neglect/Visibility** on '${nemesisName}'. They forget or run out of time (Miss). ADVICE: Increase visibility or change the trigger time. The prompt is too weak.`;
         }
 
-        // 2. Domino Effect Analysis
-        // Check correlations between Nemesis failure and other habits
+        // Domino Effect Analysis
         let dominoEffectFound = false;
         statsMap.forEach((data, otherId) => {
             if (otherId !== nemesisId && data.scheduled > 3) {
-                // Calculate P(Other Fails | Nemesis Fails)
                 const correlation = calculateCorrelation(nemesisId, otherId, state.dailyData, dateList);
                 if (correlation > 0.75) {
                     const { name: otherName } = getHabitDisplayInfo(data.habit, toUTCIsoDateString(today));
@@ -974,32 +1102,6 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
         ? `The Nemesis: **${nemesisName}**. ${frictionDiagnosis}` 
         : "No significant Nemesis.";
 
-    // --- GLOBAL METRICS ---
-    const totalScheduled = Object.values(trendStats.firstHalf).reduce((a, b) => a + b, 0) + Object.values(trendStats.secondHalf).reduce((a, b) => a + b, 0);
-    const globalRate = totalScheduled > 0 ? ((trendStats.firstHalf.completed + trendStats.secondHalf.completed) / totalScheduled) * 100 : 0;
-    
-    // Trend
-    const firstHalfRate = trendStats.firstHalf.scheduled > 0 ? (trendStats.firstHalf.completed / trendStats.firstHalf.scheduled) * 100 : 0;
-    const secondHalfRate = trendStats.secondHalf.scheduled > 0 ? (trendStats.secondHalf.completed / trendStats.secondHalf.scheduled) * 100 : 0;
-    const trendDiff = secondHalfRate - firstHalfRate;
-    
-    let trendDescription = "Stable";
-    if (trendDiff > 5) trendDescription = "Significantly Improving";
-    else if (trendDiff > 1) trendDescription = "Slightly Improving";
-    else if (trendDiff < -5) trendDescription = "Crashing (Urgent)";
-    else if (trendDiff < -1) trendDescription = "Declining";
-
-    // Culprit (Consistently failing habit)
-    const culpritInfo = nemesisName || "None";
-
-    // Note Density
-    const noteDensity = totalLogs > 0 ? Math.round((totalNotes / totalLogs) * 100) : 0;
-    let dataQualityWarning = "";
-    if (noteDensity < 5 && globalRate < 50) {
-        dataQualityWarning = "WARNING: User is failing but writing almost NO notes. Blind spots are high.";
-    }
-
-    // --- TEMPORAL PATTERNS ---
     let temporalSummary = "";
     let lowestPerfTime: TimeOfDay = 'Morning';
     let lowestPerfRate = 1.0;
@@ -1017,41 +1119,118 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
         }
     });
 
-    // --- DYNAMIC INSTRUCTION INJECTION (Prompt Engineering) ---
-    // Instead of complex IF/ELSE inside the prompt text, we inject the specific instruction
-    // based on the user's state (Winter vs Summer). This reduces token usage and cognitive load on the AI.
+    const firstHalfRate = trendStats.firstHalf.scheduled > 0 ? Math.round((trendStats.firstHalf.completed / trendStats.firstHalf.scheduled) * 100) : 0;
+    const secondHalfRate = trendStats.secondHalf.scheduled > 0 ? Math.round((trendStats.secondHalf.completed / trendStats.secondHalf.scheduled) * 100) : 0;
+    const trendDiff = secondHalfRate - firstHalfRate;
+    const trendDescription = trendDiff > 5 ? "RISING MOMENTUM 🚀" : (trendDiff < -5 ? "LOSING MOMENTUM 📉" : "STABLE ➖");
+    
+    const culpritEntry = Object.entries(failedHabitsOnBadDays).sort((a, b) => b[1] - a[1])[0];
+    const culpritInfo = culpritEntry ? `Habit most often associated with 'Bad Days': **${culpritEntry[0]}**` : "None.";
+
+    const noteDensity = totalLogs > 0 ? Math.round((totalNotes / totalLogs) * 100) : 0;
+    
+    const globalRate = (firstHalfRate + secondHalfRate) / 2;
+
+    let dataQualityWarning = "Good context.";
+    if (globalRate < 80 && mysteryHabits.length > 0) {
+         dataQualityWarning = `MISSING CONTEXT: User is failing at ${mysteryHabits.join(', ')} but has written ZERO notes.`;
+    } else if (globalRate >= 80) {
+         dataQualityWarning = "High performance; notes are optional.";
+    }
+
+    let seasonalPhase = "";
+    if (globalRate > 85 && trendDiff >= -2) seasonalPhase = "SUMMER (Harvest/Flow) - High performance.";
+    else if (globalRate < 50) seasonalPhase = "WINTER (The Citadel) - Low performance, focus on resilience.";
+    else if (trendDiff > 5) seasonalPhase = "SPRING (Ascent) - Growing momentum.";
+    else seasonalPhase = "AUTUMN (Turbulence) - Declining momentum.";
+
+    // REFACTOR [2025-02-16]: Projection is no longer hardcoded text.
+    let historicalDepth = "Short (New)";
+    if (highestStreakValue > 66) historicalDepth = "Deep (Consolidated)";
+    else if (highestStreakValue > 21) historicalDepth = "Medium (Forming)";
+
+    const projectionMetrics = `
+    - Current Consistency: ${Math.round(globalRate)}%
+    - Momentum (Last 7 Days vs Previous): ${trendDiff > 0 ? '+' : ''}${Math.round(trendDiff)}%
+    - History Depth: ${historicalDepth}
+    - Streak Risk: ${highestStreakValue > 10 ? "High Stakes" : "Low Stakes"}
+    `;
+
+    // --- SMART QUOTE SELECTION ---
+    let quoteFilterFn = (q: any) => true; // Default to all
+    let quoteReason = "General Wisdom"; 
+
+    const isBurnout = activeHabitsCount > 6 && trendDiff < 0;
+    const isDrifter = globalRate < 50 && trendDiff <= 0;
+
+    if (isBurnout) {
+        quoteFilterFn = (q) => q.tags.includes('simplicity') || q.tags.includes('rest') || q.tags.includes('essentialism');
+        quoteReason = "simplifying your routine to prevent burnout (Essentialism)";
+    } else if (highestSnoozeRate > 0.15) {
+        quoteFilterFn = (q) => q.tags.includes('action') || q.tags.includes('time');
+        quoteReason = "overcoming the inertia of procrastination";
+    } else if (realityGapWarning.length > 0) {
+        quoteFilterFn = (q) => q.tags.includes('control') || q.tags.includes('reality');
+        quoteReason = "aligning ambition with reality";
+    } else if (seasonalPhase.includes("WINTER") || seasonalPhase.includes("AUTUMN")) {
+        quoteFilterFn = (q) => q.tags.includes('resilience') || q.tags.includes('suffering');
+        quoteReason = "finding strength in adversity";
+    } else if (seasonalPhase.includes("SUMMER")) {
+        quoteFilterFn = (q) => q.tags.includes('nature') || q.tags.includes('humility');
+        quoteReason = "maintaining humility in success";
+    } else if (isDrifter) {
+        quoteFilterFn = (q) => q.tags.includes('discipline') || q.tags.includes('focus');
+        quoteReason = "building the foundation of discipline";
+    } else if (lowestPerfRate < 0.6) {
+        if (lowestPerfTime === 'Morning') {
+            quoteFilterFn = (q) => q.tags.includes('time') || q.tags.includes('action') || q.tags.includes('morning');
+            quoteReason = "conquering the morning resistance";
+        } else if (lowestPerfTime === 'Evening') {
+            quoteFilterFn = (q) => q.tags.includes('reflection') || q.tags.includes('evening') || q.tags.includes('gratitude');
+            quoteReason = "closing the day with purpose";
+        }
+    } else if (redFlagDay) {
+        quoteFilterFn = (q) => q.tags.includes('acceptance') || q.tags.includes('fate');
+        quoteReason = "accepting the chaos of a bad day (Amor Fati)";
+    } else if (totalLogs < 20) {
+        quoteFilterFn = (q) => q.tags.includes('courage') || q.tags.includes('preparation');
+        quoteReason = "finding the courage to begin";
+    }
+
+    const quotePool = STOIC_QUOTES.filter(quoteFilterFn);
+    const finalPool = quotePool.length > 0 ? quotePool : STOIC_QUOTES;
+    
+    const selectedQuote = finalPool[Math.floor(Math.random() * finalPool.length)];
+    const quoteText = selectedQuote[langCode as 'pt'|'en'|'es'] || selectedQuote['en'];
+    const quoteAuthor = t(selectedQuote.author);
+
+    // --- DYNAMIC INSTRUCTION INJECTION ---
     let systemInstructionText = "Suggest a specific 'Implementation Intention' to reduce friction (Mise-en-place).";
     
-    // REFINE [2025-02-09]: 'Gateway Habit' terminology for low performance
-    // BEHAVIORAL UPDATE [2025-02-09]: Require Biological/Mechanical Anchors.
-    // CRITICAL UPDATE [2025-02-12]: Moved TIMING RULE here to make it dynamic.
     let actionInstructionText = `One tiny, 'Gateway Habit' (less than 2 min). A physical movement that initiates the flow. Link it to a PRECISE BIOLOGICAL/MECHANICAL ANCHOR (e.g. 'Feet hit floor', 'Turn off shower', 'Close laptop') suitable for the user's struggle time (${lowestPerfTime}). Avoid time-based anchors (e.g. 'At 8am'). Time Horizon: NOW or TONIGHT. Never Tomorrow.`;
     
-    // Determine dynamic Action Instruction based on Friction Diagnosis
-    // RECOMMENDATION EXPERT LOGIC [2025-02-16]: Apply Fogg Behavior Model principles.
-    // High Snooze = Low Motivation (Requires lowering the barrier/fun).
-    // High Miss = Low Ability/Trigger (Requires simplification or better prompts).
+    if (lowestPerfTime === 'Morning' && lowestPerfRate < 0.6) {
+        actionInstructionText += " TIMING RULE: Since the failure happens in the Morning, the Trigger MUST happen the **Night Before** (Preparation) OR **Immediately upon Waking** (if prep is impossible).";
+    }
+    
+    let socraticInstruction = "Ask about FRICTION (What stands in the way? Is it fatigue or fear?).";
+    
     if (highestSnoozeRate > 0.2) {
         actionInstructionText += " **DIAGNOSIS: High Resistance (Snoozing).** The user has Ability but lacks Motivation/Courage. The Action must be 'Stupidly Small' to bypass the amygdala (e.g., 'Put on one shoe'). Lower the threat level.";
     } else if (highestMissRate > 0.2) {
         actionInstructionText += " **DIAGNOSIS: Low Visibility (Missing).** The user lacks a Prompt or Ability (Time). The Action must be a 'Forced Encounter' (e.g., placing the book on the pillow). Improve the Trigger.";
     }
 
-    let socraticInstruction = "Ask about FRICTION (What stands in the way? Is it fatigue or fear?).";
+    // DEEPENING ANALYSIS [2025-02-15]: "Domino Effect" Detection.
+    let patternInstruction = `Use the Semantic Log. ${correlationInfo} Scan for other subtle links. Does a specific success trigger a streak?`;
     
     // DEEPENING ANALYSIS [2025-02-15]: Benefit Reinforcement Logic.
-    // If a Nemesis exists, we must explain WHY overcoming it matters.
-    // REFACTOR [2025-02-16]: Removed dependency on 'archetype'.
     let teleologyInstruction = "";
     if (nemesisName) {
         teleologyInstruction = `**CRITICAL:** The user is struggling with '${nemesisName}'. In the 'Hidden Virtue' section, do NOT scold. Instead, SELL THE BENEFIT. Explain the deep, philosophical, or psychological reward of '${nemesisName}' that the user is missing out on. Frame it as the specific antidote to their current struggle. e.g., If drifting, the benefit is Anchoring. If anxious, the benefit is Clarity.`;
     } else {
         teleologyInstruction = `The user is consistent. In the 'Hidden Virtue' section, reinforce the COMPOUND INTEREST of their 'Keystone Habit' (${highestStreakHabitName || 'consistency'}). Explain what character trait they are forging by not quitting.`;
     }
-
-    // DEEPENING ANALYSIS [2025-02-15]: "Domino Effect" Detection.
-    // Instead of just identifying a turning point, ask the AI to look for causal links between Morning failures and Evening collapses.
-    let patternInstruction = `Use the Semantic Log. ${correlationInfo} Scan for other subtle links. Does a specific success trigger a streak?`;
 
     let tweaksExamples = `
     Examples of System Tweaks (Low Friction):
@@ -1067,100 +1246,78 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
 
 
     // FOCUS LOGIC & SPARKLINE GENERATION
-    let focusTarget = "Consistency"; // Default
-    let seasonalPhase = "";
+    let focusTarget = "Sustainability & Burnout Prevention (Maintenance)";
     
-    if (globalRate > 85 && trendDiff >= -2) seasonalPhase = "SUMMER (Harvest/Flow) - High performance.";
-    else if (globalRate < 50) seasonalPhase = "WINTER (The Citadel) - Low performance, focus on resilience.";
-    else if (trendDiff > 5) seasonalPhase = "SPRING (Ascent) - Growing momentum.";
-    else seasonalPhase = "AUTUMN (Turbulence) - Declining momentum.";
-
-    // REFACTOR [2025-02-16]: Projection is no longer hardcoded text.
-    // We pass raw metrics to the AI and let it derive the trajectory based on Stoic Physics (Cause & Effect).
-    // This allows for nuanced predictions (e.g., "High stats but declining trend" = Hubris).
+    if (highestStreakHabitName) {
+         focusTarget = `'Keystone Habit' (${highestStreakHabitName})`;
+         for (const [id, data] of statsMap.entries()) {
+             const { name } = getHabitDisplayInfo(data.habit, toUTCIsoDateString(today));
+             if (name === highestStreakHabitName) sparklineHabitId = id;
+         }
+    }
+    if (nemesisName) {
+        focusTarget = `'Nemesis' (${nemesisName}) - Source of the problem`;
+        for (const [id, data] of statsMap.entries()) {
+             const { name } = getHabitDisplayInfo(data.habit, toUTCIsoDateString(today));
+             if (name === nemesisName) sparklineHabitId = id;
+        }
+    }
     
-    let historicalDepth = "Short (New)";
-    if (highestStreakValue > 66) historicalDepth = "Deep (Consolidated)";
-    else if (highestStreakValue > 21) historicalDepth = "Medium (Forming)";
-
-    const projectionMetrics = `
-    - Current Consistency: ${Math.round(globalRate)}%
-    - Momentum (Last 7 Days vs Previous): ${trendDiff > 0 ? '+' : ''}${Math.round(trendDiff)}%
-    - History Depth: ${historicalDepth}
-    - Streak Risk: ${highestStreakValue > 10 ? "High Stakes" : "Low Stakes"}
-    `;
-
-    // REMOVED: ARCHETYPE CALCULATION
+    if (realityGapWarning.length > 0) {
+        focusTarget = "the Reality Gap (Goal Reduction) - Source of the problem";
+        systemInstructionText = "Your 'System Tweak' MUST be a direct command to reduce the numeric goal to match reality. Do NOT use the 'When/Then' template. Just stating the new goal is enough.";
+        implTemplate = recalibrationTemplate;
+        actionInstructionText = "Commit to the new, smaller number immediately. The action is 'Mental Acceptance'.";
+    }
     
-    // --- SMART QUOTE SELECTION (Contextual Filtering by TAGS) ---
-    let quoteFilterFn = (q: any) => true; // Default to all
-    let quoteReason = "General Wisdom"; 
-
-    // NEW [2025-02-14]: Burnout / Overwhelm Detection
-    const isBurnout = activeHabitsCount > 6 && trendDiff < 0;
+    if (redFlagDay) focusTarget = `The Collapse on ${redFlagDay} - Analyze why this specific day failed.`;
     
-    // NEW [2025-02-14]: Drifter / Lack of Focus Detection
-    const isDrifter = globalRate < 50 && trendDiff <= 0;
-
     if (isBurnout) {
-        // PROBLEM: Doing too much, crashing.
-        // TAGS: Simplicity, Essentialism, Rest
-        quoteFilterFn = (q) => q.tags.includes('simplicity') || q.tags.includes('essentialism') || q.tags.includes('rest');
-        quoteReason = "burnout prevention (doing less, better)";
-        focusTarget = "Essentialism (Cut the Noise)";
-        systemInstructionText = "Suggest REMOVING a habit or reducing intensity. Focus on 'Via Negativa'.";
-        headerSystem = "The Art of Subtraction";
-        insightPlaceholder = "[Validate the effort but warn about the cost of overextension. Suggest strategic rest.]";
-    } else if (isDrifter) {
-        // PROBLEM: Low consistency, no improvement.
-        // TAGS: Discipline, Action, Duty
-        quoteFilterFn = (q) => q.tags.includes('discipline') || q.tags.includes('duty') || q.tags.includes('action');
-        quoteReason = "instilling discipline and duty";
-        focusTarget = "Discipline (The Anchor)";
-        insightPlaceholder = "[A wake-up call. Gentle but firm. Point out the drift and the cost of inaction.]";
-    } else if (redFlagDay) {
-        // PROBLEM: Specific Day Collapse
-        // TAGS: Acceptance, Fate
-        quoteFilterFn = (q) => q.tags.includes('acceptance') || q.tags.includes('fate');
-        quoteReason = "accepting the chaos of a bad day (Amor Fati)";
-    } else if (totalLogs < 20) {
-        // PROBLEM: Fear of starting
-        // TAGS: Courage, Preparation
-        quoteFilterFn = (q) => q.tags.includes('courage') || q.tags.includes('preparation');
-        quoteReason = "finding the courage to begin";
+        focusTarget = "BURNOUT RISK (Too many habits, dropping trend). Priority: Simplicity.";
+        systemInstructionText = "Suggest PAUSING or ARCHIVING one habit to save the others. The system is overloaded.";
+        actionInstructionText = "A specific action to Rest or Simplify. e.g. 'Delete one task from to-do list'.";
     }
 
-    const quotePool = STOIC_QUOTES.filter(quoteFilterFn);
-    // Fallback if pool is empty
-    const finalPool = quotePool.length > 0 ? quotePool : STOIC_QUOTES;
-    
-    // Deterministic Randomness based on Date to avoid jitter on re-runs same day?
-    // No, randomness is fine for "refreshing" wisdom.
-    const quoteIdx = Math.floor(Math.random() * finalPool.length);
-    const quote = finalPool[quoteIdx];
-    
-    // LANGUAGE SAFEGUARD: Ensure quote exists in target language
-    const quoteText = quote[state.activeLanguageCode as 'en'|'pt'|'es'] || quote['en'];
-    const quoteAuthor = t(quote.author);
-
-    // Generate Sparkline (Mini-graph) using Semantic Log
-    // We can rebuild it from the semantic log array we created.
-    // Visual: ▂▄▆█
-    // Simple Text:  __..Il
-    const logContent = semanticLog.join('\n');
     let sparkline = "";
-    if (semanticLog.length > 0) {
-        sparkline = semanticLog.map(line => {
-            if (line.includes("✅")) return "I"; // Success
-            if (line.includes("⏸️")) return "."; // Snooze
-            return "_"; // Fail
-        }).join("");
+    if (sparklineHabitId) {
+        const habit = state.habits.find(h => h.id === sparklineHabitId);
+        if (habit) {
+            const days: string[] = [];
+            for (let i = 6; i >= 0; i--) {
+                const d = addDays(today, -i);
+                const dISO = toUTCIsoDateString(d);
+                const daily = state.dailyData[dISO]?.[sparklineHabitId]?.instances || {};
+                
+                const schedule = getEffectiveScheduleForHabitOnDate(habit, dISO);
+                if (schedule.length === 0) {
+                     days.push('▪️');
+                     continue;
+                }
+                
+                let dayStatus = '❌';
+                let hasCompleted = false;
+                let hasSnoozed = false;
+                
+                for (const time of schedule) {
+                    const s = daily[time]?.status;
+                    if (s === 'completed') hasCompleted = true;
+                    if (s === 'snoozed') hasSnoozed = true;
+                }
+                
+                if (hasCompleted) dayStatus = '✅';
+                else if (hasSnoozed) dayStatus = '⏸️';
+                
+                days.push(dayStatus);
+            }
+            sparkline = days.join(' ');
+        }
     }
 
-    let taskDescription = "Analyze the user's habit log and provide Stoic guidance.";
+
+    let taskDescription = `Write a structured, soulful Stoic mentorship reflection based on the user's evidence (${periodName})`;
+    let logContent = semanticLog.join('\n');
 
     // --- COLD START / ONBOARDING MODE ---
-    // Detects new users with very little data to prevent hallucinated pattern recognition.
     if (totalLogs < 5) {
         seasonalPhase = "THE BEGINNING (Day 1)";
         focusTarget = "Building the Foundation (Start Small)";
@@ -1169,16 +1326,31 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
         patternInstruction = "Do NOT look for trends yet. Validate the courage of the first step.";
         insightPlaceholder = "[Welcome them to the Stoic path. Validate the difficulty of starting. Focus on the courage to begin.]";
         taskDescription = "Write a welcoming and foundational Stoic mentorship letter for a beginner.";
-        sparkline = ""; // No sparkline for beginners
+        sparkline = ""; 
+        logContent = "(Insufficient data for pattern recognition - Focus solely on the virtue of starting.)";
     } else if (globalRate > 80 || seasonalPhase.includes("SUMMER")) {
-        // --- HIGH PERFORMANCE MODE ---
-        focusTarget = "Excellence (Arete)";
-        systemInstructionText = "Suggest a 'Level Up' challenge. How to increase intensity or quality?";
+        systemInstructionText = "Suggest a method to increase difficulty (Progressive Overload) or efficiency. Challenge them.";
+        
+        actionInstructionText = "A specific experimental step to Challenge Limits, Teach Others, or Vary the Context (Anti-fragility). Link to an Anchor.";
+        
+        socraticInstruction = "Use 'Eternal Recurrence' (Amor Fati). Ask: 'Would you be willing to live this exact week again for eternity?'";
+        
+        if (highestStreakValue > 30) {
+            socraticInstruction = "Deconstruct the fear of losing the streak. Ask: 'Does the value lie in the number (external) or the character you are building (internal)?'";
+        }
+        
+        tweaksExamples = `
+        Examples of System Tweaks (High Performance):
+        - Bad: "Keep going." -> Good: "When I finish the set, I will add 5 minutes."
+        - Bad: "Good job." -> Good: "When I master this, I will teach it to someone else."
+        `;
+
         headerSystem = headers.system_high;
-        insightPlaceholder = "[Acknowledge the flow state. Warn against hubris (Pride). Challenge them to maintain this standard.]";
+        headerAction = headers.action_high;
+        insightPlaceholder = "[Synthesize the victory. Analyze what makes their consistency possible and where the next plateau lies. 2-3 sentences. NO LISTS.]";
+        actionPlaceholder = "[A specific constraint or added difficulty to test their mastery (Progressive Overload).]";
     }
 
-    // LANGUAGE SPECIFIC FORBIDDEN WORDS
     const forbiddenWhyMap = {
         pt: '"Por que"',
         en: '"Why"',
@@ -1186,7 +1358,6 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
     };
     const forbiddenWhy = forbiddenWhyMap[langCode as 'pt'|'en'|'es'] || '"Why"';
     
-    // CURRENT DATE FOR CONTEXT
     const currentDateStr = toUTCIsoDateString(today);
 
 
@@ -1302,21 +1473,55 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
         state.lastAIResult = text;
         state.aiState = 'completed';
         
-        // REFACTOR [2025-02-16]: Do not open modal automatically.
-        // Instead, mark as unseen and update the UI (notification dot).
+        // Notification logic: Do not open modal automatically.
         state.hasSeenAIResult = false;
-        
-        // Removed: ui.aiResponse.innerHTML = simpleMarkdownToHTML(text);
-        // Removed: openModal(ui.aiModal);
 
     } catch (error) {
         console.error("AI Analysis failed", error);
         state.aiState = 'error';
         state.lastAIResult = t('aiErrorGeneric');
         state.lastAIError = error instanceof Error ? error.message : String(error);
-        state.hasSeenAIResult = false; // Even error should notify
+        state.hasSeenAIResult = false; 
     } finally {
         renderAINotificationState();
         saveState();
     }
+}
+
+export function handleHabitDrop(habitId: string, fromTime: TimeOfDay, toTime: TimeOfDay) {
+    const habit = state.habits.find(h => h.id === habitId);
+    if (!habit) return;
+    
+    const date = state.selectedDate;
+    const { name } = getHabitDisplayInfo(habit, date);
+
+    _requestFutureScheduleChange(
+        habit,
+        date,
+        t('confirmHabitMove', { habitName: name, oldTime: t(`filter${fromTime}`), newTime: t(`filter${toTime}`) }),
+        t('modalMoveHabitTitle'),
+        fromTime,
+        toTime
+    );
+}
+
+export function reorderHabit(habitId: string, targetHabitId: string, position: 'before' | 'after') {
+    const oldIndex = state.habits.findIndex(h => h.id === habitId);
+    const targetIndex = state.habits.findIndex(h => h.id === targetHabitId);
+    
+    if (oldIndex === -1 || targetIndex === -1) return;
+
+    // Remove
+    const [habit] = state.habits.splice(oldIndex, 1);
+    
+    // Recalcula índice de destino após remoção
+    let newIndex = state.habits.findIndex(h => h.id === targetHabitId);
+    if (position === 'after') newIndex++;
+
+    // Insere
+    state.habits.splice(newIndex, 0, habit);
+
+    state.uiDirtyState.habitListStructure = true;
+    saveState();
+    renderHabits();
 }

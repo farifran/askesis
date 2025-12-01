@@ -49,7 +49,6 @@
     "confirmInvalidKeyTitle": "Invalid Key Format",
     "confirmPermanentDelete": "This will permanently delete the habit '{habitName}' and all its history. This action cannot be undone. Do you want to continue?",
     "confirmRemoveTime": "Do you want to remove \"{habitName}\" from the <strong>{time}</strong> schedule?",
-    "confirmRemoveTimeMulti": "This habit occurs at multiple times. Do you want to remove only the <strong>{time}</strong> slot or delete the habit entirely?",
     "confirmResetApp": "This will permanently delete ALL your habits and progress data. This action cannot be undone. Do you want to continue?",
     "confirmSyncDisable": "Are you sure you want to disable sync? You will no longer be able to access your data on other devices and new data will not be saved to the cloud.",
     "confirmSyncOverwrite": "The data in the cloud is different from your local data. Do you want to overwrite your local data with the cloud data?",
