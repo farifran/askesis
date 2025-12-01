@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 import { ui } from './ui';
-import { state, invalidateChartCache } from './state';
-import { renderApp, renderFullCalendar, openModal } from './render';
-import { parseUTCIsoDate, triggerHaptic, getTodayUTCIso } from './utils';
+import { state, invalidateChartCache, DAYS_IN_CALENDAR } from './state';
+import { renderApp, renderFullCalendar, openModal, scrollToToday } from './render';
+import { parseUTCIsoDate, triggerHaptic, getTodayUTCIso, addDays } from './utils';
 import { setupModalListeners } from './modalListeners';
 import { setupHabitCardListeners } from './habitCardListeners';
 import { setupDragAndDropHandler } from './dragAndDropHandler';
@@ -88,8 +88,21 @@ export function setupEventListeners() {
     if (ui.headerTitle) {
         ui.headerTitle.addEventListener('click', () => {
             triggerHaptic('light');
-            // CHANGE [2025-02-16]: Header click now resets view to "Today" instead of opening calendar
-            updateSelectedDateAndRender(getTodayUTCIso());
+            
+            const today = getTodayUTCIso();
+            
+            // LOGIC FIX [2025-02-18]: Reset Calendar Range.
+            // If user navigated far away via almanac, clicking "Today" should bring the 
+            // calendar strip back to the default view (centered on today), not just select the date.
+            const todayDate = parseUTCIsoDate(today);
+            state.calendarDates = Array.from({ length: DAYS_IN_CALENDAR }, (_, i) => 
+                addDays(todayDate, i - 30)
+            );
+
+            updateSelectedDateAndRender(today);
+            
+            // Visual Reset: Smooth scroll to the updated "today" element
+            scrollToToday('smooth');
         });
     }
 }

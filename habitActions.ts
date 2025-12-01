@@ -488,12 +488,33 @@ export function requestHabitTimeRemoval(habitId: string, time: TimeOfDay) {
 export function saveHabitFromModal() {
     if (!state.editingHabit) return;
 
-    const { isNew, habitId, formData, targetDate } = state.editingHabit;
+    // Destructure mutable variables
+    let { isNew, habitId } = state.editingHabit;
+    const { formData, targetDate } = state.editingHabit;
     
     // Validação básica
     if (!formData.name && !formData.nameKey) {
         alert(t('noticeNameCannotBeEmpty'));
         return;
+    }
+
+    // LOGIC UPDATE [2025-02-17]: Revival / Unification Logic.
+    // If the user tries to create a "New" habit that shares a name with an existing one (even if ended),
+    // we should reuse the existing habit ID and append a new schedule to it.
+    // This prevents fragmentation and duplicate entries in the Manage list.
+    if (isNew) {
+        const existingMatch = state.habits.find(h => {
+            const { name } = getHabitDisplayInfo(h);
+            // Check display name OR nameKey match
+            if (formData.nameKey && h.scheduleHistory.some(s => s.nameKey === formData.nameKey)) return true;
+            return name === formData.name;
+        });
+
+        if (existingMatch) {
+            console.log(`Reviving existing habit '${formData.name}' instead of creating new.`);
+            isNew = false;
+            habitId = existingMatch.id;
+        }
     }
 
     if (isNew) {
@@ -518,6 +539,8 @@ export function saveHabitFromModal() {
         const habit = state.habits.find(h => h.id === habitId);
         if (habit) {
             // LOGIC FIX [2025-02-15]: Priority Clean-up.
+            // When editing an existing habit for a specific date, we MUST remove any daily override
+            // (like 'deleted just for today') to ensure the new edits (time/goal) are actually applied and visible.
             const dailyInfo = state.dailyData[targetDate]?.[habit.id];
             if (dailyInfo && dailyInfo.dailySchedule !== undefined) {
                 delete dailyInfo.dailySchedule;
@@ -528,44 +551,48 @@ export function saveHabitFromModal() {
             habit.color = formData.color;
             habit.goal = formData.goal;
             
-            // Lógica de agendamento
-            const currentSchedule = getScheduleForDate(habit, targetDate) 
-                || habit.scheduleHistory[habit.scheduleHistory.length - 1];
-                
-            const hasScheduleChanges = 
-                JSON.stringify(currentSchedule.times.sort()) !== JSON.stringify(formData.times.sort()) ||
-                JSON.stringify(currentSchedule.frequency) !== JSON.stringify(formData.frequency) ||
-                currentSchedule.name !== formData.name;
+            // Gets the LAST schedule in history (could be ended or active)
+            const lastSchedule = habit.scheduleHistory[habit.scheduleHistory.length - 1];
+            
+            // Check if we can modify the last schedule in-place or need a new entry
+            const isSameStart = lastSchedule.startDate === targetDate;
+            const isLastScheduleEnded = !!lastSchedule.endDate && lastSchedule.endDate <= targetDate;
 
-            if (hasScheduleChanges) {
-                // Simplificação: Se a data alvo é o início do agendamento atual, atualiza in-place.
-                if (currentSchedule.startDate === targetDate) {
-                    currentSchedule.times = formData.times;
-                    currentSchedule.frequency = formData.frequency;
-                    currentSchedule.name = formData.name;
-                    currentSchedule.nameKey = formData.nameKey;
-                    currentSchedule.subtitleKey = formData.subtitleKey;
-                } else {
-                    // Fork schedule
-                    currentSchedule.endDate = targetDate;
-                    const newSchedule: HabitSchedule = {
-                        startDate: targetDate,
-                        times: formData.times,
-                        frequency: formData.frequency,
-                        name: formData.name,
-                        nameKey: formData.nameKey,
-                        subtitleKey: formData.subtitleKey,
-                        scheduleAnchor: targetDate // Reancora para cálculo de frequência
-                    };
-                    habit.scheduleHistory.push(newSchedule);
-                    // Ordena histórico
-                    habit.scheduleHistory.sort((a, b) => a.startDate.localeCompare(b.startDate));
-                }
-                clearScheduleCache();
+            if (isSameStart && !isLastScheduleEnded) {
+                // Simplificação: Se a data alvo é o início do agendamento atual e ele está aberto, atualiza in-place.
+                lastSchedule.times = formData.times;
+                lastSchedule.frequency = formData.frequency;
+                lastSchedule.name = formData.name;
+                lastSchedule.nameKey = formData.nameKey;
+                lastSchedule.subtitleKey = formData.subtitleKey;
             } else {
-                currentSchedule.name = formData.name;
-                currentSchedule.nameKey = formData.nameKey;
+                // Fork / Append logic
+                
+                // Only close the previous schedule if it wasn't already closed before this target date
+                if (!lastSchedule.endDate || lastSchedule.endDate > targetDate) {
+                    lastSchedule.endDate = targetDate;
+                }
+
+                const newSchedule: HabitSchedule = {
+                    startDate: targetDate,
+                    times: formData.times,
+                    frequency: formData.frequency,
+                    name: formData.name,
+                    nameKey: formData.nameKey,
+                    subtitleKey: formData.subtitleKey,
+                    scheduleAnchor: targetDate // Reancora para cálculo de frequência
+                };
+                habit.scheduleHistory.push(newSchedule);
+                // Ordena histórico
+                habit.scheduleHistory.sort((a, b) => a.startDate.localeCompare(b.startDate));
             }
+            
+            // Clean graduation status if we are editing/reviving
+            if (habit.graduatedOn) {
+                habit.graduatedOn = undefined;
+            }
+            
+            clearScheduleCache();
         }
     }
 
@@ -602,6 +629,7 @@ export function endHabit(habitId: string, dateISO: string) {
     habit.scheduleHistory = habit.scheduleHistory.filter(s => s.startDate <= dateISO);
     
     // Encerra ao final do dia ANTERIOR se a intenção é não fazer mais a partir de hoje
+    // Mas se o usuário escolhe hoje, ele espera ver hoje.
     activeSchedule.endDate = dateISO;
 
     clearScheduleCache();
@@ -619,15 +647,23 @@ export function requestHabitEndingFromModal(habitId: string) {
     if (!habit) return;
     const { name } = getHabitDisplayInfo(habit, state.selectedDate);
     
+    // Formata a data para exibir na mensagem de forma amigável (ex: "21 de fevereiro")
+    const dateObj = parseUTCIsoDate(state.selectedDate);
+    const formattedDate = getDateTimeFormat(state.activeLanguageCode, { 
+        day: 'numeric', 
+        month: 'long', 
+        timeZone: 'UTC' 
+    }).format(dateObj);
+
     showConfirmationModal(
-        t('confirmEndHabitBody', { habitName: name }),
+        t('confirmEndHabit', { habitName: name, date: formattedDate }),
         () => {
             endHabit(habitId, state.selectedDate);
             closeModal(ui.manageModal);
         },
         {
-            title: t('confirmEndHabitTitle'),
-            confirmText: t('modalManageEndButton'),
+            title: t('modalEndHabitTitle'),
+            confirmText: t('endButton'),
             confirmButtonStyle: 'danger'
         }
     );
@@ -636,15 +672,29 @@ export function requestHabitEndingFromModal(habitId: string) {
 export function requestHabitPermanentDeletion(habitId: string) {
     const habit = state.habits.find(h => h.id === habitId);
     if (!habit) return;
-    const { name } = getHabitDisplayInfo(habit);
+    
+    // CHANGE [2025-02-17]: Uniform Deletion.
+    // Instead of deleting just by ID, we delete ALL habits that share the same name.
+    // This cleans up any legacy fragmentation where the user might have multiple "Meditate" habits.
+    const { name: targetName } = getHabitDisplayInfo(habit);
 
     showConfirmationModal(
-        t('confirmPermanentDelete', { habitName: name }),
+        t('confirmPermanentDelete', { habitName: targetName }),
         () => {
-            state.habits = state.habits.filter(h => h.id !== habitId);
+            // Identify all IDs to be removed for cache cleanup
+            const idsToRemove: string[] = [];
             
-            // Remove do cache de elementos também para evitar reuso acidental
-            removeHabitFromCache(habitId);
+            state.habits = state.habits.filter(h => {
+                const { name } = getHabitDisplayInfo(h);
+                if (name === targetName) {
+                    idsToRemove.push(h.id);
+                    return false; // Remove from state
+                }
+                return true; // Keep
+            });
+            
+            // Remove all variants from DOM cache
+            idsToRemove.forEach(id => removeHabitFromCache(id));
 
             state.uiDirtyState.habitListStructure = true;
             clearActiveHabitsCache();

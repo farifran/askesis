@@ -1,5 +1,4 @@
 
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -245,7 +244,7 @@ export function scrollToToday(behavior: ScrollBehavior = 'auto') {
 
 export function renderCalendar() {
     // PERFORMANCE [2025-01-26]: DIRTY CHECK GUARD.
-    // Se o estado visual do calendário não mudou (datas e seleção são as mesmas), pulamos.
+    // Se o estado visual do calendário não mudou (mesmos hábitos, mesma ordem), pulamos.
     // Atualizações pontuais de progresso são tratadas por 'renderCalendarDayPartial'.
     if (!state.uiDirtyState.calendarVisuals) {
         return;
@@ -1073,7 +1072,14 @@ export function renderStoicQuote() {
     const oneDay = 1000 * 60 * 60 * 24;
     const dayOfYear = Math.floor(diff / oneDay);
     
-    const quoteIndex = dayOfYear % STOIC_QUOTES.length;
+    // UX IMPROVEMENT [2025-02-18]: Pseudo-Random Shuffle.
+    // Instead of a linear index, we use a seed based on the date to generate
+    // a pseudo-random number. This ensures the same quote for the same day (deterministic)
+    // but scatters the selection across the entire array day-to-day, preventing clustering.
+    const seed = date.getFullYear() * 1000 + dayOfYear;
+    const rnd = Math.abs(Math.sin(seed)); 
+    const quoteIndex = Math.floor(rnd * STOIC_QUOTES.length);
+    
     const quote = STOIC_QUOTES[quoteIndex];
     
     const lang = state.activeLanguageCode as keyof Omit<typeof quote, 'author'>;
@@ -1396,17 +1402,50 @@ function _createManageHabitListItem(habitData: { habit: Habit; status: 'active' 
 
 
 export function setupManageModal() {
-    const habitsForModal = state.habits.map(habit => {
+    // VISUAL DEDUPLICATION [2025-02-17]: Group habits by name.
+    // The user wants "Unified History". Even if data is fragmented (multiple IDs for same habit name),
+    // the UI should show it as one entry. We pick the most "relevant" version to display.
+    const habitsByName = new Map<string, Habit[]>();
+    
+    state.habits.forEach(habit => {
         const { name } = getHabitDisplayInfo(habit);
-        return {
-            habit,
-            status: getHabitStatusForSorting(habit),
-            name: name
-        };
+        if (!habitsByName.has(name)) {
+            habitsByName.set(name, []);
+        }
+        habitsByName.get(name)!.push(habit);
     });
 
-    const statusOrder = { 'active': 0, 'ended': 1, 'graduated': 2 };
+    const habitsForModal = [];
+    const statusOrder = { 'active': 0, 'graduated': 1, 'ended': 2 };
 
+    for (const [name, habitGroup] of habitsByName) {
+        // Find the "best" representative for this habit name
+        // Priority: Active > Graduated > Ended
+        // Secondary Sort: Most recently created/modified
+        
+        habitGroup.sort((a, b) => {
+            const statusA = getHabitStatusForSorting(a);
+            const statusB = getHabitStatusForSorting(b);
+            
+            if (statusA !== statusB) {
+                return statusOrder[statusA] - statusOrder[statusB];
+            }
+            // If same status, pick the one with later start date (newer)
+            const lastA = a.scheduleHistory[a.scheduleHistory.length-1].startDate;
+            const lastB = b.scheduleHistory[b.scheduleHistory.length-1].startDate;
+            return lastB.localeCompare(lastA);
+        });
+
+        const representative = habitGroup[0]; // Top pick
+        
+        habitsForModal.push({
+            habit: representative,
+            status: getHabitStatusForSorting(representative),
+            name: name
+        });
+    }
+
+    // Sort the final list
     habitsForModal.sort((a, b) => {
         const statusDifference = statusOrder[a.status] - statusOrder[b.status];
         if (statusDifference !== 0) {
@@ -1417,7 +1456,7 @@ export function setupManageModal() {
 
     const fragment = document.createDocumentFragment();
     habitsForModal.forEach(habitData => {
-        fragment.appendChild(_createManageHabitListItem(habitData as { habit: Habit; status: 'active' | 'ended' | 'graduated'; name: string; }));
+        fragment.appendChild(_createManageHabitListItem(habitData));
     });
 
     ui.habitList.innerHTML = '';
