@@ -946,10 +946,16 @@ export function renderHabits() {
         // DOM RECONCILIATION STRATEGY [2025-01-24]:
         // Utiliza o cache persistente `habitElementCache` para evitar `querySelectorAll` e recriação de DOM.
         
+        // DEFENSIVE RENDERING [2025-02-19]: Ensure uniqueness.
+        // Even if data is corrupted, prevent rendering the same habit ID multiple times in the same time slot.
         const activeKeysInGroup = new Set<string>();
+        const processedHabitIds = new Set<string>();
         let currentIndex = 0;
 
         desiredHabits.forEach(habit => {
+            if (processedHabitIds.has(habit.id)) return; // Skip duplicates within this time group
+            processedHabitIds.add(habit.id);
+
             const key = `${habit.id}|${time}`;
             activeKeysInGroup.add(key);
             
@@ -958,8 +964,6 @@ export function renderHabits() {
             
             if (card) {
                 // BUGFIX [2025-02-07]: Reset swipe state when reusing cached element.
-                // If a habit was removed via swipe (leaving it in 'is-open' state in cache) 
-                // and then re-added, it would reappear open. This forces it closed.
                 card.classList.remove('is-open-left', 'is-open-right', 'is-swiping');
 
                 // 2. Atualiza estado se existir (Surgical)
@@ -988,12 +992,7 @@ export function renderHabits() {
         });
 
         // 5. Remove elementos que estão no DOM mas não deveriam estar neste grupo
-        // Nota: Não removemos do cache aqui, pois o hábito pode ter mudado de dia/grupo mas ainda ser válido.
-        // A remoção do cache ocorre apenas na exclusão definitiva.
-        // Porém, precisamos remover do DOM se sobrar.
         while (groupEl.children.length > currentIndex) {
-            // O elemento sobrante é removido do DOM.
-            // Ele permanece no cache se não for explicitamente destruído, o que é bom para performance se o usuário voltar.
             groupEl.lastChild?.remove();
         }
         

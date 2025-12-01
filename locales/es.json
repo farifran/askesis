@@ -115,6 +115,7 @@
     "modalStatusGraduated": "(Graduado)",
     "musoniusRufus": "Musonio Rufo",
     "noticeDuplicateHabitWithName": "Ya existe un hábito con este nombre.",
+    "noticeHabitAlreadyExistsInTime": "El hábito '{habitName}' ya está activo en: {times}.",
     "noticeNameCannotBeEmpty": "El nombre del hábito no puede estar vacío.",
     "notificationStatusDisabled": "Las notificaciones están bloqueadas. Debes cambiar los permisos en la configuración de tu navegador.",
     "notificationStatusEnabled": "Las notificaciones están activadas.",

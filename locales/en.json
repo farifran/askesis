@@ -115,6 +115,7 @@
     "modalStatusGraduated": "(Graduated)",
     "musoniusRufus": "Musonius Rufus",
     "noticeDuplicateHabitWithName": "A habit with this name already exists.",
+    "noticeHabitAlreadyExistsInTime": "The habit '{habitName}' is already active in: {times}.",
     "noticeNameCannotBeEmpty": "The habit name cannot be empty.",
     "notificationStatusDisabled": "Notifications are blocked. You need to change the permissions in your browser settings.",
     "notificationStatusEnabled": "Notifications are enabled.",

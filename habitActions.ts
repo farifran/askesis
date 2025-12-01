@@ -498,10 +498,35 @@ export function saveHabitFromModal() {
         return;
     }
 
+    // STRICT DUPLICATION CHECK [2025-02-19]: Prevent creating a habit in a time slot where it already exists.
+    // This logic ensures that if "Drink Water" is active in "Morning", the user CANNOT add "Drink Water" to "Morning" again.
+    // It works for both new habits (checking against all active) and editing/reviving (checking against active target).
+    
+    const nameToCheck = formData.name || (formData.nameKey ? t(formData.nameKey) : '');
+    
+    for (const h of state.habits) {
+        // Skip comparing with self if we are editing the same habit ID
+        if (!isNew && h.id === habitId) continue;
+
+        const info = getHabitDisplayInfo(h);
+        if (info.name.toLowerCase() === nameToCheck.toLowerCase()) {
+            const lastSch = h.scheduleHistory[h.scheduleHistory.length - 1];
+            // Check if habit is currently active
+            if (!lastSch.endDate) {
+                // Check for time overlap
+                const activeTimes = lastSch.times;
+                const overlappingTimes = formData.times.filter(time => activeTimes.includes(time));
+                
+                if (overlappingTimes.length > 0) {
+                    const timeNames = overlappingTimes.map(tm => t(`filter${tm}`)).join(', ');
+                    alert(t('noticeHabitAlreadyExistsInTime', { habitName: info.name, times: timeNames }));
+                    return; // Block save
+                }
+            }
+        }
+    }
+
     // LOGIC UPDATE [2025-02-17]: Revival / Unification Logic.
-    // If the user tries to create a "New" habit that shares a name with an existing one (even if ended),
-    // we should reuse the existing habit ID and append a new schedule to it.
-    // This prevents fragmentation and duplicate entries in the Manage list.
     if (isNew) {
         const existingMatch = state.habits.find(h => {
             const { name } = getHabitDisplayInfo(h);
@@ -538,9 +563,7 @@ export function saveHabitFromModal() {
     } else {
         const habit = state.habits.find(h => h.id === habitId);
         if (habit) {
-            // LOGIC FIX [2025-02-15]: Priority Clean-up.
-            // When editing an existing habit for a specific date, we MUST remove any daily override
-            // (like 'deleted just for today') to ensure the new edits (time/goal) are actually applied and visible.
+            // Priority Clean-up for daily overrides
             const dailyInfo = state.dailyData[targetDate]?.[habit.id];
             if (dailyInfo && dailyInfo.dailySchedule !== undefined) {
                 delete dailyInfo.dailySchedule;
@@ -560,7 +583,23 @@ export function saveHabitFromModal() {
 
             if (isSameStart && !isLastScheduleEnded) {
                 // Simplificação: Se a data alvo é o início do agendamento atual e ele está aberto, atualiza in-place.
-                lastSchedule.times = formData.times;
+                // NOTE: We merge times if reviving, but strict check above prevents true duplicates.
+                // Here we just set the times. If reviving, formData.times should ideally contain old + new?
+                // Actually, the UI for 'Edit' doesn't easily support 'Add to existing'.
+                // If the user selected different times in the form, they replace the old ones for that day forward.
+                // BUT, if it's a revival (isNew was true, turned false), formData.times ONLY has the new times.
+                // We should MERGE them if reviving an active habit (though strict check blocks overlap, disjoint sets are ok).
+                
+                // If we are reviving an ACTIVE habit with non-overlapping times (e.g. adding Evening to Morning):
+                if (!isNew && state.editingHabit?.isNew) {
+                     // This was a revival. We should merge times.
+                     const mergedTimes = Array.from(new Set([...lastSchedule.times, ...formData.times]));
+                     lastSchedule.times = mergedTimes;
+                } else {
+                     // Standard edit or revival of ended habit -> Set times directly
+                     lastSchedule.times = formData.times;
+                }
+                
                 lastSchedule.frequency = formData.frequency;
                 lastSchedule.name = formData.name;
                 lastSchedule.nameKey = formData.nameKey;
@@ -573,17 +612,22 @@ export function saveHabitFromModal() {
                     lastSchedule.endDate = targetDate;
                 }
 
+                // If reviving active habit with disjoint times, merge for the new schedule
+                let newTimes = formData.times;
+                if (!isNew && state.editingHabit?.isNew && !isLastScheduleEnded) {
+                     newTimes = Array.from(new Set([...lastSchedule.times, ...formData.times]));
+                }
+
                 const newSchedule: HabitSchedule = {
                     startDate: targetDate,
-                    times: formData.times,
+                    times: newTimes,
                     frequency: formData.frequency,
                     name: formData.name,
                     nameKey: formData.nameKey,
                     subtitleKey: formData.subtitleKey,
-                    scheduleAnchor: targetDate // Reancora para cálculo de frequência
+                    scheduleAnchor: targetDate
                 };
                 habit.scheduleHistory.push(newSchedule);
-                // Ordena histórico
                 habit.scheduleHistory.sort((a, b) => a.startDate.localeCompare(b.startDate));
             }
             
