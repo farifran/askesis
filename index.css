@@ -1,5 +1,4 @@
 
-
 /*
  * [ANALYSIS PROGRESS]: 100% - Análise concluída.
  * - Padronização de variáveis (substituição de hardcoded pixels).
@@ -52,9 +51,12 @@
 
     /* --- CAMADAS (Z-INDEX) --- */
     --z-index-base: 1;
+    --z-index-sticky: 20; /* Time markers */
     --z-index-content: 2;
     --z-index-indicator: 3;
     --z-index-tooltip: 10;
+    --z-index-header: 50; /* Header above scrolling content */
+    --z-index-footer: 50; /* Chart footer above scrolling content */
     --z-index-modal-overlay: 1000;
     --z-index-modal-content: 1001;
     --z-index-stacked-modal: 1010; /* Para modais que aparecem sobre outros modais */
@@ -124,6 +126,12 @@
 
 
 /* --- RESET E ESTILOS GLOBAIS --- */
+html {
+    height: 100%;
+    overflow: hidden; /* Lock body scroll */
+    overscroll-behavior: none; /* Prevent bounce on body */
+}
+
 * {
     margin: 0;
     padding: 0;
@@ -148,8 +156,10 @@ body {
     overscroll-behavior: contain;
     
     /* MODERN LAYOUT [2025-01-18]: Garante altura total em mobile ignorando a barra de endereços */
-    min-height: 100vh;
-    min-height: 100dvh;
+    height: 100%;
+    height: 100dvh;
+    overflow: hidden; /* Double lock */
+    
     /* UX: Previne o ajuste automático de texto em rotação no iOS */
     -webkit-text-size-adjust: 100%;
 }
@@ -188,26 +198,42 @@ body {
 }
 
 
-/* --- LAYOUT BASE --- */
+/* --- LAYOUT BASE (APP SHELL) --- */
 .app-container {
     max-width: 800px;
     margin-inline: auto;
-    padding-inline: var(--space-lg);
-    padding-block-end: 100px;
+    
+    /* FIX: APP SHELL LAYOUT */
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
 }
 
 main {
     display: flex;
     flex-direction: column;
+    flex: 1; /* Occupy remaining space */
+    min-height: 0; /* Critical for nested scrolling */
+    overflow: hidden;
+    position: relative;
 }
 
-/* --- CABEÇALHO --- */
+/* --- CABEÇALHO (FIXED TOP) --- */
 .app-header {
     display: flex;
     flex-direction: column;
     gap: var(--space-sm);
     padding-block-start: var(--space-section);
-    margin-block-end: var(--space-lg);
+    padding-block-end: var(--space-md);
+    padding-inline: var(--space-lg); /* Restore horizontal padding */
+    flex-shrink: 0; /* Prevent shrinking */
+    
+    /* LAYOUT LOCKING */
+    z-index: var(--z-index-header);
+    background-color: var(--bg-color); /* Ensure opacity */
+    /* Subtle shadow to separate from scrolling content */
+    box-shadow: 0 4px 20px -10px rgba(0,0,0,0.5);
 }
 
 .header-top {
@@ -579,24 +605,57 @@ main {
 }
 
 
-/* --- COMPONENTES: GRUPO DE HÁBITOS --- */
+/* --- LAYOUT DE HABIT CONTAINER (SINGLE SCROLLABLE AREA) --- */
+#habit-container {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+    
+    /* SCROLL UNIFICADO */
+    flex: 1; /* Ocupa o espaço entre Header e Chart */
+    overflow-y: auto; /* Apenas este container rola */
+    overflow-x: hidden;
+    
+    /* UX: Padding para o conteúdo não colar nas bordas */
+    padding-inline: var(--space-lg);
+    padding-bottom: var(--space-md);
+    
+    /* UX: Smooth scrolling */
+    scroll-behavior: smooth;
+    overscroll-behavior-y: contain;
+}
+
+/* Hide native scrollbar but allow functionality */
+#habit-container::-webkit-scrollbar {
+    width: 4px;
+}
+#habit-container::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+}
+
+/* --- COMPONENTES: GRUPO DE HÁBITOS (WRAPPER) --- */
 .habit-group-wrapper {
     margin-block-end: 0;
-    transition: max-height var(--transition-duration-slow) ease-in-out, margin-block-start var(--transition-duration-slow) ease-in-out, margin-block-end var(--transition-duration-slow) ease-in-out;
-    /* UX: Evita scroll chaining */
-    overscroll-behavior: contain;
-    /* PERFORMANCE [2025-01-18]: Otimização para evitar renderização de conteúdo fora de tela em listas longas. */
-    content-visibility: auto;
-    /* PERFORMANCE "GOLD MASTER" [2025-01-27]: Ajuste para 80px para reduzir CLS */
-    contain-intrinsic-size: 80px;
+    transition: margin-block-start var(--transition-duration-slow) ease-in-out;
     
-    /* UI UPDATE [2025-02-23]: Flex layout for Timeline view */
+    /* UI UPDATE: Layout Flex para Timeline */
     display: flex;
     align-items: flex-start; /* Align top */
     gap: var(--space-md);
+    
+    /* SINGLE SCROLL FIX: Remove scroll limits from wrappers */
+    flex: 0 0 auto; /* Grow with content, do not shrink */
+    min-height: auto;
+    overflow: visible;
 }
 
-/* Time Marker (Left Timeline Column) */
+/* Collapsible state override */
+.habit-group-wrapper.is-collapsible {
+    display: none; /* Completely hide empty groups to save scroll space */
+}
+
+/* Time Marker (Left Timeline Column - STICKY) */
 .time-marker {
     flex-shrink: 0;
     width: 30px;
@@ -604,8 +663,12 @@ main {
     color: var(--text-tertiary);
     display: flex;
     justify-content: center;
+    
+    /* STICKY BEHAVIOR within the Unified Scroll */
     position: sticky;
-    top: 10px;
+    top: 10px; /* Gruda no topo do #habit-container */
+    z-index: var(--z-index-sticky); /* Ensure it stays above content */
+    
     transition: opacity var(--transition-duration);
 }
 .time-marker svg {
@@ -613,33 +676,21 @@ main {
     height: 24px;
 }
 
-/* ROBUSTEZ [2025-01-28]: Desativa content-visibility durante drag-and-drop.
- * O navegador precisa calcular o layout de todos os grupos (mesmo vazios/fora da tela)
- * para determinar corretamente as zonas de soltura (drop-zones). Sem isso,
- * a transição de max-height pode falhar ou pular.
- */
+
+/* ROBUSTEZ [2025-01-28]: Desativa content-visibility durante drag-and-drop. */
 body.is-dragging-active .habit-group-wrapper {
     content-visibility: visible;
     contain-intrinsic-size: auto;
 }
+/* Allow wrapper to grow to show drop zones */
+body.is-dragging-active .habit-group-wrapper.is-collapsible {
+    display: flex;
+    min-height: 100px;
+    margin-block-start: var(--space-md);
+}
 
 .habit-group-wrapper + .habit-group-wrapper {
-    margin-block-start: var(--space-md);
-}
-#habit-container > .habit-group-wrapper:last-of-type {
-    margin-block-end: var(--space-section);
-}
-#habit-container > .habit-group-wrapper:last-of-type.has-habits {
-    margin-block-end: var(--space-3xl);
-}
-.habit-group-wrapper.is-collapsible {
-    max-height: 0;
-    overflow: hidden;
     margin-block-start: 0;
-}
-body.is-dragging-active .habit-group-wrapper.is-collapsible {
-    max-height: 100px;
-    margin-block-start: var(--space-md);
 }
 
 .habit-group {
@@ -651,16 +702,19 @@ body.is-dragging-active .habit-group-wrapper.is-collapsible {
     border: 2px dashed transparent;
     transition: background-color var(--transition-duration), border-color var(--transition-duration);
     min-height: 40px;
-    /* PERFORMANCE [2025-01-18]: Isola o layout do grupo. Mudanças dentro do grupo não afetam o layout externo. */
-    contain: layout style;
     
     /* Flex child props */
     flex-grow: 1;
     min-width: 0; /* Important for flex children to shrink properly */
+
+    /* SINGLE SCROLL FIX: Remove internal scroll */
+    height: auto; 
+    overflow: visible;
 }
-/* Quando arrastando, relaxamos o containment para permitir que o indicador e o placeholder fluam */
+
+/* Quando arrastando, relaxamos o containment e a altura para permitir fluidez */
 body.is-dragging-active .habit-group {
-    contain: style; 
+    contain: style;
 }
 
 .habit-group.drag-over {
@@ -1094,7 +1148,7 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     letter-spacing: 0.5px;
 }
 
-/* --- COMPONENTES: GRÁFICO DE EVOLUÇÃO --- */
+/* --- COMPONENTES: GRÁFICO DE EVOLUÇÃO (FIXED FOOTER) --- */
 .chart-container {
     padding: var(--space-lg);
     background-color: var(--surface-color);
@@ -1105,6 +1159,19 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     /* PERFORMANCE [2025-01-18]: Otimização para evitar renderização quando fora da tela. */
     content-visibility: auto;
     contain-intrinsic-size: 150px;
+    
+    /* FIX: APP SHELL - Footer Pinned */
+    flex-shrink: 0; /* Prevent shrinking */
+    max-height: 25vh;
+    
+    /* UI FIX: Pinned to bottom, above scrollable content */
+    margin-top: 0;
+    margin-inline: var(--space-lg); /* Maintain padding visually */
+    margin-bottom: var(--space-md);
+    
+    z-index: var(--z-index-footer);
+    /* Shadow pointing up to separate from scrolling list */
+    box-shadow: 0 -4px 20px -10px rgba(0,0,0,0.5);
 }
 .chart-header {
     display: flex;
