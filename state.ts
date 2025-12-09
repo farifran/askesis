@@ -548,18 +548,21 @@ export function getScheduleForDate(habit: Habit, date: Date | string): HabitSche
  */
 export function getEffectiveScheduleForHabitOnDate(habit: Habit, dateISO: string): TimeOfDay[] {
     const dailyInfo = state.dailyData[dateISO]?.[habit.id];
-    // PERFORMANCE: Pass string directly to avoid Date creation inside getScheduleForDate if not needed
-    const activeSchedule = getScheduleForDate(habit, dateISO);
     
-    // BUGFIX [2025-02-07]: Explicit check for undefined on dailySchedule.
-    // This is critical because dailySchedule can be an empty array [], which is falsy.
-    // If the user removes a habit for "Just Today", dailySchedule becomes [].
+    // LOGIC FIX [2025-02-21]: The Opaque Layer logic.
+    // If dailySchedule exists (even if empty), it IS the schedule.
+    // We use a strict undefined check because [] (empty array) is a valid "no schedule" state.
     if (dailyInfo?.dailySchedule !== undefined) {
-        return dailyInfo.dailySchedule;
+        // SAFETY: Deduplicate times from the override layer to prevent rendering duplicates.
+        return Array.from(new Set(dailyInfo.dailySchedule));
     }
     
+    // Fallback to standard history schedule
+    const activeSchedule = getScheduleForDate(habit, dateISO);
     if (!activeSchedule) return [];
-    return activeSchedule.times;
+    
+    // SAFETY: Deduplicate times from history to prevent rendering duplicates.
+    return Array.from(new Set(activeSchedule.times));
 }
 
 // GC OPTIMIZATION [2025-01-23]: Singleton empty object for daily info.
@@ -612,20 +615,18 @@ export function shouldHabitAppearOnDate(habit: Habit, date: Date, dateISO?: stri
     // Smart Garbage collection - Increased limit to prevent thrashing
     manageCacheSize(state.habitAppearanceCache, MAX_CACHE_SIZE * 2);
 
-    // LOGIC FIX [2025-02-21]: CRITICAL PRIORITY FOR DAILY OVERRIDES.
-    // Must check for manual override BEFORE checking standard frequency/schedule.
-    // If a user manually moved a habit to today (e.g. from Monday to Tuesday), 
-    // there will be a `dailySchedule` entry. If we verify frequency first, 
-    // it will return FALSE because today is Tuesday, hiding the manual move.
+    // LOGIC FIX [2025-02-21]: CRITICAL PRIORITY FOR DAILY OVERRIDES (The Opaque Layer).
+    // If a daily override exists (dailySchedule is not undefined), it MUST take precedence.
+    // Even if it is an empty array [], it means "No habit today".
+    // We do NOT check frequency if an override exists.
     const dailyInfo = state.dailyData[dateStr]?.[habit.id];
     if (dailyInfo?.dailySchedule !== undefined) {
-        // If an explicit schedule exists, we only show it if it has times.
-        // Empty array [] means explicitly removed for today.
         const result = dailyInfo.dailySchedule.length > 0;
         state.habitAppearanceCache.set(cacheKey, result);
         return result;
     }
 
+    // Standard Frequency Check (The Background Layer)
     const activeSchedule = getScheduleForDate(habit, dateStr);
     if (!activeSchedule) {
         state.habitAppearanceCache.set(cacheKey, false);

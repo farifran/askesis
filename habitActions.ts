@@ -97,6 +97,8 @@ function _createDefaultSchedule(startDate: string): HabitSchedule {
 function _cleanDailyOverrides(date: string, habitId: string) {
     const dailyInfo = state.dailyData[date]?.[habitId];
     if (dailyInfo && dailyInfo.dailySchedule !== undefined) {
+        // CRITICAL: We strictly delete the key so `dailySchedule` becomes undefined.
+        // This forces the "Opaque Layer" logic in state.ts to fall through to the permanent history.
         delete dailyInfo.dailySchedule;
     }
 }
@@ -185,7 +187,6 @@ export function toggleHabitStatus(habitId: string, time: TimeOfDay, date: string
     // STORAGE OPTIMIZATION [2025-02-21]: Pruning.
     // If the status is 'pending' (default) AND there is no note AND no goalOverride,
     // this entry provides no information. We delete it to keep storage minimal.
-    // This prevents the "ghost data" accumulation in the save file.
     if (newStatus === 'pending' && !instanceData.note && instanceData.goalOverride === undefined) {
         const dailyInfo = state.dailyData[date]?.[habitId];
         if (dailyInfo && dailyInfo.instances) {
@@ -195,6 +196,7 @@ export function toggleHabitStatus(habitId: string, time: TimeOfDay, date: string
             // If the user removed the habit "Just Today", dailySchedule will be [].
             // If we delete the dailyInfo object, we lose this override and the habit
             // will reappear (Ghost). We must check if dailySchedule is explicitly undefined.
+            // Using strict check against undefined because [] is a valid (truthy) value we want to keep.
             if (Object.keys(dailyInfo.instances).length === 0 && dailyInfo.dailySchedule === undefined) {
                 delete state.dailyData[date][habitId];
                 
@@ -358,9 +360,9 @@ function _removeTimeFromSchedule(habit: Habit, effectiveDate: string, timeToRemo
     }
 
     const activeSchedule = habit.scheduleHistory[targetScheduleIndex];
+    // Check permanent history, not effective schedule (which might include overrides already)
     const isTimeInHistory = activeSchedule.times.includes(timeToRemove);
-    const dailyInfo = state.dailyData[effectiveDate]?.[habit.id];
-
+    
     // CASE A: The time exists in the Permanent History.
     // We must update the history (From Now On).
     if (isTimeInHistory) {
@@ -403,17 +405,17 @@ function _removeTimeFromSchedule(habit: Habit, effectiveDate: string, timeToRemo
     // We only need to remove it from the daily override.
     else {
         // Ensure dailyInfo exists first
-        ensureHabitDailyInfo(effectiveDate, habit.id);
-        const info = state.dailyData[effectiveDate][habit.id];
+        const info = ensureHabitDailyInfo(effectiveDate, habit.id);
         
-        if (info.dailySchedule) {
-            info.dailySchedule = info.dailySchedule.filter(t => t !== timeToRemove);
-            // NOTE: If dailySchedule becomes empty here, it effectively means "Removed for Today".
-            // We KEEP it as [] so shouldHabitAppearOnDate returns false correctly.
-        } else {
-            // Edge case: Habit appeared due to logic glitch or race condition, force empty schedule.
-            info.dailySchedule = [];
-        }
+        // If we are here, there MUST be a daily override or the habit wouldn't be visible to click.
+        // We get the current *effective* schedule (which includes the override).
+        const currentEffectiveSchedule = getEffectiveScheduleForHabitOnDate(habit, effectiveDate);
+        
+        // Filter out the removed time
+        const newSchedule = currentEffectiveSchedule.filter(t => t !== timeToRemove);
+        
+        // Update the override. Even if it's empty [], we save it to block the permanent schedule.
+        info.dailySchedule = newSchedule;
     }
     
     // Always clean up instance data (notes, status) for the removed time
@@ -439,19 +441,27 @@ function _requestFutureScheduleChange(
     fromTime: TimeOfDay,
     toTime?: TimeOfDay
 ) {
-    const scheduleModifier = (times: TimeOfDay[]): TimeOfDay[] => {
-        const newTimes = times.filter(t => t !== fromTime);
-        if (toTime) {
-            newTimes.push(toTime);
-        }
-        return newTimes.sort((a, b) => TIMES_OF_DAY.indexOf(a) - TIMES_OF_DAY.indexOf(b));
-    };
-
     const justTodayAction = () => {
         const dailyInfo = ensureHabitDailyInfo(effectiveDate, habit.id);
-        const originalSchedule = getEffectiveScheduleForHabitOnDate(habit, effectiveDate);
-        dailyInfo.dailySchedule = scheduleModifier(originalSchedule);
         
+        // FIX [2025-02-21]: "Just Today" needs to create a complete snapshot of the day.
+        // We get the current effective schedule (which might already have overrides)
+        const currentEffectiveSchedule = getEffectiveScheduleForHabitOnDate(habit, effectiveDate);
+        
+        // We calculate the NEW complete list for the day
+        const newSchedule = currentEffectiveSchedule.filter(t => t !== fromTime);
+        if (toTime) {
+            if (!newSchedule.includes(toTime)) {
+                newSchedule.push(toTime);
+            }
+        }
+        // Sort to maintain order Morning -> Evening
+        newSchedule.sort((a, b) => TIMES_OF_DAY.indexOf(a) - TIMES_OF_DAY.indexOf(b));
+        
+        // Save this as the "Opaque Layer" for the day
+        dailyInfo.dailySchedule = newSchedule;
+        
+        // Migrate data if moving
         const instanceData = dailyInfo.instances[fromTime];
         if (instanceData) {
             if (toTime) {
@@ -470,6 +480,7 @@ function _requestFutureScheduleChange(
     };
     
     const fromNowOnAction = () => {
+        // We find the background schedule to clone properties (frequency, name, etc)
         let targetScheduleIndex = habit.scheduleHistory.findIndex(s => {
              const startOk = s.startDate <= effectiveDate;
              const endOk = !s.endDate || s.endDate > effectiveDate;
@@ -482,23 +493,31 @@ function _requestFutureScheduleChange(
 
         const activeSchedule = habit.scheduleHistory[targetScheduleIndex];
         
-        const applyChangeToTimes = (times: TimeOfDay[]): TimeOfDay[] => {
-            const newTimes = times.filter(t => t !== fromTime);
-            if (toTime) {
-                newTimes.push(toTime);
-            }
-            return newTimes.sort((a, b) => TIMES_OF_DAY.indexOf(a) - TIMES_OF_DAY.indexOf(b));
-        };
+        // CRITICAL LOGIC FIX [2025-02-22]: Use EFFECTIVE Schedule as the base.
+        // When user says "From Now On", they expect the NEW rule to reflect what they 
+        // currently see (which might include previous "Just Today" edits), minus the 
+        // slot they are moving, plus the slot they are moving to.
+        // If we only look at history, we lose previous "Just Today" edits and cause ghosts.
+        const currentEffective = getEffectiveScheduleForHabitOnDate(habit, effectiveDate);
         
+        const newTimesSet = new Set(currentEffective);
+        // Remove the 'from' time
+        newTimesSet.delete(fromTime);
+        // Add the 'to' time
+        if (toTime) {
+            newTimesSet.add(toTime);
+        }
+        
+        const newTimes = Array.from(newTimesSet).sort((a, b) => TIMES_OF_DAY.indexOf(a) - TIMES_OF_DAY.indexOf(b));
+
         if (activeSchedule.startDate === effectiveDate) {
-            activeSchedule.times = applyChangeToTimes(activeSchedule.times);
+            activeSchedule.times = newTimes;
             if (activeSchedule.times.length === 0) {
                  endHabit(habit.id, effectiveDate);
                  return;
             }
         } else {
             activeSchedule.endDate = effectiveDate;
-            const newTimes = applyChangeToTimes(activeSchedule.times);
             if (newTimes.length > 0) {
                 const newSchedule: HabitSchedule = {
                     ...activeSchedule,
@@ -511,8 +530,9 @@ function _requestFutureScheduleChange(
             }
         }
 
-        // CLEANUP: Since we are changing the permanent rule, we should wipe any
-        // specific daily overrides for this date to avoid conflicts/ghosts.
+        // NUCLEAR CLEANUP [2025-02-21]: 
+        // Since we baked the effective state into the new permanent history, 
+        // we MUST remove any overrides for this day.
         _cleanDailyOverrides(effectiveDate, habit.id);
         
         const dailyInfo = state.dailyData[effectiveDate]?.[habit.id];
@@ -561,7 +581,8 @@ export function requestHabitTimeRemoval(habitId: string, time: TimeOfDay) {
     showConfirmationModal(
         bodyText,
         () => {
-            // Ação Principal: Remover este horário específico de agora em diante.
+            // Ação Principal: Remover este horário específico de agora em diante ou apenas hoje.
+            // A função interna _removeTimeFromSchedule lida com a lógica de histórico vs override.
             _removeTimeFromSchedule(habit, date, time);
         },
         {
@@ -646,6 +667,8 @@ export function saveHabitFromModal() {
         const habit = state.habits.find(h => h.id === habitId);
         if (habit) {
             // HYGIENE [2025-02-21]: Priority Clean-up for daily overrides.
+            // If the user edits the habit for this day, any "Just Today" override is likely obsolete.
+            // We wipe it to ensure the new rule (from history) takes precedence.
             _cleanDailyOverrides(targetDate, habit.id);
 
             // Atualiza propriedades visuais globais
