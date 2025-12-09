@@ -1,3 +1,5 @@
+// habitActions.ts
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -86,6 +88,66 @@ function _createDefaultSchedule(startDate: string): HabitSchedule {
     };
 }
 
+/**
+ * STATE HYGIENE HELPER [2025-02-21]:
+ * Removes any "dailySchedule" overrides for a specific habit on a specific date.
+ * crucial when saving/editing/reviving habits to ensure the new configuration takes precedence
+ * over old "moved" or "deleted" exceptions stored in dailyData.
+ */
+function _cleanDailyOverrides(date: string, habitId: string) {
+    const dailyInfo = state.dailyData[date]?.[habitId];
+    if (dailyInfo && dailyInfo.dailySchedule !== undefined) {
+        delete dailyInfo.dailySchedule;
+    }
+}
+
+/**
+ * DEEP CLEAN HELPER [2025-02-21]:
+ * Removes ALL daily data (instances, notes, overrides) for the given habit IDs across ALL dates.
+ * Used for Permanent Deletion to ensure no "ghost data" remains if the ID is reused later.
+ */
+function _wipeDailyDataForHabits(habitIds: string[]) {
+    if (habitIds.length === 0) return;
+    const idsSet = new Set(habitIds);
+    
+    Object.keys(state.dailyData).forEach(dateKey => {
+        const dayRecord = state.dailyData[dateKey];
+        if (!dayRecord) return;
+        
+        let changed = false;
+        habitIds.forEach(id => {
+            if (dayRecord[id]) {
+                delete dayRecord[id];
+                changed = true;
+            }
+        });
+        
+        // Clean up empty date records to keep state small
+        if (changed && Object.keys(dayRecord).length === 0) {
+            delete state.dailyData[dateKey];
+        }
+    });
+}
+
+/**
+ * FUTURE CLEAN HELPER [2025-02-21]:
+ * Removes daily data for a habit for all dates strictly greater than the provided date.
+ * Used when Ending a habit to clear any future "ghost" moves/notes that are now orphan.
+ */
+function _wipeFutureDailyDataForHabit(habitId: string, fromDateISO: string) {
+    Object.keys(state.dailyData).forEach(dateKey => {
+        if (dateKey > fromDateISO) {
+            const dayRecord = state.dailyData[dateKey];
+            if (dayRecord && dayRecord[habitId]) {
+                delete dayRecord[habitId];
+                if (Object.keys(dayRecord).length === 0) {
+                    delete state.dailyData[dateKey];
+                }
+            }
+        }
+    });
+}
+
 // --- ACTIONS ---
 
 export function createDefaultHabit() {
@@ -120,10 +182,28 @@ export function toggleHabitStatus(habitId: string, time: TimeOfDay, date: string
     
     instanceData.status = newStatus;
     
-    // Se completou, define o valor padrão se não houver override
-    if (newStatus === 'completed' && instanceData.goalOverride === undefined) {
-        // Opcional: definir um valor padrão aqui se necessário, 
-        // mas o render já trata undefined usando getSmartGoalForHabit
+    // STORAGE OPTIMIZATION [2025-02-21]: Pruning.
+    // If the status is 'pending' (default) AND there is no note AND no goalOverride,
+    // this entry provides no information. We delete it to keep storage minimal.
+    // This prevents the "ghost data" accumulation in the save file.
+    if (newStatus === 'pending' && !instanceData.note && instanceData.goalOverride === undefined) {
+        const dailyInfo = state.dailyData[date]?.[habitId];
+        if (dailyInfo && dailyInfo.instances) {
+            delete dailyInfo.instances[time];
+            
+            // LOGIC FIX [2025-02-21]: Protection against deleting Valid Overrides.
+            // If the user removed the habit "Just Today", dailySchedule will be [].
+            // If we delete the dailyInfo object, we lose this override and the habit
+            // will reappear (Ghost). We must check if dailySchedule is explicitly undefined.
+            if (Object.keys(dailyInfo.instances).length === 0 && dailyInfo.dailySchedule === undefined) {
+                delete state.dailyData[date][habitId];
+                
+                // If the day is empty, remove the day record entirely
+                if (Object.keys(state.dailyData[date]).length === 0) {
+                    delete state.dailyData[date];
+                }
+            }
+        }
     }
 
     invalidateStreakCache(habitId, date);
@@ -159,9 +239,6 @@ export function toggleHabitStatus(habitId: string, time: TimeOfDay, date: string
 export function setGoalOverride(habitId: string, date: string, time: TimeOfDay, value: number) {
     const instanceData = ensureHabitInstanceData(date, habitId, time);
     instanceData.goalOverride = value;
-    
-    // Se alterou a meta, e estava pendente, talvez devesse completar?
-    // Por enquanto, apenas salva o valor. O usuário clica para completar.
     
     invalidateChartCache();
     saveState();
@@ -220,7 +297,6 @@ export function handleUndoDelete() {
 
     if (habit) {
         // Reverte a alteração no último agendamento
-        // Localiza o agendamento correspondente (deve ser o último ou o que foi modificado)
         const scheduleToRestore = habit.scheduleHistory.find(s => 
             s.startDate === lastSchedule.startDate && s.scheduleAnchor === lastSchedule.scheduleAnchor
         );
@@ -265,10 +341,12 @@ export function handleUndoDelete() {
 }
 
 /**
- * HELPER: Remove a specific time from the schedule starting from a specific date (Future Scope).
- * This logic replaces the "From Now On" branch of _requestFutureScheduleChange.
+ * LOGIC FIX [2025-02-21]: Robust removal logic.
+ * Distinguishes between removing a time that is in the Permanent History vs. a Just Today override.
+ * Ensures we don't accidentally wipe out other times or leave stale overrides.
  */
 function _removeTimeFromSchedule(habit: Habit, effectiveDate: string, timeToRemove: TimeOfDay) {
+    // 1. Find the active schedule definition (History)
     let targetScheduleIndex = habit.scheduleHistory.findIndex(s => {
             const startOk = s.startDate <= effectiveDate;
             const endOk = !s.endDate || s.endDate > effectiveDate;
@@ -280,58 +358,72 @@ function _removeTimeFromSchedule(habit: Habit, effectiveDate: string, timeToRemo
     }
 
     const activeSchedule = habit.scheduleHistory[targetScheduleIndex];
-    
-    // Helper to filter times
-    const filterTimes = (times: TimeOfDay[]) => times.filter(t => t !== timeToRemove);
-
-    // Se a mudança é no mesmo dia de início, apenas atualiza
-    if (activeSchedule.startDate === effectiveDate) {
-        activeSchedule.times = filterTimes(activeSchedule.times);
-        if (activeSchedule.times.length === 0) {
-                // Se removeu todos os horários, encerra o hábito
-                endHabit(habit.id, effectiveDate);
-                return;
-        }
-    } else {
-        // Split do agendamento
-        activeSchedule.endDate = effectiveDate;
-        
-        const newTimes = filterTimes(activeSchedule.times);
-        if (newTimes.length > 0) {
-            const newSchedule: HabitSchedule = {
-                ...activeSchedule,
-                startDate: effectiveDate,
-                endDate: undefined,
-                times: newTimes,
-            };
-            delete (newSchedule as any).endDate;
-            habit.scheduleHistory.push(newSchedule);
-        } else {
-            // If no times left, we are effectively ending the habit, which assumes
-            // the user intended to delete the whole habit from this point on.
-            // Since activeSchedule.endDate is already set, we just finish.
-        }
-    }
-
-    // CLEANUP OVERRIDES [2025-02-15]: If we are removing a time "From Now On",
-    // we should check if there was a "Just Today" override that might conflict or be redundant.
+    const isTimeInHistory = activeSchedule.times.includes(timeToRemove);
     const dailyInfo = state.dailyData[effectiveDate]?.[habit.id];
-    if (dailyInfo && dailyInfo.dailySchedule) {
-        // Remove the time from the daily override as well to be consistent
-        dailyInfo.dailySchedule = dailyInfo.dailySchedule.filter(t => t !== timeToRemove);
-        if (dailyInfo.dailySchedule.length === 0 && activeSchedule.times.length === 0) {
-            // Clean up empty daily schedule
-            delete dailyInfo.dailySchedule;
+
+    // CASE A: The time exists in the Permanent History.
+    // We must update the history (From Now On).
+    if (isTimeInHistory) {
+        const newTimes = activeSchedule.times.filter(t => t !== timeToRemove);
+
+        if (newTimes.length === 0) {
+            // If removing this time leaves the habit with NO times, end the habit.
+            endHabit(habit.id, effectiveDate);
+            return;
+        }
+
+        // Apply history change (Split or Update)
+        if (activeSchedule.startDate === effectiveDate) {
+            // If the schedule started today, we can just modify it in-place.
+            activeSchedule.times = newTimes;
+        } else {
+            // If it's an older schedule, we close it yesterday and start a new one today.
+            activeSchedule.endDate = effectiveDate;
+            
+            habit.scheduleHistory.push({
+                startDate: effectiveDate,
+                times: newTimes,
+                frequency: activeSchedule.frequency,
+                name: activeSchedule.name,
+                nameKey: activeSchedule.nameKey,
+                subtitle: activeSchedule.subtitle,
+                subtitleKey: activeSchedule.subtitleKey,
+                scheduleAnchor: activeSchedule.scheduleAnchor
+            });
+            habit.scheduleHistory.sort((a, b) => a.startDate.localeCompare(b.startDate));
+        }
+
+        // CLEANUP: If we updated the permanent history, any 'Just Today' override that might 
+        // exist for this date is likely obsolete or confusing. We clean it up so the 
+        // new history (which now EXCLUDES the time) takes precedence.
+        _cleanDailyOverrides(effectiveDate, habit.id);
+
+    } 
+    // CASE B: The time is NOT in history (It was a "Just Today" addition/move).
+    // We only need to remove it from the daily override.
+    else {
+        // Ensure dailyInfo exists first
+        ensureHabitDailyInfo(effectiveDate, habit.id);
+        const info = state.dailyData[effectiveDate][habit.id];
+        
+        if (info.dailySchedule) {
+            info.dailySchedule = info.dailySchedule.filter(t => t !== timeToRemove);
+            // NOTE: If dailySchedule becomes empty here, it effectively means "Removed for Today".
+            // We KEEP it as [] so shouldHabitAppearOnDate returns false correctly.
+        } else {
+            // Edge case: Habit appeared due to logic glitch or race condition, force empty schedule.
+            info.dailySchedule = [];
         }
     }
     
-    // Remove instance data for that time
-    if (dailyInfo && dailyInfo.instances[timeToRemove]) {
-        delete dailyInfo.instances[timeToRemove];
+    // Always clean up instance data (notes, status) for the removed time
+    const info = state.dailyData[effectiveDate]?.[habit.id];
+    if (info && info.instances[timeToRemove]) {
+        delete info.instances[timeToRemove];
     }
 
     // Cache cleanup
-    removeHabitFromCache(habit.id); // Ensure DOM element is recreated clean
+    removeHabitFromCache(habit.id);
     state.uiDirtyState.habitListStructure = true;
     clearScheduleCache();
     clearActiveHabitsCache();
@@ -339,7 +431,6 @@ function _removeTimeFromSchedule(habit: Habit, effectiveDate: string, timeToRemo
     renderApp();
 }
 
-// Kept for Drag & Drop functionality (Move Habit)
 function _requestFutureScheduleChange(
     habit: Habit,
     effectiveDate: string,
@@ -369,16 +460,16 @@ function _requestFutureScheduleChange(
             delete dailyInfo.instances[fromTime];
         }
 
+        // CLEANUP [2025-02-21]: Essential for DOM Cache consistency.
+        removeHabitFromCache(habit.id);
+
         state.uiDirtyState.habitListStructure = true; 
         clearActiveHabitsCache();
         saveState();
         renderApp();
     };
     
-    // For "From Now On" moves, we reuse the logic structure but with Add + Remove
     const fromNowOnAction = () => {
-        // This is complex because it's a move (Remove + Add), not just Remove.
-        // We will keep the original implementation logic here for Move.
         let targetScheduleIndex = habit.scheduleHistory.findIndex(s => {
              const startOk = s.startDate <= effectiveDate;
              const endOk = !s.endDate || s.endDate > effectiveDate;
@@ -420,12 +511,9 @@ function _requestFutureScheduleChange(
             }
         }
 
-        if (state.dailyData[effectiveDate]?.[habit.id]?.dailySchedule) {
-             const dailyInfo = ensureHabitDailyInfo(effectiveDate, habit.id);
-             if (dailyInfo.dailySchedule) {
-                dailyInfo.dailySchedule = scheduleModifier(dailyInfo.dailySchedule);
-             }
-        }
+        // CLEANUP: Since we are changing the permanent rule, we should wipe any
+        // specific daily overrides for this date to avoid conflicts/ghosts.
+        _cleanDailyOverrides(effectiveDate, habit.id);
         
         const dailyInfo = state.dailyData[effectiveDate]?.[habit.id];
         if (dailyInfo) {
@@ -438,6 +526,9 @@ function _requestFutureScheduleChange(
             }
         }
         
+        // CLEANUP [2025-02-21]: Essential for DOM Cache consistency.
+        removeHabitFromCache(habit.id);
+
         state.uiDirtyState.habitListStructure = true;
         clearScheduleCache();
         clearActiveHabitsCache();
@@ -465,9 +556,6 @@ export function requestHabitTimeRemoval(habitId: string, time: TimeOfDay) {
     const date = state.selectedDate;
     const { name } = getHabitDisplayInfo(habit, date);
     
-    // UX UPDATE [2025-02-17]: Simplificação radical do fluxo de exclusão via Swipe.
-    // O botão principal agora remove apenas o horário (slot) específico daqui para frente.
-    
     const bodyText = t('confirmRemoveTime', { habitName: name, time: t(`filter${time}`) });
     
     showConfirmationModal(
@@ -478,7 +566,7 @@ export function requestHabitTimeRemoval(habitId: string, time: TimeOfDay) {
         },
         {
             title: t('modalRemoveTimeTitle'),
-            confirmText: t('deleteButton'), // "Apagar"
+            confirmText: t('deleteButton'),
             confirmButtonStyle: 'danger'
         }
     );
@@ -499,28 +587,22 @@ export function saveHabitFromModal() {
     }
 
     // STRICT DUPLICATION CHECK [2025-02-19]: Prevent creating a habit in a time slot where it already exists.
-    // This logic ensures that if "Drink Water" is active in "Morning", the user CANNOT add "Drink Water" to "Morning" again.
-    // It works for both new habits (checking against all active) and editing/reviving (checking against active target).
-    
     const nameToCheck = formData.name || (formData.nameKey ? t(formData.nameKey) : '');
     
     for (const h of state.habits) {
-        // Skip comparing with self if we are editing the same habit ID
         if (!isNew && h.id === habitId) continue;
 
         const info = getHabitDisplayInfo(h);
         if (info.name.toLowerCase() === nameToCheck.toLowerCase()) {
             const lastSch = h.scheduleHistory[h.scheduleHistory.length - 1];
-            // Check if habit is currently active
             if (!lastSch.endDate) {
-                // Check for time overlap
                 const activeTimes = lastSch.times;
                 const overlappingTimes = formData.times.filter(time => activeTimes.includes(time));
                 
                 if (overlappingTimes.length > 0) {
                     const timeNames = overlappingTimes.map(tm => t(`filter${tm}`)).join(', ');
                     alert(t('noticeHabitAlreadyExistsInTime', { habitName: info.name, times: timeNames }));
-                    return; // Block save
+                    return; 
                 }
             }
         }
@@ -563,11 +645,8 @@ export function saveHabitFromModal() {
     } else {
         const habit = state.habits.find(h => h.id === habitId);
         if (habit) {
-            // Priority Clean-up for daily overrides
-            const dailyInfo = state.dailyData[targetDate]?.[habit.id];
-            if (dailyInfo && dailyInfo.dailySchedule !== undefined) {
-                delete dailyInfo.dailySchedule;
-            }
+            // HYGIENE [2025-02-21]: Priority Clean-up for daily overrides.
+            _cleanDailyOverrides(targetDate, habit.id);
 
             // Atualiza propriedades visuais globais
             habit.icon = formData.icon;
@@ -582,14 +661,6 @@ export function saveHabitFromModal() {
             const isLastScheduleEnded = !!lastSchedule.endDate && lastSchedule.endDate <= targetDate;
 
             if (isSameStart && !isLastScheduleEnded) {
-                // Simplificação: Se a data alvo é o início do agendamento atual e ele está aberto, atualiza in-place.
-                // NOTE: We merge times if reviving, but strict check above prevents true duplicates.
-                // Here we just set the times. If reviving, formData.times should ideally contain old + new?
-                // Actually, the UI for 'Edit' doesn't easily support 'Add to existing'.
-                // If the user selected different times in the form, they replace the old ones for that day forward.
-                // BUT, if it's a revival (isNew was true, turned false), formData.times ONLY has the new times.
-                // We should MERGE them if reviving an active habit (though strict check blocks overlap, disjoint sets are ok).
-                
                 // If we are reviving an ACTIVE habit with non-overlapping times (e.g. adding Evening to Morning):
                 if (!isNew && state.editingHabit?.isNew) {
                      // This was a revival. We should merge times.
@@ -676,6 +747,9 @@ export function endHabit(habitId: string, dateISO: string) {
     // Mas se o usuário escolhe hoje, ele espera ver hoje.
     activeSchedule.endDate = dateISO;
 
+    // CLEANUP [2025-02-21]: Wipe ghost data from future.
+    _wipeFutureDailyDataForHabit(habitId, dateISO);
+
     clearScheduleCache();
     clearActiveHabitsCache();
     invalidateChartCache();
@@ -719,7 +793,6 @@ export function requestHabitPermanentDeletion(habitId: string) {
     
     // CHANGE [2025-02-17]: Uniform Deletion.
     // Instead of deleting just by ID, we delete ALL habits that share the same name.
-    // This cleans up any legacy fragmentation where the user might have multiple "Meditate" habits.
     const { name: targetName } = getHabitDisplayInfo(habit);
 
     showConfirmationModal(
@@ -736,6 +809,10 @@ export function requestHabitPermanentDeletion(habitId: string) {
                 }
                 return true; // Keep
             });
+            
+            // CLEANUP [2025-02-21]: Deep Clean of Daily Data.
+            // Remove all daily records for these IDs so they don't haunt us if the ID is reused.
+            _wipeDailyDataForHabits(idsToRemove);
             
             // Remove all variants from DOM cache
             idsToRemove.forEach(id => removeHabitFromCache(id));
@@ -772,6 +849,8 @@ export function graduateHabit(habitId: string) {
         habit.graduatedOn = today;
         
         state.uiDirtyState.habitListStructure = true;
+        // FIX [2025-02-21]: Must clear active cache so the habit disappears from the "Today" list immediately.
+        clearActiveHabitsCache();
         saveState();
         
         // Re-render manage list if open

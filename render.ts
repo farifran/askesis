@@ -1,4 +1,6 @@
 
+
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -704,12 +706,10 @@ function updateHabitCardElement(card: HTMLElement, habit: Habit, time: TimeOfDay
     const status = habitInstanceData?.status ?? 'pending';
     const hasNote = habitInstanceData?.note && habitInstanceData.note.length > 0;
     // UX FIX [2025-02-02]: Calculate streak relative to the selected date context, not strictly "Today".
-    // This ensures that browsing history shows the correct streak status for that point in time.
     const streak = calculateHabitStreak(habit.id, state.selectedDate);
     const { name, subtitle } = getHabitDisplayInfo(habit, state.selectedDate);
 
     // PERFORMANCE [2025-01-17]: Otimização de layout. Verifica se a classe já está presente
-    // antes de adicionar/remover para evitar "style recalculation" desnecessário.
     const wasCompleted = card.classList.contains('completed');
     if (!card.classList.contains(status)) {
         card.classList.remove('pending', 'completed', 'snoozed');
@@ -717,17 +717,30 @@ function updateHabitCardElement(card: HTMLElement, habit: Habit, time: TimeOfDay
     }
 
     // UX [2025-01-18]: Feedback visual "Pop" ao completar um hábito.
-    // Se o status mudou para 'completed' e não estava antes, aciona a animação no ícone.
     const isCompleted = status === 'completed';
-    if (!wasCompleted && isCompleted) {
-        const icon = card.querySelector<HTMLElement>('.habit-icon');
-        // Remove a classe primeiro (reinício forçado se necessário)
-        icon?.classList.remove('animate-pop');
-        // Força um reflow para garantir que o navegador registre a remoção antes da adição (restart animation)
-        void icon?.offsetWidth;
-        icon?.classList.add('animate-pop');
-        // Remove a classe após a animação para limpeza
-        icon?.addEventListener('animationend', () => icon.classList.remove('animate-pop'), { once: true });
+    const icon = card.querySelector<HTMLElement>('.habit-icon');
+    
+    // VISUAL SYNC [2025-02-21]: Update Icon and Color.
+    // Necessary because we use DOM caching. If the user edits the habit (changes color/icon),
+    // we reuse the old element, so we must explicitly update these visual properties.
+    if (icon) {
+        // Only touch DOM if changed to avoid layout thrashing
+        const newIconHtml = habit.icon;
+        const newColor = habit.color;
+        const newBgColor = `${habit.color}30`;
+
+        if (icon.innerHTML !== newIconHtml) icon.innerHTML = newIconHtml;
+        if (icon.style.color !== newColor) icon.style.color = newColor;
+        if (icon.style.backgroundColor !== newBgColor) icon.style.backgroundColor = newBgColor;
+
+        if (!wasCompleted && isCompleted) {
+            // Remove a classe primeiro (reinício forçado se necessário)
+            icon.classList.remove('animate-pop');
+            // Força um reflow para garantir que o navegador registre a remoção antes da adição
+            void icon.offsetWidth;
+            icon.classList.add('animate-pop');
+            icon.addEventListener('animationend', () => icon.classList.remove('animate-pop'), { once: true });
+        }
     }
 
     // Atualiza classes de consolidação
@@ -761,7 +774,6 @@ function updateHabitCardElement(card: HTMLElement, habit: Habit, time: TimeOfDay
     const noteBtn = card.querySelector<HTMLElement>('.swipe-note-btn');
     if (noteBtn) {
         const hasNoteStr = String(hasNote);
-        // OTIMIZAÇÃO: Verifica o estado via dataset antes de manipular o DOM/SVG
         if (noteBtn.dataset.hasNote !== hasNoteStr) {
             noteBtn.innerHTML = hasNote ? icons.swipeNoteHasNote : icons.swipeNote;
             noteBtn.setAttribute('aria-label', t(hasNote ? 'habitNoteEdit_ariaLabel' : 'habitNoteAdd_ariaLabel'));
@@ -964,7 +976,8 @@ export function renderHabits() {
             
             if (card) {
                 // BUGFIX [2025-02-07]: Reset swipe state when reusing cached element.
-                card.classList.remove('is-open-left', 'is-open-right', 'is-swiping');
+                // Prevent ghost visuals where a habit appears stuck open or dragging.
+                card.classList.remove('is-open-left', 'is-open-right', 'is-swiping', 'dragging');
 
                 // 2. Atualiza estado se existir (Surgical)
                 updateHabitCardElement(card, habit, time);

@@ -360,6 +360,39 @@ export function invalidateChartCache() {
     state.chartDataDirty = true;
 }
 
+/**
+ * DATA HYGIENE [2025-02-21]: Prunes daily data records for habits that no longer exist.
+ * This removes "zombie" data that can cause ghosts or syncing bloat.
+ */
+function pruneOrphanedDailyData(habits: Habit[], dailyData: Record<string, Record<string, HabitDailyInfo>>) {
+    const validHabitIds = new Set(habits.map(h => h.id));
+    let cleanedCount = 0;
+
+    Object.keys(dailyData).forEach(date => {
+        const dayRecord = dailyData[date];
+        if (!dayRecord) return;
+
+        const habitIds = Object.keys(dayRecord);
+        let dayModified = false;
+
+        habitIds.forEach(id => {
+            if (!validHabitIds.has(id)) {
+                delete dayRecord[id];
+                dayModified = true;
+                cleanedCount++;
+            }
+        });
+
+        if (dayModified && Object.keys(dayRecord).length === 0) {
+            delete dailyData[date];
+        }
+    });
+
+    if (cleanedCount > 0) {
+        console.log(`Pruned ${cleanedCount} orphaned habit records from daily data.`);
+    }
+}
+
 export function loadState(cloudState?: AppState) {
     let loadedState: AppState | null = cloudState || null;
 
@@ -377,17 +410,31 @@ export function loadState(cloudState?: AppState) {
     if (loadedState) {
         const migrated = migrateState(loadedState, APP_VERSION);
         
-        // ROBUSTEZ [2025-01-18]: Sanitização do estado carregado.
-        const sanitizedHabits = migrated.habits.filter(h => {
-            if (!h.id || !h.scheduleHistory || h.scheduleHistory.length === 0) {
-                console.warn(`Removing corrupted habit found in state: ${h.id || 'unknown'}`);
+        // DATA INTEGRITY [2025-02-21]: Deduplication.
+        // Ensure strictly unique habit IDs. If duplicates exist, keep the first one.
+        const uniqueHabitsMap = new Map<string, Habit>();
+        migrated.habits.forEach(h => {
+            if (h.id && !uniqueHabitsMap.has(h.id)) {
+                uniqueHabitsMap.set(h.id, h);
+            }
+        });
+        const sanitizedHabits = Array.from(uniqueHabitsMap.values());
+
+        // DATA INTEGRITY: Filter out corrupted habits without schedule history.
+        const validHabits = sanitizedHabits.filter(h => {
+            if (!h.scheduleHistory || h.scheduleHistory.length === 0) {
+                console.warn(`Removing corrupted habit found in state: ${h.id}`);
                 return false;
             }
             return true;
         });
 
-        state.habits = sanitizedHabits;
+        state.habits = validHabits;
         state.dailyData = migrated.dailyData || {};
+        
+        // HYGIENE: Clean up daily data for habits that were removed or filtered out.
+        pruneOrphanedDailyData(state.habits, state.dailyData);
+
         state.notificationsShown = migrated.notificationsShown || [];
         state.pending21DayHabitIds = migrated.pending21DayHabitIds || [];
         state.pendingConsolidationHabitIds = migrated.pendingConsolidationHabitIds || [];
@@ -503,16 +550,15 @@ export function getEffectiveScheduleForHabitOnDate(habit: Habit, dateISO: string
     const dailyInfo = state.dailyData[dateISO]?.[habit.id];
     // PERFORMANCE: Pass string directly to avoid Date creation inside getScheduleForDate if not needed
     const activeSchedule = getScheduleForDate(habit, dateISO);
-    if (!activeSchedule) return [];
     
     // BUGFIX [2025-02-07]: Explicit check for undefined on dailySchedule.
     // This is critical because dailySchedule can be an empty array [], which is falsy.
     // If the user removes a habit for "Just Today", dailySchedule becomes [].
-    // Without the strict check, `[] || activeSchedule.times` would fall back to the original schedule,
-    // preventing the removal of the habit for that day.
     if (dailyInfo?.dailySchedule !== undefined) {
         return dailyInfo.dailySchedule;
     }
+    
+    if (!activeSchedule) return [];
     return activeSchedule.times;
 }
 
@@ -554,8 +600,6 @@ export function shouldHabitAppearOnDate(habit: Habit, date: Date, dateISO?: stri
     const dateStr = dateISO || toUTCIsoDateString(date);
 
     // FIX [2025-02-02]: Integrity check for graduated habits.
-    // Habits should only disappear on or AFTER their graduation date, not before.
-    // This allows graduated habits to remain visible in historical charts and data.
     if (habit.graduatedOn && dateStr >= habit.graduatedOn) {
         return false;
     }
@@ -568,6 +612,20 @@ export function shouldHabitAppearOnDate(habit: Habit, date: Date, dateISO?: stri
     // Smart Garbage collection - Increased limit to prevent thrashing
     manageCacheSize(state.habitAppearanceCache, MAX_CACHE_SIZE * 2);
 
+    // LOGIC FIX [2025-02-21]: CRITICAL PRIORITY FOR DAILY OVERRIDES.
+    // Must check for manual override BEFORE checking standard frequency/schedule.
+    // If a user manually moved a habit to today (e.g. from Monday to Tuesday), 
+    // there will be a `dailySchedule` entry. If we verify frequency first, 
+    // it will return FALSE because today is Tuesday, hiding the manual move.
+    const dailyInfo = state.dailyData[dateStr]?.[habit.id];
+    if (dailyInfo?.dailySchedule !== undefined) {
+        // If an explicit schedule exists, we only show it if it has times.
+        // Empty array [] means explicitly removed for today.
+        const result = dailyInfo.dailySchedule.length > 0;
+        state.habitAppearanceCache.set(cacheKey, result);
+        return result;
+    }
+
     const activeSchedule = getScheduleForDate(habit, dateStr);
     if (!activeSchedule) {
         state.habitAppearanceCache.set(cacheKey, false);
@@ -578,7 +636,6 @@ export function shouldHabitAppearOnDate(habit: Habit, date: Date, dateISO?: stri
     
     // PERFORMANCE [2025-01-17]: HOT-PATH OPTIMIZATION
     // A frequência 'diária' é o caso mais comum. Retornamos 'true' imediatamente
-    // para evitar cálculos matemáticos de timestamp (divisões/arredondamentos) desnecessários.
     if (freq.type === 'daily') {
         state.habitAppearanceCache.set(cacheKey, true);
         return true;
@@ -644,8 +701,16 @@ export function getActiveHabitsForDate(dateOrIso: Date | string): Array<{ habit:
     // Fallback: precisamos do objeto Date para a lógica de agendamento se não estiver em cache
     const date = typeof dateOrIso === 'string' ? parseUTCIsoDate(dateOrIso) : dateOrIso;
 
+    // DATA INTEGRITY [2025-02-21]: Filter out any duplicates that might have slipped into state.habits
+    const processedIds = new Set<string>();
+    
     const activeHabits = state.habits
-        .filter(habit => shouldHabitAppearOnDate(habit, date, dateStr))
+        .filter(habit => {
+            if (processedIds.has(habit.id)) return false; // Skip if already processed
+            const shouldAppear = shouldHabitAppearOnDate(habit, date, dateStr);
+            if (shouldAppear) processedIds.add(habit.id);
+            return shouldAppear;
+        })
         .map(habit => ({
             habit,
             schedule: getEffectiveScheduleForHabitOnDate(habit, dateStr),

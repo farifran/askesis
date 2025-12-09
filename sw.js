@@ -1,10 +1,10 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// [ANALYSIS PROGRESS]: 100% - Análise concluída. Estratégia Cache-First implementada para navegação instantânea (0ms latência no boot). Fallback de rede robusto.
-// OPTIMIZATION [2025-01-27]: Added ignoreSearch to cache match to support deep linking/UTM parameters offline.
-// ROBUSTNESS [2025-01-28]: Wrapped importScripts in try-catch. Core PWA functionality must survive external script failures (e.g., AdBlockers or partial offline state).
+// [ANALYSIS PROGRESS]: 100% - Análise concluída. Estratégia Cache-First implementada para navegação instantânea (0ms latência no boot).
+// UPDATE [2025-02-21]: Bumped version to v2 to force update of application logic (Data Pruning & Visual Sync).
 
 try {
     importScripts("https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js");
@@ -12,7 +12,7 @@ try {
     console.warn("Failed to load OneSignal SDK in Service Worker. Push notifications might not work.", e);
 }
 
-const CACHE_NAME = 'habit-tracker-v1';
+const CACHE_NAME = 'habit-tracker-v2';
 
 // Arquivos essenciais para o App Shell
 const CACHE_FILES = [
@@ -37,7 +37,6 @@ self.addEventListener('install', (event) => {
             console.log('Service Worker: Caching App Shell (Network Forced)');
             
             // FORÇA a atualização do cache via rede ('reload') para garantir que a nova versão seja baixada.
-            // Isso é crucial para atualizar o App Shell em segundo plano.
             await Promise.all(CACHE_FILES.map(async (url) => {
                 try {
                     const request = new Request(url, { cache: 'reload' });
@@ -77,7 +76,6 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ESTRATÉGIA CACHE-FIRST PARA NAVEGAÇÃO (App Shell)
-    // Garante carregamento instantâneo servindo o HTML do cache.
     if (event.request.mode === 'navigate') {
         event.respondWith((async () => {
             try {
@@ -87,7 +85,7 @@ self.addEventListener('fetch', (event) => {
                     return cachedResponse;
                 }
                 
-                // 2. Fallback de Rede (apenas se o cache estiver vazio/corrompido)
+                // 2. Fallback de Rede
                 return await fetch(event.request);
             } catch (error) {
                 console.error('Navigation failed:', error);
@@ -108,7 +106,6 @@ self.addEventListener('fetch', (event) => {
             return await fetch(event.request);
         } catch (error) {
             // Opcional: retornar placeholder se necessário
-            // console.error('Asset fetch failed', error);
         }
     })());
 });
