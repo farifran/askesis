@@ -922,8 +922,9 @@ export function renderHabits() {
         return;
     }
 
-    const selectedDateObj = parseUTCIsoDate(state.selectedDate);
-    const activeHabitsData = getActiveHabitsForDate(selectedDateObj);
+    // OTIMIZAÇÃO: Usa a string ISO diretamente para evitar criação de objeto Date.
+    // A função getActiveHabitsForDate aceita string ISO.
+    const activeHabitsData = getActiveHabitsForDate(state.selectedDate);
     const habitsByTime: Record<TimeOfDay, Habit[]> = { 'Morning': [], 'Afternoon': [], 'Evening': [] };
     
     activeHabitsData.forEach(({ habit, schedule }) => {
