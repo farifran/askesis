@@ -1,6 +1,3 @@
-
-
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -950,6 +947,25 @@ export function renderHabits() {
         const groupEl = wrapperEl?.querySelector<HTMLElement>(`.habit-group[data-time="${time}"]`);
         if (!wrapperEl || !groupEl) return;
         
+        const hasHabits = groupHasHabits[time];
+
+        // UI UPDATE [2025-02-23]: Inject time icon into the timeline marker
+        // LOGIC FIX [2025-02-23]: Toggle marker visibility based on content.
+        // If there are habits: Show Marker (Left) -> Display: Flex/Block
+        // If empty (Placeholder): Hide Marker -> Display: None (This allows sibling to expand full width)
+        const marker = wrapperEl.querySelector('.time-marker') as HTMLElement;
+        if (marker) {
+            if (hasHabits) {
+                marker.innerHTML = getTimeOfDayIcon(time);
+                marker.style.display = ''; // Restore default display (from CSS)
+                marker.style.opacity = '1';
+            } else {
+                // Completely remove from flow so the placeholder can take 100% width
+                marker.style.display = 'none'; 
+                marker.innerHTML = ''; 
+            }
+        }
+
         // A11Y: Define o rótulo ARIA para o grupo de hábitos com base no período do dia
         groupEl.setAttribute('aria-label', getTimeOfDayName(time));
 
@@ -1009,7 +1025,6 @@ export function renderHabits() {
             groupEl.lastChild?.remove();
         }
         
-        const hasHabits = groupHasHabits[time];
         const isSmartPlaceholder = time === smartPlaceholderTargetTime;
         
         wrapperEl.classList.toggle('has-habits', hasHabits);

@@ -588,6 +588,28 @@ main {
     content-visibility: auto;
     /* PERFORMANCE "GOLD MASTER" [2025-01-27]: Ajuste para 80px para reduzir CLS */
     contain-intrinsic-size: 80px;
+    
+    /* UI UPDATE [2025-02-23]: Flex layout for Timeline view */
+    display: flex;
+    align-items: flex-start; /* Align top */
+    gap: var(--space-md);
+}
+
+/* Time Marker (Left Timeline Column) */
+.time-marker {
+    flex-shrink: 0;
+    width: 30px;
+    padding-top: 10px; /* Align with card text visually */
+    color: var(--text-tertiary);
+    display: flex;
+    justify-content: center;
+    position: sticky;
+    top: 10px;
+    transition: opacity var(--transition-duration);
+}
+.time-marker svg {
+    width: 24px;
+    height: 24px;
 }
 
 /* ROBUSTEZ [2025-01-28]: Desativa content-visibility durante drag-and-drop.
@@ -630,6 +652,10 @@ body.is-dragging-active .habit-group-wrapper.is-collapsible {
     min-height: 40px;
     /* PERFORMANCE [2025-01-18]: Isola o layout do grupo. Mudanças dentro do grupo não afetam o layout externo. */
     contain: layout style;
+    
+    /* Flex child props */
+    flex-grow: 1;
+    min-width: 0; /* Important for flex children to shrink properly */
 }
 /* Quando arrastando, relaxamos o containment para permitir que o indicador e o placeholder fluam */
 body.is-dragging-active .habit-group {
@@ -681,6 +707,9 @@ body.is-dragging-active .habit-group {
     background-color: transparent;
     margin-block-end: var(--space-sm);
     transition: color var(--transition-duration), transform var(--transition-duration), border-color var(--transition-duration), background-color var(--transition-duration);
+    
+    /* UI FIX: Expand to full width */
+    width: 100%;
 }
 .empty-group-placeholder:hover {
     color: var(--text-primary);
@@ -842,6 +871,11 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     width: 18px;
     height: 100%;
     stroke: currentColor;
+}
+
+/* UI CLEANUP [2025-02-23]: Hide duplicated time icons inside cards ONLY. Keep visible for placeholder. */
+.habit-card .time-of-day-icon {
+    display: none !important;
 }
 
 .habit-center-group {
@@ -2094,6 +2128,10 @@ body.is-offline #ai-eval-btn .offline-icon {
     .habit-group {
         display: flex; flex-wrap: wrap;
         gap: var(--space-sm); padding: 0;
+        
+        /* UI FIX [2025-02-23]: Allow flex children to grow properly inside the timeline layout */
+        flex-grow: 1;
+        min-width: 0;
     }
     .habit-card {
         flex: 1 1 calc(50% - var(--space-sm));

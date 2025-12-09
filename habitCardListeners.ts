@@ -7,7 +7,7 @@
 
 import { ui } from './ui';
 import { state, Habit, getCurrentGoalForInstance, TimeOfDay, getSmartGoalForHabit } from './state';
-import { openNotesModal, getUnitString, formatGoalForDisplay } from './render';
+import { openNotesModal, getUnitString, formatGoalForDisplay, renderExploreHabits, openModal } from './render';
 import {
     toggleHabitStatus,
     setGoalOverride,
@@ -150,6 +150,17 @@ export function setupHabitCardListeners() {
 
     ui.habitContainer.addEventListener('click', e => {
         const target = e.target as HTMLElement;
+
+        // --- PLACEHOLDER LISTENER ---
+        // Permite clicar na área pontilhada "Adicionar Hábito" para abrir o modal
+        const placeholder = target.closest('.empty-group-placeholder');
+        if (placeholder) {
+            triggerHaptic('light');
+            renderExploreHabits();
+            openModal(ui.exploreModal);
+            return;
+        }
+
         const card = target.closest<HTMLElement>('.habit-card');
         if (!card) return;
 
