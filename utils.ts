@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -203,20 +202,6 @@ export function simpleMarkdownToHTML(text: string): string {
     closeUnorderedList();
     closeOrderedList();
     return html;
-}
-
-export function debounce<T extends (...args: any[]) => void>(func: T, wait: number): (...args: Parameters<T>) => void {
-    let timeout: number | null;
-    return function (...args: Parameters<T>) {
-        const later = () => {
-            timeout = null;
-            func(...args);
-        };
-        if (timeout) {
-            clearTimeout(timeout);
-        }
-        timeout = window.setTimeout(later, wait);
-    };
 }
 
 // SCHEDULING OPTIMIZATION [2025-01-21]: Centralized requestIdleCallback polyfill.

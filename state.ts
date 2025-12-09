@@ -116,7 +116,6 @@ export const APP_VERSION = 6; // Increased version for scheduleHistory refactor
 export const DAYS_IN_CALENDAR = 61;
 export const STREAK_SEMI_CONSOLIDATED = 21;
 export const STREAK_CONSOLIDATED = 66;
-export const SMART_GOAL_AVERAGE_COUNT = 3;
 // MEMORY OPTIMIZATION [2025-01-21]: Max cache size aumented to 3000.
 const MAX_CACHE_SIZE = 3000;
 

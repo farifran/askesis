@@ -255,51 +255,6 @@ export function setGoalOverride(habitId: string, date: string, time: TimeOfDay, 
     saveState();
 }
 
-export function completeAllHabitsForDate(date: string) {
-    const activeHabits = getActiveHabitsForDate(date);
-    
-    let changed = false;
-    activeHabits.forEach(({ habit, schedule }: { habit: Habit, schedule: TimeOfDay[] }) => {
-        schedule.forEach((time: TimeOfDay) => {
-            const instance = ensureHabitInstanceData(date, habit.id, time);
-            if (instance.status !== 'completed') {
-                instance.status = 'completed';
-                changed = true;
-                invalidateStreakCache(habit.id, date);
-            }
-        });
-    });
-
-    if (changed) {
-        invalidateDaySummaryCache(date);
-        invalidateChartCache();
-        saveState();
-        renderApp(); // Render completo é mais seguro para atualização em massa
-    }
-}
-
-export function snoozeAllHabitsForDate(date: string) {
-    const activeHabits = getActiveHabitsForDate(date);
-    
-    let changed = false;
-    activeHabits.forEach(({ habit, schedule }: { habit: Habit, schedule: TimeOfDay[] }) => {
-        schedule.forEach((time: TimeOfDay) => {
-            const instance = ensureHabitInstanceData(date, habit.id, time);
-            if (instance.status !== 'snoozed' && instance.status !== 'completed') {
-                instance.status = 'snoozed';
-                changed = true;
-            }
-        });
-    });
-
-    if (changed) {
-        invalidateDaySummaryCache(date);
-        invalidateChartCache();
-        saveState();
-        renderApp();
-    }
-}
-
 export function handleUndoDelete() {
     if (!state.lastEnded) return;
 
