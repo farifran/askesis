@@ -79,15 +79,6 @@ function calculateCorrelation(
     return triggerFailures > 0 ? (jointFailures / triggerFailures) : 0;
 }
 
-function _createDefaultSchedule(startDate: string): HabitSchedule {
-    return {
-        startDate,
-        times: ['Morning'],
-        frequency: { type: 'daily' },
-        scheduleAnchor: startDate
-    };
-}
-
 /**
  * STATE HYGIENE HELPER [2025-02-21]:
  * Removes any "dailySchedule" overrides for a specific habit on a specific date.
@@ -148,6 +139,24 @@ function _wipeFutureDailyDataForHabit(habitId: string, fromDateISO: string) {
             }
         }
     });
+}
+
+/**
+ * REFACTOR [2025-02-22]: Finds the index of the schedule active on the given date.
+ * Reduces duplication in _removeTimeFromSchedule and _requestFutureScheduleChange.
+ */
+function _findActiveScheduleIndex(habit: Habit, dateISO: string): number {
+    let index = habit.scheduleHistory.findIndex(s => {
+        const startOk = s.startDate <= dateISO;
+        const endOk = !s.endDate || s.endDate > dateISO;
+        return startOk && endOk;
+    });
+
+    // Fallback to the last schedule if none found (defensive coding)
+    if (index === -1) {
+        index = habit.scheduleHistory.length - 1;
+    }
+    return index;
 }
 
 // --- ACTIONS ---
@@ -349,24 +358,21 @@ export function handleUndoDelete() {
  */
 function _removeTimeFromSchedule(habit: Habit, effectiveDate: string, timeToRemove: TimeOfDay) {
     // 1. Find the active schedule definition (History)
-    let targetScheduleIndex = habit.scheduleHistory.findIndex(s => {
-            const startOk = s.startDate <= effectiveDate;
-            const endOk = !s.endDate || s.endDate > effectiveDate;
-            return startOk && endOk;
-    });
-
-    if (targetScheduleIndex === -1) {
-        targetScheduleIndex = habit.scheduleHistory.length - 1;
-    }
-
+    const targetScheduleIndex = _findActiveScheduleIndex(habit, effectiveDate);
     const activeSchedule = habit.scheduleHistory[targetScheduleIndex];
+    
     // Check permanent history, not effective schedule (which might include overrides already)
     const isTimeInHistory = activeSchedule.times.includes(timeToRemove);
     
     // CASE A: The time exists in the Permanent History.
-    // We must update the history (From Now On).
+    // We treat this as "From Now On" implicitly if the user deletes a permanent item.
+    // To prevent data loss of other "Just Today" edits, we use the Effective Schedule as the new base.
     if (isTimeInHistory) {
-        const newTimes = activeSchedule.times.filter(t => t !== timeToRemove);
+        // Calculate the NEW complete list for the day based on what the user SEES
+        const currentEffective = getEffectiveScheduleForHabitOnDate(habit, effectiveDate);
+        const newTimesSet = new Set(currentEffective);
+        newTimesSet.delete(timeToRemove);
+        const newTimes = Array.from(newTimesSet).sort((a, b) => TIMES_OF_DAY.indexOf(a) - TIMES_OF_DAY.indexOf(b));
 
         if (newTimes.length === 0) {
             // If removing this time leaves the habit with NO times, end the habit.
@@ -395,9 +401,8 @@ function _removeTimeFromSchedule(habit: Habit, effectiveDate: string, timeToRemo
             habit.scheduleHistory.sort((a, b) => a.startDate.localeCompare(b.startDate));
         }
 
-        // CLEANUP: If we updated the permanent history, any 'Just Today' override that might 
-        // exist for this date is likely obsolete or confusing. We clean it up so the 
-        // new history (which now EXCLUDES the time) takes precedence.
+        // CLEANUP: Since we updated the permanent history with the effective state,
+        // we MUST wipe the override to avoid conflicts.
         _cleanDailyOverrides(effectiveDate, habit.id);
 
     } 
@@ -481,16 +486,7 @@ function _requestFutureScheduleChange(
     
     const fromNowOnAction = () => {
         // We find the background schedule to clone properties (frequency, name, etc)
-        let targetScheduleIndex = habit.scheduleHistory.findIndex(s => {
-             const startOk = s.startDate <= effectiveDate;
-             const endOk = !s.endDate || s.endDate > effectiveDate;
-             return startOk && endOk;
-        });
-
-        if (targetScheduleIndex === -1) {
-            targetScheduleIndex = habit.scheduleHistory.length - 1;
-        }
-
+        const targetScheduleIndex = _findActiveScheduleIndex(habit, effectiveDate);
         const activeSchedule = habit.scheduleHistory[targetScheduleIndex];
         
         // CRITICAL LOGIC FIX [2025-02-22]: Use EFFECTIVE Schedule as the base.

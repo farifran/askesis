@@ -851,10 +851,10 @@ export function calculateDaySummary(dateISO: string) {
      let snoozed = 0;
      let showPlus = false;
      
-     const dailyData = state.dailyData[dateISO] || {};
+     const dayRecord = state.dailyData[dateISO] || {}; // Renamed from dailyData to dayRecord for clarity
 
      for (const { habit, schedule } of activeHabits) {
-         const instances = dailyData[habit.id]?.instances || {};
+         const instances = dayRecord[habit.id]?.instances || {}; // Uses dayRecord
          
          if (_wasGoalExceededWithStreak(habit, instances, schedule, dateISO)) {
              showPlus = true;
