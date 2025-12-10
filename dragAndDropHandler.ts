@@ -6,7 +6,7 @@
 // [ANALYSIS PROGRESS]: 100% - Análise concluída. Implementada otimização de renderização no evento 'dragover' para evitar layout thrashing e removida redundância na limpeza de listeners (DRY).
 // UX UPDATE [2025-01-17]: Adicionado Auto-Scroll suave para permitir arrastar itens para fora da área visível atual.
 // PERFORMANCE UPDATE [2025-01-20]: Decoupled Rendering. Visual updates now run in a rAF loop separate from the high-frequency dragover event.
-// FIX [2025-02-23]: Updated Auto-Scroll to target 'ui.habitContainer' instead of 'window' due to Fixed App Shell layout.
+// FIX [2025-02-23]: Updated Auto-Scroll to target 'main' element due to Flow Layout change.
 
 import { ui } from './ui';
 import { isCurrentlySwiping } from './swipeHandler';
@@ -42,15 +42,16 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
     // Variáveis de estado para Auto-Scroll
     let scrollVelocity = 0;
     let animationFrameId: number | null = null;
+    let scrollContainer: HTMLElement | null = null;
 
     /**
      * UX & PERFORMANCE: Loop de animação unificado para Auto-Scroll e Atualizações Visuais.
      * Separa a leitura de eventos (input) da escrita no DOM (output).
      */
     function _animationLoop() {
-        // 1. Auto-Scroll Logic (Targeting the container, not window)
-        if (scrollVelocity !== 0) {
-            ui.habitContainer.scrollBy(0, scrollVelocity);
+        // 1. Auto-Scroll Logic (Targeting the dynamic scroll container)
+        if (scrollVelocity !== 0 && scrollContainer) {
+            scrollContainer.scrollBy(0, scrollVelocity);
         }
 
         // 2. Visual Updates Logic (Dirty Checking)
@@ -132,20 +133,26 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
         const dropZone = target.closest<HTMLElement>('.drop-zone');
         
         // UX: Lógica de detecção de borda para Auto-Scroll
-        // Uses habitContainer bounds instead of window innerHeight
-        const containerRect = ui.habitContainer.getBoundingClientRect();
-        const { clientY } = e;
-        
-        // Define zones relative to the container's visual viewport
-        const topThreshold = containerRect.top + SCROLL_ZONE_SIZE;
-        const bottomThreshold = containerRect.bottom - SCROLL_ZONE_SIZE;
-        
-        if (clientY < topThreshold) {
-            scrollVelocity = -SCROLL_SPEED;
-        } else if (clientY > bottomThreshold) {
-            scrollVelocity = SCROLL_SPEED;
-        } else {
-            scrollVelocity = 0;
+        // Find the scrollable container (main) dynamically
+        if (!scrollContainer) {
+            scrollContainer = document.querySelector('main');
+        }
+
+        if (scrollContainer) {
+            const containerRect = scrollContainer.getBoundingClientRect();
+            const { clientY } = e;
+            
+            // Define zones relative to the container's visual viewport
+            const topThreshold = containerRect.top + SCROLL_ZONE_SIZE;
+            const bottomThreshold = containerRect.bottom - SCROLL_ZONE_SIZE;
+            
+            if (clientY < topThreshold) {
+                scrollVelocity = -SCROLL_SPEED;
+            } else if (clientY > bottomThreshold) {
+                scrollVelocity = SCROLL_SPEED;
+            } else {
+                scrollVelocity = 0;
+            }
         }
 
         if (!draggedHabitObject || !draggedHabitOriginalTime || !dropZone) {
@@ -225,6 +232,9 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
         nextReorderTargetId = null;
         nextReorderPosition = null;
         isDropValid = false;
+        
+        // Reset scroll container reference
+        scrollContainer = null;
     }
 
 

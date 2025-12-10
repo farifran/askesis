@@ -214,9 +214,25 @@ main {
     flex-direction: column;
     flex: 1; /* Occupy remaining space */
     min-height: 0; /* Critical for nested scrolling */
-    overflow: hidden;
+    
+    /* LAYOUT UPDATE: Main is now the scroll container */
+    overflow-y: auto; 
+    overflow-x: hidden;
     position: relative;
+    
+    /* UX: Smooth scrolling */
+    scroll-behavior: smooth;
+    overscroll-behavior-y: contain;
+
+    /* HIDE SCROLLBAR (Firefox) */
+    scrollbar-width: none;
 }
+
+/* HIDE SCROLLBAR (Chrome, Safari, Edge) */
+main::-webkit-scrollbar {
+    display: none;
+}
+
 
 /* --- CABEÇALHO (FIXED TOP) --- */
 .app-header {
@@ -604,44 +620,29 @@ main {
 }
 
 
-/* --- LAYOUT DE HABIT CONTAINER (SINGLE SCROLLABLE AREA) --- */
+/* --- LAYOUT DE HABIT CONTAINER (FLOW CONTENT) --- */
 #habit-container {
     display: flex;
     flex-direction: column;
     gap: var(--space-md);
     
-    /* SCROLL UNIFICADO */
-    flex: 1; /* Ocupa o espaço entre Header e Chart */
-    overflow-y: auto; /* Apenas este container rola */
-    overflow-x: hidden;
+    /* FLOW LAYOUT: No internal scroll, height fits content */
+    flex: 0 0 auto; 
+    overflow: visible;
     
     /* UX: Padding para o conteúdo não colar nas bordas */
     padding-inline: var(--space-lg);
     
-    /* UX FIX: Margem Externa. Cria uma separação física entre a janela de rolagem
-       e o container do gráfico. Isso impede que os cartões 'encostem' visualmente no gráfico. */
-    margin-bottom: var(--space-xl);
-    
-    /* UX FIX: Padding Interno. Um colchão de segurança para o final da rolagem. */
-    padding-bottom: 80px;
-    
-    /* UX: Smooth scrolling */
-    scroll-behavior: smooth;
-    overscroll-behavior-y: contain;
-
-    /* HIDE SCROLLBAR (Firefox) */
-    scrollbar-width: none;
+    /* Reset padding/margins as chart is now a sibling in flow */
+    padding-bottom: 0;
+    margin-bottom: 0;
 }
 
-/* Garante que o último elemento dentro do container tenha uma margem forçada */
-#habit-container > :last-child {
-    margin-bottom: var(--space-xs);
-}
-
-/* HIDE SCROLLBAR (Chrome, Safari, Edge) */
+/* Hide native scrollbar but allow functionality */
 #habit-container::-webkit-scrollbar {
     display: none;
 }
+
 
 /* --- COMPONENTES: GRUPO DE HÁBITOS (WRAPPER) --- */
 .habit-group-wrapper {
@@ -684,6 +685,8 @@ main {
     width: 24px;
     height: 24px;
 }
+
+/* SCROLLBAR CUSTOMIZADA (REMOVIDA) */
 
 
 /* ROBUSTEZ [2025-01-28]: Desativa content-visibility durante drag-and-drop. */
@@ -1157,7 +1160,7 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     letter-spacing: 0.5px;
 }
 
-/* --- COMPONENTES: GRÁFICO DE EVOLUÇÃO (FIXED FOOTER) --- */
+/* --- COMPONENTES: GRÁFICO DE EVOLUÇÃO (FLOW FOOTER) --- */
 .chart-container {
     padding: var(--space-lg);
     background-color: var(--surface-color);
@@ -1169,18 +1172,20 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     content-visibility: auto;
     contain-intrinsic-size: 150px;
     
-    /* FIX: APP SHELL - Footer Pinned */
-    flex-shrink: 0; /* Prevent shrinking */
-    max-height: 25vh;
+    /* FIX: FLOW LAYOUT - Just a block at the end */
+    flex-shrink: 0; 
+    max-height: none;
+    overflow: visible;
     
-    /* UI FIX: Pinned to bottom, above scrollable content */
-    margin-top: 0;
-    margin-inline: var(--space-lg); /* Maintain padding visually */
-    margin-bottom: var(--space-md);
+    /* UI FIX: Aumentado para space-3xl (48px) para garantir que o gráfico
+       não pareça 'grudado' no último cartão, mas flua naturalmente logo após com respiro. */
+    margin-top: var(--space-3xl);
+    margin-inline: var(--space-lg); 
+    margin-bottom: var(--space-3xl);
     
-    z-index: var(--z-index-footer);
-    /* Shadow pointing up to separate from scrolling list */
-    box-shadow: 0 -4px 20px -10px rgba(0,0,0,0.5);
+    /* Remove Fixed/Floating styles */
+    z-index: auto;
+    box-shadow: none;
 }
 .chart-header {
     display: flex;

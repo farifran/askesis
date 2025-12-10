@@ -42,7 +42,6 @@ import { STOIC_QUOTES } from './quotes';
 import { icons, getTimeOfDayIcon } from './icons';
 import { renderChart } from './chart';
 
-const noticeTimeouts = new WeakMap<HTMLElement, number>();
 const focusTrapListeners = new Map<HTMLElement, (e: KeyboardEvent) => void>();
 const previouslyFocusedElements = new WeakMap<HTMLElement, HTMLElement>();
 
@@ -800,7 +799,7 @@ export function renderHabitCardState(habitId: string, time: TimeOfDay) {
 }
 
 
-export function createHabitCardElement(habit: Habit, time: TimeOfDay): HTMLElement {
+function createHabitCardElement(habit: Habit, time: TimeOfDay): HTMLElement {
     const dailyInfo = getHabitDailyInfoForDate(state.selectedDate);
     const habitInstanceData = dailyInfo[habit.id]?.instances?.[time];
     const status = habitInstanceData?.status ?? 'pending';
@@ -1331,21 +1330,6 @@ export function initializeModalClosing(modal: HTMLElement, onClose?: () => void)
         if (e.target === modal) handleClose();
     });
     modal.querySelectorAll<HTMLElement>('.modal-close-btn').forEach(btn => btn.addEventListener('click', handleClose));
-}
-
-export function showInlineNotice(element: HTMLElement, message: string) {
-    const existingTimeout = noticeTimeouts.get(element);
-    if (existingTimeout) clearTimeout(existingTimeout);
-    
-    setTextContent(element, message);
-    element.classList.add('visible');
-    
-    const newTimeout = window.setTimeout(() => {
-        element.classList.remove('visible');
-        noticeTimeouts.delete(element);
-    }, 2500);
-    
-    noticeTimeouts.set(element, newTimeout);
 }
 
 function getHabitStatusForSorting(habit: Habit): 'active' | 'ended' | 'graduated' {
