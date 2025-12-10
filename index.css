@@ -215,24 +215,10 @@ main {
     flex: 1; /* Occupy remaining space */
     min-height: 0; /* Critical for nested scrolling */
     
-    /* LAYOUT UPDATE: Main is now the scroll container */
-    overflow-y: auto; 
-    overflow-x: hidden;
+    /* LAYOUT LOCK: Main does not scroll globally */
+    overflow: hidden;
     position: relative;
-    
-    /* UX: Smooth scrolling */
-    scroll-behavior: smooth;
-    overscroll-behavior-y: contain;
-
-    /* HIDE SCROLLBAR (Firefox) */
-    scrollbar-width: none;
 }
-
-/* HIDE SCROLLBAR (Chrome, Safari, Edge) */
-main::-webkit-scrollbar {
-    display: none;
-}
-
 
 /* --- CABEÇALHO (FIXED TOP) --- */
 .app-header {
@@ -620,25 +606,39 @@ main::-webkit-scrollbar {
 }
 
 
-/* --- LAYOUT DE HABIT CONTAINER (FLOW CONTENT) --- */
+/* --- LAYOUT DE HABIT CONTAINER (SMART FLEX SCROLL) --- */
 #habit-container {
     display: flex;
     flex-direction: column;
     gap: var(--space-md);
     
-    /* FLOW LAYOUT: No internal scroll, height fits content */
-    flex: 0 0 auto; 
-    overflow: visible;
+    /* SMART LAYOUT: 
+       flex-grow: 0 (Não ocupa espaço vazio desnecessário, deixando o gráfico subir)
+       flex-shrink: 1 (Encolhe se faltar espaço, ativando o scroll)
+       flex-basis: auto (Tamanho baseado no conteúdo)
+    */
+    flex: 0 1 auto;
+    
+    /* SCROLL INTERNO: Ativa apenas quando o conteúdo excede o espaço disponível */
+    overflow-y: auto; 
+    overflow-x: hidden;
+    min-height: 0; /* Important for flex child scroll */
     
     /* UX: Padding para o conteúdo não colar nas bordas */
     padding-inline: var(--space-lg);
     
-    /* Reset padding/margins as chart is now a sibling in flow */
-    padding-bottom: 0;
-    margin-bottom: 0;
+    /* UX: Respiro interno no final da rolagem */
+    padding-bottom: var(--space-xl);
+    
+    /* UX: Smooth scrolling */
+    scroll-behavior: smooth;
+    overscroll-behavior-y: contain;
+
+    /* HIDE SCROLLBAR (Firefox) */
+    scrollbar-width: none;
 }
 
-/* Hide native scrollbar but allow functionality */
+/* HIDE SCROLLBAR (Chrome, Safari, Edge) */
 #habit-container::-webkit-scrollbar {
     display: none;
 }
@@ -669,7 +669,7 @@ main::-webkit-scrollbar {
     flex-shrink: 0;
     width: 30px;
     padding-top: 10px; /* Align with card text visually */
-    color: var(--text-tertiary);
+    color: #ffffff; /* Changed from var(--text-tertiary) */
     display: flex;
     justify-content: center;
     
@@ -684,6 +684,8 @@ main::-webkit-scrollbar {
     width: 24px;
     height: 24px;
 }
+
+/* SCROLLBAR CUSTOMIZADA (REMOVIDA) */
 
 
 /* ROBUSTEZ [2025-01-28]: Desativa content-visibility durante drag-and-drop. */
@@ -867,7 +869,7 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     padding: var(--space-sm) var(--space-lg);
     position: relative;
     z-index: var(--z-index-content);
-    background-color: var(--surface-color);
+    background-color: #161616; /* Changed from var(--surface-color) for darker gray */
     cursor: pointer;
     transition: transform var(--transition-duration-slow) cubic-bezier(0.23, 1, 0.32, 1), background-color var(--transition-duration);
     border-radius: 9px;
@@ -881,9 +883,9 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     will-change: transform;
 }
 
-.habit-card:hover .habit-content-wrapper { background-color: var(--surface-hover); }
+.habit-card:hover .habit-content-wrapper { background-color: #202020; }
 .habit-card.completed .habit-content-wrapper { 
-    background-color: color-mix(in srgb, var(--accent-blue) 20%, var(--surface-color));
+    background-color: color-mix(in srgb, var(--accent-blue) 20%, #161616);
     opacity: 0.75; /* UX: De-emphasize completed items */
 }
 .habit-card.snoozed .habit-content-wrapper {
@@ -1157,7 +1159,7 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     letter-spacing: 0.5px;
 }
 
-/* --- COMPONENTES: GRÁFICO DE EVOLUÇÃO (FLOW FOOTER) --- */
+/* --- COMPONENTES: GRÁFICO DE EVOLUÇÃO (AUTO FOOTER) --- */
 .chart-container {
     padding: var(--space-lg);
     background-color: var(--surface-color);
@@ -1169,19 +1171,22 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     content-visibility: auto;
     contain-intrinsic-size: 150px;
     
-    /* FIX: FLOW LAYOUT - Just a block at the end */
-    flex-shrink: 0; 
+    /* FIX: FLEX ITEM */
+    flex-shrink: 0; /* Nunca encolhe, sempre visível */
     max-height: none;
     overflow: visible;
     
-    /* UI FIX: Aumentado para space-3xl (48px) para garantir que o gráfico
-       não pareça 'grudado' no último cartão, mas flua naturalmente logo após com respiro. */
-    margin-top: var(--space-3xl);
+    /* UI FIX: Margem superior para separar dos cartões.
+       Como o container de hábitos não força altura total, o gráfico sobe
+       naturalmente para ficar perto dos cartões quando há poucos. */
+    margin-top: var(--space-lg);
     margin-inline: var(--space-lg); 
-    margin-bottom: var(--space-3xl);
     
-    /* Remove Fixed/Floating styles */
-    z-index: auto;
+    /* Margem inferior para não colar na borda da tela */
+    margin-bottom: var(--space-lg);
+    
+    /* Estilos visuais normais (não flutuante) */
+    z-index: var(--z-index-footer);
     box-shadow: none;
 }
 .chart-header {
