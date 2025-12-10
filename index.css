@@ -1169,7 +1169,7 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 /* --- COMPONENTES: GRÁFICO DE EVOLUÇÃO (AUTO FOOTER) --- */
 .chart-container {
     padding: var(--space-lg);
-    background-color: var(--surface-color);
+    background-color: #161616; /* Atualizado para combinar com .habit-content-wrapper */
     border-radius: var(--border-radius-large);
     /* PERFORMANCE [2024-12-28]: Isola o layout e a pintura da faixa de calendário para evitar reflows globais. */
     /* FIX [2024-12-28]: Alterado para 'layout style' para permitir que tooltips overflow (visualmente). */
