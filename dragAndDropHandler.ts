@@ -1,4 +1,5 @@
 
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -49,7 +50,7 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
      * Separa a leitura de eventos (input) da escrita no DOM (output).
      */
     function _animationLoop() {
-        // 1. Auto-Scroll Logic (Targeting the dynamic scroll container)
+        // 1. Auto-Scroll Logic
         if (scrollVelocity !== 0 && scrollContainer) {
             scrollContainer.scrollBy(0, scrollVelocity);
         }
@@ -133,9 +134,9 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
         const dropZone = target.closest<HTMLElement>('.drop-zone');
         
         // UX: Lógica de detecção de borda para Auto-Scroll
-        // Find the scrollable container (main) dynamically
+        // Find the scrollable container (#habit-container) dynamically
         if (!scrollContainer) {
-            scrollContainer = document.querySelector('main');
+            scrollContainer = document.getElementById('habit-container');
         }
 
         if (scrollContainer) {
@@ -143,8 +144,9 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
             const { clientY } = e;
             
             // Define zones relative to the container's visual viewport
-            const topThreshold = containerRect.top + SCROLL_ZONE_SIZE;
-            const bottomThreshold = containerRect.bottom - SCROLL_ZONE_SIZE;
+            // NOTE: We clamp the top threshold so it doesn't go above the header
+            const topThreshold = Math.max(containerRect.top, 0) + SCROLL_ZONE_SIZE;
+            const bottomThreshold = Math.min(containerRect.bottom, window.innerHeight) - SCROLL_ZONE_SIZE;
             
             if (clientY < topThreshold) {
                 scrollVelocity = -SCROLL_SPEED;
