@@ -19,8 +19,9 @@ const DROP_INDICATOR_GAP = 5; // Espaçamento em pixels acima/abaixo do cartão 
 const DROP_INDICATOR_HEIGHT = 3; // Deve corresponder à altura do indicador no CSS
 
 // Constantes para Auto-Scroll
-const SCROLL_ZONE_SIZE = 60; // Pixels a partir da borda para ativar o scroll
-const SCROLL_SPEED = 12; // Pixels por frame
+const SCROLL_ZONE_SIZE = 150; // Increased zone size for better reachability
+const BASE_SCROLL_SPEED = 10;
+const MAX_SCROLL_SPEED = 30; // Increased speed for smoother traversal
 
 export function setupDragAndDropHandler(habitContainer: HTMLElement) {
     let draggedElement: HTMLElement | null = null;
@@ -139,20 +140,27 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
             scrollContainer = document.getElementById('habit-container');
         }
 
+        // AUTO-SCROLL LOGIC UPDATE [2025-02-23]: Global Viewport Detection.
+        // Instead of calculating relative to the container element (which can be tricky with complex layouts),
+        // we use absolute viewport coordinates. If the finger/cursor is at the top/bottom of the SCREEN,
+        // we scroll the container.
         if (scrollContainer) {
-            const containerRect = scrollContainer.getBoundingClientRect();
             const { clientY } = e;
+            const viewportHeight = window.innerHeight;
             
-            // Define zones relative to the container's visual viewport
-            // NOTE: We clamp the top threshold so it doesn't go above the header
-            const topThreshold = Math.max(containerRect.top, 0) + SCROLL_ZONE_SIZE;
-            const bottomThreshold = Math.min(containerRect.bottom, window.innerHeight) - SCROLL_ZONE_SIZE;
-            
-            if (clientY < topThreshold) {
-                scrollVelocity = -SCROLL_SPEED;
-            } else if (clientY > bottomThreshold) {
-                scrollVelocity = SCROLL_SPEED;
-            } else {
+            // Top Zone: 0 to SCROLL_ZONE_SIZE
+            if (clientY < SCROLL_ZONE_SIZE) {
+                // Moving UP: Closer to 0 = Faster speed
+                const intensity = 1 - (Math.max(0, clientY) / SCROLL_ZONE_SIZE);
+                scrollVelocity = -(BASE_SCROLL_SPEED + (intensity * intensity * (MAX_SCROLL_SPEED - BASE_SCROLL_SPEED)));
+            } 
+            // Bottom Zone: (Height - Zone) to Height
+            else if (clientY > (viewportHeight - SCROLL_ZONE_SIZE)) {
+                // Moving DOWN: Closer to bottom = Faster speed
+                const intensity = 1 - ((viewportHeight - clientY) / SCROLL_ZONE_SIZE);
+                scrollVelocity = BASE_SCROLL_SPEED + (intensity * intensity * (MAX_SCROLL_SPEED - BASE_SCROLL_SPEED));
+            } 
+            else {
                 scrollVelocity = 0;
             }
         }

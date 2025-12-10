@@ -226,7 +226,10 @@ main {
     flex-direction: column;
     gap: var(--space-sm);
     padding-block-start: var(--space-section);
-    padding-block-end: var(--space-md);
+    
+    /* PADDING REDUCTION [2025-02-23]: Reduced from --space-md to 0 to minimize gap between quote and habits */
+    padding-block-end: 0;
+    
     padding-inline: var(--space-lg); /* Restore horizontal padding */
     flex-shrink: 0; /* Prevent shrinking */
     
@@ -266,7 +269,9 @@ main {
     align-items: center;
     gap: var(--space-xl);
     justify-content: space-between;
-    margin-block-start: var(--space-md);
+    /* UPDATE: Reduzido de var(--space-md) para aproximar o título/citação da área superior */
+    margin-block-start: var(--space-xs);
+    margin-block-end: var(--space-sm); /* Small visual buffer before content */
 }
 
 .app-header h2 {
@@ -681,8 +686,9 @@ main {
     transition: opacity var(--transition-duration);
 }
 .time-marker svg {
-    width: 24px;
-    height: 24px;
+    /* Reduced size from 24px to 21px (~10%) */
+    width: 21px;
+    height: 21px;
 }
 
 /* SCROLLBAR CUSTOMIZADA (REMOVIDA) */
@@ -755,7 +761,7 @@ body.is-dragging-active .habit-group {
 }
 
 .empty-group-placeholder {
-    padding: var(--space-lg);
+    padding: var(--space-md); /* Reduced from --space-lg (16px) to --space-md (12px) */
     color: var(--text-tertiary);
     font-style: normal;
     font-weight: 500;
@@ -974,7 +980,8 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     min-width: 0; /* Permite truncagem de texto se necessário */
 }
 .habit-details .name {
-    font-size: 18px;
+    /* Reduced from 18px to ~16px (10% reduction) */
+    font-size: 16px;
     font-weight: 600;
     color: var(--text-primary);
     transition: color var(--transition-duration-slow), text-decoration-color var(--transition-duration-slow);
@@ -1179,11 +1186,13 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     /* UI FIX: Margem superior para separar dos cartões.
        Como o container de hábitos não força altura total, o gráfico sobe
        naturalmente para ficar perto dos cartões quando há poucos. */
+    /* Reduced margin-top from --space-3xl (48px) to --space-xl (24px) for tighter layout */
     margin-top: var(--space-lg);
     margin-inline: var(--space-lg); 
     
     /* Margem inferior para não colar na borda da tela */
-    margin-bottom: var(--space-lg);
+    /* Reduced margin-bottom from --space-lg (16px) to --space-sm (8px) */
+    margin-bottom: var(--space-sm);
     
     /* Estilos visuais normais (não flutuante) */
     z-index: var(--z-index-footer);
@@ -2239,7 +2248,8 @@ body.is-offline #ai-eval-btn .offline-icon {
     .empty-group-placeholder { width: 100%; }
 
     .habit-content-wrapper { padding: var(--space-xs) var(--space-xl); }
-    .habit-details .name { font-size: 19px; }
+    /* Adjusted text size for desktop from 19px to 17px */
+    .habit-details .name { font-size: 17px; }
     .habit-details .subtitle { font-size: 12px; }
 
     .modal-content { max-width: 500px; padding: var(--space-xl); }
