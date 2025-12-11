@@ -377,7 +377,7 @@ export function setupModalListeners() {
     ui.aiOptionsModal.addEventListener('click', e => {
         const button = (e.target as HTMLElement).closest<HTMLButtonElement>('.ai-option-btn');
         if (!button) return;
-        const analysisType = button.dataset.analysisType as 'weekly' | 'monthly' | 'general';
+        const analysisType = button.dataset.analysisType as 'monthly' | 'quarterly' | 'historical';
         performAIAnalysis(analysisType);
     });
 

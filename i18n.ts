@@ -206,12 +206,24 @@ function updateUIText() {
     ui.aiModal.querySelector('.modal-close-btn')!.textContent = t('closeButton');
     
     ui.aiOptionsModal.querySelector('h2')!.textContent = t('modalAIOptionsTitle');
-    ui.aiOptionsModal.querySelector<HTMLSpanElement>('[data-analysis-type="weekly"] .ai-option-title')!.textContent = t('aiOptionWeeklyTitle');
-    ui.aiOptionsModal.querySelector<HTMLSpanElement>('[data-analysis-type="weekly"] .ai-option-desc')!.textContent = t('aiOptionWeeklyDesc');
-    ui.aiOptionsModal.querySelector<HTMLSpanElement>('[data-analysis-type="monthly"] .ai-option-title')!.textContent = t('aiOptionMonthlyTitle');
-    ui.aiOptionsModal.querySelector<HTMLSpanElement>('[data-analysis-type="monthly"] .ai-option-desc')!.textContent = t('aiOptionMonthlyDesc');
-    ui.aiOptionsModal.querySelector<HTMLSpanElement>('[data-analysis-type="general"] .ai-option-title')!.textContent = t('aiOptionGeneralTitle');
-    ui.aiOptionsModal.querySelector<HTMLSpanElement>('[data-analysis-type="general"] .ai-option-desc')!.textContent = t('aiOptionGeneralDesc');
+    
+    const monthlyBtn = ui.aiOptionsModal.querySelector<HTMLElement>('[data-analysis-type="monthly"]');
+    if (monthlyBtn) {
+        monthlyBtn.querySelector('.ai-option-title')!.textContent = t('aiOptionMonthlyTitle');
+        monthlyBtn.querySelector('.ai-option-desc')!.textContent = t('aiOptionMonthlyDesc');
+    }
+
+    const quarterlyBtn = ui.aiOptionsModal.querySelector<HTMLElement>('[data-analysis-type="quarterly"]');
+    if (quarterlyBtn) {
+        quarterlyBtn.querySelector('.ai-option-title')!.textContent = t('aiOptionQuarterlyTitle');
+        quarterlyBtn.querySelector('.ai-option-desc')!.textContent = t('aiOptionQuarterlyDesc');
+    }
+
+    const historicalBtn = ui.aiOptionsModal.querySelector<HTMLElement>('[data-analysis-type="historical"]');
+    if (historicalBtn) {
+        historicalBtn.querySelector('.ai-option-title')!.textContent = t('aiOptionHistoricalTitle');
+        historicalBtn.querySelector('.ai-option-desc')!.textContent = t('aiOptionHistoricalDesc');
+    }
 
     ui.confirmModal.querySelector('h2')!.textContent = t('modalConfirmTitle');
     ui.confirmModal.querySelector('.modal-close-btn')!.textContent = t('cancelButton');

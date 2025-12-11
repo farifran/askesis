@@ -9,7 +9,7 @@
 import { ui } from './ui';
 import { state, invalidateChartCache, DAYS_IN_CALENDAR } from './state';
 import { renderApp, renderFullCalendar, openModal, scrollToToday } from './render';
-import { parseUTCIsoDate, triggerHaptic, getTodayUTCIso, addDays } from './utils';
+import { parseUTCIsoDate, triggerHaptic, getTodayUTCIso, addDays, toUTCIsoDateString } from './utils';
 import { setupModalListeners } from './modalListeners';
 import { setupHabitCardListeners } from './habitCardListeners';
 import { setupDragAndDropHandler } from './dragAndDropHandler';
@@ -92,6 +92,40 @@ export function setupEventListeners() {
             triggerHaptic('selection');
             updateSelectedDateAndRender(dayItem.dataset.date);
         }
+    });
+
+    // A11Y [2025-02-23]: Navegação por teclado na faixa de dias (Roving Focus)
+    ui.calendarStrip.addEventListener('keydown', (e) => {
+        if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+        
+        e.preventDefault();
+        
+        const currentDate = parseUTCIsoDate(state.selectedDate);
+        let newDate: Date;
+        
+        if (e.key === 'ArrowLeft') {
+            newDate = addDays(currentDate, -1);
+        } else {
+            newDate = addDays(currentDate, 1);
+        }
+        
+        const newDateStr = toUTCIsoDateString(newDate);
+        
+        // Verifica se a nova data está dentro do alcance visível (opcional, mas bom para UX)
+        // O renderApp vai regenerar a faixa se necessário (se mudasse o intervalo),
+        // mas aqui estamos apenas navegando dentro da faixa existente.
+        triggerHaptic('selection');
+        updateSelectedDateAndRender(newDateStr);
+        
+        // Gerenciamento de Foco: Após a re-renderização, foca no novo dia selecionado.
+        // O requestAnimationFrame garante que o DOM foi atualizado.
+        requestAnimationFrame(() => {
+            const newSelectedEl = ui.calendarStrip.querySelector<HTMLElement>(`${DOM_SELECTORS.DAY_ITEM}[data-date="${newDateStr}"]`);
+            if (newSelectedEl) {
+                newSelectedEl.focus();
+                newSelectedEl.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+            }
+        });
     });
 
     // --- Header Title Listener (Go to Today) ---

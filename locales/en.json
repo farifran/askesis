@@ -1,6 +1,5 @@
-
 {
-    "_comment": "[ANALYSIS PROGRESS]: 100% - Dead keys cleanup (buttonEndHabit, modalAddTitle, etc.) performed [2025-01-16].",
+    "_comment": "[ANALYSIS PROGRESS]: 100% - Dead keys cleanup performed [2025-01-16].",
     "aiCelebration21Day": {
         "one": "### Congratulations! 🎉\n\nYou've maintained the habit **{habitNames}** for 21 consecutive days! This is a crucial milestone in making an action automatic. Keep up the great work!",
         "other": "### Congratulations! 🎉\n\nYou've maintained the habits **{habitNames}** for 21 consecutive days! This is a crucial milestone in making an action automatic. Keep up the great work!"
@@ -12,12 +11,15 @@
     "aiErrorPrefix": "AI Error",
     "aiErrorUnknown": "An unknown error occurred.",
     "aiEval_ariaLabel": "AI Evaluation",
-    "aiOptionGeneralDesc": "A holistic view of your entire habit journey.",
-    "aiOptionGeneralTitle": "General Analysis",
-    "aiOptionMonthlyDesc": "An in-depth analysis of the last 30 days.",
-    "aiOptionMonthlyTitle": "Monthly Review",
-    "aiOptionWeeklyDesc": "A Stoic reflection on the last 7 days.",
-    "aiOptionWeeklyTitle": "Weekly Check-in",
+    "aiOptionHistoricalDesc": "A complete view of your entire journey.",
+    "aiOptionHistoricalTitle": "Historical Analysis",
+    "aiOptionMonthlyDesc": "A reflection on available data (max 30 days).",
+    "aiOptionMonthlyTitle": "Current Analysis",
+    "aiOptionQuarterlyDesc": "A consolidated view of the last 90 days.",
+    "aiOptionQuarterlyTitle": "Quarterly Analysis",
+    "aiPeriodHistorical": "Complete History",
+    "aiPeriodMonthly": "Last 30 Days",
+    "aiPeriodQuarterly": "Last 90 Days",
     "aiPromptGeneral": "Conduct a general analysis of the entire provided habit history. Your feedback MUST focus on: 1. A deep Stoic reflection on the user's overall journey. 2. Identifying the most consistent habit (the greatest strength). 3. Identifying the most challenging habit. 4. ONE high-level piece of advice for the continued improvement of discipline.\n\nData:\n- Active Habits: {activeHabitList}\n{graduatedHabitsSection}- Complete History:\n{history}",
     "aiPromptGraduatedSection": "- Graduated Habits: {graduatedHabitList}\n",
     "aiPromptMonthHeader": "Data for the Month of {month}",
@@ -108,7 +110,7 @@
     "modalManageHabitsSubtitle": "Manage Habits",
     "modalManageLanguage": "Language",
     "modalManageNotifications": "Notifications",
-    "modalManageNotificationsStaticDesc": "Receive reminders to complete your habits. Click below to allow notifications.",
+    "modalManageNotificationsStaticDesc": "Click the button to enable or disable notifications.",
     "modalManageReset": "Reset",
     "modalManageResetButton": "Delete data",
     "modalManageTitle": "General Settings",

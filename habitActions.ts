@@ -294,6 +294,12 @@ export function createDefaultHabit() {
     
     state.habits.push(newHabit);
     state.uiDirtyState.habitListStructure = true;
+    
+    // FIX [2025-02-23]: Invalida o cache de hábitos ativos.
+    // Isso garante que `getActiveHabitsForDate` reavalie a lista e inclua o novo hábito
+    // imediatamente na próxima renderização, evitando que ele fique invisível.
+    clearActiveHabitsCache();
+    
     saveState();
 }
 
@@ -1026,7 +1032,8 @@ const RECALIBRATION_TEMPLATES = {
 };
 
 
-export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'general') {
+// UPDATED [2025-02-23]: New Analysis Periods
+export async function performAIAnalysis(analysisType: 'monthly' | 'quarterly' | 'historical') {
     closeModal(ui.aiOptionsModal);
     
     state.aiState = 'loading';
@@ -1038,18 +1045,44 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
     let periodNameKey: string;
     let daysCount = 0;
 
-    if (analysisType === 'weekly') {
-        startDate = addDays(today, -7);
-        periodNameKey = 'aiPeriodWeekly';
-        daysCount = 7;
-    } else if (analysisType === 'monthly') {
+    if (analysisType === 'monthly') {
+        // "Revisão Mensal" = Last 30 days
         startDate = addDays(today, -30);
         periodNameKey = 'aiPeriodMonthly';
         daysCount = 30;
+    } else if (analysisType === 'quarterly') {
+        // "Análise Trimestral" = Last 90 days (Max Hot Storage Efficiency)
+        startDate = addDays(today, -90);
+        periodNameKey = 'aiPeriodQuarterly';
+        daysCount = 90;
     } else {
-        startDate = addDays(today, -14); // General context
-        periodNameKey = 'aiPeriodGeneral';
-        daysCount = 14;
+        // "Análise Histórica" = Desde o início dos tempos
+        // Calculate the earliest recorded date in habits to define the start.
+        const todayISO = getTodayUTCIso();
+        let earliestISO = todayISO;
+        
+        state.habits.forEach(h => {
+            if (h.createdOn < earliestISO) earliestISO = h.createdOn;
+        });
+        
+        // Also check if there's any stray data in dailyData older than habit creation (rare but possible)
+        const dailyKeys = Object.keys(state.dailyData);
+        if (dailyKeys.length > 0) {
+             const minDaily = dailyKeys.sort()[0];
+             if (minDaily < earliestISO) earliestISO = minDaily;
+        }
+        
+        startDate = parseUTCIsoDate(earliestISO);
+        
+        // Limit historical scan if it's too huge (e.g. > 3 years) to prevent timeouts, though Gemini context is huge.
+        // Let's cap at 3 years for sanity.
+        const threeYearsAgo = addDays(today, -1095);
+        if (startDate < threeYearsAgo) {
+            startDate = threeYearsAgo;
+        }
+
+        periodNameKey = 'aiPeriodHistorical';
+        daysCount = Math.floor((today.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
     }
 
     const periodName = t(periodNameKey);
@@ -1121,8 +1154,8 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
         const dateISO = toUTCIsoDateString(currentDate);
         dateList.push(dateISO);
         
+        // This will seamlessly fetch from archives if needed due to 'startDate' going far back
         const activeHabits = getActiveHabitsForDate(dateISO);
-        // USE LAZY ACCESSOR
         const dailyInfo = getHabitDailyInfoForDate(dateISO);
         
         let dayScheduled = 0;

@@ -248,8 +248,8 @@ export function setupManageModal() {
             privacySection = document.createElement('div');
             privacySection.id = 'privacy-section';
             privacySection.className = 'setting-item setting-item--column';
-            privacySection.style.paddingTop = '20px';
-            privacySection.style.borderTop = '1px solid var(--border-color)';
+            // Added styling for consistent spacing
+            privacySection.style.marginBlockEnd = 'var(--space-sm)';
             
             const header = document.createElement('div');
             header.className = 'setting-item-header';
@@ -270,7 +270,14 @@ export function setupManageModal() {
             
             actions.append(exportBtn, importBtn);
             privacySection.append(header, actions);
-            container.appendChild(privacySection);
+            
+            // ORDERING LOGIC [2025-02-23]: Ensure "Data & Privacy" comes BEFORE "Reset".
+            const resetSection = container.querySelector('#reset-section');
+            if (resetSection) {
+                container.insertBefore(privacySection, resetSection);
+            } else {
+                container.appendChild(privacySection);
+            }
         }
     }
 
