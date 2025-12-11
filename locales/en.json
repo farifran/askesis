@@ -1,3 +1,4 @@
+
 {
     "_comment": "[ANALYSIS PROGRESS]: 100% - Dead keys cleanup (buttonEndHabit, modalAddTitle, etc.) performed [2025-01-16].",
     "aiCelebration21Day": {
@@ -58,6 +59,7 @@
     "editButton": "Edit",
     "endButton": "End",
     "epictetus": "Epictetus",
+    "exportButton": "Export Backup",
     "fabAddHabit_ariaLabel": "Add Habit",
     "filterAfternoon": "Afternoon",
     "filterEvening": "Night",
@@ -78,6 +80,9 @@
     "headerTitleToday": "Today",
     "headerTitleTomorrow": "Tomorrow",
     "headerTitleYesterday": "Yesterday",
+    "importButton": "Restore Backup",
+    "importError": "Failed to import. Please ensure the file is a valid backup.",
+    "importSuccess": "Backup restored successfully! The page will reload.",
     "langEnglish": "English",
     "langPortuguese": "Portuguese",
     "langSpanish": "Spanish",
@@ -191,6 +196,7 @@
     "predefinedHabitWaterSubtitle": "Hydration is life",
     "predefinedHabitYogaName": "Yoga",
     "predefinedHabitYogaSubtitle": "Balance and flexibility",
+    "privacyLabel": "Data & Privacy",
     "seneca": "Seneca",
     "syncActiveDesc": "Cloud sync is active on this device.",
     "syncConfirmOverwrite": "Overwrite",

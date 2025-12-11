@@ -1,3 +1,4 @@
+
 {
     "_comment": "[ANALYSIS PROGRESS]: 100% - Limpeza de chaves mortas (buttonEndHabit, modalAddTitle, etc.) realizada [2025-01-16].",
     "aiCelebration21Day": {
@@ -58,6 +59,7 @@
     "editButton": "Editar",
     "endButton": "Encerrar",
     "epictetus": "Epicteto",
+    "exportButton": "Exportar Backup",
     "fabAddHabit_ariaLabel": "Adicionar Hábito",
     "filterAfternoon": "Tarde",
     "filterEvening": "Noite",
@@ -78,6 +80,9 @@
     "headerTitleToday": "Hoje",
     "headerTitleTomorrow": "Amanhã",
     "headerTitleYesterday": "Ontem",
+    "importButton": "Restaurar Backup",
+    "importError": "Falha ao importar. Verifique se o arquivo é um backup válido.",
+    "importSuccess": "Backup restaurado com sucesso! A página será recarregada.",
     "langEnglish": "Inglês",
     "langPortuguese": "Português",
     "langSpanish": "Espanhol",
@@ -191,6 +196,7 @@
     "predefinedHabitWaterSubtitle": "A hidratação é vida",
     "predefinedHabitYogaName": "Yoga",
     "predefinedHabitYogaSubtitle": "Equilíbrio e flexibilidade",
+    "privacyLabel": "Dados & Privacidade",
     "seneca": "Sêneca",
     "syncActiveDesc": "A sincronização na nuvem está ativa neste dispositivo.",
     "syncConfirmOverwrite": "Sobrescrever",

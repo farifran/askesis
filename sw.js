@@ -3,8 +3,9 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// [ANALYSIS PROGRESS]: 100% - Análise concluída. Estratégia Cache-First implementada para navegação instantânea (0ms latência no boot).
-// UPDATE [2025-02-21]: Bumped version to v2 to force update of application logic (Data Pruning & Visual Sync).
+// [ANALYSIS PROGRESS]: 0% - Análise concluída. Estratégia Cache-First robusta para App Shell.
+// [NOTA COMPARATIVA]: Nível de Engenharia: Crítico/Infraestrutura. Código de alta resiliência. Diferente de 'state.ts' (lógica) ou 'render.ts' (UI), bugs aqui podem causar falhas permanentes (zombie workers). A lógica de instalação agora garante integridade atômica do cache.
+// UPDATE [2025-02-23]: Critical Fix - Installation now fails if core assets cannot be fetched, preventing incomplete cache states.
 
 try {
     importScripts("https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js");
@@ -37,20 +38,25 @@ self.addEventListener('install', (event) => {
             console.log('Service Worker: Caching App Shell (Network Forced)');
             
             // FORÇA a atualização do cache via rede ('reload') para garantir que a nova versão seja baixada.
+            // ATOMICIDADE [2025-02-23]: Se qualquer arquivo crítico falhar, a instalação DEVE falhar.
             await Promise.all(CACHE_FILES.map(async (url) => {
                 try {
                     const request = new Request(url, { cache: 'reload' });
                     const response = await fetch(request);
-                    if (!response.ok) throw new Error(`Failed to fetch ${url}`);
+                    if (!response.ok) throw new Error(`Status ${response.status}`);
                     return cache.put(request, response);
                 } catch (err) {
                     console.error(`Failed to cache ${url}:`, err);
+                    throw err; // Propaga o erro para abortar a instalação
                 }
             }));
 
             self.skipWaiting();
         } catch (error) {
             console.error('Service Worker: Install failed', error);
+            // RE-THROW CRÍTICO: Garante que o navegador saiba que a instalação falhou.
+            // Sem isso, o SW seria considerado "instalado" mesmo com cache incompleto.
+            throw error;
         }
     })());
 });

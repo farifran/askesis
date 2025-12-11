@@ -14,6 +14,7 @@ import { setupModalListeners } from './modalListeners';
 import { setupHabitCardListeners } from './habitCardListeners';
 import { setupDragAndDropHandler } from './dragAndDropHandler';
 import { setupSwipeHandler } from './swipeHandler';
+import { DOM_SELECTORS } from './domConstants';
 
 function updateSelectedDateAndRender(date: string) {
     state.selectedDate = date;
@@ -60,7 +61,7 @@ export function setupEventListeners() {
     // UX: Pointer events para suporte unificado a Mouse e Touch
     ui.calendarStrip.addEventListener('pointerdown', (e) => {
         if (e.button !== 0) return; // Apenas botão esquerdo/toque principal
-        const dayItem = (e.target as HTMLElement).closest('.day-item');
+        const dayItem = (e.target as HTMLElement).closest(DOM_SELECTORS.DAY_ITEM);
         if (!dayItem) return;
 
         isLongPress = false;
@@ -86,7 +87,7 @@ export function setupEventListeners() {
             return;
         }
 
-        const dayItem = (e.target as HTMLElement).closest<HTMLElement>('.day-item');
+        const dayItem = (e.target as HTMLElement).closest<HTMLElement>(DOM_SELECTORS.DAY_ITEM);
         if (dayItem && dayItem.dataset.date) {
             triggerHaptic('selection');
             updateSelectedDateAndRender(dayItem.dataset.date);

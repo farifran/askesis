@@ -23,6 +23,7 @@ function calculateTodayPendingCount(): number {
     const todayISO = getTodayUTCIso();
     // PERFORMANCE [2025-02-23]: Passamos a string ISO diretamente.
     // getActiveHabitsForDate lida eficientemente com strings, evitando parsing desnecessário aqui.
+    // USE LAZY ACCESSOR: Ensure compatibility with archive/lazy-loading architecture.
     const dailyInfo = getHabitDailyInfoForDate(todayISO);
     
     let pendingCount = 0;

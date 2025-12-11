@@ -1,9 +1,99 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
+// [ANALYSIS PROGRESS]: 100% - Análise concluída. Repositório de dados validado.
+// [NOTA COMPARATIVA]: Este arquivo atua como o Banco de Dados Estático da aplicação. A integridade do conteúdo (traduções, atribuições) é tão crítica quanto a sintaxe.
+// [2025-02-23]: Refatoração de tipos para manutenibilidade e limpeza de dados (remoção de citações apócrifas e correção de typos).
 
-export type StoicTag = 'action' | 'resilience' | 'control' | 'time' | 'gratitude' | 'discipline' | 'temperance' | 'nature' | 'learning' | 'humility' | 'reality' | 'suffering' | 'focus' | 'virtue' | 'death' | 'anxiety' | 'community' | 'perception' | 'change' | 'wisdom' | 'perspective' | 'responsibility' | 'morning' | 'evening' | 'reflection' | 'duty' | 'rest' | 'consistency' | 'presence' | 'fate' | 'simplicity' | 'healing' | 'mindset' | 'life' | 'love' | 'laziness' | 'preparation' | 'prudence' | 'peace' | 'courage' | 'confidence' | 'growth' | 'character' | 'solitude' | 'justice' | 'silence' | 'optimism' | 'creativity' | 'passion' | 'reason' | 'history' | 'wealth' | 'happiness' | 'leadership' | 'truth' | 'freedom' | 'acceptance' | 'integrity' | 'minimalism' | 'purpose' | 'legacy' | 'fear' | 'belief' | 'identity' | 'practice' | 'authenticity' | 'example' | 'desire' | 'habit' | 'listening' | 'values' | 'criticism' | 'urgency' | 'patience' | 'strength' | 'honor' | 'essentialism' | 'flow' | 'health' | 'hope' | 'speech' | 'body' | 'mindfulness' | 'friendship' | 'anger' | 'kindness';
+export type StoicTag = 
+    | 'action' 
+    | 'resilience' 
+    | 'control' 
+    | 'time' 
+    | 'gratitude' 
+    | 'discipline' 
+    | 'temperance' 
+    | 'nature' 
+    | 'learning' 
+    | 'humility' 
+    | 'reality' 
+    | 'suffering' 
+    | 'focus' 
+    | 'virtue' 
+    | 'death' 
+    | 'anxiety' 
+    | 'community' 
+    | 'perception' 
+    | 'change' 
+    | 'wisdom' 
+    | 'perspective' 
+    | 'responsibility' 
+    | 'morning' 
+    | 'evening' 
+    | 'reflection' 
+    | 'duty' 
+    | 'rest' 
+    | 'consistency' 
+    | 'presence' 
+    | 'fate' 
+    | 'simplicity' 
+    | 'healing' 
+    | 'mindset' 
+    | 'life' 
+    | 'love' 
+    | 'laziness' 
+    | 'preparation' 
+    | 'prudence' 
+    | 'peace' 
+    | 'courage' 
+    | 'confidence' 
+    | 'growth' 
+    | 'character' 
+    | 'solitude' 
+    | 'justice' 
+    | 'silence' 
+    | 'optimism' 
+    | 'creativity' 
+    | 'passion' 
+    | 'reason' 
+    | 'history' 
+    | 'wealth' 
+    | 'happiness' 
+    | 'leadership' 
+    | 'truth' 
+    | 'freedom' 
+    | 'acceptance' 
+    | 'integrity' 
+    | 'minimalism' 
+    | 'purpose' 
+    | 'legacy' 
+    | 'fear' 
+    | 'belief' 
+    | 'identity' 
+    | 'practice' 
+    | 'authenticity' 
+    | 'example' 
+    | 'desire' 
+    | 'habit' 
+    | 'listening' 
+    | 'values' 
+    | 'criticism' 
+    | 'urgency' 
+    | 'patience' 
+    | 'strength' 
+    | 'honor' 
+    | 'essentialism' 
+    | 'flow' 
+    | 'health' 
+    | 'hope' 
+    | 'speech' 
+    | 'body' 
+    | 'mindfulness' 
+    | 'friendship' 
+    | 'anger' 
+    | 'kindness';
 
 export type Quote = {
     pt: string;
@@ -655,7 +745,7 @@ export const STOIC_QUOTES: Quote[] = [
     {
         pt: "Ao acordar de manhã, diga a si mesmo: As pessoas com quem lidarei hoje serão intrometidas, ingratas, arrogantes, desonestas, ciumentas e rudes.",
         en: "When you wake up in the morning, tell yourself: The people I deal with today will be meddling, ungrateful, arrogant, dishonest, jealous, and surly.",
-        es: "Al despertar por la mañana, dite a ti mismo: Las personas con las que trataré hoy serán entrometidas, ingratas, arrogantes, deshonestas, celosas y hosqu.",
+        es: "Al despertar por la mañana, dite a ti mismo: Las personas con las que trataré hoy serán entrometidas, ingratas, arrogantes, deshonestas, celosas y hoscas.",
         author: "marcusAurelius",
         tags: ['morning', 'community', 'patience', 'resilience', 'preparation']
     },
@@ -1769,12 +1859,5 @@ export const STOIC_QUOTES: Quote[] = [
         es: "Aquel que no sabe contentarse con poco, no se contentará con nada.",
         author: "epictetus",
         tags: ['temperance', 'gratitude']
-    },
-    {
-        pt: "O que a mente pode conceber e acreditar, ela pode alcançar.",
-        en: "What the mind can conceive and believe, it can achieve.",
-        es: "Lo que la mente puede concebir y creer, puede lograr.",
-        author: "marcusAurelius",
-        tags: ['action', 'reality']
     }
 ];

@@ -10,6 +10,7 @@ import { isCurrentlySwiping } from './swipeHandler';
 import { handleHabitDrop, reorderHabit } from './habitActions';
 import { state, TimeOfDay, Habit, getEffectiveScheduleForHabitOnDate } from './state';
 import { triggerHaptic } from './utils';
+import { DOM_SELECTORS, CSS_CLASSES } from './domConstants';
 
 const DROP_INDICATOR_GAP = 5; // Espaçamento em pixels acima/abaixo do cartão de destino
 const DROP_INDICATOR_HEIGHT = 3; // Deve corresponder à altura do indicador no CSS
@@ -56,7 +57,7 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
         // Atualiza Drop Zone (Highlight)
         if (nextDropZoneTarget !== currentRenderedDropZone) {
             if (currentRenderedDropZone) {
-                currentRenderedDropZone.classList.remove('drag-over', 'invalid-drop');
+                currentRenderedDropZone.classList.remove(CSS_CLASSES.DRAG_OVER, CSS_CLASSES.INVALID_DROP);
             }
             currentRenderedDropZone = nextDropZoneTarget;
         }
@@ -66,11 +67,11 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
             const shouldBeInvalid = !isDropValid;
             const shouldBeDragOver = isDropValid && currentRenderedDropZone.dataset.time !== draggedHabitOriginalTime;
 
-            if (currentRenderedDropZone.classList.contains('invalid-drop') !== shouldBeInvalid) {
-                currentRenderedDropZone.classList.toggle('invalid-drop', shouldBeInvalid);
+            if (currentRenderedDropZone.classList.contains(CSS_CLASSES.INVALID_DROP) !== shouldBeInvalid) {
+                currentRenderedDropZone.classList.toggle(CSS_CLASSES.INVALID_DROP, shouldBeInvalid);
             }
-            if (currentRenderedDropZone.classList.contains('drag-over') !== shouldBeDragOver) {
-                currentRenderedDropZone.classList.toggle('drag-over', shouldBeDragOver);
+            if (currentRenderedDropZone.classList.contains(CSS_CLASSES.DRAG_OVER) !== shouldBeDragOver) {
+                currentRenderedDropZone.classList.toggle(CSS_CLASSES.DRAG_OVER, shouldBeDragOver);
             }
             
             // Garante que o indicador esteja no container correto
@@ -127,7 +128,7 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
      */
     function _calculateDragState(e: DragEvent) {
         const target = e.target as HTMLElement;
-        const dropZone = target.closest<HTMLElement>('.drop-zone');
+        const dropZone = target.closest<HTMLElement>(DOM_SELECTORS.DROP_ZONE);
         
         // UX: Lógica de detecção de borda para Auto-Scroll
         // REFACTOR [2025-02-23]: Usamos o 'habitContainer' passado como argumento, removendo a busca redundante pelo ID.
@@ -170,7 +171,7 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
         isDropValid = !isInvalidDrop;
 
         // Cálculo da posição do indicador
-        const cardTarget = target.closest<HTMLElement>('.habit-card');
+        const cardTarget = target.closest<HTMLElement>(DOM_SELECTORS.HABIT_CARD);
         if (cardTarget && cardTarget !== draggedElement) {
             const targetRect = cardTarget.getBoundingClientRect();
             // Calculation needs to be relative to the parent drop zone (which is relatively positioned)
@@ -251,11 +252,11 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
     
     const cleanupDrag = () => {
         // 1. Limpa os estilos visuais aplicados durante o arrasto
-        draggedElement?.classList.remove('dragging');
+        draggedElement?.classList.remove(CSS_CLASSES.DRAGGING);
         document.body.classList.remove('is-dragging-active');
         
         if (currentRenderedDropZone) {
-            currentRenderedDropZone.classList.remove('drag-over', 'invalid-drop');
+            currentRenderedDropZone.classList.remove(CSS_CLASSES.DRAG_OVER, CSS_CLASSES.INVALID_DROP);
         }
         
         // 2. Remove elementos temporários do DOM
@@ -277,8 +278,8 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
             e.preventDefault();
             return;
         }
-        const cardContent = (e.target as HTMLElement).closest<HTMLElement>('.habit-content-wrapper');
-        const card = cardContent?.closest<HTMLElement>('.habit-card');
+        const cardContent = (e.target as HTMLElement).closest<HTMLElement>(DOM_SELECTORS.HABIT_CONTENT_WRAPPER);
+        const card = cardContent?.closest<HTMLElement>(DOM_SELECTORS.HABIT_CARD);
         if (card && cardContent && card.dataset.habitId && card.dataset.time) {
             triggerHaptic('light');
             draggedElement = card;
@@ -290,7 +291,7 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
             e.dataTransfer!.effectAllowed = 'move';
 
             const dragImage = cardContent.cloneNode(true) as HTMLElement;
-            dragImage.classList.add('drag-image-ghost');
+            dragImage.classList.add(CSS_CLASSES.DRAG_IMAGE_GHOST);
             
             // FIX [2025-01-17]: Copia estilos computados críticos para garantir que a imagem de arrasto
             // mantenha a aparência visual exata (cor, bordas arredondadas), já que ao ser anexada
@@ -319,7 +320,7 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
             _startAnimationLoop();
 
             setTimeout(() => {
-                card.classList.add('dragging');
+                card.classList.add(CSS_CLASSES.DRAGGING);
             }, 0);
         }
     });

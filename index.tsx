@@ -8,7 +8,7 @@
 
 import { inject } from '@vercel/analytics';
 import './index.css';
-import { loadState, saveState, state, persistStateLocally, STATE_STORAGE_KEY, AppState } from './state';
+import { loadState, saveState, state, persistStateLocally, STATE_STORAGE_KEY, AppState, registerSyncHandler } from './state';
 import { initUI } from './ui';
 import { renderApp } from './render';
 import { setupEventListeners } from './listeners';
@@ -118,6 +118,9 @@ function handleFirstTimeUser() {
 }
 
 function setupAppListeners() {
+    // WIRE UP SYNC: Connect state changes to cloud sync
+    registerSyncHandler(syncStateWithCloud);
+    
     setupEventListeners();
     setupNotificationListeners();
     initSync();

@@ -1,3 +1,4 @@
+
 {
     "_comment": "[ANALYSIS PROGRESS]: 100% - Limpieza de claves no utilizadas (buttonEndHabit, modalAddTitle, etc.) realizada [2025-01-16].",
     "aiCelebration21Day": {
@@ -58,6 +59,7 @@
     "editButton": "Editar",
     "endButton": "Finalizar",
     "epictetus": "Epicteto",
+    "exportButton": "Exportar Copia",
     "fabAddHabit_ariaLabel": "Añadir Hábito",
     "filterAfternoon": "Tarde",
     "filterEvening": "Noche",
@@ -78,6 +80,9 @@
     "headerTitleToday": "Hoy",
     "headerTitleTomorrow": "Mañana",
     "headerTitleYesterday": "Ayer",
+    "importButton": "Restaurar Copia",
+    "importError": "Error al importar. Verifica que el archivo sea una copia de seguridad válida.",
+    "importSuccess": "¡Copia restaurada con éxito! La página se recargará.",
     "langEnglish": "Inglés",
     "langPortuguese": "Portugués",
     "langSpanish": "Español",
@@ -191,6 +196,7 @@
     "predefinedHabitWaterSubtitle": "La hidratación es vida",
     "predefinedHabitYogaName": "Yoga",
     "predefinedHabitYogaSubtitle": "Equilibrio y flexibilidad",
+    "privacyLabel": "Datos & Privacidad",
     "seneca": "Séneca",
     "syncActiveDesc": "La sincronización en la nube está activa en este dispositivo.",
     "syncConfirmOverwrite": "Sobrescribir",

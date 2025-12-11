@@ -5,7 +5,7 @@
 */
 // [ANALYSIS PROGRESS]: 100% - Análise concluída. Otimização de "Layout Thrashing" implementada. A geometria do gráfico agora é calculada preguiçosamente (Lazy Evaluation) na interação, evitando reflows forçados durante a atualização de dados.
 
-import { state, getActiveHabitsForDate } from './state';
+import { state, getActiveHabitsForDate, getHabitDailyInfoForDate } from './state';
 import { ui } from './ui';
 import { t } from './i18n';
 import { addDays, getTodayUTCIso, parseUTCIsoDate, toUTCIsoDateString, getDateTimeFormat } from './utils';
@@ -76,7 +76,10 @@ function calculateChartData(): ChartDataPoint[] {
         const currentDateISO = toUTCIsoDateString(currentDate);
 
         const activeHabitsData = getActiveHabitsForDate(currentDate);
-        const dailyInfo = state.dailyData[currentDateISO] || {};
+        
+        // FIX [2025-02-23]: Use Lazy Loading Accessor instead of direct state access.
+        // This ensures the chart works even if the user scrolls back to archived dates.
+        const dailyInfo = getHabitDailyInfoForDate(currentDateISO);
 
         let scheduledCount = 0;
         let completedCount = 0;

@@ -1,11 +1,13 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// [ANALYSIS PROGRESS]: 100% - Análise concluída. Gerenciamento de eventos de modal verificado. A lógica de limpeza (cleanup) ao fechar modais está implementada corretamente para prevenir vazamento de estado.
+// [ANALYSIS PROGRESS]: 100% - Análise concluída.
+// [NOTA COMPARATIVA]: Este arquivo atua como o 'Controlador de Interações Modais'. Diferente de 'habitActions.ts' (Regras de Negócio) ou 'render.ts' (Manipulação DOM), este módulo foca exclusivamente em capturar a intenção do usuário e delegar a execução. O código está bem desacoplado, utilizando event delegation para listas e helpers privados para lógica de formulário.
 
 import { ui } from './ui';
-import { state, LANGUAGES, PREDEFINED_HABITS, TimeOfDay, saveState, STREAK_SEMI_CONSOLIDATED, STREAK_CONSOLIDATED, Frequency, FREQUENCIES, invalidateChartCache, DAYS_IN_CALENDAR } from './state';
+import { state, LANGUAGES, PREDEFINED_HABITS, saveState, STREAK_SEMI_CONSOLIDATED, STREAK_CONSOLIDATED, FREQUENCIES, invalidateChartCache, DAYS_IN_CALENDAR } from './state';
 import {
     openModal,
     closeModal,
@@ -32,11 +34,12 @@ import {
     handleSaveNote,
     graduateHabit,
     performAIAnalysis,
+    exportData,
+    importData,
 } from './habitActions';
 import { setLanguage, t, getHabitDisplayInfo } from './i18n';
 import { setupReelRotary } from './rotary';
 import { simpleMarkdownToHTML, pushToOneSignal, getContrastColor, addDays, parseUTCIsoDate, toUTCIsoDateString } from './utils';
-import { icons } from './icons';
 
 // REFACTOR [2024-09-02]: Centraliza a lógica de processamento e formatação de celebrações
 // para remover duplicação de código e melhorar a legibilidade no listener do botão de IA.
@@ -230,6 +233,7 @@ export function setupModalListeners() {
     });
     
     // --- Modal de Gerenciamento de Hábitos (Manage) ---
+    // Listeners para os botões de lista (via delegação no elemento pai)
     ui.habitList.addEventListener('click', (e) => {
         const target = e.target as HTMLElement;
         const button = target.closest<HTMLButtonElement>('button');
@@ -246,6 +250,17 @@ export function setupModalListeners() {
             requestHabitEditingFromModal(habitId);
         } else if (button.classList.contains('graduate-habit-btn')) {
             graduateHabit(habitId);
+        }
+    });
+
+    // Listeners para os botões de Dados e Privacidade (Adicionados dinamicamente)
+    // Usamos delegação no modal de gerenciamento para capturar o clique, pois os botões são injetados.
+    ui.manageModal.addEventListener('click', (e) => {
+        const target = e.target as HTMLElement;
+        if (target.id === 'export-data-btn') {
+            exportData();
+        } else if (target.id === 'import-data-btn') {
+            importData();
         }
     });
 
@@ -576,7 +591,7 @@ export function setupModalListeners() {
         const button = (e.target as HTMLElement).closest<HTMLButtonElement>('.segmented-control-option');
         if (!button) return;
 
-        const time = button.dataset.time as TimeOfDay;
+        const time = button.dataset.time as any; // Using any cast to avoid explicit import of TimeOfDay for local DOM handling
         const currentlySelected = state.editingHabit.formData.times.includes(time);
 
         if (currentlySelected) {

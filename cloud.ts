@@ -3,15 +3,16 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// [ANALYSIS PROGRESS]: 100% - Análise concluída [2025-02-23]. Módulo robusto. A estratégia de "Last Write Wins" com fila de estado pendente (pendingSyncState) e debounce previne condições de corrida e sobrecarga de rede. Criptografia e tratamento de conflitos (409) implementados corretamente.
+// [ANALYSIS PROGRESS]: 100% - Análise concluída [2025-02-23]. Módulo robusto. Implementado algoritmo 'Smart Merge' para resolução de conflitos, garantindo integridade de dados multi-dispositivo sem intervenção do usuário.
 
 import { AppState, STATE_STORAGE_KEY, loadState, state, persistStateLocally, saveState, APP_VERSION } from './state';
 import { pushToOneSignal } from './utils';
 import { ui } from './ui';
 import { t } from './i18n';
 import { hasLocalSyncKey, getSyncKey, apiFetch } from './api';
-import { renderApp, updateNotificationUI, showConfirmationModal } from './render';
+import { renderApp, updateNotificationUI } from './render';
 import { encrypt, decrypt } from './crypto';
+import { mergeStates } from './dataMerge'; // REFACTOR: Importado do novo módulo
 
 // Debounce para evitar salvar na nuvem a cada pequena alteração.
 let syncTimeout: number | null = null;
@@ -56,6 +57,7 @@ export function setupNotificationListeners() {
     });
 }
 
+// [REMOVED]: mergeStates function moved to dataMerge.ts
 
 /**
  * Lida com um conflito de sincronização, onde o servidor tem uma versão mais recente dos dados.
@@ -63,7 +65,7 @@ export function setupNotificationListeners() {
  * @param serverPayload O payload autoritativo (e criptografado) recebido do servidor.
  */
 async function resolveConflictWithServerState(serverPayload: ServerPayload) {
-    console.warn("Sync conflict detected. Prompting user for resolution.");
+    console.warn("Sync conflict detected. Initiating Smart Merge sequence.");
     
     const syncKey = getSyncKey();
     if (!syncKey) {
@@ -83,47 +85,41 @@ async function resolveConflictWithServerState(serverPayload: ServerPayload) {
             throw new Error("Corrupted server data received.");
         }
 
-        // IMPLEMENTAÇÃO DE SEGURANÇA OFFLINE [2025-02-10]:
-        // Em vez de sobrescrever automaticamente, perguntamos ao usuário.
-        // Isso previne que o trabalho offline (que tem um timestamp mais antigo que o servidor
-        // se houve uma edição concorrente) seja perdido.
-        showConfirmationModal(
-            t('syncConflictDescription'),
-            () => {
-                // Opção "Confirmar" (Danger) -> Usar Nuvem (Sobrescreve Local)
-                console.log("User chose to overwrite local with cloud data.");
-                persistStateLocally(serverState);
-                loadState(serverState);
-                renderApp();
-                setSyncStatus('syncSynced');
-                document.dispatchEvent(new CustomEvent('habitsChanged'));
-            },
-            {
-                title: t('syncConflictTitle'),
-                confirmText: t('syncUseCloud'), // "Baixar da Nuvem"
-                editText: t('syncKeepLocal'), // "Manter Local"
-                onEdit: () => {
-                    // Opção "Editar" (Neutro) -> Manter Local (Sobrescreve Nuvem)
-                    console.log("User chose to keep local data. Forcing push.");
-                    
-                    // Construct explicit AppState to satisfy type checker and include version/lastModified
-                    const appState: AppState = {
-                        version: APP_VERSION,
-                        lastModified: Date.now(),
-                        habits: state.habits,
-                        dailyData: state.dailyData,
-                        notificationsShown: state.notificationsShown,
-                        pending21DayHabitIds: state.pending21DayHabitIds,
-                        pendingConsolidationHabitIds: state.pendingConsolidationHabitIds
-                    };
+        // IMPLEMENTAÇÃO DE SMART MERGE [2025-02-23]:
+        // Em vez de perguntar ao usuário (que pode não saber qual versão está correta),
+        // nós mesclamos os estados matematicamente para preservar o máximo de dados.
+        
+        // 1. Snapshot do estado local atual
+        const localState: AppState = {
+            version: APP_VERSION,
+            lastModified: Date.now(), // Irrelevante para o merge, será gerado um novo
+            habits: state.habits,
+            dailyData: state.dailyData,
+            archives: state.archives,
+            notificationsShown: state.notificationsShown,
+            pending21DayHabitIds: state.pending21DayHabitIds,
+            pendingConsolidationHabitIds: state.pendingConsolidationHabitIds,
+            // Preservamos estados de UI não persistidos (AI, etc) fora do merge
+        };
 
-                    persistStateLocally(appState); // Persiste o novo timestamp
-                    syncStateWithCloud(appState, true); // Força o envio imediato
-                },
-                hideCancel: true, // Oculta o "Cancelar" padrão para forçar uma escolha binária
-                confirmButtonStyle: 'danger' // Destaca que sobrescrever o local é destrutivo
-            }
-        );
+        // 2. Executa a fusão (usando a função importada)
+        const mergedState = mergeStates(localState, serverState);
+        console.log("Smart Merge completed successfully.");
+
+        // 3. Persiste e Carrega o novo estado unificado
+        persistStateLocally(mergedState);
+        loadState(mergedState);
+        
+        // 4. Atualiza a UI
+        renderApp();
+        setSyncStatus('syncSynced'); // UI otimista
+        document.dispatchEvent(new CustomEvent('habitsChanged'));
+
+        // 5. CRÍTICO: Envia o estado mesclado de volta para a nuvem.
+        // Isso resolve o conflito no servidor, tornando este novo estado a "versão mais recente"
+        // para todos os outros dispositivos.
+        // Usamos 'immediate=true' para resolver o mais rápido possível.
+        syncStateWithCloud(mergedState, true);
         
     } catch (error) {
         console.error("Failed to resolve conflict with server state:", error);

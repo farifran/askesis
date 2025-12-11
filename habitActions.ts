@@ -19,7 +19,10 @@ import {
     getActiveHabitsForDate,
     AppState,
     getHabitDailyInfoForDate,
-    HabitDailyInfo // Required for correlation helper
+    HabitDailyInfo, // Required for correlation helper
+    APP_VERSION,
+    persistStateLocally,
+    loadState
 } from './state';
 import { ui } from './ui';
 import { 
@@ -34,6 +37,8 @@ import {
 } from './utils';
 import { apiFetch } from './api';
 import { STOIC_QUOTES } from './quotes';
+import { mergeStates } from './dataMerge';
+import { syncStateWithCloud } from './cloud';
 
 // --- HELPERS ---
 
@@ -42,14 +47,17 @@ import { STOIC_QUOTES } from './quotes';
 function calculateCorrelation(
     triggerHabitId: string, 
     targetHabitId: string, 
-    dailyData: Record<string, Record<string, HabitDailyInfo>>, 
+    // CHANGE: No longer passes raw dailyData, but we assume the caller uses getHabitDailyInfoForDate or passes a resolved structure.
+    // However, for performance in analysis, we can't easily iterate global state with lazy loading.
+    // FIX: We iterate daysToCheck and call accessor.
     daysToCheck: string[]
 ): number {
     let triggerFailures = 0;
     let jointFailures = 0;
 
     for (const date of daysToCheck) {
-        const dayData = dailyData[date];
+        // USE LAZY ACCESSOR
+        const dayData = getHabitDailyInfoForDate(date);
         if (!dayData) continue;
 
         const triggerInstances = dayData[triggerHabitId]?.instances || {};
@@ -88,7 +96,8 @@ function calculateCorrelation(
  * over old "moved" or "deleted" exceptions stored in dailyData.
  */
 function _cleanDailyOverrides(date: string, habitId: string) {
-    const dailyInfo = state.dailyData[date]?.[habitId];
+    // USE LAZY ACCESSOR - Must ensure it's editable if it exists
+    const dailyInfo = ensureHabitDailyInfo(date, habitId);
     if (dailyInfo && dailyInfo.dailySchedule !== undefined) {
         // CRITICAL: We strictly delete the key so `dailySchedule` becomes undefined.
         // This forces the "Opaque Layer" logic in state.ts to fall through to the permanent history.
@@ -104,6 +113,11 @@ function _cleanDailyOverrides(date: string, habitId: string) {
 function _wipeDailyDataForHabits(habitIds: string[]) {
     if (habitIds.length === 0) return;
     const idsSet = new Set(habitIds);
+    
+    // UPDATE: Iterating over Hot Storage only is safer/faster for now. 
+    // Deleting from archives would require parsing everything. 
+    // For now, let's clean hot storage. Archiving naturally handles "old" data.
+    // If a user deletes a habit, old archive data remains (historical record).
     
     Object.keys(state.dailyData).forEach(dateKey => {
         const dayRecord = state.dailyData[dateKey];
@@ -125,15 +139,22 @@ function _wipeDailyDataForHabits(habitIds: string[]) {
 }
 
 /**
- * FUTURE CLEAN HELPER [2025-02-21]:
+ * FUTURE CLEAN HELPER [2025-02-23]:
  * Removes daily data for a habit for all dates strictly greater than the provided date.
  * Used when Ending a habit to clear any future "ghost" moves/notes that are now orphan.
+ * UPDATE: Returns the wiped data so it can be stored for Undo capability.
  */
-function _wipeFutureDailyDataForHabit(habitId: string, fromDateISO: string) {
+function _wipeFutureDailyDataForHabit(habitId: string, fromDateISO: string): Record<string, HabitDailyInfo> {
+    const wipedData: Record<string, HabitDailyInfo> = {};
+    
+    // UPDATE: Only clean hot storage. Future dates are unlikely to be archived.
     Object.keys(state.dailyData).forEach(dateKey => {
         if (dateKey > fromDateISO) {
             const dayRecord = state.dailyData[dateKey];
             if (dayRecord && dayRecord[habitId]) {
+                // Capture data before deletion
+                wipedData[dateKey] = JSON.parse(JSON.stringify(dayRecord[habitId]));
+                
                 delete dayRecord[habitId];
                 if (Object.keys(dayRecord).length === 0) {
                     delete state.dailyData[dateKey];
@@ -141,6 +162,7 @@ function _wipeFutureDailyDataForHabit(habitId: string, fromDateISO: string) {
             }
         }
     });
+    return wipedData;
 }
 
 /**
@@ -162,6 +184,93 @@ function _findActiveScheduleIndex(habit: Habit, dateISO: string): number {
 }
 
 // --- ACTIONS ---
+
+// DATA SOVEREIGNTY ACTIONS [2025-02-23]
+
+export function exportData() {
+    const dataToExport: AppState = {
+        version: APP_VERSION,
+        lastModified: Date.now(),
+        habits: state.habits,
+        dailyData: state.dailyData,
+        archives: state.archives,
+        notificationsShown: state.notificationsShown,
+        pending21DayHabitIds: state.pending21DayHabitIds,
+        pendingConsolidationHabitIds: state.pendingConsolidationHabitIds
+    };
+
+    const blob = new Blob([JSON.stringify(dataToExport, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `askesis-backup-${getTodayUTCIso()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+export function importData() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'application/json';
+    
+    input.onchange = async (e) => {
+        const file = (e.target as HTMLInputElement).files?.[0];
+        if (!file) return;
+
+        try {
+            const text = await file.text();
+            const importedState = JSON.parse(text);
+
+            // Validação Básica
+            if (!importedState.habits || !importedState.version) {
+                throw new Error("Invalid backup file format.");
+            }
+
+            // SMART MERGE: Combina o estado atual com o backup
+            // Isso previne a perda de dados se o usuário fez algo antes de importar.
+            const currentState: AppState = {
+                version: APP_VERSION,
+                lastModified: Date.now(),
+                habits: state.habits,
+                dailyData: state.dailyData,
+                archives: state.archives,
+                notificationsShown: state.notificationsShown,
+                pending21DayHabitIds: state.pending21DayHabitIds,
+                pendingConsolidationHabitIds: state.pendingConsolidationHabitIds
+            };
+
+            const mergedState = mergeStates(currentState, importedState);
+            
+            // 1. Persiste Localmente
+            persistStateLocally(mergedState);
+            
+            // 2. Carrega na Memória (Reseta caches e dirty flags)
+            loadState(mergedState); 
+            
+            // 3. CRÍTICO: Força sincronização IMEDIATA (sem debounce)
+            // Se fizéssemos window.reload() aqui, o navegador cancelaria o request de rede.
+            syncStateWithCloud(mergedState, true);
+            
+            // 4. Atualiza a UI via SPA (sem reload)
+            renderApp();
+            
+            // Se o modal de gerenciamento estiver aberto, atualiza a lista interna
+            if (ui.manageModal.classList.contains('visible')) {
+                setupManageModal();
+            }
+            
+            alert(t('importSuccess'));
+
+        } catch (err) {
+            console.error("Import failed", err);
+            alert(t('importError'));
+        }
+    };
+
+    input.click();
+}
 
 export function createDefaultHabit() {
     const defaultTemplate = PREDEFINED_HABITS.find(h => h.isDefault) || PREDEFINED_HABITS[0];
@@ -199,21 +308,19 @@ export function toggleHabitStatus(habitId: string, time: TimeOfDay, date: string
     // If the status is 'pending' (default) AND there is no note AND no goalOverride,
     // this entry provides no information. We delete it to keep storage minimal.
     if (newStatus === 'pending' && !instanceData.note && instanceData.goalOverride === undefined) {
-        const dailyInfo = state.dailyData[date]?.[habitId];
+        const dailyInfo = ensureHabitDailyInfo(date, habitId); // Ensure editable ref
         if (dailyInfo && dailyInfo.instances) {
             delete dailyInfo.instances[time];
             
             // LOGIC FIX [2025-02-21]: Protection against deleting Valid Overrides.
-            // If the user removed the habit "Just Today", dailySchedule will be [].
-            // If we delete the dailyInfo object, we lose this override and the habit
-            // will reappear (Ghost). We must check if dailySchedule is explicitly undefined.
-            // Using strict check against undefined because [] is a valid (truthy) value we want to keep.
             if (Object.keys(dailyInfo.instances).length === 0 && dailyInfo.dailySchedule === undefined) {
-                delete state.dailyData[date][habitId];
-                
-                // If the day is empty, remove the day record entirely
-                if (Object.keys(state.dailyData[date]).length === 0) {
-                    delete state.dailyData[date];
+                // We need to delete the habit entry from the date record.
+                // Since we are modifying state.dailyData directly, we check if it exists there.
+                if (state.dailyData[date]) {
+                    delete state.dailyData[date][habitId];
+                    if (Object.keys(state.dailyData[date]).length === 0) {
+                        delete state.dailyData[date];
+                    }
                 }
             }
         }
@@ -260,7 +367,7 @@ export function setGoalOverride(habitId: string, date: string, time: TimeOfDay, 
 export function handleUndoDelete() {
     if (!state.lastEnded) return;
 
-    const { habitId, lastSchedule, removedSchedules } = state.lastEnded;
+    const { habitId, lastSchedule, removedSchedules, wipedDailyData } = state.lastEnded;
     const habit = state.habits.find(h => h.id === habitId);
 
     if (habit) {
@@ -288,6 +395,16 @@ export function handleUndoDelete() {
         // Limpa estado de graduação se foi uma ação de graduação desfeita
         if (habit.graduatedOn) {
             habit.graduatedOn = undefined;
+        }
+        
+        // RESTORE WIPED DATA [2025-02-23]: Critical for preventing data loss on undo.
+        if (wipedDailyData) {
+             Object.entries(wipedDailyData).forEach(([date, data]) => {
+                 // Ensure day exists
+                 if (!state.dailyData[date]) state.dailyData[date] = {};
+                 // Restore habit data for that day
+                 state.dailyData[date][habitId] = data;
+             });
         }
 
         clearScheduleCache();
@@ -381,7 +498,7 @@ function _removeTimeFromSchedule(habit: Habit, effectiveDate: string, timeToRemo
     }
     
     // Always clean up instance data (notes, status) for the removed time
-    const info = state.dailyData[effectiveDate]?.[habit.id];
+    const info = ensureHabitDailyInfo(effectiveDate, habit.id);
     if (info && info.instances[timeToRemove]) {
         delete info.instances[timeToRemove];
     }
@@ -488,7 +605,7 @@ function _requestFutureScheduleChange(
         // we MUST remove any overrides for this day.
         _cleanDailyOverrides(effectiveDate, habit.id);
         
-        const dailyInfo = state.dailyData[effectiveDate]?.[habit.id];
+        const dailyInfo = ensureHabitDailyInfo(effectiveDate, habit.id);
         if (dailyInfo) {
             const instanceData = dailyInfo.instances[fromTime];
             if (instanceData) {
@@ -710,10 +827,15 @@ export function endHabit(habitId: string, dateISO: string) {
     // Salva estado para undo
     const removedSchedules = habit.scheduleHistory.filter(s => s.startDate > dateISO);
     
+    // CLEANUP [2025-02-23]: Wipe ghost data from future AND CAPTURE IT.
+    // This allows us to restore notes if the user undoes the action.
+    const wipedData = _wipeFutureDailyDataForHabit(habitId, dateISO);
+
     state.lastEnded = {
         habitId,
         lastSchedule: JSON.parse(JSON.stringify(activeSchedule)), // Snapshot
-        removedSchedules: JSON.parse(JSON.stringify(removedSchedules)) // Snapshot
+        removedSchedules: JSON.parse(JSON.stringify(removedSchedules)), // Snapshot
+        wipedDailyData: wipedData
     };
 
     // Remove agendamentos futuros
@@ -722,9 +844,6 @@ export function endHabit(habitId: string, dateISO: string) {
     // Encerra ao final do dia ANTERIOR se a intenção é não fazer mais a partir de hoje
     // Mas se o usuário escolhe hoje, ele espera ver hoje.
     activeSchedule.endDate = dateISO;
-
-    // CLEANUP [2025-02-21]: Wipe ghost data from future.
-    _wipeFutureDailyDataForHabit(habitId, dateISO);
 
     clearScheduleCache();
     clearActiveHabitsCache();
@@ -1003,6 +1122,7 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
         dateList.push(dateISO);
         
         const activeHabits = getActiveHabitsForDate(dateISO);
+        // USE LAZY ACCESSOR
         const dailyInfo = getHabitDailyInfoForDate(dateISO);
         
         let dayScheduled = 0;
@@ -1210,7 +1330,7 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
         let dominoEffectFound = false;
         statsMap.forEach((data, otherId) => {
             if (otherId !== nemesisId && data.scheduled > 3) {
-                const correlation = calculateCorrelation(nemesisId, otherId, state.dailyData, dateList);
+                const correlation = calculateCorrelation(nemesisId, otherId, dateList); // Just pass dateList
                 if (correlation > 0.75) {
                     const { name: otherName } = getHabitDisplayInfo(data.habit, toUTCIsoDateString(today));
                     correlationInfo = `**CRITICAL CHAIN REACTION DETECTED:** When the user fails '${nemesisName}', there is a ${Math.round(correlation * 100)}% chance they will ALSO fail '${otherName}'. Fix '${nemesisName}' to save the day.`;
@@ -1416,7 +1536,8 @@ export async function performAIAnalysis(analysisType: 'weekly' | 'monthly' | 'ge
             for (let i = 6; i >= 0; i--) {
                 const d = addDays(today, -i);
                 const dISO = toUTCIsoDateString(d);
-                const daily = state.dailyData[dISO]?.[sparklineHabitId]?.instances || {};
+                // USE LAZY ACCESSOR
+                const daily = getHabitDailyInfoForDate(dISO)[sparklineHabitId]?.instances || {};
                 
                 const schedule = getEffectiveScheduleForHabitOnDate(habit, dISO);
                 if (schedule.length === 0) {
