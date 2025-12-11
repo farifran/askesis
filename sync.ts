@@ -3,7 +3,6 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// [ANALYSIS PROGRESS]: 100% - Análise concluída. Bug crítico de travamento de botões (deadlock de UI) corrigido na função _processKey. Adicionado tratamento de erros para a API de Clipboard. Código limpo e funcional.
 
 import { ui } from "./ui";
 import { t } from "./i18n";

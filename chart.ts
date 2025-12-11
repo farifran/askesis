@@ -3,11 +3,7 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// [ANALYSIS PROGRESS]: 100% - Otimização "Platinum". Migração de "Game Loop" para "Event-Driven Throttling".
-// PERFORMANCE [2025-01-30]: True Zero-Cost Idle. O código só executa quando o evento pointermove dispara,
-// eliminado completamente o overhead de CPU quando o mouse está parado sobre o gráfico.
-// BUGFIX [2025-02-02]: Tooltip Stale Data fix. Ensures tooltip updates immediately when data changes even if mouse is stationary.
-// BUGFIX [2025-02-05]: Future Date Projection. Fixes chart score dropping to zero when scrolling to future dates.
+// [ANALYSIS PROGRESS]: 100% - Análise concluída. Otimização de "Layout Thrashing" implementada. A geometria do gráfico agora é calculada preguiçosamente (Lazy Evaluation) na interação, evitando reflows forçados durante a atualização de dados.
 
 import { state, getActiveHabitsForDate } from './state';
 import { ui } from './ui';
@@ -184,12 +180,19 @@ function _updateChartDOM(chartData: ChartDataPoint[]) {
     evolutionIndicator.style.top = `${lastPointY}px`;
     
     let indicatorX = lastPointX + 10;
+    
+    // PERFORMANCE NOTE: Reading offsetWidth here forces a specific reflow for the indicator,
+    // which is unavoidable for correct positioning of dynamic text.
     if (indicatorX + evolutionIndicator.offsetWidth > chartWrapper.offsetWidth) {
         indicatorX = lastPointX - evolutionIndicator.offsetWidth - 10;
     }
     evolutionIndicator.style.left = `${indicatorX}px`;
     
-    cachedChartRect = chartWrapper.getBoundingClientRect();
+    // LAYOUT THRASHING FIX [2025-02-23]: 
+    // Do NOT call getBoundingClientRect() here. We just invalidated layout by setting styles above.
+    // Reading layout now would force a synchronous reflow of the entire chart section.
+    // Instead, we invalidate the cache. The next interaction (tooltip) will read fresh layout values.
+    cachedChartRect = null;
 }
 
 // CORE RENDER LOGIC [2025-02-02]: Extracted for re-use.
@@ -200,6 +203,7 @@ function updateTooltipPosition() {
     if (!chartWrapper || !tooltip || !indicator || !tooltipDate || !tooltipScoreLabel || !tooltipScoreValue || !tooltipHabits) return;
     if (lastChartData.length === 0 || !chartWrapper.isConnected) return;
 
+    // LAZY LAYOUT: Only measure the DOM if cache is invalid/null.
     if (!cachedChartRect) {
         cachedChartRect = chartWrapper.getBoundingClientRect();
     }
@@ -299,9 +303,7 @@ function _initObservers() {
         resizeObserver = new ResizeObserver(entries => {
             if (!chartInitialized || !isChartVisible) return;
             // Invalida cache de geometria no resize
-            if (entries[0]?.contentRect && chartElements.chartWrapper) {
-                 cachedChartRect = chartElements.chartWrapper.getBoundingClientRect();
-            }
+            cachedChartRect = null;
             _updateChartDOM(lastChartData);
         });
         resizeObserver.observe(ui.chartContainer);

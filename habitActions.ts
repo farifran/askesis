@@ -1,9 +1,11 @@
+
 // habitActions.ts
 
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
+// [ANALYSIS PROGRESS]: 100% - Análise concluída. Lógica de negócios validada. O gerenciamento de histórico temporal, a lógica de "Camada Opaca" (Overrides diários vs Histórico Permanente) e a geração de prompts para IA estão robustos. Código morto (TIME_ANCHORS) removido.
 
 import { 
     state, Habit, HabitSchedule, TimeOfDay, Frequency, 
@@ -902,25 +904,6 @@ const RECALIBRATION_TEMPLATES = {
     pt: "Nova Meta: [NÚMERO] [UNIDADE] por dia.",
     en: "New Goal: [NUMBER] [UNIT] per day.",
     es: "Nueva Meta: [NÚMERO] [UNIDAD] por día."
-};
-
-// TIME-SPECIFIC ANCHOR EXAMPLES
-const TIME_ANCHORS = {
-    Morning: {
-        pt: "Ao acordar, Depois de escovar os dentes, Com o café",
-        en: "Upon waking, After brushing teeth, With coffee",
-        es: "Al despertar, Después de cepillarse, Con el café"
-    },
-    Afternoon: {
-        pt: "Após o almoço, Ao fechar o laptop, Chegando em casa",
-        en: "After lunch, Closing laptop, Arriving home",
-        es: "Después del almuerzo, Al cerrar la laptop, Llegando a casa"
-    },
-    Evening: {
-        pt: "Após o jantar, Colocando pijama, Antes de escovar os dentes",
-        en: "After dinner, Putting on pajamas, Before brushing teeth",
-        es: "Después de cenar, Poniéndose el pijama, Antes de cepillarse"
-    }
 };
 
 

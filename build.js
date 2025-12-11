@@ -1,13 +1,15 @@
 
 // build.js
-// Este script é responsável por compilar e empacotar os arquivos da aplicação
-// para produção. Ele utiliza 'esbuild' para uma compilação rápida e eficiente.
-
-// [ANALYSIS PROGRESS]: 100% - Análise completa. O script é sólido. Adicionada rotina de encerramento gracioso para liberar recursos ao parar o servidor.
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+*/
+// [ANALYSIS PROGRESS]: 100% - Análise concluída. Script otimizado com feedback robusto para o versionamento do Service Worker e watcher seguro.
 
 const esbuild = require('esbuild');
-const fs = require('fs/promises'); // API de sistema de arquivos baseada em Promises do Node.js
-const path = require('path'); // Módulo para lidar com caminhos de arquivo
+const fs = require('fs/promises'); // API de sistema de arquivos baseada em Promises
+const fsSync = require('fs'); // [2025-02-23] API síncrona para watch e checks rápidos
+const path = require('path'); 
 
 const isProduction = process.env.NODE_ENV === 'production';
 const outdir = 'public';
@@ -22,19 +24,33 @@ async function copyStaticFiles() {
     try {
         const swContent = await fs.readFile('sw.js', 'utf-8');
         // Regex robusta para encontrar qualquer variação de const CACHE_NAME = '...';
-        const versionedSw = swContent.replace(
-            /const\s+CACHE_NAME\s*=\s*['"][^'"]+['"];/, 
-            `const CACHE_NAME = 'habit-tracker-v${Date.now()}';`
-        );
-        await fs.writeFile(path.join(outdir, 'sw.js'), versionedSw);
+        const versionRegex = /const\s+CACHE_NAME\s*=\s*['"][^'"]+['"];/;
+        
+        if (versionRegex.test(swContent)) {
+            const versionedSw = swContent.replace(
+                versionRegex, 
+                `const CACHE_NAME = 'habit-tracker-v${Date.now()}';`
+            );
+            await fs.writeFile(path.join(outdir, 'sw.js'), versionedSw);
+        } else {
+            // [2025-02-23] ROBUSTEZ: Alerta se o padrão de cache não for encontrado, evitando cache estagnado silencioso.
+            console.warn('⚠️ AVISO: Padrão CACHE_NAME não encontrado em sw.js. O versionamento automático falhou.');
+            await fs.copyFile('sw.js', path.join(outdir, 'sw.js'));
+        }
     } catch (e) {
         console.error('Erro ao processar sw.js:', e);
-        // Fallback para cópia simples em caso de erro
+        // Fallback para cópia simples em caso de erro de leitura/escrita
         await fs.copyFile('sw.js', path.join(outdir, 'sw.js'));
     }
 
-    await fs.cp('icons', path.join(outdir, 'icons'), { recursive: true });
-    await fs.cp('locales', path.join(outdir, 'locales'), { recursive: true });
+    // Copia diretórios recursivamente se existirem
+    try {
+        await fs.cp('icons', path.join(outdir, 'icons'), { recursive: true });
+        await fs.cp('locales', path.join(outdir, 'locales'), { recursive: true });
+    } catch (err) {
+        console.warn('Aviso ao copiar diretórios de assets:', err.message);
+    }
+    
     console.log('Arquivos estáticos copiados.');
 }
 
@@ -55,15 +71,19 @@ function watchStaticFiles() {
     console.log('Observando arquivos estáticos para mudanças...');
 
     pathsToWatch.forEach(p => {
+        // [2025-02-23] ROBUSTEZ: Verifica existência antes de assistir para evitar crash imediato.
+        if (!fsSync.existsSync(p)) {
+            return;
+        }
+
         let debounceTimeout;
-        // fs.watch pode ser instável em alguns sistemas Linux com 'recursive', mas é adequado para este escopo.
         try {
-            require('fs').watch(p, { recursive: ['icons', 'locales'].includes(p) }, (eventType, filename) => {
-                clearTimeout(debounceTimeout);
+            fsSync.watch(p, { recursive: ['icons', 'locales'].includes(p) }, (eventType, filename) => {
+                if (debounceTimeout) clearTimeout(debounceTimeout);
                 debounceTimeout = setTimeout(() => {
-                    console.log(`Mudança detectada em '${p}/${filename || ''}'. Recopiando arquivos estáticos...`);
+                    console.log(`Mudança detectada em '${p}${filename ? '/' + filename : ''}'. Recopiando arquivos estáticos...`);
                     copyStaticFiles().catch(err => console.error('Falha ao recopiar arquivos estáticos:', err));
-                }, 100);
+                }, 100); // Debounce de 100ms
             });
         } catch (err) {
             console.warn(`Aviso: Não foi possível iniciar watch para ${p}.`, err.message);
@@ -139,7 +159,7 @@ async function build() {
 
             // CORREÇÃO CRÍTICA: Inicia um servidor local servindo a pasta 'public'.
             // Isso resolve o erro "ServiceWorker script origin does not match" garantindo
-            // que index.html e sw.js sejam servidos da mesma raiz (ex: localhost:8000).
+            // que index.html e sw.js sejam servidos da mesma raiz.
             const { host, port } = await ctx.serve({
                 servedir: outdir,
                 port: 8000, // Porta preferencial, fará fallback se ocupada
@@ -154,8 +174,6 @@ async function build() {
             console.log('Pressione Ctrl+C para sair.');
 
             // [2025-01-15] ROBUSTEZ: Implementação de encerramento gracioso (Graceful Shutdown).
-            // Garante que o contexto do esbuild seja descartado e o processo encerrado corretamente
-            // ao receber um sinal de interrupção (como Ctrl+C).
             const handleExit = async () => {
                 console.log('\nEncerrando servidor de desenvolvimento...');
                 try {

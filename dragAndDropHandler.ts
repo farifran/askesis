@@ -1,13 +1,9 @@
 
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// [ANALYSIS PROGRESS]: 100% - Análise concluída. Implementada otimização de renderização no evento 'dragover' para evitar layout thrashing e removida redundância na limpeza de listeners (DRY).
-// UX UPDATE [2025-01-17]: Adicionado Auto-Scroll suave para permitir arrastar itens para fora da área visível atual.
-// PERFORMANCE UPDATE [2025-01-20]: Decoupled Rendering. Visual updates now run in a rAF loop separate from the high-frequency dragover event.
-// FIX [2025-02-23]: Updated Auto-Scroll to target 'main' element due to Flow Layout change.
+// [ANALYSIS PROGRESS]: 100% - Análise concluída. Otimização final: Remoção de busca DOM redundante para o container de scroll. O argumento 'habitContainer' é usado diretamente.
 
 import { ui } from './ui';
 import { isCurrentlySwiping } from './swipeHandler';
@@ -44,7 +40,6 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
     // Variáveis de estado para Auto-Scroll
     let scrollVelocity = 0;
     let animationFrameId: number | null = null;
-    let scrollContainer: HTMLElement | null = null;
 
     /**
      * UX & PERFORMANCE: Loop de animação unificado para Auto-Scroll e Atualizações Visuais.
@@ -52,8 +47,8 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
      */
     function _animationLoop() {
         // 1. Auto-Scroll Logic
-        if (scrollVelocity !== 0 && scrollContainer) {
-            scrollContainer.scrollBy(0, scrollVelocity);
+        if (scrollVelocity !== 0) {
+            habitContainer.scrollBy(0, scrollVelocity);
         }
 
         // 2. Visual Updates Logic (Dirty Checking)
@@ -135,34 +130,27 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
         const dropZone = target.closest<HTMLElement>('.drop-zone');
         
         // UX: Lógica de detecção de borda para Auto-Scroll
-        // Find the scrollable container (#habit-container) dynamically
-        if (!scrollContainer) {
-            scrollContainer = document.getElementById('habit-container');
-        }
-
+        // REFACTOR [2025-02-23]: Usamos o 'habitContainer' passado como argumento, removendo a busca redundante pelo ID.
+        // Isso garante que estamos referenciando o mesmo elemento que o restante da UI.
+        
         // AUTO-SCROLL LOGIC UPDATE [2025-02-23]: Global Viewport Detection.
-        // Instead of calculating relative to the container element (which can be tricky with complex layouts),
-        // we use absolute viewport coordinates. If the finger/cursor is at the top/bottom of the SCREEN,
-        // we scroll the container.
-        if (scrollContainer) {
-            const { clientY } = e;
-            const viewportHeight = window.innerHeight;
-            
-            // Top Zone: 0 to SCROLL_ZONE_SIZE
-            if (clientY < SCROLL_ZONE_SIZE) {
-                // Moving UP: Closer to 0 = Faster speed
-                const intensity = 1 - (Math.max(0, clientY) / SCROLL_ZONE_SIZE);
-                scrollVelocity = -(BASE_SCROLL_SPEED + (intensity * intensity * (MAX_SCROLL_SPEED - BASE_SCROLL_SPEED)));
-            } 
-            // Bottom Zone: (Height - Zone) to Height
-            else if (clientY > (viewportHeight - SCROLL_ZONE_SIZE)) {
-                // Moving DOWN: Closer to bottom = Faster speed
-                const intensity = 1 - ((viewportHeight - clientY) / SCROLL_ZONE_SIZE);
-                scrollVelocity = BASE_SCROLL_SPEED + (intensity * intensity * (MAX_SCROLL_SPEED - BASE_SCROLL_SPEED));
-            } 
-            else {
-                scrollVelocity = 0;
-            }
+        const { clientY } = e;
+        const viewportHeight = window.innerHeight;
+        
+        // Top Zone: 0 to SCROLL_ZONE_SIZE
+        if (clientY < SCROLL_ZONE_SIZE) {
+            // Moving UP: Closer to 0 = Faster speed
+            const intensity = 1 - (Math.max(0, clientY) / SCROLL_ZONE_SIZE);
+            scrollVelocity = -(BASE_SCROLL_SPEED + (intensity * intensity * (MAX_SCROLL_SPEED - BASE_SCROLL_SPEED)));
+        } 
+        // Bottom Zone: (Height - Zone) to Height
+        else if (clientY > (viewportHeight - SCROLL_ZONE_SIZE)) {
+            // Moving DOWN: Closer to bottom = Faster speed
+            const intensity = 1 - ((viewportHeight - clientY) / SCROLL_ZONE_SIZE);
+            scrollVelocity = BASE_SCROLL_SPEED + (intensity * intensity * (MAX_SCROLL_SPEED - BASE_SCROLL_SPEED));
+        } 
+        else {
+            scrollVelocity = 0;
         }
 
         if (!draggedHabitObject || !draggedHabitOriginalTime || !dropZone) {
@@ -242,9 +230,6 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
         nextReorderTargetId = null;
         nextReorderPosition = null;
         isDropValid = false;
-        
-        // Reset scroll container reference
-        scrollContainer = null;
     }
 
 

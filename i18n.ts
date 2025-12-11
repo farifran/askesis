@@ -3,11 +3,11 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// [ANALYSIS PROGRESS]: 100% - Análise concluída. Implementado cache para Intl.PluralRules na função 't' para otimizar performance em renderizações frequentes.
+// [ANALYSIS PROGRESS]: 100% - Análise concluída. O módulo de internacionalização gerencia corretamente o carregamento dinâmico de JSONs, cache de PluralRules e atualização imperativa do DOM. Imports não utilizados removidos.
 
 import { state, Habit, LANGUAGES, PredefinedHabit, TimeOfDay, getScheduleForDate, invalidateChartCache } from './state';
 import { ui } from './ui';
-import { renderApp, updateHeaderTitle, setupManageModal, initLanguageFilter } from './render';
+import { renderApp, setupManageModal, initLanguageFilter } from './render';
 import { pushToOneSignal, getDateTimeFormat } from './utils';
 
 type PluralableTranslation = { one: string; other: string };

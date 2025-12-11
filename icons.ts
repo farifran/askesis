@@ -3,7 +3,7 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// [ANALYSIS PROGRESS]: 100% - Análise concluída. Repositório central de ícones SVG. Código limpo e otimizado com reutilização de strings (DRY).
+// [ANALYSIS PROGRESS]: 100% - Análise concluída. Repositório central de ícones validado. Otimização DRY aplicada e função de lookup protegida com fallback padrão.
 
 import { TimeOfDay } from './state';
 
@@ -75,5 +75,8 @@ export function getTimeOfDayIcon(time: TimeOfDay): string {
         case 'Morning': return icons.morning;
         case 'Afternoon': return icons.afternoon;
         case 'Evening': return icons.evening;
+        // FALLBACK DE SEGURANÇA [2025-02-23]: Garante que a função sempre retorne uma string válida,
+        // mesmo se o valor de 'time' for inválido em tempo de execução (dados corrompidos).
+        default: return icons.morning;
     }
 }

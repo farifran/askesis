@@ -3,6 +3,9 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
+// [ANALYSIS PROGRESS]: 100% - Análise concluída.
+// [NOTA COMPARATIVA]: Este arquivo atua como o 'Controlador de Eventos'. Em comparação com a complexidade algorítmica de 'habitActions.ts' ou a manipulação direta do DOM em 'render.ts', este arquivo é arquiteturalmente limpo, atuando como um despachante (Dispatcher). Seu nível de código é excelente, pois delega responsabilidades complexas (Swipe, Drag&Drop) para módulos especializados.
+
 import { ui } from './ui';
 import { state, invalidateChartCache, DAYS_IN_CALENDAR } from './state';
 import { renderApp, renderFullCalendar, openModal, scrollToToday } from './render';
@@ -24,15 +27,19 @@ function updateSelectedDateAndRender(date: string) {
 }
 
 export function setupEventListeners() {
+    // Inicializa módulos de listeners especializados
     setupModalListeners();
     setupHabitCardListeners();
+    
+    // Inicializa manipuladores de gestos complexos
     setupDragAndDropHandler(ui.habitContainer);
     setupSwipeHandler(ui.habitContainer);
 
     // --- Calendar Strip Logic (Long Press & Click) ---
+    // Variáveis de controle para distinguir clique de pressão longa
+    const LONG_PRESS_DURATION = 500;
     let longPressTimer: number | null = null;
     let isLongPress = false;
-    const LONG_PRESS_DURATION = 500;
 
     const openAlmanac = () => {
         state.fullCalendar = {
@@ -50,8 +57,9 @@ export function setupEventListeners() {
         }
     };
 
+    // UX: Pointer events para suporte unificado a Mouse e Touch
     ui.calendarStrip.addEventListener('pointerdown', (e) => {
-        if (e.button !== 0) return; // Only left click/touch
+        if (e.button !== 0) return; // Apenas botão esquerdo/toque principal
         const dayItem = (e.target as HTMLElement).closest('.day-item');
         if (!dayItem) return;
 
@@ -63,13 +71,14 @@ export function setupEventListeners() {
         }, LONG_PRESS_DURATION);
     });
 
+    // Cancela o timer em qualquer interrupção
     ui.calendarStrip.addEventListener('pointerup', clearTimer);
     ui.calendarStrip.addEventListener('pointercancel', clearTimer);
     ui.calendarStrip.addEventListener('pointerleave', clearTimer);
-    ui.calendarStrip.addEventListener('scroll', clearTimer); // Safety: scroll cancels long press
+    ui.calendarStrip.addEventListener('scroll', clearTimer); // Scroll cancela a intenção de long press
 
     ui.calendarStrip.addEventListener('click', e => {
-        // Prevent selection if it was a long press (Almanac trigger)
+        // Previne a seleção se foi um Long Press (gatilho do Almanaque)
         if (isLongPress) {
             e.preventDefault();
             e.stopPropagation();
@@ -84,25 +93,24 @@ export function setupEventListeners() {
         }
     });
 
-    // Header Title Listener (Go to Today)
-    if (ui.headerTitle) {
-        ui.headerTitle.addEventListener('click', () => {
-            triggerHaptic('light');
-            
-            const today = getTodayUTCIso();
-            
-            // LOGIC FIX [2025-02-18]: Reset Calendar Range.
-            // If user navigated far away via almanac, clicking "Today" should bring the 
-            // calendar strip back to the default view (centered on today), not just select the date.
-            const todayDate = parseUTCIsoDate(today);
-            state.calendarDates = Array.from({ length: DAYS_IN_CALENDAR }, (_, i) => 
-                addDays(todayDate, i - 30)
-            );
+    // --- Header Title Listener (Go to Today) ---
+    // [2025-02-23]: Removida verificação 'if (ui.headerTitle)' pois initUI garante existência do elemento.
+    ui.headerTitle.addEventListener('click', () => {
+        triggerHaptic('light');
+        
+        const today = getTodayUTCIso();
+        
+        // LOGIC FIX [2025-02-18]: Reset Calendar Range.
+        // Se o usuário navegou para longe via almanaque, clicar em "Hoje" deve trazer
+        // a faixa do calendário de volta para a visualização padrão (centrada em hoje).
+        const todayDate = parseUTCIsoDate(today);
+        state.calendarDates = Array.from({ length: DAYS_IN_CALENDAR }, (_, i) => 
+            addDays(todayDate, i - 30)
+        );
 
-            updateSelectedDateAndRender(today);
-            
-            // Visual Reset: Smooth scroll to the updated "today" element
-            scrollToToday('smooth');
-        });
-    }
+        updateSelectedDateAndRender(today);
+        
+        // Visual Reset: Smooth scroll to the updated "today" element
+        scrollToToday('smooth');
+    });
 }

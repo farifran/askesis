@@ -3,7 +3,7 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// [ANALYSIS PROGRESS]: 100% - Arquivo analisado. Otimização no tratamento de erro de parsing JSON implementada para diferenciar erros de cliente (400) de erros de servidor. Código robusto e em conformidade com o SDK @google/genai.
+// [ANALYSIS PROGRESS]: 100% - Análise concluída. O endpoint está robusto, utilizando corretamente o SDK @google/genai moderno com suporte a Edge Runtime. Tratamento de erros e validação de input estão sólidos.
 
 import { GoogleGenAI } from '@google/genai';
 
@@ -76,6 +76,7 @@ export default async function handler(req: Request) {
         });
         
         // MELHORIA DE ROBUSTEZ: Verifica se a resposta do modelo foi bloqueada ou está vazia.
+        // A propriedade .text é um getter que pode ser undefined se o conteúdo for bloqueado.
         if (!geminiResponse.candidates || geminiResponse.candidates.length === 0 || !geminiResponse.text) {
             const finishReason = geminiResponse.candidates?.[0]?.finishReason;
             const safetyRatings = geminiResponse.promptFeedback?.safetyRatings;

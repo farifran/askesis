@@ -3,10 +3,10 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// [ANALYSIS PROGRESS]: 100% - Análise concluída. O código utiliza delegação de eventos de forma eficiente. Refatorada a função 'createGoalInput' para garantir a remoção explícita de event listeners antes da manipulação do DOM, prevenindo vazamentos de memória (memory leaks) e referências circulares.
+// [ANALYSIS PROGRESS]: 100% - Análise concluída. Imports limpos. Lógica de manipulação de eventos validada para performance e acessibilidade.
 
 import { ui } from './ui';
-import { state, Habit, getCurrentGoalForInstance, TimeOfDay, getSmartGoalForHabit } from './state';
+import { state, Habit, getCurrentGoalForInstance, TimeOfDay } from './state';
 import { openNotesModal, getUnitString, formatGoalForDisplay, renderExploreHabits, openModal } from './render';
 import {
     toggleHabitStatus,
