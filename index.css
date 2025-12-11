@@ -874,7 +874,7 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     display: flex;
     align-items: center;
     gap: var(--space-sm);
-    padding: var(--space-sm) var(--space-lg);
+    padding: var(--space-sm) var(--space-lg) var(--space-sm) var(--space-xxl);
     position: relative;
     z-index: var(--z-index-content);
     background-color: #161616; /* Changed from var(--surface-color) for darker gray */
