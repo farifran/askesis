@@ -229,8 +229,8 @@ main {
     gap: var(--space-sm);
     padding-block-start: var(--space-section);
     
-    /* PADDING REDUCTION [2025-02-23]: Reduced from --space-md to 0 to minimize gap between quote and habits */
-    padding-block-end: 0;
+    /* PADDING UPDATE [2025-02-26]: Increased from 0 to --space-md to separate quote from habits */
+    padding-block-end: var(--space-md);
     
     padding-inline: var(--space-lg); /* Restore horizontal padding */
     flex-shrink: 0; /* Prevent shrinking */
@@ -238,8 +238,9 @@ main {
     /* LAYOUT LOCKING */
     z-index: var(--z-index-header);
     background-color: var(--bg-color); /* Ensure opacity */
-    /* Subtle shadow to separate from scrolling content */
-    box-shadow: 0 4px 20px -10px rgba(0,0,0,0.5);
+    
+    /* VISUAL UPDATE [2025-02-26]: Removed shadow to blend seamlessly with app background */
+    box-shadow: none;
 }
 
 .header-top {
@@ -273,7 +274,6 @@ main {
     justify-content: space-between;
     /* UPDATE: Reduzido de var(--space-md) para aproximar o título/citação da área superior */
     margin-block-start: var(--space-xs);
-    margin-block-end: var(--space-sm); /* Small visual buffer before content */
 }
 
 .app-header h2 {
@@ -538,7 +538,9 @@ main {
     scroll-snap-align: end;
 }
 .day-item:hover { background-color: var(--surface-hover); }
-.day-item.selected { background-color: var(--surface-color); }
+.day-item.selected { 
+    background-color: var(--surface-color);
+}
 
 /* UX: Feedback tátil para "Long Press" no calendário */
 .day-item.is-pressing {
@@ -633,6 +635,7 @@ main {
     
     /* UX: Padding para o conteúdo não colar nas bordas */
     padding-inline: var(--space-lg);
+    padding-top: var(--space-lg); /* Space between header and habits, matches chart margin. */
     
     /* UX: Respiro interno no final da rolagem */
     padding-bottom: var(--space-xl);
@@ -657,7 +660,7 @@ main {
     
     /* UI UPDATE: Layout Flex para Timeline */
     display: flex;
-    align-items: flex-start; /* Align top */
+    align-items: flex-start; /* [2025-02-26]: Mantém Top Alignment para Sticky */
     gap: var(--space-md);
     
     /* SINGLE SCROLL FIX: Remove scroll limits from wrappers */
@@ -675,22 +678,35 @@ main {
 .time-marker {
     flex-shrink: 0;
     width: 30px;
-    padding-top: 10px; /* Align with card text visually */
+    padding-top: 25px; /* [2025-02-26]: Ajuste fino para alinhar visualmente à base do cartão */
+    padding-bottom: 2px;
     color: #ffffff; /* Changed from var(--text-tertiary) */
     display: flex;
     justify-content: center;
     
     /* STICKY BEHAVIOR within the Unified Scroll */
     position: sticky;
-    top: 10px; /* Gruda no topo do #habit-container */
+    top: 10px; /* [2025-02-26]: Define limite de fixação no topo, permitindo rolagem inicial natural */
     z-index: var(--z-index-sticky); /* Ensure it stays above content */
     
     transition: opacity var(--transition-duration);
+    
+    /* UX FIX [2025-02-25]: Disable pointer events so dragging over the icon hits the drop zone behind it */
+    pointer-events: none;
 }
 .time-marker svg {
     /* Reduced size from 24px to 21px (~10%) */
     width: 21px;
     height: 21px;
+}
+
+/* VISUAL ALIGNMENT FIX [2025-02-26]: The 'Morning' (Sunrise) icon tweaks. */
+.habit-group-wrapper[data-time-wrapper="Morning"] .time-marker {
+    padding-bottom: 12px; /* User adjustment: Specific clearance for Morning */
+}
+.habit-card[data-time="Morning"] .time-of-day-icon svg,
+.habit-group-wrapper[data-time-wrapper="Morning"] .time-marker svg {
+    transform: translateY(-2px);
 }
 
 /* SCROLLBAR CUSTOMIZADA (REMOVIDA) */
@@ -729,6 +745,9 @@ body.is-dragging-active .habit-group-wrapper.is-collapsible {
     /* SINGLE SCROLL FIX: Remove internal scroll */
     height: auto; 
     overflow: visible;
+    
+    /* FIX [2025-02-25]: Ensure z-index is higher than time-marker to catch pointer events */
+    z-index: var(--z-index-content); 
 }
 
 /* Quando arrastando, relaxamos o containment e a altura para permitir fluidez */
@@ -795,6 +814,11 @@ body.is-dragging-active .habit-group {
     background-color: var(--surface-color);
 }
 
+/* FIX [2025-02-25]: Disable pointer events on children to ensure dragover hits the container or main placeholder */
+.empty-group-placeholder * {
+    pointer-events: none;
+}
+
 .habit-group-wrapper:not(.has-habits) .empty-group-placeholder.show-smart-placeholder,
 body.is-dragging-active .habit-group-wrapper:not(.has-habits) .empty-group-placeholder {
     display: flex;
@@ -837,13 +861,15 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     transform: scaleX(0);
 }
 .habit-card.snoozed::before {
-    inset-inline-start: var(--space-xs);
+    /* VISUAL UPDATE [2025-02-26]: Aumentado de space-xs (4px) para space-md (12px) para desgrudar da borda */
+    inset-inline-start: var(--space-md);
     background-color: var(--text-tertiary);
     transform: scaleX(1);
     transform-origin: left;
 }
 .habit-card.completed::before {
-    inset-inline-end: var(--space-xs);
+    /* VISUAL UPDATE [2025-02-26]: Aumentado de space-xs (4px) para space-md (12px) para desgrudar da borda */
+    inset-inline-end: var(--space-md);
     background-color: var(--accent-blue);
     transform: scaleX(1);
     transform-origin: right;
@@ -873,8 +899,11 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 .habit-content-wrapper {
     display: flex;
     align-items: center;
-    gap: var(--space-sm);
-    padding: var(--space-sm) var(--space-lg) var(--space-sm) var(--space-xxl);
+    gap: var(--space-md); /* Changed from sm (8px) to md (12px) for spacing */
+    /* VISUAL UPDATE [2025-02-26]: Ajuste de padding para 32px (space-xxl) para triplicar a margem visual durante o swipe (de 6px para 18px).
+       Math: 32px (pad) + 34px (icon) + 12px (gap) = 78px. 
+       Swipe Width: 60px. Buffer: 18px. */
+    padding: var(--space-sm) var(--space-xxl);
     position: relative;
     z-index: var(--z-index-content);
     background-color: #161616; /* Changed from var(--surface-color) for darker gray */
@@ -894,7 +923,8 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 .habit-card:hover .habit-content-wrapper { background-color: #202020; }
 .habit-card.completed .habit-content-wrapper { 
     background-color: color-mix(in srgb, var(--accent-blue) 20%, #161616);
-    opacity: 0.75; /* UX: De-emphasize completed items */
+    /* BUGFIX [2025-02-26]: Removed opacity to prevent transparency issues when dragging or overlaying content */
+    opacity: 1 !important;
 }
 .habit-card.snoozed .habit-content-wrapper {
     background-color: var(--surface-snoozed);
@@ -938,18 +968,10 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     gap: var(--space-xs);
     transition: opacity var(--transition-duration-slow);
 }
-.habit-card .time-of-day-icon {
-    margin-inline-end: var(--space-xs);
-}
 .time-of-day-icon svg {
     width: 18px;
     height: 100%;
     stroke: currentColor;
-}
-
-/* UI CLEANUP [2025-02-23]: Hide duplicated time icons inside cards ONLY. Keep visible for placeholder. */
-.habit-card .time-of-day-icon {
-    display: none !important;
 }
 
 .habit-center-group {
@@ -1143,16 +1165,24 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 }
 
 /* REFINAMENTO VISUAL [2025-01-16]: Estilos do wrapper de status 'Adiado' para corrigir sobreposição e alinhar com o ícone. */
-.snoozed-wrapper {
+.snoozed-wrapper, .completed-wrapper {
     display: flex;
     align-items: center;
     gap: var(--space-sm);
     padding: 2px 6px;
     border-radius: var(--border-radius-small);
+}
+
+.snoozed-wrapper {
     background-color: rgba(0, 0, 0, 0.2); /* Contraste sutil sobre o fundo snoozed */
 }
 
-/* Generic SVG styling for snoozed icon inside wrapper */
+/* VISUAL UPDATE [2025-02-26]: Wrapper para estado concluído combinando com estilo de adiado */
+.completed-wrapper {
+    background-color: rgba(0, 122, 255, 0.15); /* Contraste sutil sobre o fundo completed */
+}
+
+/* Generic SVG styling for snoozed/checked icon inside wrapper */
 .snoozed-wrapper svg {
     width: 16px;
     height: 16px;
@@ -1160,9 +1190,24 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     display: block;
 }
 
+.completed-wrapper svg {
+    width: 16px;
+    height: 16px;
+    stroke: var(--accent-blue);
+    display: block;
+}
+
 .snoozed-text {
     font-size: 12px;
     color: var(--text-tertiary);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.completed-text {
+    font-size: 12px;
+    color: var(--accent-blue);
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.5px;
@@ -1377,7 +1422,8 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     inset: -2px;
     border-radius: var(--border-radius-pill);
     background-color: transparent;
-    box-shadow: 0 0 10px var(--accent-blue);
+    /* VISUAL UPDATE [2025-02-26]: Reduced glow effect size from 10px to 5px */
+    box-shadow: 0 0 5px var(--accent-blue);
     opacity: 0;
     animation: glow-pulse 2.5s infinite ease-in-out;
     pointer-events: none;
@@ -1635,14 +1681,27 @@ input:disabled + .slider {
     max-width: 480px;
     padding: 0;
 }
+
+/* FIX [2025-02-26]: Move spacing from scrollable grid to fixed header to preserve margin during scroll */
+#icon-picker-modal .modal-header {
+    padding-bottom: var(--space-xl);
+    position: relative; /* Ensure z-index works if needed */
+    z-index: 2; 
+    background-color: var(--surface-color); /* Ensure opaque background if scrolling happens near */
+    /* However, since they are flex siblings, grid shouldn't scroll behind header unless negative margin.
+       But adding z-index/bg is safe practice. */
+}
+
 #icon-picker-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(60px, 1fr));
     gap: var(--space-md);
     max-height: 300px;
     overflow-y: auto;
-    padding: var(--space-xl);
-    padding-top: var(--space-md);
+    
+    /* UX FIX [2025-02-26]: Padding adjusted to move top spacing to header */
+    padding: 4px var(--space-xl) var(--space-xl); 
+    
     --current-habit-bg-color: #000000;
     --current-habit-fg-color: #e5e5e5;
     /* UX: Evita scroll chaining */
@@ -2210,7 +2269,6 @@ body.is-offline #ai-eval-btn .offline-icon {
 @media (max-width: 767px) {
     .app-header {
         gap: var(--space-sm);
-        margin-block-end: var(--space-xxl);
     }
     .app-header h2 { font-size: 24px; }
     .stoic-quote { font-size: 12px; }

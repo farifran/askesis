@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -277,13 +276,18 @@ export function setupSwipeHandler(habitContainer: HTMLElement) {
 
         const content = activeCard.querySelector<HTMLElement>(DOM_SELECTORS.HABIT_CONTENT_WRAPPER);
         if (content) {
-            content.draggable = false;
-            dragEnableTimer = window.setTimeout(() => {
-                if (content && swipeDirection === 'none') {
-                    content.draggable = true;
-                }
-                dragEnableTimer = null;
-            }, 150);
+            // FIX [2025-02-26]: Só desabilitamos 'draggable' se NÃO for mouse.
+            // Para mouse, queremos que o arrasto nativo (Drag & Drop) inicie instantaneamente sem delay.
+            // Para touch, precisamos desabilitar brevemente para permitir a detecção de swipe ou long-press.
+            if (e.pointerType !== 'mouse') {
+                content.draggable = false;
+                dragEnableTimer = window.setTimeout(() => {
+                    if (content && swipeDirection === 'none') {
+                        content.draggable = true;
+                    }
+                    dragEnableTimer = null;
+                }, 150);
+            }
         }
 
         window.addEventListener('pointermove', handlePointerMove);

@@ -73,6 +73,7 @@
     "frequency_ariaLabel": "Seletor de frequência",
     "habitColorPicker_ariaLabel": "Selecionar cor do hábito",
     "habitConsolidatedMessage": "✅ Hábito consolidado!",
+    "habitDone": "FEITO",
     "habitEnd_ariaLabel": "Encerrar Hábito",
     "habitGoalDecrement_ariaLabel": "Diminuir meta",
     "habitGoalIncrement_ariaLabel": "Aumentar meta",

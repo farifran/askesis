@@ -79,21 +79,23 @@ export function updateGoalContentElement(goalEl: HTMLElement, status: HabitStatu
             setTextContent(wrapper.querySelector('.unit'), unitVal);
 
         } else {
-            // Checkmark
-            if (goalEl.textContent?.includes('✓')) return;
+            // Checkmark (Non-numeric)
+            // VISUAL UPDATE [2025-02-26]: Use the pill style (wrapper + icon + text) to match Snoozed style.
             
+            if (goalEl.querySelector('.completed-wrapper')) return;
+
             goalEl.replaceChildren();
             
-            const progDiv = document.createElement('div');
-            progDiv.className = 'progress';
-            progDiv.style.color = 'var(--accent-blue)';
-            progDiv.textContent = '✓';
+            const wrapper = document.createElement('div');
+            wrapper.className = 'completed-wrapper';
+            wrapper.innerHTML = icons.check; // Add check icon
             
-            const unitDiv = document.createElement('div');
-            unitDiv.className = 'unit';
-            unitDiv.textContent = getUnitString(habit, 1);
+            const textSpan = document.createElement('span');
+            textSpan.className = 'completed-text';
+            textSpan.textContent = t('habitDone');
             
-            goalEl.append(progDiv, unitDiv);
+            wrapper.appendChild(textSpan);
+            goalEl.appendChild(wrapper);
         }
     } else if (status === CSS_CLASSES.SNOOZED) {
         if (goalEl.querySelector('.snoozed-wrapper')) return;
@@ -320,10 +322,6 @@ export function createHabitCardElement(habit: Habit, time: TimeOfDay): HTMLEleme
     contentWrapper.setAttribute('tabindex', '0');
     contentWrapper.setAttribute('aria-label', `${name}, ${t(`filter${time}`)}, ${status}`);
 
-    const timeOfDayIcon = document.createElement('div');
-    timeOfDayIcon.className = 'time-of-day-icon';
-    timeOfDayIcon.innerHTML = getTimeOfDayIcon(time);
-    
     const icon = document.createElement('div');
     icon.className = 'habit-icon';
     icon.style.backgroundColor = `${habit.color}30`;
@@ -346,7 +344,8 @@ export function createHabitCardElement(habit: Habit, time: TimeOfDay): HTMLEleme
     goal.className = 'habit-goal';
     updateGoalContentElement(goal, status, habit, time, habitInstanceData);
 
-    contentWrapper.append(timeOfDayIcon, icon, details, goal);
+    // FIX [2025-02-26]: Removed redundant 'timeOfDayIcon' from append to clean up card layout.
+    contentWrapper.append(icon, details, goal);
     card.append(actionsLeft, actionsRight, contentWrapper);
     
     habitElementCache.set(`${habit.id}|${time}`, card);

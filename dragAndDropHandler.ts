@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -128,25 +127,29 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
      */
     function _calculateDragState(e: DragEvent) {
         const target = e.target as HTMLElement;
-        const dropZone = target.closest<HTMLElement>(DOM_SELECTORS.DROP_ZONE);
+        
+        // UX IMPROVEMENT [2025-02-25]: Robust Drop Zone Detection.
+        // Instead of requiring the user to hover precisely over the list (UL), we allow hovering
+        // anywhere inside the wrapper (including the time marker or padding). This prevents
+        // the "stuck card" feeling when dragging to an empty group.
+        let dropZone = target.closest<HTMLElement>(DOM_SELECTORS.DROP_ZONE);
+        if (!dropZone) {
+            // If not directly over the list, check if we are in the wrapper and find the list inside it.
+            const wrapper = target.closest<HTMLElement>('.habit-group-wrapper');
+            if (wrapper) {
+                dropZone = wrapper.querySelector<HTMLElement>(DOM_SELECTORS.DROP_ZONE);
+            }
+        }
         
         // UX: Lógica de detecção de borda para Auto-Scroll
-        // REFACTOR [2025-02-23]: Usamos o 'habitContainer' passado como argumento, removendo a busca redundante pelo ID.
-        // Isso garante que estamos referenciando o mesmo elemento que o restante da UI.
-        
-        // AUTO-SCROLL LOGIC UPDATE [2025-02-23]: Global Viewport Detection.
         const { clientY } = e;
         const viewportHeight = window.innerHeight;
         
-        // Top Zone: 0 to SCROLL_ZONE_SIZE
         if (clientY < SCROLL_ZONE_SIZE) {
-            // Moving UP: Closer to 0 = Faster speed
             const intensity = 1 - (Math.max(0, clientY) / SCROLL_ZONE_SIZE);
             scrollVelocity = -(BASE_SCROLL_SPEED + (intensity * intensity * (MAX_SCROLL_SPEED - BASE_SCROLL_SPEED)));
         } 
-        // Bottom Zone: (Height - Zone) to Height
         else if (clientY > (viewportHeight - SCROLL_ZONE_SIZE)) {
-            // Moving DOWN: Closer to bottom = Faster speed
             const intensity = 1 - ((viewportHeight - clientY) / SCROLL_ZONE_SIZE);
             scrollVelocity = BASE_SCROLL_SPEED + (intensity * intensity * (MAX_SCROLL_SPEED - BASE_SCROLL_SPEED));
         } 
@@ -165,17 +168,25 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
         const scheduleForDay = getEffectiveScheduleForHabitOnDate(draggedHabitObject, state.selectedDate);
         
         const isSameGroup = newTime === draggedHabitOriginalTime;
-        // É inválido se tentar mover para um grupo onde o hábito já existe (exceto se for o mesmo grupo, que é reordenação)
-        const isInvalidDrop = !isSameGroup && scheduleForDay.includes(newTime);
         
+        // Normal validation: Invalid if different group AND target group already contains this habit.
+        let isInvalidDrop = !isSameGroup && scheduleForDay.includes(newTime);
+    
+        // BUGFIX [2025-02-25]: PRIORITY OVERRIDE for Single Habit Instance.
+        // If the habit effectively only has 1 instance on this day (or zero, defensively), 
+        // AND we are moving it to a DIFFERENT group, we explicitly ALLOW the move.
+        // This bypasses any subtle cache/state desync issues that might falsely flag 'isInvalidDrop' as true.
+        // We do NOT override for `isSameGroup` because dragging to the same group without reordering targets is a no-op anyway.
+        if (!isSameGroup && scheduleForDay.length <= 1) {
+            isInvalidDrop = false; 
+        }
+    
         isDropValid = !isInvalidDrop;
 
         // Cálculo da posição do indicador
         const cardTarget = target.closest<HTMLElement>(DOM_SELECTORS.HABIT_CARD);
-        if (cardTarget && cardTarget !== draggedElement) {
+        if (cardTarget && cardTarget !== draggedElement && cardTarget.parentElement === dropZone) {
             const targetRect = cardTarget.getBoundingClientRect();
-            // Calculation needs to be relative to the parent drop zone (which is relatively positioned)
-            // But offsetTop works relative to the parent anyway.
             const midY = targetRect.top + targetRect.height / 2;
             const position = e.clientY < midY ? 'before' : 'after';
 
@@ -186,6 +197,11 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
             nextIndicatorTop = `${indicatorTopVal - (DROP_INDICATOR_HEIGHT / 2)}px`;
             nextReorderTargetId = cardTarget.dataset.habitId || null;
             nextReorderPosition = position;
+        } else {
+            // Default to appending if not over a card
+            nextReorderTargetId = null;
+            nextReorderPosition = null;
+            nextIndicatorTop = null; // Let CSS handle default or hide it
         }
     }
 
@@ -285,6 +301,7 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
             draggedElement = card;
             draggedHabitId = card.dataset.habitId;
             draggedHabitOriginalTime = card.dataset.time as TimeOfDay;
+            // UPDATE: Ensure fresh habit object reference from state
             draggedHabitObject = state.habits.find(h => h.id === draggedHabitId) || null;
 
             e.dataTransfer!.setData('text/plain', draggedHabitId);
@@ -311,7 +328,6 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
             dropIndicator.className = 'drop-indicator';
             // O indicador será anexado via loop de animação quando necessário
             
-            document.body.classList.add('is-dragging-active');
             document.body.addEventListener('dragover', handleBodyDragOver);
             document.body.addEventListener('drop', handleBodyDrop);
             document.body.addEventListener('dragend', cleanupDrag, { once: true });
@@ -319,7 +335,13 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
             // Inicia o loop de renderização desacoplado
             _startAnimationLoop();
 
+            // FIX [2025-02-26]: LAYOUT SHIFT PROTECTION.
+            // Movemos a adição da classe 'is-dragging-active' para o final da fila de eventos.
+            // Isso garante que o navegador tenha tempo de processar a imagem de arrasto (Drag Ghost)
+            // ANTES que o layout mude drasticamente (expansão das zonas ocultas da manhã/tarde).
+            // Se o layout mudar no mesmo tick do dragstart, o elemento sob o cursor muda e o browser cancela o drag.
             setTimeout(() => {
+                document.body.classList.add('is-dragging-active');
                 card.classList.add(CSS_CLASSES.DRAGGING);
             }, 0);
         }
