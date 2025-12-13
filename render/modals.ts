@@ -536,12 +536,26 @@ function _createHabitTemplateForForm(habitOrTemplate: Habit | PredefinedHabit | 
 export function openEditModal(habitOrTemplate: Habit | HabitTemplate | null) {
     const isNew = !habitOrTemplate || !('id' in habitOrTemplate);
     const form = ui.editHabitForm;
-    const noticeEl = form.querySelector<HTMLElement>('.duplicate-habit-notice')!;
-    noticeEl.classList.remove('visible');
+    
+    // FIX [2025-02-23]: Reset de estado visual de validação.
+    // Garante que mensagens de erro anteriores (duplicata ou tamanho) sejam limpas ao reabrir o modal.
+    const duplicateNoticeEl = form.querySelector<HTMLElement>('.duplicate-habit-notice')!;
+    const formNoticeEl = form.querySelector<HTMLElement>('.form-notice')!; // Seleciona o novo aviso genérico
+    const nameInput = form.elements.namedItem('habit-name') as HTMLInputElement;
+
+    duplicateNoticeEl.classList.remove('visible');
+    if (formNoticeEl) formNoticeEl.classList.remove('visible');
+    if (nameInput) nameInput.classList.remove('shake');
+    
+    // BUGFIX: Reseta o estado desabilitado do botão de salvar.
+    // Isso previne que o botão permaneça "travado" se o usuário fechou o modal 
+    // enquanto ele estava em estado de erro (ex: nome muito longo) e reabriu.
+    ui.editHabitSaveBtn.disabled = false;
+
     form.reset();
     
     const formData = _createHabitTemplateForForm(habitOrTemplate as Habit | PredefinedHabit | null, state.selectedDate);
-    const nameInput = form.elements.namedItem('habit-name') as HTMLInputElement;
+    // nameInput is already selected above
     nameInput.placeholder = t('modalEditFormNameLabel');
 
     if (isNew) {

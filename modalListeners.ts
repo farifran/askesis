@@ -160,6 +160,21 @@ function _validateHabitName(newName: string, currentHabitId?: string): boolean {
         return false;
     }
 
+    // Verifica tamanho máximo (20 caracteres)
+    if (newName.length > 20) {
+        formNoticeEl.textContent = t('noticeNameTooLong');
+        formNoticeEl.classList.add('visible');
+        
+        requestAnimationFrame(() => {
+            habitNameInput.classList.add('shake');
+            habitNameInput.addEventListener('animationend', () => {
+                habitNameInput.classList.remove('shake');
+            }, { once: true });
+        });
+        
+        return false;
+    }
+
     // Verifica se há duplicatas
     const isDuplicate = state.habits.some(h => {
         const { name } = getHabitDisplayInfo(h, state.selectedDate);

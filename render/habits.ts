@@ -46,71 +46,36 @@ export function updateGoalContentElement(goalEl: HTMLElement, status: HabitStatu
     const hasNumericGoal = habit.goal.type === 'pages' || habit.goal.type === 'minutes';
 
     if (status === CSS_CLASSES.COMPLETED) {
-        if (hasNumericGoal) {
-            const smartGoal = getSmartGoalForHabit(habit, state.selectedDate, time);
-            const completedGoal = dayDataForInstance?.goalOverride ?? smartGoal;
-            const displayVal = formatGoalForDisplay(completedGoal);
-            const unitVal = getUnitString(habit, completedGoal);
+        // VISUAL UPDATE [2025-02-27]: Simplificação total.
+        // Se está completo, mostramos APENAS o ícone de Check dentro da pílula.
+        // A quantidade numérica desaparece para focar na conclusão.
+        // O texto "FEITO" também foi removido.
+        
+        if (goalEl.querySelector('.completed-wrapper')) return;
 
-            let wrapper = goalEl.querySelector(`.${CSS_CLASSES.GOAL_VALUE_WRAPPER}`) as HTMLElement;
-            const controls = goalEl.querySelector(`.${CSS_CLASSES.HABIT_GOAL_CONTROLS}`);
+        goalEl.replaceChildren();
+        
+        const wrapper = document.createElement('div');
+        wrapper.className = 'completed-wrapper';
+        wrapper.innerHTML = icons.check; // Apenas o ícone
+        // Sem texto adicional
+        
+        goalEl.appendChild(wrapper);
 
-            if (controls) {
-                goalEl.replaceChildren();
-                wrapper = null as any;
-            }
-
-            if (!wrapper) {
-                wrapper = document.createElement('div');
-                wrapper.className = CSS_CLASSES.GOAL_VALUE_WRAPPER;
-                
-                const progDiv = document.createElement('div');
-                progDiv.className = 'progress';
-                progDiv.style.color = 'var(--accent-blue)';
-                
-                const unitDiv = document.createElement('div');
-                unitDiv.className = 'unit';
-                
-                wrapper.append(progDiv, unitDiv);
-                goalEl.appendChild(wrapper);
-            }
-
-            setTextContent(wrapper.querySelector('.progress'), displayVal);
-            setTextContent(wrapper.querySelector('.unit'), unitVal);
-
-        } else {
-            // Checkmark (Non-numeric)
-            // VISUAL UPDATE [2025-02-26]: Use the pill style (wrapper + icon + text) to match Snoozed style.
-            
-            if (goalEl.querySelector('.completed-wrapper')) return;
-
-            goalEl.replaceChildren();
-            
-            const wrapper = document.createElement('div');
-            wrapper.className = 'completed-wrapper';
-            wrapper.innerHTML = icons.check; // Add check icon
-            
-            const textSpan = document.createElement('span');
-            textSpan.className = 'completed-text';
-            textSpan.textContent = t('habitDone');
-            
-            wrapper.appendChild(textSpan);
-            goalEl.appendChild(wrapper);
-        }
     } else if (status === CSS_CLASSES.SNOOZED) {
+        // VISUAL UPDATE [2025-02-27]: Simplificação total.
+        // Se está adiado, mostramos APENAS o ícone de Snooze.
+        // O texto "ADIADO" foi removido.
+
         if (goalEl.querySelector('.snoozed-wrapper')) return;
 
         goalEl.replaceChildren();
         
         const wrapper = document.createElement('div');
         wrapper.className = 'snoozed-wrapper';
-        wrapper.innerHTML = icons.snoozed;
+        wrapper.innerHTML = icons.snoozed; // Apenas o ícone
+        // Sem texto adicional
         
-        const textSpan = document.createElement('span');
-        textSpan.className = 'snoozed-text';
-        textSpan.textContent = t('habitSnoozed');
-        
-        wrapper.appendChild(textSpan);
         goalEl.appendChild(wrapper);
 
     } else { 
@@ -214,6 +179,13 @@ export function updateHabitCardElement(card: HTMLElement, habit: Habit, time: Ti
         card.classList.add(status);
     }
 
+    // UX: Adiciona classe para nomes longos (mobile wrap)
+    if (name.length > 17) {
+        card.classList.add('long-name');
+    } else {
+        card.classList.remove('long-name');
+    }
+
     const isCompleted = status === CSS_CLASSES.COMPLETED;
     const icon = card.querySelector<HTMLElement>('.habit-icon');
     
@@ -301,10 +273,15 @@ export function createHabitCardElement(habit: Habit, time: TimeOfDay): HTMLEleme
     card.dataset.habitId = habit.id;
     card.dataset.time = time;
 
+    const { name, subtitle } = getHabitDisplayInfo(habit, state.selectedDate);
+
+    // UX: Adiciona classe para nomes longos (mobile wrap)
+    if (name.length > 17) {
+        card.classList.add('long-name');
+    }
+
     if (streak >= STREAK_CONSOLIDATED) card.classList.add('consolidated');
     else if (streak >= STREAK_SEMI_CONSOLIDATED) card.classList.add('semi-consolidated');
-
-    const { name, subtitle } = getHabitDisplayInfo(habit, state.selectedDate);
 
     const actionsLeft = document.createElement('div');
     actionsLeft.className = 'habit-actions-left';
