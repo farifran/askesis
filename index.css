@@ -1,4 +1,5 @@
 
+
 /* 
  * [ANALYSIS PROGRESS]: 100% - Análise concluída.
  * [2025-02-23]: Auditoria de CSS Completa.
@@ -272,8 +273,7 @@ main {
     align-items: center;
     gap: var(--space-xl);
     justify-content: space-between;
-    /* UPDATE: Reduzido de var(--space-md) para aproximar o título/citação da área superior */
-    margin-block-start: var(--space-xs);
+    margin-block-start: var(--space-md);
 }
 
 .app-header h2 {
@@ -903,12 +903,12 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     /* VISUAL UPDATE [2025-02-26]: Ajuste de padding para 32px (space-xxl) para triplicar a margem visual durante o swipe (de 6px para 18px).
        Math: 32px (pad) + 34px (icon) + 12px (gap) = 78px. 
        Swipe Width: 60px. Buffer: 18px. */
-    padding: var(--space-sm) var(--space-xxl);
+    padding: var(--space-sm) var(--space-md) var(--space-sm) var(--space-xxl);
     position: relative;
     z-index: var(--z-index-content);
     background-color: #161616; /* Changed from var(--surface-color) for darker gray */
     cursor: pointer;
-    transition: transform var(--transition-duration-slow) cubic-bezier(0.23, 1, 0.32, 1), background-color var(--transition-duration);
+    transition: transform var(--transition-duration-slow) cubic-bezier(0.23, 1, 0.32, 1), background-color var(--transition-duration), padding-right var(--transition-duration);
     border-radius: 9px;
     flex-grow: 1;
     touch-action: pan-y;
@@ -929,6 +929,12 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 .habit-card.snoozed .habit-content-wrapper {
     background-color: var(--surface-snoozed);
 }
+
+.habit-card.completed .habit-content-wrapper,
+.habit-card.snoozed .habit-content-wrapper {
+    padding-right: var(--space-xl);
+}
+
 .habit-card.dragging { opacity: 0.4; }
 .habit-card.is-swiping .habit-content-wrapper {
     transition: none; /* Desativa transição durante o deslize manual */
@@ -1028,6 +1034,29 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     text-decoration-thickness: 2px;
 }
 
+/* UX: Long Habit Names */
+.habit-card.long-name .habit-details .name {
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    line-height: 1.2;
+}
+.habit-card.long-name .habit-details .subtitle {
+    display: none;
+}
+
+.habit-card.completed.long-name .habit-details .name,
+.habit-card.snoozed.long-name .habit-details .name {
+    white-space: nowrap;
+    display: block; /* Overrides -webkit-box */
+}
+
+.habit-card.completed.long-name .habit-details .subtitle,
+.habit-card.snoozed.long-name .habit-details .subtitle {
+    display: block;
+}
+
 .habit-goal {
     text-align: right;
     display: flex;
@@ -1043,7 +1072,7 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 .habit-goal-controls {
     display: flex;
     align-items: center;
-    gap: 0;
+    gap: var(--space-xs);
     transition: opacity var(--transition-duration);
 }
 .goal-control-btn {
@@ -1239,7 +1268,7 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-block-end: var(--space-lg);
+    margin-block-end: var(--space-sm);
 }
 /* REFINAMENTO DE UI [2024-11-25]: Estilos atualizados para acomodar um novo cabeçalho de gráfico com título e subtítulo. */
 .chart-title-group {
@@ -1256,13 +1285,14 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     color: var(--accent-green);
 }
 .chart-subtitle {
-    font-size: 13px;
+    font-size: 11px;
     font-weight: 500;
     color: var(--text-secondary);
+    line-height: 1.2;
 }
 .chart-wrapper { 
     position: relative; 
-    height: 100px; 
+    height: 80px; 
     /* UX [2025-01-24]: Permite scroll vertical (pan-y) mas captura horizontal */
     touch-action: pan-y; 
     user-select: none; 
@@ -1303,7 +1333,7 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 }
 .chart-empty-state {
     display: flex; align-items: center; justify-content: center;
-    height: 100px; color: var(--text-tertiary); font-style: italic; text-align: center;
+    height: 80px; color: var(--text-tertiary); font-style: italic; text-align: center;
 }
 .chart-evolution-indicator {
     position: absolute; font-size: 13px; font-weight: 700;
@@ -1823,12 +1853,11 @@ input:disabled + .slider {
     color: var(--text-tertiary);
     pointer-events: none;
 }
-.full-calendar-day.selected .day-progress-ring {
-    border: 2px solid var(--accent-blue);
+.full-calendar-day.selected .day-number {
+    font-size: 1.3em;
+    font-weight: 700;
 }
 .full-calendar-day.today .day-number {
-    background-color: transparent;
-    color: var(--accent-green);
     font-weight: 700;
 }
 .full-calendar-day.today .day-progress-ring::after {
@@ -2277,18 +2306,6 @@ body.is-offline #ai-eval-btn .offline-icon {
     #habit-container > .habit-group-wrapper:last-of-type.has-habits {
         margin-block-end: var(--space-xxl); /* Original era --space-3xl */
     }
-
-    /* UX: Nomes Longos em Mobile */
-    .habit-card.long-name .habit-details .name {
-        white-space: normal;
-        display: -webkit-box;
-        -webkit-line-clamp: 2;
-        -webkit-box-orient: vertical;
-        line-height: 1.2;
-    }
-    .habit-card.long-name .habit-details .subtitle {
-        display: none;
-    }
 }
 
 @media (min-width: 768px) {
@@ -2311,7 +2328,9 @@ body.is-offline #ai-eval-btn .offline-icon {
     }
     .empty-group-placeholder { width: 100%; }
 
-    .habit-content-wrapper { padding: var(--space-xs) var(--space-xl); }
+    .habit-content-wrapper { 
+        padding: var(--space-xs) var(--space-md) var(--space-xs) var(--space-xl); 
+    }
     /* Adjusted text size for desktop from 19px to 17px */
     .habit-details .name { font-size: 17px; }
     .habit-details .subtitle { font-size: 12px; }
