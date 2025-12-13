@@ -1,395 +1,242 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
 
-import { state, getActiveHabitsForDate, getHabitDailyInfoForDate } from './state';
+import { AppState, STATE_STORAGE_KEY, loadState, state, persistStateLocally, saveState, APP_VERSION } from './state';
+import { pushToOneSignal } from './utils';
 import { ui } from './ui';
 import { t } from './i18n';
-import { addDays, getTodayUTCIso, parseUTCIsoDate, toUTCIsoDateString, getDateTimeFormat } from './utils';
+import { hasLocalSyncKey, getSyncKey, apiFetch } from './api';
+import { renderApp, updateNotificationUI } from './render';
+import { encrypt, decrypt } from './crypto';
+import { mergeStates } from './dataMerge'; // REFACTOR: Importado do novo módulo
 
-const CHART_DAYS = 30;
-const INITIAL_SCORE = 100;
-const MAX_DAILY_CHANGE_RATE = 0.015;
+// Debounce para evitar salvar na nuvem a cada pequena alteração.
+let syncTimeout: number | null = null;
+const DEBOUNCE_DELAY = 2000; // 2 segundos
 
-type ChartDataPoint = {
-    date: string;
-    value: number;
-    completedCount: number;
-    scheduledCount: number;
-};
-
-// Variáveis de estado do módulo
-let chartInitialized = false;
-let lastChartData: ChartDataPoint[] = [];
-
-// Cache de metadados para escala (Performance)
-let chartMetadata = { minVal: 0, maxVal: 100, valueRange: 100 };
-
-// Cache de geometria do gráfico (Evita Reflow no hot-path)
-let cachedChartRect: DOMRect | null = null;
-
-// BUGFIX: Módulo-scoped para permitir reset externo quando os dados mudam
-let lastRenderedPointIndex = -1;
-
-// Cache de referências DOM (Evita querySelector no hot-path)
-let chartElements: {
-    chartSvg?: SVGSVGElement;
-    areaPath?: SVGPathElement;
-    linePath?: SVGPathElement;
-    evolutionIndicator?: HTMLElement;
-    axisStart?: HTMLElement;
-    axisEnd?: HTMLElement;
-    chartWrapper?: HTMLElement;
-    tooltip?: HTMLElement;
-    indicator?: HTMLElement;
-    // Elementos internos do Tooltip para atualização cirúrgica
-    tooltipDate?: HTMLElement;
-    tooltipScoreLabel?: HTMLElement;
-    tooltipScoreValue?: HTMLElement;
-    tooltipHabits?: HTMLElement;
-} = {};
-
-// Controle de visibilidade e observadores
-let isChartVisible = true;
-let isChartDirty = false;
-let chartObserver: IntersectionObserver | null = null;
-let resizeObserver: ResizeObserver | null = null;
-
-// INTERACTION STATE [2025-02-02]: Hoisted to module scope to allow external re-render triggers.
-let rafId: number | null = null;
-let inputClientX = 0;
+// MELHORIA DE ROBUSTEZ: Variáveis de estado para prevenir condições de corrida de sincronização.
+let isSyncInProgress = false;
+let pendingSyncState: AppState | null = null;
 
 
-function calculateChartData(): ChartDataPoint[] {
-    const data: ChartDataPoint[] = [];
-    const endDate = parseUTCIsoDate(state.selectedDate);
-    const startDate = addDays(endDate, -(CHART_DAYS - 1));
-    const todayISO = getTodayUTCIso();
-
-    let previousDayValue = INITIAL_SCORE;
-
-    for (let i = 0; i < CHART_DAYS; i++) {
-        const currentDate = addDays(startDate, i);
-        const currentDateISO = toUTCIsoDateString(currentDate);
-
-        const activeHabitsData = getActiveHabitsForDate(currentDate);
-        
-        // FIX [2025-02-23]: Use Lazy Loading Accessor instead of direct state access.
-        // This ensures the chart works even if the user scrolls back to archived dates.
-        const dailyInfo = getHabitDailyInfoForDate(currentDateISO);
-
-        let scheduledCount = 0;
-        let completedCount = 0;
-        let pendingCount = 0;
-
-        activeHabitsData.forEach(({ habit, schedule: scheduleForDay }) => {
-            const instances = dailyInfo[habit.id]?.instances || {};
-            scheduledCount += scheduleForDay.length;
-            scheduleForDay.forEach(time => {
-                const status = instances[time]?.status ?? 'pending';
-                if (status === 'completed') completedCount++;
-                else if (status === 'pending') pendingCount++;
-            });
-        });
-
-        const hasPending = pendingCount > 0;
-        const isToday = currentDateISO === todayISO;
-        // CORREÇÃO [2025-02-05]: Identifica se a data é futura (maior que hoje).
-        const isFuture = currentDateISO > todayISO;
-
-        let currentValue: number;
-        
-        // LÓGICA DE PROJEÇÃO:
-        // 1. Futuro: Congela a pontuação (não penaliza dias que ainda não chegaram).
-        // 2. Hoje com pendências: Congela a pontuação (dá chance de completar).
-        // 3. Passado ou Hoje completo: Calcula a variação baseada no desempenho.
-        if (isFuture || (isToday && hasPending)) {
-            currentValue = previousDayValue;
-        } else if (scheduledCount > 0) {
-            const completionRatio = completedCount / scheduledCount;
-            const performanceFactor = (completionRatio - 0.5) * 2;
-            const dailyChange = performanceFactor * MAX_DAILY_CHANGE_RATE;
-            currentValue = previousDayValue * (1 + dailyChange);
-        } else {
-            currentValue = previousDayValue;
-        }
-        
-        data.push({ date: currentDateISO, value: currentValue, completedCount, scheduledCount });
-        previousDayValue = currentValue;
-    }
-    return data;
+// Interface para a carga de dados que o servidor manipula
+interface ServerPayload {
+    lastModified: number;
+    state: string; // Esta é a string criptografada
 }
 
-function _updateChartDOM(chartData: ChartDataPoint[]) {
-    const { chartSvg, areaPath, linePath, evolutionIndicator, axisStart, axisEnd, chartWrapper } = chartElements;
-    if (!chartSvg || !areaPath || !linePath || !evolutionIndicator || !axisStart || !axisEnd || !chartWrapper) return;
+export function setSyncStatus(statusKey: 'syncSaving' | 'syncSynced' | 'syncError' | 'syncInitial') {
+    state.syncState = statusKey;
+    ui.syncStatus.textContent = t(statusKey);
+}
 
-    const firstDate = parseUTCIsoDate(chartData[0].date);
-    const lastDate = parseUTCIsoDate(chartData[chartData.length - 1].date);
-    
-    // UX FIX [2025-02-05]: Show year if range spans across different years OR if not current year.
-    const currentYear = new Date().getUTCFullYear();
-    const startYear = firstDate.getUTCFullYear();
-    const endYear = lastDate.getUTCFullYear();
-    const showYear = startYear !== endYear || endYear !== currentYear;
-    
-    const axisFormatter = getDateTimeFormat(state.activeLanguageCode, { 
-        month: 'short', 
-        day: 'numeric', 
-        timeZone: 'UTC',
-        year: showYear ? '2-digit' : undefined
+export function hasSyncKey(): boolean {
+    return hasLocalSyncKey();
+}
+
+/**
+ * Configura os listeners de notificação e atualiza a UI inicial.
+ */
+export function setupNotificationListeners() {
+    // A inicialização do SDK do OneSignal agora é feita diretamente no index.html.
+    // Esta função apenas anexa os listeners de eventos necessários para a UI.
+    pushToOneSignal((OneSignal: any) => {
+        // Este listener garante que a UI seja atualizada se o usuário alterar
+        // as permissões de notificação nas configurações do navegador enquanto o app estiver aberto.
+        OneSignal.Notifications.addEventListener('permissionChange', () => {
+            // Adia a atualização da UI para dar tempo ao SDK de atualizar seu estado interno.
+            setTimeout(updateNotificationUI, 500);
+        });
+
+        // Atualiza a UI no carregamento inicial, caso o estado já esteja definido.
+        updateNotificationUI();
     });
-    
-    const svgWidth = ui.chartContainer.clientWidth;
-    const svgHeight = 80;
-    const padding = { top: 10, right: 10, bottom: 10, left: 10 };
-    const chartWidth = svgWidth - padding.left - padding.right;
-    const chartHeight = svgHeight - padding.top - padding.bottom;
-    
-    chartSvg.setAttribute('viewBox', `0 0 ${svgWidth} ${svgHeight}`);
-
-    const values = chartData.map(d => d.value);
-    const minVal = Math.min(...values) * 0.98;
-    const maxVal = Math.max(...values) * 1.02;
-    const valueRange = maxVal - minVal;
-    
-    chartMetadata = { minVal, maxVal, valueRange: valueRange > 0 ? valueRange : 1 };
-
-    const xScale = (index: number) => padding.left + (index / (chartData.length - 1)) * chartWidth;
-    const yScale = (value: number) => padding.top + chartHeight - ((value - minVal) / chartMetadata.valueRange) * chartHeight;
-
-    const pathData = chartData.map((point, i) => `${i === 0 ? 'M' : 'L'} ${xScale(i)} ${yScale(point.value)}`).join(' ');
-    const areaPathData = `${pathData} V ${yScale(minVal)} L ${xScale(0)} ${yScale(minVal)} Z`;
-
-    areaPath.setAttribute('d', areaPathData);
-    linePath.setAttribute('d', pathData);
-
-    axisStart.textContent = axisFormatter.format(firstDate);
-    axisEnd.textContent = axisFormatter.format(lastDate);
-
-    const lastPoint = chartData[chartData.length - 1];
-    const referencePoint = chartData.find(d => d.scheduledCount > 0) || chartData[0];
-    const evolution = ((lastPoint.value - referencePoint.value) / referencePoint.value) * 100;
-    const evolutionString = `${evolution > 0 ? '+' : ''}${evolution.toFixed(1)}%`;
-    
-    evolutionIndicator.className = `chart-evolution-indicator ${evolution >= 0 ? 'positive' : 'negative'}`;
-    evolutionIndicator.textContent = evolutionString;
-    
-    const lastPointX = xScale(chartData.length - 1);
-    const lastPointY = yScale(lastPoint.value);
-    evolutionIndicator.style.top = `${lastPointY}px`;
-    
-    let indicatorX = lastPointX + 10;
-    
-    // PERFORMANCE NOTE: Reading offsetWidth here forces a specific reflow for the indicator,
-    // which is unavoidable for correct positioning of dynamic text.
-    if (indicatorX + evolutionIndicator.offsetWidth > chartWrapper.offsetWidth) {
-        indicatorX = lastPointX - evolutionIndicator.offsetWidth - 10;
-    }
-    evolutionIndicator.style.left = `${indicatorX}px`;
-    
-    // LAYOUT THRASHING FIX [2025-02-23]: 
-    // Do NOT call getBoundingClientRect() here. We just invalidated layout by setting styles above.
-    // Reading layout now would force a synchronous reflow of the entire chart section.
-    // Instead, we invalidate the cache. The next interaction (tooltip) will read fresh layout values.
-    cachedChartRect = null;
 }
 
-// CORE RENDER LOGIC [2025-02-02]: Extracted for re-use.
-function updateTooltipPosition() {
-    rafId = null; // Clear flag to allow next frame request
-    const { chartWrapper, tooltip, indicator, tooltipDate, tooltipScoreLabel, tooltipScoreValue, tooltipHabits } = chartElements;
+// [REMOVED]: mergeStates function moved to dataMerge.ts
 
-    if (!chartWrapper || !tooltip || !indicator || !tooltipDate || !tooltipScoreLabel || !tooltipScoreValue || !tooltipHabits) return;
-    if (lastChartData.length === 0 || !chartWrapper.isConnected) return;
-
-    // LAZY LAYOUT: Only measure the DOM if cache is invalid/null.
-    if (!cachedChartRect) {
-        cachedChartRect = chartWrapper.getBoundingClientRect();
+/**
+ * Lida com um conflito de sincronização, onde o servidor tem uma versão mais recente dos dados.
+ * Atualiza o estado local e a UI para corresponder à versão do servidor.
+ * @param serverPayload O payload autoritativo (e criptografado) recebido do servidor.
+ */
+async function resolveConflictWithServerState(serverPayload: ServerPayload) {
+    console.warn("Sync conflict detected. Initiating Smart Merge sequence.");
+    
+    const syncKey = getSyncKey();
+    if (!syncKey) {
+        console.error("Cannot resolve conflict without sync key.");
+        setSyncStatus('syncError');
+        return;
     }
-
-    const svgWidth = cachedChartRect.width;
-    if (svgWidth === 0) return;
-
-    const padding = { top: 10, right: 10, bottom: 10, left: 10 };
-    const chartWidth = svgWidth - padding.left - padding.right;
     
-    // Math optimization: Single calculation path
-    const x = inputClientX - cachedChartRect.left;
-    const index = Math.round((x - padding.left) / chartWidth * (lastChartData.length - 1));
-    const pointIndex = Math.max(0, Math.min(lastChartData.length - 1, index));
-
-    // Dirty Check: Surgical DOM update only on index change
-    if (pointIndex !== lastRenderedPointIndex) {
-        lastRenderedPointIndex = pointIndex;
+    try {
+        const decryptedStateJSON = await decrypt(serverPayload.state, syncKey);
         
-        const point = lastChartData[pointIndex];
-        const { minVal, valueRange } = chartMetadata;
-        const chartHeight = 80 - padding.top - padding.bottom;
-    
-        const pointX = padding.left + (pointIndex / (lastChartData.length - 1)) * chartWidth;
-        const pointY = padding.top + chartHeight - ((point.value - minVal) / valueRange) * chartHeight;
-
-        indicator.style.opacity = '1';
-        indicator.style.transform = `translateX(${pointX}px)`;
-        const dot = indicator.querySelector<HTMLElement>('.chart-indicator-dot');
-        if (dot) dot.style.top = `${pointY}px`;
-        
-        const date = parseUTCIsoDate(point.date);
-        const formattedDate = getDateTimeFormat(state.activeLanguageCode, { 
-            weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' 
-        }).format(date);
-        
-        tooltipDate.textContent = formattedDate;
-        tooltipScoreLabel.textContent = t('chartTooltipScore') + ': ';
-        tooltipScoreValue.textContent = point.value.toFixed(2);
-        tooltipHabits.textContent = t('chartTooltipCompleted', { completed: point.completedCount, total: point.scheduledCount });
-
-        if (!tooltip.classList.contains('visible')) {
-            tooltip.classList.add('visible');
+        let serverState: AppState;
+        try {
+            serverState = JSON.parse(decryptedStateJSON);
+        } catch (e) {
+            console.error("Failed to parse decrypted server state during conflict resolution:", e);
+            throw new Error("Corrupted server data received.");
         }
+
+        // IMPLEMENTAÇÃO DE SMART MERGE [2025-02-23]:
+        // Em vez de perguntar ao usuário (que pode não saber qual versão está correta),
+        // nós mesclamos os estados matematicamente para preservar o máximo de dados.
         
-        let translateX = '-50%';
-        if (pointX < 50) translateX = '0%';
-        else if (pointX > svgWidth - 50) translateX = '-100%';
+        // 1. Snapshot do estado local atual
+        const localState: AppState = {
+            version: APP_VERSION,
+            lastModified: Date.now(), // Irrelevante para o merge, será gerado um novo
+            habits: state.habits,
+            dailyData: state.dailyData,
+            archives: state.archives,
+            notificationsShown: state.notificationsShown,
+            pending21DayHabitIds: state.pending21DayHabitIds,
+            pendingConsolidationHabitIds: state.pendingConsolidationHabitIds,
+            // Preservamos estados de UI não persistidos (AI, etc) fora do merge
+        };
 
-        tooltip.style.transform = `translate3d(calc(${pointX}px + ${translateX}), calc(${pointY - 20}px - 100%), 0)`;
+        // 2. Executa a fusão (usando a função importada)
+        const mergedState = mergeStates(localState, serverState);
+        console.log("Smart Merge completed successfully.");
+
+        // 3. Persiste e Carrega o novo estado unificado
+        persistStateLocally(mergedState);
+        loadState(mergedState);
+        
+        // 4. Atualiza a UI
+        renderApp();
+        setSyncStatus('syncSynced'); // UI otimista
+        document.dispatchEvent(new CustomEvent('habitsChanged'));
+
+        // 5. CRÍTICO: Envia o estado mesclado de volta para a nuvem.
+        // Isso resolve o conflito no servidor, tornando este novo estado a "versão mais recente"
+        // para todos os outros dispositivos.
+        // Usamos 'immediate=true' para resolver o mais rápido possível.
+        syncStateWithCloud(mergedState, true);
+        
+    } catch (error) {
+        console.error("Failed to resolve conflict with server state:", error);
+        setSyncStatus('syncError');
     }
 }
 
-function _setupChartListeners() {
-    const { chartWrapper, tooltip, indicator } = chartElements;
-    if (!chartWrapper || !tooltip || !indicator) return;
-
-    // Handler de Input: Solicita o frame APENAS se um não estiver pendente
-    const handlePointerMove = (e: PointerEvent) => {
-        inputClientX = e.clientX;
-        if (!rafId) {
-            rafId = requestAnimationFrame(updateTooltipPosition);
-        }
-    };
-
-    const handlePointerLeave = () => {
-        if (rafId) {
-            cancelAnimationFrame(rafId);
-            rafId = null;
-        }
-        tooltip.classList.remove('visible');
-        indicator.style.opacity = '0';
-        lastRenderedPointIndex = -1;
-    };
-
-    chartWrapper.addEventListener('pointermove', handlePointerMove);
-    chartWrapper.addEventListener('pointerleave', handlePointerLeave);
-    chartWrapper.addEventListener('pointercancel', handlePointerLeave);
-}
-
-function _initObservers() {
-    if (!ui.chartContainer) return;
-
-    if (!chartObserver) {
-        chartObserver = new IntersectionObserver((entries) => {
-            const entry = entries[0];
-            isChartVisible = entry.isIntersecting;
-            if (isChartVisible && isChartDirty) {
-                isChartDirty = false;
-                _updateChartDOM(lastChartData);
-            }
-        }, { threshold: 0.1 });
-        chartObserver.observe(ui.chartContainer);
-    }
-
-    if (!resizeObserver) {
-        resizeObserver = new ResizeObserver(entries => {
-            if (!chartInitialized || !isChartVisible) return;
-            // Invalida cache de geometria no resize
-            cachedChartRect = null;
-            _updateChartDOM(lastChartData);
-        });
-        resizeObserver.observe(ui.chartContainer);
-    }
-}
-
-export function renderChart() {
-    if (state.chartDataDirty || lastChartData.length === 0) {
-        lastChartData = calculateChartData();
-        state.chartDataDirty = false;
-        // BUGFIX: Reset rendered index to force tooltip update even if mouse didn't move
-        lastRenderedPointIndex = -1; 
-    }
-
-    const isEmpty = lastChartData.length < 2 || lastChartData.every(d => d.scheduledCount === 0);
-
-    if (isEmpty) {
-        ui.chartContainer.innerHTML = `
-            <div class="chart-header">
-                <div class="chart-title-group">
-                    <h3 class="chart-title">${t('appName')}</h3>
-                    <h4 class="chart-subtitle">${t('chartTitle')}</h4>
-                </div>
-            </div>
-            <div class="chart-empty-state">${t('chartEmptyState')}</div>
-        `;
-        chartInitialized = false;
-        chartElements = {};
+/**
+ * Executa a requisição de rede real para sincronizar o estado com a nuvem.
+ */
+async function performSync() {
+    if (isSyncInProgress || !pendingSyncState) {
         return;
     }
 
-    if (!chartInitialized) {
-        ui.chartContainer.innerHTML = `
-            <div class="chart-header">
-                <div class="chart-title-group">
-                    <h3 class="chart-title">${t('appName')}</h3>
-                    <h4 class="chart-subtitle">${t('chartTitle')}</h4>
-                </div>
-            </div>
-            <div class="chart-wrapper">
-                <svg class="chart-svg" preserveAspectRatio="none"><defs><linearGradient id="chart-gradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="var(--accent-blue)" stop-opacity="0.3"/><stop offset="100%" stop-color="var(--accent-blue)" stop-opacity="0"/></linearGradient></defs><path class="chart-area"></path><path class="chart-line"></path></svg>
-                <div class="chart-tooltip">
-                    <div class="tooltip-date"></div>
-                    <div class="tooltip-score"><span class="tooltip-score-label"></span><span class="tooltip-score-value"></span></div>
-                    <ul class="tooltip-habits"><li class="tooltip-habits-content"></li></ul>
-                </div>
-                <div class="chart-indicator"><div class="chart-indicator-dot"></div></div>
-                <div class="chart-evolution-indicator"></div>
-            </div>
-            <div class="chart-axis-labels"><span></span><span></span></div>
-        `;
-        
-        chartElements = {
-            chartSvg: ui.chartContainer.querySelector<SVGSVGElement>('.chart-svg')!,
-            areaPath: ui.chartContainer.querySelector<SVGPathElement>('.chart-area')!,
-            linePath: ui.chartContainer.querySelector<SVGPathElement>('.chart-line')!,
-            evolutionIndicator: ui.chartContainer.querySelector<HTMLElement>('.chart-evolution-indicator')!,
-            axisStart: ui.chartContainer.querySelector<HTMLElement>('.chart-axis-labels span:first-child')!,
-            axisEnd: ui.chartContainer.querySelector<HTMLElement>('.chart-axis-labels span:last-child')!,
-            chartWrapper: ui.chartContainer.querySelector<HTMLElement>('.chart-wrapper')!,
-            tooltip: ui.chartContainer.querySelector<HTMLElement>('.chart-tooltip')!,
-            indicator: ui.chartContainer.querySelector<HTMLElement>('.chart-indicator')!,
-            tooltipDate: ui.chartContainer.querySelector<HTMLElement>('.tooltip-date')!,
-            tooltipScoreLabel: ui.chartContainer.querySelector<HTMLElement>('.tooltip-score-label')!,
-            tooltipScoreValue: ui.chartContainer.querySelector<HTMLElement>('.tooltip-score-value')!,
-            tooltipHabits: ui.chartContainer.querySelector<HTMLElement>('.tooltip-habits-content')!,
-        };
+    isSyncInProgress = true;
+    const appState = pendingSyncState;
+    pendingSyncState = null; // Consome o estado pendente
 
-        _setupChartListeners();
-        _initObservers();
-        chartInitialized = true;
+    const syncKey = getSyncKey();
+    if (!syncKey) {
+        setSyncStatus('syncError');
+        console.error("Cannot sync without a sync key.");
+        isSyncInProgress = false; // Libera a trava
+        return;
     }
 
-    if (isChartVisible) {
-        _updateChartDOM(lastChartData);
+    try {
+        const stateJSON = JSON.stringify(appState);
+        const encryptedState = await encrypt(stateJSON, syncKey);
+
+        const payload: ServerPayload = {
+            lastModified: appState.lastModified,
+            state: encryptedState,
+        };
         
-        // REACTIVE TOOLTIP UPDATE [2025-02-02]:
-        // If the tooltip is currently visible, force an immediate position/content update.
-        // This fixes the issue where checking a habit via keyboard didn't update the tooltip value instantly.
-        if (chartElements.tooltip && chartElements.tooltip.classList.contains('visible')) {
-            updateTooltipPosition();
+        const response = await apiFetch('/api/sync', {
+            method: 'POST',
+            body: JSON.stringify(payload),
+        }, true);
+
+        if (response.status === 409) {
+            // Conflito: o servidor tem dados mais recentes.
+            const serverPayload: ServerPayload = await response.json();
+            await resolveConflictWithServerState(serverPayload);
+        } else {
+            // Sucesso (a verificação de response.ok já foi feita em apiFetch).
+            setSyncStatus('syncSynced');
+            document.dispatchEvent(new CustomEvent('habitsChanged')); // Notifica o emblema/etc para atualizar
         }
-        
-        isChartDirty = false;
+    } catch (error) {
+        console.error("Error syncing state to cloud:", error);
+        setSyncStatus('syncError');
+    } finally {
+        isSyncInProgress = false;
+        // Se um novo estado foi salvo enquanto a sincronização estava em andamento,
+        // aciona uma nova sincronização imediatamente para processar a fila.
+        if (pendingSyncState) {
+            if (syncTimeout) clearTimeout(syncTimeout);
+            performSync();
+        }
+    }
+}
+
+/**
+ * Schedules a state sync to the cloud. This is debounced and handles a sync-in-progress lock.
+ * @param appState The application state to sync.
+ * @param immediate If true, performs the sync immediately, bypassing the debounce timer.
+ */
+export function syncStateWithCloud(appState: AppState, immediate = false) {
+    if (!hasSyncKey()) return;
+
+    pendingSyncState = appState; // Sempre atualiza para o estado mais recente.
+    setSyncStatus('syncSaving');
+
+    if (syncTimeout) clearTimeout(syncTimeout);
+    
+    // Se uma sincronização já estiver em andamento, o bloco `finally` de `performSync`
+    // cuidará de acionar a próxima. Não precisamos fazer nada aqui.
+    if (isSyncInProgress) {
+        return;
+    }
+
+    if (immediate) {
+        performSync();
     } else {
-        isChartDirty = true;
+        syncTimeout = window.setTimeout(performSync, DEBOUNCE_DELAY);
+    }
+}
+
+export async function fetchStateFromCloud(): Promise<AppState | undefined> {
+    if (!hasSyncKey()) return undefined;
+
+    const syncKey = getSyncKey();
+    if (!syncKey) return undefined;
+
+    try {
+        const response = await apiFetch('/api/sync', {}, true);
+        const data: ServerPayload | null = await response.json();
+
+        if (data && data.state) {
+            const decryptedStateJSON = await decrypt(data.state, syncKey);
+            const appState = JSON.parse(decryptedStateJSON) as AppState;
+            setSyncStatus('syncSynced');
+            return appState;
+        } else {
+            // Nenhum dado na nuvem (resposta foi 200 com corpo nulo)
+            console.log("No state found in cloud for this sync key. Performing initial sync.");
+            const localDataJSON = localStorage.getItem(STATE_STORAGE_KEY);
+            if (localDataJSON) {
+                const localState = JSON.parse(localDataJSON) as AppState;
+                syncStateWithCloud(localState, true);
+            }
+            return undefined;
+        }
+    } catch (error) {
+        console.error("Failed to fetch state from cloud:", error);
+        setSyncStatus('syncError');
+        throw error;
     }
 }

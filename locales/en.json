@@ -1,251 +1,155 @@
-{
-    "_comment": "[ANALYSIS PROGRESS]: 100% - Dead keys cleanup performed [2025-01-16].",
-    "aiCelebration21Day": {
-        "one": "### Congratulations! 🎉\n\nYou've maintained the habit **{habitNames}** for 21 consecutive days! This is a crucial milestone in making an action automatic. Keep up the great work!",
-        "other": "### Congratulations! 🎉\n\nYou've maintained the habits **{habitNames}** for 21 consecutive days! This is a crucial milestone in making an action automatic. Keep up the great work!"
-    },
-    "aiCelebration66Day": {
-        "one": "### Incredible Achievement! 🏆\n\nYou've reached 66 days with the habit **{habitNames}**! Science suggests this is the point where a new behavior becomes truly consolidated. You've built a solid foundation for lasting change.",
-        "other": "### Incredible Achievement! 🏆\n\nYou've reached 66 days with the habits **{habitNames}**! Science suggests this is the point where a new behavior becomes truly consolidated. You've built a solid foundation for lasting change."
-    },
-    "aiErrorPrefix": "AI Error",
-    "aiErrorUnknown": "An unknown error occurred.",
-    "aiEval_ariaLabel": "AI Evaluation",
-    "aiOptionHistoricalDesc": "A complete view of your entire journey.",
-    "aiOptionHistoricalTitle": "Historical Analysis",
-    "aiOptionMonthlyDesc": "A reflection on available data (max 30 days).",
-    "aiOptionMonthlyTitle": "Current Analysis",
-    "aiOptionQuarterlyDesc": "A consolidated view of the last 90 days.",
-    "aiOptionQuarterlyTitle": "Quarterly Analysis",
-    "aiPeriodHistorical": "Complete History",
-    "aiPeriodMonthly": "Last 30 Days",
-    "aiPeriodQuarterly": "Last 90 Days",
-    "aiPromptGeneral": "Conduct a general analysis of the entire provided habit history. Your feedback MUST focus on: 1. A deep Stoic reflection on the user's overall journey. 2. Identifying the most consistent habit (the greatest strength). 3. Identifying the most challenging habit. 4. ONE high-level piece of advice for the continued improvement of discipline.\n\nData:\n- Active Habits: {activeHabitList}\n{graduatedHabitsSection}- Complete History:\n{history}",
-    "aiPromptGraduatedSection": "- Graduated Habits: {graduatedHabitList}\n",
-    "aiPromptMonthHeader": "Data for the Month of {month}",
-    "aiPromptMonthly": "Conduct a performance review of the last month (30 days). Your feedback MUST focus on: 1. A reflection on overall consistency and observed trends. 2. Identifying which habit was the biggest challenge and why. 3. Providing ONE actionable suggestion to improve consistency for the next month.\n\nData:\n- Active Habits: {activeHabitList}\n{graduatedHabitsSection}- Last 30 Days History:\n{history}",
-    "aiPromptNoData": "No data.",
-    "aiPromptNone": "None",
-    "aiPromptWeekly": "Your analysis must be global, looking for patterns in the last 7 days. Your feedback MUST be: 1. A concise Stoic reflection (1-2 sentences) on the overall pattern. 2. ONE single, profound, actionable suggestion as a list item to strengthen virtue and discipline.\n\nData:\n- Active Habits: {activeHabitList}\n{graduatedHabitsSection}- Last 7 Days History:\n{history}",
-    "aiSystemInstruction": "You are a Stoic Sage, a habit mentor who values consistency over perfection and focus on what we can control (our actions). Your response MUST be in {languageName}. Use markdown. The habit history uses these symbols: ✅ for Completed, ⚪️ for Pending, and ➡️ for Snoozed.",
-    "appName": "<strong>A</strong>skes<strong>I</strong>s",
-    "aria_delete_permanent": "Delete {habitName} permanently",
-    "aria_edit": "Edit {habitName}",
-    "aria_end": "End {habitName}",
-    "aria_graduate": "Graduate Habit {habitName}",
-    "btnRemoveHabit": "Delete Habit",
-    "btnRemoveTimeOnly": "Remove {time}",
-    "buttonFromNowOn": "From Now On",
-    "buttonJustToday": "Just Today",
-    "cancelButton": "Cancel",
-    "chartEmptyState": "Keep tracking your habits to see your progress here.",
-    "chartEvolutionSince": "Evolution since {date}",
-    "chartTitle": "Compound Growth",
-    "chartTooltipCompleted": "Completed: {completed}/{total}",
-    "chartTooltipScore": "Compound Score",
-    "cleanthes": "Cleanthes",
-    "closeButton": "Close",
-    "confirmButton": "Confirm",
-    "confirmEndHabit": "Are you sure you want to end the habit \"{habitName}\" starting from {date}? It will no longer appear on this or any future dates.",
-    "confirmHabitMove": "You moved \"{habitName}\" from {oldTime} to {newTime}. Apply this change for today only, or from now on?",
-    "confirmInvalidKeyBody": "The entered key does not appear to be a valid UUID. Sync keys typically have a format like '123e4567-e89b-12d3-a456-426614174000'. Do you want to continue anyway?",
-    "confirmInvalidKeyTitle": "Invalid Key Format",
-    "confirmPermanentDelete": "This will permanently delete the habit '{habitName}' and all its history. This action cannot be undone. Do you want to continue?",
-    "confirmRemoveTime": "Do you want to remove \"{habitName}\" from the <strong>{time}</strong> schedule?",
-    "confirmResetApp": "This will permanently delete ALL your habits and progress data. This action cannot be undone. Do you want to continue?",
-    "confirmSyncDisable": "Are you sure you want to disable sync? You will no longer be able to access your data on other devices and new data will not be saved to the cloud.",
-    "confirmSyncOverwrite": "The data in the cloud is different from your local data. Do you want to overwrite your local data with the cloud data?",
-    "customHabitSubtitle": "Custom habit",
-    "deleteButton": "Delete",
-    "dragToAddHabit": "Add a habit",
-    "editButton": "Edit",
-    "endButton": "End",
-    "epictetus": "Epictetus",
-    "exportButton": "Export Backup",
-    "fabAddHabit_ariaLabel": "Add Habit",
-    "filterAfternoon": "Afternoon",
-    "filterEvening": "Night",
-    "filterMorning": "Morning",
-    "freqDaily": "Every day",
-    "freqEvery": "Every",
-    "freqSpecificDaysOfWeek": "Specific days of the week",
-    "frequency_ariaLabel": "Frequency selector",
-    "habitColorPicker_ariaLabel": "Select habit color",
-    "habitConsolidatedMessage": "✅ Habit consolidated!",
-    "habitDone": "DONE",
-    "habitEnd_ariaLabel": "End Habit",
-    "habitGoalDecrement_ariaLabel": "Decrease goal",
-    "habitGoalIncrement_ariaLabel": "Increase goal",
-    "habitNoteAdd_ariaLabel": "Add Note",
-    "habitNoteEdit_ariaLabel": "Edit Note",
-    "habitSemiConsolidatedMessage": "Habit semi-consolidated",
-    "habitSnoozed": "Snoozed",
-    "headerTitleToday": "Today",
-    "headerTitleTomorrow": "Tomorrow",
-    "headerTitleYesterday": "Yesterday",
-    "importButton": "Restore Backup",
-    "importError": "Failed to import. Please ensure the file is a valid backup.",
-    "importSuccess": "Backup restored successfully! The page will reload.",
-    "langEnglish": "English",
-    "langPortuguese": "Portuguese",
-    "langSpanish": "Spanish",
-    "languageNext_ariaLabel": "Next language",
-    "languagePrev_ariaLabel": "Previous language",
-    "language_ariaLabel": "Language selector",
-    "manageHabits_ariaLabel": "Settings",
-    "marcusAurelius": "Marcus Aurelius",
-    "modalAIOptionsTitle": "AI Analysis Options",
-    "modalAITitle": "AI Evaluation",
-    "modalColorPickerTitle": "Select Color",
-    "modalConfirmTitle": "Confirm Action",
-    "modalDeleteHabitTitle": "Delete Permanently",
-    "modalEditFormNameLabel": "Name",
-    "modalEditFormNotice": "Please name the habit and select at least one time slot.",
-    "modalEditNewTitle": "Add New Habit",
-    "modalEditSaveButton": "Save Habit",
-    "modalEditTitle": "Edit Habit",
-    "modalEndHabitTitle": "End Habit",
-    "modalExploreCreateCustom": "Create custom habit",
-    "modalExploreTitle": "Explore Habits",
-    "modalIconPickerTitle": "Select Icon",
-    "modalManageHabitsSubtitle": "Manage Habits",
-    "modalManageLanguage": "Language",
-    "modalManageNotifications": "Notifications",
-    "modalManageNotificationsStaticDesc": "Click the button to enable or disable notifications.",
-    "modalManageReset": "Reset",
-    "modalManageResetButton": "Delete data",
-    "modalManageTitle": "General Settings",
-    "modalMoveHabitTitle": "Move Habit",
-    "modalNotesSaveButton": "Save Note",
-    "modalNotesTextareaPlaceholder": "Enter your note about this habit for the selected day...",
-    "modalRemoveTimeTitle": "Remove Time Slot",
-    "modalStatusEnded": "(Ended)",
-    "modalStatusGraduated": "(Graduated)",
-    "musoniusRufus": "Musonius Rufus",
-    "noticeDuplicateHabitWithName": "A habit with this name already exists.",
-    "noticeHabitAlreadyExistsInTime": "The habit '{habitName}' is already active in: {times}.",
-    "noticeNameCannotBeEmpty": "The habit name cannot be empty.",
-    "notificationStatusDisabled": "Notifications are blocked. You need to change the permissions in your browser settings.",
-    "notificationStatusEnabled": "Notifications are enabled.",
-    "predefinedHabitCookHealthyName": "Cook Healthy",
-    "predefinedHabitCookHealthySubtitle": "Nutrition and flavor",
-    "predefinedHabitCreativeHobbyName": "Creative Hobby",
-    "predefinedHabitCreativeHobbySubtitle": "Express your art",
-    "predefinedHabitDisconnectName": "Disconnect at Night",
-    "predefinedHabitDisconnectSubtitle": "More restful sleep",
-    "predefinedHabitDrawName": "Draw",
-    "predefinedHabitDrawSubtitle": "Unleash your creativity",
-    "predefinedHabitEatFruitName": "Eat Fruit",
-    "predefinedHabitEatFruitSubtitle": "Vitamins and energy",
-    "predefinedHabitEmailsName": "Clear Emails",
-    "predefinedHabitEmailsSubtitle": "Focus on the essential",
-    "predefinedHabitExerciseName": "Exercise",
-    "predefinedHabitExerciseSubtitle": "Strong body, sound mind",
-    "predefinedHabitFamilyTimeName": "Family Time",
-    "predefinedHabitFamilyTimeSubtitle": "Strengthen bonds",
-    "predefinedHabitFinancesName": "Review Finances",
-    "predefinedHabitFinancesSubtitle": "Control and clarity",
-    "predefinedHabitGratitudeName": "Practice Gratitude",
-    "predefinedHabitGratitudeSubtitle": "Appreciate the moment",
-    "predefinedHabitInstrumentName": "Practice Instrument",
-    "predefinedHabitInstrumentSubtitle": "Music for the soul",
-    "predefinedHabitJournalName": "Journal",
-    "predefinedHabitJournalSubtitle": "Connect with yourself",
-    "predefinedHabitLanguageName": "Study Language",
-    "predefinedHabitLanguageSubtitle": "Open new doors",
-    "predefinedHabitLearnSkillName": "Learn a Skill",
-    "predefinedHabitLearnSkillSubtitle": "Invest in yourself",
-    "predefinedHabitMeditateName": "Meditate",
-    "predefinedHabitMeditateSubtitle": "Clarity and inner peace",
-    "predefinedHabitNewsName": "Read News",
-    "predefinedHabitNewsSubtitle": "Stay informed",
-    "predefinedHabitNoComplaintName": "Don't Complain",
-    "predefinedHabitNoComplaintSubtitle": "Avoid negativity",
-    "predefinedHabitOrganizeName": "Organize Space",
-    "predefinedHabitOrganizeSubtitle": "Clear mind, light life",
-    "predefinedHabitPhotographyName": "Photography",
-    "predefinedHabitPhotographySubtitle": "Capture the moment",
-    "predefinedHabitPlanDayName": "Plan the Day",
-    "predefinedHabitPlanDaySubtitle": "Focus and productivity",
-    "predefinedHabitPlantsName": "Care for Plants",
-    "predefinedHabitPlantsSubtitle": "A touch of green",
-    "predefinedHabitPodcastName": "Listen to Podcast",
-    "predefinedHabitPodcastSubtitle": "Learn something new",
-    "predefinedHabitReadName": "Read",
-    "predefinedHabitReadSubtitle": "Expand your mind",
-    "predefinedHabitReflectDayName": "Reflect on the Day",
-    "predefinedHabitReflectDaySubtitle": "Self-knowledge",
-    "predefinedHabitReviewDayName": "Review the Day",
-    "predefinedHabitReviewDaySubtitle": "Daily reflection",
-    "predefinedHabitScreenBreakName": "Screen-Free Break",
-    "predefinedHabitScreenBreakSubtitle": "Rest your eyes",
-    "predefinedHabitSkincareName": "Skincare",
-    "predefinedHabitSkincareSubtitle": "Care and affection",
-    "predefinedHabitStoicismName": "Practice Stoicism",
-    "predefinedHabitStoicismSubtitle": "Focus on what you control",
-    "predefinedHabitStretchName": "Stretch",
-    "predefinedHabitStretchSubtitle": "Energy for the day",
-    "predefinedHabitSunlightName": "Get Sunlight",
-    "predefinedHabitSunlightSubtitle": "Natural Vitamin D",
-    "predefinedHabitTalkFriendName": "Talk to a Friend",
-    "predefinedHabitTalkFriendSubtitle": "Connections that matter",
-    "predefinedHabitTeaName": "Drink Tea",
-    "predefinedHabitTeaSubtitle": "A moment to relax",
-    "predefinedHabitVolunteerName": "Volunteer",
-    "predefinedHabitVolunteerSubtitle": "Make a difference",
-    "predefinedHabitWalkName": "Walk",
-    "predefinedHabitWalkSubtitle": "Move your body",
-    "predefinedHabitWaterName": "Drink Water",
-    "predefinedHabitWaterSubtitle": "Hydration is life",
-    "predefinedHabitYogaName": "Yoga",
-    "predefinedHabitYogaSubtitle": "Balance and flexibility",
-    "privacyLabel": "Data & Privacy",
-    "seneca": "Seneca",
-    "syncActiveDesc": "Cloud sync is active on this device.",
-    "syncConfirmOverwrite": "Overwrite",
-    "syncConflictDescription": "We detected different data in the cloud. If you worked offline, choose 'Keep Local' to save your progress.",
-    "syncConflictTitle": "Data Conflict",
-    "syncDataFoundTitle": "Data Found in Cloud",
-    "syncDisable": "Disable",
-    "syncDisableConfirm": "Disable",
-    "syncDisableTitle": "Disable Sync",
-    "syncEnable": "Enable Sync",
-    "syncEnterKey": "Enter Key",
-    "syncError": "Sync error",
-    "syncInactiveDesc": "Save your data to the cloud to access it on any device.",
-    "syncInitial": "Cloud sync is disabled.",
-    "syncKeepLocal": "Keep Local",
-    "syncKeySaved": "I've saved my key!",
-    "syncLabel": "Sync",
-    "syncLabelEnterKey": "Enter your Sync Key",
-    "syncSaving": "Saving...",
-    "syncSubmitKey": "Sync",
-    "syncSynced": "Synced ✓",
-    "syncUseCloud": "Use Cloud Data",
-    "syncViewKey": "View Key",
-    "syncWarning": "<strong>WRITE THIS KEY DOWN!</strong> It is the only way to access your data on other devices. If you lose it, your cloud data will be lost forever.",
-    "undoButton": "Undo",
-    "undoToastText": "Habit ended.",
-    "unitCheck": {
-        "one": "time",
-        "other": "times"
-    },
-    "unitDays": "days",
-    "unitMin": {
-        "one": "min",
-        "other": "min"
-    },
-    "unitPage": {
-        "one": "page",
-        "other": "pages"
-    },
-    "unitWeeks": "weeks",
-    "weekdayFri": "Friday",
-    "weekdayMon": "Monday",
-    "weekdaySat": "Saturday",
-    "weekdaySun": "Sunday",
-    "weekdayThu": "Thursday",
-    "weekdayTue": "Tuesday",
-    "weekdayWed": "Wednesday",
-    "zeno": "Zeno of Citium"
+
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+*/
+// [NOTA COMPARATIVA]: Este arquivo atua como o orquestrador de inicialização (Bootstrapper). Comparado aos módulos de lógica pesada ('state.ts', 'render.ts'), o 'index.tsx' é conciso e focado exclusivamente no ciclo de vida inicial: carregamento de dependências, resolução de conflitos de estado (Local vs Nuvem) e injeção no DOM. O nível de engenharia é alto, implementando um padrão de "Race-to-Idle" para inicialização perceptivelmente instantânea.
+
+import { inject } from '@vercel/analytics';
+import './index.css';
+import { loadState, saveState, state, persistStateLocally, STATE_STORAGE_KEY, AppState, registerSyncHandler } from './state';
+import { initUI } from './ui';
+import { renderApp } from './render';
+import { setupEventListeners } from './listeners';
+import { initI18n } from './i18n';
+import { createDefaultHabit } from './habitActions';
+import { initSync } from './sync';
+import { fetchStateFromCloud, setupNotificationListeners, syncStateWithCloud } from './cloud';
+import { hasLocalSyncKey, initAuth } from './api';
+import { updateAppBadge } from './badge';
+
+// --- SERVICE WORKER REGISTRATION ---
+const registerServiceWorker = () => {
+    if ('serviceWorker' in navigator && window.location.protocol.startsWith('http')) {
+        const doRegister = async () => {
+            try {
+                // Caminho relativo ./sw.js para maior compatibilidade
+                const registration = await navigator.serviceWorker.register('./sw.js', { scope: './' });
+                console.log('ServiceWorker registration successful with scope: ', registration.scope);
+            } catch (err) {
+                console.error('ServiceWorker registration failed: ', err);
+            }
+        };
+
+        if (document.readyState === 'complete') {
+            doRegister();
+        } else {
+            window.addEventListener('load', doRegister);
+        }
+    } else if (window.location.protocol === 'file:') {
+        console.warn('Service Worker não suportado no protocolo file://. Por favor, use um servidor local (npm run dev).');
+    }
+};
+
+
+// --- PRIVATE HELPERS (INIT ORCHESTRATION) ---
+
+async function setupBase() {
+    initUI(); // Mapeia os elementos do DOM
+    initAuth(); // Inicializa a autenticação (lê a chave de sincronização) antes de carregar o estado
+    await initI18n(); // Carrega as traduções
 }
+
+async function loadInitialState() {
+    // 1. Snapshot do estado local antes de qualquer operação de rede
+    // Isso é crucial para garantir que edições offline não sejam sobrescritas.
+    const localStr = localStorage.getItem(STATE_STORAGE_KEY);
+    let localState: AppState | null = null;
+    if (localStr) {
+        try {
+            localState = JSON.parse(localStr);
+        } catch (e) {
+            console.error("Startup: Failed to parse local state", e);
+        }
+    }
+
+    let stateToLoad: AppState | null = localState; // Padrão: Confia no local
+
+    if (hasLocalSyncKey()) {
+        try {
+            const cloudState = await fetchStateFromCloud();
+            
+            if (cloudState) {
+                // LÓGICA DEFENSIVA: Comparação Estrita de Timestamps
+                // Se o local for mais novo (ex: editado offline), ele deve vencer.
+                if (localState && localState.lastModified > cloudState.lastModified) {
+                    console.log(`Startup: Local state (${localState.lastModified}) is newer than cloud (${cloudState.lastModified}). Pushing local changes.`);
+                    
+                    // CRÍTICO: Atualiza o timestamp para "agora".
+                    // Isso garante que este estado seja considerado a "nova verdade" pelo servidor
+                    // e previne conflitos de hash se o conteúdo divergir sutilmente.
+                    localState.lastModified = Date.now();
+                    
+                    // Persiste o novo timestamp localmente imediatamente
+                    persistStateLocally(localState);
+                    stateToLoad = localState;
+                    
+                    // Força o envio imediato para a nuvem para sincronizar os outros dispositivos
+                    syncStateWithCloud(localState, true);
+                } else {
+                    console.log("Startup: Cloud state is newer or equal. Syncing local with cloud.");
+                    // Nuvem vence (ou é igual). Persiste localmente para manter a consistência.
+                    // ATENÇÃO: persistStateLocally não altera lastModified, apenas salva o blob.
+                    persistStateLocally(cloudState);
+                    stateToLoad = cloudState;
+                }
+            } else {
+                // Chave existe, mas sem dados na nuvem (ou fetch retornou undefined/vazio).
+                // Mantém o local. A lógica interna do fetchStateFromCloud já pode ter tentado iniciar o push,
+                // mas garantimos que o loadState use o que temos em mãos.
+                console.log("Startup: No cloud data found, using local.");
+            }
+        } catch (e) {
+            console.error("Startup: Failed to fetch from cloud, falling back to local state.", e);
+            // Em caso de erro de rede, stateToLoad continua sendo localState (o padrão definido acima)
+        }
+    }
+    
+    // Carrega o estado vencedor na memória da aplicação
+    loadState(stateToLoad);
+}
+
+function handleFirstTimeUser() {
+    if (state.habits.length === 0) {
+        createDefaultHabit();
+        saveState();
+    }
+}
+
+function setupAppListeners() {
+    // WIRE UP SYNC: Connect state changes to cloud sync
+    registerSyncHandler(syncStateWithCloud);
+    
+    setupEventListeners();
+    setupNotificationListeners();
+    initSync();
+}
+
+function finalizeInit(loader: HTMLElement | null) {
+    if (loader) {
+        loader.classList.add('hidden');
+        loader.addEventListener('transitionend', () => loader.remove());
+    }
+    inject(); // Vercel Analytics
+}
+
+// --- MAIN INITIALIZATION ---
+async function init(loader: HTMLElement | null) {
+    await setupBase();
+    await loadInitialState();
+    handleFirstTimeUser();
+    renderApp();
+    setupAppListeners();
+    updateAppBadge(); // Define o emblema inicial
+    finalizeInit(loader);
+}
+
+registerServiceWorker();
+
+const initialLoader = document.getElementById('initial-loader');
+init(initialLoader).catch(err => {
+    console.error("Failed to initialize application:", err);
+    if(initialLoader) {
+        initialLoader.innerHTML = '<h2>Falha ao carregar a aplicação. Por favor, tente novamente.</h2>'
+    }
+});
