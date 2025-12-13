@@ -126,7 +126,7 @@
     "noticeDuplicateHabitWithName": "Já existe um hábito com este nome.",
     "noticeHabitAlreadyExistsInTime": "O hábito '{habitName}' já está ativo no horário: {times}.",
     "noticeNameCannotBeEmpty": "O nome do hábito não pode estar vazio.",
-    "noticeNameTooLong": "Máximo de 20 caracteres. Use uma descrição sucinta.",
+    "noticeNameTooLong": "Máximo de 16 caracteres. Use uma descrição sucinta.",
     "notificationStatusDisabled": "As notificações estão bloqueadas. É necessário alterar as permissões nas configurações do seu navegador.",
     "notificationStatusEnabled": "As notificações estão ativadas.",
     "predefinedHabitCookHealthyName": "Cozinhar Saudável",

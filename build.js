@@ -4,7 +4,6 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// [ANALYSIS PROGRESS]: 100% - Análise concluída. Script otimizado com feedback robusto para o versionamento do Service Worker e watcher seguro.
 
 const esbuild = require('esbuild');
 const fs = require('fs/promises'); // API de sistema de arquivos baseada em Promises

@@ -3,7 +3,6 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// [ANALYSIS PROGRESS]: 100% - Análise concluída. O endpoint está robusto, utilizando corretamente o SDK @google/genai moderno com suporte a Edge Runtime. Tratamento de erros e validação de input estão sólidos.
 
 import { GoogleGenAI } from '@google/genai';
 

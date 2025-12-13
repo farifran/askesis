@@ -3,7 +3,6 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// [ANALYSIS PROGRESS]: 100% - Módulo criado. Isola lógica da faixa de dias e calendário completo.
 
 import { state, calculateDaySummary, DAYS_IN_CALENDAR } from '../state';
 import { ui } from '../ui';

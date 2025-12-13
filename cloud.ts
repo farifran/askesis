@@ -3,7 +3,6 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// [ANALYSIS PROGRESS]: 100% - Análise concluída [2025-02-23]. Módulo robusto. Implementado algoritmo 'Smart Merge' para resolução de conflitos, garantindo integridade de dados multi-dispositivo sem intervenção do usuário.
 
 import { AppState, STATE_STORAGE_KEY, loadState, state, persistStateLocally, saveState, APP_VERSION } from './state';
 import { pushToOneSignal } from './utils';

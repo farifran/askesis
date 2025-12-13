@@ -3,7 +3,6 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// [ANALYSIS PROGRESS]: 100% - Módulo criado. Isola lógica de modais e forms.
 
 import { state, Habit, HabitTemplate, Frequency, PredefinedHabit, TimeOfDay, calculateHabitStreak, STREAK_CONSOLIDATED, PREDEFINED_HABITS, TIMES_OF_DAY, FREQUENCIES, LANGUAGES, getHabitDailyInfoForDate } from '../state';
 import { ui } from '../ui';

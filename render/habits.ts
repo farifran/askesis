@@ -1,9 +1,7 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// [ANALYSIS PROGRESS]: 100% - Módulo criado. Isola a lógica complexa de renderização e atualização cirúrgica de cartões de hábito.
 
 import { state, Habit, HabitStatus, HabitDayData, getSmartGoalForHabit, calculateHabitStreak, STREAK_CONSOLIDATED, STREAK_SEMI_CONSOLIDATED, TimeOfDay, getHabitDailyInfoForDate, getActiveHabitsForDate, TIMES_OF_DAY } from '../state';
 import { ui } from '../ui';
@@ -180,7 +178,7 @@ export function updateHabitCardElement(card: HTMLElement, habit: Habit, time: Ti
     }
 
     // UX: Adiciona classe para nomes longos (mobile wrap)
-    if (name.length > 17) {
+    if (name.length > 16) {
         card.classList.add('long-name');
     } else {
         card.classList.remove('long-name');
@@ -276,7 +274,7 @@ export function createHabitCardElement(habit: Habit, time: TimeOfDay): HTMLEleme
     const { name, subtitle } = getHabitDisplayInfo(habit, state.selectedDate);
 
     // UX: Adiciona classe para nomes longos (mobile wrap)
-    if (name.length > 17) {
+    if (name.length > 16) {
         card.classList.add('long-name');
     }
 

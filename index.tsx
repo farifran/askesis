@@ -3,7 +3,6 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// [ANALYSIS PROGRESS]: 100% - Análise concluída.
 // [NOTA COMPARATIVA]: Este arquivo atua como o orquestrador de inicialização (Bootstrapper). Comparado aos módulos de lógica pesada ('state.ts', 'render.ts'), o 'index.tsx' é conciso e focado exclusivamente no ciclo de vida inicial: carregamento de dependências, resolução de conflitos de estado (Local vs Nuvem) e injeção no DOM. O nível de engenharia é alto, implementando um padrão de "Race-to-Idle" para inicialização perceptivelmente instantânea.
 
 import { inject } from '@vercel/analytics';

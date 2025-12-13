@@ -3,7 +3,6 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  */
-// [ANALYSIS PROGRESS]: 100% - Arquivo criado.
 // SINGLE SOURCE OF TRUTH: Define as classes CSS usadas para interatividade.
 // Isso garante que se mudarmos o CSS, o TS avisa onde quebrou a lógica.
 

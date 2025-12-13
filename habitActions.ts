@@ -1,11 +1,9 @@
-
 // habitActions.ts
 
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// [ANALYSIS PROGRESS]: 100% - Análise concluída. Lógica de negócios validada. O gerenciamento de histórico temporal, a lógica de "Camada Opaca" (Overrides diários vs Histórico Permanente) e a geração de prompts para IA estão robustos. Código morto (TIME_ANCHORS) removido.
 
 import { 
     state, Habit, HabitSchedule, TimeOfDay, Frequency, 
@@ -787,18 +785,16 @@ export function saveHabitFromModal() {
                 if (!isNew && state.editingHabit?.isNew && !isLastScheduleEnded) {
                      newTimes = Array.from(new Set([...lastSchedule.times, ...formData.times]));
                 }
-
+                
                 const newSchedule: HabitSchedule = {
+                    // FIX: Corrected a typo where 'activeSchedule' was used instead of 'lastSchedule'.
+                    ...lastSchedule,
                     startDate: targetDate,
+                    endDate: undefined,
                     times: newTimes,
-                    frequency: formData.frequency,
-                    name: formData.name,
-                    nameKey: formData.nameKey,
-                    subtitleKey: formData.subtitleKey,
-                    scheduleAnchor: targetDate
                 };
+                delete (newSchedule as any).endDate;
                 habit.scheduleHistory.push(newSchedule);
-                habit.scheduleHistory.sort((a, b) => a.startDate.localeCompare(b.startDate));
             }
             
             // Clean graduation status if we are editing/reviving
@@ -1808,4 +1804,43 @@ export function reorderHabit(habitId: string, targetHabitId: string, position: '
     state.uiDirtyState.habitListStructure = true;
     saveState();
     renderHabits();
+}
+
+/**
+ * Marks all active habits for a given date with a specific status.
+ * Used for multi-click shortcuts on the calendar.
+ * @param dateISO The date to update in ISO format.
+ * @param status The target status ('completed' or 'snoozed').
+ * @returns {boolean} True if any habit status was changed, false otherwise.
+ */
+export function markAllHabitsForDate(dateISO: string, status: 'completed' | 'snoozed'): boolean {
+    const activeHabits = getActiveHabitsForDate(dateISO);
+    
+    if (activeHabits.length === 0) return false;
+
+    let changed = false;
+    activeHabits.forEach(({ habit, schedule }) => {
+        schedule.forEach(time => {
+            const instance = ensureHabitInstanceData(dateISO, habit.id, time);
+            // Only change if it's not already in the target state to avoid unnecessary writes/cache invalidations
+            if (instance.status !== status) {
+                instance.status = status;
+                invalidateStreakCache(habit.id, dateISO);
+                changed = true;
+            }
+        });
+    });
+
+    // Only save and set dirty flags if something actually changed
+    if (changed) {
+        invalidateChartCache();
+        invalidateDaySummaryCache(dateISO); // Invalidate only the specific day
+        saveState();
+        
+        // Força a re-renderização da UI para refletir as mudanças imediatamente
+        state.uiDirtyState.habitListStructure = true;
+        state.uiDirtyState.calendarVisuals = true;
+    }
+    
+    return changed;
 }

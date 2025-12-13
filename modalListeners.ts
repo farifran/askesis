@@ -1,9 +1,7 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// [ANALYSIS PROGRESS]: 100% - Análise concluída.
 // [NOTA COMPARATIVA]: Este arquivo atua como o 'Controlador de Interações Modais'. Diferente de 'habitActions.ts' (Regras de Negócio) ou 'render.ts' (Manipulação DOM), este módulo foca exclusivamente em capturar a intenção do usuário e delegar a execução. O código está bem desacoplado, utilizando event delegation para listas e helpers privados para lógica de formulário.
 
 import { ui } from './ui';
@@ -160,8 +158,8 @@ function _validateHabitName(newName: string, currentHabitId?: string): boolean {
         return false;
     }
 
-    // Verifica tamanho máximo (20 caracteres)
-    if (newName.length > 20) {
+    // Verifica tamanho máximo (16 caracteres)
+    if (newName.length > 16) {
         formNoticeEl.textContent = t('noticeNameTooLong');
         formNoticeEl.classList.add('visible');
         

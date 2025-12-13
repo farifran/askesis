@@ -3,7 +3,6 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// [ANALYSIS PROGRESS]: 100% - Análise concluída. O módulo de API está robusto, com tipagem estrita e lógica de retry implementada corretamente. Nenhuma redundância funcional encontrada.
 
 // UPDATE [2025-01-17]: Adicionada lógica de retry com backoff exponencial para maior robustez em rede.
 

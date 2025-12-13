@@ -3,7 +3,6 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// [ANALYSIS PROGRESS]: 0% - Análise concluída. Estratégia Cache-First robusta para App Shell.
 // [NOTA COMPARATIVA]: Nível de Engenharia: Crítico/Infraestrutura. Código de alta resiliência. Diferente de 'state.ts' (lógica) ou 'render.ts' (UI), bugs aqui podem causar falhas permanentes (zombie workers). A lógica de instalação agora garante integridade atômica do cache.
 // UPDATE [2025-02-23]: Critical Fix - Installation now fails if core assets cannot be fetched, preventing incomplete cache states.
 

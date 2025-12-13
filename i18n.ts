@@ -3,7 +3,6 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// [ANALYSIS PROGRESS]: 100% - Análise concluída. O módulo de internacionalização gerencia corretamente o carregamento dinâmico de JSONs, cache de PluralRules e atualização imperativa do DOM. Imports não utilizados removidos.
 
 import { state, Habit, LANGUAGES, PredefinedHabit, TimeOfDay, getScheduleForDate, invalidateChartCache } from './state';
 import { ui } from './ui';

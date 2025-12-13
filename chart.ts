@@ -1,9 +1,7 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// [ANALYSIS PROGRESS]: 100% - Análise concluída. Otimização de "Layout Thrashing" implementada. A geometria do gráfico agora é calculada preguiçosamente (Lazy Evaluation) na interação, evitando reflows forçados durante a atualização de dados.
 
 import { state, getActiveHabitsForDate, getHabitDailyInfoForDate } from './state';
 import { ui } from './ui';
@@ -144,7 +142,7 @@ function _updateChartDOM(chartData: ChartDataPoint[]) {
     });
     
     const svgWidth = ui.chartContainer.clientWidth;
-    const svgHeight = 100;
+    const svgHeight = 80;
     const padding = { top: 10, right: 10, bottom: 10, left: 10 };
     const chartWidth = svgWidth - padding.left - padding.right;
     const chartHeight = svgHeight - padding.top - padding.bottom;
@@ -228,7 +226,7 @@ function updateTooltipPosition() {
         
         const point = lastChartData[pointIndex];
         const { minVal, valueRange } = chartMetadata;
-        const chartHeight = 100 - padding.top - padding.bottom;
+        const chartHeight = 80 - padding.top - padding.bottom;
     
         const pointX = padding.left + (pointIndex / (lastChartData.length - 1)) * chartWidth;
         const pointY = padding.top + chartHeight - ((point.value - minVal) / valueRange) * chartHeight;
@@ -328,7 +326,7 @@ export function renderChart() {
             <div class="chart-header">
                 <div class="chart-title-group">
                     <h3 class="chart-title">${t('appName')}</h3>
-                    <p class="chart-subtitle">${t('chartTitle')}</p>
+                    <h4 class="chart-subtitle">${t('chartTitle')}</h4>
                 </div>
             </div>
             <div class="chart-empty-state">${t('chartEmptyState')}</div>
@@ -343,7 +341,7 @@ export function renderChart() {
             <div class="chart-header">
                 <div class="chart-title-group">
                     <h3 class="chart-title">${t('appName')}</h3>
-                    <p class="chart-subtitle">${t('chartTitle')}</p>
+                    <h4 class="chart-subtitle">${t('chartTitle')}</h4>
                 </div>
             </div>
             <div class="chart-wrapper">

@@ -3,7 +3,6 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// [ANALYSIS PROGRESS]: 100% - Análise concluída. A lógica de migração para a versão 6 (scheduleHistory) está correta e robusta, garantindo a integridade dos dados históricos ao unificar IDs e mesclar registros diários.
 // [NOTA COMPARATIVA]: Este módulo é executado raramente, mas é crítico. A implementação demonstra engenharia sênior ao usar Maps para eficiência e uma arquitetura baseada em array de 'MIGRATIONS' que facilita a adição de futuras alterações de esquema de banco de dados local sem refatoração pesada.
 
 import { AppState, Habit, HabitSchedule } from './state';

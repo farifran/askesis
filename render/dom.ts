@@ -3,7 +3,6 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// [ANALYSIS PROGRESS]: 100% - Módulo criado. Contém helpers de DOM puros.
 
 import { t } from '../i18n';
 

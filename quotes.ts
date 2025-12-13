@@ -3,7 +3,6 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// [ANALYSIS PROGRESS]: 100% - Análise concluída. Repositório de dados validado.
 // [NOTA COMPARATIVA]: Este arquivo atua como o Banco de Dados Estático da aplicação. A integridade do conteúdo (traduções, atribuições) é tão crítica quanto a sintaxe.
 // [2025-02-23]: Refatoração de tipos para manutenibilidade e limpeza de dados (remoção de citações apócrifas e correção de typos).
 

@@ -1,9 +1,7 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// [ANALYSIS PROGRESS]: 100% - Análise concluída.
 // [NOTA COMPARATIVA]: Este arquivo atua como o 'Controlador de Eventos'. Em comparação com a complexidade algorítmica de 'habitActions.ts' ou a manipulação direta do DOM em 'render.ts', este arquivo é arquiteturalmente limpo, atuando como um despachante (Dispatcher). Seu nível de código é excelente, pois delega responsabilidades complexas (Swipe, Drag&Drop) para módulos especializados.
 
 import { ui } from './ui';
@@ -15,6 +13,7 @@ import { setupHabitCardListeners } from './habitCardListeners';
 import { setupDragAndDropHandler } from './dragAndDropHandler';
 import { setupSwipeHandler } from './swipeHandler';
 import { DOM_SELECTORS } from './domConstants';
+import { markAllHabitsForDate } from './habitActions';
 
 function updateSelectedDateAndRender(date: string) {
     state.selectedDate = date;
@@ -41,6 +40,11 @@ export function setupEventListeners() {
     const LONG_PRESS_DURATION = 500;
     let longPressTimer: number | null = null;
     let isLongPress = false;
+    
+    // Variáveis de controle para múltiplos cliques
+    let clickCount = 0;
+    let clickTimer: number | null = null;
+    const MULTI_CLICK_DELAY = 300; // ms
 
     const openAlmanac = () => {
         state.fullCalendar = {
@@ -88,10 +92,42 @@ export function setupEventListeners() {
         }
 
         const dayItem = (e.target as HTMLElement).closest<HTMLElement>(DOM_SELECTORS.DAY_ITEM);
-        if (dayItem && dayItem.dataset.date) {
-            triggerHaptic('selection');
-            updateSelectedDateAndRender(dayItem.dataset.date);
+        if (!dayItem || !dayItem.dataset.date) return;
+
+        const dateISO = dayItem.dataset.date;
+
+        clickCount++;
+
+        if (clickTimer) {
+            clearTimeout(clickTimer);
         }
+
+        clickTimer = window.setTimeout(() => {
+            switch (clickCount) {
+                case 1:
+                    // Single Click: Select Date
+                    triggerHaptic('selection');
+                    updateSelectedDateAndRender(dateISO);
+                    break;
+                case 2:
+                    // Double Click: Mark all as completed
+                    triggerHaptic('success');
+                    if (markAllHabitsForDate(dateISO, 'completed')) {
+                        renderApp();
+                    }
+                    break;
+                default:
+                    // Triple Click or more: Mark all as snoozed
+                    if (clickCount >= 3) {
+                        triggerHaptic('medium');
+                        if (markAllHabitsForDate(dateISO, 'snoozed')) {
+                            renderApp();
+                        }
+                    }
+                    break;
+            }
+            clickCount = 0; // Reseta após a ação
+        }, MULTI_CLICK_DELAY);
     });
 
     // A11Y [2025-02-23]: Navegação por teclado na faixa de dias (Roving Focus)

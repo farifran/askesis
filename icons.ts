@@ -3,7 +3,6 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// [ANALYSIS PROGRESS]: 100% - Análise concluída. Repositório central de ícones validado. Otimização DRY aplicada e função de lookup protegida com fallback padrão.
 
 import { TimeOfDay } from './state';
 

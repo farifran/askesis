@@ -5,7 +5,6 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// [ANALYSIS PROGRESS]: 100% - Análise concluída. O estado da aplicação está bem estruturado. A lógica de cálculo de streaks e agendamento (scheduleHistory) está sólida. Implementadas otimizações de cache (WeakMap, LRU) e constantes para limites de histórico.
 // [2025-02-23]: Implementado "Cold Storage" (Arquivamento) para otimização de performance de longo prazo.
 // [2025-02-23]: Arquitetura Desacoplada. 'state.ts' não depende mais de 'cloud.ts'.
 

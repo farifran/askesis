@@ -3,7 +3,6 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// [ANALYSIS PROGRESS]: 100% - Análise concluída. Componente de controle rotativo otimizado com Pointer Capture e cache de layout para performance nativa.
 
 interface RotaryConfig {
     viewportEl: HTMLElement;

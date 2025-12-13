@@ -3,7 +3,6 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// [ANALYSIS PROGRESS]: 100% - Análise concluída. Imports limpos. Lógica de manipulação de eventos validada para performance e acessibilidade.
 
 import { ui } from './ui';
 import { state, Habit, getCurrentGoalForInstance, TimeOfDay } from './state';

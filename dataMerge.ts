@@ -3,7 +3,6 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  */
-// [ANALYSIS PROGRESS]: 100% - Módulo criado. Lógica de fusão isolada para reutilização e testabilidade.
 
 import { AppState, HabitDailyInfo, HabitStatus, TimeOfDay } from './state';
 

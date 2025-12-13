@@ -3,7 +3,6 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// [ANALYSIS PROGRESS]: 100% - Refatorado para Orquestrador (Barrel File).
 // Delega a lógica complexa para módulos especializados em 'render/'.
 
 import { state, LANGUAGES } from './state';

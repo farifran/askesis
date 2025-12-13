@@ -3,7 +3,6 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// [ANALYSIS PROGRESS]: 100% - Análise concluída. Utilitários otimizados para V8.
 // [NOTA COMPARATIVA]: Nível de Engenharia: Infraestrutura/Utilitário. Código puro e de alta performance.
 // Substitui bibliotecas pesadas (Moment.js, Marked) por implementações nativas leves e cacheadas.
 // PERFORMANCE [2025-02-23]: Regex e funções auxiliares movidas para escopo de módulo para evitar recriação em loops.

@@ -3,7 +3,6 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// [ANALYSIS PROGRESS]: 100% - Análise concluída. O módulo de Badge está robusto, seguro e performático. Lógica de contagem otimizada e tratamento de erros da API experimental implementado corretamente. Nenhuma ação adicional requerida.
 
 import { getHabitDailyInfoForDate, getActiveHabitsForDate } from './state';
 import { getTodayUTCIso } from './utils';

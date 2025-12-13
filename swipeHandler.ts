@@ -2,7 +2,6 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// [ANALYSIS PROGRESS]: 100% - Análise concluída. Módulo de Gestos (Swipe) validado.
 // [NOTA COMPARATIVA]: Nível de Engenharia: Crítico/Interativo. Implementa física de gestos com alta performance (60fps) usando 'requestAnimationFrame' e transformações GPU. A lógica de 'Pointer Capture' e detecção de intenção (Direction Locking) é robusta, prevenindo conflitos com a rolagem vertical nativa (depende de 'touch-action: pan-y' no CSS).
 
 import { triggerHaptic } from './utils';

@@ -2,7 +2,6 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// [ANALYSIS PROGRESS]: 100% - Análise concluída. Otimização final: Remoção de busca DOM redundante para o container de scroll. O argumento 'habitContainer' é usado diretamente.
 
 import { ui } from './ui';
 import { isCurrentlySwiping } from './swipeHandler';
@@ -15,9 +14,9 @@ const DROP_INDICATOR_GAP = 5; // Espaçamento em pixels acima/abaixo do cartão 
 const DROP_INDICATOR_HEIGHT = 3; // Deve corresponder à altura do indicador no CSS
 
 // Constantes para Auto-Scroll
-const SCROLL_ZONE_SIZE = 150; // Increased zone size for better reachability
-const BASE_SCROLL_SPEED = 10;
-const MAX_SCROLL_SPEED = 30; // Increased speed for smoother traversal
+const SCROLL_ZONE_SIZE = 200; // Increased zone size for better reachability
+const BASE_SCROLL_SPEED = 60;
+const MAX_SCROLL_SPEED = 180;
 
 export function setupDragAndDropHandler(habitContainer: HTMLElement) {
     let draggedElement: HTMLElement | null = null;
@@ -143,15 +142,18 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
         
         // UX: Lógica de detecção de borda para Auto-Scroll
         const { clientY } = e;
-        const viewportHeight = window.innerHeight;
+        const scrollContainerRect = habitContainer.getBoundingClientRect();
         
-        if (clientY < SCROLL_ZONE_SIZE) {
-            const intensity = 1 - (Math.max(0, clientY) / SCROLL_ZONE_SIZE);
-            scrollVelocity = -(BASE_SCROLL_SPEED + (intensity * intensity * (MAX_SCROLL_SPEED - BASE_SCROLL_SPEED)));
+        const topZoneEnd = scrollContainerRect.top + SCROLL_ZONE_SIZE;
+        const bottomZoneStart = scrollContainerRect.bottom - SCROLL_ZONE_SIZE;
+
+        if (clientY < topZoneEnd && clientY > scrollContainerRect.top) {
+            const intensity = Math.sqrt(1 - (clientY - scrollContainerRect.top) / SCROLL_ZONE_SIZE);
+            scrollVelocity = -(BASE_SCROLL_SPEED + (intensity * (MAX_SCROLL_SPEED - BASE_SCROLL_SPEED)));
         } 
-        else if (clientY > (viewportHeight - SCROLL_ZONE_SIZE)) {
-            const intensity = 1 - ((viewportHeight - clientY) / SCROLL_ZONE_SIZE);
-            scrollVelocity = BASE_SCROLL_SPEED + (intensity * intensity * (MAX_SCROLL_SPEED - BASE_SCROLL_SPEED));
+        else if (clientY > bottomZoneStart && clientY < scrollContainerRect.bottom) {
+            const intensity = Math.sqrt((clientY - bottomZoneStart) / SCROLL_ZONE_SIZE);
+            scrollVelocity = BASE_SCROLL_SPEED + (intensity * (MAX_SCROLL_SPEED - BASE_SCROLL_SPEED));
         } 
         else {
             scrollVelocity = 0;
