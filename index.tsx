@@ -130,7 +130,12 @@ function finalizeInit(loader: HTMLElement | null) {
         loader.classList.add('hidden');
         loader.addEventListener('transitionend', () => loader.remove());
     }
-    inject(); // Vercel Analytics
+    
+    // FIX [2025-02-28]: Injeta Analytics apenas em produção para evitar erros 404 no console de desenvolvimento.
+    // O script /_vercel/insights/script.js é virtual e só existe na infraestrutura da Vercel.
+    if (process.env.NODE_ENV === 'production') {
+        inject(); 
+    }
 }
 
 // --- MAIN INITIALIZATION ---
