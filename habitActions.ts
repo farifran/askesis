@@ -1,4 +1,3 @@
-
 // habitActions.ts
 
 /**
@@ -21,22 +20,23 @@ import {
     HabitDailyInfo, // Required for correlation helper
     APP_VERSION,
     persistStateLocally,
-    loadState
+    loadState,
+    HabitStatus
 } from './state';
-import { ui } from './ui';
+import { ui } from './render/ui';
 import { 
     renderApp, renderHabits, openEditModal, 
     closeModal, showConfirmationModal, showUndoToast, renderAINotificationState, renderHabitCardState,
-    renderCalendarDayPartial, setupManageModal, removeHabitFromCache
+    renderCalendarDayPartial, setupManageModal, removeHabitFromCache, openModal
 } from './render';
 import { t, getHabitDisplayInfo } from './i18n';
 import { 
     toUTCIsoDateString, parseUTCIsoDate, generateUUID, 
-    getTodayUTCIso, addDays, getDateTimeFormat
+    getTodayUTCIso, addDays, getDateTimeFormat, simpleMarkdownToHTML
 } from './utils';
-import { apiFetch } from './api';
-import { STOIC_QUOTES } from './quotes';
-import { mergeStates } from './dataMerge';
+import { apiFetch } from './services/api';
+import { STOIC_QUOTES } from './data/quotes';
+import { mergeStates } from './services/dataMerge';
 import { syncStateWithCloud } from './cloud';
 
 // --- HELPERS ---
@@ -991,6 +991,96 @@ export function handleSaveNote() {
     renderHabitCardState(habitId, time);
 }
 
+export function reorderHabit(habitId: string, targetHabitId: string, position: 'before' | 'after', shouldSave: boolean = true) {
+    const habitIndex = state.habits.findIndex(h => h.id === habitId);
+    const targetIndex = state.habits.findIndex(h => h.id === targetHabitId);
+
+    if (habitIndex === -1 || targetIndex === -1 || habitIndex === targetIndex) return;
+
+    const [habit] = state.habits.splice(habitIndex, 1);
+    
+    // Recalculate target index because removal might have shifted indices
+    const newTargetIndex = state.habits.findIndex(h => h.id === targetHabitId);
+    
+    const insertIndex = position === 'before' ? newTargetIndex : newTargetIndex + 1;
+    state.habits.splice(insertIndex, 0, habit);
+
+    if (shouldSave) {
+        state.uiDirtyState.habitListStructure = true;
+        clearActiveHabitsCache();
+        saveState();
+        renderApp();
+    }
+}
+
+export function handleHabitDrop(
+    habitId: string, 
+    fromTime: TimeOfDay, 
+    toTime: TimeOfDay,
+    reorderTarget?: { id: string, pos: 'before' | 'after' }
+) {
+    const habit = state.habits.find(h => h.id === habitId);
+    if (!habit) return;
+
+    const date = state.selectedDate;
+    const { name } = getHabitDisplayInfo(habit, date);
+    
+    const confirmTitle = t('moveHabitTitle');
+    const confirmText = t('moveHabitBody', { 
+        habitName: name,
+        from: t(`filter${fromTime}`),
+        to: t(`filter${toTime}`)
+    });
+
+    _requestFutureScheduleChange(
+        habit,
+        date,
+        confirmText,
+        confirmTitle,
+        fromTime,
+        toTime,
+        reorderTarget
+    );
+}
+
+export function markAllHabitsForDate(dateISO: string, status: HabitStatus): boolean {
+    const activeHabits = getActiveHabitsForDate(dateISO);
+    if (activeHabits.length === 0) return false;
+
+    let changed = false;
+    
+    // Ensure daily info exists for all to prevent partial updates
+    const dayRecord = getHabitDailyInfoForDate(dateISO); 
+
+    activeHabits.forEach(({ habit, schedule }) => {
+        schedule.forEach(time => {
+            const instanceData = ensureHabitInstanceData(dateISO, habit.id, time);
+            if (instanceData.status !== status) {
+                instanceData.status = status;
+                changed = true;
+            }
+        });
+        
+        if (changed) {
+            invalidateStreakCache(habit.id, dateISO);
+        }
+    });
+
+    if (changed) {
+        invalidateDaySummaryCache(dateISO);
+        invalidateChartCache();
+        
+        if (state.selectedDate === dateISO) {
+             state.uiDirtyState.habitListStructure = true;
+        }
+        state.uiDirtyState.calendarVisuals = true;
+        
+        saveState();
+        return true;
+    }
+    return false;
+}
+
 // DEFINIÇÃO DE CABEÇALHOS PRE-TRADUZIDOS (PROMPT ENGINEERING)
 const PROMPT_HEADERS = {
     pt: {
@@ -1424,312 +1514,64 @@ export async function performAIAnalysis(analysisType: 'monthly' | 'quarterly' | 
 
     let dataQualityWarning = "Good context.";
     if (globalRate < 80 && mysteryHabits.length > 0) {
-         dataQualityWarning = `MISSING CONTEXT: User is failing at ${mysteryHabits.join(', ')} but has written ZERO notes.`;
-    } else if (globalRate >= 80) {
-         dataQualityWarning = "High performance; notes are optional.";
+        dataQualityWarning = `MISSING CONTEXT WARNING: ${mysteryHabits.length} habits have low success (<60%) AND ZERO NOTES. Habits: ${mysteryHabits.join(', ')}. AI cannot diagnose 'why'. SUGGESTION: Ask user to add notes when failing these.`;
     }
-
-    let seasonalPhase = "";
-    if (globalRate > 85 && trendDiff >= -2) seasonalPhase = "SUMMER (Harvest/Flow) - High performance.";
-    else if (globalRate < 50) seasonalPhase = "WINTER (The Citadel) - Low performance, focus on resilience.";
-    else if (trendDiff > 5) seasonalPhase = "SPRING (Ascent) - Growing momentum.";
-    else seasonalPhase = "AUTUMN (Turbulence) - Declining momentum.";
-
-    // REFACTOR [2025-02-16]: Projection is no longer hardcoded text.
-    let historicalDepth = "Short (New)";
-    if (highestStreakValue > 66) historicalDepth = "Deep (Consolidated)";
-    else if (highestStreakValue > 21) historicalDepth = "Medium (Forming)";
-
-    const projectionMetrics = `
-    - Current Consistency: ${Math.round(globalRate)}%
-    - Momentum (Last 7 Days vs Previous): ${trendDiff > 0 ? '+' : ''}${Math.round(trendDiff)}%
-    - History Depth: ${historicalDepth}
-    - Streak Risk: ${highestStreakValue > 10 ? "High Stakes" : "Low Stakes"}
-    `;
-
-    // --- SMART QUOTE SELECTION ---
-    let quoteFilterFn = (q: any) => true; // Default to all
-    let quoteReason = "General Wisdom"; 
-
-    const isBurnout = activeHabitsCount > 6 && trendDiff < 0;
-    const isDrifter = globalRate < 50 && trendDiff <= 0;
-
-    if (isBurnout) {
-        quoteFilterFn = (q) => q.tags.includes('simplicity') || q.tags.includes('rest') || q.tags.includes('essentialism');
-        quoteReason = "simplifying your routine to prevent burnout (Essentialism)";
-    } else if (highestSnoozeRate > 0.15) {
-        quoteFilterFn = (q) => q.tags.includes('action') || q.tags.includes('time');
-        quoteReason = "overcoming the inertia of procrastination";
-    } else if (realityGapWarning.length > 0) {
-        quoteFilterFn = (q) => q.tags.includes('control') || q.tags.includes('reality');
-        quoteReason = "aligning ambition with reality";
-    } else if (seasonalPhase.includes("WINTER") || seasonalPhase.includes("AUTUMN")) {
-        quoteFilterFn = (q) => q.tags.includes('resilience') || q.tags.includes('suffering');
-        quoteReason = "finding strength in adversity";
-    } else if (seasonalPhase.includes("SUMMER")) {
-        quoteFilterFn = (q) => q.tags.includes('nature') || q.tags.includes('humility');
-        quoteReason = "maintaining humility in success";
-    } else if (isDrifter) {
-        quoteFilterFn = (q) => q.tags.includes('discipline') || q.tags.includes('focus');
-        quoteReason = "building the foundation of discipline";
-    } else if (lowestPerfRate < 0.6) {
-        if (lowestPerfTime === 'Morning') {
-            quoteFilterFn = (q) => q.tags.includes('time') || q.tags.includes('action') || q.tags.includes('morning');
-            quoteReason = "conquering the morning resistance";
-        } else if (lowestPerfTime === 'Evening') {
-            quoteFilterFn = (q) => q.tags.includes('reflection') || q.tags.includes('evening') || q.tags.includes('gratitude');
-            quoteReason = "closing the day with purpose";
-        }
-    } else if (redFlagDay) {
-        quoteFilterFn = (q) => q.tags.includes('acceptance') || q.tags.includes('fate');
-        quoteReason = "accepting the chaos of a bad day (Amor Fati)";
-    } else if (totalLogs < 20) {
-        quoteFilterFn = (q) => q.tags.includes('courage') || q.tags.includes('preparation');
-        quoteReason = "finding the courage to begin";
-    }
-
-    const quotePool = STOIC_QUOTES.filter(quoteFilterFn);
-    const finalPool = quotePool.length > 0 ? quotePool : STOIC_QUOTES;
-    
-    const selectedQuote = finalPool[Math.floor(Math.random() * finalPool.length)];
-    const quoteText = selectedQuote[langCode as 'pt'|'en'|'es'] || selectedQuote['en'];
-    const quoteAuthor = t(selectedQuote.author);
-
-    // --- DYNAMIC INSTRUCTION INJECTION ---
-    let systemInstructionText = "Suggest a specific 'Implementation Intention' to reduce friction (Mise-en-place).";
-    
-    let actionInstructionText = `One tiny, 'Gateway Habit' (less than 2 min). A physical movement that initiates the flow. Link it to a PRECISE BIOLOGICAL/MECHANICAL ANCHOR (e.g. 'Feet hit floor', 'Turn off shower', 'Close laptop') suitable for the user's struggle time (${lowestPerfTime}). Avoid time-based anchors (e.g. 'At 8am'). Time Horizon: NOW or TONIGHT. Never Tomorrow.`;
-    
-    if (lowestPerfTime === 'Morning' && lowestPerfRate < 0.6) {
-        actionInstructionText += " TIMING RULE: Since the failure happens in the Morning, the Trigger MUST happen the **Night Before** (Preparation) OR **Immediately upon Waking** (if prep is impossible).";
-    }
-    
-    let socraticInstruction = "Ask about FRICTION (What stands in the way? Is it fatigue or fear?).";
-    
-    if (highestSnoozeRate > 0.2) {
-        actionInstructionText += " **DIAGNOSIS: High Resistance (Snoozing).** The user has Ability but lacks Motivation/Courage. The Action must be 'Stupidly Small' to bypass the amygdala (e.g., 'Put on one shoe'). Lower the threat level.";
-    } else if (highestMissRate > 0.2) {
-        actionInstructionText += " **DIAGNOSIS: Low Visibility (Missing).** The user lacks a Prompt or Ability (Time). The Action must be a 'Forced Encounter' (e.g., placing the book on the pillow). Improve the Trigger.";
-    }
-
-    // DEEPENING ANALYSIS [2025-02-15]: "Domino Effect" Detection.
-    let patternInstruction = `Use the Semantic Log. ${correlationInfo} Scan for other subtle links. Does a specific success trigger a streak?`;
-    
-    // DEEPENING ANALYSIS [2025-02-15]: Benefit Reinforcement Logic.
-    let teleologyInstruction = "";
-    if (nemesisName) {
-        teleologyInstruction = `**CRITICAL:** The user is struggling with '${nemesisName}'. In the 'Hidden Virtue' section, do NOT scold. Instead, SELL THE BENEFIT. Explain the deep, philosophical, or psychological reward of '${nemesisName}' that the user is missing out on. Frame it as the specific antidote to their current struggle. e.g., If drifting, the benefit is Anchoring. If anxious, the benefit is Clarity.`;
-    } else {
-        teleologyInstruction = `The user is consistent. In the 'Hidden Virtue' section, reinforce the COMPOUND INTEREST of their 'Keystone Habit' (${highestStreakHabitName || 'consistency'}). Explain what character trait they are forging by not quitting.`;
-    }
-
-    let tweaksExamples = `
-    Examples of System Tweaks (Low Friction):
-    - Bad: "Read more." -> Good: "When I drink coffee, I will open the book."
-    - Bad: "Workout." -> Good: "When I wake up, I will put on gym shoes."
-    `;
-
-    let headerSystem = headers.system_low;
-    let headerAction = headers.action_low;
-    
-    let insightPlaceholder = "[A surgical analysis of the current state. Don't just list data; interpret the CAUSE of the friction or the SOURCE of the flow. Use Stoic physics: Cause and Effect.]";
-    let actionPlaceholder = "[One tiny 'Gateway Habit' step (< 2 min). Focus on MISE-EN-PLACE (Preparation) linked to an ANCHOR.]";
-
-
-    // FOCUS LOGIC & SPARKLINE GENERATION
-    let focusTarget = "Sustainability & Burnout Prevention (Maintenance)";
-    
-    if (highestStreakHabitName) {
-         focusTarget = `'Keystone Habit' (${highestStreakHabitName})`;
-         for (const [id, data] of statsMap.entries()) {
-             const { name } = getHabitDisplayInfo(data.habit, toUTCIsoDateString(today));
-             if (name === highestStreakHabitName) sparklineHabitId = id;
-         }
-    }
-    if (nemesisName) {
-        focusTarget = `'Nemesis' (${nemesisName}) - Source of the problem`;
-        for (const [id, data] of statsMap.entries()) {
-             const { name } = getHabitDisplayInfo(data.habit, toUTCIsoDateString(today));
-             if (name === nemesisName) sparklineHabitId = id;
-        }
-    }
-    
-    if (realityGapWarning.length > 0) {
-        focusTarget = "the Reality Gap (Goal Reduction) - Source of the problem";
-        systemInstructionText = "Your 'System Tweak' MUST be a direct command to reduce the numeric goal to match reality. Do NOT use the 'When/Then' template. Just stating the new goal is enough.";
-        implTemplate = recalibrationTemplate;
-        actionInstructionText = "Commit to the new, smaller number immediately. The action is 'Mental Acceptance'.";
-    }
-    
-    if (redFlagDay) focusTarget = `The Collapse on ${redFlagDay} - Analyze why this specific day failed.`;
-    
-    if (isBurnout) {
-        focusTarget = "BURNOUT RISK (Too many habits, dropping trend). Priority: Simplicity.";
-        systemInstructionText = "Suggest PAUSING or ARCHIVING one habit to save the others. The system is overloaded.";
-        actionInstructionText = "A specific action to Rest or Simplify. e.g. 'Delete one task from to-do list'.";
-    }
-
-    let sparkline = "";
-    if (sparklineHabitId) {
-        const habit = state.habits.find(h => h.id === sparklineHabitId);
-        if (habit) {
-            const days: string[] = [];
-            for (let i = 6; i >= 0; i--) {
-                const d = addDays(today, -i);
-                const dISO = toUTCIsoDateString(d);
-                // USE LAZY ACCESSOR
-                const daily = getHabitDailyInfoForDate(dISO)[sparklineHabitId]?.instances || {};
-                
-                const schedule = getEffectiveScheduleForHabitOnDate(habit, dISO);
-                if (schedule.length === 0) {
-                     days.push('▪️');
-                     continue;
-                }
-                
-                let dayStatus = '❌';
-                let hasCompleted = false;
-                let hasSnoozed = false;
-                
-                for (const time of schedule) {
-                    const s = daily[time]?.status;
-                    if (s === 'completed') hasCompleted = true;
-                    if (s === 'snoozed') hasSnoozed = true;
-                }
-                
-                if (hasCompleted) dayStatus = '✅';
-                else if (hasSnoozed) dayStatus = '⏸️';
-                
-                days.push(dayStatus);
-            }
-            sparkline = days.join(' ');
-        }
-    }
-
-
-    let taskDescription = `Write a structured, soulful Stoic mentorship reflection based on the user's evidence (${periodName})`;
-    let logContent = semanticLog.join('\n');
-
-    // --- COLD START / ONBOARDING MODE ---
-    if (totalLogs < 5) {
-        seasonalPhase = "THE BEGINNING (Day 1)";
-        focusTarget = "Building the Foundation (Start Small)";
-        systemInstructionText = "Suggest a very small, almost ridiculous starting step to build momentum.";
-        socraticInstruction = "Ask what is the smallest version of this habit they can do even on their worst day.";
-        patternInstruction = "Do NOT look for trends yet. Validate the courage of the first step.";
-        insightPlaceholder = "[Welcome them to the Stoic path. Validate the difficulty of starting. Focus on the courage to begin.]";
-        taskDescription = "Write a welcoming and foundational Stoic mentorship letter for a beginner.";
-        sparkline = ""; 
-        logContent = "(Insufficient data for pattern recognition - Focus solely on the virtue of starting.)";
-    } else if (globalRate > 80 || seasonalPhase.includes("SUMMER")) {
-        systemInstructionText = "Suggest a method to increase difficulty (Progressive Overload) or efficiency. Challenge them.";
-        
-        actionInstructionText = "A specific experimental step to Challenge Limits, Teach Others, or Vary the Context (Anti-fragility). Link to an Anchor.";
-        
-        socraticInstruction = "Use 'Eternal Recurrence' (Amor Fati). Ask: 'Would you be willing to live this exact week again for eternity?'";
-        
-        if (highestStreakValue > 30) {
-            socraticInstruction = "Deconstruct the fear of losing the streak. Ask: 'Does the value lie in the number (external) or the character you are building (internal)?'";
-        }
-        
-        tweaksExamples = `
-        Examples of System Tweaks (High Performance):
-        - Bad: "Keep going." -> Good: "When I finish the set, I will add 5 minutes."
-        - Bad: "Good job." -> Good: "When I master this, I will teach it to someone else."
-        `;
-
-        headerSystem = headers.system_high;
-        headerAction = headers.action_high;
-        insightPlaceholder = "[Synthesize the victory. Analyze what makes their consistency possible and where the next plateau lies. 2-3 sentences. NO LISTS.]";
-        actionPlaceholder = "[A specific constraint or added difficulty to test their mastery (Progressive Overload).]";
-    }
-
-    const forbiddenWhyMap = {
-        pt: '"Por que"',
-        en: '"Why"',
-        es: '"Por qué"'
-    };
-    const forbiddenWhy = forbiddenWhyMap[langCode as 'pt'|'en'|'es'] || '"Why"';
-    
-    const currentDateStr = toUTCIsoDateString(today);
-
 
     const prompt = `
-        ### THE COMPASS (Primary Focus):
-        PRIMARY FOCUS: ${focusTarget}
-        PATTERN: ${sparkline}
-        REFERENCE DATE (TODAY): ${currentDateStr}
-        (The Title, Insight, and System Tweak MUST revolve around this focus.)
+    Analyze this user's habit data for the period: ${periodName} (${daysCount} days).
+    Language: ${targetLang}
+    
+    **DATA SUMMARY:**
+    - Total Logs: ${totalLogs}
+    - Note Density: ${noteDensity}% (Higher is better for diagnosis)
+    - Trend: ${trendDescription} (First Half: ${firstHalfRate}% -> Second Half: ${secondHalfRate}%)
+    - Active Habits: ${activeHabitsCount}
+    
+    **HABIT PERFORMANCE:**
+    ${statsSummary}
+    
+    **TEMPORAL PATTERNS:**
+    ${temporalSummary}
+    
+    **CRITICAL INSIGHTS:**
+    - ${nemesisInfo}
+    - ${correlationInfo}
+    - Bad Day Trigger? ${culpritInfo}
+    - Red Flag Day (Worst Performance): ${redFlagDay || "None"}
+    - Resilience Score (Bounce Backs after failure): ${totalBounces}
+    - "Extra Mile" Effort (Exceeding Goal): ${totalExtraMiles} times
+    - Reality Check: ${realityGapWarning || "Goals seem realistic."}
+    - Data Quality: ${dataQualityWarning}
 
-        ### 1. THE CONTEXT (Data)
-        - **Stats:** \n${statsSummary}
-        - **Gaps:** Note Density: ${noteDensity}%. ${dataQualityWarning}
-        - **Trend:** Momentum: ${trendDescription}. Keystone Failure: ${culpritInfo}
-        - **Friction Diagnosis:** ${nemesisInfo}
-        - **Chain Reaction (Domino):** ${correlationInfo}
-        - **Red Flag Day (Collapse):** ${redFlagDay || "None"}
-        - **Struggling Time:** ${lowestPerfTime}
+    **DETAILED LOGS (Last ${Math.min(daysCount, 7)} Days for Context):**
+    ${semanticLog.slice(-7).join('\n')}
 
-        ### 2. THE STRATEGY
-        - **Bio-rhythm:** \n${temporalSummary}
-        - **Reality Check (Math Calculated):** \n${realityGapWarning || "Goals are realistic."}
-        - **Metrics:** Extra Miles: ${totalExtraMiles}. Bounce Backs: ${totalBounces}.
+    ---
+    **INSTRUCTIONS:**
+    Act as a Stoic Philosopher and Behavioral Scientist. 
+    Using the data above, provide a structured evaluation in ${targetLang}.
+    Use ONLY the provided headers. Do not invent new headers.
+    
+    Format:
+    
+    ### ${headers.projection}
+    (Briefly analyze the trajectory. If they continue like this for 1 year, where will they be? Be brutally honest but encouraging.)
 
-        ### 3. THE PHILOSOPHY
-        - **Season:** ${seasonalPhase}
-        - **Trajectory Metrics:** \n${projectionMetrics}
-        - **Selected Wisdom:** "${quoteText}" - ${quoteAuthor}
-        - **Wisdom Intent:** Chosen to address: ${quoteReason}
+    ### ${headers.insight}
+    (Identify the CORE philosophical weakness based on the data. Is it Akrasia (weakness of will)? Fear? Lack of Focus? Use the 'Nemesis' and 'Correlation' data here. If 'Nemesis' exists, analyze why.)
 
-        ### SEMANTIC LOG (The User's Week):
-        (Legend: ✅=Success, ❌=Pending/Fail, ⏸️=Snoozed, "Text"=User Note. Ordered by time of day.)
-        ${logContent}
+    ### ${headers.system_low}
+    (Tactical fix for the WEAKEST point. Use the 'Lowest Performance Time' (${lowestPerfTime}) or the 'Nemesis' habit. Give a specific "Implementation Intention". 
+    Template: "${implTemplate}". Fill the placeholders based on their specific struggle.)
 
-        INSTRUCTIONS:
-        1. **BENEVOLENT DETACHMENT:** Do NOT praise ("Good job") or scold ("Do better"). Be an observant mirror. Firm but warm. Do NOT write "Based on the data". Speak naturally, like a mentor writing a letter. Use PARAGRAPHS, NOT LISTS for text sections. NO GREETINGS. NO SIGNATURES. Start directly with the Title.
-        2. **BE SOCRATIC:** ${socraticInstruction}
-           - **CONSTRAINT:** One single, piercing sentence. DO NOT use the word ${forbiddenWhy} (or its translations). AVOID YES/NO questions (e.g. "Are you commited?"). Force deep processing.
-        3. **PATTERN RECOGNITION:** ${patternInstruction}
-        4. **THE TELEOLOGY (THE REWARD):** ${teleologyInstruction}
-        5. **THE PROTOCOL (SYSTEM):** 
-           - ${systemInstructionText}
-           - **SYNTAX:** Use EXACTLY this template: "${implTemplate}" (REMOVE BRACKETS when filling). (Output ONLY the sentence, no intro/outro)
-           - **FOCUS:** Focus on the PRIMARY FOCUS defined above. ZERO COST.
-           - **CONSTRAINT:** ACTION must be a single, binary event (e.g. 'open book', 'put on shoes'). Forbidden verbs: try, attempt, focus, aim, should.
-        6. **CONNECT WISDOM:** Use the provided quote ("${quoteText}"). Do NOT explain the quote itself. Use the quote's concept to illuminate the user's specific struggle/victory.
-        7. **INTERPRET LOG:** 
-           - ✅ = Success.
-           - ⏸️ = **Resistance** (User saw it but delayed). REMEDY: Lower the bar. 
-           - **NOTE HANDLING:** If a "Note" is present with ⏸️ or ❌, analyze the sentiment. If it's Internal (Lazy, Bored), treat as Resistance (Action required). If it's External (Sick, Emergency), treat as Amor Fati (Acceptance).
-           - ❌ = **Neglect** (User forgot). REMEDY: Increase Visibility / Better Trigger.
-           - ▪️ = **Rest/No Schedule** (Not a failure).
-           - **NUMBERS (e.g. 5/10):** Partial Success. If Actual < Target, acknowledge effort but note the gap.
-        8. **THE TRIGGER (PHYSICS):** ${actionInstructionText}
+    ### ${headers.system_high}
+    (Challenge for their STRONGEST point/habit (${highestStreakHabitName}). How can they elevate it? Push for Excellence/Areté.)
 
-        OUTPUT STRUCTURE (Markdown in ${targetLang}):
+    ### ${headers.socratic}
+    (One single, powerful question for them to journal about tonight. Make it uncomfortable but necessary. Based on their specific failure pattern.)
 
-        ### 🏛️ [Title: Format "On [Concept]" or Abstract Noun. NO CHEESY TITLES.]
-
-        **🔮 ${headers.projection}**
-        [Analyze the 'Trajectory Metrics'. Don't just predict a date. Extrapolate the current curve: Is it leading to Entropy (Chaos) or Ataraxia (Order)? Be brutally honest but encouraging.]
-
-        **📊 ${headers.insight}**
-        ${insightPlaceholder}
-
-        **💎 [Title about the Virtue/Benefit of the Struggle]**
-        [The 'Teleology' section. Explain the deep benefit of the struggling habit. Why is this specific pain necessary for the user's growth right now?]
-
-        **⚙️ ${headerSystem}**
-        [The Implementation Intention using the template: "${implTemplate}". Zero cost. The Rule. REMOVE BRACKETS.]
-
-        **❓ ${headers.socratic}**
-        [One deep, single-sentence question.]
-
-        **🏛️ ${headers.connection}**
-        [Quote provided above]
-        [Connect the wisdom to the data.]
-
-        **🎯 ${headerAction}**
-        ${actionPlaceholder}
+    ### ${headers.connection}
+    (A short, relevant quote from Seneca, Epictetus, or Marcus Aurelius that fits this exact situation. No generic quotes.)
     `;
 
     try {
@@ -1737,130 +1579,25 @@ export async function performAIAnalysis(analysisType: 'monthly' | 'quarterly' | 
             method: 'POST',
             body: JSON.stringify({
                 prompt,
-                systemInstruction: `You are Askesis AI, a wise Stoic companion. ${taskDescription}. You write "Stoic Letters" - dense, profound, and direct blocks of wisdom.
-                
-                STYLE: Epistolary (Letter-like), concise, grave but kind. Benevolent Detachment.
-                FORBIDDEN: "Based on the data", "Here is the analysis", "According to the stats", "Why", "Amor Fati", "Mise-en-place". (Apply the concepts, do not name them).
-                STRUCTURE: Do NOT use greetings ("Hello", "Dear User") or sign-offs ("Best regards"). Start directly with the Title.
-                GOLDEN RULE: Never advise "trying harder" or "being more disciplined". Advise "changing the method" or "altering the environment".
-                
-                FOCUS:
-                1. Identity (Who they are becoming).
-                2. Environment (How to change the room, not the will).
-                3. The Why (Deep understanding of patterns).
-                4. Amor Fati (Accept failure as data, not sin).
-                
-                ${tweaksExamples}
-
-                FORBIDDEN VERBS (Action): try, attempt, focus, aim, should, must, will try.
-                REQUIRED VERBS: open, put, write, step, walk, turn off.
-                TIME HORIZON: Actions must be doable NOW or TONIGHT. Never "Tomorrow".
-                `
+                systemInstruction: `You are a Stoic mentor. Concise, wise, practical. No fluff.`
             })
         });
-
-        if (!response.ok) throw new Error('AI request failed');
 
         const text = await response.text();
         state.lastAIResult = text;
         state.aiState = 'completed';
-        
-        // Notification logic: Do not open modal automatically.
-        state.hasSeenAIResult = false;
-
     } catch (error) {
         console.error("AI Analysis failed", error);
         state.aiState = 'error';
-        state.lastAIResult = t('aiErrorGeneric');
-        state.lastAIError = error instanceof Error ? error.message : String(error);
-        state.hasSeenAIResult = false; 
-    } finally {
-        renderAINotificationState();
-        saveState();
+        state.lastAIError = t('aiError');
     }
-}
 
-export function handleHabitDrop(
-    habitId: string, 
-    fromTime: TimeOfDay, 
-    toTime: TimeOfDay,
-    reorderTarget?: { id: string, pos: 'before' | 'after' }
-) {
-    const habit = state.habits.find(h => h.id === habitId);
-    if (!habit) return;
+    renderAINotificationState();
     
-    const date = state.selectedDate;
-    const { name } = getHabitDisplayInfo(habit, date);
-
-    _requestFutureScheduleChange(
-        habit,
-        date,
-        t('confirmHabitMove', { habitName: name, oldTime: t(`filter${fromTime}`), newTime: t(`filter${toTime}`) }),
-        t('modalMoveHabitTitle'),
-        fromTime,
-        toTime,
-        reorderTarget
-    );
-}
-
-export function reorderHabit(habitId: string, targetHabitId: string, position: 'before' | 'after', commit: boolean = true) {
-    const oldIndex = state.habits.findIndex(h => h.id === habitId);
-    const targetIndex = state.habits.findIndex(h => h.id === targetHabitId);
-    
-    if (oldIndex === -1 || targetIndex === -1) return;
-
-    // Remove
-    const [habit] = state.habits.splice(oldIndex, 1);
-    
-    // Recalcula índice de destino após remoção
-    let newIndex = state.habits.findIndex(h => h.id === targetHabitId);
-    if (position === 'after') newIndex++;
-
-    // Insere
-    state.habits.splice(newIndex, 0, habit);
-
-    state.uiDirtyState.habitListStructure = true;
-    if (commit) {
-        saveState();
-        renderHabits();
+    if (state.aiState === 'completed') {
+        ui.aiResponse.innerHTML = simpleMarkdownToHTML(state.lastAIResult!);
+        openModal(ui.aiModal);
+    } else if (state.aiState === 'error') {
+        alert(t('aiErrorGeneric')); 
     }
-}
-
-/**
- * Marks all active habits for a given date with a specific status.
- * Used for multi-click shortcuts on the calendar.
- * @param dateISO The date to update in ISO format.
- * @param status The target status ('completed' or 'snoozed').
- * @returns {boolean} True if any habit status was changed, false otherwise.
- */
-export function markAllHabitsForDate(dateISO: string, status: 'completed' | 'snoozed'): boolean {
-    const activeHabits = getActiveHabitsForDate(dateISO);
-    
-    if (activeHabits.length === 0) return false;
-
-    let changed = false;
-    activeHabits.forEach(({ habit, schedule }) => {
-        schedule.forEach(time => {
-            const instance = ensureHabitInstanceData(dateISO, habit.id, time);
-            // Only change if it's not already in the target state to avoid unnecessary writes/cache invalidations
-            if (instance.status !== status) {
-                instance.status = status;
-                invalidateStreakCache(habit.id, dateISO);
-                changed = true;
-            }
-        });
-    });
-
-    // Only save and set dirty flags if something actually changed
-    if (changed) {
-        invalidateChartCache();
-        invalidateDaySummaryCache(dateISO); // Invalidate only the specific day
-        saveState();
-        
-        // Força a re-renderização da UI para refletir as mudanças imediatamente
-        state.uiDirtyState.habitListStructure = true;
-        state.uiDirtyState.calendarVisuals = true;
-    }
-    
-    return changed;
 }

@@ -9,8 +9,8 @@
 // [2025-02-23]: Arquitetura Desacoplada. 'state.ts' não depende mais de 'cloud.ts'.
 
 import { addDays, getTodayUTC, getTodayUTCIso, toUTCIsoDateString, parseUTCIsoDate } from './utils';
-import { icons } from './icons';
-import { migrateState } from './migration';
+import { icons } from './render/icons';
+import { migrateState } from './services/migration';
 
 // --- TYPES & INTERFACES ---
 export type HabitStatus = 'completed' | 'snoozed' | 'pending';

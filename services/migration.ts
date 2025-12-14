@@ -5,7 +5,7 @@
 */
 // [NOTA COMPARATIVA]: Este módulo é executado raramente, mas é crítico. A implementação demonstra engenharia sênior ao usar Maps para eficiência e uma arquitetura baseada em array de 'MIGRATIONS' que facilita a adição de futuras alterações de esquema de banco de dados local sem refatoração pesada.
 
-import { AppState, Habit, HabitSchedule } from './state';
+import { AppState, Habit, HabitSchedule } from '../state';
 
 /**
  * Migrates the state from a version older than 6 to version 6.

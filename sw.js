@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -19,6 +20,7 @@ const CACHE_FILES = [
     '/index.html',
     '/bundle.js',
     '/bundle.css',
+    '/sync-worker.js', // WORKER [2025-02-28]: Adicionado ao cache para suporte offline
     '/manifest.json',
     '/locales/pt.json',
     '/locales/en.json',

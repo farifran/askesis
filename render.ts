@@ -7,15 +7,15 @@
 
 import { state, LANGUAGES } from './state';
 import { runIdle, parseUTCIsoDate, toUTCIsoDateString, addDays, getDateTimeFormat, pushToOneSignal, getTodayUTCIso } from './utils';
-import { ui } from './ui';
+import { ui } from './render/ui';
 import { t } from './i18n';
-import { STOIC_QUOTES } from './quotes';
-import { renderChart } from './chart';
+import { STOIC_QUOTES } from './data/quotes';
 
 // Importa os renderizadores especializados
 import { setTextContent, updateReelRotaryARIA } from './render/dom';
 import { renderCalendar, renderFullCalendar } from './render/calendar';
 import { renderHabits } from './render/habits';
+import { renderChart } from './render/chart';
 // IMPORTANTE: Importação explícita necessária para uso interno neste arquivo
 import { renderLanguageFilter } from './render/modals';
 
@@ -272,44 +272,8 @@ function updateUIText() {
 }
 
 export async function setLanguage(langCode: 'pt' | 'en' | 'es') {
-    // await loadLanguage(langCode); // This function is internal to i18n.ts, called via setLanguage in i18n.ts not here?
-    // Wait, setLanguage is defined in i18n.ts and exported. This file is render.ts. 
-    // The previous implementation had setLanguage here? Let me check the provided file content.
-    // Ah, `updateUIText` was internal to i18n.ts in previous versions, but moved here?
-    // Looking at the provided `render.ts` content, `setLanguage` is NOT defined here. 
-    // `setLanguage` is imported from `./i18n`.
-    // However, `updateUIText` is defined in `i18n.ts` in the previous `i18n.ts` file provided.
-    // BUT the error message says `evaluating 'ui.aiOptionsModal.querySelector...`. 
-    // The user provided `render.ts` content shows `updateUIText` is NOT in `render.ts`.
-    // Wait, I might be confusing where `updateUIText` lives. 
-    // Let's check `i18n.ts` content provided in previous turn.
-    // `i18n.ts` has `updateUIText`.
-    
-    // ERROR ANALYSIS CORRECTION:
-    // The user provided `render.ts` in the previous prompt but `updateUIText` logic resides in `i18n.ts` 
-    // based on standard refactoring unless it was moved.
-    // Let's check `i18n.ts` provided in the previous turn.
-    // Yes, `i18n.ts` contains `function updateUIText()`.
-    
-    // CRITICAL: The user provided `render.ts` in the "existing files" block of the PREVIOUS prompt, 
-    // but the error comes from `updateUIText` which is likely in `i18n.ts`.
-    // However, looking at the `i18n.ts` provided in the "existing files" of THIS prompt turn (in thought process), 
-    // `updateUIText` IS in `i18n.ts`.
-    
-    // Wait, I see `render.ts` in the `changes` XML I am writing.
-    // I should modify `i18n.ts`, NOT `render.ts`.
-    
-    // Let me double check where `updateUIText` is.
-    // In `i18n.ts` provided in the context:
-    // `function updateUIText() { ... }`
-    // So I need to update `i18n.ts`.
-    
-    // BUT, the user prompt says: "These are the existing files in the app: ... render.ts ... i18n.ts ..."
-    // `i18n.ts` has `updateUIText`.
-    
-    // SO, the file to change is `i18n.ts`.
-    
-    return;
+    // A função real está em i18n.ts, mas o render é chamado lá.
+    // Este placeholder é mantido caso seja necessário lógica específica de UI na troca de idioma no futuro.
 }
 
 /**
@@ -323,9 +287,11 @@ export function renderApp() {
     updateHeaderTitle();
 
     // Fase 2 & 3: Renderização Não Crítica (Diferida)
-    runIdle(() => {
+    runIdle(async () => {
         renderAINotificationState();
         renderStoicQuote();
+        // ROBUSTEZ PWA [2025-02-28]: Importação estática garantida.
+        // Evita chunks dinâmicos não cacheados no modo offline.
         renderChart();
     });
 }

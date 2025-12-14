@@ -8,15 +8,15 @@
 import { inject } from '@vercel/analytics';
 import './index.css';
 import { loadState, saveState, state, persistStateLocally, STATE_STORAGE_KEY, AppState, registerSyncHandler } from './state';
-import { initUI } from './ui';
+import { initUI } from './render/ui';
 import { renderApp } from './render';
 import { setupEventListeners } from './listeners';
 import { initI18n } from './i18n';
 import { createDefaultHabit } from './habitActions';
-import { initSync } from './sync';
+import { initSync } from './listeners/sync';
 import { fetchStateFromCloud, setupNotificationListeners, syncStateWithCloud } from './cloud';
-import { hasLocalSyncKey, initAuth } from './api';
-import { updateAppBadge } from './badge';
+import { hasLocalSyncKey, initAuth } from './services/api';
+import { updateAppBadge } from './services/badge';
 
 // --- SERVICE WORKER REGISTRATION ---
 const registerServiceWorker = () => {

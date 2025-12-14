@@ -4,12 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 
-import { ui } from "./ui";
-import { t } from "./i18n";
-import { fetchStateFromCloud, setSyncStatus } from "./cloud";
-import { loadState, saveState } from "./state";
-import { renderApp, showConfirmationModal } from "./render";
-import { storeKey, clearKey, hasLocalSyncKey, getSyncKey, isValidKeyFormat, initAuth } from "./api";
+import { ui } from "../render/ui";
+import { t } from "../i18n";
+import { fetchStateFromCloud, setSyncStatus } from "../cloud";
+import { loadState, saveState } from "../state";
+import { renderApp, showConfirmationModal } from "../render";
+import { storeKey, clearKey, hasLocalSyncKey, getSyncKey, isValidKeyFormat, initAuth } from "../services/api";
 
 // --- Funções de UI ---
 

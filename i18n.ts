@@ -5,7 +5,7 @@
 */
 
 import { state, Habit, LANGUAGES, PredefinedHabit, TimeOfDay, getScheduleForDate, invalidateChartCache } from './state';
-import { ui } from './ui';
+import { ui } from './render/ui';
 import { renderApp, setupManageModal, initLanguageFilter } from './render';
 import { pushToOneSignal, getDateTimeFormat } from './utils';
 

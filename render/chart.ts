@@ -1,12 +1,13 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
 
-import { state, getActiveHabitsForDate, getHabitDailyInfoForDate } from './state';
+import { state, getActiveHabitsForDate, getHabitDailyInfoForDate } from '../state';
 import { ui } from './ui';
-import { t } from './i18n';
-import { addDays, getTodayUTCIso, parseUTCIsoDate, toUTCIsoDateString, getDateTimeFormat } from './utils';
+import { t } from '../i18n';
+import { addDays, getTodayUTCIso, parseUTCIsoDate, toUTCIsoDateString, getDateTimeFormat } from '../utils';
 
 const CHART_DAYS = 30;
 const INITIAL_SCORE = 100;

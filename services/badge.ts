@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 
-import { getHabitDailyInfoForDate, getActiveHabitsForDate } from './state';
-import { getTodayUTCIso } from './utils';
+import { getHabitDailyInfoForDate, getActiveHabitsForDate } from '../state';
+import { getTodayUTCIso } from '../utils';
 
 // [2025-01-15] TYPE SAFETY: Definição de interface local para a Badging API.
 // Evita o uso repetido de 'as any' e fornece autocompletar/verificação se o TS for atualizado.

@@ -1180,7 +1180,7 @@ export const STOIC_QUOTES: Quote[] = [
     {
         pt: "O ouro é provado pelo fogo, os bravos pela adversidade.",
         en: "Gold is tried by fire, brave men by adversity.",
-        es: "El oro se prueba con fuego, los hombres valientes con adversidad.",
+        es: "El acero se prueba con fuego, los hombres valientes con adversidad.",
         author: "seneca",
         tags: ['resilience', 'suffering']
     },

@@ -5,12 +5,12 @@
 */
 
 import { state, calculateDaySummary, DAYS_IN_CALENDAR } from '../state';
-import { ui } from '../ui';
+import { ui } from './ui';
 import { getTodayUTCIso, toUTCIsoDateString, parseUTCIsoDate, getDateTimeFormat, addDays } from '../utils';
 import { getLocaleDayName } from '../i18n';
 import { setTextContent } from './dom';
 import { openModal, closeModal } from './modals';
-import { CSS_CLASSES, DOM_SELECTORS } from '../domConstants';
+import { CSS_CLASSES, DOM_SELECTORS } from './constants';
 
 // OTIMIZAÇÃO [2025-01-22]: Cache de elementos do calendário para evitar querySelectorAll repetido.
 let cachedDayElements: HTMLElement[] = [];

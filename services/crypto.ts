@@ -17,6 +17,8 @@ const decoder = new TextDecoder();
  * A nova versão processa os dados em "chunks" (pedaços), usando `String.fromCharCode` com o operador spread
  * em subarrays. Isso é significativamente mais rápido e previne erros de "Maximum call stack size exceeded"
  * que poderiam ocorrer com estados de aplicação muito grandes.
+ * 
+ * UPDATE [2025-02-28]: Removida dependência de 'window' para permitir execução em Web Workers.
  */
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
     const bytes = new Uint8Array(buffer);
@@ -26,11 +28,13 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
         // Usar o operador spread é mais moderno e legível que .apply
         binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK_SIZE));
     }
-    return window.btoa(binary);
+    // Isomorphic execution: uses global btoa available in Window and Worker scopes
+    return btoa(binary);
 }
 
 function base64ToArrayBuffer(base64: string): ArrayBuffer {
-    const binary_string = window.atob(base64);
+    // Isomorphic execution: uses global atob available in Window and Worker scopes
+    const binary_string = atob(base64);
     const len = binary_string.length;
     const bytes = new Uint8Array(len);
     for (let i = 0; i < len; i++) {

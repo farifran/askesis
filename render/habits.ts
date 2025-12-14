@@ -1,15 +1,16 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
 
 import { state, Habit, HabitStatus, HabitDayData, getSmartGoalForHabit, calculateHabitStreak, STREAK_CONSOLIDATED, STREAK_SEMI_CONSOLIDATED, TimeOfDay, getHabitDailyInfoForDate, getActiveHabitsForDate, TIMES_OF_DAY } from '../state';
-import { ui } from '../ui';
+import { ui } from './ui';
 import { t, getHabitDisplayInfo, getTimeOfDayName } from '../i18n';
-import { icons, getTimeOfDayIcon } from '../icons';
+import { icons, getTimeOfDayIcon } from './icons';
 import { setTextContent } from './dom';
 import { openNotesModal, renderExploreHabits, openModal } from './modals';
-import { CSS_CLASSES, DOM_SELECTORS } from '../domConstants'; // TYPE SAFETY IMPORT
+import { CSS_CLASSES, DOM_SELECTORS } from './constants'; // TYPE SAFETY IMPORT
 
 // OTIMIZAÇÃO [2025-01-24]: Cache persistente para cartões de hábitos.
 const habitElementCache = new Map<string, HTMLElement>();

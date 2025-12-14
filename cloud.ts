@@ -5,13 +5,12 @@
 */
 
 import { AppState, STATE_STORAGE_KEY, loadState, state, persistStateLocally, saveState, APP_VERSION } from './state';
-import { pushToOneSignal } from './utils';
-import { ui } from './ui';
+import { pushToOneSignal, generateUUID } from './utils';
+import { ui } from './render/ui';
 import { t } from './i18n';
-import { hasLocalSyncKey, getSyncKey, apiFetch } from './api';
+import { hasLocalSyncKey, getSyncKey, apiFetch } from './services/api';
 import { renderApp, updateNotificationUI } from './render';
-import { encrypt, decrypt } from './crypto';
-import { mergeStates } from './dataMerge'; // REFACTOR: Importado do novo módulo
+import { mergeStates } from './services/dataMerge';
 
 // Debounce para evitar salvar na nuvem a cada pequena alteração.
 let syncTimeout: number | null = null;
@@ -21,6 +20,46 @@ const DEBOUNCE_DELAY = 2000; // 2 segundos
 let isSyncInProgress = false;
 let pendingSyncState: AppState | null = null;
 
+// --- WORKER INFRASTRUCTURE [2025-02-28] ---
+// Singleton lazy-loaded worker instance
+let syncWorker: Worker | null = null;
+const workerCallbacks = new Map<string, { resolve: (val: any) => void, reject: (err: any) => void }>();
+
+function getWorker(): Worker {
+    if (!syncWorker) {
+        // O nome do arquivo deve corresponder à saída configurada no build.js
+        syncWorker = new Worker('./sync-worker.js', { type: 'module' });
+        
+        syncWorker.onmessage = (e) => {
+            const { id, status, result, error } = e.data;
+            const callback = workerCallbacks.get(id);
+            if (callback) {
+                if (status === 'success') {
+                    callback.resolve(result);
+                } else {
+                    callback.reject(new Error(error));
+                }
+                workerCallbacks.delete(id);
+            }
+        };
+        
+        syncWorker.onerror = (e) => {
+            console.error("Critical Worker Error:", e);
+        };
+    }
+    return syncWorker;
+}
+
+/**
+ * Envia uma tarefa para o worker e aguarda a resposta (Promise-based).
+ */
+function runWorkerTask<T>(type: 'encrypt' | 'decrypt', payload: any, key: string): Promise<T> {
+    return new Promise((resolve, reject) => {
+        const id = generateUUID();
+        workerCallbacks.set(id, { resolve, reject });
+        getWorker().postMessage({ id, type, payload, key });
+    });
+}
 
 // Interface para a carga de dados que o servidor manipula
 interface ServerPayload {
@@ -56,8 +95,6 @@ export function setupNotificationListeners() {
     });
 }
 
-// [REMOVED]: mergeStates function moved to dataMerge.ts
-
 /**
  * Lida com um conflito de sincronização, onde o servidor tem uma versão mais recente dos dados.
  * Atualiza o estado local e a UI para corresponder à versão do servidor.
@@ -74,15 +111,8 @@ async function resolveConflictWithServerState(serverPayload: ServerPayload) {
     }
     
     try {
-        const decryptedStateJSON = await decrypt(serverPayload.state, syncKey);
-        
-        let serverState: AppState;
-        try {
-            serverState = JSON.parse(decryptedStateJSON);
-        } catch (e) {
-            console.error("Failed to parse decrypted server state during conflict resolution:", e);
-            throw new Error("Corrupted server data received.");
-        }
+        // WORKER OFFLOAD: Decriptografia e Parsing ocorrem fora da thread principal
+        const serverState = await runWorkerTask<AppState>('decrypt', serverPayload.state, syncKey);
 
         // IMPLEMENTAÇÃO DE SMART MERGE [2025-02-23]:
         // Em vez de perguntar ao usuário (que pode não saber qual versão está correta),
@@ -102,6 +132,8 @@ async function resolveConflictWithServerState(serverPayload: ServerPayload) {
         };
 
         // 2. Executa a fusão (usando a função importada)
+        // Nota: O merge ainda é feito na main thread pois é rápido (lógica de negócio), 
+        // mas poderia ser movido para o worker se a estrutura AppState crescer muito.
         const mergedState = mergeStates(localState, serverState);
         console.log("Smart Merge completed successfully.");
 
@@ -147,8 +179,9 @@ async function performSync() {
     }
 
     try {
-        const stateJSON = JSON.stringify(appState);
-        const encryptedState = await encrypt(stateJSON, syncKey);
+        // WORKER OFFLOAD: Serialização JSON e Criptografia ocorrem fora da thread principal.
+        // Isso elimina o travamento da UI durante o salvamento.
+        const encryptedState = await runWorkerTask<string>('encrypt', appState, syncKey);
 
         const payload: ServerPayload = {
             lastModified: appState.lastModified,
@@ -220,8 +253,9 @@ export async function fetchStateFromCloud(): Promise<AppState | undefined> {
         const data: ServerPayload | null = await response.json();
 
         if (data && data.state) {
-            const decryptedStateJSON = await decrypt(data.state, syncKey);
-            const appState = JSON.parse(decryptedStateJSON) as AppState;
+            // WORKER OFFLOAD: Decriptografia e Parsing
+            const appState = await runWorkerTask<AppState>('decrypt', data.state, syncKey);
+            
             setSyncStatus('syncSynced');
             return appState;
         } else {

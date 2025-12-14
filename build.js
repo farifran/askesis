@@ -127,15 +127,28 @@ async function build() {
         await copyStaticFiles();
 
         // --- 3. Compilação do Código TypeScript/CSS com esbuild ---
+        // ARQUITETURA [2025-02-28]: Configuração multi-entry para suportar Web Worker.
+        // 'bundle': A aplicação principal.
+        // 'sync-worker': O script do worker isolado.
+        // NOTA: 'splitting' foi removido para evitar a criação de chunks compartilhados dinâmicos
+        // que não seriam cacheados pelo SW estático, garantindo robustez Offline-First.
         const esbuildOptions = {
-            entryPoints: ['index.tsx'],
+            entryPoints: {
+                'bundle': 'index.tsx',
+                'sync-worker': 'services/sync.worker.ts'
+            },
             bundle: true,
             outdir: outdir,
-            entryNames: 'bundle',
-            format: 'esm',
+            entryNames: '[name]', // Usa a chave do objeto entryPoints como nome do arquivo
+            format: 'esm', // Formato de módulo para suportar import/export nativo
             platform: 'browser',
             minify: isProduction,
             sourcemap: !isProduction,
+            // CRÍTICO [2025-02-28]: Substitui process.env.NODE_ENV por string literal no tempo de build.
+            // Isso previne erros "process is not defined" no navegador ao usar bibliotecas ou código condicional.
+            define: { 
+                'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'development') 
+            }
         };
         
         if (isProduction) {

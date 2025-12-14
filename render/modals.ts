@@ -5,9 +5,9 @@
 */
 
 import { state, Habit, HabitTemplate, Frequency, PredefinedHabit, TimeOfDay, calculateHabitStreak, STREAK_CONSOLIDATED, PREDEFINED_HABITS, TIMES_OF_DAY, FREQUENCIES, LANGUAGES, getHabitDailyInfoForDate } from '../state';
-import { ui } from '../ui';
+import { ui } from './ui';
 import { t, getHabitDisplayInfo, getTimeOfDayName } from '../i18n';
-import { icons, getTimeOfDayIcon } from '../icons';
+import { icons, getTimeOfDayIcon } from './icons';
 import { setTextContent, getMainContainer, updateReelRotaryARIA } from './dom';
 import { escapeHTML, getContrastColor, getDateTimeFormat, parseUTCIsoDate, getTodayUTCIso } from '../utils';
 import { getScheduleForDate } from '../state'; // Explicit import to avoid circular dep issues

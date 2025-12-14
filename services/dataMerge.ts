@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { AppState, HabitDailyInfo, HabitStatus, TimeOfDay } from './state';
+import { AppState, HabitDailyInfo, HabitStatus, TimeOfDay } from '../state';
 
 /**
  * SMART MERGE ALGORITHM:

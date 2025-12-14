@@ -1,20 +1,20 @@
 
 type UIElements = {
     calendarStrip: HTMLElement;
-    headerTitle: HTMLElement; // [2025-01-16] Added to allow click listener on the full title container
+    headerTitle: HTMLElement;
     headerTitleDesktop: HTMLElement;
     headerTitleMobile: HTMLElement;
     stoicQuoteDisplay: HTMLElement;
     habitContainer: HTMLElement;
     chartContainer: HTMLElement;
-    manageHabitsBtn: HTMLButtonElement; // TYPE FIX [2025-02-23]: Specific type
-    fabAddHabit: HTMLButtonElement;     // TYPE FIX [2025-02-23]: Specific type
+    manageHabitsBtn: HTMLButtonElement;
+    fabAddHabit: HTMLButtonElement;
     manageModal: HTMLElement;
     manageModalTitle: HTMLElement;
     habitListTitle: HTMLElement;
     exploreModal: HTMLElement;
     exploreHabitList: HTMLElement;
-    createCustomHabitBtn: HTMLButtonElement; // TYPE FIX [2025-02-23]: Specific type
+    createCustomHabitBtn: HTMLButtonElement;
     aiEvalBtn: HTMLButtonElement;
     aiModal: HTMLElement;
     aiOptionsModal: HTMLElement;
@@ -22,16 +22,16 @@ type UIElements = {
     habitList: HTMLElement;
     aiResponse: HTMLElement;
     confirmModalText: HTMLElement;
-    confirmModalConfirmBtn: HTMLButtonElement; // TYPE FIX [2025-02-23]: Specific type
-    confirmModalEditBtn: HTMLButtonElement;    // TYPE FIX [2025-02-23]: Specific type
+    confirmModalConfirmBtn: HTMLButtonElement;
+    confirmModalEditBtn: HTMLButtonElement;
     undoToast: HTMLElement;
-    undoBtn: HTMLButtonElement; // TYPE FIX [2025-02-23]: Specific type
+    undoBtn: HTMLButtonElement;
     notesModal: HTMLElement;
     notesModalTitle: HTMLElement;
     notesModalSubtitle: HTMLElement;
     notesTextarea: HTMLTextAreaElement;
-    saveNoteBtn: HTMLButtonElement; // TYPE FIX [2025-02-23]: Specific type
-    resetAppBtn: HTMLButtonElement; // TYPE FIX [2025-02-23]: Specific type
+    saveNoteBtn: HTMLButtonElement;
+    resetAppBtn: HTMLButtonElement;
     languagePrevBtn: HTMLButtonElement;
     languageViewport: HTMLElement;
     languageReel: HTMLElement;
