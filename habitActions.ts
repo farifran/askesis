@@ -1,3 +1,4 @@
+
 // habitActions.ts
 
 /**
@@ -522,7 +523,8 @@ function _requestFutureScheduleChange(
     confirmationText: string,
     confirmationTitle: string,
     fromTime: TimeOfDay,
-    toTime?: TimeOfDay
+    toTime?: TimeOfDay,
+    reorderTarget?: { id: string, pos: 'before' | 'after' }
 ) {
     const justTodayAction = () => {
         const dailyInfo = ensureHabitDailyInfo(effectiveDate, habit.id);
@@ -551,6 +553,11 @@ function _requestFutureScheduleChange(
                 dailyInfo.instances[toTime] = instanceData;
             }
             delete dailyInfo.instances[fromTime];
+        }
+
+        // Apply Reordering logic inside the Just Today action to ensure immediate consistency
+        if (reorderTarget) {
+            reorderHabit(habit.id, reorderTarget.id, reorderTarget.pos, false);
         }
 
         // CLEANUP [2025-02-21]: Essential for DOM Cache consistency.
@@ -618,6 +625,11 @@ function _requestFutureScheduleChange(
                 }
                 delete dailyInfo.instances[fromTime];
             }
+        }
+        
+        // Apply Reordering logic
+        if (reorderTarget) {
+            reorderHabit(habit.id, reorderTarget.id, reorderTarget.pos, false);
         }
         
         // CLEANUP [2025-02-21]: Essential for DOM Cache consistency.
@@ -1768,7 +1780,12 @@ export async function performAIAnalysis(analysisType: 'monthly' | 'quarterly' | 
     }
 }
 
-export function handleHabitDrop(habitId: string, fromTime: TimeOfDay, toTime: TimeOfDay) {
+export function handleHabitDrop(
+    habitId: string, 
+    fromTime: TimeOfDay, 
+    toTime: TimeOfDay,
+    reorderTarget?: { id: string, pos: 'before' | 'after' }
+) {
     const habit = state.habits.find(h => h.id === habitId);
     if (!habit) return;
     
@@ -1781,11 +1798,12 @@ export function handleHabitDrop(habitId: string, fromTime: TimeOfDay, toTime: Ti
         t('confirmHabitMove', { habitName: name, oldTime: t(`filter${fromTime}`), newTime: t(`filter${toTime}`) }),
         t('modalMoveHabitTitle'),
         fromTime,
-        toTime
+        toTime,
+        reorderTarget
     );
 }
 
-export function reorderHabit(habitId: string, targetHabitId: string, position: 'before' | 'after') {
+export function reorderHabit(habitId: string, targetHabitId: string, position: 'before' | 'after', commit: boolean = true) {
     const oldIndex = state.habits.findIndex(h => h.id === habitId);
     const targetIndex = state.habits.findIndex(h => h.id === targetHabitId);
     
@@ -1802,8 +1820,10 @@ export function reorderHabit(habitId: string, targetHabitId: string, position: '
     state.habits.splice(newIndex, 0, habit);
 
     state.uiDirtyState.habitListStructure = true;
-    saveState();
-    renderHabits();
+    if (commit) {
+        saveState();
+        renderHabits();
+    }
 }
 
 /**

@@ -1,5 +1,4 @@
 
-
 /* 
  * [ANALYSIS PROGRESS]: 100% - Análise concluída.
  * [2025-02-23]: Auditoria de CSS Completa.
@@ -698,15 +697,6 @@ main {
     /* Reduced size from 24px to 21px (~10%) */
     width: 21px;
     height: 21px;
-}
-
-/* VISUAL ALIGNMENT FIX [2025-02-26]: The 'Morning' (Sunrise) icon tweaks. */
-.habit-group-wrapper[data-time-wrapper="Morning"] .time-marker {
-    padding-bottom: 12px; /* User adjustment: Specific clearance for Morning */
-}
-.habit-card[data-time="Morning"] .time-of-day-icon svg,
-.habit-group-wrapper[data-time-wrapper="Morning"] .time-marker svg {
-    transform: translateY(-2px);
 }
 
 /* SCROLLBAR CUSTOMIZADA (REMOVIDA) */

@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -223,9 +224,17 @@ export function setupDragAndDropHandler(habitContainer: HTMLElement) {
         const isMovingGroup = newTime !== draggedHabitOriginalTime;
         const isReordering = reorderTargetId && draggedHabitId !== reorderTargetId;
 
+        // UX FIX [2025-02-28]: Passa informações de reordenação mesmo se estiver movendo de grupo.
+        // Isso garante que o cartão aterrisse na posição correta indicada pelo indicador,
+        // em vez de ser adicionado ao final da lista padrão.
         if (isMovingGroup) {
             triggerHaptic('medium');
-            handleHabitDrop(draggedHabitId, draggedHabitOriginalTime, newTime);
+            handleHabitDrop(
+                draggedHabitId, 
+                draggedHabitOriginalTime, 
+                newTime,
+                isReordering && reorderTargetId ? { id: reorderTargetId, pos: reorderPosition! } : undefined
+            );
         } else if (isReordering) {
             triggerHaptic('medium');
             reorderHabit(draggedHabitId, reorderTargetId!, reorderPosition!);
