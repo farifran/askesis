@@ -1255,27 +1255,21 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 }
 /* REFINAMENTO DE UI [2024-11-25]: Estilos atualizados para acomodar um novo cabeçalho de gráfico com título e subtítulo. */
 .chart-title {
+    /* RESTAURADO: Título 'Askesis' */
     font-size: 18px;
     font-weight: 700;
     line-height: 1.2;
 }
 .app-subtitle {
-    font-size: 13px;
+    /* RESTAURADO: Frase de reflexão */
+    font-size: 13px; /* Aumentado de 11px para 13px conforme solicitado */
     font-style: italic;
     color: var(--text-secondary);
-    margin-top: var(--space-xs);
+    margin-bottom: var(--space-xs); /* UPDATE [2025-03-03]: Add spacing below to separate from title */
+    line-height: 1.4;
 }
 .chart-title strong {
     color: var(--accent-green);
-}
-.chart-subtitle {
-    font-size: 11px;
-    font-weight: 500;
-    color: var(--text-secondary);
-    line-height: 1.2;
-    text-align: center;
-    margin-block-start: 0;
-    margin-block-end: var(--space-sm);
 }
 .chart-wrapper { 
     position: relative; 

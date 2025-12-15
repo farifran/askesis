@@ -49,6 +49,9 @@ let chartElements: {
     tooltipScoreLabel?: HTMLElement;
     tooltipScoreValue?: HTMLElement;
     tooltipHabits?: HTMLElement;
+    // Elementos de texto estático para i18n dinâmico
+    chartTitle?: HTMLElement;
+    appSubtitle?: HTMLElement;
 } = {};
 
 // Controle de visibilidade e observadores
@@ -323,10 +326,11 @@ export function renderChart() {
     const isEmpty = lastChartData.length < 2 || lastChartData.every(d => d.scheduledCount === 0);
 
     if (isEmpty) {
+        // SWAPPED: appSubtitle on TOP, appName on BOTTOM
         ui.chartContainer.innerHTML = `
             <div class="chart-header">
-                <h3 class="chart-title">${t('appName')}</h3>
                 <div class="app-subtitle">${t('appSubtitle')}</div>
+                <h3 class="chart-title">${t('appName')}</h3>
             </div>
             <div class="chart-empty-state">${t('chartEmptyState')}</div>
         `;
@@ -336,10 +340,11 @@ export function renderChart() {
     }
 
     if (!chartInitialized) {
+        // SWAPPED: appSubtitle on TOP, appName on BOTTOM
         ui.chartContainer.innerHTML = `
             <div class="chart-header">
-                <h3 class="chart-title">${t('appName')}</h3>
                 <div class="app-subtitle">${t('appSubtitle')}</div>
+                <h3 class="chart-title">${t('appName')}</h3>
             </div>
             <div class="chart-wrapper">
                 <svg class="chart-svg" preserveAspectRatio="none"><defs><linearGradient id="chart-gradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="var(--accent-blue)" stop-opacity="0.3"/><stop offset="100%" stop-color="var(--accent-blue)" stop-opacity="0"/></linearGradient></defs><path class="chart-area"></path><path class="chart-line"></path></svg>
@@ -353,7 +358,6 @@ export function renderChart() {
             </div>
             <div class="chart-axis-labels">
                 <span></span>
-                <h4 class="chart-subtitle">${t('chartTitle')}</h4>
                 <span></span>
             </div>
         `;
@@ -372,12 +376,18 @@ export function renderChart() {
             tooltipScoreLabel: ui.chartContainer.querySelector<HTMLElement>('.tooltip-score span:first-child')!,
             tooltipScoreValue: ui.chartContainer.querySelector<HTMLElement>('.tooltip-score-value')!,
             tooltipHabits: ui.chartContainer.querySelector<HTMLElement>('.tooltip-habits li')!,
+            chartTitle: ui.chartContainer.querySelector<HTMLElement>('.chart-title')!,
+            appSubtitle: ui.chartContainer.querySelector<HTMLElement>('.app-subtitle')!,
         };
 
         _setupChartListeners();
         _initObservers();
         chartInitialized = true;
     }
+
+    // FIX [2025-03-03]: Ensure static text is updated on every render (e.g. language change)
+    if (chartElements.chartTitle) chartElements.chartTitle.innerHTML = t('appName');
+    if (chartElements.appSubtitle) chartElements.appSubtitle.textContent = t('appSubtitle');
 
     if (isChartVisible) {
         _updateChartDOM(lastChartData);
