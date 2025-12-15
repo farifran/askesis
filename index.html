@@ -3,15 +3,23 @@
 <html lang="pt-BR">
 <!-- 
     [NOTA COMPARATIVA]: Este arquivo serve como a fundação (App Shell) do sistema. Enquanto 'state.ts' e 'render.ts' gerenciam a complexidade lógica e visual, o 'index.html' demonstra engenharia sênior focada em Performance Percebida (Critical CSS inline, Preloads) e Acessibilidade (Semântica, Noscript).
-    [2025-02-23]: 'importmap' removido pois as dependências são empacotadas via esbuild (bundle.js), tornando o mapeamento de CDN redundante.
 -->
 <head>
-
     <meta charset="UTF-8">
     <base href="/">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Askesis</title>
     
+    <script type="importmap">
+    {
+      "imports": {
+        "@vercel/analytics": "https://esm.sh/@vercel/analytics@^1.6.1",
+        "@vercel/kv": "https://esm.sh/@vercel/kv@^3.0.0",
+        "@google/genai": "https://esm.sh/@google/genai@^1.33.0"
+      }
+    }
+    </script>
+
     <!-- Pré-carregamento de ativos críticos para LCP (Largest Contentful Paint) otimizado -->
     <link rel="preload" href="bundle.css" as="style">
     <link rel="preload" href="bundle.js" as="script">
@@ -30,12 +38,15 @@
     
     <link rel="stylesheet" href="bundle.css">
     <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#121212">
+    <meta name="theme-color" content="#000000">
     
     <!-- CSS Crítico Inline: Renderiza o loader e o fundo imediatamente, antes do CSS externo carregar -->
     <style>
+        html {
+            background-color: #000000;
+        }
         body {
-            background-color: #121212;
+            background-color: #000000;
             color: #e5e5e5;
         }
         .initial-loader {
@@ -44,7 +55,7 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            background-color: #121212;
+            background-color: #000000;
             z-index: 9999;
             opacity: 1;
             transition: opacity 0.3s ease-out;
@@ -75,15 +86,6 @@
         });
       });
     </script>
-<script type="importmap">
-{
-  "imports": {
-    "@vercel/analytics": "https://esm.sh/@vercel/analytics@^1.6.1",
-    "@vercel/kv": "https://esm.sh/@vercel/kv@^3.0.0",
-    "@google/genai": "https://esm.sh/@google/genai@^1.33.0"
-  }
-}
-</script>
 </head>
 <body>
     <!-- SVG Defs: Definição centralizada de ícones comuns para reutilização via <use> -->
@@ -346,44 +348,44 @@
                          <div id="habit-time-container">
                             <!-- O controle segmentado será injetado aqui pelo JavaScript -->
                          </div>
-                        </div>
                     </div>
-
-                    <div id="frequency-options-container">
-                        <!-- As opções de frequência serão injetadas aqui pelo JavaScript -->
-                    </div>
-                </form>
-                <div class="modal-actions">
-                    <button class="btn modal-close-btn"></button>
-                    <button id="edit-habit-save-btn" class="btn btn--primary"></button>
                 </div>
+
+                <div id="frequency-options-container">
+                    <!-- As opções de frequência serão injetadas aqui pelo JavaScript -->
+                </div>
+            </form>
+            <div class="modal-actions">
+                <button class="btn modal-close-btn"></button>
+                <button id="edit-habit-save-btn" class="btn btn--primary"></button>
             </div>
         </div>
+    </div>
 
-        <div id="full-calendar-modal" class="modal-overlay">
-            <div class="modal-content">
-                <div id="full-calendar-header">
-                    <button id="full-calendar-prev" class="icon-btn" aria-label="Mês anterior">
-                        <svg width="20" height="20"><use href="#icon-chevron-left"></use></svg>
-                    </button>
-                    <h2 id="full-calendar-month-year"></h2>
-                    <button id="full-calendar-next" class="icon-btn" aria-label="Próximo mês">
-                        <svg width="20" height="20"><use href="#icon-chevron-right"></use></svg>
-                    </button>
-                </div>
-                <div id="full-calendar-weekdays"></div>
-                <div id="full-calendar-grid"></div>
-                <button class="btn modal-close-btn">Fechar</button>
+    <div id="full-calendar-modal" class="modal-overlay">
+        <div class="modal-content">
+            <div id="full-calendar-header">
+                <button id="full-calendar-prev" class="icon-btn" aria-label="Mês anterior">
+                    <svg width="20" height="20"><use href="#icon-chevron-left"></use></svg>
+                </button>
+                <h2 id="full-calendar-month-year"></h2>
+                <button id="full-calendar-next" class="icon-btn" aria-label="Próximo mês">
+                    <svg width="20" height="20"><use href="#icon-chevron-right"></use></svg>
+                </button>
             </div>
+            <div id="full-calendar-weekdays"></div>
+            <div id="full-calendar-grid"></div>
+            <button class="btn modal-close-btn">Fechar</button>
         </div>
+    </div>
 
 
-        <!-- Toast Notification -->
-        <div id="undo-toast" class="undo-toast" role="status" aria-live="polite">
-            <span>Hábito encerrado.</span>
-            <button id="undo-btn">Desfazer</button>
-        </div>
-        
-        <script type="module" src="bundle.js"></script>
-    </body>
-    </html>
+    <!-- Toast Notification -->
+    <div id="undo-toast" class="undo-toast" role="status" aria-live="polite">
+        <span>Hábito encerrado.</span>
+        <button id="undo-btn">Desfazer</button>
+    </div>
+    
+    <script type="module" src="bundle.js"></script>
+</body>
+</html>
