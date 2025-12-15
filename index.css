@@ -12,10 +12,10 @@
     /* --- CORES --- */
     /* FIX [2025-03-02]: Alterado para #000000 (True Black) a pedido do usuário para eliminar a percepção de 'fundo azulado' em telas OLED/LCD */
     --bg-color: #000000;
-    --surface-color: #1e1e1e;
+    --surface-color: #141414;
     --surface-hover: #2a2a2a;
-    --surface-snoozed: #3a3a3a;
-    --border-color: #2a2a2a;
+    --surface-snoozed: var(--surface-color);
+    --border-color: var(--surface-hover);
     /* MANUTENIBILIDADE [2024-12-07]: Este valor é lido dinamicamente pela função getContrastColor em utils.ts para garantir a consistência do tema. */
     --text-primary: #e5e5e5;
     --text-secondary: #b3b3b3;
@@ -881,7 +881,8 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     position: absolute;
     inset: 0;
     border-radius: var(--border-radius-large);
-    border: 1px solid rgba(255, 255, 255, 0.3);
+    /* 3D EFFECT: Borda sutil para dar profundidade */
+    border: 1px solid rgba(255, 255, 255, 0.15);
     pointer-events: none;
     z-index: var(--z-index-indicator);
     transition: border-color var(--transition-duration);
@@ -901,9 +902,8 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     padding: var(--space-sm) var(--space-md) var(--space-sm) var(--space-xxl);
     position: relative;
     z-index: var(--z-index-content);
-    background-color: var(--bg-color); /* TESTE: Alterado para preto puro a pedido do usuário */
     cursor: pointer;
-    transition: transform var(--transition-duration-slow) cubic-bezier(0.23, 1, 0.32, 1), background-color var(--transition-duration), padding-right var(--transition-duration);
+    transition: transform var(--transition-duration-slow) cubic-bezier(0.23, 1, 0.32, 1), background var(--transition-duration), padding-right var(--transition-duration);
     border-radius: 9px;
     flex-grow: 1;
     touch-action: pan-y;
@@ -915,14 +915,18 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     will-change: transform;
 }
 
-.habit-card:hover .habit-content-wrapper { background-color: var(--surface-color); }
+.habit-card:not(.completed):not(.snoozed) .habit-content-wrapper {
+    /* 3D EFFECT: Gradiente sutil para simular luz de cima e dar perspectiva */
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.05) 0%, transparent 60%), var(--bg-color);
+}
+
 .habit-card.completed .habit-content-wrapper { 
-    background-color: color-mix(in srgb, var(--accent-blue) 20%, var(--bg-color));
+    background: color-mix(in srgb, var(--accent-blue) 20%, var(--bg-color));
     /* BUGFIX [2025-02-26]: Removed opacity to prevent transparency issues when dragging or overlaying content */
     opacity: 1 !important;
 }
 .habit-card.snoozed .habit-content-wrapper {
-    background-color: var(--surface-color); /* TESTE: Escurecido para combinar com o tema preto */
+    background: var(--surface-snoozed);
 }
 
 .habit-card.completed .habit-content-wrapper,
@@ -1245,20 +1249,21 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 }
 .chart-header {
     display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-block-end: var(--space-sm);
+    flex-direction: column;
+    align-items: flex-start;
+    margin-bottom: var(--space-md);
 }
 /* REFINAMENTO DE UI [2024-11-25]: Estilos atualizados para acomodar um novo cabeçalho de gráfico com título e subtítulo. */
-.chart-title-group {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-}
 .chart-title {
     font-size: 18px;
     font-weight: 700;
     line-height: 1.2;
+}
+.app-subtitle {
+    font-size: 13px;
+    font-style: italic;
+    color: var(--text-secondary);
+    margin-top: var(--space-xs);
 }
 .chart-title strong {
     color: var(--accent-green);
@@ -1268,6 +1273,9 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     font-weight: 500;
     color: var(--text-secondary);
     line-height: 1.2;
+    text-align: center;
+    margin-block-start: 0;
+    margin-block-end: var(--space-sm);
 }
 .chart-wrapper { 
     position: relative; 
@@ -2204,7 +2212,7 @@ input:disabled + .slider {
        Using opacity and visibility ensures it's completely gone from the render tree/accessibility tree
        until needed, preventing "ghost" clicks or visuals. */
     transform: translate(-50%, 20px); 
-    background-color: #252525;
+    background-color: var(--surface-color);
     color: var(--text-primary);
     padding: var(--space-lg) var(--space-section);
     border-radius: var(--border-radius-base);

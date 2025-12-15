@@ -325,12 +325,11 @@ export function renderChart() {
     if (isEmpty) {
         ui.chartContainer.innerHTML = `
             <div class="chart-header">
-                <div class="chart-title-group">
-                    <h3 class="chart-title">${t('appName')}</h3>
-                    <h4 class="chart-subtitle">${t('chartTitle')}</h4>
-                </div>
+                <h3 class="chart-title">${t('appName')}</h3>
+                <div class="app-subtitle">Aja até conseguir acontecer.</div>
             </div>
             <div class="chart-empty-state">${t('chartEmptyState')}</div>
+            <h4 class="chart-subtitle">${t('chartTitle')}</h4>
         `;
         chartInitialized = false;
         chartElements = {};
@@ -340,21 +339,20 @@ export function renderChart() {
     if (!chartInitialized) {
         ui.chartContainer.innerHTML = `
             <div class="chart-header">
-                <div class="chart-title-group">
-                    <h3 class="chart-title">${t('appName')}</h3>
-                    <h4 class="chart-subtitle">${t('chartTitle')}</h4>
-                </div>
+                <h3 class="chart-title">${t('appName')}</h3>
+                <div class="app-subtitle">Aja até conseguir acontecer.</div>
             </div>
             <div class="chart-wrapper">
                 <svg class="chart-svg" preserveAspectRatio="none"><defs><linearGradient id="chart-gradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="var(--accent-blue)" stop-opacity="0.3"/><stop offset="100%" stop-color="var(--accent-blue)" stop-opacity="0"/></linearGradient></defs><path class="chart-area"></path><path class="chart-line"></path></svg>
                 <div class="chart-tooltip">
                     <div class="tooltip-date"></div>
                     <div class="tooltip-score"><span class="tooltip-score-label"></span><span class="tooltip-score-value"></span></div>
-                    <ul class="tooltip-habits"><li class="tooltip-habits-content"></li></ul>
+                    <ul class="tooltip-habits"><li></li></ul>
                 </div>
                 <div class="chart-indicator"><div class="chart-indicator-dot"></div></div>
                 <div class="chart-evolution-indicator"></div>
             </div>
+            <h4 class="chart-subtitle">${t('chartTitle')}</h4>
             <div class="chart-axis-labels"><span></span><span></span></div>
         `;
         
@@ -369,9 +367,9 @@ export function renderChart() {
             tooltip: ui.chartContainer.querySelector<HTMLElement>('.chart-tooltip')!,
             indicator: ui.chartContainer.querySelector<HTMLElement>('.chart-indicator')!,
             tooltipDate: ui.chartContainer.querySelector<HTMLElement>('.tooltip-date')!,
-            tooltipScoreLabel: ui.chartContainer.querySelector<HTMLElement>('.tooltip-score-label')!,
+            tooltipScoreLabel: ui.chartContainer.querySelector<HTMLElement>('.tooltip-score span:first-child')!,
             tooltipScoreValue: ui.chartContainer.querySelector<HTMLElement>('.tooltip-score-value')!,
-            tooltipHabits: ui.chartContainer.querySelector<HTMLElement>('.tooltip-habits-content')!,
+            tooltipHabits: ui.chartContainer.querySelector<HTMLElement>('.tooltip-habits li')!,
         };
 
         _setupChartListeners();
