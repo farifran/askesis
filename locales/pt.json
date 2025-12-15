@@ -1,3 +1,4 @@
+
 {
     "_comment": "[ANALYSIS PROGRESS]: 100% - Limpeza de chaves mortas realizada [2025-01-16].",
     "aiCelebration21Day": {
@@ -211,7 +212,7 @@
     "syncDisable": "Desativar",
     "syncDisableConfirm": "Desativar",
     "syncDisableTitle": "Desativar Sincronização",
-    "syncEnable": "Ativar Sincronización",
+    "syncEnable": "Ativar Sincronização",
     "syncEnterKey": "Digitar Chave",
     "syncError": "Erro de sincronização",
     "syncInactiveDesc": "Salve seus dados na nuvem para acessá-los em qualquer dispositivo.",

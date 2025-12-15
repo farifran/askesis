@@ -1005,9 +1005,14 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     font-weight: 600;
     color: var(--text-primary);
     transition: color var(--transition-duration-slow), text-decoration-color var(--transition-duration-slow);
-    white-space: nowrap;
+    
+    /* ROBUSTEZ [2025-02-28]: Uso de Line Clamping em vez de JS para truncar nomes longos. */
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
     overflow: hidden;
-    text-overflow: ellipsis;
+    white-space: normal;
+    line-height: 1.2;
 }
 .habit-details .subtitle { 
     font-size: 11px; 
@@ -1022,29 +1027,6 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     text-decoration: line-through;
     text-decoration-color: var(--accent-blue);
     text-decoration-thickness: 2px;
-}
-
-/* UX: Long Habit Names */
-.habit-card.long-name .habit-details .name {
-    white-space: normal;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    line-height: 1.2;
-}
-.habit-card.long-name .habit-details .subtitle {
-    display: none;
-}
-
-.habit-card.completed.long-name .habit-details .name,
-.habit-card.snoozed.long-name .habit-details .name {
-    white-space: nowrap;
-    display: block; /* Overrides -webkit-box */
-}
-
-.habit-card.completed.long-name .habit-details .subtitle,
-.habit-card.snoozed.long-name .habit-details .subtitle {
-    display: block;
 }
 
 .habit-goal {
@@ -1098,7 +1080,7 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 .goal-value-wrapper:hover { background-color: var(--surface-hover); }
 
 .goal-input-inline {
-    width: calc(var(--space-section) * 2);
+    width: calc(var(--space-section) * 2.5); /* Widen for 3 digits comfort */
     background: transparent; /* UX FIX: Blend with card background */
     border: 1px solid var(--accent-blue);
     color: var(--text-primary);

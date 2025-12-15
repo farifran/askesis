@@ -40,9 +40,7 @@ import { setupReelRotary } from '../render/rotary';
 import { simpleMarkdownToHTML, pushToOneSignal, getContrastColor, addDays, parseUTCIsoDate, toUTCIsoDateString, getDateTimeFormat } from '../utils';
 import { icons, getTimeOfDayIcon } from '../render/icons';
 import { TimeOfDay, FREQUENCIES, TIMES_OF_DAY } from '../state';
-import { getScheduleForDate } from '../state';
 import { setTextContent, updateReelRotaryARIA } from '../render/dom';
-import { escapeHTML } from '../utils';
 import { Habit, HabitTemplate, Frequency, PredefinedHabit } from '../state';
 import { getTimeOfDayName } from '../i18n';
 

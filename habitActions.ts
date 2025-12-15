@@ -1,3 +1,4 @@
+
 // habitActions.ts
 
 /**
@@ -35,7 +36,6 @@ import {
     getTodayUTCIso, addDays, getDateTimeFormat, simpleMarkdownToHTML
 } from './utils';
 import { apiFetch } from './services/api';
-import { STOIC_QUOTES } from './data/quotes';
 import { mergeStates } from './services/dataMerge';
 import { syncStateWithCloud } from './cloud';
 

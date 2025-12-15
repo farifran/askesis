@@ -72,7 +72,7 @@ export function setSyncStatus(statusKey: 'syncSaving' | 'syncSynced' | 'syncErro
     ui.syncStatus.textContent = t(statusKey);
 }
 
-export function hasSyncKey(): boolean {
+function hasSyncKey(): boolean {
     return hasLocalSyncKey();
 }
 

@@ -9,7 +9,6 @@ import { ui } from './ui';
 import { t, getHabitDisplayInfo, getTimeOfDayName } from '../i18n';
 import { icons, getTimeOfDayIcon } from './icons';
 import { setTextContent } from './dom';
-import { openNotesModal, renderExploreHabits, openModal } from './modals';
 import { CSS_CLASSES, DOM_SELECTORS } from './constants'; // TYPE SAFETY IMPORT
 
 // OTIMIZAÇÃO [2025-01-24]: Cache persistente para cartões de hábitos.
@@ -178,13 +177,6 @@ export function updateHabitCardElement(card: HTMLElement, habit: Habit, time: Ti
         card.classList.add(status);
     }
 
-    // UX: Adiciona classe para nomes longos (mobile wrap)
-    if (name.length > 16) {
-        card.classList.add('long-name');
-    } else {
-        card.classList.remove('long-name');
-    }
-
     const isCompleted = status === CSS_CLASSES.COMPLETED;
     const icon = card.querySelector<HTMLElement>('.habit-icon');
     
@@ -273,11 +265,6 @@ export function createHabitCardElement(habit: Habit, time: TimeOfDay): HTMLEleme
     card.dataset.time = time;
 
     const { name, subtitle } = getHabitDisplayInfo(habit, state.selectedDate);
-
-    // UX: Adiciona classe para nomes longos (mobile wrap)
-    if (name.length > 16) {
-        card.classList.add('long-name');
-    }
 
     if (streak >= STREAK_CONSOLIDATED) card.classList.add('consolidated');
     else if (streak >= STREAK_SEMI_CONSOLIDATED) card.classList.add('semi-consolidated');

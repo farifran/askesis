@@ -1,3 +1,4 @@
+
 {
     "_comment": "[ANALYSIS PROGRESS]: 100% - Limpieza de claves no utilizadas realizada [2025-01-16].",
     "aiCelebration21Day": {
@@ -93,7 +94,7 @@
     "languagePrev_ariaLabel": "Idioma anterior",
     "language_ariaLabel": "Selector de idioma",
     "manageHabits_ariaLabel": "Configuración",
-    "marcusAurelio": "Marco Aurelio",
+    "marcusAurelius": "Marco Aurelio",
     "modalAIOptionsTitle": "Opciones de Análisis de IA",
     "modalAITitle": "Evaluación de IA",
     "modalColorPickerTitle": "Seleccionar Color",
