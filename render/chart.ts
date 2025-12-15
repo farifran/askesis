@@ -326,10 +326,9 @@ export function renderChart() {
         ui.chartContainer.innerHTML = `
             <div class="chart-header">
                 <h3 class="chart-title">${t('appName')}</h3>
-                <div class="app-subtitle">Aja até conseguir acontecer.</div>
+                <div class="app-subtitle">${t('appSubtitle')}</div>
             </div>
             <div class="chart-empty-state">${t('chartEmptyState')}</div>
-            <h4 class="chart-subtitle">${t('chartTitle')}</h4>
         `;
         chartInitialized = false;
         chartElements = {};
@@ -340,7 +339,7 @@ export function renderChart() {
         ui.chartContainer.innerHTML = `
             <div class="chart-header">
                 <h3 class="chart-title">${t('appName')}</h3>
-                <div class="app-subtitle">Aja até conseguir acontecer.</div>
+                <div class="app-subtitle">${t('appSubtitle')}</div>
             </div>
             <div class="chart-wrapper">
                 <svg class="chart-svg" preserveAspectRatio="none"><defs><linearGradient id="chart-gradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="var(--accent-blue)" stop-opacity="0.3"/><stop offset="100%" stop-color="var(--accent-blue)" stop-opacity="0"/></linearGradient></defs><path class="chart-area"></path><path class="chart-line"></path></svg>
@@ -352,8 +351,11 @@ export function renderChart() {
                 <div class="chart-indicator"><div class="chart-indicator-dot"></div></div>
                 <div class="chart-evolution-indicator"></div>
             </div>
-            <h4 class="chart-subtitle">${t('chartTitle')}</h4>
-            <div class="chart-axis-labels"><span></span><span></span></div>
+            <div class="chart-axis-labels">
+                <span></span>
+                <h4 class="chart-subtitle">${t('chartTitle')}</h4>
+                <span></span>
+            </div>
         `;
         
         chartElements = {
