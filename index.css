@@ -901,7 +901,7 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     padding: var(--space-sm) var(--space-md) var(--space-sm) var(--space-xxl);
     position: relative;
     z-index: var(--z-index-content);
-    background-color: #161616; /* Changed from var(--surface-color) for darker gray */
+    background-color: var(--bg-color); /* TESTE: Alterado para preto puro a pedido do usuário */
     cursor: pointer;
     transition: transform var(--transition-duration-slow) cubic-bezier(0.23, 1, 0.32, 1), background-color var(--transition-duration), padding-right var(--transition-duration);
     border-radius: 9px;
@@ -915,14 +915,14 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     will-change: transform;
 }
 
-.habit-card:hover .habit-content-wrapper { background-color: #202020; }
+.habit-card:hover .habit-content-wrapper { background-color: var(--surface-color); }
 .habit-card.completed .habit-content-wrapper { 
-    background-color: color-mix(in srgb, var(--accent-blue) 20%, #161616);
+    background-color: color-mix(in srgb, var(--accent-blue) 20%, var(--bg-color));
     /* BUGFIX [2025-02-26]: Removed opacity to prevent transparency issues when dragging or overlaying content */
     opacity: 1 !important;
 }
 .habit-card.snoozed .habit-content-wrapper {
-    background-color: var(--surface-snoozed);
+    background-color: var(--surface-color); /* TESTE: Escurecido para combinar com o tema preto */
 }
 
 .habit-card.completed .habit-content-wrapper,
@@ -986,6 +986,8 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     font-size: 14px;
     width: 34px;
     height: 34px;
+    /* FIX [2025-03-02]: Garante que o ícone nunca encolha, mesmo com textos longos */
+    flex-shrink: 0;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1209,7 +1211,7 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 /* --- COMPONENTES: GRÁFICO DE EVOLUÇÃO (AUTO FOOTER) --- */
 .chart-container {
     padding: var(--space-lg);
-    background-color: #161616; /* [2025-02-23] Changed from var(--surface-color) to match habit card */
+    background-color: var(--bg-color); /* TESTE: Alterado para preto puro a pedido do usuário */
     border-radius: var(--border-radius-large);
     /* PERFORMANCE [2024-12-28]: Isola o layout e a pintura da faixa de calendário para evitar reflows globais. */
     /* FIX [2024-12-28]: Alterado para 'layout style' para permitir que tooltips overflow (visualmente). */
