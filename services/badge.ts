@@ -1,10 +1,9 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
 
-import { getHabitDailyInfoForDate, getActiveHabitsForDate } from '../state';
+import { calculateDaySummary } from '../state';
 import { getTodayUTCIso } from '../utils';
 
 // [2025-01-15] TYPE SAFETY: Definição de interface local para a Badging API.
@@ -12,35 +11,6 @@ import { getTodayUTCIso } from '../utils';
 interface NavigatorWithBadging extends Navigator {
     setAppBadge(contents?: number): Promise<void>;
     clearAppBadge(): Promise<void>;
-}
-
-/**
- * Calcula o número de instâncias de hábitos pendentes para o dia atual.
- * @returns O número total de hábitos pendentes para hoje.
- */
-function calculateTodayPendingCount(): number {
-    const todayISO = getTodayUTCIso();
-    // PERFORMANCE [2025-02-23]: Passamos a string ISO diretamente.
-    // getActiveHabitsForDate lida eficientemente com strings, evitando parsing desnecessário aqui.
-    // USE LAZY ACCESSOR: Ensure compatibility with archive/lazy-loading architecture.
-    const dailyInfo = getHabitDailyInfoForDate(todayISO);
-    
-    let pendingCount = 0;
-    
-    const activeHabitsToday = getActiveHabitsForDate(todayISO);
-
-    activeHabitsToday.forEach(({ habit, schedule }) => {
-        const instances = dailyInfo[habit.id]?.instances || {};
-        
-        schedule.forEach(time => {
-            const status = instances[time]?.status ?? 'pending';
-            if (status === 'pending') {
-                pendingCount++;
-            }
-        });
-    });
-    
-    return pendingCount;
 }
 
 /**
@@ -52,7 +22,9 @@ export async function updateAppBadge(): Promise<void> {
     // A API de Emblema é suportada no objeto navigator.
     if ('setAppBadge' in navigator && 'clearAppBadge' in navigator) {
         try {
-            const count = calculateTodayPendingCount();
+            // REFACTOR [2025-03-05]: Remove a função local redundante e usa a função
+            // centralizada e cacheada 'calculateDaySummary' para obter a contagem de pendentes.
+            const { pending: count } = calculateDaySummary(getTodayUTCIso());
             const nav = navigator as NavigatorWithBadging;
 
             if (count > 0) {

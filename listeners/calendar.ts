@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -6,7 +5,7 @@
 
 import { ui } from '../render/ui';
 import { state, invalidateChartCache, DAYS_IN_CALENDAR } from '../state';
-import { renderApp, renderFullCalendar, openModal, scrollToToday } from '../render';
+import { renderApp, renderFullCalendar, openModal, scrollToToday, closeModal } from '../render';
 import { parseUTCIsoDate, triggerHaptic, getTodayUTCIso, addDays, toUTCIsoDateString } from '../utils';
 import { DOM_SELECTORS } from '../render/constants';
 import { markAllHabitsForDate } from '../habitActions';
@@ -23,10 +22,7 @@ export function setupCalendarListeners() {
     const LONG_PRESS_DURATION = 500;
     let longPressTimer: number | null = null;
     let isLongPress = false;
-    
-    let clickCount = 0;
-    let clickTimer: number | null = null;
-    const MULTI_CLICK_DELAY = 300; 
+    let activeQuickActionDate: string | null = null;
 
     const openAlmanac = () => {
         state.fullCalendar = {
@@ -46,17 +42,42 @@ export function setupCalendarListeners() {
 
     ui.calendarStrip.addEventListener('pointerdown', (e) => {
         if (e.button !== 0) return; 
-        const dayItem = (e.target as HTMLElement).closest(DOM_SELECTORS.DAY_ITEM);
-        if (!dayItem) return;
+        const dayItem = (e.target as HTMLElement).closest<HTMLElement>(DOM_SELECTORS.DAY_ITEM);
+        if (!dayItem || !dayItem.dataset.date) return;
+
+        const dateISO = dayItem.dataset.date;
 
         isLongPress = false;
         longPressTimer = window.setTimeout(() => {
             isLongPress = true;
+            dayItem.classList.add('is-pressing');
             triggerHaptic('medium');
-            openAlmanac();
-        }, LONG_PRESS_DURATION);
-    });
+            
+            activeQuickActionDate = dateISO;
 
+            const rect = dayItem.getBoundingClientRect();
+            const modal = ui.calendarQuickActions;
+            const top = rect.bottom + 8;
+            const left = rect.left + rect.width / 2;
+            
+            modal.style.setProperty('--actions-top', `${top}px`);
+            modal.style.setProperty('--actions-left', `${left}px`);
+            
+            openModal(modal, undefined, () => {
+                activeQuickActionDate = null;
+            });
+
+        }, LONG_PRESS_DURATION);
+
+        const clearPressing = () => {
+            dayItem.classList.remove('is-pressing');
+            window.removeEventListener('pointerup', clearPressing);
+            window.removeEventListener('pointercancel', clearPressing);
+        };
+        window.addEventListener('pointerup', clearPressing, { once: true });
+        window.addEventListener('pointercancel', clearPressing, { once: true });
+    });
+    
     ui.calendarStrip.addEventListener('pointerup', clearTimer);
     ui.calendarStrip.addEventListener('pointercancel', clearTimer);
     ui.calendarStrip.addEventListener('pointerleave', clearTimer);
@@ -73,37 +94,34 @@ export function setupCalendarListeners() {
         const dayItem = (e.target as HTMLElement).closest<HTMLElement>(DOM_SELECTORS.DAY_ITEM);
         if (!dayItem || !dayItem.dataset.date) return;
 
-        const dateISO = dayItem.dataset.date;
-
-        clickCount++;
-
-        if (clickTimer) {
-            clearTimeout(clickTimer);
-        }
-
-        clickTimer = window.setTimeout(() => {
-            switch (clickCount) {
-                case 1:
-                    triggerHaptic('selection');
-                    updateSelectedDateAndRender(dateISO);
-                    break;
-                case 2:
-                    triggerHaptic('success');
-                    if (markAllHabitsForDate(dateISO, 'completed')) {
-                        renderApp();
-                    }
-                    break;
-                default:
-                    if (clickCount >= 3) {
-                        triggerHaptic('medium');
-                        if (markAllHabitsForDate(dateISO, 'snoozed')) {
-                            renderApp();
-                        }
-                    }
-                    break;
+        triggerHaptic('selection');
+        updateSelectedDateAndRender(dayItem.dataset.date);
+    });
+    
+    ui.quickActionDone.addEventListener('click', () => {
+        if (activeQuickActionDate) {
+            triggerHaptic('success');
+            if (markAllHabitsForDate(activeQuickActionDate, 'completed')) {
+                renderApp();
             }
-            clickCount = 0; 
-        }, MULTI_CLICK_DELAY);
+        }
+        closeModal(ui.calendarQuickActions);
+    });
+
+    ui.quickActionSnooze.addEventListener('click', () => {
+        if (activeQuickActionDate) {
+            triggerHaptic('medium');
+            if (markAllHabitsForDate(activeQuickActionDate, 'snoozed')) {
+                renderApp();
+            }
+        }
+        closeModal(ui.calendarQuickActions);
+    });
+
+    ui.quickActionAlmanac.addEventListener('click', () => {
+        triggerHaptic('light');
+        closeModal(ui.calendarQuickActions);
+        openAlmanac();
     });
 
     ui.calendarStrip.addEventListener('keydown', (e) => {

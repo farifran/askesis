@@ -212,9 +212,9 @@ export const state: {
     // MELHORIA DE ROBUSTEZ [2024-10-06]: A estrutura de `lastEnded` foi aprimorada para incluir `removedSchedules`.
     // UPDATE [2025-02-23]: Incluído `wipedDailyData` para permitir restauração completa de dados futuros no undo.
     lastEnded: { 
-        habitId: string; 
-        lastSchedule: HabitSchedule; 
-        removedSchedules: HabitSchedule[]; 
+        habitId: string;
+        // FIX [2025-03-05]: Store the original habit object for a perfect undo.
+        originalHabit: Habit;
         wipedDailyData?: Record<string, HabitDailyInfo>;
     } | null;
     undoTimeout: number | null;
@@ -962,8 +962,7 @@ function _wasGoalExceededWithStreak(habit: Habit, instances: HabitDailyInstances
 
 // PERFORMANCE [2025-01-17]: Cache para resultados de calculateDaySummary.
 // Evita o recálculo de progresso para todos os 61 dias do calendário a cada renderização.
-// MEMORY OPTIMIZATION [2025-03-03]: 'totalPercent' removido para economizar memória e eliminar código morto.
-// OPTIMIZATION [2025-03-05]: Added raw counts to cache to be used by Chart renderer.
+// REFACTOR [2025-03-05]: DaySummary agora inclui `showPlus` para unificar cálculos.
 interface DaySummary {
     total: number;
     completed: number;
@@ -971,9 +970,9 @@ interface DaySummary {
     pending: number;
     completedPercent: number;
     snoozedPercent: number;
+    showPlus: boolean;
 }
 const daySummaryCache = new Map<string, DaySummary>();
-const plusIndicatorCache = new Map<string, boolean>();
 
 /**
  * Invalida o cache de resumo diário para uma data específica ou para todos os dias.
@@ -983,48 +982,40 @@ const plusIndicatorCache = new Map<string, boolean>();
 export function invalidateDaySummaryCache(dateISO?: string) {
     if (dateISO) {
         daySummaryCache.delete(dateISO);
-        plusIndicatorCache.delete(dateISO);
     } else {
         daySummaryCache.clear();
-        plusIndicatorCache.clear();
     }
 }
 
 /**
- * OTIMIZAÇÃO DE PERFORMANCE [2024-09-30]: Esta nova função centraliza todos os cálculos necessários
- * para renderizar um dia no calendário (`completedPercent`, `totalPercent`, `showPlus`) em um único
- * loop sobre os hábitos do dia. Isso substitui as chamadas separadas para `calculateDayProgress` e
- * `shouldShowPlusIndicator`, reduzindo significativamente o número de iterações e melhorando a
- * performance da renderização do calendário.
- * 
- * ATUALIZAÇÃO [2025-01-17]: Agora utiliza cache para evitar recálculos redundantes.
- * ATUALIZAÇÃO [2025-02-08]: Atualizado para calcular 'snoozedPercent' e usar 'total absoluto' para o anel.
- * REFACTOR [2025-03-05]: Returns raw counts to be used by Chart, avoiding double-iteration.
+ * REFACTOR [2025-03-05]: Esta função foi refatorada para unificar os cálculos de `calculateDaySummary`
+ * e `shouldShowPlusIndicatorForDate`. Agora, em um único loop, ela calcula todos os dados necessários
+ * para renderizar um dia no calendário, eliminando iterações redundantes e melhorando a performance.
  */
 export function calculateDaySummary(dateISO: string): DaySummary {
     if (daySummaryCache.has(dateISO)) {
         return daySummaryCache.get(dateISO)!;
     }
     
-    // Smart garbage collection
     manageCacheSize(daySummaryCache, DAYS_IN_CALENDAR * 2);
 
-     // OTIMIZAÇÃO [2025-01-17]: Passa a string ISO diretamente para getActiveHabitsForDate.
-     // Isso evita a criação de um objeto Date redundante se os dados já estiverem em cache em getActiveHabitsForDate.
      const activeHabits = getActiveHabitsForDate(dateISO);
      
-     // Initialize default object
      let total = 0;
      let completed = 0;
      let snoozed = 0;
      let pending = 0;
+     let showPlus = false;
      
      if (activeHabits.length > 0) {
-         // USES TRANSPARENT ACCESSOR (Handles Archives)
          const dayRecord = getHabitDailyInfoForDate(dateISO);
 
          for (const { habit, schedule } of activeHabits) {
-             const instances = dayRecord[habit.id]?.instances || {}; // Uses dayRecord
+             const instances = dayRecord[habit.id]?.instances || {};
+             
+             if (!showPlus && _wasGoalExceededWithStreak(habit, instances, schedule, dateISO)) {
+                showPlus = true;
+             }
              
              for (const time of schedule) {
                  total++;
@@ -1036,39 +1027,10 @@ export function calculateDaySummary(dateISO: string): DaySummary {
          }
      }
      
-     // LOGIC CHANGE [2025-02-08]: Calculate percentages based on absolute total to show gray segment for snoozed.
      const completedPercent = total > 0 ? Math.round((completed / total) * 100) : 0;
      const snoozedPercent = total > 0 ? Math.round((snoozed / total) * 100) : 0;
      
-     const result: DaySummary = { total, completed, snoozed, pending, completedPercent, snoozedPercent };
+     const result: DaySummary = { total, completed, snoozed, pending, completedPercent, snoozedPercent, showPlus };
      daySummaryCache.set(dateISO, result);
      return result;
-}
-
-export function shouldShowPlusIndicatorForDate(dateISO: string): boolean {
-    if (plusIndicatorCache.has(dateISO)) {
-        return plusIndicatorCache.get(dateISO)!;
-    }
-
-    // Smart garbage collection
-    manageCacheSize(plusIndicatorCache, DAYS_IN_CALENDAR * 2);
-
-    const activeHabits = getActiveHabitsForDate(dateISO);
-    if (activeHabits.length === 0) {
-        plusIndicatorCache.set(dateISO, false);
-        return false;
-    }
-
-    const dayRecord = getHabitDailyInfoForDate(dateISO);
-    
-    for (const { habit, schedule } of activeHabits) {
-        const instances = dayRecord[habit.id]?.instances || {};
-        if (_wasGoalExceededWithStreak(habit, instances, schedule, dateISO)) {
-            plusIndicatorCache.set(dateISO, true);
-            return true;
-        }
-    }
-
-    plusIndicatorCache.set(dateISO, false);
-    return false;
 }

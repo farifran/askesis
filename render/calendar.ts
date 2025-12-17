@@ -3,7 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 
-import { state, calculateDaySummary, shouldShowPlusIndicatorForDate } from '../state';
+// FIX: Removed shouldShowPlusIndicatorForDate from import as it's now part of calculateDaySummary
+import { state, calculateDaySummary } from '../state';
 import { ui } from './ui';
 import { getTodayUTCIso, toUTCIsoDateString, parseUTCIsoDate, getDateTimeFormat } from '../utils';
 import { getLocaleDayName } from '../i18n';
@@ -23,8 +24,8 @@ export function updateCalendarDayElement(dayItem: HTMLElement, date: Date, today
     const isoDate = toUTCIsoDateString(date);
     
     // DECOUPLING: Chamadas separadas para performance
-    const { completedPercent, snoozedPercent } = calculateDaySummary(isoDate);
-    const showPlus = shouldShowPlusIndicatorForDate(isoDate);
+    // FIX: Destructured showPlus from calculateDaySummary result
+    const { completedPercent, snoozedPercent, showPlus } = calculateDaySummary(isoDate);
     
     const isSelected = isoDate === state.selectedDate;
     const isToday = isoDate === effectiveTodayISO;

@@ -7,6 +7,7 @@ import { state, Habit, LANGUAGES, PredefinedHabit, TimeOfDay, getScheduleForDate
 import { ui } from './render/ui';
 import { renderApp, setupManageModal, initLanguageFilter, refreshEditModalUI } from './render';
 import { pushToOneSignal, getDateTimeFormat } from './utils';
+import { icons } from './render/icons';
 
 type PluralableTranslation = { one: string; other: string };
 type TranslationValue = string | PluralableTranslation;
@@ -246,6 +247,12 @@ function updateUIText() {
         ui.undoToast.firstElementChild.textContent = t('undoToastText');
     }
     ui.undoBtn.textContent = t('undoButton');
+
+    // Quick Actions Menu
+    ui.quickActionDone.innerHTML = `${icons.check} ${t('quickActionMarkAllDone')}`;
+    ui.quickActionSnooze.innerHTML = `${icons.snoozed} ${t('quickActionMarkAllSnoozed')}`;
+    ui.quickActionAlmanac.innerHTML = `${icons.calendar} ${t('quickActionOpenAlmanac')}`;
+
 
     // DYNAMIC CONTENT REFRESH [2025-03-03]:
     if (state.editingHabit) {

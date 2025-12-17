@@ -1,4 +1,3 @@
-
 type UIElements = {
     appContainer: HTMLElement; // Cached reference
     calendarStrip: HTMLElement;
@@ -75,6 +74,10 @@ type UIElements = {
     fullCalendarNextBtn: HTMLButtonElement;
     fullCalendarWeekdays: HTMLElement;
     fullCalendarGrid: HTMLElement;
+    calendarQuickActions: HTMLElement;
+    quickActionDone: HTMLButtonElement;
+    quickActionSnooze: HTMLButtonElement;
+    quickActionAlmanac: HTMLButtonElement;
     
     // Static Text Elements (Labels/Titles) for i18n
     labelLanguage: HTMLElement;
@@ -191,6 +194,10 @@ export function initUI(): void {
         fullCalendarNextBtn: queryElement<HTMLButtonElement>('#full-calendar-next'),
         fullCalendarWeekdays: queryElement('#full-calendar-weekdays'),
         fullCalendarGrid: queryElement('#full-calendar-grid'),
+        calendarQuickActions: queryElement('#calendar-quick-actions'),
+        quickActionDone: queryElement<HTMLButtonElement>('#quick-action-done'),
+        quickActionSnooze: queryElement<HTMLButtonElement>('#quick-action-snooze'),
+        quickActionAlmanac: queryElement<HTMLButtonElement>('#quick-action-almanac'),
         
         // Static Text Elements
         labelLanguage: queryElement('#label-language'),

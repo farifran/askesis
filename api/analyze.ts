@@ -63,10 +63,9 @@ export default async function handler(req: Request) {
         
         const ai = new GoogleGenAI({ apiKey });
 
-        // UPDATE [2025-01-18]: Enable Thinking Config for deeper insights.
-        // Using gemini-2.5-flash with a moderate thinking budget to balance quality and latency.
+        // UPDATE [2025-03-05]: Upgraded model from gemini-2.5-flash to gemini-3-flash-preview for better performance and quality.
         const geminiResponse = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
+            model: 'gemini-3-flash-preview',
             contents: prompt,
             config: {
                 systemInstruction: systemInstruction,

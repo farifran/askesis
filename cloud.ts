@@ -1,4 +1,5 @@
 
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -53,7 +54,7 @@ function getWorker(): Worker {
 /**
  * Envia uma tarefa para o worker e aguarda a resposta (Promise-based).
  */
-function runWorkerTask<T>(type: 'encrypt' | 'decrypt', payload: any, key: string): Promise<T> {
+export function runWorkerTask<T>(type: 'encrypt' | 'decrypt' | 'build-ai-prompt', payload: any, key?: string): Promise<T> {
     return new Promise((resolve, reject) => {
         const id = generateUUID();
         workerCallbacks.set(id, { resolve, reject });

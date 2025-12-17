@@ -1,4 +1,5 @@
 
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -26,6 +27,49 @@ export * from './render/modals';
 
 // --- HELPERS ---
 
+function _updateHeaderTitle() {
+    const todayISO = getTodayUTCIso();
+    const yesterdayISO = toUTCIsoDateString(addDays(parseUTCIsoDate(todayISO), -1));
+    const tomorrowISO = toUTCIsoDateString(addDays(parseUTCIsoDate(todayISO), 1));
+
+    const specialDateMap: Record<string, string> = {
+        [todayISO]: 'headerTitleToday',
+        [yesterdayISO]: 'headerTitleYesterday',
+        [tomorrowISO]: 'headerTitleTomorrow',
+    };
+
+    let desktopTitle: string;
+    let mobileTitle: string;
+    
+    const specialDateKey = specialDateMap[state.selectedDate];
+
+    if (specialDateKey) {
+        const title = t(specialDateKey);
+        desktopTitle = title;
+        mobileTitle = title;
+    } else {
+        const date = parseUTCIsoDate(state.selectedDate);
+
+        const day = String(date.getUTCDate()).padStart(2, '0');
+        const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+        mobileTitle = `${day}/${month}`;
+        
+        desktopTitle = getDateTimeFormat(state.activeLanguageCode, {
+            month: 'long',
+            day: 'numeric',
+            timeZone: 'UTC'
+        }).format(date);
+    }
+    setTextContent(ui.headerTitleDesktop, desktopTitle);
+    setTextContent(ui.headerTitleMobile, mobileTitle);
+    
+    // Acessibilidade: Garante que a data completa esteja sempre disponível para leitores de tela.
+    const fullLabel = getDateTimeFormat(state.activeLanguageCode, {
+        weekday: 'long', month: 'long', day: 'numeric', timeZone: 'UTC'
+    }).format(parseUTCIsoDate(state.selectedDate));
+    ui.headerTitle.setAttribute('aria-label', fullLabel);
+}
+
 function _renderHeaderIcons() {
     if (!ui.manageHabitsBtn.innerHTML) {
         ui.manageHabitsBtn.innerHTML = icons.settings;
@@ -38,6 +82,29 @@ function _renderHeaderIcons() {
 
 
 // --- ORQUESTRAÇÃO GLOBAL ---
+
+// FIX: Added missing renderApp function to orchestrate all UI updates.
+export function renderApp() {
+    _renderHeaderIcons();
+    _updateHeaderTitle();
+    renderStoicQuote();
+    renderCalendar();
+    renderHabits();
+    renderAINotificationState();
+    renderChart();
+}
+
+// FIX: Added missing updateNotificationUI function.
+export function updateNotificationUI() {
+    pushToOneSignal((OneSignal: any) => {
+        const isPushEnabled = OneSignal.User.PushSubscription.optedIn;
+        const permission = OneSignal.Notifications.permission;
+        
+        ui.notificationToggle.checked = isPushEnabled;
+        // The toggle should be disabled if permission is denied, as the user can't re-enable via UI.
+        ui.notificationToggleLabel.classList.toggle('disabled', permission === 'denied');
+    });
+}
 
 export function initLanguageFilter() {
     // Precisamos popular o DOM inicial antes de chamar o render
@@ -91,85 +158,9 @@ export function renderStoicQuote() {
 
     ui.stoicQuoteDisplay.classList.remove('visible');
     
+    // O tempo do timeout deve ser menor que a transição CSS (0.5s) para que a mudança de texto não seja visível.
     setTimeout(() => {
         setTextContent(ui.stoicQuoteDisplay, fullText);
         ui.stoicQuoteDisplay.classList.add('visible');
-    }, 100);
-}
-
-export function updateHeaderTitle() {
-    if (!state.uiDirtyState.calendarVisuals) {
-       return;
-    }
-
-    const todayISO = getTodayUTCIso();
-    const yesterdayISO = toUTCIsoDateString(addDays(parseUTCIsoDate(todayISO), -1));
-    const tomorrowISO = toUTCIsoDateString(addDays(parseUTCIsoDate(todayISO), 1));
-
-    const specialDateMap: Record<string, string> = {
-        [todayISO]: 'headerTitleToday',
-        [yesterdayISO]: 'headerTitleYesterday',
-        [tomorrowISO]: 'headerTitleTomorrow',
-    };
-
-    let desktopTitle: string;
-    let mobileTitle: string;
-    
-    const specialDateKey = specialDateMap[state.selectedDate];
-
-    if (specialDateKey) {
-        const title = t(specialDateKey);
-        desktopTitle = title;
-        mobileTitle = title;
-    } else {
-        const date = parseUTCIsoDate(state.selectedDate);
-
-        const day = String(date.getUTCDate()).padStart(2, '0');
-        const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-        mobileTitle = `${day}/${month}`;
-        
-        desktopTitle = getDateTimeFormat(state.activeLanguageCode, {
-            month: 'long',
-            day: 'numeric',
-            timeZone: 'UTC'
-        }).format(date);
-    }
-    setTextContent(ui.headerTitleDesktop, desktopTitle);
-    setTextContent(ui.headerTitleMobile, mobileTitle);
-}
-
-export function updateNotificationUI() {
-    pushToOneSignal((OneSignal: any) => {
-        const permission = OneSignal.Notifications.permission;
-        const isPushEnabled = OneSignal.User.PushSubscription.optedIn;
-
-        if (permission === "denied") {
-            ui.notificationToggle.checked = false;
-            ui.notificationToggle.disabled = true;
-            // CLEANUP [2025-03-04]: Removed manual style.cursor manipulation. Handled by CSS.
-            setTextContent(ui.notificationStatusDesc, t('notificationStatusDisabled'));
-        } else {
-            ui.notificationToggle.disabled = false;
-            // CLEANUP [2025-03-04]: Removed manual style.cursor manipulation. Handled by CSS.
-
-            ui.notificationToggle.checked = isPushEnabled;
-
-            if (isPushEnabled) {
-                setTextContent(ui.notificationStatusDesc, t('notificationStatusEnabled'));
-            } else {
-                setTextContent(ui.notificationStatusDesc, t('modalManageNotificationsStaticDesc'));
-            }
-        }
-    });
-}
-
-// CENTRAL ORCHESTRATION FUNCTION
-export function renderApp() {
-    _renderHeaderIcons();
-    updateHeaderTitle();
-    renderStoicQuote();
-    renderCalendar();
-    renderHabits();
-    renderChart();
-    renderAINotificationState();
+    }, 150);
 }
