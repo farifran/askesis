@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -98,12 +97,12 @@ const dateTimeFormatCache = new Map<string, Intl.DateTimeFormat>();
  * @returns Uma instância de Intl.DateTimeFormat.
  */
 export function getDateTimeFormat(locale: string, options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
-    // PERFORMANCE [2025-03-04]: Optimized cache key generation.
-    // Instead of Object.entries(options).sort(...), we use the JSON.stringify replacer array
-    // to sort keys deterministically without creating intermediate Entry arrays.
-    // This reduces GC pressure in hot paths (calendar rendering).
+    // MICRO-OTIMIZAÇÃO: Geração manual da chave de cache para evitar sobrecarga de JSON.stringify.
     const keys = Object.keys(options).sort();
-    const optionsKey = JSON.stringify(options, keys);
+    let optionsKey = '';
+    for (const key of keys) {
+        optionsKey += `${key}:${options[key as keyof Intl.DateTimeFormatOptions]};`;
+    }
     const key = `${locale}|${optionsKey}`;
 
     if (!dateTimeFormatCache.has(key)) {

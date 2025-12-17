@@ -10,6 +10,7 @@ import { parseUTCIsoDate, toUTCIsoDateString, addDays, getDateTimeFormat, pushTo
 import { ui } from './render/ui';
 import { t } from './i18n';
 import { STOIC_QUOTES } from './data/quotes';
+import { icons } from './render/icons';
 
 // Importa os renderizadores especializados
 import { setTextContent, updateReelRotaryARIA } from './render/dom';
@@ -22,6 +23,19 @@ export * from './render/dom';
 export * from './render/calendar';
 export * from './render/habits';
 export * from './render/modals';
+
+// --- HELPERS ---
+
+function _renderHeaderIcons() {
+    if (!ui.manageHabitsBtn.innerHTML) {
+        ui.manageHabitsBtn.innerHTML = icons.settings;
+    }
+    const aiDefaultIcon = ui.aiEvalBtn.querySelector('.default-icon');
+    if (aiDefaultIcon && !aiDefaultIcon.innerHTML) {
+        aiDefaultIcon.innerHTML = icons.ai;
+    }
+}
+
 
 // --- ORQUESTRAÇÃO GLOBAL ---
 
@@ -151,6 +165,7 @@ export function updateNotificationUI() {
 
 // CENTRAL ORCHESTRATION FUNCTION
 export function renderApp() {
+    _renderHeaderIcons();
     updateHeaderTitle();
     renderStoicQuote();
     renderCalendar();

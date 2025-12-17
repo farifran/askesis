@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -11,7 +10,6 @@ import {
     closeModal,
     setupManageModal,
     renderExploreHabits,
-    initializeModalClosing,
     showConfirmationModal,
     renderLanguageFilter,
     renderAINotificationState,
@@ -157,32 +155,6 @@ function _validateHabitName(newName: string, currentHabitId?: string): boolean {
 
 
 export function setupModalListeners() {
-    const modalsToInitialize = [
-        ui.manageModal,
-        ui.exploreModal,
-        ui.confirmModal,
-        ui.aiOptionsModal,
-        ui.fullCalendarModal,
-    ];
-    modalsToInitialize.forEach(modal => initializeModalClosing(modal));
-
-    initializeModalClosing(ui.editHabitModal, () => {
-        state.editingHabit = null;
-    });
-    initializeModalClosing(ui.notesModal, () => {
-        state.editingNoteFor = null;
-    });
-    initializeModalClosing(ui.iconPickerModal);
-    initializeModalClosing(ui.colorPickerModal, () => {
-        ui.iconPickerModal.classList.remove('is-picking-color');
-        renderIconPicker();
-    });
-
-    initializeModalClosing(ui.aiModal, () => {
-        state.hasSeenAIResult = true;
-        renderAINotificationState();
-    });
-
     ui.manageHabitsBtn.addEventListener('click', () => {
         setupManageModal();
         updateNotificationUI();
@@ -302,14 +274,20 @@ export function setupModalListeners() {
 
         if (allCelebrations) {
             ui.aiResponse.innerHTML = simpleMarkdownToHTML(allCelebrations);
-            openModal(ui.aiModal);
+            openModal(ui.aiModal, undefined, () => {
+                state.hasSeenAIResult = true;
+                renderAINotificationState();
+            });
             state.pending21DayHabitIds = [];
             state.pendingConsolidationHabitIds = [];
             saveState(); // Salva que as notificações foram vistas
             renderAINotificationState();
         } else if ((state.aiState === 'completed' || state.aiState === 'error') && !state.hasSeenAIResult && state.lastAIResult) {
             ui.aiResponse.innerHTML = simpleMarkdownToHTML(state.lastAIResult);
-            openModal(ui.aiModal);
+            openModal(ui.aiModal, undefined, () => {
+                state.hasSeenAIResult = true;
+                renderAINotificationState();
+            });
         } else {
             openModal(ui.aiOptionsModal);
         }
@@ -489,7 +467,10 @@ export function setupModalListeners() {
     ui.changeColorFromPickerBtn.addEventListener('click', () => {
         renderColorPicker();
         ui.iconPickerModal.classList.add('is-picking-color');
-        openModal(ui.colorPickerModal);
+        openModal(ui.colorPickerModal, undefined, () => {
+            ui.iconPickerModal.classList.remove('is-picking-color');
+            renderIconPicker();
+        });
     });
 
     ui.habitTimeContainer.addEventListener('click', e => {

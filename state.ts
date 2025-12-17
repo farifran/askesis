@@ -894,50 +894,40 @@ export function calculateHabitStreak(habitId: string, referenceDateISO: string):
 
     let streak = 0;
     
-    // PERFORMANCE [2025-01-16]: Optimization. Instead of creating a new Date object in every iteration
-    // via `addDays(date, -1)`, we create one date object and mutate it in-place using `setUTCDate`.
-    // This saves up to ~730 object allocations per habit per render when streak cache is cold.
     const iteratorDate = parseUTCIsoDate(referenceDateISO);
     
     for (let i = 0; i < STREAK_LOOKBACK_DAYS; i++) {
-        // PERFORMANCE [2025-01-16]: We generate dateStr once per iteration and pass it down.
-        // Previously it was generated again inside `getScheduleForDate` (called by shouldHabitAppearOnDate).
         const dateStr = toUTCIsoDateString(iteratorDate);
         
         if (dateStr < habit.createdOn) break;
 
         if (shouldHabitAppearOnDate(habit, iteratorDate, dateStr)) {
-             // USES TRANSPARENT ACCESSOR (Handles Archives)
              const dayRecord = getHabitDailyInfoForDate(dateStr);
              const dailyInfo = dayRecord[habitId];
-             
              const schedule = getEffectiveScheduleForHabitOnDate(habit, dateStr);
              
-             let allCompleted = true;
-             
-             for (const time of schedule) {
-                 const status = dailyInfo?.instances?.[time]?.status || 'pending';
-                 if (status !== 'completed' && status !== 'snoozed') {
-                     allCompleted = false;
-                     break;
-                 }
+             if (schedule.length === 0) {
+                iteratorDate.setUTCDate(iteratorDate.getUTCDate() - 1);
+                continue; 
              }
              
-             if (allCompleted && schedule.length > 0) {
+             // OTIMIZAÇÃO: Verifica se ALGUM hábito está pendente. `some` é mais rápido que `every`.
+             const isAnyPending = schedule.some(time => (dailyInfo?.instances?.[time]?.status || 'pending') === 'pending');
+             const isDayComplete = !isAnyPending;
+
+             if (isDayComplete) {
                  streak++;
              } else {
-                 if (dateStr === referenceDateISO && !allCompleted) {
-                     // If today is not completed, we simply don't count it but check yesterday
-                 } else {
+                 // LÓGICA CLARIFICADA: Se o dia não estiver completo, o streak quebra,
+                 // A MENOS que seja a data de referência (hoje), caso em que apenas não contamos.
+                 if (dateStr !== referenceDateISO) {
                      break; 
                  }
              }
         }
-        // Mutate date in-place for next iteration (Go to yesterday)
         iteratorDate.setUTCDate(iteratorDate.getUTCDate() - 1);
     }
     
-    // Smart garbage collection for streak cache
     manageCacheSize(state.streaksCache, MAX_CACHE_SIZE);
     state.streaksCache.set(cacheKey, streak);
     return streak;
@@ -981,9 +971,9 @@ interface DaySummary {
     pending: number;
     completedPercent: number;
     snoozedPercent: number;
-    showPlus: boolean;
 }
 const daySummaryCache = new Map<string, DaySummary>();
+const plusIndicatorCache = new Map<string, boolean>();
 
 /**
  * Invalida o cache de resumo diário para uma data específica ou para todos os dias.
@@ -993,8 +983,10 @@ const daySummaryCache = new Map<string, DaySummary>();
 export function invalidateDaySummaryCache(dateISO?: string) {
     if (dateISO) {
         daySummaryCache.delete(dateISO);
+        plusIndicatorCache.delete(dateISO);
     } else {
         daySummaryCache.clear();
+        plusIndicatorCache.clear();
     }
 }
 
@@ -1026,7 +1018,6 @@ export function calculateDaySummary(dateISO: string): DaySummary {
      let completed = 0;
      let snoozed = 0;
      let pending = 0;
-     let showPlus = false;
      
      if (activeHabits.length > 0) {
          // USES TRANSPARENT ACCESSOR (Handles Archives)
@@ -1035,10 +1026,6 @@ export function calculateDaySummary(dateISO: string): DaySummary {
          for (const { habit, schedule } of activeHabits) {
              const instances = dayRecord[habit.id]?.instances || {}; // Uses dayRecord
              
-             if (_wasGoalExceededWithStreak(habit, instances, schedule, dateISO)) {
-                 showPlus = true;
-             }
-
              for (const time of schedule) {
                  total++;
                  const status = instances[time]?.status ?? 'pending';
@@ -1053,7 +1040,35 @@ export function calculateDaySummary(dateISO: string): DaySummary {
      const completedPercent = total > 0 ? Math.round((completed / total) * 100) : 0;
      const snoozedPercent = total > 0 ? Math.round((snoozed / total) * 100) : 0;
      
-     const result: DaySummary = { total, completed, snoozed, pending, completedPercent, snoozedPercent, showPlus };
+     const result: DaySummary = { total, completed, snoozed, pending, completedPercent, snoozedPercent };
      daySummaryCache.set(dateISO, result);
      return result;
+}
+
+export function shouldShowPlusIndicatorForDate(dateISO: string): boolean {
+    if (plusIndicatorCache.has(dateISO)) {
+        return plusIndicatorCache.get(dateISO)!;
+    }
+
+    // Smart garbage collection
+    manageCacheSize(plusIndicatorCache, DAYS_IN_CALENDAR * 2);
+
+    const activeHabits = getActiveHabitsForDate(dateISO);
+    if (activeHabits.length === 0) {
+        plusIndicatorCache.set(dateISO, false);
+        return false;
+    }
+
+    const dayRecord = getHabitDailyInfoForDate(dateISO);
+    
+    for (const { habit, schedule } of activeHabits) {
+        const instances = dayRecord[habit.id]?.instances || {};
+        if (_wasGoalExceededWithStreak(habit, instances, schedule, dateISO)) {
+            plusIndicatorCache.set(dateISO, true);
+            return true;
+        }
+    }
+
+    plusIndicatorCache.set(dateISO, false);
+    return false;
 }

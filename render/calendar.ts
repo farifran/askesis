@@ -1,10 +1,9 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
 
-import { state, calculateDaySummary } from '../state';
+import { state, calculateDaySummary, shouldShowPlusIndicatorForDate } from '../state';
 import { ui } from './ui';
 import { getTodayUTCIso, toUTCIsoDateString, parseUTCIsoDate, getDateTimeFormat } from '../utils';
 import { getLocaleDayName } from '../i18n';
@@ -22,7 +21,11 @@ let cachedDayElements: HTMLElement[] = [];
 export function updateCalendarDayElement(dayItem: HTMLElement, date: Date, todayISO?: string) {
     const effectiveTodayISO = todayISO || getTodayUTCIso();
     const isoDate = toUTCIsoDateString(date);
-    const { completedPercent, snoozedPercent, showPlus } = calculateDaySummary(isoDate);
+    
+    // DECOUPLING: Chamadas separadas para performance
+    const { completedPercent, snoozedPercent } = calculateDaySummary(isoDate);
+    const showPlus = shouldShowPlusIndicatorForDate(isoDate);
+    
     const isSelected = isoDate === state.selectedDate;
     const isToday = isoDate === effectiveTodayISO;
 

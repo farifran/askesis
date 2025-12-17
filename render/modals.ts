@@ -13,7 +13,7 @@ import { escapeHTML, getContrastColor, getDateTimeFormat, parseUTCIsoDate, getTo
 const focusTrapListeners = new Map<HTMLElement, (e: KeyboardEvent) => void>();
 const previouslyFocusedElements = new WeakMap<HTMLElement, HTMLElement>();
 
-export function openModal(modal: HTMLElement, elementToFocus?: HTMLElement) {
+export function openModal(modal: HTMLElement, elementToFocus?: HTMLElement, onClose?: () => void) {
     previouslyFocusedElements.set(modal, document.activeElement as HTMLElement);
 
     modal.classList.add('visible');
@@ -65,6 +65,23 @@ export function openModal(modal: HTMLElement, elementToFocus?: HTMLElement) {
     
     modal.addEventListener('keydown', trapListener);
     focusTrapListeners.set(modal, trapListener);
+
+    // ROBUSTNESS REFACTOR: Auto-initialize closing logic
+    const handleClose = () => {
+        closeModal(modal);
+        onClose?.();
+    };
+
+    const backdropListener = (e: MouseEvent) => {
+        if (e.target === modal) handleClose();
+    };
+
+    modal.addEventListener('click', backdropListener, { once: true });
+    
+    const closeButtons = modal.querySelectorAll<HTMLElement>('.modal-close-btn');
+    closeButtons.forEach(btn => {
+        btn.addEventListener('click', handleClose, { once: true });
+    });
 }
 
 export function closeModal(modal: HTMLElement) {
@@ -88,18 +105,6 @@ export function closeModal(modal: HTMLElement) {
         ui.habitContainer.focus();
     }
     previouslyFocusedElements.delete(modal);
-}
-
-export function initializeModalClosing(modal: HTMLElement, onClose?: () => void) {
-    const handleClose = () => {
-        closeModal(modal);
-        onClose?.();
-    };
-
-    modal.addEventListener('click', e => {
-        if (e.target === modal) handleClose();
-    });
-    modal.querySelectorAll<HTMLElement>('.modal-close-btn').forEach(btn => btn.addEventListener('click', handleClose));
 }
 
 function getHabitStatusForSorting(habit: Habit): 'active' | 'ended' | 'graduated' {
@@ -309,10 +314,15 @@ export function openNotesModal(habitId: string, date: string, time: TimeOfDay) {
     const dayData = getHabitDailyInfoForDate(date)[habitId]?.instances[time];
     ui.notesTextarea.value = dayData?.note || '';
     
-    openModal(ui.notesModal, ui.notesTextarea);
+    openModal(ui.notesModal, ui.notesTextarea, () => {
+        state.editingNoteFor = null;
+    });
 }
 
 const PALETTE_COLORS = ['#e74c3c', '#f1c40f', '#3498db', '#2ecc71', '#9b59b6', '#1abc9c', '#34495e', '#e67e22', '#e84393', '#7f8c8d'];
+
+// OTIMIZAÇÃO: Cache para o HTML dos botões de ícone
+let cachedIconButtonsHTML: string | null = null;
 
 export function renderIconPicker() {
     if (!state.editingHabit) return;
@@ -322,10 +332,10 @@ export function renderIconPicker() {
     ui.iconPickerGrid.style.setProperty('--current-habit-bg-color', bgColor);
     ui.iconPickerGrid.style.setProperty('--current-habit-fg-color', fgColor);
 
-    if (ui.iconPickerGrid.children.length === 0) {
+    if (!cachedIconButtonsHTML) {
         const nonHabitIconKeys = new Set(['morning', 'afternoon', 'evening', 'deletePermanentAction', 'editAction', 'graduateAction', 'endAction', 'swipeDelete', 'swipeNote', 'swipeNoteHasNote', 'colorPicker', 'edit', 'snoozed', 'check']);
         
-        const iconButtons = Object.keys(icons)
+        cachedIconButtonsHTML = Object.keys(icons)
             .filter(key => !nonHabitIconKeys.has(key))
             .map(key => {
                 const iconSVG = (icons as any)[key];
@@ -335,8 +345,10 @@ export function renderIconPicker() {
                     </button>
                 `;
             }).join('');
+    }
 
-        ui.iconPickerGrid.innerHTML = iconButtons;
+    if (ui.iconPickerGrid.innerHTML !== cachedIconButtonsHTML) {
+        ui.iconPickerGrid.innerHTML = cachedIconButtonsHTML;
     }
 
     const changeColorBtn = ui.iconPickerModal.querySelector<HTMLButtonElement>('#change-color-from-picker-btn');
@@ -562,7 +574,9 @@ export function openEditModal(habitOrTemplate: Habit | HabitTemplate | null) {
     `;
 
     renderFrequencyOptions();
-    openModal(ui.editHabitModal);
+    openModal(ui.editHabitModal, undefined, () => {
+        state.editingHabit = null;
+    });
 }
 
 export function renderExploreHabits() {
