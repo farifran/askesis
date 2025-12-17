@@ -1,5 +1,6 @@
 
 type UIElements = {
+    appContainer: HTMLElement; // Cached reference
     calendarStrip: HTMLElement;
     headerTitle: HTMLElement;
     headerTitleDesktop: HTMLElement;
@@ -100,6 +101,7 @@ export function initUI(): void {
     // Garante Type Safety entre o HTML e o TypeScript.
     
     Object.assign(ui, {
+        appContainer: queryElement('.app-container'),
         calendarStrip: queryElement('#calendar-strip'),
         headerTitle: queryElement('#header-title'), 
         headerTitleDesktop: queryElement('#header-title .header-title-desktop'),

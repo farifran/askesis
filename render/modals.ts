@@ -8,7 +8,7 @@ import { state, Habit, HabitTemplate, Frequency, PredefinedHabit, TimeOfDay, cal
 import { ui } from './ui';
 import { t, getHabitDisplayInfo, getTimeOfDayName } from '../i18n';
 import { icons, getTimeOfDayIcon } from './icons';
-import { setTextContent, getMainContainer, updateReelRotaryARIA } from './dom';
+import { setTextContent, updateReelRotaryARIA } from './dom';
 import { escapeHTML, getContrastColor, getDateTimeFormat, parseUTCIsoDate, getTodayUTCIso } from '../utils';
 
 const focusTrapListeners = new Map<HTMLElement, (e: KeyboardEvent) => void>();
@@ -19,9 +19,8 @@ export function openModal(modal: HTMLElement, elementToFocus?: HTMLElement) {
 
     modal.classList.add('visible');
 
-    const mainContainer = getMainContainer();
-    if (mainContainer) {
-        mainContainer.setAttribute('inert', '');
+    if (ui.appContainer) {
+        ui.appContainer.setAttribute('inert', '');
     }
 
     const focusableElements = modal.querySelectorAll<HTMLElement>(
@@ -72,9 +71,8 @@ export function openModal(modal: HTMLElement, elementToFocus?: HTMLElement) {
 export function closeModal(modal: HTMLElement) {
     modal.classList.remove('visible');
     
-    const mainContainer = getMainContainer();
-    if (mainContainer) {
-        mainContainer.removeAttribute('inert');
+    if (ui.appContainer) {
+        ui.appContainer.removeAttribute('inert');
     }
 
     const listener = focusTrapListeners.get(modal);
@@ -376,7 +374,7 @@ export function renderIconPicker() {
     ui.iconPickerGrid.style.setProperty('--current-habit-fg-color', fgColor);
 
     if (ui.iconPickerGrid.children.length === 0) {
-        const nonHabitIconKeys = new Set(['morning', 'afternoon', 'evening', 'deletePermanentAction', 'editAction', 'graduateAction', 'endAction', 'swipeDelete', 'swipeNote', 'swipeNoteHasNote', 'colorPicker', 'edit', 'snoozed']);
+        const nonHabitIconKeys = new Set(['morning', 'afternoon', 'evening', 'deletePermanentAction', 'editAction', 'graduateAction', 'endAction', 'swipeDelete', 'swipeNote', 'swipeNoteHasNote', 'colorPicker', 'edit', 'snoozed', 'check']);
         
         const iconButtons = Object.keys(icons)
             .filter(key => !nonHabitIconKeys.has(key))

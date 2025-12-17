@@ -26,6 +26,3 @@ export function updateReelRotaryARIA(viewportEl: HTMLElement, currentIndex: numb
     viewportEl.setAttribute('aria-valuetext', options[currentIndex]);
     viewportEl.setAttribute('tabindex', '0');
 }
-
-// HELPER: Container para aplicação de inert.
-export const getMainContainer = (): HTMLElement | null => document.querySelector('.app-container');

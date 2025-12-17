@@ -642,14 +642,17 @@ export function getEffectiveScheduleForHabitOnDate(habit: Habit, dateISO: string
     
     // LOGIC FIX [2025-02-21]: The Opaque Layer logic.
     if (dailyInfo?.dailySchedule !== undefined) {
-        return Array.from(new Set(dailyInfo.dailySchedule));
+        // PERFORMANCE [2025-03-03]: Retorna uma cópia rasa do array existente em vez de alocar um novo Set.
+        // A unicidade já é garantida no momento da escrita (habitActions.ts).
+        return [...dailyInfo.dailySchedule];
     }
     
     // Fallback to standard history schedule
     const activeSchedule = getScheduleForDate(habit, dateISO);
     if (!activeSchedule) return [];
     
-    return Array.from(new Set(activeSchedule.times));
+    // PERFORMANCE [2025-03-03]: Retorna uma cópia rasa do array existente em vez de alocar um novo Set.
+    return [...activeSchedule.times];
 }
 
 // GC OPTIMIZATION [2025-01-23]: Singleton empty object for daily info.
