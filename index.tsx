@@ -151,10 +151,20 @@ async function init(loader: HTMLElement | null) {
 
 registerServiceWorker();
 
-const initialLoader = document.getElementById('initial-loader');
-init(initialLoader).catch(err => {
-    console.error("Failed to initialize application:", err);
-    if(initialLoader) {
-        initialLoader.innerHTML = '<h2>Falha ao carregar a aplicação. Por favor, tente novamente.</h2>'
-    }
-});
+const startApp = () => {
+    const initialLoader = document.getElementById('initial-loader');
+    init(initialLoader).catch(err => {
+        console.error("Failed to initialize application:", err);
+        if(initialLoader) {
+            initialLoader.innerHTML = '<h2>Falha ao carregar a aplicação. Por favor, tente novamente.</h2>'
+        }
+    });
+};
+
+// FIX [2025-03-04]: Ensure DOM is fully loaded before initialization.
+// This prevents "element not found" errors if the script runs before the HTML parser finishes.
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', startApp);
+} else {
+    startApp();
+}

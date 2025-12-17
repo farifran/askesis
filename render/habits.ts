@@ -185,7 +185,13 @@ export function updateHabitCardElement(card: HTMLElement, habit: Habit, time: Ti
         const newColor = habit.color;
         const newBgColor = `${habit.color}30`;
 
-        if (icon.innerHTML !== newIconHtml) icon.innerHTML = newIconHtml;
+        // PERFORMANCE [2025-03-04]: Avoid DOM read (innerHTML) by checking a custom property.
+        // Reading innerHTML causes reflow if the layout is dirty.
+        if ((icon as any)._cachedIconHtml !== newIconHtml) {
+            icon.innerHTML = newIconHtml;
+            (icon as any)._cachedIconHtml = newIconHtml;
+        }
+        
         if (icon.style.color !== newColor) icon.style.color = newColor;
         if (icon.style.backgroundColor !== newBgColor) icon.style.backgroundColor = newBgColor;
 
@@ -290,6 +296,8 @@ export function createHabitCardElement(habit: Habit, time: TimeOfDay): HTMLEleme
     icon.style.backgroundColor = `${habit.color}30`;
     icon.style.color = habit.color;
     icon.innerHTML = habit.icon;
+    // Cache the initial HTML to avoid reading it back later
+    (icon as any)._cachedIconHtml = habit.icon;
 
     const details = document.createElement('div');
     details.className = CSS_CLASSES.HABIT_DETAILS;

@@ -118,11 +118,9 @@ function _handleIntervalControlChange(button: HTMLButtonElement) {
 }
 
 function _validateHabitName(newName: string, currentHabitId?: string): boolean {
-    const duplicateNoticeEl = ui.editHabitForm.querySelector<HTMLElement>('.duplicate-habit-notice')!;
     const formNoticeEl = ui.editHabitForm.querySelector<HTMLElement>('.form-notice')!;
     const habitNameInput = ui.editHabitForm.elements.namedItem('habit-name') as HTMLInputElement;
 
-    duplicateNoticeEl.classList.remove('visible');
     formNoticeEl.classList.remove('visible');
     habitNameInput.classList.remove('shake');
 
@@ -143,25 +141,6 @@ function _validateHabitName(newName: string, currentHabitId?: string): boolean {
     if (newName.length > 16) {
         formNoticeEl.textContent = t('noticeNameTooLong');
         formNoticeEl.classList.add('visible');
-        
-        requestAnimationFrame(() => {
-            habitNameInput.classList.add('shake');
-            habitNameInput.addEventListener('animationend', () => {
-                habitNameInput.classList.remove('shake');
-            }, { once: true });
-        });
-        
-        return false;
-    }
-
-    const isDuplicate = state.habits.some(h => {
-        const { name } = getHabitDisplayInfo(h, state.selectedDate);
-        return name.toLowerCase() === newName.toLowerCase() && h.id !== currentHabitId;
-    });
-
-    if (isDuplicate) {
-        duplicateNoticeEl.textContent = t('noticeDuplicateHabitWithName');
-        duplicateNoticeEl.classList.add('visible');
         
         requestAnimationFrame(() => {
             habitNameInput.classList.add('shake');

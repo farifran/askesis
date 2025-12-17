@@ -211,22 +211,6 @@ export function simpleMarkdownToHTML(text: string): string {
     return html;
 }
 
-// SCHEDULING OPTIMIZATION [2025-01-21]: Centralized requestIdleCallback polyfill.
-// Ensures consistent background processing across the app without code duplication.
-export const runIdle = (cb: (deadline: IdleDeadline) => void) => {
-    if ('requestIdleCallback' in window) {
-        window.requestIdleCallback(cb);
-    } else {
-        setTimeout(() => {
-            const start = Date.now();
-            cb({
-                didTimeout: false,
-                timeRemaining: () => Math.max(0, 50 - (Date.now() - start))
-            });
-        }, 1);
-    }
-};
-
 export function pushToOneSignal(callback: (oneSignal: any) => void) {
     if (typeof window.OneSignal === 'undefined') {
         window.OneSignalDeferred = window.OneSignalDeferred || [];

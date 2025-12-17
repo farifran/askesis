@@ -1137,49 +1137,57 @@ export async function performAIAnalysis(analysisType: 'monthly' | 'quarterly' | 
     renderAINotificationState();
 
     const today = parseUTCIsoDate(getTodayUTCIso());
-    let startDate: Date;
+    
+    // INTELLIGENT START DATE LOGIC [2025-03-04]:
+    // Determine the actual "System Start Date" (When the user actually started).
+    // We calculate this upfront to ensure it applies to all analysis types.
+    const todayISO = getTodayUTCIso();
+    let systemEarliestISO = todayISO;
+
+    // Check habits creation
+    state.habits.forEach(h => {
+        if (h.createdOn < systemEarliestISO) systemEarliestISO = h.createdOn;
+    });
+
+    // Check daily data (just in case there's data older than habit creation)
+    const dailyKeys = Object.keys(state.dailyData);
+    if (dailyKeys.length > 0) {
+            const minDaily = dailyKeys.sort()[0];
+            if (minDaily < systemEarliestISO) systemEarliestISO = minDaily;
+    }
+
+    const systemEarliestDate = parseUTCIsoDate(systemEarliestISO);
+    
+    // --- DETERMINE WINDOW ---
+    let targetStartDate: Date;
     let periodNameKey: string;
-    let daysCount = 0;
 
     if (analysisType === 'monthly') {
         // "Revisão Mensal" = Last 30 days
-        startDate = addDays(today, -30);
+        targetStartDate = addDays(today, -30);
         periodNameKey = 'aiPeriodMonthly';
-        daysCount = 30;
     } else if (analysisType === 'quarterly') {
-        // "Análise Trimestral" = Last 90 days (Max Hot Storage Efficiency)
-        startDate = addDays(today, -90);
+        // "Análise Trimestral" = Last 90 days
+        targetStartDate = addDays(today, -90);
         periodNameKey = 'aiPeriodQuarterly';
-        daysCount = 90;
     } else {
-        // "Análise Histórica" = Desde o início dos tempos
-        // Calculate the earliest recorded date in habits to define the start.
-        const todayISO = getTodayUTCIso();
-        let earliestISO = todayISO;
-        
-        state.habits.forEach(h => {
-            if (h.createdOn < earliestISO) earliestISO = h.createdOn;
-        });
-        
-        // Also check if there's any stray data in dailyData older than habit creation (rare but possible)
-        const dailyKeys = Object.keys(state.dailyData);
-        if (dailyKeys.length > 0) {
-             const minDaily = dailyKeys.sort()[0];
-             if (minDaily < earliestISO) earliestISO = minDaily;
-        }
-        
-        startDate = parseUTCIsoDate(earliestISO);
-        
-        // Limit historical scan if it's too huge (e.g. > 3 years) to prevent timeouts, though Gemini context is huge.
-        // Let's cap at 3 years for sanity.
-        const threeYearsAgo = addDays(today, -1095);
-        if (startDate < threeYearsAgo) {
-            startDate = threeYearsAgo;
-        }
-
+        // "Análise Histórica" = Desde o início dos tempos (capped at 3 years safety)
+        targetStartDate = addDays(today, -1095);
         periodNameKey = 'aiPeriodHistorical';
-        daysCount = Math.floor((today.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
     }
+
+    // --- APPLY CLAMPING ---
+    // Use the LATER of the two dates (Target Window vs. Actual Start).
+    // This prevents analyzing empty days before the user even existed.
+    // Example: Quarterly (-90d) vs User Started (-5d) -> Start Date = -5d.
+    // Example: Historical (-3y) vs User Started (-5y) -> Start Date = -3y (Safety Cap).
+    let startDate = targetStartDate;
+    if (startDate < systemEarliestDate) {
+        startDate = systemEarliestDate;
+    }
+
+    // Calculate actual days count for the prompt (+1 to include today)
+    const daysCount = Math.floor((today.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
 
     const periodName = t(periodNameKey);
 
@@ -1237,7 +1245,10 @@ export async function performAIAnalysis(analysisType: 'monthly' | 'quarterly' | 
     let totalLogs = 0;
     let totalNotes = 0;
 
-    let currentDate = startDate;
+    // PERFORMANCE [2025-03-04]: Single mutable date object for loop iteration.
+    // Avoids creating ~1000 Date objects during historical analysis.
+    const iteratorDate = new Date(startDate);
+    
     let dayIndex = 0;
     let redFlagDay = ""; 
     let sparklineHabitId: string | null = null;
@@ -1246,8 +1257,8 @@ export async function performAIAnalysis(analysisType: 'monthly' | 'quarterly' | 
     
     const activeHabitsCount = state.habits.filter(h => !h.graduatedOn && !h.scheduleHistory[h.scheduleHistory.length-1].endDate).length;
 
-    while (currentDate <= today) {
-        const dateISO = toUTCIsoDateString(currentDate);
+    while (iteratorDate <= today) {
+        const dateISO = toUTCIsoDateString(iteratorDate);
         dateList.push(dateISO);
         
         // This will seamlessly fetch from archives if needed due to 'startDate' going far back
@@ -1257,7 +1268,7 @@ export async function performAIAnalysis(analysisType: 'monthly' | 'quarterly' | 
         let dayScheduled = 0;
         let dayCompleted = 0;
         
-        const dayOfWeek = currentDate.getUTCDay();
+        const dayOfWeek = iteratorDate.getUTCDay();
         const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
 
         if (activeHabits.length > 0) {
@@ -1357,7 +1368,7 @@ export async function performAIAnalysis(analysisType: 'monthly' | 'quarterly' | 
                 });
             });
 
-            const dayName = dayFormatter.format(currentDate);
+            const dayName = dayFormatter.format(iteratorDate);
             semanticLog.push(`${dateISO.substring(5)} (${dayName}): ${dayEntriesStrings.join(', ')}`);
 
             // Bad Day Logic
@@ -1380,10 +1391,12 @@ export async function performAIAnalysis(analysisType: 'monthly' | 'quarterly' | 
                 }
             }
         } else {
-             const dayName = dayFormatter.format(currentDate);
+             const dayName = dayFormatter.format(iteratorDate);
              semanticLog.push(`${dateISO.substring(5)} (${dayName}): ▪️ (No habits scheduled)`);
         }
-        currentDate = addDays(currentDate, 1);
+        
+        // Mutate in place
+        iteratorDate.setUTCDate(iteratorDate.getUTCDate() + 1);
         dayIndex++;
     }
 
@@ -1516,7 +1529,7 @@ export async function performAIAnalysis(analysisType: 'monthly' | 'quarterly' | 
     }
 
     const prompt = `
-    Analyze this user's habit data for the period: ${periodName} (${daysCount} days).
+    Analyze this user's habit data for the period: ${periodName} (${daysCount} days analyzed, User active since ${toUTCIsoDateString(systemEarliestDate)}).
     Language: ${targetLang}
     
     **DATA SUMMARY:**

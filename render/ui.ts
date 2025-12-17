@@ -75,6 +75,21 @@ type UIElements = {
     fullCalendarNextBtn: HTMLButtonElement;
     fullCalendarWeekdays: HTMLElement;
     fullCalendarGrid: HTMLElement;
+    
+    // Static Text Elements (Labels/Titles) for i18n
+    labelLanguage: HTMLElement;
+    labelSync: HTMLElement;
+    labelNotifications: HTMLElement;
+    labelReset: HTMLElement;
+    labelPrivacy: HTMLElement;
+    exportDataBtn: HTMLButtonElement;
+    importDataBtn: HTMLButtonElement;
+    syncInactiveDesc: HTMLElement;
+    labelEnterKey: HTMLElement;
+    syncWarningText: HTMLElement;
+    syncActiveDesc: HTMLElement;
+    iconPickerTitle: HTMLElement;
+    colorPickerTitle: HTMLElement;
 };
 
 export const ui = {} as UIElements;
@@ -176,5 +191,20 @@ export function initUI(): void {
         fullCalendarNextBtn: queryElement<HTMLButtonElement>('#full-calendar-next'),
         fullCalendarWeekdays: queryElement('#full-calendar-weekdays'),
         fullCalendarGrid: queryElement('#full-calendar-grid'),
+        
+        // Static Text Elements
+        labelLanguage: queryElement('#label-language'),
+        labelSync: queryElement('#label-sync'),
+        labelNotifications: queryElement('#label-notifications'),
+        labelReset: queryElement('#label-reset'),
+        labelPrivacy: queryElement('#label-privacy'),
+        exportDataBtn: queryElement<HTMLButtonElement>('#export-data-btn'),
+        importDataBtn: queryElement<HTMLButtonElement>('#import-data-btn'),
+        syncInactiveDesc: queryElement('#sync-inactive-desc'),
+        labelEnterKey: queryElement('#label-enter-key'),
+        syncWarningText: queryElement('#sync-warning-text'),
+        syncActiveDesc: queryElement('#sync-active-desc'),
+        iconPickerTitle: queryElement('#icon-picker-modal-title'),
+        colorPickerTitle: queryElement('#color-picker-modal-title'),
     });
 }

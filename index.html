@@ -83,7 +83,7 @@
   "imports": {
     "@vercel/analytics": "https://esm.sh/@vercel/analytics@^1.6.1",
     "@vercel/kv": "https://esm.sh/@vercel/kv@^3.0.0",
-    "@google/genai": "https://esm.sh/@google/genai@^1.33.0"
+    "@google/genai": "https://esm.sh/@google/genai@^1.34.0"
   }
 }
 </script>
@@ -243,7 +243,17 @@
                         </div>
                     </div>
                 </div>
-                <!-- ID Adicionado para permitir inserção ordenada de 'Dados e Privacidade' -->
+                
+                <div id="privacy-section" class="setting-item setting-item--column" style="margin-block-end: var(--space-sm);">
+                    <div class="setting-item-header">
+                        <label id="label-privacy">Dados & Privacidade</label>
+                    </div>
+                    <div class="sync-actions">
+                        <button id="export-data-btn" class="btn">Exportar Backup</button>
+                        <button id="import-data-btn" class="btn">Restaurar Backup</button>
+                    </div>
+                </div>
+
                 <div id="reset-section" class="setting-item">
                     <label id="label-reset">Reinicialização</label>
                     <button id="reset-app-btn" class="btn btn--danger">Apagar dados</button>
@@ -339,7 +349,6 @@
                     </div>
                     <div class="habit-name-input-wrapper">
                         <input type="text" id="habit-name" name="habit-name" class="form-control" required>
-                        <div class="duplicate-habit-notice"></div>
                         <div class="form-notice"></div>
                     </div>
                 </div>

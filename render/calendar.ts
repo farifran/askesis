@@ -235,9 +235,13 @@ export function renderFullCalendar() {
         timeZone: 'UTC'
     });
 
+    // PERFORMANCE [2025-03-04]: Use a single mutable Date object for the loop.
+    // Reduces garbage collection pressure by reusing the same object instance.
+    const iteratorDate = new Date(Date.UTC(year, month, 1));
+
     for (let day = 1; day <= daysInMonth; day++) {
-        const currentDate = new Date(Date.UTC(year, month, day));
-        const isoDate = toUTCIsoDateString(currentDate);
+        // Use iteratorDate which is already set to the correct day
+        const isoDate = toUTCIsoDateString(iteratorDate);
         const { completedPercent, snoozedPercent } = calculateDaySummary(isoDate);
 
         const dayEl = document.createElement('div');
@@ -248,7 +252,7 @@ export function renderFullCalendar() {
         dayEl.classList.toggle(CSS_CLASSES.SELECTED, isSelected);
         dayEl.classList.toggle(CSS_CLASSES.TODAY, isoDate === todayISO);
         dayEl.setAttribute('aria-pressed', String(isSelected));
-        dayEl.setAttribute('aria-label', ariaDateFormatter.format(currentDate));
+        dayEl.setAttribute('aria-label', ariaDateFormatter.format(iteratorDate));
         dayEl.setAttribute('tabindex', isSelected ? '0' : '-1');
 
         const ringEl = document.createElement('div');
@@ -264,6 +268,9 @@ export function renderFullCalendar() {
         dayEl.appendChild(ringEl);
         fragment.appendChild(dayEl);
         totalGridCells++;
+        
+        // Advance mutable date by one day
+        iteratorDate.setUTCDate(iteratorDate.getUTCDate() + 1);
     }
     
     const remainingCells = (7 - (totalGridCells % 7)) % 7;

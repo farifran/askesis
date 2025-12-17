@@ -652,6 +652,11 @@ main {
     scrollbar-width: none;
 }
 
+/* PERFORMANCE FIX [2025-03-04]: Desativa scroll suave durante arrasto para evitar conflito com a física JS */
+#habit-container.is-dragging {
+    scroll-behavior: auto !important;
+}
+
 /* HIDE SCROLLBAR (Chrome, Safari, Edge) */
 #habit-container::-webkit-scrollbar {
     display: none;
@@ -1638,28 +1643,6 @@ input:disabled + .slider {
 #ai-response li svg { width: 20px; height: 20px; flex-shrink: 0; }
 #confirm-modal-text { color: var(--text-secondary); line-height: 1.6; margin-block-end: var(--space-sm); }
 
-/* UX IMPROVEMENT [2024-08-04]: Adiciona um indicador de carregamento para o modal de IA. */
-/* Garante que o usuário tenha um feedback visual imediato de que a solicitação está sendo processada. */
-.ai-response-loader {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    min-height: 100px; /* BUGFIX [2024-08-29]: Reduz a altura mínima para um visual mais compacto. */
-}
-/* BUGFIX [2024-08-29]: Adiciona a animação de rotação ao ícone de carregamento do modal de IA para consistência. */
-.ai-response-loader .loading-icon {
-    display: block;
-    width: 32px;
-    height: 32px;
-    animation: spin 1s linear infinite;
-    stroke: var(--text-tertiary);
-}
-
-.ai-error-message {
-    color: var(--color-red);
-    font-weight: 500;
-}
-
 /* Modal: Opções da IA */
 #ai-options-modal .modal-content { gap: var(--space-section); }
 .ai-options-list { display: flex; flex-direction: column; gap: var(--space-md); }
@@ -2248,7 +2231,6 @@ input:disabled + .slider {
     font-weight: 600; font-size: 14px; cursor: pointer; padding: 0;
 }
 
-.duplicate-habit-notice,
 .form-notice {
     color: var(--color-red); font-size: 13px; font-weight: 500;
     opacity: 0; max-height: 0;
@@ -2257,7 +2239,6 @@ input:disabled + .slider {
     text-align: left; /* Alinhado à esquerda conforme solicitação */
     padding: 0; margin-block-start: var(--space-xs);
 }
-.duplicate-habit-notice.visible,
 .form-notice.visible {
     opacity: 1;
     max-height: 40px;

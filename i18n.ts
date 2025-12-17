@@ -157,48 +157,44 @@ function updateUIText() {
     ui.manageModalTitle.textContent = t('modalManageTitle');
     ui.habitListTitle.textContent = t('modalManageHabitsSubtitle');
     
-    // Elementos que não estão no objeto 'ui' precisam ser buscados
-    const labelLanguage = document.getElementById('label-language');
-    if (labelLanguage) labelLanguage.textContent = t('modalManageLanguage');
+    // Cached Elements
+    ui.labelLanguage.textContent = t('modalManageLanguage');
 
     ui.languagePrevBtn.setAttribute('aria-label', t('languagePrev_ariaLabel'));
     ui.languageNextBtn.setAttribute('aria-label', t('languageNext_ariaLabel'));
     
-    const labelSync = document.getElementById('label-sync');
-    if (labelSync) labelSync.textContent = t('syncLabel');
-
-    const labelNotifications = document.getElementById('label-notifications');
-    if (labelNotifications) labelNotifications.textContent = t('modalManageNotifications');
+    ui.labelSync.textContent = t('syncLabel');
+    ui.labelNotifications.textContent = t('modalManageNotifications');
 
     ui.notificationStatusDesc.textContent = t('modalManageNotificationsStaticDesc');
     
-    const labelReset = document.getElementById('label-reset');
-    if (labelReset) labelReset.textContent = t('modalManageReset');
+    ui.labelReset.textContent = t('modalManageReset');
 
     ui.resetAppBtn.textContent = t('modalManageResetButton');
     ui.manageModal.querySelector('.modal-close-btn')!.textContent = t('closeButton');
     
-    const syncInactiveDesc = document.getElementById('sync-inactive-desc');
-    if (syncInactiveDesc) syncInactiveDesc.textContent = t('syncInactiveDesc');
+    // Privacy Section
+    ui.labelPrivacy.textContent = t('privacyLabel');
+    ui.exportDataBtn.textContent = t('exportButton');
+    ui.importDataBtn.textContent = t('importButton');
+    
+    ui.syncInactiveDesc.textContent = t('syncInactiveDesc');
 
     ui.enableSyncBtn.textContent = t('syncEnable');
     ui.enterKeyViewBtn.textContent = t('syncEnterKey');
     
-    const labelEnterKey = document.getElementById('label-enter-key');
-    if (labelEnterKey) labelEnterKey.textContent = t('syncLabelEnterKey');
+    ui.labelEnterKey.textContent = t('syncLabelEnterKey');
 
     ui.cancelEnterKeyBtn.textContent = t('cancelButton');
     ui.submitKeyBtn.textContent = t('syncSubmitKey');
     
-    const syncWarningText = document.getElementById('sync-warning-text');
-    if (syncWarningText) syncWarningText.innerHTML = t('syncWarning');
+    ui.syncWarningText.innerHTML = t('syncWarning');
 
     // CONTEXT AWARENESS [2025-03-03]: Verifica o contexto do botão (visualização vs salvamento)
     const keyContext = ui.syncDisplayKeyView.dataset.context;
     ui.keySavedBtn.textContent = (keyContext === 'view') ? t('closeButton') : t('syncKeySaved');
     
-    const syncActiveDesc = document.getElementById('sync-active-desc');
-    if (syncActiveDesc) syncActiveDesc.textContent = t('syncActiveDesc');
+    ui.syncActiveDesc.textContent = t('syncActiveDesc');
 
     ui.viewKeyBtn.textContent = t('syncViewKey');
     ui.disableSyncBtn.textContent = t('syncDisable');
@@ -235,14 +231,10 @@ function updateUIText() {
     ui.saveNoteBtn.textContent = t('modalNotesSaveButton');
     ui.notesTextarea.placeholder = t('modalNotesTextareaPlaceholder');
 
-    const iconPickerTitle = document.getElementById('icon-picker-modal-title');
-    if (iconPickerTitle) iconPickerTitle.textContent = t('modalIconPickerTitle');
-    
+    ui.iconPickerTitle.textContent = t('modalIconPickerTitle');
     ui.iconPickerModal.querySelector('.modal-close-btn')!.textContent = t('cancelButton');
 
-    const colorPickerTitle = document.getElementById('color-picker-modal-title');
-    if (colorPickerTitle) colorPickerTitle.textContent = t('modalColorPickerTitle');
-    
+    ui.colorPickerTitle.textContent = t('modalColorPickerTitle');
     ui.colorPickerModal.querySelector('.modal-close-btn')!.textContent = t('cancelButton');
 
     const editModalActions = ui.editHabitModal.querySelector('.modal-actions');

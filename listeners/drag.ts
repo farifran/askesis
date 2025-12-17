@@ -246,6 +246,9 @@ export function setupDragHandler(habitContainer: HTMLElement) {
         draggedElement?.classList.remove(CSS_CLASSES.DRAGGING);
         document.body.classList.remove('is-dragging-active');
         
+        // FIX [2025-03-04]: Restore smooth scrolling
+        habitContainer.classList.remove('is-dragging');
+        
         if (currentRenderedDropZone) {
             currentRenderedDropZone.classList.remove(CSS_CLASSES.DRAG_OVER, CSS_CLASSES.INVALID_DROP);
         }
@@ -305,6 +308,8 @@ export function setupDragHandler(habitContainer: HTMLElement) {
             setTimeout(() => {
                 document.body.classList.add('is-dragging-active');
                 card.classList.add(CSS_CLASSES.DRAGGING);
+                // FIX [2025-03-04]: Disable smooth scrolling on container to prevent physics conflict
+                habitContainer.classList.add('is-dragging');
             }, 0);
         }
     });

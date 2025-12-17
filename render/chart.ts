@@ -68,19 +68,20 @@ let inputClientX = 0;
 function calculateChartData(): ChartDataPoint[] {
     const data: ChartDataPoint[] = [];
     const endDate = parseUTCIsoDate(state.selectedDate);
-    const startDate = addDays(endDate, -(CHART_DAYS - 1));
+    // Optimization: Start from beginning and iterate forward with mutable date
+    const iteratorDate = addDays(endDate, -(CHART_DAYS - 1));
     const todayISO = getTodayUTCIso();
 
     let previousDayValue = INITIAL_SCORE;
 
     for (let i = 0; i < CHART_DAYS; i++) {
-        const currentDate = addDays(startDate, i);
-        const currentDateISO = toUTCIsoDateString(currentDate);
+        // PERFORMANCE [2025-03-04]: Use shared mutable date object to avoid allocating 30 Dates per render.
+        // getActiveHabitsForDate handles strings efficiently via cache.
+        const currentDateISO = toUTCIsoDateString(iteratorDate);
 
-        const activeHabitsData = getActiveHabitsForDate(currentDate);
+        const activeHabitsData = getActiveHabitsForDate(currentDateISO);
         
         // FIX [2025-02-23]: Use Lazy Loading Accessor instead of direct state access.
-        // This ensures the chart works even if the user scrolls back to archived dates.
         const dailyInfo = getHabitDailyInfoForDate(currentDateISO);
 
         let scheduledCount = 0;
@@ -99,15 +100,11 @@ function calculateChartData(): ChartDataPoint[] {
 
         const hasPending = pendingCount > 0;
         const isToday = currentDateISO === todayISO;
-        // CORREÇÃO [2025-02-05]: Identifica se a data é futura (maior que hoje).
         const isFuture = currentDateISO > todayISO;
 
         let currentValue: number;
         
         // LÓGICA DE PROJEÇÃO:
-        // 1. Futuro: Congela a pontuação (não penaliza dias que ainda não chegaram).
-        // 2. Hoje com pendências: Congela a pontuação (dá chance de completar).
-        // 3. Passado ou Hoje completo: Calcula a variação baseada no desempenho.
         if (isFuture || (isToday && hasPending)) {
             currentValue = previousDayValue;
         } else if (scheduledCount > 0) {
@@ -121,6 +118,9 @@ function calculateChartData(): ChartDataPoint[] {
         
         data.push({ date: currentDateISO, value: currentValue, completedCount, scheduledCount });
         previousDayValue = currentValue;
+        
+        // Mutate in-place for next iteration
+        iteratorDate.setUTCDate(iteratorDate.getUTCDate() + 1);
     }
     return data;
 }

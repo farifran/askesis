@@ -238,59 +238,6 @@ export function setupManageModal() {
 
     ui.habitList.innerHTML = '';
     ui.habitList.appendChild(fragment);
-    
-    // NEW [2025-02-23]: Data & Privacy Section (Added dynamically if not present)
-    let privacySection = ui.manageModal.querySelector<HTMLElement>('#privacy-section');
-    if (!privacySection) {
-        const container = ui.manageModal.querySelector('.modal-settings-section');
-        if (container) {
-            privacySection = document.createElement('div');
-            privacySection.id = 'privacy-section';
-            privacySection.className = 'setting-item setting-item--column';
-            // Added styling for consistent spacing
-            privacySection.style.marginBlockEnd = 'var(--space-sm)';
-            
-            const header = document.createElement('div');
-            header.className = 'setting-item-header';
-            header.innerHTML = `<label>${t('privacyLabel')}</label>`;
-            
-            const actions = document.createElement('div');
-            actions.className = 'sync-actions'; // Reuse styles
-            
-            const exportBtn = document.createElement('button');
-            exportBtn.id = 'export-data-btn';
-            exportBtn.className = 'btn';
-            // Text content set below to ensure updates
-            
-            const importBtn = document.createElement('button');
-            importBtn.id = 'import-data-btn';
-            importBtn.className = 'btn';
-            // Text content set below to ensure updates
-            
-            actions.append(exportBtn, importBtn);
-            privacySection.append(header, actions);
-            
-            // ORDERING LOGIC [2025-02-23]: Ensure "Data & Privacy" comes BEFORE "Reset".
-            const resetSection = container.querySelector('#reset-section');
-            if (resetSection) {
-                container.insertBefore(privacySection, resetSection);
-            } else {
-                container.appendChild(privacySection);
-            }
-        }
-    }
-
-    // UPDATE TEXT (Fix for language switching)
-    if (privacySection) {
-        const label = privacySection.querySelector('label');
-        if (label) setTextContent(label, t('privacyLabel'));
-        
-        const exportBtn = privacySection.querySelector('#export-data-btn');
-        if (exportBtn) setTextContent(exportBtn, t('exportButton'));
-        
-        const importBtn = privacySection.querySelector('#import-data-btn');
-        if (importBtn) setTextContent(importBtn, t('importButton'));
-    }
 }
 
 export function showUndoToast() {
@@ -573,12 +520,9 @@ export function openEditModal(habitOrTemplate: Habit | HabitTemplate | null) {
     const form = ui.editHabitForm;
     
     // FIX [2025-02-23]: Reset de estado visual de validação.
-    // Garante que mensagens de erro anteriores (duplicata ou tamanho) sejam limpas ao reabrir o modal.
-    const duplicateNoticeEl = form.querySelector<HTMLElement>('.duplicate-habit-notice')!;
     const formNoticeEl = form.querySelector<HTMLElement>('.form-notice')!; // Seleciona o novo aviso genérico
     const nameInput = form.elements.namedItem('habit-name') as HTMLInputElement;
 
-    duplicateNoticeEl.classList.remove('visible');
     if (formNoticeEl) formNoticeEl.classList.remove('visible');
     if (nameInput) nameInput.classList.remove('shake');
     
