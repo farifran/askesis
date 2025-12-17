@@ -116,12 +116,11 @@ function getHabitStatusForSorting(habit: Habit): 'active' | 'ended' | 'graduated
     return 'active';
 }
 
-function _createManageHabitListItem(habitData: { habit: Habit; status: 'active' | 'ended' | 'graduated'; name: string; }): HTMLLIElement {
+function _createManageHabitListItem(habitData: { habit: Habit; status: 'active' | 'ended' | 'graduated'; name: string; }, todayISO: string): HTMLLIElement {
     const { habit, status, name } = habitData;
     
-    // FIX [2025-02-23]: Uso de getTodayUTCIso() para consistência de fuso horário em todo o app.
-    // Anteriormente usava new Date().toISOString() que poderia gerar data errada (amanhã) em fusos negativos.
-    const streak = calculateHabitStreak(habit.id, getTodayUTCIso()); 
+    // PERFORMANCE FIX [2025-03-03]: Recebe todayISO pré-calculado para evitar múltiplas alocações de Date.
+    const streak = calculateHabitStreak(habit.id, todayISO); 
     const isConsolidated = streak >= STREAK_CONSOLIDATED;
 
     const li = document.createElement('li');
@@ -231,8 +230,12 @@ export function setupManageModal() {
     });
 
     const fragment = document.createDocumentFragment();
+    
+    // PERFORMANCE FIX: Hoist today calculation out of the loop
+    const todayISO = getTodayUTCIso();
+    
     habitsForModal.forEach(habitData => {
-        fragment.appendChild(_createManageHabitListItem(habitData));
+        fragment.appendChild(_createManageHabitListItem(habitData, todayISO));
     });
 
     ui.habitList.innerHTML = '';
@@ -528,6 +531,42 @@ function _createHabitTemplateForForm(habitOrTemplate: Habit | PredefinedHabit | 
         return { ...commonData, nameKey: schedule.nameKey };
     } else {
         return { ...commonData, name: name };
+    }
+}
+
+/**
+ * REFRESH DYNAMIC CONTENT [2025-03-03]:
+ * Re-renders specific sections of the Edit Habit modal that contain dynamic text (Frequency options, Time segments).
+ * This ensures that if the language changes while the modal is open (or cached in DOM), the texts update immediately.
+ */
+export function refreshEditModalUI() {
+    if (!state.editingHabit) return;
+
+    // 1. Update Frequency Options (Daily/Weekly labels)
+    renderFrequencyOptions();
+
+    // 2. Update Time Segmented Control
+    const formData = state.editingHabit.formData;
+    ui.habitTimeContainer.innerHTML = `
+        <div class="segmented-control">
+            ${TIMES_OF_DAY.map(time => `
+                <button type="button" class="segmented-control-option ${formData.times.includes(time) ? 'selected' : ''}" data-time="${time}">
+                    ${getTimeOfDayIcon(time)}
+                    ${getTimeOfDayName(time)}
+                </button>
+            `).join('')}
+        </div>
+    `;
+    
+    // 3. Update Input Placeholder
+    const habitNameInput = ui.editHabitForm.elements.namedItem('habit-name') as HTMLInputElement;
+    if (habitNameInput) {
+        habitNameInput.placeholder = t('modalEditFormNameLabel');
+        
+        // If it's a predefined habit (has a key) and not a custom name, translate the value too
+        if (state.editingHabit.formData.nameKey) {
+            habitNameInput.value = t(state.editingHabit.formData.nameKey);
+        }
     }
 }
 

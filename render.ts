@@ -6,7 +6,7 @@
 // Delega a lógica complexa para módulos especializados em 'render/'.
 
 import { state, LANGUAGES } from './state';
-import { runIdle, parseUTCIsoDate, toUTCIsoDateString, addDays, getDateTimeFormat, pushToOneSignal, getTodayUTCIso } from './utils';
+import { parseUTCIsoDate, toUTCIsoDateString, addDays, getDateTimeFormat, pushToOneSignal, getTodayUTCIso } from './utils';
 import { ui } from './render/ui';
 import { t } from './i18n';
 import { STOIC_QUOTES } from './data/quotes';
@@ -16,16 +16,12 @@ import { setTextContent, updateReelRotaryARIA } from './render/dom';
 import { renderCalendar, renderFullCalendar } from './render/calendar';
 import { renderHabits } from './render/habits';
 import { renderChart } from './render/chart';
-// IMPORTANTE: Importação explícita necessária para uso interno neste arquivo
-import { renderLanguageFilter } from './render/modals';
 
 // Re-exporta tudo para manter compatibilidade com listeners.ts e habitActions.ts
 export * from './render/dom';
 export * from './render/calendar';
 export * from './render/habits';
 export * from './render/modals';
-// Exporta renderFullCalendar explicitamente pois é usado no index/listeners
-export { renderFullCalendar };
 
 // --- ORQUESTRAÇÃO GLOBAL ---
 
@@ -153,145 +149,12 @@ export function updateNotificationUI() {
     });
 }
 
-function updateUIText() {
-    const appNameHtml = t('appName');
-    
-    // Strip HTML for the document title
-    const tempEl = document.createElement('div');
-    tempEl.innerHTML = appNameHtml;
-    document.title = tempEl.textContent || 'Askesis';
-
-    ui.fabAddHabit.setAttribute('aria-label', t('fabAddHabit_ariaLabel'));
-    ui.manageHabitsBtn.setAttribute('aria-label', t('manageHabits_ariaLabel'));
-    ui.aiEvalBtn.setAttribute('aria-label', t('aiEval_ariaLabel'));
-    
-    ui.exploreModal.querySelector('h2')!.textContent = t('modalExploreTitle');
-    ui.createCustomHabitBtn.textContent = t('modalExploreCreateCustom');
-    ui.exploreModal.querySelector('.modal-close-btn')!.textContent = t('closeButton');
-
-    ui.manageModalTitle.textContent = t('modalManageTitle');
-    ui.habitListTitle.textContent = t('modalManageHabitsSubtitle');
-    
-    // Elementos que não estão no objeto 'ui' precisam ser buscados
-    const labelLanguage = document.getElementById('label-language');
-    if (labelLanguage) labelLanguage.textContent = t('modalManageLanguage');
-
-    ui.languagePrevBtn.setAttribute('aria-label', t('languagePrev_ariaLabel'));
-    ui.languageNextBtn.setAttribute('aria-label', t('languageNext_ariaLabel'));
-    
-    const labelSync = document.getElementById('label-sync');
-    if (labelSync) labelSync.textContent = t('syncLabel');
-
-    const labelNotifications = document.getElementById('label-notifications');
-    if (labelNotifications) labelNotifications.textContent = t('modalManageNotifications');
-
-    ui.notificationStatusDesc.textContent = t('modalManageNotificationsStaticDesc');
-    
-    const labelReset = document.getElementById('label-reset');
-    if (labelReset) labelReset.textContent = t('modalManageReset');
-
-    ui.resetAppBtn.textContent = t('modalManageResetButton');
-    ui.manageModal.querySelector('.modal-close-btn')!.textContent = t('closeButton');
-    
-    const syncInactiveDesc = document.getElementById('sync-inactive-desc');
-    if (syncInactiveDesc) syncInactiveDesc.textContent = t('syncInactiveDesc');
-
-    ui.enableSyncBtn.textContent = t('syncEnable');
-    ui.enterKeyViewBtn.textContent = t('syncEnterKey');
-    
-    const labelEnterKey = document.getElementById('label-enter-key');
-    if (labelEnterKey) labelEnterKey.textContent = t('syncLabelEnterKey');
-
-    ui.cancelEnterKeyBtn.textContent = t('cancelButton');
-    ui.submitKeyBtn.textContent = t('syncSubmitKey');
-    
-    const syncWarningText = document.getElementById('sync-warning-text');
-    if (syncWarningText) syncWarningText.innerHTML = t('syncWarning');
-
-    ui.keySavedBtn.textContent = t('syncKeySaved');
-    
-    const syncActiveDesc = document.getElementById('sync-active-desc');
-    if (syncActiveDesc) syncActiveDesc.textContent = t('syncActiveDesc');
-
-    ui.viewKeyBtn.textContent = t('syncViewKey');
-    ui.disableSyncBtn.textContent = t('syncDisable');
-    
-    ui.aiModal.querySelector('h2')!.textContent = t('modalAITitle');
-    ui.aiModal.querySelector('.modal-close-btn')!.textContent = t('closeButton');
-    
-    // UPDATE [2025-02-23]: Corrected selectors for new analysis buttons
-    ui.aiOptionsModal.querySelector('h2')!.textContent = t('modalAIOptionsTitle');
-    
-    const monthlyBtn = ui.aiOptionsModal.querySelector<HTMLElement>('[data-analysis-type="monthly"]');
-    if (monthlyBtn) {
-        monthlyBtn.querySelector('.ai-option-title')!.textContent = t('aiOptionMonthlyTitle');
-        monthlyBtn.querySelector('.ai-option-desc')!.textContent = t('aiOptionMonthlyDesc');
-    }
-
-    const quarterlyBtn = ui.aiOptionsModal.querySelector<HTMLElement>('[data-analysis-type="quarterly"]');
-    if (quarterlyBtn) {
-        quarterlyBtn.querySelector('.ai-option-title')!.textContent = t('aiOptionQuarterlyTitle');
-        quarterlyBtn.querySelector('.ai-option-desc')!.textContent = t('aiOptionQuarterlyDesc');
-    }
-
-    const historicalBtn = ui.aiOptionsModal.querySelector<HTMLElement>('[data-analysis-type="historical"]');
-    if (historicalBtn) {
-        historicalBtn.querySelector('.ai-option-title')!.textContent = t('aiOptionHistoricalTitle');
-        historicalBtn.querySelector('.ai-option-desc')!.textContent = t('aiOptionHistoricalDesc');
-    }
-
-    ui.confirmModal.querySelector('h2')!.textContent = t('modalConfirmTitle');
-    ui.confirmModal.querySelector('.modal-close-btn')!.textContent = t('cancelButton');
-    ui.confirmModalEditBtn.textContent = t('editButton');
-    ui.confirmModalConfirmBtn.textContent = t('confirmButton');
-
-    ui.notesModal.querySelector('.modal-close-btn')!.textContent = t('cancelButton');
-    ui.saveNoteBtn.textContent = t('modalNotesSaveButton');
-    ui.notesTextarea.placeholder = t('modalNotesTextareaPlaceholder');
-
-    const iconPickerTitle = document.getElementById('icon-picker-modal-title');
-    if (iconPickerTitle) iconPickerTitle.textContent = t('modalIconPickerTitle');
-    
-    ui.iconPickerModal.querySelector('.modal-close-btn')!.textContent = t('cancelButton');
-
-    const colorPickerTitle = document.getElementById('color-picker-modal-title');
-    if (colorPickerTitle) colorPickerTitle.textContent = t('modalColorPickerTitle');
-    
-    ui.colorPickerModal.querySelector('.modal-close-btn')!.textContent = t('cancelButton');
-
-    const editModalActions = ui.editHabitModal.querySelector('.modal-actions');
-    if (editModalActions) {
-        editModalActions.querySelector('.modal-close-btn')!.textContent = t('cancelButton');
-        editModalActions.querySelector('#edit-habit-save-btn')!.textContent = t('modalEditSaveButton');
-    }
-    
-    if (ui.undoToast.firstElementChild) {
-        ui.undoToast.firstElementChild.textContent = t('undoToastText');
-    }
-    ui.undoBtn.textContent = t('undoButton');
-}
-
-export async function setLanguage(langCode: 'pt' | 'en' | 'es') {
-    // A função real está em i18n.ts, mas o render é chamado lá.
-    // Este placeholder é mantido caso seja necessário lógica específica de UI na troca de idioma no futuro.
-}
-
-/**
- * RENDERIZAÇÃO PROGRESSIVA: Orquestrador Principal.
- * Coordena os renderizadores especializados.
- */
+// CENTRAL ORCHESTRATION FUNCTION
 export function renderApp() {
-    // Fase 1: Renderização Crítica (Interatividade Imediata)
-    renderHabits();
-    renderCalendar();
     updateHeaderTitle();
-
-    // Fase 2 & 3: Renderização Não Crítica (Diferida)
-    runIdle(async () => {
-        renderAINotificationState();
-        renderStoicQuote();
-        // ROBUSTEZ PWA [2025-02-28]: Importação estática garantida.
-        // Evita chunks dinâmicos não cacheados no modo offline.
-        renderChart();
-    });
+    renderStoicQuote();
+    renderCalendar();
+    renderHabits();
+    renderChart();
+    renderAINotificationState();
 }

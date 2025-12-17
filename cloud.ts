@@ -72,10 +72,6 @@ export function setSyncStatus(statusKey: 'syncSaving' | 'syncSynced' | 'syncErro
     ui.syncStatus.textContent = t(statusKey);
 }
 
-function hasSyncKey(): boolean {
-    return hasLocalSyncKey();
-}
-
 /**
  * Configura os listeners de notificação e atualiza a UI inicial.
  */
@@ -222,7 +218,7 @@ async function performSync() {
  * @param immediate If true, performs the sync immediately, bypassing the debounce timer.
  */
 export function syncStateWithCloud(appState: AppState, immediate = false) {
-    if (!hasSyncKey()) return;
+    if (!hasLocalSyncKey()) return;
 
     pendingSyncState = appState; // Sempre atualiza para o estado mais recente.
     setSyncStatus('syncSaving');
@@ -243,7 +239,7 @@ export function syncStateWithCloud(appState: AppState, immediate = false) {
 }
 
 export async function fetchStateFromCloud(): Promise<AppState | undefined> {
-    if (!hasSyncKey()) return undefined;
+    if (!hasLocalSyncKey()) return undefined;
 
     const syncKey = getSyncKey();
     if (!syncKey) return undefined;

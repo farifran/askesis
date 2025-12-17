@@ -337,14 +337,12 @@ export function toggleHabitStatus(habitId: string, time: TimeOfDay, date: string
     // Atualiza apenas o cartão específico e o resumo do dia
     renderHabitCardState(habitId, time);
     
-    // Atualiza o dia no calendário (progresso)
-    const dayItem = ui.calendarStrip.querySelector<HTMLElement>(`.day-item[data-date="${date}"]`);
-    if (dayItem) {
-        // Precisamos recalcular o summary e forçar update visual
-        invalidateDaySummaryCache(date);
-        
-        renderCalendarDayPartial(date);
-    }
+    // CORREÇÃO [2025-03-03]: Invalida o cache de resumo diário incondicionalmente para garantir consistência
+    // mesmo se o dia estiver fora da tela. Remove a verificação redundante do DOM antes de chamar a atualização.
+    invalidateDaySummaryCache(date);
+    
+    // Atualiza o dia no calendário (progresso) se visível
+    renderCalendarDayPartial(date);
     
     saveState();
     
@@ -1580,7 +1578,8 @@ export async function performAIAnalysis(analysisType: 'monthly' | 'quarterly' | 
             body: JSON.stringify({
                 prompt,
                 systemInstruction: `You are a Stoic mentor. Concise, wise, practical. No fluff.`
-            })
+            }),
+            timeout: 60000 // Increase timeout to 60s for Thinking models
         });
 
         const text = await response.text();

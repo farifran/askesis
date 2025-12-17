@@ -40,6 +40,9 @@ export function setupDragHandler(habitContainer: HTMLElement) {
     // Variáveis de estado para Auto-Scroll
     let scrollVelocity = 0;
     let animationFrameId: number | null = null;
+    
+    // PERFORMANCE [2025-03-03]: Cache container bounds to avoid layout thrashing during dragover
+    let cachedContainerRect: DOMRect | null = null;
 
     function _animationLoop() {
         if (scrollVelocity !== 0) {
@@ -120,7 +123,9 @@ export function setupDragHandler(habitContainer: HTMLElement) {
         }
         
         const { clientY } = e;
-        const scrollContainerRect = habitContainer.getBoundingClientRect();
+        
+        // PERFORMANCE: Use cached rect if available, fallback to query if not (safety)
+        const scrollContainerRect = cachedContainerRect || habitContainer.getBoundingClientRect();
         
         const topZoneEnd = scrollContainerRect.top + SCROLL_ZONE_SIZE;
         const bottomZoneStart = scrollContainerRect.bottom - SCROLL_ZONE_SIZE;
@@ -216,6 +221,8 @@ export function setupDragHandler(habitContainer: HTMLElement) {
         nextReorderTargetId = null;
         nextReorderPosition = null;
         isDropValid = false;
+        
+        cachedContainerRect = null; // Clear cache
     }
 
 
@@ -265,6 +272,9 @@ export function setupDragHandler(habitContainer: HTMLElement) {
             draggedHabitId = card.dataset.habitId;
             draggedHabitOriginalTime = card.dataset.time as TimeOfDay;
             draggedHabitObject = state.habits.find(h => h.id === draggedHabitId) || null;
+            
+            // PERFORMANCE: Cache the container rect ONCE at start
+            cachedContainerRect = habitContainer.getBoundingClientRect();
 
             e.dataTransfer!.setData('text/plain', draggedHabitId);
             e.dataTransfer!.effectAllowed = 'move';

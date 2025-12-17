@@ -6,7 +6,7 @@
 
 import { state, Habit, LANGUAGES, PredefinedHabit, TimeOfDay, getScheduleForDate, invalidateChartCache } from './state';
 import { ui } from './render/ui';
-import { renderApp, setupManageModal, initLanguageFilter } from './render';
+import { renderApp, setupManageModal, initLanguageFilter, refreshEditModalUI } from './render';
 import { pushToOneSignal, getDateTimeFormat } from './utils';
 
 type PluralableTranslation = { one: string; other: string };
@@ -193,7 +193,9 @@ function updateUIText() {
     const syncWarningText = document.getElementById('sync-warning-text');
     if (syncWarningText) syncWarningText.innerHTML = t('syncWarning');
 
-    ui.keySavedBtn.textContent = t('syncKeySaved');
+    // CONTEXT AWARENESS [2025-03-03]: Verifica o contexto do botão (visualização vs salvamento)
+    const keyContext = ui.syncDisplayKeyView.dataset.context;
+    ui.keySavedBtn.textContent = (keyContext === 'view') ? t('closeButton') : t('syncKeySaved');
     
     const syncActiveDesc = document.getElementById('sync-active-desc');
     if (syncActiveDesc) syncActiveDesc.textContent = t('syncActiveDesc');
@@ -253,6 +255,11 @@ function updateUIText() {
         ui.undoToast.firstElementChild.textContent = t('undoToastText');
     }
     ui.undoBtn.textContent = t('undoButton');
+
+    // DYNAMIC CONTENT REFRESH [2025-03-03]:
+    if (state.editingHabit) {
+        refreshEditModalUI();
+    }
 }
 
 export async function setLanguage(langCode: 'pt' | 'en' | 'es') {

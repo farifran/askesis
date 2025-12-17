@@ -1,4 +1,3 @@
-
 {
     "_comment": "[ANALYSIS PROGRESS]: 100% - Limpieza de claves no utilizadas realizada [2025-01-16].",
     "aiCelebration21Day": {
@@ -9,6 +8,8 @@
         "one": "### ¡Logro Increíble! 🏆\n\n¡Has alcanzado los 66 días con el hábito **{habitNames}**! La ciencia sugiere que este es el punto en el que un nuevo comportamiento se consolida de verdad. Has construido una base sólida para un cambio duradero.",
         "other": "### ¡Logro Increíble! 🏆\n\n¡Has alcanzado los 66 días con los hábitos **{habitNames}**! La ciencia sugiere que este es el punto en el que un nuevo comportamiento se consolida de verdad. Has construido una base sólida para un cambio duradero."
     },
+    "aiError": "Error al analizar los datos.",
+    "aiErrorGeneric": "Ocurrió un error en la comunicación con la Inteligencia Artificial. Por favor, intente nuevamente más tarde.",
     "aiErrorPrefix": "Error de IA",
     "aiErrorUnknown": "Ocurrió un error desconocido.",
     "aiEval_ariaLabel": "Evaluación IA",

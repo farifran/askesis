@@ -17,13 +17,14 @@ let cachedDayElements: HTMLElement[] = [];
 /**
  * OTIMIZAÇÃO (DRY): Aplica o estado visual a um elemento de dia do calendário.
  * Centraliza a lógica de classes, atributos ARIA e variáveis CSS para evitar duplicação.
+ * PERFORMANCE [2025-03-03]: Aceita todayISO opcional para evitar recálculo em loops.
  */
-export function _applyDayState(dayItem: HTMLElement, date: Date) {
-    const todayISO = getTodayUTCIso();
+export function _applyDayState(dayItem: HTMLElement, date: Date, todayISO?: string) {
+    const effectiveTodayISO = todayISO || getTodayUTCIso();
     const isoDate = toUTCIsoDateString(date);
     const { completedPercent, snoozedPercent, showPlus } = calculateDaySummary(isoDate);
     const isSelected = isoDate === state.selectedDate;
-    const isToday = isoDate === todayISO;
+    const isToday = isoDate === effectiveTodayISO;
 
     // Gerenciamento de Classes
     if (dayItem.classList.contains(CSS_CLASSES.SELECTED) !== isSelected) {
@@ -85,8 +86,8 @@ export function _applyDayState(dayItem: HTMLElement, date: Date) {
     setTextContent(dayNameEl, getLocaleDayName(date));
 }
 
-function updateCalendarDayElement(dayItem: HTMLElement, date: Date) {
-    _applyDayState(dayItem, date);
+function updateCalendarDayElement(dayItem: HTMLElement, date: Date, todayISO: string) {
+    _applyDayState(dayItem, date, todayISO);
 }
 
 /**
@@ -97,11 +98,13 @@ export function renderCalendarDayPartial(dateISO: string) {
     const dayItem = ui.calendarStrip.querySelector<HTMLElement>(`${DOM_SELECTORS.DAY_ITEM}[data-date="${dateISO}"]`);
     if (dayItem) {
         const dateObj = parseUTCIsoDate(dateISO);
-        _applyDayState(dayItem, dateObj);
+        // Optimization: Single element update doesn't strictly require hoisting todayISO, 
+        // but for consistency we calculate it.
+        _applyDayState(dayItem, dateObj, getTodayUTCIso());
     }
 }
 
-export function createCalendarDayElement(date: Date): HTMLElement {
+export function createCalendarDayElement(date: Date, todayISO: string): HTMLElement {
     const dayItem = document.createElement('div');
     dayItem.className = CSS_CLASSES.DAY_ITEM;
     dayItem.dataset.date = toUTCIsoDateString(date);
@@ -121,7 +124,7 @@ export function createCalendarDayElement(date: Date): HTMLElement {
     dayItem.appendChild(dayName);
     dayItem.appendChild(dayProgressRing);
 
-    _applyDayState(dayItem, date);
+    _applyDayState(dayItem, date, todayISO);
 
     return dayItem;
 }
@@ -146,6 +149,8 @@ export function renderCalendar() {
     }
 
     const needsRebuild = cachedDayElements.length === 0 || cachedDayElements.length !== state.calendarDates.length;
+    // PERFORMANCE [2025-03-03]: Hoist calculation out of the loop.
+    const todayISO = getTodayUTCIso();
     
     if (needsRebuild) {
         ui.calendarStrip.innerHTML = '';
@@ -153,7 +158,7 @@ export function renderCalendar() {
         
         const fragment = document.createDocumentFragment();
         state.calendarDates.forEach(date => {
-            const el = createCalendarDayElement(date);
+            const el = createCalendarDayElement(date, todayISO);
             cachedDayElements.push(el);
             fragment.appendChild(el);
         });
@@ -168,7 +173,7 @@ export function renderCalendar() {
                 if(dayEl.dataset.date !== isoDate) {
                     dayEl.dataset.date = isoDate;
                 }
-                updateCalendarDayElement(dayEl, date);
+                updateCalendarDayElement(dayEl, date, todayISO);
             }
         });
     }

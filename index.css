@@ -1262,7 +1262,7 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 }
 .app-subtitle {
     /* RESTAURADO: Frase de reflexão */
-    font-size: 13px; /* Aumentado de 11px para 13px conforme solicitado */
+    font-size: 11px; /* Fonte reduzida conforme solicitado */
     font-style: italic;
     color: var(--text-secondary);
     margin-bottom: var(--space-xs); /* UPDATE [2025-03-03]: Add spacing below to separate from title */
