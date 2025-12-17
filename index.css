@@ -1,4 +1,3 @@
-
 /* 
  * [ANALYSIS PROGRESS]: 100% - Análise concluída.
  * [2025-02-23]: Auditoria de CSS Completa.
@@ -2033,19 +2032,6 @@ input:disabled + .slider {
     flex: 1;
     display: flex;
     justify-content: center;
-}
-
-.weekday-picker input[type="checkbox"] {
-    /* A11Y FIX [2025-01-18]: Usar .visually-hidden em vez de display:none para permitir foco por teclado */
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    margin: -1px;
-    padding: 0;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
 }
 
 .weekday-button {

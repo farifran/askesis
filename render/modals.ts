@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -114,10 +113,9 @@ function getHabitStatusForSorting(habit: Habit): 'active' | 'ended' | 'graduated
     return 'active';
 }
 
-function _createManageHabitListItem(habitData: { habit: Habit; status: 'active' | 'ended' | 'graduated'; name: string; }, todayISO: string): HTMLLIElement {
-    const { habit, status, name } = habitData;
+function _createManageHabitListItem(habitData: { habit: Habit; status: 'active' | 'ended' | 'graduated'; name: string; subtitle: string }, todayISO: string): HTMLLIElement {
+    const { habit, status, name, subtitle } = habitData;
     
-    // PERFORMANCE FIX [2025-03-03]: Recebe todayISO pré-calculado para evitar múltiplas alocações de Date.
     const streak = calculateHabitStreak(habit.id, todayISO); 
     const isConsolidated = streak >= STREAK_CONSOLIDATED;
 
@@ -131,11 +129,26 @@ function _createManageHabitListItem(habitData: { habit: Habit; status: 'active' 
     iconSpan.innerHTML = habit.icon;
     iconSpan.style.color = habit.color;
     
+    const textWrapper = document.createElement('div');
+    textWrapper.style.display = 'flex';
+    textWrapper.style.flexDirection = 'column';
+
     const nameSpan = document.createElement('span');
     nameSpan.className = 'habit-name';
     nameSpan.textContent = name;
 
-    mainSpan.append(iconSpan, nameSpan);
+    const subtitleSpan = document.createElement('span');
+    subtitleSpan.className = 'habit-subtitle';
+    subtitleSpan.textContent = subtitle;
+    
+    textWrapper.appendChild(nameSpan);
+    if (subtitle) {
+        subtitleSpan.style.fontSize = '11px';
+        subtitleSpan.style.color = 'var(--text-tertiary)';
+        textWrapper.appendChild(subtitleSpan);
+    }
+    
+    mainSpan.append(iconSpan, textWrapper);
 
     if (status === 'graduated' || status === 'ended') {
         const statusSpan = document.createElement('span');
@@ -162,6 +175,9 @@ function _createManageHabitListItem(habitData: { habit: Habit; status: 'active' 
             actionsDiv.appendChild(createActionButton(
                 'permanent-delete-habit-btn', habit.id, t('aria_delete_permanent', { habitName: name }), icons.deletePermanentAction
             ));
+            actionsDiv.appendChild(createActionButton(
+                'edit-habit-btn', habit.id, t('aria_edit', { habitName: name }), icons.editAction
+            ));
             break;
         case 'active':
             actionsDiv.appendChild(createActionButton(
@@ -177,6 +193,11 @@ function _createManageHabitListItem(habitData: { habit: Habit; status: 'active' 
                 ));
             }
             break;
+        case 'graduated':
+            actionsDiv.appendChild(createActionButton(
+                'permanent-delete-habit-btn', habit.id, t('aria_delete_permanent', { habitName: name }), icons.deletePermanentAction
+            ));
+            break;
     }
     
     li.append(mainSpan, actionsDiv);
@@ -184,52 +205,34 @@ function _createManageHabitListItem(habitData: { habit: Habit; status: 'active' 
 }
 
 export function setupManageModal() {
-    const habitsByName = new Map<string, Habit[]>();
-    
-    state.habits.forEach(habit => {
-        const { name } = getHabitDisplayInfo(habit);
-        if (!habitsByName.has(name)) {
-            habitsByName.set(name, []);
-        }
-        habitsByName.get(name)!.push(habit);
+    const habitsForModal = state.habits.map(habit => {
+        const { name, subtitle } = getHabitDisplayInfo(habit);
+        return {
+            habit,
+            status: getHabitStatusForSorting(habit),
+            name,
+            subtitle
+        };
     });
 
-    const habitsForModal = [];
     const statusOrder = { 'active': 0, 'graduated': 1, 'ended': 2 };
-
-    for (const [name, habitGroup] of habitsByName) {
-        habitGroup.sort((a, b) => {
-            const statusA = getHabitStatusForSorting(a);
-            const statusB = getHabitStatusForSorting(b);
-            
-            if (statusA !== statusB) {
-                return statusOrder[statusA] - statusOrder[statusB];
-            }
-            const lastA = a.scheduleHistory[a.scheduleHistory.length-1].startDate;
-            const lastB = b.scheduleHistory[b.scheduleHistory.length-1].startDate;
-            return lastB.localeCompare(lastA);
-        });
-
-        const representative = habitGroup[0]; 
-        
-        habitsForModal.push({
-            habit: representative,
-            status: getHabitStatusForSorting(representative),
-            name: name
-        });
-    }
 
     habitsForModal.sort((a, b) => {
         const statusDifference = statusOrder[a.status] - statusOrder[b.status];
         if (statusDifference !== 0) {
             return statusDifference;
         }
+        
+        if (a.status !== 'active') {
+             const lastA = a.habit.scheduleHistory[a.habit.scheduleHistory.length-1].endDate || '';
+             const lastB = b.habit.scheduleHistory[b.habit.scheduleHistory.length-1].endDate || '';
+             if (lastA !== lastB) return lastB.localeCompare(lastA);
+        }
+        
         return a.name.localeCompare(b.name);
     });
 
     const fragment = document.createDocumentFragment();
-    
-    // PERFORMANCE FIX: Hoist today calculation out of the loop
     const todayISO = getTodayUTCIso();
     
     habitsForModal.forEach(habitData => {
@@ -303,7 +306,6 @@ export function openNotesModal(habitId: string, date: string, time: TimeOfDay) {
     setTextContent(ui.notesModalTitle, name);
     setTextContent(ui.notesModalSubtitle, `${formattedDate} - ${timeName}`);
     
-    // FIX [2025-02-23]: Use lazy loading accessor to ensure we can read notes from archives.
     const dayData = getHabitDailyInfoForDate(date)[habitId]?.instances[time];
     ui.notesTextarea.value = dayData?.note || '';
     
@@ -381,7 +383,7 @@ export function renderFrequencyOptions() {
                 const dayName = t(key);
                 return `
                 <label title="${dayName}">
-                    <input type="checkbox" data-day="${day}" ${selectedDays.has(day) ? 'checked' : ''}>
+                    <input type="checkbox" class="visually-hidden" data-day="${day}" ${selectedDays.has(day) ? 'checked' : ''}>
                     <span class="weekday-button">${dayName.substring(0, 1)}</span>
                 </label>
             `}).join('')}
@@ -479,11 +481,6 @@ function _createHabitTemplateForForm(habitOrTemplate: Habit | PredefinedHabit | 
     }
 }
 
-/**
- * REFRESH DYNAMIC CONTENT [2025-03-03]:
- * Re-renders specific sections of the Edit Habit modal that contain dynamic text (Frequency options, Time segments).
- * This ensures that if the language changes while the modal is open (or cached in DOM), the texts update immediately.
- */
 export function refreshEditModalUI() {
     if (!state.editingHabit) return;
 
@@ -508,7 +505,6 @@ export function refreshEditModalUI() {
     if (habitNameInput) {
         habitNameInput.placeholder = t('modalEditFormNameLabel');
         
-        // If it's a predefined habit (has a key) and not a custom name, translate the value too
         if (state.editingHabit.formData.nameKey) {
             habitNameInput.value = t(state.editingHabit.formData.nameKey);
         }
@@ -519,29 +515,22 @@ export function openEditModal(habitOrTemplate: Habit | HabitTemplate | null) {
     const isNew = !habitOrTemplate || !('id' in habitOrTemplate);
     const form = ui.editHabitForm;
     
-    // FIX [2025-02-23]: Reset de estado visual de validação.
-    const formNoticeEl = form.querySelector<HTMLElement>('.form-notice')!; // Seleciona o novo aviso genérico
+    const formNoticeEl = form.querySelector<HTMLElement>('.form-notice')!;
     const nameInput = form.elements.namedItem('habit-name') as HTMLInputElement;
 
     if (formNoticeEl) formNoticeEl.classList.remove('visible');
     if (nameInput) nameInput.classList.remove('shake');
     
-    // BUGFIX: Reseta o estado desabilitado do botão de salvar.
-    // Isso previne que o botão permaneça "travado" se o usuário fechou o modal 
-    // enquanto ele estava em estado de erro (ex: nome muito longo) e reabriu.
     ui.editHabitSaveBtn.disabled = false;
-
     form.reset();
     
     const formData = _createHabitTemplateForForm(habitOrTemplate as Habit | PredefinedHabit | null, state.selectedDate);
-    // nameInput is already selected above
     nameInput.placeholder = t('modalEditFormNameLabel');
 
     if (isNew) {
         setTextContent(ui.editHabitModalTitle, t('modalEditNewTitle'));
         nameInput.value = (habitOrTemplate && 'nameKey' in habitOrTemplate) ? t(habitOrTemplate.nameKey) : '';
     } else {
-        // const habit = habitOrTemplate as Habit;
         const { name } = getHabitDisplayInfo(habitOrTemplate as Habit, state.selectedDate);
         setTextContent(ui.editHabitModalTitle, name);
         nameInput.value = name;
