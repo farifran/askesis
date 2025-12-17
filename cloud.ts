@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 
-import { AppState, STATE_STORAGE_KEY, loadState, state, persistStateLocally, saveState, APP_VERSION } from './state';
+import { AppState, STATE_STORAGE_KEY, loadState, state, persistStateLocally, saveState, APP_VERSION, getPersistableState } from './state';
 import { pushToOneSignal, generateUUID } from './utils';
 import { ui } from './render/ui';
 import { t } from './i18n';
@@ -115,17 +115,8 @@ async function resolveConflictWithServerState(serverPayload: ServerPayload) {
         // nós mesclamos os estados matematicamente para preservar o máximo de dados.
         
         // 1. Snapshot do estado local atual
-        const localState: AppState = {
-            version: APP_VERSION,
-            lastModified: Date.now(), // Irrelevante para o merge, será gerado um novo
-            habits: state.habits,
-            dailyData: state.dailyData,
-            archives: state.archives,
-            notificationsShown: state.notificationsShown,
-            pending21DayHabitIds: state.pending21DayHabitIds,
-            pendingConsolidationHabitIds: state.pendingConsolidationHabitIds,
-            // Preservamos estados de UI não persistidos (AI, etc) fora do merge
-        };
+        // REFACTOR [2025-03-04]: Utiliza helper centralizado para evitar duplicação
+        const localState = getPersistableState();
 
         // 2. Executa a fusão (usando a função importada)
         // Nota: O merge ainda é feito na main thread pois é rápido (lógica de negócio), 

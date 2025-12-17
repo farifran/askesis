@@ -14,6 +14,11 @@ import { CSS_CLASSES, DOM_SELECTORS } from './constants'; // TYPE SAFETY IMPORT
 // OTIMIZAÇÃO [2025-01-24]: Cache persistente para cartões de hábitos.
 const habitElementCache = new Map<string, HTMLElement>();
 
+// MEMORY OPTIMIZATION [2025-03-04]: Object Pool para agrupamento de hábitos.
+// Evita a criação de novos arrays (alocação de memória) a cada frame de renderização.
+// Apenas limpamos (.length = 0) e reutilizamos os arrays existentes.
+const habitsByTimePool: Record<TimeOfDay, Habit[]> = { 'Morning': [], 'Afternoon': [], 'Evening': [] };
+
 export function getCachedHabitCard(habitId: string, time: TimeOfDay): HTMLElement | undefined {
     return habitElementCache.get(`${habitId}|${time}`);
 }
@@ -357,22 +362,22 @@ export function renderHabits() {
     }
 
     const activeHabitsData = getActiveHabitsForDate(state.selectedDate);
-    const habitsByTime: Record<TimeOfDay, Habit[]> = { 'Morning': [], 'Afternoon': [], 'Evening': [] };
+    
+    // MEMORY OPTIMIZATION: Reset pool instead of creating new objects.
+    habitsByTimePool.Morning.length = 0;
+    habitsByTimePool.Afternoon.length = 0;
+    habitsByTimePool.Evening.length = 0;
     
     activeHabitsData.forEach(({ habit, schedule }) => {
         schedule.forEach(time => {
-            if (habitsByTime[time]) {
-                habitsByTime[time].push(habit);
+            if (habitsByTimePool[time]) {
+                habitsByTimePool[time].push(habit);
             }
         });
     });
 
-    const groupHasHabits: Record<TimeOfDay, boolean> = { 'Morning': false, 'Afternoon': false, 'Evening': false };
-    TIMES_OF_DAY.forEach(time => {
-        groupHasHabits[time] = habitsByTime[time].length > 0;
-    });
-
-    const emptyTimes = TIMES_OF_DAY.filter(time => !groupHasHabits[time]);
+    // OTIMIZAÇÃO: Filtra diretamente para obter os horários vazios em uma única passagem.
+    const emptyTimes = TIMES_OF_DAY.filter(time => habitsByTimePool[time].length === 0);
     const smartPlaceholderTargetTime: TimeOfDay | undefined = emptyTimes[0];
 
     TIMES_OF_DAY.forEach(time => {
@@ -380,7 +385,8 @@ export function renderHabits() {
         const groupEl = wrapperEl?.querySelector<HTMLElement>(`.${CSS_CLASSES.HABIT_GROUP}[data-time="${time}"]`);
         if (!wrapperEl || !groupEl) return;
         
-        const hasHabits = groupHasHabits[time];
+        const desiredHabits = habitsByTimePool[time];
+        const hasHabits = desiredHabits.length > 0;
 
         const marker = wrapperEl.querySelector('.time-marker') as HTMLElement;
         if (marker) {
@@ -396,7 +402,6 @@ export function renderHabits() {
 
         groupEl.setAttribute('aria-label', getTimeOfDayName(time));
 
-        const desiredHabits = habitsByTime[time];
         const processedHabitIds = new Set<string>();
         let currentIndex = 0;
 

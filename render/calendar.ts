@@ -19,7 +19,7 @@ let cachedDayElements: HTMLElement[] = [];
  * Centraliza a lógica de classes, atributos ARIA e variáveis CSS para evitar duplicação.
  * PERFORMANCE [2025-03-03]: Aceita todayISO opcional para evitar recálculo em loops.
  */
-export function _applyDayState(dayItem: HTMLElement, date: Date, todayISO?: string) {
+export function updateCalendarDayElement(dayItem: HTMLElement, date: Date, todayISO?: string) {
     const effectiveTodayISO = todayISO || getTodayUTCIso();
     const isoDate = toUTCIsoDateString(date);
     const { completedPercent, snoozedPercent, showPlus } = calculateDaySummary(isoDate);
@@ -86,10 +86,6 @@ export function _applyDayState(dayItem: HTMLElement, date: Date, todayISO?: stri
     setTextContent(dayNameEl, getLocaleDayName(date));
 }
 
-function updateCalendarDayElement(dayItem: HTMLElement, date: Date, todayISO: string) {
-    _applyDayState(dayItem, date, todayISO);
-}
-
 /**
  * SURGICAL UPDATE: Atualiza apenas o dia do calendário especificado no DOM.
  */
@@ -100,7 +96,7 @@ export function renderCalendarDayPartial(dateISO: string) {
         const dateObj = parseUTCIsoDate(dateISO);
         // Optimization: Single element update doesn't strictly require hoisting todayISO, 
         // but for consistency we calculate it.
-        _applyDayState(dayItem, dateObj, getTodayUTCIso());
+        updateCalendarDayElement(dayItem, dateObj, getTodayUTCIso());
     }
 }
 
@@ -124,7 +120,7 @@ export function createCalendarDayElement(date: Date, todayISO: string): HTMLElem
     dayItem.appendChild(dayName);
     dayItem.appendChild(dayProgressRing);
 
-    _applyDayState(dayItem, date, todayISO);
+    updateCalendarDayElement(dayItem, date, todayISO);
 
     return dayItem;
 }
@@ -236,7 +232,7 @@ export function renderFullCalendar() {
     });
 
     // PERFORMANCE [2025-03-04]: Use a single mutable Date object for the loop.
-    // Reduces garbage collection pressure by reusing the same object instance.
+    // Reduces garbage collection pressure by reusing the same object instance ~30 times.
     const iteratorDate = new Date(Date.UTC(year, month, 1));
 
     for (let day = 1; day <= daysInMonth; day++) {

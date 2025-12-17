@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 
-import { state, getActiveHabitsForDate, getHabitDailyInfoForDate } from '../state';
+import { state, calculateDaySummary } from '../state';
 import { ui } from './ui';
 import { t } from '../i18n';
 import { addDays, getTodayUTCIso, parseUTCIsoDate, toUTCIsoDateString, getDateTimeFormat } from '../utils';
@@ -79,24 +79,10 @@ function calculateChartData(): ChartDataPoint[] {
         // getActiveHabitsForDate handles strings efficiently via cache.
         const currentDateISO = toUTCIsoDateString(iteratorDate);
 
-        const activeHabitsData = getActiveHabitsForDate(currentDateISO);
-        
-        // FIX [2025-02-23]: Use Lazy Loading Accessor instead of direct state access.
-        const dailyInfo = getHabitDailyInfoForDate(currentDateISO);
-
-        let scheduledCount = 0;
-        let completedCount = 0;
-        let pendingCount = 0;
-
-        activeHabitsData.forEach(({ habit, schedule: scheduleForDay }) => {
-            const instances = dailyInfo[habit.id]?.instances || {};
-            scheduledCount += scheduleForDay.length;
-            scheduleForDay.forEach(time => {
-                const status = instances[time]?.status ?? 'pending';
-                if (status === 'completed') completedCount++;
-                else if (status === 'pending') pendingCount++;
-            });
-        });
+        // REFACTOR [2025-03-05]: Use the new calculateDaySummary which returns raw counts.
+        // This reuses the logic used for the calendar rings, ensuring consistency and
+        // avoiding re-iterating all habits for overlapping days (which is the entire chart).
+        const { total: scheduledCount, completed: completedCount, pending: pendingCount } = calculateDaySummary(currentDateISO);
 
         const hasPending = pendingCount > 0;
         const isToday = currentDateISO === todayISO;
@@ -386,8 +372,19 @@ export function renderChart() {
     }
 
     // FIX [2025-03-03]: Ensure static text is updated on every render (e.g. language change)
-    if (chartElements.chartTitle) chartElements.chartTitle.innerHTML = t('appName');
-    if (chartElements.appSubtitle) chartElements.appSubtitle.textContent = t('appSubtitle');
+    // OPTIMIZATION [2025-03-04]: Added dirty check to avoid redundant DOM writes
+    if (chartElements.chartTitle) {
+        const newTitle = t('appName');
+        if (chartElements.chartTitle.innerHTML !== newTitle) {
+            chartElements.chartTitle.innerHTML = newTitle;
+        }
+    }
+    if (chartElements.appSubtitle) {
+        const newSubtitle = t('appSubtitle');
+        if (chartElements.appSubtitle.textContent !== newSubtitle) {
+            chartElements.appSubtitle.textContent = newSubtitle;
+        }
+    }
 
     if (isChartVisible) {
         _updateChartDOM(lastChartData);

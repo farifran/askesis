@@ -132,11 +132,11 @@ export function updateNotificationUI() {
         if (permission === "denied") {
             ui.notificationToggle.checked = false;
             ui.notificationToggle.disabled = true;
-            ui.notificationToggleLabel.style.cursor = 'not-allowed';
+            // CLEANUP [2025-03-04]: Removed manual style.cursor manipulation. Handled by CSS.
             setTextContent(ui.notificationStatusDesc, t('notificationStatusDisabled'));
         } else {
             ui.notificationToggle.disabled = false;
-            ui.notificationToggleLabel.style.cursor = 'pointer';
+            // CLEANUP [2025-03-04]: Removed manual style.cursor manipulation. Handled by CSS.
 
             ui.notificationToggle.checked = isPushEnabled;
 

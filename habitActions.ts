@@ -22,7 +22,8 @@ import {
     APP_VERSION,
     persistStateLocally,
     loadState,
-    HabitStatus
+    HabitStatus,
+    getPersistableState // REFACTOR [2025-03-04]: Importado para DRY
 } from './state';
 import { ui } from './render/ui';
 import { 
@@ -182,21 +183,32 @@ function _findActiveScheduleIndex(habit: Habit, dateISO: string): number {
     return index;
 }
 
+/**
+ * REFACTOR [2025-03-04]: Consolidated cleanup and save logic for schedule changes.
+ * Used by both "Just Today" and "From Now On" actions.
+ */
+function _finalizeScheduleUpdate(habitId: string, clearHistoryCache: boolean) {
+    // CLEANUP [2025-02-21]: Essential for DOM Cache consistency.
+    removeHabitFromCache(habitId);
+
+    state.uiDirtyState.habitListStructure = true;
+    
+    if (clearHistoryCache) {
+        clearScheduleCache();
+    }
+    
+    clearActiveHabitsCache();
+    saveState();
+    renderApp();
+}
+
 // --- ACTIONS ---
 
 // DATA SOVEREIGNTY ACTIONS [2025-02-23]
 
 export function exportData() {
-    const dataToExport: AppState = {
-        version: APP_VERSION,
-        lastModified: Date.now(),
-        habits: state.habits,
-        dailyData: state.dailyData,
-        archives: state.archives,
-        notificationsShown: state.notificationsShown,
-        pending21DayHabitIds: state.pending21DayHabitIds,
-        pendingConsolidationHabitIds: state.pendingConsolidationHabitIds
-    };
+    // REFACTOR [2025-03-04]: Use centralized snapshot creator (DRY)
+    const dataToExport = getPersistableState();
 
     const blob = new Blob([JSON.stringify(dataToExport, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -229,16 +241,8 @@ export function importData() {
 
             // SMART MERGE: Combina o estado atual com o backup
             // Isso previne a perda de dados se o usuário fez algo antes de importar.
-            const currentState: AppState = {
-                version: APP_VERSION,
-                lastModified: Date.now(),
-                habits: state.habits,
-                dailyData: state.dailyData,
-                archives: state.archives,
-                notificationsShown: state.notificationsShown,
-                pending21DayHabitIds: state.pending21DayHabitIds,
-                pendingConsolidationHabitIds: state.pendingConsolidationHabitIds
-            };
+            // REFACTOR [2025-03-04]: Use centralized snapshot creator (DRY)
+            const currentState = getPersistableState();
 
             const mergedState = mergeStates(currentState, importedState);
             
@@ -482,6 +486,9 @@ function _removeTimeFromSchedule(habit: Habit, effectiveDate: string, timeToRemo
         // we MUST wipe the override to avoid conflicts.
         _cleanDailyOverrides(effectiveDate, habit.id);
 
+        // Cache cleanup for History change
+        _finalizeScheduleUpdate(habit.id, true);
+
     } 
     // CASE B: The time is NOT in history (It was a "Just Today" addition/move).
     // We only need to remove it from the daily override.
@@ -498,6 +505,9 @@ function _removeTimeFromSchedule(habit: Habit, effectiveDate: string, timeToRemo
         
         // Update the override. Even if it's empty [], we save it to block the permanent schedule.
         info.dailySchedule = newSchedule;
+
+        // Cache cleanup for Daily override change (No history clear needed)
+        _finalizeScheduleUpdate(habit.id, false);
     }
     
     // Always clean up instance data (notes, status) for the removed time
@@ -505,14 +515,6 @@ function _removeTimeFromSchedule(habit: Habit, effectiveDate: string, timeToRemo
     if (info && info.instances[timeToRemove]) {
         delete info.instances[timeToRemove];
     }
-
-    // Cache cleanup
-    removeHabitFromCache(habit.id);
-    state.uiDirtyState.habitListStructure = true;
-    clearScheduleCache();
-    clearActiveHabitsCache();
-    saveState();
-    renderApp();
 }
 
 function _requestFutureScheduleChange(
@@ -558,13 +560,7 @@ function _requestFutureScheduleChange(
             reorderHabit(habit.id, reorderTarget.id, reorderTarget.pos, false);
         }
 
-        // CLEANUP [2025-02-21]: Essential for DOM Cache consistency.
-        removeHabitFromCache(habit.id);
-
-        state.uiDirtyState.habitListStructure = true; 
-        clearActiveHabitsCache();
-        saveState();
-        renderApp();
+        _finalizeScheduleUpdate(habit.id, false);
     };
     
     const fromNowOnAction = () => {
@@ -630,14 +626,7 @@ function _requestFutureScheduleChange(
             reorderHabit(habit.id, reorderTarget.id, reorderTarget.pos, false);
         }
         
-        // CLEANUP [2025-02-21]: Essential for DOM Cache consistency.
-        removeHabitFromCache(habit.id);
-
-        state.uiDirtyState.habitListStructure = true;
-        clearScheduleCache();
-        clearActiveHabitsCache();
-        saveState();
-        renderApp();
+        _finalizeScheduleUpdate(habit.id, true);
     };
 
     showConfirmationModal(
@@ -814,6 +803,12 @@ export function saveHabitFromModal() {
             
             clearScheduleCache();
         }
+    }
+
+    // FIX [2025-03-04]: CLEANUP CACHE to prevent memory leaks if times changed.
+    // Ensure we clear the specific habit cache so old time slots (DOM elements) are collected.
+    if (!isNew && habitId) {
+        removeHabitFromCache(habitId);
     }
 
     state.editingHabit = null;

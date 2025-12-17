@@ -1,4 +1,3 @@
-
 // state.ts
 
 /**
@@ -381,21 +380,30 @@ function archiveOldData() {
     console.log(`Archived ${movedCount} daily records to cold storage.`);
 }
 
+/**
+ * REFACTOR [2025-03-04]: Centralized AppState Snapshot.
+ * Creates a clean, persistable object from the current runtime state.
+ * Eliminates duplication across saveState, exportData, and cloud sync logic (DRY Principle).
+ */
+export function getPersistableState(): AppState {
+    return {
+        version: APP_VERSION,
+        lastModified: Date.now(),
+        habits: state.habits,
+        dailyData: state.dailyData,
+        archives: state.archives,
+        notificationsShown: state.notificationsShown,
+        pending21DayHabitIds: state.pending21DayHabitIds,
+        pendingConsolidationHabitIds: state.pendingConsolidationHabitIds
+    };
+}
+
 export function saveState() {
     // OPTIMIZATION [2025-03-03]: Removed redundant 'archiveOldData()' call.
     // It is already called on loadState(). Running it here caused unnecessary 
     // JSON.parse/stringify thrashing when editing historical habits.
 
-    const stateToSave: AppState = {
-        version: APP_VERSION,
-        lastModified: Date.now(),
-        habits: state.habits,
-        dailyData: state.dailyData,
-        archives: state.archives, // Save cold storage
-        notificationsShown: state.notificationsShown,
-        pending21DayHabitIds: state.pending21DayHabitIds,
-        pendingConsolidationHabitIds: state.pendingConsolidationHabitIds
-    };
+    const stateToSave = getPersistableState();
     
     const saveToLocalStorage = (data: AppState) => {
         try {
@@ -643,17 +651,19 @@ export function getEffectiveScheduleForHabitOnDate(habit: Habit, dateISO: string
     
     // LOGIC FIX [2025-02-21]: The Opaque Layer logic.
     if (dailyInfo?.dailySchedule !== undefined) {
-        // PERFORMANCE [2025-03-03]: Retorna uma cópia rasa do array existente em vez de alocar um novo Set.
-        // A unicidade já é garantida no momento da escrita (habitActions.ts).
-        return [...dailyInfo.dailySchedule];
+        // PERFORMANCE [2025-03-04]: Retorna a referência direta ao array (ZERO COST ALLOCATION).
+        // Anteriormente: `return [...dailyInfo.dailySchedule]`.
+        // A remoção da cópia reduz o thrashing do GC em hot-paths como calculateHabitStreak.
+        // O consumidor deve tratar este array como somente-leitura.
+        return dailyInfo.dailySchedule;
     }
     
     // Fallback to standard history schedule
     const activeSchedule = getScheduleForDate(habit, dateISO);
     if (!activeSchedule) return [];
     
-    // PERFORMANCE [2025-03-03]: Retorna uma cópia rasa do array existente em vez de alocar um novo Set.
-    return [...activeSchedule.times];
+    // PERFORMANCE [2025-03-04]: Retorna a referência direta ao array.
+    return activeSchedule.times;
 }
 
 // GC OPTIMIZATION [2025-01-23]: Singleton empty object for daily info.
@@ -730,6 +740,18 @@ export function ensureHabitInstanceData(date: string, habitId: string, time: Tim
     
     state.dailyData[date][habitId].instances[time] ??= { status: 'pending' };
     return state.dailyData[date][habitId].instances[time]!;
+}
+
+// --- GOAL HELPERS ---
+
+export function getSmartGoalForHabit(habit: Habit, date: string, time: TimeOfDay): number {
+    return habit.goal.total || 0;
+}
+
+export function getCurrentGoalForInstance(habit: Habit, date: string, time: TimeOfDay): number {
+    const dayRecord = getHabitDailyInfoForDate(date);
+    const instance = dayRecord[habit.id]?.instances?.[time];
+    return instance?.goalOverride ?? getSmartGoalForHabit(habit, date, time);
 }
 
 // PERFORMANCE [2025-01-16]: Cache para armazenar o timestamp da âncora de agendamento.
@@ -951,7 +973,17 @@ function _wasGoalExceededWithStreak(habit: Habit, instances: HabitDailyInstances
 // PERFORMANCE [2025-01-17]: Cache para resultados de calculateDaySummary.
 // Evita o recálculo de progresso para todos os 61 dias do calendário a cada renderização.
 // MEMORY OPTIMIZATION [2025-03-03]: 'totalPercent' removido para economizar memória e eliminar código morto.
-const daySummaryCache = new Map<string, { completedPercent: number, snoozedPercent: number, showPlus: boolean }>();
+// OPTIMIZATION [2025-03-05]: Added raw counts to cache to be used by Chart renderer.
+interface DaySummary {
+    total: number;
+    completed: number;
+    snoozed: number;
+    pending: number;
+    completedPercent: number;
+    snoozedPercent: number;
+    showPlus: boolean;
+}
+const daySummaryCache = new Map<string, DaySummary>();
 
 /**
  * Invalida o cache de resumo diário para uma data específica ou para todos os dias.
@@ -975,9 +1007,9 @@ export function invalidateDaySummaryCache(dateISO?: string) {
  * 
  * ATUALIZAÇÃO [2025-01-17]: Agora utiliza cache para evitar recálculos redundantes.
  * ATUALIZAÇÃO [2025-02-08]: Atualizado para calcular 'snoozedPercent' e usar 'total absoluto' para o anel.
- * CLEANUP [2025-03-03]: Removido cálculo de 'totalPercent' não utilizado.
+ * REFACTOR [2025-03-05]: Returns raw counts to be used by Chart, avoiding double-iteration.
  */
-export function calculateDaySummary(dateISO: string) {
+export function calculateDaySummary(dateISO: string): DaySummary {
     if (daySummaryCache.has(dateISO)) {
         return daySummaryCache.get(dateISO)!;
     }
@@ -989,52 +1021,39 @@ export function calculateDaySummary(dateISO: string) {
      // Isso evita a criação de um objeto Date redundante se os dados já estiverem em cache em getActiveHabitsForDate.
      const activeHabits = getActiveHabitsForDate(dateISO);
      
-     if (activeHabits.length === 0) return { completedPercent: 0, snoozedPercent: 0, showPlus: false };
-     
+     // Initialize default object
      let total = 0;
      let completed = 0;
      let snoozed = 0;
+     let pending = 0;
      let showPlus = false;
      
-     // USES TRANSPARENT ACCESSOR (Handles Archives)
-     const dayRecord = getHabitDailyInfoForDate(dateISO);
+     if (activeHabits.length > 0) {
+         // USES TRANSPARENT ACCESSOR (Handles Archives)
+         const dayRecord = getHabitDailyInfoForDate(dateISO);
 
-     for (const { habit, schedule } of activeHabits) {
-         const instances = dayRecord[habit.id]?.instances || {}; // Uses dayRecord
-         
-         if (_wasGoalExceededWithStreak(habit, instances, schedule, dateISO)) {
-             showPlus = true;
-         }
+         for (const { habit, schedule } of activeHabits) {
+             const instances = dayRecord[habit.id]?.instances || {}; // Uses dayRecord
+             
+             if (_wasGoalExceededWithStreak(habit, instances, schedule, dateISO)) {
+                 showPlus = true;
+             }
 
-         for (const time of schedule) {
-             total++;
-             const status = instances[time]?.status;
-             if (status === 'completed') completed++;
-             else if (status === 'snoozed') snoozed++;
+             for (const time of schedule) {
+                 total++;
+                 const status = instances[time]?.status ?? 'pending';
+                 if (status === 'completed') completed++;
+                 else if (status === 'snoozed') snoozed++;
+                 else if (status === 'pending') pending++;
+             }
          }
      }
      
      // LOGIC CHANGE [2025-02-08]: Calculate percentages based on absolute total to show gray segment for snoozed.
      const completedPercent = total > 0 ? Math.round((completed / total) * 100) : 0;
      const snoozedPercent = total > 0 ? Math.round((snoozed / total) * 100) : 0;
-
-     const result = { completedPercent, snoozedPercent, showPlus };
+     
+     const result: DaySummary = { total, completed, snoozed, pending, completedPercent, snoozedPercent, showPlus };
      daySummaryCache.set(dateISO, result);
      return result;
-}
-
-export function getSmartGoalForHabit(habit: Habit, dateISO: string, time: TimeOfDay): number {
-    // Simple implementation: return total goal or default to 1
-    return habit.goal.total || 1; 
-}
-
-export function getCurrentGoalForInstance(habit: Habit, dateISO: string, time: TimeOfDay): number {
-    // USES TRANSPARENT ACCESSOR
-    const dayRecord = getHabitDailyInfoForDate(dateISO);
-    const daily = dayRecord[habit.id];
-    
-    if (daily?.instances?.[time]?.goalOverride !== undefined) {
-        return daily.instances[time].goalOverride!;
-    }
-    return getSmartGoalForHabit(habit, dateISO, time);
 }
