@@ -57,6 +57,9 @@ function updateCachedLayoutValues() {
 
 export function setupSwipeHandler(habitContainer: HTMLElement) {
     let activeCard: HTMLElement | null = null;
+    // PERFORMANCE [2025-03-04]: Cache content wrapper to avoid querySelector in RAF loop
+    let activeContent: HTMLElement | null = null;
+    
     let startX = 0;
     let startY = 0;
     
@@ -96,7 +99,8 @@ export function setupSwipeHandler(habitContainer: HTMLElement) {
             }
 
             activeCard.classList.remove(CSS_CLASSES.IS_SWIPING);
-            const content = activeCard.querySelector<HTMLElement>(DOM_SELECTORS.HABIT_CONTENT_WRAPPER);
+            // Use cached reference if available, otherwise query (fallback)
+            const content = activeContent || activeCard.querySelector<HTMLElement>(DOM_SELECTORS.HABIT_CONTENT_WRAPPER);
             if (content) {
                 content.style.transform = '';
                 content.draggable = true;
@@ -109,6 +113,7 @@ export function setupSwipeHandler(habitContainer: HTMLElement) {
         window.removeEventListener('contextmenu', _cleanupAndReset);
         
         activeCard = null;
+        activeContent = null; // Clear reference
         isSwiping = false;
         swipeDirection = 'none';
         dragEnableTimer = null;
@@ -122,17 +127,16 @@ export function setupSwipeHandler(habitContainer: HTMLElement) {
     };
 
     const updateVisuals = () => {
-        if (!activeCard || swipeDirection !== 'horizontal') return;
+        // PERFORMANCE: Check activeContent directly instead of DOM query
+        if (!activeCard || !activeContent || swipeDirection !== 'horizontal') return;
 
         const deltaX = inputCurrentX - startX;
         let translateX = deltaX;
         if (wasOpenLeft) translateX += swipeActionWidth;
         if (wasOpenRight) translateX -= swipeActionWidth;
 
-        const content = activeCard.querySelector<HTMLElement>(DOM_SELECTORS.HABIT_CONTENT_WRAPPER);
-        if (content) {
-            content.style.transform = `translateX(${translateX}px)`;
-        }
+        // Apply transform to cached element
+        activeContent.style.transform = `translateX(${translateX}px)`;
 
         if (!hasTriggeredHaptic && Math.abs(deltaX) > HAPTIC_THRESHOLD) {
             triggerHaptic('light');
@@ -162,8 +166,8 @@ export function setupSwipeHandler(habitContainer: HTMLElement) {
                         dragEnableTimer = null;
                     }
                     activeCard.classList.add(CSS_CLASSES.IS_SWIPING);
-                    const content = activeCard.querySelector<HTMLElement>(DOM_SELECTORS.HABIT_CONTENT_WRAPPER);
-                    if (content) content.draggable = false;
+                    
+                    if (activeContent) activeContent.draggable = false;
                     
                     try {
                         activeCard.setPointerCapture(e.pointerId);
@@ -220,6 +224,9 @@ export function setupSwipeHandler(habitContainer: HTMLElement) {
         }
 
         activeCard = targetCard;
+        // CACHE HIT: Store the content wrapper immediately to avoid lookups later
+        activeContent = contentWrapper;
+        
         startX = e.clientX;
         startY = e.clientY;
         inputCurrentX = startX; 
@@ -230,13 +237,14 @@ export function setupSwipeHandler(habitContainer: HTMLElement) {
 
         swipeActionWidth = cachedSwipeActionWidth || 60;
 
-        const content = activeCard.querySelector<HTMLElement>(DOM_SELECTORS.HABIT_CONTENT_WRAPPER);
-        if (content) {
+        // Use cached reference
+        if (activeContent) {
             if (e.pointerType !== 'mouse') {
-                content.draggable = false;
+                activeContent.draggable = false;
                 dragEnableTimer = window.setTimeout(() => {
-                    if (content && swipeDirection === 'none') {
-                        content.draggable = true;
+                    // Check cached reference
+                    if (activeContent && swipeDirection === 'none') {
+                        activeContent.draggable = true;
                     }
                     dragEnableTimer = null;
                 }, 150);

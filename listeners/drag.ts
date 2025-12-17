@@ -14,10 +14,11 @@ import { DOM_SELECTORS, CSS_CLASSES } from '../render/constants';
 const DROP_INDICATOR_GAP = 5; 
 const DROP_INDICATOR_HEIGHT = 3; 
 
-// Constantes para Auto-Scroll
-const SCROLL_ZONE_SIZE = 200; 
-const BASE_SCROLL_SPEED = 60;
-const MAX_SCROLL_SPEED = 180;
+// CALIBRAÇÃO DE FÍSICA [2025-03-04]:
+// Zona de 120px. Velocidade quadrática para controle preciso.
+// Curva: v = MAX * (proximidade ^ 2).
+const SCROLL_ZONE_SIZE = 120;
+const MAX_SCROLL_SPEED = 15; // Aumentado levemente pois a curva quadrática é mais suave na média
 
 export function setupDragHandler(habitContainer: HTMLElement) {
     let draggedElement: HTMLElement | null = null;
@@ -41,11 +42,12 @@ export function setupDragHandler(habitContainer: HTMLElement) {
     let scrollVelocity = 0;
     let animationFrameId: number | null = null;
     
-    // PERFORMANCE [2025-03-03]: Cache container bounds to avoid layout thrashing during dragover
+    // PERFORMANCE [2025-03-03]: Cache container bounds to avoid layout thrashing
     let cachedContainerRect: DOMRect | null = null;
 
     function _animationLoop() {
         if (scrollVelocity !== 0) {
+            // Nota: O CSS 'scroll-behavior: auto' é forçado pela classe .is-dragging
             habitContainer.scrollBy(0, scrollVelocity);
         }
 
@@ -130,13 +132,42 @@ export function setupDragHandler(habitContainer: HTMLElement) {
         const topZoneEnd = scrollContainerRect.top + SCROLL_ZONE_SIZE;
         const bottomZoneStart = scrollContainerRect.bottom - SCROLL_ZONE_SIZE;
 
-        if (clientY < topZoneEnd && clientY > scrollContainerRect.top) {
-            const intensity = Math.sqrt(1 - (clientY - scrollContainerRect.top) / SCROLL_ZONE_SIZE);
-            scrollVelocity = -(BASE_SCROLL_SPEED + (intensity * (MAX_SCROLL_SPEED - BASE_SCROLL_SPEED)));
+        // --- LÓGICA PROPORCIONAL QUADRÁTICA ---
+        // Topo
+        if (clientY < topZoneEnd) {
+            // Distância da borda real do container
+            // Se clientY estiver acima do container, distance será negativa (o que é ok, tratamos no clamp)
+            const distance = clientY - scrollContainerRect.top;
+            
+            // Normaliza (0 = início da zona, 1 = na borda ou além)
+            // Se distance for pequeno (perto da borda), ratio aproxima-se de 1.
+            let ratio = (SCROLL_ZONE_SIZE - distance) / SCROLL_ZONE_SIZE;
+            
+            // Clamp: Garante que ratio fique entre 0 e 1 (para o cálculo da curva), 
+            // mas permite > 1 para velocidade máxima imediata se sair muito fora.
+            ratio = Math.max(0, Math.min(1, ratio));
+            
+            // Curva Quadrática (Ease-In): x * x
+            // Isso garante que a velocidade aumente lentamente no início e rápido no final.
+            const intensity = ratio * ratio; 
+            
+            scrollVelocity = -(intensity * MAX_SCROLL_SPEED);
+            
+            // Garante movimento mínimo se estiver na zona
+            if (scrollVelocity > -1 && scrollVelocity < 0) scrollVelocity = -1;
         } 
-        else if (clientY > bottomZoneStart && clientY < scrollContainerRect.bottom) {
-            const intensity = Math.sqrt((clientY - bottomZoneStart) / SCROLL_ZONE_SIZE);
-            scrollVelocity = BASE_SCROLL_SPEED + (intensity * (MAX_SCROLL_SPEED - BASE_SCROLL_SPEED));
+        // Fundo
+        else if (clientY > bottomZoneStart) {
+            const distance = scrollContainerRect.bottom - clientY;
+            
+            let ratio = (SCROLL_ZONE_SIZE - distance) / SCROLL_ZONE_SIZE;
+            ratio = Math.max(0, Math.min(1, ratio));
+            
+            const intensity = ratio * ratio;
+            
+            scrollVelocity = intensity * MAX_SCROLL_SPEED;
+            
+            if (scrollVelocity < 1 && scrollVelocity > 0) scrollVelocity = 1;
         } 
         else {
             scrollVelocity = 0;
@@ -246,7 +277,7 @@ export function setupDragHandler(habitContainer: HTMLElement) {
         draggedElement?.classList.remove(CSS_CLASSES.DRAGGING);
         document.body.classList.remove('is-dragging-active');
         
-        // FIX [2025-03-04]: Restore smooth scrolling
+        // FIX [2025-03-04]: Restore smooth scrolling on container
         habitContainer.classList.remove('is-dragging');
         
         if (currentRenderedDropZone) {

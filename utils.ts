@@ -98,8 +98,12 @@ const dateTimeFormatCache = new Map<string, Intl.DateTimeFormat>();
  * @returns Uma instância de Intl.DateTimeFormat.
  */
 export function getDateTimeFormat(locale: string, options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
-    // Cria uma chave única baseada no locale e nas opções ordenadas (para consistência).
-    const optionsKey = JSON.stringify(Object.entries(options).sort((a, b) => a[0].localeCompare(b[0])));
+    // PERFORMANCE [2025-03-04]: Optimized cache key generation.
+    // Instead of Object.entries(options).sort(...), we use the JSON.stringify replacer array
+    // to sort keys deterministically without creating intermediate Entry arrays.
+    // This reduces GC pressure in hot paths (calendar rendering).
+    const keys = Object.keys(options).sort();
+    const optionsKey = JSON.stringify(options, keys);
     const key = `${locale}|${optionsKey}`;
 
     if (!dateTimeFormatCache.has(key)) {

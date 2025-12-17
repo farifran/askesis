@@ -258,22 +258,15 @@ export function renderHabitCardState(habitId: string, time: TimeOfDay) {
 }
 
 export function createHabitCardElement(habit: Habit, time: TimeOfDay): HTMLElement {
-    // USE LAZY ACCESSOR
-    const dailyInfo = getHabitDailyInfoForDate(state.selectedDate);
-    const habitInstanceData = dailyInfo[habit.id]?.instances?.[time];
-    const status = habitInstanceData?.status ?? CSS_CLASSES.PENDING;
-    const hasNote = habitInstanceData?.note && habitInstanceData.note.length > 0;
-    const streak = calculateHabitStreak(habit.id, state.selectedDate);
+    // REFACTOR [2025-03-04]: Pure Skeleton Factory.
+    // Removes redundant logic by building only the DOM structure and delegating
+    // all data population (status, text, classes) to updateHabitCardElement.
     
     const card = document.createElement('li');
-    card.className = `${CSS_CLASSES.HABIT_CARD} ${status}`;
+    // Base class only, dynamic classes added by update
+    card.className = CSS_CLASSES.HABIT_CARD; 
     card.dataset.habitId = habit.id;
     card.dataset.time = time;
-
-    const { name, subtitle } = getHabitDisplayInfo(habit, state.selectedDate);
-
-    if (streak >= STREAK_CONSOLIDATED) card.classList.add('consolidated');
-    else if (streak >= STREAK_SEMI_CONSOLIDATED) card.classList.add('semi-consolidated');
 
     const actionsLeft = document.createElement('div');
     actionsLeft.className = 'habit-actions-left';
@@ -281,7 +274,8 @@ export function createHabitCardElement(habit: Habit, time: TimeOfDay): HTMLEleme
 
     const actionsRight = document.createElement('div');
     actionsRight.className = 'habit-actions-right';
-    actionsRight.innerHTML = `<button type="button" class="${CSS_CLASSES.SWIPE_NOTE_BTN}" data-has-note="${hasNote}" aria-label="${t(hasNote ? 'habitNoteEdit_ariaLabel' : 'habitNoteAdd_ariaLabel')}">${hasNote ? icons.swipeNoteHasNote : icons.swipeNote}</button>`;
+    // Note icon state will be set by update
+    actionsRight.innerHTML = `<button type="button" class="${CSS_CLASSES.SWIPE_NOTE_BTN}">${icons.swipeNote}</button>`;
     
     const contentWrapper = document.createElement('div');
     contentWrapper.className = CSS_CLASSES.HABIT_CONTENT_WRAPPER;
@@ -289,37 +283,33 @@ export function createHabitCardElement(habit: Habit, time: TimeOfDay): HTMLEleme
     
     contentWrapper.setAttribute('role', 'button');
     contentWrapper.setAttribute('tabindex', '0');
-    contentWrapper.setAttribute('aria-label', `${name}, ${t(`filter${time}`)}, ${status}`);
 
     const icon = document.createElement('div');
     icon.className = 'habit-icon';
-    icon.style.backgroundColor = `${habit.color}30`;
-    icon.style.color = habit.color;
-    icon.innerHTML = habit.icon;
-    // Cache the initial HTML to avoid reading it back later
-    (icon as any)._cachedIconHtml = habit.icon;
+    // Style and content set by update
 
     const details = document.createElement('div');
     details.className = CSS_CLASSES.HABIT_DETAILS;
+    
     const nameEl = document.createElement('div');
     nameEl.className = 'name';
-    nameEl.textContent = name;
     const subtitleEl = document.createElement('div');
     subtitleEl.className = 'subtitle';
-    subtitleEl.textContent = subtitle;
-    details.append(nameEl, subtitleEl);
     
-    _updateConsolidationMessage(details, streak);
+    details.append(nameEl, subtitleEl);
+    // Consolidation message injected by update
 
     const goal = document.createElement('div');
     goal.className = 'habit-goal';
-    updateGoalContentElement(goal, status, habit, time, habitInstanceData);
+    // Goal content injected by update
 
-    // FIX [2025-02-26]: Removed redundant 'timeOfDayIcon' from append to clean up card layout.
     contentWrapper.append(icon, details, goal);
     card.append(actionsLeft, actionsRight, contentWrapper);
     
     habitElementCache.set(`${habit.id}|${time}`, card);
+
+    // DELEGATION: Populate data immediately
+    updateHabitCardElement(card, habit, time);
 
     return card;
 }
