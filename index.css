@@ -1219,22 +1219,36 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 /* --- COMPONENTES: GRÁFICO DE EVOLUÇÃO (AUTO FOOTER) --- */
 .chart-container {
     padding: var(--space-lg);
-    background-color: var(--bg-color);
+    background-color: var(--bg-color); /* TESTE: Alterado para preto puro a pedido do usuário */
     border-radius: var(--border-radius-large);
+    /* PERFORMANCE [2024-12-28]: Isola o layout e a pintura da faixa de calendário para evitar reflows globais. */
+    /* FIX [2024-12-28]: Alterado para 'layout style' para permitir que tooltips overflow (visualmente). */
     contain: layout style;
+    /* PERFORMANCE [2025-01-18]: Otimização para evitar renderização quando fora da tela. */
     content-visibility: auto;
-    contain-intrinsic-size: 150px;
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    min-height: 150px;
-    max-height: 250px;
+    contain-intrinsic-size: 80px;
+    
+    /* FIX: FLEX ITEM */
+    flex-shrink: 0; /* Nunca encolhe, sempre visível */
+    max-height: none;
     overflow: visible;
+    
+    /* UI FIX: Margem superior para separar dos cartões.
+       Como o container de hábitos não força altura total, o gráfico sobe
+       naturalmente para ficar perto dos cartões quando há poucos. */
+    /* Reduced margin-top from --space-3xl (48px) to --space-xl (24px) for tighter layout */
     margin-top: var(--space-lg);
-    margin-inline: var(--space-lg);
+    margin-inline: var(--space-lg); 
+    
+    /* Margem inferior para não colar na borda da tela */
+    /* Reduced margin-bottom from --space-lg (16px) to --space-sm (8px) */
     margin-bottom: var(--space-sm);
+    
+    /* Estilos visuais normais (não flutuante) */
     z-index: var(--z-index-footer);
     box-shadow: none;
+    
+    /* [2025-02-23] Add border matching habit cards */
     border: 1px solid rgba(255, 255, 255, 0.3);
 }
 .chart-header {
@@ -1261,25 +1275,18 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 .chart-title strong {
     color: var(--accent-green);
 }
-.chart-data-view {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-}
 .chart-data-view, .chart-empty-state {
     display: none;
 }
 .chart-container:not(.is-empty) .chart-data-view {
-    display: flex;
+    display: block;
 }
 .chart-container.is-empty .chart-empty-state {
     display: flex;
 }
 .chart-wrapper { 
     position: relative; 
-    flex: 1;
-    min-height: 42px;
+    height: 42px; 
     /* UX [2025-01-24]: Permite scroll vertical (pan-y) mas captura horizontal */
     touch-action: pan-y; 
     user-select: none; 
@@ -1327,9 +1334,7 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 }
 .chart-empty-state {
     display: flex; align-items: center; justify-content: center;
-    flex: 1;
-    min-height: 42px;
-    color: var(--text-tertiary); font-style: italic; text-align: center;
+    height: 42px; color: var(--text-tertiary); font-style: italic; text-align: center;
 }
 .chart-evolution-indicator {
     position: absolute;
