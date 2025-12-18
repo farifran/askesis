@@ -107,10 +107,24 @@ function _calculateChartScales(chartData: ChartDataPoint[]): ChartScales {
     ui.chart.svg.setAttribute('viewBox', `0 0 ${svgWidth} ${svgHeight}`);
 
     const values = chartData.map(d => d.value);
-    const minVal = Math.min(...values) * 0.98;
-    const maxVal = Math.max(...values) * 1.02;
-    const valueRange = maxVal - minVal;
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const range = max - min;
     
+    let minVal, maxVal;
+
+    if (range === 0) {
+        // Flat line, center it vertically with a small artificial range
+        minVal = min - 1;
+        maxVal = max + 1;
+    } else {
+        // Add a small buffer to prevent the line from touching the edges.
+        const buffer = range * 0.05; 
+        minVal = min - buffer;
+        maxVal = max + buffer;
+    }
+    
+    const valueRange = maxVal - minVal;
     chartMetadata = { minVal, maxVal, valueRange: valueRange > 0 ? valueRange : 1 };
 
     const xScale = (index: number) => padding.left + (index / (chartData.length - 1)) * chartWidth;
