@@ -13,6 +13,8 @@ import { addDays, getTodayUTCIso, parseUTCIsoDate, toUTCIsoDateString, getDateTi
 const CHART_DAYS = 30;
 const INITIAL_SCORE = 100;
 const MAX_DAILY_CHANGE_RATE = 0.015;
+// VISUAL TWEAK: Reduz o preenchimento vertical para tornar as variações da linha mais pronunciadas
+const CHART_PADDING = { top: 2, right: 10, bottom: 2, left: 10 };
 
 type ChartDataPoint = {
     date: string;
@@ -98,7 +100,7 @@ function calculateChartData(): ChartDataPoint[] {
 function _calculateChartScales(chartData: ChartDataPoint[]): ChartScales {
     const svgWidth = ui.chartContainer.clientWidth;
     const svgHeight = 42;
-    const padding = { top: 10, right: 10, bottom: 10, left: 10 };
+    const padding = CHART_PADDING;
     const chartWidth = svgWidth - padding.left - padding.right;
     const chartHeight = svgHeight - padding.top - padding.bottom;
 
@@ -193,7 +195,7 @@ function updateTooltipPosition() {
     const svgWidth = cachedChartRect.width;
     if (svgWidth === 0) return;
 
-    const padding = { top: 10, right: 10, bottom: 10, left: 10 };
+    const padding = CHART_PADDING;
     const chartWidth = svgWidth - padding.left - padding.right;
     
     // Math optimization: Single calculation path
