@@ -612,6 +612,8 @@ export function markAllHabitsForDate(dateISO: string, status: HabitStatus): bool
 
     invalidateDaySummaryCache(dateISO);
     invalidateChartCache();
+    state.uiDirtyState.habitListStructure = true;
+    state.uiDirtyState.calendarVisuals = true;
     document.dispatchEvent(new CustomEvent('habitsChanged'));
     saveState();
     return true;
