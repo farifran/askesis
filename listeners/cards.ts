@@ -1,4 +1,5 @@
 
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -39,57 +40,45 @@ function _updateGoalDisplay(wrapperEl: HTMLElement, habit: Habit, newGoal: numbe
 
 
 function createGoalInput(habit: Habit, time: TimeOfDay, wrapper: HTMLElement) {
-    const controls = wrapper.closest(DOM_SELECTORS.HABIT_GOAL_CONTROLS);
-    if (controls?.querySelector('input')) return; // Já está no modo de edição
-
-    const habitId = habit.id;
-    const currentGoal = getCurrentGoalForInstance(habit, state.selectedDate, time);
+    if (wrapper.querySelector('input')) return; // Já está no modo de edição
 
     const originalContent = wrapper.innerHTML;
+    const currentGoal = getCurrentGoalForInstance(habit, state.selectedDate, time);
     
-    // UX IMPROVEMENT [2025-01-16]: Adicionado inputmode="numeric" e pattern="[0-9]*"
     wrapper.innerHTML = `<input type="number" class="goal-input-inline" value="${currentGoal}" min="1" step="1" inputmode="numeric" pattern="[0-9]*" />`;
     const input = wrapper.querySelector('input')!;
     input.focus();
     input.select();
 
-    const cleanup = () => {
+    const restoreOriginalContent = () => {
         input.removeEventListener('blur', onBlur);
         input.removeEventListener('keydown', onKeyDown);
+        wrapper.innerHTML = originalContent;
     };
 
     const save = () => {
         const newGoal = parseInt(input.value, 10);
-        cleanup(); // Limpa listeners antes de destruir o input
+        restoreOriginalContent(); 
 
         if (!isNaN(newGoal) && newGoal > 0) {
-            setGoalOverride(habitId, state.selectedDate, time, newGoal);
-            wrapper.innerHTML = originalContent;
+            setGoalOverride(habit.id, state.selectedDate, time, newGoal);
             _updateGoalDisplay(wrapper, habit, newGoal);
             triggerHaptic('success');
 
             requestAnimationFrame(() => {
                 wrapper.classList.add('increase');
-                wrapper.addEventListener('animationend', () => {
-                    wrapper.classList.remove('increase');
-                }, { once: true });
+                wrapper.addEventListener('animationend', () => wrapper.classList.remove('increase'), { once: true });
             });
-        } else {
-            wrapper.innerHTML = originalContent;
         }
     };
 
-    const onBlur = () => {
-        save();
-    };
-    
+    const onBlur = () => save();
     const onKeyDown = (e: KeyboardEvent) => {
         if (e.key === 'Enter') {
             e.preventDefault();
             input.blur(); 
         } else if (e.key === 'Escape') {
-            cleanup(); 
-            wrapper.innerHTML = originalContent; 
+            restoreOriginalContent();
         }
     };
     

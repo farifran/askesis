@@ -24,8 +24,6 @@ type UIElements = {
     confirmModalText: HTMLElement;
     confirmModalConfirmBtn: HTMLButtonElement;
     confirmModalEditBtn: HTMLButtonElement;
-    undoToast: HTMLElement;
-    undoBtn: HTMLButtonElement;
     notesModal: HTMLElement;
     notesModalTitle: HTMLElement;
     notesModalSubtitle: HTMLElement;
@@ -93,6 +91,27 @@ type UIElements = {
     syncActiveDesc: HTMLElement;
     iconPickerTitle: HTMLElement;
     colorPickerTitle: HTMLElement;
+
+    // Chart Elements
+    chart: {
+        title: HTMLElement;
+        subtitle: HTMLElement;
+        emptyState: HTMLElement;
+        dataView: HTMLElement;
+        wrapper: HTMLElement;
+        svg: SVGSVGElement;
+        areaPath: SVGPathElement;
+        linePath: SVGPathElement;
+        tooltip: HTMLElement;
+        tooltipDate: HTMLElement;
+        tooltipScoreLabel: HTMLElement;
+        tooltipScoreValue: HTMLElement;
+        tooltipHabits: HTMLElement;
+        indicator: HTMLElement;
+        evolutionIndicator: HTMLElement;
+        axisStart: HTMLElement;
+        axisEnd: HTMLElement;
+    }
 };
 
 export const ui = {} as UIElements;
@@ -102,9 +121,10 @@ export const ui = {} as UIElements;
  * Lança um erro claro se o elemento não for encontrado, evitando erros de
  * tempo de execução causados por seletores ou IDs incorretos.
  * @param selector O seletor CSS para o elemento.
- * @returns O elemento HTMLElement encontrado.
+ * @returns O elemento encontrado.
  */
-function queryElement<T extends HTMLElement>(selector: string): T {
+// FIX: Changed constraint from HTMLElement to Element to support SVG elements, and added a default type of HTMLElement to maintain compatibility with existing calls.
+function queryElement<T extends Element = HTMLElement>(selector: string): T {
     const element = document.querySelector<T>(selector);
     if (!element) {
         throw new Error(`UI element with selector "${selector}" not found in the DOM.`);
@@ -144,8 +164,6 @@ export function initUI(): void {
         confirmModalText: queryElement('#confirm-modal-text'),
         confirmModalConfirmBtn: queryElement<HTMLButtonElement>('#confirm-modal-confirm-btn'),
         confirmModalEditBtn: queryElement<HTMLButtonElement>('#confirm-modal-edit-btn'),
-        undoToast: queryElement('#undo-toast'),
-        undoBtn: queryElement<HTMLButtonElement>('#undo-btn'),
         notesModal: queryElement('#notes-modal'),
         notesModalTitle: queryElement('#notes-modal-title'),
         notesModalSubtitle: queryElement('#notes-modal-subtitle'),
@@ -213,5 +231,26 @@ export function initUI(): void {
         syncActiveDesc: queryElement('#sync-active-desc'),
         iconPickerTitle: queryElement('#icon-picker-modal-title'),
         colorPickerTitle: queryElement('#color-picker-modal-title'),
+
+        // Chart Elements
+        chart: {
+            title: queryElement('#chart-container .chart-title'),
+            subtitle: queryElement('#chart-container .app-subtitle'),
+            emptyState: queryElement('#chart-container .chart-empty-state'),
+            dataView: queryElement('#chart-container .chart-data-view'),
+            wrapper: queryElement('#chart-container .chart-wrapper'),
+            svg: queryElement<SVGSVGElement>('.chart-svg'),
+            areaPath: queryElement<SVGPathElement>('.chart-area'),
+            linePath: queryElement<SVGPathElement>('.chart-line'),
+            tooltip: queryElement('#chart-container .chart-tooltip'),
+            tooltipDate: queryElement('#chart-container .tooltip-date'),
+            tooltipScoreLabel: queryElement('#chart-container .tooltip-score-label'),
+            tooltipScoreValue: queryElement('#chart-container .tooltip-score-value'),
+            tooltipHabits: queryElement('#chart-container .tooltip-habits li'),
+            indicator: queryElement('#chart-container .chart-indicator'),
+            evolutionIndicator: queryElement('#chart-container .chart-evolution-indicator'),
+            axisStart: queryElement('#chart-container .chart-axis-labels span:first-child'),
+            axisEnd: queryElement('#chart-container .chart-axis-labels span:last-child'),
+        }
     });
 }

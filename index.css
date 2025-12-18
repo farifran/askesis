@@ -1226,7 +1226,7 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     contain: layout style;
     /* PERFORMANCE [2025-01-18]: Otimização para evitar renderização quando fora da tela. */
     content-visibility: auto;
-    contain-intrinsic-size: 150px;
+    contain-intrinsic-size: 120px;
     
     /* FIX: FLEX ITEM */
     flex-shrink: 0; /* Nunca encolhe, sempre visível */
@@ -1275,9 +1275,18 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 .chart-title strong {
     color: var(--accent-green);
 }
+.chart-data-view, .chart-empty-state {
+    display: none;
+}
+.chart-container:not(.is-empty) .chart-data-view {
+    display: block;
+}
+.chart-container.is-empty .chart-empty-state {
+    display: flex;
+}
 .chart-wrapper { 
     position: relative; 
-    height: 80px; 
+    height: 64px; 
     /* UX [2025-01-24]: Permite scroll vertical (pan-y) mas captura horizontal */
     touch-action: pan-y; 
     user-select: none; 
@@ -1325,7 +1334,7 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 }
 .chart-empty-state {
     display: flex; align-items: center; justify-content: center;
-    height: 80px; color: var(--text-tertiary); font-style: italic; text-align: center;
+    height: 64px; color: var(--text-tertiary); font-style: italic; text-align: center;
 }
 .chart-evolution-indicator {
     position: absolute;
@@ -2241,46 +2250,6 @@ input:disabled + .slider {
 
 
 /* --- UTILITÁRIOS --- */
-.undo-toast {
-    position: fixed;
-    bottom: var(--space-section);
-    bottom: calc(var(--space-section) + env(safe-area-inset-bottom));
-    left: 50%;
-    /* UX FIX [2025-02-23]: Robust hiding strategy.
-       Using opacity and visibility ensures it's completely gone from the render tree/accessibility tree
-       until needed, preventing "ghost" clicks or visuals. */
-    transform: translate(-50%, 20px); 
-    background-color: var(--surface-color);
-    color: var(--text-primary);
-    padding: var(--space-lg) var(--space-section);
-    border-radius: var(--border-radius-base);
-    border: 1px solid var(--border-color);
-    box-shadow: 0 4px 20px rgba(0,0,0,0.4);
-    display: flex;
-    align-items: center;
-    gap: var(--space-lg);
-    z-index: var(--z-index-toast);
-    
-    /* Default Hidden State */
-    opacity: 0;
-    visibility: hidden;
-    pointer-events: none;
-    transition: opacity 0.3s cubic-bezier(0.23, 1, 0.32, 1), transform 0.3s cubic-bezier(0.23, 1, 0.32, 1), visibility 0.3s;
-}
-
-.undo-toast.visible {
-    /* Active State */
-    opacity: 1;
-    visibility: visible;
-    pointer-events: auto;
-    transform: translate(-50%, 0);
-}
-
-.undo-toast button {
-    background: none; border: none; color: var(--accent-blue);
-    font-weight: 600; font-size: 14px; cursor: pointer; padding: 0;
-}
-
 .form-notice {
     color: var(--color-red); font-size: 13px; font-weight: 500;
     opacity: 0; max-height: 0;

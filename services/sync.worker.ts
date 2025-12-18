@@ -1,11 +1,110 @@
 
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
 
-import { encrypt, decrypt } from './crypto';
 import type { AppState, Habit, HabitDailyInfo, TimeOfDay } from '../state';
+
+// --- CRYPTO FUNCTIONS (INLINED TO MAKE WORKER SELF-CONTAINED) ---
+
+const ITERATIONS = 100000; // Um número padrão de iterações para PBKDF2
+
+const encoder = new TextEncoder();
+const decoder = new TextDecoder();
+
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+    const bytes = new Uint8Array(buffer);
+    const CHUNK_SIZE = 8192;
+    let binary = '';
+    for (let i = 0; i < bytes.length; i += CHUNK_SIZE) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK_SIZE));
+    }
+    return btoa(binary);
+}
+
+function base64ToArrayBuffer(base64: string): ArrayBuffer {
+    const binary_string = atob(base64);
+    const len = binary_string.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+        bytes[i] = binary_string.charCodeAt(i);
+    }
+    return bytes.buffer;
+}
+
+async function deriveKey(password: string, salt: Uint8Array): Promise<CryptoKey> {
+    const keyMaterial = await crypto.subtle.importKey(
+        'raw',
+        encoder.encode(password),
+        { name: 'PBKDF2' },
+        false,
+        ['deriveKey']
+    );
+
+    return crypto.subtle.deriveKey(
+        {
+            name: 'PBKDF2',
+            salt: salt,
+            iterations: ITERATIONS,
+            hash: 'SHA-256',
+        },
+        keyMaterial,
+        { name: 'AES-GCM', length: 256 },
+        true,
+        ['encrypt', 'decrypt']
+    );
+}
+
+async function encrypt(data: string, password: string): Promise<string> {
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    const key = await deriveKey(password, salt);
+    
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const encrypted = await crypto.subtle.encrypt(
+        {
+            name: 'AES-GCM',
+            iv: iv,
+        },
+        key,
+        encoder.encode(data)
+    );
+
+    const combined = {
+        salt: arrayBufferToBase64(salt),
+        iv: arrayBufferToBase64(iv),
+        encrypted: arrayBufferToBase64(encrypted),
+    };
+    
+    return JSON.stringify(combined);
+}
+
+async function decrypt(encryptedDataJSON: string, password: string): Promise<string> {
+    try {
+        const { salt: saltBase64, iv: ivBase64, encrypted: encryptedBase64 } = JSON.parse(encryptedDataJSON);
+
+        const salt = base64ToArrayBuffer(saltBase64);
+        const key = await deriveKey(password, new Uint8Array(salt));
+
+        const iv = base64ToArrayBuffer(ivBase64);
+        const encrypted = base64ToArrayBuffer(encryptedBase64);
+    
+        const decrypted = await crypto.subtle.decrypt(
+            {
+                name: 'AES-GCM',
+                iv: iv,
+            },
+            key,
+            encrypted
+        );
+        return decoder.decode(decrypted);
+    } catch (e) {
+        console.error("Decryption or Parsing failed:", e);
+        throw new Error("Decryption failed. The sync key may be incorrect or the data corrupted.");
+    }
+}
+
 
 // --- Simple Date Utils (duplicated from utils.ts to be self-contained) ---
 function toUTCIsoDateString(date: Date): string {

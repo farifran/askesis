@@ -244,8 +244,6 @@ export const state: {
         year: number;
         month: number;
     };
-    // PERFORMANCE [2025-01-18]: Dirty flag para evitar recálculos desnecessários do gráfico.
-    chartDataDirty: boolean;
     // PERFORMANCE [2025-01-26]: Dirty flags para controle granular de renderização UI.
     uiDirtyState: {
         calendarVisuals: boolean; // Verdadeiro se a seleção de data ou o intervalo de dias mudou.
@@ -283,8 +281,6 @@ export const state: {
         year: new Date().getFullYear(),
         month: new Date().getMonth(),
     },
-    // PERFORMANCE: Inicializa como true para garantir que o gráfico seja calculado na primeira renderização.
-    chartDataDirty: true,
     // PERFORMANCE: Inicializa como true para garantir a primeira renderização completa.
     uiDirtyState: {
         calendarVisuals: true,
@@ -449,9 +445,20 @@ export function persistStateLocally(appState: AppState) {
  * Invalida o cache do gráfico, forçando um recálculo na próxima renderização.
  * Deve ser chamado sempre que os dados históricos ou de hoje forem alterados.
  */
+let isChartCacheInvalid = true;
+
 export function invalidateChartCache() {
-    state.chartDataDirty = true;
+    isChartCacheInvalid = true;
 }
+
+export function isChartDataDirty(): boolean {
+    const wasDirty = isChartCacheInvalid;
+    if (wasDirty) {
+        isChartCacheInvalid = false; // Consome a flag
+    }
+    return wasDirty;
+}
+
 
 /**
  * DATA HYGIENE [2025-02-21]: Prunes daily data records for habits that no longer exist.
@@ -555,26 +562,30 @@ export function loadState(cloudState?: AppState) {
 }
 
 /**
- * Limpa o cache de agendamento. Chamado sempre que um `scheduleHistory` é modificado.
+ * REFACTOR [2025-03-05]: Invalidação de Cache Unificada.
+ * Limpa todos os caches que dependem do histórico de agendamento.
+ * Como uma mudança de agendamento sempre afeta os hábitos ativos, esta função limpa ambos
+ * os caches principais (`scheduleCache`, `activeHabitsCache`) e todos os caches derivados
+ * (`habitAppearanceCache`, `daySummaryCache`, `chartDataDirty`) de uma só vez, eliminando redundância.
  */
 export function clearScheduleCache() {
     state.scheduleCache.clear();
-    state.habitAppearanceCache.clear(); // Agendamento mudou, invalidar aparência
-    // Mudanças no agendamento afetam o resumo diário de todos os dias
+    state.activeHabitsCache.clear(); // Se o histórico muda, os hábitos ativos também mudam
+    state.habitAppearanceCache.clear();
     invalidateDaySummaryCache();
     invalidateChartCache();
 }
 
 /**
- * PERFORMANCE [2024-08-12]: Limpa o cache de hábitos ativos.
- * Chamado sempre que um hábito ou seu agendamento é modificado.
+ * REFACTOR [2025-03-05]: Invalidação de Cache de Visão.
+ * Limpa caches que afetam a visualização diária, mas não o histórico de agendamento.
+ * Usado para operações como reordenar, onde a estrutura da lista muda, mas a lógica de agendamento permanece a mesma.
  */
 export function clearActiveHabitsCache() {
     state.activeHabitsCache.clear();
-    state.habitAppearanceCache.clear(); // Mudanças ativas afetam aparência
-    // Mudanças em hábitos ativos afetam o resumo diário
-    invalidateDaySummaryCache();
-    invalidateChartCache();
+    state.habitAppearanceCache.clear(); // Aparência pode ser afetada por reordenação
+    invalidateDaySummaryCache(); // Resumo do dia depende dos hábitos ativos
+    invalidateChartCache(); // Gráfico depende do resumo do dia
 }
 
 
@@ -933,36 +944,7 @@ export function calculateHabitStreak(habitId: string, referenceDateISO: string):
     return streak;
 }
 
-/**
- * REATORAÇÃO DE LÓGICA [2024-12-27]: Verifica se a meta de um hábito foi superada HOJE e se existe consistência (streak).
- * O indicador "Plus" exige que o usuário supere a meta E tenha um streak anterior >= 2 dias,
- * garantindo que o prêmio seja dado apenas para "Consistência + Esforço".
- */
-function _wasGoalExceededWithStreak(habit: Habit, instances: HabitDailyInstances, scheduleForDay: TimeOfDay[], dateISO: string): boolean {
-    if (habit.goal.type !== 'pages' && habit.goal.type !== 'minutes') {
-        return false;
-    }
-
-    const exceededToday = scheduleForDay.some(time => {
-        const instance = instances[time];
-        return instance?.status === 'completed' && 
-               instance.goalOverride !== undefined && 
-               instance.goalOverride > (habit.goal.total ?? 0);
-    });
-
-    if (!exceededToday) return false;
-
-    // Verifica streak anterior para exigir consistência
-    const previousDate = addDays(parseUTCIsoDate(dateISO), -1);
-    const previousDateISO = toUTCIsoDateString(previousDate);
-    const streak = calculateHabitStreak(habit.id, previousDateISO);
-
-    return streak >= 2;
-}
-
 // PERFORMANCE [2025-01-17]: Cache para resultados de calculateDaySummary.
-// Evita o recálculo de progresso para todos os 61 dias do calendário a cada renderização.
-// REFACTOR [2025-03-05]: DaySummary agora inclui `showPlus` para unificar cálculos.
 interface DaySummary {
     total: number;
     completed: number;
@@ -970,27 +952,71 @@ interface DaySummary {
     pending: number;
     completedPercent: number;
     snoozedPercent: number;
-    showPlus: boolean;
 }
 const daySummaryCache = new Map<string, DaySummary>();
+const plusIndicatorCache = new Map<string, boolean>();
 
 /**
  * Invalida o cache de resumo diário para uma data específica ou para todos os dias.
- * Deve ser chamado sempre que dados que afetam o progresso diário (status de hábito, meta, agendamento) mudarem.
- * @param dateISO A data para invalidar. Se omitido, limpa todo o cache.
  */
 export function invalidateDaySummaryCache(dateISO?: string) {
     if (dateISO) {
         daySummaryCache.delete(dateISO);
+        plusIndicatorCache.delete(dateISO);
     } else {
         daySummaryCache.clear();
+        plusIndicatorCache.clear();
     }
 }
 
 /**
- * REFACTOR [2025-03-05]: Esta função foi refatorada para unificar os cálculos de `calculateDaySummary`
- * e `shouldShowPlusIndicatorForDate`. Agora, em um único loop, ela calcula todos os dados necessários
- * para renderizar um dia no calendário, eliminando iterações redundantes e melhorando a performance.
+ * DECOUPLED & CACHED: Determina se o indicador de bônus ("+") deve ser exibido.
+ */
+export function shouldShowPlusIndicatorForDate(dateISO: string): boolean {
+    if (plusIndicatorCache.has(dateISO)) {
+        return plusIndicatorCache.get(dateISO)!;
+    }
+
+    manageCacheSize(plusIndicatorCache, DAYS_IN_CALENDAR * 2);
+
+    const activeHabits = getActiveHabitsForDate(dateISO);
+    if (activeHabits.length === 0) {
+        plusIndicatorCache.set(dateISO, false);
+        return false;
+    }
+
+    const dayRecord = getHabitDailyInfoForDate(dateISO);
+    const previousDate = addDays(parseUTCIsoDate(dateISO), -1);
+    const previousDateISO = toUTCIsoDateString(previousDate);
+
+    for (const { habit, schedule } of activeHabits) {
+        if (habit.goal.type !== 'pages' && habit.goal.type !== 'minutes') {
+            continue;
+        }
+
+        const instances = dayRecord[habit.id]?.instances || {};
+        const exceededToday = schedule.some(time => {
+            const instance = instances[time];
+            return instance?.status === 'completed' && 
+                   instance.goalOverride !== undefined && 
+                   instance.goalOverride > (habit.goal.total ?? 0);
+        });
+
+        if (exceededToday) {
+            const streak = calculateHabitStreak(habit.id, previousDateISO);
+            if (streak >= 2) {
+                plusIndicatorCache.set(dateISO, true);
+                return true;
+            }
+        }
+    }
+
+    plusIndicatorCache.set(dateISO, false);
+    return false;
+}
+
+/**
+ * Calcula um resumo rápido do progresso de um dia, otimizado para a renderização do anel do calendário.
  */
 export function calculateDaySummary(dateISO: string): DaySummary {
     if (daySummaryCache.has(dateISO)) {
@@ -1005,17 +1031,12 @@ export function calculateDaySummary(dateISO: string): DaySummary {
      let completed = 0;
      let snoozed = 0;
      let pending = 0;
-     let showPlus = false;
      
      if (activeHabits.length > 0) {
          const dayRecord = getHabitDailyInfoForDate(dateISO);
 
          for (const { habit, schedule } of activeHabits) {
              const instances = dayRecord[habit.id]?.instances || {};
-             
-             if (!showPlus && _wasGoalExceededWithStreak(habit, instances, schedule, dateISO)) {
-                showPlus = true;
-             }
              
              for (const time of schedule) {
                  total++;
@@ -1030,7 +1051,7 @@ export function calculateDaySummary(dateISO: string): DaySummary {
      const completedPercent = total > 0 ? Math.round((completed / total) * 100) : 0;
      const snoozedPercent = total > 0 ? Math.round((snoozed / total) * 100) : 0;
      
-     const result: DaySummary = { total, completed, snoozed, pending, completedPercent, snoozedPercent, showPlus };
+     const result: DaySummary = { total, completed, snoozed, pending, completedPercent, snoozedPercent };
      daySummaryCache.set(dateISO, result);
      return result;
 }

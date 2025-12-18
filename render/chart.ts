@@ -1,10 +1,11 @@
 
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
 
-import { state, calculateDaySummary } from '../state';
+import { state, calculateDaySummary, isChartDataDirty } from '../state';
 import { ui } from './ui';
 import { t } from '../i18n';
 import { addDays, getTodayUTCIso, parseUTCIsoDate, toUTCIsoDateString, getDateTimeFormat } from '../utils';
@@ -20,8 +21,12 @@ type ChartDataPoint = {
     scheduledCount: number;
 };
 
+type ChartScales = {
+    xScale: (index: number) => number;
+    yScale: (value: number) => number;
+};
+
 // Variáveis de estado do módulo
-let chartInitialized = false;
 let lastChartData: ChartDataPoint[] = [];
 
 // Cache de metadados para escala (Performance)
@@ -32,27 +37,6 @@ let cachedChartRect: DOMRect | null = null;
 
 // BUGFIX: Módulo-scoped para permitir reset externo quando os dados mudam
 let lastRenderedPointIndex = -1;
-
-// Cache de referências DOM (Evita querySelector no hot-path)
-let chartElements: {
-    chartSvg?: SVGSVGElement;
-    areaPath?: SVGPathElement;
-    linePath?: SVGPathElement;
-    evolutionIndicator?: HTMLElement;
-    axisStart?: HTMLElement;
-    axisEnd?: HTMLElement;
-    chartWrapper?: HTMLElement;
-    tooltip?: HTMLElement;
-    indicator?: HTMLElement;
-    // Elementos internos do Tooltip para atualização cirúrgica
-    tooltipDate?: HTMLElement;
-    tooltipScoreLabel?: HTMLElement;
-    tooltipScoreValue?: HTMLElement;
-    tooltipHabits?: HTMLElement;
-    // Elementos de texto estático para i18n dinâmico
-    chartTitle?: HTMLElement;
-    appSubtitle?: HTMLElement;
-} = {};
 
 // Controle de visibilidade e observadores
 let isChartVisible = true;
@@ -111,33 +95,14 @@ function calculateChartData(): ChartDataPoint[] {
     return data;
 }
 
-function _updateChartDOM(chartData: ChartDataPoint[]) {
-    const { chartSvg, areaPath, linePath, evolutionIndicator, axisStart, axisEnd, chartWrapper } = chartElements;
-    if (!chartSvg || !areaPath || !linePath || !evolutionIndicator || !axisStart || !axisEnd || !chartWrapper) return;
-
-    const firstDate = parseUTCIsoDate(chartData[0].date);
-    const lastDate = parseUTCIsoDate(chartData[chartData.length - 1].date);
-    
-    // UX FIX [2025-02-05]: Show year if range spans across different years OR if not current year.
-    const currentYear = new Date().getUTCFullYear();
-    const startYear = firstDate.getUTCFullYear();
-    const endYear = lastDate.getUTCFullYear();
-    const showYear = startYear !== endYear || endYear !== currentYear;
-    
-    const axisFormatter = getDateTimeFormat(state.activeLanguageCode, { 
-        month: 'short', 
-        day: 'numeric', 
-        timeZone: 'UTC',
-        year: showYear ? '2-digit' : undefined
-    });
-    
+function _calculateChartScales(chartData: ChartDataPoint[]): ChartScales {
     const svgWidth = ui.chartContainer.clientWidth;
-    const svgHeight = 80;
+    const svgHeight = 64;
     const padding = { top: 10, right: 10, bottom: 10, left: 10 };
     const chartWidth = svgWidth - padding.left - padding.right;
     const chartHeight = svgHeight - padding.top - padding.bottom;
-    
-    chartSvg.setAttribute('viewBox', `0 0 ${svgWidth} ${svgHeight}`);
+
+    ui.chart.svg.setAttribute('viewBox', `0 0 ${svgWidth} ${svgHeight}`);
 
     const values = chartData.map(d => d.value);
     const minVal = Math.min(...values) * 0.98;
@@ -149,54 +114,80 @@ function _updateChartDOM(chartData: ChartDataPoint[]) {
     const xScale = (index: number) => padding.left + (index / (chartData.length - 1)) * chartWidth;
     const yScale = (value: number) => padding.top + chartHeight - ((value - minVal) / chartMetadata.valueRange) * chartHeight;
 
-    const pathData = chartData.map((point, i) => `${i === 0 ? 'M' : 'L'} ${xScale(i)} ${yScale(point.value)}`).join(' ');
-    const areaPathData = `${pathData} V ${yScale(minVal)} L ${xScale(0)} ${yScale(minVal)} Z`;
+    return { xScale, yScale };
+}
 
-    areaPath.setAttribute('d', areaPathData);
-    linePath.setAttribute('d', pathData);
+function _generatePathData(chartData: ChartDataPoint[], { xScale, yScale }: ChartScales): { areaPathData: string, linePathData: string } {
+    const linePathData = chartData.map((point, i) => `${i === 0 ? 'M' : 'L'} ${xScale(i)} ${yScale(point.value)}`).join(' ');
+    const areaPathData = `${linePathData} V ${yScale(chartMetadata.minVal)} L ${xScale(0)} ${yScale(chartMetadata.minVal)} Z`;
+    return { areaPathData, linePathData };
+}
+
+function _updateAxisLabels(chartData: ChartDataPoint[]) {
+    const { axisStart, axisEnd } = ui.chart;
+    const firstDate = parseUTCIsoDate(chartData[0].date);
+    const lastDate = parseUTCIsoDate(chartData[chartData.length - 1].date);
+
+    const currentYear = new Date().getUTCFullYear();
+    const showYear = firstDate.getUTCFullYear() !== lastDate.getUTCFullYear() || lastDate.getUTCFullYear() !== currentYear;
+    
+    const axisFormatter = getDateTimeFormat(state.activeLanguageCode, { 
+        month: 'short', 
+        day: 'numeric', 
+        timeZone: 'UTC',
+        year: showYear ? '2-digit' : undefined
+    });
 
     axisStart.textContent = axisFormatter.format(firstDate);
     axisEnd.textContent = axisFormatter.format(lastDate);
+}
 
+function _updateEvolutionIndicator(chartData: ChartDataPoint[], { xScale, yScale }: ChartScales) {
+    const { evolutionIndicator, wrapper } = ui.chart;
     const lastPoint = chartData[chartData.length - 1];
     const referencePoint = chartData.find(d => d.scheduledCount > 0) || chartData[0];
     const evolution = ((lastPoint.value - referencePoint.value) / referencePoint.value) * 100;
-    const evolutionString = `${evolution > 0 ? '+' : ''}${evolution.toFixed(1)}%`;
     
     evolutionIndicator.className = `chart-evolution-indicator ${evolution >= 0 ? 'positive' : 'negative'}`;
-    evolutionIndicator.textContent = evolutionString;
+    evolutionIndicator.textContent = `${evolution > 0 ? '+' : ''}${evolution.toFixed(1)}%`;
     
     const lastPointX = xScale(chartData.length - 1);
-    const lastPointY = yScale(lastPoint.value);
-    evolutionIndicator.style.top = `${lastPointY}px`;
+    evolutionIndicator.style.top = `${yScale(lastPoint.value)}px`;
     
     let indicatorX = lastPointX + 10;
-    
-    // PERFORMANCE NOTE: Reading offsetWidth here forces a specific reflow for the indicator,
-    // which is unavoidable for correct positioning of dynamic text.
-    if (indicatorX + evolutionIndicator.offsetWidth > chartWrapper.offsetWidth) {
+    if (indicatorX + evolutionIndicator.offsetWidth > wrapper.offsetWidth) {
         indicatorX = lastPointX - evolutionIndicator.offsetWidth - 10;
     }
     evolutionIndicator.style.left = `${indicatorX}px`;
+}
+
+function _updateChartDOM(chartData: ChartDataPoint[]) {
+    const { areaPath, linePath } = ui.chart;
+    if (!areaPath || !linePath) return;
+
+    const scales = _calculateChartScales(chartData);
+    const { areaPathData, linePathData } = _generatePathData(chartData, scales);
     
-    // LAYOUT THRASHING FIX [2025-02-23]: 
-    // Do NOT call getBoundingClientRect() here. We just invalidated layout by setting styles above.
-    // Reading layout now would force a synchronous reflow of the entire chart section.
-    // Instead, we invalidate the cache. The next interaction (tooltip) will read fresh layout values.
+    areaPath.setAttribute('d', areaPathData);
+    linePath.setAttribute('d', linePathData);
+    
+    _updateAxisLabels(chartData);
+    _updateEvolutionIndicator(chartData, scales);
+
     cachedChartRect = null;
 }
 
 // CORE RENDER LOGIC [2025-02-02]: Extracted for re-use.
 function updateTooltipPosition() {
     rafId = null; // Clear flag to allow next frame request
-    const { chartWrapper, tooltip, indicator, tooltipDate, tooltipScoreLabel, tooltipScoreValue, tooltipHabits } = chartElements;
+    const { wrapper, tooltip, indicator, tooltipDate, tooltipScoreLabel, tooltipScoreValue, tooltipHabits } = ui.chart;
 
-    if (!chartWrapper || !tooltip || !indicator || !tooltipDate || !tooltipScoreLabel || !tooltipScoreValue || !tooltipHabits) return;
-    if (lastChartData.length === 0 || !chartWrapper.isConnected) return;
+    if (!wrapper || !tooltip || !indicator || !tooltipDate || !tooltipScoreLabel || !tooltipScoreValue || !tooltipHabits) return;
+    if (lastChartData.length === 0 || !wrapper.isConnected) return;
 
     // LAZY LAYOUT: Only measure the DOM if cache is invalid/null.
     if (!cachedChartRect) {
-        cachedChartRect = chartWrapper.getBoundingClientRect();
+        cachedChartRect = wrapper.getBoundingClientRect();
     }
 
     const svgWidth = cachedChartRect.width;
@@ -216,7 +207,7 @@ function updateTooltipPosition() {
         
         const point = lastChartData[pointIndex];
         const { minVal, valueRange } = chartMetadata;
-        const chartHeight = 80 - padding.top - padding.bottom;
+        const chartHeight = 64 - padding.top - padding.bottom;
     
         const pointX = padding.left + (pointIndex / (lastChartData.length - 1)) * chartWidth;
         const pointY = padding.top + chartHeight - ((point.value - minVal) / valueRange) * chartHeight;
@@ -249,8 +240,8 @@ function updateTooltipPosition() {
 }
 
 function _setupChartListeners() {
-    const { chartWrapper, tooltip, indicator } = chartElements;
-    if (!chartWrapper || !tooltip || !indicator) return;
+    const { wrapper, tooltip, indicator } = ui.chart;
+    if (!wrapper || !tooltip || !indicator) return;
 
     // Handler de Input: Solicita o frame APENAS se um não estiver pendente
     const handlePointerMove = (e: PointerEvent) => {
@@ -270,9 +261,9 @@ function _setupChartListeners() {
         lastRenderedPointIndex = -1;
     };
 
-    chartWrapper.addEventListener('pointermove', handlePointerMove);
-    chartWrapper.addEventListener('pointerleave', handlePointerLeave);
-    chartWrapper.addEventListener('pointercancel', handlePointerLeave);
+    wrapper.addEventListener('pointermove', handlePointerMove);
+    wrapper.addEventListener('pointerleave', handlePointerLeave);
+    wrapper.addEventListener('pointercancel', handlePointerLeave);
 }
 
 function _initObservers() {
@@ -292,7 +283,7 @@ function _initObservers() {
 
     if (!resizeObserver) {
         resizeObserver = new ResizeObserver(entries => {
-            if (!chartInitialized || !isChartVisible) return;
+            if (!isChartVisible) return;
             // Invalida cache de geometria no resize
             cachedChartRect = null;
             _updateChartDOM(lastChartData);
@@ -301,98 +292,50 @@ function _initObservers() {
     }
 }
 
+export function initChartInteractions() {
+    _setupChartListeners();
+    _initObservers();
+}
+
 export function renderChart() {
-    if (state.chartDataDirty || lastChartData.length === 0) {
+    // FIX: Use isChartDataDirty() function to check if chart data needs recalculation. This function is designed to be called once per render cycle and consumes the dirty flag.
+    if (isChartDataDirty() || lastChartData.length === 0) {
         lastChartData = calculateChartData();
-        state.chartDataDirty = false;
         // BUGFIX: Reset rendered index to force tooltip update even if mouse didn't move
         lastRenderedPointIndex = -1; 
     }
 
     const isEmpty = lastChartData.length < 2 || lastChartData.every(d => d.scheduledCount === 0);
+    
+    ui.chartContainer.classList.toggle('is-empty', isEmpty);
 
-    if (isEmpty) {
-        // SWAPPED: appSubtitle on TOP, appName on BOTTOM
-        ui.chartContainer.innerHTML = `
-            <div class="chart-header">
-                <div class="app-subtitle">${t('appSubtitle')}</div>
-                <h3 class="chart-title">${t('appName')}</h3>
-            </div>
-            <div class="chart-empty-state">${t('chartEmptyState')}</div>
-        `;
-        chartInitialized = false;
-        chartElements = {};
-        return;
-    }
-
-    if (!chartInitialized) {
-        // SWAPPED: appSubtitle on TOP, appName on BOTTOM
-        ui.chartContainer.innerHTML = `
-            <div class="chart-header">
-                <div class="app-subtitle">${t('appSubtitle')}</div>
-                <h3 class="chart-title">${t('appName')}</h3>
-            </div>
-            <div class="chart-wrapper">
-                <svg class="chart-svg" preserveAspectRatio="none"><defs><linearGradient id="chart-gradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="var(--accent-blue)" stop-opacity="0.3"/><stop offset="100%" stop-color="var(--accent-blue)" stop-opacity="0"/></linearGradient></defs><path class="chart-area"></path><path class="chart-line"></path></svg>
-                <div class="chart-tooltip">
-                    <div class="tooltip-date"></div>
-                    <div class="tooltip-score"><span class="tooltip-score-label"></span><span class="tooltip-score-value"></span></div>
-                    <ul class="tooltip-habits"><li></li></ul>
-                </div>
-                <div class="chart-indicator"><div class="chart-indicator-dot"></div></div>
-                <div class="chart-evolution-indicator"></div>
-            </div>
-            <div class="chart-axis-labels">
-                <span></span>
-                <span></span>
-            </div>
-        `;
-        
-        chartElements = {
-            chartSvg: ui.chartContainer.querySelector<SVGSVGElement>('.chart-svg')!,
-            areaPath: ui.chartContainer.querySelector<SVGPathElement>('.chart-area')!,
-            linePath: ui.chartContainer.querySelector<SVGPathElement>('.chart-line')!,
-            evolutionIndicator: ui.chartContainer.querySelector<HTMLElement>('.chart-evolution-indicator')!,
-            axisStart: ui.chartContainer.querySelector<HTMLElement>('.chart-axis-labels span:first-child')!,
-            axisEnd: ui.chartContainer.querySelector<HTMLElement>('.chart-axis-labels span:last-child')!,
-            chartWrapper: ui.chartContainer.querySelector<HTMLElement>('.chart-wrapper')!,
-            tooltip: ui.chartContainer.querySelector<HTMLElement>('.chart-tooltip')!,
-            indicator: ui.chartContainer.querySelector<HTMLElement>('.chart-indicator')!,
-            tooltipDate: ui.chartContainer.querySelector<HTMLElement>('.tooltip-date')!,
-            tooltipScoreLabel: ui.chartContainer.querySelector<HTMLElement>('.tooltip-score span:first-child')!,
-            tooltipScoreValue: ui.chartContainer.querySelector<HTMLElement>('.tooltip-score-value')!,
-            tooltipHabits: ui.chartContainer.querySelector<HTMLElement>('.tooltip-habits li')!,
-            chartTitle: ui.chartContainer.querySelector<HTMLElement>('.chart-title')!,
-            appSubtitle: ui.chartContainer.querySelector<HTMLElement>('.app-subtitle')!,
-        };
-
-        _setupChartListeners();
-        _initObservers();
-        chartInitialized = true;
-    }
-
-    // FIX [2025-03-03]: Ensure static text is updated on every render (e.g. language change)
-    // OPTIMIZATION [2025-03-04]: Added dirty check to avoid redundant DOM writes
-    if (chartElements.chartTitle) {
+    if (ui.chart.title) {
         const newTitle = t('appName');
-        if (chartElements.chartTitle.innerHTML !== newTitle) {
-            chartElements.chartTitle.innerHTML = newTitle;
+        if (ui.chart.title.innerHTML !== newTitle) {
+            ui.chart.title.innerHTML = newTitle;
         }
     }
-    if (chartElements.appSubtitle) {
+    if (ui.chart.subtitle) {
         const newSubtitle = t('appSubtitle');
-        if (chartElements.appSubtitle.textContent !== newSubtitle) {
-            chartElements.appSubtitle.textContent = newSubtitle;
+        if (ui.chart.subtitle.textContent !== newSubtitle) {
+            ui.chart.subtitle.textContent = newSubtitle;
         }
+    }
+    
+    if (isEmpty) {
+        if (ui.chart.emptyState) {
+            const newEmptyText = t('chartEmptyState');
+            if (ui.chart.emptyState.textContent !== newEmptyText) {
+                ui.chart.emptyState.textContent = newEmptyText;
+            }
+        }
+        return;
     }
 
     if (isChartVisible) {
         _updateChartDOM(lastChartData);
         
-        // REACTIVE TOOLTIP UPDATE [2025-02-02]:
-        // If the tooltip is currently visible, force an immediate position/content update.
-        // This fixes the issue where checking a habit via keyboard didn't update the tooltip value instantly.
-        if (chartElements.tooltip && chartElements.tooltip.classList.contains('visible')) {
+        if (ui.chart.tooltip && ui.chart.tooltip.classList.contains('visible')) {
             updateTooltipPosition();
         }
         

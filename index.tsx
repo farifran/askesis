@@ -1,4 +1,5 @@
 
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -112,7 +113,6 @@ async function loadInitialState() {
 function handleFirstTimeUser() {
     if (state.habits.length === 0) {
         createDefaultHabit();
-        saveState();
     }
 }
 
@@ -123,6 +123,9 @@ function setupAppListeners() {
     setupEventListeners();
     setupNotificationListeners();
     initSync();
+    
+    // BUGFIX: Garante que o emblema da PWA seja atualizado em tempo real.
+    document.addEventListener('habitsChanged', updateAppBadge);
 }
 
 function finalizeInit(loader: HTMLElement | null) {

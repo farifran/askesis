@@ -34,19 +34,6 @@ export function getCachedHabitCard(habitId: string, time: TimeOfDay): HTMLElemen
     return habitElementCache.get(`${habitId}|${time}`);
 }
 
-export function removeHabitFromCache(habitId: string) {
-    for (const key of habitElementCache.keys()) {
-        if (key.startsWith(`${habitId}|`)) {
-            const el = habitElementCache.get(key);
-            if (el) {
-                cardElementsCache.delete(el); // Limpa o cache de elementos internos
-                el.remove(); // Garante remoção do DOM
-            }
-            habitElementCache.delete(key);
-        }
-    }
-}
-
 export const getUnitString = (habit: Habit, value: number | undefined) => {
     const unitKey = habit.goal.unitKey || 'unitCheck';
     return t(unitKey, { count: value });
@@ -392,22 +379,22 @@ export function renderHabits() {
 
     TIMES_OF_DAY.forEach(time => {
         const wrapperEl = ui.habitContainer.querySelector(`.habit-group-wrapper[data-time-wrapper="${time}"]`);
-        const groupEl = wrapperEl?.querySelector<HTMLElement>(`.${CSS_CLASSES.HABIT_GROUP}[data-time="${time}"]`);
-        if (!wrapperEl || !groupEl) return;
+        if (!wrapperEl) return;
+        
+        const groupEl = wrapperEl.querySelector<HTMLElement>(`.${CSS_CLASSES.HABIT_GROUP}[data-time="${time}"]`);
+        const marker = wrapperEl.querySelector<HTMLElement>('.time-marker');
+        if (!groupEl || !marker) return;
         
         const desiredHabits = habitsByTimePool[time];
         const hasHabits = desiredHabits.length > 0;
 
-        const marker = wrapperEl.querySelector('.time-marker') as HTMLElement;
-        if (marker) {
-            if (hasHabits) {
-                marker.innerHTML = getTimeOfDayIcon(time);
-                marker.style.display = '';
-                marker.style.opacity = '1';
-            } else {
-                marker.style.display = 'none'; 
-                marker.innerHTML = ''; 
-            }
+        if (hasHabits) {
+            marker.innerHTML = getTimeOfDayIcon(time);
+            marker.style.display = '';
+            marker.style.opacity = '1';
+        } else {
+            marker.style.display = 'none'; 
+            marker.innerHTML = ''; 
         }
 
         groupEl.setAttribute('aria-label', getTimeOfDayName(time));
@@ -443,8 +430,20 @@ export function renderHabits() {
             }
         });
 
+        // MEMORY LEAK FIX [2025-03-05]: Limpa os caches para elementos removidos do DOM.
         while (groupEl.children.length > currentIndex) {
-            groupEl.lastChild?.remove();
+            const childToRemove = groupEl.lastChild as HTMLElement;
+            if (childToRemove) {
+                const habitId = childToRemove.dataset.habitId;
+                const habitTime = childToRemove.dataset.time as TimeOfDay;
+
+                if (habitId && habitTime) {
+                    const cacheKey = `${habitId}|${habitTime}`;
+                    habitElementCache.delete(cacheKey);
+                    cardElementsCache.delete(childToRemove);
+                }
+                childToRemove.remove();
+            }
         }
         
         const isSmartPlaceholder = time === smartPlaceholderTargetTime;

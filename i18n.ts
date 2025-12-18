@@ -5,7 +5,7 @@
 
 import { state, Habit, LANGUAGES, PredefinedHabit, TimeOfDay, getScheduleForDate, invalidateChartCache } from './state';
 import { ui } from './render/ui';
-import { renderApp, setupManageModal, initLanguageFilter, refreshEditModalUI } from './render';
+import { renderApp, setupManageModal, initLanguageFilter, refreshEditModalUI, renderLanguageFilter } from './render';
 import { pushToOneSignal, getDateTimeFormat } from './utils';
 import { icons } from './render/icons';
 
@@ -85,14 +85,14 @@ export function t(key: string, options?: { [key: string]: string | number | unde
     }
 
     if (options) {
-        return Object.entries(options).reduce((acc, [optKey, optValue]) => {
-            // MELHORIA DE ROBUSTEZ: Ignora a substituição se o valor for indefinido para evitar
-            // a inserção da string "undefined" na UI.
+        let result = translationString;
+        for (const [optKey, optValue] of Object.entries(options)) {
             if (optValue !== undefined) {
-                return acc.split(`{${optKey}}`).join(String(optValue));
+                // FIX: [Compatibility] Use split/join for global replacement to support older JS environments.
+                result = result.split(`{${optKey}}`).join(String(optValue));
             }
-            return acc;
-        }, translationString);
+        }
+        return result;
     }
 
     return translationString;
@@ -242,11 +242,6 @@ function updateUIText() {
         editModalActions.querySelector('.modal-close-btn')!.textContent = t('cancelButton');
         editModalActions.querySelector('#edit-habit-save-btn')!.textContent = t('modalEditSaveButton');
     }
-    
-    if (ui.undoToast.firstElementChild) {
-        ui.undoToast.firstElementChild.textContent = t('undoToastText');
-    }
-    ui.undoBtn.textContent = t('undoButton');
 
     // Quick Actions Menu
     ui.quickActionDone.innerHTML = `${icons.check} ${t('quickActionMarkAllDone')}`;
@@ -274,6 +269,9 @@ export async function setLanguage(langCode: 'pt' | 'en' | 'es') {
     });
     
     initLanguageFilter();
+    // BUGFIX [2025-03-07]: Chama a renderização do posicionamento do carrossel imediatamente
+    // após a criação do seu DOM, garantindo que a UI visual reflita o estado do idioma.
+    renderLanguageFilter();
 
     // CRITICAL FIX [2025-02-05]: Invalidação de cache de UI (Dirty Checking).
     // Ao trocar o idioma, a lógica de renderApp() normalmente pularia a renderização

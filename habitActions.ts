@@ -28,8 +28,8 @@ import {
 import { ui } from './render/ui';
 import { 
     renderApp, renderHabits, openEditModal, 
-    closeModal, showConfirmationModal, showUndoToast, renderAINotificationState, renderHabitCardState,
-    renderCalendarDayPartial, setupManageModal, removeHabitFromCache, openModal
+    closeModal, showConfirmationModal, renderAINotificationState, renderHabitCardState,
+    renderCalendarDayPartial, setupManageModal, openModal
 } from './render';
 // FIX: Import getTimeOfDayName to resolve missing name errors.
 import { t, getHabitDisplayInfo, getTimeOfDayName } from './i18n';
@@ -136,21 +136,21 @@ function _findActiveScheduleIndex(habit: Habit, dateISO: string): number {
 }
 
 /**
- * REFACTOR [2025-03-04]: Consolidated cleanup and save logic for schedule changes.
- * Used by both "Just Today" and "From Now On" actions.
+ * REFACTOR [2025-03-05]: Lógica de finalização consolidada para atualizações de agendamento.
+ * A chamada redundante para `clearActiveHabitsCache` foi removida, pois `clearScheduleCache`
+ * agora lida com a invalidação completa, tornando o código mais limpo e eficiente.
  */
 function _finalizeScheduleUpdate(clearHistoryCache: boolean) {
-    // REFACTOR [2025-03-05]: The call to `removeHabitFromCache` was removed.
-    // The reconciliation logic in `renderHabits` now handles cache cleanup automatically
-    // when a DOM element is removed, which is a more robust and centralized approach.
-
     state.uiDirtyState.habitListStructure = true;
     
     if (clearHistoryCache) {
+        // Esta função agora lida com a limpeza de todos os caches dependentes, incluindo o activeHabitsCache.
         clearScheduleCache();
+    } else {
+        // Usado para operações que afetam apenas a visualização diária (ex: reordenar), não o histórico.
+        clearActiveHabitsCache();
     }
     
-    clearActiveHabitsCache();
     saveState();
     renderApp();
 }
@@ -180,11 +180,14 @@ export function importData() {
     input.accept = 'application/json';
     input.onchange = (e) => {
         const file = (e.target as HTMLInputElement).files?.[0];
-        if (!file) return;
+        if (!file) {
+            input.remove(); // Limpa se o usuário cancelar
+            return;
+        }
 
-        // Se o arquivo for muito grande, o navegador pode travar. Adicionamos um limite de segurança.
-        if (file.size > 5 * 1024 * 1024) { // 5MB limit
+        if (file.size > 5 * 1024 * 1024) { // Limite de 5MB
             alert(t('importError'));
+            input.remove();
             return;
         }
         
@@ -194,25 +197,31 @@ export function importData() {
                 const text = e.target?.result as string;
                 const importedState: AppState = JSON.parse(text);
 
-                // VALIDAÇÃO BÁSICA: Verifica se o objeto importado se parece com nosso estado.
                 if (typeof importedState.version !== 'number' || !Array.isArray(importedState.habits)) {
                     throw new Error("Invalid state structure");
                 }
-
-                persistStateLocally(importedState);
+                
+                // REFACTOR: Usa a função principal loadState para migração e higiene dos dados.
+                // Isso proporciona uma experiência de atualização contínua e sem recarregamento.
+                loadState(importedState);
+                saveState(); // Persiste o estado limpo/migrado
+                renderApp(); // Re-renderiza toda a UI com o novo estado
+                
                 alert(t('importSuccess'));
-                window.location.reload();
+
             } catch (error) {
                 console.error("Error processing imported file:", error);
                 alert(t('importError'));
+            } finally {
+                input.remove();
             }
         };
         reader.onerror = () => {
             console.error("Error reading file");
             alert(t('importError'));
+            input.remove();
         };
         reader.readAsText(file);
-        input.remove();
     };
     input.click();
 }
@@ -249,6 +258,10 @@ export function addHabit(template: { nameKey: string; name?: never } | { name: s
     };
     
     state.habits.push(newHabit);
+
+    // ARCHITECTURE [2025-03-05]: Makes this an atomic action.
+    // The responsibility of saving state and re-rendering now belongs to the action itself.
+    _finalizeScheduleUpdate(true);
 }
 
 export function reorderHabit(draggedHabitId: string, targetHabitId: string, position: 'before' | 'after') {
@@ -363,13 +376,12 @@ function _requestFutureScheduleChange(
     scheduleToSplit.endDate = targetDate;
 
     // Remove any future schedules that are now obsolete
-    const removedSchedules = habit.scheduleHistory.splice(activeScheduleIndex + 1);
+    habit.scheduleHistory.splice(activeScheduleIndex + 1);
 
     // Add the new schedule
     habit.scheduleHistory.push(newSchedule);
     
     _finalizeScheduleUpdate(true);
-    return { newSchedule, removedSchedules };
 }
 
 export function toggleHabitStatus(habitId: string, time: TimeOfDay, date: string) {
@@ -453,7 +465,6 @@ export function saveHabitFromModal() {
     }
 
     closeModal(ui.editHabitModal);
-    _finalizeScheduleUpdate(true);
 }
 
 
@@ -461,28 +472,8 @@ function _removeTimeFromSchedule(habitId: string, timeToRemove: TimeOfDay, targe
     const habit = state.habits.find(h => h.id === habitId);
     if (!habit) return;
 
-    // A. "Just Today" Logic
-    const applyJustToday = () => {
-        const dailyInfo = ensureHabitDailyInfo(targetDate, habitId);
-        let currentSchedule = getEffectiveScheduleForHabitOnDate(habit, targetDate);
-
-        // If an override exists, we need a mutable copy.
-        if (dailyInfo.dailySchedule) {
-            currentSchedule = [...currentSchedule];
-        }
-
-        const fromIndex = currentSchedule.indexOf(timeToRemove);
-        if (fromIndex > -1) {
-            currentSchedule.splice(fromIndex, 1);
-        }
-        
-        dailyInfo.dailySchedule = currentSchedule;
-
-        _finalizeScheduleUpdate(false);
-    };
-
-    // B. "From Now On" Logic
-    const applyFromNowOn = () => {
+    // "From Now On" is now the only logic for removing a time slot.
+    const applyRemoval = () => {
         _requestFutureScheduleChange(habitId, targetDate, (currentSchedule) => {
             const indexToRemove = currentSchedule.times.indexOf(timeToRemove);
             if (indexToRemove > -1) {
@@ -496,13 +487,12 @@ function _removeTimeFromSchedule(habitId: string, timeToRemove: TimeOfDay, targe
     const timeName = getTimeOfDayName(timeToRemove);
 
     showConfirmationModal(
-        t('confirmRemoveTime', { habitName, time: timeName }),
-        applyFromNowOn,
-        {
-            title: t('modalRemoveTimeTitle'),
-            confirmText: t('buttonFromNowOn'),
-            editText: t('buttonJustToday'),
-            onEdit: applyJustToday
+        t('confirmRemoveTimePermanent', { habitName, time: timeName }),
+        applyRemoval,
+        { 
+            title: t('modalRemoveTimeTitle'), 
+            confirmText: t('deleteButton'), 
+            confirmButtonStyle: 'danger' 
         }
     );
 }
@@ -516,7 +506,7 @@ export function requestHabitTimeRemoval(habitId: string, time: TimeOfDay) {
     if (schedule.length > 1) {
         _removeTimeFromSchedule(habitId, time, state.selectedDate);
     } else {
-        requestHabitEndingFromModal(habitId, state.selectedDate);
+        requestHabitPermanentDeletion(habitId);
     }
 }
 
@@ -534,9 +524,6 @@ export function requestHabitEndingFromModal(habitId: string, date: string = stat
         () => {
             const habit = state.habits.find(h => h.id === habitId);
             if (!habit) return;
-
-            // FIX: Create a deep copy of the habit *before* it's mutated, for the undo action.
-            const originalHabitForUndo = JSON.parse(JSON.stringify(habit));
             
             const activeScheduleIndex = _findActiveScheduleIndex(habit, date);
             const activeSchedule = habit.scheduleHistory[activeScheduleIndex];
@@ -554,12 +541,9 @@ export function requestHabitEndingFromModal(habitId: string, date: string = stat
                 habit.scheduleHistory.splice(activeScheduleIndex + 1);
             }
             
-            // FIX: Store the original habit object for a perfect undo state.
-            state.lastEnded = { habitId, originalHabit: originalHabitForUndo };
-            state.lastEnded.wipedDailyData = _wipeFutureDailyDataForHabit(habitId, date);
+            _wipeFutureDailyDataForHabit(habitId, date);
             
             _finalizeScheduleUpdate(true);
-            showUndoToast();
         },
         { 
             title: t('modalEndHabitTitle'), 
@@ -567,37 +551,6 @@ export function requestHabitEndingFromModal(habitId: string, date: string = stat
             confirmButtonStyle: 'danger'
         }
     );
-}
-
-export function undoLastEnd() {
-    if (!state.lastEnded) return;
-
-    // FIX: Use the complete originalHabit object to restore the state perfectly.
-    const { habitId, originalHabit, wipedDailyData } = state.lastEnded;
-
-    const habitIndex = state.habits.findIndex(h => h.id === habitId);
-
-    if (habitIndex > -1) {
-        // If the habit was only modified (e.g., an endDate was added), replace it in-place.
-        state.habits[habitIndex] = originalHabit;
-    } else {
-        // If the habit was completely removed, add it back to the list.
-        state.habits.push(originalHabit);
-    }
-    
-    // Restore wiped data
-    if(wipedDailyData) {
-        for (const dateKey in wipedDailyData) {
-            state.dailyData[dateKey] = state.dailyData[dateKey] || {};
-            state.dailyData[dateKey][habitId] = wipedDailyData[dateKey];
-        }
-    }
-
-    state.lastEnded = null;
-    if (state.undoTimeout) clearTimeout(state.undoTimeout);
-    ui.undoToast.classList.remove('visible');
-    
-    _finalizeScheduleUpdate(true);
 }
 
 export function requestHabitPermanentDeletion(habitId: string) {
@@ -610,9 +563,8 @@ export function requestHabitPermanentDeletion(habitId: string) {
         () => {
             state.habits = state.habits.filter(h => h.id !== habitId);
             _wipeDailyDataForHabits([habitId]);
-            removeHabitFromCache(habitId); // Purge from DOM cache
+            
             clearScheduleCache();
-            clearActiveHabitsCache();
             
             state.uiDirtyState.habitListStructure = true;
             saveState();
@@ -642,8 +594,7 @@ export function resetApplicationData() {
     state.archives = {};
     _wipeDailyDataForHabits(state.habits.map(h => h.id)); // Clean up any orphans
     createDefaultHabit();
-    saveState();
-    renderApp();
+    
     closeModal(ui.manageModal);
 }
 
@@ -666,6 +617,70 @@ export function markAllHabitsForDate(dateISO: string, status: HabitStatus): bool
     return true;
 }
 
+function _prepareAIAnalysisPayload(analysisType: 'monthly' | 'quarterly' | 'historical'): object {
+    const todayISO = getTodayUTCIso();
+    const langMap: Record<string, string> = { pt: 'Português', en: 'English', es: 'Español' };
+    const languageName = langMap[state.activeLanguageCode as keyof typeof langMap] || 'English';
+
+    let promptTemplate: string;
+    switch (analysisType) {
+        case 'quarterly':
+            promptTemplate = t('aiPromptMonthly').replace(/30/g, '90').replace(/mês|Month/g, 'trimestre|Quarter');
+            break;
+        case 'monthly':
+            promptTemplate = t('aiPromptMonthly');
+            break;
+        case 'historical':
+        default:
+            promptTemplate = t('aiPromptGeneral');
+            break;
+    }
+    
+    let daysToAnalyze = 30;
+    if (analysisType === 'quarterly') daysToAnalyze = 90;
+    if (analysisType === 'historical') {
+        const firstHabitDate = state.habits.reduce((oldest, h) => (h.createdOn < oldest ? h.createdOn : oldest), todayISO);
+        const diffTime = Math.abs(parseUTCIsoDate(todayISO).getTime() - parseUTCIsoDate(firstHabitDate).getTime());
+        daysToAnalyze = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+    }
+
+    const endDate = parseUTCIsoDate(todayISO);
+    const startDate = addDays(endDate, -daysToAnalyze);
+    const startDateISO = toUTCIsoDateString(startDate);
+
+    const relevantDailyData: AppState['dailyData'] = {};
+    for (const date in state.dailyData) {
+        if (date >= startDateISO && date <= todayISO) {
+            relevantDailyData[date] = state.dailyData[date];
+        }
+    }
+
+    const relevantArchives: AppState['archives'] = {};
+    for (let year = startDate.getUTCFullYear(); year <= endDate.getUTCFullYear(); year++) {
+        const yearStr = String(year);
+        if (state.archives[yearStr]) {
+            relevantArchives[yearStr] = state.archives[yearStr];
+        }
+    }
+
+    return {
+        analysisType,
+        habits: state.habits,
+        dailyData: relevantDailyData,
+        archives: relevantArchives,
+        languageName,
+        translations: {
+            promptTemplate,
+            aiPromptGraduatedSection: t('aiPromptGraduatedSection'),
+            aiPromptNoData: t('aiPromptNoData'),
+            aiPromptNone: t('aiPromptNone'),
+            aiSystemInstruction: t('aiSystemInstruction'),
+            ...Object.fromEntries(PREDEFINED_HABITS.map(h => [h.nameKey, t(h.nameKey)]))
+        },
+        todayISO
+    };
+}
+
 export async function performAIAnalysis(analysisType: 'monthly' | 'quarterly' | 'historical') {
     closeModal(ui.aiOptionsModal);
     
@@ -674,49 +689,7 @@ export async function performAIAnalysis(analysisType: 'monthly' | 'quarterly' | 
     renderAINotificationState();
 
     try {
-        const todayISO = getTodayUTCIso();
-
-        let promptTemplateKey: string;
-        let promptTemplate: string;
-        switch (analysisType) {
-            case 'quarterly':
-                promptTemplateKey = 'aiPromptMonthly';
-                promptTemplate = t(promptTemplateKey)
-                    .replace('30 dias', '90 dias')
-                    .replace('30-Day', '90-Day')
-                    .replace('último mês', 'último trimestre');
-                break;
-            case 'monthly':
-                promptTemplateKey = 'aiPromptMonthly';
-                promptTemplate = t(promptTemplateKey);
-                break;
-            case 'historical':
-            default:
-                promptTemplateKey = 'aiPromptGeneral';
-                promptTemplate = t(promptTemplateKey);
-                break;
-        }
-
-        const langMap: Record<string, string> = { pt: 'Português', en: 'English', es: 'Español' };
-        const languageName = langMap[state.activeLanguageCode as keyof typeof langMap] || 'English';
-
-        const payloadForWorker = {
-            analysisType,
-            habits: state.habits,
-            dailyData: state.dailyData,
-            archives: state.archives,
-            languageName,
-            translations: {
-                promptTemplate,
-                aiPromptGraduatedSection: t('aiPromptGraduatedSection'),
-                aiPromptNoData: t('aiPromptNoData'),
-                aiPromptNone: t('aiPromptNone'),
-                aiSystemInstruction: t('aiSystemInstruction'),
-                ...Object.fromEntries(PREDEFINED_HABITS.map(h => [h.nameKey, t(h.nameKey)]))
-            },
-            todayISO
-        };
-        
+        const payloadForWorker = _prepareAIAnalysisPayload(analysisType);
         const { prompt, systemInstruction } = await runWorkerTask<{ prompt: string; systemInstruction: string }>('build-ai-prompt', payloadForWorker);
 
         const response = await fetch('/api/analyze', {

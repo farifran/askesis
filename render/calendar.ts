@@ -4,7 +4,7 @@
 */
 
 // FIX: Removed shouldShowPlusIndicatorForDate from import as it's now part of calculateDaySummary
-import { state, calculateDaySummary } from '../state';
+import { state, calculateDaySummary, shouldShowPlusIndicatorForDate } from '../state';
 import { ui } from './ui';
 import { getTodayUTCIso, toUTCIsoDateString, parseUTCIsoDate, getDateTimeFormat } from '../utils';
 import { getLocaleDayName } from '../i18n';
@@ -24,8 +24,8 @@ export function updateCalendarDayElement(dayItem: HTMLElement, date: Date, today
     const isoDate = toUTCIsoDateString(date);
     
     // DECOUPLING: Chamadas separadas para performance
-    // FIX: Destructured showPlus from calculateDaySummary result
-    const { completedPercent, snoozedPercent, showPlus } = calculateDaySummary(isoDate);
+    const { completedPercent, snoozedPercent } = calculateDaySummary(isoDate);
+    const showPlus = shouldShowPlusIndicatorForDate(isoDate);
     
     const isSelected = isoDate === state.selectedDate;
     const isToday = isoDate === effectiveTodayISO;

@@ -155,7 +155,45 @@
                 </div>
             </div>
 
-            <section id="chart-container" class="chart-container"></section>
+            <section id="chart-container" class="chart-container">
+                <div class="chart-header">
+                    <div class="app-subtitle"></div>
+                    <h3 class="chart-title"></h3>
+                </div>
+                <!-- Estado Vazio -->
+                <div class="chart-empty-state"></div>
+                <!-- Estrutura do Gráfico -->
+                <div class="chart-data-view">
+                    <div class="chart-wrapper">
+                        <svg class="chart-svg" preserveAspectRatio="none">
+                            <defs>
+                                <linearGradient id="chart-gradient" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="0%" stop-color="var(--accent-blue)" stop-opacity="0.3"/>
+                                    <stop offset="100%" stop-color="var(--accent-blue)" stop-opacity="0"/>
+                                </linearGradient>
+                            </defs>
+                            <path class="chart-area"></path>
+                            <path class="chart-line"></path>
+                        </svg>
+                        <div class="chart-tooltip">
+                            <div class="tooltip-date"></div>
+                            <div class="tooltip-score">
+                                <span class="tooltip-score-label"></span>
+                                <span class="tooltip-score-value"></span>
+                            </div>
+                            <ul class="tooltip-habits"><li></li></ul>
+                        </div>
+                        <div class="chart-indicator">
+                            <div class="chart-indicator-dot"></div>
+                        </div>
+                        <div class="chart-evolution-indicator"></div>
+                    </div>
+                    <div class="chart-axis-labels">
+                        <span></span>
+                        <span></span>
+                    </div>
+                </div>
+            </section>
         </main>
     </div>
 
@@ -398,12 +436,6 @@
             </div>
         </div>
 
-        <!-- Toast Notification -->
-        <div id="undo-toast" class="undo-toast" role="status" aria-live="polite">
-            <span>Hábito encerrado.</span>
-            <button id="undo-btn">Desfazer</button>
-        </div>
-        
         <script type="module" src="bundle.js"></script>
     </body>
     </html>

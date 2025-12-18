@@ -13,6 +13,11 @@ import { escapeHTML, getContrastColor, getDateTimeFormat, parseUTCIsoDate, getTo
 const focusTrapListeners = new Map<HTMLElement, (e: KeyboardEvent) => void>();
 const previouslyFocusedElements = new WeakMap<HTMLElement, HTMLElement>();
 
+// NEW: Maps to hold listeners for proper cleanup
+const backdropListeners = new Map<HTMLElement, (e: MouseEvent) => void>();
+const closeButtonHandlerMap = new Map<HTMLElement, { buttons: HTMLElement[], handler: () => void }>();
+
+
 export function openModal(modal: HTMLElement, elementToFocus?: HTMLElement, onClose?: () => void) {
     previouslyFocusedElements.set(modal, document.activeElement as HTMLElement);
 
@@ -76,12 +81,15 @@ export function openModal(modal: HTMLElement, elementToFocus?: HTMLElement, onCl
         if (e.target === modal) handleClose();
     };
 
-    modal.addEventListener('click', backdropListener, { once: true });
+    modal.addEventListener('click', backdropListener);
+    backdropListeners.set(modal, backdropListener);
     
-    const closeButtons = modal.querySelectorAll<HTMLElement>('.modal-close-btn');
+    const closeButtons = Array.from(modal.querySelectorAll<HTMLElement>('.modal-close-btn'));
     closeButtons.forEach(btn => {
-        btn.addEventListener('click', handleClose, { once: true });
+        btn.addEventListener('click', handleClose);
     });
+    // Store the handler and buttons for cleanup
+    closeButtonHandlerMap.set(modal, { buttons: closeButtons, handler: handleClose });
 }
 
 export function closeModal(modal: HTMLElement) {
@@ -95,6 +103,22 @@ export function closeModal(modal: HTMLElement) {
     if (listener) {
         modal.removeEventListener('keydown', listener);
         focusTrapListeners.delete(modal);
+    }
+    
+    // Cleanup backdrop listener
+    const backdropListener = backdropListeners.get(modal);
+    if (backdropListener) {
+        modal.removeEventListener('click', backdropListener);
+        backdropListeners.delete(modal);
+    }
+    
+    // Cleanup close button listeners
+    const buttonInfo = closeButtonHandlerMap.get(modal);
+    if (buttonInfo) {
+        buttonInfo.buttons.forEach(btn => {
+            btn.removeEventListener('click', buttonInfo.handler);
+        });
+        closeButtonHandlerMap.delete(modal);
     }
 
     const elementToRestoreFocus = previouslyFocusedElements.get(modal);
@@ -175,34 +199,21 @@ function _createManageHabitListItem(habitData: { habit: Habit; status: 'active' 
         return button;
     };
 
-    switch(status) {
-        case 'ended':
-            actionsDiv.appendChild(createActionButton(
-                'permanent-delete-habit-btn', habit.id, t('aria_delete_permanent', { habitName: name }), icons.deletePermanentAction
-            ));
-            actionsDiv.appendChild(createActionButton(
-                'edit-habit-btn', habit.id, t('aria_edit', { habitName: name }), icons.editAction
-            ));
-            break;
-        case 'active':
-            actionsDiv.appendChild(createActionButton(
-                'edit-habit-btn', habit.id, t('aria_edit', { habitName: name }), icons.editAction
-            ));
-            if (isConsolidated) {
-                actionsDiv.appendChild(createActionButton(
-                    'graduate-habit-btn', habit.id, t('aria_graduate', { habitName: name }), icons.graduateAction
-                ));
-            } else {
-                actionsDiv.appendChild(createActionButton(
-                    'end-habit-btn', habit.id, t('aria_end', { habitName: name }), icons.endAction
-                ));
-            }
-            break;
-        case 'graduated':
-            actionsDiv.appendChild(createActionButton(
-                'permanent-delete-habit-btn', habit.id, t('aria_delete_permanent', { habitName: name }), icons.deletePermanentAction
-            ));
-            break;
+    // Lógica de botões refatorada para evitar duplicação
+    if (status === 'ended' || status === 'graduated') {
+        actionsDiv.appendChild(createActionButton('permanent-delete-habit-btn', habit.id, t('aria_delete_permanent', { habitName: name }), icons.deletePermanentAction));
+    }
+
+    if (status === 'active' || status === 'ended') {
+        actionsDiv.appendChild(createActionButton('edit-habit-btn', habit.id, t('aria_edit', { habitName: name }), icons.editAction));
+    }
+    
+    if (status === 'active') {
+        if (isConsolidated) {
+            actionsDiv.appendChild(createActionButton('graduate-habit-btn', habit.id, t('aria_graduate', { habitName: name }), icons.graduateAction));
+        } else {
+            actionsDiv.appendChild(createActionButton('end-habit-btn', habit.id, t('aria_end', { habitName: name }), icons.endAction));
+        }
     }
     
     li.append(mainSpan, actionsDiv);
@@ -246,15 +257,6 @@ export function setupManageModal() {
 
     ui.habitList.innerHTML = '';
     ui.habitList.appendChild(fragment);
-}
-
-export function showUndoToast() {
-    if (state.undoTimeout) clearTimeout(state.undoTimeout);
-    ui.undoToast.classList.add('visible');
-    state.undoTimeout = window.setTimeout(() => {
-        ui.undoToast.classList.remove('visible');
-        state.lastEnded = null;
-    }, 5000);
 }
 
 export function showConfirmationModal(

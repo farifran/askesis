@@ -1,4 +1,5 @@
 
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -63,7 +64,6 @@ export default async function handler(req: Request) {
         
         const ai = new GoogleGenAI({ apiKey });
 
-        // UPDATE [2025-03-05]: Upgraded model from gemini-2.5-flash to gemini-3-flash-preview for better performance and quality.
         const geminiResponse = await ai.models.generateContent({
             model: 'gemini-3-flash-preview',
             contents: prompt,

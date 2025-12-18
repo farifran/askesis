@@ -1,4 +1,5 @@
 
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -11,12 +12,14 @@ import { setupCardListeners } from './listeners/cards';
 import { setupDragHandler } from './listeners/drag';
 import { setupSwipeHandler } from './listeners/swipe';
 import { setupCalendarListeners } from './listeners/calendar';
+import { initChartInteractions } from './render/chart';
 
 export function setupEventListeners() {
     // Inicializa módulos de listeners especializados
     setupModalListeners();
     setupCardListeners();
     setupCalendarListeners();
+    initChartInteractions(); // Adiciona a inicialização do gráfico
     
     // Inicializa manipuladores de gestos complexos
     setupDragHandler(ui.habitContainer);
