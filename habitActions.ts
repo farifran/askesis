@@ -612,6 +612,7 @@ export function markAllHabitsForDate(dateISO: string, status: HabitStatus): bool
 
     invalidateDaySummaryCache(dateISO);
     invalidateChartCache();
+    // FIX: Sinaliza que a UI precisa ser redesenhada.
     state.uiDirtyState.habitListStructure = true;
     state.uiDirtyState.calendarVisuals = true;
     document.dispatchEvent(new CustomEvent('habitsChanged'));

@@ -97,7 +97,7 @@ function calculateChartData(): ChartDataPoint[] {
 
 function _calculateChartScales(chartData: ChartDataPoint[]): ChartScales {
     const svgWidth = ui.chartContainer.clientWidth;
-    const svgHeight = 42;
+    const svgHeight = ui.chart.wrapper.clientHeight;
     const padding = { top: 10, right: 10, bottom: 10, left: 10 };
     const chartWidth = svgWidth - padding.left - padding.right;
     const chartHeight = svgHeight - padding.top - padding.bottom;
@@ -207,7 +207,7 @@ function updateTooltipPosition() {
         
         const point = lastChartData[pointIndex];
         const { minVal, valueRange } = chartMetadata;
-        const chartHeight = 42 - padding.top - padding.bottom;
+        const chartHeight = cachedChartRect.height - padding.top - padding.bottom;
     
         const pointX = padding.left + (pointIndex / (lastChartData.length - 1)) * chartWidth;
         const pointY = padding.top + chartHeight - ((point.value - minVal) / valueRange) * chartHeight;
