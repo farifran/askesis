@@ -1226,7 +1226,7 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     contain: layout style;
     /* PERFORMANCE [2025-01-18]: Otimização para evitar renderização quando fora da tela. */
     content-visibility: auto;
-    contain-intrinsic-size: 120px;
+    contain-intrinsic-size: 80px;
     
     /* FIX: FLEX ITEM */
     flex-shrink: 0; /* Nunca encolhe, sempre visível */
@@ -1286,7 +1286,7 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 }
 .chart-wrapper { 
     position: relative; 
-    height: 64px; 
+    height: 42px; 
     /* UX [2025-01-24]: Permite scroll vertical (pan-y) mas captura horizontal */
     touch-action: pan-y; 
     user-select: none; 
@@ -1334,7 +1334,7 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 }
 .chart-empty-state {
     display: flex; align-items: center; justify-content: center;
-    height: 64px; color: var(--text-tertiary); font-style: italic; text-align: center;
+    height: 42px; color: var(--text-tertiary); font-style: italic; text-align: center;
 }
 .chart-evolution-indicator {
     position: absolute;
@@ -1632,7 +1632,8 @@ input:disabled + .slider {
 .explore-habit-item.disabled:hover { background-color: var(--bg-color); }
 .explore-habit-icon {
     font-size: 24px; width: 38px; height: 38px; flex-shrink: 0;
-    display: flex; align-items: center; justify-content: center;
+    display: flex; align-items: center;
+    justify-content: center;
     background-color: var(--surface-color); border-radius: var(--border-radius-base);
     margin-block-end: 2px;
 }
