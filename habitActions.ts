@@ -1,4 +1,3 @@
-// habitActions.ts
 
 /**
  * @license
@@ -6,277 +5,158 @@
 */
 
 import { 
-    state, Habit, HabitSchedule, TimeOfDay, Frequency, 
-    saveState, getScheduleForDate, 
-    clearActiveHabitsCache, clearScheduleCache, invalidateChartCache,
-    ensureHabitDailyInfo, getEffectiveScheduleForHabitOnDate,
-    PREDEFINED_HABITS, TIMES_OF_DAY, 
-    ensureHabitInstanceData, getNextStatus, calculateHabitStreak,
-    invalidateStreakCache,
-    invalidateDaySummaryCache,
-    getActiveHabitsForDate,
-    AppState,
-    getHabitDailyInfoForDate,
-    HabitDailyInfo, // Required for correlation helper
-    APP_VERSION,
-    persistStateLocally,
-    loadState,
+    state, 
+    saveState, 
+    Habit, 
+    HabitSchedule, 
+    TimeOfDay, 
+    PREDEFINED_HABITS, 
+    ensureHabitDailyInfo, 
+    getEffectiveScheduleForHabitOnDate, 
+    ensureHabitInstanceData, 
+    getNextStatus, 
+    getPersistableState, 
+    loadState, 
     HabitStatus,
-    getPersistableState, // REFACTOR [2025-03-04]: Importado para DRY
-    LANGUAGES
+    clearScheduleCache,
+    invalidateChartCache,
+    invalidateStreakCache,
+    getScheduleForDate,
+    APP_VERSION,
+    clearActiveHabitsCache,
+    HabitDailyInfo,
+    getActiveHabitsForDate
 } from './state';
-import { ui } from './render/ui';
 import { 
-    renderApp, renderHabits, openEditModal, 
-    closeModal, showConfirmationModal, renderAINotificationState, renderHabitCardState,
-    renderCalendarDayPartial, setupManageModal, openModal
-} from './render';
-// FIX: Import getTimeOfDayName to resolve missing name errors.
-import { t, getHabitDisplayInfo, getTimeOfDayName } from './i18n';
-import { 
-    toUTCIsoDateString, parseUTCIsoDate, generateUUID, 
-    getTodayUTCIso, addDays, getDateTimeFormat, simpleMarkdownToHTML
+    generateUUID, 
+    getTodayUTCIso, 
+    toUTCIsoDateString, 
+    addDays, 
+    parseUTCIsoDate,
+    triggerHaptic
 } from './utils';
-import { mergeStates } from './services/dataMerge';
-import { runWorkerTask, syncStateWithCloud } from './cloud';
+import { 
+    closeModal, 
+    openModal, 
+    showConfirmationModal, 
+    openEditModal, 
+    renderAINotificationState,
+    renderHabitCardState,
+    renderCalendarDayPartial
+} from './render';
+import { ui } from './render/ui';
+import { t, getHabitDisplayInfo, getTimeOfDayName } from './i18n';
+import { runWorkerTask, setSyncStatus } from './cloud';
+import { apiFetch } from './services/api';
 
 // --- HELPERS ---
 
-/**
- * STATE HYGIENE HELPER [2025-02-21]:
- * Removes any "dailySchedule" overrides for a specific habit on a specific date.
- * crucial when saving/editing/reviving habits to ensure the new configuration takes precedence
- * over old "moved" or "deleted" exceptions stored in dailyData.
- */
-function _cleanDailyOverrides(date: string, habitId: string) {
-    // USE LAZY ACCESSOR - Must ensure it's editable if it exists
-    const dailyInfo = ensureHabitDailyInfo(date, habitId);
-    if (dailyInfo && dailyInfo.dailySchedule !== undefined) {
-        // CRITICAL: We strictly delete the key so `dailySchedule` becomes undefined.
-        // This forces the "Opaque Layer" logic in state.ts to fall through to the permanent history.
-        delete dailyInfo.dailySchedule;
-    }
-}
-
-/**
- * DEEP CLEAN HELPER [2025-02-21]:
- * Removes ALL daily data (instances, notes, overrides) for the given habit IDs across ALL dates.
- * Used for Permanent Deletion to ensure no "ghost data" remains if the ID is reused later.
- */
-function _wipeDailyDataForHabits(habitIds: string[]) {
-    if (habitIds.length === 0) return;
-    const idsSet = new Set(habitIds);
-    
-    // UPDATE: Iterating over Hot Storage only is safer/faster for now. 
-    // Deleting from archives would require parsing everything. 
-    // For now, let's clean hot storage. Archiving naturally handles "old" data.
-    
-    Object.keys(state.dailyData).forEach(dateKey => {
-        const dayRecord = state.dailyData[dateKey];
-        if (!dayRecord) return;
-        
-        let changed = false;
-        habitIds.forEach(id => {
-            if (dayRecord[id]) {
-                delete dayRecord[id];
-                changed = true;
-            }
-        });
-        
-        // Clean up empty date records to keep state small
-        if (changed && Object.keys(dayRecord).length === 0) {
-            delete state.dailyData[dateKey];
-        }
-    });
-}
-
-/**
- * FUTURE CLEAN HELPER [2025-02-23]:
- * Removes daily data for a habit for all dates strictly greater than the provided date.
- * Used when Ending a habit to clear any future "ghost" moves/notes that are now orphan.
- * UPDATE: Returns the wiped data so it can be stored for Undo capability.
- */
-function _wipeFutureDailyDataForHabit(habitId: string, fromDateISO: string): Record<string, HabitDailyInfo> {
-    const wipedData: Record<string, HabitDailyInfo> = {};
-    
-    // UPDATE: Only clean hot storage. Future dates are unlikely to be archived.
-    Object.keys(state.dailyData).forEach(dateKey => {
-        if (dateKey > fromDateISO) {
-            const dayRecord = state.dailyData[dateKey];
-            if (dayRecord && dayRecord[habitId]) {
-                // Capture data before deletion
-                wipedData[dateKey] = JSON.parse(JSON.stringify(dayRecord[habitId]));
-                
-                delete dayRecord[habitId];
-                if (Object.keys(dayRecord).length === 0) {
-                    delete state.dailyData[dateKey];
-                }
-            }
-        }
-    });
-    return wipedData;
-}
-
-/**
- * REFACTOR [2025-02-22]: Finds the index of the schedule active on the given date.
- * Reduces duplication in _removeTimeFromSchedule and _requestFutureScheduleChange.
- */
-function _findActiveScheduleIndex(habit: Habit, dateISO: string): number {
-    let index = habit.scheduleHistory.findIndex(s => {
-        const startOk = s.startDate <= dateISO;
-        const endOk = !s.endDate || s.endDate > dateISO;
-        return startOk && endOk;
-    });
-
-    // Fallback to the last schedule if none found (defensive coding)
-    if (index === -1) {
-        index = habit.scheduleHistory.length - 1;
-    }
-    return index;
-}
-
-/**
- * REFACTOR [2025-03-05]: Lógica de finalização consolidada para atualizações de agendamento.
- * A chamada redundante para `clearActiveHabitsCache` foi removida, pois `clearScheduleCache`
- * agora lida com a invalidação completa, tornando o código mais limpo e eficiente.
- */
-function _finalizeScheduleUpdate(clearHistoryCache: boolean) {
-    state.uiDirtyState.habitListStructure = true;
-    
-    if (clearHistoryCache) {
-        // Esta função agora lida com a limpeza de todos os caches dependentes, incluindo o activeHabitsCache.
+function _finalizeScheduleUpdate(affectsHistory: boolean = true) {
+    if (affectsHistory) {
         clearScheduleCache();
     } else {
-        // Usado para operações que afetam apenas a visualização diária (ex: reordenar), não o histórico.
         clearActiveHabitsCache();
     }
     
-    saveState();
-    renderApp();
-}
-
-// --- ACTIONS ---
-
-// DATA SOVEREIGNTY ACTIONS [2025-02-23]
-
-export function exportData() {
-    // REFACTOR [2025-03-04]: Use centralized snapshot creator (DRY)
-    const dataToExport = getPersistableState();
-
-    const blob = new Blob([JSON.stringify(dataToExport, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `askesis-backup-${getTodayUTCIso()}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-}
-
-export function importData() {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'application/json';
-    input.onchange = (e) => {
-        const file = (e.target as HTMLInputElement).files?.[0];
-        if (!file) {
-            input.remove(); // Limpa se o usuário cancelar
-            return;
-        }
-
-        if (file.size > 5 * 1024 * 1024) { // Limite de 5MB
-            alert(t('importError'));
-            input.remove();
-            return;
-        }
-        
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            try {
-                const text = e.target?.result as string;
-                const importedState: AppState = JSON.parse(text);
-
-                if (typeof importedState.version !== 'number' || !Array.isArray(importedState.habits)) {
-                    throw new Error("Invalid state structure");
-                }
-                
-                // REFACTOR: Usa a função principal loadState para migração e higiene dos dados.
-                // Isso proporciona uma experiência de atualização contínua e sem recarregamento.
-                loadState(importedState);
-                saveState(); // Persiste o estado limpo/migrado
-                renderApp(); // Re-renderiza toda a UI com o novo estado
-                
-                alert(t('importSuccess'));
-
-            } catch (error) {
-                console.error("Error processing imported file:", error);
-                alert(t('importError'));
-            } finally {
-                input.remove();
-            }
-        };
-        reader.onerror = () => {
-            console.error("Error reading file");
-            alert(t('importError'));
-            input.remove();
-        };
-        reader.readAsText(file);
-    };
-    input.click();
-}
-
-
-export function createDefaultHabit() {
-    const defaultHabitTemplate = PREDEFINED_HABITS.find(h => h.isDefault);
-    if (!defaultHabitTemplate) return;
-
-    addHabit(defaultHabitTemplate, getTodayUTCIso());
-}
-
-export function addHabit(template: { nameKey: string; name?: never } | { name: string; nameKey?: never }, targetDate: string) {
-    const nowISO = getTodayUTCIso();
-    const startDate = targetDate > nowISO ? targetDate : nowISO;
-
-    const newSchedule: HabitSchedule = {
-        startDate: startDate,
-        name: ('name' in template && template.name) ? template.name : undefined,
-        nameKey: ('nameKey' in template && template.nameKey) ? template.nameKey : undefined,
-        subtitleKey: (template as any).subtitleKey,
-        times: (template as any).times,
-        frequency: (template as any).frequency,
-        scheduleAnchor: startDate,
-    };
-
-    const newHabit: Habit = {
-        id: generateUUID(),
-        icon: (template as any).icon,
-        color: (template as any).color,
-        goal: (template as any).goal,
-        createdOn: startDate,
-        scheduleHistory: [newSchedule],
-    };
+    // FIX: Mark UI as dirty to force list re-rendering
+    state.uiDirtyState.habitListStructure = true;
+    state.uiDirtyState.calendarVisuals = true;
     
-    state.habits.push(newHabit);
+    saveState();
+    
+    // FIX: Use event dispatch to trigger render, breaking circular dependency with render.ts
+    document.dispatchEvent(new CustomEvent('render-app'));
+}
 
-    // ARCHITECTURE [2025-03-05]: Makes this an atomic action.
-    // The responsibility of saving state and re-rendering now belongs to the action itself.
+/**
+ * Helper to safely modify a habit's schedule for future dates (splitting history).
+ */
+function _requestFutureScheduleChange(
+    habitId: string, 
+    targetDate: string, 
+    updateFn: (schedule: HabitSchedule) => HabitSchedule
+) {
+    const habit = state.habits.find(h => h.id === habitId);
+    if (!habit) return;
+
+    // Sort history to ensure we are looking at the timeline correctly
+    habit.scheduleHistory.sort((a, b) => a.startDate.localeCompare(b.startDate));
+    
+    let activeScheduleIndex = -1;
+    for (let i = habit.scheduleHistory.length - 1; i >= 0; i--) {
+        const s = habit.scheduleHistory[i];
+        if (targetDate >= s.startDate && (!s.endDate || targetDate < s.endDate)) {
+            activeScheduleIndex = i;
+            break;
+        }
+    }
+
+    if (activeScheduleIndex === -1) return; // Should not happen for active habits
+
+    const currentSchedule = habit.scheduleHistory[activeScheduleIndex];
+
+    // If we are modifying from the exact start date of the current schedule, just update it.
+    if (currentSchedule.startDate === targetDate) {
+        habit.scheduleHistory[activeScheduleIndex] = updateFn({ ...currentSchedule });
+    } else {
+        // Otherwise, split the schedule.
+        // 1. End the current schedule yesterday.
+        const yesterday = toUTCIsoDateString(addDays(parseUTCIsoDate(targetDate), -1));
+        currentSchedule.endDate = yesterday;
+
+        // 2. Create new schedule starting today
+        const newSchedule = updateFn({ 
+            ...currentSchedule, 
+            startDate: targetDate, 
+            endDate: undefined // New schedule is open-ended
+        });
+        
+        habit.scheduleHistory.push(newSchedule);
+    }
+    
     _finalizeScheduleUpdate(true);
 }
 
-export function reorderHabit(draggedHabitId: string, targetHabitId: string, position: 'before' | 'after') {
-    const draggedHabit = state.habits.find(h => h.id === draggedHabitId);
-    if (!draggedHabit) return;
+// --- EXPORTED ACTIONS ---
 
-    const fromIndex = state.habits.indexOf(draggedHabit);
-    state.habits.splice(fromIndex, 1);
+export function createDefaultHabit() {
+    const defaultTemplate = PREDEFINED_HABITS.find(h => h.isDefault);
+    if (defaultTemplate) {
+        const newHabit: Habit = {
+            id: generateUUID(),
+            createdOn: getTodayUTCIso(),
+            icon: defaultTemplate.icon,
+            color: defaultTemplate.color,
+            goal: defaultTemplate.goal,
+            scheduleHistory: [{
+                startDate: getTodayUTCIso(),
+                times: defaultTemplate.times,
+                frequency: defaultTemplate.frequency,
+                nameKey: defaultTemplate.nameKey,
+                subtitleKey: defaultTemplate.subtitleKey,
+                scheduleAnchor: getTodayUTCIso()
+            }]
+        };
+        state.habits.push(newHabit);
+        saveState();
+    }
+}
 
-    const toIndex = state.habits.findIndex(h => h.id === targetHabitId);
-    const newIndex = position === 'before' ? toIndex : toIndex + 1;
+export function reorderHabit(movedHabitId: string, targetHabitId: string, position: 'before' | 'after') {
+    const movedIndex = state.habits.findIndex(h => h.id === movedHabitId);
+    const targetIndex = state.habits.findIndex(h => h.id === targetHabitId);
 
-    state.habits.splice(newIndex, 0, draggedHabit);
+    if (movedIndex === -1 || targetIndex === -1) return;
 
-    _finalizeScheduleUpdate(false);
+    const [movedHabit] = state.habits.splice(movedIndex, 1);
+    
+    // Recalculate target index after removal
+    const newTargetIndex = state.habits.findIndex(h => h.id === targetHabitId);
+    
+    const insertIndex = position === 'before' ? newTargetIndex : newTargetIndex + 1;
+    state.habits.splice(insertIndex, 0, movedHabit);
+
+    _finalizeScheduleUpdate(false); // Reordering doesn't change schedule logic, just display order
 }
 
 export function handleHabitDrop(
@@ -290,16 +170,11 @@ export function handleHabitDrop(
     
     const targetDate = state.selectedDate;
 
-    // A. Lógica "Apenas Hoje"
+    // A. Logic "Just Today"
     const applyJustToday = () => {
         const dailyInfo = ensureHabitDailyInfo(targetDate, habitId);
-        
-        let currentSchedule = getEffectiveScheduleForHabitOnDate(habit, targetDate);
-
-        // Se estamos usando um override, precisamos da cópia, não da referência.
-        if (dailyInfo.dailySchedule) {
-            currentSchedule = [...currentSchedule];
-        }
+        // Use spread to copy array, as getEffectiveSchedule returns readonly ref in state.ts
+        const currentSchedule = [...getEffectiveScheduleForHabitOnDate(habit, targetDate)];
 
         const fromIndex = currentSchedule.indexOf(fromTime);
         if (fromIndex > -1) {
@@ -313,26 +188,39 @@ export function handleHabitDrop(
 
         dailyInfo.dailySchedule = currentSchedule;
         
-        // Reordering logic
         if (reorderInfo) {
             const reorderTargetHabit = state.habits.find(h => h.id === reorderInfo.id);
             if (reorderTargetHabit) reorderHabit(habitId, reorderInfo.id, reorderInfo.pos);
         }
         
-        _finalizeScheduleUpdate(false);
+        _finalizeScheduleUpdate(false); // Visual update mainly
     };
 
-    // B. Lógica "De Agora em Diante"
+    // B. Logic "From Now On"
     const applyFromNowOn = () => {
-        _requestFutureScheduleChange(habitId, targetDate, (currentSchedule) => {
-            const fromIndex = currentSchedule.times.indexOf(fromTime);
+        const dailyInfo = ensureHabitDailyInfo(targetDate, habitId);
+        
+        // Capture current override if it exists
+        const currentOverride = dailyInfo.dailySchedule ? [...dailyInfo.dailySchedule] : null;
+
+        // Remove override for today so the new schedule takes effect visually
+        if (dailyInfo.dailySchedule) {
+            delete dailyInfo.dailySchedule;
+        }
+
+        _requestFutureScheduleChange(habitId, targetDate, (scheduleToUpdate) => {
+            if (currentOverride) {
+                scheduleToUpdate.times = currentOverride;
+            }
+
+            const fromIndex = scheduleToUpdate.times.indexOf(fromTime);
             if (fromIndex > -1) {
-                currentSchedule.times.splice(fromIndex, 1);
+                scheduleToUpdate.times.splice(fromIndex, 1);
             }
-            if (!currentSchedule.times.includes(toTime)) {
-                currentSchedule.times.push(toTime);
+            if (!scheduleToUpdate.times.includes(toTime)) {
+                scheduleToUpdate.times.push(toTime);
             }
-            return currentSchedule;
+            return scheduleToUpdate;
         });
         
         if (reorderInfo) {
@@ -355,372 +243,336 @@ export function handleHabitDrop(
     );
 }
 
-function _requestFutureScheduleChange(
-    habitId: string, 
-    targetDate: string,
-    changeFn: (schedule: HabitSchedule) => HabitSchedule
-) {
-    const habit = state.habits.find(h => h.id === habitId);
-    if (!habit) return;
-    
-    _cleanDailyOverrides(targetDate, habitId);
-
-    const activeScheduleIndex = _findActiveScheduleIndex(habit, targetDate);
-    const scheduleToSplit = habit.scheduleHistory[activeScheduleIndex];
-
-    const newSchedule = changeFn(JSON.parse(JSON.stringify(scheduleToSplit)));
-    newSchedule.startDate = targetDate;
-    newSchedule.endDate = undefined; 
-    
-    // Truncate the old schedule
-    scheduleToSplit.endDate = targetDate;
-
-    // Remove any future schedules that are now obsolete
-    habit.scheduleHistory.splice(activeScheduleIndex + 1);
-
-    // Add the new schedule
-    habit.scheduleHistory.push(newSchedule);
-    
-    _finalizeScheduleUpdate(true);
-}
-
-export function toggleHabitStatus(habitId: string, time: TimeOfDay, date: string) {
-    const instance = ensureHabitInstanceData(date, habitId, time);
-    instance.status = getNextStatus(instance.status);
-
-    invalidateStreakCache(habitId, date);
-    invalidateDaySummaryCache(date);
-    invalidateChartCache();
-    renderHabitCardState(habitId, time);
-    renderCalendarDayPartial(date);
-    document.dispatchEvent(new CustomEvent('habitsChanged'));
-    saveState();
-}
-
-export function setGoalOverride(habitId: string, date: string, time: TimeOfDay, newGoal: number) {
-    const instance = ensureHabitInstanceData(date, habitId, time);
-    instance.goalOverride = newGoal;
-    
-    invalidateDaySummaryCache(date);
-    invalidateChartCache();
-    document.dispatchEvent(new CustomEvent('habitsChanged'));
-    saveState();
-}
-
-export function handleSaveNote() {
-    if (!state.editingNoteFor) return;
-    const { habitId, date, time } = state.editingNoteFor;
-
-    const instance = ensureHabitInstanceData(date, habitId, time);
-    instance.note = ui.notesTextarea.value.trim();
-    
-    closeModal(ui.notesModal);
-    renderHabitCardState(habitId, time);
-    saveState();
-}
-
-export function requestHabitEditingFromModal(habitId: string) {
-    const habit = state.habits.find(h => h.id === habitId);
-    if (!habit) return;
-    
-    closeModal(ui.manageModal);
-    openEditModal(habit);
-}
-
 export function saveHabitFromModal() {
     if (!state.editingHabit) return;
+
+    const { isNew, habitId, formData, targetDate } = state.editingHabit;
     
-    const { isNew, habitId, originalData, formData, targetDate } = state.editingHabit;
-    
-    const finalName = ('name' in formData && formData.name) ? formData.name : t(formData.nameKey);
-
-    const formNoticeEl = ui.editHabitForm.querySelector<HTMLElement>('.form-notice')!;
-    formNoticeEl.classList.remove('visible');
-
-    if (!finalName || formData.times.length === 0) {
-        formNoticeEl.textContent = t('modalEditFormNotice');
-        formNoticeEl.classList.add('visible');
-        return;
-    }
-
-    const newSchedule: HabitSchedule = {
-        startDate: targetDate,
-        name: ('name' in formData && formData.name) ? formData.name : undefined,
-        nameKey: ('nameKey' in formData && formData.nameKey) ? formData.nameKey : undefined,
-        subtitleKey: formData.subtitleKey,
-        times: formData.times,
-        frequency: formData.frequency,
-        scheduleAnchor: targetDate,
-    };
+    // Validation
+    if (!formData.name && !formData.nameKey) return; 
     
     if (isNew) {
-        addHabit(formData, targetDate);
-    } else if (habitId) {
-        _requestFutureScheduleChange(habitId, targetDate, () => newSchedule);
-        
-        const habit = state.habits.find(h => h.id === habitId)!;
+        const newHabit: Habit = {
+            id: generateUUID(),
+            createdOn: targetDate, // Use the date currently viewing
+            icon: formData.icon,
+            color: formData.color,
+            goal: formData.goal,
+            scheduleHistory: [{
+                startDate: targetDate,
+                times: formData.times,
+                frequency: formData.frequency,
+                name: formData.name,
+                nameKey: formData.nameKey,
+                subtitleKey: formData.subtitleKey,
+                scheduleAnchor: targetDate
+            }]
+        };
+        state.habits.push(newHabit);
+        _finalizeScheduleUpdate(true);
+    } else {
+        const habit = state.habits.find(h => h.id === habitId);
+        if (!habit) return;
+
+        // Update properties that are not schedule-dependent (visuals/goals)
         habit.icon = formData.icon;
         habit.color = formData.color;
         habit.goal = formData.goal;
+
+        // Handle Schedule Changes
+        _requestFutureScheduleChange(habit.id, targetDate, (schedule) => {
+            schedule.name = formData.name;
+            schedule.nameKey = formData.nameKey;
+            schedule.times = formData.times;
+            schedule.frequency = formData.frequency;
+            return schedule;
+        });
     }
 
     closeModal(ui.editHabitModal);
+    state.editingHabit = null;
 }
 
-
-function _removeTimeFromSchedule(habitId: string, timeToRemove: TimeOfDay, targetDate: string) {
+export function requestHabitEndingFromModal(habitId: string) {
     const habit = state.habits.find(h => h.id === habitId);
     if (!habit) return;
 
-    // "From Now On" is now the only logic for removing a time slot.
-    const applyRemoval = () => {
-        _requestFutureScheduleChange(habitId, targetDate, (currentSchedule) => {
-            const indexToRemove = currentSchedule.times.indexOf(timeToRemove);
-            if (indexToRemove > -1) {
-                currentSchedule.times.splice(indexToRemove, 1);
-            }
-            return currentSchedule;
-        });
-    };
+    const { name } = getHabitDisplayInfo(habit, state.selectedDate);
     
-    const habitName = getHabitDisplayInfo(habit, targetDate).name;
-    const timeName = getTimeOfDayName(timeToRemove);
-
     showConfirmationModal(
-        t('confirmRemoveTimePermanent', { habitName, time: timeName }),
-        applyRemoval,
-        { 
-            title: t('modalRemoveTimeTitle'), 
-            confirmText: t('deleteButton'), 
-            confirmButtonStyle: 'danger' 
-        }
-    );
-}
-
-export function requestHabitTimeRemoval(habitId: string, time: TimeOfDay) {
-    const habit = state.habits.find(h => h.id === habitId);
-    if (!habit) return;
-    
-    const schedule = getEffectiveScheduleForHabitOnDate(habit, state.selectedDate);
-
-    if (schedule.length > 1) {
-        _removeTimeFromSchedule(habitId, time, state.selectedDate);
-    } else {
-        requestHabitPermanentDeletion(habitId);
-    }
-}
-
-export function requestHabitEndingFromModal(habitId: string, date: string = state.selectedDate) {
-    const habit = state.habits.find(h => h.id === habitId);
-    if (!habit) return;
-
-    const { name } = getHabitDisplayInfo(habit, date);
-    const formattedDate = getDateTimeFormat(state.activeLanguageCode, {
-        day: 'numeric', month: 'long', timeZone: 'UTC'
-    }).format(parseUTCIsoDate(date));
-
-    showConfirmationModal(
-        t('confirmEndHabit', { habitName: name, date: formattedDate }),
+        t('confirmEndHabit', { habitName: name }),
         () => {
-            const habit = state.habits.find(h => h.id === habitId);
-            if (!habit) return;
+            _requestFutureScheduleChange(habitId, state.selectedDate, (schedule) => {
+                schedule.endDate = state.selectedDate; // Ends today
+                return schedule;
+            });
             
-            const activeScheduleIndex = _findActiveScheduleIndex(habit, date);
-            const activeSchedule = habit.scheduleHistory[activeScheduleIndex];
+            // Undo capability logic could be added here
+            state.lastEnded = { habitId, originalHabit: JSON.parse(JSON.stringify(habit)) };
             
-            if (date === activeSchedule.startDate) {
-                habit.scheduleHistory.splice(activeScheduleIndex);
-                if (habit.scheduleHistory.length > 0) {
-                    const previousSchedule = habit.scheduleHistory[habit.scheduleHistory.length - 1];
-                    previousSchedule.endDate = undefined;
-                } else {
-                    state.habits = state.habits.filter(h => h.id !== habitId);
-                }
-            } else {
-                activeSchedule.endDate = date;
-                habit.scheduleHistory.splice(activeScheduleIndex + 1);
-            }
-            
-            _wipeFutureDailyDataForHabit(habitId, date);
-            
-            _finalizeScheduleUpdate(true);
+            closeModal(ui.manageModal); // Close manager to show the change
         },
-        { 
-            title: t('modalEndHabitTitle'), 
-            confirmText: t('endButton'),
-            confirmButtonStyle: 'danger'
-        }
+        { confirmButtonStyle: 'danger', confirmText: t('buttonEnd') }
     );
 }
 
 export function requestHabitPermanentDeletion(habitId: string) {
     const habit = state.habits.find(h => h.id === habitId);
     if (!habit) return;
+    
     const { name } = getHabitDisplayInfo(habit);
 
     showConfirmationModal(
-        t('confirmPermanentDelete', { habitName: name }),
+        t('confirmDeleteHabit', { habitName: name }),
         () => {
             state.habits = state.habits.filter(h => h.id !== habitId);
-            _wipeDailyDataForHabits([habitId]);
+            // Cleanup daily data
+            Object.values(state.dailyData).forEach(day => {
+                delete day[habitId];
+            });
+            // Cleanup archives (expensive but needed for consistency)
+            // Ideally we'd use a worker for this cleanup if archives are huge.
             
-            clearScheduleCache();
+            _finalizeScheduleUpdate(true);
             
-            state.uiDirtyState.habitListStructure = true;
-            saveState();
-            renderApp();
-            setupManageModal(); // Refresh modal list
+            // Refresh modal list if it's open
+            if (ui.manageModal.classList.contains('visible')) {
+                closeModal(ui.manageModal);
+            }
         },
-        { 
-            title: t('modalDeleteHabitTitle'), 
-            confirmText: t('deleteButton'), 
-            confirmButtonStyle: 'danger'
-        }
+        { confirmButtonStyle: 'danger', confirmText: t('buttonDelete') }
     );
+}
+
+export function requestHabitEditingFromModal(habitId: string) {
+    const habit = state.habits.find(h => h.id === habitId);
+    if (habit) {
+        closeModal(ui.manageModal);
+        openEditModal(habit);
+    }
 }
 
 export function graduateHabit(habitId: string) {
     const habit = state.habits.find(h => h.id === habitId);
-    if (habit) {
-        habit.graduatedOn = getTodayUTCIso();
-        _finalizeScheduleUpdate(true);
-        setupManageModal();
-    }
+    if (!habit) return;
+
+    habit.graduatedOn = state.selectedDate;
+    _finalizeScheduleUpdate(true);
+    closeModal(ui.manageModal);
+    
+    triggerHaptic('success');
 }
 
 export function resetApplicationData() {
     state.habits = [];
     state.dailyData = {};
     state.archives = {};
-    _wipeDailyDataForHabits(state.habits.map(h => h.id)); // Clean up any orphans
-    createDefaultHabit();
+    state.lastEnded = null;
+    state.notificationsShown = [];
+    state.pending21DayHabitIds = [];
+    state.pendingConsolidationHabitIds = [];
     
-    closeModal(ui.manageModal);
+    localStorage.removeItem('habitTrackerState_v1');
+    localStorage.removeItem('habitTrackerSyncKey');
+    
+    location.reload();
 }
 
-export function markAllHabitsForDate(dateISO: string, status: HabitStatus): boolean {
-    const activeHabits = getActiveHabitsForDate(dateISO);
-    if (activeHabits.length === 0) return false;
-
-    activeHabits.forEach(({ habit, schedule }) => {
-        schedule.forEach(time => {
-            const instance = ensureHabitInstanceData(dateISO, habit.id, time);
-            instance.status = status;
-        });
-        invalidateStreakCache(habit.id, dateISO);
-    });
-
-    invalidateDaySummaryCache(dateISO);
-    invalidateChartCache();
-    state.uiDirtyState.habitListStructure = true;
-    state.uiDirtyState.calendarVisuals = true;
-    document.dispatchEvent(new CustomEvent('habitsChanged'));
+export function handleSaveNote() {
+    if (!state.editingNoteFor) return;
+    
+    const { habitId, date, time } = state.editingNoteFor;
+    const noteContent = ui.notesTextarea.value.trim();
+    
+    ensureHabitDailyInfo(date, habitId);
+    const instance = ensureHabitInstanceData(date, habitId, time);
+    
+    instance.note = noteContent;
+    
     saveState();
-    return true;
+    closeModal(ui.notesModal);
+    
+    renderHabitCardState(habitId, time); 
 }
 
-function _prepareAIAnalysisPayload(analysisType: 'monthly' | 'quarterly' | 'historical'): object {
-    const todayISO = getTodayUTCIso();
-    const langMap: Record<string, string> = { pt: 'Português', en: 'English', es: 'Español' };
-    const languageName = langMap[state.activeLanguageCode as keyof typeof langMap] || 'English';
+export async function performAIAnalysis(analysisType: 'monthly' | 'quarterly' | 'historical') {
+    if (state.aiState === 'loading') return;
 
-    let promptTemplate: string;
-    switch (analysisType) {
-        case 'quarterly':
-            promptTemplate = t('aiPromptMonthly').replace(/30/g, '90').replace(/mês|Month/g, 'trimestre|Quarter');
-            break;
-        case 'monthly':
-            promptTemplate = t('aiPromptMonthly');
-            break;
-        case 'historical':
-        default:
-            promptTemplate = t('aiPromptGeneral');
-            break;
-    }
-    
-    let daysToAnalyze = 30;
-    if (analysisType === 'quarterly') daysToAnalyze = 90;
-    if (analysisType === 'historical') {
-        const firstHabitDate = state.habits.reduce((oldest, h) => (h.createdOn < oldest ? h.createdOn : oldest), todayISO);
-        const diffTime = Math.abs(parseUTCIsoDate(todayISO).getTime() - parseUTCIsoDate(firstHabitDate).getTime());
-        daysToAnalyze = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-    }
+    state.aiState = 'loading';
+    state.hasSeenAIResult = false;
+    renderAINotificationState();
+    closeModal(ui.aiOptionsModal);
 
-    const endDate = parseUTCIsoDate(todayISO);
-    const startDate = addDays(endDate, -daysToAnalyze);
-    const startDateISO = toUTCIsoDateString(startDate);
-
-    const relevantDailyData: AppState['dailyData'] = {};
-    for (const date in state.dailyData) {
-        if (date >= startDateISO && date <= todayISO) {
-            relevantDailyData[date] = state.dailyData[date];
-        }
-    }
-
-    const relevantArchives: AppState['archives'] = {};
-    for (let year = startDate.getUTCFullYear(); year <= endDate.getUTCFullYear(); year++) {
-        const yearStr = String(year);
-        if (state.archives[yearStr]) {
-            relevantArchives[yearStr] = state.archives[yearStr];
-        }
-    }
-
-    return {
-        analysisType,
-        habits: state.habits,
-        dailyData: relevantDailyData,
-        archives: relevantArchives,
-        languageName,
-        translations: {
-            promptTemplate,
+    try {
+        const translations: any = {
+            promptTemplate: t('aiPromptTemplate'),
             aiPromptGraduatedSection: t('aiPromptGraduatedSection'),
             aiPromptNoData: t('aiPromptNoData'),
             aiPromptNone: t('aiPromptNone'),
             aiSystemInstruction: t('aiSystemInstruction'),
-            ...Object.fromEntries(PREDEFINED_HABITS.map(h => [h.nameKey, t(h.nameKey)]))
-        },
-        todayISO
-    };
-}
+        };
+        // Add all predefined habit name keys to translations for the worker
+        PREDEFINED_HABITS.forEach(h => {
+            translations[h.nameKey] = t(h.nameKey);
+        });
 
-export async function performAIAnalysis(analysisType: 'monthly' | 'quarterly' | 'historical') {
-    closeModal(ui.aiOptionsModal);
-    
-    state.aiState = 'loading';
-    state.hasSeenAIResult = true; // Hide notification dot immediately
-    renderAINotificationState();
+        // Use Worker to build the heavy prompt
+        const { prompt, systemInstruction } = await runWorkerTask<{ prompt: string, systemInstruction: string }>(
+            'build-ai-prompt',
+            {
+                analysisType,
+                habits: state.habits,
+                dailyData: state.dailyData,
+                archives: state.archives,
+                languageName: t(state.activeLanguageCode === 'pt' ? 'langPortuguese' : (state.activeLanguageCode === 'es' ? 'langSpanish' : 'langEnglish')),
+                translations,
+                todayISO: getTodayUTCIso()
+            }
+        );
 
-    try {
-        const payloadForWorker = _prepareAIAnalysisPayload(analysisType);
-        const { prompt, systemInstruction } = await runWorkerTask<{ prompt: string; systemInstruction: string }>('build-ai-prompt', payloadForWorker);
-
-        const response = await fetch('/api/analyze', {
+        const response = await apiFetch('/api/analyze', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ prompt, systemInstruction }),
         });
 
-        if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`${t('aiErrorPrefix')}: ${errorText}`);
-        }
-
-        const result = await response.text();
-        state.lastAIResult = result;
+        const text = await response.text();
+        state.lastAIResult = text;
         state.aiState = 'completed';
-    } catch (e: any) {
-        console.error("AI analysis failed:", e);
-        state.lastAIResult = `${t('aiErrorGeneric')}\n\n*${e.message}*`;
+    } catch (error) {
+        console.error("AI Analysis failed", error);
+        state.lastAIError = String(error);
         state.aiState = 'error';
+        state.lastAIResult = t('aiErrorGeneric');
     } finally {
-        state.hasSeenAIResult = false;
-        renderAINotificationState();
         saveState();
-        
-        ui.aiResponse.innerHTML = simpleMarkdownToHTML(state.lastAIResult || t('aiErrorUnknown'));
-        openModal(ui.aiModal, undefined, () => {
-            state.hasSeenAIResult = true;
-            renderAINotificationState();
-        });
+        renderAINotificationState();
     }
+}
+
+export function exportData() {
+    const dataStr = JSON.stringify(getPersistableState(), null, 2);
+    const blob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `askesis-backup-${getTodayUTCIso()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
+export function importData() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'application/json';
+    input.onchange = async (e) => {
+        const file = (e.target as HTMLInputElement).files?.[0];
+        if (!file) return;
+        
+        try {
+            const text = await file.text();
+            const data = JSON.parse(text);
+            if (data.habits && data.version) {
+                loadState(data);
+                saveState();
+                document.dispatchEvent(new CustomEvent('render-app'));
+                closeModal(ui.manageModal);
+                alert(t('importSuccess'));
+            } else {
+                alert(t('importInvalid'));
+            }
+        } catch (err) {
+            console.error(err);
+            alert(t('importError'));
+        }
+    };
+    input.click();
+}
+
+export function toggleHabitStatus(habitId: string, time: TimeOfDay, date: string) {
+    const habit = state.habits.find(h => h.id === habitId);
+    if (!habit) return;
+
+    const instance = ensureHabitInstanceData(date, habitId, time);
+    const oldStatus = instance.status;
+    const newStatus = getNextStatus(oldStatus);
+    
+    instance.status = newStatus;
+    
+    // Handle automatic goal completion for check-type habits
+    if (habit.goal.type === 'check') {
+        if (newStatus === 'completed') {
+            instance.goalOverride = 1;
+        } else if (newStatus === 'pending') {
+            instance.goalOverride = undefined;
+        }
+    }
+
+    invalidateChartCache();
+    saveState();
+    
+    // Surgical Updates
+    renderHabitCardState(habitId, time);
+    renderCalendarDayPartial(date);
+    document.dispatchEvent(new CustomEvent('render-app'));
+}
+
+export function setGoalOverride(habitId: string, date: string, time: TimeOfDay, value: number) {
+    const instance = ensureHabitInstanceData(date, habitId, time);
+    instance.goalOverride = value;
+    
+    // Auto-complete if goal reached?
+    const habit = state.habits.find(h => h.id === habitId);
+    if (habit && (habit.goal.type === 'pages' || habit.goal.type === 'minutes')) {
+        const target = habit.goal.total || 0;
+        if (value >= target && instance.status !== 'completed') {
+            instance.status = 'completed';
+        }
+    }
+    
+    invalidateChartCache();
+    saveState();
+}
+
+export function requestHabitTimeRemoval(habitId: string, time: TimeOfDay) {
+    const habit = state.habits.find(h => h.id === habitId);
+    if (!habit) return;
+    
+    const targetDate = state.selectedDate;
+    const dailyInfo = ensureHabitDailyInfo(targetDate, habitId);
+    
+    // Get current schedule (either override or base)
+    const currentSchedule = [...getEffectiveScheduleForHabitOnDate(habit, targetDate)];
+    
+    const index = currentSchedule.indexOf(time);
+    if (index > -1) {
+        currentSchedule.splice(index, 1);
+        dailyInfo.dailySchedule = currentSchedule;
+        
+        _finalizeScheduleUpdate(false);
+    }
+}
+
+export function markAllHabitsForDate(dateISO: string, status: HabitStatus): boolean {
+    const activeHabits = getActiveHabitsForDate(dateISO);
+    let changed = false;
+    
+    activeHabits.forEach(({ habit, schedule }) => {
+        schedule.forEach(time => {
+            const instance = ensureHabitInstanceData(dateISO, habit.id, time);
+            if (instance.status !== status) {
+                instance.status = status;
+                // Basic goal override for check habits
+                if (habit.goal.type === 'check') {
+                    instance.goalOverride = status === 'completed' ? 1 : undefined;
+                }
+                changed = true;
+            }
+        });
+    });
+    
+    if (changed) {
+        invalidateChartCache();
+        saveState();
+    }
+    return changed;
 }

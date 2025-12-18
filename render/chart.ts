@@ -1,5 +1,4 @@
 
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -13,8 +12,9 @@ import { addDays, getTodayUTCIso, parseUTCIsoDate, toUTCIsoDateString, getDateTi
 const CHART_DAYS = 30;
 const INITIAL_SCORE = 100;
 const MAX_DAILY_CHANGE_RATE = 0.015;
-// VISUAL TWEAK: Reduz o preenchimento vertical para tornar as variações da linha mais pronunciadas
-const CHART_PADDING = { top: 2, right: 10, bottom: 2, left: 10 };
+// VISUAL FIX: Explicitly zero horizontal padding. Top/Bottom padding prevents vertical clipping of stroke.
+const CHART_PADDING = { top: 5, right: 0, bottom: 5, left: 0 };
+const FIXED_Y_AXIS_RANGE = 15;
 
 type ChartDataPoint = {
     date: string;
@@ -98,33 +98,33 @@ function calculateChartData(): ChartDataPoint[] {
 }
 
 function _calculateChartScales(chartData: ChartDataPoint[]): ChartScales {
-    const svgWidth = ui.chartContainer.clientWidth;
+    // FIX: Use wrapper width as it's the direct parent.
+    // Use getBoundingClientRect for sub-pixel precision.
+    let svgWidth = ui.chart.wrapper.getBoundingClientRect().width;
+    
+    // Fallback: If layout hasn't updated yet (e.g. initially hidden), use container width approximation
+    if (!svgWidth && ui.chartContainer.clientWidth > 0) {
+        // Subtract padding (32px total from CSS --space-lg = 16px * 2)
+        svgWidth = ui.chartContainer.clientWidth - 32;
+    }
+    
+    // Safety fallback
+    if (!svgWidth) svgWidth = 300;
+
     const svgHeight = 42;
     const padding = CHART_PADDING;
     const chartWidth = svgWidth - padding.left - padding.right;
     const chartHeight = svgHeight - padding.top - padding.bottom;
 
     ui.chart.svg.setAttribute('viewBox', `0 0 ${svgWidth} ${svgHeight}`);
+    // FIX: Allow overflow to ensure stroke caps at the edges are not clipped
+    ui.chart.svg.style.overflow = 'visible';
 
-    const values = chartData.map(d => d.value);
-    const min = Math.min(...values);
-    const max = Math.max(...values);
-    const range = max - min;
-    
-    let minVal, maxVal;
-
-    if (range === 0) {
-        // Flat line, center it vertically with a small artificial range
-        minVal = min - 1;
-        maxVal = max + 1;
-    } else {
-        // Add a small buffer to prevent the line from touching the edges.
-        const buffer = range * 0.05; 
-        minVal = min - buffer;
-        maxVal = max + buffer;
-    }
-    
+    // LOGIC CHANGE: Implementa escala fixa para dar mais impacto visual às flutuações.
+    const minVal = INITIAL_SCORE - FIXED_Y_AXIS_RANGE;
+    const maxVal = INITIAL_SCORE + FIXED_Y_AXIS_RANGE;
     const valueRange = maxVal - minVal;
+
     chartMetadata = { minVal, maxVal, valueRange: valueRange > 0 ? valueRange : 1 };
 
     const xScale = (index: number) => padding.left + (index / (chartData.length - 1)) * chartWidth;
@@ -170,10 +170,24 @@ function _updateEvolutionIndicator(chartData: ChartDataPoint[], { xScale, yScale
     const lastPointX = xScale(chartData.length - 1);
     evolutionIndicator.style.top = `${yScale(lastPoint.value)}px`;
     
+    // Adjust logic to account for zero padding
+    // With zero padding, lastPointX should be at wrapper width.
     let indicatorX = lastPointX + 10;
-    if (indicatorX + evolutionIndicator.offsetWidth > wrapper.offsetWidth) {
+    
+    // Ensure we use the latest width
+    const wrapperWidth = wrapper.getBoundingClientRect().width || parseFloat(ui.chart.svg.getAttribute('viewBox')?.split(' ')[2] || '300');
+    
+    // If it goes beyond the right edge (which it will if lastPointX is at edge), shift left
+    if (indicatorX + evolutionIndicator.offsetWidth > wrapperWidth) {
         indicatorX = lastPointX - evolutionIndicator.offsetWidth - 10;
     }
+    
+    // Additional guard: ensure it doesn't go off-screen right
+    // This forces the indicator inside the viewport if xScale calculation put it exactly at edge
+    if (indicatorX > wrapperWidth - evolutionIndicator.offsetWidth) {
+         indicatorX = wrapperWidth - evolutionIndicator.offsetWidth;
+    }
+
     evolutionIndicator.style.left = `${indicatorX}px`;
 }
 
