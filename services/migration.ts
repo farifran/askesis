@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -10,47 +9,107 @@ import { AppState, Habit, HabitSchedule } from '../state';
 /**
  * Migrates the state from a version older than 6 to version 6.
  * The key change in v6 was the introduction of `scheduleHistory`.
- * This function converts the old flat habit structure into the new one.
+ * This function converts the old flat habit structure into the new one, correctly handling
+ * branched version histories to prevent duplicate habits from being created using a robust
+ * graph traversal algorithm to find all connected components.
  * @param oldState The application state from a version < 6.
  * @returns An AppState object conforming to the v6 structure.
  */
 function migrateToV6(oldState: any): AppState {
     const oldHabits = oldState.habits as any[];
-    // OTIMIZAÇÃO DE PERFORMANCE: Cria um mapa para lookups rápidos de hábitos por ID,
-    // o que é muito mais eficiente do que usar Array.find() repetidamente em um loop.
+    if (!oldHabits || oldHabits.length === 0) {
+        oldState.version = 6;
+        return oldState;
+    }
+
+    // --- 1. Graph Construction (Adjacency List for an Undirected Graph) ---
     const habitsMap = new Map(oldHabits.map(h => [h.id, h]));
+    const adj = new Map<string, string[]>();
 
-    // 1. Identifica as versões mais recentes de cada hábito (folhas na árvore de versões).
-    const previousVersionIds = new Set(oldHabits.map(h => h.previousVersionId).filter(Boolean));
-    const latestHabits = oldHabits.filter(h => !previousVersionIds.has(h.id));
+    const addEdge = (u: string, v: string) => {
+        if (!adj.has(u)) adj.set(u, []);
+        if (!adj.has(v)) adj.set(v, []);
+        adj.get(u)!.push(v);
+        adj.get(v)!.push(u);
+    };
+
+    for (const habit of oldHabits) {
+        // Ensure every habit is a node in the graph, even if disconnected
+        if (!adj.has(habit.id)) {
+            adj.set(habit.id, []);
+        }
+        if (habit.previousVersionId && habitsMap.has(habit.previousVersionId)) {
+            addEdge(habit.id, habit.previousVersionId);
+        }
+    }
+
+    // --- 2. Find All Connected Components ---
     const newHabits: Habit[] = [];
+    const dailyDataRemap = new Map<string, string>();
+    const visited = new Set<string>();
 
-    for (const latestHabit of latestHabits) {
-        // 2. Traça a linhagem de cada hábito, do mais antigo ao mais recente.
-        const lineage: any[] = [];
-        let currentHabitInLineage: any | undefined = latestHabit;
-        while (currentHabitInLineage) {
-            lineage.unshift(currentHabitInLineage);
-            currentHabitInLineage = habitsMap.get(currentHabitInLineage.previousVersionId);
+    for (const habit of oldHabits) {
+        if (visited.has(habit.id)) {
+            continue;
+        }
+
+        // Start a traversal (BFS) to find the entire connected component
+        const componentHabits: any[] = [];
+        const queue: string[] = [habit.id];
+        visited.add(habit.id);
+
+        while (queue.length > 0) {
+            const currentId = queue.shift()!;
+            const currentHabit = habitsMap.get(currentId);
+            if (currentHabit) {
+                componentHabits.push(currentHabit);
+            }
+
+            const neighbors = adj.get(currentId) || [];
+            for (const neighborId of neighbors) {
+                if (!visited.has(neighborId)) {
+                    visited.add(neighborId);
+                    queue.push(neighborId);
+                }
+            }
         }
         
-        const firstHabit = lineage[0];
-        // 3. Cria o novo hábito unificado, usando o ID mais recente.
+        if (componentHabits.length === 0) continue;
+
+        // --- 3. Consolidate the Component into a Single New Habit ---
+        const sortedHabits = componentHabits.sort((a, b) => a.createdOn.localeCompare(b.createdOn));
+        
+        const firstHabit = sortedHabits[0];
+        const lastHabit = sortedHabits[sortedHabits.length - 1];
+
+        // The unified habit uses the ID of the latest version and its properties.
         const newHabit: Habit = {
-            id: latestHabit.id,
-            icon: firstHabit.icon,
-            color: firstHabit.color,
-            goal: firstHabit.goal,
-            createdOn: firstHabit.createdOn,
-            graduatedOn: latestHabit.graduatedOn,
+            id: lastHabit.id,
+            icon: lastHabit.icon,
+            color: lastHabit.color,
+            goal: lastHabit.goal,
+            createdOn: firstHabit.createdOn, // Keep the original creation date
+            graduatedOn: lastHabit.graduatedOn, // Graduated status is from the last known state
             scheduleHistory: [],
         };
+        
+        // --- 4. Build the linear scheduleHistory from the sorted versions ---
+        for (let i = 0; i < sortedHabits.length; i++) {
+            const oldVersion = sortedHabits[i];
+            
+            // Map this old ID to the new unified ID for dailyData migration
+            if (oldVersion.id !== newHabit.id) {
+                dailyDataRemap.set(oldVersion.id, newHabit.id);
+            }
+            
+            // The endDate of a schedule is the startDate of the next version,
+            // or the habit's own `endedOn` property if it's the last in the chain.
+            const nextVersion = sortedHabits[i + 1];
+            const endDate = nextVersion ? nextVersion.createdOn : oldVersion.endedOn;
 
-        // 4. Constrói o `scheduleHistory` a partir da linhagem.
-        for (const oldVersion of lineage) {
             const schedule: HabitSchedule = {
                 startDate: oldVersion.createdOn,
-                endDate: oldVersion.endedOn,
+                endDate: endDate,
                 name: oldVersion.name,
                 subtitle: oldVersion.subtitle,
                 nameKey: oldVersion.nameKey,
@@ -60,43 +119,42 @@ function migrateToV6(oldState: any): AppState {
                 scheduleAnchor: oldVersion.scheduleAnchor || oldVersion.createdOn,
             };
             newHabit.scheduleHistory.push(schedule);
+        }
+        
+        newHabits.push(newHabit);
+    }
+    
+    // --- 5. Remap dailyData using the collected mappings ---
+    const newDailyData = oldState.dailyData;
+    for (const dateStr in newDailyData) {
+        const dailyEntry = newDailyData[dateStr];
+        for (const [oldId, newId] of dailyDataRemap.entries()) {
+            if (dailyEntry[oldId]) {
+                const sourceInfo = dailyEntry[oldId];
+                
+                dailyEntry[newId] = dailyEntry[newId] || { instances: {} };
+                const targetInfo = dailyEntry[newId];
 
-            // 5. Remapeia os dados diários dos IDs antigos para o novo ID unificado.
-            if (oldVersion.id !== newHabit.id) {
-                 Object.keys(oldState.dailyData).forEach(dateStr => {
-                    const dailyDataForDate = oldState.dailyData[dateStr];
-                    if (dailyDataForDate[oldVersion.id]) {
-                        // CORREÇÃO DE INTEGRIDADE DE DADOS: Em vez de sobrescrever, mescla os dados.
-                        // Isso previne a perda de dados se múltiplas versões de um hábito foram
-                        // concluídas no mesmo dia (ex: um hábito de manhã e outro à tarde).
-                        const sourceInfo = dailyDataForDate[oldVersion.id];
-                        // Garante que o objeto de destino exista.
-                        dailyDataForDate[newHabit.id] = dailyDataForDate[newHabit.id] || { instances: {} };
-                        const targetInfo = dailyDataForDate[newHabit.id];
+                // Merge instances, source takes precedence in case of time collision
+                targetInfo.instances = { ...targetInfo.instances, ...sourceInfo.instances };
+                
+                if (sourceInfo.dailySchedule && !targetInfo.dailySchedule) {
+                    targetInfo.dailySchedule = sourceInfo.dailySchedule;
+                }
 
-                        // Mescla as instâncias, com as do `sourceInfo` tendo precedência, mas na prática
-                        // não deveria haver sobreposição de horários (times) entre versões no mesmo dia.
-                        targetInfo.instances = { ...targetInfo.instances, ...sourceInfo.instances };
-                        
-                        // Mescla outras propriedades, se necessário (ex: dailySchedule).
-                        if (sourceInfo.dailySchedule && !targetInfo.dailySchedule) {
-                            targetInfo.dailySchedule = sourceInfo.dailySchedule;
-                        }
-
-                        delete dailyDataForDate[oldVersion.id];
-                    }
-                });
+                delete dailyEntry[oldId];
             }
         }
-        newHabits.push(newHabit);
     }
 
     return {
         ...oldState,
         habits: newHabits,
-        version: 6, // Marca como migrado para v6
+        dailyData: newDailyData,
+        version: 6,
     };
 }
+
 
 // ARQUITETURA DE MANUTENIBILIDADE: Um array de migrações permite um processo de migração mais limpo e escalável.
 // Para adicionar uma nova migração, basta adicionar uma nova entrada a este array.

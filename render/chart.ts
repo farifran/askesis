@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -29,7 +28,14 @@ type ChartScales = {
     yScale: (value: number) => number;
 };
 
-// Variáveis de estado do módulo
+// --- OBJECT POOL (PERFORMANCE) ---
+const chartDataPool: ChartDataPoint[] = Array.from({ length: CHART_DAYS }, () => ({
+    date: '',
+    timestamp: 0,
+    value: 0,
+    completedCount: 0,
+    scheduledCount: 0,
+}));
 let lastChartData: ChartDataPoint[] = [];
 
 // Cache de metadados para escala (Performance)
@@ -55,31 +61,21 @@ let inputClientX = 0;
 
 
 function calculateChartData(): ChartDataPoint[] {
-    const data: ChartDataPoint[] = [];
     const endDate = parseUTCIsoDate(state.selectedDate);
-    // Optimization: Start from beginning and iterate forward with mutable date
     const iteratorDate = addDays(endDate, -(CHART_DAYS - 1));
     const todayISO = getTodayUTCIso();
 
     let previousDayValue = INITIAL_SCORE;
 
     for (let i = 0; i < CHART_DAYS; i++) {
-        // PERFORMANCE [2025-03-04]: Use shared mutable date object to avoid allocating 30 Dates per render.
-        // getActiveHabitsForDate handles strings efficiently via cache.
         const currentDateISO = toUTCIsoDateString(iteratorDate);
-
-        // REFACTOR [2025-03-05]: Use the new calculateDaySummary which returns raw counts.
-        // This reuses the logic used for the calendar rings, ensuring consistency and
-        // avoiding re-iterating all habits for overlapping days (which is the entire chart).
         const { total: scheduledCount, completed: completedCount, pending: pendingCount } = calculateDaySummary(currentDateISO);
-
         const hasPending = pendingCount > 0;
         const isToday = currentDateISO === todayISO;
         const isFuture = currentDateISO > todayISO;
 
         let currentValue: number;
         
-        // LÓGICA DE PROJEÇÃO:
         if (isFuture || (isToday && hasPending)) {
             currentValue = previousDayValue;
         } else if (scheduledCount > 0) {
@@ -91,19 +87,19 @@ function calculateChartData(): ChartDataPoint[] {
             currentValue = previousDayValue;
         }
         
-        data.push({ 
-            date: currentDateISO, 
-            timestamp: iteratorDate.getTime(), // Capture timestamp from mutable date
-            value: currentValue, 
-            completedCount, 
-            scheduledCount 
-        });
+        // OBJECT POOLING: Update existing object instead of creating a new one
+        const point = chartDataPool[i];
+        point.date = currentDateISO;
+        point.timestamp = iteratorDate.getTime();
+        point.value = currentValue;
+        point.completedCount = completedCount;
+        point.scheduledCount = scheduledCount;
+
         previousDayValue = currentValue;
         
-        // Mutate in-place for next iteration
         iteratorDate.setUTCDate(iteratorDate.getUTCDate() + 1);
     }
-    return data;
+    return chartDataPool;
 }
 
 function _calculateChartScales(chartData: ChartDataPoint[], chartWidthPx: number): ChartScales {
@@ -130,25 +126,8 @@ function _calculateChartScales(chartData: ChartDataPoint[], chartWidthPx: number
 }
 
 function _generatePathData(chartData: ChartDataPoint[], { xScale, yScale }: ChartScales): { areaPathData: string, linePathData: string } {
-    // PERFORMANCE OPTIMIZATION [2025-03-09]: String Building Loop.
-    // Replaced map().join() with a simple for loop to avoid creating intermediate arrays.
-    // This reduces GC pressure during chart updates.
-    
-    let linePathData = '';
-    const len = chartData.length;
-    
-    for (let i = 0; i < len; i++) {
-        const point = chartData[i];
-        const command = i === 0 ? 'M' : 'L';
-        // Note: Template literals in modern V8 are highly optimized.
-        linePathData += `${command} ${xScale(i)} ${yScale(point.value)} `;
-    }
-    
-    // Trim is not strictly necessary for SVG paths but clean.
-    // The previous implementation used join(' '), so we match that implicit spacing.
-    
-    const areaPathData = `${linePathData}V ${yScale(chartMetadata.minVal)} L ${xScale(0)} ${yScale(chartMetadata.minVal)} Z`;
-    
+    const linePathData = chartData.map((point, i) => `${i === 0 ? 'M' : 'L'} ${xScale(i)} ${yScale(point.value)}`).join(' ');
+    const areaPathData = `${linePathData} V ${yScale(chartMetadata.minVal)} L ${xScale(0)} ${yScale(chartMetadata.minVal)} Z`;
     return { areaPathData, linePathData };
 }
 
@@ -372,7 +351,7 @@ export function initChartInteractions() {
 
 export function renderChart() {
     // FIX: Use isChartDataDirty() function to check if chart data needs recalculation. This function is designed to be called once per render cycle and consumes the dirty flag.
-    if (isChartDataDirty() || lastChartData.length === 0) {
+    if (isChartDataDirty() || lastChartData.some(d => d.date === '')) {
         lastChartData = calculateChartData();
         // BUGFIX: Reset rendered index to force tooltip update even if mouse didn't move
         lastRenderedPointIndex = -1; 

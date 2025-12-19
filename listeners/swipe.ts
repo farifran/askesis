@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -10,11 +9,11 @@ import { DOM_SELECTORS, CSS_CLASSES } from '../render/constants';
 let isSwiping = false;
 let cachedSwipeActionWidth = 0;
 
+const SWIPE_INTENT_THRESHOLD = 10;
+
 export const isCurrentlySwiping = (): boolean => isSwiping;
 
 function _finalizeSwipeState(activeCard: HTMLElement, deltaX: number, wasOpenLeft: boolean, wasOpenRight: boolean) {
-    const SWIPE_INTENT_THRESHOLD = 10;
-    
     if (wasOpenLeft) {
         if (deltaX < -SWIPE_INTENT_THRESHOLD) {
             activeCard.classList.remove(CSS_CLASSES.IS_OPEN_LEFT);
@@ -33,7 +32,6 @@ function _finalizeSwipeState(activeCard: HTMLElement, deltaX: number, wasOpenLef
 }
 
 function _blockSubsequentClick(deltaX: number) {
-    const SWIPE_INTENT_THRESHOLD = 10;
     if (Math.abs(deltaX) <= SWIPE_INTENT_THRESHOLD) return;
 
     const blockClick = (e: MouseEvent) => {
@@ -76,9 +74,14 @@ export function setupSwipeHandler(habitContainer: HTMLElement) {
     const HAPTIC_THRESHOLD = 15;
     
     let rafId: number | null = null;
+    
+    let resizeDebounceTimer: number;
 
     updateCachedLayoutValues();
-    window.addEventListener('resize', updateCachedLayoutValues);
+    window.addEventListener('resize', () => {
+        clearTimeout(resizeDebounceTimer);
+        resizeDebounceTimer = window.setTimeout(updateCachedLayoutValues, 150);
+    });
 
     const _cleanupAndReset = () => {
         if (dragEnableTimer) {

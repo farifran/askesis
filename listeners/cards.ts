@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -40,12 +39,6 @@ function createGoalInput(habit: Habit, time: TimeOfDay, wrapper: HTMLElement) {
 
         if (!isNaN(newGoal) && newGoal > 0) {
             setGoalOverride(habit.id, state.selectedDate, time, newGoal);
-            
-            // UI CONSISTENCY FIX [2025-03-08]: Full surgical update instead of just text change.
-            // This ensures if goal met target, the card turns green (completed) immediately.
-            renderHabitCardState(habit.id, time);
-            renderCalendarDayPartial(state.selectedDate);
-            
             triggerHaptic('success');
 
             // DOM OPTIMIZATION [2025-03-09]: Find the card context first to avoid global DOM scan.
@@ -167,10 +160,6 @@ export function setupCardListeners() {
                 : Math.max(1, currentGoal - GOAL_STEP);
 
             setGoalOverride(habitId, state.selectedDate, time, newGoal);
-            
-            // UI CONSISTENCY FIX: Surgical update for full status reflection
-            renderHabitCardState(habit.id, time);
-            renderCalendarDayPartial(state.selectedDate);
             
             // DOM OPTIMIZATION [2025-03-09]: Use local query on the card reference instead of scanning the full container.
             const goalWrapper = card.querySelector<HTMLElement>(DOM_SELECTORS.GOAL_VALUE_WRAPPER);

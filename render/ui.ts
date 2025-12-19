@@ -114,16 +114,9 @@ type UIElements = {
     }
 };
 
-export const ui = {} as UIElements;
+const uiCache: Partial<UIElements> = {};
+const chartCache: Partial<UIElements['chart']> = {};
 
-/**
- * REATORAÇÃO DE ROBUSTEZ: Função auxiliar para consultar um elemento do DOM.
- * Lança um erro claro se o elemento não for encontrado, evitando erros de
- * tempo de execução causados por seletores ou IDs incorretos.
- * @param selector O seletor CSS para o elemento.
- * @returns O elemento encontrado.
- */
-// FIX: Changed constraint from HTMLElement to Element to support SVG elements, and added a default type of HTMLElement to maintain compatibility with existing calls.
 function queryElement<T extends Element = HTMLElement>(selector: string): T {
     const element = document.querySelector<T>(selector);
     if (!element) {
@@ -132,125 +125,136 @@ function queryElement<T extends Element = HTMLElement>(selector: string): T {
     return element;
 }
 
-
-export function initUI(): void {
-    // [ANALYSIS PROGRESS]: 100% - Análise concluída. Mapeamento Singleton do DOM.
-    // [NOTA COMPARATIVA]: Infraestrutura crítica mas de baixa complexidade lógica. 
-    // Garante Type Safety entre o HTML e o TypeScript.
-    
-    Object.assign(ui, {
-        appContainer: queryElement('.app-container'),
-        calendarStrip: queryElement('#calendar-strip'),
-        headerTitle: queryElement('#header-title'), 
-        headerTitleDesktop: queryElement('#header-title .header-title-desktop'),
-        headerTitleMobile: queryElement('#header-title .header-title-mobile'),
-        stoicQuoteDisplay: queryElement('#stoic-quote-display'),
-        habitContainer: queryElement('#habit-container'),
-        chartContainer: queryElement('#chart-container'),
-        manageHabitsBtn: queryElement<HTMLButtonElement>('#manage-habits-btn'),
-        fabAddHabit: queryElement<HTMLButtonElement>('#fab-add-habit'),
-        manageModal: queryElement('#manage-modal'),
-        manageModalTitle: queryElement('#manage-modal-title'),
-        habitListTitle: queryElement('#habit-list-title'),
-        exploreModal: queryElement('#explore-modal'),
-        exploreHabitList: queryElement('#explore-habit-list'),
-        createCustomHabitBtn: queryElement<HTMLButtonElement>('#create-custom-habit-btn'),
-        aiEvalBtn: queryElement<HTMLButtonElement>('#ai-eval-btn'),
-        aiModal: queryElement('#ai-modal'),
-        aiOptionsModal: queryElement('#ai-options-modal'),
-        confirmModal: queryElement('#confirm-modal'),
-        habitList: queryElement('#habit-list'),
-        aiResponse: queryElement('#ai-response'),
-        confirmModalText: queryElement('#confirm-modal-text'),
-        confirmModalConfirmBtn: queryElement<HTMLButtonElement>('#confirm-modal-confirm-btn'),
-        confirmModalEditBtn: queryElement<HTMLButtonElement>('#confirm-modal-edit-btn'),
-        notesModal: queryElement('#notes-modal'),
-        notesModalTitle: queryElement('#notes-modal-title'),
-        notesModalSubtitle: queryElement('#notes-modal-subtitle'),
-        notesTextarea: queryElement<HTMLTextAreaElement>('#notes-textarea'),
-        saveNoteBtn: queryElement<HTMLButtonElement>('#save-note-btn'),
-        resetAppBtn: queryElement<HTMLButtonElement>('#reset-app-btn'),
-        languagePrevBtn: queryElement<HTMLButtonElement>('#language-prev'),
-        languageViewport: queryElement('#language-viewport'),
-        languageReel: queryElement('#language-reel'),
-        languageNextBtn: queryElement<HTMLButtonElement>('#language-next'),
-        editHabitModal: queryElement('#edit-habit-modal'),
-        editHabitModalTitle: queryElement('#edit-habit-modal-title'),
-        editHabitForm: queryElement<HTMLFormElement>('#edit-habit-form'),
-        editHabitSaveBtn: queryElement<HTMLButtonElement>('#edit-habit-save-btn'),
-        habitTimeContainer: queryElement('#habit-time-container'),
-        frequencyOptionsContainer: queryElement('#frequency-options-container'),
-        syncStatus: queryElement('#sync-status'),
-        syncSection: queryElement('#sync-section'),
-        syncInactiveView: queryElement('#sync-inactive-view'),
-        enableSyncBtn: queryElement<HTMLButtonElement>('#enable-sync-btn'),
-        enterKeyViewBtn: queryElement<HTMLButtonElement>('#enter-key-view-btn'),
-        syncEnterKeyView: queryElement('#sync-enter-key-view'),
-        syncKeyInput: queryElement<HTMLInputElement>('#sync-key-input'),
-        cancelEnterKeyBtn: queryElement<HTMLButtonElement>('#cancel-enter-key-btn'),
-        submitKeyBtn: queryElement<HTMLButtonElement>('#submit-key-btn'),
-        syncDisplayKeyView: queryElement('#sync-display-key-view'),
-        syncKeyText: queryElement('#sync-key-text'),
-        copyKeyBtn: queryElement<HTMLButtonElement>('#copy-key-btn'),
-        keySavedBtn: queryElement<HTMLButtonElement>('#key-saved-btn'),
-        syncActiveView: queryElement('#sync-active-view'),
-        viewKeyBtn: queryElement<HTMLButtonElement>('#view-key-btn'),
-        disableSyncBtn: queryElement<HTMLButtonElement>('#disable-sync-btn'),
-        notificationToggle: queryElement<HTMLInputElement>('#notification-toggle'),
-        notificationToggleLabel: queryElement<HTMLLabelElement>('#notification-toggle-label'),
-        notificationStatusDesc: queryElement('#notification-status-desc'),
-        iconPickerModal: queryElement('#icon-picker-modal'),
-        iconPickerGrid: queryElement('#icon-picker-grid'),
-        habitIconPickerBtn: queryElement<HTMLButtonElement>('#habit-icon-picker-btn'),
-        colorPickerModal: queryElement('#color-picker-modal'),
-        colorPickerGrid: queryElement('#color-picker-grid'),
-        changeColorFromPickerBtn: queryElement<HTMLButtonElement>('#change-color-from-picker-btn'),
-        fullCalendarModal: queryElement('#full-calendar-modal'),
-        fullCalendarHeader: queryElement('#full-calendar-header'),
-        fullCalendarMonthYear: queryElement('#full-calendar-month-year'),
-        fullCalendarPrevBtn: queryElement<HTMLButtonElement>('#full-calendar-prev'),
-        fullCalendarNextBtn: queryElement<HTMLButtonElement>('#full-calendar-next'),
-        fullCalendarWeekdays: queryElement('#full-calendar-weekdays'),
-        fullCalendarGrid: queryElement('#full-calendar-grid'),
-        calendarQuickActions: queryElement('#calendar-quick-actions'),
-        quickActionDone: queryElement<HTMLButtonElement>('#quick-action-done'),
-        quickActionSnooze: queryElement<HTMLButtonElement>('#quick-action-snooze'),
-        quickActionAlmanac: queryElement<HTMLButtonElement>('#quick-action-almanac'),
-        
-        // Static Text Elements
-        labelLanguage: queryElement('#label-language'),
-        labelSync: queryElement('#label-sync'),
-        labelNotifications: queryElement('#label-notifications'),
-        labelReset: queryElement('#label-reset'),
-        labelPrivacy: queryElement('#label-privacy'),
-        exportDataBtn: queryElement<HTMLButtonElement>('#export-data-btn'),
-        importDataBtn: queryElement<HTMLButtonElement>('#import-data-btn'),
-        syncInactiveDesc: queryElement('#sync-inactive-desc'),
-        labelEnterKey: queryElement('#label-enter-key'),
-        syncWarningText: queryElement('#sync-warning-text'),
-        syncActiveDesc: queryElement('#sync-active-desc'),
-        iconPickerTitle: queryElement('#icon-picker-modal-title'),
-        colorPickerTitle: queryElement('#color-picker-modal-title'),
-
-        // Chart Elements
-        chart: {
-            title: queryElement('#chart-container .chart-title'),
-            subtitle: queryElement('#chart-container .app-subtitle'),
-            emptyState: queryElement('#chart-container .chart-empty-state'),
-            dataView: queryElement('#chart-container .chart-data-view'),
-            wrapper: queryElement('#chart-container .chart-wrapper'),
-            svg: queryElement<SVGSVGElement>('.chart-svg'),
-            areaPath: queryElement<SVGPathElement>('.chart-area'),
-            linePath: queryElement<SVGPathElement>('.chart-line'),
-            tooltip: queryElement('#chart-container .chart-tooltip'),
-            tooltipDate: queryElement('#chart-container .tooltip-date'),
-            tooltipScoreLabel: queryElement('#chart-container .tooltip-score-label'),
-            tooltipScoreValue: queryElement('#chart-container .tooltip-score-value'),
-            tooltipHabits: queryElement('#chart-container .tooltip-habits li'),
-            indicator: queryElement('#chart-container .chart-indicator'),
-            evolutionIndicator: queryElement('#chart-container .chart-evolution-indicator'),
-            axisStart: queryElement('#chart-container .chart-axis-labels span:first-child'),
-            axisEnd: queryElement('#chart-container .chart-axis-labels span:last-child'),
+function createLazyGetter<K extends keyof UIElements>(key: K, selector: string): Pick<UIElements, K> {
+    return {
+        get [key]() {
+            if (!uiCache[key]) {
+                (uiCache as any)[key] = queryElement(selector);
+            }
+            return uiCache[key] as UIElements[K];
         }
-    });
+    } as Pick<UIElements, K>;
 }
+
+function createLazyChartGetter<K extends keyof UIElements['chart']>(key: K, selector: string): Pick<UIElements['chart'], K> {
+    return {
+        get [key]() {
+            if (!chartCache[key]) {
+                (chartCache as any)[key] = queryElement(selector);
+            }
+            return chartCache[key] as UIElements['chart'][K];
+        }
+    } as Pick<UIElements['chart'], K>;
+}
+
+export const ui: UIElements = {
+    ...createLazyGetter('appContainer', '.app-container'),
+    ...createLazyGetter('calendarStrip', '#calendar-strip'),
+    ...createLazyGetter('headerTitle', '#header-title'),
+    ...createLazyGetter('headerTitleDesktop', '#header-title .header-title-desktop'),
+    ...createLazyGetter('headerTitleMobile', '#header-title .header-title-mobile'),
+    ...createLazyGetter('stoicQuoteDisplay', '#stoic-quote-display'),
+    ...createLazyGetter('habitContainer', '#habit-container'),
+    ...createLazyGetter('chartContainer', '#chart-container'),
+    ...createLazyGetter('manageHabitsBtn', '#manage-habits-btn'),
+    ...createLazyGetter('fabAddHabit', '#fab-add-habit'),
+    ...createLazyGetter('manageModal', '#manage-modal'),
+    ...createLazyGetter('manageModalTitle', '#manage-modal-title'),
+    ...createLazyGetter('habitListTitle', '#habit-list-title'),
+    ...createLazyGetter('exploreModal', '#explore-modal'),
+    ...createLazyGetter('exploreHabitList', '#explore-habit-list'),
+    ...createLazyGetter('createCustomHabitBtn', '#create-custom-habit-btn'),
+    ...createLazyGetter('aiEvalBtn', '#ai-eval-btn'),
+    ...createLazyGetter('aiModal', '#ai-modal'),
+    ...createLazyGetter('aiOptionsModal', '#ai-options-modal'),
+    ...createLazyGetter('confirmModal', '#confirm-modal'),
+    ...createLazyGetter('habitList', '#habit-list'),
+    ...createLazyGetter('aiResponse', '#ai-response'),
+    ...createLazyGetter('confirmModalText', '#confirm-modal-text'),
+    ...createLazyGetter('confirmModalConfirmBtn', '#confirm-modal-confirm-btn'),
+    ...createLazyGetter('confirmModalEditBtn', '#confirm-modal-edit-btn'),
+    ...createLazyGetter('notesModal', '#notes-modal'),
+    ...createLazyGetter('notesModalTitle', '#notes-modal-title'),
+    ...createLazyGetter('notesModalSubtitle', '#notes-modal-subtitle'),
+    ...createLazyGetter('notesTextarea', '#notes-textarea'),
+    ...createLazyGetter('saveNoteBtn', '#save-note-btn'),
+    ...createLazyGetter('resetAppBtn', '#reset-app-btn'),
+    ...createLazyGetter('languagePrevBtn', '#language-prev'),
+    ...createLazyGetter('languageViewport', '#language-viewport'),
+    ...createLazyGetter('languageReel', '#language-reel'),
+    ...createLazyGetter('languageNextBtn', '#language-next'),
+    ...createLazyGetter('editHabitModal', '#edit-habit-modal'),
+    ...createLazyGetter('editHabitModalTitle', '#edit-habit-modal-title'),
+    ...createLazyGetter('editHabitForm', '#edit-habit-form'),
+    ...createLazyGetter('editHabitSaveBtn', '#edit-habit-save-btn'),
+    ...createLazyGetter('habitTimeContainer', '#habit-time-container'),
+    ...createLazyGetter('frequencyOptionsContainer', '#frequency-options-container'),
+    ...createLazyGetter('syncStatus', '#sync-status'),
+    ...createLazyGetter('syncSection', '#sync-section'),
+    ...createLazyGetter('syncInactiveView', '#sync-inactive-view'),
+    ...createLazyGetter('enableSyncBtn', '#enable-sync-btn'),
+    ...createLazyGetter('enterKeyViewBtn', '#enter-key-view-btn'),
+    ...createLazyGetter('syncEnterKeyView', '#sync-enter-key-view'),
+    ...createLazyGetter('syncKeyInput', '#sync-key-input'),
+    ...createLazyGetter('cancelEnterKeyBtn', '#cancel-enter-key-btn'),
+    ...createLazyGetter('submitKeyBtn', '#submit-key-btn'),
+    ...createLazyGetter('syncDisplayKeyView', '#sync-display-key-view'),
+    ...createLazyGetter('syncKeyText', '#sync-key-text'),
+    ...createLazyGetter('copyKeyBtn', '#copy-key-btn'),
+    ...createLazyGetter('keySavedBtn', '#key-saved-btn'),
+    ...createLazyGetter('syncActiveView', '#sync-active-view'),
+    ...createLazyGetter('viewKeyBtn', '#view-key-btn'),
+    ...createLazyGetter('disableSyncBtn', '#disable-sync-btn'),
+    ...createLazyGetter('notificationToggle', '#notification-toggle'),
+    ...createLazyGetter('notificationToggleLabel', '#notification-toggle-label'),
+    ...createLazyGetter('notificationStatusDesc', '#notification-status-desc'),
+    ...createLazyGetter('iconPickerModal', '#icon-picker-modal'),
+    ...createLazyGetter('iconPickerGrid', '#icon-picker-grid'),
+    ...createLazyGetter('habitIconPickerBtn', '#habit-icon-picker-btn'),
+    ...createLazyGetter('colorPickerModal', '#color-picker-modal'),
+    ...createLazyGetter('colorPickerGrid', '#color-picker-grid'),
+    ...createLazyGetter('changeColorFromPickerBtn', '#change-color-from-picker-btn'),
+    ...createLazyGetter('fullCalendarModal', '#full-calendar-modal'),
+    ...createLazyGetter('fullCalendarHeader', '#full-calendar-header'),
+    ...createLazyGetter('fullCalendarMonthYear', '#full-calendar-month-year'),
+    ...createLazyGetter('fullCalendarPrevBtn', '#full-calendar-prev'),
+    ...createLazyGetter('fullCalendarNextBtn', '#full-calendar-next'),
+    ...createLazyGetter('fullCalendarWeekdays', '#full-calendar-weekdays'),
+    ...createLazyGetter('fullCalendarGrid', '#full-calendar-grid'),
+    ...createLazyGetter('calendarQuickActions', '#calendar-quick-actions'),
+    ...createLazyGetter('quickActionDone', '#quick-action-done'),
+    ...createLazyGetter('quickActionSnooze', '#quick-action-snooze'),
+    ...createLazyGetter('quickActionAlmanac', '#quick-action-almanac'),
+    ...createLazyGetter('labelLanguage', '#label-language'),
+    ...createLazyGetter('labelSync', '#label-sync'),
+    ...createLazyGetter('labelNotifications', '#label-notifications'),
+    ...createLazyGetter('labelReset', '#label-reset'),
+    ...createLazyGetter('labelPrivacy', '#label-privacy'),
+    ...createLazyGetter('exportDataBtn', '#export-data-btn'),
+    ...createLazyGetter('importDataBtn', '#import-data-btn'),
+    ...createLazyGetter('syncInactiveDesc', '#sync-inactive-desc'),
+    ...createLazyGetter('labelEnterKey', '#label-enter-key'),
+    ...createLazyGetter('syncWarningText', '#sync-warning-text'),
+    ...createLazyGetter('syncActiveDesc', '#sync-active-desc'),
+    ...createLazyGetter('iconPickerTitle', '#icon-picker-modal-title'),
+    ...createLazyGetter('colorPickerTitle', '#color-picker-modal-title'),
+    chart: {
+        ...createLazyChartGetter('title', '#chart-container .chart-title'),
+        ...createLazyChartGetter('subtitle', '#chart-container .app-subtitle'),
+        ...createLazyChartGetter('emptyState', '#chart-container .chart-empty-state'),
+        ...createLazyChartGetter('dataView', '#chart-container .chart-data-view'),
+        ...createLazyChartGetter('wrapper', '#chart-container .chart-wrapper'),
+        ...createLazyChartGetter('svg', '.chart-svg'),
+        ...createLazyChartGetter('areaPath', '.chart-area'),
+        ...createLazyChartGetter('linePath', '.chart-line'),
+        ...createLazyChartGetter('tooltip', '#chart-container .chart-tooltip'),
+        ...createLazyChartGetter('tooltipDate', '#chart-container .tooltip-date'),
+        ...createLazyChartGetter('tooltipScoreLabel', '#chart-container .tooltip-score-label'),
+        ...createLazyChartGetter('tooltipScoreValue', '#chart-container .tooltip-score-value'),
+        ...createLazyChartGetter('tooltipHabits', '#chart-container .tooltip-habits li'),
+        ...createLazyChartGetter('indicator', '#chart-container .chart-indicator'),
+        ...createLazyChartGetter('evolutionIndicator', '#chart-container .chart-evolution-indicator'),
+        ...createLazyChartGetter('axisStart', '#chart-container .chart-axis-labels span:first-child'),
+        ...createLazyChartGetter('axisEnd', '#chart-container .chart-axis-labels span:last-child'),
+    }
+};

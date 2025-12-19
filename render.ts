@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -9,8 +8,8 @@ import { state, LANGUAGES } from './state';
 import { parseUTCIsoDate, toUTCIsoDateString, addDays, getDateTimeFormat, pushToOneSignal, getTodayUTCIso } from './utils';
 import { ui } from './render/ui';
 import { t } from './i18n';
-import { STOIC_QUOTES } from './data/quotes';
 import { icons } from './render/icons';
+import type { Quote } from './data/quotes';
 
 // Importa os renderizadores especializados
 import { setTextContent, updateReelRotaryARIA } from './render/dom';
@@ -33,6 +32,10 @@ let _lastTitleLang: string | null = null;
 // OTIMIZAÇÃO: Estado local para evitar re-renderização da citação sem necessidade
 let _lastQuoteDate: string | null = null;
 let _lastQuoteLang: string | null = null;
+
+// PERFORMANCE: Cache para o módulo de citações carregado dinamicamente
+let stoicQuotesModule: { STOIC_QUOTES: Quote[] } | null = null;
+
 
 function _updateHeaderTitle() {
     // Check if update is needed
@@ -141,11 +144,20 @@ export function renderAINotificationState() {
     ui.aiEvalBtn.classList.toggle('has-notification', hasCelebrations || hasUnseenResult);
 }
 
-export function renderStoicQuote() {
-    // MEMOIZATION [2025-03-08]: Skip unnecessary recalculation if date/lang unchanged.
+export async function renderStoicQuote() {
     if (_lastQuoteDate === state.selectedDate && _lastQuoteLang === state.activeLanguageCode) {
         return;
     }
+
+    if (!stoicQuotesModule) {
+        try {
+            stoicQuotesModule = await import('./data/quotes');
+        } catch (e) {
+            console.error("Failed to load stoic quotes module", e);
+            return; // Abort if quotes can't be loaded
+        }
+    }
+    const { STOIC_QUOTES } = stoicQuotesModule;
 
     const date = parseUTCIsoDate(state.selectedDate);
     const startOfYear = new Date(date.getUTCFullYear(), 0, 0);
@@ -153,24 +165,21 @@ export function renderStoicQuote() {
     const oneDay = 1000 * 60 * 60 * 24;
     const dayOfYear = Math.floor(diff / oneDay);
     
-    // UX IMPROVEMENT: Pseudo-Random Shuffle baseado na data
     const seed = date.getFullYear() * 1000 + dayOfYear;
     const rnd = Math.abs(Math.sin(seed)); 
     const quoteIndex = Math.floor(rnd * STOIC_QUOTES.length);
     
     const quote = STOIC_QUOTES[quoteIndex];
     
-    const lang = state.activeLanguageCode as keyof Omit<typeof quote, 'author'>;
+    const lang = state.activeLanguageCode as keyof Omit<typeof quote, 'author'|'tags'>;
     const quoteText = quote[lang];
     const authorName = t(quote.author);
     
     const fullText = `"${quoteText}" — ${authorName}`;
 
-    // Update Cache
     _lastQuoteDate = state.selectedDate;
     _lastQuoteLang = state.activeLanguageCode;
 
-    // Evita o "blink" da citação se o texto não mudou (dupla verificação por segurança)
     if (ui.stoicQuoteDisplay.textContent === fullText && ui.stoicQuoteDisplay.classList.contains('visible')) {
         return;
     }
@@ -183,7 +192,6 @@ export function renderStoicQuote() {
 
     ui.stoicQuoteDisplay.classList.remove('visible');
     
-    // O tempo do timeout deve ser menor que a transição CSS (0.5s) para que a mudança de texto não seja visível.
     setTimeout(() => {
         setTextContent(ui.stoicQuoteDisplay, fullText);
         ui.stoicQuoteDisplay.classList.add('visible');

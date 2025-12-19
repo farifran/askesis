@@ -24,20 +24,8 @@ type CardElements = {
     noteBtn: HTMLElement;
     deleteBtn: HTMLElement; // Added cached reference for delete button
     goal: HTMLElement;
-    // OPTIMIZATION [2025-03-09]: Cache the current icon HTML string here instead of on the DOM node.
-    // Avoids "dirtying" the DOM element with custom properties.
-    currentIconHtml?: string;
 };
 const cardElementsCache = new Map<HTMLElement, CardElements>();
-
-// PERFORMANCE [2025-03-09]: Group Wrapper Cache.
-// Evita consultas repetitivas ao DOM com querySelector em loops de renderização.
-type GroupElements = {
-    wrapper: HTMLElement;
-    group: HTMLElement;
-    marker: HTMLElement;
-};
-const groupElementsCache = new Map<TimeOfDay, GroupElements>();
 
 // MEMORY OPTIMIZATION [2025-03-04]: Object Pool para agrupamento de hábitos.
 // Evita a criação de novos arrays (alocação de memória) a cada frame de renderização.
@@ -47,7 +35,6 @@ const habitsByTimePool: Record<TimeOfDay, Habit[]> = { 'Morning': [], 'Afternoon
 export function clearHabitDomCache() {
     habitElementCache.clear();
     cardElementsCache.clear();
-    // Note: groupElementsCache should persist as the layout structure doesn't change
 }
 
 export function getCachedHabitCard(habitId: string, time: TimeOfDay): HTMLElement | undefined {
@@ -239,10 +226,9 @@ export function updateHabitCardElement(card: HTMLElement, habit: Habit, time: Ti
     const newColor = habit.color;
     const newBgColor = `${habit.color}30`;
 
-    // OPTIMIZATION [2025-03-09]: Use cached value in JS object instead of DOM property
-    if (elements.currentIconHtml !== newIconHtml) {
+    if ((icon as any)._cachedIconHtml !== newIconHtml) {
         icon.innerHTML = newIconHtml;
-        elements.currentIconHtml = newIconHtml;
+        (icon as any)._cachedIconHtml = newIconHtml;
     }
     
     // OPTIMIZATION [2025-03-09]: Dirty Check styles to prevent Layout Thrashing
@@ -358,7 +344,6 @@ export function createHabitCardElement(habit: Habit, time: TimeOfDay): HTMLEleme
         noteBtn: actionsRight.querySelector(`.${CSS_CLASSES.SWIPE_NOTE_BTN}`)!,
         deleteBtn: actionsLeft.querySelector(`.${CSS_CLASSES.SWIPE_DELETE_BTN}`)!,
         goal: goal,
-        currentIconHtml: undefined // Initialize dirty check cache
     });
 
     // DELEGATION: Populate data immediately using cached elements.
@@ -404,26 +389,6 @@ export function updatePlaceholderForGroup(groupEl: HTMLElement, time: TimeOfDay,
     }
 }
 
-function getGroupElements(time: TimeOfDay): GroupElements | null {
-    if (groupElementsCache.has(time)) {
-        return groupElementsCache.get(time)!;
-    }
-    
-    // Fallback: Lazy load if not cached yet
-    const wrapperEl = ui.habitContainer.querySelector(`.habit-group-wrapper[data-time-wrapper="${time}"]`) as HTMLElement;
-    if (!wrapperEl) return null;
-    
-    const groupEl = wrapperEl.querySelector<HTMLElement>(`.${CSS_CLASSES.HABIT_GROUP}[data-time="${time}"]`);
-    const marker = wrapperEl.querySelector<HTMLElement>('.time-marker');
-    
-    if (groupEl && marker) {
-        const elements = { wrapper: wrapperEl, group: groupEl, marker };
-        groupElementsCache.set(time, elements);
-        return elements;
-    }
-    return null;
-}
-
 export function renderHabits() {
     if (!state.uiDirtyState.habitListStructure) {
         return;
@@ -449,11 +414,12 @@ export function renderHabits() {
     const smartPlaceholderTargetTime: TimeOfDay | undefined = emptyTimes[0];
 
     TIMES_OF_DAY.forEach(time => {
-        // PERFORMANCE [2025-03-09]: Use cached wrapper elements
-        const elements = getGroupElements(time);
-        if (!elements) return;
+        const wrapperEl = ui.habitContainer.querySelector(`.habit-group-wrapper[data-time-wrapper="${time}"]`);
+        if (!wrapperEl) return;
         
-        const { wrapper: wrapperEl, group: groupEl, marker } = elements;
+        const groupEl = wrapperEl.querySelector<HTMLElement>(`.${CSS_CLASSES.HABIT_GROUP}[data-time="${time}"]`);
+        const marker = wrapperEl.querySelector<HTMLElement>('.time-marker');
+        if (!groupEl || !marker) return;
         
         const desiredHabits = habitsByTimePool[time];
         const hasHabits = desiredHabits.length > 0;

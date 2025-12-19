@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -7,9 +6,10 @@
 import { state, Habit, HabitTemplate, Frequency, PredefinedHabit, TimeOfDay, calculateHabitStreak, STREAK_CONSOLIDATED, PREDEFINED_HABITS, TIMES_OF_DAY, FREQUENCIES, LANGUAGES, getHabitDailyInfoForDate, getScheduleForDate } from '../state';
 import { ui } from './ui';
 import { t, getHabitDisplayInfo, getTimeOfDayName } from '../i18n';
+// FIX: Removed unused and non-existent import 'HABIT_ICONS'
 import { icons, getTimeOfDayIcon } from './icons';
 import { setTextContent, updateReelRotaryARIA } from './dom';
-import { escapeHTML, getContrastColor, getDateTimeFormat, parseUTCIsoDate, getTodayUTCIso } from '../utils';
+import { escapeHTML, getContrastColor, getDateTimeFormat, parseUTCIsoDate, getTodayUTCIso, getSafeDate } from '../utils';
 
 const focusTrapListeners = new Map<HTMLElement, (e: KeyboardEvent) => void>();
 const previouslyFocusedElements = new WeakMap<HTMLElement, HTMLElement>();
@@ -231,20 +231,18 @@ function _createManageHabitListItem(habitData: { habit: Habit; status: 'active' 
         return button;
     };
 
-    if (status === 'ended' || status === 'graduated') {
-        actionsDiv.appendChild(createActionButton('permanent-delete-habit-btn', t('aria_delete_permanent', { habitName: name }), icons.deletePermanentAction));
-    }
-
-    if (status === 'active' || status === 'ended') {
-        actionsDiv.appendChild(createActionButton('edit-habit-btn', t('aria_edit', { habitName: name }), icons.editAction));
-    }
-    
     if (status === 'active') {
+        actionsDiv.appendChild(createActionButton('edit-habit-btn', t('aria_edit', { habitName: name }), icons.editAction));
         if (isConsolidated) {
             actionsDiv.appendChild(createActionButton('graduate-habit-btn', t('aria_graduate', { habitName: name }), icons.graduateAction));
         } else {
             actionsDiv.appendChild(createActionButton('end-habit-btn', t('aria_end', { habitName: name }), icons.endAction));
         }
+    } else if (status === 'ended') {
+        actionsDiv.appendChild(createActionButton('restore-habit-btn', t('aria_restore', { habitName: name }), icons.restoreAction));
+        actionsDiv.appendChild(createActionButton('permanent-delete-habit-btn', t('aria_delete_permanent', { habitName: name }), icons.deletePermanentAction));
+    } else if (status === 'graduated') {
+        actionsDiv.appendChild(createActionButton('permanent-delete-habit-btn', t('aria_delete_permanent', { habitName: name }), icons.deletePermanentAction));
     }
     
     return li;
@@ -366,7 +364,7 @@ export function renderIconPicker() {
     ui.iconPickerGrid.style.setProperty('--current-habit-fg-color', fgColor);
 
     if (!cachedIconButtonsHTML) {
-        const nonHabitIconKeys = new Set(['morning', 'afternoon', 'evening', 'deletePermanentAction', 'editAction', 'graduateAction', 'endAction', 'swipeDelete', 'swipeNote', 'swipeNoteHasNote', 'colorPicker', 'edit', 'snoozed', 'check']);
+        const nonHabitIconKeys = new Set(['morning', 'afternoon', 'evening', 'deletePermanentAction', 'editAction', 'graduateAction', 'endAction', 'swipeDelete', 'swipeNote', 'swipeNoteHasNote', 'colorPicker', 'edit', 'snoozed', 'check', 'restoreAction']);
         
         cachedIconButtonsHTML = Object.keys(icons)
             .filter(key => !nonHabitIconKeys.has(key))
@@ -569,14 +567,15 @@ export function openEditModal(habitOrTemplate: Habit | HabitTemplate | null) {
     ui.editHabitSaveBtn.disabled = false;
     form.reset();
     
-    const formData = _createHabitTemplateForForm(habitOrTemplate as Habit | PredefinedHabit | null, state.selectedDate);
+    const safeDate = getSafeDate(state.selectedDate);
+    const formData = _createHabitTemplateForForm(habitOrTemplate as Habit | PredefinedHabit | null, safeDate);
     nameInput.placeholder = t('modalEditFormNameLabel');
 
     if (isNew) {
         setTextContent(ui.editHabitModalTitle, t('modalEditNewTitle'));
         nameInput.value = (habitOrTemplate && 'nameKey' in habitOrTemplate) ? t(habitOrTemplate.nameKey) : '';
     } else {
-        const { name } = getHabitDisplayInfo(habitOrTemplate as Habit, state.selectedDate);
+        const { name } = getHabitDisplayInfo(habitOrTemplate as Habit, safeDate);
         setTextContent(ui.editHabitModalTitle, name);
         nameInput.value = name;
     }
@@ -586,7 +585,7 @@ export function openEditModal(habitOrTemplate: Habit | HabitTemplate | null) {
         habitId: isNew ? undefined : (habitOrTemplate as Habit).id,
         originalData: isNew ? undefined : { ...(habitOrTemplate as Habit) },
         formData: formData,
-        targetDate: state.selectedDate
+        targetDate: safeDate
     };
 
     ui.editHabitModal.querySelector<HTMLElement>('.edit-icon-overlay')!.innerHTML = icons.edit;

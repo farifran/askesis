@@ -96,6 +96,20 @@ export function addDays(date: Date, days: number): Date {
     return result;
 }
 
+/**
+ * HELPER: Safely retrieves a valid date string.
+ * If the provided date is corrupted (e.g., empty or invalid format), it defaults to Today.
+ * This prevents actions from failing silently.
+ */
+export function getSafeDate(date: string | undefined | null): string {
+    if (!date || date.length < 10 || isNaN(parseUTCIsoDate(date).getTime())) {
+        console.warn("Detected invalid date in action, defaulting to Today");
+        return getTodayUTCIso();
+    }
+    return date;
+}
+
+
 // --- Formatting & Localization Performance ---
 
 // Cache para instâncias de Intl.DateTimeFormat.

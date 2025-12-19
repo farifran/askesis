@@ -1,148 +1,15 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
 
-import type { AppState, Habit, HabitDailyInfo, TimeOfDay } from '../state';
+import type { AppState, Habit, HabitDailyInfo } from '../state';
 // DRY FIX [2025-03-08]: Import utils instead of duplicating them. 
-// Esbuild handles the bundling for the worker context.
-import { toUTCIsoDateString, parseUTCIsoDate, addDays } from '../utils';
+import { toUTCIsoDateString, parseUTCIsoDate } from '../utils';
+// MODULARITY: Import crypto functions from the dedicated module.
+import { encrypt, decrypt } from './crypto';
 
-// --- CRYPTO FUNCTIONS (INLINED TO MAKE WORKER SELF-CONTAINED) ---
-
-const ITERATIONS = 100000; // Um número padrão de iterações para PBKDF2
-
-const encoder = new TextEncoder();
-const decoder = new TextDecoder();
-
-// PERFORMANCE [2025-03-09]: Session Cache para Derivação de Chaves (PBKDF2).
-// PBKDF2 é intencionalmente lento (CPU bound). Caching evita re-derivar a chave
-// a cada auto-save se a senha (sync key) não mudou.
-let cachedPassword: string | null = null;
-let cachedDerivedKey: CryptoKey | null = null;
-let cachedSaltBase64: string | null = null;
-
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
-    const bytes = new Uint8Array(buffer);
-    const CHUNK_SIZE = 8192;
-    let binary = '';
-    for (let i = 0; i < bytes.length; i += CHUNK_SIZE) {
-        binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK_SIZE));
-    }
-    return btoa(binary);
-}
-
-function base64ToArrayBuffer(base64: string): ArrayBuffer {
-    const binary_string = atob(base64);
-    const len = binary_string.length;
-    const bytes = new Uint8Array(len);
-    for (let i = 0; i < len; i++) {
-        bytes[i] = binary_string.charCodeAt(i);
-    }
-    return bytes.buffer;
-}
-
-async function deriveKey(password: string, salt: Uint8Array): Promise<CryptoKey> {
-    const keyMaterial = await crypto.subtle.importKey(
-        'raw',
-        encoder.encode(password),
-        { name: 'PBKDF2' },
-        false,
-        ['deriveKey']
-    );
-
-    return crypto.subtle.deriveKey(
-        {
-            name: 'PBKDF2',
-            salt: salt,
-            iterations: ITERATIONS,
-            hash: 'SHA-256',
-        },
-        keyMaterial,
-        { name: 'AES-GCM', length: 256 },
-        true,
-        ['encrypt', 'decrypt']
-    );
-}
-
-async function encrypt(data: string, password: string): Promise<string> {
-    let key: CryptoKey;
-    let saltBase64: string;
-
-    // OTIMIZAÇÃO: Verifica se podemos reutilizar a chave derivada da sessão anterior
-    if (cachedPassword === password && cachedDerivedKey && cachedSaltBase64) {
-        key = cachedDerivedKey;
-        saltBase64 = cachedSaltBase64;
-    } else {
-        // Cold Start ou Senha Mudou: Gera novo salt e deriva nova chave (Lento)
-        const salt = crypto.getRandomValues(new Uint8Array(16));
-        key = await deriveKey(password, salt);
-        
-        // Atualiza Cache
-        cachedPassword = password;
-        cachedDerivedKey = key;
-        cachedSaltBase64 = arrayBufferToBase64(salt);
-        
-        saltBase64 = cachedSaltBase64;
-    }
-    
-    // O IV (Initialization Vector) DEVE ser único para cada encriptação, mesmo com a mesma chave.
-    const iv = crypto.getRandomValues(new Uint8Array(12));
-    
-    const encrypted = await crypto.subtle.encrypt(
-        {
-            name: 'AES-GCM',
-            iv: iv,
-        },
-        key,
-        encoder.encode(data)
-    );
-
-    const combined = {
-        salt: saltBase64, // Reutilizamos o salt da sessão
-        iv: arrayBufferToBase64(iv),
-        encrypted: arrayBufferToBase64(encrypted),
-    };
-    
-    return JSON.stringify(combined);
-}
-
-async function decrypt(encryptedDataJSON: string, password: string): Promise<string> {
-    try {
-        const { salt: saltBase64, iv: ivBase64, encrypted: encryptedBase64 } = JSON.parse(encryptedDataJSON);
-
-        // Para decriptar, precisamos usar EXATAMENTE o salt que foi usado para encriptar.
-        // Não podemos usar o cache de sessão aqui cegamente, pois o dado pode ter vindo de outro dispositivo.
-        const salt = base64ToArrayBuffer(saltBase64);
-        
-        // Pequena otimização: Se o salt do payload for idêntico ao da sessão, usamos a chave cacheada.
-        let key: CryptoKey;
-        if (cachedPassword === password && cachedSaltBase64 === saltBase64 && cachedDerivedKey) {
-            key = cachedDerivedKey;
-        } else {
-            key = await deriveKey(password, new Uint8Array(salt));
-        }
-
-        const iv = base64ToArrayBuffer(ivBase64);
-        const encrypted = base64ToArrayBuffer(encryptedBase64);
-    
-        const decrypted = await crypto.subtle.decrypt(
-            {
-                name: 'AES-GCM',
-                iv: iv,
-            },
-            key,
-            encrypted
-        );
-        return decoder.decode(decrypted);
-    } catch (e) {
-        console.error("Decryption or Parsing failed:", e);
-        throw new Error("Decryption failed. The sync key may be incorrect or the data corrupted.");
-    }
-}
-
-// --- AI Prompt Building Logic (moved from habitActions.ts) ---
+// --- AI Prompt Building Logic ---
 
 type AIPromptPayload = {
     analysisType: 'monthly' | 'quarterly' | 'historical';
@@ -182,13 +49,17 @@ function _getHistoryForPrompt(
     let history = '';
     const date = parseUTCIsoDate(todayISO);
     
+    // PERFORMANCE [WORKER-SIDE CACHE]: Caches parsed archive JSON to avoid re-parsing on every date lookup within the same AI analysis.
     const unarchivedCache = new Map<string, any>();
+    
     const getDailyDataForDate = (dateStr: string): Record<string, HabitDailyInfo> => {
         if (dailyData[dateStr]) return dailyData[dateStr];
+        
         const year = dateStr.substring(0, 4);
         if (unarchivedCache.has(year)) {
             return unarchivedCache.get(year)[dateStr] || {};
         }
+
         if (archives[year]) {
             try {
                 const parsed = JSON.parse(archives[year]);

@@ -64,12 +64,16 @@ export default async function handler(req: Request) {
         
         const ai = new GoogleGenAI({ apiKey });
 
+        // PERFORMANCE TUNING [2025-03-10]: Switch to Flash model.
+        // Reason: 'gemini-3-flash-preview' is chosen over 'pro' to guarantee execution within 
+        // Vercel Edge Function timeout limits (10s-30s). It offers the best balance of speed/quality 
+        // for analyzing large habit history text blobs.
         const geminiResponse = await ai.models.generateContent({
             model: 'gemini-3-flash-preview',
             contents: prompt,
             config: {
                 systemInstruction: systemInstruction,
-                thinkingConfig: { thinkingBudget: 2048 } 
+                // Thinking config removed to prioritize latency. Flash is smart enough for this reflection task.
             },
         });
         

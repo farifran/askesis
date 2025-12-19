@@ -1,13 +1,11 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
 
-// FIX: Removed shouldShowPlusIndicatorForDate from import as it's now part of calculateDaySummary
-import { state, calculateDaySummary } from '../state';
+import { state, calculateDaySummary, DAYS_IN_CALENDAR } from '../state';
 import { ui } from './ui';
-import { getTodayUTCIso, toUTCIsoDateString, parseUTCIsoDate, getDateTimeFormat } from '../utils';
+import { getTodayUTCIso, toUTCIsoDateString, parseUTCIsoDate, getDateTimeFormat, addDays } from '../utils';
 import { getLocaleDayName } from '../i18n';
 import { setTextContent } from './dom';
 import { CSS_CLASSES, DOM_SELECTORS } from './constants';
@@ -73,8 +71,8 @@ export function updateCalendarDayElement(dayItem: HTMLElement, date: Date, today
     // PERFORMANCE OPTIMIZATION: Use pre-calculated ISO date if available
     const isoDate = precalcIsoDate || toUTCIsoDateString(date);
     
-    // DECOUPLING: Single unified call to cached summary
-    const { completedPercent, snoozedPercent, hasPlus } = calculateDaySummary(isoDate);
+    // DECOUPLING: Chamadas separadas para performance
+    const { completedPercent, snoozedPercent, showPlusIndicator: showPlus } = calculateDaySummary(isoDate);
     
     const isSelected = isoDate === state.selectedDate;
     const isToday = isoDate === effectiveTodayISO;
@@ -128,9 +126,8 @@ export function updateCalendarDayElement(dayItem: HTMLElement, date: Date, today
         
         const dayNumber = dayProgressRing.querySelector<HTMLElement>(`.${CSS_CLASSES.DAY_NUMBER}`);
         if (dayNumber) {
-            // Updated to use the merged flag
-            if (dayNumber.classList.contains('has-plus') !== hasPlus) {
-                dayNumber.classList.toggle('has-plus', hasPlus);
+            if (dayNumber.classList.contains('has-plus') !== showPlus) {
+                dayNumber.classList.toggle('has-plus', showPlus);
             }
             setTextContent(dayNumber, String(date.getUTCDate()));
         }
@@ -184,6 +181,23 @@ export function renderCalendar() {
     // PERFORMANCE [2025-01-26]: DIRTY CHECK GUARD.
     if (!state.uiDirtyState.calendarVisuals) {
         return;
+    }
+
+    // FIX [2025-03-10]: Self-healing and Robustness logic.
+    // 1. Verify if selectedDate is valid. If not, reset to Today.
+    let selectedDateObj = parseUTCIsoDate(state.selectedDate);
+    if (isNaN(selectedDateObj.getTime())) {
+        console.warn("Invalid selectedDate detected during render. Resetting to Today.");
+        state.selectedDate = getTodayUTCIso();
+        state.calendarDates = []; // Force rebuild
+    }
+
+    // 2. If state.calendarDates is empty or corrupted, repopulate it.
+    if (state.calendarDates.length === 0) {
+        selectedDateObj = parseUTCIsoDate(state.selectedDate); // Re-parse in case it was just fixed
+        state.calendarDates = Array.from({ length: DAYS_IN_CALENDAR }, (_, i) => 
+            addDays(selectedDateObj, i - 30)
+        );
     }
 
     const needsRebuild = cachedDayElements.length === 0 || cachedDayElements.length !== state.calendarDates.length;
@@ -281,7 +295,6 @@ export function renderFullCalendar() {
     for (let day = 1; day <= daysInMonth; day++) {
         // Use iteratorDate which is already set to the correct day
         const isoDate = toUTCIsoDateString(iteratorDate);
-        // Uses merged summary
         const { completedPercent, snoozedPercent } = calculateDaySummary(isoDate);
 
         // OPTIMIZATION: Clone from template

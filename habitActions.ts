@@ -1,4 +1,3 @@
-
 // ... (imports remain the same)
 import { 
     state, 
@@ -15,14 +14,10 @@ import {
     loadState, 
     HabitStatus,
     clearScheduleCache,
-    invalidateChartCache,
-    invalidateStreakCache, // Ensure this is imported
     getScheduleForDate,
-    APP_VERSION,
     clearActiveHabitsCache,
-    HabitDailyInfo,
     getActiveHabitsForDate,
-    invalidateDaySummaryCache
+    invalidateCachesForDateChange
 } from './state';
 import { 
     generateUUID, 
@@ -30,7 +25,9 @@ import {
     toUTCIsoDateString, 
     addDays, 
     parseUTCIsoDate,
-    triggerHaptic
+    triggerHaptic,
+    getSafeDate,
+    getDateTimeFormat
 } from './utils';
 import { 
     closeModal, 
@@ -38,13 +35,12 @@ import {
     showConfirmationModal, 
     openEditModal, 
     renderAINotificationState,
-    renderHabitCardState,
-    renderCalendarDayPartial,
-    clearHabitDomCache
+    clearHabitDomCache,
+    setupManageModal
 } from './render';
 import { ui } from './render/ui';
 import { t, getHabitDisplayInfo, getTimeOfDayName } from './i18n';
-import { runWorkerTask, setSyncStatus } from './cloud';
+import { runWorkerTask } from './cloud';
 import { apiFetch } from './services/api';
 
 // --- HELPERS ---
@@ -94,8 +90,10 @@ function _requestFutureScheduleChange(
     if (currentSchedule.startDate === targetDate) {
         habit.scheduleHistory[activeScheduleIndex] = updateFn({ ...currentSchedule });
     } else {
-        const yesterday = toUTCIsoDateString(addDays(parseUTCIsoDate(targetDate), -1));
-        currentSchedule.endDate = yesterday;
+        // BUGFIX [2025-03-10]: End Date Logic.
+        // The check `!s.endDate || date < s.endDate` is strict (exclusive). 
+        // To be valid UP TO targetDate (exclusive of targetDate), the endDate must be targetDate itself.
+        currentSchedule.endDate = targetDate;
 
         const newSchedule = updateFn({ 
             ...currentSchedule, 
@@ -161,7 +159,7 @@ export function handleHabitDrop(
     const habit = state.habits.find(h => h.id === habitId);
     if (!habit) return;
     
-    const targetDate = state.selectedDate;
+    const targetDate = getSafeDate(state.selectedDate);
 
     const applyJustToday = () => {
         const dailyInfo = ensureHabitDailyInfo(targetDate, habitId);
@@ -318,13 +316,21 @@ export function requestHabitEndingFromModal(habitId: string) {
     const habit = state.habits.find(h => h.id === habitId);
     if (!habit) return;
 
-    const { name } = getHabitDisplayInfo(habit, state.selectedDate);
+    const targetDate = getSafeDate(state.selectedDate);
+    const { name } = getHabitDisplayInfo(habit, targetDate);
+    
+    const dateObj = parseUTCIsoDate(targetDate);
+    const formattedDate = getDateTimeFormat(state.activeLanguageCode, {
+        day: 'numeric',
+        month: 'long',
+        timeZone: 'UTC'
+    }).format(dateObj);
     
     showConfirmationModal(
-        t('confirmEndHabit', { habitName: name }),
+        t('confirmEndHabit', { habitName: name, date: formattedDate }),
         () => {
-            _requestFutureScheduleChange(habitId, state.selectedDate, (schedule) => {
-                schedule.endDate = state.selectedDate;
+            _requestFutureScheduleChange(habitId, targetDate, (schedule) => {
+                schedule.endDate = targetDate;
                 return schedule;
             });
             
@@ -332,7 +338,7 @@ export function requestHabitEndingFromModal(habitId: string) {
             
             closeModal(ui.manageModal);
         },
-        { confirmButtonStyle: 'danger', confirmText: t('buttonEnd') }
+        { confirmButtonStyle: 'danger', confirmText: t('endButton') }
     );
 }
 
@@ -343,7 +349,7 @@ export function requestHabitPermanentDeletion(habitId: string) {
     const { name } = getHabitDisplayInfo(habit);
 
     showConfirmationModal(
-        t('confirmDeleteHabit', { habitName: name }),
+        t('confirmPermanentDelete', { habitName: name }),
         () => {
             state.habits = state.habits.filter(h => h.id !== habitId);
             Object.values(state.dailyData).forEach(day => {
@@ -356,7 +362,37 @@ export function requestHabitPermanentDeletion(habitId: string) {
                 closeModal(ui.manageModal);
             }
         },
-        { confirmButtonStyle: 'danger', confirmText: t('buttonDelete') }
+        { confirmButtonStyle: 'danger', confirmText: t('deleteButton') }
+    );
+}
+
+export function requestHabitRestoration(habitId: string) {
+    const habit = state.habits.find(h => h.id === habitId);
+    if (!habit) return;
+    
+    const { name } = getHabitDisplayInfo(habit);
+
+    showConfirmationModal(
+        t('confirmRestoreHabit', { habitName: name }),
+        () => {
+            const habitToRestore = state.habits.find(h => h.id === habitId);
+            if (!habitToRestore) return;
+
+            habitToRestore.scheduleHistory.sort((a, b) => a.startDate.localeCompare(b.startDate));
+            
+            const lastSchedule = habitToRestore.scheduleHistory[habitToRestore.scheduleHistory.length - 1];
+            if (lastSchedule.endDate) {
+                delete lastSchedule.endDate;
+            }
+
+            _finalizeScheduleUpdate(true);
+            
+            setupManageModal();
+        },
+        { 
+            confirmText: t('restoreButton'),
+            title: t('modalRestoreHabitTitle')
+        }
     );
 }
 
@@ -372,7 +408,8 @@ export function graduateHabit(habitId: string) {
     const habit = state.habits.find(h => h.id === habitId);
     if (!habit) return;
 
-    habit.graduatedOn = state.selectedDate;
+    const targetDate = getSafeDate(state.selectedDate);
+    habit.graduatedOn = targetDate;
     _finalizeScheduleUpdate(true);
     closeModal(ui.manageModal);
     
@@ -396,19 +433,27 @@ export function resetApplicationData() {
 
 export function handleSaveNote() {
     if (!state.editingNoteFor) return;
-    
+
     const { habitId, date, time } = state.editingNoteFor;
     const noteContent = ui.notesTextarea.value.trim();
-    
-    ensureHabitDailyInfo(date, habitId);
+
     const instance = ensureHabitInstanceData(date, habitId, time);
-    
-    instance.note = noteContent;
-    
-    saveState();
+
+    // OTIMIZAÇÃO: Apenas salva e renderiza se a nota realmente mudou.
+    if ((instance.note || '') !== noteContent) {
+        if (noteContent) {
+            instance.note = noteContent;
+        } else {
+            delete instance.note;
+        }
+
+        // A mudança de uma nota afeta o ícone de nota no cartão, que é uma mudança estrutural/visual.
+        state.uiDirtyState.habitListStructure = true;
+        saveState();
+        document.dispatchEvent(new CustomEvent('render-app'));
+    }
+
     closeModal(ui.notesModal);
-    
-    renderHabitCardState(habitId, time); 
 }
 
 export async function performAIAnalysis(analysisType: 'monthly' | 'quarterly' | 'historical') {
@@ -519,16 +564,15 @@ export function toggleHabitStatus(habitId: string, time: TimeOfDay, date: string
             instance.goalOverride = undefined;
         }
     }
-
-    invalidateChartCache();
-    invalidateDaySummaryCache(date);
-    // LOGIC FIX [2025-03-09]: Invalidate streaks for this habit to ensure immediate UI feedback (e.g. "Consolidated!")
-    invalidateStreakCache(habitId, date);
+    
+    invalidateCachesForDateChange(date, [habitId]);
+    
+    // Set dirty flags to ensure the full re-render cycle updates the UI
+    state.uiDirtyState.calendarVisuals = true;
+    state.uiDirtyState.habitListStructure = true;
     
     saveState();
     
-    renderHabitCardState(habitId, time);
-    renderCalendarDayPartial(date);
     document.dispatchEvent(new CustomEvent('render-app'));
 }
 
@@ -537,31 +581,34 @@ export function setGoalOverride(habitId: string, date: string, time: TimeOfDay, 
     instance.goalOverride = value;
     
     const habit = state.habits.find(h => h.id === habitId);
-    let statusChanged = false;
     
     if (habit && (habit.goal.type === 'pages' || habit.goal.type === 'minutes')) {
         const target = habit.goal.total || 0;
         if (value >= target && instance.status !== 'completed') {
             instance.status = 'completed';
-            statusChanged = true;
+        } else if (value < target && instance.status === 'completed') {
+            // CORRECTNESS FIX: If a user edits a completed goal to be below the target,
+            // revert the status to pending to maintain logical consistency.
+            instance.status = 'pending';
         }
     }
     
-    invalidateChartCache();
-    invalidateDaySummaryCache(date);
+    invalidateCachesForDateChange(date, [habitId]);
     
-    // LOGIC FIX [2025-03-09]: Invalidate streaks if status might have changed due to goal completion.
-    // Even if status didn't change, changing the value might affect historical data correction logic, so safer to invalidate.
-    invalidateStreakCache(habitId, date);
+    // Set dirty flags and trigger re-render
+    state.uiDirtyState.calendarVisuals = true;
+    state.uiDirtyState.habitListStructure = true;
     
     saveState();
+    
+    document.dispatchEvent(new CustomEvent('render-app'));
 }
 
 export function requestHabitTimeRemoval(habitId: string, time: TimeOfDay) {
     const habit = state.habits.find(h => h.id === habitId);
     if (!habit) return;
     
-    const targetDate = state.selectedDate;
+    const targetDate = getSafeDate(state.selectedDate); // Force safe date capture here
     const { name } = getHabitDisplayInfo(habit, targetDate);
     const timeName = getTimeOfDayName(time);
     
@@ -620,11 +667,7 @@ export function markAllHabitsForDate(dateISO: string, status: HabitStatus): bool
     });
     
     if (changed) {
-        invalidateChartCache();
-        invalidateDaySummaryCache(dateISO);
-        
-        // LOGIC FIX [2025-03-09]: Batch invalidate streaks for all changed habits
-        changedHabitIds.forEach(id => invalidateStreakCache(id, dateISO));
+        invalidateCachesForDateChange(dateISO, Array.from(changedHabitIds));
         
         state.uiDirtyState.calendarVisuals = true;
         state.uiDirtyState.habitListStructure = true;
