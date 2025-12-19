@@ -1,3 +1,4 @@
+
 /* 
  * [ANALYSIS PROGRESS]: 100% - Análise concluída.
  * [2025-02-23]: Auditoria de CSS Completa.
@@ -198,6 +199,11 @@ body {
     clip: rect(0, 0, 0, 0);
     white-space: nowrap;
     border: 0;
+}
+
+/* UTILITÁRIO GERAL: Esconde elementos completamente */
+.hidden {
+    display: none !important;
 }
 
 
@@ -675,6 +681,12 @@ main {
     flex: 0 0 auto; /* Grow with content, do not shrink */
     min-height: auto;
     overflow: visible;
+
+    /* OTIMIZAÇÃO [2025-03-09]: Content Visibility.
+       Permite que o navegador pule a renderização de grupos fora da tela (ex: Noite quando vendo Manhã).
+       Isso reduz o tempo de paint em telas pequenas com listas longas. */
+    content-visibility: auto;
+    contain-intrinsic-size: 100px; /* Altura estimada de um grupo vazio/pequeno para evitar saltos de scroll */
 }
 
 /* Collapsible state override */
@@ -981,13 +993,6 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     width: 18px;
     height: 100%;
     stroke: currentColor;
-}
-
-.habit-center-group {
-    display: flex;
-    justify-content: center;
-    flex-grow: 1;
-    gap: var(--space-sm);
 }
 
 .habit-icon {

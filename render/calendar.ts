@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -14,14 +15,42 @@ import { CSS_CLASSES, DOM_SELECTORS } from './constants';
 // OTIMIZAÇÃO [2025-01-22]: Cache de elementos do calendário para evitar querySelectorAll repetido.
 let cachedDayElements: HTMLElement[] = [];
 
+// OTIMIZAÇÃO [2025-03-09]: Template Prototype para clonagem rápida.
+// Evita o custo de múltiplas chamadas 'createElement' e 'appendChild' a cada dia gerado.
+let dayItemTemplate: HTMLElement | null = null;
+
+function getDayItemTemplate(): HTMLElement {
+    if (!dayItemTemplate) {
+        dayItemTemplate = document.createElement('div');
+        dayItemTemplate.className = CSS_CLASSES.DAY_ITEM;
+        dayItemTemplate.setAttribute('role', 'button');
+        dayItemTemplate.setAttribute('tabindex', '-1');
+
+        const dayName = document.createElement('span');
+        dayName.className = CSS_CLASSES.DAY_NAME;
+
+        const dayProgressRing = document.createElement('div');
+        dayProgressRing.className = CSS_CLASSES.DAY_PROGRESS_RING;
+
+        const dayNumber = document.createElement('span');
+        dayNumber.className = CSS_CLASSES.DAY_NUMBER;
+
+        dayProgressRing.appendChild(dayNumber);
+        dayItemTemplate.appendChild(dayName);
+        dayItemTemplate.appendChild(dayProgressRing);
+    }
+    return dayItemTemplate;
+}
+
 /**
  * OTIMIZAÇÃO (DRY): Aplica o estado visual a um elemento de dia do calendário.
  * Centraliza a lógica de classes, atributos ARIA e variáveis CSS para evitar duplicação.
  * PERFORMANCE [2025-03-03]: Aceita todayISO opcional para evitar recálculo em loops.
  */
-export function updateCalendarDayElement(dayItem: HTMLElement, date: Date, todayISO?: string) {
+export function updateCalendarDayElement(dayItem: HTMLElement, date: Date, todayISO?: string, precalcIsoDate?: string) {
     const effectiveTodayISO = todayISO || getTodayUTCIso();
-    const isoDate = toUTCIsoDateString(date);
+    // PERFORMANCE OPTIMIZATION: Use pre-calculated ISO date if available
+    const isoDate = precalcIsoDate || toUTCIsoDateString(date);
     
     // DECOUPLING: Chamadas separadas para performance
     const { completedPercent, snoozedPercent } = calculateDaySummary(isoDate);
@@ -100,31 +129,19 @@ export function renderCalendarDayPartial(dateISO: string) {
         const dateObj = parseUTCIsoDate(dateISO);
         // Optimization: Single element update doesn't strictly require hoisting todayISO, 
         // but for consistency we calculate it.
-        updateCalendarDayElement(dayItem, dateObj, getTodayUTCIso());
+        updateCalendarDayElement(dayItem, dateObj, getTodayUTCIso(), dateISO);
     }
 }
 
 export function createCalendarDayElement(date: Date, todayISO: string): HTMLElement {
-    const dayItem = document.createElement('div');
-    dayItem.className = CSS_CLASSES.DAY_ITEM;
-    dayItem.dataset.date = toUTCIsoDateString(date);
-    dayItem.setAttribute('role', 'button');
-    dayItem.setAttribute('tabindex', '-1');
+    // PERFORMANCE [2025-03-09]: Clone from template instead of creating fresh.
+    const dayItem = getDayItemTemplate().cloneNode(true) as HTMLElement;
+    
+    const isoDate = toUTCIsoDateString(date);
+    dayItem.dataset.date = isoDate;
 
-    const dayName = document.createElement('span');
-    dayName.className = CSS_CLASSES.DAY_NAME;
-
-    const dayProgressRing = document.createElement('div');
-    dayProgressRing.className = CSS_CLASSES.DAY_PROGRESS_RING;
-
-    const dayNumber = document.createElement('span');
-    dayNumber.className = CSS_CLASSES.DAY_NUMBER;
-
-    dayProgressRing.appendChild(dayNumber);
-    dayItem.appendChild(dayName);
-    dayItem.appendChild(dayProgressRing);
-
-    updateCalendarDayElement(dayItem, date, todayISO);
+    // Hydrate the cloned node with specific data
+    updateCalendarDayElement(dayItem, date, todayISO, isoDate);
 
     return dayItem;
 }
@@ -173,7 +190,7 @@ export function renderCalendar() {
                 if(dayEl.dataset.date !== isoDate) {
                     dayEl.dataset.date = isoDate;
                 }
-                updateCalendarDayElement(dayEl, date, todayISO);
+                updateCalendarDayElement(dayEl, date, todayISO, isoDate);
             }
         });
     }

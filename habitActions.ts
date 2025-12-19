@@ -1,9 +1,5 @@
 
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
-*/
-
+// ... (imports remain the same)
 import { 
     state, 
     saveState, 
@@ -20,12 +16,13 @@ import {
     HabitStatus,
     clearScheduleCache,
     invalidateChartCache,
-    invalidateStreakCache,
+    invalidateStreakCache, // Ensure this is imported
     getScheduleForDate,
     APP_VERSION,
     clearActiveHabitsCache,
     HabitDailyInfo,
-    getActiveHabitsForDate
+    getActiveHabitsForDate,
+    invalidateDaySummaryCache
 } from './state';
 import { 
     generateUUID, 
@@ -42,7 +39,8 @@ import {
     openEditModal, 
     renderAINotificationState,
     renderHabitCardState,
-    renderCalendarDayPartial
+    renderCalendarDayPartial,
+    clearHabitDomCache
 } from './render';
 import { ui } from './render/ui';
 import { t, getHabitDisplayInfo, getTimeOfDayName } from './i18n';
@@ -54,17 +52,16 @@ import { apiFetch } from './services/api';
 function _finalizeScheduleUpdate(affectsHistory: boolean = true) {
     if (affectsHistory) {
         clearScheduleCache();
+        clearHabitDomCache();
     } else {
         clearActiveHabitsCache();
     }
     
-    // FIX: Mark UI as dirty to force list re-rendering
     state.uiDirtyState.habitListStructure = true;
     state.uiDirtyState.calendarVisuals = true;
     
     saveState();
     
-    // FIX: Use event dispatch to trigger render, breaking circular dependency with render.ts
     document.dispatchEvent(new CustomEvent('render-app'));
 }
 
@@ -79,7 +76,6 @@ function _requestFutureScheduleChange(
     const habit = state.habits.find(h => h.id === habitId);
     if (!habit) return;
 
-    // Sort history to ensure we are looking at the timeline correctly
     habit.scheduleHistory.sort((a, b) => a.startDate.localeCompare(b.startDate));
     
     let activeScheduleIndex = -1;
@@ -91,24 +87,20 @@ function _requestFutureScheduleChange(
         }
     }
 
-    if (activeScheduleIndex === -1) return; // Should not happen for active habits
+    if (activeScheduleIndex === -1) return;
 
     const currentSchedule = habit.scheduleHistory[activeScheduleIndex];
 
-    // If we are modifying from the exact start date of the current schedule, just update it.
     if (currentSchedule.startDate === targetDate) {
         habit.scheduleHistory[activeScheduleIndex] = updateFn({ ...currentSchedule });
     } else {
-        // Otherwise, split the schedule.
-        // 1. End the current schedule yesterday.
         const yesterday = toUTCIsoDateString(addDays(parseUTCIsoDate(targetDate), -1));
         currentSchedule.endDate = yesterday;
 
-        // 2. Create new schedule starting today
         const newSchedule = updateFn({ 
             ...currentSchedule, 
             startDate: targetDate, 
-            endDate: undefined // New schedule is open-ended
+            endDate: undefined
         });
         
         habit.scheduleHistory.push(newSchedule);
@@ -138,11 +130,11 @@ export function createDefaultHabit() {
             }]
         };
         state.habits.push(newHabit);
-        saveState();
+        _finalizeScheduleUpdate(true);
     }
 }
 
-export function reorderHabit(movedHabitId: string, targetHabitId: string, position: 'before' | 'after') {
+export function reorderHabit(movedHabitId: string, targetHabitId: string, position: 'before' | 'after', skipFinalize = false) {
     const movedIndex = state.habits.findIndex(h => h.id === movedHabitId);
     const targetIndex = state.habits.findIndex(h => h.id === targetHabitId);
 
@@ -150,13 +142,14 @@ export function reorderHabit(movedHabitId: string, targetHabitId: string, positi
 
     const [movedHabit] = state.habits.splice(movedIndex, 1);
     
-    // Recalculate target index after removal
-    const newTargetIndex = state.habits.findIndex(h => h.id === targetHabitId);
+    const newTargetIndex = (movedIndex < targetIndex) ? targetIndex - 1 : targetIndex;
     
     const insertIndex = position === 'before' ? newTargetIndex : newTargetIndex + 1;
     state.habits.splice(insertIndex, 0, movedHabit);
 
-    _finalizeScheduleUpdate(false); // Reordering doesn't change schedule logic, just display order
+    if (!skipFinalize) {
+        _finalizeScheduleUpdate(false);
+    }
 }
 
 export function handleHabitDrop(
@@ -170,10 +163,8 @@ export function handleHabitDrop(
     
     const targetDate = state.selectedDate;
 
-    // A. Logic "Just Today"
     const applyJustToday = () => {
         const dailyInfo = ensureHabitDailyInfo(targetDate, habitId);
-        // Use spread to copy array, as getEffectiveSchedule returns readonly ref in state.ts
         const currentSchedule = [...getEffectiveScheduleForHabitOnDate(habit, targetDate)];
 
         const fromIndex = currentSchedule.indexOf(fromTime);
@@ -190,25 +181,31 @@ export function handleHabitDrop(
         
         if (reorderInfo) {
             const reorderTargetHabit = state.habits.find(h => h.id === reorderInfo.id);
-            if (reorderTargetHabit) reorderHabit(habitId, reorderInfo.id, reorderInfo.pos);
+            if (reorderTargetHabit) {
+                reorderHabit(habitId, reorderInfo.id, reorderInfo.pos, true);
+            }
         }
         
-        _finalizeScheduleUpdate(false); // Visual update mainly
+        _finalizeScheduleUpdate(false);
     };
 
-    // B. Logic "From Now On"
     const applyFromNowOn = () => {
         const dailyInfo = ensureHabitDailyInfo(targetDate, habitId);
         
-        // Capture current override if it exists
         const currentOverride = dailyInfo.dailySchedule ? [...dailyInfo.dailySchedule] : null;
 
-        // Remove override for today so the new schedule takes effect visually
         if (dailyInfo.dailySchedule) {
             delete dailyInfo.dailySchedule;
         }
 
+        if (reorderInfo) {
+            reorderHabit(habitId, reorderInfo.id, reorderInfo.pos, true);
+        }
+
         _requestFutureScheduleChange(habitId, targetDate, (scheduleToUpdate) => {
+            // FIX: Clone the array to prevent shared reference bugs
+            scheduleToUpdate.times = [...scheduleToUpdate.times];
+
             if (currentOverride) {
                 scheduleToUpdate.times = currentOverride;
             }
@@ -222,10 +219,6 @@ export function handleHabitDrop(
             }
             return scheduleToUpdate;
         });
-        
-        if (reorderInfo) {
-            reorderHabit(habitId, reorderInfo.id, reorderInfo.pos);
-        }
     };
     
     const timeNames = { oldTime: getTimeOfDayName(fromTime), newTime: getTimeOfDayName(toTime) };
@@ -248,13 +241,12 @@ export function saveHabitFromModal() {
 
     const { isNew, habitId, formData, targetDate } = state.editingHabit;
     
-    // Validation
     if (!formData.name && !formData.nameKey) return; 
     
     if (isNew) {
         const newHabit: Habit = {
             id: generateUUID(),
-            createdOn: targetDate, // Use the date currently viewing
+            createdOn: targetDate,
             icon: formData.icon,
             color: formData.color,
             goal: formData.goal,
@@ -274,12 +266,10 @@ export function saveHabitFromModal() {
         const habit = state.habits.find(h => h.id === habitId);
         if (!habit) return;
 
-        // Update properties that are not schedule-dependent (visuals/goals)
         habit.icon = formData.icon;
         habit.color = formData.color;
         habit.goal = formData.goal;
 
-        // Handle Schedule Changes
         _requestFutureScheduleChange(habit.id, targetDate, (schedule) => {
             schedule.name = formData.name;
             schedule.nameKey = formData.nameKey;
@@ -303,14 +293,13 @@ export function requestHabitEndingFromModal(habitId: string) {
         t('confirmEndHabit', { habitName: name }),
         () => {
             _requestFutureScheduleChange(habitId, state.selectedDate, (schedule) => {
-                schedule.endDate = state.selectedDate; // Ends today
+                schedule.endDate = state.selectedDate;
                 return schedule;
             });
             
-            // Undo capability logic could be added here
             state.lastEnded = { habitId, originalHabit: JSON.parse(JSON.stringify(habit)) };
             
-            closeModal(ui.manageModal); // Close manager to show the change
+            closeModal(ui.manageModal);
         },
         { confirmButtonStyle: 'danger', confirmText: t('buttonEnd') }
     );
@@ -326,16 +315,12 @@ export function requestHabitPermanentDeletion(habitId: string) {
         t('confirmDeleteHabit', { habitName: name }),
         () => {
             state.habits = state.habits.filter(h => h.id !== habitId);
-            // Cleanup daily data
             Object.values(state.dailyData).forEach(day => {
                 delete day[habitId];
             });
-            // Cleanup archives (expensive but needed for consistency)
-            // Ideally we'd use a worker for this cleanup if archives are huge.
             
             _finalizeScheduleUpdate(true);
             
-            // Refresh modal list if it's open
             if (ui.manageModal.classList.contains('visible')) {
                 closeModal(ui.manageModal);
             }
@@ -411,12 +396,10 @@ export async function performAIAnalysis(analysisType: 'monthly' | 'quarterly' | 
             aiPromptNone: t('aiPromptNone'),
             aiSystemInstruction: t('aiSystemInstruction'),
         };
-        // Add all predefined habit name keys to translations for the worker
         PREDEFINED_HABITS.forEach(h => {
             translations[h.nameKey] = t(h.nameKey);
         });
 
-        // Use Worker to build the heavy prompt
         const { prompt, systemInstruction } = await runWorkerTask<{ prompt: string, systemInstruction: string }>(
             'build-ai-prompt',
             {
@@ -498,7 +481,6 @@ export function toggleHabitStatus(habitId: string, time: TimeOfDay, date: string
     
     instance.status = newStatus;
     
-    // Handle automatic goal completion for check-type habits
     if (habit.goal.type === 'check') {
         if (newStatus === 'completed') {
             instance.goalOverride = 1;
@@ -508,9 +490,12 @@ export function toggleHabitStatus(habitId: string, time: TimeOfDay, date: string
     }
 
     invalidateChartCache();
+    invalidateDaySummaryCache(date);
+    // LOGIC FIX [2025-03-09]: Invalidate streaks for this habit to ensure immediate UI feedback (e.g. "Consolidated!")
+    invalidateStreakCache(habitId, date);
+    
     saveState();
     
-    // Surgical Updates
     renderHabitCardState(habitId, time);
     renderCalendarDayPartial(date);
     document.dispatchEvent(new CustomEvent('render-app'));
@@ -520,16 +505,24 @@ export function setGoalOverride(habitId: string, date: string, time: TimeOfDay, 
     const instance = ensureHabitInstanceData(date, habitId, time);
     instance.goalOverride = value;
     
-    // Auto-complete if goal reached?
     const habit = state.habits.find(h => h.id === habitId);
+    let statusChanged = false;
+    
     if (habit && (habit.goal.type === 'pages' || habit.goal.type === 'minutes')) {
         const target = habit.goal.total || 0;
         if (value >= target && instance.status !== 'completed') {
             instance.status = 'completed';
+            statusChanged = true;
         }
     }
     
     invalidateChartCache();
+    invalidateDaySummaryCache(date);
+    
+    // LOGIC FIX [2025-03-09]: Invalidate streaks if status might have changed due to goal completion.
+    // Even if status didn't change, changing the value might affect historical data correction logic, so safer to invalidate.
+    invalidateStreakCache(habitId, date);
+    
     saveState();
 }
 
@@ -538,40 +531,88 @@ export function requestHabitTimeRemoval(habitId: string, time: TimeOfDay) {
     if (!habit) return;
     
     const targetDate = state.selectedDate;
-    const dailyInfo = ensureHabitDailyInfo(targetDate, habitId);
+    const { name } = getHabitDisplayInfo(habit, targetDate);
+    const timeName = getTimeOfDayName(time);
     
-    // Get current schedule (either override or base)
-    const currentSchedule = [...getEffectiveScheduleForHabitOnDate(habit, targetDate)];
-    
-    const index = currentSchedule.indexOf(time);
-    if (index > -1) {
-        currentSchedule.splice(index, 1);
-        dailyInfo.dailySchedule = currentSchedule;
+    // Action 1: Remove only for the current date (Override)
+    const applyJustToday = () => {
+        const dailyInfo = ensureHabitDailyInfo(targetDate, habitId);
         
-        _finalizeScheduleUpdate(false);
-    }
+        // Start with the effective schedule (defaults + existing overrides)
+        const currentSchedule = [...getEffectiveScheduleForHabitOnDate(habit, targetDate)];
+        
+        const index = currentSchedule.indexOf(time);
+        if (index > -1) {
+            currentSchedule.splice(index, 1);
+            dailyInfo.dailySchedule = currentSchedule;
+            
+            // Just visual update for today
+            _finalizeScheduleUpdate(false);
+        }
+    };
+
+    // Action 2: Remove from history moving forward
+    const applyFromNowOn = () => {
+        const dailyInfo = ensureHabitDailyInfo(targetDate, habitId);
+        
+        // Clean up any local override to let the new history take over cleanly
+        if (dailyInfo.dailySchedule) {
+            delete dailyInfo.dailySchedule;
+        }
+
+        _requestFutureScheduleChange(habitId, targetDate, (scheduleToUpdate) => {
+            // FIX: Clone the array to prevent shared reference bugs
+            scheduleToUpdate.times = [...scheduleToUpdate.times];
+
+            // Remove the time from the schedule definition
+            const index = scheduleToUpdate.times.indexOf(time);
+            if (index > -1) {
+                scheduleToUpdate.times.splice(index, 1);
+            }
+            return scheduleToUpdate;
+        });
+    };
+
+    showConfirmationModal(
+        t('confirmRemoveTimePermanent', { habitName: name, time: timeName }),
+        applyFromNowOn,
+        {
+            title: t('modalRemoveTimeTitle'), // Use explicit title for clarity
+            confirmText: t('buttonFromNowOn'),
+            editText: t('buttonJustToday'),
+            onEdit: applyJustToday
+        }
+    );
 }
 
 export function markAllHabitsForDate(dateISO: string, status: HabitStatus): boolean {
     const activeHabits = getActiveHabitsForDate(dateISO);
     let changed = false;
+    const changedHabitIds = new Set<string>();
     
     activeHabits.forEach(({ habit, schedule }) => {
         schedule.forEach(time => {
             const instance = ensureHabitInstanceData(dateISO, habit.id, time);
             if (instance.status !== status) {
                 instance.status = status;
-                // Basic goal override for check habits
                 if (habit.goal.type === 'check') {
                     instance.goalOverride = status === 'completed' ? 1 : undefined;
                 }
                 changed = true;
+                changedHabitIds.add(habit.id);
             }
         });
     });
     
     if (changed) {
         invalidateChartCache();
+        invalidateDaySummaryCache(dateISO);
+        
+        // LOGIC FIX [2025-03-09]: Batch invalidate streaks for all changed habits
+        changedHabitIds.forEach(id => invalidateStreakCache(id, dateISO));
+        
+        state.uiDirtyState.calendarVisuals = true;
+        state.uiDirtyState.habitListStructure = true;
         saveState();
     }
     return changed;

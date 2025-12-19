@@ -1,11 +1,13 @@
 
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
 
 import type { AppState, Habit, HabitDailyInfo, TimeOfDay } from '../state';
+// DRY FIX [2025-03-08]: Import utils instead of duplicating them. 
+// Esbuild handles the bundling for the worker context.
+import { toUTCIsoDateString, parseUTCIsoDate, addDays } from '../utils';
 
 // --- CRYPTO FUNCTIONS (INLINED TO MAKE WORKER SELF-CONTAINED) ---
 
@@ -103,25 +105,6 @@ async function decrypt(encryptedDataJSON: string, password: string): Promise<str
         console.error("Decryption or Parsing failed:", e);
         throw new Error("Decryption failed. The sync key may be incorrect or the data corrupted.");
     }
-}
-
-
-// --- Simple Date Utils (duplicated from utils.ts to be self-contained) ---
-function toUTCIsoDateString(date: Date): string {
-    const year = date.getUTCFullYear();
-    const month = date.getUTCMonth() + 1;
-    const day = date.getUTCDate();
-    return year + (month < 10 ? '-0' : '-') + month + (day < 10 ? '-0' : '-') + day;
-}
-
-function parseUTCIsoDate(isoString: string): Date {
-    return new Date(`${isoString}T00:00:00.000Z`);
-}
-
-function addDays(date: Date, days: number): Date {
-    const result = new Date(date);
-    result.setUTCDate(result.getUTCDate() + days);
-    return result;
 }
 
 // --- AI Prompt Building Logic (moved from habitActions.ts) ---

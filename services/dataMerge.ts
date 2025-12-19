@@ -16,7 +16,8 @@ import { AppState, HabitDailyInfo, HabitStatus, TimeOfDay } from '../state';
  */
 export function mergeStates(local: AppState, incoming: AppState): AppState {
     // 1. Base: O estado que chega (incoming) é a base, clonamos para evitar mutação.
-    const merged: AppState = JSON.parse(JSON.stringify(incoming));
+    // MODERNIZATION [2025-03-08]: Use structuredClone for better performance and modern standard compliance.
+    const merged: AppState = structuredClone(incoming);
 
     // 2. Fusão de Definições de Hábitos (Estratégia de União)
     // Se o usuário criou um hábito novo localmente que não está no incoming, adicionamos ao merge.

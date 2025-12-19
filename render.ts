@@ -1,5 +1,4 @@
 
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -27,7 +26,20 @@ export * from './render/modals';
 
 // --- HELPERS ---
 
+// OTIMIZAÇÃO: Estado local para evitar re-renderização do título sem necessidade
+let _lastTitleDate: string | null = null;
+let _lastTitleLang: string | null = null;
+
+// OTIMIZAÇÃO: Estado local para evitar re-renderização da citação sem necessidade
+let _lastQuoteDate: string | null = null;
+let _lastQuoteLang: string | null = null;
+
 function _updateHeaderTitle() {
+    // Check if update is needed
+    if (_lastTitleDate === state.selectedDate && _lastTitleLang === state.activeLanguageCode) {
+        return;
+    }
+
     const todayISO = getTodayUTCIso();
     const yesterdayISO = toUTCIsoDateString(addDays(parseUTCIsoDate(todayISO), -1));
     const tomorrowISO = toUTCIsoDateString(addDays(parseUTCIsoDate(todayISO), 1));
@@ -68,6 +80,10 @@ function _updateHeaderTitle() {
         weekday: 'long', month: 'long', day: 'numeric', timeZone: 'UTC'
     }).format(parseUTCIsoDate(state.selectedDate));
     ui.headerTitle.setAttribute('aria-label', fullLabel);
+
+    // Update Cache
+    _lastTitleDate = state.selectedDate;
+    _lastTitleLang = state.activeLanguageCode;
 }
 
 function _renderHeaderIcons() {
@@ -126,6 +142,11 @@ export function renderAINotificationState() {
 }
 
 export function renderStoicQuote() {
+    // MEMOIZATION [2025-03-08]: Skip unnecessary recalculation if date/lang unchanged.
+    if (_lastQuoteDate === state.selectedDate && _lastQuoteLang === state.activeLanguageCode) {
+        return;
+    }
+
     const date = parseUTCIsoDate(state.selectedDate);
     const startOfYear = new Date(date.getUTCFullYear(), 0, 0);
     const diff = date.getTime() - startOfYear.getTime();
@@ -145,7 +166,11 @@ export function renderStoicQuote() {
     
     const fullText = `"${quoteText}" — ${authorName}`;
 
-    // Evita o "blink" da citação se o texto não mudou
+    // Update Cache
+    _lastQuoteDate = state.selectedDate;
+    _lastQuoteLang = state.activeLanguageCode;
+
+    // Evita o "blink" da citação se o texto não mudou (dupla verificação por segurança)
     if (ui.stoicQuoteDisplay.textContent === fullText && ui.stoicQuoteDisplay.classList.contains('visible')) {
         return;
     }

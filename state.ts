@@ -1,4 +1,3 @@
-// state.ts
 
 /**
  * @license
@@ -734,7 +733,8 @@ export function ensureHabitDailyInfo(date: string, habitId: string): HabitDailyI
         
         if (archivedDay !== EMPTY_DAILY_INFO) {
             // Thaw: Copy from archive to hot storage
-            state.dailyData[date] = JSON.parse(JSON.stringify(archivedDay));
+            // MODERNIZATION [2025-03-08]: Use structuredClone instead of JSON.parse/stringify for better performance.
+            state.dailyData[date] = structuredClone(archivedDay);
         } else {
             // New day
             state.dailyData[date] = {};
@@ -768,7 +768,8 @@ export function getCurrentGoalForInstance(habit: Habit, date: string, time: Time
 // PERFORMANCE [2025-01-16]: Cache para armazenar o timestamp da âncora de agendamento.
 // Evita parsear a string de data ISO repetidamente dentro do loop de streaks (hot-path).
 // WeakMap garante que se o objeto de agendamento for removido, o cache seja limpo.
-const anchorTimestampCache = new WeakMap<HabitSchedule, number>();
+// PERFORMANCE UPDATE [2025-03-05]: Agora armazena também o dia da semana para evitar alocação de Date no loop semanal.
+const anchorPropsCache = new WeakMap<HabitSchedule, { time: number, dayOfWeek: number }>();
 
 export function shouldHabitAppearOnDate(habit: Habit, date: Date, dateISO?: string): boolean {
     // PERFORMANCE [2025-01-20]: Cache Determinístico de Aparência (Hot-Path Optimization).
@@ -815,15 +816,19 @@ export function shouldHabitAppearOnDate(habit: Habit, date: Date, dateISO?: stri
         return true;
     }
 
-    // OTIMIZAÇÃO [2025-01-16]: Uso de cache para o timestamp da âncora.
-    let anchorTime = anchorTimestampCache.get(activeSchedule);
-    if (anchorTime === undefined) {
-        anchorTime = parseUTCIsoDate(activeSchedule.scheduleAnchor).getTime();
-        anchorTimestampCache.set(activeSchedule, anchorTime);
+    // OTIMIZAÇÃO [2025-01-16]: Uso de cache para propriedades da âncora.
+    let anchorProps = anchorPropsCache.get(activeSchedule);
+    if (anchorProps === undefined) {
+        const anchorDate = parseUTCIsoDate(activeSchedule.scheduleAnchor);
+        anchorProps = {
+            time: anchorDate.getTime(),
+            dayOfWeek: anchorDate.getUTCDay()
+        };
+        anchorPropsCache.set(activeSchedule, anchorProps);
     }
 
     // A diferença é calculada usando o timestamp cacheado, evitando alocação de 'new Date'.
-    const daysDifference = Math.round((date.getTime() - anchorTime) / (1000 * 60 * 60 * 24));
+    const daysDifference = Math.round((date.getTime() - anchorProps.time) / (1000 * 60 * 60 * 24));
 
     if (daysDifference < 0) {
         state.habitAppearanceCache.set(cacheKey, false);
@@ -836,8 +841,8 @@ export function shouldHabitAppearOnDate(habit: Habit, date: Date, dateISO?: stri
         if (freq.unit === 'days') {
             result = daysDifference % freq.amount === 0;
         } else if (freq.unit === 'weeks') {
-            const anchorDate = new Date(anchorTime); 
-            if (date.getUTCDay() !== anchorDate.getUTCDay()) {
+            // PERFORMANCE [2025-03-05]: Use cached dayOfWeek instead of allocating new Date(anchorTime).
+            if (date.getUTCDay() !== anchorProps.dayOfWeek) {
                 result = false;
             } else {
                 const weeksDifference = Math.floor(daysDifference / 7);
@@ -875,16 +880,11 @@ export function getActiveHabitsForDate(dateOrIso: Date | string): Array<{ habit:
     // Fallback: precisamos do objeto Date para a lógica de agendamento se não estiver em cache
     const date = typeof dateOrIso === 'string' ? parseUTCIsoDate(dateOrIso) : dateOrIso;
 
-    // DATA INTEGRITY [2025-02-21]: Filter out any duplicates that might have slipped into state.habits
-    const processedIds = new Set<string>();
+    // DATA INTEGRITY [2025-02-21]: Deduplication logic removed.
+    // `loadState` guarantees ID uniqueness, so we can skip the Set creation and checks here for performance.
     
     const activeHabits = state.habits
-        .filter(habit => {
-            if (processedIds.has(habit.id)) return false; // Skip if already processed
-            const shouldAppear = shouldHabitAppearOnDate(habit, date, dateStr);
-            if (shouldAppear) processedIds.add(habit.id);
-            return shouldAppear;
-        })
+        .filter(habit => shouldHabitAppearOnDate(habit, date, dateStr))
         .map(habit => ({
             habit,
             schedule: getEffectiveScheduleForHabitOnDate(habit, dateStr),

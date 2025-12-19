@@ -55,10 +55,21 @@ export function setupReelRotary({
     let isSwiping = false;
     let startTransformX = 0;
     
-    // PERFORMANCE [2025-02-23]: Cache da largura do item.
-    // Ler `clientWidth` dentro do `pointerMove` causa "Layout Thrashing" (reflow forçado) a cada frame.
-    // Agora lemos apenas uma vez no início do gesto (`pointerdown`).
-    let cachedItemWidth = 0;
+    // PERFORMANCE [2025-02-23]: Cache da largura do item via ResizeObserver.
+    // Evita leituras síncronas de layout (clientWidth) durante eventos de interação.
+    let cachedItemWidth = 95; // Valor inicial seguro
+    
+    const resizeObserver = new ResizeObserver(entries => {
+        for (const entry of entries) {
+            const firstChild = entry.target.firstElementChild;
+            if (firstChild) {
+                cachedItemWidth = firstChild.clientWidth;
+            }
+        }
+    });
+    
+    // Observa o reel para capturar mudanças de layout nos filhos
+    resizeObserver.observe(reelEl);
     
     const SWIPE_THRESHOLD = 40;
 
@@ -128,11 +139,6 @@ export function setupReelRotary({
 
     viewportEl.addEventListener('pointerdown', (e: PointerEvent) => {
         if (e.button !== 0) return; // Apenas botão esquerdo/toque principal
-
-        // PERFORMANCE: Calcula métricas de layout apenas uma vez no início da interação
-        const firstChild = reelEl.firstElementChild;
-        if (!firstChild) return;
-        cachedItemWidth = firstChild.clientWidth;
 
         // Estado inicial
         startX = e.clientX;

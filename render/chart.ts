@@ -18,6 +18,7 @@ const FIXED_Y_AXIS_RANGE = 15;
 
 type ChartDataPoint = {
     date: string;
+    timestamp: number; // PERFORMANCE [2025-03-09]: Pre-calculated timestamp for tooltips
     value: number;
     completedCount: number;
     scheduledCount: number;
@@ -36,6 +37,8 @@ let chartMetadata = { minVal: 0, maxVal: 100, valueRange: 100 };
 
 // Cache de geometria do gráfico (Evita Reflow no hot-path)
 let cachedChartRect: DOMRect | null = null;
+// PERFORMANCE [2025-03-09]: Cache chart width to avoid measuring DOM on every data update
+let currentChartWidth = 0;
 
 // BUGFIX: Módulo-scoped para permitir reset externo quando os dados mudam
 let lastRenderedPointIndex = -1;
@@ -88,7 +91,13 @@ function calculateChartData(): ChartDataPoint[] {
             currentValue = previousDayValue;
         }
         
-        data.push({ date: currentDateISO, value: currentValue, completedCount, scheduledCount });
+        data.push({ 
+            date: currentDateISO, 
+            timestamp: iteratorDate.getTime(), // Capture timestamp from mutable date
+            value: currentValue, 
+            completedCount, 
+            scheduledCount 
+        });
         previousDayValue = currentValue;
         
         // Mutate in-place for next iteration
@@ -97,26 +106,13 @@ function calculateChartData(): ChartDataPoint[] {
     return data;
 }
 
-function _calculateChartScales(chartData: ChartDataPoint[]): ChartScales {
-    // FIX: Use wrapper width as it's the direct parent.
-    // Use getBoundingClientRect for sub-pixel precision.
-    let svgWidth = ui.chart.wrapper.getBoundingClientRect().width;
-    
-    // Fallback: If layout hasn't updated yet (e.g. initially hidden), use container width approximation
-    if (!svgWidth && ui.chartContainer.clientWidth > 0) {
-        // Subtract padding (32px total from CSS --space-lg = 16px * 2)
-        svgWidth = ui.chartContainer.clientWidth - 32;
-    }
-    
-    // Safety fallback
-    if (!svgWidth) svgWidth = 300;
-
+function _calculateChartScales(chartData: ChartDataPoint[], chartWidthPx: number): ChartScales {
     const svgHeight = 42;
     const padding = CHART_PADDING;
-    const chartWidth = svgWidth - padding.left - padding.right;
+    const chartWidth = chartWidthPx - padding.left - padding.right;
     const chartHeight = svgHeight - padding.top - padding.bottom;
 
-    ui.chart.svg.setAttribute('viewBox', `0 0 ${svgWidth} ${svgHeight}`);
+    ui.chart.svg.setAttribute('viewBox', `0 0 ${chartWidthPx} ${svgHeight}`);
     // FIX: Allow overflow to ensure stroke caps at the edges are not clipped
     ui.chart.svg.style.overflow = 'visible';
 
@@ -141,11 +137,16 @@ function _generatePathData(chartData: ChartDataPoint[], { xScale, yScale }: Char
 
 function _updateAxisLabels(chartData: ChartDataPoint[]) {
     const { axisStart, axisEnd } = ui.chart;
-    const firstDate = parseUTCIsoDate(chartData[0].date);
-    const lastDate = parseUTCIsoDate(chartData[chartData.length - 1].date);
+    // PERFORMANCE: Use stored timestamps instead of parsing ISO strings
+    const firstDateMs = chartData[0].timestamp;
+    const lastDateMs = chartData[chartData.length - 1].timestamp;
 
     const currentYear = new Date().getUTCFullYear();
-    const showYear = firstDate.getUTCFullYear() !== lastDate.getUTCFullYear() || lastDate.getUTCFullYear() !== currentYear;
+    // Helper simple date extraction to avoid full Date parsing for year check
+    const firstYear = new Date(firstDateMs).getUTCFullYear();
+    const lastYear = new Date(lastDateMs).getUTCFullYear();
+    
+    const showYear = firstYear !== lastYear || lastYear !== currentYear;
     
     const axisFormatter = getDateTimeFormat(state.activeLanguageCode, { 
         month: 'short', 
@@ -154,12 +155,12 @@ function _updateAxisLabels(chartData: ChartDataPoint[]) {
         year: showYear ? '2-digit' : undefined
     });
 
-    axisStart.textContent = axisFormatter.format(firstDate);
-    axisEnd.textContent = axisFormatter.format(lastDate);
+    axisStart.textContent = axisFormatter.format(firstDateMs);
+    axisEnd.textContent = axisFormatter.format(lastDateMs);
 }
 
-function _updateEvolutionIndicator(chartData: ChartDataPoint[], { xScale, yScale }: ChartScales) {
-    const { evolutionIndicator, wrapper } = ui.chart;
+function _updateEvolutionIndicator(chartData: ChartDataPoint[], { xScale, yScale }: ChartScales, chartWidthPx: number) {
+    const { evolutionIndicator } = ui.chart;
     const lastPoint = chartData[chartData.length - 1];
     const referencePoint = chartData.find(d => d.scheduledCount > 0) || chartData[0];
     const evolution = ((lastPoint.value - referencePoint.value) / referencePoint.value) * 100;
@@ -174,8 +175,8 @@ function _updateEvolutionIndicator(chartData: ChartDataPoint[], { xScale, yScale
     // With zero padding, lastPointX should be at wrapper width.
     let indicatorX = lastPointX + 10;
     
-    // Ensure we use the latest width
-    const wrapperWidth = wrapper.getBoundingClientRect().width || parseFloat(ui.chart.svg.getAttribute('viewBox')?.split(' ')[2] || '300');
+    // Use passed width instead of measuring DOM again
+    const wrapperWidth = chartWidthPx;
     
     // If it goes beyond the right edge (which it will if lastPointX is at edge), shift left
     if (indicatorX + evolutionIndicator.offsetWidth > wrapperWidth) {
@@ -183,7 +184,6 @@ function _updateEvolutionIndicator(chartData: ChartDataPoint[], { xScale, yScale
     }
     
     // Additional guard: ensure it doesn't go off-screen right
-    // This forces the indicator inside the viewport if xScale calculation put it exactly at edge
     if (indicatorX > wrapperWidth - evolutionIndicator.offsetWidth) {
          indicatorX = wrapperWidth - evolutionIndicator.offsetWidth;
     }
@@ -195,14 +195,37 @@ function _updateChartDOM(chartData: ChartDataPoint[]) {
     const { areaPath, linePath } = ui.chart;
     if (!areaPath || !linePath) return;
 
-    const scales = _calculateChartScales(chartData);
+    // OPTIMIZATION [2025-03-09]: Prevent Layout Thrashing.
+    // Use cached width from ResizeObserver if available.
+    let svgWidth = currentChartWidth;
+    
+    // Fallback: If cache is empty (first run), measure immediately.
+    if (!svgWidth) {
+        svgWidth = ui.chart.wrapper.getBoundingClientRect().width;
+        // Do not update cache here to let ResizeObserver handle the source of truth,
+        // or update it lazily.
+        if (svgWidth > 0) currentChartWidth = svgWidth;
+    }
+    
+    // Fallback: If layout hasn't updated yet, use container width approximation
+    if (!svgWidth && ui.chartContainer.clientWidth > 0) {
+        // Subtract padding (32px total from CSS --space-lg = 16px * 2)
+        svgWidth = ui.chartContainer.clientWidth - 32;
+    }
+    // Safety fallback
+    if (!svgWidth) svgWidth = 300;
+
+    // WRITE PHASE: Apply calculations and update DOM.
+    const scales = _calculateChartScales(chartData, svgWidth);
     const { areaPathData, linePathData } = _generatePathData(chartData, scales);
     
     areaPath.setAttribute('d', areaPathData);
     linePath.setAttribute('d', linePathData);
     
     _updateAxisLabels(chartData);
-    _updateEvolutionIndicator(chartData, scales);
+    
+    // Pass the already measured width to avoid re-measuring
+    _updateEvolutionIndicator(chartData, scales, svgWidth);
 
     cachedChartRect = null;
 }
@@ -247,10 +270,10 @@ function updateTooltipPosition() {
         const dot = indicator.querySelector<HTMLElement>('.chart-indicator-dot');
         if (dot) dot.style.top = `${pointY}px`;
         
-        const date = parseUTCIsoDate(point.date);
+        // PERFORMANCE [2025-03-09]: Use pre-calculated timestamp instead of allocating new Date.
         const formattedDate = getDateTimeFormat(state.activeLanguageCode, { 
             weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' 
-        }).format(date);
+        }).format(point.timestamp);
         
         tooltipDate.textContent = formattedDate;
         tooltipScoreLabel.textContent = t('chartTooltipScore') + ': ';
@@ -313,8 +336,11 @@ function _initObservers() {
 
     if (!resizeObserver) {
         resizeObserver = new ResizeObserver(entries => {
+            // OPTIMIZATION [2025-03-09]: Update width cache on resize.
+            currentChartWidth = ui.chart.wrapper.getBoundingClientRect().width;
+            
             if (!isChartVisible) return;
-            // Invalida cache de geometria no resize
+            // Invalida cache de geometria (bounding rect para tooltip) no resize
             cachedChartRect = null;
             _updateChartDOM(lastChartData);
         });

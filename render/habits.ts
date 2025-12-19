@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -21,6 +22,7 @@ type CardElements = {
     subtitle: HTMLElement;
     details: HTMLElement;
     noteBtn: HTMLElement;
+    deleteBtn: HTMLElement; // Added cached reference for delete button
     goal: HTMLElement;
 };
 const cardElementsCache = new Map<HTMLElement, CardElements>();
@@ -29,6 +31,11 @@ const cardElementsCache = new Map<HTMLElement, CardElements>();
 // Evita a criação de novos arrays (alocação de memória) a cada frame de renderização.
 // Apenas limpamos (.length = 0) e reutilizamos os arrays existentes.
 const habitsByTimePool: Record<TimeOfDay, Habit[]> = { 'Morning': [], 'Afternoon': [], 'Evening': [] };
+
+export function clearHabitDomCache() {
+    habitElementCache.clear();
+    cardElementsCache.clear();
+}
 
 export function getCachedHabitCard(habitId: string, time: TimeOfDay): HTMLElement | undefined {
     return habitElementCache.get(`${habitId}|${time}`);
@@ -175,7 +182,7 @@ export function updateHabitCardElement(card: HTMLElement, habit: Habit, time: Ti
         return; 
     }
     
-    const { icon, contentWrapper, name: nameEl, subtitle: subtitleEl, details: detailsEl, noteBtn, goal: goalEl } = elements;
+    const { icon, contentWrapper, name: nameEl, subtitle: subtitleEl, details: detailsEl, noteBtn, deleteBtn, goal: goalEl } = elements;
     
     const dailyInfo = getHabitDailyInfoForDate(state.selectedDate);
     const habitInstanceData = dailyInfo[habit.id]?.instances?.[time];
@@ -201,6 +208,7 @@ export function updateHabitCardElement(card: HTMLElement, habit: Habit, time: Ti
         (icon as any)._cachedIconHtml = newIconHtml;
     }
     
+    // OPTIMIZATION [2025-03-09]: Dirty Check styles to prevent Layout Thrashing
     if (icon.style.color !== newColor) icon.style.color = newColor;
     if (icon.style.backgroundColor !== newBgColor) icon.style.backgroundColor = newBgColor;
 
@@ -238,6 +246,9 @@ export function updateHabitCardElement(card: HTMLElement, habit: Habit, time: Ti
         noteBtn.dataset.hasNote = hasNoteStr;
     }
 
+    // A11Y FIX [2025-03-08]: Update aria-label for delete button dynamically on language change
+    deleteBtn.setAttribute('aria-label', t('habitEnd_ariaLabel'));
+
     updateGoalContentElement(goalEl, status, habit, time, habitInstanceData);
 }
 
@@ -265,7 +276,8 @@ export function createHabitCardElement(habit: Habit, time: TimeOfDay): HTMLEleme
 
     const actionsLeft = document.createElement('div');
     actionsLeft.className = 'habit-actions-left';
-    actionsLeft.innerHTML = `<button type="button" class="${CSS_CLASSES.SWIPE_DELETE_BTN}" aria-label="${t('habitEnd_ariaLabel')}">${icons.swipeDelete}</button>`;
+    // NOTE: aria-label set initially but updated dynamically in updateHabitCardElement
+    actionsLeft.innerHTML = `<button type="button" class="${CSS_CLASSES.SWIPE_DELETE_BTN}">${icons.swipeDelete}</button>`;
 
     const actionsRight = document.createElement('div');
     actionsRight.className = 'habit-actions-right';
@@ -307,6 +319,7 @@ export function createHabitCardElement(habit: Habit, time: TimeOfDay): HTMLEleme
         subtitle: subtitleEl,
         details: details,
         noteBtn: actionsRight.querySelector(`.${CSS_CLASSES.SWIPE_NOTE_BTN}`)!,
+        deleteBtn: actionsLeft.querySelector(`.${CSS_CLASSES.SWIPE_DELETE_BTN}`)!,
         goal: goal,
     });
 
@@ -399,13 +412,9 @@ export function renderHabits() {
 
         groupEl.setAttribute('aria-label', getTimeOfDayName(time));
 
-        const processedHabitIds = new Set<string>();
         let currentIndex = 0;
 
         desiredHabits.forEach(habit => {
-            if (processedHabitIds.has(habit.id)) return; 
-            processedHabitIds.add(habit.id);
-
             const key = `${habit.id}|${time}`;
             
             let card = habitElementCache.get(key);

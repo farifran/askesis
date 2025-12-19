@@ -1,5 +1,4 @@
 
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -7,7 +6,7 @@
 
 import { ui } from '../render/ui';
 import { state, Habit, getCurrentGoalForInstance, TimeOfDay } from '../state';
-import { openNotesModal, getUnitString, formatGoalForDisplay, renderExploreHabits, openModal } from '../render';
+import { openNotesModal, renderExploreHabits, openModal, renderHabitCardState, renderCalendarDayPartial } from '../render';
 import {
     toggleHabitStatus,
     setGoalOverride,
@@ -15,29 +14,8 @@ import {
 } from '../habitActions';
 import { triggerHaptic } from '../utils';
 import { DOM_SELECTORS, CSS_CLASSES } from '../render/constants';
-import { t } from '../i18n';
 
 const GOAL_STEP = 5;
-
-/**
- * REATORAÇÃO [2024-09-11]: Centraliza a lógica de atualização da UI da meta para evitar duplicação.
- */
-function _updateGoalDisplay(wrapperEl: HTMLElement, habit: Habit, newGoal: number) {
-    const progressEl = wrapperEl.querySelector<HTMLElement>('.progress');
-    const unitEl = wrapperEl.querySelector<HTMLElement>('.unit');
-    if (progressEl && unitEl) {
-        progressEl.textContent = formatGoalForDisplay(newGoal);
-        unitEl.textContent = getUnitString(habit, newGoal);
-    }
-    
-    // UX FIX [2025-02-05]: Update decrement button state based on value
-    const controls = wrapperEl.closest(DOM_SELECTORS.HABIT_GOAL_CONTROLS);
-    const decBtn = controls?.querySelector<HTMLButtonElement>(`${DOM_SELECTORS.GOAL_CONTROL_BTN}[data-action="decrement"]`);
-    if (decBtn) {
-        decBtn.disabled = newGoal <= 1;
-    }
-}
-
 
 function createGoalInput(habit: Habit, time: TimeOfDay, wrapper: HTMLElement) {
     if (wrapper.querySelector('input')) return; // Já está no modo de edição
@@ -62,13 +40,31 @@ function createGoalInput(habit: Habit, time: TimeOfDay, wrapper: HTMLElement) {
 
         if (!isNaN(newGoal) && newGoal > 0) {
             setGoalOverride(habit.id, state.selectedDate, time, newGoal);
-            _updateGoalDisplay(wrapper, habit, newGoal);
+            
+            // UI CONSISTENCY FIX [2025-03-08]: Full surgical update instead of just text change.
+            // This ensures if goal met target, the card turns green (completed) immediately.
+            renderHabitCardState(habit.id, time);
+            renderCalendarDayPartial(state.selectedDate);
+            
             triggerHaptic('success');
 
-            requestAnimationFrame(() => {
-                wrapper.classList.add('increase');
-                wrapper.addEventListener('animationend', () => wrapper.classList.remove('increase'), { once: true });
-            });
+            // DOM OPTIMIZATION [2025-03-09]: Find the card context first to avoid global DOM scan.
+            const card = wrapper.closest<HTMLElement>(DOM_SELECTORS.HABIT_CARD);
+            if (card) {
+                // Now query strictly inside the card
+                const updatedWrapper = card.querySelector<HTMLElement>(DOM_SELECTORS.GOAL_VALUE_WRAPPER);
+                
+                if (updatedWrapper) {
+                    requestAnimationFrame(() => {
+                        updatedWrapper.classList.add('increase');
+                        updatedWrapper.addEventListener('animationend', () => updatedWrapper.classList.remove('increase'), { once: true });
+                    });
+                }
+                
+                // A11Y FIX [2025-03-09]: Restore focus to the card content to maintain keyboard navigation flow.
+                const content = card.querySelector<HTMLElement>(DOM_SELECTORS.HABIT_CONTENT_WRAPPER);
+                content?.focus();
+            }
         }
     };
 
@@ -79,6 +75,10 @@ function createGoalInput(habit: Habit, time: TimeOfDay, wrapper: HTMLElement) {
             input.blur(); 
         } else if (e.key === 'Escape') {
             restoreOriginalContent();
+            // A11Y: Restore focus even on cancel
+            const card = wrapper.closest<HTMLElement>(DOM_SELECTORS.HABIT_CARD);
+            const content = card?.querySelector<HTMLElement>(DOM_SELECTORS.HABIT_CONTENT_WRAPPER);
+            content?.focus();
         }
     };
     
@@ -159,9 +159,7 @@ export function setupCardListeners() {
             if (!habit || (habit.goal.type !== 'pages' && habit.goal.type !== 'minutes')) return;
             
             const action = controlBtn.dataset.action as 'increment' | 'decrement';
-            const goalWrapper = controlBtn.closest(DOM_SELECTORS.HABIT_GOAL_CONTROLS)?.querySelector<HTMLElement>(DOM_SELECTORS.GOAL_VALUE_WRAPPER);
-            if (!goalWrapper) return;
-
+            
             triggerHaptic('light');
             const currentGoal = getCurrentGoalForInstance(habit, state.selectedDate, time);
             const newGoal = (action === 'increment') 
@@ -169,16 +167,24 @@ export function setupCardListeners() {
                 : Math.max(1, currentGoal - GOAL_STEP);
 
             setGoalOverride(habitId, state.selectedDate, time, newGoal);
-            _updateGoalDisplay(goalWrapper, habit, newGoal);
             
-            const animationClass = action === 'increment' ? 'increase' : 'decrease';
-            goalWrapper.classList.remove('increase', 'decrease');
-            requestAnimationFrame(() => {
-                goalWrapper.classList.add(animationClass);
-                goalWrapper.addEventListener('animationend', () => {
-                    goalWrapper.classList.remove(animationClass);
-                }, { once: true });
-            });
+            // UI CONSISTENCY FIX: Surgical update for full status reflection
+            renderHabitCardState(habit.id, time);
+            renderCalendarDayPartial(state.selectedDate);
+            
+            // DOM OPTIMIZATION [2025-03-09]: Use local query on the card reference instead of scanning the full container.
+            const goalWrapper = card.querySelector<HTMLElement>(DOM_SELECTORS.GOAL_VALUE_WRAPPER);
+            
+            if (goalWrapper) {
+                const animationClass = action === 'increment' ? 'increase' : 'decrease';
+                goalWrapper.classList.remove('increase', 'decrease');
+                requestAnimationFrame(() => {
+                    goalWrapper.classList.add(animationClass);
+                    goalWrapper.addEventListener('animationend', () => {
+                        goalWrapper.classList.remove(animationClass);
+                    }, { once: true });
+                });
+            }
 
             return;
         }

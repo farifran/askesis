@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -142,81 +143,110 @@ function getHabitStatusForSorting(habit: Habit): 'active' | 'ended' | 'graduated
     return 'active';
 }
 
+// OTIMIZAÇÃO [2025-03-09]: Template Prototype para item da lista de gerenciamento.
+// Evita a recriação custosa da árvore DOM para cada item da lista.
+let manageItemTemplate: HTMLLIElement | null = null;
+
+function getManageItemTemplate(): HTMLLIElement {
+    if (!manageItemTemplate) {
+        manageItemTemplate = document.createElement('li');
+        manageItemTemplate.className = 'habit-list-item';
+
+        const mainSpan = document.createElement('span');
+        mainSpan.className = 'habit-main-info';
+        
+        const iconSpan = document.createElement('span');
+        iconSpan.className = 'habit-icon-slot';
+        
+        const textWrapper = document.createElement('div');
+        textWrapper.style.display = 'flex';
+        textWrapper.style.flexDirection = 'column';
+
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'habit-name';
+
+        const subtitleSpan = document.createElement('span');
+        subtitleSpan.className = 'habit-subtitle';
+        subtitleSpan.style.fontSize = '11px';
+        subtitleSpan.style.color = 'var(--text-tertiary)';
+        
+        textWrapper.appendChild(nameSpan);
+        textWrapper.appendChild(subtitleSpan);
+        
+        const statusSpan = document.createElement('span');
+        statusSpan.className = 'habit-name-status';
+        
+        mainSpan.append(iconSpan, textWrapper, statusSpan);
+        
+        const actionsDiv = document.createElement('div');
+        actionsDiv.className = 'habit-list-actions';
+        
+        manageItemTemplate.append(mainSpan, actionsDiv);
+    }
+    return manageItemTemplate;
+}
+
 function _createManageHabitListItem(habitData: { habit: Habit; status: 'active' | 'ended' | 'graduated'; name: string; subtitle: string }, todayISO: string): HTMLLIElement {
     const { habit, status, name, subtitle } = habitData;
     
+    // Clone from prototype
+    const li = getManageItemTemplate().cloneNode(true) as HTMLLIElement;
+    
+    li.classList.add(status);
+    li.dataset.habitId = habit.id;
+
+    // Fast populate using pre-known structure
+    const iconSpan = li.querySelector('.habit-icon-slot') as HTMLElement;
+    iconSpan.innerHTML = habit.icon;
+    iconSpan.style.color = habit.color;
+
+    const nameSpan = li.querySelector('.habit-name')!;
+    setTextContent(nameSpan, name);
+
+    const subtitleSpan = li.querySelector('.habit-subtitle')!;
+    if (subtitle) {
+        setTextContent(subtitleSpan, subtitle);
+    } else {
+        subtitleSpan.remove();
+    }
+
+    const statusSpan = li.querySelector('.habit-name-status')!;
+    if (status === 'graduated' || status === 'ended') {
+        setTextContent(statusSpan, t(status === 'graduated' ? 'modalStatusGraduated' : 'modalStatusEnded'));
+    } else {
+        statusSpan.remove();
+    }
+    
+    const actionsDiv = li.querySelector('.habit-list-actions')!;
     const streak = calculateHabitStreak(habit.id, todayISO); 
     const isConsolidated = streak >= STREAK_CONSOLIDATED;
 
-    const li = document.createElement('li');
-    li.className = `habit-list-item ${status}`;
-    li.dataset.habitId = habit.id;
-
-    const mainSpan = document.createElement('span');
-    
-    const iconSpan = document.createElement('span');
-    iconSpan.innerHTML = habit.icon;
-    iconSpan.style.color = habit.color;
-    
-    const textWrapper = document.createElement('div');
-    textWrapper.style.display = 'flex';
-    textWrapper.style.flexDirection = 'column';
-
-    const nameSpan = document.createElement('span');
-    nameSpan.className = 'habit-name';
-    nameSpan.textContent = name;
-
-    const subtitleSpan = document.createElement('span');
-    subtitleSpan.className = 'habit-subtitle';
-    subtitleSpan.textContent = subtitle;
-    
-    textWrapper.appendChild(nameSpan);
-    if (subtitle) {
-        subtitleSpan.style.fontSize = '11px';
-        subtitleSpan.style.color = 'var(--text-tertiary)';
-        textWrapper.appendChild(subtitleSpan);
-    }
-    
-    mainSpan.append(iconSpan, textWrapper);
-
-    if (status === 'graduated' || status === 'ended') {
-        const statusSpan = document.createElement('span');
-        statusSpan.className = 'habit-name-status';
-        statusSpan.textContent = t(status === 'graduated' ? 'modalStatusGraduated' : 'modalStatusEnded');
-        mainSpan.appendChild(statusSpan);
-    }
-    
-    const actionsDiv = document.createElement('div');
-    actionsDiv.className = 'habit-list-actions';
-
-    const createActionButton = (className: string, habitId: string, ariaLabel: string, icon: string): HTMLButtonElement => {
+    const createActionButton = (className: string, ariaLabel: string, icon: string): HTMLButtonElement => {
         const button = document.createElement('button');
         button.className = className;
-        button.dataset.habitId = habitId;
+        // habitId is looked up from LI dataset in listener, no need to duplicate on button for delegation
         button.setAttribute('aria-label', ariaLabel);
         button.type = "button"; 
         button.innerHTML = icon;
         return button;
     };
 
-    // Lógica de botões refatorada para evitar duplicação
     if (status === 'ended' || status === 'graduated') {
-        actionsDiv.appendChild(createActionButton('permanent-delete-habit-btn', habit.id, t('aria_delete_permanent', { habitName: name }), icons.deletePermanentAction));
+        actionsDiv.appendChild(createActionButton('permanent-delete-habit-btn', t('aria_delete_permanent', { habitName: name }), icons.deletePermanentAction));
     }
 
     if (status === 'active' || status === 'ended') {
-        actionsDiv.appendChild(createActionButton('edit-habit-btn', habit.id, t('aria_edit', { habitName: name }), icons.editAction));
+        actionsDiv.appendChild(createActionButton('edit-habit-btn', t('aria_edit', { habitName: name }), icons.editAction));
     }
     
     if (status === 'active') {
         if (isConsolidated) {
-            actionsDiv.appendChild(createActionButton('graduate-habit-btn', habit.id, t('aria_graduate', { habitName: name }), icons.graduateAction));
+            actionsDiv.appendChild(createActionButton('graduate-habit-btn', t('aria_graduate', { habitName: name }), icons.graduateAction));
         } else {
-            actionsDiv.appendChild(createActionButton('end-habit-btn', habit.id, t('aria_end', { habitName: name }), icons.endAction));
+            actionsDiv.appendChild(createActionButton('end-habit-btn', t('aria_end', { habitName: name }), icons.endAction));
         }
     }
     
-    li.append(mainSpan, actionsDiv);
     return li;
 }
 
@@ -289,11 +319,12 @@ export function showConfirmationModal(
         cancelBtn.style.display = options?.hideCancel ? 'none' : '';
     }
     
+    // FIX [2025-03-09]: Use CSS classes for visibility to play nice with Flexbox layout
     if (options?.editText && options?.onEdit) {
-        ui.confirmModalEditBtn.style.display = 'inline-block';
+        ui.confirmModalEditBtn.classList.remove('hidden');
         setTextContent(ui.confirmModalEditBtn, options.editText);
     } else {
-        ui.confirmModalEditBtn.style.display = 'none';
+        ui.confirmModalEditBtn.classList.add('hidden');
     }
 
     openModal(ui.confirmModal);

@@ -23,6 +23,7 @@ export function updateReelRotaryARIA(viewportEl: HTMLElement, currentIndex: numb
     viewportEl.setAttribute('aria-valuemin', '1');
     viewportEl.setAttribute('aria-valuemax', String(options.length));
     viewportEl.setAttribute('aria-valuenow', String(currentIndex + 1));
-    viewportEl.setAttribute('aria-valuetext', options[currentIndex]);
+    // A11Y FIX [2025-03-08]: Guard against undefined index access to prevent "undefined" string in ARIA.
+    viewportEl.setAttribute('aria-valuetext', options[currentIndex] || '');
     viewportEl.setAttribute('tabindex', '0');
 }

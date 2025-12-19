@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -69,8 +70,20 @@ export function getTodayUTC(): Date {
     return new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
 }
 
+// OTIMIZAÇÃO [2025-03-09]: Memoização de "Hoje".
+// A data atual muda raramente (1x por dia). Evitamos alocar 'new Date()' a cada renderização.
+// Usamos um TTL de 60 segundos para garantir atualização se o app ficar aberto na virada do dia.
+let _cachedTodayISO: string | null = null;
+let _lastTodayCheckTime = 0;
+
 export function getTodayUTCIso(): string {
-    return toUTCIsoDateString(getTodayUTC());
+    const now = Date.now();
+    // Revalida a cada 60 segundos (60000 ms)
+    if (!_cachedTodayISO || (now - _lastTodayCheckTime > 60000)) {
+        _cachedTodayISO = toUTCIsoDateString(getTodayUTC());
+        _lastTodayCheckTime = now;
+    }
+    return _cachedTodayISO;
 }
 
 export function parseUTCIsoDate(isoString: string): Date {
