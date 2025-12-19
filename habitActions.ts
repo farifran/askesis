@@ -270,13 +270,41 @@ export function saveHabitFromModal() {
         habit.color = formData.color;
         habit.goal = formData.goal;
 
-        _requestFutureScheduleChange(habit.id, targetDate, (schedule) => {
-            schedule.name = formData.name;
-            schedule.nameKey = formData.nameKey;
-            schedule.times = formData.times;
-            schedule.frequency = formData.frequency;
-            return schedule;
-        });
+        // FIX [2025-03-09]: CRITICAL FIX FOR RESTORING HABITS IN PAST.
+        // Clean up any 'Just Today' removal overrides that might be hiding the habit.
+        const dailyInfo = ensureHabitDailyInfo(targetDate, habit.id);
+        if (dailyInfo.dailySchedule) {
+            delete dailyInfo.dailySchedule;
+        }
+
+        // Sort history to find the start
+        habit.scheduleHistory.sort((a, b) => a.startDate.localeCompare(b.startDate));
+        const firstSchedule = habit.scheduleHistory[0];
+
+        // LOGIC FIX [2025-03-09]: Backfill Logic.
+        // If the target date is BEFORE the habit's current start date, we extend the
+        // first schedule backwards. This "overwrites" the past by making the habit active
+        // from the new earlier date onwards.
+        if (targetDate < firstSchedule.startDate) {
+            firstSchedule.startDate = targetDate;
+            
+            // Also apply the edits to this extended schedule
+            firstSchedule.name = formData.name;
+            firstSchedule.nameKey = formData.nameKey;
+            firstSchedule.times = formData.times;
+            firstSchedule.frequency = formData.frequency;
+            
+            _finalizeScheduleUpdate(true);
+        } else {
+            // Standard behavior: Modify future or split history
+            _requestFutureScheduleChange(habit.id, targetDate, (schedule) => {
+                schedule.name = formData.name;
+                schedule.nameKey = formData.nameKey;
+                schedule.times = formData.times;
+                schedule.frequency = formData.frequency;
+                return schedule;
+            });
+        }
     }
 
     closeModal(ui.editHabitModal);

@@ -176,10 +176,33 @@ export function _updateConsolidationMessage(detailsEl: HTMLElement, streak: numb
 }
 
 export function updateHabitCardElement(card: HTMLElement, habit: Habit, time: TimeOfDay): void {
-    const elements = cardElementsCache.get(card);
+    let elements = cardElementsCache.get(card);
+    
+    // FIX [2025-03-09]: ROBUSTNESS AUTO-REPAIR.
+    // If cache was cleared but the card reference persists (e.g. inside a loop or event handler),
+    // verify if elements exist. If not, re-query them from the DOM to avoid silent failures.
     if (!elements) {
-        console.warn(`Cache miss for habit card elements: ${habit.id}|${time}. This should not happen.`);
-        return; 
+        const icon = card.querySelector('.habit-icon') as HTMLElement;
+        const contentWrapper = card.querySelector(`.${CSS_CLASSES.HABIT_CONTENT_WRAPPER}`) as HTMLElement;
+        
+        // If critical elements are missing from DOM, we can't repair. Abort.
+        if (icon && contentWrapper) {
+             elements = {
+                icon: icon,
+                contentWrapper: contentWrapper,
+                name: card.querySelector('.name') as HTMLElement,
+                subtitle: card.querySelector('.subtitle') as HTMLElement,
+                details: card.querySelector(`.${CSS_CLASSES.HABIT_DETAILS}`) as HTMLElement,
+                noteBtn: card.querySelector(`.${CSS_CLASSES.SWIPE_NOTE_BTN}`) as HTMLElement,
+                deleteBtn: card.querySelector(`.${CSS_CLASSES.SWIPE_DELETE_BTN}`) as HTMLElement,
+                goal: card.querySelector('.habit-goal') as HTMLElement,
+            };
+            // Repair cache
+            cardElementsCache.set(card, elements);
+        } else {
+            console.warn(`Critical DOM elements missing for habit ${habit.id}. Cannot render.`);
+            return;
+        }
     }
     
     const { icon, contentWrapper, name: nameEl, subtitle: subtitleEl, details: detailsEl, noteBtn, deleteBtn, goal: goalEl } = elements;
@@ -448,7 +471,14 @@ export function renderHabits() {
 
                 if (habitId && habitTime) {
                     const cacheKey = `${habitId}|${habitTime}`;
-                    habitElementCache.delete(cacheKey);
+                    
+                    // FIX [2025-03-09]: Only remove from cache if the cached element is the one being removed.
+                    // This prevents deleting the cache entry for a new card that has just been created
+                    // (and has the same key) but is inserted before this cleanup runs.
+                    if (habitElementCache.get(cacheKey) === childToRemove) {
+                        habitElementCache.delete(cacheKey);
+                    }
+                    
                     cardElementsCache.delete(childToRemove);
                 }
                 childToRemove.remove();
