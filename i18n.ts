@@ -88,7 +88,8 @@ export function t(key: string, options?: { [key: string]: string | number | unde
         let result = translationString;
         for (const [optKey, optValue] of Object.entries(options)) {
             if (optValue !== undefined) {
-                // FIX: [Compatibility] Use split/join for global replacement to support older JS environments.
+                // COMPATIBILITY [2025-03-09]: Reverted replaceAll to split/join to support older TS libs.
+                // Original comment: Use String.replaceAll (ES2021) which is optimized...
                 result = result.split(`{${optKey}}`).join(String(optValue));
             }
         }

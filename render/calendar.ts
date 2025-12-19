@@ -5,7 +5,7 @@
 */
 
 // FIX: Removed shouldShowPlusIndicatorForDate from import as it's now part of calculateDaySummary
-import { state, calculateDaySummary, shouldShowPlusIndicatorForDate } from '../state';
+import { state, calculateDaySummary } from '../state';
 import { ui } from './ui';
 import { getTodayUTCIso, toUTCIsoDateString, parseUTCIsoDate, getDateTimeFormat } from '../utils';
 import { getLocaleDayName } from '../i18n';
@@ -18,6 +18,8 @@ let cachedDayElements: HTMLElement[] = [];
 // OTIMIZAÇÃO [2025-03-09]: Template Prototype para clonagem rápida.
 // Evita o custo de múltiplas chamadas 'createElement' e 'appendChild' a cada dia gerado.
 let dayItemTemplate: HTMLElement | null = null;
+// OTIMIZAÇÃO [2025-03-09]: Template Prototype para dias do calendário completo.
+let fullCalendarDayTemplate: HTMLElement | null = null;
 
 function getDayItemTemplate(): HTMLElement {
     if (!dayItemTemplate) {
@@ -42,6 +44,25 @@ function getDayItemTemplate(): HTMLElement {
     return dayItemTemplate;
 }
 
+function getFullCalendarDayTemplate(): HTMLElement {
+    if (!fullCalendarDayTemplate) {
+        fullCalendarDayTemplate = document.createElement('div');
+        fullCalendarDayTemplate.className = 'full-calendar-day';
+        fullCalendarDayTemplate.setAttribute('role', 'button');
+        fullCalendarDayTemplate.setAttribute('tabindex', '-1');
+
+        const ringEl = document.createElement('div');
+        ringEl.className = CSS_CLASSES.DAY_PROGRESS_RING;
+
+        const numberEl = document.createElement('span');
+        numberEl.className = CSS_CLASSES.DAY_NUMBER;
+        
+        ringEl.appendChild(numberEl);
+        fullCalendarDayTemplate.appendChild(ringEl);
+    }
+    return fullCalendarDayTemplate;
+}
+
 /**
  * OTIMIZAÇÃO (DRY): Aplica o estado visual a um elemento de dia do calendário.
  * Centraliza a lógica de classes, atributos ARIA e variáveis CSS para evitar duplicação.
@@ -52,9 +73,8 @@ export function updateCalendarDayElement(dayItem: HTMLElement, date: Date, today
     // PERFORMANCE OPTIMIZATION: Use pre-calculated ISO date if available
     const isoDate = precalcIsoDate || toUTCIsoDateString(date);
     
-    // DECOUPLING: Chamadas separadas para performance
-    const { completedPercent, snoozedPercent } = calculateDaySummary(isoDate);
-    const showPlus = shouldShowPlusIndicatorForDate(isoDate);
+    // DECOUPLING: Single unified call to cached summary
+    const { completedPercent, snoozedPercent, hasPlus } = calculateDaySummary(isoDate);
     
     const isSelected = isoDate === state.selectedDate;
     const isToday = isoDate === effectiveTodayISO;
@@ -108,8 +128,9 @@ export function updateCalendarDayElement(dayItem: HTMLElement, date: Date, today
         
         const dayNumber = dayProgressRing.querySelector<HTMLElement>(`.${CSS_CLASSES.DAY_NUMBER}`);
         if (dayNumber) {
-            if (dayNumber.classList.contains('has-plus') !== showPlus) {
-                dayNumber.classList.toggle('has-plus', showPlus);
+            // Updated to use the merged flag
+            if (dayNumber.classList.contains('has-plus') !== hasPlus) {
+                dayNumber.classList.toggle('has-plus', hasPlus);
             }
             setTextContent(dayNumber, String(date.getUTCDate()));
         }
@@ -232,6 +253,7 @@ export function renderFullCalendar() {
     const fragment = document.createDocumentFragment();
     let totalGridCells = 0;
 
+    // PERFORMANCE [2025-03-09]: Use cached template for day creation
     for (let i = 0; i < startDayOfWeek; i++) {
         const day = daysInPrevMonth - startDayOfWeek + 1 + i;
         const dayEl = document.createElement('div');
@@ -259,30 +281,31 @@ export function renderFullCalendar() {
     for (let day = 1; day <= daysInMonth; day++) {
         // Use iteratorDate which is already set to the correct day
         const isoDate = toUTCIsoDateString(iteratorDate);
+        // Uses merged summary
         const { completedPercent, snoozedPercent } = calculateDaySummary(isoDate);
 
-        const dayEl = document.createElement('div');
-        dayEl.className = 'full-calendar-day';
+        // OPTIMIZATION: Clone from template
+        const dayEl = getFullCalendarDayTemplate().cloneNode(true) as HTMLElement;
+        
         dayEl.dataset.date = isoDate;
-        dayEl.setAttribute('role', 'button');
         const isSelected = isoDate === state.selectedDate;
-        dayEl.classList.toggle(CSS_CLASSES.SELECTED, isSelected);
-        dayEl.classList.toggle(CSS_CLASSES.TODAY, isoDate === todayISO);
+        
+        // Batch class updates
+        if (isSelected) dayEl.classList.add(CSS_CLASSES.SELECTED);
+        if (isoDate === todayISO) dayEl.classList.add(CSS_CLASSES.TODAY);
+        
         dayEl.setAttribute('aria-pressed', String(isSelected));
         dayEl.setAttribute('aria-label', ariaDateFormatter.format(iteratorDate));
         dayEl.setAttribute('tabindex', isSelected ? '0' : '-1');
 
-        const ringEl = document.createElement('div');
-        ringEl.className = CSS_CLASSES.DAY_PROGRESS_RING;
+        // Locate children in the cloned template (knowing the structure)
+        const ringEl = dayEl.firstElementChild as HTMLElement; // .day-progress-ring
+        const numberEl = ringEl.firstElementChild as HTMLElement; // .day-number
+
         ringEl.style.setProperty('--completed-percent', `${completedPercent}%`);
         ringEl.style.setProperty('--snoozed-percent', `${snoozedPercent}%`);
-
-        const numberEl = document.createElement('span');
-        numberEl.className = CSS_CLASSES.DAY_NUMBER;
         numberEl.textContent = String(day);
         
-        ringEl.appendChild(numberEl);
-        dayEl.appendChild(ringEl);
         fragment.appendChild(dayEl);
         totalGridCells++;
         

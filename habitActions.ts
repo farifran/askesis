@@ -271,7 +271,7 @@ export function saveHabitFromModal() {
         habit.goal = formData.goal;
 
         // FIX [2025-03-09]: CRITICAL FIX FOR RESTORING HABITS IN PAST.
-        // Clean up any 'Just Today' removal overrides that might be hiding the habit.
+        // Clean up any 'Just Today' removal overrides that might be hiding the habit on this specific date.
         const dailyInfo = ensureHabitDailyInfo(targetDate, habit.id);
         if (dailyInfo.dailySchedule) {
             delete dailyInfo.dailySchedule;
@@ -293,6 +293,9 @@ export function saveHabitFromModal() {
             firstSchedule.nameKey = formData.nameKey;
             firstSchedule.times = formData.times;
             firstSchedule.frequency = formData.frequency;
+            
+            // Update anchor if needed to ensure frequency calculation starts from new start date
+            firstSchedule.scheduleAnchor = targetDate;
             
             _finalizeScheduleUpdate(true);
         } else {
@@ -562,25 +565,10 @@ export function requestHabitTimeRemoval(habitId: string, time: TimeOfDay) {
     const { name } = getHabitDisplayInfo(habit, targetDate);
     const timeName = getTimeOfDayName(time);
     
-    // Action 1: Remove only for the current date (Override)
-    const applyJustToday = () => {
-        const dailyInfo = ensureHabitDailyInfo(targetDate, habitId);
-        
-        // Start with the effective schedule (defaults + existing overrides)
-        const currentSchedule = [...getEffectiveScheduleForHabitOnDate(habit, targetDate)];
-        
-        const index = currentSchedule.indexOf(time);
-        if (index > -1) {
-            currentSchedule.splice(index, 1);
-            dailyInfo.dailySchedule = currentSchedule;
-            
-            // Just visual update for today
-            _finalizeScheduleUpdate(false);
-        }
-    };
-
-    // Action 2: Remove from history moving forward
-    const applyFromNowOn = () => {
+    // UX REFINEMENT [2025-03-09]: Simplified flow.
+    // User requested to remove "Just Today" option, favoring "Snooze" for temporary skips.
+    // Now creates a permanent schedule split (From Now On).
+    const confirmDeletion = () => {
         const dailyInfo = ensureHabitDailyInfo(targetDate, habitId);
         
         // Clean up any local override to let the new history take over cleanly
@@ -603,12 +591,11 @@ export function requestHabitTimeRemoval(habitId: string, time: TimeOfDay) {
 
     showConfirmationModal(
         t('confirmRemoveTimePermanent', { habitName: name, time: timeName }),
-        applyFromNowOn,
+        confirmDeletion,
         {
-            title: t('modalRemoveTimeTitle'), // Use explicit title for clarity
-            confirmText: t('buttonFromNowOn'),
-            editText: t('buttonJustToday'),
-            onEdit: applyJustToday
+            title: t('modalRemoveTimeTitle'), 
+            confirmText: t('deleteButton'), // Use explicit "Delete" text
+            confirmButtonStyle: 'danger' // Make it red/danger
         }
     );
 }

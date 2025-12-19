@@ -16,6 +16,13 @@ const ITERATIONS = 100000; // Um número padrão de iterações para PBKDF2
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
+// PERFORMANCE [2025-03-09]: Session Cache para Derivação de Chaves (PBKDF2).
+// PBKDF2 é intencionalmente lento (CPU bound). Caching evita re-derivar a chave
+// a cada auto-save se a senha (sync key) não mudou.
+let cachedPassword: string | null = null;
+let cachedDerivedKey: CryptoKey | null = null;
+let cachedSaltBase64: string | null = null;
+
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
     const bytes = new Uint8Array(buffer);
     const CHUNK_SIZE = 8192;
@@ -60,10 +67,29 @@ async function deriveKey(password: string, salt: Uint8Array): Promise<CryptoKey>
 }
 
 async function encrypt(data: string, password: string): Promise<string> {
-    const salt = crypto.getRandomValues(new Uint8Array(16));
-    const key = await deriveKey(password, salt);
+    let key: CryptoKey;
+    let saltBase64: string;
+
+    // OTIMIZAÇÃO: Verifica se podemos reutilizar a chave derivada da sessão anterior
+    if (cachedPassword === password && cachedDerivedKey && cachedSaltBase64) {
+        key = cachedDerivedKey;
+        saltBase64 = cachedSaltBase64;
+    } else {
+        // Cold Start ou Senha Mudou: Gera novo salt e deriva nova chave (Lento)
+        const salt = crypto.getRandomValues(new Uint8Array(16));
+        key = await deriveKey(password, salt);
+        
+        // Atualiza Cache
+        cachedPassword = password;
+        cachedDerivedKey = key;
+        cachedSaltBase64 = arrayBufferToBase64(salt);
+        
+        saltBase64 = cachedSaltBase64;
+    }
     
+    // O IV (Initialization Vector) DEVE ser único para cada encriptação, mesmo com a mesma chave.
     const iv = crypto.getRandomValues(new Uint8Array(12));
+    
     const encrypted = await crypto.subtle.encrypt(
         {
             name: 'AES-GCM',
@@ -74,7 +100,7 @@ async function encrypt(data: string, password: string): Promise<string> {
     );
 
     const combined = {
-        salt: arrayBufferToBase64(salt),
+        salt: saltBase64, // Reutilizamos o salt da sessão
         iv: arrayBufferToBase64(iv),
         encrypted: arrayBufferToBase64(encrypted),
     };
@@ -86,8 +112,17 @@ async function decrypt(encryptedDataJSON: string, password: string): Promise<str
     try {
         const { salt: saltBase64, iv: ivBase64, encrypted: encryptedBase64 } = JSON.parse(encryptedDataJSON);
 
+        // Para decriptar, precisamos usar EXATAMENTE o salt que foi usado para encriptar.
+        // Não podemos usar o cache de sessão aqui cegamente, pois o dado pode ter vindo de outro dispositivo.
         const salt = base64ToArrayBuffer(saltBase64);
-        const key = await deriveKey(password, new Uint8Array(salt));
+        
+        // Pequena otimização: Se o salt do payload for idêntico ao da sessão, usamos a chave cacheada.
+        let key: CryptoKey;
+        if (cachedPassword === password && cachedSaltBase64 === saltBase64 && cachedDerivedKey) {
+            key = cachedDerivedKey;
+        } else {
+            key = await deriveKey(password, new Uint8Array(salt));
+        }
 
         const iv = base64ToArrayBuffer(ivBase64);
         const encrypted = base64ToArrayBuffer(encryptedBase64);

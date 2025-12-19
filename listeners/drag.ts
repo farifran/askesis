@@ -20,6 +20,18 @@ const DROP_INDICATOR_HEIGHT = 3;
 const SCROLL_ZONE_SIZE = 120;
 const MAX_SCROLL_SPEED = 15; // Aumentado levemente pois a curva quadrática é mais suave na média
 
+// UX IMPROVEMENT [2025-03-09]: Magnetic Threshold.
+// Distância em pixels para "sugar" o item para dentro de um grupo vazio.
+const MAGNETIC_THRESHOLD = 60; 
+
+// Advanced Physics Cache Interface
+interface ZoneGeometry {
+    element: HTMLElement;
+    initialTop: number;
+    initialBottom: number;
+    height: number;
+}
+
 export function setupDragHandler(habitContainer: HTMLElement) {
     let draggedElement: HTMLElement | null = null;
     let draggedHabitId: string | null = null;
@@ -44,6 +56,12 @@ export function setupDragHandler(habitContainer: HTMLElement) {
     
     // PERFORMANCE [2025-03-03]: Cache container bounds to avoid layout thrashing
     let cachedContainerRect: DOMRect | null = null;
+    
+    // PERFORMANCE [2025-03-09]: ZERO-REFLOW CACHE
+    // Armazena geometrias estáticas relativas ao topo do documento (offset)
+    // para calcular colisões magneticamente sem ler o DOM.
+    let cachedEmptyZones: ZoneGeometry[] = [];
+    let initialContainerScrollTop = 0;
 
     function _animationLoop() {
         if (scrollVelocity !== 0) {
@@ -115,63 +133,98 @@ export function setupDragHandler(habitContainer: HTMLElement) {
 
     function _calculateDragState(e: DragEvent) {
         const target = e.target as HTMLElement;
+        const { clientY } = e;
         
-        let dropZone = target.closest<HTMLElement>(DOM_SELECTORS.DROP_ZONE);
+        // --- 1. DETECT DROP ZONE ---
+        let dropZone: HTMLElement | null = null;
+        let isMagnetized = false;
+
+        // First check: Direct hover (Standard behavior)
+        dropZone = target.closest<HTMLElement>(DOM_SELECTORS.DROP_ZONE);
         if (!dropZone) {
             const wrapper = target.closest<HTMLElement>('.habit-group-wrapper');
             if (wrapper) {
                 dropZone = wrapper.querySelector<HTMLElement>(DOM_SELECTORS.DROP_ZONE);
             }
         }
+
+        // UX IMPROVEMENT: Magnetic Pull for Empty Groups
+        // ALGORITHMIC OPTIMIZATION [2025-03-09]: Projection Math.
+        // Instead of querying DOM Rects (slow), calculate current position based on initial cache + scroll delta.
+        // Formula: CurrentY = InitialY - (CurrentScrollTop - InitialScrollTop) + ContainerOffset.
         
-        const { clientY } = e;
+        if (cachedContainerRect && cachedEmptyZones.length > 0) {
+            // We need current container rect because the whole page doesn't scroll, but the container does.
+            // Actually, getBoundingClientRect is relative to viewport.
+            // If the container scrolls, the elements move up.
+            // CurrentY = InitialRectY - (CurrentScroll - InitialScroll).
+            
+            const currentScrollTop = habitContainer.scrollTop;
+            const scrollDelta = currentScrollTop - initialContainerScrollTop;
+            
+            let bestCandidate: HTMLElement | null = null;
+            let minDistance = Infinity;
+
+            for (const zoneGeom of cachedEmptyZones) {
+                // Project the zone's current Y center relative to the viewport
+                const projectedTop = zoneGeom.initialTop - scrollDelta;
+                const projectedCenterY = projectedTop + (zoneGeom.height / 2);
+                
+                const dist = Math.abs(clientY - projectedCenterY);
+                
+                if (dist < MAGNETIC_THRESHOLD) {
+                    if (dist < minDistance) {
+                        minDistance = dist;
+                        bestCandidate = zoneGeom.element;
+                    }
+                }
+            }
+            
+            // Magnet wins if found
+            if (bestCandidate) {
+                dropZone = bestCandidate;
+                isMagnetized = true;
+            }
+        }
+
+        // --- 2. CALCULATE SCROLL VELOCITY ---
         
-        // PERFORMANCE: Use cached rect if available, fallback to query if not (safety)
+        // PERFORMANCE: Use cached rect
         const scrollContainerRect = cachedContainerRect || habitContainer.getBoundingClientRect();
         
         const topZoneEnd = scrollContainerRect.top + SCROLL_ZONE_SIZE;
         const bottomZoneStart = scrollContainerRect.bottom - SCROLL_ZONE_SIZE;
 
-        // --- LÓGICA PROPORCIONAL QUADRÁTICA ---
+        // Stabilize scroll if magnetized (prevent jitter when dropping into empty slot)
+        const scrollDampener = isMagnetized ? 0 : 1; 
+
         // Topo
         if (clientY < topZoneEnd) {
-            // Distância da borda real do container
-            // Se clientY estiver acima do container, distance será negativa (o que é ok, tratamos no clamp)
             const distance = clientY - scrollContainerRect.top;
-            
-            // Normaliza (0 = início da zona, 1 = na borda ou além)
-            // Se distance for pequeno (perto da borda), ratio aproxima-se de 1.
             let ratio = (SCROLL_ZONE_SIZE - distance) / SCROLL_ZONE_SIZE;
-            
-            // Clamp: Garante que ratio fique entre 0 e 1 (para o cálculo da curva), 
-            // mas permite > 1 para velocidade máxima imediata se sair muito fora.
             ratio = Math.max(0, Math.min(1, ratio));
-            
-            // Curva Quadrática (Ease-In): x * x
-            // Isso garante que a velocidade aumente lentamente no início e rápido no final.
             const intensity = ratio * ratio; 
             
-            scrollVelocity = -(intensity * MAX_SCROLL_SPEED);
+            scrollVelocity = -(intensity * MAX_SCROLL_SPEED) * scrollDampener;
             
-            // Garante movimento mínimo se estiver na zona
             if (scrollVelocity > -1 && scrollVelocity < 0) scrollVelocity = -1;
         } 
         // Fundo
         else if (clientY > bottomZoneStart) {
             const distance = scrollContainerRect.bottom - clientY;
-            
             let ratio = (SCROLL_ZONE_SIZE - distance) / SCROLL_ZONE_SIZE;
             ratio = Math.max(0, Math.min(1, ratio));
-            
             const intensity = ratio * ratio;
             
-            scrollVelocity = intensity * MAX_SCROLL_SPEED;
+            scrollVelocity = (intensity * MAX_SCROLL_SPEED) * scrollDampener;
             
             if (scrollVelocity < 1 && scrollVelocity > 0) scrollVelocity = 1;
         } 
         else {
             scrollVelocity = 0;
         }
+
+        // --- 3. VALIDATE DROP LOGIC ---
 
         if (!draggedHabitObject || !draggedHabitOriginalTime || !dropZone) {
             nextDropZoneTarget = null;
@@ -192,23 +245,48 @@ export function setupDragHandler(habitContainer: HTMLElement) {
     
         isDropValid = !isInvalidDrop;
 
-        const cardTarget = target.closest<HTMLElement>(DOM_SELECTORS.HABIT_CARD);
-        if (cardTarget && cardTarget !== draggedElement && cardTarget.parentElement === dropZone) {
-            const targetRect = cardTarget.getBoundingClientRect();
-            const midY = targetRect.top + targetRect.height / 2;
-            const position = e.clientY < midY ? 'before' : 'after';
+        // Calculate Position Indicator
+        // If magnetized to an empty group, just show indicator at top (or hidden inside placeholder logic)
+        const hasCards = dropZone.querySelectorAll(DOM_SELECTORS.HABIT_CARD).length > 0;
 
-            const indicatorTopVal = position === 'before'
-                ? cardTarget.offsetTop - DROP_INDICATOR_GAP
-                : cardTarget.offsetTop + cardTarget.offsetHeight + DROP_INDICATOR_GAP;
+        if (hasCards) {
+            const cardTarget = target.closest<HTMLElement>(DOM_SELECTORS.HABIT_CARD);
+            if (cardTarget && cardTarget !== draggedElement && cardTarget.parentElement === dropZone) {
+                const targetRect = cardTarget.getBoundingClientRect();
+                const midY = targetRect.top + targetRect.height / 2;
+                const position = e.clientY < midY ? 'before' : 'after';
 
-            nextIndicatorTop = `${indicatorTopVal - (DROP_INDICATOR_HEIGHT / 2)}px`;
-            nextReorderTargetId = cardTarget.dataset.habitId || null;
-            nextReorderPosition = position;
+                const indicatorTopVal = position === 'before'
+                    ? cardTarget.offsetTop - DROP_INDICATOR_GAP
+                    : cardTarget.offsetTop + cardTarget.offsetHeight + DROP_INDICATOR_GAP;
+
+                nextIndicatorTop = `${indicatorTopVal - (DROP_INDICATOR_HEIGHT / 2)}px`;
+                nextReorderTargetId = cardTarget.dataset.habitId || null;
+                nextReorderPosition = position;
+            } else {
+                // Hovering over group but not specific card (e.g. gap) - Append to end
+                // Reset reorder specific targets to null so it appends
+                nextReorderTargetId = null;
+                nextReorderPosition = null;
+                // Position indicator at bottom of list
+                const lastCard = dropZone.lastElementChild as HTMLElement;
+                if (lastCard && lastCard !== dropIndicator) {
+                     nextIndicatorTop = `${lastCard.offsetTop + lastCard.offsetHeight + DROP_INDICATOR_GAP}px`;
+                } else {
+                     nextIndicatorTop = '0px';
+                }
+            }
         } else {
+            // Empty group (Magnetized or Hovered)
+            // Center the indicator or put it at the top relative to placeholder
+            const placeholder = dropZone.querySelector(DOM_SELECTORS.EMPTY_GROUP_PLACEHOLDER) as HTMLElement;
+            if (placeholder) {
+                nextIndicatorTop = `${placeholder.offsetTop}px`;
+            } else {
+                nextIndicatorTop = '0px';
+            }
             nextReorderTargetId = null;
             nextReorderPosition = null;
-            nextIndicatorTop = null; 
         }
     }
 
@@ -254,6 +332,7 @@ export function setupDragHandler(habitContainer: HTMLElement) {
         isDropValid = false;
         
         cachedContainerRect = null; // Clear cache
+        cachedEmptyZones = []; // Clear cache
     }
 
 
@@ -309,6 +388,25 @@ export function setupDragHandler(habitContainer: HTMLElement) {
             
             // PERFORMANCE: Cache the container rect ONCE at start
             cachedContainerRect = habitContainer.getBoundingClientRect();
+            initialContainerScrollTop = habitContainer.scrollTop;
+            
+            // PERFORMANCE [2025-03-09]: Pre-calculate geometry of potential magnetic targets (Empty Zones).
+            // This allows dragover to run at 60fps without touching the DOM.
+            const allDropZones = Array.from(habitContainer.querySelectorAll(DOM_SELECTORS.DROP_ZONE));
+            cachedEmptyZones = [];
+            
+            for (const zone of allDropZones) {
+                // If zone has no cards (or only the placeholder), it's a candidate for magnetism
+                if (!zone.querySelector(DOM_SELECTORS.HABIT_CARD)) {
+                    const rect = zone.getBoundingClientRect();
+                    cachedEmptyZones.push({
+                        element: zone as HTMLElement,
+                        initialTop: rect.top, // Viewport relative at start
+                        initialBottom: rect.bottom,
+                        height: rect.height
+                    });
+                }
+            }
 
             e.dataTransfer!.setData('text/plain', draggedHabitId);
             e.dataTransfer!.effectAllowed = 'move';

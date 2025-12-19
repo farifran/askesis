@@ -130,8 +130,25 @@ function _calculateChartScales(chartData: ChartDataPoint[], chartWidthPx: number
 }
 
 function _generatePathData(chartData: ChartDataPoint[], { xScale, yScale }: ChartScales): { areaPathData: string, linePathData: string } {
-    const linePathData = chartData.map((point, i) => `${i === 0 ? 'M' : 'L'} ${xScale(i)} ${yScale(point.value)}`).join(' ');
-    const areaPathData = `${linePathData} V ${yScale(chartMetadata.minVal)} L ${xScale(0)} ${yScale(chartMetadata.minVal)} Z`;
+    // PERFORMANCE OPTIMIZATION [2025-03-09]: String Building Loop.
+    // Replaced map().join() with a simple for loop to avoid creating intermediate arrays.
+    // This reduces GC pressure during chart updates.
+    
+    let linePathData = '';
+    const len = chartData.length;
+    
+    for (let i = 0; i < len; i++) {
+        const point = chartData[i];
+        const command = i === 0 ? 'M' : 'L';
+        // Note: Template literals in modern V8 are highly optimized.
+        linePathData += `${command} ${xScale(i)} ${yScale(point.value)} `;
+    }
+    
+    // Trim is not strictly necessary for SVG paths but clean.
+    // The previous implementation used join(' '), so we match that implicit spacing.
+    
+    const areaPathData = `${linePathData}V ${yScale(chartMetadata.minVal)} L ${xScale(0)} ${yScale(chartMetadata.minVal)} Z`;
+    
     return { areaPathData, linePathData };
 }
 
