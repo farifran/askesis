@@ -46,6 +46,7 @@
     "cancelButton": "Cancel",
     "chartEmptyState": "",
     "chartEvolutionSince": "Evolution since {date}",
+    "chartSubtitleProgress": "Compound Progress",
     "chartTooltipCompleted": "Completed: {completed}/{total}",
     "chartTooltipScore": "Compound Score",
     "cleanthes": "Cleanthes",

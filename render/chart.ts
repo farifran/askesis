@@ -368,7 +368,11 @@ export function renderChart() {
         }
     }
     if (ui.chart.subtitle) {
-        const newSubtitle = t('appSubtitle');
+        const summary = calculateDaySummary(state.selectedDate);
+        const hasCompletedHabits = summary.completed > 0;
+        const newSubtitleKey = hasCompletedHabits ? 'chartSubtitleProgress' : 'appSubtitle';
+        const newSubtitle = t(newSubtitleKey);
+
         if (ui.chart.subtitle.textContent !== newSubtitle) {
             ui.chart.subtitle.textContent = newSubtitle;
         }
