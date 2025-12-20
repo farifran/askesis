@@ -1,4 +1,5 @@
 
+
 /* 
  * [ANALYSIS PROGRESS]: 100% - Análise concluída.
  * [2025-02-23]: Auditoria de CSS Completa.
@@ -1224,42 +1225,26 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 /* --- COMPONENTES: GRÁFICO DE EVOLUÇÃO (AUTO FOOTER) --- */
 .chart-container {
     padding: var(--space-lg);
-    background-color: var(--bg-color); /* TESTE: Alterado para preto puro a pedido do usuário */
+    background-color: var(--bg-color);
     border-radius: var(--border-radius-large);
-    /* PERFORMANCE [2024-12-28]: Isola o layout e a pintura da faixa de calendário para evitar reflows globais. */
-    /* FIX [2024-12-28]: Alterado para 'layout style' para permitir que tooltips overflow (visualmente). */
     contain: layout style;
-    /* PERFORMANCE [2025-01-18]: Otimização para evitar renderização quando fora da tela. */
     content-visibility: auto;
     contain-intrinsic-size: 80px;
-    
-    /* FIX: FLEX ITEM */
-    flex-shrink: 0; /* Nunca encolhe, sempre visível */
+    flex-shrink: 0;
     max-height: none;
     overflow: visible;
-    
-    /* UI FIX: Margem superior para separar dos cartões.
-       Como o container de hábitos não força altura total, o gráfico sobe
-       naturalmente para ficar perto dos cartões quando há poucos. */
-    /* Reduced margin-top from --space-3xl (48px) to --space-xl (24px) for tighter layout */
-    margin-top: var(--space-lg);
-    margin-inline: var(--space-lg); 
-    
-    /* Margem inferior para não colar na borda da tela */
-    /* Reduced margin-bottom from --space-lg (16px) to --space-sm (8px) */
-    margin-bottom: var(--space-sm);
-    
-    /* Estilos visuais normais (não flutuante) */
+    margin-top: 0;
+    margin-inline: var(--space-lg);
+    margin-bottom: var(--space-lg);
     z-index: var(--z-index-footer);
     box-shadow: none;
-    
-    /* [2025-02-23] Add border matching habit cards */
     border: 1px solid rgba(255, 255, 255, 0.3);
 }
 .chart-header {
     display: flex;
     flex-direction: column;
     align-items: flex-start;
+    margin: 0;
     margin-bottom: var(--space-md);
 }
 /* REFINAMENTO DE UI [2024-11-25]: Estilos atualizados para acomodar um novo cabeçalho de gráfico com título e subtítulo. */
@@ -1269,12 +1254,13 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     font-weight: 700;
     line-height: 1.2;
 }
+.app-subtitle-wrapper {
+    margin: var(--space-lg) var(--space-lg) var(--space-md);
+}
 .app-subtitle {
-    /* RESTAURADO: Frase de reflexão */
-    font-size: 11px; /* Fonte reduzida conforme solicitado */
+    font-size: 13px;
     font-style: italic;
     color: var(--text-secondary);
-    margin-bottom: var(--space-xs); /* UPDATE [2025-03-03]: Add spacing below to separate from title */
     line-height: 1.4;
 }
 .chart-title strong {

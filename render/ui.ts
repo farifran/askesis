@@ -239,8 +239,8 @@ export const ui: UIElements = {
     ...createLazyGetter('iconPickerTitle', '#icon-picker-modal-title'),
     ...createLazyGetter('colorPickerTitle', '#color-picker-modal-title'),
     chart: {
-        ...createLazyChartGetter('title', '#chart-container .chart-title'),
-        ...createLazyChartGetter('subtitle', '#chart-container .app-subtitle'),
+        ...createLazyChartGetter('title', '.chart-header .chart-title'),
+        ...createLazyChartGetter('subtitle', '.app-subtitle'),
         ...createLazyChartGetter('emptyState', '#chart-container .chart-empty-state'),
         ...createLazyChartGetter('dataView', '#chart-container .chart-data-view'),
         ...createLazyChartGetter('wrapper', '#chart-container .chart-wrapper'),
