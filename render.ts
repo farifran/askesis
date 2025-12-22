@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -122,6 +123,14 @@ export function updateNotificationUI() {
         ui.notificationToggle.checked = isPushEnabled;
         // The toggle should be disabled if permission is denied, as the user can't re-enable via UI.
         ui.notificationToggleLabel.classList.toggle('disabled', permission === 'denied');
+
+        let statusTextKey = 'notificationStatusOptedOut'; // Default to disabled by choice
+        if (permission === 'denied') {
+            statusTextKey = 'notificationStatusDisabled'; // Blocked by browser
+        } else if (isPushEnabled) {
+            statusTextKey = 'notificationStatusEnabled'; // Enabled and opted-in
+        }
+        setTextContent(ui.notificationStatusDesc, t(statusTextKey));
     });
 }
 

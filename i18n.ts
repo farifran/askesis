@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -166,8 +167,6 @@ function updateUIText() {
     
     ui.labelSync.textContent = t('syncLabel');
     ui.labelNotifications.textContent = t('modalManageNotifications');
-
-    ui.notificationStatusDesc.textContent = t('modalManageNotificationsStaticDesc');
     
     ui.labelReset.textContent = t('modalManageReset');
 
