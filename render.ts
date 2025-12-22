@@ -121,9 +121,17 @@ export function updateNotificationUI() {
         const permission = OneSignal.Notifications.permission;
         
         ui.notificationToggle.checked = isPushEnabled;
+        ui.notificationToggle.disabled = false;
+        
         // The toggle should be disabled if permission is denied, as the user can't re-enable via UI.
         ui.notificationToggleLabel.classList.toggle('disabled', permission === 'denied');
+        if (permission === 'denied') {
+            ui.notificationToggle.disabled = true;
+        }
 
+        ui.notificationRestartNotice.classList.add('hidden');
+        ui.notificationRestartNotice.textContent = '';
+        
         let statusTextKey = 'notificationStatusOptedOut'; // Default to disabled by choice
         if (permission === 'denied') {
             statusTextKey = 'notificationStatusDisabled'; // Blocked by browser

@@ -1,3 +1,5 @@
+
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -225,14 +227,19 @@ export function setupModalListeners() {
         render: renderLanguageFilter,
     });
     
-    ui.notificationToggle.addEventListener('change', async () => {
+    ui.notificationToggle.addEventListener('change', () => {
         pushToOneSignal(async (OneSignal: any) => {
-            const isPushEnabled = OneSignal.User.PushSubscription.optedIn;
-            if (isPushEnabled) {
-                await OneSignal.User.PushSubscription.optOut();
-            } else {
+            const isEnabled = ui.notificationToggle.checked;
+            if (isEnabled) {
                 await OneSignal.Notifications.requestPermission();
+                setTextContent(ui.notificationStatusDesc, t('notificationWillBeEnabled'));
+            } else {
+                await OneSignal.User.PushSubscription.optOut();
+                setTextContent(ui.notificationStatusDesc, t('notificationWillBeDisabled'));
             }
+            ui.notificationToggle.disabled = true;
+            ui.notificationRestartNotice.classList.remove('hidden');
+            setTextContent(ui.notificationRestartNotice, t('notificationNeedsRestart'));
         });
     });
 

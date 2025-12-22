@@ -3,11 +3,11 @@
     "_comment": "[ANALYSIS PROGRESS]: 100% - Limpeza de claves no utilizadas realizada [2025-01-16].",
     "aiCelebration21Day": {
         "one": "### ¡Felicidades! 🎉\n\n¡Has mantenido el hábito **{habitNames}** durante 21 días consecutivos! Este es un hito crucial para que una acción se vuelva automática. ¡Sigue con el buen trabajo!",
-        "other": "### ¡Felicidades! 🎉\n\n¡Has mantenido los hábitos **{habitNames}** durante 21 días consecutivos! Este es un hito crucial para que una acción se vuelva automática. ¡Sigue con el buen trabajo!"
+        "other": "### ¡Felicidades! 🎉\n\n¡Has mantenido los hábitos **{habitNames}** durante 21 días consecutivos! Este es um hito crucial para que una acción se vuelva automática. ¡Sigue con el buen trabajo!"
     },
     "aiCelebration66Day": {
         "one": "### ¡Logro Increíble! 🏆\n\n¡Has alcanzado los 66 días con el hábito **{habitNames}**! La ciencia sugiere que este es el punto en el que un nuevo comportamiento se consolida de verdad. Has construido una base sólida para un cambio duradero.",
-        "other": "### ¡Logro Increíble! 🏆\n\n¡Has mantenido los hábitos **{habitNames}** durante 21 días consecutivos! La ciencia sugiere que este es el punto en el que un nuevo comportamiento se consolida de verdad. Has construido una base sólida para un cambio duradero."
+        "other": "### ¡Logro Increíble! 🏆\n\n¡Has mantenido los hábitos **{habitNames}** durante 21 días consecutivos! La ciencia sugiere que este es el punto en el que un nuevo comportamento se consolida de verdad. Has construido una base sólida para un cambio duradero."
     },
     "aiError": "Error al analizar los datos.",
     "aiErrorGeneric": "Ocurrió un error en la comunicación con la Inteligencia Artificial. Por favor, intente nuevamente más tarde.",

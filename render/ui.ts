@@ -1,3 +1,4 @@
+
 type UIElements = {
     appContainer: HTMLElement; // Cached reference
     calendarStrip: HTMLElement;
@@ -59,6 +60,7 @@ type UIElements = {
     notificationToggle: HTMLInputElement;
     notificationToggleLabel: HTMLLabelElement;
     notificationStatusDesc: HTMLElement;
+    notificationRestartNotice: HTMLElement; // Added
     iconPickerModal: HTMLElement;
     iconPickerGrid: HTMLElement;
     habitIconPickerBtn: HTMLButtonElement;
@@ -208,6 +210,7 @@ export const ui: UIElements = {
     ...createLazyGetter('notificationToggle', '#notification-toggle'),
     ...createLazyGetter('notificationToggleLabel', '#notification-toggle-label'),
     ...createLazyGetter('notificationStatusDesc', '#notification-status-desc'),
+    ...createLazyGetter('notificationRestartNotice', '#notification-restart-notice'),
     ...createLazyGetter('iconPickerModal', '#icon-picker-modal'),
     ...createLazyGetter('iconPickerGrid', '#icon-picker-grid'),
     ...createLazyGetter('habitIconPickerBtn', '#habit-icon-picker-btn'),

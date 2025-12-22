@@ -1545,7 +1545,12 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 .setting-item label { font-size: 14px; color: var(--text-secondary); }
 /* STYLE UPDATE: Centered to match sync status text style. */
 .setting-item-desc { font-size: 13px; color: var(--text-secondary); line-height: 1.5; text-align: center; width: 100%; }
-
+#notification-restart-notice {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    font-style: italic;
+    margin-inline-start: var(--space-sm);
+}
 
 /* Seção de Status de Notificação e Interruptor (Toggle) */
 .toggle-switch {
