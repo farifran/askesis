@@ -239,8 +239,7 @@ export function setupModalListeners() {
 
             // Update UI immediately to show pending state
             ui.notificationToggle.disabled = true;
-            const statusText = t(wantsEnabled ? 'notificationStatusActivated' : 'notificationStatusDeactivated');
-            setTextContent(ui.notificationStatusDesc, t('notificationChangePending', { status: statusText }));
+            setTextContent(ui.notificationStatusDesc, t('notificationChangePending'));
         });
     });
 

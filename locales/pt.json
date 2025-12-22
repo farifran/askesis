@@ -134,7 +134,7 @@
     "noticeHabitAlreadyExistsInTime": "O hábito '{habitName}' já está ativo no horário: {times}.",
     "noticeNameCannotBeEmpty": "O nome do hábito não pode estar vazio.",
     "noticeNameTooLong": "Máximo de 16 caracteres. Use uma descrição sucinta.",
-    "notificationChangePending": "As notificações serão {status}. A alteração terá efeito após reiniciar o aplicativo.",
+    "notificationChangePending": "A alteração terá efeito após reiniciar o aplicativo.",
     "notificationStatusActivated": "ativadas",
     "notificationStatusDeactivated": "desativadas",
     "notificationStatusDisabled": "As notificações estão bloqueadas. É necessário alterar as permissões nas configurações do seu navegador.",
