@@ -3,7 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 
-import { state, calculateDaySummary, isChartDataDirty } from '../state';
+import { state, isChartDataDirty } from '../state';
+import { calculateDaySummary } from '../services/selectors';
 import { ui } from './ui';
 import { t } from '../i18n';
 import { addDays, getTodayUTCIso, parseUTCIsoDate, toUTCIsoDateString, getDateTimeFormat } from '../utils';

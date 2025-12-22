@@ -1,3 +1,4 @@
+
 {
     "_comment": "[ANALYSIS PROGRESS]: 100% - Limpeza de claves no utilizadas realizada [2025-01-16].",
     "aiCelebration21Day": {
@@ -6,7 +7,7 @@
     },
     "aiCelebration66Day": {
         "one": "### ¡Logro Increíble! 🏆\n\n¡Has alcanzado los 66 días con el hábito **{habitNames}**! La ciencia sugiere que este es el punto en el que un nuevo comportamiento se consolida de verdad. Has construido una base sólida para un cambio duradero.",
-        "other": "### ¡Logro Increíble! 🏆\n\n¡Has alcanzado los 66 días con los hábitos **{habitNames}**! La ciencia sugiere que este es el punto en el que un nuevo comportamiento se consolida de verdad. Has construido una base sólida para un cambio duradero."
+        "other": "### ¡Logro Increíble! 🏆\n\n¡Has mantenido los hábitos **{habitNames}** durante 21 días consecutivos! La ciencia sugiere que este es el punto en el que un nuevo comportamiento se consolida de verdad. Has construido una base sólida para un cambio duradero."
     },
     "aiError": "Error al analizar los datos.",
     "aiErrorGeneric": "Ocurrió un error en la comunicación con la Inteligencia Artificial. Por favor, intente nuevamente más tarde.",
@@ -118,7 +119,6 @@
     "modalManageHabitsSubtitle": "Gestionar Hábitos",
     "modalManageLanguage": "Idioma",
     "modalManageNotifications": "Notificaciones",
-    "modalManageNotificationsStaticDesc": "Haz clic en el botón para habilitar o deshabilitar las notificaciones.",
     "modalManageReset": "Restablecer",
     "modalManageResetButton": "Borrar datos",
     "modalManageTitle": "Configuración General",
@@ -135,6 +135,7 @@
     "noticeNameCannotBeEmpty": "El nombre del hábito no puede estar vacío.",
     "notificationStatusDisabled": "Las notificaciones están bloqueadas. Debes cambiar los permisos en la configuración de tu navegador.",
     "notificationStatusEnabled": "Las notificaciones están activadas.",
+    "notificationStatusOptedOut": "Las notificaciones están desactivadas.",
     "predefinedHabitCookHealthyName": "Cocinar Saludable",
     "predefinedHabitCookHealthySubtitle": "Nutrición y sabor",
     "predefinedHabitCreativeHobbyName": "Hobby Creativo",
@@ -208,9 +209,9 @@
     "predefinedHabitYogaName": "Yoga",
     "predefinedHabitYogaSubtitle": "Equilibrio y flexibilidad",
     "privacyLabel": "Datos & Privacidad",
-    "quickActionMarkAllDone": "Marcar Todos como Hechos",
-    "quickActionMarkAllSnoozed": "Pospener Todos los Hábitos",
-    "quickActionOpenAlmanac": "Abrir Calendario Mensual",
+    "quickActionMarkAllDone": "Completar Día",
+    "quickActionMarkAllSnoozed": "Posponer Día",
+    "quickActionOpenAlmanac": "Calendario",
     "restoreButton": "Restaurar",
     "seneca": "Séneca",
     "syncActiveDesc": "La sincronización en la nube está activa en este dispositivo.",

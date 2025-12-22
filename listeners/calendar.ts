@@ -4,7 +4,7 @@
 */
 
 import { ui } from '../render/ui';
-import { state, invalidateChartCache, DAYS_IN_CALENDAR } from '../state';
+import { state, DAYS_IN_CALENDAR } from '../state';
 import { renderApp, renderFullCalendar, openModal, scrollToToday, closeModal } from '../render';
 import { parseUTCIsoDate, triggerHaptic, getTodayUTCIso, addDays, toUTCIsoDateString } from '../utils';
 import { DOM_SELECTORS } from '../render/constants';
@@ -14,7 +14,7 @@ function updateSelectedDateAndRender(date: string) {
     state.selectedDate = date;
     state.uiDirtyState.calendarVisuals = true;
     state.uiDirtyState.habitListStructure = true;
-    invalidateChartCache();
+    state.uiDirtyState.chartData = true;
     renderApp();
 }
 
@@ -57,12 +57,35 @@ export function setupCalendarListeners() {
 
             const rect = dayItem.getBoundingClientRect();
             const modal = ui.calendarQuickActions;
+            const modalContent = modal.querySelector<HTMLElement>('.quick-actions-content');
+
+            if (!modalContent) return;
+
             const top = rect.bottom + 8;
-            const left = rect.left + rect.width / 2;
-            
+            const centerPoint = rect.left + rect.width / 2;
+            const modalWidth = 240; // Based on min-width in CSS
+            const windowWidth = window.innerWidth;
+            const padding = 8; // Screen edge padding
+
+            let finalLeft = centerPoint;
+            let translateX = '-50%';
+
+            const halfModalWidth = modalWidth / 2;
+            const leftEdge = centerPoint - halfModalWidth;
+            const rightEdge = centerPoint + halfModalWidth;
+
+            if (leftEdge < padding) {
+                finalLeft = padding;
+                translateX = '0%';
+            } else if (rightEdge > windowWidth - padding) {
+                finalLeft = windowWidth - padding;
+                translateX = '-100%';
+            }
+
             modal.style.setProperty('--actions-top', `${top}px`);
-            modal.style.setProperty('--actions-left', `${left}px`);
-            
+            modal.style.setProperty('--actions-left', `${finalLeft}px`);
+            modalContent.style.setProperty('--translate-x', translateX);
+
             openModal(modal, undefined, () => {
                 activeQuickActionDate = null;
             });

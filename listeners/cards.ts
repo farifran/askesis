@@ -4,8 +4,9 @@
 */
 
 import { ui } from '../render/ui';
-import { state, Habit, getCurrentGoalForInstance, TimeOfDay } from '../state';
-import { openNotesModal, renderExploreHabits, openModal, renderHabitCardState, renderCalendarDayPartial } from '../render';
+import { state, Habit, TimeOfDay } from '../state';
+import { getCurrentGoalForInstance } from '../services/selectors';
+import { openNotesModal, renderExploreHabits, openModal } from '../render';
 import {
     toggleHabitStatus,
     setGoalOverride,
@@ -184,7 +185,7 @@ export function setupCardListeners() {
             e.stopPropagation();
             triggerHaptic('light');
             const habit = state.habits.find(h => h.id === habitId);
-            if (habit && (habit.goal.type === 'pages' || habit.goal.type === 'minutes') && !card.classList.contains(CSS_CLASSES.COMPLETED)) {
+            if (habit && (habit.goal.type === 'pages' || habit.goal.type === 'minutes')) {
                 createGoalInput(habit, time, goalWrapper);
             }
             return;

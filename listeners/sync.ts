@@ -5,7 +5,7 @@
 
 import { ui } from "../render/ui";
 import { t } from "../i18n";
-import { fetchStateFromCloud, setSyncStatus } from "../cloud";
+import { fetchStateFromCloud, setSyncStatus } from "../services/cloud";
 import { loadState, saveState } from "../state";
 import { renderApp, showConfirmationModal } from "../render";
 import { storeKey, clearKey, hasLocalSyncKey, getSyncKey, isValidKeyFormat, initAuth } from "../services/api";

@@ -1,3 +1,4 @@
+
 {
     "_comment": "[ANALYSIS PROGRESS]: 100% - Limpeza de chaves mortas realizada [2025-01-16].",
     "aiCelebration21Day": {
@@ -118,7 +119,6 @@
     "modalManageHabitsSubtitle": "Gerenciar Hábitos",
     "modalManageLanguage": "Idioma",
     "modalManageNotifications": "Notificações",
-    "modalManageNotificationsStaticDesc": "Clique no botão para habilitar ou deshabilitar as notificações.",
     "modalManageReset": "Reinicialização",
     "modalManageResetButton": "Apagar dados",
     "modalManageTitle": "Configurações Gerais",
@@ -136,6 +136,7 @@
     "noticeNameTooLong": "Máximo de 16 caracteres. Use uma descrição sucinta.",
     "notificationStatusDisabled": "As notificações estão bloqueadas. É necessário alterar as permissões nas configurações do seu navegador.",
     "notificationStatusEnabled": "As notificações estão ativadas.",
+    "notificationStatusOptedOut": "As notificações estão desativadas.",
     "predefinedHabitCookHealthyName": "Cozinhar Saudável",
     "predefinedHabitCookHealthySubtitle": "Nutrição e sabor",
     "predefinedHabitCreativeHobbyName": "Hobby Criativo",
@@ -209,9 +210,9 @@
     "predefinedHabitYogaName": "Yoga",
     "predefinedHabitYogaSubtitle": "Equilíbrio e flexibilidade",
     "privacyLabel": "Dados & Privacidade",
-    "quickActionMarkAllDone": "Marcar Todos como Feitos",
-    "quickActionMarkAllSnoozed": "Adiar Todos os Hábitos",
-    "quickActionOpenAlmanac": "Abrir Calendário Mensal",
+    "quickActionMarkAllDone": "Concluir Dia",
+    "quickActionMarkAllSnoozed": "Adiar Dia",
+    "quickActionOpenAlmanac": "Calendário",
     "restoreButton": "Restaurar",
     "seneca": "Sêneca",
     "syncActiveDesc": "A sincronização na nuvem está ativa neste dispositivo.",

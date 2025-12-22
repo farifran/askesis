@@ -1,3 +1,4 @@
+
 {
     "_comment": "[ANALYSIS PROGRESS]: 100% - Dead key cleanup performed [2025-01-16].",
     "aiCelebration21Day": {
@@ -118,7 +119,6 @@
     "modalManageHabitsSubtitle": "Manage Habits",
     "modalManageLanguage": "Language",
     "modalManageNotifications": "Notifications",
-    "modalManageNotificationsStaticDesc": "Click the toggle to enable or disable notifications.",
     "modalManageReset": "Reset",
     "modalManageResetButton": "Delete data",
     "modalManageTitle": "General Settings",
@@ -136,6 +136,7 @@
     "noticeNameTooLong": "Max 16 characters. Use a succinct description.",
     "notificationStatusDisabled": "Notifications are blocked. You need to change permissions in your browser settings.",
     "notificationStatusEnabled": "Notifications are enabled.",
+    "notificationStatusOptedOut": "Notifications are disabled.",
     "predefinedHabitCookHealthyName": "Cook Healthy",
     "predefinedHabitCookHealthySubtitle": "Nutrition and flavor",
     "predefinedHabitCreativeHobbyName": "Creative Hobby",
@@ -209,9 +210,9 @@
     "predefinedHabitYogaName": "Yoga",
     "predefinedHabitYogaSubtitle": "Balance and flexibility",
     "privacyLabel": "Data & Privacy",
-    "quickActionMarkAllDone": "Mark All as Done",
-    "quickActionMarkAllSnoozed": "Snooze All Habits",
-    "quickActionOpenAlmanac": "Open Monthly Calendar",
+    "quickActionMarkAllDone": "Complete Day",
+    "quickActionMarkAllSnoozed": "Snooze Day",
+    "quickActionOpenAlmanac": "Calendar",
     "restoreButton": "Restore",
     "seneca": "Seneca",
     "syncActiveDesc": "Cloud sync is active on this device.",

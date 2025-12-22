@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 
-import { calculateDaySummary } from '../state';
+import { calculateDaySummary } from './selectors';
 import { getTodayUTCIso } from '../utils';
 
 // [2025-01-15] TYPE SAFETY: Definição de interface local para a Badging API.

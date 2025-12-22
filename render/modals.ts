@@ -3,7 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 
-import { state, Habit, HabitTemplate, Frequency, PredefinedHabit, TimeOfDay, calculateHabitStreak, STREAK_CONSOLIDATED, PREDEFINED_HABITS, TIMES_OF_DAY, FREQUENCIES, LANGUAGES, getHabitDailyInfoForDate, getScheduleForDate } from '../state';
+// FIX: Import calculateHabitStreak from selectors module, not state module.
+import { state, Habit, HabitTemplate, Frequency, PredefinedHabit, TimeOfDay, STREAK_CONSOLIDATED, PREDEFINED_HABITS, TIMES_OF_DAY, FREQUENCIES, LANGUAGES, getHabitDailyInfoForDate } from '../state';
+import { getScheduleForDate, calculateHabitStreak } from '../services/selectors';
 import { ui } from './ui';
 import { t, getHabitDisplayInfo, getTimeOfDayName } from '../i18n';
 // FIX: Removed unused and non-existent import 'HABIT_ICONS'
@@ -408,8 +410,7 @@ export function renderFrequencyOptions() {
 
     const rawWeekdays = [
         { key: 'weekdaySun', day: 0 }, { key: 'weekdayMon', day: 1 }, { key: 'weekdayTue', day: 2 },
-        { key: 'weekdayWed', day: 3 }, { key: 'weekdayThu', day: 4 }, { key: 'weekdayFri', day: 5 },
-        { key: 'weekdaySat', day: 6 }
+        { key: 'weekdayWed', day: 3 }, { key: 'weekdayThu', day: 4 }, { key: 'weekdayFri', day: 5 }, { key: 'weekdaySat', day: 6 }
     ];
 
     let weekdays = rawWeekdays;

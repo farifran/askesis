@@ -1,10 +1,11 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
 
-import { state, Habit, HabitStatus, HabitDayData, getSmartGoalForHabit, calculateHabitStreak, STREAK_CONSOLIDATED, STREAK_SEMI_CONSOLIDATED, TimeOfDay, getHabitDailyInfoForDate, getActiveHabitsForDate, TIMES_OF_DAY } from '../state';
+// FIX: Import getSmartGoalForHabit from selectors module, not state module.
+import { state, Habit, HabitStatus, HabitDayData, STREAK_CONSOLIDATED, STREAK_SEMI_CONSOLIDATED, TimeOfDay, getHabitDailyInfoForDate, TIMES_OF_DAY } from '../state';
+import { calculateHabitStreak, getActiveHabitsForDate, getSmartGoalForHabit } from '../services/selectors';
 import { ui } from './ui';
 import { t, getHabitDisplayInfo, getTimeOfDayName } from '../i18n';
 import { icons, getTimeOfDayIcon } from './icons';
@@ -140,16 +141,15 @@ function _renderPendingGoalControls(goalEl: HTMLElement, habit: Habit, time: Tim
 }
 
 export function updateGoalContentElement(goalEl: HTMLElement, status: HabitStatus, habit: Habit, time: TimeOfDay, dayDataForInstance: HabitDayData | undefined) {
-    switch(status) {
-        case 'completed':
-            _renderCompletedGoal(goalEl);
-            break;
-        case 'snoozed':
-            _renderSnoozedGoal(goalEl);
-            break;
-        case 'pending':
-            _renderPendingGoalControls(goalEl, habit, time, dayDataForInstance);
-            break;
+    const isNumericGoal = habit.goal.type === 'pages' || habit.goal.type === 'minutes';
+
+    if (status === 'completed' && !isNumericGoal) {
+        _renderCompletedGoal(goalEl);
+    } else if (status === 'snoozed') {
+        _renderSnoozedGoal(goalEl);
+    } else {
+        // This now correctly handles 'pending' AND 'completed' for numeric goals
+        _renderPendingGoalControls(goalEl, habit, time, dayDataForInstance);
     }
 }
 
@@ -382,7 +382,7 @@ export function updatePlaceholderForGroup(groupEl: HTMLElement, time: TimeOfDay,
             iconHTML = `<span class="placeholder-icon-specific">${getTimeOfDayIcon(time)}</span>`;
         }
         
-        placeholder.innerHTML = `<div class="time-of-day-icon">${iconHTML}</div><span>${text}</span>`;
+        placeholder.innerHTML = `<div class="time-of-day-icon">${iconHTML}</span><span>${text}</span>`;
 
     } else if (placeholder) {
         placeholder.remove();

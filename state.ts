@@ -8,6 +8,7 @@
 import { addDays, getTodayUTC, getTodayUTCIso, toUTCIsoDateString, parseUTCIsoDate } from './utils';
 import { icons } from './render/icons';
 import { migrateState } from './services/migration';
+import { calculateDaySummary, shouldHabitAppearOnDate, getEffectiveScheduleForHabitOnDate } from './services/selectors';
 
 // --- TYPES & INTERFACES ---
 export type HabitStatus = 'completed' | 'snoozed' | 'pending';
@@ -120,9 +121,9 @@ export const DAYS_IN_CALENDAR = 61;
 export const STREAK_SEMI_CONSOLIDATED = 21;
 export const STREAK_CONSOLIDATED = 66;
 // MEMORY OPTIMIZATION [2025-01-21]: Max cache size aumented to 3000.
-const MAX_CACHE_SIZE = 3000;
+export const MAX_CACHE_SIZE = 3000;
 // CONSTANT [2025-02-23]: Limit for streak calculation lookback (2 years).
-const STREAK_LOOKBACK_DAYS = 730;
+export const STREAK_LOOKBACK_DAYS = 730;
 // ARCHIVE THRESHOLD [2025-02-23]: Data older than this (in days) moves to cold storage.
 const ARCHIVE_THRESHOLD_DAYS = 90; 
 
@@ -207,6 +208,7 @@ export const state: {
     habitAppearanceCache: Map<string, boolean>;
     scheduleCache: Map<string, HabitSchedule | null>;
     activeHabitsCache: Map<string, Array<{ habit: Habit; schedule: TimeOfDay[] }>>;
+    daySummaryCache: Map<string, any>;
     // MELHORIA DE ROBUSTEZ [2024-10-06]: A estrutura de `lastEnded` foi aprimorada para incluir `removedSchedules`.
     // UPDATE [2025-02-23]: Incluído `wipedDailyData` para permitir restauração completa de dados futuros no undo.
     lastEnded: { 
@@ -246,6 +248,7 @@ export const state: {
     uiDirtyState: {
         calendarVisuals: boolean; // Verdadeiro se a seleção de data ou o intervalo de dias mudou.
         habitListStructure: boolean; // Verdadeiro se a ordem, quantidade ou conteúdo textual dos hábitos mudou.
+        chartData: boolean;
     };
 } = {
     habits: [],
@@ -256,6 +259,7 @@ export const state: {
     habitAppearanceCache: new Map(),
     scheduleCache: new Map(),
     activeHabitsCache: new Map(),
+    daySummaryCache: new Map(),
     lastEnded: null,
     undoTimeout: null,
     // LOGIC UPDATE [2025-02-05]: Calendar range centered on today (30 past + Today + 30 future).
@@ -282,7 +286,8 @@ export const state: {
     // PERFORMANCE: Inicializa como true para garantir a primeira renderização completa.
     uiDirtyState: {
         calendarVisuals: true,
-        habitListStructure: true
+        habitListStructure: true,
+        chartData: true,
     }
 };
 
@@ -295,30 +300,19 @@ export function registerSyncHandler(handler: (state: AppState) => void) {
 }
 
 // --- CACHE MANAGEMENT ---
-
-/**
- * SENIOR ENGINEER OPTIMIZATION: Implements a "Partial Eviction" strategy (LRU Approximation).
- * Instead of clearing the entire cache when it hits the limit (which causes CPU spikes due to massive rebuilding),
- * we remove the oldest 20% of entries. Maps in JS iterate in insertion order, making this efficient.
- * @param cache The Map cache to manage.
- * @param limit The maximum allowable size.
- */
-function manageCacheSize<K, V>(cache: Map<K, V>, limit: number) {
-    if (cache.size > limit) {
-        const deleteCount = Math.ceil(limit * 0.2); // Evict 20%
-        const keysToDelete = [];
-        let i = 0;
-        // The first keys yielded are the oldest inserted
-        for (const key of cache.keys()) {
-            keysToDelete.push(key);
-            i++;
-            if (i >= deleteCount) break;
-        }
-        for (const key of keysToDelete) {
-            cache.delete(key);
-        }
+export function isChartDataDirty(): boolean {
+    const wasDirty = state.uiDirtyState.chartData;
+    if (wasDirty) {
+        state.uiDirtyState.chartData = false; // Consome a flag
     }
+    return wasDirty;
 }
+
+// FIX: Add and export missing invalidateChartCache function to manage chart UI state.
+export function invalidateChartCache() {
+    state.uiDirtyState.chartData = true;
+}
+
 
 // --- STATE-DEPENDENT HELPERS ---
 
@@ -439,24 +433,6 @@ export function persistStateLocally(appState: AppState) {
     }
 }
 
-/**
- * Invalida o cache do gráfico, forçando um recálculo na próxima renderização.
- * Deve ser chamado sempre que os dados históricos ou de hoje forem alterados.
- */
-let isChartCacheInvalid = true;
-
-export function invalidateChartCache() {
-    isChartCacheInvalid = true;
-}
-
-export function isChartDataDirty(): boolean {
-    const wasDirty = isChartCacheInvalid;
-    if (wasDirty) {
-        isChartCacheInvalid = false; // Consome a flag
-    }
-    return wasDirty;
-}
-
 
 /**
  * DATA HYGIENE [2025-02-21]: Prunes daily data records for habits that no longer exist.
@@ -544,18 +520,16 @@ export function loadState(cloudState?: AppState) {
         state.activeHabitsCache = new Map();
         state.unarchivedCache = new Map(); // Clear runtime archive cache
         state.habitAppearanceCache.clear();
+        state.daySummaryCache.clear();
         state.lastEnded = null;
         
         // Force full UI refresh on load
         state.uiDirtyState.calendarVisuals = true;
         state.uiDirtyState.habitListStructure = true;
+        state.uiDirtyState.chartData = true;
         
         // Initial cleanup of old data into archives
         archiveOldData();
-
-        // Clear summary cache on load
-        invalidateDaySummaryCache();
-        invalidateChartCache(); // Dados novos exigem gráfico novo
     }
 }
 
@@ -571,8 +545,8 @@ export function clearScheduleCache() {
     state.activeHabitsCache.clear();
     state.habitAppearanceCache.clear();
     state.streaksCache.clear();
-    invalidateDaySummaryCache();
-    invalidateChartCache();
+    state.daySummaryCache.clear();
+    state.uiDirtyState.chartData = true;
 }
 
 /**
@@ -584,112 +558,24 @@ export function clearActiveHabitsCache() {
     state.activeHabitsCache.clear();
     state.habitAppearanceCache.clear();
     state.streaksCache.clear();
-    invalidateDaySummaryCache();
-    invalidateChartCache();
+    state.daySummaryCache.clear();
+    state.uiDirtyState.chartData = true;
 }
 
-
-/**
- * Invalida o cache de streaks para um hábito específico a partir de uma data.
- * Isso é necessário sempre que o status de um hábito muda, pois afeta o cálculo
- * de streaks para todas as datas futuras.
- * @param habitId O ID do hábito a ser invalidado.
- * @param fromDateISO A data (string ISO) a partir da qual invalidar.
- */
-export function invalidateStreakCache(habitId: string, fromDateISO: string) {
-    if (habitId === 'global') {
-        state.streaksCache.clear();
-        return;
-    }
-
-    const fromDate = parseUTCIsoDate(fromDateISO);
-    // Use Map.size for O(1) check.
-    if (state.streaksCache.size > MAX_CACHE_SIZE) {
-        manageCacheSize(state.streaksCache, MAX_CACHE_SIZE);
-    }
-
-    // Iterate using Map iterator
-    for (const key of state.streaksCache.keys()) {
-        // A chave é no formato "habitId|dateISO"
-        if (key.startsWith(`${habitId}|`)) {
-            const cachedDateISO = key.substring(habitId.length + 1);
-            const cachedDate = parseUTCIsoDate(cachedDateISO);
-            if (cachedDate >= fromDate) {
-                state.streaksCache.delete(key);
-            }
-        }
-    }
-}
 
 /**
  * DRY REFACTOR: Centralizes cache invalidation for daily data changes.
  */
 export function invalidateCachesForDateChange(dateISO: string, habitIds: string[]) {
-    invalidateChartCache();
-    invalidateDaySummaryCache(dateISO);
-    habitIds.forEach(id => invalidateStreakCache(id, dateISO));
-}
-
-
-export function getScheduleForDate(habit: Habit, date: Date | string): HabitSchedule | null {
-    // PERFORMANCE [2025-01-16]: String Comparison Optimization.
-    const dateStr = typeof date === 'string' ? date : toUTCIsoDateString(date);
+    state.uiDirtyState.chartData = true;
+    state.daySummaryCache.delete(dateISO);
     
-    const cacheKey = `${habit.id}|${dateStr}`;
-    if (state.scheduleCache.has(cacheKey)) {
-        return state.scheduleCache.get(cacheKey)!;
-    }
-    
-    // Smart Garbage collection
-    manageCacheSize(state.scheduleCache, MAX_CACHE_SIZE);
-
-    let foundSchedule: HabitSchedule | null = null;
-
-    // PERFORMANCE [2025-01-16]: Zero-allocation loop with string comparison.
-    for (let i = habit.scheduleHistory.length - 1; i >= 0; i--) {
-        const schedule = habit.scheduleHistory[i];
-        
-        // ISO Strings comparison works: '2024-01-02' > '2024-01-01'
-        const isAfterStart = dateStr >= schedule.startDate;
-        const isBeforeEnd = !schedule.endDate || dateStr < schedule.endDate;
-
-        if (isAfterStart && isBeforeEnd) {
-            foundSchedule = schedule;
-            break;
-        }
-    }
-    
-    state.scheduleCache.set(cacheKey, foundSchedule);
-    return foundSchedule;
-}
-
-/**
- * Obtém o agendamento de horários efetivo para um hábito em uma data específica,
- * considerando os agendamentos diários personalizados sobre o agendamento padrão.
- * @param habit O objeto do hábito.
- * @param dateISO A data no formato string ISO.
- * @returns Um array de TimeOfDay representando os horários agendados.
- */
-export function getEffectiveScheduleForHabitOnDate(habit: Habit, dateISO: string): TimeOfDay[] {
-    // Uses the improved data getter which transparently checks archives
-    const dayRecord = getHabitDailyInfoForDate(dateISO);
-    const dailyInfo = dayRecord[habit.id];
-    
-    // LOGIC FIX [2025-02-21]: The Opaque Layer logic.
-    if (dailyInfo?.dailySchedule !== undefined) {
-        // PERFORMANCE [2025-03-04]: Retorna a referência direta ao array (ZERO COST ALLOCATION).
-        // Anteriormente: `return [...dailyInfo.dailySchedule]`.
-        // A remoção da cópia reduz o thrashing do GC em hot-paths como calculateHabitStreak.
-        // O consumidor deve tratar este array como somente-leitura.
-        return dailyInfo.dailySchedule;
-    }
-    
-    // Fallback to standard history schedule
-    const activeSchedule = getScheduleForDate(habit, dateISO);
-    if (!activeSchedule) return [];
-    
-    // PERFORMANCE [2025-03-04]: Retorna a referência direta ao array.
-    return activeSchedule.times;
+    // Invalidate streak for today and tomorrow
+    habitIds.forEach(id => {
+        state.streaksCache.delete(`${id}|${dateISO}`);
+        const tomorrow = toUTCIsoDateString(addDays(parseUTCIsoDate(dateISO), 1));
+        state.streaksCache.delete(`${id}|${tomorrow}`);
+    });
 }
 
 // GC OPTIMIZATION [2025-01-23]: Singleton empty object for daily info.
@@ -767,278 +653,4 @@ export function ensureHabitInstanceData(date: string, habitId: string, time: Tim
     
     state.dailyData[date][habitId].instances[time] ??= { status: 'pending' };
     return state.dailyData[date][habitId].instances[time]!;
-}
-
-// --- GOAL HELPERS ---
-
-export function getSmartGoalForHabit(habit: Habit, date: string, time: TimeOfDay): number {
-    return habit.goal.total || 0;
-}
-
-export function getCurrentGoalForInstance(habit: Habit, date: string, time: TimeOfDay): number {
-    const dayRecord = getHabitDailyInfoForDate(date);
-    const instance = dayRecord[habit.id]?.instances?.[time];
-    return instance?.goalOverride ?? getSmartGoalForHabit(habit, date, time);
-}
-
-// PERFORMANCE [2025-01-16]: Cache para armazenar o timestamp da âncora de agendamento.
-// Evita parsear a string de data ISO repetidamente dentro do loop de streaks (hot-path).
-// WeakMap garante que se o objeto de agendamento for removido, o cache seja limpo.
-// PERFORMANCE UPDATE [2025-03-05]: Agora armazena também o dia da semana para evitar alocação de Date no loop semanal.
-const anchorPropsCache = new WeakMap<HabitSchedule, { time: number, dayOfWeek: number }>();
-
-export function shouldHabitAppearOnDate(habit: Habit, date: Date, dateISO?: string): boolean {
-    // PERFORMANCE [2025-01-20]: Cache Determinístico de Aparência (Hot-Path Optimization).
-    // Esta função é chamada milhares de vezes durante o cálculo de streak.
-    const dateStr = dateISO || toUTCIsoDateString(date);
-    const cacheKey = `${habit.id}|${dateStr}`;
-    if (state.habitAppearanceCache.has(cacheKey)) {
-        return state.habitAppearanceCache.get(cacheKey)!;
-    }
-    
-    // FIX [2025-02-02]: Integrity check for graduated habits.
-    if (habit.graduatedOn && dateStr >= habit.graduatedOn) {
-        state.habitAppearanceCache.set(cacheKey, false);
-        return false;
-    }
-
-    // Smart Garbage collection - Increased limit to prevent thrashing
-    manageCacheSize(state.habitAppearanceCache, MAX_CACHE_SIZE * 2);
-
-    // USES TRANSPARENT ACCESSOR (Handles Archives)
-    const dayRecord = getHabitDailyInfoForDate(dateStr);
-    const dailyInfo = dayRecord[habit.id];
-    
-    // LOGIC FIX [2025-02-21]: CRITICAL PRIORITY FOR DAILY OVERRIDES.
-    if (dailyInfo?.dailySchedule !== undefined) {
-        const result = dailyInfo.dailySchedule.length > 0;
-        state.habitAppearanceCache.set(cacheKey, result);
-        return result;
-    }
-
-    // Standard Frequency Check (The Background Layer)
-    const activeSchedule = getScheduleForDate(habit, dateStr);
-    if (!activeSchedule) {
-        state.habitAppearanceCache.set(cacheKey, false);
-        return false;
-    }
-
-    const freq = activeSchedule.frequency;
-    
-    // PERFORMANCE [2025-01-17]: HOT-PATH OPTIMIZATION
-    // A frequência 'diária' é o caso mais comum. Retornamos 'true' imediatamente
-    if (freq.type === 'daily') {
-        state.habitAppearanceCache.set(cacheKey, true);
-        return true;
-    }
-
-    // OTIMIZAÇÃO [2025-01-16]: Uso de cache para propriedades da âncora.
-    let anchorProps = anchorPropsCache.get(activeSchedule);
-    if (anchorProps === undefined) {
-        const anchorDate = parseUTCIsoDate(activeSchedule.scheduleAnchor);
-        anchorProps = {
-            time: anchorDate.getTime(),
-            dayOfWeek: anchorDate.getUTCDay()
-        };
-        anchorPropsCache.set(activeSchedule, anchorProps);
-    }
-
-    // A diferença é calculada usando o timestamp cacheado, evitando alocação de 'new Date'.
-    const daysDifference = Math.round((date.getTime() - anchorProps.time) / (1000 * 60 * 60 * 24));
-
-    if (daysDifference < 0) {
-        state.habitAppearanceCache.set(cacheKey, false);
-        return false;
-    }
-
-    let result = false;
-
-    if (freq.type === 'interval') {
-        if (freq.unit === 'days') {
-            result = daysDifference % freq.amount === 0;
-        } else if (freq.unit === 'weeks') {
-            // PERFORMANCE [2025-03-05]: Use cached dayOfWeek instead of allocating new Date(anchorTime).
-            if (date.getUTCDay() !== anchorProps.dayOfWeek) {
-                result = false;
-            } else {
-                const weeksDifference = Math.floor(daysDifference / 7);
-                result = weeksDifference % freq.amount === 0;
-            }
-        }
-    } else if (freq.type === 'specific_days_of_week') {
-        result = freq.days.includes(date.getUTCDay());
-    } else {
-        result = true; // Fallback safe
-    }
-
-    state.habitAppearanceCache.set(cacheKey, result);
-    return result;
-}
-
-/**
- * PERFORMANCE [2024-08-12]: Moved from utils.ts to resolve circular dependency.
- * Obtém hábitos ativos e seus horários para uma data com cache.
- * PERFORMANCE [2025-01-17]: Agora aceita `Date | string` para evitar alocações de Date desnecessárias
- * quando o chamador já possui a string ISO e o cache está "quente".
- * @param dateOrIso A data para a qual obter os hábitos.
- * @returns Um array de objetos, cada um contendo o hábito e seu agendamento para o dia.
- */
-export function getActiveHabitsForDate(dateOrIso: Date | string): Array<{ habit: Habit; schedule: TimeOfDay[] }> {
-    const dateStr = typeof dateOrIso === 'string' ? dateOrIso : toUTCIsoDateString(dateOrIso);
-    const cacheKey = dateStr;
-    if (state.activeHabitsCache.has(cacheKey)) {
-        return state.activeHabitsCache.get(cacheKey)!;
-    }
-    
-    // Smart Garbage collection
-    manageCacheSize(state.activeHabitsCache, MAX_CACHE_SIZE);
-    
-    // Fallback: precisamos do objeto Date para a lógica de agendamento se não estiver em cache
-    const date = typeof dateOrIso === 'string' ? parseUTCIsoDate(dateOrIso) : dateOrIso;
-
-    // DATA INTEGRITY [2025-02-21]: Deduplication logic removed.
-    // `loadState` guarantees ID uniqueness, so we can skip the Set creation and checks here for performance.
-    
-    const activeHabits = state.habits
-        .filter(habit => shouldHabitAppearOnDate(habit, date, dateStr))
-        .map(habit => ({
-            habit,
-            schedule: getEffectiveScheduleForHabitOnDate(habit, dateStr),
-        }));
-
-    state.activeHabitsCache.set(cacheKey, activeHabits);
-    return activeHabits;
-}
-
-export function calculateHabitStreak(habitId: string, referenceDateISO: string): number {
-    const cacheKey = `${habitId}|${referenceDateISO}`;
-    if (state.streaksCache.has(cacheKey)) {
-        return state.streaksCache.get(cacheKey)!;
-    }
-
-    const habit = state.habits.find(h => h.id === habitId);
-    if (!habit) return 0;
-
-    let streak = 0;
-    
-    const iteratorDate = parseUTCIsoDate(referenceDateISO);
-    
-    for (let i = 0; i < STREAK_LOOKBACK_DAYS; i++) {
-        const dateStr = toUTCIsoDateString(iteratorDate);
-        
-        if (dateStr < habit.createdOn) break;
-
-        if (shouldHabitAppearOnDate(habit, iteratorDate, dateStr)) {
-             const dayRecord = getHabitDailyInfoForDate(dateStr);
-             const dailyInfo = dayRecord[habitId];
-             const schedule = getEffectiveScheduleForHabitOnDate(habit, dateStr);
-             
-             if (schedule.length === 0) {
-                iteratorDate.setUTCDate(iteratorDate.getUTCDate() - 1);
-                continue; 
-             }
-             
-             // OTIMIZAÇÃO: Verifica se ALGUM hábito está pendente. `some` é mais rápido que `every`.
-             const isAnyPending = schedule.some(time => (dailyInfo?.instances?.[time]?.status || 'pending') === 'pending');
-             const isDayComplete = !isAnyPending;
-
-             if (isDayComplete) {
-                 streak++;
-             } else {
-                 // LÓGICA CLARIFICADA: Se o dia não estiver completo, o streak quebra,
-                 // A MENOS que seja a data de referência (hoje), caso em que apenas não contamos.
-                 if (dateStr !== referenceDateISO) {
-                     break; 
-                 }
-             }
-        }
-        iteratorDate.setUTCDate(iteratorDate.getUTCDate() - 1);
-    }
-    
-    manageCacheSize(state.streaksCache, MAX_CACHE_SIZE);
-    state.streaksCache.set(cacheKey, streak);
-    return streak;
-}
-
-// PERFORMANCE [2025-01-17]: Cache para resultados de calculateDaySummary.
-interface DaySummary {
-    total: number;
-    completed: number;
-    snoozed: number;
-    pending: number;
-    completedPercent: number;
-    snoozedPercent: number;
-    showPlusIndicator: boolean;
-}
-const daySummaryCache = new Map<string, DaySummary>();
-
-/**
- * Invalida o cache de resumo diário para uma data específica ou para todos os dias.
- */
-export function invalidateDaySummaryCache(dateISO?: string) {
-    if (dateISO) {
-        daySummaryCache.delete(dateISO);
-    } else {
-        daySummaryCache.clear();
-    }
-}
-
-/**
- * Calcula um resumo rápido do progresso de um dia, otimizado para a renderização do anel do calendário.
- */
-export function calculateDaySummary(dateISO: string): DaySummary {
-    if (daySummaryCache.has(dateISO)) {
-        return daySummaryCache.get(dateISO)!;
-    }
-    
-    manageCacheSize(daySummaryCache, DAYS_IN_CALENDAR * 2);
-
-     const activeHabits = getActiveHabitsForDate(dateISO);
-     
-     let total = 0;
-     let completed = 0;
-     let snoozed = 0;
-     let pending = 0;
-     let showPlusIndicator = false;
-     
-     if (activeHabits.length > 0) {
-         const dayRecord = getHabitDailyInfoForDate(dateISO);
-         const previousDate = addDays(parseUTCIsoDate(dateISO), -1);
-         const previousDateISO = toUTCIsoDateString(previousDate);
-
-         for (const { habit, schedule } of activeHabits) {
-             const instances = dayRecord[habit.id]?.instances || {};
-             
-             for (const time of schedule) {
-                 total++;
-                 const status = instances[time]?.status ?? 'pending';
-                 if (status === 'completed') completed++;
-                 else if (status === 'snoozed') snoozed++;
-                 else if (status === 'pending') pending++;
-             }
-             
-             if (!showPlusIndicator && (habit.goal.type === 'pages' || habit.goal.type === 'minutes')) {
-                const exceededToday = schedule.some(time => {
-                    const instance = instances[time];
-                    return instance?.status === 'completed' && 
-                           instance.goalOverride !== undefined && 
-                           instance.goalOverride > (habit.goal.total ?? 0);
-                });
-        
-                if (exceededToday) {
-                    const streak = calculateHabitStreak(habit.id, previousDateISO);
-                    if (streak >= 2) {
-                        showPlusIndicator = true;
-                    }
-                }
-            }
-         }
-     }
-     
-     const completedPercent = total > 0 ? Math.round((completed / total) * 100) : 0;
-     const snoozedPercent = total > 0 ? Math.round((snoozed / total) * 100) : 0;
-     
-     const result: DaySummary = { total, completed, snoozed, pending, completedPercent, snoozedPercent, showPlusIndicator };
-     daySummaryCache.set(dateISO, result);
-     return result;
 }

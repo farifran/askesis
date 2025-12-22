@@ -7,18 +7,16 @@ import {
     TimeOfDay, 
     PREDEFINED_HABITS, 
     ensureHabitDailyInfo, 
-    getEffectiveScheduleForHabitOnDate, 
     ensureHabitInstanceData, 
     getNextStatus, 
     getPersistableState, 
     loadState, 
     HabitStatus,
     clearScheduleCache,
-    getScheduleForDate,
     clearActiveHabitsCache,
-    getActiveHabitsForDate,
     invalidateCachesForDateChange
 } from './state';
+import { getEffectiveScheduleForHabitOnDate, getActiveHabitsForDate, getScheduleForDate } from './services/selectors';
 import { 
     generateUUID, 
     getTodayUTCIso, 
@@ -40,7 +38,7 @@ import {
 } from './render';
 import { ui } from './render/ui';
 import { t, getHabitDisplayInfo, getTimeOfDayName } from './i18n';
-import { runWorkerTask } from './cloud';
+import { runWorkerTask } from './services/cloud';
 import { apiFetch } from './services/api';
 
 // --- HELPERS ---
@@ -579,19 +577,6 @@ export function toggleHabitStatus(habitId: string, time: TimeOfDay, date: string
 export function setGoalOverride(habitId: string, date: string, time: TimeOfDay, value: number) {
     const instance = ensureHabitInstanceData(date, habitId, time);
     instance.goalOverride = value;
-    
-    const habit = state.habits.find(h => h.id === habitId);
-    
-    if (habit && (habit.goal.type === 'pages' || habit.goal.type === 'minutes')) {
-        const target = habit.goal.total || 0;
-        if (value >= target && instance.status !== 'completed') {
-            instance.status = 'completed';
-        } else if (value < target && instance.status === 'completed') {
-            // CORRECTNESS FIX: If a user edits a completed goal to be below the target,
-            // revert the status to pending to maintain logical consistency.
-            instance.status = 'pending';
-        }
-    }
     
     invalidateCachesForDateChange(date, [habitId]);
     

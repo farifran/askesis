@@ -6,7 +6,9 @@
 import { ui } from '../render/ui';
 import { isCurrentlySwiping } from './swipe';
 import { handleHabitDrop, reorderHabit } from '../habitActions';
-import { state, TimeOfDay, Habit, getEffectiveScheduleForHabitOnDate } from '../state';
+// FIX: Import getEffectiveScheduleForHabitOnDate from selectors module, not state module.
+import { state, TimeOfDay, Habit } from '../state';
+import { getEffectiveScheduleForHabitOnDate } from '../services/selectors';
 import { triggerHaptic } from '../utils';
 import { DOM_SELECTORS, CSS_CLASSES } from '../render/constants';
 

@@ -1,9 +1,11 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
 
-import { state, Habit, LANGUAGES, PredefinedHabit, TimeOfDay, getScheduleForDate, invalidateChartCache } from './state';
+import { state, Habit, LANGUAGES, PredefinedHabit, TimeOfDay } from './state';
+import { getScheduleForDate } from './services/selectors';
 import { ui } from './render/ui';
 import { renderApp, setupManageModal, initLanguageFilter, refreshEditModalUI, renderLanguageFilter } from './render';
 import { pushToOneSignal, getDateTimeFormat } from './utils';
@@ -165,8 +167,6 @@ function updateUIText() {
     
     ui.labelSync.textContent = t('syncLabel');
     ui.labelNotifications.textContent = t('modalManageNotifications');
-
-    ui.notificationStatusDesc.textContent = t('modalManageNotificationsStaticDesc');
     
     ui.labelReset.textContent = t('modalManageReset');
 
@@ -279,7 +279,7 @@ export async function setLanguage(langCode: 'pt' | 'en' | 'es') {
     // obrigando o redesenho imediato do calendário, lista de hábitos e gráficos com o novo idioma.
     state.uiDirtyState.calendarVisuals = true;
     state.uiDirtyState.habitListStructure = true;
-    invalidateChartCache();
+    state.uiDirtyState.chartData = true;
 
     updateUIText();
     // Garante que o status de sincronização dinâmico seja re-traduzido a partir do estado.

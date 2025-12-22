@@ -13,7 +13,7 @@ import { setupEventListeners } from './listeners';
 import { initI18n } from './i18n';
 import { createDefaultHabit } from './habitActions';
 import { initSync } from './listeners/sync';
-import { fetchStateFromCloud, setupNotificationListeners, syncStateWithCloud } from './cloud';
+import { fetchStateFromCloud, setupNotificationListeners, syncStateWithCloud } from './services/cloud';
 import { hasLocalSyncKey, initAuth } from './services/api';
 import { updateAppBadge } from './services/badge';
 import { mergeStates } from './services/dataMerge';

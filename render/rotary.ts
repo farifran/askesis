@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -128,9 +127,9 @@ export function setupReelRotary({
         // Lógica de limiar para decidir se muda o índice
         if (Math.abs(diffX) > SWIPE_THRESHOLD) {
             if (diffX < 0) { // Deslize para a esquerda (Próximo Item)
-                await onIndexChange(Math.min(optionsCount - 1, currentIndex + 1));
+                await onIndexChange((currentIndex + 1) % optionsCount);
             } else { // Deslize para a direita (Item Anterior)
-                await onIndexChange(Math.max(0, currentIndex - 1));
+                await onIndexChange((currentIndex - 1 + optionsCount) % optionsCount);
             }
         }
         
