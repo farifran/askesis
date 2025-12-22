@@ -1552,7 +1552,6 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     margin-inline-start: var(--space-sm);
 }
 
-
 /* Seção de Status de Notificação e Interruptor (Toggle) */
 .toggle-switch {
     position: relative;
@@ -2303,6 +2302,65 @@ body.is-offline #ai-eval-btn .offline-icon {
     display: block;
 }
 
+/* --- SCROLLBARS PERSONALIZADAS (MODAIS) --- */
+.modal-content,
+#explore-habit-list,
+#habit-list,
+#ai-response,
+#icon-picker-grid,
+#color-picker-grid,
+#edit-habit-form {
+    /* Firefox */
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--text-tertiary) 50%, transparent) transparent;
+}
+
+/* WebKit (Chrome, Safari, Edge) */
+.modal-content::-webkit-scrollbar,
+#explore-habit-list::-webkit-scrollbar,
+#habit-list::-webkit-scrollbar,
+#ai-response::-webkit-scrollbar,
+#icon-picker-grid::-webkit-scrollbar,
+#color-picker-grid::-webkit-scrollbar,
+#edit-habit-form::-webkit-scrollbar {
+    width: 8px;
+}
+
+.modal-content::-webkit-scrollbar-track,
+#explore-habit-list::-webkit-scrollbar-track,
+#habit-list::-webkit-scrollbar-track,
+#ai-response::-webkit-scrollbar-track,
+#icon-picker-grid::-webkit-scrollbar-track,
+#color-picker-grid::-webkit-scrollbar-track,
+#edit-habit-form::-webkit-scrollbar-track {
+    background: transparent;
+    /* Adiciona margem para que a barra não toque nas bordas arredondadas do modal */
+    margin-block: var(--space-md);
+}
+
+.modal-content::-webkit-scrollbar-thumb,
+#explore-habit-list::-webkit-scrollbar-thumb,
+#habit-list::-webkit-scrollbar-thumb,
+#ai-response::-webkit-scrollbar-thumb,
+#icon-picker-grid::-webkit-scrollbar-thumb,
+#color-picker-grid::-webkit-scrollbar-thumb,
+#edit-habit-form::-webkit-scrollbar-thumb {
+    background-color: color-mix(in srgb, var(--text-tertiary) 50%, transparent);
+    border-radius: 4px;
+    /* Cria um efeito de "padding" ao redor do polegar, fazendo-o parecer mais fino */
+    border: 2px solid transparent;
+    background-clip: content-box;
+}
+
+.modal-content::-webkit-scrollbar-thumb:hover,
+#explore-habit-list::-webkit-scrollbar-thumb:hover,
+#habit-list::-webkit-scrollbar-thumb:hover,
+#ai-response::-webkit-scrollbar-thumb:hover,
+#icon-picker-grid::-webkit-scrollbar-thumb:hover,
+#color-picker-grid::-webkit-scrollbar-thumb:hover,
+#edit-habit-form::-webkit-scrollbar-thumb:hover {
+    background-color: color-mix(in srgb, var(--text-tertiary) 80%, transparent);
+}
 
 /* --- RESPONSIVIDADE --- */
 @media (max-width: 767px) {
@@ -2365,8 +2423,6 @@ body.is-offline #ai-eval-btn .offline-icon {
     .explore-habit-details .name { font-size: 14px; }
     .explore-habit-details .subtitle {
         display: block; font-size: 11px;
-        color: var(--text-secondary); line-height: 1.3;
+        color: var(--text-tertiary); line-height: 1.3;
     }
-}--- START OF FILE assets/app-preview.jpg ---
-
-[Binary content
+}

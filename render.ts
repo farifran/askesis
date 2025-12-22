@@ -116,16 +116,25 @@ export function renderApp() {
 
 // FIX: Added missing updateNotificationUI function.
 export function updateNotificationUI() {
+    // Se o botão foi desativado por uma ação do usuário (mudança pendente), não altere seu estado.
+    // Isso preserva a mensagem "precisa reiniciar" até que o app seja recarregado.
+    const isPendingChange = ui.notificationToggle.disabled && !ui.notificationToggleLabel.classList.contains('disabled');
+    if (isPendingChange) {
+        return;
+    }
+
     pushToOneSignal((OneSignal: any) => {
         const isPushEnabled = OneSignal.User.PushSubscription.optedIn;
         const permission = OneSignal.Notifications.permission;
         
         ui.notificationToggle.checked = isPushEnabled;
-        // The toggle should be disabled if permission is denied, as the user can't re-enable via UI.
-        ui.notificationToggleLabel.classList.toggle('disabled', permission === 'denied');
+        
+        const isDenied = permission === 'denied';
+        ui.notificationToggle.disabled = isDenied;
+        ui.notificationToggleLabel.classList.toggle('disabled', isDenied);
 
         let statusTextKey = 'notificationStatusOptedOut'; // Default to disabled by choice
-        if (permission === 'denied') {
+        if (isDenied) {
             statusTextKey = 'notificationStatusDisabled'; // Blocked by browser
         } else if (isPushEnabled) {
             statusTextKey = 'notificationStatusEnabled'; // Enabled and opted-in
