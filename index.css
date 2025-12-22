@@ -2343,8 +2343,8 @@ body.is-offline #ai-eval-btn .offline-icon {
 #color-picker-grid::-webkit-scrollbar-track,
 #edit-habit-form::-webkit-scrollbar-track {
     background: transparent;
-    /* CORREÇÃO: Remove a margem que causava uma aparência de falha no início/fim da barra */
-    margin-block: 0;
+    /* CORREÇÃO: Adiciona margem vertical para que a barra não corte os cantos arredondados do modal. */
+    margin-block: var(--space-lg);
 }
 
 .modal-content::-webkit-scrollbar-thumb,

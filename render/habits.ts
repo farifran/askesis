@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -273,18 +274,6 @@ export function updateHabitCardElement(card: HTMLElement, habit: Habit, time: Ti
     deleteBtn.setAttribute('aria-label', t('habitEnd_ariaLabel'));
 
     updateGoalContentElement(goalEl, status, habit, time, habitInstanceData);
-}
-
-/**
- * SURGICAL UPDATE: Atualiza apenas o cartão de hábito especificado no DOM.
- */
-export function renderHabitCardState(habitId: string, time: TimeOfDay) {
-    const card = getCachedHabitCard(habitId, time);
-    const habit = state.habits.find(h => h.id === habitId);
-    
-    if (card && habit) {
-        updateHabitCardElement(card, habit, time);
-    }
 }
 
 export function createHabitCardElement(habit: Habit, time: TimeOfDay): HTMLElement {

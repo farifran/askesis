@@ -287,21 +287,27 @@ export function triggerHaptic(type: 'selection' | 'light' | 'medium' | 'heavy' |
 let cachedLightContrastColor: string | null = null;
 let cachedDarkContrastColor: string | null = null;
 
-export function getContrastColor(hexColor: string): string {
-    // Otimização: Cacheia as cores de contraste lidas do CSS para evitar leituras repetidas do DOM.
-    if (!cachedLightContrastColor || !cachedDarkContrastColor) {
-        try {
-            const rootStyles = getComputedStyle(document.documentElement);
-            cachedLightContrastColor = rootStyles.getPropertyValue('--text-primary').trim() || '#e5e5e5';
-            cachedDarkContrastColor = rootStyles.getPropertyValue('--bg-color').trim() || '#000000';
-        } catch (e) {
-            // Fallback em caso de erro (ex: ambiente de teste sem DOM)
-            cachedLightContrastColor = '#e5e5e5';
-            cachedDarkContrastColor = '#000000';
-        }
+// Otimização: Esta função é chamada apenas uma vez para popular o cache.
+function _cacheContrastColors() {
+    if (cachedLightContrastColor && cachedDarkContrastColor) {
+        return; // Já cacheado, sai imediatamente.
     }
+    try {
+        const rootStyles = getComputedStyle(document.documentElement);
+        cachedLightContrastColor = rootStyles.getPropertyValue('--text-primary').trim() || '#e5e5e5';
+        cachedDarkContrastColor = rootStyles.getPropertyValue('--bg-color').trim() || '#000000';
+    } catch (e) {
+        // Fallback em caso de erro (ex: ambiente de teste sem DOM)
+        cachedLightContrastColor = '#e5e5e5';
+        cachedDarkContrastColor = '#000000';
+    }
+}
 
-    if (!hexColor || hexColor.length < 7) return cachedLightContrastColor;
+export function getContrastColor(hexColor: string): string {
+    // Garante que o cache esteja populado antes de continuar.
+    _cacheContrastColors();
+
+    if (!hexColor || hexColor.length < 7) return cachedLightContrastColor!;
     
     try {
         const r = parseInt(hexColor.slice(1, 3), 16);
@@ -309,9 +315,9 @@ export function getContrastColor(hexColor: string): string {
         const b = parseInt(hexColor.slice(5, 7), 16);
         // Fórmula de luminância YIQ
         const yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000;
-        return (yiq >= 128) ? cachedDarkContrastColor : cachedLightContrastColor;
+        return (yiq >= 128) ? cachedDarkContrastColor! : cachedLightContrastColor!;
     } catch (e) {
         // Retorna a cor clara como um fallback seguro em caso de erro de parsing.
-        return cachedLightContrastColor;
+        return cachedLightContrastColor!;
     }
 }
