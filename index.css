@@ -1552,6 +1552,7 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     margin-inline-start: var(--space-sm);
 }
 
+
 /* Seção de Status de Notificação e Interruptor (Toggle) */
 .toggle-switch {
     position: relative;
@@ -2366,4 +2367,6 @@ body.is-offline #ai-eval-btn .offline-icon {
         display: block; font-size: 11px;
         color: var(--text-secondary); line-height: 1.3;
     }
-}
+}--- START OF FILE assets/app-preview.jpg ---
+
+[Binary content
