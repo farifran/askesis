@@ -1466,11 +1466,12 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 .modal-content > .modal-close-btn { margin-block-start: var(--space-lg); width: 100%; padding: var(--space-md); }
 
 .modal-subtitle {
-    font-size: 18px;
-    font-weight: 600;
-    color: var(--text-primary);
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--text-secondary);
     margin-block-start: var(--space-md);
     margin-block-end: var(--space-lg);
+    text-align: center;
 }
 .modal-settings-section {
     margin-block-end: var(--space-lg); padding-block-end: var(--space-lg);
