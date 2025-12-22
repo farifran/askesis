@@ -7,7 +7,7 @@
 import { state, Habit, LANGUAGES, PredefinedHabit, TimeOfDay } from './state';
 import { getScheduleForDate } from './services/selectors';
 import { ui } from './render/ui';
-import { renderApp, setupManageModal, initLanguageFilter, refreshEditModalUI, renderLanguageFilter } from './render';
+import { renderApp, setupManageModal, initLanguageFilter, refreshEditModalUI, renderLanguageFilter, updateNotificationUI } from './render';
 import { pushToOneSignal, getDateTimeFormat } from './utils';
 import { icons } from './render/icons';
 
@@ -287,6 +287,7 @@ export async function setLanguage(langCode: 'pt' | 'en' | 'es') {
     
     if (ui.manageModal.classList.contains('visible')) {
         setupManageModal();
+        updateNotificationUI();
     }
 
     // REFACTOR [2024-09-02]: Remove a chamada redundante para `updateHeaderTitle`

@@ -2320,7 +2320,7 @@ body.is-offline #ai-eval-btn .offline-icon {
 #edit-habit-form {
     /* Firefox */
     scrollbar-width: thin;
-    scrollbar-color: color-mix(in srgb, var(--text-tertiary) 50%, transparent) transparent;
+    scrollbar-color: color-mix(in srgb, var(--text-tertiary) 60%, transparent) transparent;
 }
 
 /* WebKit (Chrome, Safari, Edge) */
@@ -2331,7 +2331,7 @@ body.is-offline #ai-eval-btn .offline-icon {
 #icon-picker-grid::-webkit-scrollbar,
 #color-picker-grid::-webkit-scrollbar,
 #edit-habit-form::-webkit-scrollbar {
-    width: 8px;
+    width: 6px;
 }
 
 .modal-content::-webkit-scrollbar-track,
@@ -2342,8 +2342,8 @@ body.is-offline #ai-eval-btn .offline-icon {
 #color-picker-grid::-webkit-scrollbar-track,
 #edit-habit-form::-webkit-scrollbar-track {
     background: transparent;
-    /* Adiciona margem para que a barra não toque nas bordas arredondadas do modal */
-    margin-block: var(--space-md);
+    /* CORREÇÃO: Remove a margem que causava uma aparência de falha no início/fim da barra */
+    margin-block: 0;
 }
 
 .modal-content::-webkit-scrollbar-thumb,
@@ -2353,10 +2353,10 @@ body.is-offline #ai-eval-btn .offline-icon {
 #icon-picker-grid::-webkit-scrollbar-thumb,
 #color-picker-grid::-webkit-scrollbar-thumb,
 #edit-habit-form::-webkit-scrollbar-thumb {
-    background-color: color-mix(in srgb, var(--text-tertiary) 50%, transparent);
-    border-radius: 4px;
+    background-color: color-mix(in srgb, var(--text-tertiary) 60%, transparent);
+    border-radius: 3px;
     /* Cria um efeito de "padding" ao redor do polegar, fazendo-o parecer mais fino */
-    border: 2px solid transparent;
+    border: 1px solid transparent;
     background-clip: content-box;
 }
 
@@ -2367,7 +2367,7 @@ body.is-offline #ai-eval-btn .offline-icon {
 #icon-picker-grid::-webkit-scrollbar-thumb:hover,
 #color-picker-grid::-webkit-scrollbar-thumb:hover,
 #edit-habit-form::-webkit-scrollbar-thumb:hover {
-    background-color: color-mix(in srgb, var(--text-tertiary) 80%, transparent);
+    background-color: color-mix(in srgb, var(--text-tertiary) 90%, transparent);
 }
 
 /* --- RESPONSIVIDADE --- */
