@@ -120,6 +120,8 @@ export function updateNotificationUI() {
     // Isso preserva a mensagem "precisa reiniciar" até que o app seja recarregado.
     const isPendingChange = ui.notificationToggle.disabled && !ui.notificationToggleLabel.classList.contains('disabled');
     if (isPendingChange) {
+        // BUGFIX DE TRADUÇÃO: A mensagem de "pendente" precisa ser re-traduzida se o idioma mudar.
+        setTextContent(ui.notificationStatusDesc, t('notificationChangePending'));
         return;
     }
 

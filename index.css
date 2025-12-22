@@ -1471,7 +1471,7 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     color: var(--text-secondary);
     margin-block-start: var(--space-md);
     margin-block-end: var(--space-lg);
-    text-align: center;
+    text-align: left;
 }
 .modal-settings-section {
     margin-block-end: var(--space-lg); padding-block-end: var(--space-lg);
