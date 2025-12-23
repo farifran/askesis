@@ -1,3 +1,4 @@
+
 type UIElements = {
     appContainer: HTMLElement; // Cached reference
     calendarStrip: HTMLElement;
@@ -118,7 +119,16 @@ const uiCache: Partial<UIElements> = {};
 const chartCache: Partial<UIElements['chart']> = {};
 
 function queryElement<T extends Element = HTMLElement>(selector: string): T {
-    const element = document.querySelector<T>(selector);
+    // PERFORMANCE OPTIMIZATION [2025-03-16]: Hybrid Selector Strategy.
+    // 'getElementById' is essentially a hash map lookup (O(1)) and significantly faster
+    // than 'querySelector' which requires CSS selector parsing and tree traversal.
+    // We detect simple ID selectors to use the fast path, falling back for complex queries.
+    const isSimpleId = selector.startsWith('#') && !selector.includes(' ') && !selector.includes('.') && !selector.includes('[');
+    
+    const element = isSimpleId
+        ? document.getElementById(selector.substring(1)) as unknown as T
+        : document.querySelector<T>(selector);
+
     if (!element) {
         throw new Error(`UI element with selector "${selector}" not found in the DOM.`);
     }

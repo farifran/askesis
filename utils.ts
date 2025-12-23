@@ -101,8 +101,11 @@ export function addDays(date: Date, days: number): Date {
  * If the provided date is corrupted (e.g., empty or invalid format), it defaults to Today.
  * This prevents actions from failing silently.
  */
+const ISO_DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+
 export function getSafeDate(date: string | undefined | null): string {
-    if (!date || date.length < 10 || isNaN(parseUTCIsoDate(date).getTime())) {
+    // PERFORMANCE [2025-03-16]: Regex check is faster than `new Date() + isNaN`.
+    if (!date || !ISO_DATE_REGEX.test(date)) {
         console.warn("Detected invalid date in action, defaulting to Today");
         return getTodayUTCIso();
     }
@@ -138,53 +141,64 @@ export function getDateTimeFormat(locale: string, options: Intl.DateTimeFormatOp
     return dateTimeFormatCache.get(key)!;
 }
 
+// PERFORMANCE: Pre-compile RegEx and Replacement Map
+const ESCAPE_HTML_REGEX = /[&<>"']/g;
+const ESCAPE_REPLACEMENTS: Record<string, string> = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+};
+
 export function escapeHTML(str: string): string {
-    return str.replace(/[&<>"']/g, function (match) {
-        switch (match) {
-            case '&': return '&amp;';
-            case '<': return '&lt;';
-            case '>': return '&gt;';
-            case '"': return '&quot;';
-            case "'": return '&#39;';
-            default: return match;
-        }
-    });
+    return str.replace(ESCAPE_HTML_REGEX, match => ESCAPE_REPLACEMENTS[match]);
 }
 
-// OTIMIZAÇÃO DE PERFORMANCE [2024-12-28]: Expressões regulares movidas para o escopo do módulo
-// para serem compiladas apenas uma vez, em vez de a cada chamada da função formatInline.
-const MD_BOLD_ITALIC_REGEX = /\*\*\*(.*?)\*\*\*/g;
-const MD_BOLD_REGEX = /\*\*(.*?)\*\*/g;
-const MD_ITALIC_REGEX = /\*(.*?)\*/g;
-const MD_STRIKE_REGEX = /~~(.*?)~~/g;
+// OTIMIZAÇÃO DE PERFORMANCE [2025-03-16]: Single Pass Regex.
+// Combines multiple inline formatting rules into one RegExp for O(N) processing per line.
+// Groups: 1=BoldItalic, 2=Bold, 3=Italic, 4=Strike
+const MD_INLINE_COMBINED_REGEX = /(\*\*\*(.*?)\*\*\*)|(\*\*(.*?)\*\*)|(\*(.*?)\*)|(~~(.*?)~~)/g;
+
 // PERFORMANCE [2025-02-23]: Regex de lista ordenada movida para escopo global.
 const MD_ORDERED_LIST_REGEX = /^\d+\.\s/;
 
+// PERFORMANCE [2025-03-16]: Hoisted replacement function.
+// Prevents closure allocation on every line processed.
+const MD_REPLACER = (match: string, g1: string, c1: string, g2: string, c2: string, g3: string, c3: string, g4: string, c4: string) => {
+    if (g1) return `<strong><em>${c1}</em></strong>`;
+    if (g2) return `<strong>${c2}</strong>`;
+    if (g3) return `<em>${c3}</em>`;
+    if (g4) return `<del>${c4}</del>`;
+    return match;
+};
+
+// PERFORMANCE [2025-03-16]: Hoisted inline formatter.
+function formatInline(line: string): string {
+    // One pass replacement using capture groups and static replacer
+    return escapeHTML(line).replace(MD_INLINE_COMBINED_REGEX, MD_REPLACER);
+}
+
 export function simpleMarkdownToHTML(text: string): string {
     const lines = text.split('\n');
-    let html = '';
+    // PERFORMANCE [2025-03-14]: Use Array Buffer (StringBuilder) instead of string concatenation.
+    // Better for memory allocation with large texts.
+    const html: string[] = [];
+    
     let inUnorderedList = false;
     let inOrderedList = false;
 
     const closeUnorderedList = () => {
         if (inUnorderedList) {
-            html += '</ul>';
+            html.push('</ul>');
             inUnorderedList = false;
         }
     };
     const closeOrderedList = () => {
         if (inOrderedList) {
-            html += '</ol>';
+            html.push('</ol>');
             inOrderedList = false;
         }
-    };
-
-    const formatInline = (line: string): string => {
-        return escapeHTML(line)
-            .replace(MD_BOLD_ITALIC_REGEX, '<strong><em>$1</em></strong>')
-            .replace(MD_BOLD_REGEX, '<strong>$1</strong>')
-            .replace(MD_ITALIC_REGEX, '<em>$1</em>')
-            .replace(MD_STRIKE_REGEX, '<del>$1</del>');
     };
 
     for (const line of lines) {
@@ -193,52 +207,52 @@ export function simpleMarkdownToHTML(text: string): string {
         if (trimmedLine.startsWith('### ')) {
             closeUnorderedList();
             closeOrderedList();
-            html += `<h3>${formatInline(line.substring(4))}</h3>`;
+            html.push(`<h3>${formatInline(line.substring(4))}</h3>`);
             continue;
         }
         if (trimmedLine.startsWith('## ')) {
             closeUnorderedList();
             closeOrderedList();
-            html += `<h2>${formatInline(line.substring(3))}</h2>`;
+            html.push(`<h2>${formatInline(line.substring(3))}</h2>`);
             continue;
         }
         if (trimmedLine.startsWith('# ')) {
             closeUnorderedList();
             closeOrderedList();
-            html += `<h1>${formatInline(line.substring(2))}</h1>`;
+            html.push(`<h1>${formatInline(line.substring(2))}</h1>`);
             continue;
         }
 
         if (trimmedLine.startsWith('* ') || trimmedLine.startsWith('- ')) {
             closeOrderedList();
             if (!inUnorderedList) {
-                html += '<ul>';
+                html.push('<ul>');
                 inUnorderedList = true;
             }
-            html += `<li>${formatInline(line.trim().substring(2))}</li>`;
+            html.push(`<li>${formatInline(line.trim().substring(2))}</li>`);
             continue;
         }
 
         if (trimmedLine.match(MD_ORDERED_LIST_REGEX)) {
             closeUnorderedList();
             if (!inOrderedList) {
-                html += '<ol>';
+                html.push('<ol>');
                 inOrderedList = true;
             }
-            html += `<li>${formatInline(line.replace(MD_ORDERED_LIST_REGEX, ''))}</li>`;
+            html.push(`<li>${formatInline(line.replace(MD_ORDERED_LIST_REGEX, ''))}</li>`);
             continue;
         }
         
         closeUnorderedList();
         closeOrderedList();
         if (trimmedLine.length > 0) {
-            html += `<p>${formatInline(line)}</p>`;
+            html.push(`<p>${formatInline(line)}</p>`);
         }
     }
 
     closeUnorderedList();
     closeOrderedList();
-    return html;
+    return html.join('');
 }
 
 export function pushToOneSignal(callback: (oneSignal: any) => void) {

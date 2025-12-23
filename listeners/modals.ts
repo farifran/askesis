@@ -5,7 +5,25 @@
 */
 
 import { ui } from '../render/ui';
-import { state, LANGUAGES, PREDEFINED_HABITS, STREAK_SEMI_CONSOLIDATED, STREAK_CONSOLIDATED, saveState, DAYS_IN_CALENDAR, invalidateChartCache } from '../state';
+import { 
+    state, 
+    LANGUAGES, 
+    STREAK_SEMI_CONSOLIDATED, 
+    STREAK_CONSOLIDATED, 
+    DAYS_IN_CALENDAR, 
+    invalidateChartCache,
+    TimeOfDay, 
+    FREQUENCIES, 
+    TIMES_OF_DAY,
+    Habit, 
+    HabitTemplate, 
+    Frequency, 
+    PredefinedHabit
+} from '../state';
+// ARCHITECTURE FIX: Import persistence logic from service layer.
+import { saveState } from '../services/persistence';
+// ARCHITECTURE FIX: Import predefined habits from data layer, not state module.
+import { PREDEFINED_HABITS } from '../data/predefinedHabits';
 import {
     openModal,
     closeModal,
@@ -38,11 +56,10 @@ import {
 import { setLanguage, t, getHabitDisplayInfo } from '../i18n';
 import { setupReelRotary } from '../render/rotary';
 import { simpleMarkdownToHTML, pushToOneSignal, getContrastColor, addDays, parseUTCIsoDate, toUTCIsoDateString, getDateTimeFormat } from '../utils';
-import { icons, getTimeOfDayIcon } from '../render/icons';
-import { TimeOfDay, FREQUENCIES, TIMES_OF_DAY } from '../state';
+import { getTimeOfDayIcon } from '../render/icons';
 import { setTextContent, updateReelRotaryARIA } from '../render/dom';
-import { Habit, HabitTemplate, Frequency, PredefinedHabit } from '../state';
 import { getTimeOfDayName } from '../i18n';
+import { isHabitNameDuplicate, calculateHabitStreak } from '../services/selectors';
 
 // REFACTOR [2024-09-02]: Centraliza a lógica de processamento e formatação de celebrações
 const _processAndFormatCelebrations = (
@@ -67,6 +84,9 @@ const _processAndFormatCelebrations = (
 
     return t(translationKey, { count: pendingIds.length, habitNames });
 };
+
+// Hoisted constant for habit sorting to avoid reallocation
+const STATUS_ORDER = { 'active': 0, 'graduated': 1, 'ended': 2 } as const;
 
 // --- PRIVATE HELPERS (MODAL FORMS) ---
 
@@ -123,8 +143,10 @@ function _validateHabitName(newName: string, currentHabitId?: string): boolean {
 
     formNoticeEl.classList.remove('visible');
     habitNameInput.classList.remove('shake');
+    
+    const trimmedName = newName.trim();
 
-    if (newName.length === 0) {
+    if (trimmedName.length === 0) {
         formNoticeEl.textContent = t('noticeNameCannotBeEmpty');
         formNoticeEl.classList.add('visible');
         
@@ -138,8 +160,22 @@ function _validateHabitName(newName: string, currentHabitId?: string): boolean {
         return false;
     }
 
-    if (newName.length > 16) {
+    if (trimmedName.length > 16) {
         formNoticeEl.textContent = t('noticeNameTooLong');
+        formNoticeEl.classList.add('visible');
+        
+        requestAnimationFrame(() => {
+            habitNameInput.classList.add('shake');
+            habitNameInput.addEventListener('animationend', () => {
+                habitNameInput.classList.remove('shake');
+            }, { once: true });
+        });
+        
+        return false;
+    }
+    
+    if (isHabitNameDuplicate(trimmedName, currentHabitId)) {
+        formNoticeEl.textContent = t('noticeDuplicateHabitWithName');
         formNoticeEl.classList.add('visible');
         
         requestAnimationFrame(() => {
@@ -455,7 +491,7 @@ export function setupModalListeners() {
     habitNameInput.addEventListener('input', () => {
         if (!state.editingHabit) return;
         
-        const newName = habitNameInput.value.trim();
+        const newName = habitNameInput.value;
         state.editingHabit.formData.name = newName;
         delete state.editingHabit.formData.nameKey; 
 

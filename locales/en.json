@@ -93,6 +93,7 @@
     "headerTitleYesterday": "Yesterday",
     "importButton": "Restore Backup",
     "importError": "Import failed. Check if the file is a valid backup.",
+    "importInvalid": "Import failed. The selected file does not appear to be a valid Askesis backup.",
     "importSuccess": "Backup restored successfully!",
     "langEnglish": "English",
     "langPortuguese": "Portuguese",

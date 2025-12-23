@@ -5,13 +5,14 @@
 */
 
 // FIX: Import getSmartGoalForHabit from selectors module, not state module.
-import { state, Habit, HabitStatus, HabitDayData, STREAK_CONSOLIDATED, STREAK_SEMI_CONSOLIDATED, TimeOfDay, getHabitDailyInfoForDate, TIMES_OF_DAY } from '../state';
+import { state, Habit, HabitStatus, HabitDayData, STREAK_CONSOLIDATED, STREAK_SEMI_CONSOLIDATED, TimeOfDay, getHabitDailyInfoForDate, TIMES_OF_DAY, HabitDailyInfo } from '../state';
 import { calculateHabitStreak, getActiveHabitsForDate, getSmartGoalForHabit } from '../services/selectors';
 import { ui } from './ui';
 import { t, getHabitDisplayInfo, getTimeOfDayName } from '../i18n';
-import { icons, getTimeOfDayIcon } from './icons';
+import { UI_ICONS, getTimeOfDayIcon } from './icons';
 import { setTextContent } from './dom';
 import { CSS_CLASSES, DOM_SELECTORS } from './constants'; // TYPE SAFETY IMPORT
+import { parseUTCIsoDate } from '../utils';
 
 // OTIMIZAÇÃO [2025-01-24]: Cache persistente para cartões de hábitos.
 const habitElementCache = new Map<string, HTMLElement>();
@@ -34,6 +35,27 @@ const cardElementsCache = new Map<HTMLElement, CardElements>();
 // Apenas limpamos (.length = 0) e reutilizamos os arrays existentes.
 const habitsByTimePool: Record<TimeOfDay, Habit[]> = { 'Morning': [], 'Afternoon': [], 'Evening': [] };
 
+// OTIMIZAÇÃO [2025-03-16]: Template Prototype para controles de meta numérica.
+let goalControlsTemplate: HTMLElement | null = null;
+
+function getGoalControlsTemplate(): HTMLElement {
+    if (!goalControlsTemplate) {
+        // Build structure once
+        const div = document.createElement('div');
+        div.className = CSS_CLASSES.HABIT_GOAL_CONTROLS;
+        div.innerHTML = `
+            <button type="button" class="${CSS_CLASSES.GOAL_CONTROL_BTN}" data-action="decrement">-</button>
+            <div class="${CSS_CLASSES.GOAL_VALUE_WRAPPER}">
+                <div class="progress"></div>
+                <div class="unit"></div>
+            </div>
+            <button type="button" class="${CSS_CLASSES.GOAL_CONTROL_BTN}" data-action="increment">+</button>
+        `;
+        goalControlsTemplate = div;
+    }
+    return goalControlsTemplate;
+}
+
 export function clearHabitDomCache() {
     habitElementCache.clear();
     cardElementsCache.clear();
@@ -48,12 +70,6 @@ export const getUnitString = (habit: Habit, value: number | undefined) => {
     return t(unitKey, { count: value });
 };
 
-export const formatGoalForDisplay = (goal: number): string => {
-    if (goal < 5) return '< 5';
-    if (goal > 95) return '> 95';
-    return goal.toString();
-};
-
 function _renderCompletedGoal(goalEl: HTMLElement) {
     if (goalEl.querySelector('.completed-wrapper')) return;
 
@@ -61,7 +77,7 @@ function _renderCompletedGoal(goalEl: HTMLElement) {
     
     const wrapper = document.createElement('div');
     wrapper.className = 'completed-wrapper';
-    wrapper.innerHTML = icons.check;
+    wrapper.innerHTML = UI_ICONS.check;
     
     goalEl.appendChild(wrapper);
 }
@@ -73,7 +89,7 @@ function _renderSnoozedGoal(goalEl: HTMLElement) {
     
     const wrapper = document.createElement('div');
     wrapper.className = 'snoozed-wrapper';
-    wrapper.innerHTML = icons.snoozed;
+    wrapper.innerHTML = UI_ICONS.snoozed;
     
     goalEl.appendChild(wrapper);
 }
@@ -84,58 +100,36 @@ function _renderPendingGoalControls(goalEl: HTMLElement, habit: Habit, time: Tim
     if (hasNumericGoal) {
         const smartGoal = getSmartGoalForHabit(habit, state.selectedDate, time);
         const currentGoal = dayDataForInstance?.goalOverride ?? smartGoal;
-        const displayVal = formatGoalForDisplay(currentGoal);
+        const displayVal = currentGoal.toString();
         const unitVal = getUnitString(habit, currentGoal);
 
         let controls = goalEl.querySelector(`.${CSS_CLASSES.HABIT_GOAL_CONTROLS}`);
         
         if (!controls) {
             goalEl.replaceChildren();
-            controls = document.createElement('div');
-            controls.className = CSS_CLASSES.HABIT_GOAL_CONTROLS;
-            
-            const decBtn = document.createElement('button');
-            decBtn.type = 'button';
-            decBtn.className = CSS_CLASSES.GOAL_CONTROL_BTN;
-            decBtn.dataset.habitId = habit.id;
-            decBtn.dataset.time = time;
-            decBtn.dataset.action = 'decrement';
-            decBtn.setAttribute('aria-label', t('habitGoalDecrement_ariaLabel'));
-            decBtn.textContent = '-';
-            
-            const valWrapper = document.createElement('div');
-            valWrapper.className = CSS_CLASSES.GOAL_VALUE_WRAPPER;
-            
-            const progDiv = document.createElement('div');
-            progDiv.className = 'progress';
-            
-            const unitDiv = document.createElement('div');
-            unitDiv.className = 'unit';
-            
-            valWrapper.append(progDiv, unitDiv);
-            
-            const incBtn = document.createElement('button');
-            incBtn.type = 'button';
-            incBtn.className = CSS_CLASSES.GOAL_CONTROL_BTN;
-            incBtn.dataset.habitId = habit.id;
-            incBtn.dataset.time = time;
-            incBtn.dataset.action = 'increment';
-            incBtn.setAttribute('aria-label', t('habitGoalIncrement_ariaLabel'));
-            incBtn.textContent = '+';
-            
-            controls.append(decBtn, valWrapper, incBtn);
+            // PERFORMANCE: Use cloned template instead of creating elements from scratch
+            controls = getGoalControlsTemplate().cloneNode(true) as HTMLElement;
             goalEl.appendChild(controls);
         }
 
+        // Locate children in the (potentially cloned) structure
+        const decBtn = controls.querySelector(`[data-action="decrement"]`) as HTMLButtonElement;
+        const incBtn = controls.querySelector(`[data-action="increment"]`) as HTMLButtonElement;
         const prog = controls.querySelector('.progress');
         const unit = controls.querySelector('.unit');
+
+        // Update Dynamic Data
+        decBtn.dataset.habitId = habit.id;
+        decBtn.dataset.time = time;
+        decBtn.setAttribute('aria-label', t('habitGoalDecrement_ariaLabel'));
+        decBtn.disabled = currentGoal <= 1;
+
+        incBtn.dataset.habitId = habit.id;
+        incBtn.dataset.time = time;
+        incBtn.setAttribute('aria-label', t('habitGoalIncrement_ariaLabel'));
+
         setTextContent(prog, displayVal);
         setTextContent(unit, unitVal);
-        
-        const decBtn = controls.querySelector<HTMLButtonElement>(`.${CSS_CLASSES.GOAL_CONTROL_BTN}[data-action="decrement"]`);
-        if (decBtn) {
-            decBtn.disabled = currentGoal <= 1;
-        }
     } else {
         if (goalEl.hasChildNodes()) goalEl.replaceChildren();
     }
@@ -176,7 +170,16 @@ export function _updateConsolidationMessage(detailsEl: HTMLElement, streak: numb
     }
 }
 
-export function updateHabitCardElement(card: HTMLElement, habit: Habit, time: TimeOfDay): void {
+/**
+ * Updates a habit card's DOM with current state.
+ * PERFORMANCE [2025-03-16]: Accepts optional `preLoadedDailyInfo` to avoid fetching data map repeatedly in loops.
+ */
+export function updateHabitCardElement(
+    card: HTMLElement, 
+    habit: Habit, 
+    time: TimeOfDay, 
+    preLoadedDailyInfo?: Record<string, HabitDailyInfo>
+): void {
     let elements = cardElementsCache.get(card);
     
     // FIX [2025-03-09]: ROBUSTNESS AUTO-REPAIR.
@@ -208,7 +211,9 @@ export function updateHabitCardElement(card: HTMLElement, habit: Habit, time: Ti
     
     const { icon, contentWrapper, name: nameEl, subtitle: subtitleEl, details: detailsEl, noteBtn, deleteBtn, goal: goalEl } = elements;
     
-    const dailyInfo = getHabitDailyInfoForDate(state.selectedDate);
+    // OPTIMIZATION: Use injected daily info map if available, otherwise fetch it.
+    const dailyInfo = preLoadedDailyInfo || getHabitDailyInfoForDate(state.selectedDate);
+    
     const habitInstanceData = dailyInfo[habit.id]?.instances?.[time];
     const status = habitInstanceData?.status ?? CSS_CLASSES.PENDING;
     const hasNote = habitInstanceData?.note && habitInstanceData.note.length > 0;
@@ -265,7 +270,7 @@ export function updateHabitCardElement(card: HTMLElement, habit: Habit, time: Ti
     
     const hasNoteStr = String(hasNote);
     if (noteBtn.dataset.hasNote !== hasNoteStr) {
-        noteBtn.innerHTML = hasNote ? icons.swipeNoteHasNote : icons.swipeNote;
+        noteBtn.innerHTML = hasNote ? UI_ICONS.swipeNoteHasNote : UI_ICONS.swipeNote;
         noteBtn.setAttribute('aria-label', t(hasNote ? 'habitNoteEdit_ariaLabel' : 'habitNoteAdd_ariaLabel'));
         noteBtn.dataset.hasNote = hasNoteStr;
     }
@@ -276,7 +281,7 @@ export function updateHabitCardElement(card: HTMLElement, habit: Habit, time: Ti
     updateGoalContentElement(goalEl, status, habit, time, habitInstanceData);
 }
 
-export function createHabitCardElement(habit: Habit, time: TimeOfDay): HTMLElement {
+export function createHabitCardElement(habit: Habit, time: TimeOfDay, preLoadedDailyInfo?: Record<string, HabitDailyInfo>): HTMLElement {
     // REFACTOR [2025-03-05]: Pure Skeleton Factory.
     // Removes redundant logic by building only the DOM structure and delegating
     // all data population (status, text, classes) to updateHabitCardElement.
@@ -289,11 +294,11 @@ export function createHabitCardElement(habit: Habit, time: TimeOfDay): HTMLEleme
     const actionsLeft = document.createElement('div');
     actionsLeft.className = 'habit-actions-left';
     // NOTE: aria-label set initially but updated dynamically in updateHabitCardElement
-    actionsLeft.innerHTML = `<button type="button" class="${CSS_CLASSES.SWIPE_DELETE_BTN}">${icons.swipeDelete}</button>`;
+    actionsLeft.innerHTML = `<button type="button" class="${CSS_CLASSES.SWIPE_DELETE_BTN}">${UI_ICONS.swipeDelete}</button>`;
 
     const actionsRight = document.createElement('div');
     actionsRight.className = 'habit-actions-right';
-    actionsRight.innerHTML = `<button type="button" class="${CSS_CLASSES.SWIPE_NOTE_BTN}">${icons.swipeNote}</button>`;
+    actionsRight.innerHTML = `<button type="button" class="${CSS_CLASSES.SWIPE_NOTE_BTN}">${UI_ICONS.swipeNote}</button>`;
     
     const contentWrapper = document.createElement('div');
     contentWrapper.className = CSS_CLASSES.HABIT_CONTENT_WRAPPER;
@@ -336,7 +341,7 @@ export function createHabitCardElement(habit: Habit, time: TimeOfDay): HTMLEleme
     });
 
     // DELEGATION: Populate data immediately using cached elements.
-    updateHabitCardElement(card, habit, time);
+    updateHabitCardElement(card, habit, time, preLoadedDailyInfo);
 
     return card;
 }
@@ -383,7 +388,14 @@ export function renderHabits() {
         return;
     }
 
-    const activeHabitsData = getActiveHabitsForDate(state.selectedDate);
+    // OTIMIZAÇÃO [2025-03-16]: Pre-Parse Date & Batch Fetch Data.
+    // We parse the date ONCE and fetch the daily data ONCE for the entire render cycle.
+    // This avoids redundant parsing and cache lookups inside loops (N habits * M invocations).
+    const selectedDateObj = parseUTCIsoDate(state.selectedDate);
+    const dailyInfo = getHabitDailyInfoForDate(state.selectedDate);
+    
+    // Pass pre-parsed date to selector to avoid re-parsing inside filter loop
+    const activeHabitsData = getActiveHabitsForDate(state.selectedDate, selectedDateObj);
     
     // MEMORY OPTIMIZATION: Reset pool instead of creating new objects.
     habitsByTimePool.Morning.length = 0;
@@ -433,9 +445,11 @@ export function renderHabits() {
             
             if (card) {
                 card.classList.remove(CSS_CLASSES.IS_OPEN_LEFT, CSS_CLASSES.IS_OPEN_RIGHT, CSS_CLASSES.IS_SWIPING, CSS_CLASSES.DRAGGING);
-                updateHabitCardElement(card, habit, time);
+                // Pass pre-fetched dailyInfo to avoid re-fetch
+                updateHabitCardElement(card, habit, time, dailyInfo);
             } else {
-                card = createHabitCardElement(habit, time);
+                // UPDATE [2025-03-16]: Pass pre-fetched dailyInfo to card creation logic
+                card = createHabitCardElement(habit, time, dailyInfo);
             }
             
             if (card) {

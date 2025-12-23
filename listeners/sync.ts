@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -6,7 +7,8 @@
 import { ui } from "../render/ui";
 import { t } from "../i18n";
 import { fetchStateFromCloud, setSyncStatus } from "../services/cloud";
-import { loadState, saveState } from "../state";
+// ARCHITECTURE FIX: Import persistence logic from service layer.
+import { loadState, saveState } from "../services/persistence";
 import { renderApp, showConfirmationModal } from "../render";
 import { storeKey, clearKey, hasLocalSyncKey, getSyncKey, isValidKeyFormat, initAuth } from "../services/api";
 

@@ -1,15 +1,18 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
 
 // FIX: Import calculateHabitStreak from selectors module, not state module.
-import { state, Habit, HabitTemplate, Frequency, PredefinedHabit, TimeOfDay, STREAK_CONSOLIDATED, PREDEFINED_HABITS, TIMES_OF_DAY, FREQUENCIES, LANGUAGES, getHabitDailyInfoForDate } from '../state';
+import { state, Habit, HabitTemplate, Frequency, PredefinedHabit, TimeOfDay, STREAK_CONSOLIDATED, TIMES_OF_DAY, FREQUENCIES, LANGUAGES, getHabitDailyInfoForDate } from '../state';
+// ARCHITECTURE FIX: Import predefined habits from data layer, not state module.
+import { PREDEFINED_HABITS } from '../data/predefinedHabits';
 import { getScheduleForDate, calculateHabitStreak } from '../services/selectors';
 import { ui } from './ui';
 import { t, getHabitDisplayInfo, getTimeOfDayName } from '../i18n';
-// FIX: Removed unused and non-existent import 'HABIT_ICONS'
-import { icons, getTimeOfDayIcon } from './icons';
+// FIX: Removed unused 'icons' import. Using segregated HABIT_ICONS and UI_ICONS.
+import { HABIT_ICONS, UI_ICONS, getTimeOfDayIcon } from './icons';
 import { setTextContent, updateReelRotaryARIA } from './dom';
 import { escapeHTML, getContrastColor, getDateTimeFormat, parseUTCIsoDate, getTodayUTCIso, getSafeDate } from '../utils';
 
@@ -234,17 +237,17 @@ function _createManageHabitListItem(habitData: { habit: Habit; status: 'active' 
     };
 
     if (status === 'active') {
-        actionsDiv.appendChild(createActionButton('edit-habit-btn', t('aria_edit', { habitName: name }), icons.editAction));
+        actionsDiv.appendChild(createActionButton('edit-habit-btn', t('aria_edit', { habitName: name }), UI_ICONS.editAction));
         if (isConsolidated) {
-            actionsDiv.appendChild(createActionButton('graduate-habit-btn', t('aria_graduate', { habitName: name }), icons.graduateAction));
+            actionsDiv.appendChild(createActionButton('graduate-habit-btn', t('aria_graduate', { habitName: name }), UI_ICONS.graduateAction));
         } else {
-            actionsDiv.appendChild(createActionButton('end-habit-btn', t('aria_end', { habitName: name }), icons.endAction));
+            actionsDiv.appendChild(createActionButton('end-habit-btn', t('aria_end', { habitName: name }), UI_ICONS.endAction));
         }
     } else if (status === 'ended') {
-        actionsDiv.appendChild(createActionButton('restore-habit-btn', t('aria_restore', { habitName: name }), icons.restoreAction));
-        actionsDiv.appendChild(createActionButton('permanent-delete-habit-btn', t('aria_delete_permanent', { habitName: name }), icons.deletePermanentAction));
+        actionsDiv.appendChild(createActionButton('restore-habit-btn', t('aria_restore', { habitName: name }), UI_ICONS.restoreAction));
+        actionsDiv.appendChild(createActionButton('permanent-delete-habit-btn', t('aria_delete_permanent', { habitName: name }), UI_ICONS.deletePermanentAction));
     } else if (status === 'graduated') {
-        actionsDiv.appendChild(createActionButton('permanent-delete-habit-btn', t('aria_delete_permanent', { habitName: name }), icons.deletePermanentAction));
+        actionsDiv.appendChild(createActionButton('permanent-delete-habit-btn', t('aria_delete_permanent', { habitName: name }), UI_ICONS.deletePermanentAction));
     }
     
     return li;
@@ -366,12 +369,13 @@ export function renderIconPicker() {
     ui.iconPickerGrid.style.setProperty('--current-habit-fg-color', fgColor);
 
     if (!cachedIconButtonsHTML) {
-        const nonHabitIconKeys = new Set(['morning', 'afternoon', 'evening', 'deletePermanentAction', 'editAction', 'graduateAction', 'endAction', 'swipeDelete', 'swipeNote', 'swipeNoteHasNote', 'colorPicker', 'edit', 'snoozed', 'check', 'restoreAction']);
+        // REFACTOR [2025-03-12]: Simplified icon filtering logic.
+        // Instead of manually blacklisting UI icons, we now iterate directly over the semantic HABIT_ICONS object.
+        // This makes adding new UI icons safe without needing to update this list.
         
-        cachedIconButtonsHTML = Object.keys(icons)
-            .filter(key => !nonHabitIconKeys.has(key))
+        cachedIconButtonsHTML = Object.keys(HABIT_ICONS)
             .map(key => {
-                const iconSVG = (icons as any)[key];
+                const iconSVG = (HABIT_ICONS as any)[key];
                 return `
                     <button type="button" class="icon-picker-item" data-icon-svg="${escapeHTML(iconSVG)}">
                         ${iconSVG}
@@ -386,7 +390,7 @@ export function renderIconPicker() {
 
     const changeColorBtn = ui.iconPickerModal.querySelector<HTMLButtonElement>('#change-color-from-picker-btn');
     if (changeColorBtn) {
-        changeColorBtn.innerHTML = icons.colorPicker;
+        changeColorBtn.innerHTML = UI_ICONS.colorPicker;
         changeColorBtn.setAttribute('aria-label', t('habitColorPicker_ariaLabel'));
     }
 }
@@ -479,7 +483,7 @@ export function renderFrequencyOptions() {
 function _createHabitTemplateForForm(habitOrTemplate: Habit | PredefinedHabit | null, selectedDate: string): HabitTemplate {
     if (!habitOrTemplate) {
         const commonData = {
-            icon: icons.custom,
+            icon: HABIT_ICONS.custom,
             color: '#000000',
             times: ['Morning'] as TimeOfDay[],
             goal: { type: 'check', unitKey: 'unitCheck' } as Habit['goal'],
@@ -589,7 +593,7 @@ export function openEditModal(habitOrTemplate: Habit | HabitTemplate | null) {
         targetDate: safeDate
     };
 
-    ui.editHabitModal.querySelector<HTMLElement>('.edit-icon-overlay')!.innerHTML = icons.edit;
+    ui.editHabitModal.querySelector<HTMLElement>('.edit-icon-overlay')!.innerHTML = UI_ICONS.edit;
     const iconColor = getContrastColor(formData.color);
     ui.habitIconPickerBtn.innerHTML = formData.icon;
     ui.habitIconPickerBtn.style.backgroundColor = formData.color;

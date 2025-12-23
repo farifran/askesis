@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -66,6 +67,7 @@ function getFullCalendarDayTemplate(): HTMLElement {
  * OTIMIZAÇÃO (DRY): Aplica o estado visual a um elemento de dia do calendário.
  * Centraliza a lógica de classes, atributos ARIA e variáveis CSS para evitar duplicação.
  * PERFORMANCE [2025-03-03]: Aceita todayISO opcional para evitar recálculo em loops.
+ * PERFORMANCE [2025-03-13]: Aceita date object opcional para evitar recriação via parse.
  */
 export function updateCalendarDayElement(dayItem: HTMLElement, date: Date, todayISO?: string, precalcIsoDate?: string) {
     const effectiveTodayISO = todayISO || getTodayUTCIso();
@@ -73,7 +75,8 @@ export function updateCalendarDayElement(dayItem: HTMLElement, date: Date, today
     const isoDate = precalcIsoDate || toUTCIsoDateString(date);
     
     // DECOUPLING: Chamadas separadas para performance
-    const { completedPercent, snoozedPercent, showPlusIndicator: showPlus } = calculateDaySummary(isoDate);
+    // Pass date object to avoid re-parsing inside calculateDaySummary
+    const { completedPercent, snoozedPercent, showPlusIndicator: showPlus } = calculateDaySummary(isoDate, date);
     
     const isSelected = isoDate === state.selectedDate;
     const isToday = isoDate === effectiveTodayISO;
@@ -136,20 +139,6 @@ export function updateCalendarDayElement(dayItem: HTMLElement, date: Date, today
     
     const dayNameEl = dayItem.querySelector(`.${CSS_CLASSES.DAY_NAME}`);
     setTextContent(dayNameEl, getLocaleDayName(date));
-}
-
-/**
- * SURGICAL UPDATE: Atualiza apenas o dia do calendário especificado no DOM.
- */
-export function renderCalendarDayPartial(dateISO: string) {
-    // Uses type-safe DOM selector
-    const dayItem = ui.calendarStrip.querySelector<HTMLElement>(`${DOM_SELECTORS.DAY_ITEM}[data-date="${dateISO}"]`);
-    if (dayItem) {
-        const dateObj = parseUTCIsoDate(dateISO);
-        // Optimization: Single element update doesn't strictly require hoisting todayISO, 
-        // but for consistency we calculate it.
-        updateCalendarDayElement(dayItem, dateObj, getTodayUTCIso(), dateISO);
-    }
 }
 
 export function createCalendarDayElement(date: Date, todayISO: string): HTMLElement {
@@ -296,7 +285,8 @@ export function renderFullCalendar() {
     for (let day = 1; day <= daysInMonth; day++) {
         // Use iteratorDate which is already set to the correct day
         const isoDate = toUTCIsoDateString(iteratorDate);
-        const { completedPercent, snoozedPercent } = calculateDaySummary(isoDate);
+        // Pass iteratorDate reference to selector to avoid re-parsing
+        const { completedPercent, snoozedPercent } = calculateDaySummary(isoDate, iteratorDate);
 
         // OPTIMIZATION: Clone from template
         const dayEl = getFullCalendarDayTemplate().cloneNode(true) as HTMLElement;

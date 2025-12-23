@@ -12,6 +12,11 @@ const UUID_REGEX = /^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}
 let localSyncKey: string | null = null;
 let keyHashCache: string | null = null;
 
+// OPTIMIZATION [2025-03-14]: Hoisted TextEncoder and Pre-calculated Hex Table.
+// Reduces allocation overhead during hashing operations.
+const encoder = new TextEncoder();
+const HEX_TABLE = Array.from({ length: 256 }, (_, i) => i.toString(16).padStart(2, '0'));
+
 // --- Authentication / Key Management ---
 
 export function initAuth() {
@@ -53,11 +58,20 @@ async function hashKey(key: string): Promise<string> {
         return '';
     }
 
-    const encoder = new TextEncoder();
     const data = encoder.encode(key);
     const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    
+    // PERFORMANCE OPTIMIZATION: Use Lookup Table instead of map/padStart.
+    // Significantly faster for byte-to-hex conversion.
+    const hashArray = new Uint8Array(hashBuffer);
+    const len = hashArray.length;
+    const hexChars = new Array(len);
+    
+    for (let i = 0; i < len; i++) {
+        hexChars[i] = HEX_TABLE[hashArray[i]];
+    }
+    
+    return hexChars.join('');
 }
 
 export async function getSyncKeyHash(): Promise<string | null> {
@@ -116,6 +130,9 @@ export async function apiFetch(endpoint: string, options: ExtendedRequestInit = 
                 ...fetchOptions,
                 headers,
                 signal: controller.signal,
+                // ROBUSTNESS [2025-03-16]: Keepalive ensures requests survive page unloads/navigation.
+                // Critical for data persistence on close.
+                keepalive: true,
             });
             clearTimeout(timeoutId);
 

@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -6,7 +7,8 @@
 
 import { inject } from '@vercel/analytics';
 import './index.css';
-import { loadState, saveState, state, persistStateLocally, STATE_STORAGE_KEY, AppState, registerSyncHandler } from './state';
+import { state, STATE_STORAGE_KEY, AppState } from './state';
+import { loadState, saveState, persistStateLocally, registerSyncHandler } from './services/persistence';
 // DEAD CODE REMOVAL [2025-03-10]: initUI removed as UI elements are lazily initialized.
 import { renderApp } from './render';
 import { setupEventListeners } from './listeners';

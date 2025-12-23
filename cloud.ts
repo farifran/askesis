@@ -1,16 +1,16 @@
 
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
 
-import { AppState, STATE_STORAGE_KEY, loadState, state, persistStateLocally, saveState, APP_VERSION, getPersistableState } from './state';
-import { pushToOneSignal, generateUUID } from './utils';
-import { ui } from './render/ui';
-import { t } from './i18n';
+import { AppState, state, APP_VERSION, getPersistableState, STATE_STORAGE_KEY } from './state';
+import { loadState, saveState, persistStateLocally } from './services/persistence';
+import { pushToOneSignal, generateUUID } from '../utils';
+import { ui } from '../render/ui';
+import { t } from '../i18n';
 import { hasLocalSyncKey, getSyncKey, apiFetch } from './services/api';
-import { renderApp, updateNotificationUI } from './render';
+import { renderApp, updateNotificationUI } from '../render';
 import { mergeStates } from './services/dataMerge';
 
 // Debounce para evitar salvar na nuvem a cada pequena alteração.

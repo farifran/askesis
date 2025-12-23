@@ -93,6 +93,7 @@
     "headerTitleYesterday": "Ayer",
     "importButton": "Restaurar Copia",
     "importError": "Error al importar. Verifica que el archivo sea una copia de seguridad válida.",
+    "importInvalid": "Error al importar. El archivo seleccionado no parece ser una copia de seguridad válida de Askesis.",
     "importSuccess": "¡Copia restaurada con éxito!",
     "langEnglish": "Inglés",
     "langPortuguese": "Portugués",

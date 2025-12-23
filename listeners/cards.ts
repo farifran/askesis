@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -28,37 +29,43 @@ function createGoalInput(habit: Habit, time: TimeOfDay, wrapper: HTMLElement) {
     input.focus();
     input.select();
 
-    const restoreOriginalContent = () => {
+    const cleanupListeners = () => {
         input.removeEventListener('blur', onBlur);
         input.removeEventListener('keydown', onKeyDown);
+    };
+
+    const restoreOriginalContent = () => {
+        cleanupListeners();
         wrapper.innerHTML = originalContent;
     };
 
     const save = () => {
         const newGoal = parseInt(input.value, 10);
-        restoreOriginalContent(); 
-
+        
         if (!isNaN(newGoal) && newGoal > 0) {
+            // PERFORMANCE [2025-03-16]: Skip restoreOriginalContent().
+            // setGoalOverride triggers a full app render which will update this wrapper's HTML 
+            // with the new value immediately. Restoring old content first causes 
+            // Layout Thrashing (Write -> Read -> Write).
+            cleanupListeners();
+            
             setGoalOverride(habit.id, state.selectedDate, time, newGoal);
             triggerHaptic('success');
 
-            // DOM OPTIMIZATION [2025-03-09]: Find the card context first to avoid global DOM scan.
+            // Reuse 'wrapper' reference directly
+            requestAnimationFrame(() => {
+                wrapper.classList.add('increase');
+                wrapper.addEventListener('animationend', () => wrapper.classList.remove('increase'), { once: true });
+            });
+            
+            // A11Y FIX: Restore focus efficiently.
+            // We use closest() here only on success, which is rare compared to reads.
             const card = wrapper.closest<HTMLElement>(DOM_SELECTORS.HABIT_CARD);
-            if (card) {
-                // Now query strictly inside the card
-                const updatedWrapper = card.querySelector<HTMLElement>(DOM_SELECTORS.GOAL_VALUE_WRAPPER);
-                
-                if (updatedWrapper) {
-                    requestAnimationFrame(() => {
-                        updatedWrapper.classList.add('increase');
-                        updatedWrapper.addEventListener('animationend', () => updatedWrapper.classList.remove('increase'), { once: true });
-                    });
-                }
-                
-                // A11Y FIX [2025-03-09]: Restore focus to the card content to maintain keyboard navigation flow.
-                const content = card.querySelector<HTMLElement>(DOM_SELECTORS.HABIT_CONTENT_WRAPPER);
-                content?.focus();
-            }
+            const content = card?.querySelector<HTMLElement>(DOM_SELECTORS.HABIT_CONTENT_WRAPPER);
+            content?.focus();
+        } else {
+            // Invalid input: restore previous state
+            restoreOriginalContent();
         }
     };
 
@@ -69,7 +76,7 @@ function createGoalInput(habit: Habit, time: TimeOfDay, wrapper: HTMLElement) {
             input.blur(); 
         } else if (e.key === 'Escape') {
             restoreOriginalContent();
-            // A11Y: Restore focus even on cancel
+            // A11Y: Restore focus on cancel
             const card = wrapper.closest<HTMLElement>(DOM_SELECTORS.HABIT_CARD);
             const content = card?.querySelector<HTMLElement>(DOM_SELECTORS.HABIT_CONTENT_WRAPPER);
             content?.focus();

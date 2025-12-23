@@ -1,35 +1,42 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
 // [ARQUITETURA]: Módulo de Seletores (Selectors Module).
 // Este módulo centraliza toda a lógica de "leitura" e "cálculo" do estado da aplicação.
-// Funções aqui são puras (Pure Functions): recebem o estado como entrada e retornam dados derivados,
+// Funções aqui são puras (Pure Functions): recebem o estado como entrada e retornar dados derivados,
 // sem causar efeitos colaterais (side effects). Isso melhora a testabilidade, o cache e a manutenibilidade.
 
-import { state, Habit, TimeOfDay, HabitSchedule, HabitDailyInfo, STREAK_LOOKBACK_DAYS, MAX_CACHE_SIZE, getHabitDailyInfoForDate } from '../state';
+import { state, Habit, TimeOfDay, HabitSchedule, getHabitDailyInfoForDate, STREAK_LOOKBACK_DAYS } from '../state';
 import { toUTCIsoDateString, parseUTCIsoDate, addDays, getTodayUTCIso } from '../utils';
+import { getHabitDisplayInfo } from '../i18n';
 
 // --- Seletores de Agendamento (Schedule Selectors) ---
 
 /**
  * Encontra o agendamento específico de um hábito que estava ativo em uma determinada data.
- * Utiliza cache para otimizar buscas repetidas.
+ * Utiliza cache aninhado (Habit -> Date) para otimizar buscas repetidas sem alocação de strings.
  */
 export function getScheduleForDate(habit: Habit, dateISO: string): HabitSchedule | null {
-    const cacheKey = `${habit.id}|${dateISO}`;
-    if (state.scheduleCache.has(cacheKey)) {
-        return state.scheduleCache.get(cacheKey)!;
+    let subCache = state.scheduleCache.get(habit.id);
+    if (!subCache) {
+        subCache = new Map();
+        state.scheduleCache.set(habit.id, subCache);
     }
-    // Otimização: Ordena apenas uma vez se necessário, mas geralmente já está ordenado.
-    habit.scheduleHistory.sort((a, b) => a.startDate.localeCompare(b.startDate));
+    
+    if (subCache.has(dateISO)) {
+        return subCache.get(dateISO)!;
+    }
+    
+    // OPTIMIZATION [2025-03-12]: Removed .sort().
+    // The scheduleHistory array MUST be sorted by startDate upon insertion/loading.
+    
     const schedule = habit.scheduleHistory.find(s =>
         dateISO >= s.startDate && (!s.endDate || dateISO < s.endDate)
     ) || null;
 
-    if (state.scheduleCache.size > MAX_CACHE_SIZE) state.scheduleCache.clear();
-    state.scheduleCache.set(cacheKey, schedule);
-
+    subCache.set(dateISO, schedule);
     return schedule;
 }
 
@@ -48,21 +55,28 @@ export function getEffectiveScheduleForHabitOnDate(habit: Habit, dateISO: string
 
 /**
  * Determina se um hábito deve aparecer em uma data específica com base em sua frequência.
- * Utiliza cache para performance.
+ * Utiliza cache aninhado para performance.
+ * PERFORMANCE [2025-03-13]: Accepts optional preParsedDate to avoid creating new Date objects in tight loops.
  */
-export function shouldHabitAppearOnDate(habit: Habit, dateISO: string): boolean {
-    const cacheKey = `${habit.id}|${dateISO}`;
-    if (state.habitAppearanceCache.has(cacheKey)) {
-        return state.habitAppearanceCache.get(cacheKey)!;
+export function shouldHabitAppearOnDate(habit: Habit, dateISO: string, preParsedDate?: Date): boolean {
+    let subCache = state.habitAppearanceCache.get(habit.id);
+    if (!subCache) {
+        subCache = new Map();
+        state.habitAppearanceCache.set(habit.id, subCache);
+    }
+
+    if (subCache.has(dateISO)) {
+        return subCache.get(dateISO)!;
     }
 
     const schedule = getScheduleForDate(habit, dateISO);
     if (!schedule || habit.graduatedOn) {
-        state.habitAppearanceCache.set(cacheKey, false);
+        subCache.set(dateISO, false);
         return false;
     }
 
-    const date = parseUTCIsoDate(dateISO);
+    // OPTIMIZATION: Use injected date object if available to avoid parsing overhead
+    const date = preParsedDate || parseUTCIsoDate(dateISO);
     const frequency = schedule.frequency;
     let appears = false;
 
@@ -86,8 +100,7 @@ export function shouldHabitAppearOnDate(habit: Habit, dateISO: string): boolean 
             break;
     }
 
-    if (state.habitAppearanceCache.size > MAX_CACHE_SIZE) state.habitAppearanceCache.clear();
-    state.habitAppearanceCache.set(cacheKey, appears);
+    subCache.set(dateISO, appears);
     return appears;
 }
 
@@ -96,12 +109,17 @@ export function shouldHabitAppearOnDate(habit: Habit, dateISO: string): boolean 
 
 /**
  * Calcula a sequência (streak) atual de um hábito até uma data específica.
- * Usa cache e um lookback limitado para performance.
+ * Usa cache aninhado e um lookback limitado para performance.
  */
 export function calculateHabitStreak(habitId: string, endDateISO: string): number {
-    const cacheKey = `${habitId}|${endDateISO}`;
-    if (state.streaksCache.has(cacheKey)) {
-        return state.streaksCache.get(cacheKey)!;
+    let subCache = state.streaksCache.get(habitId);
+    if (!subCache) {
+        subCache = new Map();
+        state.streaksCache.set(habitId, subCache);
+    }
+
+    if (subCache.has(endDateISO)) {
+        return subCache.get(endDateISO)!;
     }
 
     const habit = state.habits.find(h => h.id === habitId);
@@ -114,7 +132,8 @@ export function calculateHabitStreak(habitId: string, endDateISO: string): numbe
         const currentDateISO = toUTCIsoDateString(iteratorDate);
         if (currentDateISO < habit.createdOn) break;
 
-        if (shouldHabitAppearOnDate(habit, currentDateISO)) {
+        // Pass the iteratorDate directly to avoid re-parsing inside shouldHabitAppearOnDate
+        if (shouldHabitAppearOnDate(habit, currentDateISO, iteratorDate)) {
             const schedule = getEffectiveScheduleForHabitOnDate(habit, currentDateISO);
             const dailyInfo = getHabitDailyInfoForDate(currentDateISO)[habitId];
             
@@ -133,8 +152,7 @@ export function calculateHabitStreak(habitId: string, endDateISO: string): numbe
         iteratorDate.setUTCDate(iteratorDate.getUTCDate() - 1);
     }
     
-    if (state.streaksCache.size > MAX_CACHE_SIZE) state.streaksCache.clear();
-    state.streaksCache.set(cacheKey, streak);
+    subCache.set(endDateISO, streak);
     return streak;
 }
 
@@ -171,21 +189,22 @@ export function getCurrentGoalForInstance(habit: Habit, dateISO: string, time: T
 /**
  * Retorna uma lista de hábitos que estão ativos em uma data específica.
  * Usa cache para otimizar a performance.
+ * PERFORMANCE [2025-03-13]: Accepts optional preParsedDate.
  */
-export function getActiveHabitsForDate(dateISO: string): Array<{ habit: Habit, schedule: TimeOfDay[] }> {
+export function getActiveHabitsForDate(dateISO: string, preParsedDate?: Date): Array<{ habit: Habit, schedule: TimeOfDay[] }> {
     if (state.activeHabitsCache.has(dateISO)) {
         return state.activeHabitsCache.get(dateISO)!;
     }
     
     const activeHabits = state.habits
-        .filter(habit => shouldHabitAppearOnDate(habit, dateISO))
+        .filter(habit => shouldHabitAppearOnDate(habit, dateISO, preParsedDate))
         .map(habit => ({
             habit,
             schedule: getEffectiveScheduleForHabitOnDate(habit, dateISO)
         }))
         .filter(item => item.schedule.length > 0);
     
-    if (state.activeHabitsCache.size > MAX_CACHE_SIZE) state.activeHabitsCache.clear();
+    // No explicit limit for this cache; relying on GC or global clears.
     state.activeHabitsCache.set(dateISO, activeHabits);
     return activeHabits;
 }
@@ -193,23 +212,29 @@ export function getActiveHabitsForDate(dateISO: string): Array<{ habit: Habit, s
 /**
  * Calcula um resumo do dia: total de hábitos, concluídos, adiados, etc.
  * Usa cache para performance.
+ * PERFORMANCE [2025-03-13]: Accepts optional preParsedDate to optimize loop usage.
  */
-export function calculateDaySummary(dateISO: string) {
+export function calculateDaySummary(dateISO: string, preParsedDate?: Date) {
     if (state.daySummaryCache.has(dateISO)) {
         return state.daySummaryCache.get(dateISO);
     }
 
-    const activeHabits = getActiveHabitsForDate(dateISO);
+    const activeHabits = getActiveHabitsForDate(dateISO, preParsedDate);
     let total = 0;
     let completed = 0;
     let snoozed = 0;
     let pending = 0;
     let hasNumericOverachieved = false;
 
-    const dailyInfoForDate = getHabitDailyInfoForDate(dateISO);
+    // OPTIMIZATION [2025-03-16]: Hoist data retrieval out of the loop.
+    // getHabitDailyInfoForDate returns a map of { [habitId]: info }.
+    // Fetching it once avoids repeated checks/unarchiving inside the habit loop.
+    const dailyInfoMap = getHabitDailyInfoForDate(dateISO);
 
     for (const { habit, schedule } of activeHabits) {
-        const dailyInfo = dailyInfoForDate[habit.id];
+        // Direct O(1) access from the pre-fetched map
+        const dailyInfo = dailyInfoMap[habit.id];
+        
         for (const time of schedule) {
             total++;
             const instance = dailyInfo?.instances[time];
@@ -241,7 +266,31 @@ export function calculateDaySummary(dateISO: string) {
         showPlusIndicator: hasNumericOverachieved
     };
     
-    if (state.daySummaryCache.size > MAX_CACHE_SIZE) state.daySummaryCache.clear();
     state.daySummaryCache.set(dateISO, summary);
     return summary;
+}
+
+/**
+ * Verifica se um nome de hábito já existe, ignorando o próprio hábito durante a edição.
+ * @param name O nome a ser verificado.
+ * @param currentHabitId O ID do hábito que está sendo editado, para ser excluído da verificação.
+ * @returns `true` se o nome for um duplicado, `false` caso contrário.
+ */
+export function isHabitNameDuplicate(name: string, currentHabitId?: string): boolean {
+    const normalizedNewName = name.trim().toLowerCase();
+    if (!normalizedNewName) {
+        return false;
+    }
+
+    // PERFORMANCE [2025-03-16]: Hoisted today calculation out of the loop.
+    const todayISO = getTodayUTCIso();
+
+    return state.habits.some(habit => {
+        if (habit.id === currentHabitId) {
+            return false;
+        }
+        // Usa a data de hoje como contexto para o nome do hábito existente.
+        const { name: existingHabitName } = getHabitDisplayInfo(habit, todayISO);
+        return existingHabitName.trim().toLowerCase() === normalizedNewName;
+    });
 }

@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -24,16 +25,20 @@ const MAX_SCROLL_SPEED = 15; // Aumentado levemente pois a curva quadrática é 
 export function setupDragHandler(habitContainer: HTMLElement) {
     let draggedElement: HTMLElement | null = null;
     let draggedHabitId: string | null = null;
-    let draggedHabitObject: Habit | null = null; 
     let draggedHabitOriginalTime: TimeOfDay | null = null;
+    
+    // OPTIMIZATION [2025-03-16]: Cache the schedule at drag start to avoid recalculating per frame.
+    let cachedScheduleForDay: TimeOfDay[] | null = null;
+    
     let dropIndicator: HTMLElement | null = null;
     
     // Render State Variables
     let nextDropZoneTarget: HTMLElement | null = null;
     let currentRenderedDropZone: HTMLElement | null = null;
     
-    let nextIndicatorTop: string | null = null;
-    let currentIndicatorTop: string | null = null;
+    // PERFORMANCE [2025-03-16]: Changed from string (px) to number for GPU transform
+    let nextIndicatorY: number | null = null;
+    let currentIndicatorY: number | null = null;
     
     let nextReorderTargetId: string | null = null;
     let nextReorderPosition: 'before' | 'after' | null = null;
@@ -45,6 +50,30 @@ export function setupDragHandler(habitContainer: HTMLElement) {
     
     // PERFORMANCE [2025-03-03]: Cache container bounds to avoid layout thrashing
     let cachedContainerRect: DOMRect | null = null;
+
+    // PERFORMANCE [2025-03-12]: Geometry Cache for Habit Cards.
+    // Stores the initial positions of all cards to avoid calling `getBoundingClientRect`
+    // inside the hot `dragover` loop, preventing Layout Thrashing.
+    // BUGFIX [2025-03-16]: Removed 'top' from cache because it becomes stale on scroll.
+    // We only cache offset properties which are stable relative to the parent.
+    const cardRectCache = new Map<string, { offsetTop: number, offsetHeight: number }>();
+
+    function _captureGeometryCache() {
+        cardRectCache.clear();
+        const cards = habitContainer.querySelectorAll<HTMLElement>(DOM_SELECTORS.HABIT_CARD);
+        // Batch read: Reading layout properties sequentially is optimized by browsers
+        for (const card of cards) {
+            const id = card.dataset.habitId;
+            if (id && card !== draggedElement) {
+                // We cache offset values needed for indicator positioning (Write phase)
+                // We DO NOT cache rect.top/bottom because they change on scroll (Read phase check)
+                cardRectCache.set(id, {
+                    offsetTop: card.offsetTop,
+                    offsetHeight: card.offsetHeight
+                });
+            }
+        }
+    }
 
     function _animationLoop() {
         if (scrollVelocity !== 0) {
@@ -72,6 +101,8 @@ export function setupDragHandler(habitContainer: HTMLElement) {
             
             if (dropIndicator && dropIndicator.parentElement !== currentRenderedDropZone) {
                 currentRenderedDropZone.appendChild(dropIndicator);
+                // Reset transform when changing parents to avoid visual jumps before next frame
+                dropIndicator.style.transform = 'translate3d(0, 0, 0)';
             }
         } else {
              if (dropIndicator && dropIndicator.parentElement) {
@@ -84,10 +115,15 @@ export function setupDragHandler(habitContainer: HTMLElement) {
                 if (!dropIndicator.classList.contains('visible')) {
                     dropIndicator.classList.add('visible');
                 }
-                if (nextIndicatorTop !== currentIndicatorTop && nextIndicatorTop !== null) {
-                    dropIndicator.style.top = nextIndicatorTop;
-                    currentIndicatorTop = nextIndicatorTop;
+                
+                // PERFORMANCE [2025-03-16]: GPU Hardware Acceleration.
+                // Uses translate3d to move the indicator on the composite layer, 
+                // avoiding CPU Layout recalculations on every frame.
+                if (nextIndicatorY !== currentIndicatorY && nextIndicatorY !== null) {
+                    dropIndicator.style.transform = `translate3d(0, ${nextIndicatorY}px, 0)`;
+                    currentIndicatorY = nextIndicatorY;
                 }
+                
                 if (nextReorderTargetId) dropIndicator.dataset.targetId = nextReorderTargetId;
                 if (nextReorderPosition) dropIndicator.dataset.position = nextReorderPosition;
             } else {
@@ -177,7 +213,7 @@ export function setupDragHandler(habitContainer: HTMLElement) {
         scrollVelocity = finalVelocity;
 
         // --- 3. LÓGICA DE ZONA DE SOLTURA (DROP ZONE) ---
-        if (!draggedHabitObject || !draggedHabitOriginalTime || !dropZone) {
+        if (!cachedScheduleForDay || !draggedHabitOriginalTime || !dropZone) {
             nextDropZoneTarget = null;
             isDropValid = false;
             return;
@@ -185,34 +221,55 @@ export function setupDragHandler(habitContainer: HTMLElement) {
 
         nextDropZoneTarget = dropZone;
         const newTime = dropZone.dataset.time as TimeOfDay;
-        const scheduleForDay = getEffectiveScheduleForHabitOnDate(draggedHabitObject, state.selectedDate);
         
+        // Use cached schedule instead of expensive calculation
         const isSameGroup = newTime === draggedHabitOriginalTime;
-        let isInvalidDrop = !isSameGroup && scheduleForDay.includes(newTime);
+        let isInvalidDrop = !isSameGroup && cachedScheduleForDay.includes(newTime);
     
-        if (!isSameGroup && scheduleForDay.length <= 1) {
+        if (!isSameGroup && cachedScheduleForDay.length <= 1) {
             isInvalidDrop = false; 
         }
     
         isDropValid = !isInvalidDrop;
 
         const cardTarget = target.closest<HTMLElement>(DOM_SELECTORS.HABIT_CARD);
+        
         if (cardTarget && cardTarget !== draggedElement && cardTarget.parentElement === dropZone) {
+            // FIX [2025-03-16]: Use live Geometry for hit testing to support scrolling.
+            // Reading getBoundingClientRect on the *target* element is efficient enough because
+            // we don't loop through all elements.
             const targetRect = cardTarget.getBoundingClientRect();
             const midY = targetRect.top + targetRect.height / 2;
             const position = e.clientY < midY ? 'before' : 'after';
+            
+            // OPTIMIZATION: Use cached Offset properties for Indicator Positioning (Write Phase).
+            // This prevents layout thrashing by avoiding reading layout props that trigger reflow
+            // right before we write to style.
+            const targetId = cardTarget.dataset.habitId;
+            const cachedProps = targetId ? cardRectCache.get(targetId) : null;
+            
+            let indicatorY: number;
+            
+            if (cachedProps) {
+                // Fast path using cached relative offsets
+                indicatorY = position === 'before'
+                    ? cachedProps.offsetTop - DROP_INDICATOR_GAP
+                    : cachedProps.offsetTop + cachedProps.offsetHeight + DROP_INDICATOR_GAP;
+            } else {
+                // Fallback path
+                indicatorY = position === 'before'
+                    ? cardTarget.offsetTop - DROP_INDICATOR_GAP
+                    : cardTarget.offsetTop + cardTarget.offsetHeight + DROP_INDICATOR_GAP;
+            }
 
-            const indicatorTopVal = position === 'before'
-                ? cardTarget.offsetTop - DROP_INDICATOR_GAP
-                : cardTarget.offsetTop + cardTarget.offsetHeight + DROP_INDICATOR_GAP;
-
-            nextIndicatorTop = `${indicatorTopVal - (DROP_INDICATOR_HEIGHT / 2)}px`;
-            nextReorderTargetId = cardTarget.dataset.habitId || null;
+            // Adjust for centering the indicator height
+            nextIndicatorY = indicatorY - (DROP_INDICATOR_HEIGHT / 2);
+            nextReorderTargetId = targetId || null;
             nextReorderPosition = position;
         } else {
             nextReorderTargetId = null;
             nextReorderPosition = null;
-            nextIndicatorTop = null; 
+            nextIndicatorY = null; 
         }
     }
 
@@ -246,18 +303,19 @@ export function setupDragHandler(habitContainer: HTMLElement) {
         draggedElement = null;
         draggedHabitId = null;
         draggedHabitOriginalTime = null;
-        draggedHabitObject = null;
+        cachedScheduleForDay = null; // Clear cache
         dropIndicator = null;
         
         nextDropZoneTarget = null;
         currentRenderedDropZone = null;
-        nextIndicatorTop = null;
-        currentIndicatorTop = null;
+        nextIndicatorY = null;
+        currentIndicatorY = null;
         nextReorderTargetId = null;
         nextReorderPosition = null;
         isDropValid = false;
         
-        cachedContainerRect = null; // Clear cache
+        cachedContainerRect = null;
+        cardRectCache.clear(); // Free memory
     }
 
 
@@ -308,9 +366,16 @@ export function setupDragHandler(habitContainer: HTMLElement) {
             draggedElement = card;
             draggedHabitId = card.dataset.habitId;
             draggedHabitOriginalTime = card.dataset.time as TimeOfDay;
-            draggedHabitObject = state.habits.find(h => h.id === draggedHabitId) || null;
+            
+            const draggedHabitObject = state.habits.find(h => h.id === draggedHabitId) || null;
+            if (draggedHabitObject) {
+                // PERFORMANCE: Calculate and cache the schedule ONCE at drag start.
+                cachedScheduleForDay = getEffectiveScheduleForHabitOnDate(draggedHabitObject, state.selectedDate);
+            }
             
             cachedContainerRect = habitContainer.getBoundingClientRect();
+            // OPTIMIZATION: Pre-calculate layout once
+            _captureGeometryCache();
 
             e.dataTransfer!.setData('text/plain', draggedHabitId);
             e.dataTransfer!.effectAllowed = 'move';
@@ -331,6 +396,10 @@ export function setupDragHandler(habitContainer: HTMLElement) {
             
             dropIndicator = document.createElement('div');
             dropIndicator.className = 'drop-indicator';
+            // Initial position at 0,0 to prepare for transform
+            dropIndicator.style.top = '0';
+            dropIndicator.style.left = 'var(--space-sm)'; // Matches CSS
+            dropIndicator.style.right = 'var(--space-sm)'; // Matches CSS
             
             document.body.addEventListener('dragover', handleBodyDragOver);
             document.body.addEventListener('drop', handleBodyDrop);

@@ -9,7 +9,7 @@ import { state, LANGUAGES } from './state';
 import { parseUTCIsoDate, toUTCIsoDateString, addDays, getDateTimeFormat, pushToOneSignal, getTodayUTCIso } from './utils';
 import { ui } from './render/ui';
 import { t } from './i18n';
-import { icons } from './render/icons';
+import { UI_ICONS } from './render/icons';
 import type { Quote } from './data/quotes';
 
 // Importa os renderizadores especializados
@@ -57,6 +57,9 @@ function _updateHeaderTitle() {
     let desktopTitle: string;
     let mobileTitle: string;
     
+    // OPTIMIZATION: Parse once and reuse for both logic and A11y
+    const date = parseUTCIsoDate(state.selectedDate);
+    
     const specialDateKey = specialDateMap[state.selectedDate];
 
     if (specialDateKey) {
@@ -64,8 +67,6 @@ function _updateHeaderTitle() {
         desktopTitle = title;
         mobileTitle = title;
     } else {
-        const date = parseUTCIsoDate(state.selectedDate);
-
         const day = String(date.getUTCDate()).padStart(2, '0');
         const month = String(date.getUTCMonth() + 1).padStart(2, '0');
         mobileTitle = `${day}/${month}`;
@@ -82,7 +83,7 @@ function _updateHeaderTitle() {
     // Acessibilidade: Garante que a data completa esteja sempre disponível para leitores de tela.
     const fullLabel = getDateTimeFormat(state.activeLanguageCode, {
         weekday: 'long', month: 'long', day: 'numeric', timeZone: 'UTC'
-    }).format(parseUTCIsoDate(state.selectedDate));
+    }).format(date);
     ui.headerTitle.setAttribute('aria-label', fullLabel);
 
     // Update Cache
@@ -92,11 +93,11 @@ function _updateHeaderTitle() {
 
 function _renderHeaderIcons() {
     if (!ui.manageHabitsBtn.innerHTML) {
-        ui.manageHabitsBtn.innerHTML = icons.settings;
+        ui.manageHabitsBtn.innerHTML = UI_ICONS.settings;
     }
     const aiDefaultIcon = ui.aiEvalBtn.querySelector('.default-icon');
     if (aiDefaultIcon && !aiDefaultIcon.innerHTML) {
-        aiDefaultIcon.innerHTML = icons.ai;
+        aiDefaultIcon.innerHTML = UI_ICONS.ai;
     }
 }
 

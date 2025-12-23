@@ -7,12 +7,24 @@
 import { t } from '../i18n';
 
 /**
- * OTIMIZAÇÃO DE PERFORMANCE: Helper para atualizar textContent apenas se o valor mudou.
- * Evita recálculos de layout/paint desnecessários no navegador.
+ * OTIMIZAÇÃO DE PERFORMANCE: Helper para atualizar texto do DOM.
+ * Verifica primeiro se é um TextNode simples para usar `nodeValue` (mais rápido),
+ * caso contrário usa `textContent`, sempre evitando escritas desnecessárias (layout thrashing).
  */
 export function setTextContent(element: Element | null, text: string) {
-    if (element && element.textContent !== text) {
-        element.textContent = text;
+    if (!element) return;
+
+    // Fast path: Se o elemento contém apenas um nó de texto simples, atualiza o valor do nó diretamente.
+    // Isso é mais performático que .textContent porque pula passos de normalização do DOM.
+    if (element.firstChild && element.firstChild.nodeType === 3 && !element.firstChild.nextSibling) {
+        if (element.firstChild.nodeValue !== text) {
+            element.firstChild.nodeValue = text;
+        }
+    } else {
+        // Fallback seguro ou para elementos com estrutura mista
+        if (element.textContent !== text) {
+            element.textContent = text;
+        }
     }
 }
 

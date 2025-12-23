@@ -1,9 +1,11 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
 
-import { AppState, STATE_STORAGE_KEY, loadState, state, persistStateLocally, saveState, APP_VERSION, getPersistableState } from '../state';
+import { AppState, state, getPersistableState } from '../state';
+import { loadState, persistStateLocally } from './persistence';
 import { pushToOneSignal, generateUUID } from '../utils';
 import { ui } from '../render/ui';
 import { t } from '../i18n';
@@ -245,13 +247,8 @@ export async function fetchStateFromCloud(): Promise<AppState | undefined> {
             setSyncStatus('syncSynced');
             return appState;
         } else {
-            // Nenhum dado na nuvem (resposta foi 200 com corpo nulo)
-            console.log("No state found in cloud for this sync key. Performing initial sync.");
-            const localDataJSON = localStorage.getItem(STATE_STORAGE_KEY);
-            if (localDataJSON) {
-                const localState = JSON.parse(localDataJSON) as AppState;
-                syncStateWithCloud(localState, true);
-            }
+            // Retorna undefined se não houver dados na nuvem.
+            // O orquestrador (index.tsx) decidirá se deve enviar o estado local.
             return undefined;
         }
     } catch (error) {

@@ -151,9 +151,7 @@ body {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     -webkit-user-select: none; /* Safari */
-    -moz-user-select: none;    /* Firefox */
-    -ms-user-select: none;     /* IE/Edge */
-    user-select: none;         /* Padrão */
+    user-select: none;         /* Padrão Moderno */
     touch-action: manipulation; /* BUGFIX [2024-08-29]: Desabilita o zoom por duplo toque em dispositivos móveis para melhorar a resposta de interações personalizadas. */
     overscroll-behavior-y: none; /* Previne o efeito rubber-banding/pull-to-refresh nativo */
     /* UX: Evita scroll chaining */
@@ -175,8 +173,6 @@ body {
 #sync-key-text,
 #confirm-modal-text {
     -webkit-user-select: text;
-    -moz-user-select: text;
-    -ms-user-select: text;
     user-select: text;
 }
 

@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -70,7 +71,8 @@ function calculateChartData(): ChartDataPoint[] {
 
     for (let i = 0; i < CHART_DAYS; i++) {
         const currentDateISO = toUTCIsoDateString(iteratorDate);
-        const { total: scheduledCount, completed: completedCount, pending: pendingCount } = calculateDaySummary(currentDateISO);
+        // OPTIMIZATION [2025-03-13]: Pass iteratorDate object to avoid re-parsing inside selectors.
+        const { total: scheduledCount, completed: completedCount, pending: pendingCount } = calculateDaySummary(currentDateISO, iteratorDate);
         const hasPending = pendingCount > 0;
         const isToday = currentDateISO === todayISO;
         const isFuture = currentDateISO > todayISO;
@@ -109,9 +111,12 @@ function _calculateChartScales(chartData: ChartDataPoint[], chartWidthPx: number
     const chartWidth = chartWidthPx - padding.left - padding.right;
     const chartHeight = svgHeight - padding.top - padding.bottom;
 
-    ui.chart.svg.setAttribute('viewBox', `0 0 ${chartWidthPx} ${svgHeight}`);
-    // FIX: Allow overflow to ensure stroke caps at the edges are not clipped
-    ui.chart.svg.style.overflow = 'visible';
+    // PERFORMANCE [2025-03-16]: Check if viewBox actually changed before setting attribute.
+    // Setting attribute forces browser layout invalidation even if value is identical.
+    const newViewBox = `0 0 ${chartWidthPx} ${svgHeight}`;
+    if (ui.chart.svg.getAttribute('viewBox') !== newViewBox) {
+        ui.chart.svg.setAttribute('viewBox', newViewBox);
+    }
 
     // LOGIC CHANGE: Implementa escala fixa para dar mais impacto visual às flutuações.
     const minVal = INITIAL_SCORE - FIXED_Y_AXIS_RANGE;

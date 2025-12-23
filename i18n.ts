@@ -9,7 +9,7 @@ import { getScheduleForDate } from './services/selectors';
 import { ui } from './render/ui';
 import { renderApp, setupManageModal, initLanguageFilter, refreshEditModalUI, renderLanguageFilter, updateNotificationUI } from './render';
 import { pushToOneSignal, getDateTimeFormat } from './utils';
-import { icons } from './render/icons';
+import { UI_ICONS } from './render/icons';
 
 type PluralableTranslation = { one: string; other: string };
 type TranslationValue = string | PluralableTranslation;
@@ -50,6 +50,10 @@ async function loadLanguage(langCode: 'pt' | 'en' | 'es'): Promise<void> {
     }
 }
 
+// PERFORMANCE [2025-03-16]: Pre-compiled Regex for interpolation.
+// Captures {key} pattern globally.
+const INTERPOLATION_REGEX = /{([^{}]+)}/g;
+
 export function t(key: string, options?: { [key: string]: string | number | undefined }): string {
     const lang = state.activeLanguageCode || 'pt';
     const dict = loadedTranslations[lang] || loadedTranslations['pt'];
@@ -87,14 +91,13 @@ export function t(key: string, options?: { [key: string]: string | number | unde
     }
 
     if (options) {
-        let result = translationString;
-        for (const [optKey, optValue] of Object.entries(options)) {
-            if (optValue !== undefined) {
-                // FIX: [Compatibility] Use split/join for global replacement to support older JS environments.
-                result = result.split(`{${optKey}}`).join(String(optValue));
-            }
-        }
-        return result;
+        // PERFORMANCE [2025-03-16]: Single-pass interpolation.
+        // Replaces loop + split/join with a single Regex pass.
+        // This is O(N) where N is string length, vs O(K*N) where K is num keys.
+        return translationString.replace(INTERPOLATION_REGEX, (_match, key) => {
+            const value = options[key];
+            return value !== undefined ? String(value) : _match;
+        });
     }
 
     return translationString;
@@ -244,9 +247,9 @@ function updateUIText() {
     }
 
     // Quick Actions Menu
-    ui.quickActionDone.innerHTML = `${icons.check} ${t('quickActionMarkAllDone')}`;
-    ui.quickActionSnooze.innerHTML = `${icons.snoozed} ${t('quickActionMarkAllSnoozed')}`;
-    ui.quickActionAlmanac.innerHTML = `${icons.calendar} ${t('quickActionOpenAlmanac')}`;
+    ui.quickActionDone.innerHTML = `${UI_ICONS.check} ${t('quickActionMarkAllDone')}`;
+    ui.quickActionSnooze.innerHTML = `${UI_ICONS.snoozed} ${t('quickActionMarkAllSnoozed')}`;
+    ui.quickActionAlmanac.innerHTML = `${UI_ICONS.calendar} ${t('quickActionOpenAlmanac')}`;
 
 
     // DYNAMIC CONTENT REFRESH [2025-03-03]:
