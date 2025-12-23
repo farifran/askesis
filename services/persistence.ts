@@ -39,8 +39,7 @@ export function registerSyncHandler(handler: (state: AppState) => void) {
  * Data older than ARCHIVE_THRESHOLD_DAYS is stringified and moved to state.archives['YYYY'].
  */
 function archiveOldData() {
-    // PERFORMANCE: Execute in background to avoid blocking the main thread during startup/render.
-    setTimeout(() => {
+    const runArchive = () => {
         const today = parseUTCIsoDate(getTodayUTCIso());
         const thresholdDate = addDays(today, -ARCHIVE_THRESHOLD_DAYS);
         const thresholdISO = toUTCIsoDateString(thresholdDate);
@@ -52,6 +51,7 @@ function archiveOldData() {
         // Optimization: Use Object.keys is fast, but we handle the state mutation carefully.
         const dates = Object.keys(state.dailyData);
         for (const dateStr of dates) {
+            // Binary string comparison for ISO dates is faster than localeCompare
             if (dateStr < thresholdISO) {
                 const year = dateStr.substring(0, 4);
                 if (!yearBuckets[year]) yearBuckets[year] = {};
@@ -94,7 +94,16 @@ function archiveOldData() {
             console.log(`Archived ${movedCount} daily records to cold storage.`);
             saveState(); // Persist the architectural changes
         }
-    }, 2000); // Delay execution to ensure app is interactive
+    };
+
+    // ADVANCED OPTIMIZATION [2025-03-17]: Use requestIdleCallback.
+    // Heavy JSON serialization should happen only when the browser is idle to avoid
+    // blocking frame rendering or user interaction during startup.
+    if ('requestIdleCallback' in window) {
+        requestIdleCallback(runArchive, { timeout: 5000 });
+    } else {
+        setTimeout(runArchive, 2000);
+    }
 }
 
 /**
@@ -204,8 +213,8 @@ export function loadState(cloudState?: AppState) {
                 console.warn(`Removing corrupted habit found in state: ${h.id}`);
                 return false;
             }
-            // OPTIMIZATION [2025-03-12]: Sort scheduleHistory on load so selectors don't have to.
-            h.scheduleHistory.sort((a, b) => a.startDate.localeCompare(b.startDate));
+            // OPTIMIZATION [2025-03-17]: Binary comparison is faster than localeCompare for dates
+            h.scheduleHistory.sort((a, b) => (a.startDate > b.startDate ? 1 : -1));
             return true;
         });
 
@@ -233,7 +242,7 @@ export function loadState(cloudState?: AppState) {
         state.uiDirtyState.habitListStructure = true;
         state.uiDirtyState.chartData = true;
         
-        // Initial cleanup of old data into archives - NOW ASYNC
+        // Initial cleanup of old data into archives - NOW ASYNC via IdleCallback
         archiveOldData();
     }
 }

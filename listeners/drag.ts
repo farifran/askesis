@@ -12,6 +12,8 @@ import { state, TimeOfDay, Habit } from '../state';
 import { getEffectiveScheduleForHabitOnDate } from '../services/selectors';
 import { triggerHaptic } from '../utils';
 import { DOM_SELECTORS, CSS_CLASSES } from '../render/constants';
+// OPTIMIZATION [2025-03-17]: Import live card iterator to avoid querySelectorAll
+import { getLiveHabitCards } from '../render/habits';
 
 const DROP_INDICATOR_GAP = 5; 
 const DROP_INDICATOR_HEIGHT = 3; 
@@ -60,14 +62,16 @@ export function setupDragHandler(habitContainer: HTMLElement) {
 
     function _captureGeometryCache() {
         cardRectCache.clear();
-        const cards = habitContainer.querySelectorAll<HTMLElement>(DOM_SELECTORS.HABIT_CARD);
-        // Batch read: Reading layout properties sequentially is optimized by browsers
-        for (const card of cards) {
-            const id = card.dataset.habitId;
-            if (id && card !== draggedElement) {
-                // We cache offset values needed for indicator positioning (Write phase)
-                // We DO NOT cache rect.top/bottom because they change on scroll (Read phase check)
-                cardRectCache.set(id, {
+        
+        // ADVANCED OPTIMIZATION [2025-03-17]: Avoid querySelectorAll(DOM_SELECTORS.HABIT_CARD).
+        // Iterate over the live cache of habit cards directly from memory.
+        // This is O(HABIT_COUNT) memory access vs O(DOM_NODES) traversal.
+        const liveCardsIterator = getLiveHabitCards();
+        
+        for (const card of liveCardsIterator) {
+            // Ensure card is actually in the DOM (isConnected) before reading layout
+            if (card.isConnected && card.dataset.habitId && card !== draggedElement) {
+                cardRectCache.set(card.dataset.habitId, {
                     offsetTop: card.offsetTop,
                     offsetHeight: card.offsetHeight
                 });
@@ -163,6 +167,8 @@ export function setupDragHandler(habitContainer: HTMLElement) {
         
         const { clientY } = e;
         
+        // PERFORMANCE FIX: Use cached rect instead of getBoundingClientRect().
+        // Fallback to getBoundingClientRect if cache is somehow missing (safety).
         const scrollContainerRect = cachedContainerRect || habitContainer.getBoundingClientRect();
         
         const topZoneEnd = scrollContainerRect.top + SCROLL_ZONE_SIZE;
@@ -350,6 +356,7 @@ export function setupDragHandler(habitContainer: HTMLElement) {
         
         document.body.removeEventListener('dragover', handleBodyDragOver);
         document.body.removeEventListener('drop', handleBodyDrop);
+        document.body.removeEventListener('dragend', cleanupDrag);
 
         _resetDragState();
     };
@@ -373,6 +380,7 @@ export function setupDragHandler(habitContainer: HTMLElement) {
                 cachedScheduleForDay = getEffectiveScheduleForHabitOnDate(draggedHabitObject, state.selectedDate);
             }
             
+            // CACHE HIT: Cache the container rect to avoid repeated layout reads during dragover.
             cachedContainerRect = habitContainer.getBoundingClientRect();
             // OPTIMIZATION: Pre-calculate layout once
             _captureGeometryCache();

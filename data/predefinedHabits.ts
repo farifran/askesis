@@ -4,13 +4,34 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 
+/**
+ * @file data/predefinedHabits.ts
+ * @description Catálogo estático de templates de hábitos pré-configurados.
+ * 
+ * [SHARED CONTEXT: MAIN THREAD & WORKER]:
+ * Este arquivo é isomórfico. Ele é importado tanto pela UI (render/modals.ts) para exibir a lista de escolha,
+ * quanto pelo Web Worker (sync.worker.ts) para gerar prompts de IA contextuais baseados em templates.
+ * 
+ * ARQUITETURA DE DADOS:
+ * - Imutabilidade: Estes objetos servem apenas como "Carimbos" (Blueprints) para criar novas instâncias de Habits.
+ * - I18n: Usa chaves de tradução (nameKey, subtitleKey) em vez de texto hardcoded para suportar troca dinâmica de idioma.
+ * 
+ * DEPENDÊNCIAS CRÍTICAS:
+ * - `HABIT_ICONS` (render/icons.ts): Deve conter apenas strings SVG puras, sem dependências de DOM (HTMLElement),
+ *   para garantir que este arquivo possa ser importado dentro do Worker sem causar erro "document is not defined".
+ */
+
 import { PredefinedHabit } from '../state';
+// PERFORMANCE: Importa apenas strings SVG, seguro para Worker (não acessa DOM nem causa reflow).
 import { HABIT_ICONS } from '../render/icons';
 
+// DO NOT REFACTOR: A estrutura deve corresponder estritamente ao tipo PredefinedHabit
+// para garantir a serialização correta entre threads (postMessage) e compatibilidade com o sistema de tipos.
 // Predefined habits configuration using keys for localization
 export const PREDEFINED_HABITS: PredefinedHabit[] = [
     { nameKey: 'predefinedHabitReadName', subtitleKey: 'predefinedHabitReadSubtitle', icon: HABIT_ICONS.read, color: '#e74c3c', times: ['Evening'], goal: { type: 'pages', total: 10, unitKey: 'unitPage' }, frequency: { type: 'daily' } },
     { nameKey: 'predefinedHabitMeditateName', subtitleKey: 'predefinedHabitMeditateSubtitle', icon: HABIT_ICONS.meditate, color: '#f1c40f', times: ['Morning'], goal: { type: 'minutes', total: 10, unitKey: 'unitMin' }, frequency: { type: 'daily' } },
+    // LOGIC LOCK: 'isDefault: true' define o hábito sugerido no onboarding (Cold Start). Apenas um deve ter essa flag.
     { nameKey: 'predefinedHabitWaterName', subtitleKey: 'predefinedHabitWaterSubtitle', icon: HABIT_ICONS.water, color: '#3498db', times: ['Morning', 'Afternoon', 'Evening'], goal: { type: 'check', unitKey: 'unitCheck' }, frequency: { type: 'daily' }, isDefault: true },
     { nameKey: 'predefinedHabitExerciseName', subtitleKey: 'predefinedHabitExerciseSubtitle', icon: HABIT_ICONS.exercise, color: '#2ecc71', times: ['Afternoon'], goal: { type: 'minutes', total: 30, unitKey: 'unitMin' }, frequency: { type: 'daily' } },
     { nameKey: 'predefinedHabitStretchName', subtitleKey: 'predefinedHabitStretchSubtitle', icon: HABIT_ICONS.stretch, color: '#7f8c8d', times: ['Morning'], goal: { type: 'minutes', total: 5, unitKey: 'unitMin' }, frequency: { type: 'daily' } },

@@ -1,18 +1,34 @@
-
 <!DOCTYPE html>
 <html lang="pt-BR">
 <!-- 
-    [NOTA COMPARATIVA]: Este arquivo serve como a fundação (App Shell) do sistema. Enquanto 'state.ts' e 'render.ts' gerenciam a complexidade lógica e visual, o 'index.html' demonstra engenharia sênior focada em Performance Percebida (Critical CSS inline, Preloads) e Acessibilidade (Semântica, Noscript).
-    [2025-03-12]: Otimização de limpeza - importmap removido pois o esbuild cuida do empacotamento das dependências.
+    /**
+     * @file index.html
+     * @description App Shell e Orquestrador do Caminho Crítico de Renderização (CRP).
+     * 
+     * [MAIN THREAD]: Responsável pelo First Contentful Paint (FCP) e montagem da estrutura base.
+     * 
+     * ARQUITETURA DE PERFORMANCE:
+     * 1. **App Shell Pattern:** Estrutura mínima de UI injetada via HTML puro para visualização instantânea.
+     * 2. **Critical CSS Inline:** Estilos vitais para o loader e fundo OLED (#000) embutidos para evitar bloqueio de renderização por rede.
+     * 3. **Resource Hinting:** Preload de bundle.css/js para priorização na fila do navegador.
+     * 4. **Pre-defined Modals:** Todos os modais existem no DOM inicial (display: none via CSS) para evitar 
+     *    instanciação dinâmica custosa e picos de alocação de memória durante o uso.
+     * 
+     * DEPENDÊNCIAS CRÍTICAS:
+     * - `bundle.js`: Ponto de entrada da lógica TS.
+     * - `bundle.css`: Design System completo.
+     * - OneSignal SDK: Dependência externa para Push Hooks.
+     */
 -->
 <head>
 
     <meta charset="UTF-8">
     <base href="/">
+    <!-- [MAIN THREAD]: viewport-fit=cover é essencial para lidar com "notches" e safe-areas em dispositivos mobile modernos -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Askesis</title>
     
-    <!-- Pré-carregamento de ativos críticos para LCP (Largest Contentful Paint) otimizado -->
+    <!-- PERFORMANCE: Hinting de prioridade para descoberta antecipada de ativos pesados -->
     <link rel="preload" href="bundle.css" as="style">
     <link rel="preload" href="bundle.js" as="script">
 
@@ -32,7 +48,7 @@
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#000000">
     
-    <!-- CSS Crítico Inline: Renderiza o loader e o fundo imediatamente, antes do CSS externo carregar -->
+    <!-- PERFORMANCE: Inline Critical CSS evita o "Flash of Unstyled Content" (FOUC) e minimiza o FCP -->
     <style>
         html {
             background-color: #000000;
@@ -67,7 +83,7 @@
         }
     </style>
     
-    <!-- OneSignal SDK: Mantido inline para inicialização prioritária de Push Notifications -->
+    <!-- DO NOT REFACTOR: Inicialização assíncrona do OneSignal deve ocorrer o mais cedo possível para registrar Service Worker Hooks -->
     <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
     <script>
       window.OneSignalDeferred = window.OneSignalDeferred || [];
@@ -89,7 +105,7 @@
 </script>
 </head>
 <body>
-    <!-- SVG Defs: Definição centralizada de ícones comuns para reutilização via <use> -->
+    <!-- PERFORMANCE: Padrão SVG Sprite (use/symbol) reduz contagem de nós e parsing repetitivo de caminhos geométricos -->
     <svg style="display: none;">
       <defs>
         <symbol id="icon-chevron-left" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -104,7 +120,7 @@
       </defs>
     </svg>
 
-    <!-- Fallback para acessibilidade: Garante que o usuário saiba por que o app não carrega -->
+    <!-- Fallback para acessibilidade: Crítico para usuários com scripts desabilitados -->
     <noscript>
         <div style="text-align: center; padding: 20px; font-family: sans-serif;">
             <h1>JavaScript é necessário</h1>
@@ -112,7 +128,7 @@
         </div>
     </noscript>
 
-    <!-- Indicador de carregamento inicial (Critical Rendering Path) -->
+    <!-- PERFORMANCE: Spinner de dependência zero para feedback visual imediato antes da execução do bundle JS -->
     <div id="initial-loader-container">
         <div id="initial-loader" class="initial-loader">
             <svg width="48" height="48"><use href="#icon-spinner"></use></svg>
@@ -143,6 +159,7 @@
         </header>
 
         <main>
+            <!-- [MAIN THREAD]: Contêiner de hábitos gerenciado pelo render loop em render.ts -->
             <div id="habit-container">
                 <div class="habit-group-wrapper" data-time-wrapper="Morning">
                     <div class="time-marker"></div>
@@ -158,6 +175,7 @@
                 </div>
             </div>
 
+            <!-- PERFORMANCE: Otimizado via Content Visibility (CSS) para reduzir impacto de pintura no footer -->
             <section id="chart-container" class="chart-container">
                 <div class="chart-header">
                     <div class="app-subtitle"></div>
@@ -200,7 +218,8 @@
         </main>
     </div>
 
-    <!-- Modals -->
+    <!-- [MAIN THREAD]: Modais pré-instanciados no HTML para evitar recálculos de layout por inserção de DOM em runtime -->
+    
     <div id="explore-modal" class="modal-overlay">
         <div class="modal-content">
             <h2>Explorar Hábitos</h2>
@@ -256,7 +275,7 @@
                         <div class="sync-view" id="sync-enter-key-view" style="display: none;">
                              <div class="form-group">
                                 <label for="sync-key-input" id="label-enter-key"></label>
-                                <!-- UX IMPROVEMENT [2025-01-18]: Desativa correções automáticas para chaves complexas (UUID) -->
+                                <!-- UX: Desativa correções automáticas para chaves UUID -->
                                 <input type="text" id="sync-key-input" class="form-control" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
                             </div>
                             <div class="sync-actions">
@@ -317,7 +336,6 @@
         <div class="modal-content">
             <h2>Análise da IA</h2>
             <div class="ai-options-list">
-                <!-- UPDATE [2025-02-23]: Textos ajustados para 'Análise Atual' e descrições contextuais -->
                 <button class="ai-option-btn" data-analysis-type="monthly">
                     <span class="ai-option-title">Análise Atual</span>
                     <span class="ai-option-desc">Uma reflexão sobre os dados disponíveis (máx. 30 dias).</span>

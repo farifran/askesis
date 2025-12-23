@@ -1,12 +1,28 @@
 
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
 
+/**
+ * @file api/analyze.ts
+ * @description Proxy seguro e otimizado para a Google GenAI API.
+ * 
+ * [SERVERLESS / EDGE FUNCTION CONTEXT]:
+ * Este código roda na Vercel Edge Network (V8 Isolate), não no navegador nem em Node.js completo.
+ * - SEM acesso ao DOM, window ou localStorage.
+ * - Limites estritos de tempo de execução (Timeout).
+ * - Deve ser extremamente rápido (low latency) para não estourar o orçamento de tempo da Edge Function.
+ * 
+ * RESPONSABILIDADE:
+ * 1. Atuar como barreira de segurança para a API Key (Server-side only).
+ * 2. Processar prompts de IA com o modelo mais rápido disponível para garantir resposta síncrona.
+ * 3. Sanitizar entradas e saídas para o cliente.
+ */
+
 import { GoogleGenAI } from '@google/genai';
 
+// PERFORMANCE: Define o runtime como 'edge' para inicialização instantânea (Cold Start próximo de zero).
 export const config = {
   runtime: 'edge',
 };
@@ -32,6 +48,7 @@ const createErrorResponse = (message: string, status: number, details = '') => {
 };
 
 export default async function handler(req: Request) {
+    // Tratamento de Preflight CORS
     if (req.method === 'OPTIONS') {
         return new Response(null, { status: 204, headers: corsHeaders });
     }
@@ -41,7 +58,8 @@ export default async function handler(req: Request) {
     }
 
     // [2025-01-15] ROBUSTEZ: Tratamento específico para falhas de parsing JSON.
-    // Isso garante que um JSON malformado retorne 400 (Bad Request) em vez de cair no catch genérico 500.
+    // DO NOT REFACTOR: Isso garante que um JSON malformado retorne 400 (Bad Request) 
+    // em vez de cair no catch genérico 500, o que confundiria o diagnóstico.
     let body: AnalyzeRequestBody;
     try {
         body = await req.json();
@@ -56,6 +74,7 @@ export default async function handler(req: Request) {
             return createErrorResponse('Bad Request: Missing prompt or systemInstruction', 400);
         }
         
+        // SECURITY CRITICAL: A API Key deve vir apenas das variáveis de ambiente do servidor.
         const apiKey = process.env.API_KEY;
         if (!apiKey) {
             console.error("[api/analyze] API_KEY environment variable not set.");
@@ -64,10 +83,11 @@ export default async function handler(req: Request) {
         
         const ai = new GoogleGenAI({ apiKey });
 
-        // PERFORMANCE TUNING [2025-03-10]: Switch to Flash model.
-        // Reason: 'gemini-3-flash-preview' is chosen over 'pro' to guarantee execution within 
-        // Vercel Edge Function timeout limits (10s-30s). It offers the best balance of speed/quality 
-        // for analyzing large habit history text blobs.
+        // PERFORMANCE TUNING [2025-03-10] & ARCHITECTURAL LOCK:
+        // DO NOT REFACTOR to 'pro' models without verifying Vercel Edge Function timeouts.
+        // Reason: 'gemini-3-flash-preview' is chosen explicitly to guarantee execution within 
+        // Edge Function limits (typically 10s-30s). Pro models are slower and risk hanging the connection.
+        // Flash offers the best balance of speed/quality for analyzing large habit history text blobs.
         const geminiResponse = await ai.models.generateContent({
             model: 'gemini-3-flash-preview',
             contents: prompt,

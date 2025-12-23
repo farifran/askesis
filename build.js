@@ -5,6 +5,25 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 
+/**
+ * @file build.js
+ * @description Script de orquestração de build e servidor de desenvolvimento (DevServer).
+ * 
+ * [BUILD ENVIRONMENT / NODE.JS CONTEXT]:
+ * Este código roda no ambiente Node.js (Local ou CI/CD), NÃO no navegador.
+ * 
+ * RESPONSABILIDADE:
+ * 1. Compilação TypeScript -> JavaScript (ESM) usando esbuild.
+ * 2. Gestão de Assets Estáticos (HTML, CSS, JSON, SVG).
+ * 3. Versionamento Automático do Service Worker (Cache Busting).
+ * 4. Servidor de Desenvolvimento com suporte a SPA e Service Workers.
+ * 
+ * ARQUITETURA CRÍTICA:
+ * - Multi-Entry Bundling: Separa 'bundle' (UI Main Thread) e 'sync-worker' (Worker Thread).
+ *   Isso é obrigatório para que o `new Worker('./sync-worker.js')` funcione no browser.
+ * - Injection: Define variáveis de ambiente (NODE_ENV) em tempo de build.
+ */
+
 const esbuild = require('esbuild');
 const fs = require('fs/promises'); // API de sistema de arquivos baseada em Promises
 const fsSync = require('fs'); // [2025-02-23] API síncrona para watch e checks rápidos
@@ -22,7 +41,10 @@ async function copyStaticFiles() {
     // Lê o sw.js original e injeta um timestamp no CACHE_NAME para forçar a atualização do cache no navegador.
     try {
         const swContent = await fs.readFile('sw.js', 'utf-8');
-        // Regex robusta para encontrar qualquer variação de const CACHE_NAME = '...';
+        
+        // CRITICAL LOGIC [CACHE BUSTING]:
+        // DO NOT REFACTOR: Esta Regex depende estritamente da sintaxe `const CACHE_NAME = '...'` no sw.js.
+        // Qualquer alteração de formatação no sw.js pode quebrar essa injeção, impedindo a atualização do PWA.
         const versionRegex = /const\s+CACHE_NAME\s*=\s*['"][^'"]+['"];/;
         
         if (versionRegex.test(swContent)) {
@@ -75,6 +97,7 @@ function watchStaticFiles() {
             return;
         }
 
+        // PERFORMANCE: Debounce para evitar múltiplas cópias em salvamentos rápidos ou eventos duplicados do SO.
         let debounceTimeout;
         try {
             fsSync.watch(p, { recursive: ['icons', 'locales'].includes(p) }, (eventType, filename) => {
@@ -128,8 +151,9 @@ async function build() {
 
         // --- 3. Compilação do Código TypeScript/CSS com esbuild ---
         // ARQUITETURA [2025-02-28]: Configuração multi-entry para suportar Web Worker.
-        // 'bundle': A aplicação principal.
-        // 'sync-worker': O script do worker isolado.
+        // 'bundle': A aplicação principal (Main Thread).
+        // 'sync-worker': O script do worker isolado (Worker Thread).
+        // DO NOT REFACTOR: Unificar esses entryPoints quebrará o carregamento do Worker.
         // NOTA: 'splitting' foi removido para evitar a criação de chunks compartilhados dinâmicos
         // que não seriam cacheados pelo SW estático, garantindo robustez Offline-First.
         const esbuildOptions = {

@@ -4,6 +4,25 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 
+/**
+ * @file i18n.ts
+ * @description Orquestrador de Localização e Internacionalização (i18n).
+ * 
+ * [MAIN THREAD]: Foco em 60fps. Este módulo gerencia a re-tradução da UI e formatação de dados culturais.
+ * 
+ * ARQUITETURA:
+ * 1. **Responsabilidade Única:** Centralizar a semântica textual do sistema e prover formatação localizada de datas/números.
+ * 2. **Estratégia de Performance (Zero-Copy/Zero-Alloc):**
+ *    - Caching agressivo de instâncias `Intl.PluralRules` e `Intl.DateTimeFormat` para evitar o custo de inicialização de objetos do SO.
+ *    - Interpolação de strings via Regex pré-compilada em passo único (Single-pass O(N)).
+ * 3. **Resiliência:** Implementa carregamento assíncrono de dicionários com fallback automático para 'pt' em caso de falha de rede ou arquivo corrompido.
+ * 
+ * DEPENDÊNCIAS CRÍTICAS:
+ * - `state.ts`: Consome o idioma ativo e estado dos hábitos.
+ * - `render/ui.ts`: Referências diretas ao DOM para atualização massiva de textos.
+ * - `utils.ts`: Utiliza formatadores de data para consistência temporal.
+ */
+
 import { state, Habit, LANGUAGES, PredefinedHabit, TimeOfDay } from './state';
 import { getScheduleForDate } from './services/selectors';
 import { ui } from './render/ui';
@@ -15,15 +34,20 @@ type PluralableTranslation = { one: string; other: string };
 type TranslationValue = string | PluralableTranslation;
 type Translations = Record<string, TranslationValue>;
 
-// Cache para instâncias de PluralRules para evitar recriação custosa a cada tradução
+// PERFORMANCE: Memoização de objetos Intl.PluralRules para evitar overhead de alocação no critical path.
 const pluralRulesCache: Record<string, Intl.PluralRules> = {};
 
 export function getTimeOfDayName(time: TimeOfDay): string {
     return t(`filter${time}`);
 }
 
+// PERFORMANCE: Repositório em memória para dicionários carregados via rede. Evita re-fetch e parsing redundante.
 const loadedTranslations: Record<string, Translations> = {};
 
+/**
+ * Carrega dinamicamente o arquivo JSON de tradução.
+ * // DO NOT REFACTOR: A lógica de fallback para 'pt' é vital para evitar telas em branco se a rede falhar.
+ */
 async function loadLanguage(langCode: 'pt' | 'en' | 'es'): Promise<void> {
     if (loadedTranslations[langCode]) {
         return;
@@ -50,10 +74,15 @@ async function loadLanguage(langCode: 'pt' | 'en' | 'es'): Promise<void> {
     }
 }
 
-// PERFORMANCE [2025-03-16]: Pre-compiled Regex for interpolation.
-// Captures {key} pattern globally.
+// PERFORMANCE: Regex pré-compilada para interpolação global. 
+// Evita parsing de string em cada chamada da função t().
 const INTERPOLATION_REGEX = /{([^{}]+)}/g;
 
+/**
+ * Tradutor universal com suporte a interpolação e pluralização.
+ * // PERFORMANCE: Implementação O(N) onde N é o tamanho da string, vs O(K*N) em abordagens de loop múltiplo.
+ * // DO NOT REFACTOR: A ordem de precedência (lang -> default pt -> key) garante que o app nunca trave por falta de string.
+ */
 export function t(key: string, options?: { [key: string]: string | number | undefined }): string {
     const lang = state.activeLanguageCode || 'pt';
     const dict = loadedTranslations[lang] || loadedTranslations['pt'];
@@ -72,7 +101,7 @@ export function t(key: string, options?: { [key: string]: string | number | unde
 
     if (typeof translationValue === 'object') {
         if (options?.count !== undefined) {
-            // PERFORMANCE [2025-01-16]: Uso de cache para Intl.PluralRules.
+            // PERFORMANCE: Reutiliza instância cacheada de PluralRules.
             let pluralRules = pluralRulesCache[lang];
             if (!pluralRules) {
                 pluralRules = new Intl.PluralRules(lang);
@@ -91,9 +120,8 @@ export function t(key: string, options?: { [key: string]: string | number | unde
     }
 
     if (options) {
-        // PERFORMANCE [2025-03-16]: Single-pass interpolation.
-        // Replaces loop + split/join with a single Regex pass.
-        // This is O(N) where N is string length, vs O(K*N) where K is num keys.
+        // PERFORMANCE: Single-pass interpolation usando Regex e função de substituição.
+        // Evita múltiplos loops e alocações de memória causados por split/join/replace encadeados.
         return translationString.replace(INTERPOLATION_REGEX, (_match, key) => {
             const value = options[key];
             return value !== undefined ? String(value) : _match;
@@ -107,18 +135,17 @@ export function t(key: string, options?: { [key: string]: string | number | unde
 /**
  * CORREÇÃO DE DADOS HISTÓRICOS [2024-09-20]: A função agora aceita um `dateISO` opcional.
  * Se uma data for fornecida, ela busca o agendamento historicamente correto para essa data,
- * garantindo que o nome e o subtítulo exibidos sejam precisos para o contexto temporal,
- * o que é crucial para a renderização da UI e a geração de prompts para a IA.
- * @param habit O objeto do hábito ou modelo predefinido.
- * @param dateISO A data opcional no formato string ISO para buscar informações históricas.
- * @returns O nome e o subtítulo para exibição.
+ * garantindo que o nome e o subtítulo exibidos sejam precisos para o contexto temporal.
+ * 
+ * // CRITICAL LOGIC: Resolução histórico-temporal. Hábitos podem mudar de nome no tempo.
+ * // Mudar esta lógica quebraria a integridade visual do Calendário e da IA.
  */
 export function getHabitDisplayInfo(habit: Habit | PredefinedHabit, dateISO?: string): { name: string, subtitle: string } {
     let source: any = habit;
     
     if ('scheduleHistory' in habit && habit.scheduleHistory.length > 0) {
         if (dateISO) {
-            // Busca o agendamento ativo para a data específica.
+            // PERFORMANCE: Delegado ao seletor otimizado com cache.
             source = getScheduleForDate(habit, dateISO) || habit.scheduleHistory[habit.scheduleHistory.length - 1];
         } else {
             // Se nenhuma data for fornecida, assume o comportamento padrão de usar o agendamento mais recente.
@@ -139,14 +166,19 @@ export function getHabitDisplayInfo(habit: Habit | PredefinedHabit, dateISO?: st
 }
 
 export function getLocaleDayName(date: Date): string {
-    // PERFORMANCE [2025-01-16]: Uso de cache para Intl.DateTimeFormat para evitar recriação em loops de calendário.
+    // PERFORMANCE: Uso de cache para Intl.DateTimeFormat (via helper utils.ts) para evitar recriação em loops de calendário.
     return getDateTimeFormat(state.activeLanguageCode, { weekday: 'short', timeZone: 'UTC' }).format(date).toUpperCase();
 }
 
+/**
+ * Atualiza todos os textos estáticos do DOM de acordo com o idioma ativo.
+ * // [MAIN THREAD]: Esta função causa Layout Thrashing massivo (Write-only).
+ * // DO NOT REFACTOR: Deve ser chamada apenas durante a troca de idioma ou inicialização.
+ */
 function updateUIText() {
     const appNameHtml = t('appName');
     
-    // Strip HTML for the document title
+    // PERFORMANCE: Strip HTML para o título do documento usando elemento temporário off-DOM.
     const tempEl = document.createElement('div');
     tempEl.innerHTML = appNameHtml;
     document.title = tempEl.textContent || 'Askesis';
@@ -162,7 +194,6 @@ function updateUIText() {
     ui.manageModalTitle.textContent = t('modalManageTitle');
     ui.habitListTitle.textContent = t('modalManageHabitsSubtitle');
     
-    // Cached Elements
     ui.labelLanguage.textContent = t('modalManageLanguage');
 
     ui.languagePrevBtn.setAttribute('aria-label', t('languagePrev_ariaLabel'));
@@ -176,7 +207,6 @@ function updateUIText() {
     ui.resetAppBtn.textContent = t('modalManageResetButton');
     ui.manageModal.querySelector('.modal-close-btn')!.textContent = t('closeButton');
     
-    // Privacy Section
     ui.labelPrivacy.textContent = t('privacyLabel');
     ui.exportDataBtn.textContent = t('exportButton');
     ui.importDataBtn.textContent = t('importButton');
@@ -193,7 +223,7 @@ function updateUIText() {
     
     ui.syncWarningText.innerHTML = t('syncWarning');
 
-    // CONTEXT AWARENESS [2025-03-03]: Verifica o contexto do botão (visualização vs salvamento)
+    // CONTEXT AWARENESS: Verifica o contexto do botão (visualização vs salvamento)
     const keyContext = ui.syncDisplayKeyView.dataset.context;
     ui.keySavedBtn.textContent = (keyContext === 'view') ? t('closeButton') : t('syncKeySaved');
     
@@ -252,40 +282,37 @@ function updateUIText() {
     ui.quickActionAlmanac.innerHTML = `${UI_ICONS.calendar} ${t('quickActionOpenAlmanac')}`;
 
 
-    // DYNAMIC CONTENT REFRESH [2025-03-03]:
     if (state.editingHabit) {
         refreshEditModalUI();
     }
 }
 
+/**
+ * Define o idioma global da aplicação.
+ * // CRITICAL LOGIC: Orquestra sincronização com OneSignal e invalidação de caches de UI.
+ */
 export async function setLanguage(langCode: 'pt' | 'en' | 'es') {
     await loadLanguage(langCode);
     state.activeLanguageCode = langCode;
     document.documentElement.lang = langCode;
     localStorage.setItem('habitTrackerLanguage', langCode);
     
-    // BUGFIX DE ROBUSTEZ [2024-10-19]: Utiliza o helper pushToOneSignal para garantir que
-    // a configuração de idioma seja enfileirada e executada de forma confiável, mesmo que o SDK
-    // do OneSignal ainda não tenha sido totalmente inicializado. Isso previne uma condição de corrida.
+    // BUGFIX DE ROBUSTEZ: Enfileira a atualização no OneSignal para evitar race conditions.
     pushToOneSignal((OneSignal: any) => {
         OneSignal.User.setLanguage(langCode);
     });
     
     initLanguageFilter();
-    // BUGFIX [2025-03-07]: Chama a renderização do posicionamento do carrossel imediatamente
-    // após a criação do seu DOM, garantindo que a UI visual reflita o estado do idioma.
+    // BUGFIX: Posicionamento visual imediato do idioma selecionado.
     renderLanguageFilter();
 
-    // CRITICAL FIX [2025-02-05]: Invalidação de cache de UI (Dirty Checking).
-    // Ao trocar o idioma, a lógica de renderApp() normalmente pularia a renderização
-    // porque os dados em si não mudaram. Aqui forçamos as flags de 'dirty' para true,
-    // obrigando o redesenho imediato do calendário, lista de hábitos e gráficos com o novo idioma.
+    // PERFORMANCE: Invalidação de Dirty Checking. Força re-renderização completa no próximo frame.
     state.uiDirtyState.calendarVisuals = true;
     state.uiDirtyState.habitListStructure = true;
     state.uiDirtyState.chartData = true;
 
     updateUIText();
-    // Garante que o status de sincronização dinâmico seja re-traduzido a partir do estado.
+    // Re-traduz o status de sincronização a partir do novo dicionário.
     ui.syncStatus.textContent = t(state.syncState);
     
     if (ui.manageModal.classList.contains('visible')) {
@@ -293,11 +320,13 @@ export async function setLanguage(langCode: 'pt' | 'en' | 'es') {
         updateNotificationUI();
     }
 
-    // REFACTOR [2024-09-02]: Remove a chamada redundante para `updateHeaderTitle`
-    // uma vez que `renderApp` já a executa internamente.
     renderApp();
 }
 
+/**
+ * Inicializa o sistema de i18n no boot da aplicação.
+ * // [RACE-TO-IDLE]: Chamado antes da primeira renderização para garantir consistência visual.
+ */
 export async function initI18n() {
     const savedLang = localStorage.getItem('habitTrackerLanguage');
     const browserLang = navigator.language.split('-')[0];

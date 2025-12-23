@@ -23,6 +23,8 @@ const previouslyFocusedElements = new WeakMap<HTMLElement, HTMLElement>();
 const backdropListeners = new Map<HTMLElement, (e: MouseEvent) => void>();
 const closeButtonHandlerMap = new Map<HTMLElement, { buttons: HTMLElement[], handler: () => void }>();
 
+// OPTIMIZATION [2025-03-17]: Hoisted constant to avoid reallocation on every render.
+const STATUS_ORDER = { 'active': 0, 'graduated': 1, 'ended': 2 } as const;
 
 export function openModal(modal: HTMLElement, elementToFocus?: HTMLElement, onClose?: () => void) {
     previouslyFocusedElements.set(modal, document.activeElement as HTMLElement);
@@ -200,36 +202,39 @@ function _createManageHabitListItem(habitData: { habit: Habit; status: 'active' 
     li.classList.add(status);
     li.dataset.habitId = habit.id;
 
-    // Fast populate using pre-known structure
-    const iconSpan = li.querySelector('.habit-icon-slot') as HTMLElement;
+    // Fast populate using pre-known structure (querySelector on small subtree is fast)
+    // Structure: li > span.habit-main-info > [icon, textWrapper, status]
+    const mainSpan = li.firstElementChild as HTMLElement;
+    const iconSpan = mainSpan.children[0] as HTMLElement;
+    const textWrapper = mainSpan.children[1] as HTMLElement;
+    const statusSpan = mainSpan.children[2] as HTMLElement;
+    const actionsDiv = li.children[1] as HTMLElement;
+
     iconSpan.innerHTML = habit.icon;
     iconSpan.style.color = habit.color;
 
-    const nameSpan = li.querySelector('.habit-name')!;
+    const nameSpan = textWrapper.children[0];
     setTextContent(nameSpan, name);
 
-    const subtitleSpan = li.querySelector('.habit-subtitle')!;
+    const subtitleSpan = textWrapper.children[1];
     if (subtitle) {
         setTextContent(subtitleSpan, subtitle);
     } else {
         subtitleSpan.remove();
     }
 
-    const statusSpan = li.querySelector('.habit-name-status')!;
     if (status === 'graduated' || status === 'ended') {
         setTextContent(statusSpan, t(status === 'graduated' ? 'modalStatusGraduated' : 'modalStatusEnded'));
     } else {
         statusSpan.remove();
     }
     
-    const actionsDiv = li.querySelector('.habit-list-actions')!;
     const streak = calculateHabitStreak(habit.id, todayISO); 
     const isConsolidated = streak >= STREAK_CONSOLIDATED;
 
     const createActionButton = (className: string, ariaLabel: string, icon: string): HTMLButtonElement => {
         const button = document.createElement('button');
         button.className = className;
-        // habitId is looked up from LI dataset in listener, no need to duplicate on button for delegation
         button.setAttribute('aria-label', ariaLabel);
         button.type = "button"; 
         button.innerHTML = icon;
@@ -264,10 +269,9 @@ export function setupManageModal() {
         };
     });
 
-    const statusOrder = { 'active': 0, 'graduated': 1, 'ended': 2 };
-
     habitsForModal.sort((a, b) => {
-        const statusDifference = statusOrder[a.status] - statusOrder[b.status];
+        // Use hoisted STATUS_ORDER constant
+        const statusDifference = STATUS_ORDER[a.status] - STATUS_ORDER[b.status];
         if (statusDifference !== 0) {
             return statusDifference;
         }

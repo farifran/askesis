@@ -3,9 +3,30 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// [NOTA COMPARATIVA]: Este arquivo atua como o Banco de Dados Estático da aplicação. A integridade do conteúdo (traduções, atribuições) é tão crítica quanto a sintaxe.
-// [2025-02-23]: Refatoração de tipos para manutenibilidade e limpeza de dados (remoção de citações apócrifas e correção de typos).
 
+/**
+ * @file data/quotes.ts
+ * @description Banco de Dados Estático de sabedoria estoica (Citações).
+ * 
+ * [SHARED RESOURCE / LAZY LOAD TARGET]:
+ * Este módulo contém uma grande quantidade de dados textuais (Strings).
+ * 
+ * CONTEXTO ARQUITETURAL:
+ * 1. **Responsabilidade Única:** Prover conteúdo curado, traduzido e semanticamente taggeado.
+ *    Atua como a "Alma" da aplicação, sem dependências lógicas.
+ * 2. **Estratégia de Carregamento (Performance):** Devido ao tamanho deste array, este arquivo é
+ *    projetado para ser importado dinamicamente (`await import(...)`) no `render.ts`.
+ *    Isso remove o peso do texto do bundle inicial (Critical Path), melhorando o TTI (Time to Interactive).
+ * 3. **Integridade de Dados:** A precisão das traduções e atribuições é crítica para a credibilidade
+ *    do app ("Askesis" = Treinamento).
+ * 
+ * DEPENDÊNCIAS CRÍTICAS:
+ * - Nenhuma dependência de importação (Leaf Node).
+ * - Consumido por `render.ts` (função `renderStoicQuote`).
+ */
+
+// PERFORMANCE: Union Types de string literais são removidos na transpilação,
+// gerando zero overhead de runtime, mas garantindo consistência semântica para filtros ou IA.
 export type StoicTag = 
     | 'action' 
     | 'resilience' 
@@ -102,6 +123,8 @@ export type Quote = {
     tags: StoicTag[];
 };
 
+// DO NOT REFACTOR: Este array é a fonte da verdade. 
+// A estrutura deve ser mantida plana (Flat Array) para facilitar a seleção aleatória O(1) via índice.
 // A curated list of Stoic quotes with Semantic Tags
 export const STOIC_QUOTES: Quote[] = [
     // --- CLEANTHES (The Devout - Acceptance of Fate) ---

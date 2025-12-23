@@ -18,6 +18,10 @@ import { DOM_SELECTORS, CSS_CLASSES } from '../render/constants';
 
 const GOAL_STEP = 5;
 
+// Pre-computed selector for single-pass delegation
+// Matches any interactive element we care about within the habit container
+const INTERACTIVE_SELECTOR = `${DOM_SELECTORS.HABIT_CONTENT_WRAPPER}, ${DOM_SELECTORS.GOAL_CONTROL_BTN}, ${DOM_SELECTORS.GOAL_VALUE_WRAPPER}, ${DOM_SELECTORS.SWIPE_DELETE_BTN}, ${DOM_SELECTORS.SWIPE_NOTE_BTN}, ${DOM_SELECTORS.EMPTY_GROUP_PLACEHOLDER}`;
+
 function createGoalInput(habit: Habit, time: TimeOfDay, wrapper: HTMLElement) {
     if (wrapper.querySelector('input')) return; // Já está no modo de edição
 
@@ -119,47 +123,51 @@ export function setupCardListeners() {
     ui.habitContainer.addEventListener('click', e => {
         const target = e.target as HTMLElement;
 
-        // --- PLACEHOLDER LISTENER ---
-        const placeholder = target.closest(DOM_SELECTORS.EMPTY_GROUP_PLACEHOLDER);
-        if (placeholder) {
+        // ADVANCED OPTIMIZATION [2025-03-18]: Single-Pass Delegation.
+        // Instead of calling .closest() multiple times for every possible button/wrapper,
+        // we call it ONCE for a combined selector of all interactive elements.
+        // This reduces DOM traversal complexity from O(Depth * Selectors) to O(Depth).
+        const interactiveElement = target.closest(INTERACTIVE_SELECTOR) as HTMLElement;
+        
+        if (!interactiveElement) return;
+
+        // --- PLACEHOLDER ---
+        if (interactiveElement.classList.contains(CSS_CLASSES.EMPTY_GROUP_PLACEHOLDER)) {
             triggerHaptic('light');
             renderExploreHabits();
             openModal(ui.exploreModal);
             return;
         }
 
-        const card = target.closest<HTMLElement>(DOM_SELECTORS.HABIT_CARD);
+        // All other interactions require a habit card context
+        const card = interactiveElement.closest<HTMLElement>(DOM_SELECTORS.HABIT_CARD);
         if (!card) return;
 
         const habitId = card.dataset.habitId;
         const time = card.dataset.time as TimeOfDay | undefined;
         if (!habitId || !time) return;
 
-        // Clicou no botão de deletar (revelado pelo swipe)
-        const deleteBtn = target.closest<HTMLElement>(DOM_SELECTORS.SWIPE_DELETE_BTN);
-        if (deleteBtn) {
+        // --- SWIPE ACTIONS ---
+        if (interactiveElement.classList.contains(CSS_CLASSES.SWIPE_DELETE_BTN)) {
             triggerHaptic('medium');
             requestHabitTimeRemoval(habitId, time);
             return;
         }
 
-        // Clicou no botão de nota (revelado pelo swipe)
-        const noteBtn = target.closest<HTMLElement>(DOM_SELECTORS.SWIPE_NOTE_BTN);
-        if (noteBtn) {
+        if (interactiveElement.classList.contains(CSS_CLASSES.SWIPE_NOTE_BTN)) {
             triggerHaptic('light');
             openNotesModal(habitId, state.selectedDate, time);
             return;
         }
 
-        // Clicou em um dos controles de meta (+/-)
-        const controlBtn = target.closest<HTMLElement>(DOM_SELECTORS.GOAL_CONTROL_BTN);
-        if (controlBtn) {
+        // --- GOAL CONTROLS ---
+        if (interactiveElement.classList.contains(CSS_CLASSES.GOAL_CONTROL_BTN)) {
             e.stopPropagation(); 
             
             const habit = state.habits.find(h => h.id === habitId);
             if (!habit || (habit.goal.type !== 'pages' && habit.goal.type !== 'minutes')) return;
             
-            const action = controlBtn.dataset.action as 'increment' | 'decrement';
+            const action = interactiveElement.dataset.action as 'increment' | 'decrement';
             
             triggerHaptic('light');
             const currentGoal = getCurrentGoalForInstance(habit, state.selectedDate, time);
@@ -169,8 +177,8 @@ export function setupCardListeners() {
 
             setGoalOverride(habitId, state.selectedDate, time, newGoal);
             
-            // DOM OPTIMIZATION [2025-03-09]: Use local query on the card reference instead of scanning the full container.
-            const goalWrapper = card.querySelector<HTMLElement>(DOM_SELECTORS.GOAL_VALUE_WRAPPER);
+            // DOM OPTIMIZATION [2025-03-09]: Optimized lookup using sibling traversal.
+            const goalWrapper = interactiveElement.parentElement?.querySelector<HTMLElement>(DOM_SELECTORS.GOAL_VALUE_WRAPPER);
             
             if (goalWrapper) {
                 const animationClass = action === 'increment' ? 'increase' : 'decrease';
@@ -182,25 +190,21 @@ export function setupCardListeners() {
                     }, { once: true });
                 });
             }
-
             return;
         }
 
-        // Clicou na área do valor da meta para edição direta
-        const goalWrapper = target.closest<HTMLElement>(DOM_SELECTORS.GOAL_VALUE_WRAPPER);
-        if (goalWrapper) {
+        if (interactiveElement.classList.contains(CSS_CLASSES.GOAL_VALUE_WRAPPER)) {
             e.stopPropagation();
             triggerHaptic('light');
             const habit = state.habits.find(h => h.id === habitId);
             if (habit && (habit.goal.type === 'pages' || habit.goal.type === 'minutes')) {
-                createGoalInput(habit, time, goalWrapper);
+                createGoalInput(habit, time, interactiveElement);
             }
             return;
         }
 
-        // Clicou na área principal do cartão
-        const contentWrapper = target.closest<HTMLElement>(DOM_SELECTORS.HABIT_CONTENT_WRAPPER);
-        if (contentWrapper) {
+        // --- MAIN CARD CONTENT ---
+        if (interactiveElement.classList.contains(CSS_CLASSES.HABIT_CONTENT_WRAPPER)) {
             const isOpen = card.classList.contains(CSS_CLASSES.IS_OPEN_LEFT) || card.classList.contains(CSS_CLASSES.IS_OPEN_RIGHT);
             
             if (isOpen) {

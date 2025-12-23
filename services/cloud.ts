@@ -4,7 +4,25 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 
-import { AppState, state, getPersistableState } from '../state';
+/**
+ * @file cloud.ts
+ * @description Orquestrador de Sincronização e Ponte para Web Workers.
+ * 
+ * [MAIN THREAD CONTEXT]:
+ * Este código roda na thread principal (UI).
+ * 
+ * ARQUITETURA CRÍTICA (Worker Bridge):
+ * - Atua como cliente para o `sync.worker.ts`.
+ * - Responsável por delegar tarefas pesadas (Criptografia, Decriptografia, Parsing de JSON massivo, Construção de Prompts IA)
+ *   para a thread de background, garantindo que a UI nunca trave (0 jank).
+ * 
+ * RESPONSABILIDADE:
+ * 1. Gerenciamento do Ciclo de Vida do Worker (Singleton Lazy-Loaded).
+ * 2. Controle de Concorrência de Rede (Debounce + Mutex).
+ * 3. Resolução de Conflitos de Dados (Smart Merge).
+ */
+
+import { AppState, state, getPersistableState, STATE_STORAGE_KEY } from '../state';
 import { loadState, persistStateLocally } from './persistence';
 import { pushToOneSignal, generateUUID } from '../utils';
 import { ui } from '../render/ui';
@@ -13,16 +31,18 @@ import { hasLocalSyncKey, getSyncKey, apiFetch } from './api';
 import { renderApp, updateNotificationUI } from '../render';
 import { mergeStates } from './dataMerge';
 
-// Debounce para evitar salvar na nuvem a cada pequena alteração.
+// Debounce para evitar salvar na nuvem a cada pequena alteração (ex: digitar uma nota).
+// PERFORMANCE: Reduz chamadas de API e overhead de criptografia.
 let syncTimeout: number | null = null;
 const DEBOUNCE_DELAY = 2000; // 2 segundos
 
-// MELHORIA DE ROBUSTEZ: Variáveis de estado para prevenir condições de corrida de sincronização.
+// MELHORIA DE ROBUSTEZ: Variáveis de estado para prevenir condições de corrida de sincronização (Mutex lógico).
 let isSyncInProgress = false;
 let pendingSyncState: AppState | null = null;
 
 // --- WORKER INFRASTRUCTURE [2025-02-28] ---
-// Singleton lazy-loaded worker instance
+// Singleton lazy-loaded worker instance.
+// PERFORMANCE: Só instanciamos o worker se e quando for necessário (ex: usuário ativa sync).
 let syncWorker: Worker | null = null;
 const workerCallbacks = new Map<string, { resolve: (val: any) => void, reject: (err: any) => void }>();
 
@@ -31,8 +51,10 @@ function getWorker(): Worker {
         // O nome do arquivo deve corresponder à saída configurada no build.js
         syncWorker = new Worker('./sync-worker.js', { type: 'module' });
         
+        // Configura o listener global para receber respostas do worker
         syncWorker.onmessage = (e) => {
             const { id, status, result, error } = e.data;
+            // Correlaciona a resposta com a promessa original via ID
             const callback = workerCallbacks.get(id);
             if (callback) {
                 if (status === 'success') {
@@ -52,17 +74,23 @@ function getWorker(): Worker {
 }
 
 /**
- * Envia uma tarefa para o worker e aguarda a resposta (Promise-based).
+ * Ponte de comunicação assíncrona com o Worker.
+ * Envia uma tarefa e retorna uma Promise que resolve quando o Worker responder.
+ * 
+ * @param type Tipo da operação (deve ser suportada pelo switch case do worker).
+ * @param payload Dados para processamento.
+ * @param key (Opcional) Chave de criptografia/sincronização.
  */
 export function runWorkerTask<T>(type: 'encrypt' | 'decrypt' | 'build-ai-prompt', payload: any, key?: string): Promise<T> {
     return new Promise((resolve, reject) => {
         const id = generateUUID();
+        // Armazena os handlers da Promise para serem chamados quando o worker responder com este ID.
         workerCallbacks.set(id, { resolve, reject });
         getWorker().postMessage({ id, type, payload, key });
     });
 }
 
-// Interface para a carga de dados que o servidor manipula
+// Interface para a carga de dados que o servidor manipula (Blob opaco)
 interface ServerPayload {
     lastModified: number;
     state: string; // Esta é a string criptografada
@@ -108,7 +136,9 @@ async function resolveConflictWithServerState(serverPayload: ServerPayload) {
     }
     
     try {
-        // WORKER OFFLOAD: Decriptografia e Parsing ocorrem fora da thread principal
+        // DO NOT REFACTOR: Worker Offload Crítico.
+        // A decriptografia e o parsing de JSON podem bloquear a main thread por 50-200ms
+        // dependendo do tamanho do histórico. Isso DEVE ocorrer no worker.
         const serverState = await runWorkerTask<AppState>('decrypt', serverPayload.state, syncKey);
 
         // IMPLEMENTAÇÃO DE SMART MERGE [2025-02-23]:
@@ -148,15 +178,17 @@ async function resolveConflictWithServerState(serverPayload: ServerPayload) {
 
 /**
  * Executa a requisição de rede real para sincronizar o estado com a nuvem.
+ * CRITICAL LOGIC: Implementa um Mutex (isSyncInProgress) para serializar os salvamentos.
  */
 async function performSync() {
+    // Se já estamos sincronizando ou não há nada pendente (race condition check), aborta.
     if (isSyncInProgress || !pendingSyncState) {
         return;
     }
 
     isSyncInProgress = true;
     const appState = pendingSyncState;
-    pendingSyncState = null; // Consome o estado pendente
+    pendingSyncState = null; // Consome o estado pendente, liberando o slot.
 
     const syncKey = getSyncKey();
     if (!syncKey) {
@@ -167,8 +199,10 @@ async function performSync() {
     }
 
     try {
-        // WORKER OFFLOAD: Serialização JSON e Criptografia ocorrem fora da thread principal.
-        // Isso elimina o travamento da UI durante o salvamento.
+        // DO NOT REFACTOR: Worker Offload Crítico.
+        // 1. Serialização JSON (CPU intensive)
+        // 2. Criptografia AES-GCM (CPU intensive)
+        // Ocorrem na thread secundária para manter a UI fluida (60fps) durante o "Salvando...".
         const encryptedState = await runWorkerTask<string>('encrypt', appState, syncKey);
 
         const payload: ServerPayload = {
@@ -195,8 +229,9 @@ async function performSync() {
         setSyncStatus('syncError');
     } finally {
         isSyncInProgress = false;
-        // Se um novo estado foi salvo enquanto a sincronização estava em andamento,
-        // aciona uma nova sincronização imediatamente para processar a fila.
+        // DO NOT REFACTOR: Queue Processing.
+        // Se um novo estado foi salvo (pendingSyncState != null) ENQUANTO a sincronização estava em andamento,
+        // aciona uma nova sincronização imediatamente para processar a fila e garantir consistência final.
         if (pendingSyncState) {
             if (syncTimeout) clearTimeout(syncTimeout);
             performSync();
@@ -205,20 +240,21 @@ async function performSync() {
 }
 
 /**
- * Schedules a state sync to the cloud. This is debounced and handles a sync-in-progress lock.
- * @param appState The application state to sync.
- * @param immediate If true, performs the sync immediately, bypassing the debounce timer.
+ * Agenda uma sincronização com a nuvem.
+ * Implementa estratégia de 'Debounce' para não sobrecarregar a rede/bateria em digitação rápida.
+ * @param appState O estado da aplicação a ser sincronizado.
+ * @param immediate Se true, ignora o debounce e tenta sincronizar o mais rápido possível (ex: fechamento de aba).
  */
 export function syncStateWithCloud(appState: AppState, immediate = false) {
     if (!hasLocalSyncKey()) return;
 
-    pendingSyncState = appState; // Sempre atualiza para o estado mais recente.
+    pendingSyncState = appState; // Sempre atualiza a referência para o estado mais recente (Last Write Wins local).
     setSyncStatus('syncSaving');
 
     if (syncTimeout) clearTimeout(syncTimeout);
     
     // Se uma sincronização já estiver em andamento, o bloco `finally` de `performSync`
-    // cuidará de acionar a próxima. Não precisamos fazer nada aqui.
+    // cuidará de acionar a próxima recursivamente. Não precisamos fazer nada aqui.
     if (isSyncInProgress) {
         return;
     }
@@ -241,14 +277,21 @@ export async function fetchStateFromCloud(): Promise<AppState | undefined> {
         const data: ServerPayload | null = await response.json();
 
         if (data && data.state) {
-            // WORKER OFFLOAD: Decriptografia e Parsing
+            // DO NOT REFACTOR: Worker Offload para decriptografia no boot.
+            // Essencial para um TTI (Time to Interactive) rápido se o payload for grande.
             const appState = await runWorkerTask<AppState>('decrypt', data.state, syncKey);
             
             setSyncStatus('syncSynced');
             return appState;
         } else {
-            // Retorna undefined se não houver dados na nuvem.
-            // O orquestrador (index.tsx) decidirá se deve enviar o estado local.
+            // Nenhum dado na nuvem (resposta foi 200 com corpo nulo)
+            console.log("No state found in cloud for this sync key. Performing initial sync.");
+            const localDataJSON = localStorage.getItem(STATE_STORAGE_KEY);
+            if (localDataJSON) {
+                const localState = JSON.parse(localDataJSON) as AppState;
+                // Empurra o estado local para a nuvem recém-configurada
+                syncStateWithCloud(localState, true);
+            }
             return undefined;
         }
     } catch (error) {

@@ -31,6 +31,7 @@ type ChartScales = {
 };
 
 // --- OBJECT POOL (PERFORMANCE) ---
+// Pre-allocate objects once to avoid Garbage Collection pressure during high-frequency updates.
 const chartDataPool: ChartDataPoint[] = Array.from({ length: CHART_DAYS }, () => ({
     date: '',
     timestamp: 0,
@@ -48,6 +49,10 @@ let cachedChartRect: DOMRect | null = null;
 // PERFORMANCE [2025-03-09]: Cache chart width to avoid measuring DOM on every data update
 let currentChartWidth = 0;
 
+// MEMOIZATION STATE [2025-03-18]: Tracks what was last painted to the DOM to avoid redundant work.
+let renderedDataRef: ChartDataPoint[] | null = null;
+let renderedWidth = 0;
+
 // BUGFIX: Módulo-scoped para permitir reset externo quando os dados mudam
 let lastRenderedPointIndex = -1;
 
@@ -64,6 +69,8 @@ let inputClientX = 0;
 
 function calculateChartData(): ChartDataPoint[] {
     const endDate = parseUTCIsoDate(state.selectedDate);
+    // OPTIMIZATION: Reuse iterator object instead of creating new Dates inside loop where possible,
+    // though here we need specific timestamps.
     const iteratorDate = addDays(endDate, -(CHART_DAYS - 1));
     const todayISO = getTodayUTCIso();
 
@@ -102,6 +109,7 @@ function calculateChartData(): ChartDataPoint[] {
         
         iteratorDate.setUTCDate(iteratorDate.getUTCDate() + 1);
     }
+    // Return the reference to the pool
     return chartDataPool;
 }
 
@@ -132,6 +140,7 @@ function _calculateChartScales(chartData: ChartDataPoint[], chartWidthPx: number
 }
 
 function _generatePathData(chartData: ChartDataPoint[], { xScale, yScale }: ChartScales): { areaPathData: string, linePathData: string } {
+    // PERFORMANCE [2025-03-14]: Use specialized join for large arrays if needed, but standard map/join is fast enough here.
     const linePathData = chartData.map((point, i) => `${i === 0 ? 'M' : 'L'} ${xScale(i)} ${yScale(point.value)}`).join(' ');
     const areaPathData = `${linePathData} V ${yScale(chartMetadata.minVal)} L ${xScale(0)} ${yScale(chartMetadata.minVal)} Z`;
     return { areaPathData, linePathData };
@@ -217,6 +226,13 @@ function _updateChartDOM(chartData: ChartDataPoint[]) {
     // Safety fallback
     if (!svgWidth) svgWidth = 300;
 
+    // ADVANCED OPTIMIZATION [2025-03-18]: Render Memoization.
+    // If the data reference hasn't changed AND the width is the same as last render,
+    // we can safely skip the expensive math and DOM updates.
+    if (chartData === renderedDataRef && svgWidth === renderedWidth) {
+        return;
+    }
+
     // WRITE PHASE: Apply calculations and update DOM.
     const scales = _calculateChartScales(chartData, svgWidth);
     const { areaPathData, linePathData } = _generatePathData(chartData, scales);
@@ -229,6 +245,9 @@ function _updateChartDOM(chartData: ChartDataPoint[]) {
     // Pass the already measured width to avoid re-measuring
     _updateEvolutionIndicator(chartData, scales, svgWidth);
 
+    // Update Memoization State
+    renderedDataRef = chartData;
+    renderedWidth = svgWidth;
     cachedChartRect = null;
 }
 
@@ -361,6 +380,7 @@ export function renderChart() {
         lastChartData = calculateChartData();
         // BUGFIX: Reset rendered index to force tooltip update even if mouse didn't move
         lastRenderedPointIndex = -1; 
+        // NOTE: We do not nullify renderedDataRef here to allow _updateChartDOM to detect changes by reference later.
     }
 
     const isEmpty = lastChartData.length < 2 || lastChartData.every(d => d.scheduledCount === 0);

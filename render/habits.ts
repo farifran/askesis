@@ -18,6 +18,7 @@ import { parseUTCIsoDate } from '../utils';
 const habitElementCache = new Map<string, HTMLElement>();
 
 // PERFORMANCE [2025-03-05]: Cache para referências de elementos internos dos cartões.
+// Using WeakMap allows keys (HTML Elements) to be garbage collected automatically when removed from DOM.
 type CardElements = {
     icon: HTMLElement;
     contentWrapper: HTMLElement;
@@ -28,19 +29,22 @@ type CardElements = {
     deleteBtn: HTMLElement; // Added cached reference for delete button
     goal: HTMLElement;
 };
-const cardElementsCache = new Map<HTMLElement, CardElements>();
+const cardElementsCache = new WeakMap<HTMLElement, CardElements>();
 
 // MEMORY OPTIMIZATION [2025-03-04]: Object Pool para agrupamento de hábitos.
 // Evita a criação de novos arrays (alocação de memória) a cada frame de renderização.
 // Apenas limpamos (.length = 0) e reutilizamos os arrays existentes.
 const habitsByTimePool: Record<TimeOfDay, Habit[]> = { 'Morning': [], 'Afternoon': [], 'Evening': [] };
 
-// OTIMIZAÇÃO [2025-03-16]: Template Prototype para controles de meta numérica.
+// --- DOM TEMPLATES (PERFORMANCE) ---
+// Pre-parsing HTML strings into DOM nodes prevents browser parser overhead during list rendering.
+
 let goalControlsTemplate: HTMLElement | null = null;
+let completedWrapperTemplate: HTMLElement | null = null;
+let snoozedWrapperTemplate: HTMLElement | null = null;
 
 function getGoalControlsTemplate(): HTMLElement {
     if (!goalControlsTemplate) {
-        // Build structure once
         const div = document.createElement('div');
         div.className = CSS_CLASSES.HABIT_GOAL_CONTROLS;
         div.innerHTML = `
@@ -56,13 +60,42 @@ function getGoalControlsTemplate(): HTMLElement {
     return goalControlsTemplate;
 }
 
+function getCompletedWrapperTemplate(): HTMLElement {
+    if (!completedWrapperTemplate) {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'completed-wrapper';
+        wrapper.innerHTML = UI_ICONS.check;
+        completedWrapperTemplate = wrapper;
+    }
+    return completedWrapperTemplate;
+}
+
+function getSnoozedWrapperTemplate(): HTMLElement {
+    if (!snoozedWrapperTemplate) {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'snoozed-wrapper';
+        wrapper.innerHTML = UI_ICONS.snoozed;
+        snoozedWrapperTemplate = wrapper;
+    }
+    return snoozedWrapperTemplate;
+}
+
 export function clearHabitDomCache() {
     habitElementCache.clear();
-    cardElementsCache.clear();
+    // cardElementsCache is a WeakMap, it clears itself when elements are GC'd
 }
 
 export function getCachedHabitCard(habitId: string, time: TimeOfDay): HTMLElement | undefined {
     return habitElementCache.get(`${habitId}|${time}`);
+}
+
+/**
+ * ADVANCED OPTIMIZATION [2025-03-17]: Expose live cache iterator.
+ * Returns an iterator for all live habit card elements currently in the DOM/Cache.
+ * Used by drag handler to avoid `querySelectorAll` layout thrashing.
+ */
+export function getLiveHabitCards(): IterableIterator<HTMLElement> {
+    return habitElementCache.values();
 }
 
 export const getUnitString = (habit: Habit, value: number | undefined) => {
@@ -71,27 +104,16 @@ export const getUnitString = (habit: Habit, value: number | undefined) => {
 };
 
 function _renderCompletedGoal(goalEl: HTMLElement) {
-    if (goalEl.querySelector('.completed-wrapper')) return;
+    // OPTIMIZATION: Check classList first to avoid DOM read/write
+    if (goalEl.firstElementChild?.classList.contains('completed-wrapper')) return;
 
-    goalEl.replaceChildren();
-    
-    const wrapper = document.createElement('div');
-    wrapper.className = 'completed-wrapper';
-    wrapper.innerHTML = UI_ICONS.check;
-    
-    goalEl.appendChild(wrapper);
+    goalEl.replaceChildren(getCompletedWrapperTemplate().cloneNode(true));
 }
 
 function _renderSnoozedGoal(goalEl: HTMLElement) {
-    if (goalEl.querySelector('.snoozed-wrapper')) return;
+    if (goalEl.firstElementChild?.classList.contains('snoozed-wrapper')) return;
 
-    goalEl.replaceChildren();
-    
-    const wrapper = document.createElement('div');
-    wrapper.className = 'snoozed-wrapper';
-    wrapper.innerHTML = UI_ICONS.snoozed;
-    
-    goalEl.appendChild(wrapper);
+    goalEl.replaceChildren(getSnoozedWrapperTemplate().cloneNode(true));
 }
 
 function _renderPendingGoalControls(goalEl: HTMLElement, habit: Habit, time: TimeOfDay, dayDataForInstance: HabitDayData | undefined) {
@@ -328,7 +350,7 @@ export function createHabitCardElement(habit: Habit, time: TimeOfDay, preLoadedD
     
     habitElementCache.set(`${habit.id}|${time}`, card);
 
-    // PERFORMANCE [2025-03-05]: Cache internal element references ONCE at creation.
+    // PERFORMANCE [2025-03-05]: Cache internal element references ONCE at creation using WeakMap.
     cardElementsCache.set(card, {
         icon: icon,
         contentWrapper: contentWrapper,
@@ -481,8 +503,7 @@ export function renderHabits() {
                     if (habitElementCache.get(cacheKey) === childToRemove) {
                         habitElementCache.delete(cacheKey);
                     }
-                    
-                    cardElementsCache.delete(childToRemove);
+                    // WeakMap clears automatically
                 }
                 childToRemove.remove();
             }

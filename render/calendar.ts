@@ -258,14 +258,17 @@ export function renderFullCalendar() {
     let totalGridCells = 0;
 
     // PERFORMANCE [2025-03-09]: Use cached template for day creation
+    // Reuse the full calendar day template logic for filler cells too
     for (let i = 0; i < startDayOfWeek; i++) {
         const day = daysInPrevMonth - startDayOfWeek + 1 + i;
-        const dayEl = document.createElement('div');
+        const dayEl = getFullCalendarDayTemplate().cloneNode(true) as HTMLElement;
         dayEl.className = 'full-calendar-day other-month';
-        const numberEl = document.createElement('span');
-        numberEl.className = CSS_CLASSES.DAY_NUMBER;
-        numberEl.textContent = String(day);
-        dayEl.appendChild(numberEl);
+        
+        // Structure is div.day-progress-ring > span.day-number
+        const ring = dayEl.firstElementChild as HTMLElement;
+        const number = ring.firstElementChild as HTMLElement;
+        number.textContent = String(day);
+        
         fragment.appendChild(dayEl);
         totalGridCells++;
     }
@@ -320,12 +323,13 @@ export function renderFullCalendar() {
     const remainingCells = (7 - (totalGridCells % 7)) % 7;
     for (let i = 1; i <= remainingCells; i++) {
         const day = i;
-        const dayEl = document.createElement('div');
+        const dayEl = getFullCalendarDayTemplate().cloneNode(true) as HTMLElement;
         dayEl.className = 'full-calendar-day other-month';
-        const numberEl = document.createElement('span');
-        numberEl.className = CSS_CLASSES.DAY_NUMBER;
-        numberEl.textContent = String(day);
-        dayEl.appendChild(numberEl);
+        
+        const ring = dayEl.firstElementChild as HTMLElement;
+        const number = ring.firstElementChild as HTMLElement;
+        number.textContent = String(day);
+        
         fragment.appendChild(dayEl);
     }
     

@@ -103,11 +103,10 @@ export function setupSwipeHandler(habitContainer: HTMLElement) {
             }
 
             activeCard.classList.remove(CSS_CLASSES.IS_SWIPING);
-            // Use cached reference if available, otherwise query (fallback)
-            const content = activeContent || activeCard.querySelector<HTMLElement>(DOM_SELECTORS.HABIT_CONTENT_WRAPPER);
-            if (content) {
-                content.style.transform = '';
-                content.draggable = true;
+            // Use cached reference directly
+            if (activeContent) {
+                activeContent.style.transform = '';
+                activeContent.draggable = true;
             }
         }
         

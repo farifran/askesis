@@ -1,4 +1,34 @@
 
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+*/
+
+/**
+ * @file habitActions.ts
+ * @description Controlador de Lógica de Negócios (Business Logic Controller).
+ * 
+ * [MAIN THREAD CONTEXT]:
+ * Este módulo roda na thread principal e orquestra mutações de estado seguidas de atualizações de UI.
+ * 
+ * ARQUITETURA (MVC Controller):
+ * - Responsabilidade Única: Receber intenções do usuário (via listeners), validar regras de negócio,
+ *   mutar o estado global (AppState) e disparar a renderização/persistência.
+ * - Desacoplamento: Não manipula o DOM diretamente (delega para `render/`). Não acessa API bruta (delega para `services/`).
+ * 
+ * DEPENDÊNCIAS CRÍTICAS:
+ * - `state.ts`: A estrutura de dados mutável. Alterações aqui propagam para todo o sistema.
+ * - `services/persistence`: Garante a durabilidade dos dados (LocalStorage).
+ * - `services/selectors`: Leitura otimizada do estado.
+ * 
+ * DECISÕES TÉCNICAS:
+ * 1. Mutabilidade Controlada: O estado é mutado diretamente para performance (evitando clonagem profunda de objetos complexos),
+ *    mas a consistência é garantida via funções de finalização (`_finalizeScheduleUpdate`) que invalidam caches.
+ * 2. Lógica Temporal: Funções como `_requestFutureScheduleChange` implementam "Time-Travel", permitindo
+ *    que hábitos mudem de propriedades no tempo sem perder o histórico passado.
+ * 3. Batch Updates: Agrupa invalidações de cache para evitar Layout Thrashing.
+ */
+
 // ... (imports remain the same)
 import { 
     state, 
@@ -12,7 +42,8 @@ import {
     clearScheduleCache,
     clearActiveHabitsCache,
     invalidateCachesForDateChange,
-    getPersistableState
+    getPersistableState,
+    HabitDayData
 } from './state';
 // ARCHITECTURE FIX: Import persistence logic from service layer.
 import { saveState, clearLocalPersistence } from './services/persistence';
@@ -43,26 +74,42 @@ import { t, getHabitDisplayInfo, getTimeOfDayName } from './i18n';
 import { runWorkerTask } from './services/cloud';
 import { apiFetch, clearKey } from './services/api';
 
-// ... (helpers _finalizeScheduleUpdate and _requestFutureScheduleChange remain unchanged)
+// --- PRIVATE HELPERS ---
 
+/**
+ * Finaliza uma transação de mutação de estado.
+ * PERFORMANCE: Centraliza a invalidação de cache e o disparo de eventos.
+ * @param affectsHistory Se true, invalida caches estruturais profundos (histórico, DOM elements). Se false, apenas caches de visualização diária.
+ */
 function _finalizeScheduleUpdate(affectsHistory: boolean = true) {
     if (affectsHistory) {
+        // PERFORMANCE: Limpeza pesada. Força recriação de DOM elements e recálculo de streaks.
         clearScheduleCache();
         clearHabitDomCache();
     } else {
+        // PERFORMANCE: Limpeza leve. Apenas revalida quais hábitos aparecem hoje.
         clearActiveHabitsCache();
     }
     
+    // Dirty Flags para o Loop de Renderização
     state.uiDirtyState.habitListStructure = true;
     state.uiDirtyState.calendarVisuals = true;
     
+    // IO Assíncrono (LocalStorage)
     saveState();
     
+    // Event Bus para notificar componentes desacoplados
     document.dispatchEvent(new CustomEvent('render-app'));
     // EVOLUTION [2025-03-16]: Update PWA Badge immediately after structural changes.
     document.dispatchEvent(new CustomEvent('habitsChanged'));
 }
 
+/**
+ * CRITICAL LOGIC: Temporal State Bifurcation.
+ * Gerencia a complexidade de alterar um hábito "de agora em diante" sem reescrever o passado.
+ * Cria uma nova entrada no `scheduleHistory` se necessário, preservando a integridade histórica.
+ * DO NOT REFACTOR: A lógica de índices e datas é sensível a erros de "off-by-one".
+ */
 function _requestFutureScheduleChange(
     habitId: string, 
     targetDate: string, 
@@ -71,6 +118,7 @@ function _requestFutureScheduleChange(
     const habit = state.habits.find(h => h.id === habitId);
     if (!habit) return;
 
+    // 1. Encontra o agendamento ativo na data alvo
     let activeScheduleIndex = -1;
     for (let i = habit.scheduleHistory.length - 1; i >= 0; i--) {
         const s = habit.scheduleHistory[i];
@@ -84,9 +132,12 @@ function _requestFutureScheduleChange(
 
     const currentSchedule = habit.scheduleHistory[activeScheduleIndex];
 
+    // 2. Decide se atualiza in-place ou bifurca o histórico
     if (currentSchedule.startDate === targetDate) {
+        // Se a mudança começa exatamente no início do agendamento atual, atualizamos in-place.
         habit.scheduleHistory[activeScheduleIndex] = updateFn({ ...currentSchedule });
     } else {
+        // Bifurcação: Encerra o agendamento atual ontem e começa um novo hoje.
         currentSchedule.endDate = targetDate;
 
         const newSchedule = updateFn({ 
@@ -97,13 +148,41 @@ function _requestFutureScheduleChange(
         
         habit.scheduleHistory.push(newSchedule);
         
-        habit.scheduleHistory.sort((a, b) => a.startDate.localeCompare(b.startDate));
+        // PERFORMANCE [2025-03-17]: Optimized sort with binary comparison for ISO dates.
+        // Garante que o histórico esteja sempre linear cronologicamente.
+        habit.scheduleHistory.sort((a, b) => (a.startDate > b.startDate ? 1 : -1));
     }
     
     _finalizeScheduleUpdate(true);
 }
 
-// ... (exported actions createDefaultHabit to requestHabitTimeRemoval remain unchanged)
+/**
+ * REFACTOR [2025-03-18]: Helper to centralize status mutations and side effects (like goal overrides).
+ * Returns true if the status effectively changed.
+ */
+function _updateHabitInstanceStatus(
+    habit: Habit, 
+    instance: HabitDayData, 
+    newStatus: HabitStatus
+): boolean {
+    if (instance.status === newStatus) return false;
+
+    instance.status = newStatus;
+
+    // Special handling for 'Check' type habits:
+    // When completed, they should have a goal of 1 (100%).
+    // When pending/snoozed, override is removed to fallback to default logic.
+    if (habit.goal.type === 'check') {
+        if (newStatus === 'completed') {
+            instance.goalOverride = 1;
+        } else {
+            instance.goalOverride = undefined;
+        }
+    }
+    return true;
+}
+
+// ... (export functions)
 
 export function createDefaultHabit() {
     const defaultTemplate = PREDEFINED_HABITS.find(h => h.isDefault);
@@ -129,6 +208,7 @@ export function createDefaultHabit() {
 }
 
 export function reorderHabit(movedHabitId: string, targetHabitId: string, position: 'before' | 'after', skipFinalize = false) {
+    // PERFORMANCE: Operação O(N) em array pequeno (<100 itens), aceitável na Main Thread.
     const movedIndex = state.habits.findIndex(h => h.id === movedHabitId);
     const targetIndex = state.habits.findIndex(h => h.id === targetHabitId);
 
@@ -146,6 +226,7 @@ export function reorderHabit(movedHabitId: string, targetHabitId: string, positi
     }
 }
 
+// LOGIC LOCK: Manipula a complexidade de UI do Drag & Drop transformando-a em lógica de estado.
 export function handleHabitDrop(
     habitId: string, 
     fromTime: TimeOfDay, 
@@ -157,6 +238,7 @@ export function handleHabitDrop(
     
     const targetDate = getSafeDate(state.selectedDate);
 
+    // Opção 1: Alteração Temporária (Override na DailyData)
     const applyJustToday = () => {
         const dailyInfo = ensureHabitDailyInfo(targetDate, habitId);
         const currentSchedule = [...getEffectiveScheduleForHabitOnDate(habit, targetDate)];
@@ -183,9 +265,11 @@ export function handleHabitDrop(
         _finalizeScheduleUpdate(false);
     };
 
+    // Opção 2: Alteração Permanente (Novo Schedule no History)
     const applyFromNowOn = () => {
         const dailyInfo = ensureHabitDailyInfo(targetDate, habitId);
         
+        // Remove override local se existir, pois a regra permanente terá precedência
         const currentOverride = dailyInfo.dailySchedule ? [...dailyInfo.dailySchedule] : null;
 
         if (dailyInfo.dailySchedule) {
@@ -199,6 +283,7 @@ export function handleHabitDrop(
         _requestFutureScheduleChange(habitId, targetDate, (scheduleToUpdate) => {
             scheduleToUpdate.times = [...scheduleToUpdate.times];
 
+            // Se havia um override hoje, usamos ele como base para a nova regra permanente
             if (currentOverride) {
                 scheduleToUpdate.times = currentOverride;
             }
@@ -270,15 +355,18 @@ export function saveHabitFromModal() {
         const habit = state.habits.find(h => h.id === habitId);
         if (!habit) return;
 
+        // Atualizações visuais são retroativas (ícone/cor/meta)
         habit.icon = formData.icon;
         habit.color = formData.color;
         habit.goal = formData.goal;
 
+        // Limpa overrides conflitantes
         const dailyInfo = ensureHabitDailyInfo(targetDate, habit.id);
         if (dailyInfo.dailySchedule) {
             delete dailyInfo.dailySchedule;
         }
 
+        // Edge Case: Editando um hábito antes de ele existir na timeline
         const firstSchedule = habit.scheduleHistory[0];
 
         if (targetDate < firstSchedule.startDate) {
@@ -291,6 +379,7 @@ export function saveHabitFromModal() {
             
             _finalizeScheduleUpdate(true);
         } else {
+            // Caso padrão: Time-Travel logic
             _requestFutureScheduleChange(habit.id, targetDate, (schedule) => {
                 schedule.name = formData.name;
                 schedule.nameKey = formData.nameKey;
@@ -350,7 +439,8 @@ export function requestHabitPermanentDeletion(habitId: string) {
                 delete day[habitId];
             });
 
-            // OPTIMIZATION: Determine the start year of the habit to avoid checking older archives.
+            // PERFORMANCE: Garbage Collection de Arquivos Mortos (Cold Storage)
+            // Evita percorrer todos os arquivos se o hábito for recente.
             const earliestDate = habit.scheduleHistory[0]?.startDate || habit.createdOn;
             const startYear = parseInt(earliestDate.substring(0, 4), 10);
 
@@ -402,9 +492,6 @@ export function requestHabitPermanentDeletion(habitId: string) {
                 }
             }
             
-            // Note: We deliberately do NOT call state.unarchivedCache.clear() here anymore.
-            // This preserves the loaded state of other years/habits, preventing a performance stutter.
-
             _finalizeScheduleUpdate(true);
             
             if (ui.manageModal.classList.contains('visible')) {
@@ -427,8 +514,10 @@ export function requestHabitRestoration(habitId: string) {
             const habitToRestore = state.habits.find(h => h.id === habitId);
             if (!habitToRestore) return;
 
-            habitToRestore.scheduleHistory.sort((a, b) => a.startDate.localeCompare(b.startDate));
+            // PERFORMANCE [2025-03-17]: Binary comparison sort
+            habitToRestore.scheduleHistory.sort((a, b) => (a.startDate > b.startDate ? 1 : -1));
             
+            // Remove o endDate do último agendamento para reabri-lo indefinidamente
             const lastSchedule = habitToRestore.scheduleHistory[habitToRestore.scheduleHistory.length - 1];
             if (lastSchedule.endDate) {
                 delete lastSchedule.endDate;
@@ -487,6 +576,7 @@ export function handleSaveNote() {
 
     const instance = ensureHabitInstanceData(date, habitId, time);
 
+    // OTIMIZAÇÃO: Evita gravação se o conteúdo não mudou.
     if ((instance.note || '') !== noteContent) {
         if (noteContent) {
             instance.note = noteContent;
@@ -522,6 +612,8 @@ export async function performAIAnalysis(analysisType: 'monthly' | 'quarterly' | 
             translations[h.nameKey] = t(h.nameKey);
         });
 
+        // PERFORMANCE: Off-Main-Thread Architecture.
+        // A construção do prompt (parse de JSON massivo, strings) ocorre no Worker.
         const { prompt, systemInstruction } = await runWorkerTask<{ prompt: string, systemInstruction: string }>(
             'build-ai-prompt',
             {
@@ -605,25 +697,19 @@ export function toggleHabitStatus(habitId: string, time: TimeOfDay, date: string
     const oldStatus = instance.status;
     const newStatus = getNextStatus(oldStatus);
     
-    instance.status = newStatus;
-    
-    if (habit.goal.type === 'check') {
-        if (newStatus === 'completed') {
-            instance.goalOverride = 1;
-        } else if (newStatus === 'pending') {
-            instance.goalOverride = undefined;
-        }
+    // REFACTOR [2025-03-18]: Logic centralized in helper
+    if (_updateHabitInstanceStatus(habit, instance, newStatus)) {
+        // PERFORMANCE: Invalida caches granularmente para apenas este hábito nesta data.
+        invalidateCachesForDateChange(date, [habitId]);
+        
+        state.uiDirtyState.calendarVisuals = true;
+        state.uiDirtyState.habitListStructure = true;
+        
+        saveState();
+        
+        document.dispatchEvent(new CustomEvent('render-app'));
+        document.dispatchEvent(new CustomEvent('habitsChanged'));
     }
-    
-    invalidateCachesForDateChange(date, [habitId]);
-    
-    state.uiDirtyState.calendarVisuals = true;
-    state.uiDirtyState.habitListStructure = true;
-    
-    saveState();
-    
-    document.dispatchEvent(new CustomEvent('render-app'));
-    document.dispatchEvent(new CustomEvent('habitsChanged'));
 }
 
 export function setGoalOverride(habitId: string, date: string, time: TimeOfDay, value: number) {
@@ -693,11 +779,8 @@ export function markAllHabitsForDate(dateISO: string, status: HabitStatus): bool
             dailyInfo.instances[time] ??= { status: 'pending' };
             const instance = dailyInfo.instances[time]!;
             
-            if (instance.status !== status) {
-                instance.status = status;
-                if (habit.goal.type === 'check') {
-                    instance.goalOverride = status === 'completed' ? 1 : undefined;
-                }
+            // REFACTOR [2025-03-18]: Use unified logic helper
+            if (_updateHabitInstanceStatus(habit, instance, status)) {
                 changed = true;
                 changedHabitIds.add(habit.id);
             }
@@ -705,6 +788,7 @@ export function markAllHabitsForDate(dateISO: string, status: HabitStatus): bool
     });
     
     if (changed) {
+        // Batch invalidation
         invalidateCachesForDateChange(dateISO, Array.from(changedHabitIds));
         
         state.uiDirtyState.calendarVisuals = true;

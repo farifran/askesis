@@ -11,14 +11,8 @@ import {
     STREAK_SEMI_CONSOLIDATED, 
     STREAK_CONSOLIDATED, 
     DAYS_IN_CALENDAR, 
-    invalidateChartCache,
-    TimeOfDay, 
-    FREQUENCIES, 
-    TIMES_OF_DAY,
-    Habit, 
-    HabitTemplate, 
-    Frequency, 
-    PredefinedHabit
+    invalidateChartCache, 
+    FREQUENCIES
 } from '../state';
 // ARCHITECTURE FIX: Import persistence logic from service layer.
 import { saveState } from '../services/persistence';
@@ -55,11 +49,9 @@ import {
 } from '../habitActions';
 import { setLanguage, t, getHabitDisplayInfo } from '../i18n';
 import { setupReelRotary } from '../render/rotary';
-import { simpleMarkdownToHTML, pushToOneSignal, getContrastColor, addDays, parseUTCIsoDate, toUTCIsoDateString, getDateTimeFormat } from '../utils';
-import { getTimeOfDayIcon } from '../render/icons';
-import { setTextContent, updateReelRotaryARIA } from '../render/dom';
-import { getTimeOfDayName } from '../i18n';
-import { isHabitNameDuplicate, calculateHabitStreak } from '../services/selectors';
+import { simpleMarkdownToHTML, pushToOneSignal, getContrastColor, addDays, parseUTCIsoDate, toUTCIsoDateString } from '../utils';
+import { setTextContent } from '../render/dom';
+import { isHabitNameDuplicate } from '../services/selectors';
 
 // REFACTOR [2024-09-02]: Centraliza a lógica de processamento e formatação de celebrações
 const _processAndFormatCelebrations = (
@@ -84,9 +76,6 @@ const _processAndFormatCelebrations = (
 
     return t(translationKey, { count: pendingIds.length, habitNames });
 };
-
-// Hoisted constant for habit sorting to avoid reallocation
-const STATUS_ORDER = { 'active': 0, 'graduated': 1, 'ended': 2 } as const;
 
 // --- PRIVATE HELPERS (MODAL FORMS) ---
 
@@ -194,6 +183,7 @@ function _validateHabitName(newName: string, currentHabitId?: string): boolean {
 
 export function setupModalListeners() {
     ui.manageHabitsBtn.addEventListener('click', () => {
+        // Calls the imported setupManageModal from render/modals.ts
         setupManageModal();
         updateNotificationUI();
         openModal(ui.manageModal);

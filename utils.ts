@@ -179,6 +179,12 @@ function formatInline(line: string): string {
     return escapeHTML(line).replace(MD_INLINE_COMBINED_REGEX, MD_REPLACER);
 }
 
+// PERFORMANCE [2025-03-17]: Hoisted block-level Regexes for simpleMarkdownToHTML to avoid recompilation.
+const MD_H3_REGEX = /^### /;
+const MD_H2_REGEX = /^## /;
+const MD_H1_REGEX = /^# /;
+const MD_UL_REGEX = /^[*+-\s] /; // Matches * - + and space
+
 export function simpleMarkdownToHTML(text: string): string {
     const lines = text.split('\n');
     // PERFORMANCE [2025-03-14]: Use Array Buffer (StringBuilder) instead of string concatenation.
@@ -204,26 +210,26 @@ export function simpleMarkdownToHTML(text: string): string {
     for (const line of lines) {
         const trimmedLine = line.trim();
 
-        if (trimmedLine.startsWith('### ')) {
+        if (MD_H3_REGEX.test(trimmedLine)) {
             closeUnorderedList();
             closeOrderedList();
             html.push(`<h3>${formatInline(line.substring(4))}</h3>`);
             continue;
         }
-        if (trimmedLine.startsWith('## ')) {
+        if (MD_H2_REGEX.test(trimmedLine)) {
             closeUnorderedList();
             closeOrderedList();
             html.push(`<h2>${formatInline(line.substring(3))}</h2>`);
             continue;
         }
-        if (trimmedLine.startsWith('# ')) {
+        if (MD_H1_REGEX.test(trimmedLine)) {
             closeUnorderedList();
             closeOrderedList();
             html.push(`<h1>${formatInline(line.substring(2))}</h1>`);
             continue;
         }
 
-        if (trimmedLine.startsWith('* ') || trimmedLine.startsWith('- ')) {
+        if (MD_UL_REGEX.test(trimmedLine)) {
             closeOrderedList();
             if (!inUnorderedList) {
                 html.push('<ul>');

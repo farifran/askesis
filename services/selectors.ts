@@ -12,6 +12,20 @@ import { state, Habit, TimeOfDay, HabitSchedule, getHabitDailyInfoForDate, STREA
 import { toUTCIsoDateString, parseUTCIsoDate, addDays, getTodayUTCIso } from '../utils';
 import { getHabitDisplayInfo } from '../i18n';
 
+// --- Internal Cache for Static Dates ---
+// Anchor dates in schedules rarely change, but are read thousands of times during streak calculations.
+// Memoizing the Date object prevents GC pressure from repetitive new Date() calls.
+const _anchorDateCache = new Map<string, Date>();
+
+function _getMemoizedDate(dateISO: string): Date {
+    let date = _anchorDateCache.get(dateISO);
+    if (!date) {
+        date = parseUTCIsoDate(dateISO);
+        _anchorDateCache.set(dateISO, date);
+    }
+    return date;
+}
+
 // --- Seletores de Agendamento (Schedule Selectors) ---
 
 /**
@@ -85,7 +99,8 @@ export function shouldHabitAppearOnDate(habit: Habit, dateISO: string, preParsed
             appears = true;
             break;
         case 'interval':
-            const anchorDate = parseUTCIsoDate(schedule.scheduleAnchor || schedule.startDate);
+            // PERFORMANCE [2025-03-18]: Use Memoized Date for Anchor.
+            const anchorDate = _getMemoizedDate(schedule.scheduleAnchor || schedule.startDate);
             const diffTime = date.getTime() - anchorDate.getTime();
             const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
             if (frequency.unit === 'days') {
