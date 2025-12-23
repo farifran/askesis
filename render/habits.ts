@@ -158,14 +158,16 @@ function _renderPendingGoalControls(goalEl: HTMLElement, habit: Habit, time: Tim
 }
 
 export function updateGoalContentElement(goalEl: HTMLElement, status: HabitStatus, habit: Habit, time: TimeOfDay, dayDataForInstance: HabitDayData | undefined) {
-    const isNumericGoal = habit.goal.type === 'pages' || habit.goal.type === 'minutes';
-
-    if (status === 'completed' && !isNumericGoal) {
+    // UX UPDATE [2025-03-19]: Simplificação visual no estado 'Completed'.
+    // Independentemente do tipo de meta (numérica ou check), se o hábito estiver concluído,
+    // exibimos apenas o ícone de checkmark. Isso oculta os controles numéricos para reduzir o ruído visual.
+    
+    if (status === 'completed') {
         _renderCompletedGoal(goalEl);
     } else if (status === 'snoozed') {
         _renderSnoozedGoal(goalEl);
     } else {
-        // This now correctly handles 'pending' AND 'completed' for numeric goals
+        // Renderiza controles apenas se estiver pendente (e for numérico)
         _renderPendingGoalControls(goalEl, habit, time, dayDataForInstance);
     }
 }
