@@ -4,6 +4,31 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 
+/**
+ * @file render/calendar.ts
+ * @description Motor de Renderização do Calendário (Strip & Almanac).
+ * 
+ * [MAIN THREAD CONTEXT]:
+ * Este módulo opera na thread principal e é crítico para a percepção de fluidez (60fps).
+ * 
+ * ARQUITETURA (DOM Recycling & Template Cloning):
+ * - **Responsabilidade Única:** Gerenciar a representação visual do tempo (faixa horizontal e grid mensal).
+ * - **Zero Allocations (Hot Path):** Utiliza "Template Cloning" em vez de `createElement` repetitivo e "DOM Recycling"
+ *   para atualizar nós existentes em vez de destruir/recriar (GC Pressure Reduction).
+ * - **Batching:** Todas as inserções usam `DocumentFragment` para causar apenas um Reflow por ciclo.
+ * 
+ * DEPENDÊNCIAS CRÍTICAS:
+ * - `state.ts`: Fonte da verdade.
+ * - `selectors.ts`: Cálculos de estatísticas diárias.
+ * - `ui.ts`: Referências DOM cacheadas.
+ * 
+ * DECISÕES TÉCNICAS:
+ * 1. **Geometry/Attribute Dirty Checking:** Antes de escrever no DOM (setAttribute, classList),
+ *    verificamos se o valor mudou. Leituras são baratas; escritas invalidam o layout.
+ * 2. **Mutable Date Objects:** Em loops de renderização (ex: `renderFullCalendar`), usamos um único objeto `Date`
+ *    mutável para evitar alocação de 30-31 objetos por renderização.
+ */
+
 import { state, DAYS_IN_CALENDAR } from '../state';
 import { calculateDaySummary } from '../services/selectors';
 import { ui } from './ui';
@@ -12,15 +37,19 @@ import { getLocaleDayName } from '../i18n';
 import { setTextContent } from './dom';
 import { CSS_CLASSES, DOM_SELECTORS } from './constants';
 
-// OTIMIZAÇÃO [2025-01-22]: Cache de elementos do calendário para evitar querySelectorAll repetido.
+// PERFORMANCE [2025-01-22]: Cache de elementos do calendário (DOM Pool).
+// Mantém referências aos nós DOM para atualização in-place, evitando o custo de `document.createElement`.
 let cachedDayElements: HTMLElement[] = [];
 
-// OTIMIZAÇÃO [2025-03-09]: Template Prototype para clonagem rápida.
-// Evita o custo de múltiplas chamadas 'createElement' e 'appendChild' a cada dia gerado.
+// PERFORMANCE [2025-03-09]: Template Prototypes.
+// `cloneNode(true)` é significativamente mais rápido que criar hierarquias DOM via API JS imperativa.
 let dayItemTemplate: HTMLElement | null = null;
-// OTIMIZAÇÃO [2025-03-09]: Template Prototype para dias do calendário completo.
 let fullCalendarDayTemplate: HTMLElement | null = null;
 
+/**
+ * Singleton Lazy-Loader para o template do item de dia.
+ * @returns O nó HTMLElement modelo (clone source).
+ */
 function getDayItemTemplate(): HTMLElement {
     if (!dayItemTemplate) {
         dayItemTemplate = document.createElement('div');
@@ -44,6 +73,9 @@ function getDayItemTemplate(): HTMLElement {
     return dayItemTemplate;
 }
 
+/**
+ * Singleton Lazy-Loader para o template do dia do calendário completo.
+ */
 function getFullCalendarDayTemplate(): HTMLElement {
     if (!fullCalendarDayTemplate) {
         fullCalendarDayTemplate = document.createElement('div');
@@ -64,24 +96,27 @@ function getFullCalendarDayTemplate(): HTMLElement {
 }
 
 /**
- * OTIMIZAÇÃO (DRY): Aplica o estado visual a um elemento de dia do calendário.
- * Centraliza a lógica de classes, atributos ARIA e variáveis CSS para evitar duplicação.
- * PERFORMANCE [2025-03-03]: Aceita todayISO opcional para evitar recálculo em loops.
- * PERFORMANCE [2025-03-13]: Aceita date object opcional para evitar recriação via parse.
+ * [HOT PATH]: Esta função roda N vezes por renderização (N = dias visíveis).
+ * OTIMIZAÇÃO (DRY & DOM Access): Aplica o estado visual minimizando escritas no DOM.
+ * 
+ * @param dayItem O elemento DOM a ser atualizado.
+ * @param date O objeto Date correspondente.
+ * @param todayISO (Opcional) Data de hoje pré-calculada para evitar chamadas repetidas a `getTodayUTCIso()`.
+ * @param precalcIsoDate (Opcional) String ISO da data para evitar `toUTCIsoDateString()` repetido.
  */
 export function updateCalendarDayElement(dayItem: HTMLElement, date: Date, todayISO?: string, precalcIsoDate?: string) {
     const effectiveTodayISO = todayISO || getTodayUTCIso();
-    // PERFORMANCE OPTIMIZATION: Use pre-calculated ISO date if available
+    // PERFORMANCE: Usa valor pré-calculado se disponível para evitar alocação de string/processamento de data.
     const isoDate = precalcIsoDate || toUTCIsoDateString(date);
     
-    // DECOUPLING: Chamadas separadas para performance
-    // Pass date object to avoid re-parsing inside calculateDaySummary
+    // DECOUPLING: Passamos o objeto `date` para evitar re-parsing dentro do seletor.
     const { completedPercent, snoozedPercent, showPlusIndicator: showPlus } = calculateDaySummary(isoDate, date);
     
     const isSelected = isoDate === state.selectedDate;
     const isToday = isoDate === effectiveTodayISO;
 
-    // Gerenciamento de Classes
+    // PERFORMANCE: DOM Token List Toggle.
+    // O navegador otimiza internamente, mas a verificação explícita `contains` evita invalidar estilos se o estado não mudou.
     if (dayItem.classList.contains(CSS_CLASSES.SELECTED) !== isSelected) {
         dayItem.classList.toggle(CSS_CLASSES.SELECTED, isSelected);
     }
@@ -89,18 +124,20 @@ export function updateCalendarDayElement(dayItem: HTMLElement, date: Date, today
         dayItem.classList.toggle(CSS_CLASSES.TODAY, isToday);
     }
 
-    // Acessibilidade e Estado
+    // Acessibilidade (ARIA)
+    // PERFORMANCE: Verificação de valor anterior (Dirty Check) antes da escrita.
     if (dayItem.getAttribute('aria-pressed') !== String(isSelected)) {
         dayItem.setAttribute('aria-pressed', String(isSelected));
     }
     
-    // A11Y [2025-01-17]: Implementação de Roving Tabindex.
+    // A11Y [2025-01-17]: Roving Tabindex para navegação por teclado.
     const newTabIndex = isSelected ? '0' : '-1';
     if (dayItem.getAttribute('tabindex') !== newTabIndex) {
         dayItem.setAttribute('tabindex', newTabIndex);
     }
 
-    // PERFORMANCE [2025-01-16]: Uso de cache para Intl.DateTimeFormat.
+    // PERFORMANCE [2025-01-16]: Intl.DateTimeFormat Cacheado.
+    // Formatação de data é custosa; `getDateTimeFormat` usa memoization interna.
     const ariaDate = getDateTimeFormat(state.activeLanguageCode, {
         weekday: 'long',
         day: 'numeric',
@@ -118,7 +155,9 @@ export function updateCalendarDayElement(dayItem: HTMLElement, date: Date, today
         const newCompleted = `${completedPercent}%`;
         const newSnoozed = `${snoozedPercent}%`;
         
-        // PERFORMANCE CRÍTICA [2025-01-23]: Uso de dataset para Dirty Checking.
+        // PERFORMANCE CRÍTICA [2025-01-23]: Dataset Dirty Checking.
+        // `style.setProperty` força o navegador a recalcular estilos. Usamos `dataset` como um cache local
+        // para saber se precisamos realmente tocar no estilo.
         if (dayProgressRing.dataset.completedPercent !== newCompleted) {
             dayProgressRing.style.setProperty('--completed-percent', newCompleted);
             dayProgressRing.dataset.completedPercent = newCompleted;
@@ -133,6 +172,7 @@ export function updateCalendarDayElement(dayItem: HTMLElement, date: Date, today
             if (dayNumber.classList.contains('has-plus') !== showPlus) {
                 dayNumber.classList.toggle('has-plus', showPlus);
             }
+            // PERFORMANCE: `setTextContent` verifica `firstChild.nodeValue` antes de escrever.
             setTextContent(dayNumber, String(date.getUTCDate()));
         }
     }
@@ -142,13 +182,13 @@ export function updateCalendarDayElement(dayItem: HTMLElement, date: Date, today
 }
 
 export function createCalendarDayElement(date: Date, todayISO: string): HTMLElement {
-    // PERFORMANCE [2025-03-09]: Clone from template instead of creating fresh.
+    // PERFORMANCE [2025-03-09]: Template Cloning.
     const dayItem = getDayItemTemplate().cloneNode(true) as HTMLElement;
     
     const isoDate = toUTCIsoDateString(date);
     dayItem.dataset.date = isoDate;
 
-    // Hydrate the cloned node with specific data
+    // Hidrata o nó clonado.
     updateCalendarDayElement(dayItem, date, todayISO, isoDate);
 
     return dayItem;
@@ -156,41 +196,51 @@ export function createCalendarDayElement(date: Date, todayISO: string): HTMLElem
 
 /**
  * Helper centralizado para rolar o calendário para o dia "Hoje".
+ * UX: `requestAnimationFrame` garante que o DOM esteja pintado antes de calcular o scroll.
  */
 export function scrollToToday(behavior: ScrollBehavior = 'auto') {
     requestAnimationFrame(() => {
         const todayEl = ui.calendarStrip.querySelector<HTMLElement>(`${DOM_SELECTORS.DAY_ITEM}.${CSS_CLASSES.TODAY}`);
         if (todayEl) {
-            // LOGIC UPDATE [2025-02-05]: Alinhamento 'end' para coincidir com o futuro à direita.
+            // LOGIC UPDATE [2025-02-05]: 'end' alinha o dia atual à direita, mostrando o passado (contexto).
             todayEl.scrollIntoView({ behavior, block: 'nearest', inline: 'end' });
         }
     });
 }
 
+/**
+ * Renderiza a faixa de calendário horizontal.
+ * Implementa estratégia de reciclagem de DOM para evitar "Layout Thrashing".
+ */
 export function renderCalendar() {
-    // PERFORMANCE [2025-01-26]: DIRTY CHECK GUARD.
+    // PERFORMANCE [2025-01-26]: Dirty Check Guard.
+    // Se nada relevante mudou visualmente no calendário, aborta o ciclo.
     if (!state.uiDirtyState.calendarVisuals) {
         return;
     }
 
-    // FIX [2025-03-10]: Self-healing and Robustness logic.
-    // 1. Verify if selectedDate is valid. If not, reset to Today.
+    // ROBUSTNESS / SELF-HEALING [2025-03-10]:
+    // Garante que o estado das datas esteja consistente antes de renderizar.
     let selectedDateObj = parseUTCIsoDate(state.selectedDate);
     if (isNaN(selectedDateObj.getTime())) {
         console.warn("Invalid selectedDate detected during render. Resetting to Today.");
         state.selectedDate = getTodayUTCIso();
-        state.calendarDates = []; // Force rebuild
+        state.calendarDates = []; // Força rebuild
     }
 
-    // 2. If state.calendarDates is empty or corrupted, repopulate it.
+    // Regenera o array de datas se estiver vazio (ex: first boot ou crash recovery).
     if (state.calendarDates.length === 0) {
-        selectedDateObj = parseUTCIsoDate(state.selectedDate); // Re-parse in case it was just fixed
+        selectedDateObj = parseUTCIsoDate(state.selectedDate);
         state.calendarDates = Array.from({ length: DAYS_IN_CALENDAR }, (_, i) => 
             addDays(selectedDateObj, i - 30)
         );
     }
 
+    // DO NOT REFACTOR: Estratégia de Reciclagem.
+    // Se o número de elementos cacheados bater com o necessário, atualizamos in-place (rápido).
+    // Caso contrário, reconstruímos tudo (lento, mas necessário se o range mudar).
     const needsRebuild = cachedDayElements.length === 0 || cachedDayElements.length !== state.calendarDates.length;
+    
     // PERFORMANCE [2025-03-03]: Hoist calculation out of the loop.
     const todayISO = getTodayUTCIso();
     
@@ -198,6 +248,7 @@ export function renderCalendar() {
         ui.calendarStrip.innerHTML = '';
         cachedDayElements = [];
         
+        // PERFORMANCE: DocumentFragment evita reflows a cada appendChild.
         const fragment = document.createDocumentFragment();
         state.calendarDates.forEach(date => {
             const el = createCalendarDayElement(date, todayISO);
@@ -208,10 +259,12 @@ export function renderCalendar() {
 
         scrollToToday('auto');
     } else {
+        // Fast Path: Atualização In-Place.
         cachedDayElements.forEach((dayEl, index) => {
             const date = state.calendarDates[index];
             if (date) {
                 const isoDate = toUTCIsoDateString(date);
+                // Atualiza dataset apenas se mudou (Dirty Check)
                 if(dayEl.dataset.date !== isoDate) {
                     dayEl.dataset.date = isoDate;
                 }
@@ -223,6 +276,10 @@ export function renderCalendar() {
     state.uiDirtyState.calendarVisuals = false;
 }
 
+/**
+ * Renderiza o modal de calendário completo (Almanaque).
+ * Utiliza otimização de objeto Date mutável.
+ */
 export function renderFullCalendar() {
     const { year, month } = state.fullCalendar;
     const todayISO = getTodayUTCIso();
@@ -243,9 +300,11 @@ export function renderFullCalendar() {
     const grid = ui.fullCalendarGrid;
     grid.innerHTML = '';
     
+    // Renderiza cabeçalho de dias da semana (apenas se vazio)
     if (ui.fullCalendarWeekdays.childElementCount === 0) {
         const weekdaysFragment = document.createDocumentFragment();
         for (let i = 0; i < 7; i++) {
+            // Data arbitrária (Domingo) para extrair nomes de dias localizados
             const day = new Date(Date.UTC(2024, 0, 7 + i));
             const weekdayEl = document.createElement('div');
             weekdayEl.textContent = getLocaleDayName(day).substring(0, 1);
@@ -257,14 +316,13 @@ export function renderFullCalendar() {
     const fragment = document.createDocumentFragment();
     let totalGridCells = 0;
 
-    // PERFORMANCE [2025-03-09]: Use cached template for day creation
-    // Reuse the full calendar day template logic for filler cells too
+    // PERFORMANCE [2025-03-09]: Template Cloning para células "filler" (mês anterior).
     for (let i = 0; i < startDayOfWeek; i++) {
         const day = daysInPrevMonth - startDayOfWeek + 1 + i;
         const dayEl = getFullCalendarDayTemplate().cloneNode(true) as HTMLElement;
         dayEl.className = 'full-calendar-day other-month';
         
-        // Structure is div.day-progress-ring > span.day-number
+        // Estrutura conhecida: div.day-progress-ring > span.day-number
         const ring = dayEl.firstElementChild as HTMLElement;
         const number = ring.firstElementChild as HTMLElement;
         number.textContent = String(day);
@@ -281,17 +339,18 @@ export function renderFullCalendar() {
         timeZone: 'UTC'
     });
 
-    // PERFORMANCE [2025-03-04]: Use a single mutable Date object for the loop.
-    // Reduces garbage collection pressure by reusing the same object instance ~30 times.
+    // MEMORY OPTIMIZATION [2025-03-04]: Mutable Date Object.
+    // Usa um único objeto Date mutável para o loop. Reduz pressão no Garbage Collector
+    // evitando a criação de ~31 objetos Date em sucessão rápida.
     const iteratorDate = new Date(Date.UTC(year, month, 1));
 
     for (let day = 1; day <= daysInMonth; day++) {
-        // Use iteratorDate which is already set to the correct day
+        // Usa o objeto mutável atualizado
         const isoDate = toUTCIsoDateString(iteratorDate);
-        // Pass iteratorDate reference to selector to avoid re-parsing
+        // Passa a referência para evitar re-parse
         const { completedPercent, snoozedPercent } = calculateDaySummary(isoDate, iteratorDate);
 
-        // OPTIMIZATION: Clone from template
+        // PERFORMANCE: Template Cloning.
         const dayEl = getFullCalendarDayTemplate().cloneNode(true) as HTMLElement;
         
         dayEl.dataset.date = isoDate;
@@ -305,10 +364,11 @@ export function renderFullCalendar() {
         dayEl.setAttribute('aria-label', ariaDateFormatter.format(iteratorDate));
         dayEl.setAttribute('tabindex', isSelected ? '0' : '-1');
 
-        // Locate children in the cloned template (knowing the structure)
+        // Locate children in the cloned template structure (Fast access)
         const ringEl = dayEl.firstElementChild as HTMLElement; // .day-progress-ring
         const numberEl = ringEl.firstElementChild as HTMLElement; // .day-number
 
+        // CSS Variables update
         ringEl.style.setProperty('--completed-percent', `${completedPercent}%`);
         ringEl.style.setProperty('--snoozed-percent', `${snoozedPercent}%`);
         numberEl.textContent = String(day);
@@ -316,10 +376,11 @@ export function renderFullCalendar() {
         fragment.appendChild(dayEl);
         totalGridCells++;
         
-        // Advance mutable date by one day
+        // Muta o objeto date para a próxima iteração
         iteratorDate.setUTCDate(iteratorDate.getUTCDate() + 1);
     }
     
+    // Preenche células restantes do grid (mês seguinte)
     const remainingCells = (7 - (totalGridCells % 7)) % 7;
     for (let i = 1; i <= remainingCells; i++) {
         const day = i;

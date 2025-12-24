@@ -2,8 +2,23 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <!-- 
-    [NOTA COMPARATIVA]: Este arquivo serve como a fundação (App Shell) do sistema. Enquanto 'state.ts' e 'render.ts' gerenciam a complexidade lógica e visual, o 'index.html' demonstra engenharia sênior focada em Performance Percebida (Critical CSS inline, Preloads) e Acessibilidade (Semântica, Noscript).
-    [2025-03-12]: Otimização de limpeza - importmap removido pois o esbuild cuida do empacotamento das dependências.
+    [ARCHITECTURAL CONTEXT]:
+    @file index.html
+    @description App Shell e Caminho Crítico de Renderização (CRP).
+    
+    [MAIN THREAD CONTEXT]:
+    Este arquivo é o ponto de entrada visual. Ele deve renderizar o primeiro pixel (First Paint)
+    em < 100ms, independentemente do carregamento do JavaScript.
+    
+    ARQUITETURA (App Shell Model):
+    - Critical CSS Inlined: Estilos essenciais (fundo, loader) estão no HTML para evitar bloqueio de renderização.
+    - Resource Hinting: Uso de <link rel="preload"> para paralelizar o download do bundle.
+    - SVG Spriting: Definições de ícones centralizadas para reduzir o tamanho do DOM.
+    
+    DEPENDÊNCIAS CRÍTICAS:
+    - bundle.js / bundle.css: Artefatos gerados pelo build.js.
+    - OneSignal SDK: Dependência externa para Push Notifications.
+    - esm.sh (ImportMap): CDNs para bibliotecas pesadas carregadas sob demanda.
 -->
 <head>
 
@@ -12,7 +27,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Askesis</title>
     
-    <!-- Pré-carregamento de ativos críticos para LCP (Largest Contentful Paint) otimizado -->
+    <!-- PERFORMANCE: Resource Hints. Instruem o navegador a baixar assets críticos em alta prioridade 
+         antes mesmo de processar o restante do HTML/CSS. Essencial para LCP (Largest Contentful Paint). -->
     <link rel="preload" href="bundle.css" as="style">
     <link rel="preload" href="bundle.js" as="script">
 
@@ -32,7 +48,9 @@
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#000000">
     
-    <!-- CSS Crítico Inline: Renderiza o loader e o fundo imediatamente, antes do CSS externo carregar -->
+    <!-- PERFORMANCE: Critical CSS Inline. 
+         Renderiza o fundo e o loader IMEDIATAMENTE. Evita o "White Flash of Death" enquanto o bundle.css externo carrega. 
+         DO NOT REFACTOR: Mover isso para arquivo externo causará layout blocking. -->
     <style>
         html {
             background-color: #000000;
@@ -78,6 +96,8 @@
         });
       });
     </script>
+<!-- ARCHITECTURE: Import Map para dependências modernas (ESM).
+     Permite carregar bibliotecas externas (Analytics, AI) via CDN sem aumentar o tamanho do bundle inicial. -->
 <script type="importmap">
 {
   "imports": {
@@ -89,7 +109,9 @@
 </script>
 </head>
 <body>
-    <!-- SVG Defs: Definição centralizada de ícones comuns para reutilização via <use> -->
+    <!-- PERFORMANCE: SVG Sprite System (Defs).
+         Define ícones complexos uma única vez no DOM. As instâncias usam <use href="#id">, 
+         que é extremamente leve (Shadow DOM nativo) comparado a repetir o path SVG. -->
     <svg style="display: none;">
       <defs>
         <symbol id="icon-chevron-left" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -112,13 +134,15 @@
         </div>
     </noscript>
 
-    <!-- Indicador de carregamento inicial (Critical Rendering Path) -->
+    <!-- UX: Indicador de carregamento inicial (Critical Rendering Path) 
+         Visível imediatamente graças ao CSS inline no <head>. -->
     <div id="initial-loader-container">
         <div id="initial-loader" class="initial-loader">
             <svg width="48" height="48"><use href="#icon-spinner"></use></svg>
         </div>
     </div>
 
+    <!-- APP SHELL: Estrutura estática que será hidratada pelo JavaScript -->
     <div class="app-container">
         <header class="app-header">
             <div class="header-top">

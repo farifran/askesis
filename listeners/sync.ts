@@ -4,6 +4,26 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 
+/**
+ * @file listeners/sync.ts
+ * @description Controlador de Interface para Sincronização e Autenticação (Sync UI Controller).
+ * 
+ * [MAIN THREAD CONTEXT]:
+ * Este módulo gerencia a Máquina de Estados da UI de Sincronização (Views: Inactive, Entry, Active).
+ * 
+ * ARQUITETURA:
+ * - State Machine Pattern: A UI alterna entre estados discretos (`showView`) em vez de manipular
+ *   visibilidade de elementos individuais, prevenindo estados inconsistentes.
+ * - Transactional Key Swap: Ao inserir uma chave, o sistema entra em um estado "tentativo".
+ *   Se houver erro ou cancelamento, a chave anterior é restaurada (Rollback).
+ * - Optimistic UI Locking: Botões são desabilitados (`_toggleButtons`) durante operações de rede
+ *   para evitar submissões duplas ou condições de corrida.
+ * 
+ * DEPENDÊNCIAS CRÍTICAS:
+ * - `services/cloud.ts`: Orquestração de dados e criptografia.
+ * - `services/api.ts`: Gerenciamento seguro de chaves no LocalStorage.
+ */
+
 import { ui } from "../render/ui";
 import { t } from "../i18n";
 import { fetchStateFromCloud, setSyncStatus } from "../services/cloud";
@@ -14,6 +34,10 @@ import { storeKey, clearKey, hasLocalSyncKey, getSyncKey, isValidKeyFormat, init
 
 // --- Funções de UI ---
 
+/**
+ * View Controller: Gerencia a visibilidade das seções do painel de sincronização.
+ * PERFORMANCE: Manipulação direta de estilo (display) é mais eficiente que classes para toggle simples.
+ */
 function showView(view: 'inactive' | 'enterKey' | 'displayKey' | 'active') {
     const viewsMap = {
         inactive: ui.syncInactiveView,
@@ -22,6 +46,7 @@ function showView(view: 'inactive' | 'enterKey' | 'displayKey' | 'active') {
         active: ui.syncActiveView,
     };
 
+    // PERFORMANCE: Loop otimizado sobre chaves fixas.
     for (const key in viewsMap) {
         viewsMap[key as keyof typeof viewsMap].style.display = 'none';
     }
@@ -34,6 +59,10 @@ function showView(view: 'inactive' | 'enterKey' | 'displayKey' | 'active') {
     }
 }
 
+/**
+ * UX/SAFETY: Bloqueia a interface durante operações assíncronas.
+ * Previne condições de corrida onde o usuário clica duas vezes antes da rede responder.
+ */
 function _toggleButtons(buttons: HTMLButtonElement[], disabled: boolean) {
     buttons.forEach(btn => btn.disabled = disabled);
 }
@@ -45,6 +74,9 @@ async function handleEnableSync() {
     _toggleButtons(buttons, true);
 
     try {
+        // CRITICAL LOGIC: Setup Transacional.
+        // 1. Gera chave -> 2. Armazena Otimisticamente -> 3. Tenta Sync Inicial.
+        // Se o passo 3 falhar, o catch executa o Rollback (clearKey).
         const newKey = crypto.randomUUID();
         storeKey(newKey); // Armazena otimisticamente via api.ts
         ui.syncKeyText.textContent = newKey;
@@ -53,7 +85,7 @@ async function handleEnableSync() {
         await fetchStateFromCloud(); // Aciona a sincronização inicial
     } catch (e) {
         console.error("Failed initial sync on new key generation", e);
-        clearKey(); // Reverte em caso de falha
+        clearKey(); // Rollback: Reverte em caso de falha de rede/crypto
         showView('inactive');
         setSyncStatus('syncError');
     } finally {
@@ -61,6 +93,15 @@ async function handleEnableSync() {
     }
 }
 
+/**
+ * CRITICAL LOGIC: Tentative Key Processing.
+ * Esta função gerencia a troca de chaves. Ela deve lidar com segurança com:
+ * 1. Chaves inválidas.
+ * 2. Conflitos de dados (Cloud vs Local).
+ * 3. Cancelamento pelo usuário.
+ * 
+ * DO NOT REFACTOR: A lógica de swap/restore (`originalKey`) é essencial para evitar perda de acesso.
+ */
 async function _processKey(key: string) {
     const buttons = [ui.submitKeyBtn, ui.cancelEnterKeyBtn];
     _toggleButtons(buttons, true);
@@ -69,25 +110,27 @@ async function _processKey(key: string) {
     
     try {
         // Usa temporariamente a nova chave para buscar na nuvem
-        // Nota: fetchStateFromCloud usa getSyncKey, então precisamos armazenar temporariamente
+        // Nota: fetchStateFromCloud usa getSyncKey internamente, então precisamos armazenar temporariamente
         storeKey(key);
         
+        // PERFORMANCE: Network Request (Bloqueante para o fluxo, mas não para a thread pois é async)
         const cloudState = await fetchStateFromCloud();
 
         // Se houver conflito ou sucesso, mantemos a chave.
         // Mas para o fluxo de UI, se houver dados, perguntamos antes de sobrescrever.
         
-        // Reverte temporariamente para evitar efeitos colaterais se o usuário cancelar
+        // SAFETY: Reverte temporariamente para a chave original enquanto o usuário decide no modal.
+        // Isso evita que o app fique num estado "limbo" se o modal for fechado sem ação.
         if (originalKey) storeKey(originalKey); 
         else clearKey();
 
         if (cloudState) {
             showConfirmationModal(
                 t('confirmSyncOverwrite'),
-                () => { // onConfirm
-                    storeKey(key); // Persiste a nova chave
-                    loadState(cloudState);
-                    saveState();
+                async () => { // onConfirm
+                    storeKey(key); // Commit: Persiste a nova chave definitivamente
+                    await loadState(cloudState);
+                    await saveState(); // Garante persistência assíncrona no IDB
                     renderApp();
                     showView('active');
                 },
@@ -98,12 +141,12 @@ async function _processKey(key: string) {
                 }
             );
         } else {
-            // Nenhum estado na nuvem, sucesso.
+            // Nenhum estado na nuvem, assumimos que é uma chave nova válida ou vazia.
             storeKey(key);
             showView('active');
         }
     } catch (error) {
-        // Restaura a chave em caso de falha
+        // Rollback em caso de erro fatal
         if (originalKey) storeKey(originalKey);
         else clearKey();
 
@@ -111,9 +154,7 @@ async function _processKey(key: string) {
         setSyncStatus('syncError');
     } finally {
         // [2025-01-15] BUGFIX: Reabilitar botões incondicionalmente.
-        // Anteriormente, havia uma verificação se o modal estava visível. Se o usuário cancelasse
-        // o modal (clicando em Cancelar ou fora dele), a lógica do modal fechava-o,
-        // mas os botões da tela de 'enterKey' permaneciam desabilitados para sempre.
+        // Anteriormente, havia uma verificação se o modal estava visível.
         // Como o overlay do modal já impede cliques na interface de fundo, é seguro reabilitar aqui.
         _toggleButtons(buttons, false);
     }
@@ -123,6 +164,7 @@ function handleSubmitKey() {
     const key = ui.syncKeyInput.value.trim();
     if (!key) return;
 
+    // INPUT VALIDATION: Previne chamadas de API desnecessárias para chaves malformadas.
     if (!isValidKeyFormat(key)) {
         showConfirmationModal(
             t('confirmInvalidKeyBody'),
@@ -167,6 +209,7 @@ function handleCopyKey() {
     const key = ui.syncKeyText.textContent;
     if(key) {
         // [2025-01-15] ROBUSTNESS: Adicionado tratamento de erro para a API Clipboard.
+        // A API clipboard é assíncrona e pode falhar (ex: permissões, contexto não seguro).
         navigator.clipboard.writeText(key).then(() => {
             const originalText = ui.copyKeyBtn.innerHTML;
             ui.copyKeyBtn.innerHTML = '✓';
@@ -190,7 +233,7 @@ export async function initSync() {
         setSyncStatus('syncInitial');
     }
     
-    // Adiciona os listeners
+    // SETUP LISTENERS: Anexa eventos apenas uma vez na inicialização.
     ui.enableSyncBtn.addEventListener('click', handleEnableSync);
     ui.enterKeyViewBtn.addEventListener('click', () => showView('enterKey'));
     ui.cancelEnterKeyBtn.addEventListener('click', () => {

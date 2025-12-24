@@ -4,6 +4,28 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 
+/**
+ * @file listeners/drag.ts
+ * @description Motor de Física para Drag & Drop e Auto-Scroll.
+ * 
+ * [MAIN THREAD CONTEXT]:
+ * Este módulo gerencia a interação mais custosa da UI.
+ * Arrastar elementos causa recálculos de layout constantes se não for gerenciado corretamente.
+ * 
+ * ARQUITETURA (Read/Write Separation):
+ * - Event Loop (`dragover`): Realiza APENAS cálculos matemáticos (interseção, velocidade, posição).
+ *   NÃO manipula o DOM (leitura apenas).
+ * - Render Loop (`requestAnimationFrame`): Aplica as mudanças visuais (transform, classes, scroll).
+ *   Isso evita "Layout Thrashing" (ciclos de leitura/escrita forçados no mesmo frame).
+ * 
+ * OTIMIZAÇÕES CRÍTICAS:
+ * 1. Geometry Caching: As posições de todos os cartões são cacheadas no `dragstart`.
+ *    Durante o arrasto, usamos matemática pura em vez de `getBoundingClientRect()` (que força reflow).
+ * 2. GPU Composition: O indicador de drop usa `translate3d` para mover-se na camada do compositor.
+ * 3. Iterator Access: Usa `getLiveHabitCards` para iterar sobre referências em memória,
+ *    evitando `querySelectorAll` lento.
+ */
+
 import { ui } from '../render/ui';
 import { isCurrentlySwiping } from './swipe';
 import { handleHabitDrop, reorderHabit } from '../habitActions';
@@ -25,6 +47,8 @@ const SCROLL_ZONE_SIZE = 120;
 const MAX_SCROLL_SPEED = 15; // Aumentado levemente pois a curva quadrática é mais suave na média
 
 export function setupDragHandler(habitContainer: HTMLElement) {
+    // --- STATE VARIABLES (HOT PATH) ---
+    // Estas variáveis são acessadas centenas de vezes por segundo.
     let draggedElement: HTMLElement | null = null;
     let draggedHabitId: string | null = null;
     let draggedHabitOriginalTime: TimeOfDay | null = null;
@@ -34,7 +58,7 @@ export function setupDragHandler(habitContainer: HTMLElement) {
     
     let dropIndicator: HTMLElement | null = null;
     
-    // Render State Variables
+    // Render State Variables (Buffer entre Lógica e UI)
     let nextDropZoneTarget: HTMLElement | null = null;
     let currentRenderedDropZone: HTMLElement | null = null;
     
@@ -54,12 +78,16 @@ export function setupDragHandler(habitContainer: HTMLElement) {
     let cachedContainerRect: DOMRect | null = null;
 
     // PERFORMANCE [2025-03-12]: Geometry Cache for Habit Cards.
-    // Stores the initial positions of all cards to avoid calling `getBoundingClientRect`
-    // inside the hot `dragover` loop, preventing Layout Thrashing.
+    // Armazena as posições iniciais (Y) e alturas para evitar chamar `getBoundingClientRect`
+    // dentro do loop crítico `dragover`.
     // BUGFIX [2025-03-16]: Removed 'top' from cache because it becomes stale on scroll.
     // We only cache offset properties which are stable relative to the parent.
     const cardRectCache = new Map<string, { offsetTop: number, offsetHeight: number }>();
 
+    /**
+     * Snapshot geométrico do layout.
+     * Deve ser chamado apenas UMA VEZ no início do arrasto.
+     */
     function _captureGeometryCache() {
         cardRectCache.clear();
         
@@ -71,6 +99,7 @@ export function setupDragHandler(habitContainer: HTMLElement) {
         for (const card of liveCardsIterator) {
             // Ensure card is actually in the DOM (isConnected) before reading layout
             if (card.isConnected && card.dataset.habitId && card !== draggedElement) {
+                // Layout Read (Força Recalculo de Estilo se o DOM estiver sujo, mas fazemos isso apenas 1x)
                 cardRectCache.set(card.dataset.habitId, {
                     offsetTop: card.offsetTop,
                     offsetHeight: card.offsetHeight
@@ -79,12 +108,19 @@ export function setupDragHandler(habitContainer: HTMLElement) {
         }
     }
 
+    /**
+     * [MAIN THREAD] RENDER LOOP
+     * Executa a cada frame (~16ms). Responsável APENAS por escritas no DOM.
+     * Desacopla a física (cálculos) da pintura.
+     */
     function _animationLoop() {
+        // 1. Auto-Scroll (Write)
         if (scrollVelocity !== 0) {
             // Nota: O CSS 'scroll-behavior: auto' é forçado pela classe .is-dragging
             habitContainer.scrollBy(0, scrollVelocity);
         }
 
+        // 2. Drop Zone Highlighting (Write)
         if (nextDropZoneTarget !== currentRenderedDropZone) {
             if (currentRenderedDropZone) {
                 currentRenderedDropZone.classList.remove(CSS_CLASSES.DRAG_OVER, CSS_CLASSES.INVALID_DROP);
@@ -96,6 +132,7 @@ export function setupDragHandler(habitContainer: HTMLElement) {
             const shouldBeInvalid = !isDropValid;
             const shouldBeDragOver = isDropValid && currentRenderedDropZone.dataset.time !== draggedHabitOriginalTime;
 
+            // Dirty Checking para evitar manipulação de classe desnecessária
             if (currentRenderedDropZone.classList.contains(CSS_CLASSES.INVALID_DROP) !== shouldBeInvalid) {
                 currentRenderedDropZone.classList.toggle(CSS_CLASSES.INVALID_DROP, shouldBeInvalid);
             }
@@ -103,6 +140,7 @@ export function setupDragHandler(habitContainer: HTMLElement) {
                 currentRenderedDropZone.classList.toggle(CSS_CLASSES.DRAG_OVER, shouldBeDragOver);
             }
             
+            // DOM Manipulation: Move o indicador para a zona correta
             if (dropIndicator && dropIndicator.parentElement !== currentRenderedDropZone) {
                 currentRenderedDropZone.appendChild(dropIndicator);
                 // Reset transform when changing parents to avoid visual jumps before next frame
@@ -114,6 +152,7 @@ export function setupDragHandler(habitContainer: HTMLElement) {
              }
         }
 
+        // 3. Drop Indicator Positioning (Write)
         if (dropIndicator && currentRenderedDropZone) {
             if (isDropValid) {
                 if (!dropIndicator.classList.contains('visible')) {
@@ -154,6 +193,11 @@ export function setupDragHandler(habitContainer: HTMLElement) {
         scrollVelocity = 0;
     }
 
+    /**
+     * CRITICAL LOGIC: Physics Engine (Read-Only Phase).
+     * Calcula interseções, velocidade e posição do indicador.
+     * NÃO deve escrever no DOM.
+     */
     function _calculateDragState(e: DragEvent) {
         const target = e.target as HTMLElement;
         
@@ -176,12 +220,12 @@ export function setupDragHandler(habitContainer: HTMLElement) {
 
         let potentialVelocity = 0;
         
-        // --- 1. CALCULAR VELOCIDADE POTENCIAL ---
+        // --- 1. CALCULAR VELOCIDADE POTENCIAL (Curva Quadrática) ---
         if (clientY < topZoneEnd) {
             const distance = clientY - scrollContainerRect.top;
             let ratio = (SCROLL_ZONE_SIZE - distance) / SCROLL_ZONE_SIZE;
             ratio = Math.max(0, Math.min(1, ratio));
-            const intensity = ratio * ratio; 
+            const intensity = ratio * ratio; // Curva quadrática para suavidade
             potentialVelocity = -(intensity * MAX_SCROLL_SPEED);
             if (potentialVelocity > -1 && potentialVelocity < 0) potentialVelocity = -1;
 
@@ -216,7 +260,7 @@ export function setupDragHandler(habitContainer: HTMLElement) {
             }
         }
         
-        scrollVelocity = finalVelocity;
+        scrollVelocity = finalVelocity; // Atualiza estado para o loop de animação ler
 
         // --- 3. LÓGICA DE ZONA DE SOLTURA (DROP ZONE) ---
         if (!cachedScheduleForDay || !draggedHabitOriginalTime || !dropZone) {

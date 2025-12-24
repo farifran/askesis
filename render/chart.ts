@@ -4,6 +4,33 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 
+/**
+ * @file render/chart.ts
+ * @description Motor de Renderização de Gráficos SVG (Evolução de Hábitos).
+ * 
+ * [MAIN THREAD CONTEXT]:
+ * Este módulo roda na thread principal e manipula o DOM (SVG) diretamente.
+ * Deve manter 60fps durante interações (tooltip) e minimizar o tempo de bloqueio durante atualizações de dados.
+ * 
+ * ARQUITETURA (SVG & Geometry Caching):
+ * - **Responsabilidade Única:** Visualizar a consistência dos hábitos nos últimos 30 dias (Pontuação Composta).
+ * - **Zero Allocations (Render Loop):** Utiliza Object Pooling para os pontos de dados e Memoization 
+ *   para evitar recálculos matemáticos se os dados não mudaram.
+ * - **Lazy Layout:** Medições de geometria (getBoundingClientRect) são cacheadas e invalidadas apenas no resize,
+ *   evitando "Layout Thrashing" durante a interação do mouse.
+ * 
+ * DEPENDÊNCIAS CRÍTICAS:
+ * - `state.ts`: Fonte da verdade dos dados.
+ * - `selectors.ts`: Lógica de cálculo de estatísticas diárias.
+ * - `ui.ts`: Referências aos elementos SVG no DOM.
+ * 
+ * DECISÕES TÉCNICAS:
+ * 1. **SVG vs Canvas:** Optou-se por SVG para garantir nitidez em qualquer resolução (Retina) e acessibilidade,
+ *    já que a complexidade do gráfico (30 pontos) é baixa o suficiente para não gargalar o DOM.
+ * 2. **QuadTree Implícita:** A detecção de hover usa matemática simples (eixo X) baseada na geometria cacheada,
+ *    em vez de event listeners em cada ponto ou `document.elementFromPoint`.
+ */
+
 import { state, isChartDataDirty } from '../state';
 import { calculateDaySummary } from '../services/selectors';
 import { ui } from './ui';
@@ -13,8 +40,8 @@ import { addDays, getTodayUTCIso, parseUTCIsoDate, toUTCIsoDateString, getDateTi
 const CHART_DAYS = 30;
 const INITIAL_SCORE = 100;
 const MAX_DAILY_CHANGE_RATE = 0.015;
-// VISUAL FIX: Explicitly zero horizontal padding. Top/Bottom padding prevents vertical clipping of stroke.
-const CHART_PADDING = { top: 5, right: 0, bottom: 5, left: 0 };
+// VISUAL FIX [2025-03-22]: Padding horizontal de 3px para evitar corte da linha (stroke clipping) nas bordas.
+const CHART_PADDING = { top: 5, right: 3, bottom: 5, left: 3 };
 const FIXED_Y_AXIS_RANGE = 15;
 
 type ChartDataPoint = {
@@ -32,6 +59,7 @@ type ChartScales = {
 
 // --- OBJECT POOL (PERFORMANCE) ---
 // Pre-allocate objects once to avoid Garbage Collection pressure during high-frequency updates.
+// PERFORMANCE: Evita alocação de 30 objetos a cada renderização. O array é fixo e reciclado.
 const chartDataPool: ChartDataPoint[] = Array.from({ length: CHART_DAYS }, () => ({
     date: '',
     timestamp: 0,
@@ -45,11 +73,14 @@ let lastChartData: ChartDataPoint[] = [];
 let chartMetadata = { minVal: 0, maxVal: 100, valueRange: 100 };
 
 // Cache de geometria do gráfico (Evita Reflow no hot-path)
+// CRITICAL LOGIC: A leitura de geometria síncrona força o navegador a recalcular o layout.
+// Armazenamos isso para ler apenas quando necessário (resize/init).
 let cachedChartRect: DOMRect | null = null;
 // PERFORMANCE [2025-03-09]: Cache chart width to avoid measuring DOM on every data update
 let currentChartWidth = 0;
 
 // MEMOIZATION STATE [2025-03-18]: Tracks what was last painted to the DOM to avoid redundant work.
+// DO NOT REFACTOR: Garante que _updateChartDOM aborte cedo se a referência de dados e largura forem idênticas.
 let renderedDataRef: ChartDataPoint[] | null = null;
 let renderedWidth = 0;
 
@@ -76,6 +107,8 @@ function calculateChartData(): ChartDataPoint[] {
 
     let previousDayValue = INITIAL_SCORE;
 
+    // PERFORMANCE: Loop manual sobre o pool pré-alocado.
+    // Evita .map() que criaria novos arrays e objetos.
     for (let i = 0; i < CHART_DAYS; i++) {
         const currentDateISO = toUTCIsoDateString(iteratorDate);
         // OPTIMIZATION [2025-03-13]: Pass iteratorDate object to avoid re-parsing inside selectors.
@@ -126,11 +159,28 @@ function _calculateChartScales(chartData: ChartDataPoint[], chartWidthPx: number
         ui.chart.svg.setAttribute('viewBox', newViewBox);
     }
 
-    // LOGIC CHANGE: Implementa escala fixa para dar mais impacto visual às flutuações.
-    const minVal = INITIAL_SCORE - FIXED_Y_AXIS_RANGE;
-    const maxVal = INITIAL_SCORE + FIXED_Y_AXIS_RANGE;
-    const valueRange = maxVal - minVal;
+    // VISUAL FIX [2025-03-22]: Escala Dinâmica (Dynamic Scaling).
+    // Calcula os extremos dos dados para garantir que a linha nunca seja cortada verticalmente.
+    let dataMin = Infinity;
+    let dataMax = -Infinity;
+    
+    // Passada única para encontrar min/max
+    for (let i = 0; i < chartData.length; i++) {
+        const val = chartData[i].value;
+        if (val < dataMin) dataMin = val;
+        if (val > dataMax) dataMax = val;
+    }
 
+    // Começa com a escala fixa padrão (para consistência visual inicial)
+    let minVal = INITIAL_SCORE - FIXED_Y_AXIS_RANGE; // Ex: 85
+    let maxVal = INITIAL_SCORE + FIXED_Y_AXIS_RANGE; // Ex: 115
+
+    // Expande a escala se os dados ultrapassarem os limites (Buffer de 5 unidades)
+    if (dataMin < minVal) minVal = Math.floor(dataMin - 5);
+    if (dataMax > maxVal) maxVal = Math.ceil(dataMax + 5);
+
+    const valueRange = maxVal - minVal;
+    // Evita divisão por zero
     chartMetadata = { minVal, maxVal, valueRange: valueRange > 0 ? valueRange : 1 };
 
     const xScale = (index: number) => padding.left + (index / (chartData.length - 1)) * chartWidth;
@@ -159,6 +209,7 @@ function _updateAxisLabels(chartData: ChartDataPoint[]) {
     
     const showYear = firstYear !== lastYear || lastYear !== currentYear;
     
+    // PERFORMANCE: Cacheado internamente em `utils.ts`
     const axisFormatter = getDateTimeFormat(state.activeLanguageCode, { 
         month: 'short', 
         day: 'numeric', 
@@ -166,8 +217,16 @@ function _updateAxisLabels(chartData: ChartDataPoint[]) {
         year: showYear ? '2-digit' : undefined
     });
 
-    axisStart.textContent = axisFormatter.format(firstDateMs);
-    axisEnd.textContent = axisFormatter.format(lastDateMs);
+    // DOM WRITE: Batch updates
+    setTextContent(axisStart, axisFormatter.format(firstDateMs));
+    setTextContent(axisEnd, axisFormatter.format(lastDateMs));
+}
+
+// Helper para setTextContent local (para evitar importar do dom.ts se não necessário ou manter coerência)
+function setTextContent(element: HTMLElement, text: string) {
+    if (element.textContent !== text) {
+        element.textContent = text;
+    }
 }
 
 function _updateEvolutionIndicator(chartData: ChartDataPoint[], { xScale, yScale }: ChartScales, chartWidthPx: number) {
@@ -176,27 +235,28 @@ function _updateEvolutionIndicator(chartData: ChartDataPoint[], { xScale, yScale
     const referencePoint = chartData.find(d => d.scheduledCount > 0) || chartData[0];
     const evolution = ((lastPoint.value - referencePoint.value) / referencePoint.value) * 100;
     
-    evolutionIndicator.className = `chart-evolution-indicator ${evolution >= 0 ? 'positive' : 'negative'}`;
-    evolutionIndicator.textContent = `${evolution > 0 ? '+' : ''}${evolution.toFixed(1)}%`;
+    // DOM WRITE
+    const newClass = `chart-evolution-indicator ${evolution >= 0 ? 'positive' : 'negative'}`;
+    if (evolutionIndicator.className !== newClass) {
+        evolutionIndicator.className = newClass;
+    }
+    setTextContent(evolutionIndicator, `${evolution > 0 ? '+' : ''}${evolution.toFixed(1)}%`);
     
     const lastPointX = xScale(chartData.length - 1);
     evolutionIndicator.style.top = `${yScale(lastPoint.value)}px`;
     
-    // Adjust logic to account for zero padding
-    // With zero padding, lastPointX should be at wrapper width.
+    // Logic updated to use current padding
     let indicatorX = lastPointX + 10;
-    
-    // Use passed width instead of measuring DOM again
     const wrapperWidth = chartWidthPx;
     
-    // If it goes beyond the right edge (which it will if lastPointX is at edge), shift left
+    // Se o indicador ultrapassar a borda direita, move para a esquerda do ponto
     if (indicatorX + evolutionIndicator.offsetWidth > wrapperWidth) {
         indicatorX = lastPointX - evolutionIndicator.offsetWidth - 10;
     }
     
-    // Additional guard: ensure it doesn't go off-screen right
-    if (indicatorX > wrapperWidth - evolutionIndicator.offsetWidth) {
-         indicatorX = wrapperWidth - evolutionIndicator.offsetWidth;
+    // Proteção adicional para não sair da tela pela esquerda
+    if (indicatorX < 0) {
+         indicatorX = 0;
     }
 
     evolutionIndicator.style.left = `${indicatorX}px`;
@@ -226,7 +286,7 @@ function _updateChartDOM(chartData: ChartDataPoint[]) {
     // Safety fallback
     if (!svgWidth) svgWidth = 300;
 
-    // ADVANCED OPTIMIZATION [2025-03-18]: Render Memoization.
+    // ADVANCED OPTIMIZATION [2025-03-18]: Render Memoization (Pure Function Check).
     // If the data reference hasn't changed AND the width is the same as last render,
     // we can safely skip the expensive math and DOM updates.
     if (chartData === renderedDataRef && svgWidth === renderedWidth) {
@@ -260,6 +320,7 @@ function updateTooltipPosition() {
     if (lastChartData.length === 0 || !wrapper.isConnected) return;
 
     // LAZY LAYOUT: Only measure the DOM if cache is invalid/null.
+    // Isso evita forçar reflow em cada movimento do mouse.
     if (!cachedChartRect) {
         cachedChartRect = wrapper.getBoundingClientRect();
     }
@@ -270,7 +331,7 @@ function updateTooltipPosition() {
     const padding = CHART_PADDING;
     const chartWidth = svgWidth - padding.left - padding.right;
     
-    // Math optimization: Single calculation path
+    // Math optimization: Single calculation path (Projeção linear do mouse para o índice do array)
     const x = inputClientX - cachedChartRect.left;
     const index = Math.round((x - padding.left) / chartWidth * (lastChartData.length - 1));
     const pointIndex = Math.max(0, Math.min(lastChartData.length - 1, index));
@@ -286,6 +347,7 @@ function updateTooltipPosition() {
         const pointX = padding.left + (pointIndex / (lastChartData.length - 1)) * chartWidth;
         const pointY = padding.top + chartHeight - ((point.value - minVal) / valueRange) * chartHeight;
 
+        // DOM WRITES (Batching styles)
         indicator.style.opacity = '1';
         indicator.style.transform = `translateX(${pointX}px)`;
         const dot = indicator.querySelector<HTMLElement>('.chart-indicator-dot');
@@ -296,19 +358,21 @@ function updateTooltipPosition() {
             weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' 
         }).format(point.timestamp);
         
-        tooltipDate.textContent = formattedDate;
-        tooltipScoreLabel.textContent = t('chartTooltipScore') + ': ';
-        tooltipScoreValue.textContent = point.value.toFixed(2);
-        tooltipHabits.textContent = t('chartTooltipCompleted', { completed: point.completedCount, total: point.scheduledCount });
+        setTextContent(tooltipDate, formattedDate);
+        setTextContent(tooltipScoreLabel, t('chartTooltipScore') + ': ');
+        setTextContent(tooltipScoreValue, point.value.toFixed(2));
+        setTextContent(tooltipHabits, t('chartTooltipCompleted', { completed: point.completedCount, total: point.scheduledCount }));
 
         if (!tooltip.classList.contains('visible')) {
             tooltip.classList.add('visible');
         }
         
+        // Logic to keep tooltip onscreen
         let translateX = '-50%';
         if (pointX < 50) translateX = '0%';
         else if (pointX > svgWidth - 50) translateX = '-100%';
 
+        // GPU Composite Layer Transform
         tooltip.style.transform = `translate3d(calc(${pointX}px + ${translateX}), calc(${pointY - 20}px - 100%), 0)`;
     }
 }
@@ -318,6 +382,7 @@ function _setupChartListeners() {
     if (!wrapper || !tooltip || !indicator) return;
 
     // Handler de Input: Solicita o frame APENAS se um não estiver pendente
+    // Desacopla a frequência do mouse (125Hz+) da frequência de renderização (60Hz).
     const handlePointerMove = (e: PointerEvent) => {
         inputClientX = e.clientX;
         if (!rafId) {
@@ -343,6 +408,8 @@ function _setupChartListeners() {
 function _initObservers() {
     if (!ui.chartContainer) return;
 
+    // PERFORMANCE: IntersectionObserver.
+    // Pausa a renderização do gráfico se ele não estiver visível na viewport.
     if (!chartObserver) {
         chartObserver = new IntersectionObserver((entries) => {
             const entry = entries[0];
@@ -355,6 +422,8 @@ function _initObservers() {
         chartObserver.observe(ui.chartContainer);
     }
 
+    // PERFORMANCE: ResizeObserver.
+    // Detecta mudanças de tamanho do container para invalidar caches de geometria.
     if (!resizeObserver) {
         resizeObserver = new ResizeObserver(entries => {
             // OPTIMIZATION [2025-03-09]: Update width cache on resize.
@@ -374,9 +443,14 @@ export function initChartInteractions() {
     _initObservers();
 }
 
+/**
+ * Função pública de renderização do gráfico.
+ * Orquestra o cálculo de dados e a atualização do DOM.
+ */
 export function renderChart() {
     // FIX: Use isChartDataDirty() function to check if chart data needs recalculation. This function is designed to be called once per render cycle and consumes the dirty flag.
     if (isChartDataDirty() || lastChartData.some(d => d.date === '')) {
+        // Recalculate using Pool
         lastChartData = calculateChartData();
         // BUGFIX: Reset rendered index to force tooltip update even if mouse didn't move
         lastRenderedPointIndex = -1; 
@@ -389,6 +463,7 @@ export function renderChart() {
 
     if (ui.chart.title) {
         const newTitle = t('appName');
+        // Dirty Check Text
         if (ui.chart.title.innerHTML !== newTitle) {
             ui.chart.title.innerHTML = newTitle;
         }
@@ -417,12 +492,14 @@ export function renderChart() {
     if (isChartVisible) {
         _updateChartDOM(lastChartData);
         
+        // Se o tooltip estiver ativo, force uma atualização de posição
         if (ui.chart.tooltip && ui.chart.tooltip.classList.contains('visible')) {
             updateTooltipPosition();
         }
         
         isChartDirty = false;
     } else {
+        // Se invisível, marca como sujo para atualizar assim que ficar visível
         isChartDirty = true;
     }
 }

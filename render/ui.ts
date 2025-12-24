@@ -1,4 +1,35 @@
 
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+*/
+
+/**
+ * @file render/ui.ts
+ * @description Registro Central de Elementos do DOM (UI Registry / DOM Facade).
+ * 
+ * [MAIN THREAD CONTEXT]:
+ * Este arquivo atua como a única fonte de verdade para referências a elementos HTML.
+ * 
+ * ARQUITETURA (Lazy DOM Access & Memoization):
+ * - **Responsabilidade Única:** Mapear seletores CSS para propriedades tipadas do TypeScript.
+ * - **Lazy Loading:** Nenhum elemento é consultado (`querySelector`) na inicialização do módulo.
+ *   As consultas ocorrem apenas no primeiro acesso à propriedade (`ui.meuElemento`).
+ *   Isso reduz drasticamente o tempo de bloqueio da thread principal (TTI - Time to Interactive) durante o boot.
+ * - **Memoization:** Após o primeiro acesso, a referência é cacheada em memória (`uiCache`).
+ *   Acessos subsequentes são O(1).
+ * 
+ * DEPENDÊNCIAS CRÍTICAS:
+ * - `index.html`: Os seletores aqui definidos DEVEM existir no HTML. Se um ID mudar no HTML,
+ *   este arquivo deve ser atualizado ou a aplicação quebrará em runtime.
+ * 
+ * DECISÕES TÉCNICAS:
+ * 1. **Hybrid Query Strategy:** Detecta seletores simples de ID (`#id`) para usar `getElementById` (muito mais rápido)
+ *    em vez de `querySelector` (que exige parsing de CSS).
+ * 2. **Typed Interfaces:** Garante que o TypeScript saiba exatamente qual tipo de elemento é esperado (HTMLButtonElement, etc),
+ *    evitando casts repetitivos no código da aplicação.
+ */
+
 type UIElements = {
     appContainer: HTMLElement; // Cached reference
     calendarStrip: HTMLElement;
@@ -116,14 +147,19 @@ type UIElements = {
     }
 };
 
+// MEMORY: Objetos de cache simples para armazenar referências DOM resolvidas.
 const uiCache: Partial<UIElements> = {};
 const chartCache: Partial<UIElements['chart']> = {};
 
+/**
+ * Utilitário de consulta DOM otimizado.
+ * @param selector String seletora CSS.
+ */
 function queryElement<T extends Element = HTMLElement>(selector: string): T {
     // PERFORMANCE OPTIMIZATION [2025-03-16]: Hybrid Selector Strategy.
-    // 'getElementById' is essentially a hash map lookup (O(1)) and significantly faster
-    // than 'querySelector' which requires CSS selector parsing and tree traversal.
-    // We detect simple ID selectors to use the fast path, falling back for complex queries.
+    // 'getElementById' é essencialmente uma busca em hash map (O(1)) no navegador,
+    // significativamente mais rápida que 'querySelector' que requer parsing de seletor CSS e travessia de árvore.
+    // Detectamos seletores de ID simples para usar o caminho rápido (Fast Path).
     const isSimpleId = selector.startsWith('#') && !selector.includes(' ') && !selector.includes('.') && !selector.includes('[');
     
     const element = isSimpleId
@@ -131,11 +167,17 @@ function queryElement<T extends Element = HTMLElement>(selector: string): T {
         : document.querySelector<T>(selector);
 
     if (!element) {
+        // FAIL FAST: É melhor quebrar explicitamente aqui do que ter 'undefined' flutuando na aplicação.
         throw new Error(`UI element with selector "${selector}" not found in the DOM.`);
     }
     return element;
 }
 
+/**
+ * CRITICAL LOGIC: Factory de Getters Lazy.
+ * Cria uma propriedade que, ao ser acessada pela primeira vez, consulta o DOM e cacheia o resultado.
+ * DO NOT REFACTOR: Mudar para consulta "Eager" (imediata) degradará a performance de inicialização.
+ */
 function createLazyGetter<K extends keyof UIElements>(key: K, selector: string): Pick<UIElements, K> {
     return {
         get [key]() {
@@ -158,6 +200,10 @@ function createLazyChartGetter<K extends keyof UIElements['chart']>(key: K, sele
     } as Pick<UIElements['chart'], K>;
 }
 
+/**
+ * Singleton de Interface de Usuário.
+ * Exporta um objeto proxy onde cada propriedade dispara a consulta DOM sob demanda.
+ */
 export const ui: UIElements = {
     ...createLazyGetter('appContainer', '.app-container'),
     ...createLazyGetter('calendarStrip', '#calendar-strip'),

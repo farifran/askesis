@@ -3,12 +3,21 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// [2025-02-23]: Implementado "Cold Storage" (Arquivamento) para otimização de performance de longo prazo.
-// [2025-02-23]: Arquitetura Desacoplada. 'state.ts' não depende mais de 'cloud.ts'.
-// [2025-03-12]: Dados estáticos (PREDEFINED_HABITS) movidos para 'data/predefinedHabits.ts'.
-// [2025-03-12]: Lógica de persistência movida para 'services/persistence.ts'.
 
-import { addDays, getTodayUTC, getTodayUTCIso } from './utils';
+/**
+ * @file state.ts
+ * @description Definição do Estado Global e Estruturas de Dados (Single Source of Truth).
+ * 
+ * [MAIN THREAD CONTEXT]:
+ * Este módulo reside na thread principal e mantém o objeto de estado mutável.
+ * 
+ * ARQUITETURA (Mutable Singleton & Hierarchical Storage):
+ * - **Cold Storage Compression:** Suporte a arquivos comprimidos GZIP.
+ * - **Lazy Async Hydration:** Se um arquivo comprimido for solicitado, o sistema retorna um objeto vazio
+ *   enquanto dispara a descompressão em background, re-renderizando a UI quando pronto.
+ */
+
+import { addDays, getTodayUTC, getTodayUTCIso, decompressString } from './utils';
 
 // --- TYPES & INTERFACES ---
 export type HabitStatus = 'completed' | 'snoozed' | 'pending';
@@ -32,6 +41,7 @@ export interface HabitDailyInfo {
     dailySchedule?: TimeOfDay[]; // Override for habit.times for this day
 }
 
+// CRITICAL LOGIC: Time-Travel Structure.
 export interface HabitSchedule {
     startDate: string;
     endDate?: string;
@@ -55,6 +65,7 @@ export interface Habit {
     };
     createdOn: string;
     graduatedOn?: string;
+    // Histórico linear ordenado cronologicamente. O último item é o estado "atual".
     scheduleHistory: HabitSchedule[];
 }
 
@@ -73,10 +84,6 @@ export type PredefinedHabit = {
     isDefault?: boolean;
 };
 
-/**
- * Represents the data needed to create a new habit.
- * It can be a predefined habit (identified by nameKey) or a custom one (identified by name).
- */
 export type HabitTemplate = {
     icon: string;
     color: string;
@@ -101,8 +108,10 @@ export interface AppState {
     version: number;
     lastModified: number;
     habits: Habit[];
+    // PERFORMANCE: Hot Storage. Acesso direto O(1).
     dailyData: Record<string, Record<string, HabitDailyInfo>>; // HOT STORAGE (Last 90 days)
-    archives: Record<string, string>; // COLD STORAGE: Key="YYYY", Value=JSON String of dailyData. Optimized for parsing speed.
+    // PERFORMANCE: Cold Storage. GZIP Strings (Prefix: "GZIP:") or Legacy JSON Strings.
+    archives: Record<string, string>; 
     notificationsShown: string[];
     pending21DayHabitIds: string[];
     pendingConsolidationHabitIds: string[];
@@ -115,12 +124,10 @@ export interface AppState {
 
 
 // --- CONSTANTS ---
-export const STATE_STORAGE_KEY = 'habitTrackerState_v1';
-export const APP_VERSION = 6; // Increased version for scheduleHistory refactor
+export const APP_VERSION = 6; 
 export const DAYS_IN_CALENDAR = 61;
 export const STREAK_SEMI_CONSOLIDATED = 21;
 export const STREAK_CONSOLIDATED = 66;
-// CONSTANT [2025-02-23]: Limit for streak calculation lookback (2 years).
 export const STREAK_LOOKBACK_DAYS = 730;
 
 export const TIMES_OF_DAY = ['Morning', 'Afternoon', 'Evening'] as const;
@@ -153,18 +160,16 @@ export function getNextStatus(currentStatus: HabitStatus): HabitStatus {
 export const state: {
     habits: Habit[];
     dailyData: Record<string, Record<string, HabitDailyInfo>>; // HOT STORAGE (Last 90 days)
-    archives: Record<string, string>; // COLD STORAGE (JSON Strings)
-    // RUNTIME CACHE [2025-02-23]: Holds parsed archive data in memory to avoid repetitive JSON.parse.
-    // Key: Year (e.g., "2023"), Value: Parsed daily data map.
+    archives: Record<string, string>; // COLD STORAGE (GZIP/JSON Strings)
+    // RUNTIME CACHE [2025-02-23]: Holds parsed archive data in memory.
     unarchivedCache: Map<string, Record<string, Record<string, HabitDailyInfo>>>;
     
-    // PERFORMANCE [2025-03-15]: Nested Maps for O(1) access without string allocation overhead.
-    // Structure: Map<HabitID, Map<DateISO, Value>>
+    // PERFORMANCE [2025-03-15]: Nested Maps for O(1) access.
     streaksCache: Map<string, Map<string, number>>;
     habitAppearanceCache: Map<string, Map<string, boolean>>;
     scheduleCache: Map<string, Map<string, HabitSchedule | null>>;
     
-    // Flat caches (Key: DateISO)
+    // Flat caches
     activeHabitsCache: Map<string, Array<{ habit: Habit; schedule: TimeOfDay[] }>>;
     daySummaryCache: Map<string, any>;
     
@@ -179,11 +184,10 @@ export const state: {
     editingNoteFor: { habitId: string; date: string; time: TimeOfDay; } | null;
     editingHabit: {
         isNew: boolean;
-        habitId?: string; // For existing habits
-        originalData?: Habit; // For comparing changes
-        // A template-like object for the form
+        habitId?: string;
+        originalData?: Habit;
         formData: HabitTemplate;
-        targetDate: string; // [2025-02-04] Snapshot of the date being edited to prevent context drift
+        targetDate: string;
     } | null;
     aiState: 'idle' | 'loading' | 'completed' | 'error';
     hasSeenAIResult: boolean;
@@ -194,10 +198,9 @@ export const state: {
         year: number;
         month: number;
     };
-    // PERFORMANCE [2025-01-26]: Dirty flags para controle granular de renderização UI.
     uiDirtyState: {
-        calendarVisuals: boolean; // Verdadeiro se a seleção de data ou o intervalo de dias mudou.
-        habitListStructure: boolean; // Verdadeiro se a ordem, quantidade ou conteúdo textual dos hábitos mudou.
+        calendarVisuals: boolean;
+        habitListStructure: boolean;
         chartData: boolean;
     };
 } = {
@@ -210,8 +213,6 @@ export const state: {
     scheduleCache: new Map(),
     activeHabitsCache: new Map(),
     daySummaryCache: new Map(),
-    // LOGIC UPDATE [2025-02-05]: Calendar range centered on today (30 past + Today + 30 future).
-    // i=30 corresponds to Today (addDays(Today, 0)).
     calendarDates: Array.from({ length: DAYS_IN_CALENDAR }, (_, i) => addDays(getTodayUTC(), i - 30)),
     selectedDate: getTodayUTCIso(),
     activeLanguageCode: 'pt',
@@ -231,7 +232,6 @@ export const state: {
         year: new Date().getFullYear(),
         month: new Date().getMonth(),
     },
-    // PERFORMANCE: Inicializa como true para garantir a primeira renderização completa.
     uiDirtyState: {
         calendarVisuals: true,
         habitListStructure: true,
@@ -243,21 +243,15 @@ export const state: {
 export function isChartDataDirty(): boolean {
     const wasDirty = state.uiDirtyState.chartData;
     if (wasDirty) {
-        state.uiDirtyState.chartData = false; // Consome a flag
+        state.uiDirtyState.chartData = false;
     }
     return wasDirty;
 }
 
-// FIX: Add and export missing invalidateChartCache function to manage chart UI state.
 export function invalidateChartCache() {
     state.uiDirtyState.chartData = true;
 }
 
-/**
- * REFACTOR [2025-03-04]: Centralized AppState Snapshot.
- * Creates a clean, persistable object from the current runtime state.
- * Eliminates duplication across saveState, exportData, and cloud sync logic (DRY Principle).
- */
 export function getPersistableState(): AppState {
     return {
         version: APP_VERSION,
@@ -271,10 +265,6 @@ export function getPersistableState(): AppState {
     };
 }
 
-/**
- * REFACTOR [2025-03-05]: Invalidação de Cache Unificada.
- * Limpa todos os caches que dependem do histórico de agendamento.
- */
 export function clearScheduleCache() {
     state.scheduleCache.clear();
     state.activeHabitsCache.clear();
@@ -284,10 +274,6 @@ export function clearScheduleCache() {
     state.uiDirtyState.chartData = true;
 }
 
-/**
- * REFACTOR [2025-03-05]: Invalidação de Cache de Visão.
- * Limpa caches que afetam a visualização diária, mas não o histórico de agendamento.
- */
 export function clearActiveHabitsCache() {
     state.activeHabitsCache.clear();
     state.habitAppearanceCache.clear();
@@ -296,31 +282,24 @@ export function clearActiveHabitsCache() {
     state.uiDirtyState.chartData = true;
 }
 
-
-/**
- * DRY REFACTOR: Centralizes cache invalidation for daily data changes.
- */
 export function invalidateCachesForDateChange(dateISO: string, habitIds: string[]) {
     state.uiDirtyState.chartData = true;
     state.daySummaryCache.delete(dateISO);
     
     habitIds.forEach(id => {
-        // BUGFIX [2025-03-15]: Streak Integrity.
-        // Changing a past or present status can affect streak calculations for all future dates.
-        // We must invalidate the ENTIRE streak cache for this habit, not just the current day.
         state.streaksCache.delete(id);
     });
 }
 
-// GC OPTIMIZATION [2025-01-23]: Singleton empty object for daily info.
 const EMPTY_DAILY_INFO = Object.freeze({});
 
 /**
  * LAZY LOADING ACCESSOR [2025-02-23]:
- * Retrieves daily data for a specific date. 
- * 1. Checks HOT STORAGE (`dailyData`).
- * 2. If missing, checks if it exists in COLD STORAGE (`archives`).
- * 3. If in cold storage, lazy-parses the year chunk into memory cache (`unarchivedCache`).
+ * Recupera dados diários com suporte a GZIP Async.
+ * 
+ * CRITICAL LOGIC: Lazy Hydration.
+ * Se o arquivo estiver comprimido, esta função retorna um objeto vazio inicialmente,
+ * dispara a descompressão em background e atualiza a UI quando pronto.
  */
 export function getHabitDailyInfoForDate(date: string): Record<string, HabitDailyInfo> {
     // 1. Check Hot Storage (Fastest)
@@ -331,45 +310,72 @@ export function getHabitDailyInfoForDate(date: string): Record<string, HabitDail
     // 2. Check Archive
     const year = date.substring(0, 4);
     
-    // Check if we already unarchived this year in this session
+    // Warm Cache (Memory)
     if (state.unarchivedCache.has(year)) {
         const yearData = state.unarchivedCache.get(year)!;
         return yearData[date] || (EMPTY_DAILY_INFO as Record<string, HabitDailyInfo>);
     }
 
-    // Check if it exists in the raw archive strings
+    // Cold Storage Check
     if (state.archives[year]) {
-        try {
-            console.log(`Lazy loading archive for year ${year}...`);
-            const parsedYearData = JSON.parse(state.archives[year]) as Record<string, Record<string, HabitDailyInfo>>;
-            // Cache it in memory for subsequent accesses
-            state.unarchivedCache.set(year, parsedYearData);
-            return parsedYearData[date] || (EMPTY_DAILY_INFO as Record<string, HabitDailyInfo>);
-        } catch (e) {
-            console.error(`Error parsing archive for ${year}`, e);
+        const raw = state.archives[year];
+        
+        // NEW: GZIP Handling (Async Hydration)
+        if (raw.startsWith('GZIP:')) {
+            const pendingKey = `${year}_pending`;
+            
+            // Check Lock: Se já estamos descomprimindo, não inicia outra promessa.
+            if (!state.unarchivedCache.has(pendingKey)) {
+                // Set Lock
+                state.unarchivedCache.set(pendingKey, {});
+                
+                console.log(`Decompressing archive for year ${year} in background...`);
+                
+                // Fire and Forget (Async)
+                decompressString(raw.substring(5)).then(json => {
+                    try {
+                        const parsedYearData = JSON.parse(json);
+                        // Save to Cache
+                        state.unarchivedCache.set(year, parsedYearData);
+                        // Remove Lock
+                        state.unarchivedCache.delete(pendingKey);
+                        
+                        // Force Re-render to show data
+                        console.log(`Archive ${year} hydrated. Re-rendering.`);
+                        document.dispatchEvent(new CustomEvent('render-app'));
+                    } catch (e) {
+                        console.error(`Failed to decompress/parse archive ${year}`, e);
+                        state.unarchivedCache.delete(pendingKey);
+                    }
+                });
+            }
+            
+            // Return empty while loading
+            return (EMPTY_DAILY_INFO as Record<string, HabitDailyInfo>);
+        } 
+        else {
+            // Legacy JSON (Synchronous)
+            try {
+                // PERFORMANCE WARNING: JSON.parse on main thread for large files.
+                // Only happens for old archives not yet converted to GZIP.
+                const parsedYearData = JSON.parse(raw) as Record<string, Record<string, HabitDailyInfo>>;
+                state.unarchivedCache.set(year, parsedYearData);
+                return parsedYearData[date] || (EMPTY_DAILY_INFO as Record<string, HabitDailyInfo>);
+            } catch (e) {
+                console.error(`Error parsing legacy archive for ${year}`, e);
+            }
         }
     }
 
     return (EMPTY_DAILY_INFO as Record<string, HabitDailyInfo>);
 }
 
-/**
- * REATORAÇÃO [2024-10-04]: Nova função auxiliar para centralizar a criação do objeto HabitDailyInfo,
- * seguindo o mesmo padrão de ensureHabitInstanceData para consistência e robustez.
- * Garante que a estrutura de dados diários para um hábito exista e retorna uma referência direta a ela.
- */
 export function ensureHabitDailyInfo(date: string, habitId: string): HabitDailyInfo {
-    // If the data is archived, we must move it back to HOT storage to allow editing.
-    // getHabitDailyInfoForDate returns a reference, but if it came from archive cache, modifying it implies updating the cache but not the state.dailyData.
-    // For consistency, we "thaw" the day into dailyData.
-    
     if (!state.dailyData[date]) {
-        // Check if we have it in archives
         const archivedDay = getHabitDailyInfoForDate(date);
         
         if (archivedDay !== EMPTY_DAILY_INFO) {
             // Thaw: Copy from archive to hot storage
-            // MODERNIZATION [2025-03-08]: Use structuredClone instead of JSON.parse/stringify for better performance.
             state.dailyData[date] = structuredClone(archivedDay);
         } else {
             // New day
@@ -382,9 +388,7 @@ export function ensureHabitDailyInfo(date: string, habitId: string): HabitDailyI
 }
 
 export function ensureHabitInstanceData(date: string, habitId: string, time: TimeOfDay): HabitDayData {
-    // Ensure day exists in HOT storage
     ensureHabitDailyInfo(date, habitId);
-    
     state.dailyData[date][habitId].instances[time] ??= { status: 'pending' };
     return state.dailyData[date][habitId].instances[time]!;
 }

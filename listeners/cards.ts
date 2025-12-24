@@ -4,6 +4,27 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 
+/**
+ * @file listeners/cards.ts
+ * @description Controlador de Interação de Itens da Lista (Cartões de Hábito).
+ * 
+ * [MAIN THREAD CONTEXT]:
+ * Este módulo gerencia interações de alta frequência (cliques, teclado) dentro da lista virtualizada.
+ * 
+ * ARQUITETURA (Event Delegation):
+ * - Em vez de anexar N listeners (um para cada cartão/botão), anexa-se apenas 1 listener
+ *   no container pai (`ui.habitContainer`).
+ * - O evento "borbulha" (bubbles up) e é interceptado aqui.
+ * 
+ * DECISÕES TÉCNICAS:
+ * 1. Single-Pass Delegation: Usa um `INTERACTIVE_SELECTOR` unificado para identificar
+ *    o alvo da interação com uma única chamada de `closest()`, reduzindo reflows e verificações.
+ * 2. Inputs Efêmeros: O modo de edição de metas cria/destrói elementos DOM sob demanda
+ *    para não poluir a árvore DOM permanente com inputs ocultos.
+ * 3. Race-to-Idle: Em caso de sucesso na edição, pulamos a restauração do DOM antigo
+ *    porque o ciclo de renderização global (`renderApp`) irá sobrescrever tudo em breve.
+ */
+
 import { ui } from '../render/ui';
 import { state, Habit, TimeOfDay } from '../state';
 import { getCurrentGoalForInstance, getEffectiveScheduleForHabitOnDate } from '../services/selectors';
@@ -19,8 +40,9 @@ import { DOM_SELECTORS, CSS_CLASSES } from '../render/constants';
 
 const GOAL_STEP = 5;
 
-// Pre-computed selector for single-pass delegation
-// Matches any interactive element we care about within the habit container
+// PERFORMANCE: Pre-computed selector for single-pass delegation.
+// Combina todos os elementos interativos em uma única query string.
+// Isso permite verificar "o usuário clicou em ALGO relevante?" com uma única operação de DOM (O(1)).
 const INTERACTIVE_SELECTOR = `${DOM_SELECTORS.HABIT_CONTENT_WRAPPER}, ${DOM_SELECTORS.GOAL_CONTROL_BTN}, ${DOM_SELECTORS.GOAL_VALUE_WRAPPER}, ${DOM_SELECTORS.SWIPE_DELETE_BTN}, ${DOM_SELECTORS.SWIPE_NOTE_BTN}, ${DOM_SELECTORS.EMPTY_GROUP_PLACEHOLDER}`;
 
 function createGoalInput(habit: Habit, time: TimeOfDay, wrapper: HTMLElement) {
@@ -29,11 +51,13 @@ function createGoalInput(habit: Habit, time: TimeOfDay, wrapper: HTMLElement) {
     const originalContent = wrapper.innerHTML;
     const currentGoal = getCurrentGoalForInstance(habit, state.selectedDate, time);
     
+    // DOM MANIPULATION: Swap text for input directly.
     wrapper.innerHTML = `<input type="number" class="goal-input-inline" value="${currentGoal}" min="1" step="1" inputmode="numeric" pattern="[0-9]*" />`;
     const input = wrapper.querySelector('input')!;
     input.focus();
     input.select();
 
+    // MEMORY MANAGEMENT: Manual cleanup of temporary listeners to prevent leaks.
     const cleanupListeners = () => {
         input.removeEventListener('blur', onBlur);
         input.removeEventListener('keydown', onKeyDown);
@@ -49,15 +73,16 @@ function createGoalInput(habit: Habit, time: TimeOfDay, wrapper: HTMLElement) {
         
         if (!isNaN(newGoal) && newGoal > 0) {
             // PERFORMANCE [2025-03-16]: Skip restoreOriginalContent().
-            // setGoalOverride triggers a full app render which will update this wrapper's HTML 
-            // with the new value immediately. Restoring old content first causes 
-            // Layout Thrashing (Write -> Read -> Write).
+            // CRITICAL ARCHITECTURE: Otimização de "Race-to-Idle".
+            // A função setGoalOverride dispara um renderApp() completo via Event Bus.
+            // Não restauramos o conteúdo antigo aqui para evitar "Layout Thrashing" (Write -> Read -> Write).
+            // Deixamos o motor de renderização reconstruir o estado correto no próximo frame.
             cleanupListeners();
             
             setGoalOverride(habit.id, state.selectedDate, time, newGoal);
             triggerHaptic('success');
 
-            // Reuse 'wrapper' reference directly
+            // Reuse 'wrapper' reference directly for simple feedback animation
             requestAnimationFrame(() => {
                 wrapper.classList.add('increase');
                 wrapper.addEventListener('animationend', () => wrapper.classList.remove('increase'), { once: true });
@@ -69,7 +94,7 @@ function createGoalInput(habit: Habit, time: TimeOfDay, wrapper: HTMLElement) {
             const content = card?.querySelector<HTMLElement>(DOM_SELECTORS.HABIT_CONTENT_WRAPPER);
             content?.focus();
         } else {
-            // Invalid input: restore previous state
+            // Invalid input: restore previous state immediately
             restoreOriginalContent();
         }
     };
@@ -78,7 +103,7 @@ function createGoalInput(habit: Habit, time: TimeOfDay, wrapper: HTMLElement) {
     const onKeyDown = (e: KeyboardEvent) => {
         if (e.key === 'Enter') {
             e.preventDefault();
-            input.blur(); 
+            input.blur(); // Triggers onBlur -> save
         } else if (e.key === 'Escape') {
             restoreOriginalContent();
             // A11Y: Restore focus on cancel
@@ -93,6 +118,8 @@ function createGoalInput(habit: Habit, time: TimeOfDay, wrapper: HTMLElement) {
 }
 
 export function setupCardListeners() {
+    // A11Y: Keyboard Navigation Logic
+    // Permite interagir com cartões complexos (Swipe simulado) usando apenas teclado.
     ui.habitContainer.addEventListener('keydown', e => {
         const card = (e.target as HTMLElement).closest(DOM_SELECTORS.HABIT_CARD);
         if (!card) return;
@@ -121,6 +148,8 @@ export function setupCardListeners() {
         }
     });
 
+    // PERFORMANCE: Centralized Click Handler (Event Delegation).
+    // Gerencia TODOS os cliques dentro da lista de hábitos.
     ui.habitContainer.addEventListener('click', e => {
         const target = e.target as HTMLElement;
 
@@ -132,7 +161,7 @@ export function setupCardListeners() {
         
         if (!interactiveElement) return;
 
-        // --- PLACEHOLDER ---
+        // --- PLACEHOLDER (Caso Especial: Não tem cartão pai) ---
         if (interactiveElement.classList.contains(CSS_CLASSES.EMPTY_GROUP_PLACEHOLDER)) {
             triggerHaptic('light');
             renderExploreHabits();
@@ -141,6 +170,7 @@ export function setupCardListeners() {
         }
 
         // All other interactions require a habit card context
+        // Busca o elemento pai 'habit-card' para obter IDs e contexto.
         const card = interactiveElement.closest<HTMLElement>(DOM_SELECTORS.HABIT_CARD);
         if (!card) return;
 
@@ -148,7 +178,7 @@ export function setupCardListeners() {
         const time = card.dataset.time as TimeOfDay | undefined;
         if (!habitId || !time) return;
 
-        // --- SWIPE ACTIONS ---
+        // --- SWIPE ACTIONS (Camada Inferior) ---
         if (interactiveElement.classList.contains(CSS_CLASSES.SWIPE_DELETE_BTN)) {
             triggerHaptic('medium');
             
@@ -157,6 +187,7 @@ export function setupCardListeners() {
 
             const currentScheduleTimes = getEffectiveScheduleForHabitOnDate(habit, state.selectedDate);
 
+            // UX Logic: Se for o único horário do dia, sugere encerrar o hábito.
             if (currentScheduleTimes.length <= 1) {
                 requestHabitEndingFromModal(habitId);
             } else {
@@ -171,9 +202,9 @@ export function setupCardListeners() {
             return;
         }
 
-        // --- GOAL CONTROLS ---
+        // --- GOAL CONTROLS (+/-) ---
         if (interactiveElement.classList.contains(CSS_CLASSES.GOAL_CONTROL_BTN)) {
-            e.stopPropagation(); 
+            e.stopPropagation(); // Impede que o clique propague e marque o hábito como feito
             
             const habit = state.habits.find(h => h.id === habitId);
             if (!habit || (habit.goal.type !== 'pages' && habit.goal.type !== 'minutes')) return;
@@ -204,6 +235,7 @@ export function setupCardListeners() {
             return;
         }
 
+        // --- GOAL VALUE (Edit Mode) ---
         if (interactiveElement.classList.contains(CSS_CLASSES.GOAL_VALUE_WRAPPER)) {
             e.stopPropagation();
             triggerHaptic('light');
@@ -214,8 +246,9 @@ export function setupCardListeners() {
             return;
         }
 
-        // --- MAIN CARD CONTENT ---
+        // --- MAIN CARD CONTENT (Toggle Status) ---
         if (interactiveElement.classList.contains(CSS_CLASSES.HABIT_CONTENT_WRAPPER)) {
+            // Se o cartão estiver "aberto" (swipe active), o clique apenas fecha.
             const isOpen = card.classList.contains(CSS_CLASSES.IS_OPEN_LEFT) || card.classList.contains(CSS_CLASSES.IS_OPEN_RIGHT);
             
             if (isOpen) {

@@ -10,6 +10,7 @@
  * 
  * [MAIN THREAD CONTEXT]:
  * Este módulo roda na thread principal e orquestra mutações de estado seguidas de atualizações de UI.
+ * O foco é manter a responsividade da UI (60fps), delegando tarefas pesadas.
  * 
  * ARQUITETURA (MVC Controller):
  * - Responsabilidade Única: Receber intenções do usuário (via listeners), validar regras de negócio,
@@ -18,15 +19,15 @@
  * 
  * DEPENDÊNCIAS CRÍTICAS:
  * - `state.ts`: A estrutura de dados mutável. Alterações aqui propagam para todo o sistema.
- * - `services/persistence`: Garante a durabilidade dos dados (LocalStorage).
- * - `services/selectors`: Leitura otimizada do estado.
+ * - `services/persistence.ts`: Garante a durabilidade dos dados (LocalStorage).
+ * - `services/selectors.ts`: Leitura otimizada do estado.
  * 
  * DECISÕES TÉCNICAS:
  * 1. Mutabilidade Controlada: O estado é mutado diretamente para performance (evitando clonagem profunda de objetos complexos),
  *    mas a consistência é garantida via funções de finalização (`_finalizeScheduleUpdate`) que invalidam caches.
  * 2. Lógica Temporal: Funções como `_requestFutureScheduleChange` implementam "Time-Travel", permitindo
  *    que hábitos mudem de propriedades no tempo sem perder o histórico passado.
- * 3. Batch Updates: Agrupa invalidações de cache para evitar Layout Thrashing.
+ * 3. Batch Updates: Agrupa invalidações de cache para evitar Layout Thrashing (recalculos de layout desnecessários).
  */
 
 // ... (imports remain the same)
@@ -58,16 +59,15 @@ import {
     parseUTCIsoDate,
     triggerHaptic,
     getSafeDate,
-    getDateTimeFormat
+    getDateTimeFormat,
+    decompressString
 } from './utils';
 import { 
     closeModal, 
-    openModal, 
     showConfirmationModal, 
     openEditModal, 
     renderAINotificationState,
-    clearHabitDomCache,
-    setupManageModal
+    clearHabitDomCache
 } from './render';
 import { ui } from './render/ui';
 import { t, getHabitDisplayInfo, getTimeOfDayName } from './i18n';
@@ -95,7 +95,9 @@ function _finalizeScheduleUpdate(affectsHistory: boolean = true) {
     state.uiDirtyState.habitListStructure = true;
     state.uiDirtyState.calendarVisuals = true;
     
-    // IO Assíncrono (LocalStorage)
+    // IO Assíncrono (IndexedDB)
+    // FIRE-AND-FORGET: Não esperamos a Promise aqui para manter a UI responsiva.
+    // O saveState trata erros internamente.
     saveState();
     
     // Event Bus para notificar componentes desacoplados
@@ -453,7 +455,7 @@ export function requestHabitPermanentDeletion(habitId: string) {
 
     showConfirmationModal(
         t('confirmPermanentDelete', { habitName: name }),
-        () => {
+        async () => { // Async callback to handle GZIP decompression
             // 1. Remove from Metadata
             state.habits = state.habits.filter(h => h.id !== habitId);
             
@@ -481,7 +483,16 @@ export function requestHabitPermanentDeletion(habitId: string) {
                         yearData = state.unarchivedCache.get(year);
                         isFromCache = true;
                     } else {
-                        yearData = JSON.parse(state.archives[year]);
+                        // BUGFIX [2025-03-22]: Handle GZIP compressed archives
+                        const raw = state.archives[year];
+                        if (raw.startsWith('GZIP:')) {
+                            // Decompress on Main Thread using stream util (Async)
+                            const json = await decompressString(raw.substring(5));
+                            yearData = JSON.parse(json);
+                        } else {
+                            // Legacy JSON
+                            yearData = JSON.parse(raw);
+                        }
                     }
 
                     let yearWasModified = false;
@@ -503,6 +514,8 @@ export function requestHabitPermanentDeletion(habitId: string) {
                             delete state.archives[year];
                             state.unarchivedCache.delete(year); // Clean empty cache entry
                         } else {
+                            // Re-save as Plain JSON for simplicity on Main Thread.
+                            // The Worker will re-compress it later during hygiene/sync if needed.
                             state.archives[year] = JSON.stringify(yearData);
                             // Update Warm Cache in-place if it existed
                             if (isFromCache) {
@@ -545,7 +558,7 @@ export function graduateHabit(habitId: string) {
     triggerHaptic('success');
 }
 
-export function resetApplicationData() {
+export async function resetApplicationData() {
     state.habits = [];
     state.dailyData = {};
     state.archives = {};
@@ -553,7 +566,8 @@ export function resetApplicationData() {
     state.pending21DayHabitIds = [];
     state.pendingConsolidationHabitIds = [];
     
-    clearLocalPersistence();
+    // Aguarda a limpeza do banco antes de recarregar
+    await clearLocalPersistence();
     clearKey();
     
     location.reload();
@@ -592,8 +606,18 @@ export async function performAIAnalysis(analysisType: 'monthly' | 'quarterly' | 
     closeModal(ui.aiOptionsModal);
 
     try {
+        // BUGFIX [2025-03-22]: Seleção dinâmica da chave de tradução baseada no tipo de análise.
+        // Anteriormente, o código buscava 'aiPromptTemplate' (inexistente) para todos os casos.
+        // Agora mapeamos corretamente para os prompts específicos definidos nos JSONs.
+        let promptTemplateKey = 'aiPromptGeneral'; // Fallback para 'historical'
+        if (analysisType === 'monthly') {
+            promptTemplateKey = 'aiPromptMonthly';
+        } else if (analysisType === 'quarterly') {
+            promptTemplateKey = 'aiPromptQuarterly';
+        }
+
         const translations: any = {
-            promptTemplate: t('aiPromptTemplate'),
+            promptTemplate: t(promptTemplateKey),
             aiPromptGraduatedSection: t('aiPromptGraduatedSection'),
             aiPromptNoData: t('aiPromptNoData'),
             aiPromptNone: t('aiPromptNone'),
@@ -662,8 +686,8 @@ export function importData() {
             const text = await file.text();
             const data = JSON.parse(text);
             if (data.habits && data.version) {
-                loadState(data);
-                saveState();
+                await loadState(data);
+                await saveState(); // Async IDB save
                 document.dispatchEvent(new CustomEvent('render-app'));
                 document.dispatchEvent(new CustomEvent('habitsChanged'));
                 
@@ -789,4 +813,29 @@ export function markAllHabitsForDate(dateISO: string, status: HabitStatus): bool
         document.dispatchEvent(new CustomEvent('habitsChanged'));
     }
     return changed;
+}
+
+/**
+ * Lida com a transição automática da meia-noite.
+ * Chamado quando o evento 'dayChanged' é disparado pelo Midnight Loop.
+ */
+export function handleDayTransition() {
+    const newToday = getTodayUTCIso(); // Isso revalidará e pegará a nova data
+    
+    // Limpa caches que dependem da noção de "Hoje"
+    clearActiveHabitsCache();
+    state.uiDirtyState.calendarVisuals = true;
+    state.uiDirtyState.habitListStructure = true;
+    state.uiDirtyState.chartData = true;
+    
+    // Força reconstrução do array de datas do calendário para centralizar no novo dia
+    state.calendarDates = [];
+
+    // Se o usuário estava vendo "Hoje" (que agora é "Ontem"), atualiza para o novo "Hoje".
+    // Isso é o comportamento padrão esperado de um app "vivo".
+    if (state.selectedDate !== newToday) {
+        state.selectedDate = newToday;
+    }
+
+    document.dispatchEvent(new CustomEvent('render-app'));
 }

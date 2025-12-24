@@ -1,6 +1,6 @@
 
 {
-    "_comment": "[ANALYSIS PROGRESS]: 100% - Dead key cleanup performed [2025-01-16].",
+    "_comment": "[ANALYSIS PROGRESS]: 100% - Dead key cleanup performed [2025-03-22].",
     "aiCelebration21Day": {
         "one": "### Congratulations! 🎉\n\nYou've maintained the habit **{habitNames}** for 21 consecutive days! This is a crucial milestone for making an action automatic. Keep up the great work!",
         "other": "### Congratulations! 🎉\n\nYou've maintained the habits **{habitNames}** for 21 consecutive days! This is a crucial milestone for making an action automatic. Keep up the great work!"
@@ -9,10 +9,7 @@
         "one": "### Incredible Achievement! 🏆\n\nYou've reached 66 days with the habit **{habitNames}**! Science suggests this is the point where a new behavior becomes truly ingrained. You've built a solid foundation for lasting change.",
         "other": "### Incredible Achievement! 🏆\n\nYou've reached 66 days with the habits **{habitNames}**! Science suggests this is the point where a new behavior becomes truly ingrained. You've built a solid foundation for lasting change."
     },
-    "aiError": "Error analyzing data.",
     "aiErrorGeneric": "An error occurred while communicating with the AI. Please try again later.",
-    "aiErrorPrefix": "AI Error",
-    "aiErrorUnknown": "An unknown error occurred.",
     "aiEval_ariaLabel": "AI Evaluation",
     "aiOptionHistoricalDesc": "A complete overview of your entire journey.",
     "aiOptionHistoricalTitle": "Historical Analysis",
@@ -29,7 +26,7 @@
     "aiPromptMonthly": "Perform a performance review of the last month (30 days). Your feedback MUST focus on: 1. A reflection on overall consistency and observed trends. 2. Identifying which habit was the biggest challenge and why. 3. Providing ONE actionable suggestion to improve consistency for the next month.\n\nData:\n- Active Habits: {activeHabitList}\n{graduatedHabitsSection}- Last 30-Day History:\n{history}",
     "aiPromptNoData": "No data.",
     "aiPromptNone": "None",
-    "aiPromptWeekly": "Your analysis should be global, looking for patterns in the last 7 days. Your feedback MUST be: 1. A concise Stoic reflection (1-2 sentences) on the overall pattern. 2. ONE single, deep, actionable suggestion as a list item to strengthen virtue and discipline.\n\nData:\n- Active Habits: {activeHabitList}\n{graduatedHabitsSection}- Last 7-Day History:\n{history}",
+    "aiPromptQuarterly": "Perform a quarterly review (90 days). Your feedback MUST focus on: 1. Long-term trends and consistency over the last 3 months. 2. Identifying habits that have consolidated or weakened in this period. 3. Providing a Stoic strategy for maintaining discipline in the next quarter.\n\nData:\n- Active Habits: {activeHabitList}\n{graduatedHabitsSection}- Last 90-Day History:\n{history}",
     "aiSystemInstruction": "You are a Stoic Sage, a habit mentor who values consistency over perfection and focus on what we can control (our actions). Your response MUST be in {languageName}. Use markdown. The habit history uses these symbols: ✅ for Completed, ⚪️ for Pending, and ➡️ for Snoozed.",
     "appName": "<strong>A</strong>skes<strong>I</strong>s",
     "appSubtitle": "Act until you become, you are the sum of your habits.",
@@ -37,8 +34,6 @@
     "aria_edit": "Edit {habitName}",
     "aria_end": "End {habitName}",
     "aria_graduate": "Graduate Habit {habitName}",
-    "btnRemoveHabit": "Delete Habit",
-    "btnRemoveTimeOnly": "Remove {time}",
     "buttonDelete": "Delete",
     "buttonEnd": "End",
     "buttonFromNowOn": "From Now On",
@@ -105,7 +100,6 @@
     "modalAITitle": "AI Evaluation",
     "modalColorPickerTitle": "Select Color",
     "modalConfirmTitle": "Confirm Action",
-    "modalDeleteHabitTitle": "Delete Permanently",
     "modalEditFormNameLabel": "Name",
     "modalEditFormNotice": "Please give the habit a name and select at least one time of day.",
     "modalEditNewTitle": "Add New Habit",

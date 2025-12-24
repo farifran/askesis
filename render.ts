@@ -3,6 +3,26 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
+
+/**
+ * @file render.ts
+ * @description Orquestrador de Renderização (View Orchestrator / Facade).
+ * 
+ * [MAIN THREAD CONTEXT]:
+ * Este módulo atua como o ponto central de despacho para atualizações visuais.
+ * 
+ * ARQUITETURA (Facade Pattern):
+ * - Centraliza a API de renderização pública, escondendo a complexidade dos sub-módulos (`render/*`).
+ * - Implementa estratégias de "Local Dirty Checking" para componentes globais (Header, Title)
+ *   que não possuem gerenciamento de estado próprio.
+ * 
+ * DECISÕES TÉCNICAS:
+ * 1. Code Splitting / Lazy Loading: O módulo de citações (`data/quotes.ts`) é carregado sob demanda
+ *    apenas quando necessário, reduzindo o tamanho do bundle inicial (Critical Rendering Path).
+ * 2. Renderização Condicional: Funções como `_updateHeaderTitle` verificam caches locais antes de tocar no DOM.
+ * 3. Atomicidade Visual: `renderApp` garante que a atualização da UI pareça instantânea e coordenada.
+ */
+
 // Delega a lógica complexa para módulos especializados em 'render/'.
 
 import { state, LANGUAGES } from './state';
@@ -26,20 +46,20 @@ export * from './render/modals';
 
 // --- HELPERS ---
 
-// OTIMIZAÇÃO: Estado local para evitar re-renderização do título sem necessidade
+// OTIMIZAÇÃO: Estado local para evitar re-renderização do título sem necessidade (Local Dirty Checking).
 let _lastTitleDate: string | null = null;
 let _lastTitleLang: string | null = null;
 
-// OTIMIZAÇÃO: Estado local para evitar re-renderização da citação sem necessidade
+// OTIMIZAÇÃO: Estado local para evitar re-renderização da citação sem necessidade.
 let _lastQuoteDate: string | null = null;
 let _lastQuoteLang: string | null = null;
 
-// PERFORMANCE: Cache para o módulo de citações carregado dinamicamente
+// PERFORMANCE: Cache para o módulo de citações carregado dinamicamente.
 let stoicQuotesModule: { STOIC_QUOTES: Quote[] } | null = null;
 
 
 function _updateHeaderTitle() {
-    // Check if update is needed
+    // PERFORMANCE: Bypass se os dados não mudaram. Evita Layout Thrashing no cabeçalho.
     if (_lastTitleDate === state.selectedDate && _lastTitleLang === state.activeLanguageCode) {
         return;
     }
@@ -77,6 +97,7 @@ function _updateHeaderTitle() {
             timeZone: 'UTC'
         }).format(date);
     }
+    // DOM WRITE: Atualiza apenas se necessário (implícito no setTextContent)
     setTextContent(ui.headerTitleDesktop, desktopTitle);
     setTextContent(ui.headerTitleMobile, mobileTitle);
     
@@ -92,6 +113,7 @@ function _updateHeaderTitle() {
 }
 
 function _renderHeaderIcons() {
+    // Lazy render de ícones estáticos para evitar bloquear o FCP (First Contentful Paint)
     if (!ui.manageHabitsBtn.innerHTML) {
         ui.manageHabitsBtn.innerHTML = UI_ICONS.settings;
     }
@@ -104,7 +126,11 @@ function _renderHeaderIcons() {
 
 // --- ORQUESTRAÇÃO GLOBAL ---
 
-// FIX: Added missing renderApp function to orchestrate all UI updates.
+/**
+ * [MAIN THREAD] Frame Orchestrator.
+ * Esta função é chamada sempre que o estado muda significativamente.
+ * Ela coordena a atualização de todos os componentes visuais.
+ */
 export function renderApp() {
     _renderHeaderIcons();
     _updateHeaderTitle();
@@ -117,8 +143,8 @@ export function renderApp() {
 
 // FIX: Added missing updateNotificationUI function.
 export function updateNotificationUI() {
-    // Se o botão foi desativado por uma ação do usuário (mudança pendente), não altere seu estado.
-    // Isso preserva a mensagem "precisa reiniciar" até que o app seja recarregado.
+    // UX/LOGIC LOCK: Se o botão foi desativado por uma ação pendente, mantemos o estado visual
+    // para comunicar que uma reinicialização é necessária.
     const isPendingChange = ui.notificationToggle.disabled && !ui.notificationToggleLabel.classList.contains('disabled');
     if (isPendingChange) {
         // BUGFIX DE TRADUÇÃO: A mensagem de "pendente" precisa ser re-traduzida se o idioma mudar.
@@ -160,16 +186,23 @@ export function renderAINotificationState() {
     const hasCelebrations = state.pending21DayHabitIds.length > 0 || state.pendingConsolidationHabitIds.length > 0;
     const hasUnseenResult = (state.aiState === 'completed' || state.aiState === 'error') && !state.hasSeenAIResult;
 
+    // DOM WRITE: Batch class updates
     ui.aiEvalBtn.classList.toggle('loading', isLoading);
     ui.aiEvalBtn.disabled = isLoading || isOffline;
     ui.aiEvalBtn.classList.toggle('has-notification', hasCelebrations || hasUnseenResult);
 }
 
+/**
+ * Renderiza uma citação estoica pseudo-aleatória baseada na data.
+ * PERFORMANCE: Carrega o banco de dados de citações (pesado) via Code Splitting.
+ */
 export async function renderStoicQuote() {
     if (_lastQuoteDate === state.selectedDate && _lastQuoteLang === state.activeLanguageCode) {
         return;
     }
 
+    // PERFORMANCE: Lazy Loading Module.
+    // O array de citações é grande e texto puro. Não deve bloquear o carregamento inicial.
     if (!stoicQuotesModule) {
         try {
             stoicQuotesModule = await import('./data/quotes');
@@ -181,6 +214,9 @@ export async function renderStoicQuote() {
     const { STOIC_QUOTES } = stoicQuotesModule;
 
     const date = parseUTCIsoDate(state.selectedDate);
+    
+    // CRITICAL LOGIC: Deterministic Randomness.
+    // Garante que a mesma citação apareça para a mesma data, independente de reloads.
     const startOfYear = new Date(date.getUTCFullYear(), 0, 0);
     const diff = date.getTime() - startOfYear.getTime();
     const oneDay = 1000 * 60 * 60 * 24;
@@ -201,6 +237,7 @@ export async function renderStoicQuote() {
     _lastQuoteDate = state.selectedDate;
     _lastQuoteLang = state.activeLanguageCode;
 
+    // UX: Evita "piscar" se o texto já for o correto e estiver visível.
     if (ui.stoicQuoteDisplay.textContent === fullText && ui.stoicQuoteDisplay.classList.contains('visible')) {
         return;
     }
@@ -211,6 +248,7 @@ export async function renderStoicQuote() {
          return;
     }
 
+    // UX: Fade-out / Fade-in transition
     ui.stoicQuoteDisplay.classList.remove('visible');
     
     setTimeout(() => {

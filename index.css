@@ -1,5 +1,29 @@
 
 /* 
+ * [ARCHITECTURAL CONTEXT]:
+ * @file index.css
+ * @description Estilização Global e Motor de Layout.
+ * 
+ * [MAIN THREAD CONTEXT]:
+ * O CSS é processado na thread principal, mas muitas propriedades aqui (transform, opacity) 
+ * são desenhadas na GPU (Composite Layer).
+ * 
+ * ARQUITETURA (Zero-Cost Abstractions):
+ * - Sem CSS-in-JS: Evita overhead de parsing e injeção em runtime.
+ * - Hardware Acceleration: Uso explícito de camadas para animações 60fps.
+ * - Virtualização Nativa: Uso de `content-visibility` substitui libs de virtualização JS pesadas.
+ * 
+ * DEPENDÊNCIAS CRÍTICAS:
+ * - `render/constants.ts`: As classes definidas aqui DEVEM coincidir com as constantes do TS.
+ * - `render/dom.ts`: Manipulações diretas de estilo dependem da estrutura aqui definida.
+ * 
+ * DECISÕES TÉCNICAS:
+ * 1. Layout Isolation (`contain`): Impede que mudanças em um cartão afetem o layout global (Reflow).
+ * 2. Gestos Nativos (`touch-action`): Delega a física de scroll ao navegador, permitindo interceptação JS apenas onde necessário.
+ * 3. Camadas (Z-Index): Gerenciamento estrito de contexto de empilhamento para Modais e Toasts.
+ */
+
+/* 
  * [ANALYSIS PROGRESS]: 100% - Análise concluída.
  * [2025-02-23]: Auditoria de CSS Completa.
  * - Variáveis globais verificadas.
@@ -52,6 +76,7 @@
     --transition-duration-slow: 0.3s;
 
     /* --- CAMADAS (Z-INDEX) --- */
+    /* DO NOT REFACTOR: A ordem dessas camadas é crítica para evitar bugs visuais em sobreposições */
     --z-index-base: 1;
     --z-index-sticky: 20; /* Time markers */
     --z-index-content: 2;
@@ -66,6 +91,7 @@
 }
 
 /* --- ANIMAÇÕES GLOBAIS --- */
+/* PERFORMANCE: Animações baseadas em transform/opacity rodam na thread do compositor (GPU), liberando a Main Thread. */
 @keyframes glow-pulse {
     0%, 100% { opacity: 0.4; transform: scale(1); }
     50% { opacity: 1; transform: scale(1.15); }
@@ -117,6 +143,7 @@
 }
 
 /* A11Y & PERFORMANCE: Respeita a preferência do usuário por movimento reduzido. */
+/* CRITICAL LOGIC: Evita desconforto vestibular e economiza bateria em dispositivos configurados para isso. */
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after {
         animation-duration: 0.01ms !important;
@@ -150,6 +177,7 @@ body {
     color: var(--text-primary);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    /* UX: Desativa seleção de texto globalmente para sensação de App Nativo. Habilitado seletivamente onde necessário. */
     -webkit-user-select: none; /* Safari */
     user-select: none;         /* Padrão Moderno */
     touch-action: manipulation; /* BUGFIX [2024-08-29]: Desabilita o zoom por duplo toque em dispositivos móveis para melhorar a resposta de interações personalizadas. */
@@ -852,6 +880,7 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     /* PERFORMANCE [2024-12-28]: Isola o layout e estilo para otimizar renderização de listas longas. */
     contain: layout style;
     /* UX [2025-01-27]: Importante para garantir scroll vertical suave ao tocar no cartão */
+    /* LOGIC LOCK: 'pan-y' é essencial para a física do swipe horizontal personalizada. */
     touch-action: pan-y;
 }
 .habit-group .habit-card:last-child { margin-block-end: 0; }
@@ -960,7 +989,8 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     background-color: var(--surface-hover);
     box-shadow: 0 5px 15px rgba(0,0,0,0.3);
     border-radius: 9px;
-    pointer-events: none; /* Garante que a imagem fantasma não intercepte eventos do mouse */
+    /* DO NOT REFACTOR: Garante que a imagem fantasma não intercepte eventos do mouse */
+    pointer-events: none;
     z-index: 9999;
     opacity: 0.95;
     transform: scale(1.02); /* Leve aumento para "levantar" da página */
@@ -1291,7 +1321,12 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     touch-action: pan-y; 
     user-select: none; 
 }
-.chart-svg { width: 100%; height: 100%; }
+.chart-svg { 
+    width: 100%; 
+    height: 100%;
+    /* FIX [2025-03-22]: Permite que o stroke ultrapasse levemente a área de visualização (para não cortar a ponta da linha ou sombras) */
+    overflow: visible;
+}
 .chart-area { fill: url(#chart-gradient); }
 .chart-line { 
     fill: none; 
@@ -1824,6 +1859,7 @@ input:disabled + .slider {
 /* Modal: Ações Rápidas do Calendário */
 #calendar-quick-actions {
     background: rgba(0,0,0,0.4);
+    /* PERFORMANCE: Filtro de desfoque é custoso; usar com moderação. */
     backdrop-filter: blur(2px);
     -webkit-backdrop-filter: blur(2px);
     align-items: flex-start;

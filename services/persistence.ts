@@ -4,12 +4,29 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 
+/**
+ * @file services/persistence.ts
+ * @description Camada de Persistência e Gerenciamento de Ciclo de Vida de Dados (Storage Engine).
+ * 
+ * [MAIN THREAD CONTEXT]:
+ * Implementação baseada em IndexedDB (Assíncrono).
+ * Substitui o localStorage bloqueante para permitir armazenamento virtualmente ilimitado e sem travamentos de UI.
+ * 
+ * ARQUITETURA (Hot/Cold Storage & IDB):
+ * - **IndexedDB Wrapper:** Implementação "Zero-Dependency" de um wrapper Promise-based para o IDB.
+ * - **GZIP Archiving:** Dados históricos ("Cold Storage") são comprimidos (GZIP) antes de salvar,
+ *   reduzindo uso de espaço e banda de sincronização.
+ * 
+ * DEPENDÊNCIAS CRÍTICAS:
+ * - `state.ts`: Estrutura de dados.
+ * - `utils.ts`: Funções utilitárias de data.
+ */
+
 import { 
     state, 
     AppState, 
     Habit, 
     HabitDailyInfo, 
-    STATE_STORAGE_KEY, 
     APP_VERSION,
     getPersistableState 
 } from '../state';
@@ -17,99 +34,193 @@ import {
     toUTCIsoDateString, 
     parseUTCIsoDate, 
     addDays, 
-    getTodayUTCIso 
+    getTodayUTCIso
 } from '../utils';
 import { migrateState } from './migration';
+import { runWorkerTask } from './cloud';
+
+// CONFIGURAÇÃO DO INDEXEDDB
+const DB_NAME = 'AskesisDB';
+const DB_VERSION = 1;
+const STORE_NAME = 'app_state';
+
+// CONSTANTS
+const STATE_STORAGE_KEY = 'habitTrackerState_v1';
+const DB_OPEN_TIMEOUT_MS = 3000;
+
+// --- IDB UTILS (Zero-Dependency Wrapper) ---
+
+let dbPromise: Promise<IDBDatabase> | null = null;
+
+function getDB(): Promise<IDBDatabase> {
+    if (!dbPromise) {
+        dbPromise = new Promise((resolve, reject) => {
+            // Safety Timeout
+            const timeoutId = setTimeout(() => {
+                reject(new Error("IndexedDB connection timed out"));
+            }, DB_OPEN_TIMEOUT_MS);
+
+            const request = indexedDB.open(DB_NAME, DB_VERSION);
+
+            request.onupgradeneeded = (event) => {
+                const db = (event.target as IDBOpenDBRequest).result;
+                if (!db.objectStoreNames.contains(STORE_NAME)) {
+                    db.createObjectStore(STORE_NAME);
+                }
+            };
+
+            request.onsuccess = (event) => {
+                clearTimeout(timeoutId);
+                resolve((event.target as IDBOpenDBRequest).result);
+            };
+
+            request.onerror = (event) => {
+                clearTimeout(timeoutId);
+                console.error("IDB Open Error", event);
+                reject((event.target as IDBOpenDBRequest).error);
+            };
+        });
+    }
+    return dbPromise;
+}
+
+async function idbGet<T>(key: string): Promise<T | undefined> {
+    try {
+        const db = await getDB();
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction(STORE_NAME, 'readonly');
+            const store = transaction.objectStore(STORE_NAME);
+            const request = store.get(key);
+            
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+    } catch (e) {
+        console.warn("Failed to read from IDB (Get)", e);
+        return undefined; // Fail safe
+    }
+}
+
+async function idbSet(key: string, value: any): Promise<void> {
+    try {
+        const db = await getDB();
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction(STORE_NAME, 'readwrite');
+            const store = transaction.objectStore(STORE_NAME);
+            const request = store.put(value, key);
+            
+            request.onsuccess = () => resolve();
+            request.onerror = () => reject(request.error);
+        });
+    } catch (e) {
+        console.error("Failed to write to IDB (Set)", e);
+    }
+}
+
+async function idbDelete(key: string): Promise<void> {
+    try {
+        const db = await getDB();
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction(STORE_NAME, 'readwrite');
+            const store = transaction.objectStore(STORE_NAME);
+            const request = store.delete(key);
+            
+            request.onsuccess = () => resolve();
+            request.onerror = () => reject(request.error);
+        });
+    } catch (e) {
+        console.error("Failed to delete from IDB", e);
+    }
+}
+
+// --- ARCHIVING & DATA HYGIENE ---
 
 // ARCHIVE THRESHOLD [2025-02-23]: Data older than this (in days) moves to cold storage.
 const ARCHIVE_THRESHOLD_DAYS = 90; 
 
-// --- SYNC HANDLER ---
 let syncHandler: ((state: AppState) => void) | null = null;
 
 export function registerSyncHandler(handler: (state: AppState) => void) {
     syncHandler = handler;
 }
 
-// --- ARCHIVING & DATA HYGIENE ---
-
 /**
  * ARCHIVE LOGIC: Moves old daily data to cold storage.
- * This runs periodically to keep the main state object small and responsive.
- * Data older than ARCHIVE_THRESHOLD_DAYS is stringified and moved to state.archives['YYYY'].
+ * [MAIN THREAD - IDLE]: Preparação leve.
+ * A Main Thread agora apenas coleta os dados e delega a compressão/merge para o Worker.
  */
 function archiveOldData() {
-    const runArchive = () => {
+    const runArchive = async () => {
         const today = parseUTCIsoDate(getTodayUTCIso());
         const thresholdDate = addDays(today, -ARCHIVE_THRESHOLD_DAYS);
         const thresholdISO = toUTCIsoDateString(thresholdDate);
         
-        let movedCount = 0;
-        const yearBuckets: Record<string, Record<string, Record<string, HabitDailyInfo>>> = {};
+        // 1. Identificar candidatos (Scan leve)
+        const yearBuckets: Record<string, { additions: Record<string, Record<string, HabitDailyInfo>>, base?: any }> = {};
+        const keysToRemove: string[] = [];
 
-        // 1. Identify and group old data
-        // Optimization: Use Object.keys is fast, but we handle the state mutation carefully.
         const dates = Object.keys(state.dailyData);
         for (const dateStr of dates) {
-            // Binary string comparison for ISO dates is faster than localeCompare
             if (dateStr < thresholdISO) {
                 const year = dateStr.substring(0, 4);
-                if (!yearBuckets[year]) yearBuckets[year] = {};
-                yearBuckets[year][dateStr] = state.dailyData[dateStr];
+                if (!yearBuckets[year]) {
+                    yearBuckets[year] = { additions: {} };
+                    
+                    // Prepara a base (dados existentes) para enviar ao worker
+                    // Prioridade: Warm Cache (Objeto) > Cold Storage (GZIP String)
+                    if (state.unarchivedCache.has(year)) {
+                        yearBuckets[year].base = state.unarchivedCache.get(year);
+                    } else if (state.archives[year]) {
+                        yearBuckets[year].base = state.archives[year];
+                    }
+                }
                 
-                // Remove from hot storage
-                delete state.dailyData[dateStr];
-                movedCount++;
+                yearBuckets[year].additions[dateStr] = state.dailyData[dateStr];
+                keysToRemove.push(dateStr);
             }
         }
 
-        if (movedCount === 0) return; // Nothing to archive
+        if (keysToRemove.length === 0) return;
 
-        // 2. Merge with existing archives
-        Object.keys(yearBuckets).forEach(year => {
-            let existingYearData: Record<string, Record<string, HabitDailyInfo>> = {};
+        // 2. Offload para Worker (CPU Heavy)
+        // O Worker fará: Decompressão (se GZIP) -> Merge -> Compressão -> Retorno GZIP
+        try {
+            console.log(`Offloading archive task for ${keysToRemove.length} days to worker...`);
             
-            // PERFORMANCE [2025-03-16]: Check Warm Cache first.
-            if (state.unarchivedCache.has(year)) {
-                existingYearData = state.unarchivedCache.get(year)!;
-            } else if (state.archives[year]) {
-                try {
-                    existingYearData = JSON.parse(state.archives[year]);
-                } catch (e) {
-                    console.error(`Failed to parse archive for year ${year}`, e);
-                }
+            // Definição de tipo manual para retorno do worker
+            type ArchiveOutput = Record<string, string>; // Ano -> GZIP
+            
+            const newArchives = await runWorkerTask<ArchiveOutput>('archive', yearBuckets);
+
+            // 3. Aplicação Atômica das Mudanças (Main Thread)
+            // Só alteramos o estado se o worker retornou com sucesso.
+            for (const year in newArchives) {
+                // Atualiza o Cold Storage
+                state.archives[year] = newArchives[year];
+                // Invalida o Warm Cache para garantir consistência (ou poderíamos atualizar, mas é mais seguro limpar)
+                // Se o usuário pedir esse ano de novo, o sistema vai descomprimir o novo GZIP atualizado.
+                state.unarchivedCache.delete(year);
             }
-            
-            // Merge new archive candidates with existing archive
-            const newYearData = { ...existingYearData, ...yearBuckets[year] };
-            
-            // Store as compressed string
-            state.archives[year] = JSON.stringify(newYearData);
-            
-            // PERFORMANCE [2025-03-16]: Warm Cache Strategy.
-            state.unarchivedCache.set(year, newYearData);
-        });
 
-        if (movedCount > 0) {
-            console.log(`Archived ${movedCount} daily records to cold storage.`);
-            saveState(); // Persist the architectural changes
+            // Remove do Hot Storage
+            keysToRemove.forEach(k => delete state.dailyData[k]);
+
+            console.log(`Archiving complete. Moved ${keysToRemove.length} records.`);
+            await saveState(); // Persist changes async
+
+        } catch (e) {
+            console.error("Archive task failed in worker:", e);
+            // Em caso de erro, não faz nada. Os dados continuam no dailyData e tentaremos novamente no próximo idle.
         }
     };
 
-    // ADVANCED OPTIMIZATION [2025-03-17]: Use requestIdleCallback.
-    // Heavy JSON serialization should happen only when the browser is idle to avoid
-    // blocking frame rendering or user interaction during startup.
     if ('requestIdleCallback' in window) {
-        requestIdleCallback(runArchive, { timeout: 5000 });
+        requestIdleCallback(() => { runArchive().catch(console.error); }, { timeout: 10000 });
     } else {
-        setTimeout(runArchive, 2000);
+        setTimeout(() => { runArchive().catch(console.error); }, 5000);
     }
 }
 
-/**
- * DATA HYGIENE: Prunes daily data records for habits that no longer exist.
- * This removes "zombie" data that can cause ghosts or syncing bloat.
- */
 function pruneOrphanedDailyData(habits: Habit[], dailyData: Record<string, Record<string, HabitDailyInfo>>) {
     const validHabitIds = new Set(habits.map(h => h.id));
     let cleanedCount = 0;
@@ -141,64 +252,58 @@ function pruneOrphanedDailyData(habits: Habit[], dailyData: Record<string, Recor
 
 // --- PERSISTENCE OPERATIONS ---
 
-export function saveState() {
+export async function saveState(): Promise<void> {
     const stateToSave = getPersistableState();
     
-    const saveToLocalStorage = (data: AppState) => {
-        try {
-            localStorage.setItem(STATE_STORAGE_KEY, JSON.stringify(data));
-            // Trigger Sync via registered handler
-            if (syncHandler) {
-                syncHandler(data);
-            }
-        } catch (e: any) {
-            if (e.name === 'QuotaExceededError') {
-                console.warn("LocalStorage quota exceeded. Attempting to clear non-essential data.");
-                try {
-                    console.error("Critical: Unable to save state due to storage quota.");
-                } catch (retryError) {
-                    console.error("Failed retry save", retryError);
-                }
-            } else {
-                console.error("Failed to save state", e);
-            }
+    try {
+        await idbSet(STATE_STORAGE_KEY, stateToSave);
+        if (syncHandler) {
+            syncHandler(stateToSave);
         }
-    };
-
-    saveToLocalStorage(stateToSave);
+    } catch (e) {
+        console.error("Critical: Failed to save state to IDB", e);
+    }
 }
 
-/**
- * Persists the current state to local storage WITHOUT updating the lastModified timestamp
- * and WITHOUT triggering a cloud sync.
- * Used when receiving data from the cloud to ensure local consistency.
- */
-export function persistStateLocally(appState: AppState) {
+export async function persistStateLocally(appState: AppState): Promise<void> {
     try {
-        localStorage.setItem(STATE_STORAGE_KEY, JSON.stringify(appState));
+        await idbSet(STATE_STORAGE_KEY, appState);
     } catch (e) {
         console.error("Failed to persist state locally", e);
     }
 }
 
-export function loadState(cloudState?: AppState) {
+export async function loadState(cloudState?: AppState): Promise<AppState | null> {
     let loadedState: AppState | null = cloudState || null;
 
     if (!loadedState) {
-        const localStr = localStorage.getItem(STATE_STORAGE_KEY);
-        if (localStr) {
-            try {
-                loadedState = JSON.parse(localStr);
-            } catch (e) {
-                console.error("Failed to parse local state", e);
+        try {
+            loadedState = await idbGet<AppState>(STATE_STORAGE_KEY) || null;
+
+            if (!loadedState) {
+                const localStr = localStorage.getItem(STATE_STORAGE_KEY);
+                if (localStr) {
+                    console.log("Migrating data from LocalStorage to IndexedDB...");
+                    try {
+                        loadedState = JSON.parse(localStr);
+                        if (loadedState) {
+                            await idbSet(STATE_STORAGE_KEY, loadedState);
+                            localStorage.removeItem(STATE_STORAGE_KEY);
+                            console.log("Migration successful. LocalStorage cleared.");
+                        }
+                    } catch (e) {
+                        console.error("Failed to parse legacy local state", e);
+                    }
+                }
             }
+        } catch (e) {
+            console.error("Failed to load state from DB", e);
         }
     }
 
     if (loadedState) {
         const migrated = migrateState(loadedState, APP_VERSION);
         
-        // DATA INTEGRITY: Deduplication.
         const uniqueHabitsMap = new Map<string, Habit>();
         migrated.habits.forEach(h => {
             if (h.id && !uniqueHabitsMap.has(h.id)) {
@@ -207,13 +312,11 @@ export function loadState(cloudState?: AppState) {
         });
         const sanitizedHabits = Array.from(uniqueHabitsMap.values());
 
-        // DATA INTEGRITY: Filter out corrupted habits & ENFORCE SORT ORDER
         const validHabits = sanitizedHabits.filter(h => {
             if (!h.scheduleHistory || h.scheduleHistory.length === 0) {
                 console.warn(`Removing corrupted habit found in state: ${h.id}`);
                 return false;
             }
-            // OPTIMIZATION [2025-03-17]: Binary comparison is faster than localeCompare for dates
             h.scheduleHistory.sort((a, b) => (a.startDate > b.startDate ? 1 : -1));
             return true;
         });
@@ -222,14 +325,12 @@ export function loadState(cloudState?: AppState) {
         state.dailyData = migrated.dailyData || {};
         state.archives = migrated.archives || {}; 
         
-        // HYGIENE: Clean up daily data.
         pruneOrphanedDailyData(state.habits, state.dailyData);
 
         state.notificationsShown = migrated.notificationsShown || [];
         state.pending21DayHabitIds = migrated.pending21DayHabitIds || [];
         state.pendingConsolidationHabitIds = migrated.pendingConsolidationHabitIds || [];
         
-        // Reset runtime caches correctly using .clear() for stability
         state.streaksCache.clear();
         state.scheduleCache.clear();
         state.activeHabitsCache.clear();
@@ -237,20 +338,18 @@ export function loadState(cloudState?: AppState) {
         state.habitAppearanceCache.clear();
         state.daySummaryCache.clear();
         
-        // Force full UI refresh on load
         state.uiDirtyState.calendarVisuals = true;
         state.uiDirtyState.habitListStructure = true;
         state.uiDirtyState.chartData = true;
         
-        // Initial cleanup of old data into archives - NOW ASYNC via IdleCallback
         archiveOldData();
+
+        return migrated;
     }
+    return null;
 }
 
-/**
- * Removes all local application data.
- * Used for full resets.
- */
-export function clearLocalPersistence() {
+export async function clearLocalPersistence(): Promise<void> {
+    await idbDelete(STATE_STORAGE_KEY);
     localStorage.removeItem(STATE_STORAGE_KEY);
 }

@@ -1,12 +1,28 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
 
+/**
+ * @file services/sync.worker.ts
+ * @description Web Worker para Processamento Pesado (CPU-Bound Tasks).
+ * 
+ * [WORKER CONTEXT]:
+ * Este código roda em uma thread isolada.
+ * 
+ * ARQUITETURA (Off-Main-Thread):
+ * - **Responsabilidade Única:** Executar tarefas que bloqueiam a thread principal.
+ * - **GZIP Parsing:** Detecta arquivos comprimidos (`GZIP:...`) e usa `decompressString` 
+ *   para acessá-los sob demanda, sem bloquear a geração do prompt de IA.
+ * 
+ * DEPENDÊNCIAS CRÍTICAS:
+ * - `utils.ts`: Funções de data e compressão.
+ * - `crypto.ts`: Criptografia.
+ */
+
 import type { AppState, Habit, HabitDailyInfo } from '../state';
-// DRY FIX [2025-03-08]: Import utils instead of duplicating them. 
-import { toUTCIsoDateString, parseUTCIsoDate } from '../utils';
-// MODULARITY: Import crypto functions from the dedicated module.
+import { toUTCIsoDateString, parseUTCIsoDate, decompressString, compressString } from '../utils';
 import { encrypt, decrypt } from './crypto';
 
 // --- AI Prompt Building Logic ---
@@ -28,7 +44,6 @@ type AIPromptPayload = {
     todayISO: string;
 };
 
-// Simplified version of getHabitDisplayInfo for worker context
 function getHabitDisplayInfo(habit: Habit, translations: Record<string, string>, dateISO: string): { name: string } {
     const schedule = habit.scheduleHistory.find(s => s.startDate <= dateISO && (!s.endDate || s.endDate > dateISO)) || habit.scheduleHistory[habit.scheduleHistory.length - 1];
     
@@ -38,43 +53,61 @@ function getHabitDisplayInfo(habit: Habit, translations: Record<string, string>,
     return { name: schedule.name || habit.id };
 }
 
-function _getHistoryForPrompt(
+// Alterado para async para suportar descompressão
+async function _getHistoryForPrompt(
     days: number,
     habits: Habit[],
     dailyData: AppState['dailyData'],
     archives: AppState['archives'],
     todayISO: string,
     translations: Record<string, string>
-): string {
+): Promise<string> {
     let history = '';
     const date = parseUTCIsoDate(todayISO);
     
-    // PERFORMANCE [WORKER-SIDE CACHE]: Caches parsed archive JSON to avoid re-parsing on every date lookup within the same AI analysis.
+    // PERFORMANCE [WORKER-SIDE CACHE]: Caches parsed archive JSON.
     const unarchivedCache = new Map<string, any>();
     
-    const getDailyDataForDate = (dateStr: string): Record<string, HabitDailyInfo> => {
+    const getDailyDataForDate = async (dateStr: string): Promise<Record<string, HabitDailyInfo>> => {
+        // Hot Storage check
         if (dailyData[dateStr]) return dailyData[dateStr];
         
         const year = dateStr.substring(0, 4);
+        
+        // Warm Cache check
         if (unarchivedCache.has(year)) {
             return unarchivedCache.get(year)[dateStr] || {};
         }
 
+        // Cold Storage access
         if (archives[year]) {
             try {
-                const parsed = JSON.parse(archives[year]);
+                let parsed: any;
+                const raw = archives[year];
+                
+                // DECOMPRESSION LOGIC: Detect GZIP signature
+                if (raw.startsWith('GZIP:')) {
+                    const json = await decompressString(raw.substring(5));
+                    parsed = JSON.parse(json);
+                } else {
+                    // Legacy Format (Plain JSON String)
+                    parsed = JSON.parse(raw);
+                }
+                
                 unarchivedCache.set(year, parsed);
                 return parsed[dateStr] || {};
-            } catch {
+            } catch (e) {
+                console.warn(`Worker failed to parse/decompress archive for year ${year}`, e);
                 return {};
             }
         }
         return {};
     };
 
+    // PERFORMANCE: Loop reverso cronológico.
     for (let i = 0; i < days; i++) {
         const currentDateISO = toUTCIsoDateString(date);
-        const dayRecord = getDailyDataForDate(currentDateISO);
+        const dayRecord = await getDailyDataForDate(currentDateISO); // Await aqui é seguro no Worker
         
         const dayHistory = habits.map(habit => {
             const schedule = habit.scheduleHistory.find(s => s.startDate <= currentDateISO && (!s.endDate || s.endDate > currentDateISO));
@@ -135,7 +168,8 @@ async function buildAIPrompt(payload: AIPromptPayload) {
         daysToAnalyze = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
     }
     
-    const history = _getHistoryForPrompt(daysToAnalyze, activeHabits, dailyData, archives, todayISO, translations);
+    // Agora assíncrono para suportar descompressão
+    const history = await _getHistoryForPrompt(daysToAnalyze, activeHabits, dailyData, archives, todayISO, translations);
 
     const prompt = promptTemplate
         .replace('{activeHabitList}', activeHabitList)
@@ -147,12 +181,76 @@ async function buildAIPrompt(payload: AIPromptPayload) {
     return { prompt, systemInstruction };
 }
 
+// --- ARCHIVAL LOGIC [2025-03-22] ---
+
+type ArchiveInputPayload = {
+    // Mapa: Ano -> Objeto de Configuração
+    [year: string]: {
+        base?: string | Record<string, any>; // Pode ser string GZIP ou Objeto cru (se vindo do cache)
+        additions: Record<string, Record<string, HabitDailyInfo>>; // Novos itens para arquivar
+    }
+};
+
+type ArchiveOutputPayload = {
+    // Mapa: Ano -> String GZIP final
+    [year: string]: string;
+};
+
+async function processArchival(payload: ArchiveInputPayload): Promise<ArchiveOutputPayload> {
+    const result: ArchiveOutputPayload = {};
+
+    for (const year of Object.keys(payload)) {
+        const { base, additions } = payload[year];
+        let yearData: Record<string, any> = {};
+
+        // 1. Hydrate Base
+        if (base) {
+            if (typeof base === 'string') {
+                try {
+                    if (base.startsWith('GZIP:')) {
+                        const json = await decompressString(base.substring(5));
+                        yearData = JSON.parse(json);
+                    } else {
+                        // Legacy JSON
+                        yearData = JSON.parse(base);
+                    }
+                } catch (e) {
+                    console.error(`Worker: Failed to parse base archive for year ${year}`, e);
+                    // Fallback: Start fresh with additions to preserve new data
+                }
+            } else {
+                // Object passed directly (from unarchivedCache)
+                yearData = base;
+            }
+        }
+
+        // 2. Merge Additions
+        // Simple spread works because keys are dates (unique per day)
+        // If a day exists in both (rare conflict), additions (from dailyData) should win as they are newer.
+        yearData = { ...yearData, ...additions };
+
+        // 3. Serialize & Compress
+        try {
+            const jsonString = JSON.stringify(yearData);
+            const compressedBase64 = await compressString(jsonString);
+            result[year] = `GZIP:${compressedBase64}`;
+        } catch (e) {
+            console.error(`Worker: Failed to compress archive for year ${year}`, e);
+            // Se falhar compressão, tenta retornar o JSON cru como fallback para não perder dados
+            result[year] = JSON.stringify(yearData); 
+        }
+    }
+
+    return result;
+}
+
 // --- Worker Message Handler ---
 
 type WorkerRequest = 
     | { id: string; type: 'encrypt'; payload: any; key: string }
     | { id: string; type: 'decrypt'; payload: string; key: string }
-    | { id: string; type: 'build-ai-prompt'; payload: AIPromptPayload };
+    | { id: string; type: 'build-ai-prompt'; payload: AIPromptPayload }
+    | { id: string; type: 'archive'; payload: ArchiveInputPayload };
 
 type WorkerResponse = 
     | { id: string; status: 'success'; result: any }
@@ -172,6 +270,8 @@ self.onmessage = async (e: MessageEvent<WorkerRequest>) => {
             result = JSON.parse(jsonString);
         } else if (type === 'build-ai-prompt') {
             result = await buildAIPrompt(payload as AIPromptPayload);
+        } else if (type === 'archive') {
+            result = await processArchival(payload as ArchiveInputPayload);
         }
         else {
             throw new Error(`Unknown operation type: ${(e.data as any).type}`);

@@ -1,7 +1,32 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
+
+/**
+ * @file i18n.ts
+ * @description Motor de Internacionalização (i18n) e Formatação de Texto.
+ * 
+ * [MAIN THREAD CONTEXT]:
+ * Executa na thread principal. A performance aqui é crítica pois `t()` é chamada centenas de vezes
+ * durante a renderização do calendário e listas.
+ * 
+ * ARQUITETURA:
+ * - Responsabilidade Única: Carregar, cachear e interpolar strings de tradução.
+ * - Zero-Dependency: Usa APIs nativas (`Intl.PluralRules`, `Intl.DateTimeFormat`) em vez de libs pesadas (i18next).
+ * - Direct DOM Manipulation: `updateUIText` injeta texto diretamente nos nós para evitar overhead de frameworks.
+ * 
+ * DECISÕES TÉCNICAS:
+ * 1. Cache Agressivo: Instâncias de `Intl` são caras de criar. `pluralRulesCache` resolve isso.
+ * 2. Regex Pré-compilado: A interpolação de strings usa uma Regex estática para performance O(N).
+ * 3. Consistência Temporal: `getHabitDisplayInfo` lida com a complexidade de hábitos que mudam de nome
+ *    ao longo do tempo (Time-Travel Logic).
+ * 
+ * DEPENDÊNCIAS CRÍTICAS:
+ * - `locales/*.json`: Arquivos estáticos de tradução.
+ * - `render/dom.ts`: `setTextContent` para atualizações eficientes do DOM.
+ */
 
 import { state, Habit, LANGUAGES, PredefinedHabit, TimeOfDay } from '../state';
 import { getScheduleForDate } from './services/selectors';
@@ -15,7 +40,8 @@ type PluralableTranslation = { one: string; other: string };
 type TranslationValue = string | PluralableTranslation;
 type Translations = Record<string, TranslationValue>;
 
-// Cache para instâncias de PluralRules para evitar recriação custosa a cada tradução
+// PERFORMANCE: Cache para instâncias de PluralRules para evitar recriação custosa a cada tradução.
+// A criação de Intl.* é uma das operações mais lentas em JS puro.
 const pluralRulesCache: Record<string, Intl.PluralRules> = {};
 
 export function getTimeOfDayName(time: TimeOfDay): string {
@@ -51,11 +77,12 @@ async function loadLanguage(langCode: 'pt' | 'en' | 'es'): Promise<void> {
 }
 
 // PERFORMANCE [2025-03-16]: Pre-compiled Regex for interpolation.
-// Captures {key} pattern globally.
+// Captures {key} pattern globally. Reusing this RegExp prevents recompilation overhead on every t() call.
 const INTERPOLATION_REGEX = /{([^{}]+)}/g;
 
 export function t(key: string, options?: { [key: string]: string | number | undefined }): string {
     const lang = state.activeLanguageCode || 'pt';
+    // Fallback chain: Requested Lang -> Cached PT -> Key
     const dict = loadedTranslations[lang] || loadedTranslations['pt'];
 
     if (!dict) {
@@ -106,9 +133,13 @@ export function t(key: string, options?: { [key: string]: string | number | unde
 
 /**
  * CORREÇÃO DE DADOS HISTÓRICOS [2024-09-20]: A função agora aceita um `dateISO` opcional.
- * Se uma data for fornecida, ela busca o agendamento historicamente correto para essa data,
- * garantindo que o nome e o subtítulo exibidos sejam precisos para o contexto temporal,
- * o que é crucial para a renderização da UI e a geração de prompts para a IA.
+ * 
+ * CRITICAL LOGIC: Temporal Consistency / Time-Travel.
+ * Hábitos mudam de nome/propriedades ao longo do tempo. Se `dateISO` for fornecido,
+ * buscamos o snapshot exato do hábito naquela data via `scheduleHistory`.
+ * Se não for fornecido, usamos o estado "atual" (último schedule).
+ * DO NOT REFACTOR: Simplificar isso quebrará a visualização correta do histórico no calendário.
+ * 
  * @param habit O objeto do hábito ou modelo predefinido.
  * @param dateISO A data opcional no formato string ISO para buscar informações históricas.
  * @returns O nome e o subtítulo para exibição.
@@ -140,9 +171,15 @@ export function getHabitDisplayInfo(habit: Habit | PredefinedHabit, dateISO?: st
 
 export function getLocaleDayName(date: Date): string {
     // PERFORMANCE [2025-01-16]: Uso de cache para Intl.DateTimeFormat para evitar recriação em loops de calendário.
+    // Cache implementado em `utils.ts` (getDateTimeFormat).
     return getDateTimeFormat(state.activeLanguageCode, { weekday: 'short', timeZone: 'UTC' }).format(date).toUpperCase();
 }
 
+/**
+ * Atualiza todos os textos estáticos da UI.
+ * PERFORMANCE: Manipulação direta do DOM (Fast Path) em vez de re-renderização total de componentes.
+ * Usa `setTextContent` (definido em render/dom.ts) para evitar escritas desnecessárias (Layout Thrashing).
+ */
 function updateUIText() {
     const appNameHtml = t('appName');
     

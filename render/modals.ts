@@ -4,6 +4,31 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 
+/**
+ * @file render/modals.ts
+ * @description Motor de Renderização de Modais e Diálogos (UI Overlay Layer).
+ * 
+ * [MAIN THREAD CONTEXT]:
+ * Este módulo gerencia o ciclo de vida visual e a acessibilidade (A11y) de elementos sobrepostos.
+ * 
+ * ARQUITETURA (A11y & Memory Safety):
+ * - **Responsabilidade Única:** Renderizar conteúdo de modais, gerenciar foco (Focus Trap) e limpar eventos.
+ * - **Gerenciamento de Memória:** Utiliza `Map` e `WeakMap` para rastrear listeners de eventos anônimos
+ *   criados durante a abertura de modais, garantindo que sejam removidos corretamente no fechamento (`removeEventListener`).
+ * - **DOM Template Recycling:** Para listas dentro de modais (ex: Gerenciar Hábitos), utiliza clonagem de nós
+ *   para minimizar o overhead de criação de DOM.
+ * 
+ * DEPENDÊNCIAS CRÍTICAS:
+ * - `ui.ts`: Referências aos containers de modal.
+ * - `i18n.ts`: Textos dinâmicos.
+ * - `state.ts`: Dados para popular formulários.
+ * 
+ * DECISÕES TÉCNICAS:
+ * 1. **Focus Management:** Implementa "Focus Trapping" manualmente para garantir que usuários de teclado
+ *    não naveguem para fora do modal aberto (Requisito WCAG).
+ * 2. **Inert Attribute:** Manipula o atributo `inert` no container principal para isolar a árvore de acessibilidade.
+ */
+
 // FIX: Import calculateHabitStreak from selectors module, not state module.
 import { state, Habit, HabitTemplate, Frequency, PredefinedHabit, TimeOfDay, STREAK_CONSOLIDATED, TIMES_OF_DAY, FREQUENCIES, LANGUAGES, getHabitDailyInfoForDate } from '../state';
 // ARCHITECTURE FIX: Import predefined habits from data layer, not state module.
@@ -16,6 +41,8 @@ import { HABIT_ICONS, UI_ICONS, getTimeOfDayIcon } from './icons';
 import { setTextContent, updateReelRotaryARIA } from './dom';
 import { escapeHTML, getContrastColor, getDateTimeFormat, parseUTCIsoDate, getTodayUTCIso, getSafeDate } from '../utils';
 
+// MEMORY MANAGEMENT: Rastreamento de listeners para limpeza (Garbage Collection Safety).
+// Armazenamos as referências das funções de callback para poder chamar removeEventListener depois.
 const focusTrapListeners = new Map<HTMLElement, (e: KeyboardEvent) => void>();
 const previouslyFocusedElements = new WeakMap<HTMLElement, HTMLElement>();
 
@@ -26,11 +53,19 @@ const closeButtonHandlerMap = new Map<HTMLElement, { buttons: HTMLElement[], han
 // OTIMIZAÇÃO [2025-03-17]: Hoisted constant to avoid reallocation on every render.
 const STATUS_ORDER = { 'active': 0, 'graduated': 1, 'ended': 2 } as const;
 
+/**
+ * Abre um modal garantindo acessibilidade e gestão de foco.
+ * @param modal O elemento DOM do modal.
+ * @param elementToFocus (Opcional) Elemento para focar ao abrir.
+ * @param onClose (Opcional) Callback ao fechar.
+ */
 export function openModal(modal: HTMLElement, elementToFocus?: HTMLElement, onClose?: () => void) {
+    // A11Y: Salva o elemento focado atualmente para restaurar ao fechar.
     previouslyFocusedElements.set(modal, document.activeElement as HTMLElement);
 
     modal.classList.add('visible');
 
+    // A11Y: Isola o resto da aplicação de tecnologias assistivas.
     if (ui.appContainer) {
         ui.appContainer.setAttribute('inert', '');
     }
@@ -45,6 +80,7 @@ export function openModal(modal: HTMLElement, elementToFocus?: HTMLElement, onCl
 
     const targetElement = elementToFocus || firstFocusable;
     
+    // UX: Pequeno delay para garantir que a transição CSS iniciou/terminou e o elemento é focável.
     setTimeout(() => {
         if (targetElement && targetElement.isConnected) {
             if (targetElement instanceof HTMLTextAreaElement) {
@@ -59,7 +95,8 @@ export function openModal(modal: HTMLElement, elementToFocus?: HTMLElement, onCl
         }
     }, 100);
 
-
+    // CRITICAL LOGIC: A11y Focus Trap.
+    // Impede que o Tab saia do modal, ciclando o foco entre o primeiro e último elemento.
     const trapListener = (e: KeyboardEvent) => {
         if (e.key !== 'Tab') return;
         
@@ -103,10 +140,12 @@ export function openModal(modal: HTMLElement, elementToFocus?: HTMLElement, onCl
 export function closeModal(modal: HTMLElement) {
     modal.classList.remove('visible');
     
+    // A11Y: Restaura interatividade do app principal.
     if (ui.appContainer) {
         ui.appContainer.removeAttribute('inert');
     }
 
+    // MEMORY LEAK PREVENTION: Remoção explícita de listeners.
     const listener = focusTrapListeners.get(modal);
     if (listener) {
         modal.removeEventListener('keydown', listener);
@@ -129,6 +168,7 @@ export function closeModal(modal: HTMLElement) {
         closeButtonHandlerMap.delete(modal);
     }
 
+    // A11Y: Restaura foco anterior.
     const elementToRestoreFocus = previouslyFocusedElements.get(modal);
     
     if (elementToRestoreFocus && elementToRestoreFocus.isConnected) {
@@ -152,6 +192,7 @@ function getHabitStatusForSorting(habit: Habit): 'active' | 'ended' | 'graduated
 
 // OTIMIZAÇÃO [2025-03-09]: Template Prototype para item da lista de gerenciamento.
 // Evita a recriação custosa da árvore DOM para cada item da lista.
+// [MAIN THREAD]: Reduz o tempo de "Scripting" durante a renderização do modal.
 let manageItemTemplate: HTMLLIElement | null = null;
 
 function getManageItemTemplate(): HTMLLIElement {
@@ -196,7 +237,7 @@ function getManageItemTemplate(): HTMLLIElement {
 function _createManageHabitListItem(habitData: { habit: Habit; status: 'active' | 'ended' | 'graduated'; name: string; subtitle: string }, todayISO: string): HTMLLIElement {
     const { habit, status, name, subtitle } = habitData;
     
-    // Clone from prototype
+    // PERFORMANCE: Clone from prototype is faster than createElement + appendChild repeatedly.
     const li = getManageItemTemplate().cloneNode(true) as HTMLLIElement;
     
     li.classList.add(status);
@@ -266,6 +307,8 @@ export function setupManageModal() {
         ui.habitList.classList.remove('hidden');
         ui.noHabitsMessage.classList.add('hidden');
 
+        // PERFORMANCE: Map & Sort. Operação síncrona na Main Thread.
+        // Aceitável para < 100 hábitos.
         const habitsForModal = state.habits.map(habit => {
             const { name, subtitle } = getHabitDisplayInfo(habit);
             return {
@@ -291,6 +334,7 @@ export function setupManageModal() {
             return a.name.localeCompare(b.name);
         });
 
+        // PERFORMANCE: DocumentFragment para inserção em lote (1 Reflow).
         const fragment = document.createDocumentFragment();
         const todayISO = getTodayUTCIso();
         
@@ -368,7 +412,7 @@ export function openNotesModal(habitId: string, date: string, time: TimeOfDay) {
 
 const PALETTE_COLORS = ['#e74c3c', '#f1c40f', '#3498db', '#2ecc71', '#9b59b6', '#1abc9c', '#34495e', '#e67e22', '#e84393', '#7f8c8d'];
 
-// OTIMIZAÇÃO: Cache para o HTML dos botões de ícone
+// OTIMIZAÇÃO: Cache para o HTML dos botões de ícone (String Imutável)
 let cachedIconButtonsHTML: string | null = null;
 
 export function renderIconPicker() {
@@ -376,6 +420,7 @@ export function renderIconPicker() {
     const bgColor = state.editingHabit.formData.color;
     const fgColor = getContrastColor(bgColor);
 
+    // CSS Variables update for runtime styling
     ui.iconPickerGrid.style.setProperty('--current-habit-bg-color', bgColor);
     ui.iconPickerGrid.style.setProperty('--current-habit-fg-color', fgColor);
 
@@ -384,6 +429,7 @@ export function renderIconPicker() {
         // Instead of manually blacklisting UI icons, we now iterate directly over the semantic HABIT_ICONS object.
         // This makes adding new UI icons safe without needing to update this list.
         
+        // PERFORMANCE: String concatenation over DOM creation for large grids.
         cachedIconButtonsHTML = Object.keys(HABIT_ICONS)
             .map(key => {
                 const iconSVG = (HABIT_ICONS as any)[key];

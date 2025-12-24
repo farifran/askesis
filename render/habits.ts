@@ -4,6 +4,32 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 
+/**
+ * @file render/habits.ts
+ * @description Motor de Renderização de Cartões de Hábito (Virtual DOM-lite).
+ * 
+ * [MAIN THREAD CONTEXT]:
+ * Este módulo gerencia a lista principal de hábitos. É o componente mais pesado da UI.
+ * 
+ * ARQUITETURA (DOM Caching & Object Pooling):
+ * - **Responsabilidade Única:** Criar, atualizar e organizar os cartões de hábito no DOM.
+ * - **WeakMap Cache:** Utiliza `WeakMap` para associar metadados (referências a nós filhos) 
+ *   aos elementos DOM sem impedir o Garbage Collection quando o nó é removido.
+ * - **Template Cloning:** Criação de novos cartões via clonagem de templates para evitar overhead de parsing HTML.
+ * - **Object Pooling:** Reutiliza arrays de agrupamento (`habitsByTimePool`) para evitar alocação de memória a cada frame (GC Pause).
+ * 
+ * DEPENDÊNCIAS CRÍTICAS:
+ * - `state.ts`: Dados brutos.
+ * - `selectors.ts`: Lógica derivada (streaks, metas).
+ * - `dom.ts`: Utilitários de escrita segura.
+ * 
+ * DECISÕES TÉCNICAS:
+ * 1. **Separação Criação/Atualização:** `createHabitCardElement` monta o esqueleto; `updateHabitCardElement` hidrata os dados.
+ *    Isso permite reciclar esqueletos no futuro se necessário.
+ * 2. **Interação com Drag & Drop:** Expõe iteradores (`getLiveHabitCards`) para que o motor de física (`listeners/drag.ts`)
+ *    possa ler posições sem varrer o DOM.
+ */
+
 // FIX: Import getSmartGoalForHabit from selectors module, not state module.
 import { state, Habit, HabitStatus, HabitDayData, STREAK_CONSOLIDATED, STREAK_SEMI_CONSOLIDATED, TimeOfDay, getHabitDailyInfoForDate, TIMES_OF_DAY, HabitDailyInfo } from '../state';
 import { calculateHabitStreak, getActiveHabitsForDate, getSmartGoalForHabit } from '../services/selectors';
@@ -15,10 +41,12 @@ import { CSS_CLASSES, DOM_SELECTORS } from './constants'; // TYPE SAFETY IMPORT
 import { parseUTCIsoDate } from '../utils';
 
 // OTIMIZAÇÃO [2025-01-24]: Cache persistente para cartões de hábitos.
+// Mapeia "HabitID|TimeOfDay" -> HTMLElement. Evita recriar DOM se o hábito não mudou de grupo.
 const habitElementCache = new Map<string, HTMLElement>();
 
 // PERFORMANCE [2025-03-05]: Cache para referências de elementos internos dos cartões.
 // Using WeakMap allows keys (HTML Elements) to be garbage collected automatically when removed from DOM.
+// Evita chamar `card.querySelector(...)` repetidamente dentro de `updateHabitCardElement` (Hot Path).
 type CardElements = {
     icon: HTMLElement;
     contentWrapper: HTMLElement;
@@ -107,10 +135,12 @@ function _renderCompletedGoal(goalEl: HTMLElement) {
     // OPTIMIZATION: Check classList first to avoid DOM read/write
     if (goalEl.firstElementChild?.classList.contains('completed-wrapper')) return;
 
+    // PERFORMANCE: Template Cloning é mais rápido que innerHTML para estruturas repetitivas.
     goalEl.replaceChildren(getCompletedWrapperTemplate().cloneNode(true));
 }
 
 function _renderSnoozedGoal(goalEl: HTMLElement) {
+    // PERFORMANCE: Dirty Check antes de manipular o DOM.
     if (goalEl.firstElementChild?.classList.contains('snoozed-wrapper')) return;
 
     goalEl.replaceChildren(getSnoozedWrapperTemplate().cloneNode(true));
@@ -141,6 +171,7 @@ function _renderPendingGoalControls(goalEl: HTMLElement, habit: Habit, time: Tim
         const unit = controls.querySelector('.unit');
 
         // Update Dynamic Data
+        // PERFORMANCE: Atribuição direta de propriedades é mais rápida que setAttribute quando possível.
         decBtn.dataset.habitId = habit.id;
         decBtn.dataset.time = time;
         decBtn.setAttribute('aria-label', t('habitGoalDecrement_ariaLabel'));
@@ -150,6 +181,7 @@ function _renderPendingGoalControls(goalEl: HTMLElement, habit: Habit, time: Tim
         incBtn.dataset.time = time;
         incBtn.setAttribute('aria-label', t('habitGoalIncrement_ariaLabel'));
 
+        // PERFORMANCE: setTextContent usa nodeValue para evitar reflows.
         setTextContent(prog, displayVal);
         setTextContent(unit, unitVal);
     } else {
@@ -197,6 +229,7 @@ export function _updateConsolidationMessage(detailsEl: HTMLElement, streak: numb
 /**
  * Updates a habit card's DOM with current state.
  * PERFORMANCE [2025-03-16]: Accepts optional `preLoadedDailyInfo` to avoid fetching data map repeatedly in loops.
+ * [HOT PATH]: Esta função é chamada N vezes por frame de renderização.
  */
 export function updateHabitCardElement(
     card: HTMLElement, 
@@ -207,8 +240,8 @@ export function updateHabitCardElement(
     let elements = cardElementsCache.get(card);
     
     // FIX [2025-03-09]: ROBUSTNESS AUTO-REPAIR.
-    // If cache was cleared but the card reference persists (e.g. inside a loop or event handler),
-    // verify if elements exist. If not, re-query them from the DOM to avoid silent failures.
+    // Se o cache foi limpo (ex: memória baixa) mas o cartão ainda existe no DOM (ex: dentro de um loop de evento),
+    // precisamos re-consultar os elementos para evitar falha silenciosa.
     if (!elements) {
         const icon = card.querySelector('.habit-icon') as HTMLElement;
         const contentWrapper = card.querySelector(`.${CSS_CLASSES.HABIT_CONTENT_WRAPPER}`) as HTMLElement;
@@ -236,6 +269,7 @@ export function updateHabitCardElement(
     const { icon, contentWrapper, name: nameEl, subtitle: subtitleEl, details: detailsEl, noteBtn, deleteBtn, goal: goalEl } = elements;
     
     // OPTIMIZATION: Use injected daily info map if available, otherwise fetch it.
+    // Evita chamadas repetitivas a `getHabitDailyInfoForDate` que podem envolver JSON parsing (Cold Storage).
     const dailyInfo = preLoadedDailyInfo || getHabitDailyInfoForDate(state.selectedDate);
     
     const habitInstanceData = dailyInfo[habit.id]?.instances?.[time];
@@ -245,6 +279,7 @@ export function updateHabitCardElement(
     const { name, subtitle } = getHabitDisplayInfo(habit, state.selectedDate);
 
     const wasCompleted = card.classList.contains(CSS_CLASSES.COMPLETED);
+    // PERFORMANCE: Dirty Check de Classes CSS.
     if (!card.classList.contains(status)) {
         card.classList.remove(CSS_CLASSES.PENDING, CSS_CLASSES.COMPLETED, CSS_CLASSES.SNOOZED);
         card.classList.add(status);
@@ -256,6 +291,7 @@ export function updateHabitCardElement(
     const newColor = habit.color;
     const newBgColor = `${habit.color}30`;
 
+    // PERFORMANCE: Cache local de HTML no objeto para evitar re-parse se o ícone não mudou.
     if ((icon as any)._cachedIconHtml !== newIconHtml) {
         icon.innerHTML = newIconHtml;
         (icon as any)._cachedIconHtml = newIconHtml;
@@ -267,7 +303,7 @@ export function updateHabitCardElement(
 
     if (!wasCompleted && isCompleted) {
         icon.classList.remove('animate-pop');
-        void icon.offsetWidth;
+        void icon.offsetWidth; // Trigger Reflow para reiniciar animação
         icon.classList.add('animate-pop');
         icon.addEventListener('animationend', () => icon.classList.remove('animate-pop'), { once: true });
     }
@@ -275,6 +311,7 @@ export function updateHabitCardElement(
     const isConsolidated = streak >= STREAK_CONSOLIDATED;
     const isSemi = streak >= STREAK_SEMI_CONSOLIDATED && !isConsolidated;
     
+    // PERFORMANCE: Toggle condicional.
     if (card.classList.contains('consolidated') !== isConsolidated) {
         card.classList.toggle('consolidated', isConsolidated);
     }
@@ -350,9 +387,11 @@ export function createHabitCardElement(habit: Habit, time: TimeOfDay, preLoadedD
     contentWrapper.append(icon, details, goal);
     card.append(actionsLeft, actionsRight, contentWrapper);
     
+    // Cache the root element
     habitElementCache.set(`${habit.id}|${time}`, card);
 
     // PERFORMANCE [2025-03-05]: Cache internal element references ONCE at creation using WeakMap.
+    // This makes subsequent updates O(1) by avoiding querySelector.
     cardElementsCache.set(card, {
         icon: icon,
         contentWrapper: contentWrapper,
@@ -381,7 +420,10 @@ export function updatePlaceholderForGroup(groupEl: HTMLElement, time: TimeOfDay,
             placeholder.setAttribute('tabindex', '0');
             groupEl.appendChild(placeholder);
         }
-        placeholder.classList.toggle('show-smart-placeholder', isSmartPlaceholder);
+        // Dirty Check
+        if (placeholder.classList.contains('show-smart-placeholder') !== isSmartPlaceholder) {
+            placeholder.classList.toggle('show-smart-placeholder', isSmartPlaceholder);
+        }
         
         const text = t('dragToAddHabit');
         let iconHTML = '';
@@ -400,14 +442,23 @@ export function updatePlaceholderForGroup(groupEl: HTMLElement, time: TimeOfDay,
             iconHTML = `<span class="placeholder-icon-specific">${getTimeOfDayIcon(time)}</span>`;
         }
         
-        placeholder.innerHTML = `<div class="time-of-day-icon">${iconHTML}</span><span>${text}</span>`;
+        // PERFORMANCE: Verifica se o conteúdo HTML mudou antes de atribuir para evitar parsing.
+        const newInner = `<div class="time-of-day-icon">${iconHTML}</span><span>${text}</span>`;
+        if (placeholder.innerHTML !== newInner) {
+            placeholder.innerHTML = newInner;
+        }
 
     } else if (placeholder) {
         placeholder.remove();
     }
 }
 
+/**
+ * Função Principal de Renderização da Lista.
+ * Reconstrói a árvore de hábitos se necessário, reutilizando nós do cache.
+ */
 export function renderHabits() {
+    // PERFORMANCE: Dirty Check global. Se a estrutura da lista não mudou, aborta.
     if (!state.uiDirtyState.habitListStructure) {
         return;
     }
@@ -449,25 +500,32 @@ export function renderHabits() {
         const desiredHabits = habitsByTimePool[time];
         const hasHabits = desiredHabits.length > 0;
 
+        // Toggle Marker Visibility
         if (hasHabits) {
-            marker.innerHTML = getTimeOfDayIcon(time);
-            marker.style.display = '';
-            marker.style.opacity = '1';
+            const iconHtml = getTimeOfDayIcon(time);
+            if (marker.innerHTML !== iconHtml) marker.innerHTML = iconHtml;
+            if (marker.style.display !== '') marker.style.display = '';
+            if (marker.style.opacity !== '1') marker.style.opacity = '1';
         } else {
-            marker.style.display = 'none'; 
-            marker.innerHTML = ''; 
+            if (marker.style.display !== 'none') marker.style.display = 'none'; 
+            if (marker.innerHTML !== '') marker.innerHTML = ''; 
         }
 
-        groupEl.setAttribute('aria-label', getTimeOfDayName(time));
+        const ariaLabel = getTimeOfDayName(time);
+        if (groupEl.getAttribute('aria-label') !== ariaLabel) {
+            groupEl.setAttribute('aria-label', ariaLabel);
+        }
 
         let currentIndex = 0;
 
+        // Reconciliação do DOM (Virtual DOM-lite)
         desiredHabits.forEach(habit => {
             const key = `${habit.id}|${time}`;
             
             let card = habitElementCache.get(key);
             
             if (card) {
+                // Reset states
                 card.classList.remove(CSS_CLASSES.IS_OPEN_LEFT, CSS_CLASSES.IS_OPEN_RIGHT, CSS_CLASSES.IS_SWIPING, CSS_CLASSES.DRAGGING);
                 // Pass pre-fetched dailyInfo to avoid re-fetch
                 updateHabitCardElement(card, habit, time, dailyInfo);
@@ -478,6 +536,7 @@ export function renderHabits() {
             
             if (card) {
                 const currentChildAtIndex = groupEl.children[currentIndex];
+                // Move o nó apenas se estiver na posição errada
                 if (currentChildAtIndex !== card) {
                     if (currentChildAtIndex) {
                         groupEl.insertBefore(card, currentChildAtIndex);
@@ -490,6 +549,7 @@ export function renderHabits() {
         });
 
         // MEMORY LEAK FIX [2025-03-05]: Limpa os caches para elementos removidos do DOM.
+        // Remove quaisquer filhos extras que não deveriam estar lá.
         while (groupEl.children.length > currentIndex) {
             const childToRemove = groupEl.lastChild as HTMLElement;
             if (childToRemove) {
@@ -513,8 +573,11 @@ export function renderHabits() {
         
         const isSmartPlaceholder = time === smartPlaceholderTargetTime;
         
-        wrapperEl.classList.toggle('has-habits', hasHabits);
-        wrapperEl.classList.toggle('is-collapsible', !hasHabits && !isSmartPlaceholder);
+        // Batch Class Updates on Wrapper
+        if (wrapperEl.classList.contains('has-habits') !== hasHabits) wrapperEl.classList.toggle('has-habits', hasHabits);
+        
+        const isCollapsible = !hasHabits && !isSmartPlaceholder;
+        if (wrapperEl.classList.contains('is-collapsible') !== isCollapsible) wrapperEl.classList.toggle('is-collapsible', isCollapsible);
 
         updatePlaceholderForGroup(groupEl, time, hasHabits, isSmartPlaceholder, emptyTimes);
     });

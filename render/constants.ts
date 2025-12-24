@@ -3,9 +3,26 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  */
-// SINGLE SOURCE OF TRUTH: Define as classes CSS usadas para interatividade.
-// Isso garante que se mudarmos o CSS, o TS avisa onde quebrou a lógica.
 
+/**
+ * @file render/constants.ts
+ * @description Single Source of Truth para Contratos de Interface (CSS Classes & Selectors).
+ * 
+ * [MAIN THREAD CONTEXT]:
+ * Este arquivo define as constantes de string usadas para manipulação de DOM e estilização.
+ * 
+ * ARQUITETURA (Type Safety & Performance):
+ * - **Acoplamento Forte:** Estas constantes representam o "contrato" entre o TypeScript e o CSS (`index.css`).
+ * - **Zero Allocations:** Ao usar constantes exportadas em vez de strings literais ('habit-card'),
+ *   evitamos a alocação de novas strings na memória durante loops de renderização (Hot Paths).
+ * - **Pre-computation:** Seletores complexos são pré-concatenados para evitar overhead de CPU em runtime.
+ * 
+ * DEPENDÊNCIAS CRÍTICAS:
+ * - `index.css`: Alterar uma classe aqui SEM alterar no CSS quebrará o layout ou a interatividade.
+ */
+
+// DO NOT REFACTOR: Mantenha sincronizado estritamente com `index.css`.
+// A mudança de nomes aqui exige refatoração global no CSS.
 export const CSS_CLASSES = {
     // Habit Card Components
     HABIT_CARD: 'habit-card',
@@ -45,8 +62,9 @@ export const CSS_CLASSES = {
     DRAG_OVER: 'drag-over'
 } as const;
 
-// Seletores pré-calculados para uso em querySelector/closest
-// OTIMIZAÇÃO: Evita concatenação de strings repetitiva em loops de eventos (Hot Paths)
+// PERFORMANCE: Seletores pré-calculados para uso em querySelector/closest.
+// Evita a concatenação de strings repetitiva (`.` + className) dentro de loops de eventos (ex: Drag & Drop, Swipe).
+// Em um loop de 60fps, concatenar strings gera lixo desnecessário para o GC.
 export const DOM_SELECTORS = {
     HABIT_CARD: `.${CSS_CLASSES.HABIT_CARD}`,
     HABIT_CONTENT_WRAPPER: `.${CSS_CLASSES.HABIT_CONTENT_WRAPPER}`,

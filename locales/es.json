@@ -1,6 +1,6 @@
 
 {
-    "_comment": "[ANALYSIS PROGRESS]: 100% - Limpeza de claves no utilizadas realizada [2025-01-16].",
+    "_comment": "[ANALYSIS PROGRESS]: 100% - Limpeza de claves no utilizadas realizada [2025-03-22].",
     "aiCelebration21Day": {
         "one": "### ¡Felicidades! 🎉\n\n¡Has mantenido el hábito **{habitNames}** durante 21 días consecutivos! Este es un hito crucial para que una acción se vuelva automática. ¡Sigue con el buen trabajo!",
         "other": "### ¡Felicidades! 🎉\n\n¡Has mantenido los hábitos **{habitNames}** durante 21 días consecutivos! Este es um hito crucial para que una acción se vuelva automática. ¡Sigue con el buen trabajo!"
@@ -9,10 +9,7 @@
         "one": "### ¡Logro Increíble! 🏆\n\n¡Has alcanzado los 66 días con el hábito **{habitNames}**! La ciencia sugiere que este es el punto en el que un nuevo comportamiento se consolida de verdad. Has construido una base sólida para un cambio duradero.",
         "other": "### ¡Logro Increíble! 🏆\n\n¡Has mantenido los hábitos **{habitNames}** durante 21 días consecutivos! La ciencia sugiere que este es el punto en el que un nuevo comportamento se consolida de verdad. Has construido una base sólida para un cambio duradero."
     },
-    "aiError": "Error al analizar los datos.",
     "aiErrorGeneric": "Ocurrió un error en la comunicación con la Inteligencia Artificial. Por favor, intente nuevamente más tarde.",
-    "aiErrorPrefix": "Error de IA",
-    "aiErrorUnknown": "Ocurrió un error desconocido.",
     "aiEval_ariaLabel": "Evaluación IA",
     "aiOptionHistoricalDesc": "Una visión completa de toda tu trayectoria.",
     "aiOptionHistoricalTitle": "Análisis Histórico",
@@ -29,7 +26,7 @@
     "aiPromptMonthly": "Realiza una revisión de rendimiento del último mes (30 dias). Tu feedback DEBE centrarse en: 1. Una reflexión sobre la consistencia general y las tendencias observadas. 2. Identificar qué hábito fue el mayor desafío y por qué. 3. Dar UNA sugerencia práctica para mejorar la consistencia el próximo mes.\n\nDatos:\n- Hábitos Activos: {activeHabitList}\n{graduatedHabitsSection}- Historial de los Últimos 30 Días:\n{history}",
     "aiPromptNoData": "Sin datos.",
     "aiPromptNone": "Ninguno",
-    "aiPromptWeekly": "Tu análisis debe ser global, buscando padrões en los últimos 7 días. Tu feedback DEBE ser: 1. Una reflexión estoica concisa (1-2 frases) sobre el patrón general. 2. UNA única sugerencia práctica y profunda, como un elemento de lista, para fortalecer la virtud y la disciplina.\n\nDatos:\n- Hábitos Activos: {activeHabitList}\n{graduatedHabitsSection}- Historial de los Últimos 7 Días:\n{history}",
+    "aiPromptQuarterly": "Realiza una revisión trimestral (90 días). Tu feedback DEBE centrarse en: 1. Tendencias a largo plazo y consistencia en los últimos 3 meses. 2. Identificar qué hábitos se han consolidado o debilitado en este período. 3. Proporcionar una estrategia estoica para mantener la disciplina en el próximo trimestre.\n\nDatos:\n- Hábitos Activos: {activeHabitList}\n{graduatedHabitsSection}- Historial de los Últimos 90 Días:\n{history}",
     "aiSystemInstruction": "Eres un Sabio Estoico, un mentor de hábitos que valora la consistencia sobre la perfección y el enfoque en lo que podemos controlar (nuestras acciones). Tu respuesta DEBE ser en {languageName}. Usa markdown. El historial de hábitos usa estos símbolos: ✅ para Completado, ⚪️ para Pendiente, e ➡️ para Pospuesto.",
     "appName": "<strong>A</strong>skes<strong>I</strong>s",
     "appSubtitle": "Actúa hasta ser, eres la suma de tus hábitos.",
@@ -37,8 +34,6 @@
     "aria_edit": "Editar {habitName}",
     "aria_end": "Finalizar {habitName}",
     "aria_graduate": "Graduar Hábito {habitName}",
-    "btnRemoveHabit": "Borrar Hábito",
-    "btnRemoveTimeOnly": "Eliminar {time}",
     "buttonDelete": "Borrar",
     "buttonEnd": "Finalizar",
     "buttonFromNowOn": "De Ahora en Adelante",
@@ -105,7 +100,6 @@
     "modalAITitle": "Evaluación de IA",
     "modalColorPickerTitle": "Seleccionar Color",
     "modalConfirmTitle": "Confirmar Acción",
-    "modalDeleteHabitTitle": "Borrar Permanentemente",
     "modalEditFormNameLabel": "Nombre",
     "modalEditFormNotice": "Por favor, dale un nombre al hábito e selecciona al menos un horario.",
     "modalEditNewTitle": "Añadir Nuevo Hábito",
@@ -118,7 +112,7 @@
     "modalManageHabitsSubtitle": "Gestionar Hábitos",
     "modalManageNoHabits": "No hay hábitos para gestionar.",
     "modalManageLanguage": "Idioma",
-    "modalManageNotifications": "Notificaciones",
+    "modalManageNotifications": "Notificações",
     "modalManageReset": "Restablecer",
     "modalManageResetButton": "Borrar datos",
     "modalManageTitle": "Configuración General",

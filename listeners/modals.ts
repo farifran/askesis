@@ -4,6 +4,26 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 
+/**
+ * @file listeners/modals.ts
+ * @description Controlador de Interação de Modais (Forms, Configurações, Diálogos).
+ * 
+ * [MAIN THREAD CONTEXT]:
+ * Este módulo gerencia o ciclo de vida de interações complexas que pausam o fluxo principal da aplicação.
+ * 
+ * ARQUITETURA (Mediator Pattern):
+ * - Atua como a "cola" entre os eventos de DOM (Clicks, Inputs) e a Lógica de Negócios (`habitActions.ts`).
+ * - Não contém lógica de estado profunda; delega para Actions e solicita re-renderização.
+ * 
+ * DECISÕES TÉCNICAS:
+ * 1. Event Delegation: A lista de "Gerenciar Hábitos" usa um único listener no pai (`ui.habitList`)
+ *    para gerenciar cliques em N botões de ação, economizando memória e custos de attach/detach.
+ * 2. Estado Efêmero: Usa `state.editingHabit` como um "Rascunho" (Draft) durante a edição,
+ *    commitando alterações apenas no "Salvar".
+ * 3. Feedback Visual (RAF): Usa `requestAnimationFrame` para garantir que animações CSS (como Shake)
+ *    sejam disparadas no momento correto do pipeline de renderização.
+ */
+
 import { ui } from '../render/ui';
 import { 
     state, 
@@ -60,6 +80,7 @@ const _processAndFormatCelebrations = (
 ): string => {
     if (pendingIds.length === 0) return '';
     
+    // PERFORMANCE: Mapeamento e filtragem em cadeia para preparar string de notificação.
     const habitNames = pendingIds
         .map(id => state.habits.find(h => h.id === id))
         .filter(Boolean)
@@ -81,6 +102,7 @@ const _processAndFormatCelebrations = (
 function _handleFrequencyTypeChange(radio: HTMLInputElement) {
     if (!state.editingHabit) return;
 
+    // Lógica de formulário complexa: Alterna entre estruturas de dados diferentes para frequência
     const type = radio.value as 'daily' | 'interval' | 'specific_days_of_week';
     switch (type) {
         case 'daily':
@@ -94,6 +116,7 @@ function _handleFrequencyTypeChange(radio: HTMLInputElement) {
         case 'interval':
             const intervalFreqTpl = FREQUENCIES.find(f => f.value.type === 'interval')!.value as { type: 'interval', unit: 'days' | 'weeks', amount: number };
             const currentIntervalFreq = state.editingHabit.formData.frequency;
+            // Preserva valores anteriores se já estava no modo intervalo
             const amount = (currentIntervalFreq.type === 'interval' ? currentIntervalFreq.amount : intervalFreqTpl.amount);
             const unit = (currentIntervalFreq.type === 'interval' ? currentIntervalFreq.unit : intervalFreqTpl.unit);
             state.editingHabit.formData.frequency = { type: 'interval', amount, unit };
@@ -125,6 +148,10 @@ function _handleIntervalControlChange(button: HTMLButtonElement) {
     renderFrequencyOptions();
 }
 
+/**
+ * Validação de formulário com feedback visual (Shake Animation).
+ * @returns true se válido, false caso contrário.
+ */
 function _validateHabitName(newName: string, currentHabitId?: string): boolean {
     const formNoticeEl = ui.editHabitForm.querySelector<HTMLElement>('.form-notice')!;
     const habitNameInput = ui.editHabitForm.elements.namedItem('habit-name') as HTMLInputElement;
@@ -138,6 +165,9 @@ function _validateHabitName(newName: string, currentHabitId?: string): boolean {
         formNoticeEl.textContent = t('noticeNameCannotBeEmpty');
         formNoticeEl.classList.add('visible');
         
+        // UX: Animação de erro.
+        // requestAnimationFrame garante que a remoção da classe 'shake' anterior foi processada
+        // antes de readicioná-la, permitindo que a animação reinicie.
         requestAnimationFrame(() => {
             habitNameInput.classList.add('shake');
             habitNameInput.addEventListener('animationend', () => {
@@ -181,6 +211,8 @@ function _validateHabitName(newName: string, currentHabitId?: string): boolean {
 
 
 export function setupModalListeners() {
+    // --- MAIN DASHBOARD ACTIONS ---
+    
     ui.manageHabitsBtn.addEventListener('click', () => {
         // Calls the imported setupManageModal from render/modals.ts
         setupManageModal();
@@ -193,6 +225,9 @@ export function setupModalListeners() {
         openModal(ui.exploreModal);
     });
     
+    // PERFORMANCE: Event Delegation for Manage Habit List.
+    // Em vez de adicionar listeners em cada botão de cada linha (o que seria caro para listas longas),
+    // escutamos no container pai e identificamos a ação via classes CSS.
     ui.habitList.addEventListener('click', (e) => {
         const target = e.target as HTMLElement;
         const button = target.closest<HTMLButtonElement>('button');
@@ -201,6 +236,7 @@ export function setupModalListeners() {
         const habitId = button.closest<HTMLLIElement>('li.habit-list-item')?.dataset.habitId;
         if (!habitId) return;
 
+        // Roteamento de ações baseado em classes
         if (button.classList.contains('end-habit-btn')) {
             requestHabitEndingFromModal(habitId);
         } else if (button.classList.contains('permanent-delete-habit-btn')) {
@@ -233,6 +269,7 @@ export function setupModalListeners() {
         );
     });
     
+    // Configuração do componente Reel Rotary (Seletor de Idioma)
     setupReelRotary({
         viewportEl: ui.languageViewport,
         reelEl: ui.languageReel,
@@ -249,7 +286,9 @@ export function setupModalListeners() {
         render: renderLanguageFilter,
     });
     
+    // --- NOTIFICATIONS & PERMISSIONS ---
     ui.notificationToggle.addEventListener('change', () => {
+        // ASYNC OPERATION: Push notification permission request.
         pushToOneSignal(async (OneSignal: any) => {
             const wantsEnabled = ui.notificationToggle.checked;
             
@@ -261,17 +300,20 @@ export function setupModalListeners() {
             }
 
             // Update UI immediately to show pending state
+            // UX: Desabilita o toggle para evitar estados inconsistentes enquanto a permissão processa
             ui.notificationToggle.disabled = true;
             setTextContent(ui.notificationStatusDesc, t('notificationChangePending'));
         });
     });
 
+    // --- EXPLORE HABITS & PRESETS ---
     ui.exploreHabitList.addEventListener('click', (e) => {
         const item = (e.target as HTMLElement).closest<HTMLElement>('.explore-habit-item');
         if (!item) return;
         const index = parseInt(item.dataset.index!, 10);
         const habitTemplate = PREDEFINED_HABITS[index];
         if (habitTemplate) {
+            // Verifica se o usuário já tem um hábito com este nome (mesmo que antigo/encerrado)
             const anyExistingHabit = state.habits.find(h =>
                 h.scheduleHistory.some(s => s.nameKey === habitTemplate.nameKey)
             );
@@ -290,6 +332,7 @@ export function setupModalListeners() {
         }
     });
 
+    // A11Y: Suporte a teclado na lista de exploração
     ui.exploreHabitList.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
@@ -302,32 +345,38 @@ export function setupModalListeners() {
 
     ui.createCustomHabitBtn.addEventListener('click', () => {
         closeModal(ui.exploreModal);
-        openEditModal(null);
+        openEditModal(null); // null = Modo de criação limpo
     });
 
+    // --- AI FEATURES ---
     ui.aiEvalBtn.addEventListener('click', () => {
+        // Verifica se há celebrações pendentes (21 ou 66 dias)
         const celebration21DayText = _processAndFormatCelebrations(state.pending21DayHabitIds, 'aiCelebration21Day', STREAK_SEMI_CONSOLIDATED);
         const celebration66DayText = _processAndFormatCelebrations(state.pendingConsolidationHabitIds, 'aiCelebration66Day', STREAK_CONSOLIDATED);
         
         const allCelebrations = [celebration66DayText, celebration21DayText].filter(Boolean).join('\n\n');
 
         if (allCelebrations) {
+            // Prioridade 1: Exibir celebrações
             ui.aiResponse.innerHTML = simpleMarkdownToHTML(allCelebrations);
             openModal(ui.aiModal, undefined, () => {
                 state.hasSeenAIResult = true;
                 renderAINotificationState();
             });
+            // Limpa filas de pendência
             state.pending21DayHabitIds = [];
             state.pendingConsolidationHabitIds = [];
             saveState(); // Salva que as notificações foram vistas
             renderAINotificationState();
         } else if ((state.aiState === 'completed' || state.aiState === 'error') && !state.hasSeenAIResult && state.lastAIResult) {
+            // Prioridade 2: Exibir resultado de análise anterior não visto
             ui.aiResponse.innerHTML = simpleMarkdownToHTML(state.lastAIResult);
             openModal(ui.aiModal, undefined, () => {
                 state.hasSeenAIResult = true;
                 renderAINotificationState();
             });
         } else {
+            // Prioridade 3: Menu de opções de IA
             openModal(ui.aiOptionsModal);
         }
     });
@@ -339,12 +388,13 @@ export function setupModalListeners() {
         performAIAnalysis(analysisType);
     });
 
+    // --- GENERIC DIALOGS ---
     ui.confirmModalConfirmBtn.addEventListener('click', () => {
         const action = state.confirmAction;
         state.confirmAction = null;
         state.confirmEditAction = null;
         closeModal(ui.confirmModal);
-        action?.();
+        action?.(); // Executa a ação confirmada
     });
     
     ui.confirmModalEditBtn.addEventListener('click', () => {
@@ -357,6 +407,7 @@ export function setupModalListeners() {
 
     ui.saveNoteBtn.addEventListener('click', handleSaveNote);
 
+    // --- FULL CALENDAR NAVIGATION ---
     ui.fullCalendarPrevBtn.addEventListener('click', () => {
         state.fullCalendar.month--;
         if (state.fullCalendar.month < 0) {
@@ -375,11 +426,13 @@ export function setupModalListeners() {
         renderFullCalendar();
     });
 
+    // Event Delegation para cliques nos dias do calendário completo
     ui.fullCalendarGrid.addEventListener('click', (e) => {
         const dayEl = (e.target as HTMLElement).closest<HTMLElement>('.full-calendar-day');
         if (dayEl && dayEl.dataset.date) {
             state.selectedDate = dayEl.dataset.date;
             
+            // Recalcula o array de datas do calendário da barra superior
             const newDate = parseUTCIsoDate(state.selectedDate);
             state.calendarDates = Array.from({ length: DAYS_IN_CALENDAR }, (_, i) => 
                 addDays(newDate, i - 30)
@@ -387,12 +440,14 @@ export function setupModalListeners() {
 
             closeModal(ui.fullCalendarModal);
             
+            // Marca a UI como suja para re-renderização total
             state.uiDirtyState.calendarVisuals = true;
             state.uiDirtyState.habitListStructure = true;
             invalidateChartCache();
             
             renderApp();
 
+            // UX: Scroll suave para o dia selecionado na barra
             requestAnimationFrame(() => {
                 const selectedEl = ui.calendarStrip.querySelector('.day-item.selected');
                 selectedEl?.scrollIntoView({ behavior: 'auto', block: 'nearest', inline: 'center' });
@@ -400,6 +455,7 @@ export function setupModalListeners() {
         }
     });
 
+    // A11Y: Navegação por teclado no calendário
     ui.fullCalendarGrid.addEventListener('keydown', (e) => {
         if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter', ' '].includes(e.key)) {
             return;
@@ -439,6 +495,7 @@ export function setupModalListeners() {
     
         state.selectedDate = toUTCIsoDateString(newDate);
     
+        // Se mudou de mês, atualiza a view
         if (newDate.getUTCMonth() !== state.fullCalendar.month || newDate.getUTCFullYear() !== state.fullCalendar.year) {
             state.fullCalendar.month = newDate.getUTCMonth();
             state.fullCalendar.year = newDate.getUTCFullYear();
@@ -446,27 +503,32 @@ export function setupModalListeners() {
         
         renderFullCalendar();
         
+        // UX: Mantém o foco no elemento do dia recém-selecionado
         requestAnimationFrame(() => {
             const newSelectedEl = ui.fullCalendarGrid.querySelector<HTMLElement>(`.full-calendar-day[data-date="${state.selectedDate}"]`);
             newSelectedEl?.focus();
         });
     });
 
+    // --- HABIT EDITING ---
     ui.editHabitSaveBtn.addEventListener('click', saveHabitFromModal);
 
     const habitNameInput = ui.editHabitForm.elements.namedItem('habit-name') as HTMLInputElement;
     
+    // Validação em tempo real (onInput)
     habitNameInput.addEventListener('input', () => {
         if (!state.editingHabit) return;
         
         const newName = habitNameInput.value;
         state.editingHabit.formData.name = newName;
+        // Ao editar manualmente, removemos a chave de tradução para preservar o input do usuário
         delete state.editingHabit.formData.nameKey; 
 
         const isValid = _validateHabitName(newName, state.editingHabit.habitId);
         ui.editHabitSaveBtn.disabled = !isValid;
     });
 
+    // Seletor de Ícones
     ui.habitIconPickerBtn.addEventListener('click', () => {
         renderIconPicker();
         openModal(ui.iconPickerModal);
@@ -483,6 +545,7 @@ export function setupModalListeners() {
         }
     });
     
+    // Seletor de Cores
     ui.colorPickerGrid.addEventListener('click', e => {
         const target = e.target as HTMLElement;
         const swatch = target.closest<HTMLButtonElement>('.color-swatch');
@@ -512,6 +575,7 @@ export function setupModalListeners() {
         });
     });
 
+    // Seletor de Horário (Segmented Control)
     ui.habitTimeContainer.addEventListener('click', e => {
         if (!state.editingHabit) return;
         const button = (e.target as HTMLElement).closest<HTMLButtonElement>('.segmented-control-option');
@@ -521,6 +585,7 @@ export function setupModalListeners() {
         const currentlySelected = state.editingHabit.formData.times.includes(time);
 
         if (currentlySelected) {
+            // Impede desmarcar o último horário (deve haver pelo menos um)
             if (state.editingHabit.formData.times.length > 1) {
                 state.editingHabit.formData.times = state.editingHabit.formData.times.filter(t => t !== time);
                 button.classList.remove('selected');
@@ -531,6 +596,7 @@ export function setupModalListeners() {
         }
     });
 
+    // Configurações de Frequência
     ui.frequencyOptionsContainer.addEventListener('change', e => {
         const target = e.target as HTMLElement;
         if (target.matches('input[name="frequency-type"]')) {

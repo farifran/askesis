@@ -1,6 +1,6 @@
 
 {
-    "_comment": "[ANALYSIS PROGRESS]: 100% - Limpeza de chaves mortas realizada [2025-01-16].",
+    "_comment": "[ANALYSIS PROGRESS]: 100% - Limpeza de chaves mortas realizada [2025-03-22].",
     "aiCelebration21Day": {
         "one": "### Parabéns! 🎉\n\nVocê manteve o hábito **{habitNames}** por 21 dias consecutivos! Este é um marco crucial para tornar uma ação automática. Continue com o ótimo trabalho!",
         "other": "### Parabéns! 🎉\n\nVocê manteve os hábitos **{habitNames}** por 21 dias consecutivos! Este é um marco crucial para tornar uma ação automática. Continue com o ótimo trabalho!"
@@ -9,10 +9,7 @@
         "one": "### Conquista Incrível! 🏆\n\nVocê alcançou 66 dias com o hábito **{habitNames}**! A ciência sugere que este é o ponto em que um novo comportamento se torna verdadeiramente consolidado. Você construiu uma base sólida para uma mudança duradoura.",
         "other": "### Conquista Incrível! 🏆\n\nVocê alcançou 66 dias com os hábitos **{habitNames}**! A ciência sugere que este é o ponto em que um novo comportamento se torna verdadeiramente consolidado. Você construiu uma base sólida para uma mudança duradoura."
     },
-    "aiError": "Erro ao analisar dados.",
     "aiErrorGeneric": "Ocorreu um erro na comunicação com a Inteligência Artificial. Por favor, tente novamente mais tarde.",
-    "aiErrorPrefix": "Erro da IA",
-    "aiErrorUnknown": "Ocorreu um erro desconhecido.",
     "aiEval_ariaLabel": "Avaliação IA",
     "aiOptionHistoricalDesc": "Uma visão completa de toda a sua jornada.",
     "aiOptionHistoricalTitle": "Análise Histórica",
@@ -29,7 +26,7 @@
     "aiPromptMonthly": "Realize uma análise de desempenho do último mês (30 dias). Seu feedback DEVE focar em: 1. Uma reflexão sobre a consistência geral e tendências observadas. 2. Identificar qual hábito foi o maior desafio e por quê. 3. Fornecer UMA sugestão acionável para melhorar a consistência para o próximo mês.\n\nDados:\n- Hábitos Ativos: {activeHabitList}\n{graduatedHabitsSection}- Histórico dos Últimos 30 Días:\n{history}",
     "aiPromptNoData": "Sem dados.",
     "aiPromptNone": "Nenhum",
-    "aiPromptWeekly": "Sua análise deve ser global, buscando padrões nos últimos 7 dias. Seu feedback DEVE ser: 1. Uma reflexão estoica concisa (1-2 frases) sobre o padrão geral. 2. UMA única sugestão profunda e acionável como um item de lista para fortalecer a virtude e a disciplina.\n\nDados:\n- Hábitos Ativos: {activeHabitList}\n{graduatedHabitsSection}- Histórico dos Últimos 7 Dias:\n{history}",
+    "aiPromptQuarterly": "Realize uma análise trimestral (90 dias). Seu feedback DEVE focar em: 1. Tendências de longo prazo e consistência nos últimos 3 meses. 2. Identificar hábitos que se consolidaram ou enfraqueceram neste período. 3. Fornecer uma estratégia estoica para manter a disciplina no próximo trimestre.\n\nDados:\n- Hábitos Ativos: {activeHabitList}\n{graduatedHabitsSection}- Histórico dos Últimos 90 Dias:\n{history}",
     "aiSystemInstruction": "Você é um Sábio Estoico, um mentor de hábitos que valoriza a consistência acima da perfeição e o foco no que podemos controlar (nossas ações). Sua resposta DEVE ser em {languageName}. Use markdown. O histórico de hábitos usa estes símbolos: ✅ para Concluído, ⚪️ para Pendente, e ➡️ para Adiado.",
     "appName": "<strong>A</strong>skes<strong>I</strong>s",
     "appSubtitle": "Aja até ser, você é o somatório dos seus hábitos.",
@@ -37,8 +34,6 @@
     "aria_edit": "Editar {habitName}",
     "aria_end": "Encerrar {habitName}",
     "aria_graduate": "Graduar Hábito {habitName}",
-    "btnRemoveHabit": "Apagar Hábito",
-    "btnRemoveTimeOnly": "Remover {time}",
     "buttonDelete": "Apagar",
     "buttonEnd": "Encerrar",
     "buttonFromNowOn": "De Agora em Diante",
@@ -104,13 +99,11 @@
     "modalAITitle": "Avaliação da IA",
     "modalColorPickerTitle": "Selecionar Cor",
     "modalConfirmTitle": "Confirmar Ação",
-    "modalDeleteHabitTitle": "Apagar Permanentemente",
     "modalEditFormNameLabel": "Nome",
     "modalEditFormNotice": "Por favor, dê um nome ao hábito e selecione pelo menos um horário.",
     "modalEditNewTitle": "Adicionar Hábito",
     "modalEditSaveButton": "Salvar Hábito",
     "modalEditTitle": "Editar Hábito",
-    "modalEndHabitTitle": "Encerrar Hábito",
     "modalExploreCreateCustom": "Criar hábito personalizado",
     "modalExploreTitle": "Explorar Hábitos",
     "modalIconPickerTitle": "Selecionar Ícone",

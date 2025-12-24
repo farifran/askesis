@@ -6,23 +6,31 @@
 
 /**
  * @file cloud.ts
- * @description Orquestrador de Sincronização e Ponte para Web Workers.
+ * @description Orquestrador de Sincronização e Ponte para Web Workers (Main Thread Client).
  * 
  * [MAIN THREAD CONTEXT]:
- * Este código roda na thread principal (UI).
+ * Este módulo roda na thread principal (UI), mas sua função primária é **delegar** processamento pesado.
+ * Atua como o "Cliente" para o `sync.worker.ts` e gerencia a máquina de estados da sincronização.
  * 
- * ARQUITETURA CRÍTICA (Worker Bridge):
- * - Atua como cliente para o `sync.worker.ts`.
- * - Responsável por delegar tarefas pesadas (Criptografia, Decriptografia, Parsing de JSON massivo, Construção de Prompts IA)
- *   para a thread de background, garantindo que a UI nunca trave (0 jank).
+ * ARQUITETURA (Worker Bridge & Mutex):
+ * - **Responsabilidade Única:** Gerenciar o ciclo de vida da sincronização (Rede + Criptografia) e comunicação com Workers.
+ * - **Off-Main-Thread Architecture:** Garante que Criptografia (AES-GCM), Parsing de JSON massivo e 
+ *   construção de prompts de IA ocorram em uma thread separada para manter a UI em 60fps (Zero Jank).
+ * - **Controle de Concorrência:** Implementa um Mutex lógico (`isSyncInProgress`) e Debouncing 
+ *   para evitar condições de corrida em rede e sobrecarga de bateria.
  * 
- * RESPONSABILIDADE:
- * 1. Gerenciamento do Ciclo de Vida do Worker (Singleton Lazy-Loaded).
- * 2. Controle de Concorrência de Rede (Debounce + Mutex).
- * 3. Resolução de Conflitos de Dados (Smart Merge).
+ * DEPENDÊNCIAS CRÍTICAS:
+ * - `sync.worker.ts`: O script do worker (deve coincidir com a saída do build).
+ * - `services/dataMerge.ts`: Algoritmo de resolução de conflitos (Smart Merge).
+ * - `services/api.ts`: Transporte HTTP.
+ * 
+ * DECISÕES TÉCNICAS:
+ * 1. **Lazy Worker Instantiation:** O Worker consome memória significativa. Só é criado quando necessário.
+ * 2. **Promise-based Messaging:** Abstrai a complexidade de `postMessage` em chamadas `async/await` lineares.
+ * 3. **Recursive Queueing:** Se o estado muda durante uma sincronização, uma nova sincronização é agendada automaticamente.
  */
 
-import { AppState, state, getPersistableState, STATE_STORAGE_KEY } from '../state';
+import { AppState, state, getPersistableState } from '../state';
 import { loadState, persistStateLocally } from './persistence';
 import { pushToOneSignal, generateUUID } from '../utils';
 import { ui } from '../render/ui';
@@ -31,22 +39,27 @@ import { hasLocalSyncKey, getSyncKey, apiFetch } from './api';
 import { renderApp, updateNotificationUI } from '../render';
 import { mergeStates } from './dataMerge';
 
-// Debounce para evitar salvar na nuvem a cada pequena alteração (ex: digitar uma nota).
-// PERFORMANCE: Reduz chamadas de API e overhead de criptografia.
+// PERFORMANCE: Debounce para evitar salvar na nuvem a cada pequena alteração (ex: digitar uma nota).
+// Reduz chamadas de API e overhead de criptografia (bateria).
 let syncTimeout: number | null = null;
 const DEBOUNCE_DELAY = 2000; // 2 segundos
 
-// MELHORIA DE ROBUSTEZ: Variáveis de estado para prevenir condições de corrida de sincronização (Mutex lógico).
+// CRITICAL LOGIC: Mutex de Sincronização.
+// Variáveis de estado para prevenir condições de corrida (Race Conditions) na rede.
+// Garante que apenas uma operação de sync ocorra por vez.
 let isSyncInProgress = false;
 let pendingSyncState: AppState | null = null;
 
 // --- WORKER INFRASTRUCTURE [2025-02-28] ---
 // Singleton lazy-loaded worker instance.
-// PERFORMANCE: Só instanciamos o worker se e quando for necessário (ex: usuário ativa sync).
 let syncWorker: Worker | null = null;
+// Map para correlacionar requisições e respostas do Worker via IDs únicos.
 const workerCallbacks = new Map<string, { resolve: (val: any) => void, reject: (err: any) => void }>();
 
 function getWorker(): Worker {
+    // PERFORMANCE: Lazy Loading.
+    // Só instanciamos o worker se e quando for necessário (ex: usuário ativa sync ou pede análise IA).
+    // Isso economiza memória e tempo de boot para usuários locais.
     if (!syncWorker) {
         // O nome do arquivo deve corresponder à saída configurada no build.js
         syncWorker = new Worker('./sync-worker.js', { type: 'module' });
@@ -81,7 +94,7 @@ function getWorker(): Worker {
  * @param payload Dados para processamento.
  * @param key (Opcional) Chave de criptografia/sincronização.
  */
-export function runWorkerTask<T>(type: 'encrypt' | 'decrypt' | 'build-ai-prompt', payload: any, key?: string): Promise<T> {
+export function runWorkerTask<T>(type: 'encrypt' | 'decrypt' | 'build-ai-prompt' | 'archive', payload: any, key?: string): Promise<T> {
     return new Promise((resolve, reject) => {
         const id = generateUUID();
         // Armazena os handlers da Promise para serem chamados quando o worker responder com este ID.
@@ -98,7 +111,10 @@ interface ServerPayload {
 
 export function setSyncStatus(statusKey: 'syncSaving' | 'syncSynced' | 'syncError' | 'syncInitial') {
     state.syncState = statusKey;
-    ui.syncStatus.textContent = t(statusKey);
+    // PERFORMANCE: Atualização direta do DOM, ignorando o ciclo de renderização completo se possível.
+    if (ui.syncStatus) {
+        ui.syncStatus.textContent = t(statusKey);
+    }
 }
 
 /**
@@ -111,7 +127,7 @@ export function setupNotificationListeners() {
         // Este listener garante que a UI seja atualizada se o usuário alterar
         // as permissões de notificação nas configurações do navegador enquanto o app estiver aberto.
         OneSignal.Notifications.addEventListener('permissionChange', () => {
-            // Adia a atualização da UI para dar tempo ao SDK de atualizar seu estado interno.
+            // UX: Adia a atualização da UI para dar tempo ao SDK de atualizar seu estado interno.
             setTimeout(updateNotificationUI, 500);
         });
 
@@ -138,7 +154,7 @@ async function resolveConflictWithServerState(serverPayload: ServerPayload) {
     try {
         // DO NOT REFACTOR: Worker Offload Crítico.
         // A decriptografia e o parsing de JSON podem bloquear a main thread por 50-200ms
-        // dependendo do tamanho do histórico. Isso DEVE ocorrer no worker.
+        // dependendo do tamanho do histórico. Isso DEVE ocorrer no worker para evitar travamento da UI.
         const serverState = await runWorkerTask<AppState>('decrypt', serverPayload.state, syncKey);
 
         // IMPLEMENTAÇÃO DE SMART MERGE [2025-02-23]:
@@ -150,14 +166,15 @@ async function resolveConflictWithServerState(serverPayload: ServerPayload) {
         const localState = getPersistableState();
 
         // 2. Executa a fusão (usando a função importada)
-        // Nota: O merge ainda é feito na main thread pois é rápido (lógica de negócio), 
+        // Nota: O merge ainda é feito na main thread pois é rápido (lógica de negócio pura), 
         // mas poderia ser movido para o worker se a estrutura AppState crescer muito.
         const mergedState = mergeStates(localState, serverState);
         console.log("Smart Merge completed successfully.");
 
         // 3. Persiste e Carrega o novo estado unificado
-        persistStateLocally(mergedState);
-        loadState(mergedState);
+        // ASYNC PERSISTENCE: Aguarda a escrita no IDB antes de atualizar a UI.
+        await persistStateLocally(mergedState);
+        await loadState(mergedState);
         
         // 4. Atualiza a UI
         renderApp();
@@ -181,11 +198,13 @@ async function resolveConflictWithServerState(serverPayload: ServerPayload) {
  * CRITICAL LOGIC: Implementa um Mutex (isSyncInProgress) para serializar os salvamentos.
  */
 async function performSync() {
-    // Se já estamos sincronizando ou não há nada pendente (race condition check), aborta.
+    // DO NOT REFACTOR: Race Condition Guard.
+    // Se já estamos sincronizando ou não há nada pendente, aborta.
     if (isSyncInProgress || !pendingSyncState) {
         return;
     }
 
+    // Lock Mutex
     isSyncInProgress = true;
     const appState = pendingSyncState;
     pendingSyncState = null; // Consome o estado pendente, liberando o slot.
@@ -194,7 +213,7 @@ async function performSync() {
     if (!syncKey) {
         setSyncStatus('syncError');
         console.error("Cannot sync without a sync key.");
-        isSyncInProgress = false; // Libera a trava
+        isSyncInProgress = false; // Release Mutex
         return;
     }
 
@@ -202,7 +221,7 @@ async function performSync() {
         // DO NOT REFACTOR: Worker Offload Crítico.
         // 1. Serialização JSON (CPU intensive)
         // 2. Criptografia AES-GCM (CPU intensive)
-        // Ocorrem na thread secundária para manter a UI fluida (60fps) durante o "Salvando...".
+        // Ocorrem na thread secundária para manter a UI fluida (60fps) durante o status "Salvando...".
         const encryptedState = await runWorkerTask<string>('encrypt', appState, syncKey);
 
         const payload: ServerPayload = {
@@ -210,6 +229,7 @@ async function performSync() {
             state: encryptedState,
         };
         
+        // Network IO
         const response = await apiFetch('/api/sync', {
             method: 'POST',
             body: JSON.stringify(payload),
@@ -228,8 +248,10 @@ async function performSync() {
         console.error("Error syncing state to cloud:", error);
         setSyncStatus('syncError');
     } finally {
+        // Release Mutex
         isSyncInProgress = false;
-        // DO NOT REFACTOR: Queue Processing.
+        
+        // DO NOT REFACTOR: Queue Processing (Recursion).
         // Se um novo estado foi salvo (pendingSyncState != null) ENQUANTO a sincronização estava em andamento,
         // aciona uma nova sincronização imediatamente para processar a fila e garantir consistência final.
         if (pendingSyncState) {
@@ -286,11 +308,11 @@ export async function fetchStateFromCloud(): Promise<AppState | undefined> {
         } else {
             // Nenhum dado na nuvem (resposta foi 200 com corpo nulo)
             console.log("No state found in cloud for this sync key. Performing initial sync.");
-            const localDataJSON = localStorage.getItem(STATE_STORAGE_KEY);
-            if (localDataJSON) {
-                const localState = JSON.parse(localDataJSON) as AppState;
-                // Empurra o estado local para a nuvem recém-configurada
-                syncStateWithCloud(localState, true);
+            // FIX [2025-03-20]: Use getPersistableState() instead of reading from localStorage.
+            // Persistence is now abstracted (IndexedDB). If memory state is populated, sync it.
+            if (state.habits.length > 0 || Object.keys(state.dailyData).length > 0) {
+                // Empurra o estado local atual para a nuvem
+                syncStateWithCloud(getPersistableState(), true);
             }
             return undefined;
         }

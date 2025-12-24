@@ -17,13 +17,14 @@
  * - I18n: Usa chaves de tradução (nameKey, subtitleKey) em vez de texto hardcoded para suportar troca dinâmica de idioma.
  * 
  * DEPENDÊNCIAS CRÍTICAS:
- * - `HABIT_ICONS` (render/icons.ts): Deve conter apenas strings SVG puras, sem dependências de DOM (HTMLElement),
+ * - `HABIT_ICONS` (data/icons.ts): Deve conter apenas strings SVG puras, sem dependências de DOM (HTMLElement),
  *   para garantir que este arquivo possa ser importado dentro do Worker sem causar erro "document is not defined".
  */
 
 import { PredefinedHabit } from '../state';
-// PERFORMANCE: Importa apenas strings SVG, seguro para Worker (não acessa DOM nem causa reflow).
-import { HABIT_ICONS } from '../render/icons';
+// ARCHITECTURE FIX [2025-03-22]: Importa de data/icons.ts para garantir segurança no Worker.
+// Evita importar de render/icons.ts que pode conter lógica de DOM no futuro.
+import { HABIT_ICONS } from './icons';
 
 // DO NOT REFACTOR: A estrutura deve corresponder estritamente ao tipo PredefinedHabit
 // para garantir a serialização correta entre threads (postMessage) e compatibilidade com o sistema de tipos.
