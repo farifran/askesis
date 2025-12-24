@@ -42,7 +42,6 @@ const INITIAL_SCORE = 100;
 const MAX_DAILY_CHANGE_RATE = 0.015;
 // VISUAL FIX [2025-03-22]: Padding horizontal de 3px para evitar corte da linha (stroke clipping) nas bordas.
 const CHART_PADDING = { top: 5, right: 3, bottom: 5, left: 3 };
-const FIXED_Y_AXIS_RANGE = 15;
 
 type ChartDataPoint = {
     date: string;
@@ -159,8 +158,8 @@ function _calculateChartScales(chartData: ChartDataPoint[], chartWidthPx: number
         ui.chart.svg.setAttribute('viewBox', newViewBox);
     }
 
-    // VISUAL FIX [2025-03-22]: Escala Dinâmica (Dynamic Scaling).
-    // Calcula os extremos dos dados para garantir que a linha nunca seja cortada verticalmente.
+    // VISUAL FIX [2025-03-22]: Escala Dinâmica (Dynamic Scaling) Ajustada.
+    // O objetivo é maximizar o uso vertical do gráfico para tornar as variações mais visíveis.
     let dataMin = Infinity;
     let dataMax = -Infinity;
     
@@ -171,16 +170,25 @@ function _calculateChartScales(chartData: ChartDataPoint[], chartWidthPx: number
         if (val > dataMax) dataMax = val;
     }
 
-    // Começa com a escala fixa padrão (para consistência visual inicial)
-    let minVal = INITIAL_SCORE - FIXED_Y_AXIS_RANGE; // Ex: 85
-    let maxVal = INITIAL_SCORE + FIXED_Y_AXIS_RANGE; // Ex: 115
+    // Define uma amplitude mínima para evitar ruído excessivo em linhas quase planas (ex: 100.00 vs 100.01)
+    const MIN_VISUAL_AMPLITUDE = 2.0; 
+    let spread = dataMax - dataMin;
 
-    // Expande a escala se os dados ultrapassarem os limites (Buffer de 5 unidades)
-    if (dataMin < minVal) minVal = Math.floor(dataMin - 5);
-    if (dataMax > maxVal) maxVal = Math.ceil(dataMax + 5);
+    if (spread < MIN_VISUAL_AMPLITUDE) {
+        const center = (dataMin + dataMax) / 2;
+        dataMin = center - (MIN_VISUAL_AMPLITUDE / 2);
+        dataMax = center + (MIN_VISUAL_AMPLITUDE / 2);
+        spread = MIN_VISUAL_AMPLITUDE;
+    }
+
+    // Adiciona um pequeno padding (buffer) vertical proporcional à amplitude (15%) para a linha não tocar as bordas
+    const verticalPadding = spread * 0.15;
+    
+    const minVal = dataMin - verticalPadding;
+    const maxVal = dataMax + verticalPadding;
 
     const valueRange = maxVal - minVal;
-    // Evita divisão por zero
+    
     chartMetadata = { minVal, maxVal, valueRange: valueRange > 0 ? valueRange : 1 };
 
     const xScale = (index: number) => padding.left + (index / (chartData.length - 1)) * chartWidth;
@@ -192,6 +200,7 @@ function _calculateChartScales(chartData: ChartDataPoint[], chartWidthPx: number
 function _generatePathData(chartData: ChartDataPoint[], { xScale, yScale }: ChartScales): { areaPathData: string, linePathData: string } {
     // PERFORMANCE [2025-03-14]: Use specialized join for large arrays if needed, but standard map/join is fast enough here.
     const linePathData = chartData.map((point, i) => `${i === 0 ? 'M' : 'L'} ${xScale(i)} ${yScale(point.value)}`).join(' ');
+    // A área deve fechar no eixo inferior do gráfico (base da escala)
     const areaPathData = `${linePathData} V ${yScale(chartMetadata.minVal)} L ${xScale(0)} ${yScale(chartMetadata.minVal)} Z`;
     return { areaPathData, linePathData };
 }
