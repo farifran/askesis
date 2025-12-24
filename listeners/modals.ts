@@ -53,6 +53,7 @@ import {
     renderColorPicker,
     renderFullCalendar,
     renderApp,
+    setLanguage, // Moved to render.ts
 } from '../render';
 import {
     saveHabitFromModal,
@@ -66,7 +67,7 @@ import {
     exportData,
     importData,
 } from '../habitActions';
-import { setLanguage, t, getHabitDisplayInfo } from '../i18n';
+import { t, getHabitDisplayInfo } from '../i18n';
 import { setupReelRotary } from '../render/rotary';
 import { simpleMarkdownToHTML, pushToOneSignal, getContrastColor, addDays, parseUTCIsoDate, toUTCIsoDateString } from '../utils';
 import { setTextContent } from '../render/dom';

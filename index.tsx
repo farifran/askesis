@@ -32,10 +32,9 @@ import { inject } from '@vercel/analytics';
 import './index.css';
 import { state, AppState } from './state';
 import { loadState, persistStateLocally, registerSyncHandler } from './services/persistence';
-// DEAD CODE REMOVAL [2025-03-10]: initUI removed as UI elements are lazily initialized.
-import { renderApp } from './render';
+import { renderApp, initI18n } from './render';
 import { setupEventListeners } from './listeners';
-import { initI18n } from './i18n';
+// I18N moved to render.ts to fix circular dependency
 import { createDefaultHabit, handleDayTransition } from './habitActions';
 import { initSync } from './listeners/sync';
 import { fetchStateFromCloud, setupNotificationListeners, syncStateWithCloud } from './services/cloud';

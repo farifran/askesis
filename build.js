@@ -16,18 +16,19 @@
  * 1. Compilação TypeScript -> JavaScript (ESM) usando esbuild.
  * 2. Gestão de Assets Estáticos (HTML, CSS, JSON, SVG).
  * 3. Versionamento Automático do Service Worker (Cache Busting).
- * 4. Servidor de Desenvolvimento com suporte a SPA e Service Workers.
+ * 4. Servidor de Desenvolvimento com suporte a SPA, Service Workers E Mock de API Serverless.
  * 
  * ARQUITETURA CRÍTICA:
  * - Multi-Entry Bundling: Separa 'bundle' (UI Main Thread) e 'sync-worker' (Worker Thread).
- *   Isso é obrigatório para que o `new Worker('./sync-worker.js')` funcione no browser.
  * - Injection: Define variáveis de ambiente (NODE_ENV) em tempo de build.
+ * - API Proxy/Mock: Intercepta requisições /api/ localmente para simular Vercel Functions.
  */
 
 const esbuild = require('esbuild');
 const fs = require('fs/promises'); // API de sistema de arquivos baseada em Promises
 const fsSync = require('fs'); // [2025-02-23] API síncrona para watch e checks rápidos
 const path = require('path'); 
+const http = require('http');
 
 const isProduction = process.env.NODE_ENV === 'production';
 const outdir = 'public';
@@ -38,13 +39,8 @@ async function copyStaticFiles() {
     await fs.copyFile('manifest.json', path.join(outdir, 'manifest.json'));
     
     // Versionamento Dinâmico do Service Worker
-    // Lê o sw.js original e injeta um timestamp no CACHE_NAME para forçar a atualização do cache no navegador.
     try {
         const swContent = await fs.readFile('sw.js', 'utf-8');
-        
-        // CRITICAL LOGIC [CACHE BUSTING]:
-        // DO NOT REFACTOR: Esta Regex depende estritamente da sintaxe `const CACHE_NAME = '...'` no sw.js.
-        // Qualquer alteração de formatação no sw.js pode quebrar essa injeção, impedindo a atualização do PWA.
         const versionRegex = /const\s+CACHE_NAME\s*=\s*['"][^'"]+['"];/;
         
         if (versionRegex.test(swContent)) {
@@ -54,17 +50,14 @@ async function copyStaticFiles() {
             );
             await fs.writeFile(path.join(outdir, 'sw.js'), versionedSw);
         } else {
-            // [2025-02-23] ROBUSTEZ: Alerta se o padrão de cache não for encontrado, evitando cache estagnado silencioso.
             console.warn('⚠️ AVISO: Padrão CACHE_NAME não encontrado em sw.js. O versionamento automático falhou.');
             await fs.copyFile('sw.js', path.join(outdir, 'sw.js'));
         }
     } catch (e) {
         console.error('Erro ao processar sw.js:', e);
-        // Fallback para cópia simples em caso de erro de leitura/escrita
         await fs.copyFile('sw.js', path.join(outdir, 'sw.js'));
     }
 
-    // Copia diretórios recursivamente se existirem
     try {
         await fs.cp('icons', path.join(outdir, 'icons'), { recursive: true });
         await fs.cp('locales', path.join(outdir, 'locales'), { recursive: true });
@@ -75,37 +68,21 @@ async function copyStaticFiles() {
     console.log('Arquivos estáticos copiados.');
 }
 
-/**
- * MELHORIA DE DX [2024-12-23]: Adiciona um watcher para arquivos estáticos no modo de desenvolvimento.
- * Isso garante que mudanças em arquivos como index.html ou assets sejam automaticamente
- * copiadas para o diretório de saída sem a necessidade de reiniciar o servidor.
- */
 function watchStaticFiles() {
-    const pathsToWatch = [
-        'index.html',
-        'manifest.json',
-        'sw.js',
-        'icons',
-        'locales'
-    ];
-
+    const pathsToWatch = ['index.html', 'manifest.json', 'sw.js', 'icons', 'locales'];
     console.log('Observando arquivos estáticos para mudanças...');
 
     pathsToWatch.forEach(p => {
-        // [2025-02-23] ROBUSTEZ: Verifica existência antes de assistir para evitar crash imediato.
-        if (!fsSync.existsSync(p)) {
-            return;
-        }
+        if (!fsSync.existsSync(p)) return;
 
-        // PERFORMANCE: Debounce para evitar múltiplas cópias em salvamentos rápidos ou eventos duplicados do SO.
         let debounceTimeout;
         try {
             fsSync.watch(p, { recursive: ['icons', 'locales'].includes(p) }, (eventType, filename) => {
                 if (debounceTimeout) clearTimeout(debounceTimeout);
                 debounceTimeout = setTimeout(() => {
-                    console.log(`Mudança detectada em '${p}${filename ? '/' + filename : ''}'. Recopiando arquivos estáticos...`);
-                    copyStaticFiles().catch(err => console.error('Falha ao recopiar arquivos estáticos:', err));
-                }, 100); // Debounce de 100ms
+                    console.log(`Mudança detectada em '${p}'. Recopiando...`);
+                    copyStaticFiles().catch(err => console.error('Falha ao recopiar:', err));
+                }, 100);
             });
         } catch (err) {
             console.warn(`Aviso: Não foi possível iniciar watch para ${p}.`, err.message);
@@ -113,8 +90,6 @@ function watchStaticFiles() {
     });
 }
 
-// MELHORIA DE DX [2024-12-24]: Plugin customizado para esbuild que fornece feedback detalhado
-// sobre o processo de reconstrução no modo de desenvolvimento.
 const watchLoggerPlugin = {
     name: 'watch-logger',
     setup(build) {
@@ -134,28 +109,112 @@ const watchLoggerPlugin = {
     },
 };
 
+// --- API MOCK SERVER HELPERS ---
+
+const MOCK_DB_FILE = '.local-kv.json';
+
+async function handleApiSync(req, res) {
+    if (req.method === 'GET') {
+        try {
+            // Check for key hash header
+            const keyHash = req.headers['x-sync-key-hash'];
+            if (!keyHash) {
+                res.writeHead(401, { 'Content-Type': 'application/json' });
+                return res.end(JSON.stringify({ error: 'Unauthorized' }));
+            }
+
+            if (!fsSync.existsSync(MOCK_DB_FILE)) {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                return res.end('null');
+            }
+            
+            const db = JSON.parse(await fs.readFile(MOCK_DB_FILE, 'utf-8'));
+            const userData = db[keyHash];
+            
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(userData || null));
+        } catch (e) {
+            console.error('API Mock Error (GET /api/sync):', e);
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: e.message }));
+        }
+    } else if (req.method === 'POST') {
+        let body = '';
+        req.on('data', chunk => body += chunk.toString());
+        req.on('end', async () => {
+            try {
+                const keyHash = req.headers['x-sync-key-hash'];
+                if (!keyHash) {
+                    res.writeHead(401, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify({ error: 'Unauthorized' }));
+                }
+
+                const payload = JSON.parse(body);
+                
+                let db = {};
+                if (fsSync.existsSync(MOCK_DB_FILE)) {
+                    db = JSON.parse(await fs.readFile(MOCK_DB_FILE, 'utf-8'));
+                }
+                
+                const existingData = db[keyHash];
+                
+                // Optimistic Locking Check
+                if (existingData && payload.lastModified < existingData.lastModified) {
+                    res.writeHead(409, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify(existingData));
+                }
+                
+                if (existingData && payload.lastModified === existingData.lastModified) {
+                    res.writeHead(304); // Not Modified
+                    return res.end();
+                }
+
+                // Save
+                db[keyHash] = payload;
+                await fs.writeFile(MOCK_DB_FILE, JSON.stringify(db, null, 2));
+                
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: true }));
+            } catch (e) {
+                console.error('API Mock Error (POST /api/sync):', e);
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: e.message }));
+            }
+        });
+    } else {
+        res.writeHead(405);
+        res.end();
+    }
+}
+
+async function handleApiAnalyze(req, res) {
+    if (req.method !== 'POST') {
+        res.writeHead(405);
+        res.end();
+        return;
+    }
+    
+    // Mock response for local development (no API Key required)
+    // Returns a generic positive message to prove integration works.
+    const mockResponse = "### Análise Local (Modo Desenvolvimento)\n\n**Estoicismo Simulado:**\n\nVocê está indo bem! A consistência é a chave. Continue praticando seus hábitos diários. Lembre-se: não é o que acontece com você, mas como você reage a isso.";
+    
+    // Simulate latency
+    setTimeout(() => {
+        res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end(mockResponse);
+    }, 1500);
+}
+
 
 async function build() {
     try {
         console.log(`Iniciando build de ${isProduction ? 'produção' : 'desenvolvimento'}...`);
-        // --- 1. Limpeza e Preparação do Diretório de Saída ---
         console.log(`Limpando diretório de saída: ${outdir}...`);
         await fs.rm(outdir, { recursive: true, force: true });
         await fs.mkdir(outdir, { recursive: true });
-        console.log('Diretório de saída preparado.');
-
-        // --- 2. Cópia Inicial de Arquivos Estáticos ---
-        // CRÍTICO: Deve ocorrer antes de iniciar o servidor ou watch.
-        // Garante que sw.js exista quando o navegador o solicitar.
+        
         await copyStaticFiles();
 
-        // --- 3. Compilação do Código TypeScript/CSS com esbuild ---
-        // ARQUITETURA [2025-02-28]: Configuração multi-entry para suportar Web Worker.
-        // 'bundle': A aplicação principal (Main Thread).
-        // 'sync-worker': O script do worker isolado (Worker Thread).
-        // DO NOT REFACTOR: Unificar esses entryPoints quebrará o carregamento do Worker.
-        // NOTA: 'splitting' foi removido para evitar a criação de chunks compartilhados dinâmicos
-        // que não seriam cacheados pelo SW estático, garantindo robustez Offline-First.
         const esbuildOptions = {
             entryPoints: {
                 'bundle': 'index.tsx',
@@ -163,73 +222,80 @@ async function build() {
             },
             bundle: true,
             outdir: outdir,
-            entryNames: '[name]', // Usa a chave do objeto entryPoints como nome do arquivo
-            format: 'esm', // Formato de módulo para suportar import/export nativo
+            entryNames: '[name]',
+            format: 'esm',
             platform: 'browser',
             minify: isProduction,
             sourcemap: !isProduction,
-            // CRÍTICO [2025-02-28]: Substitui process.env.NODE_ENV por string literal no tempo de build.
-            // Isso previne erros "process is not defined" no navegador ao usar bibliotecas ou código condicional.
             define: { 
                 'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'development') 
             }
         };
         
         if (isProduction) {
-            // --- Build de Produção: Execução única e otimizada ---
-            console.log('Compilando aplicação para produção com esbuild...');
+            console.log('Compilando aplicação para produção...');
             await esbuild.build(esbuildOptions);
-            console.log('Aplicação compilada com sucesso.');
-            console.log(`\nBuild de produção concluído com sucesso!`);
+            console.log(`\nBuild de produção concluído!`);
         } else {
-            // --- Build de Desenvolvimento: Modo de Observação (Watch) e Servidor ---
-            // Adiciona o plugin de logging apenas no modo de desenvolvimento
             esbuildOptions.plugins = [watchLoggerPlugin];
-            
-            console.log('Configurando esbuild em modo de observação para desenvolvimento...');
+            console.log('Configurando servidor de desenvolvimento...');
             const ctx = await esbuild.context(esbuildOptions);
-            
-            // Ativa o watch mode
             await ctx.watch();
-            console.log('Observação do código-fonte ativada.');
 
-            // CORREÇÃO CRÍTICA: Inicia um servidor local servindo a pasta 'public'.
-            // Isso resolve o erro "ServiceWorker script origin does not match" garantindo
-            // que index.html e sw.js sejam servidos da mesma raiz.
-            const { host, port } = await ctx.serve({
+            // Configura o servidor estático do esbuild
+            const { host, port: esbuildPort } = await ctx.serve({
                 servedir: outdir,
-                port: 8000, // Porta preferencial, fará fallback se ocupada
-                fallback: 'index.html' // Útil para SPA routing
+                fallback: 'index.html'
             });
 
-            // Inicia o monitoramento de arquivos estáticos para recópia automática.
-            watchStaticFiles();
-
-            console.log(`\n🚀 Servidor de desenvolvimento iniciado!`);
-            console.log(`👉 Abra no navegador: http://localhost:${port}`);
-            console.log('Pressione Ctrl+C para sair.');
-
-            // [2025-01-15] ROBUSTEZ: Implementação de encerramento gracioso (Graceful Shutdown).
-            const handleExit = async () => {
-                console.log('\nEncerrando servidor de desenvolvimento...');
-                try {
-                    await ctx.dispose();
-                } catch (err) {
-                    console.error('Erro ao descartar contexto do esbuild:', err);
+            // Cria um Proxy Server customizado para interceptar API
+            const devServer = http.createServer((req, res) => {
+                // Intercept API requests
+                if (req.url.startsWith('/api/sync')) {
+                    return handleApiSync(req, res);
                 }
+                if (req.url.startsWith('/api/analyze')) {
+                    return handleApiAnalyze(req, res);
+                }
+
+                // Forward all other requests to esbuild static server
+                const options = {
+                    hostname: host,
+                    port: esbuildPort,
+                    path: req.url,
+                    method: req.method,
+                    headers: req.headers,
+                };
+
+                const proxyReq = http.request(options, (proxyRes) => {
+                    res.writeHead(proxyRes.statusCode, proxyRes.headers);
+                    proxyRes.pipe(res, { end: true });
+                });
+
+                req.pipe(proxyReq, { end: true });
+            });
+
+            const DEV_PORT = 8000;
+            devServer.listen(DEV_PORT, () => {
+                console.log(`\n🚀 Servidor Dev iniciado em http://localhost:${DEV_PORT}`);
+                console.log(`✨ API Mock ativa em /api/*`);
+                watchStaticFiles();
+            });
+
+            const handleExit = async () => {
+                console.log('\nEncerrando...');
+                devServer.close();
+                await ctx.dispose();
                 process.exit(0);
             };
-
             process.on('SIGINT', handleExit);
             process.on('SIGTERM', handleExit);
         }
 
     } catch (e) {
-        // Em caso de falha, exibe o erro e encerra o processo com um código de erro.
         console.error('O build falhou:', e);
         process.exit(1);
     }
 }
 
-// Executa a função de build.
 build();

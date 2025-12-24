@@ -9,48 +9,33 @@
  * @description Motor de Internacionalização (i18n) e Formatação de Texto.
  * 
  * [MAIN THREAD CONTEXT]:
- * Executa na thread principal. A performance aqui é crítica pois `t()` é chamada centenas de vezes
- * durante a renderização do calendário e listas.
+ * Executa na thread principal. A performance aqui é crítica pois `t()` é chamada centenas de vezes.
  * 
- * ARQUITETURA:
- * - Responsabilidade Única: Carregar, cachear e interpolar strings de tradução.
- * - Zero-Dependency: Usa APIs nativas (`Intl.PluralRules`, `Intl.DateTimeFormat`) em vez de libs pesadas (i18next).
- * - Direct DOM Manipulation: `updateUIText` injeta texto diretamente nos nós para evitar overhead de frameworks.
- * 
- * DECISÕES TÉCNICAS:
- * 1. Cache Agressivo: Instâncias de `Intl` são caras de criar. `pluralRulesCache` resolve isso.
- * 2. Regex Pré-compilado: A interpolação de strings usa uma Regex estática para performance O(N).
- * 3. Consistência Temporal: `getHabitDisplayInfo` lida com a complexidade de hábitos que mudam de nome
- *    ao longo do tempo (Time-Travel Logic).
+ * ARQUITETURA (Pure Logic Layer):
+ * - REFACTOR [2025-03-22]: Este módulo agora é "puro". Ele não importa mais nada de `render/` 
+ *   para evitar dependências circulares. A lógica de atualização de UI (efeito colateral) 
+ *   foi movida para `render.ts`.
  * 
  * DEPENDÊNCIAS CRÍTICAS:
- * - `locales/*.json`: Arquivos estáticos de tradução.
- * - `render/dom.ts`: `setTextContent` para atualizações eficientes do DOM.
+ * - `state.ts`: Acesso ao idioma ativo.
+ * - `locales/*.json`: Arquivos de tradução.
  */
 
-import { state, Habit, LANGUAGES, PredefinedHabit, TimeOfDay } from '../state';
+import { state, Habit, PredefinedHabit, TimeOfDay } from './state';
 import { getScheduleForDate } from './services/selectors';
-import { ui } from './render/ui';
-// FIX: Import `setTextContent` to resolve missing name error.
-import { renderApp, setupManageModal, initLanguageFilter, refreshEditModalUI, renderLanguageFilter, updateNotificationUI, setTextContent } from './render';
-import { pushToOneSignal, getDateTimeFormat } from './utils';
-import { UI_ICONS } from './render/icons';
+import { getDateTimeFormat } from './utils';
 
 type PluralableTranslation = { one: string; other: string };
 type TranslationValue = string | PluralableTranslation;
 type Translations = Record<string, TranslationValue>;
 
 // PERFORMANCE: Cache para instâncias de PluralRules para evitar recriação custosa a cada tradução.
-// A criação de Intl.* é uma das operações mais lentas em JS puro.
 const pluralRulesCache: Record<string, Intl.PluralRules> = {};
-
-export function getTimeOfDayName(time: TimeOfDay): string {
-    return t(`filter${time}`);
-}
 
 const loadedTranslations: Record<string, Translations> = {};
 
-async function loadLanguage(langCode: 'pt' | 'en' | 'es'): Promise<void> {
+// Função agora exportada para ser usada pelo orquestrador em render.ts
+export async function loadLanguage(langCode: 'pt' | 'en' | 'es'): Promise<void> {
     if (loadedTranslations[langCode]) {
         return;
     }
@@ -63,9 +48,6 @@ async function loadLanguage(langCode: 'pt' | 'en' | 'es'): Promise<void> {
         loadedTranslations[langCode] = translations;
     } catch (error) {
         console.error(`Could not load translations for ${langCode}:`, error);
-        // MELHORIA DE ROBUSTEZ: Se o idioma solicitado falhar, tenta carregar o idioma
-        // de fallback (pt), mas apenas se ainda não tiver sido carregado. Adiciona
-        // tratamento de erro para o próprio fallback, prevenindo uma exceção não capturada.
         if (langCode !== 'pt' && !loadedTranslations['pt']) {
             try {
                 await loadLanguage('pt');
@@ -76,13 +58,11 @@ async function loadLanguage(langCode: 'pt' | 'en' | 'es'): Promise<void> {
     }
 }
 
-// PERFORMANCE [2025-03-16]: Pre-compiled Regex for interpolation.
-// Captures {key} pattern globally. Reusing this RegExp prevents recompilation overhead on every t() call.
+// PERFORMANCE: Pre-compiled Regex for interpolation.
 const INTERPOLATION_REGEX = /{([^{}]+)}/g;
 
 export function t(key: string, options?: { [key: string]: string | number | undefined }): string {
     const lang = state.activeLanguageCode || 'pt';
-    // Fallback chain: Requested Lang -> Cached PT -> Key
     const dict = loadedTranslations[lang] || loadedTranslations['pt'];
 
     if (!dict) {
@@ -99,7 +79,6 @@ export function t(key: string, options?: { [key: string]: string | number | unde
 
     if (typeof translationValue === 'object') {
         if (options?.count !== undefined) {
-            // PERFORMANCE [2025-01-16]: Uso de cache para Intl.PluralRules.
             let pluralRules = pluralRulesCache[lang];
             if (!pluralRules) {
                 pluralRules = new Intl.PluralRules(lang);
@@ -109,8 +88,6 @@ export function t(key: string, options?: { [key: string]: string | number | unde
             const pluralKey = pluralRules.select(options.count as number);
             translationString = (translationValue as PluralableTranslation)[pluralKey as keyof PluralableTranslation] || (translationValue as PluralableTranslation).other;
         } else {
-            // CORREÇÃO DE BUG: Retorna a chave se uma tradução pluralizável for usada sem 'count',
-            // em vez de retornar "[object Object]".
             return key;
         }
     } else {
@@ -118,9 +95,6 @@ export function t(key: string, options?: { [key: string]: string | number | unde
     }
 
     if (options) {
-        // PERFORMANCE [2025-03-16]: Single-pass interpolation.
-        // Replaces loop + split/join with a single Regex pass.
-        // This is O(N) where N is string length, vs O(K*N) where K is num keys.
         return translationString.replace(INTERPOLATION_REGEX, (_match, key) => {
             const value = options[key];
             return value !== undefined ? String(value) : _match;
@@ -130,29 +104,17 @@ export function t(key: string, options?: { [key: string]: string | number | unde
     return translationString;
 }
 
+export function getTimeOfDayName(time: TimeOfDay): string {
+    return t(`filter${time}`);
+}
 
-/**
- * CORREÇÃO DE DADOS HISTÓRICOS [2024-09-20]: A função agora aceita um `dateISO` opcional.
- * 
- * CRITICAL LOGIC: Temporal Consistency / Time-Travel.
- * Hábitos mudam de nome/propriedades ao longo do tempo. Se `dateISO` for fornecido,
- * buscamos o snapshot exato do hábito naquela data via `scheduleHistory`.
- * Se não for fornecido, usamos o estado "atual" (último schedule).
- * DO NOT REFACTOR: Simplificar isso quebrará a visualização correta do histórico no calendário.
- * 
- * @param habit O objeto do hábito ou modelo predefinido.
- * @param dateISO A data opcional no formato string ISO para buscar informações históricas.
- * @returns O nome e o subtítulo para exibição.
- */
 export function getHabitDisplayInfo(habit: Habit | PredefinedHabit, dateISO?: string): { name: string, subtitle: string } {
     let source: any = habit;
     
     if ('scheduleHistory' in habit && habit.scheduleHistory.length > 0) {
         if (dateISO) {
-            // Busca o agendamento ativo para a data específica.
             source = getScheduleForDate(habit, dateISO) || habit.scheduleHistory[habit.scheduleHistory.length - 1];
         } else {
-            // Se nenhuma data for fornecida, assume o comportamento padrão de usar o agendamento mais recente.
             source = habit.scheduleHistory[habit.scheduleHistory.length - 1];
         }
     }
@@ -170,183 +132,5 @@ export function getHabitDisplayInfo(habit: Habit | PredefinedHabit, dateISO?: st
 }
 
 export function getLocaleDayName(date: Date): string {
-    // PERFORMANCE [2025-01-16]: Uso de cache para Intl.DateTimeFormat para evitar recriação em loops de calendário.
-    // Cache implementado em `utils.ts` (getDateTimeFormat).
     return getDateTimeFormat(state.activeLanguageCode, { weekday: 'short', timeZone: 'UTC' }).format(date).toUpperCase();
-}
-
-/**
- * Atualiza todos os textos estáticos da UI.
- * PERFORMANCE: Manipulação direta do DOM (Fast Path) em vez de re-renderização total de componentes.
- * Usa `setTextContent` (definido em render/dom.ts) para evitar escritas desnecessárias (Layout Thrashing).
- */
-function updateUIText() {
-    const appNameHtml = t('appName');
-    
-    // Strip HTML for the document title
-    const tempEl = document.createElement('div');
-    tempEl.innerHTML = appNameHtml;
-    document.title = tempEl.textContent || 'Askesis';
-
-    ui.fabAddHabit.setAttribute('aria-label', t('fabAddHabit_ariaLabel'));
-    ui.manageHabitsBtn.setAttribute('aria-label', t('manageHabits_ariaLabel'));
-    ui.aiEvalBtn.setAttribute('aria-label', t('aiEval_ariaLabel'));
-    
-    ui.exploreModal.querySelector('h2')!.textContent = t('modalExploreTitle');
-    ui.createCustomHabitBtn.textContent = t('modalExploreCreateCustom');
-    ui.exploreModal.querySelector('.modal-close-btn')!.textContent = t('closeButton');
-
-    ui.manageModalTitle.textContent = t('modalManageTitle');
-    ui.habitListTitle.textContent = t('modalManageHabitsSubtitle');
-    
-    // Cached Elements
-    ui.labelLanguage.textContent = t('modalManageLanguage');
-
-    ui.languagePrevBtn.setAttribute('aria-label', t('languagePrev_ariaLabel'));
-    ui.languageNextBtn.setAttribute('aria-label', t('languageNext_ariaLabel'));
-    
-    ui.labelSync.textContent = t('syncLabel');
-    ui.labelNotifications.textContent = t('modalManageNotifications');
-    
-    ui.labelReset.textContent = t('modalManageReset');
-
-    ui.resetAppBtn.textContent = t('modalManageResetButton');
-    ui.manageModal.querySelector('.modal-close-btn')!.textContent = t('closeButton');
-    
-    // Privacy Section
-    ui.labelPrivacy.textContent = t('privacyLabel');
-    ui.exportDataBtn.textContent = t('exportButton');
-    ui.importDataBtn.textContent = t('importButton');
-    
-    ui.syncInactiveDesc.textContent = t('syncInactiveDesc');
-
-    ui.enableSyncBtn.textContent = t('syncEnable');
-    ui.enterKeyViewBtn.textContent = t('syncEnterKey');
-    
-    ui.labelEnterKey.textContent = t('syncLabelEnterKey');
-
-    ui.cancelEnterKeyBtn.textContent = t('cancelButton');
-    ui.submitKeyBtn.textContent = t('syncSubmitKey');
-    
-    ui.syncWarningText.innerHTML = t('syncWarning');
-
-    // CONTEXT AWARENESS [2025-03-03]: Verifica o contexto do botão (visualização vs salvamento)
-    const keyContext = ui.syncDisplayKeyView.dataset.context;
-    ui.keySavedBtn.textContent = (keyContext === 'view') ? t('closeButton') : t('syncKeySaved');
-    
-    ui.syncActiveDesc.textContent = t('syncActiveDesc');
-
-    ui.viewKeyBtn.textContent = t('syncViewKey');
-    ui.disableSyncBtn.textContent = t('syncDisable');
-    
-    ui.aiModal.querySelector('h2')!.textContent = t('modalAITitle');
-    ui.aiModal.querySelector('.modal-close-btn')!.textContent = t('closeButton');
-    
-    ui.aiOptionsModal.querySelector('h2')!.textContent = t('modalAIOptionsTitle');
-    
-    const monthlyBtn = ui.aiOptionsModal.querySelector<HTMLElement>('[data-analysis-type="monthly"]');
-    if (monthlyBtn) {
-        monthlyBtn.querySelector('.ai-option-title')!.textContent = t('aiOptionMonthlyTitle');
-        monthlyBtn.querySelector('.ai-option-desc')!.textContent = t('aiOptionMonthlyDesc');
-    }
-
-    const quarterlyBtn = ui.aiOptionsModal.querySelector<HTMLElement>('[data-analysis-type="quarterly"]');
-    if (quarterlyBtn) {
-        quarterlyBtn.querySelector('.ai-option-title')!.textContent = t('aiOptionQuarterlyTitle');
-        quarterlyBtn.querySelector('.ai-option-desc')!.textContent = t('aiOptionQuarterlyDesc');
-    }
-
-    const historicalBtn = ui.aiOptionsModal.querySelector<HTMLElement>('[data-analysis-type="historical"]');
-    if (historicalBtn) {
-        historicalBtn.querySelector('.ai-option-title')!.textContent = t('aiOptionHistoricalTitle');
-        historicalBtn.querySelector('.ai-option-desc')!.textContent = t('aiOptionHistoricalDesc');
-    }
-
-    ui.confirmModal.querySelector('h2')!.textContent = t('modalConfirmTitle');
-    ui.confirmModal.querySelector('.modal-close-btn')!.textContent = t('cancelButton');
-    ui.confirmModalEditBtn.textContent = t('editButton');
-    ui.confirmModalConfirmBtn.textContent = t('confirmButton');
-
-    ui.notesModal.querySelector('.modal-close-btn')!.textContent = t('cancelButton');
-    ui.saveNoteBtn.textContent = t('modalNotesSaveButton');
-    ui.notesTextarea.placeholder = t('modalNotesTextareaPlaceholder');
-
-    ui.iconPickerTitle.textContent = t('modalIconPickerTitle');
-    ui.iconPickerModal.querySelector('.modal-close-btn')!.textContent = t('cancelButton');
-
-    ui.colorPickerTitle.textContent = t('modalColorPickerTitle');
-    ui.colorPickerModal.querySelector('.modal-close-btn')!.textContent = t('cancelButton');
-
-    const editModalActions = ui.editHabitModal.querySelector('.modal-actions');
-    if (editModalActions) {
-        editModalActions.querySelector('.modal-close-btn')!.textContent = t('cancelButton');
-        editModalActions.querySelector('#edit-habit-save-btn')!.textContent = t('modalEditSaveButton');
-    }
-
-    // Quick Actions Menu
-    ui.quickActionDone.innerHTML = `${UI_ICONS.check} ${t('quickActionMarkAllDone')}`;
-    ui.quickActionSnooze.innerHTML = `${UI_ICONS.snoozed} ${t('quickActionMarkAllSnoozed')}`;
-    ui.quickActionAlmanac.innerHTML = `${UI_ICONS.calendar} ${t('quickActionOpenAlmanac')}`;
-    
-    setTextContent(ui.noHabitsMessage, t('modalManageNoHabits'));
-
-
-    // DYNAMIC CONTENT REFRESH [2025-03-03]:
-    if (state.editingHabit) {
-        refreshEditModalUI();
-    }
-}
-
-export async function setLanguage(langCode: 'pt' | 'en' | 'es') {
-    await loadLanguage(langCode);
-    state.activeLanguageCode = langCode;
-    document.documentElement.lang = langCode;
-    localStorage.setItem('habitTrackerLanguage', langCode);
-    
-    // BUGFIX DE ROBUSTEZ [2024-10-19]: Utiliza o helper pushToOneSignal para garantir que
-    // a configuração de idioma seja enfileirada e executada de forma confiável, mesmo que o SDK
-    // do OneSignal ainda não tenha sido totalmente inicializado. Isso previne uma condição de corrida.
-    pushToOneSignal((OneSignal: any) => {
-        OneSignal.User.setLanguage(langCode);
-    });
-    
-    initLanguageFilter();
-    // BUGFIX [2025-03-07]: Chama a renderização do posicionamento do carrossel imediatamente
-    // após a criação do seu DOM, garantindo que a UI visual reflita o estado do idioma.
-    renderLanguageFilter();
-
-    // CRITICAL FIX [2025-02-05]: Invalidação de cache de UI (Dirty Checking).
-    // Ao trocar o idioma, a lógica de renderApp() normalmente pularia a renderização
-    // porque os dados em si não mudaram. Aqui forçamos as flags de 'dirty' para true,
-    // obrigando o redesenho imediato do calendário, lista de hábitos e gráficos com o novo idioma.
-    state.uiDirtyState.calendarVisuals = true;
-    state.uiDirtyState.habitListStructure = true;
-    state.uiDirtyState.chartData = true;
-
-    updateUIText();
-    // Garante que o status de sincronização dinâmico seja re-traduzido a partir do estado.
-    ui.syncStatus.textContent = t(state.syncState);
-    
-    if (ui.manageModal.classList.contains('visible')) {
-        setupManageModal();
-        updateNotificationUI();
-    }
-
-    // REFACTOR [2024-09-02]: Remove a chamada redundante para `updateHeaderTitle`
-    // uma vez que `renderApp` já a executa internamente.
-    renderApp();
-}
-
-export async function initI18n() {
-    const savedLang = localStorage.getItem('habitTrackerLanguage');
-    const browserLang = navigator.language.split('-')[0];
-    let initialLang: 'pt' | 'en' | 'es' = 'pt';
-
-    if (savedLang && ['pt', 'en', 'es'].includes(savedLang)) {
-        initialLang = savedLang as 'pt' | 'en' | 'es';
-    } else if (['pt', 'en', 'es'].includes(browserLang)) {
-        initialLang = browserLang as 'pt' | 'en' | 'es';
-    }
-
-    await setLanguage(initialLang);
 }

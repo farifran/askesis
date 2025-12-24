@@ -25,7 +25,7 @@
  */
 
 import { ui } from '../render/ui';
-import { state, DAYS_IN_CALENDAR } from '../state';
+import { state, DAYS_IN_CALENDAR, invalidateChartCache } from '../state';
 import { renderApp, renderFullCalendar, openModal, scrollToToday, closeModal } from '../render';
 import { parseUTCIsoDate, triggerHaptic, getTodayUTCIso, addDays, toUTCIsoDateString } from '../utils';
 import { DOM_SELECTORS } from '../render/constants';
