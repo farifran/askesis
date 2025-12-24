@@ -29,7 +29,9 @@ import { t } from "../i18n";
 import { fetchStateFromCloud, setSyncStatus } from "../services/cloud";
 // ARCHITECTURE FIX: Import persistence logic from service layer.
 import { loadState, saveState } from "../services/persistence";
-import { renderApp, showConfirmationModal } from "../render";
+import { renderApp } from "../render";
+// FIX [2025-03-22]: Import direct from module to avoid circular dependency issues with re-exports
+import { showConfirmationModal } from "../render/modals";
 import { storeKey, clearKey, hasLocalSyncKey, getSyncKey, isValidKeyFormat, initAuth } from "../services/api";
 
 // --- Funções de UI ---
@@ -181,6 +183,7 @@ function handleSubmitKey() {
 }
 
 function handleDisableSync() {
+    console.log("Requesting sync disable...");
     showConfirmationModal(
         t('confirmSyncDisable'),
         () => {
