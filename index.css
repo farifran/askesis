@@ -1286,7 +1286,8 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     display: flex;
     flex-direction: column;
     align-items: flex-start;
-    margin-bottom: var(--space-md);
+    /* VISUAL UPDATE [2025-03-22]: Margin removed to align chart top with title */
+    margin-bottom: 0;
 }
 /* REFINAMENTO DE UI [2024-11-25]: Estilos atualizados para acomodar um novo cabeçalho de gráfico com título e subtítulo. */
 .chart-title {
@@ -1316,7 +1317,8 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 }
 .chart-wrapper { 
     position: relative; 
-    height: 42px; 
+    /* VISUAL UPDATE [2025-03-22]: Decreased height to 80px */
+    height: 80px; 
     /* UX [2025-01-24]: Permite scroll vertical (pan-y) mas captura horizontal */
     touch-action: pan-y; 
     user-select: none; 

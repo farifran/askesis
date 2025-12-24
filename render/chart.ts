@@ -39,9 +39,16 @@ import { addDays, getTodayUTCIso, parseUTCIsoDate, toUTCIsoDateString, getDateTi
 
 const CHART_DAYS = 30;
 const INITIAL_SCORE = 100;
-const MAX_DAILY_CHANGE_RATE = 0.015;
-// VISUAL FIX [2025-03-22]: Padding horizontal de 3px para evitar corte da linha (stroke clipping) nas bordas.
-const CHART_PADDING = { top: 5, right: 3, bottom: 5, left: 3 };
+// PHYSICS ADJUSTMENT [2025-03-22]: Increased from 0.015 to 0.025 to make movements more significant visually.
+// 2 consecutive days = ~5% growth (approx 60% of visual range in typical zoom).
+// 3 consecutive days = ~7.6% growth (approx 80-90% of visual range).
+const MAX_DAILY_CHANGE_RATE = 0.025; 
+const PLUS_BONUS_MULTIPLIER = 1.5; // "Plus" days move the needle 50% more than normal days.
+
+// VISUAL CONSTANTS
+const SVG_HEIGHT = 80; // Decreased height by 40px (from 120px)
+// Remove top padding completely to hit the "Askesis" line height ceiling.
+const CHART_PADDING = { top: 0, right: 3, bottom: 5, left: 3 };
 
 type ChartDataPoint = {
     date: string;
@@ -111,7 +118,8 @@ function calculateChartData(): ChartDataPoint[] {
     for (let i = 0; i < CHART_DAYS; i++) {
         const currentDateISO = toUTCIsoDateString(iteratorDate);
         // OPTIMIZATION [2025-03-13]: Pass iteratorDate object to avoid re-parsing inside selectors.
-        const { total: scheduledCount, completed: completedCount, pending: pendingCount } = calculateDaySummary(currentDateISO, iteratorDate);
+        // LOGIC UPDATE: Destructure 'showPlusIndicator' to detect overachievement.
+        const { total: scheduledCount, completed: completedCount, pending: pendingCount, showPlusIndicator } = calculateDaySummary(currentDateISO, iteratorDate);
         const hasPending = pendingCount > 0;
         const isToday = currentDateISO === todayISO;
         const isFuture = currentDateISO > todayISO;
@@ -122,7 +130,15 @@ function calculateChartData(): ChartDataPoint[] {
             currentValue = previousDayValue;
         } else if (scheduledCount > 0) {
             const completionRatio = completedCount / scheduledCount;
-            const performanceFactor = (completionRatio - 0.5) * 2;
+            // Base performance factor: -1.0 (0%) to 1.0 (100%)
+            let performanceFactor = (completionRatio - 0.5) * 2;
+            
+            // PHYSICS UPDATE [2025-03-22]: "Plus" days get a turbo boost.
+            // This ensures they represent a significant peak in the chart.
+            if (showPlusIndicator) {
+                performanceFactor = 1.0 * PLUS_BONUS_MULTIPLIER;
+            }
+
             const dailyChange = performanceFactor * MAX_DAILY_CHANGE_RATE;
             currentValue = previousDayValue * (1 + dailyChange);
         } else {
@@ -146,14 +162,13 @@ function calculateChartData(): ChartDataPoint[] {
 }
 
 function _calculateChartScales(chartData: ChartDataPoint[], chartWidthPx: number): ChartScales {
-    const svgHeight = 42;
     const padding = CHART_PADDING;
     const chartWidth = chartWidthPx - padding.left - padding.right;
-    const chartHeight = svgHeight - padding.top - padding.bottom;
+    const chartHeight = SVG_HEIGHT - padding.top - padding.bottom;
 
     // PERFORMANCE [2025-03-16]: Check if viewBox actually changed before setting attribute.
     // Setting attribute forces browser layout invalidation even if value is identical.
-    const newViewBox = `0 0 ${chartWidthPx} ${svgHeight}`;
+    const newViewBox = `0 0 ${chartWidthPx} ${SVG_HEIGHT}`;
     if (ui.chart.svg.getAttribute('viewBox') !== newViewBox) {
         ui.chart.svg.setAttribute('viewBox', newViewBox);
     }
@@ -181,11 +196,13 @@ function _calculateChartScales(chartData: ChartDataPoint[], chartWidthPx: number
         spread = MIN_VISUAL_AMPLITUDE;
     }
 
-    // Adiciona um pequeno padding (buffer) vertical proporcional à amplitude (15%) para a linha não tocar as bordas
-    const verticalPadding = spread * 0.15;
+    // SCALING UPDATE [2025-03-22]: Maximum Height Usage.
+    // Top padding is effectively zero (via CHART_PADDING), allowing peaks to hit the ceiling.
+    const verticalPaddingTop = 0; // Absolute max limit
+    const verticalPaddingBottom = spread * 0.15; // 15% breathing room at bottom
     
-    const minVal = dataMin - verticalPadding;
-    const maxVal = dataMax + verticalPadding;
+    const minVal = dataMin - verticalPaddingBottom;
+    const maxVal = dataMax + verticalPaddingTop;
 
     const valueRange = maxVal - minVal;
     
@@ -351,7 +368,7 @@ function updateTooltipPosition() {
         
         const point = lastChartData[pointIndex];
         const { minVal, valueRange } = chartMetadata;
-        const chartHeight = 42 - padding.top - padding.bottom;
+        const chartHeight = SVG_HEIGHT - padding.top - padding.bottom;
     
         const pointX = padding.left + (pointIndex / (lastChartData.length - 1)) * chartWidth;
         const pointY = padding.top + chartHeight - ((point.value - minVal) / valueRange) * chartHeight;
@@ -463,7 +480,12 @@ export function renderChart() {
         lastChartData = calculateChartData();
         // BUGFIX: Reset rendered index to force tooltip update even if mouse didn't move
         lastRenderedPointIndex = -1; 
-        // NOTE: We do not nullify renderedDataRef here to allow _updateChartDOM to detect changes by reference later.
+        
+        // CRITICAL FIX [2025-03-22]: Reset memoization reference.
+        // Como usamos Object Pooling (chartDataPool), a referência do array 'lastChartData'
+        // não muda entre atualizações. Isso enganava o check de memoization em '_updateChartDOM',
+        // impedindo a re-renderização visual mesmo com dados novos.
+        renderedDataRef = null;
     }
 
     const isEmpty = lastChartData.length < 2 || lastChartData.every(d => d.scheduledCount === 0);
