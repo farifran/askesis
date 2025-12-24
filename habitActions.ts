@@ -128,28 +128,51 @@ function _requestFutureScheduleChange(
         }
     }
 
-    if (activeScheduleIndex === -1) return;
+    if (activeScheduleIndex !== -1) {
+        // --- CAMINHO A: MODIFICANDO UM AGENDAMENTO ATIVO ---
+        const currentSchedule = habit.scheduleHistory[activeScheduleIndex];
 
-    const currentSchedule = habit.scheduleHistory[activeScheduleIndex];
+        // 2. Decide se atualiza in-place ou bifurca o histórico
+        if (currentSchedule.startDate === targetDate) {
+            // Se a mudança começa exatamente no início do agendamento atual, atualizamos in-place.
+            habit.scheduleHistory[activeScheduleIndex] = updateFn({ ...currentSchedule });
+        } else {
+            // Bifurcação: Encerra o agendamento atual ontem e começa um novo hoje.
+            currentSchedule.endDate = targetDate;
 
-    // 2. Decide se atualiza in-place ou bifurca o histórico
-    if (currentSchedule.startDate === targetDate) {
-        // Se a mudança começa exatamente no início do agendamento atual, atualizamos in-place.
-        habit.scheduleHistory[activeScheduleIndex] = updateFn({ ...currentSchedule });
+            const newSchedule = updateFn({ 
+                ...currentSchedule, 
+                startDate: targetDate, 
+                endDate: undefined
+            });
+            
+            habit.scheduleHistory.push(newSchedule);
+            habit.scheduleHistory.sort((a, b) => (a.startDate > b.startDate ? 1 : -1));
+        }
     } else {
-        // Bifurcação: Encerra o agendamento atual ontem e começa um novo hoje.
-        currentSchedule.endDate = targetDate;
+        // --- CAMINHO B: "REATIVANDO" UM HÁBITO ---
+        // Nenhum agendamento ativo encontrado. Isso significa que o hábito foi encerrado ou graduado,
+        // e o usuário está reativando-o a partir de uma data futura.
+        
+        const lastSchedule = habit.scheduleHistory[habit.scheduleHistory.length - 1];
+        if (!lastSchedule) {
+            console.error(`Não é possível modificar o hábito ${habitId}: Nenhum histórico de agendamento encontrado.`);
+            return;
+        }
 
         const newSchedule = updateFn({ 
-            ...currentSchedule, 
+            ...lastSchedule, 
             startDate: targetDate, 
-            endDate: undefined
+            endDate: undefined // Esta é a parte crucial que o torna ativo novamente.
         });
+
+        if (lastSchedule.endDate && lastSchedule.endDate > targetDate) {
+            lastSchedule.endDate = targetDate;
+        }
         
+        habit.graduatedOn = undefined;
+
         habit.scheduleHistory.push(newSchedule);
-        
-        // PERFORMANCE [2025-03-17]: Optimized sort with binary comparison for ISO dates.
-        // Garante que o histórico esteja sempre linear cronologicamente.
         habit.scheduleHistory.sort((a, b) => (a.startDate > b.startDate ? 1 : -1));
     }
     
@@ -499,38 +522,6 @@ export function requestHabitPermanentDeletion(habitId: string) {
             }
         },
         { confirmButtonStyle: 'danger', confirmText: t('deleteButton') }
-    );
-}
-
-export function requestHabitRestoration(habitId: string) {
-    const habit = state.habits.find(h => h.id === habitId);
-    if (!habit) return;
-    
-    const { name } = getHabitDisplayInfo(habit);
-
-    showConfirmationModal(
-        t('confirmRestoreHabit', { habitName: name }),
-        () => {
-            const habitToRestore = state.habits.find(h => h.id === habitId);
-            if (!habitToRestore) return;
-
-            // PERFORMANCE [2025-03-17]: Binary comparison sort
-            habitToRestore.scheduleHistory.sort((a, b) => (a.startDate > b.startDate ? 1 : -1));
-            
-            // Remove o endDate do último agendamento para reabri-lo indefinidamente
-            const lastSchedule = habitToRestore.scheduleHistory[habitToRestore.scheduleHistory.length - 1];
-            if (lastSchedule.endDate) {
-                delete lastSchedule.endDate;
-            }
-
-            _finalizeScheduleUpdate(true);
-            
-            setupManageModal();
-        },
-        { 
-            confirmText: t('restoreButton'),
-            title: t('modalRestoreHabitTitle')
-        }
     );
 }
 

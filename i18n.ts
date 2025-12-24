@@ -1,13 +1,13 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
 
-import { state, Habit, LANGUAGES, PredefinedHabit, TimeOfDay } from './state';
+import { state, Habit, LANGUAGES, PredefinedHabit, TimeOfDay } from '../state';
 import { getScheduleForDate } from './services/selectors';
 import { ui } from './render/ui';
-import { renderApp, setupManageModal, initLanguageFilter, refreshEditModalUI, renderLanguageFilter, updateNotificationUI } from './render';
+// FIX: Import `setTextContent` to resolve missing name error.
+import { renderApp, setupManageModal, initLanguageFilter, refreshEditModalUI, renderLanguageFilter, updateNotificationUI, setTextContent } from './render';
 import { pushToOneSignal, getDateTimeFormat } from './utils';
 import { UI_ICONS } from './render/icons';
 
@@ -250,6 +250,8 @@ function updateUIText() {
     ui.quickActionDone.innerHTML = `${UI_ICONS.check} ${t('quickActionMarkAllDone')}`;
     ui.quickActionSnooze.innerHTML = `${UI_ICONS.snoozed} ${t('quickActionMarkAllSnoozed')}`;
     ui.quickActionAlmanac.innerHTML = `${UI_ICONS.calendar} ${t('quickActionOpenAlmanac')}`;
+    
+    setTextContent(ui.noHabitsMessage, t('modalManageNoHabits'));
 
 
     // DYNAMIC CONTENT REFRESH [2025-03-03]:

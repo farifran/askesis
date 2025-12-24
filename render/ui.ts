@@ -21,6 +21,7 @@ type UIElements = {
     aiOptionsModal: HTMLElement;
     confirmModal: HTMLElement;
     habitList: HTMLElement;
+    noHabitsMessage: HTMLElement;
     aiResponse: HTMLElement;
     confirmModalText: HTMLElement;
     confirmModalConfirmBtn: HTMLButtonElement;
@@ -179,6 +180,7 @@ export const ui: UIElements = {
     ...createLazyGetter('aiOptionsModal', '#ai-options-modal'),
     ...createLazyGetter('confirmModal', '#confirm-modal'),
     ...createLazyGetter('habitList', '#habit-list'),
+    ...createLazyGetter('noHabitsMessage', '#no-habits-message'),
     ...createLazyGetter('aiResponse', '#ai-response'),
     ...createLazyGetter('confirmModalText', '#confirm-modal-text'),
     ...createLazyGetter('confirmModalConfirmBtn', '#confirm-modal-confirm-btn'),

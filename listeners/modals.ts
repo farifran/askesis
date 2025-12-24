@@ -45,7 +45,6 @@ import {
     performAIAnalysis,
     exportData,
     importData,
-    requestHabitRestoration,
 } from '../habitActions';
 import { setLanguage, t, getHabitDisplayInfo } from '../i18n';
 import { setupReelRotary } from '../render/rotary';
@@ -210,8 +209,6 @@ export function setupModalListeners() {
             requestHabitEditingFromModal(habitId);
         } else if (button.classList.contains('graduate-habit-btn')) {
             graduateHabit(habitId);
-        } else if (button.classList.contains('restore-habit-btn')) {
-            requestHabitRestoration(habitId);
         }
     });
 
@@ -275,8 +272,6 @@ export function setupModalListeners() {
         const index = parseInt(item.dataset.index!, 10);
         const habitTemplate = PREDEFINED_HABITS[index];
         if (habitTemplate) {
-            // DATA INTEGRITY FIX: Search for ANY existing habit (active, ended, graduated)
-            // that matches the template's unique identifier (nameKey).
             const anyExistingHabit = state.habits.find(h =>
                 h.scheduleHistory.some(s => s.nameKey === habitTemplate.nameKey)
             );
@@ -284,29 +279,12 @@ export function setupModalListeners() {
             closeModal(ui.exploreModal);
     
             if (anyExistingHabit) {
-                // Determine if the found habit is currently active.
-                const lastSchedule = anyExistingHabit.scheduleHistory.sort((a, b) => a.startDate.localeCompare(b.startDate))[anyExistingHabit.scheduleHistory.length - 1];
-                const isActive = !anyExistingHabit.graduatedOn && !lastSchedule.endDate;
-    
-                if (isActive) {
-                    // If it's active, open the edit modal for the existing habit.
-                    openEditModal(anyExistingHabit);
-                } else {
-                    // If it exists but is ended or graduated, prompt the user to restore it.
-                    const { name } = getHabitDisplayInfo(anyExistingHabit);
-                    showConfirmationModal(
-                        t('confirmRestoreHabit', { habitName: name }),
-                        () => {
-                            requestHabitRestoration(anyExistingHabit.id);
-                        },
-                        { 
-                            confirmText: t('restoreButton'),
-                            title: t('modalRestoreHabitTitle')
-                        }
-                    );
-                }
+                // Se o hábito já existe (ativo, encerrado ou graduado),
+                // apenas abra o modal de edição para ele. A lógica de salvamento
+                // cuidará da criação de um novo agendamento, "reativando-o" efetivamente.
+                openEditModal(anyExistingHabit);
             } else {
-                // If no habit of this type exists at all, create a new one from the template.
+                // Se nenhum hábito deste tipo existe, crie um novo a partir do modelo.
                 openEditModal(habitTemplate);
             }
         }

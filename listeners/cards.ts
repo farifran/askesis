@@ -6,12 +6,13 @@
 
 import { ui } from '../render/ui';
 import { state, Habit, TimeOfDay } from '../state';
-import { getCurrentGoalForInstance } from '../services/selectors';
+import { getCurrentGoalForInstance, getEffectiveScheduleForHabitOnDate } from '../services/selectors';
 import { openNotesModal, renderExploreHabits, openModal } from '../render';
 import {
     toggleHabitStatus,
     setGoalOverride,
     requestHabitTimeRemoval,
+    requestHabitEndingFromModal,
 } from '../habitActions';
 import { triggerHaptic } from '../utils';
 import { DOM_SELECTORS, CSS_CLASSES } from '../render/constants';
@@ -150,7 +151,17 @@ export function setupCardListeners() {
         // --- SWIPE ACTIONS ---
         if (interactiveElement.classList.contains(CSS_CLASSES.SWIPE_DELETE_BTN)) {
             triggerHaptic('medium');
-            requestHabitTimeRemoval(habitId, time);
+            
+            const habit = state.habits.find(h => h.id === habitId);
+            if (!habit) return;
+
+            const currentScheduleTimes = getEffectiveScheduleForHabitOnDate(habit, state.selectedDate);
+
+            if (currentScheduleTimes.length <= 1) {
+                requestHabitEndingFromModal(habitId);
+            } else {
+                requestHabitTimeRemoval(habitId, time);
+            }
             return;
         }
 

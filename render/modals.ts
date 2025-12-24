@@ -23,7 +23,7 @@ const previouslyFocusedElements = new WeakMap<HTMLElement, HTMLElement>();
 const backdropListeners = new Map<HTMLElement, (e: MouseEvent) => void>();
 const closeButtonHandlerMap = new Map<HTMLElement, { buttons: HTMLElement[], handler: () => void }>();
 
-// OPTIMIZATION [2025-03-17]: Hoisted constant to avoid reallocation on every render.
+// OTIMIZAÇÃO [2025-03-17]: Hoisted constant to avoid reallocation on every render.
 const STATUS_ORDER = { 'active': 0, 'graduated': 1, 'ended': 2 } as const;
 
 export function openModal(modal: HTMLElement, elementToFocus?: HTMLElement, onClose?: () => void) {
@@ -249,7 +249,6 @@ function _createManageHabitListItem(habitData: { habit: Habit; status: 'active' 
             actionsDiv.appendChild(createActionButton('end-habit-btn', t('aria_end', { habitName: name }), UI_ICONS.endAction));
         }
     } else if (status === 'ended') {
-        actionsDiv.appendChild(createActionButton('restore-habit-btn', t('aria_restore', { habitName: name }), UI_ICONS.restoreAction));
         actionsDiv.appendChild(createActionButton('permanent-delete-habit-btn', t('aria_delete_permanent', { habitName: name }), UI_ICONS.deletePermanentAction));
     } else if (status === 'graduated') {
         actionsDiv.appendChild(createActionButton('permanent-delete-habit-btn', t('aria_delete_permanent', { habitName: name }), UI_ICONS.deletePermanentAction));
@@ -259,41 +258,49 @@ function _createManageHabitListItem(habitData: { habit: Habit; status: 'active' 
 }
 
 export function setupManageModal() {
-    const habitsForModal = state.habits.map(habit => {
-        const { name, subtitle } = getHabitDisplayInfo(habit);
-        return {
-            habit,
-            status: getHabitStatusForSorting(habit),
-            name,
-            subtitle
-        };
-    });
+    if (state.habits.length === 0) {
+        ui.habitList.classList.add('hidden');
+        ui.noHabitsMessage.classList.remove('hidden');
+        ui.noHabitsMessage.textContent = t('modalManageNoHabits');
+    } else {
+        ui.habitList.classList.remove('hidden');
+        ui.noHabitsMessage.classList.add('hidden');
 
-    habitsForModal.sort((a, b) => {
-        // Use hoisted STATUS_ORDER constant
-        const statusDifference = STATUS_ORDER[a.status] - STATUS_ORDER[b.status];
-        if (statusDifference !== 0) {
-            return statusDifference;
-        }
+        const habitsForModal = state.habits.map(habit => {
+            const { name, subtitle } = getHabitDisplayInfo(habit);
+            return {
+                habit,
+                status: getHabitStatusForSorting(habit),
+                name,
+                subtitle
+            };
+        });
+
+        habitsForModal.sort((a, b) => {
+            const statusDifference = STATUS_ORDER[a.status] - STATUS_ORDER[b.status];
+            if (statusDifference !== 0) {
+                return statusDifference;
+            }
+            
+            if (a.status !== 'active') {
+                 const lastA = a.habit.scheduleHistory[a.habit.scheduleHistory.length-1].endDate || '';
+                 const lastB = b.habit.scheduleHistory[b.habit.scheduleHistory.length-1].endDate || '';
+                 if (lastA !== lastB) return lastB.localeCompare(lastA);
+            }
+            
+            return a.name.localeCompare(b.name);
+        });
+
+        const fragment = document.createDocumentFragment();
+        const todayISO = getTodayUTCIso();
         
-        if (a.status !== 'active') {
-             const lastA = a.habit.scheduleHistory[a.habit.scheduleHistory.length-1].endDate || '';
-             const lastB = b.habit.scheduleHistory[b.habit.scheduleHistory.length-1].endDate || '';
-             if (lastA !== lastB) return lastB.localeCompare(lastA);
-        }
-        
-        return a.name.localeCompare(b.name);
-    });
+        habitsForModal.forEach(habitData => {
+            fragment.appendChild(_createManageHabitListItem(habitData, todayISO));
+        });
 
-    const fragment = document.createDocumentFragment();
-    const todayISO = getTodayUTCIso();
-    
-    habitsForModal.forEach(habitData => {
-        fragment.appendChild(_createManageHabitListItem(habitData, todayISO));
-    });
-
-    ui.habitList.innerHTML = '';
-    ui.habitList.appendChild(fragment);
+        ui.habitList.innerHTML = '';
+        ui.habitList.appendChild(fragment);
+    }
 }
 
 export function showConfirmationModal(

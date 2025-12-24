@@ -1464,10 +1464,10 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 .modal-subtitle {
     font-size: 15px;
     font-weight: 500;
-    color: var(--text-secondary);
+    color: var(--text-primary);
     margin-block-start: var(--space-md);
     margin-block-end: var(--space-lg);
-    text-align: left;
+    text-align: center;
 }
 .modal-settings-section {
     margin-block-end: var(--space-lg); padding-block-end: var(--space-lg);
@@ -1505,9 +1505,8 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 #habit-list { list-style: none; margin-block-end: var(--space-lg); }
 #habit-list li.habit-list-item {
     display: flex; justify-content: space-between; align-items: center;
-    padding-block: var(--space-md); border-block-end: 1px solid var(--border-color);
+    padding-block: var(--space-md);
 }
-#habit-list li:last-child { border-block-end: none; }
 #habit-list li span { display: flex; align-items: center; gap: var(--space-md); }
 #habit-list li svg { width: 20px; height: 20px; flex-shrink: 0; }
 .habit-list-item.ended { opacity: 0.6; }
@@ -1534,6 +1533,16 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     color: var(--text-tertiary);
     margin-inline-start: var(--space-md);
     flex-shrink: 0; /* Previne quebras de linha indesejadas */
+}
+
+.empty-list-message {
+    font-size: 13px;
+    color: var(--text-tertiary);
+    text-align: center;
+    font-style: italic;
+    padding: var(--space-lg) 0;
+    margin-top: var(--space-lg);
+    border-top: 1px solid var(--border-color);
 }
 
 .setting-item { display: flex; justify-content: space-between; align-items: center; }
@@ -1987,7 +1996,7 @@ input:disabled + .slider {
     /* O preenchimento superior foi movido para o h2 para um espaçamento consistente. */
     padding: 0 var(--space-xl) var(--space-xxl);
     flex-grow: 1;
-    overflow-y: auto;
+    /* overflow-y: auto; REATORAÇÃO DE LAYOUT: Removido scroll aninhado. O scroll do formulário agora é gerenciado pelo .modal-content pai para evitar bugs de renderização em mobile. */
 }
 .form-section {
     background-color: var(--surface-color);
@@ -2293,7 +2302,7 @@ input:disabled + .slider {
 }
 .form-notice.visible {
     opacity: 1;
-    max-height: 40px;
+    max-height: 80px;
     padding-block: var(--space-sm);
 }
 
