@@ -297,7 +297,15 @@ export function calculateDaySummary(dateISO: string, preParsedDate?: Date) {
                 if ((habit.goal.type === 'pages' || habit.goal.type === 'minutes') && habit.goal.total) {
                      const currentGoal = getCurrentGoalForInstance(habit, dateISO, time);
                      if (currentGoal > habit.goal.total) {
-                         hasNumericOverachieved = true;
+                         // LOGIC UPDATE [2025-03-22]: The "Plus Day" indicator only appears if 
+                         // the user has maintained a streak of at least 2 days prior to this overachievement.
+                         // This rewards consistency + effort, not just random bursts.
+                         const yesterdayISO = toUTCIsoDateString(addDays(preParsedDate || parseUTCIsoDate(dateISO), -1));
+                         const currentStreak = calculateHabitStreak(habit.id, yesterdayISO);
+                         
+                         if (currentStreak >= 2) {
+                             hasNumericOverachieved = true;
+                         }
                      }
                 }
             } else if (status === 'snoozed') {

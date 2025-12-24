@@ -23,7 +23,7 @@
 
 import { state, Habit, PredefinedHabit, TimeOfDay } from './state';
 import { getScheduleForDate } from './services/selectors';
-import { getDateTimeFormat } from './utils';
+import { getDateTimeFormat, pushToOneSignal } from './utils';
 
 type PluralableTranslation = { one: string; other: string };
 type TranslationValue = string | PluralableTranslation;
@@ -133,4 +133,29 @@ export function getHabitDisplayInfo(habit: Habit | PredefinedHabit, dateISO?: st
 
 export function getLocaleDayName(date: Date): string {
     return getDateTimeFormat(state.activeLanguageCode, { weekday: 'short', timeZone: 'UTC' }).format(date).toUpperCase();
+}
+
+/**
+ * Define o idioma ativo e dispara o evento 'language-changed'.
+ * Isso desacopla a lógica de tradução da atualização de UI (evitando ciclos).
+ */
+export async function setLanguage(langCode: 'pt' | 'en' | 'es') {
+    await loadLanguage(langCode);
+    
+    state.activeLanguageCode = langCode;
+    document.documentElement.lang = langCode;
+    localStorage.setItem('habitTrackerLanguage', langCode);
+    
+    pushToOneSignal((OneSignal: any) => {
+        OneSignal.User.setLanguage(langCode);
+    });
+
+    // Dirty Checking flags
+    state.uiDirtyState.calendarVisuals = true;
+    state.uiDirtyState.habitListStructure = true;
+    state.uiDirtyState.chartData = true;
+
+    // EVENT BUS PATTERN: Notifica o sistema que o idioma mudou.
+    // O módulo `render.ts` ouvirá isso e atualizará a UI.
+    document.dispatchEvent(new CustomEvent('language-changed'));
 }

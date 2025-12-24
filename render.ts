@@ -14,13 +14,14 @@
  * ARQUITETURA (Facade Pattern):
  * - Centraliza a API de renderização pública, escondendo a complexidade dos sub-módulos (`render/*`).
  * - Implementa estratégias de "Local Dirty Checking" para componentes globais.
- * - REFACTOR [2025-03-22]: Agora gerencia a troca de idioma (`setLanguage`) para evitar ciclos de importação com `i18n.ts`.
+ * - REFACTOR [2025-03-22]: Agora ouve o evento `language-changed` disparado por `i18n.ts` em vez de gerenciar a lógica de tradução.
  */
 
 import { state, LANGUAGES } from './state';
 import { parseUTCIsoDate, toUTCIsoDateString, addDays, getDateTimeFormat, pushToOneSignal, getTodayUTCIso } from './utils';
 import { ui } from './render/ui';
-import { t, loadLanguage } from './i18n'; // Import loadLanguage from pure i18n module
+// FIX: import setLanguage here only for initI18n, but use the event for reactivity.
+import { t, loadLanguage, setLanguage } from './i18n'; 
 import { UI_ICONS } from './render/icons';
 import type { Quote } from './data/quotes';
 
@@ -110,7 +111,6 @@ function _renderHeaderIcons() {
 
 /**
  * Atualiza todos os textos estáticos da UI.
- * Movido de i18n.ts para render.ts para resolver dependência circular.
  */
 export function updateUIText() {
     const appNameHtml = t('appName');
@@ -216,6 +216,13 @@ export function renderApp() {
     renderHabits();
     renderAINotificationState();
     renderChart();
+
+    // UX UPDATE [2025-03-22]: Refresh Manage Modal List if visible.
+    // Garante que se o usuário encerrar ou excluir um hábito, a lista
+    // seja atualizada imediatamente sem precisar fechar e reabrir o modal.
+    if (ui.manageModal.classList.contains('visible')) {
+        setupManageModal();
+    }
 }
 
 export function updateNotificationUI() {
@@ -311,35 +318,20 @@ export async function renderStoicQuote() {
     }, 150);
 }
 
-// I18N Orchestration moved here to allow render imports
-export async function setLanguage(langCode: 'pt' | 'en' | 'es') {
-    await loadLanguage(langCode);
-    state.activeLanguageCode = langCode;
-    document.documentElement.lang = langCode;
-    localStorage.setItem('habitTrackerLanguage', langCode);
-    
-    pushToOneSignal((OneSignal: any) => {
-        OneSignal.User.setLanguage(langCode);
-    });
-    
+// SETUP: Listen for language changes dispatched from i18n module
+document.addEventListener('language-changed', () => {
     initLanguageFilter();
     renderLanguageFilter();
-
-    // Dirty Checking
-    state.uiDirtyState.calendarVisuals = true;
-    state.uiDirtyState.habitListStructure = true;
-    state.uiDirtyState.chartData = true;
-
     updateUIText();
-    ui.syncStatus.textContent = t(state.syncState);
-    
+    if (ui.syncStatus) {
+        ui.syncStatus.textContent = t(state.syncState);
+    }
     if (ui.manageModal.classList.contains('visible')) {
         setupManageModal();
         updateNotificationUI();
     }
-
     renderApp();
-}
+});
 
 export async function initI18n() {
     const savedLang = localStorage.getItem('habitTrackerLanguage');
@@ -352,5 +344,6 @@ export async function initI18n() {
         initialLang = browserLang as 'pt' | 'en' | 'es';
     }
 
+    // This calls setLanguage in i18n.ts, which dispatches the event that triggers the listener above.
     await setLanguage(initialLang);
 }

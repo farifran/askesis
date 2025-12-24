@@ -440,8 +440,9 @@ export function requestHabitEndingFromModal(habitId: string) {
                 schedule.endDate = targetDate;
                 return schedule;
             });
-            
-            closeModal(ui.manageModal);
+            // UX FIX [2025-03-22]: Não fecha o modal de Gerenciar Hábitos ao encerrar um hábito.
+            // Isso permite que o usuário veja o status atualizado na lista e continue gerenciando outros itens.
+            // O update de estado disparado por _finalizeScheduleUpdate fará a UI atualizar.
         },
         { confirmButtonStyle: 'danger', confirmText: t('endButton') }
     );

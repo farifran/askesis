@@ -184,6 +184,13 @@ function handleSubmitKey() {
 
 function handleDisableSync() {
     console.log("Requesting sync disable...");
+    
+    // Ensure the modal helper is available
+    if (typeof showConfirmationModal !== 'function') {
+        console.error("Critical Error: showConfirmationModal is not defined. Circular dependency likely.");
+        return;
+    }
+
     showConfirmationModal(
         t('confirmSyncDisable'),
         () => {
