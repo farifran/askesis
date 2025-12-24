@@ -218,10 +218,43 @@ export function getSmartGoalForHabit(habit: Habit, dateISO: string, time: TimeOf
         return dailyInfo.instances[time].goalOverride;
     }
     
-    // Lógica Progressiva: +5 unidades a cada semana de streak
     const baseGoal = habit.goal.total;
-    const streak = calculateHabitStreak(habit.id, toUTCIsoDateString(addDays(parseUTCIsoDate(dateISO), -1)));
-    
+    const targetDate = parseUTCIsoDate(dateISO);
+
+    // --- NOVA LÓGICA: Regra dos 3 Aumentos Consecutivos ---
+    // Verifica os últimos 3 dias para ver se houve superação consistente da meta base.
+    let increases: number[] = [];
+    let isConsecutiveIncrease = true;
+
+    for (let i = 1; i <= 3; i++) {
+        const pastDate = addDays(targetDate, -i);
+        const pastISO = toUTCIsoDateString(pastDate);
+        const pastDailyInfo = getHabitDailyInfoForDate(pastISO)[habit.id];
+        const pastInstance = pastDailyInfo?.instances?.[time];
+
+        // O dia deve estar completo e com um valor SUPERIOR à meta base
+        if (pastInstance?.status === 'completed') {
+            const val = pastInstance.goalOverride ?? baseGoal;
+            if (val > baseGoal) {
+                increases.push(val);
+            } else {
+                isConsecutiveIncrease = false;
+                break;
+            }
+        } else {
+            isConsecutiveIncrease = false;
+            break;
+        }
+    }
+
+    // Se houve 3 dias consecutivos de aumento, o padrão para hoje será o MENOR desses aumentos.
+    if (isConsecutiveIncrease && increases.length === 3) {
+        return Math.min(...increases);
+    }
+    // --- FIM DA NOVA LÓGICA ---
+
+    // Lógica Progressiva Padrão (Fallback): +5 unidades a cada semana de streak
+    const streak = calculateHabitStreak(habit.id, toUTCIsoDateString(addDays(targetDate, -1)));
     const streakBonus = Math.floor(streak / 7) * 5; 
     return Math.max(5, baseGoal + streakBonus);
 }
