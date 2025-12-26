@@ -1322,7 +1322,6 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     /* VISUAL UPDATE [2025-03-22]: Negative margin to pull chart up behind the title text */
     margin-top: -30px;
     position: relative;
-    z-index: 1;
 }
 .chart-container.is-empty .chart-empty-state {
     display: flex;
@@ -1340,6 +1339,9 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     height: 100%;
     /* FIX [2025-03-22]: Permite que o stroke ultrapasse levemente a área de visualização (para não cortar a ponta da linha ou sombras) */
     overflow: visible;
+    /* FIX [2025-03-25]: Z-index fix for tooltip layering */
+    position: relative;
+    z-index: 1;
 }
 .chart-area { fill: url(#chart-gradient); }
 .chart-line { 
@@ -1363,12 +1365,8 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     position: absolute;
     top: 0;
     left: 0;
-    /* UI REFINEMENT [2025-03-24]: Changed to a semi-transparent background with a backdrop-filter.
-       This creates a "frosted glass" effect that solves the legibility issue reported by the user,
-       making the text perfectly readable by blurring the chart lines behind it. */
-    background-color: rgba(20, 20, 20, 0.8);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
+    /* UI REFINEMENT [2025-03-25]: Changed to a solid surface color as requested to ensure full opacity and legibility, removing all transparency. */
+    background-color: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: var(--border-radius-base);
     padding: var(--space-sm) var(--space-md);
@@ -1376,7 +1374,7 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
     pointer-events: none;
     opacity: 0;
-    transition: opacity var(--transition-duration), backdrop-filter var(--transition-duration);
+    transition: opacity var(--transition-duration);
     will-change: transform, opacity;
     z-index: var(--z-index-tooltip);
     min-width: 150px;
@@ -1758,7 +1756,7 @@ input:disabled + .slider {
 /* Modal: Notas */
 #notes-modal .modal-content { gap: var(--space-lg); }
 #notes-modal h2, #notes-modal p { margin: 0; text-align: center; }
-#notes-modal-subtitle { color: var(--text-secondary); }
+#notes-modal-subtitle { color: var(--text-tertiary); }
 #notes-textarea {
     background: var(--bg-color); border: 1px solid var(--border-color);
     border-radius: var(--border-radius-base); padding: var(--space-md); color: var(--text-primary);
