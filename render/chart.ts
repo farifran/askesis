@@ -48,8 +48,8 @@ const PLUS_BONUS_MULTIPLIER = 1.5; // "Plus" days move the needle 50% more than 
 // VISUAL CONSTANTS
 // LAYOUT UPDATE [2025-03-25]: Ajustado para 45px para alinhar com o design de sobreposição do cabeçalho.
 const SVG_HEIGHT = 45; 
-// Remove top padding completely to hit the "Askesis" line height ceiling.
-const CHART_PADDING = { top: 0, right: 3, bottom: 5, left: 3 };
+// LAYOUT UPDATE [2025-03-26]: Padding direito ajustado para 0 conforme solicitado.
+const CHART_PADDING = { top: 0, right: 0, bottom: 5, left: 3 };
 
 type ChartDataPoint = {
     date: string;
@@ -270,27 +270,22 @@ function _updateEvolutionIndicator(chartData: ChartDataPoint[], { xScale, yScale
     setTextContent(evolutionIndicator, `${evolution > 0 ? '+' : ''}${evolution.toFixed(1)}%`);
     
     const lastPointX = xScale(chartData.length - 1);
+    const lastPointY = yScale(lastPoint.value);
     
-    // LAYOUT UPDATE [2025-03-25]: 
-    // +10px adicionado ao yScale para "Baixar 10px para baixo"
-    evolutionIndicator.style.top = `${yScale(lastPoint.value) + 10}px`;
+    // LAYOUT UPDATE [2025-03-26]: Posiciona o indicador no final da linha (verticalmente centralizado)
+    evolutionIndicator.style.top = `${lastPointY}px`;
+    evolutionIndicator.style.transform = 'translateY(-50%)'; // Centraliza verticalmente em relação ao ponto
     
-    // Logic updated to use current padding
-    // LAYOUT UPDATE [2025-03-25]:
-    // +15px (original era 10) para "5px para direita"
-    let indicatorX = lastPointX + 15;
+    const GAP = 5;
+    let indicatorX = lastPointX + GAP;
     const wrapperWidth = chartWidthPx;
     
     // Se o indicador ultrapassar a borda direita, move para a esquerda do ponto
     if (indicatorX + evolutionIndicator.offsetWidth > wrapperWidth) {
-        // Mantém simetria no fallback (15px)
-        indicatorX = lastPointX - evolutionIndicator.offsetWidth - 15;
+        indicatorX = lastPointX - evolutionIndicator.offsetWidth - GAP;
     }
     
-    // Proteção adicional para não sair da tela pela esquerda
-    if (indicatorX < 0) {
-         indicatorX = 0;
-    }
+    if (indicatorX < 0) indicatorX = 0;
 
     evolutionIndicator.style.left = `${indicatorX}px`;
 }
