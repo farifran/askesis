@@ -46,7 +46,7 @@ const MAX_DAILY_CHANGE_RATE = 0.025;
 const PLUS_BONUS_MULTIPLIER = 1.5; // "Plus" days move the needle 50% more than normal days.
 
 // VISUAL CONSTANTS
-const SVG_HEIGHT = 80; // Decreased height by 40px (from 120px)
+const SVG_HEIGHT = 60; // Decreased height to 60px
 // Remove top padding completely to hit the "Askesis" line height ceiling.
 const CHART_PADDING = { top: 0, right: 3, bottom: 5, left: 3 };
 
