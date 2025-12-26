@@ -270,15 +270,21 @@ function _updateEvolutionIndicator(chartData: ChartDataPoint[], { xScale, yScale
     setTextContent(evolutionIndicator, `${evolution > 0 ? '+' : ''}${evolution.toFixed(1)}%`);
     
     const lastPointX = xScale(chartData.length - 1);
-    evolutionIndicator.style.top = `${yScale(lastPoint.value)}px`;
+    
+    // LAYOUT UPDATE [2025-03-25]: 
+    // +10px adicionado ao yScale para "Baixar 10px para baixo"
+    evolutionIndicator.style.top = `${yScale(lastPoint.value) + 10}px`;
     
     // Logic updated to use current padding
-    let indicatorX = lastPointX + 10;
+    // LAYOUT UPDATE [2025-03-25]:
+    // +15px (original era 10) para "5px para direita"
+    let indicatorX = lastPointX + 15;
     const wrapperWidth = chartWidthPx;
     
     // Se o indicador ultrapassar a borda direita, move para a esquerda do ponto
     if (indicatorX + evolutionIndicator.offsetWidth > wrapperWidth) {
-        indicatorX = lastPointX - evolutionIndicator.offsetWidth - 10;
+        // Mantém simetria no fallback (15px)
+        indicatorX = lastPointX - evolutionIndicator.offsetWidth - 15;
     }
     
     // Proteção adicional para não sair da tela pela esquerda
