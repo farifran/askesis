@@ -1360,19 +1360,26 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     margin-block-start: var(--space-xs);
 }
 .chart-tooltip {
-    position: absolute; 
-    /* PERFORMANCE [2025-01-18]: Fixa posição em 0 e move via transform para evitar layout thrashing. */
-    top: 0; left: 0; 
-    background-color: var(--bg-color);
+    position: absolute;
+    top: 0;
+    left: 0;
+    /* UI REFINEMENT [2025-03-24]: Changed to a semi-transparent background with a backdrop-filter.
+       This creates a "frosted glass" effect that solves the legibility issue reported by the user,
+       making the text perfectly readable by blurring the chart lines behind it. */
+    background-color: rgba(20, 20, 20, 0.8);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
     border: 1px solid var(--border-color);
     border-radius: var(--border-radius-base);
-    padding: var(--space-sm) var(--space-md); font-size: 12px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-    pointer-events: none; opacity: 0;
-    transition: opacity var(--transition-duration);
-    /* PERFORMANCE [2025-01-18]: Uso de will-change para promoção de camada GPU. */
+    padding: var(--space-sm) var(--space-md);
+    font-size: 12px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity var(--transition-duration), backdrop-filter var(--transition-duration);
     will-change: transform, opacity;
-    z-index: var(--z-index-tooltip); min-width: 150px;
+    z-index: var(--z-index-tooltip);
+    min-width: 150px;
 }
 .chart-tooltip.visible { opacity: 1; }
 .tooltip-date { font-weight: 600; margin-block-end: var(--space-sm); color: var(--text-primary); }
