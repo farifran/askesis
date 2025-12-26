@@ -1317,8 +1317,8 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 }
 .chart-wrapper { 
     position: relative; 
-    /* VISUAL UPDATE [2025-03-22]: Decreased height to 50px */
-    height: 50px; 
+    /* VISUAL UPDATE [2025-03-22]: Decreased height to 35px to align with text line height/density */
+    height: 35px; 
     /* UX [2025-01-24]: Permite scroll vertical (pan-y) mas captura horizontal */
     touch-action: pan-y; 
     user-select: none; 
