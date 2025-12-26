@@ -57,6 +57,8 @@ function getDB(): Promise<IDBDatabase> {
         dbPromise = new Promise((resolve, reject) => {
             // Safety Timeout
             const timeoutId = setTimeout(() => {
+                console.warn("IndexedDB connection timed out. Clearing cache to allow retry.");
+                dbPromise = null; // CRITICAL FIX: Permite retry na próxima chamada
                 reject(new Error("IndexedDB connection timed out"));
             }, DB_OPEN_TIMEOUT_MS);
 
@@ -71,17 +73,45 @@ function getDB(): Promise<IDBDatabase> {
 
             request.onsuccess = (event) => {
                 clearTimeout(timeoutId);
-                resolve((event.target as IDBOpenDBRequest).result);
+                const db = (event.target as IDBOpenDBRequest).result;
+
+                // ROBUSTNESS [2025-03-27]: Tratamento de perda de conexão.
+                // Se o navegador fechar a conexão (pressão de memória) ou houver upgrade de versão,
+                // devemos limpar a promessa cacheada para forçar uma reconexão na próxima chamada.
+                
+                db.onclose = () => {
+                    console.warn('IndexedDB connection closed unexpectedly. Resetting connection cache.');
+                    dbPromise = null;
+                };
+
+                db.onversionchange = () => {
+                    console.warn('IndexedDB version change detected. Closing connection to allow upgrade.');
+                    db.close();
+                    dbPromise = null;
+                };
+
+                resolve(db);
             };
 
             request.onerror = (event) => {
                 clearTimeout(timeoutId);
                 console.error("IDB Open Error", event);
+                dbPromise = null; // CRITICAL FIX: Permite retry na próxima chamada se a abertura falhar
                 reject((event.target as IDBOpenDBRequest).error);
             };
         });
     }
     return dbPromise;
+}
+
+// Helper para verificar erros de conexão e invalidar cache durante operações
+function handleIDBError(e: any) {
+    console.error("IndexedDB Operation Failed:", e);
+    // Se o erro indicar que o banco foi fechado ou estado inválido, limpa a promessa para forçar reconexão.
+    if (e && (e.name === 'InvalidStateError' || (e.message && e.message.includes('closed')))) {
+        console.warn("Detected closed DB connection in operation. Resetting cache.");
+        dbPromise = null;
+    }
 }
 
 async function idbGet<T>(key: string): Promise<T | undefined> {
@@ -96,7 +126,7 @@ async function idbGet<T>(key: string): Promise<T | undefined> {
             request.onerror = () => reject(request.error);
         });
     } catch (e) {
-        console.warn("Failed to read from IDB (Get)", e);
+        handleIDBError(e);
         return undefined; // Fail safe
     }
 }
@@ -113,7 +143,8 @@ async function idbSet(key: string, value: any): Promise<void> {
             request.onerror = () => reject(request.error);
         });
     } catch (e) {
-        console.error("Failed to write to IDB (Set)", e);
+        handleIDBError(e);
+        // Não relançamos o erro para evitar crash da UI, mas o log acima alertará.
     }
 }
 
@@ -129,7 +160,7 @@ async function idbDelete(key: string): Promise<void> {
             request.onerror = () => reject(request.error);
         });
     } catch (e) {
-        console.error("Failed to delete from IDB", e);
+        handleIDBError(e);
     }
 }
 
