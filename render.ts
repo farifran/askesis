@@ -334,7 +334,13 @@ document.addEventListener('language-changed', () => {
 });
 
 export async function initI18n() {
-    const savedLang = localStorage.getItem('habitTrackerLanguage');
+    let savedLang: string | null = null;
+    try {
+        savedLang = localStorage.getItem('habitTrackerLanguage');
+    } catch (e) {
+        console.warn("Language storage access blocked:", e);
+    }
+
     const browserLang = navigator.language.split('-')[0];
     let initialLang: 'pt' | 'en' | 'es' = 'pt';
 

@@ -47,20 +47,33 @@ const HEX_TABLE = Array.from({ length: 256 }, (_, i) => i.toString(16).padStart(
 // --- Authentication / Key Management ---
 
 export function initAuth() {
-    localSyncKey = localStorage.getItem(SYNC_KEY_STORAGE_KEY);
+    try {
+        localSyncKey = localStorage.getItem(SYNC_KEY_STORAGE_KEY);
+    } catch (e) {
+        console.warn("Auth storage access blocked. Sync disabled.");
+        localSyncKey = null;
+    }
 }
 
 export function storeKey(key: string) {
     localSyncKey = key;
     // MANUTENIBILIDADE [2024-01-16]: Limpa o cache de hash sempre que a chave muda para garantir consistência.
     keyHashCache = null; 
-    localStorage.setItem(SYNC_KEY_STORAGE_KEY, key);
+    try {
+        localStorage.setItem(SYNC_KEY_STORAGE_KEY, key);
+    } catch (e) {
+        console.error("Failed to persist sync key:", e);
+    }
 }
 
 export function clearKey() {
     localSyncKey = null;
     keyHashCache = null;
-    localStorage.removeItem(SYNC_KEY_STORAGE_KEY);
+    try {
+        localStorage.removeItem(SYNC_KEY_STORAGE_KEY);
+    } catch (e) {
+        console.warn("Failed to clear sync key from storage:", e);
+    }
 }
 
 export function hasLocalSyncKey(): boolean {

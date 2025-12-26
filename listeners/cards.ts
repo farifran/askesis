@@ -6,44 +6,29 @@
 
 /**
  * @file listeners/cards.ts
- * @description Controlador de Interação de Itens da Lista (Cartões de Hábito).
- * 
- * [MAIN THREAD CONTEXT]:
- * Este módulo gerencia interações de alta frequência (cliques, teclado) dentro da lista virtualizada.
- * 
- * ARQUITETURA (Event Delegation):
- * - Em vez de anexar N listeners (um para cada cartão/botão), anexa-se apenas 1 listener
- *   no container pai (`ui.habitContainer`).
- * - O evento "borbulha" (bubbles up) e é interceptado aqui.
- * 
- * DECISÕES TÉCNICAS:
- * 1. Single-Pass Delegation: Usa um `INTERACTIVE_SELECTOR` unificado para identificar
- *    o alvo da interação com uma única chamada de `closest()`, reduzindo reflows e verificações.
- * 2. Inputs Efêmeros: O modo de edição de metas cria/destrói elementos DOM sob demanda
- *    para não poluir a árvore DOM permanente com inputs ocultos.
- * 3. Race-to-Idle: Em caso de sucesso na edição, pulamos a restauração do DOM antigo
- *    porque o ciclo de renderização global (`renderApp`) irá sobrescrever tudo em breve.
+ * @description Controlador de Interação dos Cartões de Hábito.
  */
 
 import { ui } from '../render/ui';
-import { state, Habit, TimeOfDay } from '../state';
-import { getCurrentGoalForInstance, getEffectiveScheduleForHabitOnDate } from '../services/selectors';
-import { openNotesModal, renderExploreHabits, openModal } from '../render';
-import {
-    toggleHabitStatus,
-    setGoalOverride,
-    requestHabitTimeRemoval,
-    requestHabitEndingFromModal,
-} from '../habitActions';
-import { triggerHaptic } from '../utils';
+import { 
+    state, 
+    TimeOfDay, 
+    Habit, 
+    getNextStatus, 
+    HabitStatus, 
+    ensureHabitInstanceData, 
+    getHabitDailyInfoForDate 
+} from '../state';
+import { saveState } from '../services/persistence';
+import { renderApp, openNotesModal } from '../render';
 import { DOM_SELECTORS, CSS_CLASSES } from '../render/constants';
+import { triggerHaptic } from '../utils';
+import { setGoalOverride } from '../habitActions';
 
-const GOAL_STEP = 5;
-
-// PERFORMANCE: Pre-computed selector for single-pass delegation.
-// Combina todos os elementos interativos em uma única query string.
-// Isso permite verificar "o usuário clicou em ALGO relevante?" com uma única operação de DOM (O(1)).
-const INTERACTIVE_SELECTOR = `${DOM_SELECTORS.HABIT_CONTENT_WRAPPER}, ${DOM_SELECTORS.GOAL_CONTROL_BTN}, ${DOM_SELECTORS.GOAL_VALUE_WRAPPER}, ${DOM_SELECTORS.SWIPE_DELETE_BTN}, ${DOM_SELECTORS.SWIPE_NOTE_BTN}, ${DOM_SELECTORS.EMPTY_GROUP_PLACEHOLDER}`;
+function getCurrentGoalForInstance(habit: Habit, date: string, time: TimeOfDay): number {
+    const dayData = getHabitDailyInfoForDate(date)[habit.id]?.instances[time];
+    return dayData?.goalOverride ?? habit.goal.total ?? 0;
+}
 
 function createGoalInput(habit: Habit, time: TimeOfDay, wrapper: HTMLElement) {
     if (wrapper.querySelector('input')) return; // Já está no modo de edição
@@ -68,7 +53,13 @@ function createGoalInput(habit: Habit, time: TimeOfDay, wrapper: HTMLElement) {
         wrapper.innerHTML = originalContent;
     };
 
+    // RACE CONDITION FIX: Flag para evitar salvamento duplo (Enter + Blur).
+    let isSaving = false;
+
     const save = () => {
+        if (isSaving) return;
+        isSaving = true;
+
         const newGoal = parseInt(input.value, 10);
         
         if (!isNaN(newGoal) && newGoal > 0) {
@@ -105,6 +96,8 @@ function createGoalInput(habit: Habit, time: TimeOfDay, wrapper: HTMLElement) {
             e.preventDefault();
             input.blur(); // Triggers onBlur -> save
         } else if (e.key === 'Escape') {
+            // Cancelamento não deve salvar
+            if (isSaving) return; 
             restoreOriginalContent();
             // A11Y: Restore focus on cancel
             const card = wrapper.closest<HTMLElement>(DOM_SELECTORS.HABIT_CARD);
@@ -118,153 +111,86 @@ function createGoalInput(habit: Habit, time: TimeOfDay, wrapper: HTMLElement) {
 }
 
 export function setupCardListeners() {
-    // A11Y: Keyboard Navigation Logic
-    // Permite interagir com cartões complexos (Swipe simulado) usando apenas teclado.
-    ui.habitContainer.addEventListener('keydown', e => {
-        const card = (e.target as HTMLElement).closest(DOM_SELECTORS.HABIT_CARD);
-        if (!card) return;
-        
-        if (!e.target || !(e.target as HTMLElement).classList.contains(CSS_CLASSES.HABIT_CONTENT_WRAPPER)) return;
-
-        if (e.key === 'ArrowRight') {
-            e.preventDefault();
-            if (card.classList.contains(CSS_CLASSES.IS_OPEN_RIGHT)) {
-                card.classList.remove(CSS_CLASSES.IS_OPEN_RIGHT);
-            } else {
-                card.classList.toggle(CSS_CLASSES.IS_OPEN_LEFT);
-            }
-        } else if (e.key === 'ArrowLeft') {
-            e.preventDefault();
-            if (card.classList.contains(CSS_CLASSES.IS_OPEN_LEFT)) {
-                card.classList.remove(CSS_CLASSES.IS_OPEN_LEFT);
-            } else {
-                card.classList.toggle(CSS_CLASSES.IS_OPEN_RIGHT);
-            }
-        } else if (e.key === 'Escape') {
-            if (card.classList.contains(CSS_CLASSES.IS_OPEN_LEFT) || card.classList.contains(CSS_CLASSES.IS_OPEN_RIGHT)) {
-                e.preventDefault();
-                card.classList.remove(CSS_CLASSES.IS_OPEN_LEFT, CSS_CLASSES.IS_OPEN_RIGHT);
-            }
-        }
-    });
-
-    // PERFORMANCE: Centralized Click Handler (Event Delegation).
-    // Gerencia TODOS os cliques dentro da lista de hábitos.
     ui.habitContainer.addEventListener('click', e => {
         const target = e.target as HTMLElement;
-
-        // ADVANCED OPTIMIZATION [2025-03-18]: Single-Pass Delegation.
-        // Instead of calling .closest() multiple times for every possible button/wrapper,
-        // we call it ONCE for a combined selector of all interactive elements.
-        // This reduces DOM traversal complexity from O(Depth * Selectors) to O(Depth).
-        const interactiveElement = target.closest(INTERACTIVE_SELECTOR) as HTMLElement;
+        const card = target.closest<HTMLElement>(DOM_SELECTORS.HABIT_CARD);
         
-        if (!interactiveElement) return;
-
-        // --- PLACEHOLDER (Caso Especial: Não tem cartão pai) ---
-        if (interactiveElement.classList.contains(CSS_CLASSES.EMPTY_GROUP_PLACEHOLDER)) {
-            triggerHaptic('light');
-            renderExploreHabits();
-            openModal(ui.exploreModal);
+        // --- 1. Goal Adjustment (Decrement) ---
+        if (target.matches(`[data-action="decrement"]`)) {
+            const btn = target as HTMLButtonElement;
+            const habitId = btn.dataset.habitId!;
+            const time = btn.dataset.time as TimeOfDay;
+            const habit = state.habits.find(h => h.id === habitId);
+            
+            if (habit) {
+                const currentGoal = getCurrentGoalForInstance(habit, state.selectedDate, time);
+                if (currentGoal > 1) {
+                    setGoalOverride(habitId, state.selectedDate, time, currentGoal - 1);
+                    triggerHaptic('light');
+                }
+            }
             return;
         }
 
-        // All other interactions require a habit card context
-        // Busca o elemento pai 'habit-card' para obter IDs e contexto.
-        const card = interactiveElement.closest<HTMLElement>(DOM_SELECTORS.HABIT_CARD);
-        if (!card) return;
+        // --- 2. Goal Adjustment (Increment) ---
+        if (target.matches(`[data-action="increment"]`)) {
+            const btn = target as HTMLButtonElement;
+            const habitId = btn.dataset.habitId!;
+            const time = btn.dataset.time as TimeOfDay;
+            const habit = state.habits.find(h => h.id === habitId);
+            
+            if (habit) {
+                const currentGoal = getCurrentGoalForInstance(habit, state.selectedDate, time);
+                setGoalOverride(habitId, state.selectedDate, time, currentGoal + 1);
+                triggerHaptic('light');
+                
+                // Feedback visual rápido
+                const wrapper = btn.closest(DOM_SELECTORS.HABIT_GOAL_CONTROLS);
+                if (wrapper) {
+                    wrapper.classList.add('increase');
+                    wrapper.addEventListener('animationend', () => wrapper.classList.remove('increase'), { once: true });
+                }
+            }
+            return;
+        }
 
-        const habitId = card.dataset.habitId;
-        const time = card.dataset.time as TimeOfDay | undefined;
-        if (!habitId || !time) return;
+        // --- 3. Goal Inline Editing (Click on value/unit) ---
+        if (target.matches('.goal-value-wrapper, .goal-value-wrapper *')) {
+            const wrapper = target.closest<HTMLElement>(DOM_SELECTORS.GOAL_VALUE_WRAPPER);
+            const controls = wrapper?.closest<HTMLElement>(DOM_SELECTORS.HABIT_GOAL_CONTROLS);
+            if (wrapper && controls) {
+                const decBtn = controls.querySelector(`[data-action="decrement"]`) as HTMLElement;
+                const habitId = decBtn.dataset.habitId!;
+                const time = decBtn.dataset.time as TimeOfDay;
+                const habit = state.habits.find(h => h.id === habitId);
+                
+                if (habit) {
+                    createGoalInput(habit, time, wrapper);
+                }
+            }
+            return;
+        }
 
-        // --- SWIPE ACTIONS (Camada Inferior) ---
-        if (interactiveElement.classList.contains(CSS_CLASSES.SWIPE_DELETE_BTN)) {
-            triggerHaptic('medium');
+        // --- 4. Main Card Toggle Action ---
+        if (card && card.dataset.habitId && card.dataset.time) {
+            // Ignore if clicking internal buttons (handled above or by Swipe)
+            if (target.closest('button') || target.closest('input')) return;
+
+            const habitId = card.dataset.habitId;
+            const time = card.dataset.time as TimeOfDay;
             
             const habit = state.habits.find(h => h.id === habitId);
             if (!habit) return;
 
-            const currentScheduleTimes = getEffectiveScheduleForHabitOnDate(habit, state.selectedDate);
+            const dayData = getHabitDailyInfoForDate(state.selectedDate)[habitId]?.instances[time];
+            const currentStatus = dayData?.status ?? 'pending';
+            const nextStatus = getNextStatus(currentStatus);
 
-            // UX Logic: Se for o único horário do dia, sugere encerrar o hábito.
-            if (currentScheduleTimes.length <= 1) {
-                requestHabitEndingFromModal(habitId);
-            } else {
-                requestHabitTimeRemoval(habitId, time);
-            }
-            return;
-        }
-
-        if (interactiveElement.classList.contains(CSS_CLASSES.SWIPE_NOTE_BTN)) {
-            triggerHaptic('light');
-            openNotesModal(habitId, state.selectedDate, time);
-            return;
-        }
-
-        // --- GOAL CONTROLS (+/-) ---
-        if (interactiveElement.classList.contains(CSS_CLASSES.GOAL_CONTROL_BTN)) {
-            e.stopPropagation(); // Impede que o clique propague e marque o hábito como feito
+            triggerHaptic('selection');
+            ensureHabitInstanceData(state.selectedDate, habitId, time).status = nextStatus;
             
-            const habit = state.habits.find(h => h.id === habitId);
-            if (!habit || (habit.goal.type !== 'pages' && habit.goal.type !== 'minutes')) return;
-            
-            const action = interactiveElement.dataset.action as 'increment' | 'decrement';
-            
-            triggerHaptic('light');
-            const currentGoal = getCurrentGoalForInstance(habit, state.selectedDate, time);
-            const newGoal = (action === 'increment') 
-                ? currentGoal + GOAL_STEP 
-                : Math.max(1, currentGoal - GOAL_STEP);
-
-            setGoalOverride(habitId, state.selectedDate, time, newGoal);
-            
-            // DOM OPTIMIZATION [2025-03-09]: Optimized lookup using sibling traversal.
-            const goalWrapper = interactiveElement.parentElement?.querySelector<HTMLElement>(DOM_SELECTORS.GOAL_VALUE_WRAPPER);
-            
-            if (goalWrapper) {
-                const animationClass = action === 'increment' ? 'increase' : 'decrease';
-                goalWrapper.classList.remove('increase', 'decrease');
-                requestAnimationFrame(() => {
-                    goalWrapper.classList.add(animationClass);
-                    goalWrapper.addEventListener('animationend', () => {
-                        goalWrapper.classList.remove(animationClass);
-                    }, { once: true });
-                });
-            }
-            return;
-        }
-
-        // --- GOAL VALUE (Edit Mode) ---
-        if (interactiveElement.classList.contains(CSS_CLASSES.GOAL_VALUE_WRAPPER)) {
-            e.stopPropagation();
-            triggerHaptic('light');
-            const habit = state.habits.find(h => h.id === habitId);
-            if (habit && (habit.goal.type === 'pages' || habit.goal.type === 'minutes')) {
-                createGoalInput(habit, time, interactiveElement);
-            }
-            return;
-        }
-
-        // --- MAIN CARD CONTENT (Toggle Status) ---
-        if (interactiveElement.classList.contains(CSS_CLASSES.HABIT_CONTENT_WRAPPER)) {
-            // Se o cartão estiver "aberto" (swipe active), o clique apenas fecha.
-            const isOpen = card.classList.contains(CSS_CLASSES.IS_OPEN_LEFT) || card.classList.contains(CSS_CLASSES.IS_OPEN_RIGHT);
-            
-            if (isOpen) {
-                card.classList.remove(CSS_CLASSES.IS_OPEN_LEFT, CSS_CLASSES.IS_OPEN_RIGHT);
-                return;
-            }
-
-            const currentStatus = card.classList.contains(CSS_CLASSES.COMPLETED) ? 'completed' : (card.classList.contains(CSS_CLASSES.SNOOZED) ? 'snoozed' : 'pending');
-            
-            if (currentStatus === 'pending') {
-                triggerHaptic('success');
-            } else {
-                triggerHaptic('light');
-            }
-            
-            toggleHabitStatus(habitId, time, state.selectedDate);
+            saveState();
+            renderApp();
         }
     });
 }
