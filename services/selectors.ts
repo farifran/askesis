@@ -330,21 +330,38 @@ export function calculateDaySummary(dateISO: string, preParsedDate?: Date) {
                 if ((habit.goal.type === 'pages' || habit.goal.type === 'minutes') && habit.goal.total) {
                      const currentGoal = getCurrentGoalForInstance(habit, dateISO, time);
                      if (currentGoal > habit.goal.total) {
-                         // LOGIC UPDATE [2025-03-22]: The "Plus Day" indicator only appears if 
-                         // the user has maintained a streak of at least 2 days prior to this overachievement.
-                         // This rewards consistency + effort, not just random bursts.
-                         const yesterdayISO = toUTCIsoDateString(addDays(preParsedDate || parseUTCIsoDate(dateISO), -1));
-                         const currentStreak = calculateHabitStreak(habit.id, yesterdayISO);
-                         
-                         if (currentStreak >= 2) {
-                             hasNumericOverachieved = true;
-                         }
+                         hasNumericOverachieved = true;
                      }
                 }
             } else if (status === 'snoozed') {
                 snoozed++;
             } else {
                 pending++;
+            }
+        }
+    }
+    
+    let showPlusIndicator = false;
+    
+    // LOGIC UPDATE [2025-03-22]: Plus indicator requirements:
+    // 1. At least one habit exceeded numeric goal today.
+    // 2. Today is Perfect (All completed, no snoozes, no pending).
+    // 3. Yesterday was Perfect.
+    // 4. Day before Yesterday was Perfect.
+    if (hasNumericOverachieved && total > 0 && completed === total) {
+        const currentDate = preParsedDate || parseUTCIsoDate(dateISO);
+        
+        // Check Day N-1
+        const d1 = addDays(currentDate, -1);
+        const s1 = calculateDaySummary(toUTCIsoDateString(d1), d1);
+        
+        if (s1.total > 0 && s1.completed === s1.total) {
+            // Check Day N-2
+            const d2 = addDays(currentDate, -2);
+            const s2 = calculateDaySummary(toUTCIsoDateString(d2), d2);
+            
+            if (s2.total > 0 && s2.completed === s2.total) {
+                showPlusIndicator = true;
             }
         }
     }
@@ -356,7 +373,7 @@ export function calculateDaySummary(dateISO: string, preParsedDate?: Date) {
         pending,
         completedPercent: total > 0 ? (completed / total) * 100 : 0,
         snoozedPercent: total > 0 ? (snoozed / total) * 100 : 0,
-        showPlusIndicator: hasNumericOverachieved
+        showPlusIndicator
     };
     
     state.daySummaryCache.set(dateISO, summary);
