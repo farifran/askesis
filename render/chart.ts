@@ -49,7 +49,7 @@ const PLUS_BONUS_MULTIPLIER = 1.5; // "Plus" days move the needle 50% more than 
 // LAYOUT UPDATE [2025-03-25]: Ajustado para 45px para alinhar com o design de sobreposição do cabeçalho.
 const SVG_HEIGHT = 45; 
 // LAYOUT UPDATE [2025-03-26]: Padding direito mantido em 0 para largura total.
-const CHART_PADDING = { top: 0, right: 0, bottom: 5, left: 3 };
+const CHART_PADDING = { top: 5, right: 0, bottom: 5, left: 3 };
 
 type ChartDataPoint = {
     date: string;
@@ -175,7 +175,6 @@ function _calculateChartScales(chartData: ChartDataPoint[], chartWidthPx: number
     }
 
     // VISUAL FIX [2025-03-22]: Escala Dinâmica (Dynamic Scaling) Ajustada.
-    // O objetivo é maximizar o uso vertical do gráfico para tornar as variações mais visíveis.
     let dataMin = Infinity;
     let dataMax = -Infinity;
     
@@ -186,7 +185,7 @@ function _calculateChartScales(chartData: ChartDataPoint[], chartWidthPx: number
         if (val > dataMax) dataMax = val;
     }
 
-    // Define uma amplitude mínima para evitar ruído excessivo em linhas quase planas (ex: 100.00 vs 100.01)
+    // Define uma amplitude mínima para evitar ruído excessivo em linhas quase planas
     const MIN_VISUAL_AMPLITUDE = 2.0; 
     let spread = dataMax - dataMin;
 
@@ -197,13 +196,13 @@ function _calculateChartScales(chartData: ChartDataPoint[], chartWidthPx: number
         spread = MIN_VISUAL_AMPLITUDE;
     }
 
-    // SCALING UPDATE [2025-03-22]: Maximum Height Usage.
-    // Top padding is effectively zero (via CHART_PADDING), allowing peaks to hit the ceiling.
-    const verticalPaddingTop = 0; // Absolute max limit
-    const verticalPaddingBottom = spread * 0.15; // 15% breathing room at bottom
+    // SCALING UPDATE [2025-03-27]: Safety Padding.
+    // Adiciona margem vertical significativa (25% do spread para cima e para baixo)
+    // para garantir que a linha do gráfico nunca toque os limites extremos onde o texto está.
+    const safetyPadding = spread * 0.25;
     
-    const minVal = dataMin - verticalPaddingBottom;
-    const maxVal = dataMax + verticalPaddingTop;
+    const minVal = dataMin - safetyPadding;
+    const maxVal = dataMax + safetyPadding;
 
     const valueRange = maxVal - minVal;
     
@@ -256,7 +255,7 @@ function setTextContent(element: HTMLElement, text: string) {
     }
 }
 
-function _updateEvolutionIndicator(chartData: ChartDataPoint[], { xScale, yScale }: ChartScales, chartWidthPx: number) {
+function _updateEvolutionIndicator(chartData: ChartDataPoint[]) {
     const { evolutionIndicator } = ui.chart;
     const lastPoint = chartData[chartData.length - 1];
     const referencePoint = chartData.find(d => d.scheduledCount > 0) || chartData[0];
@@ -269,47 +268,14 @@ function _updateEvolutionIndicator(chartData: ChartDataPoint[], { xScale, yScale
     }
     setTextContent(evolutionIndicator, `${evolution > 0 ? '+' : ''}${evolution.toFixed(1)}%`);
     
-    const lastPointY = yScale(lastPoint.value);
-    
-    // LAYOUT UPDATE [2025-03-26]: Pinned to Right Edge com espaçamento.
-    // REQUEST: Adicionar 20px na margem direita e evitar que toque na linha azul (ficar acima ou abaixo).
-    
-    evolutionIndicator.style.left = 'auto';
-    evolutionIndicator.style.right = '20px'; // 20px da borda direita conforme solicitado
-    evolutionIndicator.style.top = `${lastPointY}px`;
-    
-    const isPositiveTrend = evolution >= 0;
-    
-    // Boundary Safety: O gráfico tem apenas ~45px de altura.
-    const TEXT_SAFE_ZONE = 20; // px
-    const isNearTop = lastPointY < TEXT_SAFE_ZONE;
-    const isNearBottom = lastPointY > (SVG_HEIGHT - TEXT_SAFE_ZONE);
-    
-    let translateY = '';
-    
-    // GAP Vertical: Espaçamento de segurança para não tocar na linha (12px)
-    const GAP = '12px';
-
-    if (isNearTop) {
-        // Muito perto do topo -> Força para baixo
-        translateY = `calc(0% + ${GAP})`;
-    } else if (isNearBottom) {
-        // Muito perto do fundo -> Força para cima
-        translateY = `calc(-100% - ${GAP})`;
-    } else {
-        // Zona segura: Smart Dodge.
-        if (isPositiveTrend) {
-            // Se sobe, a linha vem de baixo para cima. O espaço livre está ACIMA do ponto final.
-            // translate -100% move o texto para cima da âncora Y.
-            translateY = `calc(-100% - ${GAP})`;
-        } else {
-            // Se desce, a linha vem de cima para baixo. O espaço livre está ABAIXO do ponto final.
-            // translate 0% mantém o texto abaixo da âncora Y (top-aligned).
-            translateY = `calc(0% + ${GAP})`;
-        }
-    }
-    
-    evolutionIndicator.style.transform = `translateY(${translateY})`;
+    // LAYOUT FIX [2025-03-27]: Removed manual positioning logic.
+    // The indicator is now statically positioned in the header via CSS flexbox.
+    // No JS style manipulation required for top/left/right/transform.
+    evolutionIndicator.style.top = '';
+    evolutionIndicator.style.bottom = '';
+    evolutionIndicator.style.left = '';
+    evolutionIndicator.style.right = '';
+    evolutionIndicator.style.transform = '';
 }
 
 function _updateChartDOM(chartData: ChartDataPoint[]) {
@@ -353,7 +319,7 @@ function _updateChartDOM(chartData: ChartDataPoint[]) {
     _updateAxisLabels(chartData);
     
     // Pass the already measured width to avoid re-measuring
-    _updateEvolutionIndicator(chartData, scales, svgWidth);
+    _updateEvolutionIndicator(chartData);
 
     // Update Memoization State
     renderedDataRef = chartData;

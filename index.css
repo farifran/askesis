@@ -1303,6 +1303,12 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     font-weight: 700;
     line-height: 1.2;
 }
+/* LAYOUT FIX [2025-03-27]: Flex container for title and indicator to allow horizontal alignment. */
+.chart-title-row {
+    display: flex;
+    align-items: baseline;
+    gap: 30px; /* Requested 30px gap */
+}
 .app-subtitle {
     font-size: 13px;
     font-style: italic;
@@ -1393,7 +1399,8 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     height: 42px; color: var(--text-tertiary); font-style: italic; text-align: center;
 }
 .chart-evolution-indicator {
-    position: absolute;
+    /* LAYOUT FIX [2025-03-27]: Static positioning for inline header display. */
+    position: static;
     font-size: 13px;
     font-weight: 700;
     background-color: transparent;
@@ -1402,10 +1409,20 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     pointer-events: none;
     white-space: nowrap;
     transition: color var(--transition-duration-slow);
-    transform: translateY(calc(-100% - var(--space-lg)));
+    /* Remove absolute positioning styles */
+    top: auto;
+    bottom: auto;
+    right: auto;
+    left: auto;
+    transform: none !important;
 }
-.chart-evolution-indicator.positive { color: var(--accent-green); }
-.chart-evolution-indicator.negative { color: var(--color-red); }
+/* POSITIONING FIX [2025-03-27]: Just set colors, layout handled by parent flex container. */
+.chart-evolution-indicator.positive { 
+    color: var(--accent-green);
+}
+.chart-evolution-indicator.negative { 
+    color: var(--color-red);
+}
 .chart-evolution-indicator.positive::before { content: '▲ '; }
 .chart-evolution-indicator.negative::before { content: '▼ '; }
 
