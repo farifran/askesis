@@ -2432,8 +2432,7 @@ body.is-offline #ai-eval-btn .offline-icon {
         gap: var(--space-sm);
     }
     .app-header h2 { font-size: 24px; }
-    /* FIX: Match subtitle size to quote size on mobile for consistency */
-    .stoic-quote, .app-subtitle { font-size: 12px; }
+    .stoic-quote { font-size: 12px; }
     .header-top { gap: var(--space-md); }
     #fab-add-habit { width: 38px; height: 38px; font-size: 22px; }
     .header-bottom { gap: var(--space-sm); flex-wrap: nowrap; }
