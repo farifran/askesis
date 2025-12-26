@@ -1322,6 +1322,7 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     /* VISUAL UPDATE [2025-03-22]: Negative margin to pull chart up behind the title text */
     margin-top: -30px;
     position: relative;
+    z-index: 1;
 }
 .chart-container.is-empty .chart-empty-state {
     display: flex;
@@ -1339,9 +1340,6 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     height: 100%;
     /* FIX [2025-03-22]: Permite que o stroke ultrapasse levemente a área de visualização (para não cortar a ponta da linha ou sombras) */
     overflow: visible;
-    /* FIX [2025-03-25]: Z-index fix for tooltip layering */
-    position: relative;
-    z-index: 1;
 }
 .chart-area { fill: url(#chart-gradient); }
 .chart-line { 
@@ -1362,22 +1360,19 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     margin-block-start: var(--space-xs);
 }
 .chart-tooltip {
-    position: absolute;
-    top: 0;
-    left: 0;
-    /* UI REFINEMENT [2025-03-25]: Changed to a solid surface color as requested to ensure full opacity and legibility, removing all transparency. */
-    background-color: var(--surface-color);
+    position: absolute; 
+    /* PERFORMANCE [2025-01-18]: Fixa posição em 0 e move via transform para evitar layout thrashing. */
+    top: 0; left: 0; 
+    background-color: var(--bg-color);
     border: 1px solid var(--border-color);
     border-radius: var(--border-radius-base);
-    padding: var(--space-sm) var(--space-md);
-    font-size: 12px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-    pointer-events: none;
-    opacity: 0;
+    padding: var(--space-sm) var(--space-md); font-size: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    pointer-events: none; opacity: 0;
     transition: opacity var(--transition-duration);
+    /* PERFORMANCE [2025-01-18]: Uso de will-change para promoção de camada GPU. */
     will-change: transform, opacity;
-    z-index: var(--z-index-tooltip);
-    min-width: 150px;
+    z-index: var(--z-index-tooltip); min-width: 150px;
 }
 .chart-tooltip.visible { opacity: 1; }
 .tooltip-date { font-weight: 600; margin-block-end: var(--space-sm); color: var(--text-primary); }
@@ -1756,7 +1751,7 @@ input:disabled + .slider {
 /* Modal: Notas */
 #notes-modal .modal-content { gap: var(--space-lg); }
 #notes-modal h2, #notes-modal p { margin: 0; text-align: center; }
-#notes-modal-subtitle { color: var(--text-tertiary); }
+#notes-modal-subtitle { color: var(--text-secondary); }
 #notes-textarea {
     background: var(--bg-color); border: 1px solid var(--border-color);
     border-radius: var(--border-radius-base); padding: var(--space-md); color: var(--text-primary);
