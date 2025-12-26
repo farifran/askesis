@@ -57,6 +57,9 @@ function createGoalInput(habit: Habit, time: TimeOfDay, wrapper: HTMLElement) {
     input.focus();
     input.select();
 
+    // FLAG: Previne submissão dupla (Condição de corrida Enter vs Blur)
+    let isSaving = false;
+
     // MEMORY MANAGEMENT: Manual cleanup of temporary listeners to prevent leaks.
     const cleanupListeners = () => {
         input.removeEventListener('blur', onBlur);
@@ -69,6 +72,10 @@ function createGoalInput(habit: Habit, time: TimeOfDay, wrapper: HTMLElement) {
     };
 
     const save = () => {
+        // ROBUSTNESS: Se já estiver salvando, aborta.
+        if (isSaving) return;
+        isSaving = true;
+
         const newGoal = parseInt(input.value, 10);
         
         if (!isNaN(newGoal) && newGoal > 0) {
@@ -95,6 +102,7 @@ function createGoalInput(habit: Habit, time: TimeOfDay, wrapper: HTMLElement) {
             content?.focus();
         } else {
             // Invalid input: restore previous state immediately
+            isSaving = false; // Reset lock if validation failed (though usually we destroy input)
             restoreOriginalContent();
         }
     };
@@ -103,8 +111,10 @@ function createGoalInput(habit: Habit, time: TimeOfDay, wrapper: HTMLElement) {
     const onKeyDown = (e: KeyboardEvent) => {
         if (e.key === 'Enter') {
             e.preventDefault();
-            input.blur(); // Triggers onBlur -> save
+            input.blur(); // Dispara onBlur -> save (protegido pela flag isSaving)
         } else if (e.key === 'Escape') {
+            // Se já estiver salvando, ignora o escape para não desfazer visualmente antes do refresh
+            if (isSaving) return;
             restoreOriginalContent();
             // A11Y: Restore focus on cancel
             const card = wrapper.closest<HTMLElement>(DOM_SELECTORS.HABIT_CARD);

@@ -44,18 +44,24 @@ import {
     clearActiveHabitsCache,
     invalidateCachesForDateChange,
     getPersistableState,
-    HabitDayData
+    HabitDayData,
+    STREAK_SEMI_CONSOLIDATED,
+    STREAK_CONSOLIDATED
 } from './state';
 // ARCHITECTURE FIX: Import persistence logic from service layer.
 import { saveState, clearLocalPersistence } from './services/persistence';
 // ARCHITECTURE FIX: Import predefined habits from data layer, not state module.
 import { PREDEFINED_HABITS } from './data/predefinedHabits';
-import { getEffectiveScheduleForHabitOnDate, getActiveHabitsForDate, getScheduleForDate, isHabitNameDuplicate } from './services/selectors';
+import { 
+    getEffectiveScheduleForHabitOnDate, 
+    getActiveHabitsForDate, 
+    isHabitNameDuplicate,
+    clearSelectorInternalCaches,
+    calculateHabitStreak
+} from './services/selectors';
 import { 
     generateUUID, 
     getTodayUTCIso, 
-    toUTCIsoDateString, 
-    addDays, 
     parseUTCIsoDate,
     triggerHaptic,
     getSafeDate,
@@ -86,6 +92,8 @@ function _finalizeScheduleUpdate(affectsHistory: boolean = true) {
         // PERFORMANCE: Limpeza pesada. Força recriação de DOM elements e recálculo de streaks.
         clearScheduleCache();
         clearHabitDomCache();
+        // ROBUSTNESS [2025-03-27]: Limpa caches internos de seletores (ex: datas memoizadas) para evitar vazamento em mudanças estruturais.
+        clearSelectorInternalCaches();
     } else {
         // PERFORMANCE: Limpeza leve. Apenas revalida quais hábitos aparecem hoje.
         clearActiveHabitsCache();
@@ -205,6 +213,32 @@ function _updateHabitInstanceStatus(
         }
     }
     return true;
+}
+
+/**
+ * Verifica se o hábito atingiu marcos de consistência (21 ou 66 dias)
+ * e agenda a celebração pela IA se ainda não foi mostrada.
+ */
+function _checkStreakMilestones(habitId: string, dateISO: string) {
+    const streak = calculateHabitStreak(habitId, dateISO);
+    
+    // Check 21 Days (Semi-Consolidation)
+    if (streak === STREAK_SEMI_CONSOLIDATED) {
+        const notificationKey = `${habitId}-${STREAK_SEMI_CONSOLIDATED}`;
+        if (!state.notificationsShown.includes(notificationKey) && !state.pending21DayHabitIds.includes(habitId)) {
+            state.pending21DayHabitIds.push(habitId);
+            renderAINotificationState();
+        }
+    }
+    
+    // Check 66 Days (Consolidation)
+    if (streak === STREAK_CONSOLIDATED) {
+        const notificationKey = `${habitId}-${STREAK_CONSOLIDATED}`;
+        if (!state.notificationsShown.includes(notificationKey) && !state.pendingConsolidationHabitIds.includes(habitId)) {
+            state.pendingConsolidationHabitIds.push(habitId);
+            renderAINotificationState();
+        }
+    }
 }
 
 // ... (export functions)
@@ -718,6 +752,14 @@ export function toggleHabitStatus(habitId: string, time: TimeOfDay, date: string
         // PERFORMANCE: Invalida caches granularmente para apenas este hábito nesta data.
         invalidateCachesForDateChange(date, [habitId]);
         
+        // BUGFIX [2025-03-27]: Verifica marcos de consistência (21/66 dias)
+        // Se o novo status for 'completed', verificamos se atingiu um marco.
+        if (newStatus === 'completed') {
+            // Nota: invalidateCachesForDateChange limpou o cache de streak,
+            // então a chamada dentro de _checkStreakMilestones calculará o novo valor correto.
+            _checkStreakMilestones(habitId, date);
+        }
+        
         state.uiDirtyState.calendarVisuals = true;
         state.uiDirtyState.habitListStructure = true;
         
@@ -806,6 +848,13 @@ export function markAllHabitsForDate(dateISO: string, status: HabitStatus): bool
     if (changed) {
         // Batch invalidation
         invalidateCachesForDateChange(dateISO, Array.from(changedHabitIds));
+        
+        // BUGFIX [2025-03-27]: Verifica marcos de consistência para todos os hábitos afetados
+        if (status === 'completed') {
+            changedHabitIds.forEach(habitId => {
+                _checkStreakMilestones(habitId, dateISO);
+            });
+        }
         
         state.uiDirtyState.calendarVisuals = true;
         state.uiDirtyState.habitListStructure = true;

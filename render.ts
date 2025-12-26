@@ -21,7 +21,7 @@ import { state, LANGUAGES } from './state';
 import { parseUTCIsoDate, toUTCIsoDateString, addDays, getDateTimeFormat, pushToOneSignal, getTodayUTCIso } from './utils';
 import { ui } from './render/ui';
 // FIX: import setLanguage here only for initI18n, but use the event for reactivity.
-import { t, loadLanguage, setLanguage } from './i18n'; 
+import { t, setLanguage } from './i18n'; 
 import { UI_ICONS } from './render/icons';
 import type { Quote } from './data/quotes';
 

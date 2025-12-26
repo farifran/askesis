@@ -34,8 +34,9 @@ const pluralRulesCache: Record<string, Intl.PluralRules> = {};
 
 const loadedTranslations: Record<string, Translations> = {};
 
-// Função agora exportada para ser usada pelo orquestrador em render.ts
-export async function loadLanguage(langCode: 'pt' | 'en' | 'es'): Promise<void> {
+// INTERNAL HELPER: Carrega o arquivo JSON de tradução.
+// Removido 'export' pois agora é usado apenas internamente por setLanguage.
+async function loadLanguage(langCode: 'pt' | 'en' | 'es'): Promise<void> {
     if (loadedTranslations[langCode]) {
         return;
     }

@@ -84,7 +84,10 @@ function _blockSubsequentClick(deltaX: number) {
 // PERFORMANCE: Lê o CSS apenas quando necessário (resize), evitando Forced Reflows no hot path.
 function updateCachedLayoutValues() {
     const rootStyles = getComputedStyle(document.documentElement);
-    cachedSwipeActionWidth = parseInt(rootStyles.getPropertyValue('--swipe-action-width'), 10) || 60;
+    const rawValue = rootStyles.getPropertyValue('--swipe-action-width').trim();
+    const parsed = parseInt(rawValue, 10);
+    // ROBUSTEZ: Fallback explícito para NaN ou 0. Garante que a física nunca quebre por falta de CSS.
+    cachedSwipeActionWidth = (isNaN(parsed) || parsed === 0) ? 60 : parsed;
 }
 
 export function setupSwipeHandler(habitContainer: HTMLElement) {

@@ -46,6 +46,14 @@ function _getMemoizedDate(dateISO: string): Date {
     return date;
 }
 
+/**
+ * Limpa caches internos que não são gerenciados pelo `state.ts`.
+ * Útil para liberar memória em recargas completas ou mudanças estruturais pesadas.
+ */
+export function clearSelectorInternalCaches() {
+    _anchorDateCache.clear();
+}
+
 // --- Seletores de Agendamento (Schedule Selectors) ---
 
 /**
@@ -182,7 +190,7 @@ export function calculateHabitStreak(habitId: string, endDateISO: string): numbe
             
             if (schedule.length > 0) {
                 // CRITICAL LOGIC: Streak Calculation.
-                // A streak só continua se TODOS os horários do dia estiverem "completed" ou "snoozed".
+                // A streak só continua se TODAS os horários do dia estiverem "completed" ou "snoozed".
                 // "Snoozed" preserva a streak (congelamento), mas não conta como falha.
                 const allDoneOrSnoozed = schedule.every(time => {
                     const status = dailyInfo?.instances[time]?.status;
