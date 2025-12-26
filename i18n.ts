@@ -144,12 +144,7 @@ export async function setLanguage(langCode: 'pt' | 'en' | 'es') {
     
     state.activeLanguageCode = langCode;
     document.documentElement.lang = langCode;
-    
-    try {
-        localStorage.setItem('habitTrackerLanguage', langCode);
-    } catch (e) {
-        console.warn("Language preference could not be saved to storage:", e);
-    }
+    localStorage.setItem('habitTrackerLanguage', langCode);
     
     pushToOneSignal((OneSignal: any) => {
         OneSignal.User.setLanguage(langCode);

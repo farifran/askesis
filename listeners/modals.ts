@@ -71,8 +71,6 @@ import { setupReelRotary } from '../render/rotary';
 import { simpleMarkdownToHTML, pushToOneSignal, getContrastColor, addDays, parseUTCIsoDate, toUTCIsoDateString } from '../utils';
 import { setTextContent } from '../render/dom';
 import { isHabitNameDuplicate } from '../services/selectors';
-// PERFORMANCE: Import preloadWorker for early initialization
-import { preloadWorker } from '../services/cloud';
 
 // REFACTOR [2024-09-02]: Centraliza a lógica de processamento e formatação de celebrações
 const _processAndFormatCelebrations = (
@@ -352,12 +350,6 @@ export function setupModalListeners() {
 
     // --- AI FEATURES ---
     ui.aiEvalBtn.addEventListener('click', () => {
-        // PERFORMANCE: Worker Pre-warming.
-        // Inicia o worker assim que o usuário abre o menu de IA.
-        // Como o usuário vai levar alguns segundos lendo as opções (Mensal, Trimestral),
-        // o worker estará pronto e "quente" quando o clique da análise ocorrer.
-        preloadWorker();
-
         // Verifica se há celebrações pendentes (21 ou 66 dias)
         const celebration21DayText = _processAndFormatCelebrations(state.pending21DayHabitIds, 'aiCelebration21Day', STREAK_SEMI_CONSOLIDATED);
         const celebration66DayText = _processAndFormatCelebrations(state.pendingConsolidationHabitIds, 'aiCelebration66Day', STREAK_CONSOLIDATED);

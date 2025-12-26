@@ -1281,9 +1281,6 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     
     /* [2025-02-23] Add border matching habit cards */
     border: 1px solid rgba(255, 255, 255, 0.3);
-    
-    /* VISUAL UPDATE [2025-03-22]: Make container relative for layering. */
-    position: relative;
 }
 .chart-header {
     display: flex;
@@ -1291,11 +1288,6 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     align-items: flex-start;
     /* VISUAL UPDATE [2025-03-22]: Margin removed to align chart top with title */
     margin-bottom: 0;
-    /* VISUAL UPDATE [2025-03-22]: Ensure text is above chart line */
-    position: relative;
-    z-index: 5;
-    /* UX: Disable pointer events on header so user can scrub chart underneath */
-    pointer-events: none;
 }
 /* REFINAMENTO DE UI [2024-11-25]: Estilos atualizados para acomodar um novo cabeçalho de gráfico com título e subtítulo. */
 .chart-title {
@@ -1319,18 +1311,14 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 }
 .chart-container:not(.is-empty) .chart-data-view {
     display: block;
-    /* VISUAL UPDATE [2025-03-22]: Negative margin to pull chart up behind the title text */
-    margin-top: -30px;
-    position: relative;
-    z-index: 1;
 }
 .chart-container.is-empty .chart-empty-state {
     display: flex;
 }
 .chart-wrapper { 
     position: relative; 
-    /* VISUAL UPDATE [2025-03-22]: Reduced height by 5px */
-    height: 80px; 
+    /* VISUAL UPDATE [2025-03-22]: Decreased height to 60px */
+    height: 60px; 
     /* UX [2025-01-24]: Permite scroll vertical (pan-y) mas captura horizontal */
     touch-action: pan-y; 
     user-select: none; 
