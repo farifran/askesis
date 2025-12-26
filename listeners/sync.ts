@@ -26,7 +26,7 @@
 
 import { ui } from "../render/ui";
 import { t } from "../i18n";
-import { fetchStateFromCloud, setSyncStatus } from "../services/cloud";
+import { fetchStateFromCloud, setSyncStatus, prewarmWorker } from "../services/cloud";
 // ARCHITECTURE FIX: Import persistence logic from service layer.
 import { loadState, saveState } from "../services/persistence";
 import { renderApp } from "../render";
@@ -107,6 +107,10 @@ async function handleEnableSync() {
 async function _processKey(key: string) {
     const buttons = [ui.submitKeyBtn, ui.cancelEnterKeyBtn];
     _toggleButtons(buttons, true);
+    
+    // UX OPTIMISTIC: Muda o texto do botão para dar feedback imediato de atividade.
+    const originalBtnText = ui.submitKeyBtn.textContent;
+    ui.submitKeyBtn.textContent = t('syncVerifying');
 
     const originalKey = getSyncKey();
     
@@ -158,6 +162,7 @@ async function _processKey(key: string) {
         // [2025-01-15] BUGFIX: Reabilitar botões incondicionalmente.
         // Anteriormente, havia uma verificação se o modal estava visível.
         // Como o overlay do modal já impede cliques na interface de fundo, é seguro reabilitar aqui.
+        ui.submitKeyBtn.textContent = originalBtnText; // Restaura o texto original
         _toggleButtons(buttons, false);
     }
 }
@@ -245,7 +250,14 @@ export async function initSync() {
     
     // SETUP LISTENERS: Anexa eventos apenas uma vez na inicialização.
     ui.enableSyncBtn.addEventListener('click', handleEnableSync);
-    ui.enterKeyViewBtn.addEventListener('click', () => showView('enterKey'));
+    
+    ui.enterKeyViewBtn.addEventListener('click', () => {
+        showView('enterKey');
+        // PERFORMANCE: Inicia o Worker imediatamente.
+        // Enquanto o usuário digita a chave (levará alguns segundos), o Worker carrega e fica pronto.
+        prewarmWorker(); 
+    });
+    
     ui.cancelEnterKeyBtn.addEventListener('click', () => {
         ui.syncKeyInput.value = '';
         showView('inactive');

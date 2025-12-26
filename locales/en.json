@@ -231,6 +231,7 @@
     "syncSubmitKey": "Sync",
     "syncSynced": "Synced ✓",
     "syncUseCloud": "Use Cloud Data",
+    "syncVerifying": "Verifying...",
     "syncViewKey": "View Key",
     "syncWarning": "<strong>WRITE THIS KEY DOWN!</strong> It's the only way to access your data on other devices. If you lose it, your cloud data is lost forever.",
     "unitCheck": {

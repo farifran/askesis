@@ -231,6 +231,7 @@
     "syncSubmitKey": "Sincronizar",
     "syncSynced": "Sincronizado ✓",
     "syncUseCloud": "Usar Datos Nube",
+    "syncVerifying": "Verificando...",
     "syncViewKey": "Ver Clave",
     "syncWarning": "<strong>¡ANOTA ESTA CLAVE!</strong> Es la única forma de acceder a tus datos en otros dispositivos. Si la pierdes, tus datos en la nube se perderán para siempre.",
     "unitCheck": {

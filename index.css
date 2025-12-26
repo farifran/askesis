@@ -1288,6 +1288,13 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     align-items: flex-start;
     /* VISUAL UPDATE [2025-03-22]: Margin removed to align chart top with title */
     margin-bottom: 0;
+    /* LAYOUT UPDATE [2025-03-25]: Ajustes para sobreposição visual */
+    position: relative;
+    z-index: 10;
+    pointer-events: none; /* Permite clicar no gráfico atrás do texto */
+    padding-bottom: 0;
+    /* Texto legível sobre o gráfico */
+    text-shadow: 0 1px 2px var(--bg-color); 
 }
 /* REFINAMENTO DE UI [2024-11-25]: Estilos atualizados para acomodar um novo cabeçalho de gráfico com título e subtítulo. */
 .chart-title {
@@ -1311,14 +1318,18 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 }
 .chart-container:not(.is-empty) .chart-data-view {
     display: block;
+    /* LAYOUT UPDATE [2025-03-25]: Puxa o gráfico para cima para sobrepor o cabeçalho */
+    margin-top: -45px; 
+    position: relative;
+    z-index: 5;
 }
 .chart-container.is-empty .chart-empty-state {
     display: flex;
 }
 .chart-wrapper { 
     position: relative; 
-    /* VISUAL UPDATE [2025-03-22]: Decreased height to 60px */
-    height: 60px; 
+    /* VISUAL UPDATE [2025-03-25]: Adjusted to 45px to match design spec */
+    height: 45px; 
     /* UX [2025-01-24]: Permite scroll vertical (pan-y) mas captura horizontal */
     touch-action: pan-y; 
     user-select: none; 
@@ -2420,7 +2431,7 @@ body.is-offline #ai-eval-btn .offline-icon {
         gap: var(--space-sm);
     }
     .app-header h2 { font-size: 24px; }
-    .stoic-quote { font-size: 12px; }
+    .stoic-quote, .app-subtitle { font-size: 12px; }
     .header-top { gap: var(--space-md); }
     #fab-add-habit { width: 38px; height: 38px; font-size: 22px; }
     .header-bottom { gap: var(--space-sm); flex-wrap: nowrap; }

@@ -87,6 +87,16 @@ function getWorker(): Worker {
 }
 
 /**
+ * PERFORMANCE: Pré-aquece o Worker.
+ * Deve ser chamado quando o usuário entra em fluxos que certamente usarão criptografia ou IA em breve
+ * (ex: abrir modal de sync ou clicar no botão de IA), mas antes da ação de submissão.
+ * Isso elimina o tempo de boot do Worker (~50-200ms) da latência percebida da ação.
+ */
+export function prewarmWorker() {
+    getWorker();
+}
+
+/**
  * Ponte de comunicação assíncrona com o Worker.
  * Envia uma tarefa e retorna uma Promise que resolve quando o Worker responder.
  * 
