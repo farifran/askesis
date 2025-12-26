@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -29,13 +28,18 @@
 // [NOTA COMPARATIVA]: Este arquivo atua como o 'Controlador de Eventos'. Arquiteturalmente limpo, atua como um despachante (Dispatcher) delegando implementações para a pasta 'listeners/'.
 
 import { ui } from './render/ui';
-import { renderApp } from './render';
+import { renderApp, renderAINotificationState } from './render';
 import { setupModalListeners } from './listeners/modals';
 import { setupCardListeners } from './listeners/cards';
 import { setupDragHandler } from './listeners/drag';
 import { setupSwipeHandler } from './listeners/swipe';
 import { setupCalendarListeners } from './listeners/calendar';
 import { initChartInteractions } from './render/chart';
+
+function handleOnlineStatusChange() {
+    document.body.classList.toggle('is-offline', !navigator.onLine);
+    renderAINotificationState();
+}
 
 export function setupEventListeners() {
     // Inicializa módulos de listeners especializados
@@ -55,4 +59,9 @@ export function setupEventListeners() {
     // DO NOT REFACTOR: Substituir isso por uma importação direta em `habitActions` causará
     // ciclos de dependência (Render -> State -> Actions -> Render).
     document.addEventListener('render-app', () => renderApp());
+
+    // Listeners para status de conexão
+    window.addEventListener('online', handleOnlineStatusChange);
+    window.addEventListener('offline', handleOnlineStatusChange);
+    handleOnlineStatusChange(); // Define o estado inicial
 }
