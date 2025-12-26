@@ -29,7 +29,7 @@
 // [NOTA COMPARATIVA]: Este arquivo atua como o 'Controlador de Eventos'. Arquiteturalmente limpo, atua como um despachante (Dispatcher) delegando implementações para a pasta 'listeners/'.
 
 import { ui } from './render/ui';
-import { renderApp } from './render';
+import { renderApp, renderAINotificationState } from './render';
 import { setupModalListeners } from './listeners/modals';
 import { setupCardListeners } from './listeners/cards';
 import { setupDragHandler } from './listeners/drag';
@@ -55,4 +55,23 @@ export function setupEventListeners() {
     // DO NOT REFACTOR: Substituir isso por uma importação direta em `habitActions` causará
     // ciclos de dependência (Render -> State -> Actions -> Render).
     document.addEventListener('render-app', () => renderApp());
+
+    // --- NETWORK STATUS LISTENER ---
+    // UX: Monitora conectividade para alternar o ícone da IA (Sparkle <-> Offline Cloud)
+    // e desabilitar o botão quando sem internet.
+    const handleNetworkChange = () => {
+        const isOffline = !navigator.onLine;
+        
+        // CSS Hook: O index.css usa body.is-offline para trocar a visibilidade dos ícones
+        document.body.classList.toggle('is-offline', isOffline);
+        
+        // Update Logic: Atualiza o estado 'disabled' do botão
+        renderAINotificationState();
+    };
+
+    window.addEventListener('online', handleNetworkChange);
+    window.addEventListener('offline', handleNetworkChange);
+    
+    // Verificação inicial no boot
+    handleNetworkChange();
 }
