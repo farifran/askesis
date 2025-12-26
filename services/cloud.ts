@@ -87,6 +87,15 @@ function getWorker(): Worker {
 }
 
 /**
+ * PERFORMANCE OPTIMIZATION: Worker Pre-warming.
+ * Inicializa o worker antecipadamente (ex: ao abrir o modal de chave) para remover
+ * a latência de boot do worker durante a submissão do formulário.
+ */
+export function preloadWorker() {
+    getWorker();
+}
+
+/**
  * Ponte de comunicação assíncrona com o Worker.
  * Envia uma tarefa e retorna uma Promise que resolve quando o Worker responder.
  * 
@@ -308,6 +317,7 @@ export async function fetchStateFromCloud(): Promise<AppState | undefined> {
         } else {
             // Nenhum dado na nuvem (resposta foi 200 com corpo nulo)
             console.log("No state found in cloud for this sync key. Performing initial sync.");
+            
             // FIX [2025-03-20]: Use getPersistableState() instead of reading from localStorage.
             // Persistence is now abstracted (IndexedDB). If memory state is populated, sync it.
             if (state.habits.length > 0 || Object.keys(state.dailyData).length > 0) {

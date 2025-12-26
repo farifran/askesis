@@ -33,13 +33,10 @@ import { state, Habit, HabitTemplate, Frequency, PredefinedHabit, TimeOfDay, STR
 import { PREDEFINED_HABITS } from '../data/predefinedHabits';
 import { getScheduleForDate, calculateHabitStreak } from '../services/selectors';
 import { ui } from './ui';
-import { t, getHabitDisplayInfo, getTimeOfDayName } from '../i18n';
+import { t, getHabitDisplayInfo, getTimeOfDayName, setLanguage } from '../i18n';
 import { HABIT_ICONS, UI_ICONS, getTimeOfDayIcon } from './icons';
 import { setTextContent, updateReelRotaryARIA } from './dom';
 import { escapeHTML, getContrastColor, getDateTimeFormat, parseUTCIsoDate, getTodayUTCIso, getSafeDate } from '../utils';
-
-// FIX [2025-03-22]: Import setLanguage directly from i18n to avoid cycle with render.ts
-import { setLanguage } from '../i18n';
 
 // MEMORY MANAGEMENT: Rastreamento de listeners para limpeza (Garbage Collection Safety).
 const focusTrapListeners = new Map<HTMLElement, (e: KeyboardEvent) => void>();
