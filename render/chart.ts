@@ -48,7 +48,7 @@ const PLUS_BONUS_MULTIPLIER = 1.5; // "Plus" days move the needle 50% more than 
 // VISUAL CONSTANTS
 // LAYOUT UPDATE [2025-03-25]: Ajustado para 45px para alinhar com o design de sobreposição do cabeçalho.
 const SVG_HEIGHT = 45; 
-// LAYOUT UPDATE [2025-03-26]: Padding direito ajustado para 0 conforme solicitado.
+// LAYOUT UPDATE [2025-03-26]: Padding direito mantido em 0 para largura total.
 const CHART_PADDING = { top: 0, right: 0, bottom: 5, left: 3 };
 
 type ChartDataPoint = {
@@ -269,25 +269,47 @@ function _updateEvolutionIndicator(chartData: ChartDataPoint[], { xScale, yScale
     }
     setTextContent(evolutionIndicator, `${evolution > 0 ? '+' : ''}${evolution.toFixed(1)}%`);
     
-    const lastPointX = xScale(chartData.length - 1);
     const lastPointY = yScale(lastPoint.value);
     
-    // LAYOUT UPDATE [2025-03-26]: Posiciona o indicador no final da linha (verticalmente centralizado)
+    // LAYOUT UPDATE [2025-03-26]: Pinned to Right Edge com espaçamento.
+    // REQUEST: Adicionar 20px na margem direita e evitar que toque na linha azul (ficar acima ou abaixo).
+    
+    evolutionIndicator.style.left = 'auto';
+    evolutionIndicator.style.right = '20px'; // 20px da borda direita conforme solicitado
     evolutionIndicator.style.top = `${lastPointY}px`;
-    evolutionIndicator.style.transform = 'translateY(-50%)'; // Centraliza verticalmente em relação ao ponto
     
-    const GAP = 5;
-    let indicatorX = lastPointX + GAP;
-    const wrapperWidth = chartWidthPx;
+    const isPositiveTrend = evolution >= 0;
     
-    // Se o indicador ultrapassar a borda direita, move para a esquerda do ponto
-    if (indicatorX + evolutionIndicator.offsetWidth > wrapperWidth) {
-        indicatorX = lastPointX - evolutionIndicator.offsetWidth - GAP;
+    // Boundary Safety: O gráfico tem apenas ~45px de altura.
+    const TEXT_SAFE_ZONE = 20; // px
+    const isNearTop = lastPointY < TEXT_SAFE_ZONE;
+    const isNearBottom = lastPointY > (SVG_HEIGHT - TEXT_SAFE_ZONE);
+    
+    let translateY = '';
+    
+    // GAP Vertical: Espaçamento de segurança para não tocar na linha (12px)
+    const GAP = '12px';
+
+    if (isNearTop) {
+        // Muito perto do topo -> Força para baixo
+        translateY = `calc(0% + ${GAP})`;
+    } else if (isNearBottom) {
+        // Muito perto do fundo -> Força para cima
+        translateY = `calc(-100% - ${GAP})`;
+    } else {
+        // Zona segura: Smart Dodge.
+        if (isPositiveTrend) {
+            // Se sobe, a linha vem de baixo para cima. O espaço livre está ACIMA do ponto final.
+            // translate -100% move o texto para cima da âncora Y.
+            translateY = `calc(-100% - ${GAP})`;
+        } else {
+            // Se desce, a linha vem de cima para baixo. O espaço livre está ABAIXO do ponto final.
+            // translate 0% mantém o texto abaixo da âncora Y (top-aligned).
+            translateY = `calc(0% + ${GAP})`;
+        }
     }
     
-    if (indicatorX < 0) indicatorX = 0;
-
-    evolutionIndicator.style.left = `${indicatorX}px`;
+    evolutionIndicator.style.transform = `translateY(${translateY})`;
 }
 
 function _updateChartDOM(chartData: ChartDataPoint[]) {
