@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -30,7 +29,6 @@
  * 3. Batch Updates: Agrupa invalidações de cache para evitar Layout Thrashing (recalculos de layout desnecessários).
  */
 
-// ... (imports remain the same)
 import { 
     state, 
     Habit, 
@@ -46,18 +44,19 @@ import {
     getPersistableState,
     HabitDayData,
     STREAK_SEMI_CONSOLIDATED,
-    STREAK_CONSOLIDATED
+    STREAK_CONSOLIDATED,
+    getHabitDailyInfoForDate,
+    AppState
 } from './state';
-// ARCHITECTURE FIX: Import persistence logic from service layer.
 import { saveState, clearLocalPersistence } from './services/persistence';
-// ARCHITECTURE FIX: Import predefined habits from data layer, not state module.
 import { PREDEFINED_HABITS } from './data/predefinedHabits';
 import { 
     getEffectiveScheduleForHabitOnDate, 
     getActiveHabitsForDate, 
     isHabitNameDuplicate,
     clearSelectorInternalCaches,
-    calculateHabitStreak
+    calculateHabitStreak,
+    shouldHabitAppearOnDate
 } from './services/selectors';
 import { 
     generateUUID, 
@@ -490,77 +489,48 @@ export function requestHabitPermanentDeletion(habitId: string) {
 
     showConfirmationModal(
         t('confirmPermanentDelete', { habitName: name }),
-        async () => { // Async callback to handle GZIP decompression
-            // 1. Remove from Metadata
+        async () => { 
+            // 1. Remove from Metadata (Mutable State)
             state.habits = state.habits.filter(h => h.id !== habitId);
             
-            // 2. Remove from Hot Storage
+            // 2. Remove from Hot Storage (Daily Data)
+            // PERFORMANCE: Object.keys iteration is O(N) where N is cached days (usually < 90). Fast enough.
             Object.values(state.dailyData).forEach(day => {
                 delete day[habitId];
             });
 
-            // PERFORMANCE: Garbage Collection de Arquivos Mortos (Cold Storage)
-            // Evita percorrer todos os arquivos se o hábito for recente.
+            // 3. Remove from Cold Storage (Worker Offload)
+            // STATE OF THE ART [2025-04-06]: Offload heavy decompression/parsing to worker.
+            // The Main Thread is blocked by JSON.parse/stringify of 1MB+ strings.
             const earliestDate = habit.scheduleHistory[0]?.startDate || habit.createdOn;
             const startYear = parseInt(earliestDate.substring(0, 4), 10);
 
-            // 3. Remove from Cold Storage (Archives) & Update Warm Cache
-            for (const year in state.archives) {
-                // Skip years before the habit existed
-                if (parseInt(year, 10) < startYear) continue;
+            try {
+                // Send job to worker. Returns a map of updated GZIP strings for affected years.
+                const updatedArchives = await runWorkerTask<AppState['archives']>('prune-habit', {
+                    habitId,
+                    archives: state.archives,
+                    startYear
+                });
 
-                try {
-                    let yearData: any;
-                    let isFromCache = false;
-
-                    // Optimization: Check if already parsed in memory
-                    if (state.unarchivedCache.has(year)) {
-                        yearData = state.unarchivedCache.get(year);
-                        isFromCache = true;
+                // Apply updates atomically to Cold Storage
+                for (const year in updatedArchives) {
+                    const newValue = updatedArchives[year];
+                    if (newValue === "") {
+                        // Empty string signal -> Delete year
+                        delete state.archives[year];
+                        state.unarchivedCache.delete(year);
                     } else {
-                        // BUGFIX [2025-03-22]: Handle GZIP compressed archives
-                        const raw = state.archives[year];
-                        if (raw.startsWith('GZIP:')) {
-                            // Decompress on Main Thread using stream util (Async)
-                            const json = await decompressString(raw.substring(5));
-                            yearData = JSON.parse(json);
-                        } else {
-                            // Legacy JSON
-                            yearData = JSON.parse(raw);
-                        }
+                        state.archives[year] = newValue;
+                        // Invalidate memory cache so next read fetches fresh data from archive
+                        state.unarchivedCache.delete(year);
                     }
-
-                    let yearWasModified = false;
-                    
-                    for (const date in yearData) {
-                        if (yearData[date][habitId]) {
-                            delete yearData[date][habitId];
-                            yearWasModified = true;
-                        }
-                        if (Object.keys(yearData[date]).length === 0) {
-                            delete yearData[date];
-                            yearWasModified = true;
-                        }
-                    }
-
-                    if (yearWasModified) {
-                        // Update Cold Storage
-                        if (Object.keys(yearData).length === 0) {
-                            delete state.archives[year];
-                            state.unarchivedCache.delete(year); // Clean empty cache entry
-                        } else {
-                            // Re-save as Plain JSON for simplicity on Main Thread.
-                            // The Worker will re-compress it later during hygiene/sync if needed.
-                            state.archives[year] = JSON.stringify(yearData);
-                            // Update Warm Cache in-place if it existed
-                            if (isFromCache) {
-                                state.unarchivedCache.set(year, yearData);
-                            }
-                        }
-                    }
-                } catch (e) {
-                    console.error(`Error cleaning archive for year ${year}:`, e);
                 }
+            } catch (e) {
+                console.error("Worker pruning failed:", e);
+                // Fail-safe: Data might be stale in archives, but Hot Storage is clean.
+                // Next sync might perform a merge where deletion propagates if logic allows,
+                // or data remains in archives as "orphaned". 
             }
             
             _finalizeScheduleUpdate(true);
@@ -632,18 +602,23 @@ export function handleSaveNote() {
     closeModal(ui.notesModal);
 }
 
+// Concurrency Guard: Simple timestamp ID to reject stale responses.
+let lastAIRequestId = 0;
+
 export async function performAIAnalysis(analysisType: 'monthly' | 'quarterly' | 'historical') {
     if (state.aiState === 'loading') return;
 
     state.aiState = 'loading';
     state.hasSeenAIResult = false;
+    
+    // RACE CONDITION GUARD: Increment ID. Only matches of the current ID will apply.
+    const requestId = ++lastAIRequestId;
+    
     renderAINotificationState();
     closeModal(ui.aiOptionsModal);
 
     try {
         // BUGFIX [2025-03-22]: Seleção dinâmica da chave de tradução baseada no tipo de análise.
-        // Anteriormente, o código buscava 'aiPromptTemplate' (inexistente) para todos os casos.
-        // Agora mapeamos corretamente para os prompts específicos definidos nos JSONs.
         let promptTemplateKey = 'aiPromptGeneral'; // Fallback para 'historical'
         if (analysisType === 'monthly') {
             promptTemplateKey = 'aiPromptMonthly';
@@ -651,7 +626,8 @@ export async function performAIAnalysis(analysisType: 'monthly' | 'quarterly' | 
             promptTemplateKey = 'aiPromptQuarterly';
         }
 
-        const translations: any = {
+        // TYPE SAFETY FIX: Strict typing for worker payload map.
+        const translations: Record<string, string> = {
             promptTemplate: t(promptTemplateKey),
             aiPromptGraduatedSection: t('aiPromptGraduatedSection'),
             aiPromptNoData: t('aiPromptNoData'),
@@ -663,7 +639,6 @@ export async function performAIAnalysis(analysisType: 'monthly' | 'quarterly' | 
         });
 
         // PERFORMANCE: Off-Main-Thread Architecture.
-        // A construção do prompt (parse de JSON massivo, strings) ocorre no Worker.
         const { prompt, systemInstruction } = await runWorkerTask<{ prompt: string, systemInstruction: string }>(
             'build-ai-prompt',
             {
@@ -677,22 +652,33 @@ export async function performAIAnalysis(analysisType: 'monthly' | 'quarterly' | 
             }
         );
 
+        // STALE CHECK: User triggered another analysis?
+        if (requestId !== lastAIRequestId) return;
+
         const response = await apiFetch('/api/analyze', {
             method: 'POST',
             body: JSON.stringify({ prompt, systemInstruction }),
         });
 
         const text = await response.text();
+        
+        // STALE CHECK: Late response?
+        if (requestId !== lastAIRequestId) return;
+
         state.lastAIResult = text;
         state.aiState = 'completed';
     } catch (error) {
+        if (requestId !== lastAIRequestId) return; // Ignore errors from stale requests
+        
         console.error("AI Analysis failed", error);
         state.lastAIError = String(error);
         state.aiState = 'error';
         state.lastAIResult = t('aiErrorGeneric');
     } finally {
-        saveState();
-        renderAINotificationState();
+        if (requestId === lastAIRequestId) {
+            saveState();
+            renderAINotificationState();
+        }
     }
 }
 
@@ -823,37 +809,65 @@ export function requestHabitTimeRemoval(habitId: string, time: TimeOfDay) {
 }
 
 export function markAllHabitsForDate(dateISO: string, status: HabitStatus): boolean {
-    // PERFORMANCE OPTIMIZATION [2025-03-16]: Pre-parse date to avoid parsing inside loop selectors.
+    // PERFORMANCE OPTIMIZATION [2025-04-06]: Zero-Allocation Loop.
+    // Replace complex selector chain `getActiveHabitsForDate` (which allocates objects)
+    // with a raw loop over the habit array. This is a hot path for "Quick Actions".
+    
     const dateObj = parseUTCIsoDate(dateISO);
-    const activeHabits = getActiveHabitsForDate(dateISO, dateObj);
+    
+    // CRITICAL DATA INTEGRITY FIX: Removed unsafe hoisting of `getHabitDailyInfoForDate`.
+    // Previously, accessing `dailyInfoMap[habit.id]` directly could return the Read-Only Archive object.
+    // Modifying that object bypasses `state.dailyData` (Hot Storage), leading to data loss on page reload.
+    // We now force `ensureHabitDailyInfo` inside the loop to guarantee the data is "thawed" into Hot Storage before write.
     
     let changed = false;
-    const changedHabitIds = new Set<string>();
-    
-    activeHabits.forEach(({ habit, schedule }) => {
-        const dailyInfo = ensureHabitDailyInfo(dateISO, habit.id);
+    // We use a simple array instead of Set for iteration speed, pushing unique IDs only.
+    const changedHabitIds: string[] = [];
+
+    const habits = state.habits;
+    const len = habits.length;
+
+    for (let i = 0; i < len; i++) {
+        const habit = habits[i];
         
-        schedule.forEach(time => {
+        // Fast Check: Memoized Appearance
+        if (!shouldHabitAppearOnDate(habit, dateISO, dateObj)) {
+            continue;
+        }
+
+        const schedule = getEffectiveScheduleForHabitOnDate(habit, dateISO);
+        if (schedule.length === 0) continue;
+
+        // SAFE WRITE: Always ensures data is in Hot Storage (state.dailyData) before mutation.
+        const dailyInfo = ensureHabitDailyInfo(dateISO, habit.id);
+        let habitChanged = false;
+
+        for (let j = 0; j < schedule.length; j++) {
+            const time = schedule[j];
             dailyInfo.instances[time] ??= { status: 'pending' };
             const instance = dailyInfo.instances[time]!;
             
-            // REFACTOR [2025-03-18]: Use unified logic helper
+            // Unified logic helper
             if (_updateHabitInstanceStatus(habit, instance, status)) {
+                habitChanged = true;
                 changed = true;
-                changedHabitIds.add(habit.id);
             }
-        });
-    });
+        }
+
+        if (habitChanged) {
+            changedHabitIds.push(habit.id);
+        }
+    }
     
     if (changed) {
         // Batch invalidation
-        invalidateCachesForDateChange(dateISO, Array.from(changedHabitIds));
+        invalidateCachesForDateChange(dateISO, changedHabitIds);
         
-        // BUGFIX [2025-03-27]: Verifica marcos de consistência para todos os hábitos afetados
+        // Check milestones
         if (status === 'completed') {
-            changedHabitIds.forEach(habitId => {
-                _checkStreakMilestones(habitId, dateISO);
-            });
+            for (let k = 0; k < changedHabitIds.length; k++) {
+                _checkStreakMilestones(changedHabitIds[k], dateISO);
+            }
         }
         
         state.uiDirtyState.calendarVisuals = true;

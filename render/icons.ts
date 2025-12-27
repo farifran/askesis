@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -27,13 +26,15 @@ import { UI_ICONS } from '../data/icons';
 // Re-exporta para manter compatibilidade com módulos de renderização
 export * from '../data/icons';
 
+// PERFORMANCE: Lookup Table O(1) em vez de switch/case.
+// Em hot paths de renderização, acesso a propriedade de objeto é mais otimizável pelo V8.
+const TIME_ICONS: Record<TimeOfDay, string> = {
+    'Morning': UI_ICONS.morning,
+    'Afternoon': UI_ICONS.afternoon,
+    'Evening': UI_ICONS.evening
+};
+
 export function getTimeOfDayIcon(time: TimeOfDay): string {
-    switch(time) {
-        case 'Morning': return UI_ICONS.morning;
-        case 'Afternoon': return UI_ICONS.afternoon;
-        case 'Evening': return UI_ICONS.evening;
-        // FALLBACK DE SEGURANÇA [2025-02-23]: Garante que a função sempre retorne uma string válida,
-        // mesmo se o valor de 'time' for inválido em tempo de execução (dados corrompidos).
-        default: return UI_ICONS.morning;
-    }
+    // Retorna o ícone mapeado ou 'Morning' como fallback de segurança (type-safety runtime)
+    return TIME_ICONS[time] ?? UI_ICONS.morning;
 }

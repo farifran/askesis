@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -53,9 +52,17 @@ type CardElements = {
     name: HTMLElement;
     subtitle: HTMLElement;
     details: HTMLElement;
+    consolidationMsg: HTMLElement; // Stable DOM reference
     noteBtn: HTMLElement;
-    deleteBtn: HTMLElement; // Added cached reference for delete button
+    deleteBtn: HTMLElement;
     goal: HTMLElement;
+    // Cache opcional para elementos que podem ou não existir dependendo do tipo de meta
+    goalProgress?: HTMLElement;
+    goalUnit?: HTMLElement;
+    goalDecBtn?: HTMLButtonElement;
+    goalIncBtn?: HTMLButtonElement;
+    // PERFORMANCE [2025-04-05]: Estado local do ícone para evitar re-parsing de SVG
+    cachedIconHtml?: string;
 };
 const cardElementsCache = new WeakMap<HTMLElement, CardElements>();
 
@@ -70,6 +77,7 @@ const habitsByTimePool: Record<TimeOfDay, Habit[]> = { 'Morning': [], 'Afternoon
 let goalControlsTemplate: HTMLElement | null = null;
 let completedWrapperTemplate: HTMLElement | null = null;
 let snoozedWrapperTemplate: HTMLElement | null = null;
+let habitCardTemplate: HTMLElement | null = null;
 
 function getGoalControlsTemplate(): HTMLElement {
     if (!goalControlsTemplate) {
@@ -106,6 +114,40 @@ function getSnoozedWrapperTemplate(): HTMLElement {
         snoozedWrapperTemplate = wrapper;
     }
     return snoozedWrapperTemplate;
+}
+
+/**
+ * STATE OF THE ART [2025-04-05]: Singleton Template para Cartão de Hábito.
+ * Constrói a estrutura DOM completa uma única vez.
+ * Subsequentemente, usamos `cloneNode(true)` que é processado em C++ pelo navegador,
+ * sendo muito mais rápido que múltiplas chamadas JS de `createElement`.
+ */
+function getHabitCardTemplate(): HTMLElement {
+    if (!habitCardTemplate) {
+        habitCardTemplate = document.createElement('li');
+        habitCardTemplate.className = CSS_CLASSES.HABIT_CARD;
+        
+        // Estrutura estática interna.
+        // Nota: Botões já nascem com os ícones corretos para evitar re-parse.
+        habitCardTemplate.innerHTML = `
+            <div class="habit-actions-left">
+                <button type="button" class="${CSS_CLASSES.SWIPE_DELETE_BTN}">${UI_ICONS.swipeDelete}</button>
+            </div>
+            <div class="habit-actions-right">
+                <button type="button" class="${CSS_CLASSES.SWIPE_NOTE_BTN}">${UI_ICONS.swipeNote}</button>
+            </div>
+            <div class="${CSS_CLASSES.HABIT_CONTENT_WRAPPER}" role="button" tabindex="0" draggable="true">
+                <div class="habit-icon"></div>
+                <div class="${CSS_CLASSES.HABIT_DETAILS}">
+                    <div class="name"></div>
+                    <div class="subtitle"></div>
+                    <div class="consolidation-message" hidden></div>
+                </div>
+                <div class="habit-goal"></div>
+            </div>
+        `;
+    }
+    return habitCardTemplate;
 }
 
 export function clearHabitDomCache() {
@@ -146,8 +188,20 @@ function _renderSnoozedGoal(goalEl: HTMLElement) {
     goalEl.replaceChildren(getSnoozedWrapperTemplate().cloneNode(true));
 }
 
-function _renderPendingGoalControls(goalEl: HTMLElement, habit: Habit, time: TimeOfDay, dayDataForInstance: HabitDayData | undefined) {
+/**
+ * Renderiza ou atualiza os controles de meta numérica.
+ * OPTIMIZATION [2025-04-04]: Deep Caching de referências.
+ * Em vez de buscar `.progress` e `.unit` via querySelector a cada update,
+ * usamos as referências cacheadas no `CardElements` do WeakMap.
+ */
+function _renderPendingGoalControls(
+    habit: Habit, 
+    time: TimeOfDay, 
+    dayDataForInstance: HabitDayData | undefined,
+    cachedElements: CardElements
+) {
     const hasNumericGoal = habit.goal.type === 'pages' || habit.goal.type === 'minutes';
+    const goalEl = cachedElements.goal;
 
     if (hasNumericGoal) {
         const smartGoal = getSmartGoalForHabit(habit, state.selectedDate, time);
@@ -155,64 +209,73 @@ function _renderPendingGoalControls(goalEl: HTMLElement, habit: Habit, time: Tim
         const displayVal = currentGoal.toString();
         const unitVal = getUnitString(habit, currentGoal);
 
-        let controls = goalEl.querySelector(`.${CSS_CLASSES.HABIT_GOAL_CONTROLS}`);
-        
-        if (!controls) {
+        // Se os controles ainda não existem ou foram removidos (ex: transição de completado -> pendente)
+        // Precisamos reconstruir e atualizar o cache.
+        if (!goalEl.querySelector(`.${CSS_CLASSES.HABIT_GOAL_CONTROLS}`)) {
             goalEl.replaceChildren();
-            // PERFORMANCE: Use cloned template instead of creating elements from scratch
-            controls = getGoalControlsTemplate().cloneNode(true) as HTMLElement;
+            // PERFORMANCE: Use cloned template
+            const controls = getGoalControlsTemplate().cloneNode(true) as HTMLElement;
             goalEl.appendChild(controls);
+
+            // Update Cache with new elements (Lookup ONCE)
+            cachedElements.goalDecBtn = controls.querySelector(`[data-action="decrement"]`) as HTMLButtonElement;
+            cachedElements.goalIncBtn = controls.querySelector(`[data-action="increment"]`) as HTMLButtonElement;
+            cachedElements.goalProgress = controls.querySelector('.progress') as HTMLElement;
+            cachedElements.goalUnit = controls.querySelector('.unit') as HTMLElement;
         }
 
-        // Locate children in the (potentially cloned) structure
-        const decBtn = controls.querySelector(`[data-action="decrement"]`) as HTMLButtonElement;
-        const incBtn = controls.querySelector(`[data-action="increment"]`) as HTMLButtonElement;
-        const prog = controls.querySelector('.progress');
-        const unit = controls.querySelector('.unit');
+        // Fast Access via Cache (No DOM Querying)
+        const { goalDecBtn, goalIncBtn, goalProgress, goalUnit } = cachedElements;
 
-        // Update Dynamic Data
-        // PERFORMANCE: Atribuição direta de propriedades é mais rápida que setAttribute quando possível.
-        decBtn.dataset.habitId = habit.id;
-        decBtn.dataset.time = time;
-        decBtn.setAttribute('aria-label', t('habitGoalDecrement_ariaLabel'));
-        decBtn.disabled = currentGoal <= 1;
+        if (goalDecBtn && goalIncBtn && goalProgress && goalUnit) {
+            // Update Dynamic Data
+            goalDecBtn.dataset.habitId = habit.id;
+            goalDecBtn.dataset.time = time;
+            goalDecBtn.setAttribute('aria-label', t('habitGoalDecrement_ariaLabel'));
+            goalDecBtn.disabled = currentGoal <= 1;
 
-        incBtn.dataset.habitId = habit.id;
-        incBtn.dataset.time = time;
-        incBtn.setAttribute('aria-label', t('habitGoalIncrement_ariaLabel'));
+            goalIncBtn.dataset.habitId = habit.id;
+            goalIncBtn.dataset.time = time;
+            goalIncBtn.setAttribute('aria-label', t('habitGoalIncrement_ariaLabel'));
 
-        // PERFORMANCE: setTextContent usa nodeValue para evitar reflows.
-        setTextContent(prog, displayVal);
-        setTextContent(unit, unitVal);
+            // PERFORMANCE: setTextContent usa nodeValue para evitar reflows.
+            setTextContent(goalProgress, displayVal);
+            setTextContent(goalUnit, unitVal);
+        }
     } else {
         if (goalEl.hasChildNodes()) goalEl.replaceChildren();
     }
 }
 
-export function updateGoalContentElement(goalEl: HTMLElement, status: HabitStatus, habit: Habit, time: TimeOfDay, dayDataForInstance: HabitDayData | undefined) {
+export function updateGoalContentElement(
+    status: HabitStatus, 
+    habit: Habit, 
+    time: TimeOfDay, 
+    dayDataForInstance: HabitDayData | undefined,
+    cachedElements: CardElements
+) {
+    const goalEl = cachedElements.goal;
+
     // UX UPDATE [2025-03-19]: Simplificação visual no estado 'Completed'.
-    // Independentemente do tipo de meta (numérica ou check), se o hábito estiver concluído,
-    // exibimos apenas o ícone de checkmark. Isso oculta os controles numéricos para reduzir o ruído visual.
-    
     if (status === 'completed') {
         _renderCompletedGoal(goalEl);
     } else if (status === 'snoozed') {
         _renderSnoozedGoal(goalEl);
     } else {
         // ROBUSTNESS FIX [2025-04-01]: Protect inline edit input.
-        // If the user is currently editing the goal (has an <input> element), we MUST NOT
-        // overwrite it with the standard controls, or their work will be lost during
-        // background syncs or auto-refreshes. The input handles its own lifecycle.
         if (goalEl.querySelector('input')) return;
 
         // Renderiza controles apenas se estiver pendente (e for numérico)
-        _renderPendingGoalControls(goalEl, habit, time, dayDataForInstance);
+        _renderPendingGoalControls(habit, time, dayDataForInstance, cachedElements);
     }
 }
 
-export function _updateConsolidationMessage(detailsEl: HTMLElement, streak: number) {
-    let msgEl = detailsEl.querySelector<HTMLElement>('.consolidation-message');
-
+/**
+ * Atualiza a mensagem de consolidação (Hábito Consolidado / Semi).
+ * PERFORMANCE [2025-04-04]: Stable DOM.
+ * Não cria/remove elementos. Apenas altera o texto e a classe 'hidden'.
+ */
+export function _updateConsolidationMessage(msgEl: HTMLElement, streak: number) {
     let messageText: string | null = null;
     if (streak >= STREAK_CONSOLIDATED) {
         messageText = t('habitConsolidatedMessage');
@@ -221,14 +284,10 @@ export function _updateConsolidationMessage(detailsEl: HTMLElement, streak: numb
     }
 
     if (messageText) {
-        if (!msgEl) {
-            msgEl = document.createElement('div');
-            msgEl.className = 'consolidation-message';
-            detailsEl.appendChild(msgEl);
-        }
         setTextContent(msgEl, messageText);
-    } else if (msgEl) {
-        msgEl.remove();
+        if (msgEl.hidden) msgEl.hidden = false;
+    } else {
+        if (!msgEl.hidden) msgEl.hidden = true;
     }
 }
 
@@ -246,13 +305,11 @@ export function updateHabitCardElement(
     let elements = cardElementsCache.get(card);
     
     // FIX [2025-03-09]: ROBUSTNESS AUTO-REPAIR.
-    // Se o cache foi limpo (ex: memória baixa) mas o cartão ainda existe no DOM (ex: dentro de um loop de evento),
-    // precisamos re-consultar os elementos para evitar falha silenciosa.
+    // Fallback caso o elemento não tenha sido criado via createHabitCardElement (ex: SSR ou bugs de cache).
     if (!elements) {
         const icon = card.querySelector('.habit-icon') as HTMLElement;
         const contentWrapper = card.querySelector(`.${CSS_CLASSES.HABIT_CONTENT_WRAPPER}`) as HTMLElement;
         
-        // If critical elements are missing from DOM, we can't repair. Abort.
         if (icon && contentWrapper) {
              elements = {
                 icon: icon,
@@ -260,6 +317,7 @@ export function updateHabitCardElement(
                 name: card.querySelector('.name') as HTMLElement,
                 subtitle: card.querySelector('.subtitle') as HTMLElement,
                 details: card.querySelector(`.${CSS_CLASSES.HABIT_DETAILS}`) as HTMLElement,
+                consolidationMsg: card.querySelector('.consolidation-message') as HTMLElement,
                 noteBtn: card.querySelector(`.${CSS_CLASSES.SWIPE_NOTE_BTN}`) as HTMLElement,
                 deleteBtn: card.querySelector(`.${CSS_CLASSES.SWIPE_DELETE_BTN}`) as HTMLElement,
                 goal: card.querySelector('.habit-goal') as HTMLElement,
@@ -272,10 +330,9 @@ export function updateHabitCardElement(
         }
     }
     
-    const { icon, contentWrapper, name: nameEl, subtitle: subtitleEl, details: detailsEl, noteBtn, deleteBtn, goal: goalEl } = elements;
+    const { icon, contentWrapper, name: nameEl, subtitle: subtitleEl, details: detailsEl, consolidationMsg, noteBtn, deleteBtn } = elements;
     
     // OPTIMIZATION: Use injected daily info map if available, otherwise fetch it.
-    // Evita chamadas repetitivas a `getHabitDailyInfoForDate` que podem envolver JSON parsing (Cold Storage).
     const dailyInfo = preLoadedDailyInfo || getHabitDailyInfoForDate(state.selectedDate);
     
     const habitInstanceData = dailyInfo[habit.id]?.instances?.[time];
@@ -297,10 +354,11 @@ export function updateHabitCardElement(
     const newColor = habit.color;
     const newBgColor = `${habit.color}30`;
 
-    // PERFORMANCE: Cache local de HTML no objeto para evitar re-parse se o ícone não mudou.
-    if ((icon as any)._cachedIconHtml !== newIconHtml) {
+    // PERFORMANCE [2025-04-05]: Cache local de HTML no WeakMap para evitar re-parse se o ícone não mudou.
+    // Substitui o antigo (icon as any)._cachedIconHtml por uma abordagem limpa e type-safe.
+    if (elements.cachedIconHtml !== newIconHtml) {
         icon.innerHTML = newIconHtml;
-        (icon as any)._cachedIconHtml = newIconHtml;
+        elements.cachedIconHtml = newIconHtml;
     }
     
     // OPTIMIZATION [2025-03-09]: Dirty Check styles to prevent Layout Thrashing
@@ -333,7 +391,7 @@ export function updateHabitCardElement(
     setTextContent(nameEl, name);
     setTextContent(subtitleEl, subtitle);
 
-    _updateConsolidationMessage(detailsEl, streak);
+    _updateConsolidationMessage(consolidationMsg, streak);
     
     const hasNoteStr = String(hasNote);
     if (noteBtn.dataset.hasNote !== hasNoteStr) {
@@ -345,68 +403,63 @@ export function updateHabitCardElement(
     // A11Y FIX [2025-03-08]: Update aria-label for delete button dynamically on language change
     deleteBtn.setAttribute('aria-label', t('habitEnd_ariaLabel'));
 
-    updateGoalContentElement(goalEl, status, habit, time, habitInstanceData);
+    updateGoalContentElement(status, habit, time, habitInstanceData, elements);
 }
 
 export function createHabitCardElement(habit: Habit, time: TimeOfDay, preLoadedDailyInfo?: Record<string, HabitDailyInfo>): HTMLElement {
-    // REFACTOR [2025-03-05]: Pure Skeleton Factory.
-    // Removes redundant logic by building only the DOM structure and delegating
-    // all data population (status, text, classes) to updateHabitCardElement.
+    // REFACTOR [2025-04-05]: Template Cloning Strategy.
+    // Substitui a criação imperativa (document.createElement) pela clonagem de um template pré-aquecido.
+    // Isso move a construção da árvore DOM para o código nativo (C++), reduzindo drasticamente o tempo de script.
     
-    const card = document.createElement('li');
-    card.className = CSS_CLASSES.HABIT_CARD; 
+    const card = getHabitCardTemplate().cloneNode(true) as HTMLElement;
     card.dataset.habitId = habit.id;
     card.dataset.time = time;
 
-    const actionsLeft = document.createElement('div');
-    actionsLeft.className = 'habit-actions-left';
-    // NOTE: aria-label set initially but updated dynamically in updateHabitCardElement
-    actionsLeft.innerHTML = `<button type="button" class="${CSS_CLASSES.SWIPE_DELETE_BTN}">${UI_ICONS.swipeDelete}</button>`;
-
-    const actionsRight = document.createElement('div');
-    actionsRight.className = 'habit-actions-right';
-    actionsRight.innerHTML = `<button type="button" class="${CSS_CLASSES.SWIPE_NOTE_BTN}">${UI_ICONS.swipeNote}</button>`;
-    
-    const contentWrapper = document.createElement('div');
-    contentWrapper.className = CSS_CLASSES.HABIT_CONTENT_WRAPPER;
-    contentWrapper.draggable = true;
-    
-    contentWrapper.setAttribute('role', 'button');
-    contentWrapper.setAttribute('tabindex', '0');
-
-    const icon = document.createElement('div');
-    icon.className = 'habit-icon';
-
-    const details = document.createElement('div');
-    details.className = CSS_CLASSES.HABIT_DETAILS;
-    
-    const nameEl = document.createElement('div');
-    nameEl.className = 'name';
-    const subtitleEl = document.createElement('div');
-    subtitleEl.className = 'subtitle';
-    
-    details.append(nameEl, subtitleEl);
-
-    const goal = document.createElement('div');
-    goal.className = 'habit-goal';
-
-    contentWrapper.append(icon, details, goal);
-    card.append(actionsLeft, actionsRight, contentWrapper);
-    
     // Cache the root element
     habitElementCache.set(`${habit.id}|${time}`, card);
 
-    // PERFORMANCE [2025-03-05]: Cache internal element references ONCE at creation using WeakMap.
-    // This makes subsequent updates O(1) by avoiding querySelector.
+    // PERFORMANCE [2025-04-05]: O(1) Structure Traversal.
+    // Como a estrutura do template é conhecida e rígida, podemos popular o cache usando
+    // propriedades de navegação direta (firstElementChild, nextElementSibling) em vez de querySelector.
+    // Isso evita o parse de seletores CSS para cada cartão criado.
+    
+    // Structure:
+    // 0: div.habit-actions-left > button
+    // 1: div.habit-actions-right > button
+    // 2: div.habit-content-wrapper > [icon, details, goal]
+    
+    const actionsLeft = card.firstElementChild as HTMLElement;
+    const actionsRight = actionsLeft.nextElementSibling as HTMLElement;
+    const contentWrapper = actionsRight.nextElementSibling as HTMLElement;
+    
+    const deleteBtn = actionsLeft.firstElementChild as HTMLElement;
+    const noteBtn = actionsRight.firstElementChild as HTMLElement;
+    
+    // Content Wrapper Structure:
+    // 0: div.habit-icon
+    // 1: div.habit-details > [name, subtitle, consolidationMsg]
+    // 2: div.habit-goal
+    
+    const icon = contentWrapper.firstElementChild as HTMLElement;
+    const details = icon.nextElementSibling as HTMLElement;
+    const goal = details.nextElementSibling as HTMLElement;
+    
+    // Details Structure:
+    const nameEl = details.firstElementChild as HTMLElement;
+    const subtitleEl = nameEl.nextElementSibling as HTMLElement;
+    const consolidationMsg = subtitleEl.nextElementSibling as HTMLElement;
+
+    // PERFORMANCE: Cache element references ONCE at creation.
     cardElementsCache.set(card, {
-        icon: icon,
-        contentWrapper: contentWrapper,
+        icon,
+        contentWrapper,
         name: nameEl,
         subtitle: subtitleEl,
-        details: details,
-        noteBtn: actionsRight.querySelector(`.${CSS_CLASSES.SWIPE_NOTE_BTN}`)!,
-        deleteBtn: actionsLeft.querySelector(`.${CSS_CLASSES.SWIPE_DELETE_BTN}`)!,
-        goal: goal,
+        details,
+        consolidationMsg,
+        noteBtn,
+        deleteBtn,
+        goal,
     });
 
     // DELEGATION: Populate data immediately using cached elements.

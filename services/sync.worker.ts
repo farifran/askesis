@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -196,52 +195,106 @@ type ArchiveOutputPayload = {
     [year: string]: string;
 };
 
+// HELPER: Hydrate/Decompress Archive Data
+async function hydrateArchiveData(base: string | Record<string, any>): Promise<Record<string, any>> {
+    if (typeof base === 'object') return base;
+    try {
+        if (base.startsWith('GZIP:')) {
+            const json = await decompressString(base.substring(5));
+            return JSON.parse(json);
+        }
+        return JSON.parse(base);
+    } catch (e) {
+        console.error("Worker: Decompression/Parse failed", e);
+        return {};
+    }
+}
+
 async function processArchival(payload: ArchiveInputPayload): Promise<ArchiveOutputPayload> {
     const result: ArchiveOutputPayload = {};
 
     for (const year of Object.keys(payload)) {
         const { base, additions } = payload[year];
-        let yearData: Record<string, any> = {};
+        let yearData: Record<string, any> = base ? await hydrateArchiveData(base) : {};
 
-        // 1. Hydrate Base
-        if (base) {
-            if (typeof base === 'string') {
-                try {
-                    if (base.startsWith('GZIP:')) {
-                        const json = await decompressString(base.substring(5));
-                        yearData = JSON.parse(json);
-                    } else {
-                        // Legacy JSON
-                        yearData = JSON.parse(base);
-                    }
-                } catch (e) {
-                    console.error(`Worker: Failed to parse base archive for year ${year}`, e);
-                    // Fallback: Start fresh with additions to preserve new data
-                }
-            } else {
-                // Object passed directly (from unarchivedCache)
-                yearData = base;
-            }
-        }
-
-        // 2. Merge Additions
-        // Simple spread works because keys are dates (unique per day)
-        // If a day exists in both (rare conflict), additions (from dailyData) should win as they are newer.
+        // Merge Additions
         yearData = { ...yearData, ...additions };
 
-        // 3. Serialize & Compress
+        // Serialize & Compress
         try {
             const jsonString = JSON.stringify(yearData);
             const compressedBase64 = await compressString(jsonString);
             result[year] = `GZIP:${compressedBase64}`;
         } catch (e) {
             console.error(`Worker: Failed to compress archive for year ${year}`, e);
-            // Se falhar compressão, tenta retornar o JSON cru como fallback para não perder dados
             result[year] = JSON.stringify(yearData); 
         }
     }
 
     return result;
+}
+
+// --- PRUNING LOGIC [2025-04-06] ---
+// Removes a specific habit ID from all archives passed in the payload.
+// Returns the updated archives map (Year -> GZIP String).
+
+type PruneInputPayload = {
+    habitId: string;
+    archives: AppState['archives']; // Current archives map (Strings)
+    startYear: number;
+};
+
+async function processPruning(payload: PruneInputPayload): Promise<AppState['archives']> {
+    const { habitId, archives, startYear } = payload;
+    const updatedArchives: AppState['archives'] = {};
+    
+    // Iterate only relevant years
+    for (const yearStr in archives) {
+        const yearInt = parseInt(yearStr, 10);
+        if (yearInt < startYear) {
+            // Keep older years untouched (Optimization: No decompress/recompress)
+            // But we must return them so the main thread knows they still exist? 
+            // Better: Main thread merges result. Worker returns ONLY modified years.
+            continue; 
+        }
+
+        const raw = archives[yearStr];
+        let yearData = await hydrateArchiveData(raw);
+        let modified = false;
+
+        // Prune logic
+        for (const date in yearData) {
+            if (yearData[date][habitId]) {
+                delete yearData[date][habitId];
+                modified = true;
+            }
+            // Cleanup empty days
+            if (Object.keys(yearData[date]).length === 0) {
+                delete yearData[date];
+                modified = true;
+            }
+        }
+
+        if (modified) {
+            if (Object.keys(yearData).length === 0) {
+                // Mark for deletion by returning null/undefined logic or explicit removal
+                // Here we won't add it to updatedArchives, main thread handles logic?
+                // Actually, let's return a special marker or handle it.
+                // If we don't include it in result, main thread keeps old? 
+                // Let's assume we return the new state for this year.
+                // Special case: Empty year -> return "DELETE" marker or empty string?
+                // Let's return empty string as a signal.
+                updatedArchives[yearStr] = ""; 
+            } else {
+                // Re-compress
+                const jsonString = JSON.stringify(yearData);
+                const compressedBase64 = await compressString(jsonString);
+                updatedArchives[yearStr] = `GZIP:${compressedBase64}`;
+            }
+        }
+    }
+    
+    return updatedArchives;
 }
 
 // --- Worker Message Handler ---
@@ -250,7 +303,8 @@ type WorkerRequest =
     | { id: string; type: 'encrypt'; payload: any; key: string }
     | { id: string; type: 'decrypt'; payload: string; key: string }
     | { id: string; type: 'build-ai-prompt'; payload: AIPromptPayload }
-    | { id: string; type: 'archive'; payload: ArchiveInputPayload };
+    | { id: string; type: 'archive'; payload: ArchiveInputPayload }
+    | { id: string; type: 'prune-habit'; payload: PruneInputPayload }; // New Task
 
 type WorkerResponse = 
     | { id: string; status: 'success'; result: any }
@@ -272,6 +326,8 @@ self.onmessage = async (e: MessageEvent<WorkerRequest>) => {
             result = await buildAIPrompt(payload as AIPromptPayload);
         } else if (type === 'archive') {
             result = await processArchival(payload as ArchiveInputPayload);
+        } else if (type === 'prune-habit') {
+            result = await processPruning(payload as PruneInputPayload);
         }
         else {
             throw new Error(`Unknown operation type: ${(e.data as any).type}`);
