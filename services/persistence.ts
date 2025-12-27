@@ -46,7 +46,8 @@ const STORE_NAME = 'app_state';
 
 // CONSTANTS
 const STATE_STORAGE_KEY = 'habitTrackerState_v1';
-const DB_OPEN_TIMEOUT_MS = 3000;
+// FIX [2025-04-03]: Increased timeout from 3000ms to 15000ms to accommodate slower devices during high load.
+const DB_OPEN_TIMEOUT_MS = 15000;
 
 // --- IDB UTILS (Zero-Dependency Wrapper) ---
 
@@ -55,8 +56,12 @@ let dbPromise: Promise<IDBDatabase> | null = null;
 function getDB(): Promise<IDBDatabase> {
     if (!dbPromise) {
         dbPromise = new Promise((resolve, reject) => {
+            let isSettled = false;
+
             // Safety Timeout
             const timeoutId = setTimeout(() => {
+                if (isSettled) return;
+                isSettled = true;
                 console.warn("IndexedDB connection timed out. Clearing cache to allow retry.");
                 dbPromise = null; // CRITICAL FIX: Permite retry na próxima chamada
                 reject(new Error("IndexedDB connection timed out"));
@@ -74,6 +79,15 @@ function getDB(): Promise<IDBDatabase> {
             request.onsuccess = (event) => {
                 clearTimeout(timeoutId);
                 const db = (event.target as IDBOpenDBRequest).result;
+
+                if (isSettled) {
+                    // Race Condition: Connection opened AFTER timeout. 
+                    // Close it immediately to prevent leaks since the caller has already received an error.
+                    console.warn("IndexedDB opened after timeout. Closing orphan connection.");
+                    db.close();
+                    return;
+                }
+                isSettled = true;
 
                 // ROBUSTNESS [2025-03-27]: Tratamento de perda de conexão.
                 // Se o navegador fechar a conexão (pressão de memória) ou houver upgrade de versão,
@@ -95,9 +109,16 @@ function getDB(): Promise<IDBDatabase> {
 
             request.onerror = (event) => {
                 clearTimeout(timeoutId);
+                if (isSettled) return;
+                isSettled = true;
+                
                 console.error("IDB Open Error", event);
                 dbPromise = null; // CRITICAL FIX: Permite retry na próxima chamada se a abertura falhar
                 reject((event.target as IDBOpenDBRequest).error);
+            };
+
+            request.onblocked = () => {
+                console.warn("IndexedDB open request is blocked. Please close other tabs with this app open.");
             };
         });
     }
@@ -114,7 +135,8 @@ function handleIDBError(e: any) {
     }
 }
 
-async function idbGet<T>(key: string): Promise<T | undefined> {
+// Retry Helper Logic: Tenta operações IDB até 3 vezes (2 retries)
+async function idbGet<T>(key: string, retries = 2): Promise<T | undefined> {
     try {
         const db = await getDB();
         return new Promise((resolve, reject) => {
@@ -126,12 +148,20 @@ async function idbGet<T>(key: string): Promise<T | undefined> {
             request.onerror = () => reject(request.error);
         });
     } catch (e) {
+        if (retries > 0) {
+            console.warn(`IndexedDB Get failed, retrying... (${retries} attempts left). Error:`, e);
+            // Force reset dbPromise if it was a connection/state error to ensure fresh connection on retry
+            if (e instanceof Error && (e.message.includes('timed out') || e.name === 'InvalidStateError')) {
+                dbPromise = null;
+            }
+            return idbGet(key, retries - 1);
+        }
         handleIDBError(e);
         return undefined; // Fail safe
     }
 }
 
-async function idbSet(key: string, value: any): Promise<void> {
+async function idbSet(key: string, value: any, retries = 2): Promise<void> {
     try {
         const db = await getDB();
         return new Promise((resolve, reject) => {
@@ -143,12 +173,19 @@ async function idbSet(key: string, value: any): Promise<void> {
             request.onerror = () => reject(request.error);
         });
     } catch (e) {
+        if (retries > 0) {
+            console.warn(`IndexedDB Set failed, retrying... (${retries} attempts left). Error:`, e);
+            if (e instanceof Error && (e.message.includes('timed out') || e.name === 'InvalidStateError')) {
+                dbPromise = null;
+            }
+            return idbSet(key, value, retries - 1);
+        }
         handleIDBError(e);
         // Não relançamos o erro para evitar crash da UI, mas o log acima alertará.
     }
 }
 
-async function idbDelete(key: string): Promise<void> {
+async function idbDelete(key: string, retries = 2): Promise<void> {
     try {
         const db = await getDB();
         return new Promise((resolve, reject) => {
@@ -160,6 +197,13 @@ async function idbDelete(key: string): Promise<void> {
             request.onerror = () => reject(request.error);
         });
     } catch (e) {
+        if (retries > 0) {
+            console.warn(`IndexedDB Delete failed, retrying... (${retries} attempts left).`);
+            if (e instanceof Error && (e.message.includes('timed out') || e.name === 'InvalidStateError')) {
+                dbPromise = null;
+            }
+            return idbDelete(key, retries - 1);
+        }
         handleIDBError(e);
     }
 }
@@ -177,8 +221,7 @@ export function registerSyncHandler(handler: (state: AppState) => void) {
 
 /**
  * ARCHIVE LOGIC: Moves old daily data to cold storage.
- * [MAIN THREAD - IDLE]: Preparação leve.
- * A Main Thread agora apenas coleta os dados e delega a compressão/merge para o Worker.
+ * DATA INTEGRITY FIX [2025-04-04]: Implements Post-Worker Validation to prevent data loss from race conditions.
  */
 function archiveOldData() {
     const runArchive = async () => {
@@ -190,22 +233,17 @@ function archiveOldData() {
         const yearBuckets: Record<string, { additions: Record<string, Record<string, HabitDailyInfo>>, base?: any }> = {};
         const keysToRemove: string[] = [];
 
-        const dates = Object.keys(state.dailyData);
-        for (const dateStr of dates) {
+        for (const dateStr of Object.keys(state.dailyData)) {
             if (dateStr < thresholdISO) {
                 const year = dateStr.substring(0, 4);
                 if (!yearBuckets[year]) {
                     yearBuckets[year] = { additions: {} };
-                    
-                    // Prepara a base (dados existentes) para enviar ao worker
-                    // Prioridade: Warm Cache (Objeto) > Cold Storage (GZIP String)
                     if (state.unarchivedCache.has(year)) {
                         yearBuckets[year].base = state.unarchivedCache.get(year);
                     } else if (state.archives[year]) {
                         yearBuckets[year].base = state.archives[year];
                     }
                 }
-                
                 yearBuckets[year].additions[dateStr] = state.dailyData[dateStr];
                 keysToRemove.push(dateStr);
             }
@@ -214,34 +252,49 @@ function archiveOldData() {
         if (keysToRemove.length === 0) return;
 
         // 2. Offload para Worker (CPU Heavy)
-        // O Worker fará: Decompressão (se GZIP) -> Merge -> Compressão -> Retorno GZIP
         try {
             console.log(`Offloading archive task for ${keysToRemove.length} days to worker...`);
-            
-            // Definição de tipo manual para retorno do worker
             type ArchiveOutput = Record<string, string>; // Ano -> GZIP
-            
             const newArchives = await runWorkerTask<ArchiveOutput>('archive', yearBuckets);
 
-            // 3. Aplicação Atômica das Mudanças (Main Thread)
-            // Só alteramos o estado se o worker retornou com sucesso.
+            let totalMoved = 0;
+
+            // 3. ATOMIC VALIDATION & COMMIT (per year)
             for (const year in newArchives) {
-                // Atualiza o Cold Storage
-                state.archives[year] = newArchives[year];
-                // Invalida o Warm Cache para garantir consistência (ou poderíamos atualizar, mas é mais seguro limpar)
-                // Se o usuário pedir esse ano de novo, o sistema vai descomprimir o novo GZIP atualizado.
-                state.unarchivedCache.delete(year);
+                const additionsForYear = yearBuckets[year].additions;
+                let isYearStale = false;
+
+                // VALIDATE: Check all days sent to worker against current state for this year
+                for (const dateStr in additionsForYear) {
+                    const originalDataSent = additionsForYear[dateStr];
+                    const currentDataInState = state.dailyData[dateStr];
+                    if (JSON.stringify(originalDataSent) !== JSON.stringify(currentDataInState)) {
+                        isYearStale = true;
+                        console.warn(`[ARCHIVE] Stale data detected for year ${year} (date: ${dateStr}). Aborting archival for this year to prevent data loss.`);
+                        break; 
+                    }
+                }
+
+                // COMMIT or ROLLBACK
+                if (!isYearStale) {
+                    // Commit: Data is fresh, apply changes
+                    state.archives[year] = newArchives[year];
+                    state.unarchivedCache.delete(year);
+                    
+                    const keysForThisYear = Object.keys(additionsForYear);
+                    keysForThisYear.forEach(k => delete state.dailyData[k]);
+                    totalMoved += keysForThisYear.length;
+                }
+                // If stale, we do nothing for this year. The data remains in hot storage and will be re-processed next cycle.
             }
-
-            // Remove do Hot Storage
-            keysToRemove.forEach(k => delete state.dailyData[k]);
-
-            console.log(`Archiving complete. Moved ${keysToRemove.length} records.`);
-            await saveState(); // Persist changes async
+            
+            if (totalMoved > 0) {
+                 console.log(`Archiving complete. Moved ${totalMoved} records.`);
+                 await saveState(); // Persist changes async
+            }
 
         } catch (e) {
             console.error("Archive task failed in worker:", e);
-            // Em caso de erro, não faz nada. Os dados continuam no dailyData e tentaremos novamente no próximo idle.
         }
     };
 
