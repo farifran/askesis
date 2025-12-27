@@ -668,8 +668,9 @@ main {
     padding-inline: var(--space-lg);
     padding-top: var(--space-lg); /* Space between header and habits, matches chart margin. */
     
-    /* UX: Respiro interno no final da rolagem */
-    padding-bottom: var(--space-xl);
+    /* UX FIX [2025-04-01]: Reduzido de space-xl para space-sm. 
+       Evita criar um grande espaço vazio no final da rolagem, já que o gráfico possui sua própria margem superior. */
+    padding-bottom: var(--space-sm);
     
     /* UX: Smooth scrolling */
     scroll-behavior: smooth;
@@ -2461,9 +2462,10 @@ body.is-offline #ai-eval-btn .offline-icon {
         display: block;
     }
     
-    /* REFINAMENTO DE UX [2024-11-22]: Reduz o espaçamento vertical entre a lista de hábitos e o gráfico em telas menores para uma visualização mais compacta. */
+    /* REFINAMENTO DE UX [2025-04-01]: Remove margem extra do último elemento. 
+       O padding do container e a margem do gráfico já fornecem o espaçamento correto. */
     #habit-container > .habit-group-wrapper:last-of-type.has-habits {
-        margin-block-end: var(--space-xxl); /* Original era --space-3xl */
+        margin-block-end: 0;
     }
 }
 

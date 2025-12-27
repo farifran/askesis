@@ -199,6 +199,12 @@ export function updateGoalContentElement(goalEl: HTMLElement, status: HabitStatu
     } else if (status === 'snoozed') {
         _renderSnoozedGoal(goalEl);
     } else {
+        // ROBUSTNESS FIX [2025-04-01]: Protect inline edit input.
+        // If the user is currently editing the goal (has an <input> element), we MUST NOT
+        // overwrite it with the standard controls, or their work will be lost during
+        // background syncs or auto-refreshes. The input handles its own lifecycle.
+        if (goalEl.querySelector('input')) return;
+
         // Renderiza controles apenas se estiver pendente (e for numérico)
         _renderPendingGoalControls(goalEl, habit, time, dayDataForInstance);
     }
@@ -458,6 +464,14 @@ export function updatePlaceholderForGroup(groupEl: HTMLElement, time: TimeOfDay,
  * Reconstrói a árvore de hábitos se necessário, reutilizando nós do cache.
  */
 export function renderHabits() {
+    // CRITICAL BUGFIX [2025-04-03]: Drag Locking.
+    // Se o usuário estiver arrastando um item, bloqueamos qualquer re-renderização da lista.
+    // Se permitirmos o re-render, o DOM do item arrastado pode ser reciclado ou removido,
+    // cancelando o evento de arrasto nativo do navegador e causando bugs visuais/lógicos.
+    if (document.body.classList.contains('is-dragging-active')) {
+        return;
+    }
+
     // PERFORMANCE: Dirty Check global. Se a estrutura da lista não mudou, aborta.
     if (!state.uiDirtyState.habitListStructure) {
         return;

@@ -115,21 +115,8 @@ Através do **Google AI Studio**, a barreira técnica foi dissolvida. O papel hu
 
 Isso permitiu que uma única pessoa construísse uma aplicação com a complexidade e polimento de um *squad* inteiro:
 
-*   **O Humano como Beta Tester e Pesquisador:** Além de definir a visão, o papel humano foi fundamental como um **validar ágil**. Houve um ciclo contínuo de testes onde o humano confrontava sua visão com o resultado produzido pela IA, iterando prompts para aperfeiçoar o código até sua melhor versão. Além disso, o humano atuou ativamente pesquisando os **requerimentos mais modernos** (state-of-the-art) — como criptografia nativa, PWA offline e service workers avançados — instruindo a IA a implementar soluções de ponta em vez de abordagens genéricas.
+*   **O Humano como Beta Tester e Pesquisador:** Além de definir a visão, o papel humano foi fundamental como um **validar ágil**. Houve um ciclo contínuo de testes onde o humano confrontava sua visão com o resultado produzido pela IA, iterando prompts para aperfeiçoar o código até sua melhor versão.
 *   **A IA como Engenheiro Sênior:** Os modelos Gemini atuaram na implementação técnica pesada, escrevendo linhas complexas de código, sugerindo otimizações de performance e resolvendo bugs lógicos.
-
-O resultado dessa simbiose:
-
-*   **Volume e Estrutura:** Mais de 15 módulos TypeScript interconectados e ~3.000 linhas de código limpo e tipado.
-*   **Engenharia Avançada:**
-    *   Criptografia Militar (AES-GCM/PBKDF2) rodando inteiramente no navegador.
-    *   Motor de Sincronização Bidirecional com resolução de conflitos e trava otimista (mutex).
-    *   Algoritmos de Cache LRU (Least Recently Used) e estruturas de dados `Map` para performance O(1).
-*   **UX Nativa & Complexa:**
-    *   Sistema de gestos (Swipe) com física personalizada.
-    *   Drag-and-drop fluido com auto-scroll e zonas de soltura dinâmicas.
-    *   Renderização progressiva e loops de animação desacoplados (requestAnimationFrame/requestIdleCallback) para 60fps cravados.
-*   **PWA Completo:** Funcionamento 100% offline com estratégias de cache avançadas (Cache-First com revalidação background).
 
 ---
 
@@ -164,66 +151,47 @@ Este projeto rejeita a complexidade desnecessária dos frameworks modernos em fa
 .
 ├── api/                 # Vercel Edge Functions (Backend Serverless)
 ├── locales/             # Arquivos de Tradução (i18n)
+├── render/              # Motor de Renderização (DOM Recycling & Templates)
+├── listeners/           # Controladores de Eventos e Gestos (Física)
+├── services/            # Camada de Dados, Criptografia e IO
+│   ├── api.ts           # Cliente HTTP com Retry/Backoff
+│   ├── cloud.ts         # Orquestrador de Sync e Worker Bridge
+│   ├── crypto.ts        # Criptografia AES-GCM Isomórfica
+│   ├── dataMerge.ts     # Algoritmo de Resolução de Conflitos (CRDT-lite)
+│   ├── migration.ts     # Reconstrução de Histórico (Graph-based)
+│   ├── persistence.ts   # Wrapper IndexedDB Assíncrono
+│   ├── selectors.ts     # Camada de Leitura Otimizada (Memoized)
+│   └── sync.worker.ts   # Web Worker para CPU-bound tasks
+├── state.ts             # Gerenciamento de Estado Mutável (Single Source of Truth)
+├── habitActions.ts      # Lógica de Negócios e Time-Travel
 ├── index.html           # App Shell (Critical Render Path)
-├── index.css            # CSS Variável e Responsivo
-├── index.tsx            # Ponto de Entrada
-├── state.ts             # Gerenciamento de Estado Reativo
-├── render.ts            # Motor de Renderização Cirúrgica (DOM Updates)
-├── cloud.ts             # Camada de Sincronização e Resolução de Conflitos
-├── crypto.ts            # Criptografia AES-GCM no lado do cliente
-├── habitActions.ts      # Lógica de Negócios
-├── swipeHandler.ts      # Física de Gestos Manuais
-└── sw.js                # Service Worker (Cache Strategy)
+└── sw.js                # Service Worker (Atomic Caching)
 ```
-
-<h3>Decisões Técnicas de Alto Nível</h3>
-
-1.  **Performance Extrema ("Vanilla Speed"):**
-    *   Sem React/Vue/Angular. Manipulação direta e cirúrgica do DOM.
-    *   **Dirty Checking:** O sistema sabe exatamente o que mudou e atualiza apenas o texto ou classe necessária.
-    *   **Zero-Cost Idle:** Tarefas pesadas (analytics, salvamento) rodam via `requestIdleCallback`, garantindo que a UI nunca trave.
-
-2.  **Confiabilidade de Dados e Offline-First:**
-    *   **Service Worker:** Estratégia *Cache-First* para o App Shell garante carregamento instantâneo (0ms latência) e funcionamento total offline.
-    *   **Sincronização Resiliente:** Utiliza *Optimistic UI* (a interface atualiza antes do servidor). A sincronização com a nuvem (Vercel KV) inclui lógica de retry com backoff exponencial e resolução de conflitos para garantir consistência entre múltiplos dispositivos.
-
-3.  **Segurança (Client-Side Encryption):**
-    *   Utilizamos **PBKDF2** para derivar chaves e **AES-GCM** para criptografar o payload JSON no cliente antes do envio.
-    *   O servidor Vercel KV atua apenas como um depósito cego de dados criptografados (Zero Knowledge Architecture).
 
 <h3>Deep Dive Técnico: A Plataforma Web como Nativa</h3>
 
-Este projeto explora o limite do que é possível fazer no navegador sem dependências pesadas, utilizando APIs nativas ("Vanilla JS") para obter performance e funcionalidades que competem diretamente com apps nativos.
+Este projeto explora o limite do que é possível fazer no navegador sem dependências pesadas, utilizando APIs nativas ("Vanilla JS") para obter performance de classe mundial.
 
-*   **Web Crypto API (`crypto.subtle`):** Em vez de bibliotecas JS lentas, usamos o hardware do dispositivo para criptografia AES-GCM de nível militar. A chave de sincronização nunca sai do dispositivo em formato legível.
-*   **requestIdleCallback:** Agendamento inteligente de tarefas de fundo (como persistência de dados e comunicação com IA). O código espera o navegador estar "ocioso" para executar, garantindo uma interface fluida a 60fps.
-*   **IntersectionObserver:** Renderização eficiente de listas e gráficos. Elementos fora da tela não consomem recursos de renderização desnecessários.
-*   **Service Worker API:** Interceptação de rede avançada que permite o funcionamento 100% offline e atualizações de cache em segundo plano.
-*   **Badging API:** Integração direta com o sistema operacional para exibir o contador de pendências no ícone do aplicativo.
-*   **Vibration API:** Feedback tátil (haptics) de baixa latência para reforçar ações físicas como completar tarefas ou gestos de deslize.
-*   **Page Visibility API:** Gestão de ciclo de vida do aplicativo para economizar bateria e atualizar dados (como a virada do dia) apenas quando o usuário retorna ao app.
+1.  **Multithreading (Web Workers):**
+    *   Para garantir que a UI nunca trave (Jank-free), tarefas pesadas como **Criptografia AES-GCM**, **Parsing de JSON** massivo e **Construção de Prompts de IA** são delegadas para uma thread de worker separada (`sync.worker.ts`). A thread principal cuida apenas de desenhar a tela a 60fps.
 
-<h3>Infraestrutura e Integrações Externas</h3>
+2.  **Persistência Escalável (IndexedDB):**
+    *   Diferente do LocalStorage (que é síncrono e bloqueia a UI), o Askesis implementa um wrapper leve sobre o **IndexedDB**. Isso permite armazenamento assíncrono e virtualmente ilimitado, essencial para anos de histórico.
 
-O projeto utiliza serviços modernos para garantir que o app seja rápido e confiável, sem custos de manutenção.
+3.  **Sincronização Inteligente (Smart Merge):**
+    *   Implementação de um algoritmo **CRDT-lite** (Conflict-free Replicated Data Type) para reconciliação de dados. O sistema resolve conflitos entre dispositivos offline e a nuvem usando pesos semânticos (ex: "Concluído" > "Pendente"), garantindo que o progresso do usuário nunca seja perdido.
 
-<h4>
-  <img src="https://cdn.svgporn.com/logos/vercel-icon.svg" height="24" alt="Vercel Logo" style="vertical-align: bottom; margin-right: 8px;" />
-  Vercel (O Motor e o Cofre)
-</h4>
+4.  **Segurança (Client-Side Encryption):**
+    *   Utilizamos **PBKDF2** para derivar chaves e **AES-GCM** para criptografar o payload JSON no cliente antes do envio. O servidor Vercel KV atua apenas como um depósito cego ("Zero Knowledge").
 
-*   **Velocidade Global:** O site não fica em apenas um computador; ele é distribuído por uma rede mundial (CDN). Isso garante que o app carregue instantaneamente, esteja você no Brasil ou no Japão.
-*   **Cérebro Ágil (Edge Functions):** As partes "inteligentes" do sistema (como conectar com a IA ou criptografar seus dados) rodam na "borda" da rede, fisicamente próximas ao usuário, eliminando esperas.
-*   **Cofre Cego (Vercel KV):** Usamos um banco de dados de alta performance para a sincronização. O diferencial de segurança: o servidor atua como um "cofre cego". Ele guarda seus dados criptografados, mas não tem a chave para lê-los. Apenas seu dispositivo pode abrir esse cofre.
+<h3>Performance & Otimização (60fps Target)</h3>
 
-<h4>
-  <img src="https://cdn.svgporn.com/logos/onesignal.svg" height="24" alt="OneSignal Logo" style="vertical-align: bottom; margin-right: 8px;" />
-  OneSignal (O Aliado da Consistência)
-</h4>
+A arquitetura "Zero-Cost Abstractions" foca em eliminar overhead de runtime:
 
-*   **Lembretes, não SPAM:** O sistema de notificações foi desenhado para ajudar você a manter o foco ("Lembre-se de beber água"), respeitando seu tempo.
-*   **Funciona Fechado:** Graças à integração profunda com o navegador (Service Worker), você recebe lembretes importantes mesmo se o aplicativo não estiver aberto na tela do celular.
-*   **Sincronia Real:** Se você desativa as notificações nas configurações do celular, o app entende imediatamente e atualiza o botão na interface. Sem menus confusos.
+*   **Object Pooling:** Reutilização de objetos e arrays em loops quentes (renderização de calendário e gráficos) para eliminar a pressão sobre o Garbage Collector.
+*   **Geometry Caching:** As dimensões dos elementos (layout) são cacheadas e lidas apenas no redimensionamento da janela, evitando *Layout Thrashing* (Reflows forçados) durante gestos de arrasto e deslize.
+*   **DOM Recycling & Template Cloning:** Em vez de destruir e recriar elementos DOM, o sistema clona templates (`cloneNode`) e atualiza apenas os dados alterados ("Dirty Checking"), mantendo o DOM leve.
+*   **Lazy Loading & Code Splitting:** Módulos pesados (como a lista de citações) e recursos DOM são carregados sob demanda, garantindo um *Time to Interactive* (TTI) quase instantâneo.
 
 ---
 
@@ -234,12 +202,9 @@ O projeto utiliza serviços modernos para garantir que o app seja rápido e conf
 
 Este projeto foi desenhado com uma engenharia inteligente para operar com **Custo Zero ($0)**, aproveitando os planos gratuitos de serviços modernos sem perder qualidade.
 
-*   **Armazenamento Ultraleve:** Em vez de salvar dados pesados, salvamos apenas texto criptografado e comprimido. Para se ter ideia: **5 anos** de histórico diário de um usuário ocupam menos espaço digital (KB) do que uma única foto de baixa qualidade. Isso significa que o espaço gratuito do servidor é virtualmente infinito para uso pessoal.
+*   **Armazenamento Ultraleve (GZIP):** Os dados históricos ("Cold Storage") são comprimidos via GZIP Stream API antes de serem salvos ou enviados para a nuvem. Isso reduz drasticamente o uso de banda e armazenamento.
 *   **O Celular Trabalha:** A maior parte do "pensamento" (criptografia, geração de gráficos, cálculos) é feita pelo seu próprio dispositivo, não pelo servidor. Isso poupa recursos da nuvem, garantindo que nunca ultrapassemos os limites gratuitos.
-*   **Notificações Gratuitas:** Utilizamos o plano de comunidade do OneSignal, que permite até 10.000 usuários Web gratuitamente. Para um app focado em desenvolvimento pessoal, isso é mais do que suficiente.
-
-**Veredito de Sustentabilidade:**
-A arquitetura é leve e eficiente. Como o consumo de dados cresce de forma muito lenta (apenas texto), **não há previsão de custos futuros**. O aplicativo foi construído para funcionar gratuitamente por tempo indeterminado.
+*   **Notificações Gratuitas:** Utilizamos o plano de comunidade do OneSignal, que permite até 10.000 usuários Web gratuitamente.
 
 ---
 
@@ -247,9 +212,9 @@ A arquitetura é leve e eficiente. Como o consumo de dados cresce de forma muito
 
 A visão para o Askesis é expandir sua presença nativa mantendo a base de código unificada.
 
-*   **Versão Nativa Android:** Empacotamento via **TWA (Trusted Web Activity)** para publicação na Google Play Store, oferecendo uma experiência de instalação sem fricção.
-*   **Widgets de Tela Inicial:** Desenvolvimento de widgets nativos para visualização rápida do progresso diário sem a necessidade de abrir o aplicativo.
-*   **Integração Health Connect:** Sincronização bidirecional de dados de saúde (como sono e exercícios) para correlacionar hábitos com o bem-estar físico geral.
+*   **Versão Nativa Android:** Empacotamento via **TWA (Trusted Web Activity)** para publicação na Google Play Store.
+*   **Widgets de Tela Inicial:** Desenvolvimento de widgets nativos para visualização rápida do progresso.
+*   **Integração Health Connect:** Sincronização bidirecional de dados de saúde.
 
 <h2>Licença</h2>
 

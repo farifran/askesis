@@ -79,8 +79,19 @@ function getWorker(): Worker {
             }
         };
         
+        // ROBUSTEZ: Tratamento de falhas catastróficas do Worker.
         syncWorker.onerror = (e) => {
             console.error("Critical Worker Error:", e);
+            // FAIL-SAFE: Rejeita todas as promessas pendentes para liberar a UI.
+            // Se não fizermos isso, qualquer 'await runWorkerTask' ficará pendurado para sempre (Loader infinito).
+            for (const [id, callback] of workerCallbacks.entries()) {
+                callback.reject(new Error("Worker crashed or failed to load."));
+            }
+            workerCallbacks.clear();
+            
+            // Destrói a instância para tentar recriar limpo na próxima chamada
+            syncWorker?.terminate();
+            syncWorker = null;
         };
     }
     return syncWorker;
@@ -318,6 +329,7 @@ export async function fetchStateFromCloud(): Promise<AppState | undefined> {
         } else {
             // Nenhum dado na nuvem (resposta foi 200 com corpo nulo)
             console.log("No state found in cloud for this sync key. Performing initial sync.");
+            
             // FIX [2025-03-20]: Use getPersistableState() instead of reading from localStorage.
             // Persistence is now abstracted (IndexedDB). If memory state is populated, sync it.
             if (state.habits.length > 0 || Object.keys(state.dailyData).length > 0) {

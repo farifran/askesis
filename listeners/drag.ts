@@ -80,9 +80,8 @@ export function setupDragHandler(habitContainer: HTMLElement) {
     // PERFORMANCE [2025-03-12]: Geometry Cache for Habit Cards.
     // Armazena as posições iniciais (Y) e alturas para evitar chamar `getBoundingClientRect`
     // dentro do loop crítico `dragover`.
-    // BUGFIX [2025-03-16]: Removed 'top' from cache because it becomes stale on scroll.
-    // We only cache offset properties which are stable relative to the parent.
-    const cardRectCache = new Map<string, { offsetTop: number, offsetHeight: number }>();
+    // BUGFIX [2025-04-01]: Stores both absolute (normalized) top for physics AND local top for UI.
+    const cardRectCache = new Map<string, { offsetTop: number, localTop: number, offsetHeight: number }>();
 
     /**
      * Snapshot geométrico do layout.
@@ -91,18 +90,35 @@ export function setupDragHandler(habitContainer: HTMLElement) {
     function _captureGeometryCache() {
         cardRectCache.clear();
         
+        // BUGFIX [2025-04-01]: Ensure container rect is available for relative calculation.
+        if (!cachedContainerRect) {
+            cachedContainerRect = habitContainer.getBoundingClientRect();
+        }
+
         // ADVANCED OPTIMIZATION [2025-03-17]: Avoid querySelectorAll(DOM_SELECTORS.HABIT_CARD).
         // Iterate over the live cache of habit cards directly from memory.
-        // This is O(HABIT_COUNT) memory access vs O(DOM_NODES) traversal.
         const liveCardsIterator = getLiveHabitCards();
         
         for (const card of liveCardsIterator) {
             // Ensure card is actually in the DOM (isConnected) before reading layout
             if (card.isConnected && card.dataset.habitId && card !== draggedElement) {
                 // Layout Read (Força Recalculo de Estilo se o DOM estiver sujo, mas fazemos isso apenas 1x)
+                // CRITICAL FIX: O elemento pai (.habit-group) tem 'position: relative'.
+                // Portanto, card.offsetTop é relativo ao grupo, e não ao container de scroll.
+                // Precisamos normalizar para o sistema de coordenadas do container.
+                const rect = card.getBoundingClientRect();
+                
+                // 1. Offset relativo ao topo do container (Para Física/Hit Testing)
+                const normalizedOffsetTop = rect.top - cachedContainerRect.top + habitContainer.scrollTop;
+                
+                // 2. Offset relativo ao pai imediato (Para UI/Indicator)
+                // Como o indicador é anexado ao grupo, precisamos saber a posição do card dentro do grupo.
+                const localTop = card.offsetTop;
+
                 cardRectCache.set(card.dataset.habitId, {
-                    offsetTop: card.offsetTop,
-                    offsetHeight: card.offsetHeight
+                    offsetTop: normalizedOffsetTop,
+                    localTop: localTop,
+                    offsetHeight: rect.height // rect.height é mais preciso que offsetHeight (sub-pixel)
                 });
             }
         }
@@ -215,15 +231,19 @@ export function setupDragHandler(habitContainer: HTMLElement) {
         // Fallback to getBoundingClientRect if cache is somehow missing (safety).
         const scrollContainerRect = cachedContainerRect || habitContainer.getBoundingClientRect();
         
-        const topZoneEnd = scrollContainerRect.top + SCROLL_ZONE_SIZE;
-        const bottomZoneStart = scrollContainerRect.bottom - SCROLL_ZONE_SIZE;
+        // ROBUSTNESS FIX [2025-04-01]: Ensure scroll zones do not overlap on small screens.
+        // Clamps the zone size to max 50% of container height.
+        const effectiveZone = Math.min(SCROLL_ZONE_SIZE, scrollContainerRect.height / 2);
+        
+        const topZoneEnd = scrollContainerRect.top + effectiveZone;
+        const bottomZoneStart = scrollContainerRect.bottom - effectiveZone;
 
         let potentialVelocity = 0;
         
         // --- 1. CALCULAR VELOCIDADE POTENCIAL (Curva Quadrática) ---
         if (clientY < topZoneEnd) {
             const distance = clientY - scrollContainerRect.top;
-            let ratio = (SCROLL_ZONE_SIZE - distance) / SCROLL_ZONE_SIZE;
+            let ratio = (effectiveZone - distance) / effectiveZone;
             ratio = Math.max(0, Math.min(1, ratio));
             const intensity = ratio * ratio; // Curva quadrática para suavidade
             potentialVelocity = -(intensity * MAX_SCROLL_SPEED);
@@ -231,7 +251,7 @@ export function setupDragHandler(habitContainer: HTMLElement) {
 
         } else if (clientY > bottomZoneStart) {
             const distance = scrollContainerRect.bottom - clientY;
-            let ratio = (SCROLL_ZONE_SIZE - distance) / SCROLL_ZONE_SIZE;
+            let ratio = (effectiveZone - distance) / effectiveZone;
             ratio = Math.max(0, Math.min(1, ratio));
             const intensity = ratio * ratio;
             potentialVelocity = intensity * MAX_SCROLL_SPEED;
@@ -244,18 +264,12 @@ export function setupDragHandler(habitContainer: HTMLElement) {
         if (potentialVelocity < 0 && habitContainer.scrollTop <= 0) {
             finalVelocity = 0;
         } else if (potentialVelocity > 0) {
-            const atScrollEnd = habitContainer.scrollTop >= (habitContainer.scrollHeight - habitContainer.clientHeight);
+            // FIX [2025-04-01]: Improved bounds checking logic to avoid sub-pixel rounding issues.
+            const atScrollEnd = Math.abs(habitContainer.scrollHeight - habitContainer.clientHeight - habitContainer.scrollTop) < 1;
             
-            // BUGFIX: Adiciona verificação geométrica para o último elemento.
-            // Se o último grupo já estiver totalmente visível, não devemos rolar.
-            const lastGroupWrapper = habitContainer.querySelector('.habit-group-wrapper:last-child');
-            let isLastElementVisible = false;
-            if (lastGroupWrapper) {
-                const lastGroupRect = lastGroupWrapper.getBoundingClientRect();
-                isLastElementVisible = lastGroupRect.bottom <= scrollContainerRect.bottom;
-            }
-
-            if (atScrollEnd || isLastElementVisible) {
+            // PERFORMANCE FIX: Removido getBoundingClientRect() síncrono em elemento filho.
+            // A verificação `atScrollEnd` baseada em scrollHeight é suficiente e mais performática.
+            if (atScrollEnd) {
                 finalVelocity = 0;
             }
         }
@@ -285,31 +299,47 @@ export function setupDragHandler(habitContainer: HTMLElement) {
         const cardTarget = target.closest<HTMLElement>(DOM_SELECTORS.HABIT_CARD);
         
         if (cardTarget && cardTarget !== draggedElement && cardTarget.parentElement === dropZone) {
-            // FIX [2025-03-16]: Use live Geometry for hit testing to support scrolling.
-            // Reading getBoundingClientRect on the *target* element is efficient enough because
-            // we don't loop through all elements.
-            const targetRect = cardTarget.getBoundingClientRect();
-            const midY = targetRect.top + targetRect.height / 2;
-            const position = e.clientY < midY ? 'before' : 'after';
-            
-            // OPTIMIZATION: Use cached Offset properties for Indicator Positioning (Write Phase).
-            // This prevents layout thrashing by avoiding reading layout props that trigger reflow
-            // right before we write to style.
             const targetId = cardTarget.dataset.habitId;
             const cachedProps = targetId ? cardRectCache.get(targetId) : null;
             
+            // PHYSICS ENGINE UPDATE [2025-04-01]: Zero Layout Thrashing.
+            // We calculate midY using cached offsets relative to the viewport, 
+            // avoiding `getBoundingClientRect` entirely during the drag loop.
+            // Formula: CardTop (Viewport) = ContainerTop + CardOffsetTop - ScrollTop
+            
+            let midY: number;
+            
+            if (cachedProps && cachedContainerRect) {
+                // HIT TEST: Use NORMALIZED offsetTop (content relative) to determine visual position in scrolled container.
+                const currentCardTop = cachedContainerRect.top + cachedProps.offsetTop - habitContainer.scrollTop;
+                midY = currentCardTop + (cachedProps.offsetHeight / 2);
+            } else {
+                // Fallback (Rare case: uninitialized cache)
+                const targetRect = cardTarget.getBoundingClientRect();
+                midY = targetRect.top + targetRect.height / 2;
+            }
+            
+            const position = e.clientY < midY ? 'before' : 'after';
+            
+            // Indicator positioning logic (Write Phase Prep)
             let indicatorY: number;
             
             if (cachedProps) {
-                // Fast path using cached relative offsets
+                // UI: Use LOCAL offsetTop (relative to group) for transform because indicator is appended to the GROUP.
                 indicatorY = position === 'before'
-                    ? cachedProps.offsetTop - DROP_INDICATOR_GAP
-                    : cachedProps.offsetTop + cachedProps.offsetHeight + DROP_INDICATOR_GAP;
+                    ? cachedProps.localTop - DROP_INDICATOR_GAP
+                    : cachedProps.localTop + cachedProps.offsetHeight + DROP_INDICATOR_GAP;
             } else {
-                // Fallback path
+                // Fallback logic
+                // Note: cardTarget.offsetTop is incorrect here if falling back, but this path is effectively unreachable with correct caching
+                // We use getBoundingClientRect logic relative to parent for safety fallback if cache misses
+                const tRect = cardTarget.getBoundingClientRect();
+                const parentRect = currentRenderedDropZone?.getBoundingClientRect() || { top: 0 };
+                // Approximate relative top
+                const relTop = tRect.top - parentRect.top; 
                 indicatorY = position === 'before'
-                    ? cardTarget.offsetTop - DROP_INDICATOR_GAP
-                    : cardTarget.offsetTop + cardTarget.offsetHeight + DROP_INDICATOR_GAP;
+                    ? relTop - DROP_INDICATOR_GAP
+                    : relTop + tRect.height + DROP_INDICATOR_GAP;
             }
 
             // Adjust for centering the indicator height
@@ -382,6 +412,8 @@ export function setupDragHandler(habitContainer: HTMLElement) {
 
     const handleBodyDrop = (e: DragEvent) => {
         e.preventDefault();
+        // CRITICAL FIX: Unlock rendering immediately so the drop update is visible
+        document.body.classList.remove('is-dragging-active');
         _determineAndExecuteDropAction();
     };
     

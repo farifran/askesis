@@ -159,16 +159,18 @@ function _validateHabitName(newName: string, currentHabitId?: string): boolean {
     formNoticeEl.classList.remove('visible');
     habitNameInput.classList.remove('shake');
     
+    // Force Reflow para garantir que a remoção da classe foi processada
+    // antes de tentar adicioná-la novamente (caso seja necessário).
+    void habitNameInput.offsetWidth;
+    
     const trimmedName = newName.trim();
 
     if (trimmedName.length === 0) {
         formNoticeEl.textContent = t('noticeNameCannotBeEmpty');
         formNoticeEl.classList.add('visible');
         
-        // UX: Animação de erro.
-        // requestAnimationFrame garante que a remoção da classe 'shake' anterior foi processada
-        // antes de readicioná-la, permitindo que a animação reinicie.
         requestAnimationFrame(() => {
+            void habitNameInput.offsetWidth; // Double check reflow inside RAF just to be safe across browsers
             habitNameInput.classList.add('shake');
             habitNameInput.addEventListener('animationend', () => {
                 habitNameInput.classList.remove('shake');
@@ -183,6 +185,7 @@ function _validateHabitName(newName: string, currentHabitId?: string): boolean {
         formNoticeEl.classList.add('visible');
         
         requestAnimationFrame(() => {
+            void habitNameInput.offsetWidth;
             habitNameInput.classList.add('shake');
             habitNameInput.addEventListener('animationend', () => {
                 habitNameInput.classList.remove('shake');
@@ -197,6 +200,7 @@ function _validateHabitName(newName: string, currentHabitId?: string): boolean {
         formNoticeEl.classList.add('visible');
         
         requestAnimationFrame(() => {
+            void habitNameInput.offsetWidth;
             habitNameInput.classList.add('shake');
             habitNameInput.addEventListener('animationend', () => {
                 habitNameInput.classList.remove('shake');

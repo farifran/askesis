@@ -344,9 +344,16 @@ export function getHabitDailyInfoForDate(date: string): Record<string, HabitDail
                         console.log(`Archive ${year} hydrated. Re-rendering.`);
                         document.dispatchEvent(new CustomEvent('render-app'));
                     } catch (e) {
-                        console.error(`Failed to decompress/parse archive ${year}`, e);
+                        console.error(`Failed to parse archive ${year}`, e);
+                        // Fix: Set empty object to prevent infinite retry loops for this session
+                        state.unarchivedCache.set(year, {}); 
                         state.unarchivedCache.delete(pendingKey);
                     }
+                }).catch(e => {
+                    console.error(`Failed to decompress archive ${year}`, e);
+                    // CRITICAL FIX: Handle promise rejection to prevent infinite loops of fetch attempts
+                    state.unarchivedCache.set(year, {}); 
+                    state.unarchivedCache.delete(pendingKey);
                 });
             }
             
