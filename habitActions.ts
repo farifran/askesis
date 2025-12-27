@@ -713,13 +713,41 @@ export function importData() {
                 document.dispatchEvent(new CustomEvent('habitsChanged'));
                 
                 closeModal(ui.manageModal);
-                alert(t('importSuccess'));
+                
+                // UX IMPROVEMENT (SOTA): Native-like feedback instead of browser alert
+                showConfirmationModal(
+                    t('importSuccess'),
+                    () => {}, // No-op on confirm
+                    {
+                        title: t('privacyLabel'), // "Data & Privacy"
+                        confirmText: 'OK',
+                        hideCancel: true
+                    }
+                );
             } else {
-                alert(t('importInvalid'));
+                showConfirmationModal(
+                    t('importInvalid'),
+                    () => {},
+                    {
+                        title: t('importError'),
+                        confirmText: 'OK',
+                        hideCancel: true,
+                        confirmButtonStyle: 'danger'
+                    }
+                );
             }
         } catch (err) {
             console.error(err);
-            alert(t('importError'));
+            showConfirmationModal(
+                t('importError'),
+                () => {},
+                {
+                    title: 'Error',
+                    confirmText: 'OK',
+                    hideCancel: true,
+                    confirmButtonStyle: 'danger'
+                }
+            );
         }
     };
     input.click();
