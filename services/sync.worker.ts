@@ -277,13 +277,7 @@ async function processPruning(payload: PruneInputPayload): Promise<AppState['arc
 
         if (modified) {
             if (Object.keys(yearData).length === 0) {
-                // Mark for deletion by returning null/undefined logic or explicit removal
-                // Here we won't add it to updatedArchives, main thread handles logic?
-                // Actually, let's return a special marker or handle it.
-                // If we don't include it in result, main thread keeps old? 
-                // Let's assume we return the new state for this year.
-                // Special case: Empty year -> return "DELETE" marker or empty string?
-                // Let's return empty string as a signal.
+                // Signal for deletion (Empty string)
                 updatedArchives[yearStr] = ""; 
             } else {
                 // Re-compress
