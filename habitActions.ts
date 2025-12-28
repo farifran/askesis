@@ -46,7 +46,8 @@ import {
     STREAK_SEMI_CONSOLIDATED,
     STREAK_CONSOLIDATED,
     getHabitDailyInfoForDate,
-    AppState
+    AppState,
+    isDateLoading
 } from './state';
 import { saveState, clearLocalPersistence } from './services/persistence';
 import { PREDEFINED_HABITS } from './data/predefinedHabits';
@@ -56,16 +57,15 @@ import {
     isHabitNameDuplicate,
     clearSelectorInternalCaches,
     calculateHabitStreak,
-    shouldHabitAppearOnDate
+    shouldHabitAppearOnDate,
+    getHabitDisplayInfo
 } from './services/selectors';
 import { 
     generateUUID, 
     getTodayUTCIso, 
     parseUTCIsoDate,
     triggerHaptic,
-    getSafeDate,
-    getDateTimeFormat,
-    decompressString
+    getSafeDate
 } from './utils';
 import { 
     closeModal, 
@@ -75,7 +75,7 @@ import {
     clearHabitDomCache
 } from './render';
 import { ui } from './render/ui';
-import { t, getHabitDisplayInfo, getTimeOfDayName } from './i18n';
+import { t, getTimeOfDayName, formatDate } from './i18n'; // SOPA Update: formatDate
 import { runWorkerTask } from './services/cloud';
 import { apiFetch, clearKey } from './services/api';
 
@@ -452,6 +452,13 @@ export function saveHabitFromModal() {
     state.editingHabit = null;
 }
 
+// PERFORMANCE [2025-04-13]: Hoisted Intl Options.
+const OPTS_CONFIRM_DATE: Intl.DateTimeFormatOptions = {
+    day: 'numeric',
+    month: 'long',
+    timeZone: 'UTC'
+};
+
 export function requestHabitEndingFromModal(habitId: string) {
     const habit = state.habits.find(h => h.id === habitId);
     if (!habit) return;
@@ -460,11 +467,8 @@ export function requestHabitEndingFromModal(habitId: string) {
     const { name } = getHabitDisplayInfo(habit, targetDate);
     
     const dateObj = parseUTCIsoDate(targetDate);
-    const formattedDate = getDateTimeFormat(state.activeLanguageCode, {
-        day: 'numeric',
-        month: 'long',
-        timeZone: 'UTC'
-    }).format(dateObj);
+    // SOPA Update: Use hoisted options
+    const formattedDate = formatDate(dateObj, OPTS_CONFIRM_DATE);
     
     showConfirmationModal(
         t('confirmEndHabit', { habitName: name, date: formattedDate }),
@@ -584,6 +588,12 @@ export function handleSaveNote() {
     const { habitId, date, time } = state.editingNoteFor;
     const noteContent = ui.notesTextarea.value.trim();
 
+    // SAFETY CHECK: Data loading guard
+    if (isDateLoading(date)) {
+        console.warn('Attempted to save note while data is loading.');
+        return;
+    }
+
     const instance = ensureHabitInstanceData(date, habitId, time);
 
     // OTIMIZAÇÃO: Evita gravação se o conteúdo não mudou.
@@ -634,9 +644,11 @@ export async function performAIAnalysis(analysisType: 'monthly' | 'quarterly' | 
             aiPromptNone: t('aiPromptNone'),
             aiSystemInstruction: t('aiSystemInstruction'),
         };
-        PREDEFINED_HABITS.forEach(h => {
+        
+        // REFACTOR [2025-04-07]: Zero-allocation loop (substitui forEach)
+        for (const h of PREDEFINED_HABITS) {
             translations[h.nameKey] = t(h.nameKey);
-        });
+        }
 
         // PERFORMANCE: Off-Main-Thread Architecture.
         const { prompt, systemInstruction } = await runWorkerTask<{ prompt: string, systemInstruction: string }>(
@@ -757,6 +769,12 @@ export function toggleHabitStatus(habitId: string, time: TimeOfDay, date: string
     const habit = state.habits.find(h => h.id === habitId);
     if (!habit) return;
 
+    // SAFETY CHECK: Prevent writing to uninitialized cold storage
+    if (isDateLoading(date)) {
+        console.warn('Attempted to toggle habit while data is loading.');
+        return;
+    }
+
     const instance = ensureHabitInstanceData(date, habitId, time);
     const oldStatus = instance.status;
     const newStatus = getNextStatus(oldStatus);
@@ -785,6 +803,12 @@ export function toggleHabitStatus(habitId: string, time: TimeOfDay, date: string
 }
 
 export function setGoalOverride(habitId: string, date: string, time: TimeOfDay, value: number) {
+    // SAFETY CHECK: Prevent writing to uninitialized cold storage
+    if (isDateLoading(date)) {
+        console.warn('Attempted to set goal while data is loading.');
+        return;
+    }
+
     const instance = ensureHabitInstanceData(date, habitId, time);
     instance.goalOverride = value;
     
@@ -808,6 +832,12 @@ export function requestHabitTimeRemoval(habitId: string, time: TimeOfDay) {
     const timeName = getTimeOfDayName(time);
     
     const confirmDeletion = () => {
+        // SAFETY CHECK: Prevent writing to uninitialized cold storage
+        if (isDateLoading(targetDate)) {
+            console.warn('Attempted to remove habit time while data is loading.');
+            return;
+        }
+
         const dailyInfo = ensureHabitDailyInfo(targetDate, habitId);
         
         if (dailyInfo.dailySchedule) {
@@ -837,16 +867,33 @@ export function requestHabitTimeRemoval(habitId: string, time: TimeOfDay) {
 }
 
 export function markAllHabitsForDate(dateISO: string, status: HabitStatus): boolean {
+    // SAFETY CHECK: Prevent mass writing to uninitialized cold storage
+    if (isDateLoading(dateISO)) {
+        console.warn('Attempted to batch update habits while data is loading.');
+        return false;
+    }
+
     // PERFORMANCE OPTIMIZATION [2025-04-06]: Zero-Allocation Loop.
     // Replace complex selector chain `getActiveHabitsForDate` (which allocates objects)
     // with a raw loop over the habit array. This is a hot path for "Quick Actions".
     
     const dateObj = parseUTCIsoDate(dateISO);
     
-    // CRITICAL DATA INTEGRITY FIX: Removed unsafe hoisting of `getHabitDailyInfoForDate`.
-    // Previously, accessing `dailyInfoMap[habit.id]` directly could return the Read-Only Archive object.
-    // Modifying that object bypasses `state.dailyData` (Hot Storage), leading to data loss on page reload.
-    // We now force `ensureHabitDailyInfo` inside the loop to guarantee the data is "thawed" into Hot Storage before write.
+    // OPTIMIZATION [2025-04-07]: Hoist Hot Storage Hydration.
+    // Ensure the day record exists in state.dailyData ONCE before the loop.
+    // This avoids repeated checks/clones inside ensureHabitDailyInfo for every habit.
+    if (!state.dailyData[dateISO]) {
+        const archivedDay = getHabitDailyInfoForDate(dateISO);
+        // Use a lightweight check for empty object if constant is not available here, 
+        // or rely on the fact that getHabitDailyInfoForDate returns a fresh object if empty.
+        // Actually, we can just use the logic from ensureHabitDailyInfo but manually inlined/hoisted.
+        state.dailyData[dateISO] = (Object.keys(archivedDay).length > 0) 
+            ? structuredClone(archivedDay) 
+            : {};
+    }
+    
+    // Direct reference to the hot storage day object
+    const hotDayData = state.dailyData[dateISO];
     
     let changed = false;
     // We use a simple array instead of Set for iteration speed, pushing unique IDs only.
@@ -866,8 +913,10 @@ export function markAllHabitsForDate(dateISO: string, status: HabitStatus): bool
         const schedule = getEffectiveScheduleForHabitOnDate(habit, dateISO);
         if (schedule.length === 0) continue;
 
-        // SAFE WRITE: Always ensures data is in Hot Storage (state.dailyData) before mutation.
-        const dailyInfo = ensureHabitDailyInfo(dateISO, habit.id);
+        // Optimization: Initialize habit entry directly
+        hotDayData[habit.id] ??= { instances: {} };
+        const dailyInfo = hotDayData[habit.id];
+        
         let habitChanged = false;
 
         for (let j = 0; j < schedule.length; j++) {

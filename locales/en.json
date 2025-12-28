@@ -1,4 +1,3 @@
-
 {
     "_comment": "[ANALYSIS PROGRESS]: 100% - Dead key cleanup performed [2025-03-22].",
     "aiCelebration21Day": {
@@ -94,6 +93,7 @@
     "languageNext_ariaLabel": "Next language",
     "languagePrev_ariaLabel": "Previous language",
     "language_ariaLabel": "Language selector",
+    "loadingDateData": "Loading archived data...",
     "manageHabits_ariaLabel": "Settings",
     "marcusAurelius": "Marcus Aurelius",
     "modalAIOptionsTitle": "AI Analysis Options",

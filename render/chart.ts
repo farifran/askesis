@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -34,8 +33,8 @@
 import { state, isChartDataDirty } from '../state';
 import { calculateDaySummary } from '../services/selectors';
 import { ui } from './ui';
-import { t } from '../i18n';
-import { addDays, getTodayUTCIso, parseUTCIsoDate, toUTCIsoDateString, getDateTimeFormat } from '../utils';
+import { t, formatDate, formatDecimal, formatEvolution } from '../i18n';
+import { addDays, getTodayUTCIso, parseUTCIsoDate, toUTCIsoDateString } from '../utils';
 
 const CHART_DAYS = 30;
 const INITIAL_SCORE = 100;
@@ -50,6 +49,28 @@ const PLUS_BONUS_MULTIPLIER = 1.5; // "Plus" days move the needle 50% more than 
 const SVG_HEIGHT = 45; 
 // LAYOUT UPDATE [2025-03-26]: Padding direito mantido em 0 para largura total.
 const CHART_PADDING = { top: 5, right: 0, bottom: 5, left: 3 };
+
+// PERFORMANCE [2025-04-13]: Hoisted Intl Options.
+const OPTS_AXIS_LABEL_SHORT: Intl.DateTimeFormatOptions = { 
+    month: 'short', 
+    day: 'numeric', 
+    timeZone: 'UTC',
+    year: undefined // Default
+};
+
+const OPTS_AXIS_LABEL_WITH_YEAR: Intl.DateTimeFormatOptions = { 
+    month: 'short', 
+    day: 'numeric', 
+    timeZone: 'UTC',
+    year: '2-digit'
+};
+
+const OPTS_TOOLTIP_DATE: Intl.DateTimeFormatOptions = { 
+    weekday: 'long', 
+    day: 'numeric', 
+    month: 'long', 
+    timeZone: 'UTC' 
+};
 
 type ChartDataPoint = {
     date: string;
@@ -233,19 +254,13 @@ function _updateAxisLabels(chartData: ChartDataPoint[]) {
     const firstYear = new Date(firstDateMs).getUTCFullYear();
     const lastYear = new Date(lastDateMs).getUTCFullYear();
     
-    const showYear = firstYear !== lastYear || lastYear !== currentYear;
-    
-    // PERFORMANCE: Cacheado internamente em `utils.ts`
-    const axisFormatter = getDateTimeFormat(state.activeLanguageCode, { 
-        month: 'short', 
-        day: 'numeric', 
-        timeZone: 'UTC',
-        year: showYear ? '2-digit' : undefined
-    });
+    // PERFORMANCE: SOPA Update - Use hoisted options
+    const firstLabel = formatDate(firstDateMs, (firstYear !== currentYear) ? OPTS_AXIS_LABEL_WITH_YEAR : OPTS_AXIS_LABEL_SHORT);
+    const lastLabel = formatDate(lastDateMs, (lastYear !== currentYear) ? OPTS_AXIS_LABEL_WITH_YEAR : OPTS_AXIS_LABEL_SHORT);
 
     // DOM WRITE: Batch updates
-    setTextContent(axisStart, axisFormatter.format(firstDateMs));
-    setTextContent(axisEnd, axisFormatter.format(lastDateMs));
+    setTextContent(axisStart, firstLabel);
+    setTextContent(axisEnd, lastLabel);
 }
 
 // Helper para setTextContent local (para evitar importar do dom.ts se não necessário ou manter coerência)
@@ -266,7 +281,8 @@ function _updateEvolutionIndicator(chartData: ChartDataPoint[]) {
     if (evolutionIndicator.className !== newClass) {
         evolutionIndicator.className = newClass;
     }
-    setTextContent(evolutionIndicator, `${evolution > 0 ? '+' : ''}${evolution.toFixed(1)}%`);
+    // SOPA Update: Use formatEvolution for localized number (1 decimal place)
+    setTextContent(evolutionIndicator, `${evolution > 0 ? '+' : ''}${formatEvolution(evolution)}%`);
     
     // LAYOUT FIX [2025-03-27]: Removed manual positioning logic.
     // The indicator is now statically positioned in the header via CSS flexbox.
@@ -369,14 +385,13 @@ function updateTooltipPosition() {
         const dot = indicator.querySelector<HTMLElement>('.chart-indicator-dot');
         if (dot) dot.style.top = `${pointY}px`;
         
-        // PERFORMANCE [2025-03-09]: Use pre-calculated timestamp instead of allocating new Date.
-        const formattedDate = getDateTimeFormat(state.activeLanguageCode, { 
-            weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' 
-        }).format(point.timestamp);
+        // PERFORMANCE [2025-03-09]: SOPA Update - Use hoisted options
+        const formattedDate = formatDate(point.timestamp, OPTS_TOOLTIP_DATE);
         
         setTextContent(tooltipDate, formattedDate);
         setTextContent(tooltipScoreLabel, t('chartTooltipScore') + ': ');
-        setTextContent(tooltipScoreValue, point.value.toFixed(2));
+        // SOPA Update: Use formatDecimal for localized score
+        setTextContent(tooltipScoreValue, formatDecimal(point.value));
         setTextContent(tooltipHabits, t('chartTooltipCompleted', { completed: point.completedCount, total: point.scheduledCount }));
 
         if (!tooltip.classList.contains('visible')) {

@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="pt-BR">
 <!-- 
@@ -18,7 +17,6 @@
     DEPENDÊNCIAS CRÍTICAS:
     - bundle.js / bundle.css: Artefatos gerados pelo build.js.
     - OneSignal SDK: Dependência externa para Push Notifications.
-    - esm.sh (ImportMap): CDNs para bibliotecas pesadas carregadas sob demanda.
 -->
 <head>
 
@@ -30,7 +28,8 @@
     <!-- PERFORMANCE: Resource Hints. Instruem o navegador a baixar assets críticos em alta prioridade 
          antes mesmo de processar o restante do HTML/CSS. Essencial para LCP (Largest Contentful Paint). -->
     <link rel="preload" href="bundle.css" as="style">
-    <link rel="preload" href="bundle.js" as="script">
+    <!-- OPTIMIZATION [2025-04-14]: 'modulepreload' garante o tratamento correto de credenciais/cache para ESM, evitando double-fetch. -->
+    <link rel="modulepreload" href="bundle.js">
 
     <!-- Metadados para PWA em iOS -->
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -96,8 +95,6 @@
         });
       });
     </script>
-<!-- ARCHITECTURE: Import Map para dependências modernas (ESM).
-     Permite carregar bibliotecas externas (Analytics, AI) via CDN sem aumentar o tamanho do bundle inicial. -->
 <script type="importmap">
 {
   "imports": {

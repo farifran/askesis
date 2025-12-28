@@ -31,9 +31,9 @@
 
 // FIX: Import getSmartGoalForHabit from selectors module, not state module.
 import { state, Habit, HabitStatus, HabitDayData, STREAK_CONSOLIDATED, STREAK_SEMI_CONSOLIDATED, TimeOfDay, getHabitDailyInfoForDate, TIMES_OF_DAY, HabitDailyInfo } from '../state';
-import { calculateHabitStreak, getActiveHabitsForDate, getSmartGoalForHabit } from '../services/selectors';
+import { calculateHabitStreak, getActiveHabitsForDate, getSmartGoalForHabit, getHabitDisplayInfo } from '../services/selectors';
 import { ui } from './ui';
-import { t, getHabitDisplayInfo, getTimeOfDayName } from '../i18n';
+import { t, getTimeOfDayName, formatInteger } from '../i18n';
 import { UI_ICONS, getTimeOfDayIcon } from './icons';
 import { setTextContent } from './dom';
 import { CSS_CLASSES, DOM_SELECTORS } from './constants'; // TYPE SAFETY IMPORT
@@ -206,7 +206,8 @@ function _renderPendingGoalControls(
     if (hasNumericGoal) {
         const smartGoal = getSmartGoalForHabit(habit, state.selectedDate, time);
         const currentGoal = dayDataForInstance?.goalOverride ?? smartGoal;
-        const displayVal = currentGoal.toString();
+        // SOPA Update: Use localized integer format
+        const displayVal = formatInteger(currentGoal);
         const unitVal = getUnitString(habit, currentGoal);
 
         // Se os controles ainda não existem ou foram removidos (ex: transição de completado -> pendente)

@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -18,10 +17,10 @@
  */
 
 import { state, LANGUAGES } from './state';
-import { parseUTCIsoDate, toUTCIsoDateString, addDays, getDateTimeFormat, pushToOneSignal, getTodayUTCIso } from './utils';
+import { parseUTCIsoDate, toUTCIsoDateString, addDays, pushToOneSignal, getTodayUTCIso } from './utils';
 import { ui } from './render/ui';
 // FIX: import setLanguage here only for initI18n, but use the event for reactivity.
-import { t, setLanguage } from './i18n'; 
+import { t, setLanguage, formatDate } from './i18n'; 
 import { UI_ICONS } from './render/icons';
 import type { Quote } from './data/quotes';
 
@@ -48,6 +47,19 @@ let _lastQuoteDate: string | null = null;
 let _lastQuoteLang: string | null = null;
 let stoicQuotesModule: { STOIC_QUOTES: Quote[] } | null = null;
 
+// PERFORMANCE [2025-04-13]: Hoisted Intl Options (Zero-Allocation).
+const OPTS_HEADER_DESKTOP: Intl.DateTimeFormatOptions = {
+    month: 'long',
+    day: 'numeric',
+    timeZone: 'UTC'
+};
+
+const OPTS_HEADER_ARIA: Intl.DateTimeFormatOptions = {
+    weekday: 'long', 
+    month: 'long', 
+    day: 'numeric', 
+    timeZone: 'UTC'
+};
 
 function _updateHeaderTitle() {
     if (_lastTitleDate === state.selectedDate && _lastTitleLang === state.activeLanguageCode) {
@@ -80,19 +92,15 @@ function _updateHeaderTitle() {
         const month = String(date.getUTCMonth() + 1).padStart(2, '0');
         mobileTitle = `${day}/${month}`;
         
-        desktopTitle = getDateTimeFormat(state.activeLanguageCode, {
-            month: 'long',
-            day: 'numeric',
-            timeZone: 'UTC'
-        }).format(date);
+        // SOPA Update: Use hoisted options
+        desktopTitle = formatDate(date, OPTS_HEADER_DESKTOP);
     }
     
     setTextContent(ui.headerTitleDesktop, desktopTitle);
     setTextContent(ui.headerTitleMobile, mobileTitle);
     
-    const fullLabel = getDateTimeFormat(state.activeLanguageCode, {
-        weekday: 'long', month: 'long', day: 'numeric', timeZone: 'UTC'
-    }).format(date);
+    // SOPA Update: Use hoisted options
+    const fullLabel = formatDate(date, OPTS_HEADER_ARIA);
     ui.headerTitle.setAttribute('aria-label', fullLabel);
 
     _lastTitleDate = state.selectedDate;

@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -31,12 +30,12 @@
 
 import { state, Habit, HabitTemplate, Frequency, PredefinedHabit, TimeOfDay, STREAK_CONSOLIDATED, TIMES_OF_DAY, FREQUENCIES, LANGUAGES, getHabitDailyInfoForDate } from '../state';
 import { PREDEFINED_HABITS } from '../data/predefinedHabits';
-import { getScheduleForDate, calculateHabitStreak } from '../services/selectors';
+import { getScheduleForDate, calculateHabitStreak, getHabitDisplayInfo } from '../services/selectors';
 import { ui } from './ui';
-import { t, getHabitDisplayInfo, getTimeOfDayName } from '../i18n';
+import { t, getTimeOfDayName, compareStrings, formatDate, formatInteger } from '../i18n'; // PERF: Imported compareStrings, formatDate, formatInteger
 import { HABIT_ICONS, UI_ICONS, getTimeOfDayIcon } from './icons';
 import { setTextContent, updateReelRotaryARIA } from './dom';
-import { escapeHTML, getContrastColor, getDateTimeFormat, parseUTCIsoDate, getTodayUTCIso, getSafeDate } from '../utils';
+import { escapeHTML, getContrastColor, parseUTCIsoDate, getTodayUTCIso, getSafeDate } from '../utils';
 
 // FIX [2025-03-22]: Import setLanguage directly from i18n to avoid cycle with render.ts
 import { setLanguage } from '../i18n';
@@ -48,6 +47,13 @@ const backdropListeners = new Map<HTMLElement, (e: MouseEvent) => void>();
 const closeButtonHandlerMap = new Map<HTMLElement, { buttons: HTMLElement[], handler: () => void }>();
 
 const STATUS_ORDER = { 'active': 0, 'graduated': 1, 'ended': 2 } as const;
+
+// PERFORMANCE [2025-04-13]: Hoisted Intl Options.
+const OPTS_NOTES_DATE: Intl.DateTimeFormatOptions = { 
+    day: 'numeric', 
+    month: 'long', 
+    timeZone: 'UTC' 
+};
 
 /**
  * Abre um modal garantindo acessibilidade e gestão de foco.
@@ -304,7 +310,8 @@ export function setupManageModal() {
                  const lastB = b.habit.scheduleHistory[b.habit.scheduleHistory.length-1].endDate || '';
                  if (lastA !== lastB) return lastB.localeCompare(lastA);
             }
-            return a.name.localeCompare(b.name);
+            // PERFORMANCE [2025-04-12]: Use optimized Collator from i18n
+            return compareStrings(a.name, b.name);
         });
 
         const fragment = document.createDocumentFragment();
@@ -367,7 +374,8 @@ export function openNotesModal(habitId: string, date: string, time: TimeOfDay) {
     
     const { name } = getHabitDisplayInfo(habit, date);
     const dateObj = parseUTCIsoDate(date);
-    const formattedDate = getDateTimeFormat(state.activeLanguageCode, { day: 'numeric', month: 'long', timeZone: 'UTC' }).format(dateObj);
+    // SOPA Update: Use hoisted options
+    const formattedDate = formatDate(dateObj, OPTS_NOTES_DATE);
     const timeName = getTimeOfDayName(time);
 
     setTextContent(ui.notesModalTitle, name);
@@ -463,10 +471,11 @@ export function renderFrequencyOptions() {
     const unit = isInterval ? currentFrequency.unit : (intervalFreqTpl.value.type === 'interval' ? intervalFreqTpl.value.unit : 'days');
     
     const unitText = unit === 'days' ? t('unitDays') : t('unitWeeks');
+    // SOPA Update: Use formatInteger for localized number
     const intervalControlsHTML = `
         <div class="interval-control-group">
             <button type="button" class="stepper-btn" data-action="interval-decrement" aria-label="${t('habitGoalDecrement_ariaLabel')}">-</button>
-            <span class="interval-amount-display">${amount}</span>
+            <span class="interval-amount-display">${formatInteger(amount)}</span>
             <button type="button" class="stepper-btn" data-action="interval-increment" aria-label="${t('habitGoalIncrement_ariaLabel')}">+</button>
             <button type="button" class="unit-toggle-btn" data-action="interval-unit-toggle">${unitText}</button>
         </div>

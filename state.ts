@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -292,6 +291,21 @@ export function invalidateCachesForDateChange(dateISO: string, habitIds: string[
 }
 
 const EMPTY_DAILY_INFO = Object.freeze({});
+
+/**
+ * Checks if the data for a given date is ready to be written to.
+ * Returns true if the data is currently being fetched (decompressing) from archives.
+ * Used to prevent race conditions where a write operation could overwrite archived data
+ * that hasn't been loaded yet.
+ */
+export function isDateLoading(date: string): boolean {
+    const year = date.substring(0, 4);
+    const pendingKey = `${year}_pending`;
+    // If it's archiving (pending key exists), it's not ready.
+    if (state.unarchivedCache.has(pendingKey)) return true;
+    
+    return false;
+}
 
 /**
  * LAZY LOADING ACCESSOR [2025-02-23]:

@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -66,7 +65,8 @@ import {
     exportData,
     importData,
 } from '../habitActions';
-import { t, getHabitDisplayInfo, setLanguage } from '../i18n';
+import { t, setLanguage, formatList } from '../i18n'; // ADDED: formatList
+import { getHabitDisplayInfo } from '../services/selectors';
 import { setupReelRotary } from '../render/rotary';
 import { simpleMarkdownToHTML, pushToOneSignal, getContrastColor, addDays, parseUTCIsoDate, toUTCIsoDateString } from '../utils';
 import { setTextContent } from '../render/dom';
@@ -81,11 +81,13 @@ const _processAndFormatCelebrations = (
     if (pendingIds.length === 0) return '';
     
     // PERFORMANCE: Mapeamento e filtragem em cadeia para preparar string de notificação.
-    const habitNames = pendingIds
+    const habitNamesList = pendingIds
         .map(id => state.habits.find(h => h.id === id))
         .filter(Boolean)
-        .map(h => getHabitDisplayInfo(h!).name)
-        .join(', ');
+        .map(h => getHabitDisplayInfo(h!).name);
+    
+    // SOPA Update: Use formatList for grammatical correctness
+    const habitNames = formatList(habitNamesList);
         
     pendingIds.forEach(id => {
         const celebrationId = `${id}-${streakMilestone}`;

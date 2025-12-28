@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -233,33 +232,6 @@ export function getSafeDate(date: string | undefined | null): string {
 
 
 // --- Formatting & Localization Performance ---
-
-// Cache para instâncias de Intl.DateTimeFormat.
-// A criação desses objetos é custosa (parse de locale data), então reutilizá-los melhora significativamente a performance de renderização
-// em loops (como no calendário e gráficos).
-const dateTimeFormatCache = new Map<string, Intl.DateTimeFormat>();
-
-/**
- * Obtém um formatador de data cacheado para o locale e opções especificados.
- * @param locale O código do idioma (ex: 'pt-BR').
- * @param options As opções de formatação do Intl.DateTimeFormat.
- * @returns Uma instância de Intl.DateTimeFormat.
- */
-export function getDateTimeFormat(locale: string, options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
-    // MICRO-OTIMIZAÇÃO: Geração manual da chave de cache para evitar sobrecarga de JSON.stringify.
-    // Ordenar chaves garante consistência (hit ratio).
-    const keys = Object.keys(options).sort();
-    let optionsKey = '';
-    for (const key of keys) {
-        optionsKey += `${key}:${options[key as keyof Intl.DateTimeFormatOptions]};`;
-    }
-    const key = `${locale}|${optionsKey}`;
-
-    if (!dateTimeFormatCache.has(key)) {
-        dateTimeFormatCache.set(key, new Intl.DateTimeFormat(locale, options));
-    }
-    return dateTimeFormatCache.get(key)!;
-}
 
 // PERFORMANCE: Pre-compile RegEx and Replacement Map
 const ESCAPE_HTML_REGEX = /[&<>"']/g;

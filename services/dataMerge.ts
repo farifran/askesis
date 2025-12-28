@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -152,8 +151,7 @@ export function mergeStates(local: AppState, incoming: AppState): AppState {
     }
 
     // 4. Fusão de Arquivos (Cold Storage)
-    // CRITICAL LOGIC: Arquivos são strings JSON compactadas. Precisamos parsear para mesclar.
-    // PERFORMANCE WARNING: Isso pode ser custoso para históricos de muitos anos.
+    // CRITICAL LOGIC: Manipulação de GZIP vs JSON Legacy.
     if (local.archives) {
         merged.archives = merged.archives || {};
         for (const year in local.archives) {
@@ -161,11 +159,23 @@ export function mergeStates(local: AppState, incoming: AppState): AppState {
                 // Se só existe no local, copia direto (rápido)
                 merged.archives[year] = local.archives[year];
             } else {
-                // Conflito de Arquivos: Ambos têm dados para este ano.
-                // É necessário "hidratar" (JSON.parse), mesclar e "desidratar" (JSON.stringify).
+                const localContent = local.archives[year];
+                const incomingContent = merged.archives[year];
+
+                // GZIP CHECK [2025-04-06]: Se qualquer um dos arquivos for GZIP,
+                // não podemos mesclar sincronamente sem travar a UI (descompressão).
+                // Estratégia: "Incoming Wins" para arquivos históricos comprimidos.
+                // Como arquivos antigos mudam raramente (apenas pruning), assumimos que a nuvem é a autoridade.
+                if (localContent.startsWith('GZIP:') || incomingContent.startsWith('GZIP:')) {
+                    // Mantém o incoming (já copiado no structuredClone inicial).
+                    // Log opcional para debug, mas esperado em operação normal.
+                    continue; 
+                }
+
+                // Legacy JSON: Se ambos forem texto plano, tentamos mesclar.
                 try {
-                    const localYearData = JSON.parse(local.archives[year]);
-                    const incomingYearData = JSON.parse(merged.archives[year]);
+                    const localYearData = JSON.parse(localContent);
+                    const incomingYearData = JSON.parse(incomingContent);
                     
                     // Mescla dia a dia dentro do ano arquivado
                     for (const date in localYearData) {
@@ -176,7 +186,7 @@ export function mergeStates(local: AppState, incoming: AppState): AppState {
                         }
                     }
                     
-                    // Recompacta
+                    // Recompacta (neste caso, mantém JSON pois era legado)
                     merged.archives[year] = JSON.stringify(incomingYearData);
                 } catch (e) {
                     console.error(`Failed to merge archives for year ${year}`, e);

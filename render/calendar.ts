@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -32,8 +31,8 @@
 import { state, DAYS_IN_CALENDAR } from '../state';
 import { calculateDaySummary } from '../services/selectors';
 import { ui } from './ui';
-import { getTodayUTCIso, toUTCIsoDateString, parseUTCIsoDate, getDateTimeFormat, addDays } from '../utils';
-import { getLocaleDayName } from '../i18n';
+import { getTodayUTCIso, toUTCIsoDateString, parseUTCIsoDate, addDays } from '../utils';
+import { getLocaleDayName, formatDate, formatInteger } from '../i18n'; // SOPA Update: formatInteger
 import { setTextContent } from './dom';
 import { CSS_CLASSES, DOM_SELECTORS } from './constants';
 
@@ -45,6 +44,29 @@ let cachedDayElements: HTMLElement[] = [];
 // `cloneNode(true)` é significativamente mais rápido que criar hierarquias DOM via API JS imperativa.
 let dayItemTemplate: HTMLElement | null = null;
 let fullCalendarDayTemplate: HTMLElement | null = null;
+
+// PERFORMANCE [2025-04-13]: Hoisted Intl Options (Zero-Allocation)
+// Define as opções de formatação como constantes para evitar recriação em loops.
+const OPTS_ARIA_DATE: Intl.DateTimeFormatOptions = {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    timeZone: 'UTC'
+};
+
+const OPTS_FULL_CAL_HEADER: Intl.DateTimeFormatOptions = {
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+};
+
+const OPTS_FULL_CAL_ARIA: Intl.DateTimeFormatOptions = {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    timeZone: 'UTC'
+};
 
 /**
  * Singleton Lazy-Loader para o template do item de dia.
@@ -136,14 +158,8 @@ export function updateCalendarDayElement(dayItem: HTMLElement, date: Date, today
         dayItem.setAttribute('tabindex', newTabIndex);
     }
 
-    // PERFORMANCE [2025-01-16]: Intl.DateTimeFormat Cacheado.
-    // Formatação de data é custosa; `getDateTimeFormat` usa memoization interna.
-    const ariaDate = getDateTimeFormat(state.activeLanguageCode, {
-        weekday: 'long',
-        day: 'numeric',
-        month: 'long',
-        timeZone: 'UTC'
-    }).format(date);
+    // PERFORMANCE [2025-01-16]: formatDate (i18n) Cacheado.
+    const ariaDate = formatDate(date, OPTS_ARIA_DATE);
     
     if (dayItem.getAttribute('aria-label') !== ariaDate) {
         dayItem.setAttribute('aria-label', ariaDate);
@@ -172,8 +188,8 @@ export function updateCalendarDayElement(dayItem: HTMLElement, date: Date, today
             if (dayNumber.classList.contains('has-plus') !== showPlus) {
                 dayNumber.classList.toggle('has-plus', showPlus);
             }
-            // PERFORMANCE: `setTextContent` verifica `firstChild.nodeValue` antes de escrever.
-            setTextContent(dayNumber, String(date.getUTCDate()));
+            // SOPA Update: Use formatInteger for localized number
+            setTextContent(dayNumber, formatInteger(date.getUTCDate()));
         }
     }
     
@@ -285,11 +301,8 @@ export function renderFullCalendar() {
     const todayISO = getTodayUTCIso();
 
     const monthDate = new Date(Date.UTC(year, month, 1));
-    ui.fullCalendarMonthYear.textContent = getDateTimeFormat(state.activeLanguageCode, {
-        month: 'long',
-        year: 'numeric',
-        timeZone: 'UTC',
-    }).format(monthDate);
+    // SOPA Update: Use hoisted options
+    ui.fullCalendarMonthYear.textContent = formatDate(monthDate, OPTS_FULL_CAL_HEADER);
 
     const firstDayOfMonth = new Date(Date.UTC(year, month, 1));
     const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
@@ -325,19 +338,12 @@ export function renderFullCalendar() {
         // Estrutura conhecida: div.day-progress-ring > span.day-number
         const ring = dayEl.firstElementChild as HTMLElement;
         const number = ring.firstElementChild as HTMLElement;
-        number.textContent = String(day);
+        // SOPA Update: Use formatInteger
+        number.textContent = formatInteger(day);
         
         fragment.appendChild(dayEl);
         totalGridCells++;
     }
-
-    const ariaDateFormatter = getDateTimeFormat(state.activeLanguageCode, {
-        weekday: 'long',
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-        timeZone: 'UTC'
-    });
 
     // MEMORY OPTIMIZATION [2025-03-04]: Mutable Date Object.
     // Usa um único objeto Date mutável para o loop. Reduz pressão no Garbage Collector
@@ -361,7 +367,8 @@ export function renderFullCalendar() {
         if (isoDate === todayISO) dayEl.classList.add(CSS_CLASSES.TODAY);
         
         dayEl.setAttribute('aria-pressed', String(isSelected));
-        dayEl.setAttribute('aria-label', ariaDateFormatter.format(iteratorDate));
+        // SOPA Update: Use hoisted options
+        dayEl.setAttribute('aria-label', formatDate(iteratorDate, OPTS_FULL_CAL_ARIA));
         dayEl.setAttribute('tabindex', isSelected ? '0' : '-1');
 
         // Locate children in the cloned template structure (Fast access)
@@ -371,7 +378,8 @@ export function renderFullCalendar() {
         // CSS Variables update
         ringEl.style.setProperty('--completed-percent', `${completedPercent}%`);
         ringEl.style.setProperty('--snoozed-percent', `${snoozedPercent}%`);
-        numberEl.textContent = String(day);
+        // SOPA Update: Use formatInteger
+        numberEl.textContent = formatInteger(day);
         
         fragment.appendChild(dayEl);
         totalGridCells++;
@@ -389,7 +397,8 @@ export function renderFullCalendar() {
         
         const ring = dayEl.firstElementChild as HTMLElement;
         const number = ring.firstElementChild as HTMLElement;
-        number.textContent = String(day);
+        // SOPA Update: Use formatInteger
+        number.textContent = formatInteger(day);
         
         fragment.appendChild(dayEl);
     }
