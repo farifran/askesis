@@ -28,7 +28,6 @@
  *    o console de desenvolvimento nem afetar métricas de performance locais.
  */
 
-import { inject } from '@vercel/analytics';
 import './index.css';
 import { state, AppState } from './state';
 import { loadState, persistStateLocally, registerSyncHandler } from './services/persistence';
@@ -42,6 +41,14 @@ import { hasLocalSyncKey, initAuth } from './services/api';
 import { updateAppBadge } from './services/badge';
 import { mergeStates } from './services/dataMerge';
 import { setupMidnightLoop } from './utils';
+
+// TYPE SAFETY: Extensão global para o Watchdog e Error Handler
+declare global {
+    interface Window {
+        bootWatchdog?: number;
+        showFatalError?: (msg: string, isWatchdog?: boolean) => void;
+    }
+}
 
 // --- SERVICE WORKER REGISTRATION ---
 // PWA CORE: Garante capacidade Offline-First.
@@ -72,16 +79,11 @@ const registerServiceWorker = () => {
 
 // --- PRIVATE HELPERS (INIT ORCHESTRATION) ---
 
-async function setupBase() {
-    initAuth(); // Inicializa a autenticação (lê a chave de sincronização) antes de carregar o estado
-    await initI18n(); // Carrega as traduções (Network Request ou Cache)
-}
-
 /**
  * CRITICAL LOGIC: State Reconciliation / Smart Merge.
  * Esta função decide a "Verdade" dos dados do usuário.
  * 1. Tenta carga Local (Async IDB).
- * 2. Se houver chave, tenta carga Nuvem (Assíncrona).
+ * 2. Se houver chave, tentar carga Nuvem (Assíncrona).
  * 3. Se houver conflito (ambos existem), executa Merge baseado em timestamps (`lastModified`).
  * DO NOT REFACTOR: Alterar a ordem ou a lógica de comparação pode causar perda de dados (Data Loss).
  */
@@ -101,6 +103,7 @@ async function loadInitialState() {
     if (hasLocalSyncKey()) {
         try {
             // PERFORMANCE: Network blocking call. UI Loader is visible here.
+            // Note: Cloud fetch triggers speculative worker pre-warming internally.
             const cloudState = await fetchStateFromCloud();
 
             if (cloudState && localState) {
@@ -165,6 +168,13 @@ function setupAppListeners() {
 }
 
 function finalizeInit(loader: HTMLElement | null) {
+    // ROBUSTNESS: Desarma o Watchdog Timer assim que a inicialização é bem-sucedida.
+    // Isso previne que a mensagem de erro apareça após o app já estar carregado.
+    if (typeof window.bootWatchdog !== 'undefined') {
+        clearTimeout(window.bootWatchdog);
+        window.bootWatchdog = undefined; // Libera referência
+    }
+
     if (loader) {
         // UX: Transição suave (Fade-out) para evitar "Pop-in" agressivo do conteúdo.
         loader.classList.add('hidden');
@@ -174,15 +184,30 @@ function finalizeInit(loader: HTMLElement | null) {
     // FIX [2025-02-28]: Injeta Analytics apenas em produção para evitar erros 404 no console de desenvolvimento.
     // O script /_vercel/insights/script.js é virtual e só existe na infraestrutura da Vercel.
     // PERFORMANCE: Injeção tardia para não bloquear a thread principal durante o boot.
+    // FIX [2025-04-14]: Indirection via relative import avoids "Module name does not resolve" errors
+    // in development where bundlers might leave dead-code bare imports untouched.
     if (process.env.NODE_ENV === 'production') {
-        inject(); 
+        import('./services/analytics').then(({ initAnalytics }) => {
+            initAnalytics();
+        }).catch(err => {
+            console.warn('Analytics skipped:', err);
+        });
     }
 }
 
 // --- MAIN INITIALIZATION ---
 async function init(loader: HTMLElement | null) {
-    await setupBase(); // I18n & Auth
-    await loadInitialState(); // Data IO & Merge (Async IDB)
+    initAuth(); // Inicializa a autenticação (lê a chave de sincronização)
+    
+    // PERFORMANCE [2025-04-14]: Parallel Bootstrapping (SOPA).
+    // Executa o download de traduções (Network) e o carregamento do banco de dados (Disk IO)
+    // simultaneamente. Isso reduz o tempo total de boot pela duração da tarefa mais lenta,
+    // em vez da soma de ambas.
+    await Promise.all([
+        initI18n(),        // Async Fetch
+        loadInitialState() // Async IndexedDB Read (+ Optional Cloud Fetch)
+    ]);
+
     handleFirstTimeUser(); // Onboarding logic
     renderApp(); // First Paint (DOM Hydration)
     setupAppListeners(); // Event Binding
@@ -198,8 +223,14 @@ const startApp = () => {
     init(initialLoader).catch(err => {
         console.error("Failed to initialize application:", err);
         // UX: Fallback visual em caso de erro crítico no boot.
-        if(initialLoader) {
-            initialLoader.innerHTML = '<h2>Falha ao carregar a aplicação. Por favor, tente novamente.</h2>'
+        // OTIMIZAÇÃO: Reutiliza a função global de erro se disponível para usar o DOM pré-alocado.
+        if (window.showFatalError) {
+            window.showFatalError("Ocorreu um erro interno na inicialização.");
+        } else if(initialLoader) {
+            // Fallback manual se o script global falhou
+            const svg = initialLoader.querySelector('svg');
+            if(svg) svg.style.animation = 'none';
+            initialLoader.innerHTML = '<div style="color:#ff6b6b;padding:2rem;text-align:center;"><h3>Falha Crítica</h3><button onclick="location.reload()">Tentar Novamente</button></div>';
         }
     });
 };

@@ -219,9 +219,16 @@ function updateHotCache(langCode: string) {
                 evo: new Intl.NumberFormat(langCode, { minimumFractionDigits: 1, maximumFractionDigits: 1 })
             };
         } catch (e) {
-            // Fallback seguro
-            const pt = new Intl.NumberFormat('pt');
-            numberFormatCache[langCode] = { int: pt, dec: pt, evo: pt };
+            // Fallback seguro com as mesmas opções de formatação
+            const optsInt = { maximumFractionDigits: 0 };
+            const optsDec = { minimumFractionDigits: 2, maximumFractionDigits: 2 };
+            const optsEvo = { minimumFractionDigits: 1, maximumFractionDigits: 1 };
+            
+            numberFormatCache[langCode] = { 
+                int: new Intl.NumberFormat('pt', optsInt), 
+                dec: new Intl.NumberFormat('pt', optsDec), 
+                evo: new Intl.NumberFormat('pt', optsEvo) 
+            };
         }
     }
     currentNumberFormat = numberFormatCache[langCode];

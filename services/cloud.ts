@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -311,6 +312,11 @@ export async function fetchStateFromCloud(): Promise<AppState | undefined> {
 
     const syncKey = getSyncKey();
     if (!syncKey) return undefined;
+
+    // PERFORMANCE [2025-04-14]: Speculative Worker Pre-warming (SOPA).
+    // Inicia o carregamento e parsing do Worker em paralelo com a requisição de rede.
+    // Isso remove o "tempo morto" de inicialização do worker após o retorno da API.
+    prewarmWorker();
 
     try {
         const response = await apiFetch('/api/sync', {}, true);
