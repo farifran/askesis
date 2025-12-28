@@ -12,14 +12,12 @@
  * Implementação baseada em IndexedDB (Assíncrono).
  * Substitui o localStorage bloqueante para permitir armazenamento virtualmente ilimitado e sem travamentos de UI.
  * 
- * ARQUITETURA (Hot/Cold Storage & IDB):
- * - **IndexedDB Wrapper:** Implementação "Zero-Dependency" de um wrapper Promise-based para o IDB.
- * - **GZIP Archiving:** Dados históricos ("Cold Storage") são comprimidos (GZIP) antes de salvar,
- *   reduzindo uso de espaço e banda de sincronização.
+ * ARQUITETURA (Pure I/O Layer):
+ * - **Responsabilidade Única:** Leitura e Escrita no IndexedDB.
+ * - **Zero Dependencies:** Não depende mais de `cloud.ts` ou Workers, quebrando ciclos de dependência.
  * 
  * DEPENDÊNCIAS CRÍTICAS:
  * - `state.ts`: Estrutura de dados.
- * - `utils.ts`: Funções utilitárias de data.
  */
 
 import { 
@@ -30,14 +28,7 @@ import {
     APP_VERSION,
     getPersistableState 
 } from '../state';
-import { 
-    toUTCIsoDateString, 
-    parseUTCIsoDate, 
-    addDays, 
-    getTodayUTCIso
-} from '../utils';
 import { migrateState } from './migration';
-import { runWorkerTask } from './cloud';
 
 // CONFIGURAÇÃO DO INDEXEDDB
 const DB_NAME = 'AskesisDB';
@@ -208,101 +199,10 @@ async function idbDelete(key: string, retries = 2): Promise<void> {
     }
 }
 
-// --- ARCHIVING & DATA HYGIENE ---
-
-// ARCHIVE THRESHOLD [2025-02-23]: Data older than this (in days) moves to cold storage.
-const ARCHIVE_THRESHOLD_DAYS = 90; 
-
 let syncHandler: ((state: AppState) => void) | null = null;
 
 export function registerSyncHandler(handler: (state: AppState) => void) {
     syncHandler = handler;
-}
-
-/**
- * ARCHIVE LOGIC: Moves old daily data to cold storage.
- * DATA INTEGRITY FIX [2025-04-04]: Implements Post-Worker Validation to prevent data loss from race conditions.
- */
-function archiveOldData() {
-    const runArchive = async () => {
-        const today = parseUTCIsoDate(getTodayUTCIso());
-        const thresholdDate = addDays(today, -ARCHIVE_THRESHOLD_DAYS);
-        const thresholdISO = toUTCIsoDateString(thresholdDate);
-        
-        // 1. Identificar candidatos (Scan leve)
-        const yearBuckets: Record<string, { additions: Record<string, Record<string, HabitDailyInfo>>, base?: any }> = {};
-        const keysToRemove: string[] = [];
-
-        for (const dateStr of Object.keys(state.dailyData)) {
-            if (dateStr < thresholdISO) {
-                const year = dateStr.substring(0, 4);
-                if (!yearBuckets[year]) {
-                    yearBuckets[year] = { additions: {} };
-                    if (state.unarchivedCache.has(year)) {
-                        yearBuckets[year].base = state.unarchivedCache.get(year);
-                    } else if (state.archives[year]) {
-                        yearBuckets[year].base = state.archives[year];
-                    }
-                }
-                yearBuckets[year].additions[dateStr] = state.dailyData[dateStr];
-                keysToRemove.push(dateStr);
-            }
-        }
-
-        if (keysToRemove.length === 0) return;
-
-        // 2. Offload para Worker (CPU Heavy)
-        try {
-            console.log(`Offloading archive task for ${keysToRemove.length} days to worker...`);
-            type ArchiveOutput = Record<string, string>; // Ano -> GZIP
-            const newArchives = await runWorkerTask<ArchiveOutput>('archive', yearBuckets);
-
-            let totalMoved = 0;
-
-            // 3. ATOMIC VALIDATION & COMMIT (per year)
-            for (const year in newArchives) {
-                const additionsForYear = yearBuckets[year].additions;
-                let isYearStale = false;
-
-                // VALIDATE: Check all days sent to worker against current state for this year
-                for (const dateStr in additionsForYear) {
-                    const originalDataSent = additionsForYear[dateStr];
-                    const currentDataInState = state.dailyData[dateStr];
-                    if (JSON.stringify(originalDataSent) !== JSON.stringify(currentDataInState)) {
-                        isYearStale = true;
-                        console.warn(`[ARCHIVE] Stale data detected for year ${year} (date: ${dateStr}). Aborting archival for this year to prevent data loss.`);
-                        break; 
-                    }
-                }
-
-                // COMMIT or ROLLBACK
-                if (!isYearStale) {
-                    // Commit: Data is fresh, apply changes
-                    state.archives[year] = newArchives[year];
-                    state.unarchivedCache.delete(year);
-                    
-                    const keysForThisYear = Object.keys(additionsForYear);
-                    keysForThisYear.forEach(k => delete state.dailyData[k]);
-                    totalMoved += keysForThisYear.length;
-                }
-                // If stale, we do nothing for this year. The data remains in hot storage and will be re-processed next cycle.
-            }
-            
-            if (totalMoved > 0) {
-                 console.log(`Archiving complete. Moved ${totalMoved} records.`);
-                 await saveState(); // Persist changes async
-            }
-
-        } catch (e) {
-            console.error("Archive task failed in worker:", e);
-        }
-    };
-
-    if ('requestIdleCallback' in window) {
-        requestIdleCallback(() => { runArchive().catch(console.error); }, { timeout: 10000 });
-    } else {
-        setTimeout(() => { runArchive().catch(console.error); }, 5000);
-    }
 }
 
 function pruneOrphanedDailyData(habits: Habit[], dailyData: Record<string, Record<string, HabitDailyInfo>>) {
@@ -426,8 +326,6 @@ export async function loadState(cloudState?: AppState): Promise<AppState | null>
         state.uiDirtyState.habitListStructure = true;
         state.uiDirtyState.chartData = true;
         
-        archiveOldData();
-
         return migrated;
     }
     return null;

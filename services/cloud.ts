@@ -32,11 +32,10 @@
 
 import { AppState, state, getPersistableState } from '../state';
 import { loadState, persistStateLocally } from './persistence';
-import { pushToOneSignal, generateUUID } from '../utils';
+import { generateUUID } from '../utils';
 import { ui } from '../render/ui';
 import { t } from '../i18n';
 import { hasLocalSyncKey, getSyncKey, apiFetch } from './api';
-import { renderApp, updateNotificationUI } from '../render';
 import { mergeStates } from './dataMerge';
 
 // PERFORMANCE: Debounce para evitar salvar na nuvem a cada pequena alteração (ex: digitar uma nota).
@@ -160,21 +159,11 @@ interface ServerPayload {
 export function setSyncStatus(statusKey: 'syncSaving' | 'syncSynced' | 'syncError' | 'syncInitial') {
     state.syncState = statusKey;
     // PERFORMANCE: Atualização direta do DOM, ignorando o ciclo de renderização completo se possível.
+    // ViewModel Pattern: Cloud service updates UI state directly for performance, 
+    // bypassing full render loop for status text.
     if (ui.syncStatus) {
         ui.syncStatus.textContent = t(statusKey);
     }
-}
-
-/**
- * Configura os listeners de notificação e atualiza a UI inicial.
- */
-export function setupNotificationListeners() {
-    pushToOneSignal((OneSignal: any) => {
-        OneSignal.Notifications.addEventListener('permissionChange', () => {
-            setTimeout(updateNotificationUI, 500);
-        });
-        updateNotificationUI();
-    });
 }
 
 /**
@@ -205,8 +194,8 @@ async function resolveConflictWithServerState(serverPayload: ServerPayload) {
         await persistStateLocally(mergedState);
         await loadState(mergedState);
         
-        // 4. Atualiza a UI
-        renderApp();
+        // 4. Atualiza a UI via Event Bus (Desacoplamento)
+        document.dispatchEvent(new CustomEvent('render-app'));
         setSyncStatus('syncSynced');
         document.dispatchEvent(new CustomEvent('habitsChanged'));
 

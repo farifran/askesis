@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -14,6 +15,7 @@
  * - **Cold Storage Compression:** Suporte a arquivos comprimidos GZIP.
  * - **Lazy Async Hydration:** Se um arquivo comprimido for solicitado, o sistema retorna um objeto vazio
  *   enquanto dispara a descompressão em background, re-renderizando a UI quando pronto.
+ * - **V8 Optimization (Monomorphism):** Uso estrito de Factories para garantir formas de objeto estáveis.
  */
 
 import { addDays, getTodayUTC, getTodayUTCIso, decompressString } from './utils';
@@ -26,10 +28,13 @@ export type Frequency =
     | { type: 'interval'; unit: 'days' | 'weeks'; amount: number }
     | { type: 'specific_days_of_week'; days: number[] }; // Sun=0, Mon=1, ...
 
+// PERF: Shape Stability Interface
+// Todas as instâncias devem ter TODAS as chaves inicializadas (mesmo undefined)
+// para garantir Monomorfismo no V8.
 export interface HabitDayData {
     status: HabitStatus;
-    goalOverride?: number;
-    note?: string;
+    goalOverride: number | undefined; // Smi (Small Integer) preferred
+    note: string | undefined;
 }
 
 export type HabitDailyInstances = Partial<Record<TimeOfDay, HabitDayData>>;
@@ -37,7 +42,7 @@ export type HabitDailyInstances = Partial<Record<TimeOfDay, HabitDayData>>;
 // The data for a single habit on a single day
 export interface HabitDailyInfo {
     instances: HabitDailyInstances;
-    dailySchedule?: TimeOfDay[]; // Override for habit.times for this day
+    dailySchedule: TimeOfDay[] | undefined; // Override for habit.times for this day
 }
 
 // CRITICAL LOGIC: Time-Travel Structure.
@@ -123,6 +128,7 @@ export interface AppState {
 
 
 // --- CONSTANTS ---
+// PERF: Bitwise compatible integers where possible.
 export const APP_VERSION = 6; 
 export const DAYS_IN_CALENDAR = 61;
 export const STREAK_SEMI_CONSOLIDATED = 21;
@@ -145,14 +151,36 @@ export const FREQUENCIES = [
     { labelKey: 'freqSpecificDaysOfWeek', value: { type: 'specific_days_of_week', days: [] } }
 ] as const;
 
+// --- V8 OPTIMIZATION HELPERS ---
+
+// PERF: Static Lookup Table (Frozen) for O(1) transitions.
+// Eliminates object allocation on every function call.
+const STATUS_TRANSITIONS = Object.freeze({
+    pending: 'completed',
+    completed: 'snoozed',
+    snoozed: 'pending',
+} as const);
+
+// PERF: Monomorphic Factory for HabitDailyInfo.
+// Ensures all objects have the exact same hidden class by initializing all fields.
+const _createMonomorphicDailyInfo = (): HabitDailyInfo => ({
+    instances: {},
+    dailySchedule: undefined
+});
+
+// PERF: Monomorphic Factory for HabitDayData.
+// Critical: Pre-allocates optional fields as undefined to prevent
+// hidden class transitions when these fields are set later.
+const _createMonomorphicInstance = (): HabitDayData => ({
+    status: 'pending',
+    goalOverride: undefined,
+    note: undefined
+});
+
 // --- HELPERS ---
 export function getNextStatus(currentStatus: HabitStatus): HabitStatus {
-    const transitions: Record<HabitStatus, HabitStatus> = {
-        pending: 'completed',
-        completed: 'snoozed',
-        snoozed: 'pending',
-    };
-    return transitions[currentStatus];
+    // PERF: Fast LUT access.
+    return STATUS_TRANSITIONS[currentStatus];
 }
 
 // --- APPLICATION STATE ---
@@ -212,6 +240,7 @@ export const state: {
     scheduleCache: new Map(),
     activeHabitsCache: new Map(),
     daySummaryCache: new Map(),
+    // PERF: Pre-allocate array size? Not worth for dynamic resizing logic, kept standard.
     calendarDates: Array.from({ length: DAYS_IN_CALENDAR }, (_, i) => addDays(getTodayUTC(), i - 30)),
     selectedDate: getTodayUTCIso(),
     activeLanguageCode: 'pt',
@@ -285,11 +314,13 @@ export function invalidateCachesForDateChange(dateISO: string, habitIds: string[
     state.uiDirtyState.chartData = true;
     state.daySummaryCache.delete(dateISO);
     
-    habitIds.forEach(id => {
+    // Optimized Loop: forEach is slightly slower than for..of but mostly negligible for small arrays.
+    for (const id of habitIds) {
         state.streaksCache.delete(id);
-    });
+    }
 }
 
+// PERF: Freeze empty object to ensure reference equality checks pass quickly
 const EMPTY_DAILY_INFO = Object.freeze({});
 
 /**
@@ -317,25 +348,26 @@ export function isDateLoading(date: string): boolean {
  */
 export function getHabitDailyInfoForDate(date: string): Record<string, HabitDailyInfo> {
     // 1. Check Hot Storage (Fastest)
-    if (state.dailyData[date]) {
-        return state.dailyData[date];
+    const hotData = state.dailyData[date];
+    if (hotData) {
+        return hotData;
     }
 
     // 2. Check Archive
+    // PERF: Substring is faster than date parsing
     const year = date.substring(0, 4);
     
     // Warm Cache (Memory)
-    if (state.unarchivedCache.has(year)) {
-        const yearData = state.unarchivedCache.get(year)!;
-        return yearData[date] || (EMPTY_DAILY_INFO as Record<string, HabitDailyInfo>);
+    const cachedYear = state.unarchivedCache.get(year);
+    if (cachedYear) {
+        return cachedYear[date] || (EMPTY_DAILY_INFO as Record<string, HabitDailyInfo>);
     }
 
     // Cold Storage Check
-    if (state.archives[year]) {
-        const raw = state.archives[year];
-        
+    const rawArchive = state.archives[year];
+    if (rawArchive) {
         // NEW: GZIP Handling (Async Hydration)
-        if (raw.startsWith('GZIP:')) {
+        if (rawArchive.startsWith('GZIP:')) {
             const pendingKey = `${year}_pending`;
             
             // Check Lock: Se já estamos descomprimindo, não inicia outra promessa.
@@ -346,7 +378,7 @@ export function getHabitDailyInfoForDate(date: string): Record<string, HabitDail
                 console.log(`Decompressing archive for year ${year} in background...`);
                 
                 // Fire and Forget (Async)
-                decompressString(raw.substring(5)).then(json => {
+                decompressString(rawArchive.substring(5)).then(json => {
                     try {
                         const parsedYearData = JSON.parse(json);
                         // Save to Cache
@@ -379,7 +411,7 @@ export function getHabitDailyInfoForDate(date: string): Record<string, HabitDail
             try {
                 // PERFORMANCE WARNING: JSON.parse on main thread for large files.
                 // Only happens for old archives not yet converted to GZIP.
-                const parsedYearData = JSON.parse(raw) as Record<string, Record<string, HabitDailyInfo>>;
+                const parsedYearData = JSON.parse(rawArchive) as Record<string, Record<string, HabitDailyInfo>>;
                 state.unarchivedCache.set(year, parsedYearData);
                 return parsedYearData[date] || (EMPTY_DAILY_INFO as Record<string, HabitDailyInfo>);
             } catch (e) {
@@ -392,11 +424,13 @@ export function getHabitDailyInfoForDate(date: string): Record<string, HabitDail
 }
 
 export function ensureHabitDailyInfo(date: string, habitId: string): HabitDailyInfo {
-    if (!state.dailyData[date]) {
+    // Check key existence directly to avoid prototype chain lookup overhead
+    if (!Object.prototype.hasOwnProperty.call(state.dailyData, date)) {
         const archivedDay = getHabitDailyInfoForDate(date);
         
         if (archivedDay !== EMPTY_DAILY_INFO) {
             // Thaw: Copy from archive to hot storage
+            // PERF: structuredClone is usually fast enough for day-sized chunks
             state.dailyData[date] = structuredClone(archivedDay);
         } else {
             // New day
@@ -404,12 +438,22 @@ export function ensureHabitDailyInfo(date: string, habitId: string): HabitDailyI
         }
     }
 
-    state.dailyData[date][habitId] ??= { instances: {} };
-    return state.dailyData[date][habitId];
+    const dayData = state.dailyData[date];
+    if (!dayData[habitId]) {
+        // PERF: Use Factory for Shape Stability
+        dayData[habitId] = _createMonomorphicDailyInfo();
+    }
+    return dayData[habitId];
 }
 
 export function ensureHabitInstanceData(date: string, habitId: string, time: TimeOfDay): HabitDayData {
-    ensureHabitDailyInfo(date, habitId);
-    state.dailyData[date][habitId].instances[time] ??= { status: 'pending' };
-    return state.dailyData[date][habitId].instances[time]!;
+    // Inlined call to ensureHabitDailyInfo logic for Hot Path optimization? 
+    // No, keep modular for readability unless profiling shows significant overhead.
+    const habitInfo = ensureHabitDailyInfo(date, habitId);
+    
+    if (!habitInfo.instances[time]) {
+        // PERF: Use Factory for Shape Stability
+        habitInfo.instances[time] = _createMonomorphicInstance();
+    }
+    return habitInfo.instances[time]!;
 }

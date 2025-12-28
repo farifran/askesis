@@ -34,9 +34,9 @@ import { loadState, persistStateLocally, registerSyncHandler } from './services/
 import { renderApp, initI18n } from './render';
 import { setupEventListeners } from './listeners';
 // I18N moved to render.ts to fix circular dependency
-import { createDefaultHabit, handleDayTransition } from './habitActions';
+import { createDefaultHabit, handleDayTransition, performArchivalCheck } from './habitActions';
 import { initSync } from './listeners/sync';
-import { fetchStateFromCloud, setupNotificationListeners, syncStateWithCloud } from './services/cloud';
+import { fetchStateFromCloud, syncStateWithCloud } from './services/cloud';
 import { hasLocalSyncKey, initAuth } from './services/api';
 import { updateAppBadge } from './services/badge';
 import { mergeStates } from './services/dataMerge';
@@ -156,7 +156,6 @@ function setupAppListeners() {
     registerSyncHandler(syncStateWithCloud);
     
     setupEventListeners();
-    setupNotificationListeners();
     initSync();
     
     // BUGFIX: Garante que o emblema da PWA (App Badge) seja atualizado em tempo real.
@@ -180,6 +179,11 @@ function finalizeInit(loader: HTMLElement | null) {
         loader.classList.add('hidden');
         loader.addEventListener('transitionend', () => loader.remove());
     }
+    
+    // DATA HYGIENE: Trigger archival process after boot (Low Priority).
+    // This is done here to ensure the worker is ready and the main thread is free.
+    // Moved from persistence.ts to avoid circular dependencies with cloud module.
+    performArchivalCheck();
     
     // FIX [2025-02-28]: Injeta Analytics apenas em produção para evitar erros 404 no console de desenvolvimento.
     // O script /_vercel/insights/script.js é virtual e só existe na infraestrutura da Vercel.
@@ -212,7 +216,7 @@ async function init(loader: HTMLElement | null) {
     renderApp(); // First Paint (DOM Hydration)
     setupAppListeners(); // Event Binding
     updateAppBadge(); // Define o emblema inicial
-    finalizeInit(loader); // Cleanup & Analytics
+    finalizeInit(loader); // Cleanup & Analytics & Archival
 }
 
 registerServiceWorker();

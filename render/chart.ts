@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -18,16 +19,9 @@
  * - **Lazy Layout:** Medições de geometria (getBoundingClientRect) são cacheadas e invalidadas apenas no resize,
  *   evitando "Layout Thrashing" durante a interação do mouse.
  * 
- * DEPENDÊNCIAS CRÍTICAS:
- * - `state.ts`: Fonte da verdade dos dados.
- * - `selectors.ts`: Lógica de cálculo de estatísticas diárias.
- * - `ui.ts`: Referências aos elementos SVG no DOM.
- * 
  * DECISÕES TÉCNICAS:
- * 1. **SVG vs Canvas:** Optou-se por SVG para garantir nitidez em qualquer resolução (Retina) e acessibilidade,
- *    já que a complexidade do gráfico (30 pontos) é baixa o suficiente para não gargalar o DOM.
- * 2. **QuadTree Implícita:** A detecção de hover usa matemática simples (eixo X) baseada na geometria cacheada,
- *    em vez de event listeners em cada ponto ou `document.elementFromPoint`.
+ * 1. **SVG vs Canvas:** Optou-se por SVG para garantir nitidez em qualquer resolução (Retina) e acessibilidade.
+ * 2. **Smi Optimization:** Loops de cálculo usam inteiros e lógica flat para evitar alocação de objetos temporários.
  */
 
 import { state, isChartDataDirty } from '../state';
@@ -38,16 +32,11 @@ import { addDays, getTodayUTCIso, parseUTCIsoDate, toUTCIsoDateString } from '..
 
 const CHART_DAYS = 30;
 const INITIAL_SCORE = 100;
-// PHYSICS ADJUSTMENT [2025-03-22]: Increased from 0.015 to 0.025 to make movements more significant visually.
-// 2 consecutive days = ~5% growth (approx 60% of visual range in typical zoom).
-// 3 consecutive days = ~7.6% growth (approx 80-90% of visual range).
 const MAX_DAILY_CHANGE_RATE = 0.025; 
-const PLUS_BONUS_MULTIPLIER = 1.5; // "Plus" days move the needle 50% more than normal days.
+const PLUS_BONUS_MULTIPLIER = 1.5; 
 
 // VISUAL CONSTANTS
-// LAYOUT UPDATE [2025-03-25]: Ajustado para 45px para alinhar com o design de sobreposição do cabeçalho.
 const SVG_HEIGHT = 45; 
-// LAYOUT UPDATE [2025-03-26]: Padding direito mantido em 0 para largura total.
 const CHART_PADDING = { top: 5, right: 0, bottom: 5, left: 3 };
 
 // PERFORMANCE [2025-04-13]: Hoisted Intl Options.
@@ -74,7 +63,7 @@ const OPTS_TOOLTIP_DATE: Intl.DateTimeFormatOptions = {
 
 type ChartDataPoint = {
     date: string;
-    timestamp: number; // PERFORMANCE [2025-03-09]: Pre-calculated timestamp for tooltips
+    timestamp: number;
     value: number;
     completedCount: number;
     scheduledCount: number;
@@ -86,8 +75,6 @@ type ChartScales = {
 };
 
 // --- OBJECT POOL (PERFORMANCE) ---
-// Pre-allocate objects once to avoid Garbage Collection pressure during high-frequency updates.
-// PERFORMANCE: Evita alocação de 30 objetos a cada renderização. O array é fixo e reciclado.
 const chartDataPool: ChartDataPoint[] = Array.from({ length: CHART_DAYS }, () => ({
     date: '',
     timestamp: 0,
@@ -101,18 +88,13 @@ let lastChartData: ChartDataPoint[] = [];
 let chartMetadata = { minVal: 0, maxVal: 100, valueRange: 100 };
 
 // Cache de geometria do gráfico (Evita Reflow no hot-path)
-// CRITICAL LOGIC: A leitura de geometria síncrona força o navegador a recalcular o layout.
-// Armazenamos isso para ler apenas quando necessário (resize/init).
 let cachedChartRect: DOMRect | null = null;
-// PERFORMANCE [2025-03-09]: Cache chart width to avoid measuring DOM on every data update
 let currentChartWidth = 0;
 
-// MEMOIZATION STATE [2025-03-18]: Tracks what was last painted to the DOM to avoid redundant work.
-// DO NOT REFACTOR: Garante que _updateChartDOM aborte cedo se a referência de dados e largura forem idênticas.
+// MEMOIZATION STATE
 let renderedDataRef: ChartDataPoint[] | null = null;
 let renderedWidth = 0;
 
-// BUGFIX: Módulo-scoped para permitir reset externo quando os dados mudam
 let lastRenderedPointIndex = -1;
 
 // Controle de visibilidade e observadores
@@ -121,42 +103,45 @@ let isChartDirty = false;
 let chartObserver: IntersectionObserver | null = null;
 let resizeObserver: ResizeObserver | null = null;
 
-// INTERACTION STATE [2025-02-02]: Hoisted to module scope to allow external re-render triggers.
 let rafId: number | null = null;
 let inputClientX = 0;
 
 
 function calculateChartData(): ChartDataPoint[] {
     const endDate = parseUTCIsoDate(state.selectedDate);
-    // OPTIMIZATION: Reuse iterator object instead of creating new Dates inside loop where possible,
-    // though here we need specific timestamps.
+    // OPTIMIZATION: Start date is (EndDate - 29 days).
     const iteratorDate = addDays(endDate, -(CHART_DAYS - 1));
     const todayISO = getTodayUTCIso();
 
     let previousDayValue = INITIAL_SCORE;
 
-    // PERFORMANCE: Loop manual sobre o pool pré-alocado.
-    // Evita .map() que criaria novos arrays e objetos.
-    for (let i = 0; i < CHART_DAYS; i++) {
+    // PERFORMANCE: Raw Loop over pool.
+    // BCE: i < CHART_DAYS (constante 30).
+    for (let i = 0; i < CHART_DAYS; i = (i + 1) | 0) {
         const currentDateISO = toUTCIsoDateString(iteratorDate);
-        // OPTIMIZATION [2025-03-13]: Pass iteratorDate object to avoid re-parsing inside selectors.
-        // LOGIC UPDATE: Destructure 'showPlusIndicator' to detect overachievement.
-        const { total: scheduledCount, completed: completedCount, pending: pendingCount, showPlusIndicator } = calculateDaySummary(currentDateISO, iteratorDate);
-        const hasPending = pendingCount > 0;
+        
+        // Pass iteratorDate object to avoid re-parsing inside selectors.
+        // calculateDaySummary uses caches efficiently internally.
+        const summary = calculateDaySummary(currentDateISO, iteratorDate);
+        const scheduledCount = summary.total;
+        const completedCount = summary.completed;
+        const pendingCount = summary.pending;
+        const showPlusIndicator = summary.showPlusIndicator;
+
         const isToday = currentDateISO === todayISO;
         const isFuture = currentDateISO > todayISO;
 
         let currentValue: number;
         
-        if (isFuture || (isToday && hasPending)) {
+        if (isFuture || (isToday && pendingCount > 0)) {
+            // Se futuro ou hoje ainda pendente, mantém o score estável (plateau)
             currentValue = previousDayValue;
         } else if (scheduledCount > 0) {
             const completionRatio = completedCount / scheduledCount;
             // Base performance factor: -1.0 (0%) to 1.0 (100%)
             let performanceFactor = (completionRatio - 0.5) * 2;
             
-            // PHYSICS UPDATE [2025-03-22]: "Plus" days get a turbo boost.
-            // This ensures they represent a significant peak in the chart.
+            // Bonus logic
             if (showPlusIndicator) {
                 performanceFactor = 1.0 * PLUS_BONUS_MULTIPLIER;
             }
@@ -164,10 +149,11 @@ function calculateChartData(): ChartDataPoint[] {
             const dailyChange = performanceFactor * MAX_DAILY_CHANGE_RATE;
             currentValue = previousDayValue * (1 + dailyChange);
         } else {
+            // Dias sem hábitos agendados mantêm o score (plateau)
             currentValue = previousDayValue;
         }
         
-        // OBJECT POOLING: Update existing object instead of creating a new one
+        // Update POOL directly
         const point = chartDataPool[i];
         point.date = currentDateISO;
         point.timestamp = iteratorDate.getTime();
@@ -177,9 +163,10 @@ function calculateChartData(): ChartDataPoint[] {
 
         previousDayValue = currentValue;
         
+        // Increment Date (Mutable)
         iteratorDate.setUTCDate(iteratorDate.getUTCDate() + 1);
     }
-    // Return the reference to the pool
+    
     return chartDataPool;
 }
 
@@ -188,25 +175,22 @@ function _calculateChartScales(chartData: ChartDataPoint[], chartWidthPx: number
     const chartWidth = chartWidthPx - padding.left - padding.right;
     const chartHeight = SVG_HEIGHT - padding.top - padding.bottom;
 
-    // PERFORMANCE [2025-03-16]: Check if viewBox actually changed before setting attribute.
-    // Setting attribute forces browser layout invalidation even if value is identical.
     const newViewBox = `0 0 ${chartWidthPx} ${SVG_HEIGHT}`;
     if (ui.chart.svg.getAttribute('viewBox') !== newViewBox) {
         ui.chart.svg.setAttribute('viewBox', newViewBox);
     }
 
-    // VISUAL FIX [2025-03-22]: Escala Dinâmica (Dynamic Scaling) Ajustada.
+    // SOPA: Raw Loop for Min/Max
     let dataMin = Infinity;
     let dataMax = -Infinity;
+    const len = chartData.length;
     
-    // Passada única para encontrar min/max
-    for (let i = 0; i < chartData.length; i++) {
+    for (let i = 0; i < len; i = (i + 1) | 0) {
         const val = chartData[i].value;
         if (val < dataMin) dataMin = val;
         if (val > dataMax) dataMax = val;
     }
 
-    // Define uma amplitude mínima para evitar ruído excessivo em linhas quase planas
     const MIN_VISUAL_AMPLITUDE = 2.0; 
     let spread = dataMax - dataMin;
 
@@ -217,9 +201,6 @@ function _calculateChartScales(chartData: ChartDataPoint[], chartWidthPx: number
         spread = MIN_VISUAL_AMPLITUDE;
     }
 
-    // SCALING UPDATE [2025-03-27]: Safety Padding.
-    // Adiciona margem vertical significativa (25% do spread para cima e para baixo)
-    // para garantir que a linha do gráfico nunca toque os limites extremos onde o texto está.
     const safetyPadding = spread * 0.25;
     
     const minVal = dataMin - safetyPadding;
@@ -229,41 +210,36 @@ function _calculateChartScales(chartData: ChartDataPoint[], chartWidthPx: number
     
     chartMetadata = { minVal, maxVal, valueRange: valueRange > 0 ? valueRange : 1 };
 
-    const xScale = (index: number) => padding.left + (index / (chartData.length - 1)) * chartWidth;
+    const xScale = (index: number) => padding.left + (index / (len - 1)) * chartWidth;
     const yScale = (value: number) => padding.top + chartHeight - ((value - minVal) / chartMetadata.valueRange) * chartHeight;
 
     return { xScale, yScale };
 }
 
 function _generatePathData(chartData: ChartDataPoint[], { xScale, yScale }: ChartScales): { areaPathData: string, linePathData: string } {
-    // PERFORMANCE [2025-03-14]: Use specialized join for large arrays if needed, but standard map/join is fast enough here.
+    // PERFORMANCE: Use string concatenation or efficient mapping.
+    // Given 30 points, map().join() is optimized enough.
     const linePathData = chartData.map((point, i) => `${i === 0 ? 'M' : 'L'} ${xScale(i)} ${yScale(point.value)}`).join(' ');
-    // A área deve fechar no eixo inferior do gráfico (base da escala)
     const areaPathData = `${linePathData} V ${yScale(chartMetadata.minVal)} L ${xScale(0)} ${yScale(chartMetadata.minVal)} Z`;
     return { areaPathData, linePathData };
 }
 
 function _updateAxisLabels(chartData: ChartDataPoint[]) {
     const { axisStart, axisEnd } = ui.chart;
-    // PERFORMANCE: Use stored timestamps instead of parsing ISO strings
     const firstDateMs = chartData[0].timestamp;
     const lastDateMs = chartData[chartData.length - 1].timestamp;
 
     const currentYear = new Date().getUTCFullYear();
-    // Helper simple date extraction to avoid full Date parsing for year check
     const firstYear = new Date(firstDateMs).getUTCFullYear();
     const lastYear = new Date(lastDateMs).getUTCFullYear();
     
-    // PERFORMANCE: SOPA Update - Use hoisted options
     const firstLabel = formatDate(firstDateMs, (firstYear !== currentYear) ? OPTS_AXIS_LABEL_WITH_YEAR : OPTS_AXIS_LABEL_SHORT);
     const lastLabel = formatDate(lastDateMs, (lastYear !== currentYear) ? OPTS_AXIS_LABEL_WITH_YEAR : OPTS_AXIS_LABEL_SHORT);
 
-    // DOM WRITE: Batch updates
     setTextContent(axisStart, firstLabel);
     setTextContent(axisEnd, lastLabel);
 }
 
-// Helper para setTextContent local (para evitar importar do dom.ts se não necessário ou manter coerência)
 function setTextContent(element: HTMLElement, text: string) {
     if (element.textContent !== text) {
         element.textContent = text;
@@ -273,59 +249,50 @@ function setTextContent(element: HTMLElement, text: string) {
 function _updateEvolutionIndicator(chartData: ChartDataPoint[]) {
     const { evolutionIndicator } = ui.chart;
     const lastPoint = chartData[chartData.length - 1];
-    const referencePoint = chartData.find(d => d.scheduledCount > 0) || chartData[0];
+    
+    // Logic: Find first point with scheduled habits to compare against, or default to start.
+    // Raw Loop search
+    let referencePoint = chartData[0];
+    const len = chartData.length;
+    for (let i = 0; i < len; i = (i + 1) | 0) {
+        if (chartData[i].scheduledCount > 0) {
+            referencePoint = chartData[i];
+            break;
+        }
+    }
+
     const evolution = ((lastPoint.value - referencePoint.value) / referencePoint.value) * 100;
     
-    // DOM WRITE
     const newClass = `chart-evolution-indicator ${evolution >= 0 ? 'positive' : 'negative'}`;
     if (evolutionIndicator.className !== newClass) {
         evolutionIndicator.className = newClass;
     }
-    // SOPA Update: Use formatEvolution for localized number (1 decimal place)
     setTextContent(evolutionIndicator, `${evolution > 0 ? '+' : ''}${formatEvolution(evolution)}%`);
     
-    // LAYOUT FIX [2025-03-27]: Removed manual positioning logic.
-    // The indicator is now statically positioned in the header via CSS flexbox.
-    // No JS style manipulation required for top/left/right/transform.
-    evolutionIndicator.style.top = '';
-    evolutionIndicator.style.bottom = '';
-    evolutionIndicator.style.left = '';
-    evolutionIndicator.style.right = '';
-    evolutionIndicator.style.transform = '';
+    evolutionIndicator.style.cssText = ''; // Reset inline styles
 }
 
 function _updateChartDOM(chartData: ChartDataPoint[]) {
     const { areaPath, linePath } = ui.chart;
     if (!areaPath || !linePath) return;
 
-    // OPTIMIZATION [2025-03-09]: Prevent Layout Thrashing.
-    // Use cached width from ResizeObserver if available.
     let svgWidth = currentChartWidth;
     
-    // Fallback: If cache is empty (first run), measure immediately.
     if (!svgWidth) {
         svgWidth = ui.chart.wrapper.getBoundingClientRect().width;
-        // Do not update cache here to let ResizeObserver handle the source of truth,
-        // or update it lazily.
         if (svgWidth > 0) currentChartWidth = svgWidth;
     }
     
-    // Fallback: If layout hasn't updated yet, use container width approximation
     if (!svgWidth && ui.chartContainer.clientWidth > 0) {
-        // Subtract padding (32px total from CSS --space-lg = 16px * 2)
         svgWidth = ui.chartContainer.clientWidth - 32;
     }
-    // Safety fallback
     if (!svgWidth) svgWidth = 300;
 
-    // ADVANCED OPTIMIZATION [2025-03-18]: Render Memoization (Pure Function Check).
-    // If the data reference hasn't changed AND the width is the same as last render,
-    // we can safely skip the expensive math and DOM updates.
+    // MEMOIZATION CHECK
     if (chartData === renderedDataRef && svgWidth === renderedWidth) {
         return;
     }
 
-    // WRITE PHASE: Apply calculations and update DOM.
     const scales = _calculateChartScales(chartData, svgWidth);
     const { areaPathData, linePathData } = _generatePathData(chartData, scales);
     
@@ -333,26 +300,20 @@ function _updateChartDOM(chartData: ChartDataPoint[]) {
     linePath.setAttribute('d', linePathData);
     
     _updateAxisLabels(chartData);
-    
-    // Pass the already measured width to avoid re-measuring
     _updateEvolutionIndicator(chartData);
 
-    // Update Memoization State
     renderedDataRef = chartData;
     renderedWidth = svgWidth;
     cachedChartRect = null;
 }
 
-// CORE RENDER LOGIC [2025-02-02]: Extracted for re-use.
 function updateTooltipPosition() {
-    rafId = null; // Clear flag to allow next frame request
+    rafId = null; 
     const { wrapper, tooltip, indicator, tooltipDate, tooltipScoreLabel, tooltipScoreValue, tooltipHabits } = ui.chart;
 
     if (!wrapper || !tooltip || !indicator || !tooltipDate || !tooltipScoreLabel || !tooltipScoreValue || !tooltipHabits) return;
     if (lastChartData.length === 0 || !wrapper.isConnected) return;
 
-    // LAZY LAYOUT: Only measure the DOM if cache is invalid/null.
-    // Isso evita forçar reflow em cada movimento do mouse.
     if (!cachedChartRect) {
         cachedChartRect = wrapper.getBoundingClientRect();
     }
@@ -363,12 +324,10 @@ function updateTooltipPosition() {
     const padding = CHART_PADDING;
     const chartWidth = svgWidth - padding.left - padding.right;
     
-    // Math optimization: Single calculation path (Projeção linear do mouse para o índice do array)
     const x = inputClientX - cachedChartRect.left;
     const index = Math.round((x - padding.left) / chartWidth * (lastChartData.length - 1));
     const pointIndex = Math.max(0, Math.min(lastChartData.length - 1, index));
 
-    // Dirty Check: Surgical DOM update only on index change
     if (pointIndex !== lastRenderedPointIndex) {
         lastRenderedPointIndex = pointIndex;
         
@@ -379,18 +338,15 @@ function updateTooltipPosition() {
         const pointX = padding.left + (pointIndex / (lastChartData.length - 1)) * chartWidth;
         const pointY = padding.top + chartHeight - ((point.value - minVal) / valueRange) * chartHeight;
 
-        // DOM WRITES (Batching styles)
         indicator.style.opacity = '1';
         indicator.style.transform = `translateX(${pointX}px)`;
         const dot = indicator.querySelector<HTMLElement>('.chart-indicator-dot');
         if (dot) dot.style.top = `${pointY}px`;
         
-        // PERFORMANCE [2025-03-09]: SOPA Update - Use hoisted options
         const formattedDate = formatDate(point.timestamp, OPTS_TOOLTIP_DATE);
         
         setTextContent(tooltipDate, formattedDate);
         setTextContent(tooltipScoreLabel, t('chartTooltipScore') + ': ');
-        // SOPA Update: Use formatDecimal for localized score
         setTextContent(tooltipScoreValue, formatDecimal(point.value));
         setTextContent(tooltipHabits, t('chartTooltipCompleted', { completed: point.completedCount, total: point.scheduledCount }));
 
@@ -398,12 +354,10 @@ function updateTooltipPosition() {
             tooltip.classList.add('visible');
         }
         
-        // Logic to keep tooltip onscreen
         let translateX = '-50%';
         if (pointX < 50) translateX = '0%';
         else if (pointX > svgWidth - 50) translateX = '-100%';
 
-        // GPU Composite Layer Transform
         tooltip.style.transform = `translate3d(calc(${pointX}px + ${translateX}), calc(${pointY - 20}px - 100%), 0)`;
     }
 }
@@ -412,8 +366,6 @@ function _setupChartListeners() {
     const { wrapper, tooltip, indicator } = ui.chart;
     if (!wrapper || !tooltip || !indicator) return;
 
-    // Handler de Input: Solicita o frame APENAS se um não estiver pendente
-    // Desacopla a frequência do mouse (125Hz+) da frequência de renderização (60Hz).
     const handlePointerMove = (e: PointerEvent) => {
         inputClientX = e.clientX;
         if (!rafId) {
@@ -439,8 +391,6 @@ function _setupChartListeners() {
 function _initObservers() {
     if (!ui.chartContainer) return;
 
-    // PERFORMANCE: IntersectionObserver.
-    // Pausa a renderização do gráfico se ele não estiver visível na viewport.
     if (!chartObserver) {
         chartObserver = new IntersectionObserver((entries) => {
             const entry = entries[0];
@@ -453,15 +403,11 @@ function _initObservers() {
         chartObserver.observe(ui.chartContainer);
     }
 
-    // PERFORMANCE: ResizeObserver.
-    // Detecta mudanças de tamanho do container para invalidar caches de geometria.
     if (!resizeObserver) {
         resizeObserver = new ResizeObserver(entries => {
-            // OPTIMIZATION [2025-03-09]: Update width cache on resize.
             currentChartWidth = ui.chart.wrapper.getBoundingClientRect().width;
             
             if (!isChartVisible) return;
-            // Invalida cache de geometria (bounding rect para tooltip) no resize
             cachedChartRect = null;
             _updateChartDOM(lastChartData);
         });
@@ -474,22 +420,10 @@ export function initChartInteractions() {
     _initObservers();
 }
 
-/**
- * Função pública de renderização do gráfico.
- * Orquestra o cálculo de dados e a atualização do DOM.
- */
 export function renderChart() {
-    // FIX: Use isChartDataDirty() function to check if chart data needs recalculation. This function is designed to be called once per render cycle and consumes the dirty flag.
     if (isChartDataDirty() || lastChartData.some(d => d.date === '')) {
-        // Recalculate using Pool
         lastChartData = calculateChartData();
-        // BUGFIX: Reset rendered index to force tooltip update even if mouse didn't move
         lastRenderedPointIndex = -1; 
-        
-        // CRITICAL FIX [2025-03-22]: Reset memoization reference.
-        // Como usamos Object Pooling (chartDataPool), a referência do array 'lastChartData'
-        // não muda entre atualizações. Isso enganava o check de memoization em '_updateChartDOM',
-        // impedindo a re-renderização visual mesmo com dados novos.
         renderedDataRef = null;
     }
 
@@ -499,7 +433,6 @@ export function renderChart() {
 
     if (ui.chart.title) {
         const newTitle = t('appName');
-        // Dirty Check Text
         if (ui.chart.title.innerHTML !== newTitle) {
             ui.chart.title.innerHTML = newTitle;
         }
@@ -528,14 +461,12 @@ export function renderChart() {
     if (isChartVisible) {
         _updateChartDOM(lastChartData);
         
-        // Se o tooltip estiver ativo, force uma atualização de posição
         if (ui.chart.tooltip && ui.chart.tooltip.classList.contains('visible')) {
             updateTooltipPosition();
         }
         
         isChartDirty = false;
     } else {
-        // Se invisível, marca como sujo para atualizar assim que ficar visível
         isChartDirty = true;
     }
 }

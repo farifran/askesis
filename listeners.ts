@@ -29,13 +29,32 @@
 // [NOTA COMPARATIVA]: Este arquivo atua como o 'Controlador de Eventos'. Arquiteturalmente limpo, atua como um despachante (Dispatcher) delegando implementações para a pasta 'listeners/'.
 
 import { ui } from './render/ui';
-import { renderApp, renderAINotificationState } from './render';
+import { renderApp, renderAINotificationState, updateNotificationUI } from './render';
 import { setupModalListeners } from './listeners/modals';
 import { setupCardListeners } from './listeners/cards';
 import { setupDragHandler } from './listeners/drag';
 import { setupSwipeHandler } from './listeners/swipe';
 import { setupCalendarListeners } from './listeners/calendar';
 import { initChartInteractions } from './render/chart';
+import { pushToOneSignal } from './utils';
+
+/**
+ * Configura os listeners de notificação e atualiza a UI inicial.
+ * MOVIDO DE cloud.ts [2025-04-14] para quebrar dependência circular.
+ */
+function setupNotificationListeners() {
+    pushToOneSignal((OneSignal: any) => {
+        // Este listener garante que a UI seja atualizada se o usuário alterar
+        // as permissões de notificação nas configurações do navegador enquanto o app estiver aberto.
+        OneSignal.Notifications.addEventListener('permissionChange', () => {
+            // UX: Adia a atualização da UI para dar tempo ao SDK de atualizar seu estado interno.
+            setTimeout(updateNotificationUI, 500);
+        });
+
+        // Atualiza a UI no carregamento inicial, caso o estado já esteja definido.
+        updateNotificationUI();
+    });
+}
 
 export function setupEventListeners() {
     // Inicializa módulos de listeners especializados
@@ -43,6 +62,7 @@ export function setupEventListeners() {
     setupCardListeners();
     setupCalendarListeners();
     initChartInteractions(); // Adiciona a inicialização do gráfico
+    setupNotificationListeners(); // Inicializa listeners de notificação
     
     // Inicializa manipuladores de gestos complexos (Física de Drag & Swipe)
     // PERFORMANCE: Passamos o elemento cacheado `ui.habitContainer` para evitar que os 

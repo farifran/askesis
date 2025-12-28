@@ -29,8 +29,6 @@
  *    mesmo que a ordem no array original esteja bagunçada.
  */
 
-// [NOTA COMPARATIVA]: Este módulo é executado raramente, mas é crítico. A implementação demonstra engenharia sênior ao usar Maps para eficiência e uma arquitetura baseada em array de 'MIGRATIONS' que facilita a adição de futuras alterações de esquema de banco de dados local sem refatoração pesada.
-
 import { AppState, Habit, HabitSchedule } from '../state';
 
 /**
@@ -169,7 +167,9 @@ function migrateToV6(oldState: any): AppState {
             if (dailyEntry[oldId]) {
                 const sourceInfo = dailyEntry[oldId];
                 
-                dailyEntry[newId] = dailyEntry[newId] || { instances: {} };
+                // PERF: Shape Consistency. Initialize all fields to match HabitDailyInfo interface.
+                // Ensures hidden class stability for V8 optimization.
+                dailyEntry[newId] = dailyEntry[newId] || { instances: {}, dailySchedule: undefined };
                 const targetInfo = dailyEntry[newId];
 
                 // Merge instances, source takes precedence in case of time collision

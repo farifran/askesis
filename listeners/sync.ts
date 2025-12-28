@@ -33,6 +33,7 @@ import { renderApp } from "../render";
 // FIX [2025-03-22]: Import direct from module to avoid circular dependency issues with re-exports
 import { showConfirmationModal } from "../render/modals";
 import { storeKey, clearKey, hasLocalSyncKey, getSyncKey, isValidKeyFormat, initAuth } from "../services/api";
+import { generateUUID } from "../utils";
 
 // --- Funções de UI ---
 
@@ -79,7 +80,8 @@ async function handleEnableSync() {
         // CRITICAL LOGIC: Setup Transacional.
         // 1. Gera chave -> 2. Armazena Otimisticamente -> 3. Tenta Sync Inicial.
         // Se o passo 3 falhar, o catch executa o Rollback (clearKey).
-        const newKey = crypto.randomUUID();
+        // FIX [2025-04-14]: Use generateUUID helper for compatibility.
+        const newKey = generateUUID();
         storeKey(newKey); // Armazena otimisticamente via api.ts
         ui.syncKeyText.textContent = newKey;
         ui.syncDisplayKeyView.dataset.context = 'setup';

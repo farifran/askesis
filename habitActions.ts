@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -47,13 +48,13 @@ import {
     STREAK_CONSOLIDATED,
     getHabitDailyInfoForDate,
     AppState,
-    isDateLoading
+    isDateLoading,
+    HabitDailyInfo
 } from './state';
 import { saveState, clearLocalPersistence } from './services/persistence';
 import { PREDEFINED_HABITS } from './data/predefinedHabits';
 import { 
     getEffectiveScheduleForHabitOnDate, 
-    getActiveHabitsForDate, 
     isHabitNameDuplicate,
     clearSelectorInternalCaches,
     calculateHabitStreak,
@@ -65,7 +66,9 @@ import {
     getTodayUTCIso, 
     parseUTCIsoDate,
     triggerHaptic,
-    getSafeDate
+    getSafeDate,
+    addDays,
+    toUTCIsoDateString
 } from './utils';
 import { 
     closeModal, 
@@ -241,6 +244,96 @@ function _checkStreakMilestones(habitId: string, dateISO: string) {
 }
 
 // ... (export functions)
+
+// ARCHIVE THRESHOLD [2025-02-23]: Data older than this (in days) moves to cold storage.
+const ARCHIVE_THRESHOLD_DAYS = 90; 
+
+/**
+ * ARCHIVE LOGIC: Moves old daily data to cold storage.
+ * MOVED FROM PERSISTENCE [2025-04-14] to fix circular dependency.
+ * Now executed by the Business Logic Controller.
+ */
+export function performArchivalCheck() {
+    const runArchive = async () => {
+        const today = parseUTCIsoDate(getTodayUTCIso());
+        const thresholdDate = addDays(today, -ARCHIVE_THRESHOLD_DAYS);
+        const thresholdISO = toUTCIsoDateString(thresholdDate);
+        
+        // 1. Identificar candidatos (Scan leve)
+        const yearBuckets: Record<string, { additions: Record<string, Record<string, HabitDailyInfo>>, base?: any }> = {};
+        const keysToRemove: string[] = [];
+
+        for (const dateStr of Object.keys(state.dailyData)) {
+            if (dateStr < thresholdISO) {
+                const year = dateStr.substring(0, 4);
+                if (!yearBuckets[year]) {
+                    yearBuckets[year] = { additions: {} };
+                    if (state.unarchivedCache.has(year)) {
+                        yearBuckets[year].base = state.unarchivedCache.get(year);
+                    } else if (state.archives[year]) {
+                        yearBuckets[year].base = state.archives[year];
+                    }
+                }
+                yearBuckets[year].additions[dateStr] = state.dailyData[dateStr];
+                keysToRemove.push(dateStr);
+            }
+        }
+
+        if (keysToRemove.length === 0) return;
+
+        // 2. Offload para Worker (CPU Heavy)
+        try {
+            console.log(`Offloading archive task for ${keysToRemove.length} days to worker...`);
+            type ArchiveOutput = Record<string, string>; // Ano -> GZIP
+            const newArchives = await runWorkerTask<ArchiveOutput>('archive', yearBuckets);
+
+            let totalMoved = 0;
+
+            // 3. ATOMIC VALIDATION & COMMIT (per year)
+            for (const year in newArchives) {
+                const additionsForYear = yearBuckets[year].additions;
+                let isYearStale = false;
+
+                // VALIDATE: Check all days sent to worker against current state for this year
+                for (const dateStr in additionsForYear) {
+                    const originalDataSent = additionsForYear[dateStr];
+                    const currentDataInState = state.dailyData[dateStr];
+                    if (JSON.stringify(originalDataSent) !== JSON.stringify(currentDataInState)) {
+                        isYearStale = true;
+                        console.warn(`[ARCHIVE] Stale data detected for year ${year} (date: ${dateStr}). Aborting archival for this year to prevent data loss.`);
+                        break; 
+                    }
+                }
+
+                // COMMIT or ROLLBACK
+                if (!isYearStale) {
+                    // Commit: Data is fresh, apply changes
+                    state.archives[year] = newArchives[year];
+                    state.unarchivedCache.delete(year);
+                    
+                    const keysForThisYear = Object.keys(additionsForYear);
+                    keysForThisYear.forEach(k => delete state.dailyData[k]);
+                    totalMoved += keysForThisYear.length;
+                }
+                // If stale, we do nothing for this year. The data remains in hot storage and will be re-processed next cycle.
+            }
+            
+            if (totalMoved > 0) {
+                 console.log(`Archiving complete. Moved ${totalMoved} records.`);
+                 await saveState(); // Persist changes async
+            }
+
+        } catch (e) {
+            console.error("Archive task failed in worker:", e);
+        }
+    };
+
+    if ('requestIdleCallback' in window) {
+        requestIdleCallback(() => { runArchive().catch(console.error); }, { timeout: 10000 });
+    } else {
+        setTimeout(() => { runArchive().catch(console.error); }, 5000);
+    }
+}
 
 export function createDefaultHabit() {
     const defaultTemplate = PREDEFINED_HABITS.find(h => h.isDefault);
@@ -902,7 +995,7 @@ export function markAllHabitsForDate(dateISO: string, status: HabitStatus): bool
     const habits = state.habits;
     const len = habits.length;
 
-    for (let i = 0; i < len; i++) {
+    for (let i = 0; i < len; i = (i + 1) | 0) {
         const habit = habits[i];
         
         // Fast Check: Memoized Appearance
@@ -914,14 +1007,14 @@ export function markAllHabitsForDate(dateISO: string, status: HabitStatus): bool
         if (schedule.length === 0) continue;
 
         // Optimization: Initialize habit entry directly
-        hotDayData[habit.id] ??= { instances: {} };
+        hotDayData[habit.id] ??= { instances: {}, dailySchedule: undefined };
         const dailyInfo = hotDayData[habit.id];
         
         let habitChanged = false;
 
         for (let j = 0; j < schedule.length; j++) {
             const time = schedule[j];
-            dailyInfo.instances[time] ??= { status: 'pending' };
+            dailyInfo.instances[time] ??= { status: 'pending', goalOverride: undefined, note: undefined };
             const instance = dailyInfo.instances[time]!;
             
             // Unified logic helper
