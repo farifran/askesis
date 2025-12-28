@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -10,16 +11,15 @@
  * [MAIN THREAD CONTEXT]:
  * Este módulo atua como o ponto central de despacho para atualizações visuais.
  * 
- * ARQUITETURA (Facade Pattern):
- * - Centraliza a API de renderização pública, escondendo a complexidade dos sub-módulos (`render/*`).
- * - Implementa estratégias de "Local Dirty Checking" para componentes globais.
- * - REFACTOR [2025-03-22]: Agora ouve o evento `language-changed` disparado por `i18n.ts` em vez de gerenciar a lógica de tradução.
+ * ARQUITETURA (Facade Pattern & Zero-Allocation):
+ * - **Responsabilidade Única:** Centraliza a API de renderização pública.
+ * - **Memoization de Datas:** Cálculos de datas relativas (Ontem/Amanhã) são cacheados e recalculados apenas na mudança de dia.
+ * - **DOM Reads Otimizados:** Evita `innerHTML` para verificações de existência.
  */
 
 import { state, LANGUAGES } from './state';
 import { parseUTCIsoDate, toUTCIsoDateString, addDays, pushToOneSignal, getTodayUTCIso } from './utils';
 import { ui } from './render/ui';
-// FIX: import setLanguage here only for initI18n, but use the event for reactivity.
 import { t, setLanguage, formatDate } from './i18n'; 
 import { UI_ICONS } from './render/icons';
 import type { Quote } from './data/quotes';
@@ -29,25 +29,30 @@ import { setTextContent, updateReelRotaryARIA } from './render/dom';
 import { renderCalendar, renderFullCalendar } from './render/calendar';
 import { renderHabits } from './render/habits';
 import { renderChart } from './render/chart';
-// Importação necessária para atualizar modais ao trocar idioma
 import { setupManageModal, refreshEditModalUI, renderLanguageFilter, renderIconPicker, renderFrequencyOptions } from './render/modals';
 
-// Re-exporta tudo para manter compatibilidade com listeners.ts e habitActions.ts
+// Re-exporta tudo para manter compatibilidade
 export * from './render/dom';
 export * from './render/calendar';
 export * from './render/habits';
 export * from './render/modals';
 export * from './render/chart';
 
-// --- HELPERS ---
-
+// --- HELPERS STATE (Monomorphic) ---
 let _lastTitleDate: string | null = null;
 let _lastTitleLang: string | null = null;
 let _lastQuoteDate: string | null = null;
 let _lastQuoteLang: string | null = null;
 let stoicQuotesModule: { STOIC_QUOTES: Quote[] } | null = null;
 
-// PERFORMANCE [2025-04-13]: Hoisted Intl Options (Zero-Allocation).
+// PERF: Date Cache (Avoids GC Pressure)
+// Armazena as strings ISO de hoje, ontem e amanhã para comparação rápida (string internada)
+// sem alocar novos objetos Date a cada frame.
+let _cachedRefToday: string | null = null;
+let _cachedYesterdayISO: string | null = null;
+let _cachedTomorrowISO: string | null = null;
+
+// PERFORMANCE: Hoisted Intl Options (Zero-Allocation).
 const OPTS_HEADER_DESKTOP: Intl.DateTimeFormatOptions = {
     month: 'long',
     day: 'numeric',
@@ -61,59 +66,85 @@ const OPTS_HEADER_ARIA: Intl.DateTimeFormatOptions = {
     timeZone: 'UTC'
 };
 
+/**
+ * Atualiza o cache de datas relativas apenas se o dia mudou.
+ */
+function _ensureRelativeDateCache(todayISO: string) {
+    if (_cachedRefToday !== todayISO) {
+        _cachedRefToday = todayISO;
+        const todayDate = parseUTCIsoDate(todayISO);
+        // Alocação ocorre apenas 1x por dia (ou sessão)
+        _cachedYesterdayISO = toUTCIsoDateString(addDays(todayDate, -1));
+        _cachedTomorrowISO = toUTCIsoDateString(addDays(todayDate, 1));
+    }
+}
+
 function _updateHeaderTitle() {
+    // Dirty Check (String Reference Comparison is O(1) in V8)
     if (_lastTitleDate === state.selectedDate && _lastTitleLang === state.activeLanguageCode) {
         return;
     }
 
     const todayISO = getTodayUTCIso();
-    const yesterdayISO = toUTCIsoDateString(addDays(parseUTCIsoDate(todayISO), -1));
-    const tomorrowISO = toUTCIsoDateString(addDays(parseUTCIsoDate(todayISO), 1));
+    _ensureRelativeDateCache(todayISO);
 
-    const specialDateMap: Record<string, string> = {
-        [todayISO]: 'headerTitleToday',
-        [yesterdayISO]: 'headerTitleYesterday',
-        [tomorrowISO]: 'headerTitleTomorrow',
-    };
+    const selected = state.selectedDate;
+    let titleKey: string | null = null;
+
+    // Fast Path: String Comparison
+    if (selected === todayISO) titleKey = 'headerTitleToday';
+    else if (selected === _cachedYesterdayISO) titleKey = 'headerTitleYesterday';
+    else if (selected === _cachedTomorrowISO) titleKey = 'headerTitleTomorrow';
 
     let desktopTitle: string;
     let mobileTitle: string;
+    let fullLabel: string;
     
-    const date = parseUTCIsoDate(state.selectedDate);
-    
-    const specialDateKey = specialDateMap[state.selectedDate];
-
-    if (specialDateKey) {
-        const title = t(specialDateKey);
-        desktopTitle = title;
-        mobileTitle = title;
-    } else {
-        const day = String(date.getUTCDate()).padStart(2, '0');
-        const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-        mobileTitle = `${day}/${month}`;
+    // Lazy Date Parsing: Só aloca o objeto Date se for necessário formatar
+    if (titleKey) {
+        const localizedTitle = t(titleKey);
+        desktopTitle = localizedTitle;
+        mobileTitle = localizedTitle;
         
-        // SOPA Update: Use hoisted options
+        // Precisamos da data apenas para o ARIA label completo
+        const date = parseUTCIsoDate(selected);
+        fullLabel = formatDate(date, OPTS_HEADER_ARIA);
+    } else {
+        const date = parseUTCIsoDate(selected);
+        
+        // Optimized Date Formatting for Mobile (Manual)
+        const day = date.getUTCDate();
+        const month = date.getUTCMonth() + 1;
+        // Smi (Small Integer) concatenation is fast
+        mobileTitle = (day < 10 ? '0' : '') + day + '/' + (month < 10 ? '0' : '') + month;
+        
         desktopTitle = formatDate(date, OPTS_HEADER_DESKTOP);
+        fullLabel = formatDate(date, OPTS_HEADER_ARIA);
     }
     
     setTextContent(ui.headerTitleDesktop, desktopTitle);
     setTextContent(ui.headerTitleMobile, mobileTitle);
     
-    // SOPA Update: Use hoisted options
-    const fullLabel = formatDate(date, OPTS_HEADER_ARIA);
-    ui.headerTitle.setAttribute('aria-label', fullLabel);
+    // DOM Write com Dirty Check implícito (getAttribute é rápido)
+    if (ui.headerTitle.getAttribute('aria-label') !== fullLabel) {
+        ui.headerTitle.setAttribute('aria-label', fullLabel);
+    }
 
-    _lastTitleDate = state.selectedDate;
+    _lastTitleDate = selected;
     _lastTitleLang = state.activeLanguageCode;
 }
 
 function _renderHeaderIcons() {
-    if (!ui.manageHabitsBtn.innerHTML) {
+    // PERFORMANCE: 'hasChildNodes' é mais rápido que ler 'innerHTML' (evita serialização)
+    if (!ui.manageHabitsBtn.hasChildNodes()) {
         ui.manageHabitsBtn.innerHTML = UI_ICONS.settings;
     }
-    const aiDefaultIcon = ui.aiEvalBtn.querySelector('.default-icon');
-    if (aiDefaultIcon && !aiDefaultIcon.innerHTML) {
-        aiDefaultIcon.innerHTML = UI_ICONS.ai;
+    const aiDefaultIcon = ui.aiEvalBtn.firstElementChild as HTMLElement; // .loading-icon is first, but structure might vary.
+    // Melhor usar seletor específico cacheado ou verificação direta
+    // A estrutura é: svg.loading-icon, span.default-icon, svg.offline-icon
+    const defaultIconSpan = ui.aiEvalBtn.querySelector('.default-icon');
+    if (defaultIconSpan && !defaultIconSpan.hasChildNodes()) {
+        defaultIconSpan.innerHTML = UI_ICONS.ai;
     }
 }
 
@@ -126,86 +157,97 @@ export function updateUIText() {
     tempEl.innerHTML = appNameHtml;
     document.title = tempEl.textContent || 'Askesis';
 
+    // Batch Attribute Updates
     ui.fabAddHabit.setAttribute('aria-label', t('fabAddHabit_ariaLabel'));
     ui.manageHabitsBtn.setAttribute('aria-label', t('manageHabits_ariaLabel'));
     ui.aiEvalBtn.setAttribute('aria-label', t('aiEval_ariaLabel'));
     
-    ui.exploreModal.querySelector('h2')!.textContent = t('modalExploreTitle');
-    ui.createCustomHabitBtn.textContent = t('modalExploreCreateCustom');
-    ui.exploreModal.querySelector('.modal-close-btn')!.textContent = t('closeButton');
+    // Modal Titles & Buttons
+    setTextContent(ui.exploreModal.querySelector('h2'), t('modalExploreTitle'));
+    setTextContent(ui.createCustomHabitBtn, t('modalExploreCreateCustom'));
+    setTextContent(ui.exploreModal.querySelector('.modal-close-btn'), t('closeButton'));
 
-    ui.manageModalTitle.textContent = t('modalManageTitle');
-    ui.habitListTitle.textContent = t('modalManageHabitsSubtitle');
+    setTextContent(ui.manageModalTitle, t('modalManageTitle'));
+    setTextContent(ui.habitListTitle, t('modalManageHabitsSubtitle'));
     
-    ui.labelLanguage.textContent = t('modalManageLanguage');
+    setTextContent(ui.labelLanguage, t('modalManageLanguage'));
     ui.languagePrevBtn.setAttribute('aria-label', t('languagePrev_ariaLabel'));
     ui.languageNextBtn.setAttribute('aria-label', t('languageNext_ariaLabel'));
     
-    ui.labelSync.textContent = t('syncLabel');
-    ui.labelNotifications.textContent = t('modalManageNotifications');
-    ui.labelReset.textContent = t('modalManageReset');
-    ui.resetAppBtn.textContent = t('modalManageResetButton');
-    ui.manageModal.querySelector('.modal-close-btn')!.textContent = t('closeButton');
+    setTextContent(ui.labelSync, t('syncLabel'));
+    setTextContent(ui.labelNotifications, t('modalManageNotifications'));
+    setTextContent(ui.labelReset, t('modalManageReset'));
+    setTextContent(ui.resetAppBtn, t('modalManageResetButton'));
+    setTextContent(ui.manageModal.querySelector('.modal-close-btn'), t('closeButton'));
     
-    ui.labelPrivacy.textContent = t('privacyLabel');
-    ui.exportDataBtn.textContent = t('exportButton');
-    ui.importDataBtn.textContent = t('importButton');
+    setTextContent(ui.labelPrivacy, t('privacyLabel'));
+    setTextContent(ui.exportDataBtn, t('exportButton'));
+    setTextContent(ui.importDataBtn, t('importButton'));
     
-    ui.syncInactiveDesc.textContent = t('syncInactiveDesc');
-    ui.enableSyncBtn.textContent = t('syncEnable');
-    ui.enterKeyViewBtn.textContent = t('syncEnterKey');
-    ui.labelEnterKey.textContent = t('syncLabelEnterKey');
-    ui.cancelEnterKeyBtn.textContent = t('cancelButton');
-    ui.submitKeyBtn.textContent = t('syncSubmitKey');
-    ui.syncWarningText.innerHTML = t('syncWarning');
+    setTextContent(ui.syncInactiveDesc, t('syncInactiveDesc'));
+    setTextContent(ui.enableSyncBtn, t('syncEnable'));
+    setTextContent(ui.enterKeyViewBtn, t('syncEnterKey'));
+    setTextContent(ui.labelEnterKey, t('syncLabelEnterKey'));
+    setTextContent(ui.cancelEnterKeyBtn, t('cancelButton'));
+    setTextContent(ui.submitKeyBtn, t('syncSubmitKey'));
+    
+    // innerHTML necessário para tags de formatação
+    if (ui.syncWarningText.innerHTML !== t('syncWarning')) {
+        ui.syncWarningText.innerHTML = t('syncWarning');
+    }
 
     const keyContext = ui.syncDisplayKeyView.dataset.context;
-    ui.keySavedBtn.textContent = (keyContext === 'view') ? t('closeButton') : t('syncKeySaved');
+    setTextContent(ui.keySavedBtn, (keyContext === 'view') ? t('closeButton') : t('syncKeySaved'));
     
-    ui.syncActiveDesc.textContent = t('syncActiveDesc');
-    ui.viewKeyBtn.textContent = t('syncViewKey');
-    ui.disableSyncBtn.textContent = t('syncDisable');
+    setTextContent(ui.syncActiveDesc, t('syncActiveDesc'));
+    setTextContent(ui.viewKeyBtn, t('syncViewKey'));
+    setTextContent(ui.disableSyncBtn, t('syncDisable'));
     
-    ui.aiModal.querySelector('h2')!.textContent = t('modalAITitle');
-    ui.aiModal.querySelector('.modal-close-btn')!.textContent = t('closeButton');
+    setTextContent(ui.aiModal.querySelector('h2'), t('modalAITitle'));
+    setTextContent(ui.aiModal.querySelector('.modal-close-btn'), t('closeButton'));
     
-    ui.aiOptionsModal.querySelector('h2')!.textContent = t('modalAIOptionsTitle');
+    setTextContent(ui.aiOptionsModal.querySelector('h2'), t('modalAIOptionsTitle'));
     
     const updateAiBtn = (type: string, titleKey: string, descKey: string) => {
         const btn = ui.aiOptionsModal.querySelector<HTMLElement>(`[data-analysis-type="${type}"]`);
         if (btn) {
-            btn.querySelector('.ai-option-title')!.textContent = t(titleKey);
-            btn.querySelector('.ai-option-desc')!.textContent = t(descKey);
+            setTextContent(btn.querySelector('.ai-option-title'), t(titleKey));
+            setTextContent(btn.querySelector('.ai-option-desc'), t(descKey));
         }
     };
     updateAiBtn('monthly', 'aiOptionMonthlyTitle', 'aiOptionMonthlyDesc');
     updateAiBtn('quarterly', 'aiOptionQuarterlyTitle', 'aiOptionQuarterlyDesc');
     updateAiBtn('historical', 'aiOptionHistoricalTitle', 'aiOptionHistoricalDesc');
 
-    ui.confirmModal.querySelector('h2')!.textContent = t('modalConfirmTitle');
-    ui.confirmModal.querySelector('.modal-close-btn')!.textContent = t('cancelButton');
-    ui.confirmModalEditBtn.textContent = t('editButton');
-    ui.confirmModalConfirmBtn.textContent = t('confirmButton');
+    setTextContent(ui.confirmModal.querySelector('h2'), t('modalConfirmTitle'));
+    setTextContent(ui.confirmModal.querySelector('.modal-close-btn'), t('cancelButton'));
+    setTextContent(ui.confirmModalEditBtn, t('editButton'));
+    setTextContent(ui.confirmModalConfirmBtn, t('confirmButton'));
 
-    ui.notesModal.querySelector('.modal-close-btn')!.textContent = t('cancelButton');
-    ui.saveNoteBtn.textContent = t('modalNotesSaveButton');
+    setTextContent(ui.notesModal.querySelector('.modal-close-btn'), t('cancelButton'));
+    setTextContent(ui.saveNoteBtn, t('modalNotesSaveButton'));
     ui.notesTextarea.placeholder = t('modalNotesTextareaPlaceholder');
 
-    ui.iconPickerTitle.textContent = t('modalIconPickerTitle');
-    ui.iconPickerModal.querySelector('.modal-close-btn')!.textContent = t('cancelButton');
+    setTextContent(ui.iconPickerTitle, t('modalIconPickerTitle'));
+    setTextContent(ui.iconPickerModal.querySelector('.modal-close-btn'), t('cancelButton'));
 
-    ui.colorPickerTitle.textContent = t('modalColorPickerTitle');
-    ui.colorPickerModal.querySelector('.modal-close-btn')!.textContent = t('cancelButton');
+    setTextContent(ui.colorPickerTitle, t('modalColorPickerTitle'));
+    setTextContent(ui.colorPickerModal.querySelector('.modal-close-btn'), t('cancelButton'));
 
     const editModalActions = ui.editHabitModal.querySelector('.modal-actions');
     if (editModalActions) {
-        editModalActions.querySelector('.modal-close-btn')!.textContent = t('cancelButton');
-        editModalActions.querySelector('#edit-habit-save-btn')!.textContent = t('modalEditSaveButton');
+        setTextContent(editModalActions.querySelector('.modal-close-btn'), t('cancelButton'));
+        setTextContent(editModalActions.querySelector('#edit-habit-save-btn'), t('modalEditSaveButton'));
     }
 
-    ui.quickActionDone.innerHTML = `${UI_ICONS.check} ${t('quickActionMarkAllDone')}`;
-    ui.quickActionSnooze.innerHTML = `${UI_ICONS.snoozed} ${t('quickActionMarkAllSnoozed')}`;
-    ui.quickActionAlmanac.innerHTML = `${UI_ICONS.calendar} ${t('quickActionOpenAlmanac')}`;
+    // Quick Actions - Icons + Text
+    const setBtnHtml = (btn: HTMLButtonElement, icon: string, text: string) => {
+        const html = `${icon} ${text}`;
+        if (btn.innerHTML !== html) btn.innerHTML = html;
+    };
+    setBtnHtml(ui.quickActionDone, UI_ICONS.check, t('quickActionMarkAllDone'));
+    setBtnHtml(ui.quickActionSnooze, UI_ICONS.snoozed, t('quickActionMarkAllSnoozed'));
+    setBtnHtml(ui.quickActionAlmanac, UI_ICONS.calendar, t('quickActionOpenAlmanac'));
     
     setTextContent(ui.noHabitsMessage, t('modalManageNoHabits'));
 
@@ -225,9 +267,7 @@ export function renderApp() {
     renderAINotificationState();
     renderChart();
 
-    // UX UPDATE [2025-03-22]: Refresh Manage Modal List if visible.
-    // Garante que se o usuário encerrar ou excluir um hábito, a lista
-    // seja atualizada imediatamente sem precisar fechar e reabrir o modal.
+    // UX UPDATE: Refresh Manage Modal List if visible.
     if (ui.manageModal.classList.contains('visible')) {
         setupManageModal();
     }
@@ -244,10 +284,15 @@ export function updateNotificationUI() {
         const isPushEnabled = OneSignal.User.PushSubscription.optedIn;
         const permission = OneSignal.Notifications.permission;
         
-        ui.notificationToggle.checked = isPushEnabled;
+        if (ui.notificationToggle.checked !== isPushEnabled) {
+            ui.notificationToggle.checked = isPushEnabled;
+        }
+        
         const isDenied = permission === 'denied';
-        ui.notificationToggle.disabled = isDenied;
-        ui.notificationToggleLabel.classList.toggle('disabled', isDenied);
+        if (ui.notificationToggle.disabled !== isDenied) {
+            ui.notificationToggle.disabled = isDenied;
+            ui.notificationToggleLabel.classList.toggle('disabled', isDenied);
+        }
 
         let statusTextKey = 'notificationStatusOptedOut';
         if (isDenied) statusTextKey = 'notificationStatusDisabled';
@@ -259,7 +304,12 @@ export function updateNotificationUI() {
 
 export function initLanguageFilter() {
     const langNames = LANGUAGES.map(lang => t(lang.nameKey));
-    ui.languageReel.innerHTML = langNames.map(name => `<span class="reel-option">${name}</span>`).join('');
+    // Optimization: Build string once
+    const html = langNames.map(name => `<span class="reel-option">${name}</span>`).join('');
+    if (ui.languageReel.innerHTML !== html) {
+        ui.languageReel.innerHTML = html;
+    }
+    
     const currentIndex = LANGUAGES.findIndex(l => l.code === state.activeLanguageCode);
     updateReelRotaryARIA(ui.languageViewport, currentIndex, langNames, 'language_ariaLabel');
 }
@@ -270,9 +320,14 @@ export function renderAINotificationState() {
     const hasCelebrations = state.pending21DayHabitIds.length > 0 || state.pendingConsolidationHabitIds.length > 0;
     const hasUnseenResult = (state.aiState === 'completed' || state.aiState === 'error') && !state.hasSeenAIResult;
 
-    ui.aiEvalBtn.classList.toggle('loading', isLoading);
-    ui.aiEvalBtn.disabled = isLoading || isOffline;
-    ui.aiEvalBtn.classList.toggle('has-notification', hasCelebrations || hasUnseenResult);
+    const classList = ui.aiEvalBtn.classList;
+    if (classList.contains('loading') !== isLoading) classList.toggle('loading', isLoading);
+    
+    const shouldDisable = isLoading || isOffline;
+    if (ui.aiEvalBtn.disabled !== shouldDisable) ui.aiEvalBtn.disabled = shouldDisable;
+    
+    const shouldNotify = hasCelebrations || hasUnseenResult;
+    if (classList.contains('has-notification') !== shouldNotify) classList.toggle('has-notification', shouldNotify);
 }
 
 export async function renderStoicQuote() {
@@ -290,15 +345,19 @@ export async function renderStoicQuote() {
     }
     const { STOIC_QUOTES } = stoicQuotesModule;
 
+    // PERF: Optimized Day of Year Calculation (Integer Math)
     const date = parseUTCIsoDate(state.selectedDate);
-    const startOfYear = new Date(date.getUTCFullYear(), 0, 0);
-    const diff = date.getTime() - startOfYear.getTime();
-    const oneDay = 1000 * 60 * 60 * 24;
-    const dayOfYear = Math.floor(diff / oneDay);
+    const startOfYear = new Date(Date.UTC(date.getUTCFullYear(), 0, 0));
+    // Bitwise OR to truncate float to int (Smi)
+    const diff = (date.getTime() - startOfYear.getTime()) | 0;
+    const oneDay = 86400000; // 1000 * 60 * 60 * 24
+    const dayOfYear = (diff / oneDay) | 0;
     
-    const seed = date.getFullYear() * 1000 + dayOfYear;
+    // Deterministic Seed
+    const seed = (date.getFullYear() * 1000 + dayOfYear) | 0;
     const rnd = Math.abs(Math.sin(seed)); 
-    const quoteIndex = Math.floor(rnd * STOIC_QUOTES.length);
+    // Bitwise truncation again
+    const quoteIndex = (rnd * STOIC_QUOTES.length) | 0;
     
     const quote = STOIC_QUOTES[quoteIndex];
     const lang = state.activeLanguageCode as keyof Omit<typeof quote, 'author'|'tags'>;
@@ -309,6 +368,7 @@ export async function renderStoicQuote() {
     _lastQuoteDate = state.selectedDate;
     _lastQuoteLang = state.activeLanguageCode;
 
+    // DOM Read & Write (Dirty Check)
     if (ui.stoicQuoteDisplay.textContent === fullText && ui.stoicQuoteDisplay.classList.contains('visible')) {
         return;
     }
@@ -319,6 +379,7 @@ export async function renderStoicQuote() {
          return;
     }
 
+    // Transition Logic
     ui.stoicQuoteDisplay.classList.remove('visible');
     setTimeout(() => {
         setTextContent(ui.stoicQuoteDisplay, fullText);
@@ -332,7 +393,7 @@ document.addEventListener('language-changed', () => {
     renderLanguageFilter();
     updateUIText();
     if (ui.syncStatus) {
-        ui.syncStatus.textContent = t(state.syncState);
+        setTextContent(ui.syncStatus, t(state.syncState));
     }
     if (ui.manageModal.classList.contains('visible')) {
         setupManageModal();
@@ -352,6 +413,6 @@ export async function initI18n() {
         initialLang = browserLang as 'pt' | 'en' | 'es';
     }
 
-    // This calls setLanguage in i18n.ts, which dispatches the event that triggers the listener above.
+    // Dispatches 'language-changed' event internally
     await setLanguage(initialLang);
 }

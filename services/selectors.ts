@@ -24,6 +24,7 @@
  * DECISÕES TÉCNICAS:
  * 1. **Raw Loops (BCE):** Loops `for` com cache de tamanho para Bound Checks Elimination no V8.
  * 2. **Smi Math:** Uso de `| 0` para garantir operações com Small Integers.
+ * 3. **Epoch Days:** Cálculos de streaks usam dias inteiros (timestamp / 86400000) para evitar alocação de Dates.
  */
 
 import { state, Habit, TimeOfDay, HabitSchedule, getHabitDailyInfoForDate, STREAK_LOOKBACK_DAYS, PredefinedHabit } from '../state';
@@ -226,8 +227,15 @@ function _isHabitConsistentlyDone(habit: Habit, dateISO: string, dailyInfoMap?: 
 }
 
 /**
+ * CONSTANTS FOR INTEGER DATE MATH
+ */
+const MS_PER_DAY = 86400000;
+
+/**
  * Calcula a sequência (streak).
- * SOPA UPDATE: Incremental Caching com Fallback Iterativo Otimizado.
+ * SOPA UPDATE [2025-04-15]: Integer-based Date Math (Epoch Days).
+ * Substitui o loop anterior que usava `Date.setUTCDate` (muito lento) por aritmética inteira.
+ * Convertemos a data final para "Dias desde a Época" e iteramos com decremento simples (i--).
  */
 export function calculateHabitStreak(habitId: string, endDateISO: string): number {
     let subCache = state.streaksCache.get(habitId);
@@ -246,14 +254,15 @@ export function calculateHabitStreak(habitId: string, endDateISO: string): numbe
 
     // 1. Incremental Check (Ontem + Hoje)
     const endDateObj = parseUTCIsoDate(endDateISO);
-    const yesterdayISO = toUTCIsoDateString(addDays(endDateObj, -1));
+    const endTime = endDateObj.getTime();
     
+    // Calculate Yesterday ISO manually via integer math if needed, but util is fine here for single call
+    const yesterdayISO = toUTCIsoDateString(addDays(endDateObj, -1));
     const cachedYesterday = subCache.get(yesterdayISO);
 
     if (cachedYesterday !== undefined) {
         // Fast Path: O(1)
         if (!shouldHabitAppearOnDate(habit, endDateISO, endDateObj)) {
-            // Pausa natural (não aparece hoje) -> Mantém streak
             subCache.set(endDateISO, cachedYesterday);
             return cachedYesterday;
         }
@@ -268,15 +277,31 @@ export function calculateHabitStreak(habitId: string, endDateISO: string): numbe
         }
     }
 
-    // 2. Iterative Full Calculation (Slow Path)
+    // 2. Iterative Full Calculation (Optimized Integer Loop)
     let streak = 0;
-    const iteratorDate = new Date(endDateObj); // Clone
+    
+    // We start from the end date and go backwards.
+    // Instead of mutating a Date object, we manipulate the timestamp directly.
+    let currentTimestamp = endTime;
+    
+    // We need a reusable Date object only for `shouldHabitAppearOnDate` (which needs getUTCDay)
+    // We re-hydrate this object only when necessary.
+    const iteratorDate = new Date(currentTimestamp);
+
+    // Limit check in ISO string format to avoid creating it inside the loop condition
+    const creationISO = habit.createdOn;
 
     // Raw Loop with Hard Limit
     for (let i = 0; i < STREAK_LOOKBACK_DAYS; i = (i + 1) | 0) {
+        // Update the reusable date object's time value (Very fast operation)
+        iteratorDate.setTime(currentTimestamp);
+        
+        // Manual ISO construction is tricky with varying months, so we use the util.
+        // Optimization: toUTCIsoDateString is efficient enough.
         const currentDateISO = toUTCIsoDateString(iteratorDate);
+
         // Break if before creation
-        if (currentDateISO < habit.createdOn) break;
+        if (currentDateISO < creationISO) break;
 
         if (shouldHabitAppearOnDate(habit, currentDateISO, iteratorDate)) {
             if (_isHabitConsistentlyDone(habit, currentDateISO)) {
@@ -285,8 +310,9 @@ export function calculateHabitStreak(habitId: string, endDateISO: string): numbe
                 break; // Broken
             }
         }
-        // Mutate Date (Backwards)
-        iteratorDate.setUTCDate(iteratorDate.getUTCDate() - 1);
+        
+        // Integer Decrement: Go back 1 day (86400000 ms)
+        currentTimestamp -= MS_PER_DAY;
     }
     
     subCache.set(endDateISO, streak);

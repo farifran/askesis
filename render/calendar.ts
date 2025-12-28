@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -24,8 +25,8 @@
  * DECISÕES TÉCNICAS:
  * 1. **Geometry/Attribute Dirty Checking:** Antes de escrever no DOM (setAttribute, classList),
  *    verificamos se o valor mudou. Leituras são baratas; escritas invalidam o layout.
- * 2. **Mutable Date Objects:** Em loops de renderização (ex: `renderFullCalendar`), usamos um único objeto `Date`
- *    mutável para evitar alocação de 30-31 objetos por renderização.
+ * 2. **Manual String Construction:** Em loops de renderização (ex: `renderFullCalendar`), construímos strings ISO
+ *    manualmente (concatenação de inteiros) para evitar a alocação de dezenas de objetos `Date`.
  */
 
 import { state, DAYS_IN_CALENDAR } from '../state';
@@ -294,7 +295,7 @@ export function renderCalendar() {
 
 /**
  * Renderiza o modal de calendário completo (Almanaque).
- * Utiliza otimização de objeto Date mutável.
+ * Utiliza otimização SOTA: Integer-based String Construction.
  */
 export function renderFullCalendar() {
     const { year, month } = state.fullCalendar;
@@ -345,16 +346,29 @@ export function renderFullCalendar() {
         totalGridCells++;
     }
 
-    // MEMORY OPTIMIZATION [2025-03-04]: Mutable Date Object.
-    // Usa um único objeto Date mutável para o loop. Reduz pressão no Garbage Collector
-    // evitando a criação de ~31 objetos Date em sucessão rápida.
-    const iteratorDate = new Date(Date.UTC(year, month, 1));
+    // MEMORY OPTIMIZATION [2025-04-15]: Integer-based ISO Construction.
+    // Em vez de mutar um objeto Date (ou criar novos) em loop, construímos a string ISO manualmente.
+    // Ano e Mês são constantes no loop. Apenas o dia muda.
+    // Isso evita alocação de ~31 objetos Date e overhead de formatação.
+    const paddedYear = year.toString(); // "2024"
+    const displayMonth = month + 1;
+    const paddedMonth = displayMonth < 10 ? '0' + displayMonth : displayMonth.toString(); // "05"
+    const prefix = `${paddedYear}-${paddedMonth}-`; // "2024-05-"
+
+    // Objeto Date reusável apenas para passar para calculateDaySummary/formatDate se necessário
+    // Nota: calculateDaySummary espera um Date para lógica de dia da semana (Sáb/Dom).
+    const reusableDate = new Date(Date.UTC(year, month, 1));
 
     for (let day = 1; day <= daysInMonth; day++) {
-        // Usa o objeto mutável atualizado
-        const isoDate = toUTCIsoDateString(iteratorDate);
+        // PERF: Concatenação de string simples é muito mais rápida que Date logic.
+        const paddedDay = day < 10 ? '0' + day : day.toString();
+        const isoDate = prefix + paddedDay; // "2024-05-01"
+        
+        // Atualiza o objeto de data reutilizável para a lógica interna de summary
+        reusableDate.setUTCDate(day);
+
         // Passa a referência para evitar re-parse
-        const { completedPercent, snoozedPercent } = calculateDaySummary(isoDate, iteratorDate);
+        const { completedPercent, snoozedPercent } = calculateDaySummary(isoDate, reusableDate);
 
         // PERFORMANCE: Template Cloning.
         const dayEl = getFullCalendarDayTemplate().cloneNode(true) as HTMLElement;
@@ -368,7 +382,7 @@ export function renderFullCalendar() {
         
         dayEl.setAttribute('aria-pressed', String(isSelected));
         // SOPA Update: Use hoisted options
-        dayEl.setAttribute('aria-label', formatDate(iteratorDate, OPTS_FULL_CAL_ARIA));
+        dayEl.setAttribute('aria-label', formatDate(reusableDate, OPTS_FULL_CAL_ARIA));
         dayEl.setAttribute('tabindex', isSelected ? '0' : '-1');
 
         // Locate children in the cloned template structure (Fast access)
@@ -383,9 +397,6 @@ export function renderFullCalendar() {
         
         fragment.appendChild(dayEl);
         totalGridCells++;
-        
-        // Muta o objeto date para a próxima iteração
-        iteratorDate.setUTCDate(iteratorDate.getUTCDate() + 1);
     }
     
     // Preenche células restantes do grid (mês seguinte)
