@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="pt-BR">
 <!-- 
@@ -508,11 +507,7 @@
     <!-- Modal: Edit Habit (Apple Style Form) -->
     <div id="edit-habit-modal" class="modal-overlay">
         <div class="modal-content">
-            <div class="modal-header">
-                <button class="btn modal-close-btn" style="border:none;background:none;color:var(--accent-blue);font-size:16px;">Cancelar</button>
-                <h2 id="edit-habit-modal-title" style="font-size:16px;margin:0;">Editar Hábito</h2>
-                <button id="edit-habit-save-btn" class="btn" style="border:none;background:none;color:var(--accent-blue);font-weight:700;font-size:16px;">Salvar</button>
-            </div>
+            <h2 id="edit-habit-modal-title">Editar Hábito</h2>
             <form id="edit-habit-form">
                 <div class="habit-identity-section">
                     <div class="habit-icon-picker-wrapper">
@@ -534,6 +529,10 @@
 
                 <div id="frequency-options-container"></div>
             </form>
+            <div class="modal-actions">
+                <button class="btn modal-close-btn">Cancelar</button>
+                <button id="edit-habit-save-btn" class="btn btn--primary">Salvar</button>
+            </div>
         </div>
     </div>
 

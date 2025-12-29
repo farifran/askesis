@@ -147,7 +147,6 @@ export function updateCalendarDayElement(dayItem: HTMLElement, date: Date, today
 
     // ROBUSTNESS: Auto-repair cache if missing (e.g., external DOM manipulation)
     if (!refs) {
-        // Fallback to structural check first (Fast)
         const dayName = dayItem.firstElementChild as HTMLElement;
         const dayProgressRing = dayItem.lastElementChild as HTMLElement;
         const dayNumber = dayProgressRing?.firstElementChild as HTMLElement;

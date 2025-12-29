@@ -280,14 +280,13 @@ function _appendManageButton(actionsDiv: HTMLElement, className: string, ariaLab
     actionsDiv.appendChild(btn);
 }
 
-// SOPA OPTIMIZATION [2025-04-25]: Separated Update logic from Creation.
-function _updateManageHabitListItem(li: HTMLLIElement, habitData: { habit: Habit; status: 'active' | 'ended' | 'graduated'; name: string; subtitle: string }, todayISO: string) {
+function _createManageHabitListItem(habitData: { habit: Habit; status: 'active' | 'ended' | 'graduated'; name: string; subtitle: string }, todayISO: string): HTMLLIElement {
     const { habit, status, name, subtitle } = habitData;
     
-    // Dirty check class status
-    if (li.classList.contains('active') !== (status === 'active')) li.classList.toggle('active', status === 'active');
-    if (li.classList.contains('ended') !== (status === 'ended')) li.classList.toggle('ended', status === 'ended');
-    if (li.classList.contains('graduated') !== (status === 'graduated')) li.classList.toggle('graduated', status === 'graduated');
+    const li = getManageItemTemplate().cloneNode(true) as HTMLLIElement;
+    
+    li.classList.add(status);
+    li.dataset.habitId = habit.id;
 
     const mainSpan = li.firstElementChild as HTMLElement;
     const iconSpan = mainSpan.children[0] as HTMLElement;
@@ -295,41 +294,24 @@ function _updateManageHabitListItem(li: HTMLLIElement, habitData: { habit: Habit
     const statusSpan = mainSpan.children[2] as HTMLElement;
     const actionsDiv = li.children[1] as HTMLElement;
 
-    // Update Icon (Check if changed to avoid parse)
-    if (iconSpan.innerHTML !== habit.icon) iconSpan.innerHTML = habit.icon;
-    if (iconSpan.style.color !== habit.color) iconSpan.style.color = habit.color;
+    iconSpan.innerHTML = habit.icon;
+    iconSpan.style.color = habit.color;
 
     const nameSpan = textWrapper.children[0];
     setTextContent(nameSpan, name);
 
-    const subtitleSpan = textWrapper.children[1] as HTMLElement;
-    // Check if subtitle element needs to be added/removed/updated
+    const subtitleSpan = textWrapper.children[1];
     if (subtitle) {
-        if (!textWrapper.contains(subtitleSpan)) {
-             // Re-create if it was removed
-             const newSub = document.createElement('span');
-             newSub.className = 'habit-subtitle';
-             newSub.style.fontSize = '11px';
-             newSub.style.color = 'var(--text-tertiary)';
-             newSub.textContent = subtitle;
-             textWrapper.appendChild(newSub);
-        } else {
-             setTextContent(subtitleSpan, subtitle);
-        }
-    } else if (textWrapper.contains(subtitleSpan)) {
+        setTextContent(subtitleSpan, subtitle);
+    } else {
         subtitleSpan.remove();
     }
 
     if (status === 'graduated' || status === 'ended') {
         setTextContent(statusSpan, t(status === 'graduated' ? 'modalStatusGraduated' : 'modalStatusEnded'));
-        if (!mainSpan.contains(statusSpan)) mainSpan.appendChild(statusSpan);
     } else {
-        if (mainSpan.contains(statusSpan)) statusSpan.remove();
+        statusSpan.remove();
     }
-    
-    // Actions: It's cheaper to clear and re-append buttons than to diff them because the set changes entirely.
-    // Since buttons are cloned from templates, this is fast.
-    actionsDiv.innerHTML = '';
     
     const streak = calculateHabitStreak(habit.id, todayISO); 
     const isConsolidated = streak >= STREAK_CONSOLIDATED;
@@ -344,12 +326,7 @@ function _updateManageHabitListItem(li: HTMLLIElement, habitData: { habit: Habit
     } else if (status === 'ended' || status === 'graduated') {
         _appendManageButton(actionsDiv, 'permanent-delete-habit-btn', t('aria_delete_permanent', { habitName: name }), UI_ICONS.deletePermanentAction);
     }
-}
-
-function _createManageHabitListItem(habitData: { habit: Habit; status: 'active' | 'ended' | 'graduated'; name: string; subtitle: string }, todayISO: string): HTMLLIElement {
-    const li = getManageItemTemplate().cloneNode(true) as HTMLLIElement;
-    li.dataset.habitId = habitData.habit.id;
-    _updateManageHabitListItem(li, habitData, todayISO);
+    
     return li;
 }
 
@@ -394,46 +371,17 @@ export function setupManageModal() {
         });
 
         habitsForModal.sort(_habitSorter);
-        const todayISO = getTodayUTCIso();
-
-        // SOPA OPTIMIZATION [2025-04-25]: Reconciliation Strategy (Diffing).
-        // Reuse existing LI elements instead of destroying/creating the whole list.
-        
-        // 1. Map existing elements
-        const existingNodes = new Map<string, HTMLElement>();
-        const children = ui.habitList.children;
-        // Iterate backwards to allow removal if needed, though we map first
-        for (let i = children.length - 1; i >= 0; i--) {
-            const el = children[i] as HTMLElement;
-            if (el.dataset.habitId) {
-                existingNodes.set(el.dataset.habitId, el);
-            } else {
-                el.remove(); // Remove junk
-            }
-        }
 
         const fragment = document.createDocumentFragment();
+        const todayISO = getTodayUTCIso();
         
-        // 2. Process list and reuse/create
+        // Zero-Allocation Loop
         const len = habitsForModal.length;
         for (let i = 0; i < len; i = (i + 1) | 0) {
-            const item = habitsForModal[i];
-            const existingEl = existingNodes.get(item.habit.id);
-            
-            if (existingEl) {
-                _updateManageHabitListItem(existingEl as HTMLLIElement, item, todayISO);
-                fragment.appendChild(existingEl); // Moves it to correct position
-                existingNodes.delete(item.habit.id);
-            } else {
-                const newEl = _createManageHabitListItem(item, todayISO);
-                fragment.appendChild(newEl);
-            }
+            fragment.appendChild(_createManageHabitListItem(habitsForModal[i], todayISO));
         }
 
-        // 3. Cleanup removed items
-        existingNodes.forEach(node => node.remove());
-        
-        // 4. Append sorted/updated result
+        ui.habitList.innerHTML = '';
         ui.habitList.appendChild(fragment);
     }
 }
@@ -513,20 +461,19 @@ export function renderIconPicker() {
     ui.iconPickerGrid.style.setProperty('--current-habit-bg-color', bgColor);
     ui.iconPickerGrid.style.setProperty('--current-habit-fg-color', fgColor);
 
-    // SOPA OPTIMIZATION [2025-04-24]: Existence check instead of innerHTML comparison.
-    // hasChildNodes() is O(1). Reading innerHTML triggers expensive serialization.
-    if (!ui.iconPickerGrid.hasChildNodes()) {
-        if (!cachedIconButtonsHTML) {
-            cachedIconButtonsHTML = Object.keys(HABIT_ICONS)
-                .map(key => {
-                    const iconSVG = (HABIT_ICONS as any)[key];
-                    return `
-                        <button type="button" class="icon-picker-item" data-icon-svg="${escapeHTML(iconSVG)}">
-                            ${iconSVG}
-                        </button>
-                    `;
-                }).join('');
-        }
+    if (!cachedIconButtonsHTML) {
+        cachedIconButtonsHTML = Object.keys(HABIT_ICONS)
+            .map(key => {
+                const iconSVG = (HABIT_ICONS as any)[key];
+                return `
+                    <button type="button" class="icon-picker-item" data-icon-svg="${escapeHTML(iconSVG)}">
+                        ${iconSVG}
+                    </button>
+                `;
+            }).join('');
+    }
+
+    if (ui.iconPickerGrid.innerHTML !== cachedIconButtonsHTML) {
         ui.iconPickerGrid.innerHTML = cachedIconButtonsHTML;
     }
 
@@ -540,30 +487,9 @@ export function renderIconPicker() {
 export function renderColorPicker() {
     if (!state.editingHabit) return;
     const currentColor = state.editingHabit.formData.color;
-    
-    // SOPA OPTIMIZATION [2025-04-24]: Build Once, Update Class.
-    // Avoids innerHTML thrashing on every click/render.
-    
-    // 1. Build Phase (First Run)
-    if (!ui.colorPickerGrid.hasChildNodes()) {
-        ui.colorPickerGrid.innerHTML = PALETTE_COLORS.map(color => `
-            <button type="button" class="color-swatch" style="background-color: ${color}" data-color="${color}" aria-label="${color}"></button>
-        `).join('');
-    }
-
-    // 2. Update Phase (Dirty Check)
-    // Low-level DOM Loop for speed
-    const swatches = ui.colorPickerGrid.children;
-    const len = swatches.length;
-    for (let i = 0; i < len; i = (i + 1) | 0) {
-        const btn = swatches[i] as HTMLElement;
-        const color = btn.dataset.color;
-        const isSelected = color === currentColor;
-        
-        if (btn.classList.contains('selected') !== isSelected) {
-            btn.classList.toggle('selected', isSelected);
-        }
-    }
+    ui.colorPickerGrid.innerHTML = PALETTE_COLORS.map(color => `
+        <button type="button" class="color-swatch ${currentColor === color ? 'selected' : ''}" style="background-color: ${color}" data-color="${color}" aria-label="${color}"></button>
+    `).join('');
 }
 
 export function renderFrequencyOptions() {
@@ -571,122 +497,77 @@ export function renderFrequencyOptions() {
 
     const currentFrequency = state.editingHabit.formData.frequency;
     const container = ui.frequencyOptionsContainer;
-    
-    // SOPA OPTIMIZATION [2025-04-23]: DOM Stability.
-    // Constrói a estrutura uma vez e apenas alterna classes/valores.
-    // Isso preserva o foco do teclado e evita GC churn.
-    
-    if (!container.hasChildNodes()) {
-        const rawWeekdays = [
-            { key: 'weekdaySun', day: 0 }, { key: 'weekdayMon', day: 1 }, { key: 'weekdayTue', day: 2 },
-            { key: 'weekdayWed', day: 3 }, { key: 'weekdayThu', day: 4 }, { key: 'weekdayFri', day: 5 }, { key: 'weekdaySat', day: 6 }
-        ];
-
-        let weekdays = rawWeekdays;
-        // Simple heuristic for week start. ideally should be locale-aware via Intl but this covers supported langs.
-        if (state.activeLanguageCode === 'es' || state.activeLanguageCode === 'en' || state.activeLanguageCode === 'pt') {
-            weekdays = [
-                rawWeekdays[1], rawWeekdays[2], rawWeekdays[3], rawWeekdays[4], rawWeekdays[5], rawWeekdays[6], rawWeekdays[0]
-            ];
-        }
-
-        const weekdayPickerHTML = `
-            <div class="weekday-picker">
-                ${weekdays.map(({ key, day }) => {
-                    const dayName = t(key);
-                    return `
-                    <label title="${dayName}">
-                        <input type="checkbox" class="visually-hidden" data-day="${day}">
-                        <span class="weekday-button">${dayName.substring(0, 1)}</span>
-                    </label>
-                `}).join('')}
-            </div>`;
-
-        const intervalControlsHTML = `
-            <div class="interval-control-group">
-                <button type="button" class="stepper-btn" data-action="interval-decrement" aria-label="${t('habitGoalDecrement_ariaLabel')}">-</button>
-                <span class="interval-amount-display"></span>
-                <button type="button" class="stepper-btn" data-action="interval-increment" aria-label="${t('habitGoalIncrement_ariaLabel')}">+</button>
-                <button type="button" class="unit-toggle-btn" data-action="interval-unit-toggle"></button>
-            </div>
-        `;
-
-        container.innerHTML = `
-            <div class="form-section frequency-options">
-                <div class="form-row">
-                    <label>
-                        <input type="radio" name="frequency-type" value="daily">
-                        ${t('freqDaily')}
-                    </label>
-                </div>
-                <div class="form-row form-row--vertical">
-                    <label>
-                        <input type="radio" name="frequency-type" value="specific_days_of_week">
-                        ${t('freqSpecificDaysOfWeek')}
-                    </label>
-                    <div class="frequency-details" data-type="specific_days_of_week">
-                        ${weekdayPickerHTML}
-                    </div>
-                </div>
-                <div class="form-row form-row--vertical">
-                    <label>
-                        <input type="radio" name="frequency-type" value="interval">
-                        ${t('freqEvery')}
-                    </label>
-                    <div class="frequency-details" data-type="interval">
-                        ${intervalControlsHTML}
-                    </div>
-                </div>
-            </div>`;
-    }
-
     const isDaily = currentFrequency.type === 'daily';
     const isSpecificDays = currentFrequency.type === 'specific_days_of_week';
     const isInterval = currentFrequency.type === 'interval';
 
-    // Update Radios (Fastest via checked property)
-    const radioDaily = container.querySelector('input[value="daily"]') as HTMLInputElement;
-    const radioSpecific = container.querySelector('input[value="specific_days_of_week"]') as HTMLInputElement;
-    const radioInterval = container.querySelector('input[value="interval"]') as HTMLInputElement;
-    
-    if (radioDaily.checked !== isDaily) radioDaily.checked = isDaily;
-    if (radioSpecific.checked !== isSpecificDays) radioSpecific.checked = isSpecificDays;
-    if (radioInterval.checked !== isInterval) radioInterval.checked = isInterval;
+    const rawWeekdays = [
+        { key: 'weekdaySun', day: 0 }, { key: 'weekdayMon', day: 1 }, { key: 'weekdayTue', day: 2 },
+        { key: 'weekdayWed', day: 3 }, { key: 'weekdayThu', day: 4 }, { key: 'weekdayFri', day: 5 }, { key: 'weekdaySat', day: 6 }
+    ];
 
-    // Update Visibility
-    const detailsSpecific = container.querySelector('.frequency-details[data-type="specific_days_of_week"]') as HTMLElement;
-    const detailsInterval = container.querySelector('.frequency-details[data-type="interval"]') as HTMLElement;
-    
-    if (detailsSpecific.classList.contains('visible') !== isSpecificDays) detailsSpecific.classList.toggle('visible', isSpecificDays);
-    if (detailsInterval.classList.contains('visible') !== isInterval) detailsInterval.classList.toggle('visible', isInterval);
-
-    // Update Content
-    if (isSpecificDays) {
-        const currentDays = new Set(currentFrequency.days);
-        const checkboxes = container.querySelectorAll<HTMLInputElement>('.weekday-picker input');
-        // PERF: Loop over static node list
-        for (let i = 0; i < checkboxes.length; i++) {
-            const cb = checkboxes[i];
-            const day = parseInt(cb.dataset.day!, 10);
-            const shouldCheck = currentDays.has(day);
-            if (cb.checked !== shouldCheck) cb.checked = shouldCheck;
-        }
+    let weekdays = rawWeekdays;
+    if (state.activeLanguageCode === 'es' || state.activeLanguageCode === 'en') {
+        weekdays = [
+            rawWeekdays[1], rawWeekdays[2], rawWeekdays[3], rawWeekdays[4], rawWeekdays[5], rawWeekdays[6], rawWeekdays[0]
+        ];
     }
 
-    if (isInterval) {
-        const intervalFreqTpl = FREQUENCIES.find(f => f.value.type === 'interval')!;
-        const defaults = intervalFreqTpl.value as { type: 'interval'; unit: 'days' | 'weeks'; amount: number };
-        const currentInterval = currentFrequency as { type: 'interval'; unit: 'days' | 'weeks'; amount: number };
-        
-        const amount = currentInterval.amount || defaults.amount;
-        const unit = currentInterval.unit || defaults.unit;
-        
-        const displayEl = container.querySelector('.interval-amount-display') as HTMLElement;
-        const unitBtn = container.querySelector('.unit-toggle-btn') as HTMLElement;
-        
-        setTextContent(displayEl, formatInteger(amount));
-        setTextContent(unitBtn, unit === 'days' ? t('unitDays') : t('unitWeeks'));
-    }
+    const selectedDays = isSpecificDays ? new Set(currentFrequency.days) : new Set();
+    const weekdayPickerHTML = `
+        <div class="weekday-picker">
+            ${weekdays.map(({ key, day }) => {
+                const dayName = t(key);
+                return `
+                <label title="${dayName}">
+                    <input type="checkbox" class="visually-hidden" data-day="${day}" ${selectedDays.has(day) ? 'checked' : ''}>
+                    <span class="weekday-button">${dayName.substring(0, 1)}</span>
+                </label>
+            `}).join('')}
+        </div>`;
+
+    const intervalFreqTpl = FREQUENCIES.find(f => f.value.type === 'interval')!;
+    const amount = isInterval ? currentFrequency.amount : (intervalFreqTpl.value.type === 'interval' ? intervalFreqTpl.value.amount : 2);
+    const unit = isInterval ? currentFrequency.unit : (intervalFreqTpl.value.type === 'interval' ? intervalFreqTpl.value.unit : 'days');
+    
+    const unitText = unit === 'days' ? t('unitDays') : t('unitWeeks');
+    // SOPA Update: Use formatInteger for localized number
+    const intervalControlsHTML = `
+        <div class="interval-control-group">
+            <button type="button" class="stepper-btn" data-action="interval-decrement" aria-label="${t('habitGoalDecrement_ariaLabel')}">-</button>
+            <span class="interval-amount-display">${formatInteger(amount)}</span>
+            <button type="button" class="stepper-btn" data-action="interval-increment" aria-label="${t('habitGoalIncrement_ariaLabel')}">+</button>
+            <button type="button" class="unit-toggle-btn" data-action="interval-unit-toggle">${unitText}</button>
+        </div>
+    `;
+
+    container.innerHTML = `
+        <div class="form-section frequency-options">
+            <div class="form-row">
+                <label>
+                    <input type="radio" name="frequency-type" value="daily" ${isDaily ? 'checked' : ''}>
+                    ${t('freqDaily')}
+                </label>
+            </div>
+            <div class="form-row form-row--vertical">
+                <label>
+                    <input type="radio" name="frequency-type" value="specific_days_of_week" ${isSpecificDays ? 'checked' : ''}>
+                    ${t('freqSpecificDaysOfWeek')}
+                </label>
+                <div class="frequency-details ${isSpecificDays ? 'visible' : ''}">
+                    ${weekdayPickerHTML}
+                </div>
+            </div>
+            <div class="form-row form-row--vertical">
+                <label>
+                    <input type="radio" name="frequency-type" value="interval" ${isInterval ? 'checked' : ''}>
+                    ${t('freqEvery')}
+                </label>
+                <div class="frequency-details ${isInterval ? 'visible' : ''}">
+                    ${intervalControlsHTML}
+                </div>
+            </div>
+        </div>`;
 }
 
 function _createHabitTemplateForForm(habitOrTemplate: Habit | PredefinedHabit | null, selectedDate: string): HabitTemplate {
@@ -744,35 +625,16 @@ export function refreshEditModalUI() {
     renderFrequencyOptions();
 
     const formData = state.editingHabit.formData;
-    
-    // SOPA OPTIMIZATION [2025-04-23]: Differential DOM Update.
-    // Avoid innerHTML replacement to preserve layout and object references.
-    
-    if (!ui.habitTimeContainer.firstElementChild) {
-        // Init once
-        ui.habitTimeContainer.innerHTML = `
-            <div class="segmented-control">
-                ${TIMES_OF_DAY.map(time => `
-                    <button type="button" class="segmented-control-option" data-time="${time}">
-                        ${getTimeOfDayIcon(time)}
-                        ${getTimeOfDayName(time)}
-                    </button>
-                `).join('')}
-            </div>
-        `;
-    }
-    
-    const buttons = ui.habitTimeContainer.querySelectorAll('.segmented-control-option');
-    // Low-overhead loop
-    for (let i = 0; i < buttons.length; i++) {
-        const btn = buttons[i] as HTMLElement;
-        const time = btn.dataset.time as TimeOfDay;
-        const isSelected = formData.times.includes(time);
-        
-        if (btn.classList.contains('selected') !== isSelected) {
-            btn.classList.toggle('selected', isSelected);
-        }
-    }
+    ui.habitTimeContainer.innerHTML = `
+        <div class="segmented-control">
+            ${TIMES_OF_DAY.map(time => `
+                <button type="button" class="segmented-control-option ${formData.times.includes(time) ? 'selected' : ''}" data-time="${time}">
+                    ${getTimeOfDayIcon(time)}
+                    ${getTimeOfDayName(time)}
+                </button>
+            `).join('')}
+        </div>
+    `;
     
     const habitNameInput = ui.editHabitForm.elements.namedItem('habit-name') as HTMLInputElement;
     if (habitNameInput) {
@@ -824,27 +686,24 @@ export function openEditModal(habitOrTemplate: Habit | HabitTemplate | null) {
     ui.habitIconPickerBtn.style.backgroundColor = formData.color;
     ui.habitIconPickerBtn.style.color = iconColor;
     
-    // Reset Time container if needed (re-hydrated by refreshEditModalUI)
-    if (ui.habitTimeContainer.innerHTML === '') {
-        // Initialization will happen in refreshEditModalUI
-    }
+    ui.habitTimeContainer.innerHTML = `
+        <div class="segmented-control">
+            ${TIMES_OF_DAY.map(time => `
+                <button type="button" class="segmented-control-option ${formData.times.includes(time) ? 'selected' : ''}" data-time="${time}">
+                    ${getTimeOfDayIcon(time)}
+                    ${getTimeOfDayName(time)}
+                </button>
+            `).join('')}
+        </div>
+    `;
 
-    // SOPA: Clean existing DOM state before refreshing to ensure clean slate logic
-    const checkboxes = ui.frequencyOptionsContainer.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
-    checkboxes.forEach(cb => cb.checked = false);
-
-    refreshEditModalUI(); // This now handles frequency options too
-    
+    renderFrequencyOptions();
     openModal(ui.editHabitModal, undefined, () => {
         state.editingHabit = null;
     });
 }
 
 export function renderExploreHabits() {
-    // SOPA OPTIMIZATION [2025-04-23]: Static Cache.
-    // The list is predefined and static. Render once, never again.
-    if (ui.exploreHabitList.childElementCount > 0) return;
-
     const fragment = document.createDocumentFragment();
 
     PREDEFINED_HABITS.forEach((habit, index) => {
@@ -883,6 +742,7 @@ export function renderExploreHabits() {
         fragment.appendChild(itemEl);
     });
 
+    ui.exploreHabitList.innerHTML = '';
     ui.exploreHabitList.appendChild(fragment);
 }
 

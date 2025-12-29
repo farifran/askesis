@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -38,7 +37,7 @@ const MS_PER_DAY = 86400000;
 
 // VISUAL CONSTANTS
 const SVG_HEIGHT = 45; 
-const CHART_PADDING = { top: 5, right: 0, bottom: 5, left: 3 };
+const CHART_PADDING = { top: 0, right: 0, bottom: 0, left: 3 };
 
 // PERFORMANCE [2025-04-13]: Hoisted Intl Options.
 const OPTS_AXIS_LABEL_SHORT: Intl.DateTimeFormatOptions = { 

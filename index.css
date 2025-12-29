@@ -1,4 +1,3 @@
-
 /* 
  * [ARCHITECTURAL CONTEXT]:
  * @file index.css
@@ -1462,8 +1461,6 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     overscroll-behavior: contain;
 }
 #edit-habit-modal .modal-content {
-    background-color: var(--bg-color);
-    padding: 0;
     display: flex;
     flex-direction: column;
 }
@@ -1479,12 +1476,6 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     flex-shrink: 0;
     margin: 0;
     margin-block-end: var(--space-lg);
-}
-
-/* CORREÇÃO VISUAL: Adiciona preenchimento ao título do modal de edição para consistência. */
-#edit-habit-modal h2 {
-    padding-inline: var(--space-xl);
-    padding-block-start: var(--space-xl);
 }
 
 #icon-picker-modal .modal-header h2 {
@@ -1879,8 +1870,11 @@ input:disabled + .slider {
 
 
 /* Modal: Edição/Criação de Hábito */
-#edit-habit-modal .modal-content { max-width: 540px; }
-
+#edit-habit-modal .modal-content {
+    max-width: 540px;
+    display: flex;
+    flex-direction: column;
+}
 
 /* CORREÇÃO: Garante que o modal de confirmação apareça sobre outros modais */
 #confirm-modal, #icon-picker-modal, #color-picker-modal, #full-calendar-modal, #calendar-quick-actions {
@@ -2060,8 +2054,8 @@ input:disabled + .slider {
     display: flex;
     flex-direction: column;
     gap: var(--space-lg);
-    /* O preenchimento superior foi movido para o h2 para um espaçamento consistente. */
-    padding: 0 var(--space-xl) var(--space-xxl);
+    /* O preenchimento agora é gerenciado pelo contêiner .modal-content pai */
+    padding: 0;
     flex-grow: 1;
     /* overflow-y: auto; REATORAÇÃO DE LAYOUT: Removido scroll aninhado. O scroll do formulário agora é gerenciado pelo .modal-content pai para evitar bugs de renderização em mobile. */
 }
