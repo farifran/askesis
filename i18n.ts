@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -67,6 +68,7 @@ type NumberFormatBundle = { int: Intl.NumberFormat; dec: Intl.NumberFormat; evo:
 const numberFormatCache: Record<string, NumberFormatBundle> = {};
 
 // PERFORMANCE: Cache imutável para nomes de dias da semana por idioma.
+// Permite acesso O(1) em loops de calendário.
 const weekdayCache: Record<string, string[]> = {};
 
 const loadedTranslations: Record<string, Translations> = {};
@@ -76,6 +78,7 @@ const inflightRequests = new Map<string, Promise<boolean>>();
 
 // CONSTANTS: Opções estáticas.
 const DAY_FORMAT_OPTS: Intl.DateTimeFormatOptions = { weekday: 'short', timeZone: 'UTC' };
+// Reference week: Jan 4 1970 was Sunday. Array 0-6 corresponds to Sun-Sat.
 const WEEKDAY_REF_DATES = Array.from({ length: 7 }, (_, i) => new Date(Date.UTC(1970, 0, 4 + i)));
 
 // PERFORMANCE: Lookup Table para TimeOfDay.
@@ -92,7 +95,7 @@ let currentPluralRules: Intl.PluralRules | null = null;
 let currentCollator: Intl.Collator | null = null;
 let currentListFormat: ListFormatter | null = null;
 let currentNumberFormat: NumberFormatBundle | null = null;
-let currentWeekdayNames: string[] = [];
+let currentWeekdayNames: string[] = []; // Cache array access is faster than Intl calls
 let currentLangCode: string | null = null;
 
 // CONCURRENCY: ID da última requisição.
@@ -233,7 +236,7 @@ function updateHotCache(langCode: string) {
     }
     currentNumberFormat = numberFormatCache[langCode];
 
-    // 6. Weekday Names
+    // 6. Weekday Names (Fast Lookup Cache)
     if (!weekdayCache[langCode]) {
         try {
             const dayFormatter = new Intl.DateTimeFormat(langCode, DAY_FORMAT_OPTS);
@@ -403,14 +406,23 @@ export function formatList(list: string[]): string {
     return currentListFormat ? currentListFormat.format(list) : list.join(', ');
 }
 
+/**
+ * Gets localized time of day name using optimized lookup table.
+ */
 export function getTimeOfDayName(time: TimeOfDay): string {
+    // PERFORMANCE: Static object lookup instead of string concatenation.
     return t(TIME_OF_DAY_KEYS[time] || `filter${time}`);
 }
 
+/**
+ * Gets localized day name (e.g. "SEG") from cached array.
+ * PERFORMANCE: Array access O(1) instead of Date/Intl instantiation.
+ */
 export function getLocaleDayName(date: Date): string {
     if (state.activeLanguageCode !== currentLangCode) {
         updateHotCache(state.activeLanguageCode);
     }
+    // getUTCDay() returns 0 for Sunday, matches array index
     return currentWeekdayNames[date.getUTCDay()] || '';
 }
 

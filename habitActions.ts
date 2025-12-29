@@ -12,22 +12,16 @@
  * Este módulo roda na thread principal e orquestra mutações de estado seguidas de atualizações de UI.
  * O foco é manter a responsividade da UI (60fps), delegando tarefas pesadas.
  * 
- * ARQUITETURA (MVC Controller):
- * - Responsabilidade Única: Receber intenções do usuário (via listeners), validar regras de negócio,
+ * ARQUITETURA (MVC Controller & V8 Optimization):
+ * - **Responsabilidade Única:** Receber intenções do usuário (via listeners), validar regras de negócio,
  *   mutar o estado global (AppState) e disparar a renderização/persistência.
- * - Desacoplamento: Não manipula o DOM diretamente (delega para `render/`). Não acessa API bruta (delega para `services/`).
+ * - **Monomorphism:** Evita o uso de `delete` em objetos quentes para manter Hidden Classes estáveis.
+ * - **Zero-Allocation:** Usa Pools estáticos para arrays temporários em operações de lote.
+ * - **Static Transaction State:** Callbacks de modais usam um Singleton de contexto para evitar closures.
  * 
  * DEPENDÊNCIAS CRÍTICAS:
- * - `state.ts`: A estrutura de dados mutável. Alterações aqui propagam para todo o sistema.
- * - `services/persistence.ts`: Garante a durabilidade dos dados (LocalStorage).
- * - `services/selectors.ts`: Leitura otimizada do estado.
- * 
- * DECISÕES TÉCNICAS:
- * 1. Mutabilidade Controlada: O estado é mutado diretamente para performance (evitando clonagem profunda de objetos complexos),
- *    mas a consistência é garantida via funções de finalização (`_finalizeScheduleUpdate`) que invalidam caches.
- * 2. Lógica Temporal: Funções como `_requestFutureScheduleChange` implementam "Time-Travel", permitindo
- *    que hábitos mudem de propriedades no tempo sem perder o histórico passado.
- * 3. Batch Updates: Agrupa invalidações de cache para evitar Layout Thrashing (recalculos de layout desnecessários).
+ * - `state.ts`: A estrutura de dados mutável.
+ * - `services/persistence.ts`: Garante a durabilidade dos dados.
  */
 
 import { 
@@ -78,49 +72,56 @@ import {
     clearHabitDomCache
 } from './render';
 import { ui } from './render/ui';
-import { t, getTimeOfDayName, formatDate } from './i18n'; // SOPA Update: formatDate
+import { t, getTimeOfDayName, formatDate } from './i18n'; 
 import { runWorkerTask } from './services/cloud';
 import { apiFetch, clearKey } from './services/api';
+
+// --- STATIC MEMORY POOLS (Zero-Allocation) ---
+// Used for batch operations to avoid GC pressure.
+const _batchHabitIdsPool: string[] = [];
+const _batchHabitsRefPool: Habit[] = [];
+
+// --- STATIC TRANSACTION CONTEXT (Zero-Closure Pattern) ---
+// Holds state for pending confirmations to avoid allocating closures in hot paths.
+const ActionContext = {
+    drop: null as { habitId: string, fromTime: TimeOfDay, toTime: TimeOfDay, reorderInfo?: { id: string, pos: 'before' | 'after' } } | null,
+    removal: null as { habitId: string, time: TimeOfDay, targetDate: string } | null,
+    ending: null as { habitId: string, targetDate: string } | null,
+    deletion: null as { habitId: string } | null
+};
 
 // --- PRIVATE HELPERS ---
 
 /**
  * Finaliza uma transação de mutação de estado.
  * PERFORMANCE: Centraliza a invalidação de cache e o disparo de eventos.
- * @param affectsHistory Se true, invalida caches estruturais profundos (histórico, DOM elements). Se false, apenas caches de visualização diária.
+ * @param affectsHistory Se true, invalida caches estruturais profundos.
  */
 function _finalizeScheduleUpdate(affectsHistory: boolean = true) {
     if (affectsHistory) {
-        // PERFORMANCE: Limpeza pesada. Força recriação de DOM elements e recálculo de streaks.
+        // PERFORMANCE: Limpeza pesada.
         clearScheduleCache();
         clearHabitDomCache();
-        // ROBUSTNESS [2025-03-27]: Limpa caches internos de seletores (ex: datas memoizadas) para evitar vazamento em mudanças estruturais.
+        // ROBUSTNESS: Limpa caches internos de seletores.
         clearSelectorInternalCaches();
     } else {
-        // PERFORMANCE: Limpeza leve. Apenas revalida quais hábitos aparecem hoje.
+        // PERFORMANCE: Limpeza leve.
         clearActiveHabitsCache();
     }
     
-    // Dirty Flags para o Loop de Renderização
     state.uiDirtyState.habitListStructure = true;
     state.uiDirtyState.calendarVisuals = true;
     
-    // IO Assíncrono (IndexedDB)
-    // FIRE-AND-FORGET: Não esperamos a Promise aqui para manter a UI responsiva.
-    // O saveState trata erros internamente.
+    // FIRE-AND-FORGET IO
     saveState();
     
-    // Event Bus para notificar componentes desacoplados
     document.dispatchEvent(new CustomEvent('render-app'));
-    // EVOLUTION [2025-03-16]: Update PWA Badge immediately after structural changes.
     document.dispatchEvent(new CustomEvent('habitsChanged'));
 }
 
 /**
  * CRITICAL LOGIC: Temporal State Bifurcation.
- * Gerencia a complexidade de alterar um hábito "de agora em diante" sem reescrever o passado.
- * Cria uma nova entrada no `scheduleHistory` se necessário, preservando a integridade histórica.
- * DO NOT REFACTOR: A lógica de índices e datas é sensível a erros de "off-by-one".
+ * Gerencia a complexidade de alterar um hábito "de agora em diante".
  */
 function _requestFutureScheduleChange(
     habitId: string, 
@@ -130,10 +131,11 @@ function _requestFutureScheduleChange(
     const habit = state.habits.find(h => h.id === habitId);
     if (!habit) return;
 
-    // 1. Encontra o agendamento ativo na data alvo
+    // Optimized reverse loop
     let activeScheduleIndex = -1;
-    for (let i = habit.scheduleHistory.length - 1; i >= 0; i--) {
-        const s = habit.scheduleHistory[i];
+    const history = habit.scheduleHistory;
+    for (let i = history.length - 1; i >= 0; i--) {
+        const s = history[i];
         if (targetDate >= s.startDate && (!s.endDate || targetDate < s.endDate)) {
             activeScheduleIndex = i;
             break;
@@ -141,15 +143,13 @@ function _requestFutureScheduleChange(
     }
 
     if (activeScheduleIndex !== -1) {
-        // --- CAMINHO A: MODIFICANDO UM AGENDAMENTO ATIVO ---
-        const currentSchedule = habit.scheduleHistory[activeScheduleIndex];
+        const currentSchedule = history[activeScheduleIndex];
 
-        // 2. Decide se atualiza in-place ou bifurca o histórico
         if (currentSchedule.startDate === targetDate) {
-            // Se a mudança começa exatamente no início do agendamento atual, atualizamos in-place.
-            habit.scheduleHistory[activeScheduleIndex] = updateFn({ ...currentSchedule });
+            // Update in-place
+            history[activeScheduleIndex] = updateFn({ ...currentSchedule });
         } else {
-            // Bifurcação: Encerra o agendamento atual ontem e começa um novo hoje.
+            // Bifurcation
             currentSchedule.endDate = targetDate;
 
             const newSchedule = updateFn({ 
@@ -158,24 +158,22 @@ function _requestFutureScheduleChange(
                 endDate: undefined
             });
             
-            habit.scheduleHistory.push(newSchedule);
-            habit.scheduleHistory.sort((a, b) => (a.startDate > b.startDate ? 1 : -1));
+            history.push(newSchedule);
+            // Sort logic is required after push
+            history.sort((a, b) => (a.startDate > b.startDate ? 1 : -1));
         }
     } else {
-        // --- CAMINHO B: "REATIVANDO" UM HÁBITO ---
-        // Nenhum agendamento ativo encontrado. Isso significa que o hábito foi encerrado ou graduado,
-        // e o usuário está reativando-o a partir de uma data futura.
-        
-        const lastSchedule = habit.scheduleHistory[habit.scheduleHistory.length - 1];
+        // Reactivation logic
+        const lastSchedule = history[history.length - 1];
         if (!lastSchedule) {
-            console.error(`Não é possível modificar o hábito ${habitId}: Nenhum histórico de agendamento encontrado.`);
+            console.error(`Cannot modify habit ${habitId}: No schedule history.`);
             return;
         }
 
         const newSchedule = updateFn({ 
             ...lastSchedule, 
             startDate: targetDate, 
-            endDate: undefined // Esta é a parte crucial que o torna ativo novamente.
+            endDate: undefined 
         });
 
         if (lastSchedule.endDate && lastSchedule.endDate > targetDate) {
@@ -184,16 +182,15 @@ function _requestFutureScheduleChange(
         
         habit.graduatedOn = undefined;
 
-        habit.scheduleHistory.push(newSchedule);
-        habit.scheduleHistory.sort((a, b) => (a.startDate > b.startDate ? 1 : -1));
+        history.push(newSchedule);
+        history.sort((a, b) => (a.startDate > b.startDate ? 1 : -1));
     }
     
     _finalizeScheduleUpdate(true);
 }
 
 /**
- * REFACTOR [2025-03-18]: Helper to centralize status mutations and side effects (like goal overrides).
- * Returns true if the status effectively changed.
+ * Helper to centralize status mutations and side effects.
  */
 function _updateHabitInstanceStatus(
     habit: Habit, 
@@ -204,9 +201,7 @@ function _updateHabitInstanceStatus(
 
     instance.status = newStatus;
 
-    // Special handling for 'Check' type habits:
-    // When completed, they should have a goal of 1 (100%).
-    // When pending/snoozed, override is removed to fallback to default logic.
+    // Special handling for 'Check' type habits
     if (habit.goal.type === 'check') {
         if (newStatus === 'completed') {
             instance.goalOverride = 1;
@@ -218,52 +213,216 @@ function _updateHabitInstanceStatus(
 }
 
 /**
- * Verifica se o hábito atingiu marcos de consistência (21 ou 66 dias)
- * e agenda a celebração pela IA se ainda não foi mostrada.
+ * Checks for milestones.
+ * SOPA OPTIMIZATION [2025-04-22]: Accepts Habit object directly.
+ * Avoids O(N) lookup in selectors.
  */
-function _checkStreakMilestones(habitId: string, dateISO: string) {
-    const streak = calculateHabitStreak(habitId, dateISO);
+function _checkStreakMilestones(habit: Habit, dateISO: string) {
+    // Pass object reference directly
+    const streak = calculateHabitStreak(habit, dateISO);
     
-    // Check 21 Days (Semi-Consolidation)
     if (streak === STREAK_SEMI_CONSOLIDATED) {
-        const notificationKey = `${habitId}-${STREAK_SEMI_CONSOLIDATED}`;
-        if (!state.notificationsShown.includes(notificationKey) && !state.pending21DayHabitIds.includes(habitId)) {
-            state.pending21DayHabitIds.push(habitId);
+        const notificationKey = `${habit.id}-${STREAK_SEMI_CONSOLIDATED}`;
+        if (!state.notificationsShown.includes(notificationKey) && !state.pending21DayHabitIds.includes(habit.id)) {
+            state.pending21DayHabitIds.push(habit.id);
             renderAINotificationState();
         }
     }
     
-    // Check 66 Days (Consolidation)
     if (streak === STREAK_CONSOLIDATED) {
-        const notificationKey = `${habitId}-${STREAK_CONSOLIDATED}`;
-        if (!state.notificationsShown.includes(notificationKey) && !state.pendingConsolidationHabitIds.includes(habitId)) {
-            state.pendingConsolidationHabitIds.push(habitId);
+        const notificationKey = `${habit.id}-${STREAK_CONSOLIDATED}`;
+        if (!state.notificationsShown.includes(notificationKey) && !state.pendingConsolidationHabitIds.includes(habit.id)) {
+            state.pendingConsolidationHabitIds.push(habit.id);
             renderAINotificationState();
         }
     }
 }
 
+// --- STATIC CONFIRMATION HANDLERS (DROP) ---
+
+const _applyDropJustToday = () => {
+    const ctx = ActionContext.drop;
+    if (!ctx) return;
+    const { habitId, fromTime, toTime, reorderInfo } = ctx;
+    
+    const habit = state.habits.find(h => h.id === habitId);
+    if (!habit) return;
+
+    const targetDate = getSafeDate(state.selectedDate);
+    const dailyInfo = ensureHabitDailyInfo(targetDate, habitId);
+    const currentSchedule = [...getEffectiveScheduleForHabitOnDate(habit, targetDate)];
+
+    const fromIndex = currentSchedule.indexOf(fromTime);
+    if (fromIndex > -1) {
+        currentSchedule.splice(fromIndex, 1);
+    }
+    
+    let toIndex = currentSchedule.indexOf(toTime);
+    if (toIndex === -1) {
+        currentSchedule.push(toTime);
+    }
+
+    dailyInfo.dailySchedule = currentSchedule;
+    
+    if (reorderInfo) {
+        const reorderTargetHabit = state.habits.find(h => h.id === reorderInfo.id);
+        if (reorderTargetHabit) {
+            reorderHabit(habitId, reorderInfo.id, reorderInfo.pos, true);
+        }
+    }
+    
+    _finalizeScheduleUpdate(false);
+    ActionContext.drop = null;
+};
+
+const _applyDropFromNowOn = () => {
+    const ctx = ActionContext.drop;
+    if (!ctx) return;
+    const { habitId, fromTime, toTime, reorderInfo } = ctx;
+
+    const targetDate = getSafeDate(state.selectedDate);
+    const dailyInfo = ensureHabitDailyInfo(targetDate, habitId);
+    
+    const currentOverride = dailyInfo.dailySchedule ? [...dailyInfo.dailySchedule] : null;
+
+    if (dailyInfo.dailySchedule) {
+        dailyInfo.dailySchedule = undefined; 
+    }
+
+    if (reorderInfo) {
+        reorderHabit(habitId, reorderInfo.id, reorderInfo.pos, true);
+    }
+
+    _requestFutureScheduleChange(habitId, targetDate, (scheduleToUpdate) => {
+        scheduleToUpdate.times = [...scheduleToUpdate.times];
+
+        if (currentOverride) {
+            scheduleToUpdate.times = currentOverride;
+        }
+
+        const fromIndex = scheduleToUpdate.times.indexOf(fromTime);
+        if (fromIndex > -1) {
+            scheduleToUpdate.times.splice(fromIndex, 1);
+        }
+        if (!scheduleToUpdate.times.includes(toTime)) {
+            scheduleToUpdate.times.push(toTime);
+        }
+        return scheduleToUpdate;
+    });
+    
+    ActionContext.drop = null;
+};
+
+// --- STATIC CONFIRMATION HANDLERS (ACTIONS) ---
+
+const _applyHabitEnding = () => {
+    const ctx = ActionContext.ending;
+    if (!ctx) return;
+    const { habitId, targetDate } = ctx;
+
+    _requestFutureScheduleChange(habitId, targetDate, (schedule) => {
+        schedule.endDate = targetDate;
+        return schedule;
+    });
+    
+    ActionContext.ending = null;
+};
+
+const _applyHabitDeletion = async () => {
+    const ctx = ActionContext.deletion;
+    if (!ctx) return;
+    const { habitId } = ctx;
+
+    const habit = state.habits.find(h => h.id === habitId);
+    if (!habit) return;
+
+    state.habits = state.habits.filter(h => h.id !== habitId);
+    
+    // For permanent deletion, 'delete' on the dictionary is acceptable as 
+    // the object key is being removed forever.
+    Object.values(state.dailyData).forEach(day => {
+        delete day[habitId];
+    });
+
+    const earliestDate = habit.scheduleHistory[0]?.startDate || habit.createdOn;
+    const startYear = parseInt(earliestDate.substring(0, 4), 10);
+
+    try {
+        const updatedArchives = await runWorkerTask<AppState['archives']>('prune-habit', {
+            habitId,
+            archives: state.archives,
+            startYear
+        });
+
+        for (const year in updatedArchives) {
+            const newValue = updatedArchives[year];
+            if (newValue === "") {
+                delete state.archives[year];
+                state.unarchivedCache.delete(year);
+            } else {
+                state.archives[year] = newValue;
+                state.unarchivedCache.delete(year);
+            }
+        }
+    } catch (e) {
+        console.error("Worker pruning failed:", e);
+    }
+    
+    _finalizeScheduleUpdate(true);
+    
+    if (ui.manageModal.classList.contains('visible')) {
+        closeModal(ui.manageModal);
+    }
+    
+    ActionContext.deletion = null;
+};
+
+const _applyTimeRemoval = () => {
+    const ctx = ActionContext.removal;
+    if (!ctx) return;
+    const { habitId, time, targetDate } = ctx;
+
+    if (isDateLoading(targetDate)) {
+        console.warn('Attempted to remove habit time while data is loading.');
+        return;
+    }
+
+    const dailyInfo = ensureHabitDailyInfo(targetDate, habitId);
+    
+    // V8 OPTIMIZATION: undefined assignment
+    if (dailyInfo.dailySchedule) {
+        dailyInfo.dailySchedule = undefined;
+    }
+
+    _requestFutureScheduleChange(habitId, targetDate, (scheduleToUpdate) => {
+        scheduleToUpdate.times = [...scheduleToUpdate.times];
+
+        const index = scheduleToUpdate.times.indexOf(time);
+        if (index > -1) {
+            scheduleToUpdate.times.splice(index, 1);
+        }
+        return scheduleToUpdate;
+    });
+    
+    ActionContext.removal = null;
+};
+
 // ... (export functions)
 
-// ARCHIVE THRESHOLD [2025-02-23]: Data older than this (in days) moves to cold storage.
 const ARCHIVE_THRESHOLD_DAYS = 90; 
 
-/**
- * ARCHIVE LOGIC: Moves old daily data to cold storage.
- * MOVED FROM PERSISTENCE [2025-04-14] to fix circular dependency.
- * Now executed by the Business Logic Controller.
- */
 export function performArchivalCheck() {
     const runArchive = async () => {
         const today = parseUTCIsoDate(getTodayUTCIso());
         const thresholdDate = addDays(today, -ARCHIVE_THRESHOLD_DAYS);
         const thresholdISO = toUTCIsoDateString(thresholdDate);
         
-        // 1. Identificar candidatos (Scan leve)
         const yearBuckets: Record<string, { additions: Record<string, Record<string, HabitDailyInfo>>, base?: any }> = {};
         const keysToRemove: string[] = [];
 
-        for (const dateStr of Object.keys(state.dailyData)) {
+        // Object.keys is O(N) but N is small (cached days < 90 + margin)
+        const dailyKeys = Object.keys(state.dailyData);
+        for (const dateStr of dailyKeys) {
             if (dateStr < thresholdISO) {
                 const year = dateStr.substring(0, 4);
                 if (!yearBuckets[year]) {
@@ -281,46 +440,44 @@ export function performArchivalCheck() {
 
         if (keysToRemove.length === 0) return;
 
-        // 2. Offload para Worker (CPU Heavy)
         try {
             console.log(`Offloading archive task for ${keysToRemove.length} days to worker...`);
-            type ArchiveOutput = Record<string, string>; // Ano -> GZIP
+            type ArchiveOutput = Record<string, string>;
             const newArchives = await runWorkerTask<ArchiveOutput>('archive', yearBuckets);
 
             let totalMoved = 0;
 
-            // 3. ATOMIC VALIDATION & COMMIT (per year)
             for (const year in newArchives) {
                 const additionsForYear = yearBuckets[year].additions;
                 let isYearStale = false;
 
-                // VALIDATE: Check all days sent to worker against current state for this year
+                // Validation
                 for (const dateStr in additionsForYear) {
                     const originalDataSent = additionsForYear[dateStr];
                     const currentDataInState = state.dailyData[dateStr];
                     if (JSON.stringify(originalDataSent) !== JSON.stringify(currentDataInState)) {
                         isYearStale = true;
-                        console.warn(`[ARCHIVE] Stale data detected for year ${year} (date: ${dateStr}). Aborting archival for this year to prevent data loss.`);
+                        console.warn(`[ARCHIVE] Stale data detected for year ${year}. Aborting.`);
                         break; 
                     }
                 }
 
-                // COMMIT or ROLLBACK
                 if (!isYearStale) {
-                    // Commit: Data is fresh, apply changes
                     state.archives[year] = newArchives[year];
                     state.unarchivedCache.delete(year);
                     
                     const keysForThisYear = Object.keys(additionsForYear);
-                    keysForThisYear.forEach(k => delete state.dailyData[k]);
+                    // Optimized deletion: 'delete' here is necessary to free memory
+                    for(const k of keysForThisYear) {
+                        delete state.dailyData[k];
+                    }
                     totalMoved += keysForThisYear.length;
                 }
-                // If stale, we do nothing for this year. The data remains in hot storage and will be re-processed next cycle.
             }
             
             if (totalMoved > 0) {
                  console.log(`Archiving complete. Moved ${totalMoved} records.`);
-                 await saveState(); // Persist changes async
+                 await saveState();
             }
 
         } catch (e) {
@@ -338,18 +495,23 @@ export function performArchivalCheck() {
 export function createDefaultHabit() {
     const defaultTemplate = PREDEFINED_HABITS.find(h => h.isDefault);
     if (defaultTemplate) {
+        // MONOMORPHISM: Ensure property order matches 'Habit' interface strictly
         const newHabit: Habit = {
             id: generateUUID(),
-            createdOn: getTodayUTCIso(),
             icon: defaultTemplate.icon,
             color: defaultTemplate.color,
             goal: defaultTemplate.goal,
+            createdOn: getTodayUTCIso(),
+            graduatedOn: undefined, // Explicit undefined for shape stability
             scheduleHistory: [{
                 startDate: getTodayUTCIso(),
-                times: defaultTemplate.times,
-                frequency: defaultTemplate.frequency,
+                endDate: undefined,
+                name: undefined,
+                subtitle: undefined,
                 nameKey: defaultTemplate.nameKey,
                 subtitleKey: defaultTemplate.subtitleKey,
+                times: defaultTemplate.times,
+                frequency: defaultTemplate.frequency,
                 scheduleAnchor: getTodayUTCIso()
             }]
         };
@@ -359,25 +521,24 @@ export function createDefaultHabit() {
 }
 
 export function reorderHabit(movedHabitId: string, targetHabitId: string, position: 'before' | 'after', skipFinalize = false) {
-    // PERFORMANCE: Operação O(N) em array pequeno (<100 itens), aceitável na Main Thread.
-    const movedIndex = state.habits.findIndex(h => h.id === movedHabitId);
-    const targetIndex = state.habits.findIndex(h => h.id === targetHabitId);
+    const habits = state.habits;
+    const movedIndex = habits.findIndex(h => h.id === movedHabitId);
+    const targetIndex = habits.findIndex(h => h.id === targetHabitId);
 
     if (movedIndex === -1 || targetIndex === -1) return;
 
-    const [movedHabit] = state.habits.splice(movedIndex, 1);
+    const [movedHabit] = habits.splice(movedIndex, 1);
     
     const newTargetIndex = (movedIndex < targetIndex) ? targetIndex - 1 : targetIndex;
-    
     const insertIndex = position === 'before' ? newTargetIndex : newTargetIndex + 1;
-    state.habits.splice(insertIndex, 0, movedHabit);
+    
+    habits.splice(insertIndex, 0, movedHabit);
 
     if (!skipFinalize) {
         _finalizeScheduleUpdate(false);
     }
 }
 
-// LOGIC LOCK: Manipula a complexidade de UI do Drag & Drop transformando-a em lógica de estado.
 export function handleHabitDrop(
     habitId: string, 
     fromTime: TimeOfDay, 
@@ -388,79 +549,21 @@ export function handleHabitDrop(
     if (!habit) return;
     
     const targetDate = getSafeDate(state.selectedDate);
-
-    // Opção 1: Alteração Temporária (Override na DailyData)
-    const applyJustToday = () => {
-        const dailyInfo = ensureHabitDailyInfo(targetDate, habitId);
-        const currentSchedule = [...getEffectiveScheduleForHabitOnDate(habit, targetDate)];
-
-        const fromIndex = currentSchedule.indexOf(fromTime);
-        if (fromIndex > -1) {
-            currentSchedule.splice(fromIndex, 1);
-        }
-        
-        let toIndex = currentSchedule.indexOf(toTime);
-        if (toIndex === -1) {
-            currentSchedule.push(toTime);
-        }
-
-        dailyInfo.dailySchedule = currentSchedule;
-        
-        if (reorderInfo) {
-            const reorderTargetHabit = state.habits.find(h => h.id === reorderInfo.id);
-            if (reorderTargetHabit) {
-                reorderHabit(habitId, reorderInfo.id, reorderInfo.pos, true);
-            }
-        }
-        
-        _finalizeScheduleUpdate(false);
-    };
-
-    // Opção 2: Alteração Permanente (Novo Schedule no History)
-    const applyFromNowOn = () => {
-        const dailyInfo = ensureHabitDailyInfo(targetDate, habitId);
-        
-        // Remove override local se existir, pois a regra permanente terá precedência
-        const currentOverride = dailyInfo.dailySchedule ? [...dailyInfo.dailySchedule] : null;
-
-        if (dailyInfo.dailySchedule) {
-            delete dailyInfo.dailySchedule;
-        }
-
-        if (reorderInfo) {
-            reorderHabit(habitId, reorderInfo.id, reorderInfo.pos, true);
-        }
-
-        _requestFutureScheduleChange(habitId, targetDate, (scheduleToUpdate) => {
-            scheduleToUpdate.times = [...scheduleToUpdate.times];
-
-            // Se havia um override hoje, usamos ele como base para a nova regra permanente
-            if (currentOverride) {
-                scheduleToUpdate.times = currentOverride;
-            }
-
-            const fromIndex = scheduleToUpdate.times.indexOf(fromTime);
-            if (fromIndex > -1) {
-                scheduleToUpdate.times.splice(fromIndex, 1);
-            }
-            if (!scheduleToUpdate.times.includes(toTime)) {
-                scheduleToUpdate.times.push(toTime);
-            }
-            return scheduleToUpdate;
-        });
-    };
     
+    // Set transaction context
+    ActionContext.drop = { habitId, fromTime, toTime, reorderInfo };
+
     const timeNames = { oldTime: getTimeOfDayName(fromTime), newTime: getTimeOfDayName(toTime) };
     const habitName = getHabitDisplayInfo(habit, targetDate).name;
 
     showConfirmationModal(
         t('confirmHabitMove', { habitName, ...timeNames }),
-        applyFromNowOn,
+        _applyDropFromNowOn, // Static handler
         {
             title: t('modalMoveHabitTitle'),
             confirmText: t('buttonFromNowOn'),
             editText: t('buttonJustToday'),
-            onEdit: applyJustToday
+            onEdit: _applyDropJustToday // Static handler
         }
     );
 }
@@ -484,18 +587,22 @@ export function saveHabitFromModal() {
     }
     
     if (isNew) {
+        // MONOMORPHISM: Ensure strict shape matching
         const newHabit: Habit = {
             id: generateUUID(),
-            createdOn: targetDate,
             icon: formData.icon,
             color: formData.color,
             goal: formData.goal,
+            createdOn: targetDate,
+            graduatedOn: undefined,
             scheduleHistory: [{
                 startDate: targetDate,
+                endDate: undefined,
                 times: formData.times,
                 frequency: formData.frequency,
                 name: formData.name,
                 nameKey: formData.nameKey,
+                subtitle: undefined,
                 subtitleKey: formData.subtitleKey,
                 scheduleAnchor: targetDate
             }]
@@ -506,18 +613,16 @@ export function saveHabitFromModal() {
         const habit = state.habits.find(h => h.id === habitId);
         if (!habit) return;
 
-        // Atualizações visuais são retroativas (ícone/cor/meta)
         habit.icon = formData.icon;
         habit.color = formData.color;
         habit.goal = formData.goal;
 
-        // Limpa overrides conflitantes
         const dailyInfo = ensureHabitDailyInfo(targetDate, habit.id);
+        // V8 OPTIMIZATION: Avoid 'delete'
         if (dailyInfo.dailySchedule) {
-            delete dailyInfo.dailySchedule;
+            dailyInfo.dailySchedule = undefined;
         }
 
-        // Edge Case: Editando um hábito antes de ele existir na timeline
         const firstSchedule = habit.scheduleHistory[0];
 
         if (targetDate < firstSchedule.startDate) {
@@ -530,7 +635,6 @@ export function saveHabitFromModal() {
             
             _finalizeScheduleUpdate(true);
         } else {
-            // Caso padrão: Time-Travel logic
             _requestFutureScheduleChange(habit.id, targetDate, (schedule) => {
                 schedule.name = formData.name;
                 schedule.nameKey = formData.nameKey;
@@ -545,7 +649,7 @@ export function saveHabitFromModal() {
     state.editingHabit = null;
 }
 
-// PERFORMANCE [2025-04-13]: Hoisted Intl Options.
+// PERFORMANCE: Hoisted Intl Options
 const OPTS_CONFIRM_DATE: Intl.DateTimeFormatOptions = {
     day: 'numeric',
     month: 'long',
@@ -560,20 +664,13 @@ export function requestHabitEndingFromModal(habitId: string) {
     const { name } = getHabitDisplayInfo(habit, targetDate);
     
     const dateObj = parseUTCIsoDate(targetDate);
-    // SOPA Update: Use hoisted options
     const formattedDate = formatDate(dateObj, OPTS_CONFIRM_DATE);
     
+    ActionContext.ending = { habitId, targetDate };
+
     showConfirmationModal(
         t('confirmEndHabit', { habitName: name, date: formattedDate }),
-        () => {
-            _requestFutureScheduleChange(habitId, targetDate, (schedule) => {
-                schedule.endDate = targetDate;
-                return schedule;
-            });
-            // UX FIX [2025-03-22]: Não fecha o modal de Gerenciar Hábitos ao encerrar um hábito.
-            // Isso permite que o usuário veja o status atualizado na lista e continue gerenciando outros itens.
-            // O update de estado disparado por _finalizeScheduleUpdate fará a UI atualizar.
-        },
+        _applyHabitEnding, // Static handler
         { confirmButtonStyle: 'danger', confirmText: t('endButton') }
     );
 }
@@ -583,59 +680,12 @@ export function requestHabitPermanentDeletion(habitId: string) {
     if (!habit) return;
     
     const { name } = getHabitDisplayInfo(habit);
+    
+    ActionContext.deletion = { habitId };
 
     showConfirmationModal(
         t('confirmPermanentDelete', { habitName: name }),
-        async () => { 
-            // 1. Remove from Metadata (Mutable State)
-            state.habits = state.habits.filter(h => h.id !== habitId);
-            
-            // 2. Remove from Hot Storage (Daily Data)
-            // PERFORMANCE: Object.keys iteration is O(N) where N is cached days (usually < 90). Fast enough.
-            Object.values(state.dailyData).forEach(day => {
-                delete day[habitId];
-            });
-
-            // 3. Remove from Cold Storage (Worker Offload)
-            // STATE OF THE ART [2025-04-06]: Offload heavy decompression/parsing to worker.
-            // The Main Thread is blocked by JSON.parse/stringify of 1MB+ strings.
-            const earliestDate = habit.scheduleHistory[0]?.startDate || habit.createdOn;
-            const startYear = parseInt(earliestDate.substring(0, 4), 10);
-
-            try {
-                // Send job to worker. Returns a map of updated GZIP strings for affected years.
-                const updatedArchives = await runWorkerTask<AppState['archives']>('prune-habit', {
-                    habitId,
-                    archives: state.archives,
-                    startYear
-                });
-
-                // Apply updates atomically to Cold Storage
-                for (const year in updatedArchives) {
-                    const newValue = updatedArchives[year];
-                    if (newValue === "") {
-                        // Empty string signal -> Delete year
-                        delete state.archives[year];
-                        state.unarchivedCache.delete(year);
-                    } else {
-                        state.archives[year] = newValue;
-                        // Invalidate memory cache so next read fetches fresh data from archive
-                        state.unarchivedCache.delete(year);
-                    }
-                }
-            } catch (e) {
-                console.error("Worker pruning failed:", e);
-                // Fail-safe: Data might be stale in archives, but Hot Storage is clean.
-                // Next sync might perform a merge where deletion propagates if logic allows,
-                // or data remains in archives as "orphaned". 
-            }
-            
-            _finalizeScheduleUpdate(true);
-            
-            if (ui.manageModal.classList.contains('visible')) {
-                closeModal(ui.manageModal);
-            }
-        },
+        _applyHabitDeletion, // Static handler
         { confirmButtonStyle: 'danger', confirmText: t('deleteButton') }
     );
 }
@@ -668,7 +718,6 @@ export async function resetApplicationData() {
     state.pending21DayHabitIds = [];
     state.pendingConsolidationHabitIds = [];
     
-    // Aguarda a limpeza do banco antes de recarregar
     await clearLocalPersistence();
     clearKey();
     
@@ -681,7 +730,6 @@ export function handleSaveNote() {
     const { habitId, date, time } = state.editingNoteFor;
     const noteContent = ui.notesTextarea.value.trim();
 
-    // SAFETY CHECK: Data loading guard
     if (isDateLoading(date)) {
         console.warn('Attempted to save note while data is loading.');
         return;
@@ -689,12 +737,12 @@ export function handleSaveNote() {
 
     const instance = ensureHabitInstanceData(date, habitId, time);
 
-    // OTIMIZAÇÃO: Evita gravação se o conteúdo não mudou.
     if ((instance.note || '') !== noteContent) {
         if (noteContent) {
             instance.note = noteContent;
         } else {
-            delete instance.note;
+            // V8 OPTIMIZATION: Use undefined instead of delete
+            instance.note = undefined;
         }
 
         state.uiDirtyState.habitListStructure = true;
@@ -705,7 +753,6 @@ export function handleSaveNote() {
     closeModal(ui.notesModal);
 }
 
-// Concurrency Guard: Simple timestamp ID to reject stale responses.
 let lastAIRequestId = 0;
 
 export async function performAIAnalysis(analysisType: 'monthly' | 'quarterly' | 'historical') {
@@ -714,22 +761,19 @@ export async function performAIAnalysis(analysisType: 'monthly' | 'quarterly' | 
     state.aiState = 'loading';
     state.hasSeenAIResult = false;
     
-    // RACE CONDITION GUARD: Increment ID. Only matches of the current ID will apply.
     const requestId = ++lastAIRequestId;
     
     renderAINotificationState();
     closeModal(ui.aiOptionsModal);
 
     try {
-        // BUGFIX [2025-03-22]: Seleção dinâmica da chave de tradução baseada no tipo de análise.
-        let promptTemplateKey = 'aiPromptGeneral'; // Fallback para 'historical'
+        let promptTemplateKey = 'aiPromptGeneral';
         if (analysisType === 'monthly') {
             promptTemplateKey = 'aiPromptMonthly';
         } else if (analysisType === 'quarterly') {
             promptTemplateKey = 'aiPromptQuarterly';
         }
 
-        // TYPE SAFETY FIX: Strict typing for worker payload map.
         const translations: Record<string, string> = {
             promptTemplate: t(promptTemplateKey),
             aiPromptGraduatedSection: t('aiPromptGraduatedSection'),
@@ -738,12 +782,11 @@ export async function performAIAnalysis(analysisType: 'monthly' | 'quarterly' | 
             aiSystemInstruction: t('aiSystemInstruction'),
         };
         
-        // REFACTOR [2025-04-07]: Zero-allocation loop (substitui forEach)
+        // Zero-allocation loop
         for (const h of PREDEFINED_HABITS) {
             translations[h.nameKey] = t(h.nameKey);
         }
 
-        // PERFORMANCE: Off-Main-Thread Architecture.
         const { prompt, systemInstruction } = await runWorkerTask<{ prompt: string, systemInstruction: string }>(
             'build-ai-prompt',
             {
@@ -757,7 +800,6 @@ export async function performAIAnalysis(analysisType: 'monthly' | 'quarterly' | 
             }
         );
 
-        // STALE CHECK: User triggered another analysis?
         if (requestId !== lastAIRequestId) return;
 
         const response = await apiFetch('/api/analyze', {
@@ -767,13 +809,12 @@ export async function performAIAnalysis(analysisType: 'monthly' | 'quarterly' | 
 
         const text = await response.text();
         
-        // STALE CHECK: Late response?
         if (requestId !== lastAIRequestId) return;
 
         state.lastAIResult = text;
         state.aiState = 'completed';
     } catch (error) {
-        if (requestId !== lastAIRequestId) return; // Ignore errors from stale requests
+        if (requestId !== lastAIRequestId) return; 
         
         console.error("AI Analysis failed", error);
         state.lastAIError = String(error);
@@ -813,18 +854,17 @@ export function importData() {
             const data = JSON.parse(text);
             if (data.habits && data.version) {
                 await loadState(data);
-                await saveState(); // Async IDB save
+                await saveState(); 
                 document.dispatchEvent(new CustomEvent('render-app'));
                 document.dispatchEvent(new CustomEvent('habitsChanged'));
                 
                 closeModal(ui.manageModal);
                 
-                // UX IMPROVEMENT (SOTA): Native-like feedback instead of browser alert
                 showConfirmationModal(
                     t('importSuccess'),
-                    () => {}, // No-op on confirm
+                    () => {}, 
                     {
-                        title: t('privacyLabel'), // "Data & Privacy"
+                        title: t('privacyLabel'), 
                         confirmText: 'OK',
                         hideCancel: true
                     }
@@ -862,7 +902,6 @@ export function toggleHabitStatus(habitId: string, time: TimeOfDay, date: string
     const habit = state.habits.find(h => h.id === habitId);
     if (!habit) return;
 
-    // SAFETY CHECK: Prevent writing to uninitialized cold storage
     if (isDateLoading(date)) {
         console.warn('Attempted to toggle habit while data is loading.');
         return;
@@ -872,17 +911,11 @@ export function toggleHabitStatus(habitId: string, time: TimeOfDay, date: string
     const oldStatus = instance.status;
     const newStatus = getNextStatus(oldStatus);
     
-    // REFACTOR [2025-03-18]: Logic centralized in helper
     if (_updateHabitInstanceStatus(habit, instance, newStatus)) {
-        // PERFORMANCE: Invalida caches granularmente para apenas este hábito nesta data.
         invalidateCachesForDateChange(date, [habitId]);
         
-        // BUGFIX [2025-03-27]: Verifica marcos de consistência (21/66 dias)
-        // Se o novo status for 'completed', verificamos se atingiu um marco.
         if (newStatus === 'completed') {
-            // Nota: invalidateCachesForDateChange limpou o cache de streak,
-            // então a chamada dentro de _checkStreakMilestones calculará o novo valor correto.
-            _checkStreakMilestones(habitId, date);
+            _checkStreakMilestones(habit, date);
         }
         
         state.uiDirtyState.calendarVisuals = true;
@@ -896,7 +929,6 @@ export function toggleHabitStatus(habitId: string, time: TimeOfDay, date: string
 }
 
 export function setGoalOverride(habitId: string, date: string, time: TimeOfDay, value: number) {
-    // SAFETY CHECK: Prevent writing to uninitialized cold storage
     if (isDateLoading(date)) {
         console.warn('Attempted to set goal while data is loading.');
         return;
@@ -924,33 +956,11 @@ export function requestHabitTimeRemoval(habitId: string, time: TimeOfDay) {
     const { name } = getHabitDisplayInfo(habit, targetDate);
     const timeName = getTimeOfDayName(time);
     
-    const confirmDeletion = () => {
-        // SAFETY CHECK: Prevent writing to uninitialized cold storage
-        if (isDateLoading(targetDate)) {
-            console.warn('Attempted to remove habit time while data is loading.');
-            return;
-        }
-
-        const dailyInfo = ensureHabitDailyInfo(targetDate, habitId);
-        
-        if (dailyInfo.dailySchedule) {
-            delete dailyInfo.dailySchedule;
-        }
-
-        _requestFutureScheduleChange(habitId, targetDate, (scheduleToUpdate) => {
-            scheduleToUpdate.times = [...scheduleToUpdate.times];
-
-            const index = scheduleToUpdate.times.indexOf(time);
-            if (index > -1) {
-                scheduleToUpdate.times.splice(index, 1);
-            }
-            return scheduleToUpdate;
-        });
-    };
+    ActionContext.removal = { habitId, time, targetDate };
 
     showConfirmationModal(
         t('confirmRemoveTimePermanent', { habitName: name, time: timeName }),
-        confirmDeletion,
+        _applyTimeRemoval, // Static handler
         {
             title: t('modalRemoveTimeTitle'), 
             confirmText: t('deleteButton'),
@@ -960,37 +970,27 @@ export function requestHabitTimeRemoval(habitId: string, time: TimeOfDay) {
 }
 
 export function markAllHabitsForDate(dateISO: string, status: HabitStatus): boolean {
-    // SAFETY CHECK: Prevent mass writing to uninitialized cold storage
     if (isDateLoading(dateISO)) {
         console.warn('Attempted to batch update habits while data is loading.');
         return false;
     }
 
-    // PERFORMANCE OPTIMIZATION [2025-04-06]: Zero-Allocation Loop.
-    // Replace complex selector chain `getActiveHabitsForDate` (which allocates objects)
-    // with a raw loop over the habit array. This is a hot path for "Quick Actions".
-    
     const dateObj = parseUTCIsoDate(dateISO);
     
-    // OPTIMIZATION [2025-04-07]: Hoist Hot Storage Hydration.
-    // Ensure the day record exists in state.dailyData ONCE before the loop.
-    // This avoids repeated checks/clones inside ensureHabitDailyInfo for every habit.
+    // OPTIMIZATION: Hoist Hot Storage Hydration.
     if (!state.dailyData[dateISO]) {
         const archivedDay = getHabitDailyInfoForDate(dateISO);
-        // Use a lightweight check for empty object if constant is not available here, 
-        // or rely on the fact that getHabitDailyInfoForDate returns a fresh object if empty.
-        // Actually, we can just use the logic from ensureHabitDailyInfo but manually inlined/hoisted.
         state.dailyData[dateISO] = (Object.keys(archivedDay).length > 0) 
             ? structuredClone(archivedDay) 
             : {};
     }
     
-    // Direct reference to the hot storage day object
     const hotDayData = state.dailyData[dateISO];
-    
     let changed = false;
-    // We use a simple array instead of Set for iteration speed, pushing unique IDs only.
-    const changedHabitIds: string[] = [];
+    
+    // PERF: Use static pools for batch updates
+    _batchHabitIdsPool.length = 0;
+    _batchHabitsRefPool.length = 0;
 
     const habits = state.habits;
     const len = habits.length;
@@ -998,26 +998,24 @@ export function markAllHabitsForDate(dateISO: string, status: HabitStatus): bool
     for (let i = 0; i < len; i = (i + 1) | 0) {
         const habit = habits[i];
         
-        // Fast Check: Memoized Appearance
         if (!shouldHabitAppearOnDate(habit, dateISO, dateObj)) {
             continue;
         }
 
         const schedule = getEffectiveScheduleForHabitOnDate(habit, dateISO);
-        if (schedule.length === 0) continue;
+        const schedLen = schedule.length;
+        if (schedLen === 0) continue;
 
-        // Optimization: Initialize habit entry directly
         hotDayData[habit.id] ??= { instances: {}, dailySchedule: undefined };
         const dailyInfo = hotDayData[habit.id];
         
         let habitChanged = false;
 
-        for (let j = 0; j < schedule.length; j++) {
+        for (let j = 0; j < schedLen; j = (j + 1) | 0) {
             const time = schedule[j];
             dailyInfo.instances[time] ??= { status: 'pending', goalOverride: undefined, note: undefined };
             const instance = dailyInfo.instances[time]!;
             
-            // Unified logic helper
             if (_updateHabitInstanceStatus(habit, instance, status)) {
                 habitChanged = true;
                 changed = true;
@@ -1025,18 +1023,20 @@ export function markAllHabitsForDate(dateISO: string, status: HabitStatus): bool
         }
 
         if (habitChanged) {
-            changedHabitIds.push(habit.id);
+            _batchHabitIdsPool.push(habit.id);
+            _batchHabitsRefPool.push(habit);
         }
     }
     
     if (changed) {
-        // Batch invalidation
-        invalidateCachesForDateChange(dateISO, changedHabitIds);
+        // PERF: Pass the ID array collected during the loop
+        invalidateCachesForDateChange(dateISO, _batchHabitIdsPool);
         
-        // Check milestones
         if (status === 'completed') {
-            for (let k = 0; k < changedHabitIds.length; k++) {
-                _checkStreakMilestones(changedHabitIds[k], dateISO);
+            // PERF: Iterate references directly to avoid lookup overhead
+            const batchLen = _batchHabitsRefPool.length;
+            for (let k = 0; k < batchLen; k = (k + 1) | 0) {
+                _checkStreakMilestones(_batchHabitsRefPool[k], dateISO);
             }
         }
         
@@ -1049,24 +1049,16 @@ export function markAllHabitsForDate(dateISO: string, status: HabitStatus): bool
     return changed;
 }
 
-/**
- * Lida com a transição automática da meia-noite.
- * Chamado quando o evento 'dayChanged' é disparado pelo Midnight Loop.
- */
 export function handleDayTransition() {
-    const newToday = getTodayUTCIso(); // Isso revalidará e pegará a nova data
+    const newToday = getTodayUTCIso(); 
     
-    // Limpa caches que dependem da noção de "Hoje"
     clearActiveHabitsCache();
     state.uiDirtyState.calendarVisuals = true;
     state.uiDirtyState.habitListStructure = true;
     state.uiDirtyState.chartData = true;
     
-    // Força reconstrução do array de datas do calendário para centralizar no novo dia
     state.calendarDates = [];
 
-    // Se o usuário estava vendo "Hoje" (que agora é "Ontem"), atualiza para o novo "Hoje".
-    // Isso é o comportamento padrão esperado de um app "vivo".
     if (state.selectedDate !== newToday) {
         state.selectedDate = newToday;
     }

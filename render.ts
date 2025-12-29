@@ -13,8 +13,9 @@
  * 
  * ARQUITETURA (Facade Pattern & Zero-Allocation):
  * - **Responsabilidade Única:** Centraliza a API de renderização pública.
- * - **Memoization de Datas:** Cálculos de datas relativas (Ontem/Amanhã) são cacheados e recalculados apenas na mudança de dia.
- * - **DOM Reads Otimizados:** Evita `innerHTML` para verificações de existência.
+ * - **Memoization de Datas:** Cálculos de datas relativas (Ontem/Amanhã) são cacheados e executados
+ *   com aritmética inteira onde possível.
+ * - **Static LUTs:** Uso de Tabelas de Busca para dias do mês, evitando lógica condicional complexa.
  */
 
 import { state, LANGUAGES } from './state';
@@ -46,11 +47,13 @@ let _lastQuoteLang: string | null = null;
 let stoicQuotesModule: { STOIC_QUOTES: Quote[] } | null = null;
 
 // PERF: Date Cache (Avoids GC Pressure)
-// Armazena as strings ISO de hoje, ontem e amanhã para comparação rápida (string internada)
-// sem alocar novos objetos Date a cada frame.
 let _cachedRefToday: string | null = null;
 let _cachedYesterdayISO: string | null = null;
 let _cachedTomorrowISO: string | null = null;
+
+// PERF: Lookup Table for Cumulative Days (Non-Leap Year).
+// [Jan, Feb, Mar, ...] -> Days before month starts.
+const DAYS_BEFORE_MONTH_LUT = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
 
 // PERFORMANCE: Hoisted Intl Options (Zero-Allocation).
 const OPTS_HEADER_DESKTOP: Intl.DateTimeFormatOptions = {
@@ -77,6 +80,32 @@ function _ensureRelativeDateCache(todayISO: string) {
         _cachedYesterdayISO = toUTCIsoDateString(addDays(todayDate, -1));
         _cachedTomorrowISO = toUTCIsoDateString(addDays(todayDate, 1));
     }
+}
+
+/**
+ * Calculates the Day of the Year (1-366) using pure integer arithmetic from an ISO string.
+ * PERFORMANCE: Zero 'new Date()' allocations.
+ * @param isoDate "YYYY-MM-DD"
+ */
+function _getDayOfYearFast(isoDate: string): number {
+    // Parse integers manually (faster than Date parse for this specific task)
+    // "2024-05-20"
+    //  0123456789
+    const y = parseInt(isoDate.substring(0, 4), 10);
+    const m = parseInt(isoDate.substring(5, 7), 10);
+    const d = parseInt(isoDate.substring(8, 10), 10);
+
+    // 1. Get base days from LUT
+    let dayOfYear = DAYS_BEFORE_MONTH_LUT[m - 1] + d;
+
+    // 2. Leap Year Correction
+    // (Year is divisible by 4 AND (not divisible by 100 OR divisible by 400))
+    // We only add 1 if the month is AFTER February (m > 2)
+    if (m > 2 && (y % 4 === 0) && (y % 100 !== 0 || y % 400 === 0)) {
+        dayOfYear += 1;
+    }
+
+    return dayOfYear;
 }
 
 function _updateHeaderTitle() {
@@ -106,7 +135,6 @@ function _updateHeaderTitle() {
         desktopTitle = localizedTitle;
         mobileTitle = localizedTitle;
         
-        // Precisamos da data apenas para o ARIA label completo
         const date = parseUTCIsoDate(selected);
         fullLabel = formatDate(date, OPTS_HEADER_ARIA);
     } else {
@@ -125,7 +153,6 @@ function _updateHeaderTitle() {
     setTextContent(ui.headerTitleDesktop, desktopTitle);
     setTextContent(ui.headerTitleMobile, mobileTitle);
     
-    // DOM Write com Dirty Check implícito (getAttribute é rápido)
     if (ui.headerTitle.getAttribute('aria-label') !== fullLabel) {
         ui.headerTitle.setAttribute('aria-label', fullLabel);
     }
@@ -135,13 +162,9 @@ function _updateHeaderTitle() {
 }
 
 function _renderHeaderIcons() {
-    // PERFORMANCE: 'hasChildNodes' é mais rápido que ler 'innerHTML' (evita serialização)
     if (!ui.manageHabitsBtn.hasChildNodes()) {
         ui.manageHabitsBtn.innerHTML = UI_ICONS.settings;
     }
-    const aiDefaultIcon = ui.aiEvalBtn.firstElementChild as HTMLElement; // .loading-icon is first, but structure might vary.
-    // Melhor usar seletor específico cacheado ou verificação direta
-    // A estrutura é: svg.loading-icon, span.default-icon, svg.offline-icon
     const defaultIconSpan = ui.aiEvalBtn.querySelector('.default-icon');
     if (defaultIconSpan && !defaultIconSpan.hasChildNodes()) {
         defaultIconSpan.innerHTML = UI_ICONS.ai;
@@ -191,7 +214,6 @@ export function updateUIText() {
     setTextContent(ui.cancelEnterKeyBtn, t('cancelButton'));
     setTextContent(ui.submitKeyBtn, t('syncSubmitKey'));
     
-    // innerHTML necessário para tags de formatação
     if (ui.syncWarningText.innerHTML !== t('syncWarning')) {
         ui.syncWarningText.innerHTML = t('syncWarning');
     }
@@ -240,7 +262,6 @@ export function updateUIText() {
         setTextContent(editModalActions.querySelector('#edit-habit-save-btn'), t('modalEditSaveButton'));
     }
 
-    // Quick Actions - Icons + Text
     const setBtnHtml = (btn: HTMLButtonElement, icon: string, text: string) => {
         const html = `${icon} ${text}`;
         if (btn.innerHTML !== html) btn.innerHTML = html;
@@ -267,7 +288,6 @@ export function renderApp() {
     renderAINotificationState();
     renderChart();
 
-    // UX UPDATE: Refresh Manage Modal List if visible.
     if (ui.manageModal.classList.contains('visible')) {
         setupManageModal();
     }
@@ -304,7 +324,6 @@ export function updateNotificationUI() {
 
 export function initLanguageFilter() {
     const langNames = LANGUAGES.map(lang => t(lang.nameKey));
-    // Optimization: Build string once
     const html = langNames.map(name => `<span class="reel-option">${name}</span>`).join('');
     if (ui.languageReel.innerHTML !== html) {
         ui.languageReel.innerHTML = html;
@@ -345,18 +364,14 @@ export async function renderStoicQuote() {
     }
     const { STOIC_QUOTES } = stoicQuotesModule;
 
-    // PERF: Optimized Day of Year Calculation (Integer Math)
-    const date = parseUTCIsoDate(state.selectedDate);
-    const startOfYear = new Date(Date.UTC(date.getUTCFullYear(), 0, 0));
-    // Bitwise OR to truncate float to int (Smi)
-    const diff = (date.getTime() - startOfYear.getTime()) | 0;
-    const oneDay = 86400000; // 1000 * 60 * 60 * 24
-    const dayOfYear = (diff / oneDay) | 0;
+    // PERFORMANCE [2025-04-20]: Zero Allocation.
+    // Uses integer math and LUTs instead of creating Date objects to find the day of year.
+    const year = parseInt(state.selectedDate.substring(0, 4), 10);
+    const dayOfYear = _getDayOfYearFast(state.selectedDate);
     
     // Deterministic Seed
-    const seed = (date.getFullYear() * 1000 + dayOfYear) | 0;
+    const seed = (year * 1000 + dayOfYear) | 0;
     const rnd = Math.abs(Math.sin(seed)); 
-    // Bitwise truncation again
     const quoteIndex = (rnd * STOIC_QUOTES.length) | 0;
     
     const quote = STOIC_QUOTES[quoteIndex];
@@ -368,7 +383,6 @@ export async function renderStoicQuote() {
     _lastQuoteDate = state.selectedDate;
     _lastQuoteLang = state.activeLanguageCode;
 
-    // DOM Read & Write (Dirty Check)
     if (ui.stoicQuoteDisplay.textContent === fullText && ui.stoicQuoteDisplay.classList.contains('visible')) {
         return;
     }
@@ -379,7 +393,6 @@ export async function renderStoicQuote() {
          return;
     }
 
-    // Transition Logic
     ui.stoicQuoteDisplay.classList.remove('visible');
     setTimeout(() => {
         setTextContent(ui.stoicQuoteDisplay, fullText);
@@ -387,7 +400,6 @@ export async function renderStoicQuote() {
     }, 150);
 }
 
-// SETUP: Listen for language changes dispatched from i18n module
 document.addEventListener('language-changed', () => {
     initLanguageFilter();
     renderLanguageFilter();
@@ -413,6 +425,5 @@ export async function initI18n() {
         initialLang = browserLang as 'pt' | 'en' | 'es';
     }
 
-    // Dispatches 'language-changed' event internally
     await setLanguage(initialLang);
 }

@@ -11,25 +11,14 @@
  * [MAIN THREAD CONTEXT]:
  * Este módulo roda na thread principal e deve ser executado apenas UMA VEZ na inicialização (Singleton initialization).
  * 
- * ARQUITETURA:
- * - Padrão "Facade": Centraliza a chamada de inicializadores espalhados por domínios (Modais, Cards, Gestos).
- * - Injeção de Dependência Leve: Passa referências de DOM cacheadas (`ui.habitContainer`) para os handlers 
- *   de gestos para evitar querySelectors repetitivos em módulos filhos.
- * 
- * DEPENDÊNCIAS CRÍTICAS:
- * - `render/ui.ts`: Fonte da verdade para elementos DOM (evita re-query).
- * - `listeners/*.ts`: Implementações especializadas de eventos.
- * 
- * DECISÃO TÉCNICA (Event Bus):
- * - O listener 'render-app' é a espinha dorsal da reatividade desacoplada.
- * - Permite que a camada de Lógica (`habitActions.ts`) solicite renderizações sem importar 
- *   diretamente a camada de View (`render.ts`), quebrando dependências circulares estritas.
+ * ARQUITETURA (Static Dispatch & Dependency Injection):
+ * - **Static Handlers:** Callbacks são definidos no escopo do módulo para evitar alocação de closures durante o boot.
+ * - **Injeção de Dependência Leve:** Passa referências de DOM cacheadas (`ui.habitContainer`) para os motores de física.
+ * - **Event Bus:** O listener 'render-app' desacopla a Lógica da View.
  */
 
-// [NOTA COMPARATIVA]: Este arquivo atua como o 'Controlador de Eventos'. Arquiteturalmente limpo, atua como um despachante (Dispatcher) delegando implementações para a pasta 'listeners/'.
-
 import { ui } from './render/ui';
-import { renderApp, renderAINotificationState, updateNotificationUI } from './render';
+import { renderApp, renderAINotificationState, updateNotificationUI, initModalEngine } from './render';
 import { setupModalListeners } from './listeners/modals';
 import { setupCardListeners } from './listeners/cards';
 import { setupDragHandler } from './listeners/drag';
@@ -38,60 +27,71 @@ import { setupCalendarListeners } from './listeners/calendar';
 import { initChartInteractions } from './render/chart';
 import { pushToOneSignal } from './utils';
 
-/**
- * Configura os listeners de notificação e atualiza a UI inicial.
- * MOVIDO DE cloud.ts [2025-04-14] para quebrar dependência circular.
- */
-function setupNotificationListeners() {
-    pushToOneSignal((OneSignal: any) => {
-        // Este listener garante que a UI seja atualizada se o usuário alterar
-        // as permissões de notificação nas configurações do navegador enquanto o app estiver aberto.
-        OneSignal.Notifications.addEventListener('permissionChange', () => {
-            // UX: Adia a atualização da UI para dar tempo ao SDK de atualizar seu estado interno.
-            setTimeout(updateNotificationUI, 500);
-        });
+// --- STATIC HANDLERS (Zero-Allocation) ---
+// V8 Optimization: Hoisted constants avoid creating closure scopes during initialization.
 
-        // Atualiza a UI no carregamento inicial, caso o estado já esteja definido.
-        updateNotificationUI();
-    });
-}
+const _handleRenderAppEvent = () => {
+    renderApp();
+};
+
+const _handlePermissionChange = () => {
+    // UX: Adia a atualização da UI para dar tempo ao SDK de atualizar seu estado interno.
+    // Usamos window.setTimeout para evitar busca de escopo global implícita.
+    window.setTimeout(updateNotificationUI, 500);
+};
+
+const _handleOneSignalInit = (OneSignal: any) => {
+    // Listener aponta para referência estática.
+    OneSignal.Notifications.addEventListener('permissionChange', _handlePermissionChange);
+    // Atualiza a UI no carregamento inicial (Fast Path).
+    updateNotificationUI();
+};
+
+/**
+ * Handler otimizado para mudanças de rede.
+ * Realiza "Dirty Check" estrito antes de invalidar estilos.
+ */
+const _handleNetworkChange = () => {
+    const isOffline = !navigator.onLine;
+    const body = document.body;
+    
+    // PERFORMANCE: Dirty Check para evitar 'Recalculate Style' desnecessário.
+    // O acesso a classList.contains é O(1) e muito mais barato que uma escrita no DOM.
+    if (body.classList.contains('is-offline') !== isOffline) {
+        body.classList.toggle('is-offline', isOffline);
+        // Só re-renderiza componentes reativos se o estado realmente mudou.
+        renderAINotificationState();
+    }
+};
 
 export function setupEventListeners() {
-    // Inicializa módulos de listeners especializados
+    // 1. Inicializa motores de UI globais
+    initModalEngine();
+
+    // 2. Inicializa módulos de listeners especializados (Subsystems)
     setupModalListeners();
     setupCardListeners();
     setupCalendarListeners();
-    initChartInteractions(); // Adiciona a inicialização do gráfico
-    setupNotificationListeners(); // Inicializa listeners de notificação
+    initChartInteractions(); 
     
-    // Inicializa manipuladores de gestos complexos (Física de Drag & Swipe)
-    // PERFORMANCE: Passamos o elemento cacheado `ui.habitContainer` para evitar que os 
-    // módulos de gestos precisem fazer `document.querySelector` durante a inicialização.
-    setupDragHandler(ui.habitContainer);
-    setupSwipeHandler(ui.habitContainer);
-
-    // CRITICAL LOGIC: Application Event Bus.
-    // Event listener bus for application-wide re-renders (breaks circular dependencies).
-    // DO NOT REFACTOR: Substituir isso por uma importação direta em `habitActions` causará
-    // ciclos de dependência (Render -> State -> Actions -> Render).
-    document.addEventListener('render-app', () => renderApp());
-
-    // --- NETWORK STATUS LISTENER ---
-    // UX: Monitora conectividade para alternar o ícone da IA (Sparkle <-> Offline Cloud)
-    // e desabilitar o botão quando sem internet.
-    const handleNetworkChange = () => {
-        const isOffline = !navigator.onLine;
-        
-        // CSS Hook: O index.css usa body.is-offline para trocar a visibilidade dos ícones
-        document.body.classList.toggle('is-offline', isOffline);
-        
-        // Update Logic: Atualiza o estado 'disabled' do botão
-        renderAINotificationState();
-    };
-
-    window.addEventListener('online', handleNetworkChange);
-    window.addEventListener('offline', handleNetworkChange);
+    // 3. Notification System (Async/Callback based)
+    // Passa a referência da função estática, zero alocação de closure.
+    pushToOneSignal(_handleOneSignalInit);
     
-    // Verificação inicial no boot
-    handleNetworkChange();
+    // 4. Inicializa manipuladores de gestos complexos (Physics Engines)
+    // PERFORMANCE: Passamos o elemento cacheado `ui.habitContainer` (Direct Memory Reference).
+    // Isso evita que setupDragHandler precise fazer um querySelector interno.
+    const container = ui.habitContainer;
+    setupDragHandler(container);
+    setupSwipeHandler(container);
+
+    // 5. CRITICAL LOGIC: Application Event Bus.
+    document.addEventListener('render-app', _handleRenderAppEvent);
+
+    // 6. NETWORK STATUS LISTENER (Native Events)
+    window.addEventListener('online', _handleNetworkChange);
+    window.addEventListener('offline', _handleNetworkChange);
+    
+    // Verificação inicial no boot (Fast Path)
+    _handleNetworkChange();
 }

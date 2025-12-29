@@ -11,27 +11,19 @@
  * [MAIN THREAD CONTEXT]:
  * Este arquivo atua como a única fonte de verdade para referências a elementos HTML.
  * 
- * ARQUITETURA (Lazy DOM Access & Memoization):
+ * ARQUITETURA (Lazy DOM Access & Stable Shapes):
  * - **Responsabilidade Única:** Mapear seletores CSS para propriedades tipadas do TypeScript.
- * - **Lazy Loading:** Nenhum elemento é consultado (`querySelector`) na inicialização do módulo.
- *   As consultas ocorrem apenas no primeiro acesso à propriedade (`ui.meuElemento`).
- *   Isso reduz drasticamente o tempo de bloqueio da thread principal (TTI - Time to Interactive) durante o boot.
- * - **Memoization:** Após o primeiro acesso, a referência é cacheada em memória (`uiCache`).
- *   Acessos subsequentes são O(1).
- * 
- * DEPENDÊNCIAS CRÍTICAS:
- * - `index.html`: Os seletores aqui definidos DEVEM existir no HTML. Se um ID mudar no HTML,
- *   este arquivo deve ser atualizado ou a aplicação quebrará em runtime.
+ * - **Lazy Loading:** Nenhum elemento é consultado (`querySelector`) na inicialização.
+ * - **Zero-Spread Initialization:** Substitui `...createLazyGetter` por definições diretas
+ *   para evitar alocação de objetos temporários e garantir transições de Hidden Class previsíveis no V8.
  * 
  * DECISÕES TÉCNICAS:
- * 1. **Hybrid Query Strategy:** Detecta seletores simples de ID (`#id`) para usar `getElementById` (muito mais rápido)
- *    em vez de `querySelector` (que exige parsing de CSS).
- * 2. **Typed Interfaces:** Garante que o TypeScript saiba exatamente qual tipo de elemento é esperado (HTMLButtonElement, etc),
- *    evitando casts repetitivos no código da aplicação.
+ * 1. **Hybrid Query Strategy:** Detecta seletores simples de ID (`#id`) para usar `getElementById` (Fast Path).
+ * 2. **Descriptor Map:** Constrói o mapa de propriedades estaticamente.
  */
 
 type UIElements = {
-    appContainer: HTMLElement; // Cached reference
+    appContainer: HTMLElement;
     calendarStrip: HTMLElement;
     headerTitle: HTMLElement;
     headerTitleDesktop: HTMLElement;
@@ -110,7 +102,7 @@ type UIElements = {
     quickActionSnooze: HTMLButtonElement;
     quickActionAlmanac: HTMLButtonElement;
     
-    // Static Text Elements (Labels/Titles) for i18n
+    // Static Text Elements
     labelLanguage: HTMLElement;
     labelSync: HTMLElement;
     labelNotifications: HTMLElement;
@@ -147,172 +139,164 @@ type UIElements = {
     }
 };
 
-// MEMORY: Objetos de cache simples para armazenar referências DOM resolvidas.
-const uiCache: Partial<UIElements> = {};
-const chartCache: Partial<UIElements['chart']> = {};
+// MEMORY: Cache "Flat" para acesso O(1).
+// Usamos 'any' internamente para evitar overhead de tipos complexos no runtime.
+const uiCache: Record<string, Element> = {};
+const chartCache: Record<string, Element> = {};
 
 /**
- * Utilitário de consulta DOM otimizado.
+ * Utilitário de consulta DOM otimizado (Micro-optimization).
  * @param selector String seletora CSS.
  */
-function queryElement<T extends Element = HTMLElement>(selector: string): T {
-    // PERFORMANCE OPTIMIZATION [2025-03-16]: Hybrid Selector Strategy.
-    // 'getElementById' é essencialmente uma busca em hash map (O(1)) no navegador,
-    // significativamente mais rápida que 'querySelector' que requer parsing de seletor CSS e travessia de árvore.
+function queryElement(selector: string): Element {
+    // PERFORMANCE OPTIMIZATION: Hybrid Selector Strategy.
     // Detectamos seletores de ID simples para usar o caminho rápido (Fast Path).
-    const isSimpleId = selector.startsWith('#') && !selector.includes(' ') && !selector.includes('.') && !selector.includes('[');
+    const isSimpleId = selector.charCodeAt(0) === 35 /* # */ && !/[\s.\[]/.test(selector);
     
     const element = isSimpleId
-        ? document.getElementById(selector.substring(1)) as unknown as T
-        : document.querySelector<T>(selector);
+        ? document.getElementById(selector.slice(1))
+        : document.querySelector(selector);
 
     if (!element) {
-        // FAIL FAST: É melhor quebrar explicitamente aqui do que ter 'undefined' flutuando na aplicação.
-        throw new Error(`UI element with selector "${selector}" not found in the DOM.`);
+        throw new Error(`UI element "${selector}" not found.`);
     }
     return element;
 }
 
 /**
- * CRITICAL LOGIC: Factory de Getters Lazy.
- * Cria uma propriedade que, ao ser acessada pela primeira vez, consulta o DOM e cacheia o resultado.
- * DO NOT REFACTOR: Mudar para consulta "Eager" (imediata) degradará a performance de inicialização.
+ * Configura um getter lazy no objeto alvo.
+ * @param target Objeto onde a propriedade será definida.
+ * @param prop Nome da propriedade.
+ * @param selector Seletor CSS.
+ * @param cache Objeto de cache a ser usado.
  */
-function createLazyGetter<K extends keyof UIElements>(key: K, selector: string): Pick<UIElements, K> {
-    return {
-        get [key]() {
-            if (!uiCache[key]) {
-                (uiCache as any)[key] = queryElement(selector);
+function defineLazy(target: any, prop: string, selector: string, cache: Record<string, Element>) {
+    Object.defineProperty(target, prop, {
+        get: function() {
+            // Check cache direct property access (Fastest in V8)
+            if (cache[prop] === undefined) {
+                cache[prop] = queryElement(selector);
             }
-            return uiCache[key] as UIElements[K];
-        }
-    } as Pick<UIElements, K>;
+            return cache[prop];
+        },
+        enumerable: true,
+        configurable: false
+    });
 }
 
-function createLazyChartGetter<K extends keyof UIElements['chart']>(key: K, selector: string): Pick<UIElements['chart'], K> {
-    return {
-        get [key]() {
-            if (!chartCache[key]) {
-                (chartCache as any)[key] = queryElement(selector);
-            }
-            return chartCache[key] as UIElements['chart'][K];
-        }
-    } as Pick<UIElements['chart'], K>;
-}
+// Inicializa o objeto UI
+export const ui = {} as UIElements;
 
-/**
- * Singleton de Interface de Usuário.
- * Exporta um objeto proxy onde cada propriedade dispara a consulta DOM sob demanda.
- */
-export const ui: UIElements = {
-    ...createLazyGetter('appContainer', '.app-container'),
-    ...createLazyGetter('calendarStrip', '#calendar-strip'),
-    ...createLazyGetter('headerTitle', '#header-title'),
-    ...createLazyGetter('headerTitleDesktop', '#header-title .header-title-desktop'),
-    ...createLazyGetter('headerTitleMobile', '#header-title .header-title-mobile'),
-    ...createLazyGetter('stoicQuoteDisplay', '#stoic-quote-display'),
-    ...createLazyGetter('habitContainer', '#habit-container'),
-    ...createLazyGetter('chartContainer', '#chart-container'),
-    ...createLazyGetter('manageHabitsBtn', '#manage-habits-btn'),
-    ...createLazyGetter('fabAddHabit', '#fab-add-habit'),
-    ...createLazyGetter('manageModal', '#manage-modal'),
-    ...createLazyGetter('manageModalTitle', '#manage-modal-title'),
-    ...createLazyGetter('habitListTitle', '#habit-list-title'),
-    ...createLazyGetter('exploreModal', '#explore-modal'),
-    ...createLazyGetter('exploreHabitList', '#explore-habit-list'),
-    ...createLazyGetter('createCustomHabitBtn', '#create-custom-habit-btn'),
-    ...createLazyGetter('aiEvalBtn', '#ai-eval-btn'),
-    ...createLazyGetter('aiModal', '#ai-modal'),
-    ...createLazyGetter('aiOptionsModal', '#ai-options-modal'),
-    ...createLazyGetter('confirmModal', '#confirm-modal'),
-    ...createLazyGetter('habitList', '#habit-list'),
-    ...createLazyGetter('noHabitsMessage', '#no-habits-message'),
-    ...createLazyGetter('aiResponse', '#ai-response'),
-    ...createLazyGetter('confirmModalText', '#confirm-modal-text'),
-    ...createLazyGetter('confirmModalConfirmBtn', '#confirm-modal-confirm-btn'),
-    ...createLazyGetter('confirmModalEditBtn', '#confirm-modal-edit-btn'),
-    ...createLazyGetter('notesModal', '#notes-modal'),
-    ...createLazyGetter('notesModalTitle', '#notes-modal-title'),
-    ...createLazyGetter('notesModalSubtitle', '#notes-modal-subtitle'),
-    ...createLazyGetter('notesTextarea', '#notes-textarea'),
-    ...createLazyGetter('saveNoteBtn', '#save-note-btn'),
-    ...createLazyGetter('resetAppBtn', '#reset-app-btn'),
-    ...createLazyGetter('languagePrevBtn', '#language-prev'),
-    ...createLazyGetter('languageViewport', '#language-viewport'),
-    ...createLazyGetter('languageReel', '#language-reel'),
-    ...createLazyGetter('languageNextBtn', '#language-next'),
-    ...createLazyGetter('editHabitModal', '#edit-habit-modal'),
-    ...createLazyGetter('editHabitModalTitle', '#edit-habit-modal-title'),
-    ...createLazyGetter('editHabitForm', '#edit-habit-form'),
-    ...createLazyGetter('editHabitSaveBtn', '#edit-habit-save-btn'),
-    ...createLazyGetter('habitTimeContainer', '#habit-time-container'),
-    ...createLazyGetter('frequencyOptionsContainer', '#frequency-options-container'),
-    ...createLazyGetter('syncStatus', '#sync-status'),
-    ...createLazyGetter('syncSection', '#sync-section'),
-    ...createLazyGetter('syncInactiveView', '#sync-inactive-view'),
-    ...createLazyGetter('enableSyncBtn', '#enable-sync-btn'),
-    ...createLazyGetter('enterKeyViewBtn', '#enter-key-view-btn'),
-    ...createLazyGetter('syncEnterKeyView', '#sync-enter-key-view'),
-    ...createLazyGetter('syncKeyInput', '#sync-key-input'),
-    ...createLazyGetter('cancelEnterKeyBtn', '#cancel-enter-key-btn'),
-    ...createLazyGetter('submitKeyBtn', '#submit-key-btn'),
-    ...createLazyGetter('syncDisplayKeyView', '#sync-display-key-view'),
-    ...createLazyGetter('syncKeyText', '#sync-key-text'),
-    ...createLazyGetter('copyKeyBtn', '#copy-key-btn'),
-    ...createLazyGetter('keySavedBtn', '#key-saved-btn'),
-    ...createLazyGetter('syncActiveView', '#sync-active-view'),
-    ...createLazyGetter('viewKeyBtn', '#view-key-btn'),
-    ...createLazyGetter('disableSyncBtn', '#disable-sync-btn'),
-    ...createLazyGetter('notificationToggle', '#notification-toggle'),
-    ...createLazyGetter('notificationToggleLabel', '#notification-toggle-label'),
-    ...createLazyGetter('notificationStatusDesc', '#notification-status-desc'),
-    ...createLazyGetter('iconPickerModal', '#icon-picker-modal'),
-    ...createLazyGetter('iconPickerGrid', '#icon-picker-grid'),
-    ...createLazyGetter('habitIconPickerBtn', '#habit-icon-picker-btn'),
-    ...createLazyGetter('colorPickerModal', '#color-picker-modal'),
-    ...createLazyGetter('colorPickerGrid', '#color-picker-grid'),
-    ...createLazyGetter('changeColorFromPickerBtn', '#change-color-from-picker-btn'),
-    ...createLazyGetter('fullCalendarModal', '#full-calendar-modal'),
-    ...createLazyGetter('fullCalendarHeader', '#full-calendar-header'),
-    ...createLazyGetter('fullCalendarMonthYear', '#full-calendar-month-year'),
-    ...createLazyGetter('fullCalendarPrevBtn', '#full-calendar-prev'),
-    ...createLazyGetter('fullCalendarNextBtn', '#full-calendar-next'),
-    ...createLazyGetter('fullCalendarWeekdays', '#full-calendar-weekdays'),
-    ...createLazyGetter('fullCalendarGrid', '#full-calendar-grid'),
-    ...createLazyGetter('calendarQuickActions', '#calendar-quick-actions'),
-    ...createLazyGetter('quickActionDone', '#quick-action-done'),
-    ...createLazyGetter('quickActionSnooze', '#quick-action-snooze'),
-    ...createLazyGetter('quickActionAlmanac', '#quick-action-almanac'),
-    ...createLazyGetter('labelLanguage', '#label-language'),
-    ...createLazyGetter('labelSync', '#label-sync'),
-    ...createLazyGetter('labelNotifications', '#label-notifications'),
-    ...createLazyGetter('labelReset', '#label-reset'),
-    ...createLazyGetter('labelPrivacy', '#label-privacy'),
-    ...createLazyGetter('exportDataBtn', '#export-data-btn'),
-    ...createLazyGetter('importDataBtn', '#import-data-btn'),
-    ...createLazyGetter('syncInactiveDesc', '#sync-inactive-desc'),
-    ...createLazyGetter('labelEnterKey', '#label-enter-key'),
-    ...createLazyGetter('syncWarningText', '#sync-warning-text'),
-    ...createLazyGetter('syncActiveDesc', '#sync-active-desc'),
-    ...createLazyGetter('iconPickerTitle', '#icon-picker-modal-title'),
-    ...createLazyGetter('colorPickerTitle', '#color-picker-modal-title'),
-    chart: {
-        ...createLazyChartGetter('title', '#chart-container .chart-title'),
-        ...createLazyChartGetter('subtitle', '#chart-container .app-subtitle'),
-        ...createLazyChartGetter('emptyState', '#chart-container .chart-empty-state'),
-        ...createLazyChartGetter('dataView', '#chart-container .chart-data-view'),
-        ...createLazyChartGetter('wrapper', '#chart-container .chart-wrapper'),
-        ...createLazyChartGetter('svg', '.chart-svg'),
-        ...createLazyChartGetter('areaPath', '.chart-area'),
-        ...createLazyChartGetter('linePath', '.chart-line'),
-        ...createLazyChartGetter('tooltip', '#chart-container .chart-tooltip'),
-        ...createLazyChartGetter('tooltipDate', '#chart-container .tooltip-date'),
-        ...createLazyChartGetter('tooltipScoreLabel', '#chart-container .tooltip-score-label'),
-        ...createLazyChartGetter('tooltipScoreValue', '#chart-container .tooltip-score-value'),
-        ...createLazyChartGetter('tooltipHabits', '#chart-container .tooltip-habits li'),
-        ...createLazyChartGetter('indicator', '#chart-container .chart-indicator'),
-        ...createLazyChartGetter('evolutionIndicator', '#chart-container .chart-evolution-indicator'),
-        ...createLazyChartGetter('axisStart', '#chart-container .chart-axis-labels span:first-child'),
-        ...createLazyChartGetter('axisEnd', '#chart-container .chart-axis-labels span:last-child'),
-    }
-};
+// --- ROOT ELEMENTS DEFINITION ---
+// Batch definition avoids creating intermediate objects.
+defineLazy(ui, 'appContainer', '.app-container', uiCache);
+defineLazy(ui, 'calendarStrip', '#calendar-strip', uiCache);
+defineLazy(ui, 'headerTitle', '#header-title', uiCache);
+defineLazy(ui, 'headerTitleDesktop', '#header-title .header-title-desktop', uiCache);
+defineLazy(ui, 'headerTitleMobile', '#header-title .header-title-mobile', uiCache);
+defineLazy(ui, 'stoicQuoteDisplay', '#stoic-quote-display', uiCache);
+defineLazy(ui, 'habitContainer', '#habit-container', uiCache);
+defineLazy(ui, 'chartContainer', '#chart-container', uiCache);
+defineLazy(ui, 'manageHabitsBtn', '#manage-habits-btn', uiCache);
+defineLazy(ui, 'fabAddHabit', '#fab-add-habit', uiCache);
+defineLazy(ui, 'manageModal', '#manage-modal', uiCache);
+defineLazy(ui, 'manageModalTitle', '#manage-modal-title', uiCache);
+defineLazy(ui, 'habitListTitle', '#habit-list-title', uiCache);
+defineLazy(ui, 'exploreModal', '#explore-modal', uiCache);
+defineLazy(ui, 'exploreHabitList', '#explore-habit-list', uiCache);
+defineLazy(ui, 'createCustomHabitBtn', '#create-custom-habit-btn', uiCache);
+defineLazy(ui, 'aiEvalBtn', '#ai-eval-btn', uiCache);
+defineLazy(ui, 'aiModal', '#ai-modal', uiCache);
+defineLazy(ui, 'aiOptionsModal', '#ai-options-modal', uiCache);
+defineLazy(ui, 'confirmModal', '#confirm-modal', uiCache);
+defineLazy(ui, 'habitList', '#habit-list', uiCache);
+defineLazy(ui, 'noHabitsMessage', '#no-habits-message', uiCache);
+defineLazy(ui, 'aiResponse', '#ai-response', uiCache);
+defineLazy(ui, 'confirmModalText', '#confirm-modal-text', uiCache);
+defineLazy(ui, 'confirmModalConfirmBtn', '#confirm-modal-confirm-btn', uiCache);
+defineLazy(ui, 'confirmModalEditBtn', '#confirm-modal-edit-btn', uiCache);
+defineLazy(ui, 'notesModal', '#notes-modal', uiCache);
+defineLazy(ui, 'notesModalTitle', '#notes-modal-title', uiCache);
+defineLazy(ui, 'notesModalSubtitle', '#notes-modal-subtitle', uiCache);
+defineLazy(ui, 'notesTextarea', '#notes-textarea', uiCache);
+defineLazy(ui, 'saveNoteBtn', '#save-note-btn', uiCache);
+defineLazy(ui, 'resetAppBtn', '#reset-app-btn', uiCache);
+defineLazy(ui, 'languagePrevBtn', '#language-prev', uiCache);
+defineLazy(ui, 'languageViewport', '#language-viewport', uiCache);
+defineLazy(ui, 'languageReel', '#language-reel', uiCache);
+defineLazy(ui, 'languageNextBtn', '#language-next', uiCache);
+defineLazy(ui, 'editHabitModal', '#edit-habit-modal', uiCache);
+defineLazy(ui, 'editHabitModalTitle', '#edit-habit-modal-title', uiCache);
+defineLazy(ui, 'editHabitForm', '#edit-habit-form', uiCache);
+defineLazy(ui, 'editHabitSaveBtn', '#edit-habit-save-btn', uiCache);
+defineLazy(ui, 'habitTimeContainer', '#habit-time-container', uiCache);
+defineLazy(ui, 'frequencyOptionsContainer', '#frequency-options-container', uiCache);
+defineLazy(ui, 'syncStatus', '#sync-status', uiCache);
+defineLazy(ui, 'syncSection', '#sync-section', uiCache);
+defineLazy(ui, 'syncInactiveView', '#sync-inactive-view', uiCache);
+defineLazy(ui, 'enableSyncBtn', '#enable-sync-btn', uiCache);
+defineLazy(ui, 'enterKeyViewBtn', '#enter-key-view-btn', uiCache);
+defineLazy(ui, 'syncEnterKeyView', '#sync-enter-key-view', uiCache);
+defineLazy(ui, 'syncKeyInput', '#sync-key-input', uiCache);
+defineLazy(ui, 'cancelEnterKeyBtn', '#cancel-enter-key-btn', uiCache);
+defineLazy(ui, 'submitKeyBtn', '#submit-key-btn', uiCache);
+defineLazy(ui, 'syncDisplayKeyView', '#sync-display-key-view', uiCache);
+defineLazy(ui, 'syncKeyText', '#sync-key-text', uiCache);
+defineLazy(ui, 'copyKeyBtn', '#copy-key-btn', uiCache);
+defineLazy(ui, 'keySavedBtn', '#key-saved-btn', uiCache);
+defineLazy(ui, 'syncActiveView', '#sync-active-view', uiCache);
+defineLazy(ui, 'viewKeyBtn', '#view-key-btn', uiCache);
+defineLazy(ui, 'disableSyncBtn', '#disable-sync-btn', uiCache);
+defineLazy(ui, 'notificationToggle', '#notification-toggle', uiCache);
+defineLazy(ui, 'notificationToggleLabel', '#notification-toggle-label', uiCache);
+defineLazy(ui, 'notificationStatusDesc', '#notification-status-desc', uiCache);
+defineLazy(ui, 'iconPickerModal', '#icon-picker-modal', uiCache);
+defineLazy(ui, 'iconPickerGrid', '#icon-picker-grid', uiCache);
+defineLazy(ui, 'habitIconPickerBtn', '#habit-icon-picker-btn', uiCache);
+defineLazy(ui, 'colorPickerModal', '#color-picker-modal', uiCache);
+defineLazy(ui, 'colorPickerGrid', '#color-picker-grid', uiCache);
+defineLazy(ui, 'changeColorFromPickerBtn', '#change-color-from-picker-btn', uiCache);
+defineLazy(ui, 'fullCalendarModal', '#full-calendar-modal', uiCache);
+defineLazy(ui, 'fullCalendarHeader', '#full-calendar-header', uiCache);
+defineLazy(ui, 'fullCalendarMonthYear', '#full-calendar-month-year', uiCache);
+defineLazy(ui, 'fullCalendarPrevBtn', '#full-calendar-prev', uiCache);
+defineLazy(ui, 'fullCalendarNextBtn', '#full-calendar-next', uiCache);
+defineLazy(ui, 'fullCalendarWeekdays', '#full-calendar-weekdays', uiCache);
+defineLazy(ui, 'fullCalendarGrid', '#full-calendar-grid', uiCache);
+defineLazy(ui, 'calendarQuickActions', '#calendar-quick-actions', uiCache);
+defineLazy(ui, 'quickActionDone', '#quick-action-done', uiCache);
+defineLazy(ui, 'quickActionSnooze', '#quick-action-snooze', uiCache);
+defineLazy(ui, 'quickActionAlmanac', '#quick-action-almanac', uiCache);
+defineLazy(ui, 'labelLanguage', '#label-language', uiCache);
+defineLazy(ui, 'labelSync', '#label-sync', uiCache);
+defineLazy(ui, 'labelNotifications', '#label-notifications', uiCache);
+defineLazy(ui, 'labelReset', '#label-reset', uiCache);
+defineLazy(ui, 'labelPrivacy', '#label-privacy', uiCache);
+defineLazy(ui, 'exportDataBtn', '#export-data-btn', uiCache);
+defineLazy(ui, 'importDataBtn', '#import-data-btn', uiCache);
+defineLazy(ui, 'syncInactiveDesc', '#sync-inactive-desc', uiCache);
+defineLazy(ui, 'labelEnterKey', '#label-enter-key', uiCache);
+defineLazy(ui, 'syncWarningText', '#sync-warning-text', uiCache);
+defineLazy(ui, 'syncActiveDesc', '#sync-active-desc', uiCache);
+defineLazy(ui, 'iconPickerTitle', '#icon-picker-modal-title', uiCache);
+defineLazy(ui, 'colorPickerTitle', '#color-picker-modal-title', uiCache);
+
+// --- CHART ELEMENTS SUB-OBJECT ---
+ui.chart = {} as UIElements['chart'];
+defineLazy(ui.chart, 'title', '#chart-container .chart-title', chartCache);
+defineLazy(ui.chart, 'subtitle', '#chart-container .app-subtitle', chartCache);
+defineLazy(ui.chart, 'emptyState', '#chart-container .chart-empty-state', chartCache);
+defineLazy(ui.chart, 'dataView', '#chart-container .chart-data-view', chartCache);
+defineLazy(ui.chart, 'wrapper', '#chart-container .chart-wrapper', chartCache);
+defineLazy(ui.chart, 'svg', '.chart-svg', chartCache);
+defineLazy(ui.chart, 'areaPath', '.chart-area', chartCache);
+defineLazy(ui.chart, 'linePath', '.chart-line', chartCache);
+defineLazy(ui.chart, 'tooltip', '#chart-container .chart-tooltip', chartCache);
+defineLazy(ui.chart, 'tooltipDate', '#chart-container .tooltip-date', chartCache);
+defineLazy(ui.chart, 'tooltipScoreLabel', '#chart-container .tooltip-score-label', chartCache);
+defineLazy(ui.chart, 'tooltipScoreValue', '#chart-container .tooltip-score-value', chartCache);
+defineLazy(ui.chart, 'tooltipHabits', '#chart-container .tooltip-habits li', chartCache);
+defineLazy(ui.chart, 'indicator', '#chart-container .chart-indicator', chartCache);
+defineLazy(ui.chart, 'evolutionIndicator', '#chart-container .chart-evolution-indicator', chartCache);
+defineLazy(ui.chart, 'axisStart', '#chart-container .chart-axis-labels span:first-child', chartCache);
+defineLazy(ui.chart, 'axisEnd', '#chart-container .chart-axis-labels span:last-child', chartCache);

@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -10,43 +11,42 @@
  * [MAIN THREAD CONTEXT]:
  * Este módulo gerencia o ciclo de vida visual e a acessibilidade (A11y) de elementos sobrepostos.
  * 
- * ARQUITETURA (A11y & Memory Safety):
- * - **Responsabilidade Única:** Renderizar conteúdo de modais, gerenciar foco (Focus Trap) e limpar eventos.
- * - **Gerenciamento de Memória:** Utiliza `Map` e `WeakMap` para rastrear listeners de eventos anônimos
- *   criados durante a abertura de modais, garantindo que sejam removidos corretamente no fechamento (`removeEventListener`).
- * - **DOM Template Recycling:** Para listas dentro de modais (ex: Gerenciar Hábitos), utiliza clonagem de nós
- *   para minimizar o overhead de criação de DOM.
+ * ARQUITETURA (Stack-Based Engine):
+ * - **Modal Stack:** Gerencia modais aninhados (ex: Confirmação sobre Edição) usando uma pilha LIFO.
+ *   O topo da pilha sempre detém o "Focus Trap" e captura eventos de teclado.
+ * - **Global Delegation:** Apenas dois listeners globais (`keydown`, `click`) gerenciam todos os modais,
+ *   eliminando a criação/destruição de listeners a cada abertura (`addEventListener` thrashing).
+ * - **DOM Template Recycling:** Clonagem eficiente para listas dinâmicas.
  * 
  * DEPENDÊNCIAS CRÍTICAS:
  * - `ui.ts`: Referências aos containers de modal.
  * - `i18n.ts`: Textos dinâmicos.
  * - `state.ts`: Dados para popular formulários.
- * 
- * DECISÕES TÉCNICAS:
- * 1. **Focus Management:** Implementa "Focus Trapping" manualmente para garantir que usuários de teclado
- *    não naveguem para fora do modal aberto (Requisito WCAG).
- * 2. **Inert Attribute:** Manipula o atributo `inert` no container principal para isolar a árvore de acessibilidade.
  */
 
 import { state, Habit, HabitTemplate, Frequency, PredefinedHabit, TimeOfDay, STREAK_CONSOLIDATED, TIMES_OF_DAY, FREQUENCIES, LANGUAGES, getHabitDailyInfoForDate } from '../state';
 import { PREDEFINED_HABITS } from '../data/predefinedHabits';
 import { getScheduleForDate, calculateHabitStreak, getHabitDisplayInfo } from '../services/selectors';
 import { ui } from './ui';
-import { t, getTimeOfDayName, compareStrings, formatDate, formatInteger } from '../i18n'; // PERF: Imported compareStrings, formatDate, formatInteger
+import { t, compareStrings, formatDate, formatInteger, getTimeOfDayName } from '../i18n';
 import { HABIT_ICONS, UI_ICONS, getTimeOfDayIcon } from './icons';
 import { setTextContent, updateReelRotaryARIA } from './dom';
 import { escapeHTML, getContrastColor, parseUTCIsoDate, getTodayUTCIso, getSafeDate } from '../utils';
-
-// FIX [2025-03-22]: Import setLanguage directly from i18n to avoid cycle with render.ts
 import { setLanguage } from '../i18n';
 
-// MEMORY MANAGEMENT: Rastreamento de listeners para limpeza (Garbage Collection Safety).
-const focusTrapListeners = new Map<HTMLElement, (e: KeyboardEvent) => void>();
-const previouslyFocusedElements = new WeakMap<HTMLElement, HTMLElement>();
-const backdropListeners = new Map<HTMLElement, (e: MouseEvent) => void>();
-const closeButtonHandlerMap = new Map<HTMLElement, { buttons: HTMLElement[], handler: () => void }>();
+// --- MODAL STACK ENGINE ---
 
-const STATUS_ORDER = { 'active': 0, 'graduated': 1, 'ended': 2 } as const;
+interface ModalContext {
+    element: HTMLElement;
+    previousFocus: HTMLElement | null;
+    onClose?: () => void;
+    // Cache de limites de foco para o Trap
+    firstFocusable?: HTMLElement;
+    lastFocusable?: HTMLElement;
+}
+
+// LIFO Stack para suportar modais aninhados (ex: Confirmar dentro de Editar)
+const modalStack: ModalContext[] = [];
 
 // PERFORMANCE [2025-04-13]: Hoisted Intl Options.
 const OPTS_NOTES_DATE: Intl.DateTimeFormatOptions = { 
@@ -55,118 +55,162 @@ const OPTS_NOTES_DATE: Intl.DateTimeFormatOptions = {
     timeZone: 'UTC' 
 };
 
-/**
- * Abre um modal garantindo acessibilidade e gestão de foco.
- */
-export function openModal(modal: HTMLElement, elementToFocus?: HTMLElement, onClose?: () => void) {
-    previouslyFocusedElements.set(modal, document.activeElement as HTMLElement);
+// --- STATIC HANDLERS (Global Delegation) ---
 
-    modal.classList.add('visible');
-
-    if (ui.appContainer) {
+function _updateInertState() {
+    if (modalStack.length > 0) {
         ui.appContainer.setAttribute('inert', '');
+        // Opcional: Marcar modais abaixo do topo como inert também se quisermos isolamento visual total
+        // Por simplicidade e performance, apenas o appContainer é isolado, já que o backdrop cobre o resto.
+    } else {
+        ui.appContainer.removeAttribute('inert');
+    }
+}
+
+function _handleTrapKeydown(e: KeyboardEvent) {
+    const activeCtx = modalStack[modalStack.length - 1];
+    if (!activeCtx) return;
+
+    if (e.key === 'Escape') {
+        // Fechamento prioritário do topo da pilha
+        closeModal(activeCtx.element);
+        e.stopImmediatePropagation();
+        return;
     }
 
+    if (e.key === 'Tab') {
+        const { firstFocusable, lastFocusable, element } = activeCtx;
+        
+        // Se não houver elementos focáveis, mantém o foco no modal
+        if (!firstFocusable || !lastFocusable) {
+            e.preventDefault();
+            element.focus();
+            return;
+        }
+
+        if (e.shiftKey) {
+            if (document.activeElement === firstFocusable) {
+                lastFocusable.focus();
+                e.preventDefault();
+            }
+        } else {
+            if (document.activeElement === lastFocusable) {
+                firstFocusable.focus();
+                e.preventDefault();
+            }
+        }
+    }
+}
+
+function _handleGlobalClick(e: MouseEvent) {
+    const activeCtx = modalStack[modalStack.length - 1];
+    if (!activeCtx) return;
+
+    const target = e.target as HTMLElement;
+
+    // 1. Backdrop Click (O próprio elemento modal atua como overlay/backdrop)
+    if (target === activeCtx.element) {
+        closeModal(activeCtx.element);
+        return;
+    }
+
+    // 2. Close Button Delegation
+    // Verifica se clicou em um botão de fechar dentro do modal ativo
+    const closeBtn = target.closest('.modal-close-btn');
+    if (closeBtn && activeCtx.element.contains(closeBtn)) {
+        closeModal(activeCtx.element);
+    }
+}
+
+/**
+ * Inicializa o motor de modais.
+ * Deve ser chamado UMA VEZ no boot da aplicação (listeners.ts).
+ */
+export function initModalEngine() {
+    document.addEventListener('keydown', _handleTrapKeydown);
+    document.addEventListener('click', _handleGlobalClick);
+}
+
+/**
+ * Abre um modal garantindo acessibilidade, gestão de foco e empilhamento correto.
+ */
+export function openModal(modal: HTMLElement, elementToFocus?: HTMLElement, onClose?: () => void) {
+    const ctx: ModalContext = {
+        element: modal,
+        previousFocus: document.activeElement as HTMLElement,
+        onClose
+    };
+
+    modal.classList.add('visible');
+    
+    // Calcular limites de foco (Lazy - apenas na abertura)
     const focusableElements = modal.querySelectorAll<HTMLElement>(
         'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
     );
     
-    // Focus logic
-    const targetElement = elementToFocus || (focusableElements.length > 0 ? focusableElements[0] : null);
-    
-    setTimeout(() => {
-        if (targetElement && targetElement.isConnected) {
-            if (targetElement instanceof HTMLTextAreaElement) {
-                targetElement.focus();
-                targetElement.selectionStart = targetElement.selectionEnd = targetElement.value.length;
-            } else if (targetElement instanceof HTMLInputElement) {
-                targetElement.focus();
-                targetElement.select();
-            } else {
-                targetElement.focus();
-            }
-        }
-    }, 100);
-
-    // Focus Trap
     if (focusableElements.length > 0) {
-        const firstFocusable = focusableElements[0];
-        const lastFocusable = focusableElements[focusableElements.length - 1];
-
-        const trapListener = (e: KeyboardEvent) => {
-            if (e.key !== 'Tab') return;
-            
-            if (e.shiftKey) {
-                if (document.activeElement === firstFocusable) {
-                    lastFocusable.focus();
-                    e.preventDefault();
-                }
-            } else {
-                if (document.activeElement === lastFocusable) {
-                    firstFocusable.focus();
-                    e.preventDefault();
+        ctx.firstFocusable = focusableElements[0];
+        ctx.lastFocusable = focusableElements[focusableElements.length - 1];
+        
+        const target = elementToFocus || ctx.firstFocusable;
+        
+        // Timeout para garantir que o navegador processou a visibilidade antes de focar
+        requestAnimationFrame(() => {
+            if (target.isConnected) {
+                if (target instanceof HTMLTextAreaElement) {
+                    target.focus();
+                    target.selectionStart = target.selectionEnd = target.value.length;
+                } else if (target instanceof HTMLInputElement) {
+                    target.focus();
+                    target.select();
+                } else {
+                    target.focus();
                 }
             }
-        };
-        
-        modal.addEventListener('keydown', trapListener);
-        focusTrapListeners.set(modal, trapListener);
+        });
+    } else {
+        // Fallback se não houver inputs: foca no container do modal para capturar teclado
+        modal.setAttribute('tabindex', '-1');
+        modal.focus();
     }
 
-    const handleClose = () => {
-        closeModal(modal);
-        onClose?.();
-    };
-
-    const backdropListener = (e: MouseEvent) => {
-        if (e.target === modal) handleClose();
-    };
-
-    modal.addEventListener('click', backdropListener);
-    backdropListeners.set(modal, backdropListener);
-    
-    const closeButtons = Array.from(modal.querySelectorAll<HTMLElement>('.modal-close-btn'));
-    closeButtons.forEach(btn => {
-        btn.addEventListener('click', handleClose);
-    });
-    closeButtonHandlerMap.set(modal, { buttons: closeButtons, handler: handleClose });
+    modalStack.push(ctx);
+    _updateInertState();
 }
 
 export function closeModal(modal: HTMLElement) {
+    // Encontra o modal na pilha (normalmente é o topo, mas suporta fechamento fora de ordem se necessário)
+    const index = modalStack.findIndex(ctx => ctx.element === modal);
+    if (index === -1) return;
+
+    const ctx = modalStack[index];
+    
+    // Remove da pilha
+    modalStack.splice(index, 1);
+    
     modal.classList.remove('visible');
-    
-    if (ui.appContainer) {
-        ui.appContainer.removeAttribute('inert');
-    }
+    _updateInertState();
 
-    const listener = focusTrapListeners.get(modal);
-    if (listener) {
-        modal.removeEventListener('keydown', listener);
-        focusTrapListeners.delete(modal);
-    }
-    
-    const backdropListener = backdropListeners.get(modal);
-    if (backdropListener) {
-        modal.removeEventListener('click', backdropListener);
-        backdropListeners.delete(modal);
-    }
-    
-    const buttonInfo = closeButtonHandlerMap.get(modal);
-    if (buttonInfo) {
-        buttonInfo.buttons.forEach(btn => {
-            btn.removeEventListener('click', buttonInfo.handler);
-        });
-        closeButtonHandlerMap.delete(modal);
-    }
+    // Callback de limpeza lógica
+    ctx.onClose?.();
 
-    const elementToRestoreFocus = previouslyFocusedElements.get(modal);
-    if (elementToRestoreFocus && elementToRestoreFocus.isConnected) {
-        elementToRestoreFocus.focus();
-    } else {
+    // Restaura o foco para o elemento anterior (se ele ainda existir e for o topo da interação)
+    // Apenas restaura se fechamos o modal do topo E não abrimos outro imediatamente
+    const isTopInteraction = modalStack.length === 0 || index === modalStack.length; // Era o último ou fechamos do meio
+    
+    if (isTopInteraction && ctx.previousFocus && ctx.previousFocus.isConnected) {
+        ctx.previousFocus.focus();
+    } else if (modalStack.length === 0) {
+        // Fallback seguro
         ui.habitContainer.focus();
     }
-    previouslyFocusedElements.delete(modal);
 }
+
+// --- DOM TEMPLATES ---
+let manageItemTemplate: HTMLLIElement | null = null;
+const buttonTemplates: Record<string, HTMLButtonElement> = {};
+
+const STATUS_ORDER = { 'active': 0, 'graduated': 1, 'ended': 2 } as const;
 
 function getHabitStatusForSorting(habit: Habit): 'active' | 'ended' | 'graduated' {
     if (habit.graduatedOn) {
@@ -178,8 +222,6 @@ function getHabitStatusForSorting(habit: Habit): 'active' | 'ended' | 'graduated
     }
     return 'active';
 }
-
-let manageItemTemplate: HTMLLIElement | null = null;
 
 function getManageItemTemplate(): HTMLLIElement {
     if (!manageItemTemplate) {
@@ -220,13 +262,32 @@ function getManageItemTemplate(): HTMLLIElement {
     return manageItemTemplate;
 }
 
-function _createManageHabitListItem(habitData: { habit: Habit; status: 'active' | 'ended' | 'graduated'; name: string; subtitle: string }, todayISO: string): HTMLLIElement {
+// PERF: Template buttons to avoid createElement/innerHTML overhead in loops
+function getButtonTemplate(className: string, iconHtml: string): HTMLButtonElement {
+    if (!buttonTemplates[className]) {
+        const button = document.createElement('button');
+        button.className = className;
+        button.type = "button";
+        button.innerHTML = iconHtml;
+        buttonTemplates[className] = button;
+    }
+    return buttonTemplates[className];
+}
+
+function _appendManageButton(actionsDiv: HTMLElement, className: string, ariaLabel: string, icon: string) {
+    const btn = getButtonTemplate(className, icon).cloneNode(true) as HTMLButtonElement;
+    btn.setAttribute('aria-label', ariaLabel);
+    actionsDiv.appendChild(btn);
+}
+
+// SOPA OPTIMIZATION [2025-04-25]: Separated Update logic from Creation.
+function _updateManageHabitListItem(li: HTMLLIElement, habitData: { habit: Habit; status: 'active' | 'ended' | 'graduated'; name: string; subtitle: string }, todayISO: string) {
     const { habit, status, name, subtitle } = habitData;
     
-    const li = getManageItemTemplate().cloneNode(true) as HTMLLIElement;
-    
-    li.classList.add(status);
-    li.dataset.habitId = habit.id;
+    // Dirty check class status
+    if (li.classList.contains('active') !== (status === 'active')) li.classList.toggle('active', status === 'active');
+    if (li.classList.contains('ended') !== (status === 'ended')) li.classList.toggle('ended', status === 'ended');
+    if (li.classList.contains('graduated') !== (status === 'graduated')) li.classList.toggle('graduated', status === 'graduated');
 
     const mainSpan = li.firstElementChild as HTMLElement;
     const iconSpan = mainSpan.children[0] as HTMLElement;
@@ -234,51 +295,83 @@ function _createManageHabitListItem(habitData: { habit: Habit; status: 'active' 
     const statusSpan = mainSpan.children[2] as HTMLElement;
     const actionsDiv = li.children[1] as HTMLElement;
 
-    iconSpan.innerHTML = habit.icon;
-    iconSpan.style.color = habit.color;
+    // Update Icon (Check if changed to avoid parse)
+    if (iconSpan.innerHTML !== habit.icon) iconSpan.innerHTML = habit.icon;
+    if (iconSpan.style.color !== habit.color) iconSpan.style.color = habit.color;
 
     const nameSpan = textWrapper.children[0];
     setTextContent(nameSpan, name);
 
-    const subtitleSpan = textWrapper.children[1];
+    const subtitleSpan = textWrapper.children[1] as HTMLElement;
+    // Check if subtitle element needs to be added/removed/updated
     if (subtitle) {
-        setTextContent(subtitleSpan, subtitle);
-    } else {
+        if (!textWrapper.contains(subtitleSpan)) {
+             // Re-create if it was removed
+             const newSub = document.createElement('span');
+             newSub.className = 'habit-subtitle';
+             newSub.style.fontSize = '11px';
+             newSub.style.color = 'var(--text-tertiary)';
+             newSub.textContent = subtitle;
+             textWrapper.appendChild(newSub);
+        } else {
+             setTextContent(subtitleSpan, subtitle);
+        }
+    } else if (textWrapper.contains(subtitleSpan)) {
         subtitleSpan.remove();
     }
 
     if (status === 'graduated' || status === 'ended') {
         setTextContent(statusSpan, t(status === 'graduated' ? 'modalStatusGraduated' : 'modalStatusEnded'));
+        if (!mainSpan.contains(statusSpan)) mainSpan.appendChild(statusSpan);
     } else {
-        statusSpan.remove();
+        if (mainSpan.contains(statusSpan)) statusSpan.remove();
     }
+    
+    // Actions: It's cheaper to clear and re-append buttons than to diff them because the set changes entirely.
+    // Since buttons are cloned from templates, this is fast.
+    actionsDiv.innerHTML = '';
     
     const streak = calculateHabitStreak(habit.id, todayISO); 
     const isConsolidated = streak >= STREAK_CONSOLIDATED;
 
-    const createActionButton = (className: string, ariaLabel: string, icon: string): HTMLButtonElement => {
-        const button = document.createElement('button');
-        button.className = className;
-        button.setAttribute('aria-label', ariaLabel);
-        button.type = "button"; 
-        button.innerHTML = icon;
-        return button;
-    };
-
     if (status === 'active') {
-        actionsDiv.appendChild(createActionButton('edit-habit-btn', t('aria_edit', { habitName: name }), UI_ICONS.editAction));
+        _appendManageButton(actionsDiv, 'edit-habit-btn', t('aria_edit', { habitName: name }), UI_ICONS.editAction);
         if (isConsolidated) {
-            actionsDiv.appendChild(createActionButton('graduate-habit-btn', t('aria_graduate', { habitName: name }), UI_ICONS.graduateAction));
+            _appendManageButton(actionsDiv, 'graduate-habit-btn', t('aria_graduate', { habitName: name }), UI_ICONS.graduateAction);
         } else {
-            actionsDiv.appendChild(createActionButton('end-habit-btn', t('aria_end', { habitName: name }), UI_ICONS.endAction));
+            _appendManageButton(actionsDiv, 'end-habit-btn', t('aria_end', { habitName: name }), UI_ICONS.endAction);
         }
-    } else if (status === 'ended') {
-        actionsDiv.appendChild(createActionButton('permanent-delete-habit-btn', t('aria_delete_permanent', { habitName: name }), UI_ICONS.deletePermanentAction));
-    } else if (status === 'graduated') {
-        actionsDiv.appendChild(createActionButton('permanent-delete-habit-btn', t('aria_delete_permanent', { habitName: name }), UI_ICONS.deletePermanentAction));
+    } else if (status === 'ended' || status === 'graduated') {
+        _appendManageButton(actionsDiv, 'permanent-delete-habit-btn', t('aria_delete_permanent', { habitName: name }), UI_ICONS.deletePermanentAction);
     }
-    
+}
+
+function _createManageHabitListItem(habitData: { habit: Habit; status: 'active' | 'ended' | 'graduated'; name: string; subtitle: string }, todayISO: string): HTMLLIElement {
+    const li = getManageItemTemplate().cloneNode(true) as HTMLLIElement;
+    li.dataset.habitId = habitData.habit.id;
+    _updateManageHabitListItem(li, habitData, todayISO);
     return li;
+}
+
+type ManageHabitItem = {
+    habit: Habit;
+    status: 'active' | 'ended' | 'graduated';
+    name: string;
+    subtitle: string;
+};
+
+// STATIC SORT HANDLER: Hoisted to avoid allocation on every modal open
+function _habitSorter(a: ManageHabitItem, b: ManageHabitItem): number {
+    const statusDifference = STATUS_ORDER[a.status] - STATUS_ORDER[b.status];
+    if (statusDifference !== 0) {
+        return statusDifference;
+    }
+    if (a.status !== 'active') {
+         const lastA = a.habit.scheduleHistory[a.habit.scheduleHistory.length-1].endDate || '';
+         const lastB = b.habit.scheduleHistory[b.habit.scheduleHistory.length-1].endDate || '';
+         if (lastA !== lastB) return lastB.localeCompare(lastA);
+    }
+    return compareStrings(a.name, b.name);
 }
 
 export function setupManageModal() {
@@ -300,28 +393,47 @@ export function setupManageModal() {
             };
         });
 
-        habitsForModal.sort((a, b) => {
-            const statusDifference = STATUS_ORDER[a.status] - STATUS_ORDER[b.status];
-            if (statusDifference !== 0) {
-                return statusDifference;
+        habitsForModal.sort(_habitSorter);
+        const todayISO = getTodayUTCIso();
+
+        // SOPA OPTIMIZATION [2025-04-25]: Reconciliation Strategy (Diffing).
+        // Reuse existing LI elements instead of destroying/creating the whole list.
+        
+        // 1. Map existing elements
+        const existingNodes = new Map<string, HTMLElement>();
+        const children = ui.habitList.children;
+        // Iterate backwards to allow removal if needed, though we map first
+        for (let i = children.length - 1; i >= 0; i--) {
+            const el = children[i] as HTMLElement;
+            if (el.dataset.habitId) {
+                existingNodes.set(el.dataset.habitId, el);
+            } else {
+                el.remove(); // Remove junk
             }
-            if (a.status !== 'active') {
-                 const lastA = a.habit.scheduleHistory[a.habit.scheduleHistory.length-1].endDate || '';
-                 const lastB = b.habit.scheduleHistory[b.habit.scheduleHistory.length-1].endDate || '';
-                 if (lastA !== lastB) return lastB.localeCompare(lastA);
-            }
-            // PERFORMANCE [2025-04-12]: Use optimized Collator from i18n
-            return compareStrings(a.name, b.name);
-        });
+        }
 
         const fragment = document.createDocumentFragment();
-        const todayISO = getTodayUTCIso();
         
-        habitsForModal.forEach(habitData => {
-            fragment.appendChild(_createManageHabitListItem(habitData, todayISO));
-        });
+        // 2. Process list and reuse/create
+        const len = habitsForModal.length;
+        for (let i = 0; i < len; i = (i + 1) | 0) {
+            const item = habitsForModal[i];
+            const existingEl = existingNodes.get(item.habit.id);
+            
+            if (existingEl) {
+                _updateManageHabitListItem(existingEl as HTMLLIElement, item, todayISO);
+                fragment.appendChild(existingEl); // Moves it to correct position
+                existingNodes.delete(item.habit.id);
+            } else {
+                const newEl = _createManageHabitListItem(item, todayISO);
+                fragment.appendChild(newEl);
+            }
+        }
 
-        ui.habitList.innerHTML = '';
+        // 3. Cleanup removed items
+        existingNodes.forEach(node => node.remove());
+        
+        // 4. Append sorted/updated result
         ui.habitList.appendChild(fragment);
     }
 }
@@ -401,19 +513,20 @@ export function renderIconPicker() {
     ui.iconPickerGrid.style.setProperty('--current-habit-bg-color', bgColor);
     ui.iconPickerGrid.style.setProperty('--current-habit-fg-color', fgColor);
 
-    if (!cachedIconButtonsHTML) {
-        cachedIconButtonsHTML = Object.keys(HABIT_ICONS)
-            .map(key => {
-                const iconSVG = (HABIT_ICONS as any)[key];
-                return `
-                    <button type="button" class="icon-picker-item" data-icon-svg="${escapeHTML(iconSVG)}">
-                        ${iconSVG}
-                    </button>
-                `;
-            }).join('');
-    }
-
-    if (ui.iconPickerGrid.innerHTML !== cachedIconButtonsHTML) {
+    // SOPA OPTIMIZATION [2025-04-24]: Existence check instead of innerHTML comparison.
+    // hasChildNodes() is O(1). Reading innerHTML triggers expensive serialization.
+    if (!ui.iconPickerGrid.hasChildNodes()) {
+        if (!cachedIconButtonsHTML) {
+            cachedIconButtonsHTML = Object.keys(HABIT_ICONS)
+                .map(key => {
+                    const iconSVG = (HABIT_ICONS as any)[key];
+                    return `
+                        <button type="button" class="icon-picker-item" data-icon-svg="${escapeHTML(iconSVG)}">
+                            ${iconSVG}
+                        </button>
+                    `;
+                }).join('');
+        }
         ui.iconPickerGrid.innerHTML = cachedIconButtonsHTML;
     }
 
@@ -427,9 +540,30 @@ export function renderIconPicker() {
 export function renderColorPicker() {
     if (!state.editingHabit) return;
     const currentColor = state.editingHabit.formData.color;
-    ui.colorPickerGrid.innerHTML = PALETTE_COLORS.map(color => `
-        <button type="button" class="color-swatch ${currentColor === color ? 'selected' : ''}" style="background-color: ${color}" data-color="${color}" aria-label="${color}"></button>
-    `).join('');
+    
+    // SOPA OPTIMIZATION [2025-04-24]: Build Once, Update Class.
+    // Avoids innerHTML thrashing on every click/render.
+    
+    // 1. Build Phase (First Run)
+    if (!ui.colorPickerGrid.hasChildNodes()) {
+        ui.colorPickerGrid.innerHTML = PALETTE_COLORS.map(color => `
+            <button type="button" class="color-swatch" style="background-color: ${color}" data-color="${color}" aria-label="${color}"></button>
+        `).join('');
+    }
+
+    // 2. Update Phase (Dirty Check)
+    // Low-level DOM Loop for speed
+    const swatches = ui.colorPickerGrid.children;
+    const len = swatches.length;
+    for (let i = 0; i < len; i = (i + 1) | 0) {
+        const btn = swatches[i] as HTMLElement;
+        const color = btn.dataset.color;
+        const isSelected = color === currentColor;
+        
+        if (btn.classList.contains('selected') !== isSelected) {
+            btn.classList.toggle('selected', isSelected);
+        }
+    }
 }
 
 export function renderFrequencyOptions() {
@@ -437,77 +571,122 @@ export function renderFrequencyOptions() {
 
     const currentFrequency = state.editingHabit.formData.frequency;
     const container = ui.frequencyOptionsContainer;
+    
+    // SOPA OPTIMIZATION [2025-04-23]: DOM Stability.
+    // Constrói a estrutura uma vez e apenas alterna classes/valores.
+    // Isso preserva o foco do teclado e evita GC churn.
+    
+    if (!container.hasChildNodes()) {
+        const rawWeekdays = [
+            { key: 'weekdaySun', day: 0 }, { key: 'weekdayMon', day: 1 }, { key: 'weekdayTue', day: 2 },
+            { key: 'weekdayWed', day: 3 }, { key: 'weekdayThu', day: 4 }, { key: 'weekdayFri', day: 5 }, { key: 'weekdaySat', day: 6 }
+        ];
+
+        let weekdays = rawWeekdays;
+        // Simple heuristic for week start. ideally should be locale-aware via Intl but this covers supported langs.
+        if (state.activeLanguageCode === 'es' || state.activeLanguageCode === 'en' || state.activeLanguageCode === 'pt') {
+            weekdays = [
+                rawWeekdays[1], rawWeekdays[2], rawWeekdays[3], rawWeekdays[4], rawWeekdays[5], rawWeekdays[6], rawWeekdays[0]
+            ];
+        }
+
+        const weekdayPickerHTML = `
+            <div class="weekday-picker">
+                ${weekdays.map(({ key, day }) => {
+                    const dayName = t(key);
+                    return `
+                    <label title="${dayName}">
+                        <input type="checkbox" class="visually-hidden" data-day="${day}">
+                        <span class="weekday-button">${dayName.substring(0, 1)}</span>
+                    </label>
+                `}).join('')}
+            </div>`;
+
+        const intervalControlsHTML = `
+            <div class="interval-control-group">
+                <button type="button" class="stepper-btn" data-action="interval-decrement" aria-label="${t('habitGoalDecrement_ariaLabel')}">-</button>
+                <span class="interval-amount-display"></span>
+                <button type="button" class="stepper-btn" data-action="interval-increment" aria-label="${t('habitGoalIncrement_ariaLabel')}">+</button>
+                <button type="button" class="unit-toggle-btn" data-action="interval-unit-toggle"></button>
+            </div>
+        `;
+
+        container.innerHTML = `
+            <div class="form-section frequency-options">
+                <div class="form-row">
+                    <label>
+                        <input type="radio" name="frequency-type" value="daily">
+                        ${t('freqDaily')}
+                    </label>
+                </div>
+                <div class="form-row form-row--vertical">
+                    <label>
+                        <input type="radio" name="frequency-type" value="specific_days_of_week">
+                        ${t('freqSpecificDaysOfWeek')}
+                    </label>
+                    <div class="frequency-details" data-type="specific_days_of_week">
+                        ${weekdayPickerHTML}
+                    </div>
+                </div>
+                <div class="form-row form-row--vertical">
+                    <label>
+                        <input type="radio" name="frequency-type" value="interval">
+                        ${t('freqEvery')}
+                    </label>
+                    <div class="frequency-details" data-type="interval">
+                        ${intervalControlsHTML}
+                    </div>
+                </div>
+            </div>`;
+    }
+
     const isDaily = currentFrequency.type === 'daily';
     const isSpecificDays = currentFrequency.type === 'specific_days_of_week';
     const isInterval = currentFrequency.type === 'interval';
 
-    const rawWeekdays = [
-        { key: 'weekdaySun', day: 0 }, { key: 'weekdayMon', day: 1 }, { key: 'weekdayTue', day: 2 },
-        { key: 'weekdayWed', day: 3 }, { key: 'weekdayThu', day: 4 }, { key: 'weekdayFri', day: 5 }, { key: 'weekdaySat', day: 6 }
-    ];
+    // Update Radios (Fastest via checked property)
+    const radioDaily = container.querySelector('input[value="daily"]') as HTMLInputElement;
+    const radioSpecific = container.querySelector('input[value="specific_days_of_week"]') as HTMLInputElement;
+    const radioInterval = container.querySelector('input[value="interval"]') as HTMLInputElement;
+    
+    if (radioDaily.checked !== isDaily) radioDaily.checked = isDaily;
+    if (radioSpecific.checked !== isSpecificDays) radioSpecific.checked = isSpecificDays;
+    if (radioInterval.checked !== isInterval) radioInterval.checked = isInterval;
 
-    let weekdays = rawWeekdays;
-    if (state.activeLanguageCode === 'es' || state.activeLanguageCode === 'en') {
-        weekdays = [
-            rawWeekdays[1], rawWeekdays[2], rawWeekdays[3], rawWeekdays[4], rawWeekdays[5], rawWeekdays[6], rawWeekdays[0]
-        ];
+    // Update Visibility
+    const detailsSpecific = container.querySelector('.frequency-details[data-type="specific_days_of_week"]') as HTMLElement;
+    const detailsInterval = container.querySelector('.frequency-details[data-type="interval"]') as HTMLElement;
+    
+    if (detailsSpecific.classList.contains('visible') !== isSpecificDays) detailsSpecific.classList.toggle('visible', isSpecificDays);
+    if (detailsInterval.classList.contains('visible') !== isInterval) detailsInterval.classList.toggle('visible', isInterval);
+
+    // Update Content
+    if (isSpecificDays) {
+        const currentDays = new Set(currentFrequency.days);
+        const checkboxes = container.querySelectorAll<HTMLInputElement>('.weekday-picker input');
+        // PERF: Loop over static node list
+        for (let i = 0; i < checkboxes.length; i++) {
+            const cb = checkboxes[i];
+            const day = parseInt(cb.dataset.day!, 10);
+            const shouldCheck = currentDays.has(day);
+            if (cb.checked !== shouldCheck) cb.checked = shouldCheck;
+        }
     }
 
-    const selectedDays = isSpecificDays ? new Set(currentFrequency.days) : new Set();
-    const weekdayPickerHTML = `
-        <div class="weekday-picker">
-            ${weekdays.map(({ key, day }) => {
-                const dayName = t(key);
-                return `
-                <label title="${dayName}">
-                    <input type="checkbox" class="visually-hidden" data-day="${day}" ${selectedDays.has(day) ? 'checked' : ''}>
-                    <span class="weekday-button">${dayName.substring(0, 1)}</span>
-                </label>
-            `}).join('')}
-        </div>`;
-
-    const intervalFreqTpl = FREQUENCIES.find(f => f.value.type === 'interval')!;
-    const amount = isInterval ? currentFrequency.amount : (intervalFreqTpl.value.type === 'interval' ? intervalFreqTpl.value.amount : 2);
-    const unit = isInterval ? currentFrequency.unit : (intervalFreqTpl.value.type === 'interval' ? intervalFreqTpl.value.unit : 'days');
-    
-    const unitText = unit === 'days' ? t('unitDays') : t('unitWeeks');
-    // SOPA Update: Use formatInteger for localized number
-    const intervalControlsHTML = `
-        <div class="interval-control-group">
-            <button type="button" class="stepper-btn" data-action="interval-decrement" aria-label="${t('habitGoalDecrement_ariaLabel')}">-</button>
-            <span class="interval-amount-display">${formatInteger(amount)}</span>
-            <button type="button" class="stepper-btn" data-action="interval-increment" aria-label="${t('habitGoalIncrement_ariaLabel')}">+</button>
-            <button type="button" class="unit-toggle-btn" data-action="interval-unit-toggle">${unitText}</button>
-        </div>
-    `;
-
-    container.innerHTML = `
-        <div class="form-section frequency-options">
-            <div class="form-row">
-                <label>
-                    <input type="radio" name="frequency-type" value="daily" ${isDaily ? 'checked' : ''}>
-                    ${t('freqDaily')}
-                </label>
-            </div>
-            <div class="form-row form-row--vertical">
-                <label>
-                    <input type="radio" name="frequency-type" value="specific_days_of_week" ${isSpecificDays ? 'checked' : ''}>
-                    ${t('freqSpecificDaysOfWeek')}
-                </label>
-                <div class="frequency-details ${isSpecificDays ? 'visible' : ''}">
-                    ${weekdayPickerHTML}
-                </div>
-            </div>
-            <div class="form-row form-row--vertical">
-                <label>
-                    <input type="radio" name="frequency-type" value="interval" ${isInterval ? 'checked' : ''}>
-                    ${t('freqEvery')}
-                </label>
-                <div class="frequency-details ${isInterval ? 'visible' : ''}">
-                    ${intervalControlsHTML}
-                </div>
-            </div>
-        </div>`;
+    if (isInterval) {
+        const intervalFreqTpl = FREQUENCIES.find(f => f.value.type === 'interval')!;
+        const defaults = intervalFreqTpl.value as { type: 'interval'; unit: 'days' | 'weeks'; amount: number };
+        const currentInterval = currentFrequency as { type: 'interval'; unit: 'days' | 'weeks'; amount: number };
+        
+        const amount = currentInterval.amount || defaults.amount;
+        const unit = currentInterval.unit || defaults.unit;
+        
+        const displayEl = container.querySelector('.interval-amount-display') as HTMLElement;
+        const unitBtn = container.querySelector('.unit-toggle-btn') as HTMLElement;
+        
+        setTextContent(displayEl, formatInteger(amount));
+        setTextContent(unitBtn, unit === 'days' ? t('unitDays') : t('unitWeeks'));
+    }
 }
 
 function _createHabitTemplateForForm(habitOrTemplate: Habit | PredefinedHabit | null, selectedDate: string): HabitTemplate {
@@ -565,16 +744,35 @@ export function refreshEditModalUI() {
     renderFrequencyOptions();
 
     const formData = state.editingHabit.formData;
-    ui.habitTimeContainer.innerHTML = `
-        <div class="segmented-control">
-            ${TIMES_OF_DAY.map(time => `
-                <button type="button" class="segmented-control-option ${formData.times.includes(time) ? 'selected' : ''}" data-time="${time}">
-                    ${getTimeOfDayIcon(time)}
-                    ${getTimeOfDayName(time)}
-                </button>
-            `).join('')}
-        </div>
-    `;
+    
+    // SOPA OPTIMIZATION [2025-04-23]: Differential DOM Update.
+    // Avoid innerHTML replacement to preserve layout and object references.
+    
+    if (!ui.habitTimeContainer.firstElementChild) {
+        // Init once
+        ui.habitTimeContainer.innerHTML = `
+            <div class="segmented-control">
+                ${TIMES_OF_DAY.map(time => `
+                    <button type="button" class="segmented-control-option" data-time="${time}">
+                        ${getTimeOfDayIcon(time)}
+                        ${getTimeOfDayName(time)}
+                    </button>
+                `).join('')}
+            </div>
+        `;
+    }
+    
+    const buttons = ui.habitTimeContainer.querySelectorAll('.segmented-control-option');
+    // Low-overhead loop
+    for (let i = 0; i < buttons.length; i++) {
+        const btn = buttons[i] as HTMLElement;
+        const time = btn.dataset.time as TimeOfDay;
+        const isSelected = formData.times.includes(time);
+        
+        if (btn.classList.contains('selected') !== isSelected) {
+            btn.classList.toggle('selected', isSelected);
+        }
+    }
     
     const habitNameInput = ui.editHabitForm.elements.namedItem('habit-name') as HTMLInputElement;
     if (habitNameInput) {
@@ -626,24 +824,27 @@ export function openEditModal(habitOrTemplate: Habit | HabitTemplate | null) {
     ui.habitIconPickerBtn.style.backgroundColor = formData.color;
     ui.habitIconPickerBtn.style.color = iconColor;
     
-    ui.habitTimeContainer.innerHTML = `
-        <div class="segmented-control">
-            ${TIMES_OF_DAY.map(time => `
-                <button type="button" class="segmented-control-option ${formData.times.includes(time) ? 'selected' : ''}" data-time="${time}">
-                    ${getTimeOfDayIcon(time)}
-                    ${getTimeOfDayName(time)}
-                </button>
-            `).join('')}
-        </div>
-    `;
+    // Reset Time container if needed (re-hydrated by refreshEditModalUI)
+    if (ui.habitTimeContainer.innerHTML === '') {
+        // Initialization will happen in refreshEditModalUI
+    }
 
-    renderFrequencyOptions();
+    // SOPA: Clean existing DOM state before refreshing to ensure clean slate logic
+    const checkboxes = ui.frequencyOptionsContainer.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
+    checkboxes.forEach(cb => cb.checked = false);
+
+    refreshEditModalUI(); // This now handles frequency options too
+    
     openModal(ui.editHabitModal, undefined, () => {
         state.editingHabit = null;
     });
 }
 
 export function renderExploreHabits() {
+    // SOPA OPTIMIZATION [2025-04-23]: Static Cache.
+    // The list is predefined and static. Render once, never again.
+    if (ui.exploreHabitList.childElementCount > 0) return;
+
     const fragment = document.createDocumentFragment();
 
     PREDEFINED_HABITS.forEach((habit, index) => {
@@ -682,7 +883,6 @@ export function renderExploreHabits() {
         fragment.appendChild(itemEl);
     });
 
-    ui.exploreHabitList.innerHTML = '';
     ui.exploreHabitList.appendChild(fragment);
 }
 

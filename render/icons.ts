@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -5,19 +6,15 @@
 
 /**
  * @file render/icons.ts
- * @description Helpers de Interface para Ícones (View Helpers).
+ * @description Repositório de Strings SVG Estáticas (Vectores Otimizados - SOTA).
  * 
- * [MAIN THREAD CONTEXT]:
- * Este arquivo importa os dados brutos de `data/icons.ts` e fornece funções utilitárias
- * para seleção de ícones baseada em estado (TimeOfDay).
+ * [ISOMORPHIC CONTEXT]:
+ * Este arquivo contém APENAS dados primitivos (strings).
+ * É garantido que é seguro para importação em qualquer contexto (Main Thread, Worker, Node.js).
  * 
- * ARQUITETURA:
- * - **Facade Pattern:** Re-exporta `HABIT_ICONS` e `UI_ICONS` para que o restante da UI
- *   não precise importar diretamente da camada de dados, mantendo o acoplamento baixo.
- * - **Lógica de Apresentação:** `getTimeOfDayIcon` decide qual ícone mostrar.
- * 
- * DEPENDÊNCIAS:
- * - `data/icons.ts`: Fonte da verdade das strings SVG.
+ * ARQUITETURA (Deep Vectorization & Nano-Optimization):
+ * - **Static Resolution:** Strings são pré-concatenadas para evitar chamadas de função `mkPath` em runtime.
+ * - **Single DOM Node:** Ícones renderizados como um único elemento `<path>`.
  */
 
 import type { TimeOfDay } from '../state';

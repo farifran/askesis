@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -71,6 +72,34 @@ const cardElementsCache = new WeakMap<HTMLElement, CardElements>();
 // Apenas limpamos (.length = 0) e reutilizamos os arrays existentes.
 const habitsByTimePool: Record<TimeOfDay, Habit[]> = { 'Morning': [], 'Afternoon': [], 'Evening': [] };
 
+// PERFORMANCE [2025-04-20]: Static DOM Cache for Habit Groups.
+// Avoids repetitive querySelector calls inside the render loop (3x per frame).
+// The structure of wrapper -> group/marker is static in index.html.
+type GroupDOM = { wrapper: HTMLElement; group: HTMLElement; marker: HTMLElement };
+const groupDomCache = new Map<TimeOfDay, GroupDOM>();
+
+function getGroupDOM(time: TimeOfDay): GroupDOM | null {
+    // Fast Path: Check memory cache
+    const cached = groupDomCache.get(time);
+    if (cached) return cached;
+
+    // Slow Path: Query DOM (Once per session)
+    if (!ui.habitContainer) return null; // Safety check if UI not hydrated
+
+    const wrapper = ui.habitContainer.querySelector<HTMLElement>(`.habit-group-wrapper[data-time-wrapper="${time}"]`);
+    if (!wrapper) return null;
+
+    const group = wrapper.querySelector<HTMLElement>(`.${CSS_CLASSES.HABIT_GROUP}[data-time="${time}"]`);
+    const marker = wrapper.querySelector<HTMLElement>('.time-marker');
+
+    if (group && marker) {
+        const dom = { wrapper, group, marker };
+        groupDomCache.set(time, dom);
+        return dom;
+    }
+    return null;
+}
+
 // --- DOM TEMPLATES (PERFORMANCE) ---
 // Pre-parsing HTML strings into DOM nodes prevents browser parser overhead during list rendering.
 
@@ -78,6 +107,7 @@ let goalControlsTemplate: HTMLElement | null = null;
 let completedWrapperTemplate: HTMLElement | null = null;
 let snoozedWrapperTemplate: HTMLElement | null = null;
 let habitCardTemplate: HTMLElement | null = null;
+let placeholderTemplate: HTMLElement | null = null;
 
 function getGoalControlsTemplate(): HTMLElement {
     if (!goalControlsTemplate) {
@@ -114,6 +144,16 @@ function getSnoozedWrapperTemplate(): HTMLElement {
         snoozedWrapperTemplate = wrapper;
     }
     return snoozedWrapperTemplate;
+}
+
+function getPlaceholderTemplate(): HTMLElement {
+    if (!placeholderTemplate) {
+        placeholderTemplate = document.createElement('div');
+        placeholderTemplate.className = CSS_CLASSES.EMPTY_GROUP_PLACEHOLDER;
+        placeholderTemplate.setAttribute('role', 'button');
+        placeholderTemplate.setAttribute('tabindex', '0');
+    }
+    return placeholderTemplate;
 }
 
 /**
@@ -339,7 +379,9 @@ export function updateHabitCardElement(
     const habitInstanceData = dailyInfo[habit.id]?.instances?.[time];
     const status = habitInstanceData?.status ?? CSS_CLASSES.PENDING;
     const hasNote = habitInstanceData?.note && habitInstanceData.note.length > 0;
-    const streak = calculateHabitStreak(habit.id, state.selectedDate);
+    
+    // OTIMIZAÇÃO: Passar objeto 'habit' diretamente para evitar busca O(N) dentro da função.
+    const streak = calculateHabitStreak(habit, state.selectedDate);
     const { name, subtitle } = getHabitDisplayInfo(habit, state.selectedDate);
 
     const wasCompleted = card.classList.contains(CSS_CLASSES.COMPLETED);
@@ -474,10 +516,8 @@ export function updatePlaceholderForGroup(groupEl: HTMLElement, time: TimeOfDay,
     
     if (!hasHabits) {
         if (!placeholder) {
-            placeholder = document.createElement('div');
-            placeholder.className = CSS_CLASSES.EMPTY_GROUP_PLACEHOLDER;
-            placeholder.setAttribute('role', 'button');
-            placeholder.setAttribute('tabindex', '0');
+            // PERFORMANCE: Use template cloning for placeholder too
+            placeholder = getPlaceholderTemplate().cloneNode(true) as HTMLElement;
             groupEl.appendChild(placeholder);
         }
         // Dirty Check
@@ -545,32 +585,42 @@ export function renderHabits() {
     habitsByTimePool.Afternoon.length = 0;
     habitsByTimePool.Evening.length = 0;
     
-    activeHabitsData.forEach(({ habit, schedule }) => {
-        schedule.forEach(time => {
+    const activeLen = activeHabitsData.length;
+    // BCE Loop
+    for (let i = 0; i < activeLen; i = (i + 1) | 0) {
+        const { habit, schedule } = activeHabitsData[i];
+        const schedLen = schedule.length;
+        for (let j = 0; j < schedLen; j = (j + 1) | 0) {
+            const time = schedule[j];
             if (habitsByTimePool[time]) {
                 habitsByTimePool[time].push(habit);
             }
-        });
-    });
+        }
+    }
 
     // OTIMIZAÇÃO: Filtra diretamente para obter os horários vazios em uma única passagem.
     const emptyTimes = TIMES_OF_DAY.filter(time => habitsByTimePool[time].length === 0);
     const smartPlaceholderTargetTime: TimeOfDay | undefined = emptyTimes[0];
 
-    TIMES_OF_DAY.forEach(time => {
-        const wrapperEl = ui.habitContainer.querySelector(`.habit-group-wrapper[data-time-wrapper="${time}"]`);
-        if (!wrapperEl) return;
+    // BCE Loop for Times of Day
+    const timesLen = TIMES_OF_DAY.length;
+    for (let i = 0; i < timesLen; i = (i + 1) | 0) {
+        const time = TIMES_OF_DAY[i];
         
-        const groupEl = wrapperEl.querySelector<HTMLElement>(`.${CSS_CLASSES.HABIT_GROUP}[data-time="${time}"]`);
-        const marker = wrapperEl.querySelector<HTMLElement>('.time-marker');
-        if (!groupEl || !marker) return;
+        // PERF: DOM Access via Cache O(1)
+        const dom = getGroupDOM(time);
+        if (!dom) continue; // Skip if UI not ready
+        
+        const { wrapper: wrapperEl, group: groupEl, marker } = dom;
         
         const desiredHabits = habitsByTimePool[time];
-        const hasHabits = desiredHabits.length > 0;
+        const habitsLen = desiredHabits.length;
+        const hasHabits = habitsLen > 0;
 
         // Toggle Marker Visibility
         if (hasHabits) {
             const iconHtml = getTimeOfDayIcon(time);
+            // DOM Read/Write optimization: check first
             if (marker.innerHTML !== iconHtml) marker.innerHTML = iconHtml;
             if (marker.style.display !== '') marker.style.display = '';
             if (marker.style.opacity !== '1') marker.style.opacity = '1';
@@ -587,7 +637,8 @@ export function renderHabits() {
         let currentIndex = 0;
 
         // Reconciliação do DOM (Virtual DOM-lite)
-        desiredHabits.forEach(habit => {
+        for (let h = 0; h < habitsLen; h = (h + 1) | 0) {
+            const habit = desiredHabits[h];
             const key = `${habit.id}|${time}`;
             
             let card = habitElementCache.get(key);
@@ -612,9 +663,9 @@ export function renderHabits() {
                         groupEl.appendChild(card);
                     }
                 }
-                currentIndex++;
+                currentIndex = (currentIndex + 1) | 0;
             }
-        });
+        }
 
         // MEMORY LEAK FIX [2025-03-05]: Limpa os caches para elementos removidos do DOM.
         // Remove quaisquer filhos extras que não deveriam estar lá.
@@ -648,7 +699,7 @@ export function renderHabits() {
         if (wrapperEl.classList.contains('is-collapsible') !== isCollapsible) wrapperEl.classList.toggle('is-collapsible', isCollapsible);
 
         updatePlaceholderForGroup(groupEl, time, hasHabits, isSmartPlaceholder, emptyTimes);
-    });
+    }
 
     state.uiDirtyState.habitListStructure = false;
 }

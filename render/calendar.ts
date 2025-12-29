@@ -27,13 +27,14 @@
  *    verificamos se o valor mudou. Leituras são baratas; escritas invalidam o layout.
  * 2. **Manual String Construction:** Em loops de renderização (ex: `renderFullCalendar`), construímos strings ISO
  *    manualmente (concatenação de inteiros) para evitar a alocação de dezenas de objetos `Date`.
+ * 3. **WeakMap DOM Cache:** Elimina `querySelector` no loop de renderização armazenando referências diretas aos nós filhos.
  */
 
 import { state, DAYS_IN_CALENDAR } from '../state';
 import { calculateDaySummary } from '../services/selectors';
 import { ui } from './ui';
 import { getTodayUTCIso, toUTCIsoDateString, parseUTCIsoDate, addDays } from '../utils';
-import { getLocaleDayName, formatDate, formatInteger } from '../i18n'; // SOPA Update: formatInteger
+import { getLocaleDayName, formatDate, formatInteger } from '../i18n'; 
 import { setTextContent } from './dom';
 import { CSS_CLASSES, DOM_SELECTORS } from './constants';
 
@@ -45,6 +46,15 @@ let cachedDayElements: HTMLElement[] = [];
 // `cloneNode(true)` é significativamente mais rápido que criar hierarquias DOM via API JS imperativa.
 let dayItemTemplate: HTMLElement | null = null;
 let fullCalendarDayTemplate: HTMLElement | null = null;
+
+// PERFORMANCE [2025-04-16]: WeakMap Cache for internal DOM nodes.
+// Avoids 3x querySelector calls per day item per render.
+type CalendarDayRefs = {
+    dayName: HTMLElement;
+    dayProgressRing: HTMLElement;
+    dayNumber: HTMLElement;
+};
+const dayElementCache = new WeakMap<HTMLElement, CalendarDayRefs>();
 
 // PERFORMANCE [2025-04-13]: Hoisted Intl Options (Zero-Allocation)
 // Define as opções de formatação como constantes para evitar recriação em loops.
@@ -69,6 +79,9 @@ const OPTS_FULL_CAL_ARIA: Intl.DateTimeFormatOptions = {
     timeZone: 'UTC'
 };
 
+// PERF: LUT for padding numbers 0-99 (Zero conditional branching)
+const PAD_LUT = Array.from({length: 100}, (_, i) => (i < 10 ? '0' : '') + i);
+
 /**
  * Singleton Lazy-Loader para o template do item de dia.
  * @returns O nó HTMLElement modelo (clone source).
@@ -89,6 +102,7 @@ function getDayItemTemplate(): HTMLElement {
         const dayNumber = document.createElement('span');
         dayNumber.className = CSS_CLASSES.DAY_NUMBER;
 
+        // Structure: div > [span.day-name, div.ring > span.number]
         dayProgressRing.appendChild(dayNumber);
         dayItemTemplate.appendChild(dayName);
         dayItemTemplate.appendChild(dayProgressRing);
@@ -128,6 +142,32 @@ function getFullCalendarDayTemplate(): HTMLElement {
  * @param precalcIsoDate (Opcional) String ISO da data para evitar `toUTCIsoDateString()` repetido.
  */
 export function updateCalendarDayElement(dayItem: HTMLElement, date: Date, todayISO?: string, precalcIsoDate?: string) {
+    // PERFORMANCE: Retrieve DOM references from WeakMap (O(1))
+    let refs = dayElementCache.get(dayItem);
+
+    // ROBUSTNESS: Auto-repair cache if missing (e.g., external DOM manipulation)
+    if (!refs) {
+        // Fallback to structural check first (Fast)
+        const dayName = dayItem.firstElementChild as HTMLElement;
+        const dayProgressRing = dayItem.lastElementChild as HTMLElement;
+        const dayNumber = dayProgressRing?.firstElementChild as HTMLElement;
+        
+        if (dayName && dayProgressRing && dayNumber) {
+            refs = { dayName, dayProgressRing, dayNumber };
+            dayElementCache.set(dayItem, refs);
+        } else {
+            // Fallback to querySelector (Slow Path) only if structure is broken
+            refs = {
+                dayName: dayItem.querySelector(`.${CSS_CLASSES.DAY_NAME}`) as HTMLElement,
+                dayProgressRing: dayItem.querySelector(`.${CSS_CLASSES.DAY_PROGRESS_RING}`) as HTMLElement,
+                dayNumber: dayItem.querySelector(`.${CSS_CLASSES.DAY_NUMBER}`) as HTMLElement
+            };
+            if (refs.dayName) dayElementCache.set(dayItem, refs); // Cache what we found
+        }
+    }
+
+    const { dayName, dayProgressRing, dayNumber } = refs;
+
     const effectiveTodayISO = todayISO || getTodayUTCIso();
     // PERFORMANCE: Usa valor pré-calculado se disponível para evitar alocação de string/processamento de data.
     const isoDate = precalcIsoDate || toUTCIsoDateString(date);
@@ -167,7 +207,6 @@ export function updateCalendarDayElement(dayItem: HTMLElement, date: Date, today
     }
 
     // Atualização Visual (Variáveis CSS e Indicadores)
-    const dayProgressRing = dayItem.querySelector<HTMLElement>(`.${CSS_CLASSES.DAY_PROGRESS_RING}`);
     if (dayProgressRing) {
         const newCompleted = `${completedPercent}%`;
         const newSnoozed = `${snoozedPercent}%`;
@@ -184,7 +223,6 @@ export function updateCalendarDayElement(dayItem: HTMLElement, date: Date, today
             dayProgressRing.dataset.snoozedPercent = newSnoozed;
         }
         
-        const dayNumber = dayProgressRing.querySelector<HTMLElement>(`.${CSS_CLASSES.DAY_NUMBER}`);
         if (dayNumber) {
             if (dayNumber.classList.contains('has-plus') !== showPlus) {
                 dayNumber.classList.toggle('has-plus', showPlus);
@@ -194,18 +232,27 @@ export function updateCalendarDayElement(dayItem: HTMLElement, date: Date, today
         }
     }
     
-    const dayNameEl = dayItem.querySelector(`.${CSS_CLASSES.DAY_NAME}`);
-    setTextContent(dayNameEl, getLocaleDayName(date));
+    if (dayName) {
+        setTextContent(dayName, getLocaleDayName(date));
+    }
 }
 
 export function createCalendarDayElement(date: Date, todayISO: string): HTMLElement {
     // PERFORMANCE [2025-03-09]: Template Cloning.
     const dayItem = getDayItemTemplate().cloneNode(true) as HTMLElement;
     
+    // PERFORMANCE [2025-04-16]: O(1) Structure Traversal & Caching.
+    // Known structure: div > [span.day-name, div.ring > span.number]
+    const dayName = dayItem.firstElementChild as HTMLElement;
+    const dayProgressRing = dayItem.lastElementChild as HTMLElement;
+    const dayNumber = dayProgressRing.firstElementChild as HTMLElement;
+
+    dayElementCache.set(dayItem, { dayName, dayProgressRing, dayNumber });
+    
     const isoDate = toUTCIsoDateString(date);
     dayItem.dataset.date = isoDate;
 
-    // Hidrata o nó clonado.
+    // Hidrata o nó clonado (usa o cache recém-criado).
     updateCalendarDayElement(dayItem, date, todayISO, isoDate);
 
     return dayItem;
@@ -352,16 +399,18 @@ export function renderFullCalendar() {
     // Isso evita alocação de ~31 objetos Date e overhead de formatação.
     const paddedYear = year.toString(); // "2024"
     const displayMonth = month + 1;
-    const paddedMonth = displayMonth < 10 ? '0' + displayMonth : displayMonth.toString(); // "05"
+    // PERF: LUT for month padding
+    const paddedMonth = PAD_LUT[displayMonth]; 
     const prefix = `${paddedYear}-${paddedMonth}-`; // "2024-05-"
 
-    // Objeto Date reusável apenas para passar para calculateDaySummary/formatDate se necessário
-    // Nota: calculateDaySummary espera um Date para lógica de dia da semana (Sáb/Dom).
+    // SOPA OPTIMIZATION [2025-04-22]: Single reusable date for calculateDaySummary
+    // Passa uma referência única de Date para evitar criação interna na função de resumo.
+    // Atualizamos o dia com setUTCDate a cada loop.
     const reusableDate = new Date(Date.UTC(year, month, 1));
 
     for (let day = 1; day <= daysInMonth; day++) {
-        // PERF: Concatenação de string simples é muito mais rápida que Date logic.
-        const paddedDay = day < 10 ? '0' + day : day.toString();
+        // PERF: Concatenação de string simples com LUT
+        const paddedDay = PAD_LUT[day];
         const isoDate = prefix + paddedDay; // "2024-05-01"
         
         // Atualiza o objeto de data reutilizável para a lógica interna de summary

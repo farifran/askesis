@@ -21,6 +21,9 @@ export const config = {
   runtime: 'edge',
 };
 
+// --- CONSTANTS ---
+const MAX_PROMPT_SIZE = 100 * 1024; // 100KB Limit for Text Prompts
+
 // --- TYPES ---
 interface AnalyzeRequestBody {
     prompt: string;
@@ -51,6 +54,7 @@ const ERR_METHOD_NOT_ALLOWED = JSON.stringify({ error: 'Method Not Allowed' });
 const ERR_NO_API_KEY = JSON.stringify({ error: 'Internal Server Error', details: 'Server configuration error.' });
 const ERR_INVALID_JSON = JSON.stringify({ error: 'Bad Request: Invalid JSON format' });
 const ERR_MISSING_FIELDS = JSON.stringify({ error: 'Bad Request: Missing prompt or systemInstruction' });
+const ERR_PAYLOAD_TOO_LARGE = JSON.stringify({ error: 'Payload Too Large', details: 'Request exceeds limit.' });
 
 // 3. Environment & Constants
 const API_KEY = process.env.API_KEY;
@@ -77,13 +81,21 @@ export default async function handler(req: Request) {
     }
 
     // Fail Fast: Configuração de Servidor (Environment Check)
-    // Verificação barata de string antes de qualquer lógica pesada
     if (!API_KEY) {
         console.error("[api/analyze] API_KEY environment variable not set.");
         return new Response(ERR_NO_API_KEY, {
             status: 500,
             headers: HEADERS_JSON,
         });
+    }
+
+    // SECURITY: Content-Length Check
+    const contentLengthStr = req.headers.get('content-length');
+    if (contentLengthStr) {
+        const length = parseInt(contentLengthStr, 10);
+        if (!isNaN(length) && length > MAX_PROMPT_SIZE) {
+            return new Response(ERR_PAYLOAD_TOO_LARGE, { status: 413, headers: HEADERS_JSON });
+        }
     }
 
     // Parse Body
@@ -110,7 +122,6 @@ export default async function handler(req: Request) {
     // --- HEAVY LIFTING STARTS HERE ---
     
     // Lazy Initialization: Só instancia o SDK se chegamos até aqui.
-    // Economiza CPU/Memória em Cold Starts com requisições inválidas.
     if (!aiClient) {
         aiClient = new GoogleGenAI({ apiKey: API_KEY });
     }
@@ -124,14 +135,12 @@ export default async function handler(req: Request) {
         });
         
         // Response Validation
-        // Direct property access is faster than destructuring for single checks
         if (!geminiResponse.text) {
             const candidate = geminiResponse.candidates?.[0];
             const finishReason = candidate?.finishReason;
             const details = finishReason ? `Finish reason: ${finishReason}` : 'Generation failed.';
             const isSafety = finishReason === 'SAFETY';
             
-            // Dynamic error, must serialize
             return new Response(JSON.stringify({ 
                 error: isSafety ? 'Bad Request: Blocked by safety settings' : 'Internal Server Error: Generation failed', 
                 details 
@@ -148,7 +157,6 @@ export default async function handler(req: Request) {
 
     } catch (error: any) {
         console.error('Critical error in /api/analyze handler:', error);
-        // Dynamic error, must serialize
         return new Response(JSON.stringify({ error: 'Internal Server Error', details: error.message }), {
             status: 500,
             headers: HEADERS_JSON,

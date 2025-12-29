@@ -42,6 +42,7 @@ const ERR_UNAUTHORIZED = JSON.stringify({ error: 'Unauthorized: Missing sync key
 const ERR_INVALID_JSON = JSON.stringify({ error: 'Bad Request: Invalid JSON format' });
 const ERR_INVALID_PAYLOAD = JSON.stringify({ error: 'Bad Request: Invalid or missing payload data' });
 const ERR_PAYLOAD_TOO_LARGE = JSON.stringify({ error: 'Payload Too Large', details: `Payload size exceeds the limit of ${MAX_PAYLOAD_SIZE} bytes.` });
+const ERR_LENGTH_REQUIRED = JSON.stringify({ error: 'Length Required', details: 'Content-Length header is missing.' });
 const SUCCESS_JSON = '{"success":true}'; // Static success response
 
 // --- TYPES ---
@@ -77,8 +78,20 @@ export default async function handler(req: Request) {
 
         // --- POST HANDLER ---
         if (req.method === 'POST') {
+            // SECURITY: Pre-check Content-Length to prevent OOM
+            const contentLengthStr = req.headers.get('content-length');
+            if (!contentLengthStr) {
+                return new Response(ERR_LENGTH_REQUIRED, { status: 411, headers: HEADERS_JSON });
+            }
+            
+            const contentLength = parseInt(contentLengthStr, 10);
+            if (isNaN(contentLength) || contentLength > MAX_PAYLOAD_SIZE) {
+                return new Response(ERR_PAYLOAD_TOO_LARGE, { status: 413, headers: HEADERS_JSON });
+            }
+
             let clientPayload: SyncPayload;
             try {
+                // Now safe to parse
                 clientPayload = await req.json();
             } catch (e) {
                 return new Response(ERR_INVALID_JSON, { status: 400, headers: HEADERS_JSON });
@@ -89,6 +102,7 @@ export default async function handler(req: Request) {
                 return new Response(ERR_INVALID_PAYLOAD, { status: 400, headers: HEADERS_JSON });
             }
             
+            // Double check actual string length (Content-Length might be gzipped or inaccurate)
             if (clientPayload.state.length > MAX_PAYLOAD_SIZE) {
                 return new Response(ERR_PAYLOAD_TOO_LARGE, { status: 413, headers: HEADERS_JSON });
             }

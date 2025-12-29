@@ -28,12 +28,15 @@
  */
 
 import { state, Habit, TimeOfDay, HabitSchedule, getHabitDailyInfoForDate, STREAK_LOOKBACK_DAYS, PredefinedHabit } from '../state';
-import { toUTCIsoDateString, parseUTCIsoDate, addDays, getTodayUTCIso } from '../utils';
+import { toUTCIsoDateString, parseUTCIsoDate, getTodayUTCIso } from '../utils';
 import { t } from '../i18n';
 
 // --- Internal Cache for Static Dates ---
 // Cache estático para datas de âncora. Evita `new Date()` em loops quentes.
 const _anchorDateCache = new Map<string, Date>();
+
+// PERF: Constante mágica hoistada (ms por dia)
+const MS_PER_DAY = 86400000;
 
 function _getMemoizedDate(dateISO: string): Date {
     let date = _anchorDateCache.get(dateISO);
@@ -179,8 +182,7 @@ export function shouldHabitAppearOnDate(habit: Habit, dateISO: string, preParsed
             const anchorDate = _getMemoizedDate(schedule.scheduleAnchor || schedule.startDate);
             // Integer Arithmetic: diffTime pode ser float, arredondamos.
             const diffTime = date.getTime() - anchorDate.getTime();
-            // Constante mágica hoistada (ms por dia)
-            const MS_PER_DAY = 86400000; 
+            
             const diffDays = Math.round(diffTime / MS_PER_DAY) | 0; // Force int32
 
             if (frequency.unit === 'days') {
@@ -227,17 +229,28 @@ function _isHabitConsistentlyDone(habit: Habit, dateISO: string, dailyInfoMap?: 
 }
 
 /**
- * CONSTANTS FOR INTEGER DATE MATH
- */
-const MS_PER_DAY = 86400000;
-
-/**
  * Calcula a sequência (streak).
  * SOPA UPDATE [2025-04-15]: Integer-based Date Math (Epoch Days).
  * Substitui o loop anterior que usava `Date.setUTCDate` (muito lento) por aritmética inteira.
  * Convertemos a data final para "Dias desde a Época" e iteramos com decremento simples (i--).
+ * 
+ * UPDATE [2025-04-22]: Accepts Habit object OR ID for O(1) optimization.
  */
-export function calculateHabitStreak(habitId: string, endDateISO: string): number {
+export function calculateHabitStreak(habitOrId: string | Habit, endDateISO: string): number {
+    // Resolve Habit Object (Optimization: Pass object directly to avoid .find)
+    let habit: Habit | undefined;
+    let habitId: string;
+
+    if (typeof habitOrId === 'string') {
+        habitId = habitOrId;
+        habit = state.habits.find(h => h.id === habitId);
+    } else {
+        habit = habitOrId;
+        habitId = habit.id;
+    }
+
+    if (!habit) return 0;
+
     let subCache = state.streaksCache.get(habitId);
     if (!subCache) {
         subCache = new Map();
@@ -249,15 +262,13 @@ export function calculateHabitStreak(habitId: string, endDateISO: string): numbe
         return cached;
     }
 
-    const habit = state.habits.find(h => h.id === habitId);
-    if (!habit) return 0;
-
     // 1. Incremental Check (Ontem + Hoje)
     const endDateObj = parseUTCIsoDate(endDateISO);
     const endTime = endDateObj.getTime();
     
-    // Calculate Yesterday ISO manually via integer math if needed, but util is fine here for single call
-    const yesterdayISO = toUTCIsoDateString(addDays(endDateObj, -1));
+    // PERF: Inteiro em vez de addDays
+    const yesterdayTimestamp = endTime - MS_PER_DAY;
+    const yesterdayISO = toUTCIsoDateString(new Date(yesterdayTimestamp));
     const cachedYesterday = subCache.get(yesterdayISO);
 
     if (cachedYesterday !== undefined) {
@@ -284,8 +295,9 @@ export function calculateHabitStreak(habitId: string, endDateISO: string): numbe
     // Instead of mutating a Date object, we manipulate the timestamp directly.
     let currentTimestamp = endTime;
     
-    // We need a reusable Date object only for `shouldHabitAppearOnDate` (which needs getUTCDay)
+    // GC EVASION: We need a reusable Date object only for `shouldHabitAppearOnDate` (which needs getUTCDay)
     // We re-hydrate this object only when necessary.
+    // Otimização: Instanciado FORA do loop.
     const iteratorDate = new Date(currentTimestamp);
 
     // Limit check in ISO string format to avoid creating it inside the loop condition
@@ -293,7 +305,7 @@ export function calculateHabitStreak(habitId: string, endDateISO: string): numbe
 
     // Raw Loop with Hard Limit
     for (let i = 0; i < STREAK_LOOKBACK_DAYS; i = (i + 1) | 0) {
-        // Update the reusable date object's time value (Very fast operation)
+        // Update the reusable date object's time value (Very fast operation: Direct memory write)
         iteratorDate.setTime(currentTimestamp);
         
         // Manual ISO construction is tricky with varying months, so we use the util.
@@ -332,14 +344,20 @@ export function getSmartGoalForHabit(habit: Habit, dateISO: string, time: TimeOf
     
     const baseGoal = habit.goal.total;
     const targetDate = parseUTCIsoDate(dateISO);
+    const targetTime = targetDate.getTime();
 
-    // Optimized Loop for 3-day lookback
+    // Optimized Loop for 3-day lookback with Integer Math
     let validIncreases = 0;
     let minIncrease = 999999; // Arbitrary high number
 
+    // Reusable Date for loop
+    const tempDate = new Date(targetTime);
+
     for (let i = 1; i <= 3; i = (i + 1) | 0) {
-        const pastDate = addDays(targetDate, -i);
-        const pastISO = toUTCIsoDateString(pastDate);
+        // PERF: Replace addDays with setTime
+        tempDate.setTime(targetTime - (MS_PER_DAY * i));
+        
+        const pastISO = toUTCIsoDateString(tempDate);
         const pastDailyInfo = getHabitDailyInfoForDate(pastISO)[habit.id];
         const pastInstance = pastDailyInfo?.instances?.[time];
 
@@ -361,8 +379,10 @@ export function getSmartGoalForHabit(habit: Habit, dateISO: string, time: TimeOf
     }
 
     // Default Progressive Logic
-    const yesterdayISO = toUTCIsoDateString(addDays(targetDate, -1));
-    const streak = calculateHabitStreak(habit.id, yesterdayISO);
+    // PERF: Integer math instead of addDays
+    const yesterdayISO = toUTCIsoDateString(new Date(targetTime - MS_PER_DAY));
+    // Pass habit object directly for O(1) optimization
+    const streak = calculateHabitStreak(habit, yesterdayISO);
     // Integer division hack: (a / b) | 0
     const streakBonus = ((streak / 7) | 0) * 5; 
     
@@ -410,14 +430,14 @@ export function getActiveHabitsForDate(dateISO: string, preParsedDate?: Date): A
 
 /**
  * Calcula resumo do dia.
- * SOPA UPDATE: Hoisting de Mapa Diário + Loop Raw.
+ * SOPA UPDATE [2025-04-21]: Zero-Allocation Single-Pass.
+ * Funde a lógica de `getActiveHabitsForDate` diretamente aqui para evitar a alocação do array intermediário.
+ * Em um cenário de renderização de calendário (30 dias), isso economiza 30 arrays + N objetos por frame.
  */
 export function calculateDaySummary(dateISO: string, preParsedDate?: Date) {
     const cached = state.daySummaryCache.get(dateISO);
     if (cached) return cached;
 
-    const activeHabits = getActiveHabitsForDate(dateISO, preParsedDate);
-    
     // Initialize counters (Smi)
     let total = 0;
     let completed = 0;
@@ -427,14 +447,23 @@ export function calculateDaySummary(dateISO: string, preParsedDate?: Date) {
 
     // Hoist map lookup out of loop
     const dailyInfoMap = getHabitDailyInfoForDate(dateISO);
-    const activeLen = activeHabits.length;
+    const habits = state.habits;
+    const habitsLen = habits.length;
+    
+    const dateObj = preParsedDate || parseUTCIsoDate(dateISO);
 
-    // BCE Loop over active habits
-    for (let i = 0; i < activeLen; i = (i + 1) | 0) {
-        const entry = activeHabits[i];
-        const habit = entry.habit;
-        const schedule = entry.schedule;
+    // BCE Loop over ALL habits directly (Fused Loop)
+    for (let i = 0; i < habitsLen; i = (i + 1) | 0) {
+        const habit = habits[i];
+        
+        // Inline Visibility Check
+        if (!shouldHabitAppearOnDate(habit, dateISO, dateObj)) {
+            continue;
+        }
+        
+        const schedule = getEffectiveScheduleForHabitOnDate(habit, dateISO);
         const schedLen = schedule.length;
+        if (schedLen === 0) continue;
         
         const dailyInfo = dailyInfoMap[habit.id];
         
@@ -455,11 +484,10 @@ export function calculateDaySummary(dateISO: string, preParsedDate?: Date) {
                 if ((gType === 'pages' || gType === 'minutes') && habit.goal.total) {
                      const currentGoal = getCurrentGoalForInstance(habit, dateISO, time);
                      if (currentGoal > habit.goal.total) {
-                         // Check streaks only if needed
-                         const prevDate = preParsedDate || parseUTCIsoDate(dateISO);
-                         // Note: We use a utility here that might allocate a Date, but it's rare (only on overachievement)
-                         const yesterdayISO = toUTCIsoDateString(addDays(prevDate, -1));
-                         const currentStreak = calculateHabitStreak(habit.id, yesterdayISO);
+                         // PERF: Integer math for yesterday
+                         const yesterdayISO = toUTCIsoDateString(new Date(dateObj.getTime() - MS_PER_DAY));
+                         // Pass habit object for O(1) optimization
+                         const currentStreak = calculateHabitStreak(habit, yesterdayISO);
                          
                          if (currentStreak >= 2) {
                              hasNumericOverachieved = true;

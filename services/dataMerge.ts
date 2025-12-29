@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -30,6 +31,17 @@
 
 import { AppState, HabitDailyInfo, HabitStatus, TimeOfDay } from '../state';
 
+// PERFORMANCE: Lookup Table para pesos de status (Smi Values).
+// Acesso O(1) é mais rápido que switch/if-else repetido.
+// Pending = 1, Snoozed = 2, Completed = 3. Undefined = 1.
+const STATUS_WEIGHTS: Record<string, number> = {
+    'completed': 3,
+    'snoozed': 2,
+    'pending': 1
+};
+
+const DEFAULT_WEIGHT = 1;
+
 /**
  * SMART MERGE ALGORITHM:
  * Combina dois estados (Local e Remoto/Backup) de forma inteligente, preservando o máximo de dados possível.
@@ -41,31 +53,28 @@ import { AppState, HabitDailyInfo, HabitStatus, TimeOfDay } from '../state';
 export function mergeStates(local: AppState, incoming: AppState): AppState {
     // PERFORMANCE / MODERNIZATION [2025-03-08]: Use structuredClone for better performance and modern standard compliance.
     // Deep Clone é necessário para garantir imutabilidade dos inputs. 'structuredClone' é mais rápido que JSON.parse/stringify.
+    // [OPTIMIZATION]: We mutate 'merged' in-place.
     const merged: AppState = structuredClone(incoming);
 
     // 2. Fusão de Definições de Hábitos (Estratégia de União)
     // Se o usuário criou um hábito novo localmente que não está no incoming, adicionamos ao merge.
     // PERFORMANCE: Set lookup O(1) dentro do loop O(N).
     const incomingHabitIds = new Set(incoming.habits.map(h => h.id));
-    local.habits.forEach(localHabit => {
+    const localHabits = local.habits;
+    const localHabitsLen = localHabits.length;
+
+    // Raw Loop
+    for (let i = 0; i < localHabitsLen; i = (i + 1) | 0) {
+        const localHabit = localHabits[i];
         if (!incomingHabitIds.has(localHabit.id)) {
             merged.habits.push(localHabit);
         }
-    });
-
-    // CRITICAL LOGIC: Weights Table.
-    // Define a hierarquia de verdade para conflitos de estado no mesmo dia/hábito.
-    // DO NOT REFACTOR: Alterar esses pesos pode causar perda de progresso (ex: sobrescrever "Feito" com "Pendente").
-    // Pesos: Completed (3) > Snoozed (2) > Pending (1)
-    const getStatusWeight = (status: HabitStatus | undefined): number => {
-        if (status === 'completed') return 3;
-        if (status === 'snoozed') return 2;
-        return 1; // Pending ou undefined
-    };
+    }
 
     /**
      * Helper de fusão granular dia-a-dia.
      * Itera sobre os dados locais e aplica lógica de "Winner Takes All" baseada em peso.
+     * INLINED OPTIMIZATION: Função movida para escopo local para evitar closures custosas se fosse externa.
      */
     const mergeDayRecord = (localDay: Record<string, HabitDailyInfo>, mergedDay: Record<string, HabitDailyInfo>) => {
         // PERFORMANCE: Loop 'for...in' é otimizado em V8 para objetos de dicionário.
@@ -106,8 +115,9 @@ export function mergeStates(local: AppState, incoming: AppState): AppState {
                     // mesclamos propriedade por propriedade para preservar dados ricos (Notas).
 
                     // 1. Status Merge (Baseado em Peso)
-                    const localWeight = getStatusWeight(localInst.status);
-                    const mergedWeight = getStatusWeight(mergedInst.status);
+                    // Lookup O(1) via Tabela
+                    const localWeight = STATUS_WEIGHTS[localInst.status] || DEFAULT_WEIGHT;
+                    const mergedWeight = STATUS_WEIGHTS[mergedInst.status] || DEFAULT_WEIGHT;
 
                     if (localWeight > mergedWeight) {
                         // Local ganha o status.
@@ -127,15 +137,12 @@ export function mergeStates(local: AppState, incoming: AppState): AppState {
 
                     // 2. Note Merge (Independente do Status)
                     // Estratégia: "Maior Texto Vence".
-                    // Isso preserva notas detalhadas escritas offline mesmo que o status na nuvem 
-                    // seja tecnicamente "maior" (ex: completed vs pending).
                     const localNoteLen = localInst.note ? localInst.note.length : 0;
                     const mergedNoteLen = mergedInst.note ? mergedInst.note.length : 0;
 
                     if (localNoteLen > mergedNoteLen) {
                         mergedInst.note = localInst.note;
                     }
-                    // Se mergedNoteLen >= localNoteLen, mantemos a nota que já está no mergedInst.
                 }
             }
         }
@@ -151,7 +158,6 @@ export function mergeStates(local: AppState, incoming: AppState): AppState {
     }
 
     // 4. Fusão de Arquivos (Cold Storage)
-    // CRITICAL LOGIC: Manipulação de GZIP vs JSON Legacy.
     if (local.archives) {
         merged.archives = merged.archives || {};
         for (const year in local.archives) {
@@ -162,13 +168,8 @@ export function mergeStates(local: AppState, incoming: AppState): AppState {
                 const localContent = local.archives[year];
                 const incomingContent = merged.archives[year];
 
-                // GZIP CHECK [2025-04-06]: Se qualquer um dos arquivos for GZIP,
-                // não podemos mesclar sincronamente sem travar a UI (descompressão).
-                // Estratégia: "Incoming Wins" para arquivos históricos comprimidos.
-                // Como arquivos antigos mudam raramente (apenas pruning), assumimos que a nuvem é a autoridade.
+                // GZIP CHECK [2025-04-06]: "Incoming Wins" for compressed archives to avoid Sync decompress.
                 if (localContent.startsWith('GZIP:') || incomingContent.startsWith('GZIP:')) {
-                    // Mantém o incoming (já copiado no structuredClone inicial).
-                    // Log opcional para debug, mas esperado em operação normal.
                     continue; 
                 }
 
@@ -190,7 +191,6 @@ export function mergeStates(local: AppState, incoming: AppState): AppState {
                     merged.archives[year] = JSON.stringify(incomingYearData);
                 } catch (e) {
                     console.error(`Failed to merge archives for year ${year}`, e);
-                    // Em caso de erro (ex: JSON corrompido), mantém a versão do incoming por segurança.
                 }
             }
         }
@@ -198,9 +198,10 @@ export function mergeStates(local: AppState, incoming: AppState): AppState {
 
     // 5. Fusão de Metadados e Arrays Auxiliares
     merged.lastModified = Date.now(); // O merge cria um novo momento no tempo
-    merged.version = Math.max(local.version, incoming.version);
+    merged.version = local.version > incoming.version ? local.version : incoming.version;
     
     // PERFORMANCE: União de Sets para deduplicação rápida.
+    // Usamos Spread Syntax que é otimizado em V8 modernos para iteráveis.
     const allNotifications = new Set([...incoming.notificationsShown, ...local.notificationsShown]);
     merged.notificationsShown = Array.from(allNotifications);
 

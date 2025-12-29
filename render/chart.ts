@@ -16,24 +16,25 @@
  * - **Responsabilidade Única:** Visualizar a consistência dos hábitos nos últimos 30 dias (Pontuação Composta).
  * - **Zero Allocations (Render Loop):** Utiliza Object Pooling para os pontos de dados e Memoization 
  *   para evitar recálculos matemáticos se os dados não mudaram.
- * - **Lazy Layout:** Medições de geometria (getBoundingClientRect) são cacheadas e invalidadas apenas no resize,
- *   evitando "Layout Thrashing" durante a interação do mouse.
+ * - **Inline Mathematics:** Evita closures e abstrações de escala para permitir otimização agressiva do JIT.
  * 
  * DECISÕES TÉCNICAS:
- * 1. **SVG vs Canvas:** Optou-se por SVG para garantir nitidez em qualquer resolução (Retina) e acessibilidade.
- * 2. **Smi Optimization:** Loops de cálculo usam inteiros e lógica flat para evitar alocação de objetos temporários.
+ * 1. **Raw Math vs Abstractions:** Funções de escala (d3-scale style) foram removidas em favor de matemática in-line.
+ * 2. **Smi Optimization:** Loops de cálculo usam inteiros e lógica flat.
  */
 
 import { state, isChartDataDirty } from '../state';
 import { calculateDaySummary } from '../services/selectors';
 import { ui } from './ui';
 import { t, formatDate, formatDecimal, formatEvolution } from '../i18n';
-import { addDays, getTodayUTCIso, parseUTCIsoDate, toUTCIsoDateString } from '../utils';
+import { getTodayUTCIso, parseUTCIsoDate, toUTCIsoDateString } from '../utils';
 
 const CHART_DAYS = 30;
 const INITIAL_SCORE = 100;
 const MAX_DAILY_CHANGE_RATE = 0.025; 
 const PLUS_BONUS_MULTIPLIER = 1.5; 
+// PERF: Hoist constant
+const MS_PER_DAY = 86400000;
 
 // VISUAL CONSTANTS
 const SVG_HEIGHT = 45; 
@@ -69,11 +70,6 @@ type ChartDataPoint = {
     scheduledCount: number;
 };
 
-type ChartScales = {
-    xScale: (index: number) => number;
-    yScale: (value: number) => number;
-};
-
 // --- OBJECT POOL (PERFORMANCE) ---
 const chartDataPool: ChartDataPoint[] = Array.from({ length: CHART_DAYS }, () => ({
     date: '',
@@ -85,7 +81,9 @@ const chartDataPool: ChartDataPoint[] = Array.from({ length: CHART_DAYS }, () =>
 let lastChartData: ChartDataPoint[] = [];
 
 // Cache de metadados para escala (Performance)
-let chartMetadata = { minVal: 0, maxVal: 100, valueRange: 100 };
+// Flat object structure is faster for V8
+let chartMinVal = 0;
+let chartValueRange = 100;
 
 // Cache de geometria do gráfico (Evita Reflow no hot-path)
 let cachedChartRect: DOMRect | null = null;
@@ -108,16 +106,23 @@ let inputClientX = 0;
 
 
 function calculateChartData(): ChartDataPoint[] {
+    // SOPA OPTIMIZATION [2025-04-22]: Single Mutable Date & Integer Math
+    // Instead of creating 30 Date objects, we use one and shift it.
+    
     const endDate = parseUTCIsoDate(state.selectedDate);
     // OPTIMIZATION: Start date is (EndDate - 29 days).
-    const iteratorDate = addDays(endDate, -(CHART_DAYS - 1));
+    let currentTimestamp = endDate.getTime() - ((CHART_DAYS - 1) * MS_PER_DAY);
+    
+    // Iterator object (reused)
+    const iteratorDate = new Date(currentTimestamp);
+    
     const todayISO = getTodayUTCIso();
-
     let previousDayValue = INITIAL_SCORE;
 
     // PERFORMANCE: Raw Loop over pool.
     // BCE: i < CHART_DAYS (constante 30).
     for (let i = 0; i < CHART_DAYS; i = (i + 1) | 0) {
+        iteratorDate.setTime(currentTimestamp);
         const currentDateISO = toUTCIsoDateString(iteratorDate);
         
         // Pass iteratorDate object to avoid re-parsing inside selectors.
@@ -156,34 +161,31 @@ function calculateChartData(): ChartDataPoint[] {
         // Update POOL directly
         const point = chartDataPool[i];
         point.date = currentDateISO;
-        point.timestamp = iteratorDate.getTime();
+        point.timestamp = currentTimestamp; // Integer timestamp
         point.value = currentValue;
         point.completedCount = completedCount;
         point.scheduledCount = scheduledCount;
 
         previousDayValue = currentValue;
         
-        // Increment Date (Mutable)
-        iteratorDate.setUTCDate(iteratorDate.getUTCDate() + 1);
+        // Integer Increment
+        currentTimestamp += MS_PER_DAY;
     }
     
     return chartDataPool;
 }
 
-function _calculateChartScales(chartData: ChartDataPoint[], chartWidthPx: number): ChartScales {
-    const padding = CHART_PADDING;
-    const chartWidth = chartWidthPx - padding.left - padding.right;
-    const chartHeight = SVG_HEIGHT - padding.top - padding.bottom;
+/**
+ * Optimized Path Generation.
+ * Inlines scale calculation to avoid closure overhead in the loop.
+ */
+function _generateChartPaths(chartData: ChartDataPoint[], chartWidthPx: number): { areaPathData: string, linePathData: string } {
+    const len = chartData.length;
+    if (len === 0) return { areaPathData: '', linePathData: '' };
 
-    const newViewBox = `0 0 ${chartWidthPx} ${SVG_HEIGHT}`;
-    if (ui.chart.svg.getAttribute('viewBox') !== newViewBox) {
-        ui.chart.svg.setAttribute('viewBox', newViewBox);
-    }
-
-    // SOPA: Raw Loop for Min/Max
+    // 1. Calculate Bounds (Min/Max) - Raw Loop
     let dataMin = Infinity;
     let dataMax = -Infinity;
-    const len = chartData.length;
     
     for (let i = 0; i < len; i = (i + 1) | 0) {
         const val = chartData[i].value;
@@ -202,25 +204,55 @@ function _calculateChartScales(chartData: ChartDataPoint[], chartWidthPx: number
     }
 
     const safetyPadding = spread * 0.25;
-    
     const minVal = dataMin - safetyPadding;
     const maxVal = dataMax + safetyPadding;
-
     const valueRange = maxVal - minVal;
     
-    chartMetadata = { minVal, maxVal, valueRange: valueRange > 0 ? valueRange : 1 };
+    // Update global scale cache for tooltip
+    chartMinVal = minVal;
+    chartValueRange = valueRange > 0 ? valueRange : 1;
 
-    const xScale = (index: number) => padding.left + (index / (len - 1)) * chartWidth;
-    const yScale = (value: number) => padding.top + chartHeight - ((value - minVal) / chartMetadata.valueRange) * chartHeight;
+    // 2. Setup ViewBox
+    const newViewBox = `0 0 ${chartWidthPx} ${SVG_HEIGHT}`;
+    if (ui.chart.svg.getAttribute('viewBox') !== newViewBox) {
+        ui.chart.svg.setAttribute('viewBox', newViewBox);
+    }
 
-    return { xScale, yScale };
-}
+    // 3. Pre-calculate Scale Constants (Invariant Loop Motion)
+    const paddingLeft = CHART_PADDING.left;
+    const paddingTop = CHART_PADDING.top;
+    const chartW = chartWidthPx - paddingLeft - CHART_PADDING.right;
+    const chartH = SVG_HEIGHT - paddingTop - CHART_PADDING.bottom;
+    
+    const xStep = chartW / (len - 1);
+    // Inverse Y scale factor: height / range
+    const yFactor = chartH / chartValueRange; 
+    const yBase = paddingTop + chartH; // Bottom of chart area
 
-function _generatePathData(chartData: ChartDataPoint[], { xScale, yScale }: ChartScales): { areaPathData: string, linePathData: string } {
-    // PERFORMANCE: Use string concatenation or efficient mapping.
-    // Given 30 points, map().join() is optimized enough.
-    const linePathData = chartData.map((point, i) => `${i === 0 ? 'M' : 'L'} ${xScale(i)} ${yScale(point.value)}`).join(' ');
-    const areaPathData = `${linePathData} V ${yScale(chartMetadata.minVal)} L ${xScale(0)} ${yScale(chartMetadata.minVal)} Z`;
+    // 4. Generate Path String (Unrolled First Iteration)
+    let linePathData = '';
+    
+    // First Point (M x y)
+    const firstVal = chartData[0].value;
+    const firstX = paddingLeft;
+    const firstY = yBase - ((firstVal - minVal) * yFactor);
+    
+    linePathData = 'M ' + firstX + ' ' + firstY;
+
+    // Remaining Points (L x y)
+    for (let i = 1; i < len; i = (i + 1) | 0) {
+        const val = chartData[i].value;
+        const x = paddingLeft + (i * xStep);
+        const y = yBase - ((val - minVal) * yFactor);
+        
+        // Fast string concat
+        linePathData += ' L ' + x + ' ' + y;
+    }
+
+    // Area Path: Close the loop down to the base
+    const areaBaseY = yBase - ((minVal - minVal) * yFactor); // Should be yBase actually, but logical consistency
+    const areaPathData = linePathData + ' V ' + areaBaseY + ' L ' + firstX + ' ' + areaBaseY + ' Z';
+    
     return { areaPathData, linePathData };
 }
 
@@ -293,8 +325,8 @@ function _updateChartDOM(chartData: ChartDataPoint[]) {
         return;
     }
 
-    const scales = _calculateChartScales(chartData, svgWidth);
-    const { areaPathData, linePathData } = _generatePathData(chartData, scales);
+    // Inlined math call
+    const { areaPathData, linePathData } = _generateChartPaths(chartData, svgWidth);
     
     areaPath.setAttribute('d', areaPathData);
     linePath.setAttribute('d', linePathData);
@@ -321,22 +353,31 @@ function updateTooltipPosition() {
     const svgWidth = cachedChartRect.width;
     if (svgWidth === 0) return;
 
-    const padding = CHART_PADDING;
-    const chartWidth = svgWidth - padding.left - padding.right;
+    const paddingLeft = CHART_PADDING.left;
+    const chartWidth = svgWidth - paddingLeft - CHART_PADDING.right;
+    const len = lastChartData.length;
     
+    // PERF: Smi Math & Clamping
+    // Uses integer truncation (| 0) instead of Math.round/floor where appropriate
     const x = inputClientX - cachedChartRect.left;
-    const index = Math.round((x - padding.left) / chartWidth * (lastChartData.length - 1));
-    const pointIndex = Math.max(0, Math.min(lastChartData.length - 1, index));
+    
+    // Normalized position 0..1
+    const pos = (x - paddingLeft) / chartWidth;
+    
+    // Map to index (0..29) with rounding logic (add 0.5 and truncate)
+    const rawIndex = (pos * (len - 1) + 0.5) | 0;
+    
+    // Clamp index
+    const pointIndex = rawIndex < 0 ? 0 : (rawIndex >= len ? len - 1 : rawIndex);
 
     if (pointIndex !== lastRenderedPointIndex) {
         lastRenderedPointIndex = pointIndex;
         
         const point = lastChartData[pointIndex];
-        const { minVal, valueRange } = chartMetadata;
-        const chartHeight = SVG_HEIGHT - padding.top - padding.bottom;
+        const chartHeight = SVG_HEIGHT - CHART_PADDING.top - CHART_PADDING.bottom;
     
-        const pointX = padding.left + (pointIndex / (lastChartData.length - 1)) * chartWidth;
-        const pointY = padding.top + chartHeight - ((point.value - minVal) / valueRange) * chartHeight;
+        const pointX = paddingLeft + (pointIndex / (len - 1)) * chartWidth;
+        const pointY = CHART_PADDING.top + chartHeight - ((point.value - chartMinVal) / chartValueRange) * chartHeight;
 
         indicator.style.opacity = '1';
         indicator.style.transform = `translateX(${pointX}px)`;

@@ -88,6 +88,7 @@ const esbuildOptions = {
         'sync-worker': 'services/sync.worker.ts'
     },
     bundle: true,
+    splitting: true, // PERF: Enables Code Splitting for dynamic imports (Lazy Loading)
     outdir: outdir,
     entryNames: '[name]',
     format: 'esm',

@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="pt-BR">
 <!-- 
@@ -115,11 +116,6 @@
         });
       });
     </script>
-
-    <!-- 
-        [ARCHITECTURAL GUARD]: IMPORT MAPS REMOVED.
-        All dependencies (Google GenAI, Vercel SDKs) are bundled directly into 'bundle.js' via esbuild.
-    -->
 <script type="importmap">
 {
   "imports": {
@@ -480,76 +476,87 @@
             <h2 id="notes-modal-title">Nota</h2>
             <p id="notes-modal-subtitle"></p>
             <textarea id="notes-textarea" placeholder="Digite sua nota aqui..."></textarea>
-            <div class="modal-actions">
-                <button class="btn modal-close-btn">Cancelar</button>
-                <button id="save-note-btn" class="btn btn--primary">Salvar Nota</button>
-            </div>
+            <button id="save-note-btn" class="btn btn--primary">Salvar Nota</button>
+            <button class="btn modal-close-btn">Cancelar</button>
         </div>
     </div>
 
-    <div id="edit-habit-modal" class="modal-overlay">
-        <div class="modal-content">
-            <h2 id="edit-habit-modal-title">Editar Hábito</h2>
-            <form id="edit-habit-form" onsubmit="event.preventDefault();">
-                <div class="form-notice"></div>
-                
-                <div class="habit-identity-section">
-                    <div class="habit-icon-picker-wrapper">
-                        <button type="button" id="habit-icon-picker-btn" class="habit-icon-picker-btn" aria-label="Selecionar ícone"></button>
-                        <div class="edit-icon-overlay"></div>
-                    </div>
-                    <div class="habit-name-input-wrapper">
-                        <input type="text" id="habit-name" name="habit-name" class="form-control" autocomplete="off" placeholder="Nome" required>
-                    </div>
-                </div>
-
-                <div class="form-group" style="margin-bottom: var(--space-xl);">
-                    <div id="habit-time-container"></div>
-                </div>
-
-                <div id="frequency-options-container"></div>
-                
-                <div class="modal-actions">
-                    <button class="btn modal-close-btn">Cancelar</button>
-                    <button type="submit" id="edit-habit-save-btn" class="btn btn--primary">Salvar Hábito</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
+    <!-- Modal: Ícone Picker -->
     <div id="icon-picker-modal" class="modal-overlay">
         <div class="modal-content">
             <div class="modal-header">
-                <button type="button" class="icon-btn modal-close-btn" aria-label="Fechar"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+                <button class="icon-btn modal-close-btn"><svg width="24" height="24"><use href="#icon-chevron-left"></use></svg></button>
                 <h2 id="icon-picker-modal-title">Selecionar Ícone</h2>
-                <button type="button" id="change-color-from-picker-btn" class="icon-btn"></button>
+                <button id="change-color-from-picker-btn" class="icon-btn"></button>
             </div>
             <div id="icon-picker-grid"></div>
         </div>
     </div>
 
+    <!-- Modal: Color Picker -->
     <div id="color-picker-modal" class="modal-overlay">
         <div class="modal-content">
-            <h2 id="color-picker-modal-title">Selecionar Cor</h2>
+            <div class="modal-header">
+                <button class="icon-btn modal-close-btn"><svg width="24" height="24"><use href="#icon-chevron-left"></use></svg></button>
+                <h2 id="color-picker-modal-title">Selecionar Cor</h2>
+                <div style="width: 36px;"></div>
+            </div>
             <div id="color-picker-grid"></div>
-            <button class="btn modal-close-btn">Fechar</button>
         </div>
     </div>
 
+    <!-- Modal: Edit Habit (Apple Style Form) -->
+    <div id="edit-habit-modal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <button class="btn modal-close-btn" style="border:none;background:none;color:var(--accent-blue);font-size:16px;">Cancelar</button>
+                <h2 id="edit-habit-modal-title" style="font-size:16px;margin:0;">Editar Hábito</h2>
+                <button id="edit-habit-save-btn" class="btn" style="border:none;background:none;color:var(--accent-blue);font-weight:700;font-size:16px;">Salvar</button>
+            </div>
+            <form id="edit-habit-form">
+                <div class="habit-identity-section">
+                    <div class="habit-icon-picker-wrapper">
+                        <button type="button" id="habit-icon-picker-btn" class="habit-icon-picker-btn"></button>
+                        <div class="edit-icon-overlay"></div>
+                    </div>
+                    <div class="habit-name-input-wrapper">
+                        <input type="text" id="habit-name" name="habit-name" class="form-control" placeholder="Nome" autocomplete="off" style="background:transparent;border:none;font-size:20px;padding:0;">
+                        <div class="form-notice"></div>
+                    </div>
+                </div>
+
+                <div class="form-section">
+                    <div class="form-row">
+                        <label>Horário</label>
+                    </div>
+                    <div id="habit-time-container" style="padding: 0 var(--space-lg) var(--space-lg);"></div>
+                </div>
+
+                <div id="frequency-options-container"></div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Full Calendar -->
     <div id="full-calendar-modal" class="modal-overlay">
         <div class="modal-content">
             <div id="full-calendar-header">
-                <button type="button" id="full-calendar-prev" class="icon-btn"><svg width="24" height="24"><use href="#icon-chevron-left"></use></svg></button>
+                <button id="full-calendar-prev" class="icon-btn">
+                    <svg width="24" height="24"><use href="#icon-chevron-left"></use></svg>
+                </button>
                 <h2 id="full-calendar-month-year"></h2>
-                <button type="button" id="full-calendar-next" class="icon-btn"><svg width="24" height="24"><use href="#icon-chevron-right"></use></svg></button>
+                <button id="full-calendar-next" class="icon-btn">
+                    <svg width="24" height="24"><use href="#icon-chevron-right"></use></svg>
+                </button>
             </div>
             <div id="full-calendar-weekdays"></div>
             <div id="full-calendar-grid"></div>
-            <button class="btn modal-close-btn">Fechar</button>
+            <button class="btn modal-close-btn" style="width:100%">Fechar</button>
         </div>
     </div>
 
-    <div id="calendar-quick-actions" class="modal-overlay">
+    <!-- Quick Actions Popover -->
+    <div id="calendar-quick-actions" class="modal-overlay" style="align-items: flex-start; justify-content: flex-start; background: transparent;">
         <div class="quick-actions-content">
             <button id="quick-action-done" class="quick-action-btn"></button>
             <div class="quick-action-divider"></div>
@@ -559,6 +566,6 @@
         </div>
     </div>
 
-    <script type="module" src="bundle.js"></script>
+    <script src="bundle.js" type="module"></script>
 </body>
 </html>
