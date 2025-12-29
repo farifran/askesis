@@ -36,8 +36,8 @@ const PLUS_BONUS_MULTIPLIER = 1.5;
 const MS_PER_DAY = 86400000;
 
 // VISUAL CONSTANTS
-const SVG_HEIGHT = 45; 
-const CHART_PADDING = { top: 0, right: 0, bottom: 0, left: 3 };
+const SVG_HEIGHT = 75; 
+const CHART_PADDING = { top: 0, right: 0, bottom: 5, left: 3 };
 
 // PERFORMANCE [2025-04-13]: Hoisted Intl Options.
 const OPTS_AXIS_LABEL_SHORT: Intl.DateTimeFormatOptions = { 
@@ -398,7 +398,9 @@ function updateTooltipPosition() {
         if (pointX < 50) translateX = '0%';
         else if (pointX > svgWidth - 50) translateX = '-100%';
 
-        tooltip.style.transform = `translate3d(calc(${pointX}px + ${translateX}), calc(${pointY - 20}px - 100%), 0)`;
+        // FIX [2025-04-24]: Vertically center the tooltip to prevent it from being clipped at the top.
+        const verticalPosition = `calc(${SVG_HEIGHT / 2}px - 50%)`;
+        tooltip.style.transform = `translate3d(calc(${pointX}px + ${translateX}), ${verticalPosition}, 0)`;
     }
 }
 
