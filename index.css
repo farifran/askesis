@@ -1401,7 +1401,7 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 .chart-evolution-indicator {
     /* LAYOUT FIX [2025-03-27]: Static positioning for inline header display. */
     position: static;
-    font-size: 13px;
+    font-size: 18px;
     font-weight: 700;
     background-color: transparent;
     border: none;
