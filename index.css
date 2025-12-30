@@ -1252,8 +1252,8 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     padding: var(--space-lg);
     background-color: var(--bg-color); /* TESTE: Alterado para preto puro a pedido do usuário */
     border-radius: var(--border-radius-large);
-    /* BUGFIX [2025-04-24]: Alterado para 'paint' para permitir que tooltips transbordem visualmente sem serem cortados pelo layout. */
-    contain: paint;
+    /* BUGFIX [2025-04-24]: Alterado para 'layout' para permitir que tooltips transbordem sem serem cortados, mantendo isolamento básico de layout. */
+    contain: layout;
     /* PERFORMANCE [2025-01-18]: Otimização para evitar renderização quando fora da tela. */
     content-visibility: auto;
     contain-intrinsic-size: 80px;
@@ -1401,7 +1401,8 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 .chart-evolution-indicator {
     /* LAYOUT FIX [2025-03-27]: Static positioning for inline header display. */
     position: static;
-    font-size: 17px;
+    /* VISUAL UPDATE [2025-04-24]: Tamanho 16px (18px do título - 2px). */
+    font-size: 16px;
     font-weight: 700;
     background-color: transparent;
     border: none;
@@ -2068,437 +2069,183 @@ input:disabled + .slider {
     justify-content: space-between;
     align-items: center;
     padding: var(--space-md) var(--space-lg);
-    border-bottom: 1px solid var(--border-color);
+    position: relative;
 }
-.form-section .form-row:last-child {
-    border-bottom: none;
+.form-row:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: var(--space-lg);
+    right: 0;
+    height: 1px;
+    background-color: var(--border-color);
 }
-.form-row label {
-    font-size: 16px;
-    font-weight: 400;
-    color: var(--text-primary);
-}
-.form-row-content {
-    display: flex;
-    align-items: center;
-    gap: var(--space-sm);
-    color: var(--text-secondary);
-}
-.form-row-content .chevron {
-    stroke: var(--text-tertiary);
-    width: 16px;
-    height: 16px;
-}
-.form-row--vertical {
+.form-row.form-row--vertical {
     flex-direction: column;
-    align-items: stretch;
-    gap: var(--space-lg);
+    align-items: flex-start;
+    gap: var(--space-md);
 }
 
-/* Seção de Identidade do Hábito (Ícone, Nome, Cor) */
 .habit-identity-section {
     display: flex;
-    align-items: flex-start; /* Evita pulo do ícone quando avisos aparecem */
+    align-items: center;
     gap: var(--space-lg);
-    background-color: transparent;
+    background-color: var(--surface-color);
+    border-radius: var(--border-radius-large);
+    padding: var(--space-lg);
 }
 .habit-icon-picker-wrapper {
     position: relative;
     flex-shrink: 0;
 }
-.edit-icon-overlay {
-    position: absolute;
-    top: -2px;
-    right: -2px;
-    width: 24px;
-    height: 24px;
-    background-color: var(--surface-hover);
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    pointer-events: none;
-    border: 2px solid var(--bg-color);
-    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-}
-.edit-icon-overlay svg {
-    width: 14px;
-    height: 14px;
-    stroke: var(--text-primary);
-}
-
 .habit-icon-picker-btn {
     width: 64px;
     height: 64px;
     border-radius: var(--border-radius-pill);
-    flex-shrink: 0;
+    border: none;
     display: flex;
     align-items: center;
     justify-content: center;
-    border: none;
     cursor: pointer;
-    transition: transform var(--transition-duration-fast), background-color var(--transition-duration), color var(--transition-duration);
+    transition: transform 0.2s;
 }
 .habit-icon-picker-btn:hover {
     transform: scale(1.1);
 }
 .habit-icon-picker-btn svg {
-    width: 55%;
-    height: 55%;
+    width: 60%;
+    height: 60%;
+}
+.edit-icon-overlay {
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    width: 24px;
+    height: 24px;
+    background-color: var(--accent-blue);
+    border-radius: var(--border-radius-pill);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    border: 2px solid var(--surface-color);
     pointer-events: none;
 }
+.edit-icon-overlay svg {
+    width: 14px;
+    height: 14px;
+}
 .habit-name-input-wrapper {
-    flex: 1;
-}
-#habit-name {
     flex-grow: 1;
+    position: relative;
+}
+.form-notice {
+    font-size: 11px;
+    color: var(--color-red);
+    margin-top: var(--space-xs);
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+.form-notice.visible {
+    opacity: 1;
 }
 
-
-/* Controle Segmentado (Estilo Apple) */
 .segmented-control {
     display: flex;
+    width: 100%;
     background-color: var(--bg-color);
     border-radius: var(--border-radius-base);
-    padding: 4px; /* Increased padding for larger gray background */
-    width: 100%;
-    gap: 4px; /* Spacing between options */
+    padding: 2px;
 }
 .segmented-control-option {
     flex: 1;
-    padding: 10px 0; /* Taller touch target */
-    font-size: 12px; /* Smaller text */
-    font-weight: 500;
-    color: var(--text-secondary);
-    background-color: transparent;
+    padding: var(--space-sm);
     border: none;
-    border-radius: var(--border-radius-small);
+    background-color: transparent;
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 500;
     cursor: pointer;
-    transition: background-color var(--transition-duration), color var(--transition-duration), transform 0.1s;
+    border-radius: 6px;
     display: flex;
-    flex-direction: column; /* Vertical stack for minimalism and space saving */
     align-items: center;
     justify-content: center;
-    gap: 4px;
+    gap: var(--space-sm);
+    transition: background-color 0.2s, color 0.2s;
 }
 .segmented-control-option.selected {
     background-color: var(--accent-blue);
     color: white;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-}
-.segmented-control-option:active {
-    transform: scale(0.98);
 }
 .segmented-control-option svg {
-    width: 20px;
-    height: 20px;
+    width: 18px;
+    height: 18px;
     stroke: currentColor;
 }
 
-/* Picker de Dias da Semana (Estilo Moderno de Botão de Alternância) */
+.frequency-details {
+    width: 100%;
+    padding-top: var(--space-sm);
+    display: none;
+}
+.frequency-details.visible {
+    display: block;
+}
 .weekday-picker {
     display: flex;
-    justify-content: space-between; 
-    gap: 2px; /* Reduced gap to prevent overflow */
-    padding-top: 0;
+    justify-content: space-between;
+    gap: 2px;
 }
-
 .weekday-picker label {
-    cursor: pointer;
     flex: 1;
-    display: flex;
-    justify-content: center;
 }
-
 .weekday-button {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 28px; /* Reduced size from 32px to 28px */
-    height: 28px;
-    border-radius: 50%;
-    border: 1px solid var(--border-color); /* Thinner, subtler border */
-    background-color: var(--surface-color); /* Explicit background */
-    color: var(--text-secondary);
-    font-weight: 500;
-    font-size: 11px; /* Smaller font */
-    transition: all 0.2s ease;
-    -webkit-tap-highlight-color: transparent;
-}
-
-.weekday-picker label:hover .weekday-button {
-    background-color: var(--surface-hover);
-    border-color: var(--text-tertiary);
-}
-
-.weekday-picker input[type="checkbox"]:checked + .weekday-button {
-    background-color: var(--accent-blue);
-    border-color: var(--accent-blue);
-    color: white;
-}
-
-/* A11Y: Estado de foco visível para checkbox de dia da semana */
-.weekday-picker input[type="checkbox"]:focus-visible + .weekday-button {
-    box-shadow: 0 0 0 2px var(--bg-color), 0 0 0 4px var(--accent-blue);
-}
-
-
-/* Opções de Frequência (Estilo Rádio) */
-.frequency-options .form-row label {
-    display: flex;
-    align-items: center;
     width: 100%;
+    aspect-ratio: 1/1;
+    border-radius: var(--border-radius-pill);
     cursor: pointer;
+    background-color: var(--bg-color);
+    color: var(--text-secondary);
+    transition: background-color 0.2s, color 0.2s;
 }
-.frequency-options input[type="radio"] {
-    appearance: none;
-    -webkit-appearance: none;
-    width: 22px;
-    height: 22px;
-    border: 2px solid var(--text-tertiary);
-    border-radius: 50%;
-    margin-right: var(--space-md);
-    position: relative;
-    cursor: pointer;
-    transition: border-color 0.2s;
-}
-.frequency-options input[type="radio"]:checked {
-    border-color: var(--accent-blue);
-}
-.frequency-options input[type="radio"]:checked::before {
-    content: '';
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    width: 12px;
-    height: 12px;
+.weekday-picker input:checked + .weekday-button {
     background-color: var(--accent-blue);
-    border-radius: 50%;
-    transform: translate(-50%, -50%);
-}
-
-/* A11Y: Estado de foco visível para botões de rádio customizados */
-.frequency-options input[type="radio"]:focus-visible {
-    outline: 2px solid var(--accent-blue);
-    outline-offset: 2px;
+    color: white;
 }
 
 .interval-control-group {
     display: flex;
     align-items: center;
-    gap: var(--space-sm);
+    justify-content: space-between;
     background-color: var(--bg-color);
-    border: 1px solid var(--border-color);
     border-radius: var(--border-radius-base);
     padding: var(--space-xs);
 }
-
 .stepper-btn {
-    background: var(--surface-color);
-    border: none;
-    color: var(--text-primary);
-    font-size: 20px;
-    font-weight: 500;
     width: 32px;
     height: 32px;
-    border-radius: var(--border-radius-small);
+    font-size: 24px;
+    border-radius: 6px;
+    background: var(--surface-hover);
+    color: var(--text-primary);
+    border: none;
     cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: background-color var(--transition-duration);
 }
-.stepper-btn:hover {
-    background-color: var(--surface-hover);
-}
-
 .interval-amount-display {
     font-size: 16px;
     font-weight: 500;
-    color: var(--text-primary);
-    min-width: 24px;
+    flex: 1;
     text-align: center;
 }
-
 .unit-toggle-btn {
-    background: var(--surface-color);
-    border: none;
+    padding: var(--space-sm) var(--space-lg);
+    background: var(--surface-hover);
     color: var(--text-primary);
-    font-size: 14px;
-    font-weight: 500;
-    padding: 0 var(--space-md);
-    height: 32px;
-    border-radius: var(--border-radius-small);
+    border: none;
+    border-radius: 6px;
     cursor: pointer;
-    transition: background-color var(--transition-duration);
-    min-width: 80px;
-}
-.unit-toggle-btn:hover {
-    background-color: var(--surface-hover);
-}
-
-
-/* Esconde as opções de frequência detalhadas */
-.frequency-details {
-    display: none;
-    padding: var(--space-md); /* Changed from --space-lg */
-    background-color: var(--bg-color); /* Gray background */
-    border-radius: var(--border-radius-base);
-    margin-top: var(--space-sm);
-    border: 1px solid var(--border-color); /* Added border */
-}
-.frequency-details.visible {
-    display: block;
-}
-
-
-/* --- UTILITÁRIOS --- */
-.form-notice {
-    color: var(--color-red); font-size: 13px; font-weight: 500;
-    opacity: 0; max-height: 0;
-    overflow: hidden;
-    transition: opacity var(--transition-duration-slow), max-height var(--transition-duration-slow), padding-block var(--transition-duration-slow);
-    text-align: left; /* Alinhado à esquerda conforme solicitação */
-    padding: 0; margin-block-start: var(--space-xs);
-}
-.form-notice.visible {
-    opacity: 1;
-    max-height: 80px;
-    padding-block: var(--space-sm);
-}
-
-/* --- PWA: OFFLINE INDICATOR --- */
-body.is-offline #ai-eval-btn .default-icon,
-body.is-offline #ai-eval-btn .loading-icon {
-    display: none;
-}
-
-body.is-offline #ai-eval-btn .offline-icon {
-    display: block;
-}
-
-/* --- SCROLLBARS PERSONALIZADAS (MODAIS) --- */
-.modal-content,
-#explore-habit-list,
-#habit-list,
-#ai-response,
-#icon-picker-grid,
-#color-picker-grid,
-#edit-habit-form {
-    /* Firefox */
-    scrollbar-width: thin;
-    scrollbar-color: color-mix(in srgb, var(--text-tertiary) 60%, transparent) transparent;
-}
-
-/* WebKit (Chrome, Safari, Edge) */
-.modal-content::-webkit-scrollbar,
-#explore-habit-list::-webkit-scrollbar,
-#habit-list::-webkit-scrollbar,
-#ai-response::-webkit-scrollbar,
-#icon-picker-grid::-webkit-scrollbar,
-#color-picker-grid::-webkit-scrollbar,
-#edit-habit-form::-webkit-scrollbar {
-    width: 6px;
-}
-
-.modal-content::-webkit-scrollbar-track,
-#explore-habit-list::-webkit-scrollbar-track,
-#habit-list::-webkit-scrollbar-track,
-#ai-response::-webkit-scrollbar-track,
-#icon-picker-grid::-webkit-scrollbar-track,
-#color-picker-grid::-webkit-scrollbar-track,
-#edit-habit-form::-webkit-scrollbar-track {
-    background: transparent;
-    /* CORREÇÃO: Adiciona margem vertical para que a barra não corte os cantos arredondados do modal. */
-    margin-block: var(--space-lg);
-}
-
-.modal-content::-webkit-scrollbar-thumb,
-#explore-habit-list::-webkit-scrollbar-thumb,
-#habit-list::-webkit-scrollbar-thumb,
-#ai-response::-webkit-scrollbar-thumb,
-#icon-picker-grid::-webkit-scrollbar-thumb,
-#color-picker-grid::-webkit-scrollbar-thumb,
-#edit-habit-form::-webkit-scrollbar-thumb {
-    background-color: color-mix(in srgb, var(--text-tertiary) 60%, transparent);
-    border-radius: 3px;
-    /* Cria um efeito de "padding" ao redor do polegar, fazendo-o parecer mais fino */
-    border: 1px solid transparent;
-    background-clip: content-box;
-}
-
-.modal-content::-webkit-scrollbar-thumb:hover,
-#explore-habit-list::-webkit-scrollbar-thumb:hover,
-#habit-list::-webkit-scrollbar-thumb:hover,
-#ai-response::-webkit-scrollbar-thumb:hover,
-#icon-picker-grid::-webkit-scrollbar-thumb:hover,
-#color-picker-grid::-webkit-scrollbar-thumb:hover,
-#edit-habit-form::-webkit-scrollbar-thumb:hover {
-    background-color: color-mix(in srgb, var(--text-tertiary) 90%, transparent);
-}
-
-/* --- RESPONSIVIDADE --- */
-@media (max-width: 767px) {
-    .app-header {
-        gap: var(--space-sm);
-    }
-    .app-header h2 { font-size: 24px; }
-    .stoic-quote, .app-subtitle { font-size: 12px; }
-    .header-top { gap: var(--space-md); }
-    #fab-add-habit { width: 38px; height: 38px; font-size: 22px; }
-    .header-bottom { gap: var(--space-sm); flex-wrap: nowrap; }
-
-    /* REATORAÇÃO [2024-11-19]: Adiciona regras para mostrar o formato de data mobile e ocultar o de desktop. */
-    .header-title-desktop {
-        display: none;
-    }
-    .header-title-mobile {
-        display: block;
-    }
-    
-    /* REFINAMENTO DE UX [2025-04-01]: Remove margem extra do último elemento. 
-       O padding do container e a margem do gráfico já fornecem o espaçamento correto. */
-    #habit-container > .habit-group-wrapper:last-of-type.has-habits {
-        margin-block-end: 0;
-    }
-}
-
-@media (min-width: 768px) {
-    .app-container { padding-inline: var(--space-xl); }
-    .app-header { padding-block: calc(var(--space-lg) * 2); margin-block-end: 0; }
-    .app-header h2 { font-size: 32px; }
-
-    .habit-group {
-        display: flex; flex-wrap: wrap;
-        gap: var(--space-sm); padding: 0;
-        
-        /* UI FIX [2025-02-23]: Allow flex children to grow properly inside the timeline layout */
-        flex-grow: 1;
-        min-width: 0;
-    }
-    .habit-card {
-        flex: 1 1 calc(50% - var(--space-sm));
-        margin-block-end: 0;
-        min-width: 150px;
-    }
-    .empty-group-placeholder { width: 100%; }
-
-    .habit-content-wrapper { 
-        padding: var(--space-xs) var(--space-md) var(--space-xs) var(--space-xl); 
-    }
-    /* Adjusted text size for desktop from 19px to 17px */
-    .habit-details .name { font-size: 17px; }
-    .habit-details .subtitle { font-size: 12px; }
-
-    .modal-content { max-width: 500px; padding: var(--space-xl); }
-
-    #explore-modal .modal-content { max-width: 90vw; max-height: 90vh; width: auto; }
-    #explore-habit-list { grid-template-columns: repeat(6, 1fr); gap: var(--space-md); }
-    .explore-habit-item { padding: var(--space-lg) var(--space-sm); }
-    .explore-habit-icon { width: 44px; height: 44px; margin-block-end: var(--space-xs); }
-    .explore-habit-details .name { font-size: 14px; }
-    .explore-habit-details .subtitle {
-        display: block; font-size: 11px;
-        color: var(--text-tertiary); line-height: 1.3;
-    }
 }
