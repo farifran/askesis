@@ -208,7 +208,7 @@ export function getLiveHabitCards(): IterableIterator<HTMLElement> {
     return habitElementCache.values();
 }
 
-export const getUnitString = (habit: Habit, value: number | undefined) => {
+const getUnitString = (habit: Habit, value: number | undefined) => {
     const unitKey = habit.goal.unitKey || 'unitCheck';
     return t(unitKey, { count: value });
 };

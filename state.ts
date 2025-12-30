@@ -66,8 +66,8 @@ export enum KernelHabitStatus {
 }
 
 // Map TimeOfDay string to Index (0, 1, 2)
-// EXPORTED FOR HFT ACCESS
-export const TIME_INDEX_MAP: Record<string, number> = {
+// EXPORTED FOR HFT ACCESS: Made internal for encapsulation.
+const TIME_INDEX_MAP: Record<string, number> = {
     'Morning': 0,
     'Afternoon': 1,
     'Evening': 2
@@ -441,6 +441,20 @@ export const UI_MASK_CHART = 4;    // 100
 // Used by render.ts for O(1) dirty checking.
 export let uiGlobalDirtyMask = 7; // Initial state: 111 (All dirty)
 
+// OPTIMIZATION [2025-04-26]: Singleton Proxy for UI Dirty State.
+// Avoids creating a new object literal on every access to `state.uiDirtyState`.
+// The closures capture the module-level `uiGlobalDirtyMask` by reference.
+const _uiDirtyProxy = {
+    get calendarVisuals() { return (uiGlobalDirtyMask & UI_MASK_CALENDAR) !== 0; },
+    set calendarVisuals(v: boolean) { if(v) uiGlobalDirtyMask |= UI_MASK_CALENDAR; else uiGlobalDirtyMask &= ~UI_MASK_CALENDAR; },
+    
+    get habitListStructure() { return (uiGlobalDirtyMask & UI_MASK_LIST) !== 0; },
+    set habitListStructure(v: boolean) { if(v) uiGlobalDirtyMask |= UI_MASK_LIST; else uiGlobalDirtyMask &= ~UI_MASK_LIST; },
+    
+    get chartData() { return (uiGlobalDirtyMask & UI_MASK_CHART) !== 0; },
+    set chartData(v: boolean) { if(v) uiGlobalDirtyMask |= UI_MASK_CHART; else uiGlobalDirtyMask &= ~UI_MASK_CHART; }
+};
+
 export const state: {
     habits: Habit[];
     dailyData: Record<string, Record<string, HabitDailyInfo>>;
@@ -499,18 +513,9 @@ export const state: {
         year: new Date().getFullYear(),
         month: new Date().getMonth(),
     },
-    // PROXY PATTERN: Writes to bitmask, reads from bitmask.
+    // PROXY PATTERN: Returns the singleton proxy
     get uiDirtyState() {
-        return {
-            get calendarVisuals() { return (uiGlobalDirtyMask & UI_MASK_CALENDAR) !== 0; },
-            set calendarVisuals(v: boolean) { if(v) uiGlobalDirtyMask |= UI_MASK_CALENDAR; else uiGlobalDirtyMask &= ~UI_MASK_CALENDAR; },
-            
-            get habitListStructure() { return (uiGlobalDirtyMask & UI_MASK_LIST) !== 0; },
-            set habitListStructure(v: boolean) { if(v) uiGlobalDirtyMask |= UI_MASK_LIST; else uiGlobalDirtyMask &= ~UI_MASK_LIST; },
-            
-            get chartData() { return (uiGlobalDirtyMask & UI_MASK_CHART) !== 0; },
-            set chartData(v: boolean) { if(v) uiGlobalDirtyMask |= UI_MASK_CHART; else uiGlobalDirtyMask &= ~UI_MASK_CHART; }
-        };
+        return _uiDirtyProxy;
     },
     // Dummy setter to prevent assignment errors during init
     set uiDirtyState(v) {}

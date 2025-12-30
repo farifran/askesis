@@ -18,7 +18,7 @@
 
 import { ui } from '../render/ui';
 import { state, Habit, TimeOfDay } from '../state';
-import { getCurrentGoalForInstance, getEffectiveScheduleForHabitOnDate } from '../services/selectors';
+import { getSmartGoalForHabit, getEffectiveScheduleForHabitOnDate } from '../services/selectors';
 import { openNotesModal, renderExploreHabits, openModal } from '../render';
 import {
     toggleHabitStatus,
@@ -136,7 +136,7 @@ function startGoalEditing(habit: Habit, time: TimeOfDay, wrapper: HTMLElement) {
     GoalEditState.dateISO = state.selectedDate;
     GoalEditState.isSaving = 0;
 
-    const currentGoal = getCurrentGoalForInstance(habit, state.selectedDate, time);
+    const currentGoal = getSmartGoalForHabit(habit, state.selectedDate, time);
     
     // Swap to input
     wrapper.innerHTML = `<input type="number" class="goal-input-inline" value="${currentGoal}" min="1" step="1" inputmode="numeric" pattern="[0-9]*" />`;
@@ -226,7 +226,7 @@ const _handleContainerClick = (e: MouseEvent) => {
         const action = interactiveElement.dataset.action as 'increment' | 'decrement';
         triggerHaptic('light');
         
-        const currentGoal = getCurrentGoalForInstance(habit, state.selectedDate, time);
+        const currentGoal = getSmartGoalForHabit(habit, state.selectedDate, time);
         const newGoal = (action === 'increment') 
             ? currentGoal + GOAL_STEP 
             : Math.max(1, currentGoal - GOAL_STEP);

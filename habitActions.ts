@@ -45,10 +45,10 @@ import {
     kernel,
     KernelHabitStatus,
     MAX_DAYS_WINDOW,
-    TIME_INDEX_MAP,
     isDateInKernelRange,
     getNextStatus,
-    kernelToStatus
+    kernelToStatus,
+    statusToKernel
 } from './state';
 import { saveState, clearLocalPersistence } from './services/persistence';
 import { PREDEFINED_HABITS } from './data/predefinedHabits';
@@ -916,7 +916,7 @@ export function toggleHabitStatus(habitId: string, time: TimeOfDay, date: string
     const habit = state.habits.find(h => h.id === habitId);
     if (habit && habit.goal.type === 'check') {
         const goalValue = (nextKernelStatus === KernelHabitStatus.COMPLETED) ? 1 : 0;
-        kernel.setDailyGoal(habitId, date, time, goalValue);
+        kernel.setDailyGoal(habit.id, date, time, goalValue);
     }
 
     // 6. UI & Caching Updates
@@ -1014,9 +1014,8 @@ export function markAllHabitsForDate(dateISO: string, status: HabitStatus): bool
     const len = habits.length;
     
     // Target Enum
-    let targetKernelStatus = KernelHabitStatus.PENDING;
-    if (status === 'completed') targetKernelStatus = KernelHabitStatus.COMPLETED;
-    else if (status === 'snoozed') targetKernelStatus = KernelHabitStatus.SNOOZED;
+    // REFACTOR [2025-04-26]: Deduplicated logic using shared converter.
+    const targetKernelStatus = statusToKernel(status);
 
     for (let i = 0; i < len; i = (i + 1) | 0) {
         const habit = habits[i];

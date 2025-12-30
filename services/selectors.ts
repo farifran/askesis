@@ -386,10 +386,6 @@ export function getSmartGoalForHabit(habit: Habit, dateISO: string, time: TimeOf
     return calculated > 5 ? calculated : 5;
 }
 
-export function getCurrentGoalForInstance(habit: Habit, dateISO: string, time: TimeOfDay): number {
-    return getSmartGoalForHabit(habit, dateISO, time);
-}
-
 /**
  * Retorna uma lista de hábitos ativos.
  */

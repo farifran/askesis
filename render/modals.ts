@@ -21,11 +21,10 @@ import { state, Habit, HabitTemplate, Frequency, PredefinedHabit, TimeOfDay, STR
 import { PREDEFINED_HABITS } from '../data/predefinedHabits';
 import { getScheduleForDate, calculateHabitStreak, getHabitDisplayInfo } from '../services/selectors';
 import { ui } from './ui';
-import { t, compareStrings, formatDate, formatInteger, getTimeOfDayName } from '../i18n';
+import { t, compareStrings, formatDate, formatInteger, getTimeOfDayName, setLanguage } from '../i18n';
 import { HABIT_ICONS, UI_ICONS, getTimeOfDayIcon } from './icons';
 import { setTextContent, updateReelRotaryARIA, setTransformX, setCSSVariableString } from './dom';
 import { escapeHTML, getContrastColor, parseUTCIsoDate, getTodayUTCIso, getSafeDate } from '../utils';
-import { setLanguage } from '../i18n';
 
 // --- MODAL STACK ENGINE ---
 

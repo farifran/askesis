@@ -141,7 +141,7 @@ function getFullCalendarDayTemplate(): HTMLElement {
  * @param todayISO (Opcional) Data de hoje pré-calculada para evitar chamadas repetidas a `getTodayUTCIso()`.
  * @param precalcIsoDate (Opcional) String ISO da data para evitar `toUTCIsoDateString()` repetido.
  */
-export function updateCalendarDayElement(dayItem: HTMLElement, date: Date, todayISO?: string, precalcIsoDate?: string) {
+function updateCalendarDayElement(dayItem: HTMLElement, date: Date, todayISO?: string, precalcIsoDate?: string) {
     // PERFORMANCE: Retrieve DOM references from WeakMap (O(1))
     let refs = dayElementCache.get(dayItem);
 
@@ -239,7 +239,7 @@ export function updateCalendarDayElement(dayItem: HTMLElement, date: Date, today
     }
 }
 
-export function createCalendarDayElement(date: Date, todayISO: string): HTMLElement {
+function createCalendarDayElement(date: Date, todayISO: string): HTMLElement {
     // PERFORMANCE [2025-03-09]: Template Cloning.
     const dayItem = getDayItemTemplate().cloneNode(true) as HTMLElement;
     

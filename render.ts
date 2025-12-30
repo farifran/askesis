@@ -173,7 +173,7 @@ function _renderHeaderIcons() {
 /**
  * Atualiza todos os textos estáticos da UI.
  */
-export function updateUIText() {
+function updateUIText() {
     const appNameHtml = t('appName');
     const tempEl = document.createElement('div');
     tempEl.innerHTML = appNameHtml;
@@ -183,11 +183,6 @@ export function updateUIText() {
     ui.fabAddHabit.setAttribute('aria-label', t('fabAddHabit_ariaLabel'));
     ui.manageHabitsBtn.setAttribute('aria-label', t('manageHabits_ariaLabel'));
     ui.aiEvalBtn.setAttribute('aria-label', t('aiEval_ariaLabel'));
-    
-    // ... (Mantém o restante das atualizações de texto inalteradas para brevidade, mas elas seriam incluídas aqui)
-    // Omitindo linhas repetitivas de updateUIText para focar na lógica de renderização
-    // Assume-se que o conteúdo original de updateUIText persiste aqui.
-    // [CODE_FOLD: Text Updates]
     
     setTextContent(ui.exploreModal.querySelector('h2'), t('modalExploreTitle'));
     setTextContent(ui.createCustomHabitBtn, t('modalExploreCreateCustom'));

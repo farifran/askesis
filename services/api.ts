@@ -103,7 +103,7 @@ async function hashKey(key: string): Promise<string> {
     return hexChars.join('');
 }
 
-export async function getSyncKeyHash(): Promise<string | null> {
+async function getSyncKeyHash(): Promise<string | null> {
     if (!localSyncKey) {
         return null;
     }
