@@ -133,21 +133,21 @@ function _updateHeaderTitle() {
     let mobileTitle: string;
     let fullLabel: string;
     
-    if (titleKey) {
+    const date = parseUTCIsoDate(selected);
+    const day = date.getUTCDate();
+    const month = date.getUTCMonth() + 1;
+    const shortDate = (day < 10 ? '0' : '') + day + '/' + (month < 10 ? '0' : '') + month;
+
+    if (titleKey) { // Today, Yesterday, Tomorrow
         const localizedTitle = t(titleKey);
         desktopTitle = localizedTitle;
-        mobileTitle = localizedTitle;
-        
-        const date = parseUTCIsoDate(selected);
-        fullLabel = formatDate(date, OPTS_HEADER_ARIA);
-    } else {
-        const date = parseUTCIsoDate(selected);
-        const day = date.getUTCDate();
-        const month = date.getUTCMonth() + 1;
-        mobileTitle = (day < 10 ? '0' : '') + day + '/' + (month < 10 ? '0' : '') + month;
+        mobileTitle = (titleKey === 'headerTitleToday') ? localizedTitle : shortDate;
+    } else { // Other dates
         desktopTitle = formatDate(date, OPTS_HEADER_DESKTOP);
-        fullLabel = formatDate(date, OPTS_HEADER_ARIA);
+        mobileTitle = shortDate;
     }
+    
+    fullLabel = formatDate(date, OPTS_HEADER_ARIA);
     
     setTextContent(ui.headerTitleDesktop, desktopTitle);
     setTextContent(ui.headerTitleMobile, mobileTitle);

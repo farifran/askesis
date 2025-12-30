@@ -1,3 +1,4 @@
+
 /* 
  * [ARCHITECTURAL CONTEXT]:
  * @file index.css
@@ -319,8 +320,22 @@ main {
     -webkit-user-select: none;
 }
 
+/* Responsive Date Title Logic */
 .header-title-mobile {
     display: none;
+}
+
+@media (max-width: 600px) {
+    .header-title-desktop {
+        display: none;
+    }
+    .header-title-mobile {
+        display: inline;
+    }
+    .stoic-quote,
+    .app-subtitle {
+        font-size: 12px !important;
+    }
 }
 
 .stoic-quote {
