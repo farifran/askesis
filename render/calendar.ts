@@ -35,7 +35,7 @@ import { calculateDaySummary } from '../services/selectors';
 import { ui } from './ui';
 import { getTodayUTCIso, toUTCIsoDateString, parseUTCIsoDate, addDays } from '../utils';
 import { getLocaleDayName, formatDate, formatInteger } from '../i18n'; 
-import { setTextContent } from './dom';
+import { setTextContent, setCSSVariable } from './dom';
 import { CSS_CLASSES, DOM_SELECTORS } from './constants';
 
 // PERFORMANCE [2025-01-22]: Cache de elementos do calendário (DOM Pool).
@@ -207,19 +207,22 @@ export function updateCalendarDayElement(dayItem: HTMLElement, date: Date, today
 
     // Atualização Visual (Variáveis CSS e Indicadores)
     if (dayProgressRing) {
-        const newCompleted = `${completedPercent}%`;
-        const newSnoozed = `${snoozedPercent}%`;
+        // BLEEDING-EDGE FIX: Use Typed OM para CSS Variables.
+        // Evita concatenação de strings e parsing repetido.
+        // O dataset funciona como cache local para evitar chamadas de Typed OM desnecessárias.
         
-        // PERFORMANCE CRÍTICA [2025-01-23]: Dataset Dirty Checking.
-        // `style.setProperty` força o navegador a recalcular estilos. Usamos `dataset` como um cache local
-        // para saber se precisamos realmente tocar no estilo.
-        if (dayProgressRing.dataset.completedPercent !== newCompleted) {
-            dayProgressRing.style.setProperty('--completed-percent', newCompleted);
-            dayProgressRing.dataset.completedPercent = newCompleted;
+        const cachedCompleted = dayProgressRing.dataset.c || "-1";
+        const cachedSnoozed = dayProgressRing.dataset.s || "-1";
+        
+        // Compara números com números (conversão leve)
+        if (Number(cachedCompleted) !== completedPercent) {
+            setCSSVariable(dayProgressRing, '--completed-percent', completedPercent, '%');
+            dayProgressRing.dataset.c = String(completedPercent);
         }
-        if (dayProgressRing.dataset.snoozedPercent !== newSnoozed) {
-            dayProgressRing.style.setProperty('--snoozed-percent', newSnoozed);
-            dayProgressRing.dataset.snoozedPercent = newSnoozed;
+        
+        if (Number(cachedSnoozed) !== snoozedPercent) {
+            setCSSVariable(dayProgressRing, '--snoozed-percent', snoozedPercent, '%');
+            dayProgressRing.dataset.s = String(snoozedPercent);
         }
         
         if (dayNumber) {
@@ -437,9 +440,10 @@ export function renderFullCalendar() {
         const ringEl = dayEl.firstElementChild as HTMLElement; // .day-progress-ring
         const numberEl = ringEl.firstElementChild as HTMLElement; // .day-number
 
-        // CSS Variables update
-        ringEl.style.setProperty('--completed-percent', `${completedPercent}%`);
-        ringEl.style.setProperty('--snoozed-percent', `${snoozedPercent}%`);
+        // BLEEDING-EDGE FIX: Typed OM for variables
+        setCSSVariable(ringEl, '--completed-percent', completedPercent, '%');
+        setCSSVariable(ringEl, '--snoozed-percent', snoozedPercent, '%');
+        
         // SOPA Update: Use formatInteger
         numberEl.textContent = formatInteger(day);
         

@@ -13,15 +13,8 @@
  * 
  * ARQUITETURA (Stack-Based Engine):
  * - **Modal Stack:** Gerencia modais aninhados (ex: Confirmação sobre Edição) usando uma pilha LIFO.
- *   O topo da pilha sempre detém o "Focus Trap" e captura eventos de teclado.
- * - **Global Delegation:** Apenas dois listeners globais (`keydown`, `click`) gerenciam todos os modais,
- *   eliminando a criação/destruição de listeners a cada abertura (`addEventListener` thrashing).
- * - **DOM Template Recycling:** Clonagem eficiente para listas dinâmicas.
- * 
- * DEPENDÊNCIAS CRÍTICAS:
- * - `ui.ts`: Referências aos containers de modal.
- * - `i18n.ts`: Textos dinâmicos.
- * - `state.ts`: Dados para popular formulários.
+ * - **Global Delegation:** Apenas dois listeners globais (`keydown`, `click`) gerenciam todos os modais.
+ * - **Typed OM:** Uso estrito de API tipada para estilos.
  */
 
 import { state, Habit, HabitTemplate, Frequency, PredefinedHabit, TimeOfDay, STREAK_CONSOLIDATED, TIMES_OF_DAY, FREQUENCIES, LANGUAGES, getHabitDailyInfoForDate } from '../state';
@@ -30,7 +23,7 @@ import { getScheduleForDate, calculateHabitStreak, getHabitDisplayInfo } from '.
 import { ui } from './ui';
 import { t, compareStrings, formatDate, formatInteger, getTimeOfDayName } from '../i18n';
 import { HABIT_ICONS, UI_ICONS, getTimeOfDayIcon } from './icons';
-import { setTextContent, updateReelRotaryARIA } from './dom';
+import { setTextContent, updateReelRotaryARIA, setTransformX, setCSSVariableString } from './dom';
 import { escapeHTML, getContrastColor, parseUTCIsoDate, getTodayUTCIso, getSafeDate } from '../utils';
 import { setLanguage } from '../i18n';
 
@@ -40,12 +33,10 @@ interface ModalContext {
     element: HTMLElement;
     previousFocus: HTMLElement | null;
     onClose?: () => void;
-    // Cache de limites de foco para o Trap
     firstFocusable?: HTMLElement;
     lastFocusable?: HTMLElement;
 }
 
-// LIFO Stack para suportar modais aninhados (ex: Confirmar dentro de Editar)
 const modalStack: ModalContext[] = [];
 
 // PERFORMANCE [2025-04-13]: Hoisted Intl Options.
@@ -60,8 +51,6 @@ const OPTS_NOTES_DATE: Intl.DateTimeFormatOptions = {
 function _updateInertState() {
     if (modalStack.length > 0) {
         ui.appContainer.setAttribute('inert', '');
-        // Opcional: Marcar modais abaixo do topo como inert também se quisermos isolamento visual total
-        // Por simplicidade e performance, apenas o appContainer é isolado, já que o backdrop cobre o resto.
     } else {
         ui.appContainer.removeAttribute('inert');
     }
@@ -72,7 +61,6 @@ function _handleTrapKeydown(e: KeyboardEvent) {
     if (!activeCtx) return;
 
     if (e.key === 'Escape') {
-        // Fechamento prioritário do topo da pilha
         closeModal(activeCtx.element);
         e.stopImmediatePropagation();
         return;
@@ -81,7 +69,6 @@ function _handleTrapKeydown(e: KeyboardEvent) {
     if (e.key === 'Tab') {
         const { firstFocusable, lastFocusable, element } = activeCtx;
         
-        // Se não houver elementos focáveis, mantém o foco no modal
         if (!firstFocusable || !lastFocusable) {
             e.preventDefault();
             element.focus();
@@ -108,32 +95,22 @@ function _handleGlobalClick(e: MouseEvent) {
 
     const target = e.target as HTMLElement;
 
-    // 1. Backdrop Click (O próprio elemento modal atua como overlay/backdrop)
     if (target === activeCtx.element) {
         closeModal(activeCtx.element);
         return;
     }
 
-    // 2. Close Button Delegation
-    // Verifica se clicou em um botão de fechar dentro do modal ativo
     const closeBtn = target.closest('.modal-close-btn');
     if (closeBtn && activeCtx.element.contains(closeBtn)) {
         closeModal(activeCtx.element);
     }
 }
 
-/**
- * Inicializa o motor de modais.
- * Deve ser chamado UMA VEZ no boot da aplicação (listeners.ts).
- */
 export function initModalEngine() {
     document.addEventListener('keydown', _handleTrapKeydown);
     document.addEventListener('click', _handleGlobalClick);
 }
 
-/**
- * Abre um modal garantindo acessibilidade, gestão de foco e empilhamento correto.
- */
 export function openModal(modal: HTMLElement, elementToFocus?: HTMLElement, onClose?: () => void) {
     const ctx: ModalContext = {
         element: modal,
@@ -143,7 +120,6 @@ export function openModal(modal: HTMLElement, elementToFocus?: HTMLElement, onCl
 
     modal.classList.add('visible');
     
-    // Calcular limites de foco (Lazy - apenas na abertura)
     const focusableElements = modal.querySelectorAll<HTMLElement>(
         'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
     );
@@ -154,7 +130,6 @@ export function openModal(modal: HTMLElement, elementToFocus?: HTMLElement, onCl
         
         const target = elementToFocus || ctx.firstFocusable;
         
-        // Timeout para garantir que o navegador processou a visibilidade antes de focar
         requestAnimationFrame(() => {
             if (target.isConnected) {
                 if (target instanceof HTMLTextAreaElement) {
@@ -169,7 +144,6 @@ export function openModal(modal: HTMLElement, elementToFocus?: HTMLElement, onCl
             }
         });
     } else {
-        // Fallback se não houver inputs: foca no container do modal para capturar teclado
         modal.setAttribute('tabindex', '-1');
         modal.focus();
     }
@@ -179,29 +153,22 @@ export function openModal(modal: HTMLElement, elementToFocus?: HTMLElement, onCl
 }
 
 export function closeModal(modal: HTMLElement) {
-    // Encontra o modal na pilha (normalmente é o topo, mas suporta fechamento fora de ordem se necessário)
     const index = modalStack.findIndex(ctx => ctx.element === modal);
     if (index === -1) return;
 
     const ctx = modalStack[index];
-    
-    // Remove da pilha
     modalStack.splice(index, 1);
     
     modal.classList.remove('visible');
     _updateInertState();
 
-    // Callback de limpeza lógica
     ctx.onClose?.();
 
-    // Restaura o foco para o elemento anterior (se ele ainda existir e for o topo da interação)
-    // Apenas restaura se fechamos o modal do topo E não abrimos outro imediatamente
-    const isTopInteraction = modalStack.length === 0 || index === modalStack.length; // Era o último ou fechamos do meio
+    const isTopInteraction = modalStack.length === 0 || index === modalStack.length; 
     
     if (isTopInteraction && ctx.previousFocus && ctx.previousFocus.isConnected) {
         ctx.previousFocus.focus();
     } else if (modalStack.length === 0) {
-        // Fallback seguro
         ui.habitContainer.focus();
     }
 }
@@ -262,7 +229,6 @@ function getManageItemTemplate(): HTMLLIElement {
     return manageItemTemplate;
 }
 
-// PERF: Template buttons to avoid createElement/innerHTML overhead in loops
 function getButtonTemplate(className: string, iconHtml: string): HTMLButtonElement {
     if (!buttonTemplates[className]) {
         const button = document.createElement('button');
@@ -337,7 +303,6 @@ type ManageHabitItem = {
     subtitle: string;
 };
 
-// STATIC SORT HANDLER: Hoisted to avoid allocation on every modal open
 function _habitSorter(a: ManageHabitItem, b: ManageHabitItem): number {
     const statusDifference = STATUS_ORDER[a.status] - STATUS_ORDER[b.status];
     if (statusDifference !== 0) {
@@ -375,7 +340,6 @@ export function setupManageModal() {
         const fragment = document.createDocumentFragment();
         const todayISO = getTodayUTCIso();
         
-        // Zero-Allocation Loop
         const len = habitsForModal.length;
         for (let i = 0; i < len; i = (i + 1) | 0) {
             fragment.appendChild(_createManageHabitListItem(habitsForModal[i], todayISO));
@@ -434,7 +398,6 @@ export function openNotesModal(habitId: string, date: string, time: TimeOfDay) {
     
     const { name } = getHabitDisplayInfo(habit, date);
     const dateObj = parseUTCIsoDate(date);
-    // SOPA Update: Use hoisted options
     const formattedDate = formatDate(dateObj, OPTS_NOTES_DATE);
     const timeName = getTimeOfDayName(time);
 
@@ -458,8 +421,9 @@ export function renderIconPicker() {
     const bgColor = state.editingHabit.formData.color;
     const fgColor = getContrastColor(bgColor);
 
-    ui.iconPickerGrid.style.setProperty('--current-habit-bg-color', bgColor);
-    ui.iconPickerGrid.style.setProperty('--current-habit-fg-color', fgColor);
+    // BLEEDING-EDGE FIX: Use Typed OM for String Variables (Colors)
+    setCSSVariableString(ui.iconPickerGrid, '--current-habit-bg-color', bgColor);
+    setCSSVariableString(ui.iconPickerGrid, '--current-habit-fg-color', fgColor);
 
     if (!cachedIconButtonsHTML) {
         cachedIconButtonsHTML = Object.keys(HABIT_ICONS)
@@ -531,7 +495,6 @@ export function renderFrequencyOptions() {
     const unit = isInterval ? currentFrequency.unit : (intervalFreqTpl.value.type === 'interval' ? intervalFreqTpl.value.unit : 'days');
     
     const unitText = unit === 'days' ? t('unitDays') : t('unitWeeks');
-    // SOPA Update: Use formatInteger for localized number
     const intervalControlsHTML = `
         <div class="interval-control-group">
             <button type="button" class="stepper-btn" data-action="interval-decrement" aria-label="${t('habitGoalDecrement_ariaLabel')}">-</button>
@@ -759,7 +722,10 @@ function _renderReelRotary(
     const itemWidth = firstOption?.offsetWidth || fallbackItemWidth;
     const effectiveIndex = Math.max(0, currentIndex);
     const transformX = -effectiveIndex * itemWidth;
-    reelEl.style.transform = `translateX(${transformX}px)`;
+    
+    // BLEEDING-EDGE FIX: CSS Typed OM for Translation
+    setTransformX(reelEl, transformX);
+    
     updateReelRotaryARIA(viewportEl, effectiveIndex, options, ariaLabelKey);
 }
 

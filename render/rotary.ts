@@ -24,6 +24,8 @@
  * 2. **State Tracking:** A posição visual é rastreada em JS (`currentVisualX`), eliminando a necessidade de ler a matriz CSS.
  */
 
+import { setTransformX } from './dom';
+
 interface RotaryConfig {
     viewportEl: HTMLElement;
     reelEl: HTMLElement;
@@ -67,8 +69,8 @@ export function setupReelRotary({
             reelEl.style.transition = '';
         }
         
-        // GPU Composition
-        reelEl.style.transform = `translateX(${targetX}px)`;
+        // BLEEDING-EDGE FIX: CSS Typed OM for Translation
+        setTransformX(reelEl, targetX);
     };
 
     const handleIndexChange = async (direction: 'next' | 'prev') => {
@@ -139,8 +141,8 @@ export function setupReelRotary({
         // Update State Tracker
         currentVisualX = clampedTranslateX;
         
-        // GPU Write
-        reelEl.style.transform = `translateX(${clampedTranslateX}px)`;
+        // BLEEDING-EDGE FIX: CSS Typed OM for Translation
+        setTransformX(reelEl, clampedTranslateX);
     };
 
     const endSwipe = (e: PointerEvent) => {

@@ -432,6 +432,15 @@ export const kernel = new StateKernel();
 // Mantém a interface de objeto JS para o resto da aplicação, mas sincroniza
 // dados críticos com o Kernel binário.
 
+// BITMASK UI FLAGS (Bleeding Edge)
+export const UI_MASK_CALENDAR = 1; // 001
+export const UI_MASK_LIST = 2;     // 010
+export const UI_MASK_CHART = 4;    // 100
+
+// HOT MEMORY: UI Dirty Bitmask (Static Integer)
+// Used by render.ts for O(1) dirty checking.
+export let uiGlobalDirtyMask = 7; // Initial state: 111 (All dirty)
+
 export const state: {
     habits: Habit[];
     dailyData: Record<string, Record<string, HabitDailyInfo>>;
@@ -459,6 +468,7 @@ export const state: {
     lastAIError: string | null;
     syncState: any;
     fullCalendar: { year: number; month: number };
+    // UI State: PROXY for Bitmask
     uiDirtyState: { calendarVisuals: boolean; habitListStructure: boolean; chartData: boolean };
 } = {
     habits: [],
@@ -489,11 +499,21 @@ export const state: {
         year: new Date().getFullYear(),
         month: new Date().getMonth(),
     },
-    uiDirtyState: {
-        calendarVisuals: true,
-        habitListStructure: true,
-        chartData: true,
-    }
+    // PROXY PATTERN: Writes to bitmask, reads from bitmask.
+    get uiDirtyState() {
+        return {
+            get calendarVisuals() { return (uiGlobalDirtyMask & UI_MASK_CALENDAR) !== 0; },
+            set calendarVisuals(v: boolean) { if(v) uiGlobalDirtyMask |= UI_MASK_CALENDAR; else uiGlobalDirtyMask &= ~UI_MASK_CALENDAR; },
+            
+            get habitListStructure() { return (uiGlobalDirtyMask & UI_MASK_LIST) !== 0; },
+            set habitListStructure(v: boolean) { if(v) uiGlobalDirtyMask |= UI_MASK_LIST; else uiGlobalDirtyMask &= ~UI_MASK_LIST; },
+            
+            get chartData() { return (uiGlobalDirtyMask & UI_MASK_CHART) !== 0; },
+            set chartData(v: boolean) { if(v) uiGlobalDirtyMask |= UI_MASK_CHART; else uiGlobalDirtyMask &= ~UI_MASK_CHART; }
+        };
+    },
+    // Dummy setter to prevent assignment errors during init
+    set uiDirtyState(v) {}
 };
 
 // --- DATA ACCESSORS (Kernel-Aware) ---
@@ -516,13 +536,13 @@ export function resetKernel() {
 }
 
 export function isChartDataDirty(): boolean {
-    const wasDirty = state.uiDirtyState.chartData;
-    if (wasDirty) state.uiDirtyState.chartData = false;
+    const wasDirty = (uiGlobalDirtyMask & UI_MASK_CHART) !== 0;
+    if (wasDirty) uiGlobalDirtyMask &= ~UI_MASK_CHART;
     return wasDirty;
 }
 
 export function invalidateChartCache() {
-    state.uiDirtyState.chartData = true;
+    uiGlobalDirtyMask |= UI_MASK_CHART;
 }
 
 // PERSISTENCE SANITIZATION:
@@ -601,7 +621,7 @@ export function clearScheduleCache() {
     state.habitAppearanceCache.clear();
     state.streaksCache.clear();
     state.daySummaryCache.clear();
-    state.uiDirtyState.chartData = true;
+    uiGlobalDirtyMask |= UI_MASK_CHART;
 }
 
 export function clearActiveHabitsCache() {
@@ -609,11 +629,11 @@ export function clearActiveHabitsCache() {
     state.habitAppearanceCache.clear();
     state.streaksCache.clear();
     state.daySummaryCache.clear();
-    state.uiDirtyState.chartData = true;
+    uiGlobalDirtyMask |= UI_MASK_CHART;
 }
 
 export function invalidateCachesForDateChange(dateISO: string, habitIds: string[]) {
-    state.uiDirtyState.chartData = true;
+    uiGlobalDirtyMask |= UI_MASK_CHART;
     state.daySummaryCache.delete(dateISO);
     for (const id of habitIds) {
         state.streaksCache.delete(id);

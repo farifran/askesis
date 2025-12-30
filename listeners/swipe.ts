@@ -24,6 +24,7 @@
 
 import { triggerHaptic } from '../utils';
 import { DOM_SELECTORS, CSS_CLASSES } from '../render/constants';
+import { setTransformX } from '../render/dom';
 
 // --- CONSTANTS (Int32) ---
 const DIR_NONE = 0;
@@ -134,8 +135,8 @@ const _updateVisualsStatic = () => {
     if (SwipeState.wasOpenLeft) translateX = (translateX + SwipeState.actionWidth) | 0;
     if (SwipeState.wasOpenRight) translateX = (translateX - SwipeState.actionWidth) | 0;
 
-    // Direct DOM Write
-    SwipeState.content.style.transform = `translateX(${translateX}px)`;
+    // BLEEDING-EDGE FIX: Use Typed OM for GPU transform
+    setTransformX(SwipeState.content, translateX);
 
     // Haptics Logic
     const absDelta = deltaX < 0 ? -deltaX : deltaX;

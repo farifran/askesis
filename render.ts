@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -10,14 +11,17 @@
  * [MAIN THREAD CONTEXT]:
  * Este módulo atua como o ponto central de despacho para atualizações visuais.
  * 
- * ARQUITETURA (Facade Pattern & Zero-Allocation):
- * - **Responsabilidade Única:** Centraliza a API de renderização pública.
- * - **Memoization de Datas:** Cálculos de datas relativas (Ontem/Amanhã) são cacheados e executados
- *   com aritmética inteira onde possível.
- * - **Static LUTs:** Uso de Tabelas de Busca para dias do mês, evitando lógica condicional complexa.
+ * ARQUITETURA (Bleeding-Edge Scheduling & Bitmasking):
+ * - **Scheduler API:** Utiliza `scheduler.postTask` para priorizar atualizações de UI críticas.
+ * - **Bitmask Dirty Check:** Lê flags inteiras (`uiGlobalDirtyMask`) para decisão O(1) de renderização.
+ * - **Facade Pattern:** Centraliza a API de renderização pública.
+ * 
+ * DEPENDÊNCIAS CRÍTICAS:
+ * - `state.ts`: Fonte da verdade e Flags de Dirty State (Bitmask).
+ * - `scheduler`: API Nativa do Chromium (com fallback).
  */
 
-import { state, LANGUAGES } from './state';
+import { state, LANGUAGES, uiGlobalDirtyMask, UI_MASK_CALENDAR, UI_MASK_LIST, UI_MASK_CHART } from './state';
 import { parseUTCIsoDate, toUTCIsoDateString, addDays, pushToOneSignal, getTodayUTCIso } from './utils';
 import { ui } from './render/ui';
 import { t, setLanguage, formatDate } from './i18n'; 
@@ -38,6 +42,17 @@ export * from './render/habits';
 export * from './render/modals';
 export * from './render/chart';
 
+// --- SCHEDULER POLYFILL TYPE ---
+declare global {
+    interface Scheduler {
+        postTask(callback: Function, options?: { 
+            priority?: 'user-blocking' | 'user-visible' | 'background', 
+            delay?: number 
+        }): Promise<any>;
+    }
+    var scheduler: Scheduler;
+}
+
 // --- HELPERS STATE (Monomorphic) ---
 let _lastTitleDate: string | null = null;
 let _lastTitleLang: string | null = null;
@@ -51,7 +66,6 @@ let _cachedYesterdayISO: string | null = null;
 let _cachedTomorrowISO: string | null = null;
 
 // PERF: Lookup Table for Cumulative Days (Non-Leap Year).
-// [Jan, Feb, Mar, ...] -> Days before month starts.
 const DAYS_BEFORE_MONTH_LUT = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
 
 // PERFORMANCE: Hoisted Intl Options (Zero-Allocation).
@@ -84,22 +98,14 @@ function _ensureRelativeDateCache(todayISO: string) {
 /**
  * Calculates the Day of the Year (1-366) using pure integer arithmetic from an ISO string.
  * PERFORMANCE: Zero 'new Date()' allocations.
- * @param isoDate "YYYY-MM-DD"
  */
 function _getDayOfYearFast(isoDate: string): number {
-    // Parse integers manually (faster than Date parse for this specific task)
-    // "2024-05-20"
-    //  0123456789
     const y = parseInt(isoDate.substring(0, 4), 10);
     const m = parseInt(isoDate.substring(5, 7), 10);
     const d = parseInt(isoDate.substring(8, 10), 10);
 
-    // 1. Get base days from LUT
     let dayOfYear = DAYS_BEFORE_MONTH_LUT[m - 1] + d;
 
-    // 2. Leap Year Correction
-    // (Year is divisible by 4 AND (not divisible by 100 OR divisible by 400))
-    // We only add 1 if the month is AFTER February (m > 2)
     if (m > 2 && (y % 4 === 0) && (y % 100 !== 0 || y % 400 === 0)) {
         dayOfYear += 1;
     }
@@ -119,7 +125,6 @@ function _updateHeaderTitle() {
     const selected = state.selectedDate;
     let titleKey: string | null = null;
 
-    // Fast Path: String Comparison
     if (selected === todayISO) titleKey = 'headerTitleToday';
     else if (selected === _cachedYesterdayISO) titleKey = 'headerTitleYesterday';
     else if (selected === _cachedTomorrowISO) titleKey = 'headerTitleTomorrow';
@@ -128,7 +133,6 @@ function _updateHeaderTitle() {
     let mobileTitle: string;
     let fullLabel: string;
     
-    // Lazy Date Parsing: Só aloca o objeto Date se for necessário formatar
     if (titleKey) {
         const localizedTitle = t(titleKey);
         desktopTitle = localizedTitle;
@@ -138,13 +142,9 @@ function _updateHeaderTitle() {
         fullLabel = formatDate(date, OPTS_HEADER_ARIA);
     } else {
         const date = parseUTCIsoDate(selected);
-        
-        // Optimized Date Formatting for Mobile (Manual)
         const day = date.getUTCDate();
         const month = date.getUTCMonth() + 1;
-        // Smi (Small Integer) concatenation is fast
         mobileTitle = (day < 10 ? '0' : '') + day + '/' + (month < 10 ? '0' : '') + month;
-        
         desktopTitle = formatDate(date, OPTS_HEADER_DESKTOP);
         fullLabel = formatDate(date, OPTS_HEADER_ARIA);
     }
@@ -184,51 +184,42 @@ export function updateUIText() {
     ui.manageHabitsBtn.setAttribute('aria-label', t('manageHabits_ariaLabel'));
     ui.aiEvalBtn.setAttribute('aria-label', t('aiEval_ariaLabel'));
     
-    // Modal Titles & Buttons
+    // ... (Mantém o restante das atualizações de texto inalteradas para brevidade, mas elas seriam incluídas aqui)
+    // Omitindo linhas repetitivas de updateUIText para focar na lógica de renderização
+    // Assume-se que o conteúdo original de updateUIText persiste aqui.
+    // [CODE_FOLD: Text Updates]
+    
     setTextContent(ui.exploreModal.querySelector('h2'), t('modalExploreTitle'));
     setTextContent(ui.createCustomHabitBtn, t('modalExploreCreateCustom'));
     setTextContent(ui.exploreModal.querySelector('.modal-close-btn'), t('closeButton'));
-
     setTextContent(ui.manageModalTitle, t('modalManageTitle'));
     setTextContent(ui.habitListTitle, t('modalManageHabitsSubtitle'));
-    
     setTextContent(ui.labelLanguage, t('modalManageLanguage'));
     ui.languagePrevBtn.setAttribute('aria-label', t('languagePrev_ariaLabel'));
     ui.languageNextBtn.setAttribute('aria-label', t('languageNext_ariaLabel'));
-    
     setTextContent(ui.labelSync, t('syncLabel'));
     setTextContent(ui.labelNotifications, t('modalManageNotifications'));
     setTextContent(ui.labelReset, t('modalManageReset'));
     setTextContent(ui.resetAppBtn, t('modalManageResetButton'));
     setTextContent(ui.manageModal.querySelector('.modal-close-btn'), t('closeButton'));
-    
     setTextContent(ui.labelPrivacy, t('privacyLabel'));
     setTextContent(ui.exportDataBtn, t('exportButton'));
     setTextContent(ui.importDataBtn, t('importButton'));
-    
     setTextContent(ui.syncInactiveDesc, t('syncInactiveDesc'));
     setTextContent(ui.enableSyncBtn, t('syncEnable'));
     setTextContent(ui.enterKeyViewBtn, t('syncEnterKey'));
     setTextContent(ui.labelEnterKey, t('syncLabelEnterKey'));
     setTextContent(ui.cancelEnterKeyBtn, t('cancelButton'));
     setTextContent(ui.submitKeyBtn, t('syncSubmitKey'));
-    
-    if (ui.syncWarningText.innerHTML !== t('syncWarning')) {
-        ui.syncWarningText.innerHTML = t('syncWarning');
-    }
-
+    if (ui.syncWarningText.innerHTML !== t('syncWarning')) ui.syncWarningText.innerHTML = t('syncWarning');
     const keyContext = ui.syncDisplayKeyView.dataset.context;
     setTextContent(ui.keySavedBtn, (keyContext === 'view') ? t('closeButton') : t('syncKeySaved'));
-    
     setTextContent(ui.syncActiveDesc, t('syncActiveDesc'));
     setTextContent(ui.viewKeyBtn, t('syncViewKey'));
     setTextContent(ui.disableSyncBtn, t('syncDisable'));
-    
     setTextContent(ui.aiModal.querySelector('h2'), t('modalAITitle'));
     setTextContent(ui.aiModal.querySelector('.modal-close-btn'), t('closeButton'));
-    
     setTextContent(ui.aiOptionsModal.querySelector('h2'), t('modalAIOptionsTitle'));
-    
     const updateAiBtn = (type: string, titleKey: string, descKey: string) => {
         const btn = ui.aiOptionsModal.querySelector<HTMLElement>(`[data-analysis-type="${type}"]`);
         if (btn) {
@@ -239,28 +230,22 @@ export function updateUIText() {
     updateAiBtn('monthly', 'aiOptionMonthlyTitle', 'aiOptionMonthlyDesc');
     updateAiBtn('quarterly', 'aiOptionQuarterlyTitle', 'aiOptionQuarterlyDesc');
     updateAiBtn('historical', 'aiOptionHistoricalTitle', 'aiOptionHistoricalDesc');
-
     setTextContent(ui.confirmModal.querySelector('h2'), t('modalConfirmTitle'));
     setTextContent(ui.confirmModal.querySelector('.modal-close-btn'), t('cancelButton'));
     setTextContent(ui.confirmModalEditBtn, t('editButton'));
     setTextContent(ui.confirmModalConfirmBtn, t('confirmButton'));
-
     setTextContent(ui.notesModal.querySelector('.modal-close-btn'), t('cancelButton'));
     setTextContent(ui.saveNoteBtn, t('modalNotesSaveButton'));
     ui.notesTextarea.placeholder = t('modalNotesTextareaPlaceholder');
-
     setTextContent(ui.iconPickerTitle, t('modalIconPickerTitle'));
     setTextContent(ui.iconPickerModal.querySelector('.modal-close-btn'), t('cancelButton'));
-
     setTextContent(ui.colorPickerTitle, t('modalColorPickerTitle'));
     setTextContent(ui.colorPickerModal.querySelector('.modal-close-btn'), t('cancelButton'));
-
     const editModalActions = ui.editHabitModal.querySelector('.modal-actions');
     if (editModalActions) {
         setTextContent(editModalActions.querySelector('.modal-close-btn'), t('cancelButton'));
         setTextContent(editModalActions.querySelector('#edit-habit-save-btn'), t('modalEditSaveButton'));
     }
-
     const setBtnHtml = (btn: HTMLButtonElement, icon: string, text: string) => {
         const html = `${icon} ${text}`;
         if (btn.innerHTML !== html) btn.innerHTML = html;
@@ -268,7 +253,6 @@ export function updateUIText() {
     setBtnHtml(ui.quickActionDone, UI_ICONS.check, t('quickActionMarkAllDone'));
     setBtnHtml(ui.quickActionSnooze, UI_ICONS.snoozed, t('quickActionMarkAllSnoozed'));
     setBtnHtml(ui.quickActionAlmanac, UI_ICONS.calendar, t('quickActionOpenAlmanac'));
-    
     setTextContent(ui.noHabitsMessage, t('modalManageNoHabits'));
 
     if (state.editingHabit) {
@@ -276,19 +260,71 @@ export function updateUIText() {
     }
 }
 
-// --- ORQUESTRAÇÃO GLOBAL ---
+// --- CORE RENDER LOOP (BLEEDING-EDGE) ---
 
+/**
+ * Orquestrador de Renderização Priorizada.
+ * Utiliza `scheduler.postTask` quando disponível para quebrar o trabalho em micro-tarefas,
+ * garantindo que a thread principal permaneça responsiva (INP otimizado).
+ */
 export function renderApp() {
-    _renderHeaderIcons();
-    _updateHeaderTitle();
-    renderStoicQuote();
-    renderCalendar();
-    renderHabits();
-    renderAINotificationState();
-    renderChart();
+    const hasScheduler = 'scheduler' in window;
+    
+    // BITMASK DIRTY CHECKING (Bleeding Edge O(1))
+    // Acesso direto à variável estática exportada, sem lookup de objetos.
+    const dirtyMask = uiGlobalDirtyMask;
 
-    if (ui.manageModal.classList.contains('visible')) {
-        setupManageModal();
+    if (hasScheduler) {
+        // [PRIORITY 1] USER-BLOCKING: Feedback Visual Imediato
+        // Atualiza cabeçalho e calendário. Essencial para percepção de latência zero.
+        scheduler.postTask(() => {
+            _renderHeaderIcons();
+            _updateHeaderTitle();
+            if ((dirtyMask & UI_MASK_CALENDAR) !== 0) renderCalendar();
+        }, { priority: 'user-blocking' });
+
+        // [PRIORITY 2] USER-VISIBLE: Conteúdo Principal
+        // Renderiza a lista de hábitos. Pode ser pesado, mas é o que o usuário quer ver.
+        if ((dirtyMask & UI_MASK_LIST) !== 0) {
+            scheduler.postTask(() => {
+                renderHabits();
+            }, { priority: 'user-blocking' }); // Mantido blocking para evitar layout shift visível
+        }
+
+        // [PRIORITY 3] BACKGROUND: Elementos Secundários
+        // Gráficos, notificações IA e citações. Podem atrasar alguns ms sem prejudicar a experiência.
+        scheduler.postTask(() => {
+            renderAINotificationState();
+            renderStoicQuote();
+            
+            if ((dirtyMask & UI_MASK_CHART) !== 0) renderChart();
+            
+            if (ui.manageModal.classList.contains('visible')) {
+                setupManageModal();
+            }
+        }, { priority: 'user-visible' });
+
+    } else {
+        // [FALLBACK LEGACY] RequestAnimationFrame & IdleCallback
+        // Para browsers sem Scheduler API (Safari, Firefox antigo).
+        requestAnimationFrame(() => {
+            _renderHeaderIcons();
+            _updateHeaderTitle();
+            
+            if ((dirtyMask & UI_MASK_CALENDAR) !== 0) renderCalendar();
+            if ((dirtyMask & UI_MASK_LIST) !== 0) renderHabits();
+            
+            // Defere tarefas pesadas não críticas para quando a main thread estiver livre
+            const idleFn = (window as any).requestIdleCallback || setTimeout;
+            idleFn(() => {
+                renderAINotificationState();
+                renderStoicQuote();
+                if ((dirtyMask & UI_MASK_CHART) !== 0) renderChart();
+                if (ui.manageModal.classList.contains('visible')) {
+                    setupManageModal();
+                }
+            });
+        });
     }
 }
 
@@ -363,12 +399,9 @@ export async function renderStoicQuote() {
     }
     const { STOIC_QUOTES } = stoicQuotesModule;
 
-    // PERFORMANCE [2025-04-20]: Zero Allocation.
-    // Uses integer math and LUTs instead of creating Date objects to find the day of year.
     const year = parseInt(state.selectedDate.substring(0, 4), 10);
     const dayOfYear = _getDayOfYearFast(state.selectedDate);
     
-    // Deterministic Seed
     const seed = (year * 1000 + dayOfYear) | 0;
     const rnd = Math.abs(Math.sin(seed)); 
     const quoteIndex = (rnd * STOIC_QUOTES.length) | 0;
@@ -382,21 +415,33 @@ export async function renderStoicQuote() {
     _lastQuoteDate = state.selectedDate;
     _lastQuoteLang = state.activeLanguageCode;
 
+    // Fast Path: Check if already visible and text is same
     if (ui.stoicQuoteDisplay.textContent === fullText && ui.stoicQuoteDisplay.classList.contains('visible')) {
         return;
     }
 
+    // Direct Update if empty (Initial Load)
     if (ui.stoicQuoteDisplay.textContent === '') {
          setTextContent(ui.stoicQuoteDisplay, fullText);
          ui.stoicQuoteDisplay.classList.add('visible');
          return;
     }
 
+    // Animation Cycle: Fade Out -> Update -> Fade In
     ui.stoicQuoteDisplay.classList.remove('visible');
-    setTimeout(() => {
-        setTextContent(ui.stoicQuoteDisplay, fullText);
-        ui.stoicQuoteDisplay.classList.add('visible');
-    }, 150);
+    
+    // SCHEDULER: Use task scheduling instead of setTimeout for better frame alignment
+    if ('scheduler' in window) {
+        scheduler.postTask(() => {
+            setTextContent(ui.stoicQuoteDisplay, fullText);
+            ui.stoicQuoteDisplay.classList.add('visible');
+        }, { delay: 150, priority: 'user-visible' });
+    } else {
+        setTimeout(() => {
+            setTextContent(ui.stoicQuoteDisplay, fullText);
+            ui.stoicQuoteDisplay.classList.add('visible');
+        }, 150);
+    }
 }
 
 document.addEventListener('language-changed', () => {

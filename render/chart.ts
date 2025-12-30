@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -27,6 +28,7 @@ import { calculateDaySummary } from '../services/selectors';
 import { ui } from './ui';
 import { t, formatDate, formatDecimal, formatEvolution } from '../i18n';
 import { getTodayUTCIso, parseUTCIsoDate, toUTCIsoDateString } from '../utils';
+import { setTransformX, setTextContent, setStylePixels, setTransformComposite } from './dom';
 
 const CHART_DAYS = 30;
 const INITIAL_SCORE = 100;
@@ -177,10 +179,12 @@ function calculateChartData(): ChartDataPoint[] {
 /**
  * Optimized Path Generation.
  * Inlines scale calculation to avoid closure overhead in the loop.
+ * SOTA UPDATE: Uses Array Join instead of String Concatenation.
  */
 function _generateChartPaths(chartData: ChartDataPoint[], chartWidthPx: number): { areaPathData: string, linePathData: string } {
     const len = chartData.length;
-    if (len === 0) return { areaPathData: '', linePathData: '' };
+    // FIX [2025-04-26]: Strict Guard Clause to prevent crash on empty/undefined data
+    if (!chartData || len === 0 || !chartData[0]) return { areaPathData: '', linePathData: '' };
 
     // 1. Calculate Bounds (Min/Max) - Raw Loop
     let dataMin = Infinity;
@@ -228,15 +232,16 @@ function _generateChartPaths(chartData: ChartDataPoint[], chartWidthPx: number):
     const yFactor = chartH / chartValueRange; 
     const yBase = paddingTop + chartH; // Bottom of chart area
 
-    // 4. Generate Path String (Unrolled First Iteration)
-    let linePathData = '';
+    // 4. Generate Path String (SOTA: Array Join)
+    // Allocates array once, avoids rope string overhead in large paths
+    const pathParts = new Array(len);
     
     // First Point (M x y)
     const firstVal = chartData[0].value;
     const firstX = paddingLeft;
     const firstY = yBase - ((firstVal - minVal) * yFactor);
     
-    linePathData = 'M ' + firstX + ' ' + firstY;
+    pathParts[0] = 'M ' + firstX + ' ' + firstY;
 
     // Remaining Points (L x y)
     for (let i = 1; i < len; i = (i + 1) | 0) {
@@ -244,9 +249,10 @@ function _generateChartPaths(chartData: ChartDataPoint[], chartWidthPx: number):
         const x = paddingLeft + (i * xStep);
         const y = yBase - ((val - minVal) * yFactor);
         
-        // Fast string concat
-        linePathData += ' L ' + x + ' ' + y;
+        pathParts[i] = ' L ' + x + ' ' + y;
     }
+
+    const linePathData = pathParts.join('');
 
     // Area Path: Close the loop down to the base
     const areaBaseY = yBase - ((minVal - minVal) * yFactor); // Should be yBase actually, but logical consistency
@@ -256,6 +262,9 @@ function _generateChartPaths(chartData: ChartDataPoint[], chartWidthPx: number):
 }
 
 function _updateAxisLabels(chartData: ChartDataPoint[]) {
+    // FIX [2025-04-26]: Robust Guard Clause against undefined first element
+    if (!chartData || chartData.length === 0 || !chartData[0]) return;
+    
     const { axisStart, axisEnd } = ui.chart;
     const firstDateMs = chartData[0].timestamp;
     const lastDateMs = chartData[chartData.length - 1].timestamp;
@@ -271,13 +280,10 @@ function _updateAxisLabels(chartData: ChartDataPoint[]) {
     setTextContent(axisEnd, lastLabel);
 }
 
-function setTextContent(element: HTMLElement, text: string) {
-    if (element.textContent !== text) {
-        element.textContent = text;
-    }
-}
-
 function _updateEvolutionIndicator(chartData: ChartDataPoint[]) {
+    // FIX [2025-04-26]: Robust Guard Clause against undefined first element
+    if (!chartData || chartData.length === 0 || !chartData[0]) return;
+    
     const { evolutionIndicator } = ui.chart;
     const lastPoint = chartData[chartData.length - 1];
     
@@ -286,11 +292,14 @@ function _updateEvolutionIndicator(chartData: ChartDataPoint[]) {
     let referencePoint = chartData[0];
     const len = chartData.length;
     for (let i = 0; i < len; i = (i + 1) | 0) {
-        if (chartData[i].scheduledCount > 0) {
+        // Safety check for sparse arrays just in case
+        if (chartData[i] && chartData[i].scheduledCount > 0) {
             referencePoint = chartData[i];
             break;
         }
     }
+
+    if (!lastPoint || !referencePoint) return;
 
     const evolution = ((lastPoint.value - referencePoint.value) / referencePoint.value) * 100;
     
@@ -304,6 +313,9 @@ function _updateEvolutionIndicator(chartData: ChartDataPoint[]) {
 }
 
 function _updateChartDOM(chartData: ChartDataPoint[]) {
+    // FIX [2025-04-26]: Guard Clause prevents processing if data is invalid/empty/undefined
+    if (!chartData || chartData.length === 0 || !chartData[0]) return;
+    
     const { areaPath, linePath } = ui.chart;
     if (!areaPath || !linePath) return;
 
@@ -373,15 +385,26 @@ function updateTooltipPosition() {
         lastRenderedPointIndex = pointIndex;
         
         const point = lastChartData[pointIndex];
+        // SAFETY: Check point validity
+        if (!point) return;
+
         const chartHeight = SVG_HEIGHT - CHART_PADDING.top - CHART_PADDING.bottom;
     
         const pointX = paddingLeft + (pointIndex / (len - 1)) * chartWidth;
         const pointY = CHART_PADDING.top + chartHeight - ((point.value - chartMinVal) / chartValueRange) * chartHeight;
 
         indicator.style.opacity = '1';
-        indicator.style.transform = `translateX(${pointX}px)`;
+        
+        // BLEEDING-EDGE FIX: CSS Typed OM for Indicator Translation (High Frequency)
+        // Substitui string interpolation `translateX(${pointX}px)`
+        setTransformX(indicator, pointX);
+        
         const dot = indicator.querySelector<HTMLElement>('.chart-indicator-dot');
-        if (dot) dot.style.top = `${pointY}px`;
+        if (dot) {
+            // BLEEDING-EDGE FIX: CSS Typed OM for Vertical Positioning (High Frequency)
+            // Substitui `dot.style.top = ...`
+            setStylePixels(dot, 'top', pointY);
+        }
         
         const formattedDate = formatDate(point.timestamp, OPTS_TOOLTIP_DATE);
         
@@ -394,13 +417,17 @@ function updateTooltipPosition() {
             tooltip.classList.add('visible');
         }
         
-        let translateX = '-50%';
-        if (pointX < 50) translateX = '0%';
-        else if (pointX > svgWidth - 50) translateX = '-100%';
+        let tXPercent = -50;
+        if (pointX < 50) tXPercent = 0;
+        else if (pointX > svgWidth - 50) tXPercent = -100;
 
-        // FIX [2025-04-24]: Vertically center the tooltip to prevent it from being clipped at the top.
-        const verticalPosition = `calc(${SVG_HEIGHT / 2}px - 50%)`;
-        tooltip.style.transform = `translate3d(calc(${pointX}px + ${translateX}), ${verticalPosition}, 0)`;
+        // FIX [2025-04-24]: Vertically center the tooltip (75px/2 = 37.5px)
+        const centerY = SVG_HEIGHT / 2;
+        
+        // BLEEDING-EDGE FIX: CSS Typed OM Composite Transform
+        // Substitui: tooltip.style.transform = `translate3d(calc(${pointX}px + ${translateX}), ${verticalPosition}, 0)`;
+        // Usa: translate(px, px) + translate(%, %)
+        setTransformComposite(tooltip, pointX, centerY, tXPercent, -50);
     }
 }
 

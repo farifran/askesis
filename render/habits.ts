@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -35,7 +36,7 @@ import { calculateHabitStreak, getActiveHabitsForDate, getSmartGoalForHabit, get
 import { ui } from './ui';
 import { t, getTimeOfDayName, formatInteger } from '../i18n';
 import { UI_ICONS, getTimeOfDayIcon } from './icons';
-import { setTextContent } from './dom';
+import { setTextContent, setStyleColor } from './dom';
 import { CSS_CLASSES, DOM_SELECTORS } from './constants'; // TYPE SAFETY IMPORT
 import { parseUTCIsoDate } from '../utils';
 
@@ -404,8 +405,13 @@ export function updateHabitCardElement(
     }
     
     // OPTIMIZATION [2025-03-09]: Dirty Check styles to prevent Layout Thrashing
-    if (icon.style.color !== newColor) icon.style.color = newColor;
-    if (icon.style.backgroundColor !== newBgColor) icon.style.backgroundColor = newBgColor;
+    // BLEEDING-EDGE FIX: Use Typed OM for color assignment.
+    // Dirty check using attribute/dataset avoids reading style maps unnecessarily.
+    if (icon.getAttribute('data-color') !== newColor) {
+        setStyleColor(icon, 'color', newColor);
+        setStyleColor(icon, 'background-color', newBgColor);
+        icon.setAttribute('data-color', newColor); 
+    }
 
     if (!wasCompleted && isCompleted) {
         icon.classList.remove('animate-pop');

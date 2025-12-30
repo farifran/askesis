@@ -25,6 +25,7 @@ import { getEffectiveScheduleForHabitOnDate } from '../services/selectors';
 import { triggerHaptic } from '../utils';
 import { DOM_SELECTORS, CSS_CLASSES } from '../render/constants';
 import { getLiveHabitCards } from '../render/habits';
+import { setTransformY } from '../render/dom';
 
 const DROP_INDICATOR_GAP = 5; 
 const DROP_INDICATOR_HEIGHT = 3; 
@@ -173,7 +174,8 @@ function _animationLoop() {
         
         if (DragState.dropIndicator && DragState.dropIndicator.parentElement !== DragState.currentRenderedDropZone) {
             DragState.currentRenderedDropZone.appendChild(DragState.dropIndicator);
-            DragState.dropIndicator.style.transform = 'translate3d(0, 0, 0)';
+            // BLEEDING-EDGE FIX: Reset via Typed OM
+            setTransformY(DragState.dropIndicator, 0);
         }
     } else {
          if (DragState.dropIndicator && DragState.dropIndicator.parentElement) {
@@ -188,9 +190,10 @@ function _animationLoop() {
                 DragState.dropIndicator.classList.add('visible');
             }
             
-            // GPU Hardware Acceleration
+            // GPU Hardware Acceleration via Typed OM
             if (DragState.nextIndicatorY !== DragState.currentIndicatorY && DragState.nextIndicatorY !== null) {
-                DragState.dropIndicator.style.transform = `translate3d(0, ${DragState.nextIndicatorY}px, 0)`;
+                // BLEEDING-EDGE FIX: Use setTransformY instead of string interpolation
+                setTransformY(DragState.dropIndicator, DragState.nextIndicatorY);
                 DragState.currentIndicatorY = DragState.nextIndicatorY;
             }
             
