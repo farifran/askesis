@@ -21,6 +21,7 @@
  * DECISÕES TÉCNICAS:
  * 1. **Raw Math vs Abstractions:** Funções de escala (d3-scale style) foram removidas em favor de matemática in-line.
  * 2. **Smi Optimization:** Loops de cálculo usam inteiros e lógica flat.
+ * 3. **Curve Smoothing:** Algoritmo Catmull-Rom to Cubic Bezier para renderização orgânica sem custo de CPU.
  */
 
 import { state, isChartDataDirty } from '../state';
@@ -28,7 +29,6 @@ import { calculateDaySummary } from '../services/selectors';
 import { ui } from './ui';
 import { t, formatDate, formatDecimal, formatEvolution } from '../i18n';
 import { getTodayUTCIso, parseUTCIsoDate, toUTCIsoDateString } from '../utils';
-import { setTransformX, setTextContent, setStylePixels, setTransformComposite } from './dom';
 
 const CHART_DAYS = 30;
 const INITIAL_SCORE = 100;
@@ -39,7 +39,7 @@ const MS_PER_DAY = 86400000;
 
 // VISUAL CONSTANTS
 const SVG_HEIGHT = 75; 
-const CHART_PADDING = { top: 0, right: 0, bottom: 5, left: 3 };
+const CHART_PADDING = { top: 5, right: 0, bottom: 5, left: 3 }; // Increased top padding for curve overshoot safety
 
 // PERFORMANCE [2025-04-13]: Hoisted Intl Options.
 const OPTS_AXIS_LABEL_SHORT: Intl.DateTimeFormatOptions = { 
@@ -177,14 +177,12 @@ function calculateChartData(): ChartDataPoint[] {
 }
 
 /**
- * Optimized Path Generation.
- * Inlines scale calculation to avoid closure overhead in the loop.
- * SOTA UPDATE: Uses Array Join instead of String Concatenation.
+ * Optimized Path Generation with Catmull-Rom Smoothing.
+ * Calculates cubic bezier control points on the fly without object allocation.
  */
 function _generateChartPaths(chartData: ChartDataPoint[], chartWidthPx: number): { areaPathData: string, linePathData: string } {
     const len = chartData.length;
-    // FIX [2025-04-26]: Strict Guard Clause to prevent crash on empty/undefined data
-    if (!chartData || len === 0 || !chartData[0]) return { areaPathData: '', linePathData: '' };
+    if (len === 0) return { areaPathData: '', linePathData: '' };
 
     // 1. Calculate Bounds (Min/Max) - Raw Loop
     let dataMin = Infinity;
@@ -221,50 +219,76 @@ function _generateChartPaths(chartData: ChartDataPoint[], chartWidthPx: number):
         ui.chart.svg.setAttribute('viewBox', newViewBox);
     }
 
-    // 3. Pre-calculate Scale Constants (Invariant Loop Motion)
+    // 3. Pre-calculate Scale Constants
     const paddingLeft = CHART_PADDING.left;
     const paddingTop = CHART_PADDING.top;
     const chartW = chartWidthPx - paddingLeft - CHART_PADDING.right;
     const chartH = SVG_HEIGHT - paddingTop - CHART_PADDING.bottom;
     
     const xStep = chartW / (len - 1);
-    // Inverse Y scale factor: height / range
     const yFactor = chartH / chartValueRange; 
-    const yBase = paddingTop + chartH; // Bottom of chart area
+    const yBase = paddingTop + chartH;
 
-    // 4. Generate Path String (SOTA: Array Join)
-    // Allocates array once, avoids rope string overhead in large paths
-    const pathParts = new Array(len);
+    // Helper macro for coordinate transformation (inlined manually below for speed)
+    // getX = (i) => paddingLeft + i * xStep
+    // getY = (val) => yBase - ((val - minVal) * yFactor)
+
+    // 4. Generate Smooth Path
     
-    // First Point (M x y)
     const firstVal = chartData[0].value;
     const firstX = paddingLeft;
     const firstY = yBase - ((firstVal - minVal) * yFactor);
     
-    pathParts[0] = 'M ' + firstX + ' ' + firstY;
+    let linePathData = 'M ' + firstX + ' ' + firstY;
 
-    // Remaining Points (L x y)
-    for (let i = 1; i < len; i = (i + 1) | 0) {
-        const val = chartData[i].value;
-        const x = paddingLeft + (i * xStep);
-        const y = yBase - ((val - minVal) * yFactor);
-        
-        pathParts[i] = ' L ' + x + ' ' + y;
+    // Curve Smoothing Constant (0 = sharp, 1 = very round)
+    const k = 0.25; 
+
+    for (let i = 0; i < len - 1; i = (i + 1) | 0) {
+        // Point P0 (Previous)
+        const p0Val = chartData[i > 0 ? i - 1 : i].value;
+        const p0x = paddingLeft + (i > 0 ? i - 1 : i) * xStep;
+        const p0y = yBase - ((p0Val - minVal) * yFactor);
+
+        // Point P1 (Current)
+        const p1Val = chartData[i].value;
+        const p1x = paddingLeft + i * xStep;
+        const p1y = yBase - ((p1Val - minVal) * yFactor);
+
+        // Point P2 (Next)
+        const p2Val = chartData[i + 1].value;
+        const p2x = paddingLeft + (i + 1) * xStep;
+        const p2y = yBase - ((p2Val - minVal) * yFactor);
+
+        // Point P3 (Next Next)
+        const p3Val = chartData[i + 2 < len ? i + 2 : i + 1].value;
+        const p3x = paddingLeft + (i + 2 < len ? i + 2 : i + 1) * xStep;
+        const p3y = yBase - ((p3Val - minVal) * yFactor);
+
+        // Catmull-Rom to Cubic Bezier conversion logic
+        // CP1 = P1 + (P2 - P0) * k
+        const cp1x = p1x + (p2x - p0x) * k;
+        const cp1y = p1y + (p2y - p0y) * k;
+
+        // CP2 = P2 - (P3 - P1) * k
+        const cp2x = p2x - (p3x - p1x) * k;
+        const cp2y = p2y - (p3y - p1y) * k;
+
+        // Append Cubic Bezier command (C cp1x cp1y, cp2x cp2y, x y)
+        // Using string concatenation is significantly faster than template literals in loop hot paths
+        linePathData += ' C ' + cp1x + ' ' + cp1y + ', ' + cp2x + ' ' + cp2y + ', ' + p2x + ' ' + p2y;
     }
 
-    const linePathData = pathParts.join('');
-
     // Area Path: Close the loop down to the base
-    const areaBaseY = yBase - ((minVal - minVal) * yFactor); // Should be yBase actually, but logical consistency
+    const areaBaseY = yBase - ((minVal - minVal) * yFactor); // Essentially yBase
+    // Ensure we close the path correctly relative to the view
+    const lastX = paddingLeft + (len - 1) * xStep;
     const areaPathData = linePathData + ' V ' + areaBaseY + ' L ' + firstX + ' ' + areaBaseY + ' Z';
     
     return { areaPathData, linePathData };
 }
 
 function _updateAxisLabels(chartData: ChartDataPoint[]) {
-    // FIX [2025-04-26]: Robust Guard Clause against undefined first element
-    if (!chartData || chartData.length === 0 || !chartData[0]) return;
-    
     const { axisStart, axisEnd } = ui.chart;
     const firstDateMs = chartData[0].timestamp;
     const lastDateMs = chartData[chartData.length - 1].timestamp;
@@ -280,10 +304,13 @@ function _updateAxisLabels(chartData: ChartDataPoint[]) {
     setTextContent(axisEnd, lastLabel);
 }
 
+function setTextContent(element: HTMLElement, text: string) {
+    if (element.textContent !== text) {
+        element.textContent = text;
+    }
+}
+
 function _updateEvolutionIndicator(chartData: ChartDataPoint[]) {
-    // FIX [2025-04-26]: Robust Guard Clause against undefined first element
-    if (!chartData || chartData.length === 0 || !chartData[0]) return;
-    
     const { evolutionIndicator } = ui.chart;
     const lastPoint = chartData[chartData.length - 1];
     
@@ -292,14 +319,11 @@ function _updateEvolutionIndicator(chartData: ChartDataPoint[]) {
     let referencePoint = chartData[0];
     const len = chartData.length;
     for (let i = 0; i < len; i = (i + 1) | 0) {
-        // Safety check for sparse arrays just in case
-        if (chartData[i] && chartData[i].scheduledCount > 0) {
+        if (chartData[i].scheduledCount > 0) {
             referencePoint = chartData[i];
             break;
         }
     }
-
-    if (!lastPoint || !referencePoint) return;
 
     const evolution = ((lastPoint.value - referencePoint.value) / referencePoint.value) * 100;
     
@@ -313,9 +337,6 @@ function _updateEvolutionIndicator(chartData: ChartDataPoint[]) {
 }
 
 function _updateChartDOM(chartData: ChartDataPoint[]) {
-    // FIX [2025-04-26]: Guard Clause prevents processing if data is invalid/empty/undefined
-    if (!chartData || chartData.length === 0 || !chartData[0]) return;
-    
     const { areaPath, linePath } = ui.chart;
     if (!areaPath || !linePath) return;
 
@@ -385,26 +406,15 @@ function updateTooltipPosition() {
         lastRenderedPointIndex = pointIndex;
         
         const point = lastChartData[pointIndex];
-        // SAFETY: Check point validity
-        if (!point) return;
-
         const chartHeight = SVG_HEIGHT - CHART_PADDING.top - CHART_PADDING.bottom;
     
         const pointX = paddingLeft + (pointIndex / (len - 1)) * chartWidth;
         const pointY = CHART_PADDING.top + chartHeight - ((point.value - chartMinVal) / chartValueRange) * chartHeight;
 
         indicator.style.opacity = '1';
-        
-        // BLEEDING-EDGE FIX: CSS Typed OM for Indicator Translation (High Frequency)
-        // Substitui string interpolation `translateX(${pointX}px)`
-        setTransformX(indicator, pointX);
-        
+        indicator.style.transform = `translateX(${pointX}px)`;
         const dot = indicator.querySelector<HTMLElement>('.chart-indicator-dot');
-        if (dot) {
-            // BLEEDING-EDGE FIX: CSS Typed OM for Vertical Positioning (High Frequency)
-            // Substitui `dot.style.top = ...`
-            setStylePixels(dot, 'top', pointY);
-        }
+        if (dot) dot.style.top = `${pointY}px`;
         
         const formattedDate = formatDate(point.timestamp, OPTS_TOOLTIP_DATE);
         
@@ -417,17 +427,13 @@ function updateTooltipPosition() {
             tooltip.classList.add('visible');
         }
         
-        let tXPercent = -50;
-        if (pointX < 50) tXPercent = 0;
-        else if (pointX > svgWidth - 50) tXPercent = -100;
+        let translateX = '-50%';
+        if (pointX < 50) translateX = '0%';
+        else if (pointX > svgWidth - 50) translateX = '-100%';
 
-        // FIX [2025-04-24]: Vertically center the tooltip (75px/2 = 37.5px)
-        const centerY = SVG_HEIGHT / 2;
-        
-        // BLEEDING-EDGE FIX: CSS Typed OM Composite Transform
-        // Substitui: tooltip.style.transform = `translate3d(calc(${pointX}px + ${translateX}), ${verticalPosition}, 0)`;
-        // Usa: translate(px, px) + translate(%, %)
-        setTransformComposite(tooltip, pointX, centerY, tXPercent, -50);
+        // FIX [2025-04-24]: Vertically center the tooltip to prevent it from being clipped at the top.
+        const verticalPosition = `calc(${SVG_HEIGHT / 2}px - 50%)`;
+        tooltip.style.transform = `translate3d(calc(${pointX}px + ${translateX}), ${verticalPosition}, 0)`;
     }
 }
 

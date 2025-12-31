@@ -28,7 +28,19 @@
  *    o console de desenvolvimento nem afetar métricas de performance locais.
  */
 
-import './index.css';
+// CSS MODULARIZATION [2025-05-02]:
+// Styles split by domain for maintainability. ESBuild bundles these into a single bundle.css.
+import './css/variables.css';
+import './css/base.css';
+import './css/layout.css';
+import './css/header.css';
+import './css/components.css';
+import './css/calendar.css';
+import './css/habits.css';
+import './css/charts.css';
+import './css/forms.css';
+import './css/modals.css';
+
 import { state, AppState } from './state';
 import { loadState, persistStateLocally, registerSyncHandler } from './services/persistence';
 import { renderApp, initI18n } from './render';
@@ -42,11 +54,22 @@ import { updateAppBadge } from './services/badge';
 import { mergeStates } from './services/dataMerge';
 import { setupMidnightLoop } from './utils';
 
-// TYPE SAFETY: Extensão global para o Watchdog e Error Handler
+// TYPE SAFETY: Extensão global para APIs de navegador e Watchdog
 declare global {
     interface Window {
         bootWatchdog?: number;
         showFatalError?: (msg: string, isWatchdog?: boolean) => void;
+        // Polyfill type definition for requestIdleCallback in strict environments
+        requestIdleCallback: (
+            callback: (deadline: IdleDeadline) => void,
+            options?: { timeout?: number }
+        ) => number;
+        cancelIdleCallback: (handle: number) => void;
+    }
+    
+    interface IdleDeadline {
+        timeRemaining: () => number;
+        readonly didTimeout: boolean;
     }
 }
 

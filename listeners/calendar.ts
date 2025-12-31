@@ -23,7 +23,6 @@ import { renderApp, renderFullCalendar, openModal, scrollToToday, closeModal } f
 import { parseUTCIsoDate, triggerHaptic, getTodayUTCIso, addDays, toUTCIsoDateString } from '../utils';
 import { DOM_SELECTORS, CSS_CLASSES } from '../render/constants';
 import { markAllHabitsForDate } from '../habitActions';
-import { setCSSVariable } from '../render/dom';
 
 // --- STATIC CONSTANTS ---
 const LONG_PRESS_DURATION = 500;
@@ -75,7 +74,7 @@ function _executeLongPressVisuals(dayItem: HTMLElement, dateISO: string) {
         const padding = 8; 
 
         let finalLeft = centerPoint;
-        let translateX = -50; // Use numeric value for logic
+        let translateX = '-50%';
 
         const halfModalWidth = modalWidth / 2;
         const leftEdge = centerPoint - halfModalWidth;
@@ -84,16 +83,16 @@ function _executeLongPressVisuals(dayItem: HTMLElement, dateISO: string) {
         // Edge Detection
         if (leftEdge < padding) {
             finalLeft = padding;
-            translateX = 0;
+            translateX = '0%';
         } else if (rightEdge > windowWidth - padding) {
             finalLeft = windowWidth - padding;
-            translateX = -100;
+            translateX = '-100%';
         }
 
-        // BLEEDING-EDGE FIX: Use Typed OM via setCSSVariable instead of string interpolation
-        setCSSVariable(modal, '--actions-top', top, 'px');
-        setCSSVariable(modal, '--actions-left', finalLeft, 'px');
-        setCSSVariable(modalContent, '--translate-x', translateX, '%');
+        // Direct Style Write (Composite Layer)
+        modal.style.setProperty('--actions-top', `${top}px`);
+        modal.style.setProperty('--actions-left', `${finalLeft}px`);
+        modalContent.style.setProperty('--translate-x', translateX);
 
         openModal(modal, undefined, () => {
             CalendarGestureState.activeDateISO = null;

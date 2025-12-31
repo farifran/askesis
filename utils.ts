@@ -133,7 +133,7 @@ export function toUTCIsoDateString(date: Date): string {
     return year + '-' + PAD_LUT[month] + '-' + PAD_LUT[day];
 }
 
-function getTodayUTC(): Date {
+export function getTodayUTC(): Date {
     const today = new Date();
     return new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
 }

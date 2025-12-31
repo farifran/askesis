@@ -1,0 +1,271 @@
+/* --- COMPONENTES: FORMULÁRIOS --- */
+.form-group { margin-block-end: var(--space-lg); }
+.form-group label {
+    display: block; color: var(--text-secondary);
+    font-size: 14px; font-weight: 500; margin-block-end: var(--space-sm);
+}
+.form-control {
+    width: 100%; background: var(--bg-color);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-base);
+    padding: var(--space-md); color: var(--text-primary);
+    font-size: 15px; height: 44px;
+}
+#edit-habit-modal #habit-name {
+    height: 48px;
+    font-size: 18px;
+    font-weight: 500;
+    margin-top: 8px; /* Centraliza verticalmente com o ícone de 64px */
+}
+#edit-habit-modal #habit-name:focus {
+    outline: none;
+    box-shadow: none;
+    border-color: var(--accent-blue);
+}
+#edit-habit-modal #habit-name::placeholder {
+    color: var(--text-tertiary);
+}
+
+
+/* --- FORMULÁRIO DE HÁBITO ESTILO APPLE --- */
+#edit-habit-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-lg);
+    /* O preenchimento agora é gerenciado pelo contêiner .modal-content pai */
+    padding: 0;
+    flex-grow: 1;
+    /* overflow-y: auto; REATORAÇÃO DE LAYOUT: Removido scroll aninhado. O scroll do formulário agora é gerenciado pelo .modal-content pai para evitar bugs de renderização em mobile. */
+}
+.form-section {
+    background-color: var(--surface-color);
+    border-radius: var(--border-radius-large);
+}
+.form-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-md) var(--space-lg);
+    position: relative;
+}
+.form-row:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: var(--space-lg);
+    right: 0;
+    height: 1px;
+    background-color: var(--border-color);
+}
+.form-row.form-row--vertical {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-md);
+}
+
+.habit-identity-section {
+    display: flex;
+    align-items: center;
+    gap: var(--space-lg);
+    background-color: var(--surface-color);
+    border-radius: var(--border-radius-large);
+    padding: var(--space-lg);
+}
+.habit-icon-picker-wrapper {
+    position: relative;
+    flex-shrink: 0;
+}
+.habit-icon-picker-btn {
+    width: 64px;
+    height: 64px;
+    border-radius: var(--border-radius-pill);
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: transform 0.2s;
+}
+.habit-icon-picker-btn:hover {
+    transform: scale(1.1);
+}
+.habit-icon-picker-btn svg {
+    width: 60%;
+    height: 60%;
+}
+.edit-icon-overlay {
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    width: 24px;
+    height: 24px;
+    background-color: var(--accent-blue);
+    border-radius: var(--border-radius-pill);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    border: 2px solid var(--surface-color);
+    pointer-events: none;
+}
+.edit-icon-overlay svg {
+    width: 14px;
+    height: 14px;
+}
+.habit-name-input-wrapper {
+    flex-grow: 1;
+    position: relative;
+}
+.form-notice {
+    font-size: 11px;
+    color: var(--color-red);
+    margin-top: var(--space-xs);
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+.form-notice.visible {
+    opacity: 1;
+}
+
+.segmented-control {
+    display: flex;
+    width: 100%;
+    background-color: var(--bg-color);
+    border-radius: var(--border-radius-base);
+    padding: 2px;
+}
+.segmented-control-option {
+    flex: 1;
+    padding: var(--space-sm);
+    border: none;
+    background-color: transparent;
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-sm);
+    transition: background-color 0.2s, color 0.2s;
+}
+.segmented-control-option.selected {
+    background-color: var(--accent-blue);
+    color: white;
+}
+.segmented-control-option svg {
+    width: 18px;
+    height: 18px;
+    stroke: currentColor;
+}
+
+.frequency-details {
+    width: 100%;
+    padding-top: var(--space-sm);
+    display: none;
+}
+.frequency-details.visible {
+    display: block;
+}
+.weekday-picker {
+    display: flex;
+    justify-content: space-between;
+    gap: 2px;
+}
+.weekday-picker label {
+    flex: 1;
+}
+.weekday-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    aspect-ratio: 1/1;
+    border-radius: var(--border-radius-pill);
+    cursor: pointer;
+    background-color: var(--bg-color);
+    color: var(--text-secondary);
+    transition: background-color 0.2s, color 0.2s;
+}
+.weekday-picker input:checked + .weekday-button {
+    background-color: var(--accent-blue);
+    color: white;
+}
+
+.interval-control-group {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background-color: var(--bg-color);
+    border-radius: var(--border-radius-base);
+    padding: var(--space-xs);
+}
+.stepper-btn {
+    width: 32px;
+    height: 32px;
+    font-size: 24px;
+    border-radius: 6px;
+    background: var(--surface-hover);
+    color: var(--text-primary);
+    border: none;
+    cursor: pointer;
+}
+.interval-amount-display {
+    font-size: 16px;
+    font-weight: 500;
+    flex: 1;
+    text-align: center;
+}
+.unit-toggle-btn {
+    padding: var(--space-sm) var(--space-lg);
+    background: var(--surface-hover);
+    color: var(--text-primary);
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+/* Seção de Status de Notificação e Interruptor (Toggle) */
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 44px;
+    height: 24px;
+    flex-shrink: 0;
+}
+.toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+.slider {
+    position: absolute;
+    cursor: pointer;
+    inset: 0;
+    background-color: var(--surface-hover);
+    border-radius: 34px;
+    transition: background-color var(--transition-duration);
+}
+.slider:before {
+    position: absolute;
+    content: "";
+    height: 20px;
+    width: 20px;
+    left: 2px;
+    bottom: 2px;
+    background-color: white;
+    border-radius: var(--border-radius-pill);
+    transition: transform var(--transition-duration);
+}
+input:checked + .slider {
+    background-color: var(--accent-green);
+}
+input:checked + .slider:before {
+    transform: translateX(20px);
+}
+input:disabled + .slider {
+    cursor: not-allowed;
+    background-color: var(--surface-snoozed);
+}

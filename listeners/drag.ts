@@ -6,423 +6,289 @@
 
 /**
  * @file listeners/drag.ts
- * @description Motor de Física para Drag & Drop e Auto-Scroll.
+ * @description Motor simplificado de Drag & Drop e Auto-Scroll.
  * 
  * [MAIN THREAD CONTEXT]:
- * Este módulo gerencia a interação mais custosa da UI.
+ * Implementação simplificada utilizando APIs nativas de Hit Testing e Layout.
  * 
- * ARQUITETURA (Static State & Physics Engine):
- * - **Static State Machine:** Todo o estado mutável reside em `DragState` para evitar alocação de closures.
- * - **Read/Write Separation:** Loop de Eventos (Read/Calc) vs Loop de Renderização (Write/DOM).
- * - **Geometry Caching:** As posições de todos os cartões são cacheadas no `dragstart`.
+ * ARQUITETURA (Native-First):
+ * - **Native Hit Testing:** Utiliza `e.target` e `closest()` para identificar alvos, eliminando caches geométricos complexos.
+ * - **Relative Positioning:** Calcula posições baseadas em `offsetTop` relativo ao container, robusto contra reflows.
+ * - **Dynamic Auto-Scroll:** Zonas de scroll calculadas dinamicamente baseadas no Viewport do container.
+ * - **Geometry Caching (Update):** Cache de `getBoundingClientRect` no início do arrasto para evitar Layout Thrashing.
  */
 
-import { ui } from '../render/ui';
-import { isCurrentlySwiping } from './swipe';
 import { handleHabitDrop, reorderHabit } from '../habitActions';
 import { TimeOfDay, state } from '../state';
 import { getEffectiveScheduleForHabitOnDate } from '../services/selectors';
 import { triggerHaptic } from '../utils';
 import { DOM_SELECTORS, CSS_CLASSES } from '../render/constants';
-import { getLiveHabitCards } from '../render/habits';
-import { setTransformY } from '../render/dom';
+import { isCurrentlySwiping } from './swipe';
 
-const DROP_INDICATOR_GAP = 5; 
-const DROP_INDICATOR_HEIGHT = 3; 
+// CONFIGURAÇÃO
+const SCROLL_ZONE_PX = 80; // Zona ativa para scroll
+const MAX_SCROLL_SPEED = 15; // Velocidade máxima (px/frame)
+const DROP_INDICATOR_GAP = 4; // Espaçamento visual
 
-// CALIBRAÇÃO DE FÍSICA:
-const SCROLL_ZONE_SIZE = 120;
-const MAX_SCROLL_SPEED = 15;
-
-// --- STATIC PHYSICS CACHE (Module Scope / Hot Memory) ---
-let _geo_topZoneEnd = 0;
-let _geo_bottomZoneStart = 0;
-let _geo_effectiveZone = 0;
-let _geo_invEffectiveZone = 0; // Multiplier optimization
-let _geo_containerTop = 0;
-let _geo_containerBottom = 0;
-
-// --- STATIC STATE SINGLETON ---
+// --- STATE MACHINE ---
 const DragState = {
-    // Container Reference
+    // Session
+    isActive: false,
     container: null as HTMLElement | null,
-
-    // Drag Source
-    draggedElement: null as HTMLElement | null,
-    draggedHabitId: null as string | null,
-    draggedHabitOriginalTime: null as TimeOfDay | null,
-    cachedScheduleForDay: null as TimeOfDay[] | null,
+    containerRect: null as DOMRect | null, // Cache de geometria
     
-    // UI Elements
-    dropIndicator: null as HTMLElement | null,
+    // Source
+    sourceEl: null as HTMLElement | null,
+    sourceId: null as string | null,
+    sourceTime: null as TimeOfDay | null,
+    cachedSchedule: null as TimeOfDay[] | null,
     
-    // Target State (Render Buffer)
-    nextDropZoneTarget: null as HTMLElement | null,
-    currentRenderedDropZone: null as HTMLElement | null,
+    // Targets
+    targetZone: null as HTMLElement | null,
+    targetCard: null as HTMLElement | null, // Cartão de referência para troca
+    insertPos: null as 'before' | 'after' | null,
     
-    // Positioning
-    nextIndicatorY: null as number | null,
-    currentIndicatorY: null as number | null,
+    // UI
+    indicator: null as HTMLElement | null,
+    renderedZone: null as HTMLElement | null,
     
-    // Logic State
-    nextReorderTargetId: null as string | null,
-    nextReorderPosition: null as 'before' | 'after' | null,
-    isDropValid: false,
-
-    // Auto-Scroll State
-    scrollVelocity: 0,
-    animationFrameId: 0,
+    // Logic
+    isValidDrop: false,
     
-    // Layout Snapshots
-    cachedContainerRect: null as DOMRect | null,
-    scrollTop: 0,
-    scrollHeight: 0,
-    clientHeight: 0
+    // Scroll
+    scrollSpeed: 0,
+    rafId: 0
 };
 
-// PERFORMANCE: Geometry Cache for Habit Cards.
-// Maps HabitID -> Geometry Props.
-const cardRectCache = new Map<string, { offsetTop: number, localTop: number, offsetHeight: number }>();
+// --- SCROLL ENGINE (Animation Loop) ---
 
-/**
- * Snapshot geométrico do layout.
- * Deve ser chamado apenas UMA VEZ no início do arrasto.
- */
-function _captureGeometryCache() {
-    cardRectCache.clear();
-    
-    if (!DragState.container) return;
+function _scrollLoop() {
+    if (!DragState.isActive) return;
 
-    if (!DragState.cachedContainerRect) {
-        DragState.cachedContainerRect = DragState.container.getBoundingClientRect();
-    }
-    
-    // PERF: Populate static physics cache vars
-    const rectHeight = DragState.cachedContainerRect.height;
-    _geo_containerTop = DragState.cachedContainerRect.top | 0; // Int
-    _geo_containerBottom = DragState.cachedContainerRect.bottom | 0; // Int
-    
-    // Clamp scroll zone to max 50% of container
-    _geo_effectiveZone = Math.min(SCROLL_ZONE_SIZE, rectHeight / 2);
-    _geo_invEffectiveZone = 1 / _geo_effectiveZone; // Pre-calc division
-    
-    _geo_topZoneEnd = _geo_containerTop + _geo_effectiveZone;
-    _geo_bottomZoneStart = _geo_containerBottom - _geo_effectiveZone;
-    
-    // Snapshot scroll state
-    DragState.scrollTop = DragState.container.scrollTop | 0;
-    DragState.scrollHeight = DragState.container.scrollHeight | 0;
-    DragState.clientHeight = DragState.container.clientHeight | 0;
-
-    // Iterate live cards directly from memory
-    const liveCardsIterator = getLiveHabitCards();
-    
-    for (const card of liveCardsIterator) {
-        if (card.isConnected && card.dataset.habitId && card !== DragState.draggedElement) {
-            // Layout Read (Forces Style Recalc once)
-            const rect = card.getBoundingClientRect();
-            
-            // Normalize geometry
-            const normalizedOffsetTop = rect.top - _geo_containerTop + DragState.scrollTop;
-            const localTop = card.offsetTop;
-
-            cardRectCache.set(card.dataset.habitId, {
-                offsetTop: normalizedOffsetTop,
-                localTop: localTop,
-                offsetHeight: rect.height
-            });
-        }
-    }
-}
-
-// PASSIVE LISTENER: Sync scroll top without reflow
-const _onScroll = () => {
-    if (DragState.container) {
-        DragState.scrollTop = DragState.container.scrollTop | 0;
-    }
-};
-
-// --- RENDER LOOP ---
-
-function _animationLoop() {
-    if (!DragState.container) return;
-
-    // 1. Auto-Scroll (Write)
-    if (DragState.scrollVelocity !== 0) {
-        DragState.container.scrollBy(0, DragState.scrollVelocity);
+    // 1. Auto Scroll
+    if (DragState.scrollSpeed !== 0 && DragState.container) {
+        DragState.container.scrollBy(0, DragState.scrollSpeed);
     }
 
-    // 2. Drop Zone Highlighting (Write)
-    if (DragState.nextDropZoneTarget !== DragState.currentRenderedDropZone) {
-        if (DragState.currentRenderedDropZone) {
-            DragState.currentRenderedDropZone.classList.remove(CSS_CLASSES.DRAG_OVER, CSS_CLASSES.INVALID_DROP);
-        }
-        DragState.currentRenderedDropZone = DragState.nextDropZoneTarget;
-    }
-
-    if (DragState.currentRenderedDropZone) {
-        const shouldBeInvalid = !DragState.isDropValid;
-        const shouldBeDragOver = DragState.isDropValid && DragState.currentRenderedDropZone.dataset.time !== DragState.draggedHabitOriginalTime;
-
-        // Dirty Checking
-        if (DragState.currentRenderedDropZone.classList.contains(CSS_CLASSES.INVALID_DROP) !== shouldBeInvalid) {
-            DragState.currentRenderedDropZone.classList.toggle(CSS_CLASSES.INVALID_DROP, shouldBeInvalid);
-        }
-        if (DragState.currentRenderedDropZone.classList.contains(CSS_CLASSES.DRAG_OVER) !== shouldBeDragOver) {
-            DragState.currentRenderedDropZone.classList.toggle(CSS_CLASSES.DRAG_OVER, shouldBeDragOver);
-        }
-        
-        if (DragState.dropIndicator && DragState.dropIndicator.parentElement !== DragState.currentRenderedDropZone) {
-            DragState.currentRenderedDropZone.appendChild(DragState.dropIndicator);
-            // BLEEDING-EDGE FIX: Reset via Typed OM
-            setTransformY(DragState.dropIndicator, 0);
-        }
-    } else {
-         if (DragState.dropIndicator && DragState.dropIndicator.parentElement) {
-             DragState.dropIndicator.remove();
-         }
-    }
-
-    // 3. Drop Indicator Positioning (Write)
-    if (DragState.dropIndicator && DragState.currentRenderedDropZone) {
-        if (DragState.isDropValid) {
-            if (!DragState.dropIndicator.classList.contains('visible')) {
-                DragState.dropIndicator.classList.add('visible');
-            }
-            
-            // GPU Hardware Acceleration via Typed OM
-            if (DragState.nextIndicatorY !== DragState.currentIndicatorY && DragState.nextIndicatorY !== null) {
-                // BLEEDING-EDGE FIX: Use setTransformY instead of string interpolation
-                setTransformY(DragState.dropIndicator, DragState.nextIndicatorY);
-                DragState.currentIndicatorY = DragState.nextIndicatorY;
-            }
-            
-            if (DragState.nextReorderTargetId) DragState.dropIndicator.dataset.targetId = DragState.nextReorderTargetId;
-            if (DragState.nextReorderPosition) DragState.dropIndicator.dataset.position = DragState.nextReorderPosition;
-        } else {
-            if (DragState.dropIndicator.classList.contains('visible')) {
-                DragState.dropIndicator.classList.remove('visible');
+    // 2. Render Indicator & Highlights
+    if (DragState.renderedZone !== DragState.targetZone) {
+        // Cleanup old zone
+        if (DragState.renderedZone) {
+            DragState.renderedZone.classList.remove(CSS_CLASSES.DRAG_OVER, CSS_CLASSES.INVALID_DROP);
+            if (DragState.indicator && DragState.indicator.parentElement === DragState.renderedZone) {
+                DragState.indicator.remove();
             }
         }
+        DragState.renderedZone = DragState.targetZone;
     }
 
-    DragState.animationFrameId = requestAnimationFrame(_animationLoop);
-}
+    if (DragState.targetZone && DragState.indicator) {
+        // Apply Classes
+        const isSelfZone = DragState.targetZone.dataset.time === DragState.sourceTime;
+        const showDragOver = DragState.isValidDrop && !isSelfZone;
+        const showInvalid = !DragState.isValidDrop;
 
-function _startAnimationLoop() {
-    if (!DragState.animationFrameId) {
-        DragState.animationFrameId = requestAnimationFrame(_animationLoop);
-    }
-}
-
-function _stopAnimationLoop() {
-    if (DragState.animationFrameId) {
-        cancelAnimationFrame(DragState.animationFrameId);
-        DragState.animationFrameId = 0;
-    }
-    DragState.scrollVelocity = 0;
-}
-
-// --- PHYSICS ENGINE ---
-
-function _calculateDragState(e: DragEvent) {
-    const target = e.target as HTMLElement;
-    const clientY = e.clientY;
-    
-    let dropZone = target.closest<HTMLElement>(DOM_SELECTORS.DROP_ZONE);
-    if (!dropZone) {
-        const wrapper = target.closest<HTMLElement>('.habit-group-wrapper');
-        if (wrapper) {
-            dropZone = wrapper.querySelector<HTMLElement>(DOM_SELECTORS.DROP_ZONE);
+        if (DragState.targetZone.classList.contains(CSS_CLASSES.DRAG_OVER) !== showDragOver) {
+            DragState.targetZone.classList.toggle(CSS_CLASSES.DRAG_OVER, showDragOver);
         }
-    }
-    
-    // --- 1. CALCULAR VELOCIDADE POTENCIAL ---
-    let potentialVelocity = 0;
-    
-    if (clientY < _geo_topZoneEnd) {
-        const distance = clientY - _geo_containerTop;
-        let ratio = (_geo_effectiveZone - distance) * _geo_invEffectiveZone;
-        if (ratio < 0) ratio = 0; else if (ratio > 1) ratio = 1;
-        
-        const intensity = ratio * ratio;
-        potentialVelocity = -(intensity * MAX_SCROLL_SPEED);
-        if (potentialVelocity > -1 && potentialVelocity < 0) potentialVelocity = -1;
-
-    } else if (clientY > _geo_bottomZoneStart) {
-        const distance = _geo_containerBottom - clientY;
-        let ratio = (_geo_effectiveZone - distance) * _geo_invEffectiveZone;
-        if (ratio < 0) ratio = 0; else if (ratio > 1) ratio = 1;
-        
-        const intensity = ratio * ratio;
-        potentialVelocity = intensity * MAX_SCROLL_SPEED;
-        if (potentialVelocity < 1 && potentialVelocity > 0) potentialVelocity = 1;
-    }
-
-    // --- 2. VERIFICAÇÃO DE LIMITES ---
-    let finalVelocity = potentialVelocity | 0; // Force int
-    
-    if (finalVelocity < 0 && DragState.scrollTop <= 0) {
-        finalVelocity = 0;
-    } else if (finalVelocity > 0) {
-        if ((DragState.scrollTop + DragState.clientHeight) >= DragState.scrollHeight) {
-            finalVelocity = 0;
+        if (DragState.targetZone.classList.contains(CSS_CLASSES.INVALID_DROP) !== showInvalid) {
+            DragState.targetZone.classList.toggle(CSS_CLASSES.INVALID_DROP, showInvalid);
         }
-    }
-    
-    DragState.scrollVelocity = finalVelocity; 
 
-    // --- 3. DROP ZONE LOGIC ---
-    if (!DragState.cachedScheduleForDay || !DragState.draggedHabitOriginalTime || !dropZone) {
-        DragState.nextDropZoneTarget = null;
-        DragState.isDropValid = false;
-        return;
-    }
+        // Mount Indicator
+        if (DragState.indicator.parentElement !== DragState.targetZone) {
+            DragState.targetZone.appendChild(DragState.indicator);
+        }
 
-    DragState.nextDropZoneTarget = dropZone;
-    const newTime = dropZone.dataset.time as TimeOfDay;
-    
-    const isSameGroup = newTime === DragState.draggedHabitOriginalTime;
-    let isInvalidDrop = !isSameGroup && DragState.cachedScheduleForDay.includes(newTime);
-
-    if (!isSameGroup && DragState.cachedScheduleForDay.length <= 1) {
-        isInvalidDrop = false; 
-    }
-
-    DragState.isDropValid = !isInvalidDrop;
-
-    const cardTarget = target.closest<HTMLElement>(DOM_SELECTORS.HABIT_CARD);
-    
-    if (cardTarget && cardTarget !== DragState.draggedElement && cardTarget.parentElement === dropZone) {
-        const targetId = cardTarget.dataset.habitId;
-        const cachedProps = targetId ? cardRectCache.get(targetId) : null;
-        
-        let midY: number;
-        
-        if (cachedProps) {
-            // HIT TEST: Use cached geometry
-            const currentCardTop = _geo_containerTop + cachedProps.offsetTop - DragState.scrollTop;
-            midY = currentCardTop + (cachedProps.offsetHeight / 2);
+        // Position Indicator
+        if (DragState.isValidDrop) {
+            DragState.indicator.classList.add('visible');
+            
+            let topPos = 0;
+            
+            if (DragState.targetCard) {
+                // Posicionamento relativo ao cartão alvo
+                // offsetTop é relativo ao pai posicionado (o habit-group)
+                if (DragState.insertPos === 'before') {
+                    topPos = DragState.targetCard.offsetTop - DROP_INDICATOR_GAP;
+                } else {
+                    topPos = DragState.targetCard.offsetTop + DragState.targetCard.offsetHeight + DROP_INDICATOR_GAP;
+                }
+            } else {
+                // Fallback: Se não há cartão alvo, joga no final ou início dependendo da zona
+                // (Geralmente no final se a zona estiver vazia ou mouse no fim)
+                // Aqui simplificamos para 0 se vazio, ou append.
+                if (DragState.targetZone.children.length === 0) {
+                    topPos = DROP_INDICATOR_GAP;
+                } else {
+                    // Mantém onde estava ou define lógica padrão
+                    // Se não temos targetCard mas estamos na zona, pode ser no final.
+                    const lastChild = DragState.targetZone.lastElementChild as HTMLElement;
+                    if (lastChild && lastChild !== DragState.indicator) {
+                         topPos = lastChild.offsetTop + lastChild.offsetHeight + DROP_INDICATOR_GAP;
+                    }
+                }
+            }
+            
+            DragState.indicator.style.transform = `translate3d(0, ${topPos}px, 0)`;
         } else {
-            // Fallback (Rare)
-            const targetRect = cardTarget.getBoundingClientRect();
-            midY = targetRect.top + targetRect.height / 2;
+            DragState.indicator.classList.remove('visible');
         }
-        
-        const position = clientY < midY ? 'before' : 'after';
-        
-        let indicatorY: number;
-        
-        if (cachedProps) {
-            // UI: Use LOCAL offsetTop
-            indicatorY = position === 'before'
-                ? cachedProps.localTop - DROP_INDICATOR_GAP
-                : cachedProps.localTop + cachedProps.offsetHeight + DROP_INDICATOR_GAP;
-        } else {
-            // Fallback logic
-            const tRect = cardTarget.getBoundingClientRect();
-            const parentRect = DragState.currentRenderedDropZone?.getBoundingClientRect() || { top: 0 };
-            const relTop = tRect.top - parentRect.top; 
-            indicatorY = position === 'before'
-                ? relTop - DROP_INDICATOR_GAP
-                : relTop + tRect.height + DROP_INDICATOR_GAP;
-        }
-
-        DragState.nextIndicatorY = indicatorY - (DROP_INDICATOR_HEIGHT / 2);
-        DragState.nextReorderTargetId = targetId || null;
-        DragState.nextReorderPosition = position;
-    } else {
-        DragState.nextReorderTargetId = null;
-        DragState.nextReorderPosition = null;
-        DragState.nextIndicatorY = null; 
     }
+
+    DragState.rafId = requestAnimationFrame(_scrollLoop);
 }
 
 // --- EVENT HANDLERS ---
 
-function _determineAndExecuteDropAction() {
-    if (!DragState.draggedHabitId || !DragState.draggedHabitOriginalTime) return;
+const _handleDragOver = (e: DragEvent) => {
+    e.preventDefault(); // Obrigatório para permitir drop
+    if (!DragState.isActive || !DragState.container) return;
+
+    const y = e.clientY;
+
+    // --- 1. Calcular Scroll Speed (Dinâmico) ---
+    // PERF: Usa geometria cacheada no dragStart para evitar Layout Thrashing
+    const rect = DragState.containerRect;
     
-    const reorderTargetId = DragState.nextReorderTargetId;
-    const reorderPosition = DragState.nextReorderPosition;
-    const newTime = DragState.nextDropZoneTarget?.dataset.time as TimeOfDay | undefined;
+    if (rect) {
+        const { top, height } = rect;
+        const bottom = top + height;
+        
+        const topThreshold = top + SCROLL_ZONE_PX;
+        const bottomThreshold = bottom - SCROLL_ZONE_PX;
 
-    if (!newTime || !DragState.isDropValid) return;
-
-    const isMovingGroup = newTime !== DragState.draggedHabitOriginalTime;
-    const isReordering = reorderTargetId && DragState.draggedHabitId !== reorderTargetId;
-
-    if (isMovingGroup) {
-        triggerHaptic('medium');
-        handleHabitDrop(
-            DragState.draggedHabitId, 
-            DragState.draggedHabitOriginalTime, 
-            newTime,
-            isReordering && reorderTargetId ? { id: reorderTargetId, pos: reorderPosition! } : undefined
-        );
-    } else if (isReordering) {
-        triggerHaptic('medium');
-        reorderHabit(DragState.draggedHabitId, reorderTargetId!, reorderPosition!);
+        if (y < topThreshold) {
+            const ratio = (topThreshold - y) / SCROLL_ZONE_PX;
+            DragState.scrollSpeed = -Math.max(2, ratio * MAX_SCROLL_SPEED);
+        } else if (y > bottomThreshold) {
+            const ratio = (y - bottomThreshold) / SCROLL_ZONE_PX;
+            DragState.scrollSpeed = Math.max(2, ratio * MAX_SCROLL_SPEED);
+        } else {
+            DragState.scrollSpeed = 0;
+        }
     }
-}
 
-function _resetDragState() {
-    DragState.draggedElement = null;
-    DragState.draggedHabitId = null;
-    DragState.draggedHabitOriginalTime = null;
-    DragState.cachedScheduleForDay = null;
-    DragState.dropIndicator = null;
+    // --- 2. Identificar Drop Zone ---
+    const target = e.target as HTMLElement;
     
-    DragState.nextDropZoneTarget = null;
-    DragState.currentRenderedDropZone = null;
-    DragState.nextIndicatorY = null;
-    DragState.currentIndicatorY = null;
-    DragState.nextReorderTargetId = null;
-    DragState.nextReorderPosition = null;
-    DragState.isDropValid = false;
-    
-    DragState.cachedContainerRect = null;
-    cardRectCache.clear();
-}
+    // Tenta encontrar a zona de drop (grupo de hábitos)
+    let dropZone = target.closest<HTMLElement>(DOM_SELECTORS.DROP_ZONE);
+    if (!dropZone) {
+        // Fallback para wrapper se o mouse estiver no padding/gap
+        const wrapper = target.closest<HTMLElement>('.habit-group-wrapper');
+        if (wrapper) dropZone = wrapper.querySelector<HTMLElement>(DOM_SELECTORS.DROP_ZONE);
+    }
 
-const _handleBodyDragOver = (e: DragEvent) => {
-    e.preventDefault(); 
-    _calculateDragState(e);
+    if (!dropZone) {
+        DragState.targetZone = null;
+        DragState.isValidDrop = false;
+        return;
+    }
+
+    // --- 3. Validar Drop ---
+    const targetTime = dropZone.dataset.time as TimeOfDay;
+    const isSameGroup = targetTime === DragState.sourceTime;
     
-    if (DragState.isDropValid) {
-        e.dataTransfer!.dropEffect = 'move';
+    // Regra: Não pode dropar se o hábito já existe naquele horário (exceto se for o próprio grupo)
+    // Permite reordenar no mesmo grupo.
+    let isValid = true;
+    if (!isSameGroup && DragState.cachedSchedule?.includes(targetTime)) {
+        // Exceção: Se for mover, o horário de origem vai sumir. 
+        // Mas se ele JÁ existe no destino, não pode duplicar.
+        isValid = false;
+    }
+
+    DragState.targetZone = dropZone;
+    DragState.isValidDrop = isValid;
+
+    // --- 4. Calcular Posição de Inserção (Reorder) ---
+    // Encontrar o cartão mais próximo sob o cursor
+    const card = target.closest<HTMLElement>(DOM_SELECTORS.HABIT_CARD);
+    
+    if (card && card !== DragState.sourceEl && dropZone.contains(card)) {
+        const rect = card.getBoundingClientRect();
+        const midY = rect.top + (rect.height / 2);
+        
+        DragState.targetCard = card;
+        DragState.insertPos = y < midY ? 'before' : 'after';
     } else {
-        e.dataTransfer!.dropEffect = 'none';
+        // Se não está sobre um cartão, assumimos append no final se estiver na zona
+        DragState.targetCard = null;
+        DragState.insertPos = null;
     }
+    
+    // Atualiza o efeito do cursor
+    e.dataTransfer!.dropEffect = isValid ? 'move' : 'none';
 };
 
-const _handleBodyDrop = (e: DragEvent) => {
+const _handleDrop = (e: DragEvent) => {
     e.preventDefault();
-    document.body.classList.remove('is-dragging-active');
-    _determineAndExecuteDropAction();
+    if (!DragState.isActive || !DragState.isValidDrop || !DragState.sourceId || !DragState.sourceTime) return;
+
+    const targetTime = DragState.targetZone?.dataset.time as TimeOfDay;
+    if (!targetTime) return;
+
+    const isReorder = DragState.sourceTime === targetTime;
+    
+    // Executa Ação
+    if (isReorder) {
+        if (DragState.targetCard && DragState.targetCard.dataset.habitId) {
+            triggerHaptic('medium');
+            const targetId = DragState.targetCard.dataset.habitId;
+            reorderHabit(DragState.sourceId, targetId, DragState.insertPos || 'after');
+        }
+    } else {
+        triggerHaptic('medium');
+        // Drop em outro horário
+        let reorderInfo = undefined;
+        if (DragState.targetCard && DragState.targetCard.dataset.habitId) {
+            reorderInfo = {
+                id: DragState.targetCard.dataset.habitId,
+                pos: DragState.insertPos || 'after'
+            };
+        }
+        
+        handleHabitDrop(
+            DragState.sourceId,
+            DragState.sourceTime,
+            targetTime,
+            reorderInfo as any // Type assertion compatibilidade
+        );
+    }
+    
+    _reset();
 };
 
-const _cleanupDrag = () => {
-    DragState.draggedElement?.classList.remove(CSS_CLASSES.DRAGGING);
+const _reset = () => {
+    if (DragState.rafId) cancelAnimationFrame(DragState.rafId);
+    
     document.body.classList.remove('is-dragging-active');
+    DragState.sourceEl?.classList.remove(CSS_CLASSES.DRAGGING);
     
     if (DragState.container) {
         DragState.container.classList.remove('is-dragging');
-        DragState.container.removeEventListener('scroll', _onScroll);
     }
     
-    if (DragState.currentRenderedDropZone) {
-        DragState.currentRenderedDropZone.classList.remove(CSS_CLASSES.DRAG_OVER, CSS_CLASSES.INVALID_DROP);
+    if (DragState.renderedZone) {
+        DragState.renderedZone.classList.remove(CSS_CLASSES.DRAG_OVER, CSS_CLASSES.INVALID_DROP);
     }
     
-    DragState.dropIndicator?.remove();
-    _stopAnimationLoop();
+    DragState.indicator?.remove();
     
-    document.body.removeEventListener('dragover', _handleBodyDragOver);
-    document.body.removeEventListener('drop', _handleBodyDrop);
-    document.body.removeEventListener('dragend', _cleanupDrag);
+    // Remove Global Listeners
+    document.removeEventListener('dragover', _handleDragOver);
+    document.removeEventListener('drop', _handleDrop);
+    document.removeEventListener('dragend', _reset);
 
-    _resetDragState();
+    // Clear State
+    DragState.isActive = false;
+    DragState.sourceEl = null;
+    DragState.targetZone = null;
+    DragState.targetCard = null;
+    DragState.renderedZone = null;
+    DragState.scrollSpeed = 0;
+    DragState.containerRect = null; // Clear Cache
 };
 
 const _handleDragStart = (e: DragEvent) => {
@@ -430,67 +296,75 @@ const _handleDragStart = (e: DragEvent) => {
         e.preventDefault();
         return;
     }
+
     const target = e.target as HTMLElement;
-    const cardContent = target.closest<HTMLElement>(DOM_SELECTORS.HABIT_CONTENT_WRAPPER);
-    const card = cardContent?.closest<HTMLElement>(DOM_SELECTORS.HABIT_CARD);
+    // Garante que pegamos o cartão mesmo clicando dentro
+    const card = target.closest<HTMLElement>(DOM_SELECTORS.HABIT_CARD);
+    if (!card || !card.dataset.habitId || !card.dataset.time) return;
+
+    // Inicializa Estado
+    DragState.isActive = true;
+    DragState.sourceEl = card;
+    DragState.sourceId = card.dataset.habitId;
+    DragState.sourceTime = card.dataset.time as TimeOfDay;
     
-    if (card && cardContent && card.dataset.habitId && card.dataset.time) {
-        triggerHaptic('light');
-        
-        DragState.draggedElement = card;
-        DragState.draggedHabitId = card.dataset.habitId;
-        DragState.draggedHabitOriginalTime = card.dataset.time as TimeOfDay;
-        
-        const draggedHabitObject = state.habits.find(h => h.id === DragState.draggedHabitId) || null;
-        if (draggedHabitObject) {
-            DragState.cachedScheduleForDay = getEffectiveScheduleForHabitOnDate(draggedHabitObject, state.selectedDate);
-        }
-        
-        if (DragState.container) {
-            DragState.cachedContainerRect = DragState.container.getBoundingClientRect();
-            // Pre-calculate physics & layout
-            _captureGeometryCache();
-            DragState.container.addEventListener('scroll', _onScroll, { passive: true });
-        }
-
-        e.dataTransfer!.setData('text/plain', DragState.draggedHabitId);
-        e.dataTransfer!.effectAllowed = 'move';
-
-        const dragImage = cardContent.cloneNode(true) as HTMLElement;
-        dragImage.classList.add(CSS_CLASSES.DRAG_IMAGE_GHOST);
-        
-        const computedStyle = window.getComputedStyle(cardContent);
-        dragImage.style.width = `${cardContent.offsetWidth}px`;
-        dragImage.style.height = `${cardContent.offsetHeight}px`;
-        dragImage.style.backgroundColor = computedStyle.backgroundColor;
-        dragImage.style.borderRadius = computedStyle.borderRadius;
-        dragImage.style.color = computedStyle.color;
-
-        document.body.appendChild(dragImage);
-        e.dataTransfer!.setDragImage(dragImage, e.offsetX, e.offsetY);
-        setTimeout(() => document.body.removeChild(dragImage), 0);
-        
-        DragState.dropIndicator = document.createElement('div');
-        DragState.dropIndicator.className = 'drop-indicator';
-        DragState.dropIndicator.style.top = '0';
-        DragState.dropIndicator.style.left = 'var(--space-sm)';
-        DragState.dropIndicator.style.right = 'var(--space-sm)';
-        
-        document.body.addEventListener('dragover', _handleBodyDragOver);
-        document.body.addEventListener('drop', _handleBodyDrop);
-        document.body.addEventListener('dragend', _cleanupDrag, { once: true });
-
-        _startAnimationLoop();
-
-        setTimeout(() => {
-            document.body.classList.add('is-dragging-active');
-            card.classList.add(CSS_CLASSES.DRAGGING);
-            if (DragState.container) DragState.container.classList.add('is-dragging');
-        }, 0);
+    // PERF: Captura a geometria do container UMA VEZ no início.
+    // getBoundingClientRect é custoso, não devemos chamar no dragOver (loop).
+    if (DragState.container) {
+        DragState.containerRect = DragState.container.getBoundingClientRect();
     }
+    
+    // Cache de dados do hábito para validação
+    const habit = state.habits.find(h => h.id === DragState.sourceId);
+    if (habit) {
+        DragState.cachedSchedule = getEffectiveScheduleForHabitOnDate(habit, state.selectedDate);
+    }
+
+    // Configura Drag Data
+    e.dataTransfer!.effectAllowed = 'move';
+    e.dataTransfer!.setData('text/plain', DragState.sourceId);
+
+    // Cria Ghost Image Customizada (Visual)
+    const content = card.querySelector<HTMLElement>(DOM_SELECTORS.HABIT_CONTENT_WRAPPER);
+    if (content) {
+        const ghost = content.cloneNode(true) as HTMLElement;
+        ghost.classList.add(CSS_CLASSES.DRAG_IMAGE_GHOST);
+        ghost.style.width = `${content.offsetWidth}px`;
+        ghost.style.height = `${content.offsetHeight}px`;
+        
+        // Copia estilos computados críticos
+        const styles = window.getComputedStyle(content);
+        ghost.style.backgroundColor = styles.backgroundColor;
+        
+        document.body.appendChild(ghost);
+        e.dataTransfer!.setDragImage(ghost, e.offsetX, e.offsetY);
+        
+        // Cleanup ghost imediato (o navegador já tirou o snapshot)
+        requestAnimationFrame(() => ghost.remove());
+    }
+
+    // Cria Indicador de Drop
+    DragState.indicator = document.createElement('div');
+    DragState.indicator.className = 'drop-indicator';
+
+    // Configura Listeners Globais
+    document.addEventListener('dragover', _handleDragOver);
+    document.addEventListener('drop', _handleDrop);
+    document.addEventListener('dragend', _reset);
+
+    // UI Updates
+    triggerHaptic('light');
+    requestAnimationFrame(() => {
+        card.classList.add(CSS_CLASSES.DRAGGING);
+        document.body.classList.add('is-dragging-active');
+        if (DragState.container) DragState.container.classList.add('is-dragging');
+        _scrollLoop();
+    });
 };
 
-export function setupDragHandler(habitContainer: HTMLElement) {
-    DragState.container = habitContainer;
-    habitContainer.addEventListener('dragstart', _handleDragStart);
+export function setupDragHandler(container: HTMLElement) {
+    DragState.container = container;
+    // Otimização: Apenas escutamos dragstart no container.
+    // O resto é delegado para document durante o arrasto.
+    container.addEventListener('dragstart', _handleDragStart);
 }

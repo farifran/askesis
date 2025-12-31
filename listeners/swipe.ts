@@ -24,7 +24,6 @@
 
 import { triggerHaptic } from '../utils';
 import { DOM_SELECTORS, CSS_CLASSES } from '../render/constants';
-import { setTransformX } from '../render/dom';
 
 // --- CONSTANTS (Int32) ---
 const DIR_NONE = 0;
@@ -116,7 +115,19 @@ function _blockSubsequentClick(deltaX: number) {
         e.preventDefault();
         window.removeEventListener('click', blockClick, true);
     };
+    
+    // Capture phase to intercept before bubbles reach the card
     window.addEventListener('click', blockClick, true);
+
+    // SAFETY VALVE [2025-05-02]: Timeout para limpar o bloqueador.
+    // O problema descrito pelo usuário ("delay entre instruções") ocorre porque o navegador
+    // pode não disparar um evento 'click' após um gesto de swipe agressivo (devido ao preventDefault no move).
+    // Se isso acontecer, o listener 'blockClick' ficava pendurado, comendo o PRÓXIMO clique legítimo do usuário.
+    // Adicionamos um TTL (Time To Live) de 100ms. Se o clique fantasma não chegar nesse tempo,
+    // assumimos que o gesto acabou e liberamos a UI para novas interações.
+    setTimeout(() => {
+        window.removeEventListener('click', blockClick, true);
+    }, 100);
 }
 
 // --- HOT PATH: RENDER LOOP ---
@@ -135,8 +146,8 @@ const _updateVisualsStatic = () => {
     if (SwipeState.wasOpenLeft) translateX = (translateX + SwipeState.actionWidth) | 0;
     if (SwipeState.wasOpenRight) translateX = (translateX - SwipeState.actionWidth) | 0;
 
-    // BLEEDING-EDGE FIX: Use Typed OM for GPU transform
-    setTransformX(SwipeState.content, translateX);
+    // Direct DOM Write
+    SwipeState.content.style.transform = `translateX(${translateX}px)`;
 
     // Haptics Logic
     const absDelta = deltaX < 0 ? -deltaX : deltaX;

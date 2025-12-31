@@ -1,0 +1,98 @@
+
+/* --- CABEÇALHO (FIXED TOP) --- */
+.app-header {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+    padding-block-start: var(--space-section);
+    
+    /* PADDING UPDATE [2025-02-26]: Increased from 0 to --space-md to separate quote from habits */
+    padding-block-end: var(--space-md);
+    
+    padding-inline: var(--space-lg); /* Restore horizontal padding */
+    flex-shrink: 0; /* Prevent shrinking */
+    
+    /* LAYOUT LOCKING */
+    z-index: var(--z-index-header);
+    background-color: var(--bg-color); /* Ensure opacity */
+    
+    /* VISUAL UPDATE [2025-02-26]: Removed shadow to blend seamlessly with app background */
+    box-shadow: none;
+}
+
+.header-top {
+    display: flex;
+    align-items: center;
+    gap: var(--space-lg);
+}
+
+.header-icon-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-xs);
+    flex-shrink: 0;
+}
+/* MELHORIA DE MANUTENIBILIDADE [2024-10-29]: Unifica o tamanho dos botões de ícone. A regra específica para #ai-eval-btn foi removida por ser redundante. */
+.header-icon-stack .icon-btn {
+    width: 38px;
+    height: 38px;
+    font-size: 20px;
+}
+.header-icon-stack #ai-eval-btn svg {
+    width: 22px;
+    height: 22px;
+}
+
+.header-bottom {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xl);
+    justify-content: space-between;
+    margin-block-start: var(--space-md);
+}
+
+.app-header h2 {
+    font-size: 28px;
+    font-weight: 700;
+    position: relative;
+    top: -5px;
+    white-space: nowrap;
+    flex-shrink: 0;
+    /* UX: Indica interatividade (retornar para Hoje) */
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.header-title-mobile {
+    display: none;
+}
+
+.stoic-quote {
+    font-size: 13px;
+    font-style: italic;
+    color: var(--text-secondary);
+    min-height: 2.2em;
+    line-height: 1.4;
+    transition: opacity 0.5s ease-in-out, color var(--transition-duration);
+    opacity: 0;
+    text-align: left;
+    margin-block-start: 0;
+    /* UX: Indica interatividade (clique para copiar) */
+    cursor: pointer;
+}
+
+/* TYPOGRAPHY TWEAK [2025-05-02]: Reduz fonte para 12px em mobile para melhor densidade */
+@media (max-width: 480px) {
+    .stoic-quote {
+        font-size: 12px;
+    }
+}
+
+.stoic-quote.visible {
+    opacity: 1;
+}
+.stoic-quote:active {
+    opacity: 0.7;
+}

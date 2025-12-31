@@ -12,13 +12,15 @@
  * Este módulo roda na thread principal e orquestra mutações de estado seguidas de atualizações de UI.
  * O foco é manter a responsividade da UI (60fps), delegando tarefas pesadas.
  * 
- * ARQUITETURA (Kernel-Managed IO):
- * - **Unified Data Access:** Toda a escrita de status e metas agora passa pelo `kernel`, que decide
- *   internamente se deve usar Atomics (Hot Path) ou Objetos (Cold Path).
- * - **Zero-Allocation:** Usa Pools estáticos e evita closures em loops críticos.
+ * ARQUITETURA (MVC Controller & V8 Optimization):
+ * - **Responsabilidade Única:** Receber intenções do usuário (via listeners), validar regras de negócio,
+ *   mutar o estado global (AppState) e disparar a renderização/persistência.
+ * - **Monomorphism:** Evita o uso de `delete` em objetos quentes para manter Hidden Classes estáveis.
+ * - **Zero-Allocation:** Usa Pools estáticos para arrays temporários em operações de lote.
+ * - **Static Transaction State:** Callbacks de modais usam um Singleton de contexto para evitar closures.
  * 
  * DEPENDÊNCIAS CRÍTICAS:
- * - `state.ts`: A estrutura de dados mutável e o Kernel.
+ * - `state.ts`: A estrutura de dados mutável.
  * - `services/persistence.ts`: Garante a durabilidade dos dados.
  */
 
@@ -29,6 +31,7 @@ import {
     TimeOfDay, 
     ensureHabitDailyInfo, 
     ensureHabitInstanceData, 
+    getNextStatus, 
     HabitStatus,
     clearScheduleCache,
     clearActiveHabitsCache,
@@ -40,15 +43,7 @@ import {
     getHabitDailyInfoForDate,
     AppState,
     isDateLoading,
-    HabitDailyInfo,
-    resetKernel,
-    kernel,
-    KernelHabitStatus,
-    MAX_DAYS_WINDOW,
-    isDateInKernelRange,
-    getNextStatus,
-    kernelToStatus,
-    statusToKernel
+    HabitDailyInfo
 } from './state';
 import { saveState, clearLocalPersistence } from './services/persistence';
 import { PREDEFINED_HABITS } from './data/predefinedHabits';
@@ -192,6 +187,29 @@ function _requestFutureScheduleChange(
     }
     
     _finalizeScheduleUpdate(true);
+}
+
+/**
+ * Helper to centralize status mutations and side effects.
+ */
+function _updateHabitInstanceStatus(
+    habit: Habit, 
+    instance: HabitDayData, 
+    newStatus: HabitStatus
+): boolean {
+    if (instance.status === newStatus) return false;
+
+    instance.status = newStatus;
+
+    // Special handling for 'Check' type habits
+    if (habit.goal.type === 'check') {
+        if (newStatus === 'completed') {
+            instance.goalOverride = 1;
+        } else {
+            instance.goalOverride = undefined;
+        }
+    }
+    return true;
 }
 
 /**
@@ -700,9 +718,6 @@ export async function resetApplicationData() {
     state.pending21DayHabitIds = [];
     state.pendingConsolidationHabitIds = [];
     
-    // CRITICAL: Reset Kernel Memory to prevent zombie state
-    resetKernel();
-    
     await clearLocalPersistence();
     clearKey();
     
@@ -883,58 +898,34 @@ export function importData() {
     input.click();
 }
 
-/**
- * [HFT REFACTOR] toggleHabitStatus (Logic Hardening)
- * 
- * Substitui manipulação direta e bifurcação de lógica por chamadas unificadas ao Kernel.
- * O Kernel agora decide internamente se usa Atomics (Hot) ou Objetos (Cold).
- */
 export function toggleHabitStatus(habitId: string, time: TimeOfDay, date: string) {
+    const habit = state.habits.find(h => h.id === habitId);
+    if (!habit) return;
+
     if (isDateLoading(date)) {
         console.warn('Attempted to toggle habit while data is loading.');
         return;
     }
 
-    const hIdx = kernel.getHabitIndex(habitId);
-    if (hIdx === -1) return; // Zombie Habit protection
-
-    // 1. UNIFIED KERNEL CALLS
-    // Lê o status atual (abstraído pelo kernel)
-    const currentKernelStatus = kernel.getDailyStatus(habitId, date, time);
+    const instance = ensureHabitInstanceData(date, habitId, time);
+    const oldStatus = instance.status;
+    const newStatus = getNextStatus(oldStatus);
     
-    // Lógica Branchless para alternância cíclica
-    const nextKernelStatus = (currentKernelStatus + 1) % 3;
-    
-    // Escreve o novo status (Kernel roteia para Hot/Cold storage)
-    kernel.setDailyStatus(habitId, date, time, nextKernelStatus);
-
-    // Estrutura de dados para persistência e lógica legada
-    // Garante que o objeto existe para travessia, mesmo que o valor venha do Kernel
-    ensureHabitInstanceData(date, habitId, time);
-    
-    // Special Rule for 'Check' habits
-    const habit = state.habits.find(h => h.id === habitId);
-    if (habit && habit.goal.type === 'check') {
-        const goalValue = (nextKernelStatus === KernelHabitStatus.COMPLETED) ? 1 : 0;
-        kernel.setDailyGoal(habit.id, date, time, goalValue);
+    if (_updateHabitInstanceStatus(habit, instance, newStatus)) {
+        invalidateCachesForDateChange(date, [habitId]);
+        
+        if (newStatus === 'completed') {
+            _checkStreakMilestones(habit, date);
+        }
+        
+        state.uiDirtyState.calendarVisuals = true;
+        state.uiDirtyState.habitListStructure = true;
+        
+        saveState();
+        
+        document.dispatchEvent(new CustomEvent('render-app'));
+        document.dispatchEvent(new CustomEvent('habitsChanged'));
     }
-
-    // 6. UI & Caching Updates
-    invalidateCachesForDateChange(date, [habitId]);
-    
-    // Check milestones only if completed
-    const finalStatus = kernel.getDailyStatus(habitId, date, time);
-    if (finalStatus === KernelHabitStatus.COMPLETED && habit) {
-        _checkStreakMilestones(habit, date);
-    }
-    
-    state.uiDirtyState.calendarVisuals = true;
-    state.uiDirtyState.habitListStructure = true;
-    
-    saveState();
-    
-    document.dispatchEvent(new CustomEvent('render-app'));
-    document.dispatchEvent(new CustomEvent('habitsChanged'));
 }
 
 export function setGoalOverride(habitId: string, date: string, time: TimeOfDay, value: number) {
@@ -943,11 +934,8 @@ export function setGoalOverride(habitId: string, date: string, time: TimeOfDay, 
         return;
     }
 
-    // Ensure structure exists for persistence layer traversal
-    ensureHabitInstanceData(date, habitId, time);
-    
-    // Unified Kernel Write
-    kernel.setDailyGoal(habitId, date, time, value);
+    const instance = ensureHabitInstanceData(date, habitId, time);
+    instance.goalOverride = value;
     
     invalidateCachesForDateChange(date, [habitId]);
     
@@ -981,12 +969,6 @@ export function requestHabitTimeRemoval(habitId: string, time: TimeOfDay) {
     );
 }
 
-/**
- * [HFT REFACTOR] markAllHabitsForDate (Batch Processing)
- * 
- * Executa uma mutação em lote vetorizada.
- * Coleta todos os índices relevantes e aplica mudanças via Kernel.
- */
 export function markAllHabitsForDate(dateISO: string, status: HabitStatus): boolean {
     if (isDateLoading(dateISO)) {
         console.warn('Attempted to batch update habits while data is loading.');
@@ -1012,10 +994,6 @@ export function markAllHabitsForDate(dateISO: string, status: HabitStatus): bool
 
     const habits = state.habits;
     const len = habits.length;
-    
-    // Target Enum
-    // REFACTOR [2025-04-26]: Deduplicated logic using shared converter.
-    const targetKernelStatus = statusToKernel(status);
 
     for (let i = 0; i < len; i = (i + 1) | 0) {
         const habit = habits[i];
@@ -1028,28 +1006,19 @@ export function markAllHabitsForDate(dateISO: string, status: HabitStatus): bool
         const schedLen = schedule.length;
         if (schedLen === 0) continue;
 
-        // Ensure legacy object structure exists for persistence traversal
         hotDayData[habit.id] ??= { instances: {}, dailySchedule: undefined };
+        const dailyInfo = hotDayData[habit.id];
         
         let habitChanged = false;
 
         for (let j = 0; j < schedLen; j = (j + 1) | 0) {
             const time = schedule[j];
+            dailyInfo.instances[time] ??= { status: 'pending', goalOverride: undefined, note: undefined };
+            const instance = dailyInfo.instances[time]!;
             
-            // Read via Kernel Unified Accessor
-            const currentVal = kernel.getDailyStatus(habit.id, dateISO, time);
-            
-            if (currentVal !== targetKernelStatus) {
-                // Write via Kernel Unified Accessor
-                kernel.setDailyStatus(habit.id, dateISO, time, targetKernelStatus);
-                
+            if (_updateHabitInstanceStatus(habit, instance, status)) {
                 habitChanged = true;
                 changed = true;
-                
-                if (habit.goal.type === 'check') {
-                    const goalValue = (targetKernelStatus === KernelHabitStatus.COMPLETED) ? 1 : 0;
-                    kernel.setDailyGoal(habit.id, dateISO, time, goalValue);
-                }
             }
         }
 
@@ -1064,6 +1033,7 @@ export function markAllHabitsForDate(dateISO: string, status: HabitStatus): bool
         invalidateCachesForDateChange(dateISO, _batchHabitIdsPool);
         
         if (status === 'completed') {
+            // PERF: Iterate references directly to avoid lookup overhead
             const batchLen = _batchHabitsRefPool.length;
             for (let k = 0; k < batchLen; k = (k + 1) | 0) {
                 _checkStreakMilestones(_batchHabitsRefPool[k], dateISO);

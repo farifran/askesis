@@ -18,7 +18,7 @@
 
 import { ui } from '../render/ui';
 import { state, Habit, TimeOfDay } from '../state';
-import { getSmartGoalForHabit, getEffectiveScheduleForHabitOnDate } from '../services/selectors';
+import { getCurrentGoalForInstance, getEffectiveScheduleForHabitOnDate } from '../services/selectors';
 import { openNotesModal, renderExploreHabits, openModal } from '../render';
 import {
     toggleHabitStatus,
@@ -136,7 +136,7 @@ function startGoalEditing(habit: Habit, time: TimeOfDay, wrapper: HTMLElement) {
     GoalEditState.dateISO = state.selectedDate;
     GoalEditState.isSaving = 0;
 
-    const currentGoal = getSmartGoalForHabit(habit, state.selectedDate, time);
+    const currentGoal = getCurrentGoalForInstance(habit, state.selectedDate, time);
     
     // Swap to input
     wrapper.innerHTML = `<input type="number" class="goal-input-inline" value="${currentGoal}" min="1" step="1" inputmode="numeric" pattern="[0-9]*" />`;
@@ -150,6 +150,36 @@ function startGoalEditing(habit: Habit, time: TimeOfDay, wrapper: HTMLElement) {
     // Attach static handlers
     input.addEventListener('blur', _handleGoalBlur);
     input.addEventListener('keydown', _handleGoalKeydown);
+}
+
+// --- RIPPLE EFFECT LOGIC ---
+// Creates a visual ripple effect on click
+function _createRipple(event: MouseEvent, target: HTMLElement) {
+    const rippleContainer = target.querySelector('.ripple-container');
+    if (!rippleContainer) return;
+
+    const circle = document.createElement('span');
+    const diameter = Math.max(target.clientWidth, target.clientHeight);
+    const radius = diameter / 2;
+
+    const rect = target.getBoundingClientRect();
+    
+    // Calculate position relative to the element
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+
+    circle.style.width = circle.style.height = `${diameter}px`;
+    circle.style.left = `${x - radius}px`;
+    circle.style.top = `${y - radius}px`;
+    circle.classList.add('ripple');
+
+    // Remove ripple after animation finishes
+    const ripple = rippleContainer.appendChild(circle);
+    
+    // Use timeout matching CSS animation duration (0.6s)
+    setTimeout(() => {
+        ripple.remove();
+    }, 600);
 }
 
 // --- STATIC EVENT HANDLERS (Card Interaction) ---
@@ -226,7 +256,7 @@ const _handleContainerClick = (e: MouseEvent) => {
         const action = interactiveElement.dataset.action as 'increment' | 'decrement';
         triggerHaptic('light');
         
-        const currentGoal = getSmartGoalForHabit(habit, state.selectedDate, time);
+        const currentGoal = getCurrentGoalForInstance(habit, state.selectedDate, time);
         const newGoal = (action === 'increment') 
             ? currentGoal + GOAL_STEP 
             : Math.max(1, currentGoal - GOAL_STEP);
@@ -267,6 +297,10 @@ const _handleContainerClick = (e: MouseEvent) => {
         }
 
         const currentStatus = card.classList.contains(CSS_CLASSES.COMPLETED) ? 'completed' : (card.classList.contains(CSS_CLASSES.SNOOZED) ? 'snoozed' : 'pending');
+        
+        // Trigger Ripple Effect
+        _createRipple(e, interactiveElement);
+        
         triggerHaptic(currentStatus === 'pending' ? 'success' : 'light');
         
         toggleHabitStatus(habitId, time, state.selectedDate);

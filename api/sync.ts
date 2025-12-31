@@ -12,6 +12,7 @@
  * Otimizado para "Zero-Cost Abstractions".
  * - Headers e Erros estáticos são pré-alocados.
  * - Lógica "Inline" para evitar overhead de chamadas de função desnecessárias.
+ * - [2025-05-01] ATOMICIDADE: Implementado Script Lua para garantir integridade em transações concorrentes.
  */
 
 import { kv } from '@vercel/kv';
@@ -22,6 +23,54 @@ export const config = {
 
 // --- CONSTANTS & CONFIG ---
 const MAX_PAYLOAD_SIZE = 1 * 1024 * 1024; // 1MB Limit
+
+// --- LUA SCRIPTS ---
+// Script para executar a lógica de comparação de timestamp e escrita atomicamente no Redis.
+// Isso previne condições de corrida onde uma leitura antiga sobrescreve uma escrita nova.
+// Retorna um array: [STATUS, DADOS_OPCIONAIS]
+const LUA_ATOMIC_UPDATE = `
+local key = KEYS[1]
+local newPayload = ARGV[1]
+local newTs = tonumber(ARGV[2])
+
+local currentVal = redis.call("GET", key)
+
+if not currentVal then
+    redis.call("SET", key, newPayload)
+    return { "OK" }
+end
+
+-- Decodifica apenas o necessário se possível, mas cjson.decode parseia tudo.
+-- Usamos pcall (protected call) para evitar crash se o JSON do banco estiver corrompido.
+local status, currentJson = pcall(cjson.decode, currentVal)
+
+if not status then
+    -- Se o JSON no banco estiver corrompido, sobrescrevemos (Auto-healing)
+    redis.call("SET", key, newPayload)
+    return { "OK" }
+end
+
+local currentTs = tonumber(currentJson.lastModified)
+
+if not currentTs then
+    -- Se não houver timestamp válido, assume dado legado/inválido e sobrescreve
+    redis.call("SET", key, newPayload)
+    return { "OK" }
+end
+
+if newTs == currentTs then
+    return { "NOT_MODIFIED" }
+end
+
+if newTs < currentTs then
+    -- Cliente está desatualizado: Retorna o dado do servidor para resolução de conflito
+    return { "CONFLICT", currentVal }
+end
+
+-- Last Write Wins (se newTs > currentTs)
+redis.call("SET", key, newPayload)
+return { "OK" }
+`;
 
 // --- STATIC OBJECTS (Zero-Allocation) ---
 const CORS_HEADERS = {
@@ -107,32 +156,43 @@ export default async function handler(req: Request) {
                 return new Response(ERR_PAYLOAD_TOO_LARGE, { status: 413, headers: HEADERS_JSON });
             }
 
-            // Optimistic Locking
-            const storedData = await kv.get<SyncPayload>(dataKey);
+            // ATOMIC OPERATION (Redis Lua)
+            // Serializa o payload uma vez para enviar ao Redis
+            const payloadStr = JSON.stringify(clientPayload);
+            
+            // kv.eval(script, keys[], args[])
+            // O cast é necessário pois a tipagem de retorno do eval é genérica
+            const result = await kv.eval(
+                LUA_ATOMIC_UPDATE, 
+                [dataKey], 
+                [payloadStr, clientPayload.lastModified]
+            ) as [string, string?];
 
-            if (storedData) {
-                // Idempotency: Se timestamp é igual, não gasta escrita (304 Not Modified)
-                if (clientPayload.lastModified === storedData.lastModified) {
-                    return new Response(null, { status: 304, headers: CORS_HEADERS });
-                }
-                
-                // Conflict: Cliente está desatualizado (409 Conflict)
-                if (clientPayload.lastModified < storedData.lastModified) {
-                    return new Response(JSON.stringify(storedData), {
-                        status: 409, 
-                        headers: HEADERS_JSON,
-                    });
-                }
+            const [status, conflictData] = result;
+
+            if (status === 'OK') {
+                // Sucesso ou Auto-healing
+                return new Response(SUCCESS_JSON, {
+                    status: 200,
+                    headers: HEADERS_JSON,
+                });
+            }
+            
+            if (status === 'NOT_MODIFIED') {
+                // Idempotência
+                return new Response(null, { status: 304, headers: CORS_HEADERS });
             }
 
-            // Write (Last Write Wins if timestamp is newer)
-            await kv.set(dataKey, clientPayload);
-            
-            // Static Success Response
-            return new Response(SUCCESS_JSON, {
-                status: 200,
-                headers: HEADERS_JSON,
-            });
+            if (status === 'CONFLICT' && conflictData) {
+                // Retorna o dado mais novo do servidor para que o cliente faça o Smart Merge
+                return new Response(conflictData, {
+                    status: 409, 
+                    headers: HEADERS_JSON,
+                });
+            }
+
+            // Fallback para retorno desconhecido do Lua
+            throw new Error(`Unexpected Lua result: ${status}`);
         }
 
         // Fallback

@@ -1,0 +1,179 @@
+
+/* --- COMPONENTES: GRÁFICO DE EVOLUÇÃO (AUTO FOOTER) --- */
+.chart-container {
+    padding: var(--space-lg);
+    background-color: var(--bg-color); /* TESTE: Alterado para preto puro a pedido do usuário */
+    border-radius: var(--border-radius-large);
+    /* BUGFIX [2025-04-24]: Alterado para 'paint' para permitir que tooltips transbordem visualmente sem serem cortados pelo layout. */
+    contain: paint;
+    /* PERFORMANCE [2025-01-18]: Otimização para evitar renderização quando fora da tela. */
+    content-visibility: auto;
+    contain-intrinsic-size: 80px;
+    
+    /* FIX: FLEX ITEM */
+    flex-shrink: 0; /* Nunca encolhe, sempre visível */
+    max-height: none;
+    overflow: visible;
+    
+    /* UI FIX: Margem superior para separar dos cartões.
+       Como o container de hábitos não força altura total, o gráfico sobe
+       naturalmente para ficar perto dos cartões quando há poucos. */
+    /* Reduced margin-top from --space-3xl (48px) to --space-xl (24px) for tighter layout */
+    margin-top: var(--space-lg);
+    margin-inline: var(--space-lg); 
+    
+    /* Margem inferior para não colar na borda da tela */
+    /* Reduced margin-bottom from --space-lg (16px) to --space-sm (8px) */
+    margin-bottom: var(--space-sm);
+    
+    /* Estilos visuais normais (não flutuante) */
+    z-index: var(--z-index-footer);
+    box-shadow: none;
+    
+    /* [2025-02-23] Add border matching habit cards */
+    border: 1px solid rgba(255, 255, 255, 0.3);
+}
+.chart-header {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    /* VISUAL UPDATE [2025-03-22]: Margin removed to align chart top with title */
+    margin-bottom: 0;
+    /* LAYOUT UPDATE [2025-03-25]: Ajustes para sobreposição visual */
+    position: relative;
+    z-index: 10;
+    pointer-events: none; /* Permite clicar no gráfico atrás do texto */
+    padding-bottom: 0;
+    /* Texto legível sobre o gráfico */
+    text-shadow: 0 1px 2px var(--bg-color); 
+}
+/* REFINAMENTO DE UI [2024-11-25]: Estilos atualizados para acomodar um novo cabeçalho de gráfico com título e subtítulo. */
+.chart-title {
+    /* RESTAURADO: Título 'Askesis' */
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1.2;
+}
+/* LAYOUT FIX [2025-03-27]: Flex container for title and indicator to allow horizontal alignment. */
+.chart-title-row {
+    display: flex;
+    align-items: baseline;
+    gap: 30px; /* Requested 30px gap */
+}
+.app-subtitle {
+    font-size: 13px;
+    font-style: italic;
+    color: var(--text-secondary);
+    margin-bottom: var(--space-xs);
+    line-height: 1.4;
+}
+
+/* TYPOGRAPHY TWEAK [2025-05-02]: Reduz fonte para 12px em mobile */
+@media (max-width: 480px) {
+    .app-subtitle {
+        font-size: 12px;
+    }
+}
+
+.chart-title strong {
+    color: var(--accent-green);
+}
+.chart-data-view, .chart-empty-state {
+    display: none;
+}
+.chart-container:not(.is-empty) .chart-data-view {
+    display: block;
+    /* LAYOUT UPDATE [2025-03-25]: Puxa o gráfico para cima para sobrepor o cabeçalho */
+    margin-top: -75px; 
+    position: relative;
+    /* BUGFIX [2025-04-24]: Aumenta o z-index para 15, garantindo que o gráfico e seu tooltip apareçam sobre o cabeçalho (z-index 10). */
+    z-index: 15;
+}
+.chart-container.is-empty .chart-empty-state {
+    display: flex;
+}
+.chart-wrapper { 
+    position: relative; 
+    /* VISUAL UPDATE [2025-03-25]: Adjusted to 45px to match design spec */
+    height: 75px; 
+    /* UX [2025-01-24]: Permite scroll vertical (pan-y) mas captura horizontal */
+    touch-action: pan-y; 
+    user-select: none; 
+}
+.chart-svg { 
+    width: 100%; 
+    height: 100%;
+    /* FIX [2025-03-22]: Permite que o stroke ultrapasse levemente a área de visualização (para não cortar a ponta da linha ou sombras) */
+    overflow: visible;
+}
+.chart-area { fill: url(#chart-gradient); }
+.chart-line { 
+    fill: none; 
+    stroke: var(--accent-blue); 
+    stroke-width: 2.5; 
+    stroke-linecap: round; 
+    stroke-linejoin: round;
+    /* VISUAL ENHANCEMENT: Adiciona um brilho sutil para fazer a linha se destacar. */
+    filter: drop-shadow(0 0 3px var(--accent-blue));
+}
+.chart-axis-labels {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-size: 11px;
+    color: var(--text-tertiary);
+    margin-block-start: var(--space-xs);
+}
+.chart-tooltip {
+    position: absolute; 
+    /* PERFORMANCE [2025-01-18]: Fixa posição em 0 e move via transform para evitar layout thrashing. */
+    top: 0; left: 0; 
+    background-color: var(--bg-color);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-base);
+    padding: var(--space-sm) var(--space-md); font-size: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    pointer-events: none; opacity: 0;
+    transition: opacity var(--transition-duration);
+    /* PERFORMANCE [2025-01-18]: Uso de will-change para promoção de camada GPU. */
+    will-change: transform, opacity;
+    z-index: var(--z-index-tooltip); min-width: 150px;
+}
+.chart-tooltip.visible { opacity: 1; }
+.tooltip-date { font-weight: 600; margin-block-end: var(--space-sm); color: var(--text-primary); }
+.tooltip-score { margin-block-end: var(--space-sm); color: var(--text-secondary); }
+.tooltip-score-value { color: var(--accent-blue); font-weight: 700; }
+.tooltip-habits { list-style: none; padding: 0; margin: 0; font-size: 11px; color: var(--text-secondary); }
+.tooltip-habits li { white-space: nowrap; }
+.chart-indicator {
+    position: absolute; top: 0; height: 100%; width: 1px;
+    background-color: var(--accent-blue); pointer-events: none; opacity: 0;
+}
+.chart-indicator-dot {
+    position: absolute; width: 9px; height: 9px;
+    border-radius: var(--border-radius-pill); background-color: var(--accent-blue);
+    border: 2px solid var(--bg-color); transform: translate(-50%, -50%);
+}
+.chart-empty-state {
+    display: flex; align-items: center; justify-content: center;
+    height: 42px; color: var(--text-tertiary); font-style: italic; text-align: center;
+}
+.chart-evolution-indicator {
+    /* LAYOUT CLEANUP [2025-05-02]: Clean flex item positioning */
+    font-size: 16px;
+    font-weight: 700;
+    background-color: transparent;
+    border: none;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+    pointer-events: none;
+    white-space: nowrap;
+    transition: color var(--transition-duration-slow);
+}
+.chart-evolution-indicator.positive { 
+    color: var(--accent-green);
+}
+.chart-evolution-indicator.negative { 
+    color: var(--color-red);
+}
+.chart-evolution-indicator.positive::before { content: '▲ '; }
+.chart-evolution-indicator.negative::before { content: '▼ '; }

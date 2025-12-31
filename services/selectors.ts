@@ -10,23 +10,24 @@
  * 
  * [MAIN THREAD CONTEXT]:
  * Este módulo contém funções puras que transformam o estado bruto (`state.ts`) em dados consumíveis pela UI.
+ * Como são chamadas centenas de vezes por ciclo de renderização (ex: em loops de calendário), a performance é crítica.
  * 
- * ARQUITETURA FASE 4 (Kernel Abstraction):
- * - **Unified Access:** Todas as leituras de status/metas passam pelos métodos do `kernel`.
- * - **Zero-Allocation:** Loops críticos otimizados, mas sem exposição de detalhes de implementação de memória (Atomics).
+ * ARQUITETURA (Memoization & Caching):
+ * - **Responsabilidade Única:** Centralizar a lógica de "leitura". Nenhuma função aqui deve mutar o estado.
+ * - **Multilayer Caching:** Implementa caches em memória (Maps aninhados) para resultados de cálculos caros.
+ * - **Zero-Allocation Strategies:** Utiliza loops crus e evita closures para reduzir pressão no GC.
+ * 
+ * DEPENDÊNCIAS CRÍTICAS:
+ * - `state.ts`: Fonte da verdade.
+ * - `utils.ts`: Parsers de data.
+ * 
+ * DECISÕES TÉCNICAS:
+ * 1. **Raw Loops (BCE):** Loops `for` com cache de tamanho para Bound Checks Elimination no V8.
+ * 2. **Smi Math:** Uso de `| 0` para garantir operações com Small Integers.
+ * 3. **Epoch Days:** Cálculos de streaks usam dias inteiros (timestamp / 86400000) para evitar alocação de Dates.
  */
 
-import { 
-    state, 
-    Habit, 
-    TimeOfDay, 
-    HabitSchedule, 
-    STREAK_LOOKBACK_DAYS, 
-    PredefinedHabit, 
-    kernel, 
-    KernelHabitStatus, 
-    HabitStatus
-} from '../state';
+import { state, Habit, TimeOfDay, HabitSchedule, getHabitDailyInfoForDate, STREAK_LOOKBACK_DAYS, PredefinedHabit } from '../state';
 import { toUTCIsoDateString, parseUTCIsoDate, getTodayUTCIso } from '../utils';
 import { t } from '../i18n';
 
@@ -127,9 +128,7 @@ export function getHabitDisplayInfo(habit: Habit | PredefinedHabit, dateISO?: st
  */
 export function getEffectiveScheduleForHabitOnDate(habit: Habit, dateISO: string): TimeOfDay[] {
     // 1. Hot Path: Verifica Hot Storage para override diário (O(1) dictionary access)
-    // NOTE: This access hydrates the object wrapper but DOES NOT trigger Proxy creation for instances yet.
-    // Access direct raw object to avoid Proxy overhead if possible
-    const dailyInfo = state.dailyData[dateISO]?.[habit.id];
+    const dailyInfo = getHabitDailyInfoForDate(dateISO)[habit.id];
     if (dailyInfo && dailyInfo.dailySchedule) {
         return dailyInfo.dailySchedule;
     }
@@ -207,21 +206,22 @@ export function shouldHabitAppearOnDate(habit: Habit, dateISO: string, preParsed
 
 /**
  * Verifica consistência do hábito.
- * HFT UPDATE [2025-04-22]: Phase 4 Unified Kernel Access.
+ * JIT OPTIMIZATION: Inlined checks, no closures.
  */
-function _isHabitConsistentlyDone(habit: Habit, dateISO: string): boolean {
+function _isHabitConsistentlyDone(habit: Habit, dateISO: string, dailyInfoMap?: Record<string, any>): boolean {
     const schedule = getEffectiveScheduleForHabitOnDate(habit, dateISO);
     const len = schedule.length;
     if (len === 0) return true;
 
-    // Raw Loop with Unified Accessor
+    // Use injected map or fetch
+    const dailyInfo = (dailyInfoMap || getHabitDailyInfoForDate(dateISO))[habit.id];
+    
+    // Raw Loop instead of .every() for BCE
     for (let i = 0; i < len; i = (i + 1) | 0) {
         const time = schedule[i];
-        
-        // UNIFIED KERNEL READ: Handles Hot/Cold switching internally
-        const kStatus = kernel.getDailyStatus(habit.id, dateISO, time);
-        
-        if (kStatus !== KernelHabitStatus.COMPLETED && kStatus !== KernelHabitStatus.SNOOZED) {
+        const status = dailyInfo?.instances[time]?.status;
+        // Conditional Check order: Most likely first
+        if (status !== 'completed' && status !== 'snoozed') {
             return false;
         }
     }
@@ -230,11 +230,14 @@ function _isHabitConsistentlyDone(habit: Habit, dateISO: string): boolean {
 
 /**
  * Calcula a sequência (streak).
- * FASE 4: Algoritmo Unificado via Kernel.
- * Remove a lógica duplicada de verificação de range e acesso direto a Atomics.
+ * SOPA UPDATE [2025-04-15]: Integer-based Date Math (Epoch Days).
+ * Substitui o loop anterior que usava `Date.setUTCDate` (muito lento) por aritmética inteira.
+ * Convertemos a data final para "Dias desde a Época" e iteramos com decremento simples (i--).
+ * 
+ * UPDATE [2025-04-22]: Accepts Habit object OR ID for O(1) optimization.
  */
 export function calculateHabitStreak(habitOrId: string | Habit, endDateISO: string): number {
-    // Resolve Habit Object
+    // Resolve Habit Object (Optimization: Pass object directly to avoid .find)
     let habit: Habit | undefined;
     let habitId: string;
 
@@ -259,15 +262,17 @@ export function calculateHabitStreak(habitOrId: string | Habit, endDateISO: stri
         return cached;
     }
 
-    // 1. Incremental Check (Fast Path)
+    // 1. Incremental Check (Ontem + Hoje)
     const endDateObj = parseUTCIsoDate(endDateISO);
     const endTime = endDateObj.getTime();
     
+    // PERF: Inteiro em vez de addDays
     const yesterdayTimestamp = endTime - MS_PER_DAY;
     const yesterdayISO = toUTCIsoDateString(new Date(yesterdayTimestamp));
     const cachedYesterday = subCache.get(yesterdayISO);
 
     if (cachedYesterday !== undefined) {
+        // Fast Path: O(1)
         if (!shouldHabitAppearOnDate(habit, endDateISO, endDateObj)) {
             subCache.set(endDateISO, cachedYesterday);
             return cachedYesterday;
@@ -283,41 +288,42 @@ export function calculateHabitStreak(habitOrId: string | Habit, endDateISO: stri
         }
     }
 
-    // 2. Iterative Full Calculation
+    // 2. Iterative Full Calculation (Optimized Integer Loop)
     let streak = 0;
+    
+    // We start from the end date and go backwards.
+    // Instead of mutating a Date object, we manipulate the timestamp directly.
     let currentTimestamp = endTime;
     
-    // Reuse Date object
+    // GC EVASION: We need a reusable Date object only for `shouldHabitAppearOnDate` (which needs getUTCDay)
+    // We re-hydrate this object only when necessary.
+    // Otimização: Instanciado FORA do loop.
     const iteratorDate = new Date(currentTimestamp);
+
+    // Limit check in ISO string format to avoid creating it inside the loop condition
     const creationISO = habit.createdOn;
 
+    // Raw Loop with Hard Limit
     for (let i = 0; i < STREAK_LOOKBACK_DAYS; i = (i + 1) | 0) {
+        // Update the reusable date object's time value (Very fast operation: Direct memory write)
         iteratorDate.setTime(currentTimestamp);
+        
+        // Manual ISO construction is tricky with varying months, so we use the util.
+        // Optimization: toUTCIsoDateString is efficient enough.
         const currentDateISO = toUTCIsoDateString(iteratorDate);
 
+        // Break if before creation
         if (currentDateISO < creationISO) break;
 
         if (shouldHabitAppearOnDate(habit, currentDateISO, iteratorDate)) {
-            const schedule = getEffectiveScheduleForHabitOnDate(habit, currentDateISO);
-            let consistent = true;
-            
-            for (const time of schedule) {
-                // UNIFIED KERNEL READ: Eliminates manual hot/cold branching in this complex loop
-                const kStatus = kernel.getDailyStatus(habitId, currentDateISO, time);
-                
-                if (kStatus !== KernelHabitStatus.COMPLETED && kStatus !== KernelHabitStatus.SNOOZED) {
-                    consistent = false;
-                    break;
-                }
-            }
-
-            if (consistent) {
+            if (_isHabitConsistentlyDone(habit, currentDateISO)) {
                 streak = (streak + 1) | 0;
             } else {
                 break; // Broken
             }
         }
         
+        // Integer Decrement: Go back 1 day (86400000 ms)
         currentTimestamp -= MS_PER_DAY;
     }
     
@@ -325,52 +331,46 @@ export function calculateHabitStreak(habitOrId: string | Habit, endDateISO: stri
     return streak;
 }
 
-/**
- * Calcula a meta inteligente para um hábito.
- * FASE 4: Leitura de Goal Override via Kernel Unificado.
- */
 export function getSmartGoalForHabit(habit: Habit, dateISO: string, time: TimeOfDay): number {
     if (habit.goal.type === 'check' || !habit.goal.total) {
         return 1;
     }
 
-    // 1. Unified DMA Lookup for Goal Override
-    const kGoal = kernel.getDailyGoal(habit.id, dateISO, time);
-    if (kGoal > 0) return kGoal; // 0 in kernel logic means "no override / unset"
+    const dailyInfo = getHabitDailyInfoForDate(dateISO)[habit.id];
+    const override = dailyInfo?.instances[time]?.goalOverride;
+    if (override !== undefined) {
+        return override;
+    }
     
-    // 2. Smart Calculation Logic (Unchanged)
     const baseGoal = habit.goal.total;
     const targetDate = parseUTCIsoDate(dateISO);
     const targetTime = targetDate.getTime();
 
+    // Optimized Loop for 3-day lookback with Integer Math
     let validIncreases = 0;
-    let minIncrease = 999999;
+    let minIncrease = 999999; // Arbitrary high number
+
+    // Reusable Date for loop
     const tempDate = new Date(targetTime);
 
-    // Lookback logic...
     for (let i = 1; i <= 3; i = (i + 1) | 0) {
+        // PERF: Replace addDays with setTime
         tempDate.setTime(targetTime - (MS_PER_DAY * i));
+        
         const pastISO = toUTCIsoDateString(tempDate);
-        
-        let status: HabitStatus = 'pending';
-        let pastGoalValue = baseGoal;
+        const pastDailyInfo = getHabitDailyInfoForDate(pastISO)[habit.id];
+        const pastInstance = pastDailyInfo?.instances?.[time];
 
-        // Unified Kernel Read
-        const kStatus = kernel.getDailyStatus(habit.id, pastISO, time);
-        if (kStatus === KernelHabitStatus.COMPLETED) status = 'completed';
-        
-        const kPastGoal = kernel.getDailyGoal(habit.id, pastISO, time);
-        if (kPastGoal > 0) pastGoalValue = kPastGoal;
-
-        if (status === 'completed') {
-            if (pastGoalValue > baseGoal) {
+        if (pastInstance?.status === 'completed') {
+            const val = pastInstance.goalOverride ?? baseGoal;
+            if (val > baseGoal) {
                 validIncreases = (validIncreases + 1) | 0;
-                if (pastGoalValue < minIncrease) minIncrease = pastGoalValue;
+                if (val < minIncrease) minIncrease = val;
             } else {
-                break; 
+                break; // Not consecutive increase
             }
         } else {
-            break; 
+            break; // Streak broken or not completed
         }
     }
 
@@ -378,16 +378,28 @@ export function getSmartGoalForHabit(habit: Habit, dateISO: string, time: TimeOf
         return minIncrease;
     }
 
+    // Default Progressive Logic
+    // PERF: Integer math instead of addDays
     const yesterdayISO = toUTCIsoDateString(new Date(targetTime - MS_PER_DAY));
+    // Pass habit object directly for O(1) optimization
     const streak = calculateHabitStreak(habit, yesterdayISO);
+    // Integer division hack: (a / b) | 0
     const streakBonus = ((streak / 7) | 0) * 5; 
     
     const calculated = baseGoal + streakBonus;
-    return calculated > 5 ? calculated : 5;
+    return calculated > 5 ? calculated : 5; // Math.max(5, ...)
+}
+
+export function getCurrentGoalForInstance(habit: Habit, dateISO: string, time: TimeOfDay): number {
+    const dailyInfo = getHabitDailyInfoForDate(dateISO)[habit.id];
+    // Optional chaining + Nullish coalescing is optimized in modern V8
+    return dailyInfo?.instances[time]?.goalOverride ?? getSmartGoalForHabit(habit, dateISO, time);
 }
 
 /**
  * Retorna uma lista de hábitos ativos.
+ * SOPA UPDATE: Single-Pass Allocation com Loop Raw.
+ * Substitui filter/map chain por um único loop.
  */
 export function getActiveHabitsForDate(dateISO: string, preParsedDate?: Date): Array<{ habit: Habit, schedule: TimeOfDay[] }> {
     const cached = state.activeHabitsCache.get(dateISO);
@@ -402,9 +414,11 @@ export function getActiveHabitsForDate(dateISO: string, preParsedDate?: Date): A
         const habit = habits[i];
         
         if (shouldHabitAppearOnDate(habit, dateISO, preParsedDate)) {
+            // Get effective schedule (may call getScheduleForDate internally)
             const schedule = getEffectiveScheduleForHabitOnDate(habit, dateISO);
             
             if (schedule.length > 0) {
+                // Allocation is necessary here as this is the result shape
                 activeHabits.push({ habit, schedule });
             }
         }
@@ -416,27 +430,33 @@ export function getActiveHabitsForDate(dateISO: string, preParsedDate?: Date): A
 
 /**
  * Calcula resumo do dia.
- * FASE 4: Full Unified Kernel Implementation.
+ * SOPA UPDATE [2025-04-21]: Zero-Allocation Single-Pass.
+ * Funde a lógica de `getActiveHabitsForDate` diretamente aqui para evitar a alocação do array intermediário.
+ * Em um cenário de renderização de calendário (30 dias), isso economiza 30 arrays + N objetos por frame.
  */
 export function calculateDaySummary(dateISO: string, preParsedDate?: Date) {
     const cached = state.daySummaryCache.get(dateISO);
     if (cached) return cached;
 
+    // Initialize counters (Smi)
     let total = 0;
     let completed = 0;
     let snoozed = 0;
     let pending = 0;
     let hasNumericOverachieved = false;
 
+    // Hoist map lookup out of loop
+    const dailyInfoMap = getHabitDailyInfoForDate(dateISO);
     const habits = state.habits;
     const habitsLen = habits.length;
     
     const dateObj = preParsedDate || parseUTCIsoDate(dateISO);
 
-    // Fused Loop (All Habits)
+    // BCE Loop over ALL habits directly (Fused Loop)
     for (let i = 0; i < habitsLen; i = (i + 1) | 0) {
         const habit = habits[i];
         
+        // Inline Visibility Check
         if (!shouldHabitAppearOnDate(habit, dateISO, dateObj)) {
             continue;
         }
@@ -445,23 +465,16 @@ export function calculateDaySummary(dateISO: string, preParsedDate?: Date) {
         const schedLen = schedule.length;
         if (schedLen === 0) continue;
         
-        // Time Slot Loop
+        const dailyInfo = dailyInfoMap[habit.id];
+        
+        // Inner BCE Loop over time slots
         for (let j = 0; j < schedLen; j = (j + 1) | 0) {
             const time = schedule[j];
             total = (total + 1) | 0;
             
-            let status: HabitStatus = 'pending';
-            let currentGoalVal = 0; // 0 means default/not set
-
-            // Unified Kernel Read
-            const kStatus = kernel.getDailyStatus(habit.id, dateISO, time);
-            if (kStatus === KernelHabitStatus.COMPLETED) status = 'completed';
-            else if (kStatus === KernelHabitStatus.SNOOZED) status = 'snoozed';
-            
-            // Read Goal (Only relevant if completed)
-            if (status === 'completed') {
-                currentGoalVal = kernel.getDailyGoal(habit.id, dateISO, time);
-            }
+            // Safe access
+            const instance = dailyInfo?.instances[time];
+            const status = instance ? instance.status : 'pending';
             
             if (status === 'completed') {
                 completed = (completed + 1) | 0;
@@ -469,12 +482,11 @@ export function calculateDaySummary(dateISO: string, preParsedDate?: Date) {
                 // Numeric Overachievement Check
                 const gType = habit.goal.type;
                 if ((gType === 'pages' || gType === 'minutes') && habit.goal.total) {
-                     // Normalize goal value (0 in kernel means no override, fetch smart goal)
-                     const effectiveGoal = currentGoalVal > 0 ? currentGoalVal : getSmartGoalForHabit(habit, dateISO, time);
-                     
-                     if (effectiveGoal > habit.goal.total) {
+                     const currentGoal = getCurrentGoalForInstance(habit, dateISO, time);
+                     if (currentGoal > habit.goal.total) {
                          // PERF: Integer math for yesterday
                          const yesterdayISO = toUTCIsoDateString(new Date(dateObj.getTime() - MS_PER_DAY));
+                         // Pass habit object for O(1) optimization
                          const currentStreak = calculateHabitStreak(habit, yesterdayISO);
                          
                          if (currentStreak >= 2) {

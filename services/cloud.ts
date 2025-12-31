@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -128,9 +127,15 @@ export function runWorkerTask<T>(
         // SAFETY: Timeout para evitar Deadlocks se o Worker travar silenciosamente.
         const timeoutId = setTimeout(() => {
             if (workerCallbacks.has(id)) {
+                // RECOVERY LOGIC [2025-05-02]: Se atingir o timeout, assumimos que o Worker morreu ou travou.
+                // 1. Removemos esta callback específica para rejeitar com erro de timeout preciso.
                 workerCallbacks.delete(id);
                 reject(new Error(`Worker task '${type}' timed out after ${WORKER_TIMEOUT_MS}ms`));
-                // Opcional: Considerar reiniciar o worker aqui se ele estiver travado
+                
+                // 2. Matamos o Worker atual para limpar o estado e rejeitar outras pendências com "Worker terminated".
+                // Isso garante que a próxima chamada a getWorker() crie uma nova instância fresca (Auto-Restart).
+                console.warn(`Worker unresponsive during '${type}'. Terminating to force restart.`);
+                terminateWorker();
             }
         }, WORKER_TIMEOUT_MS);
 

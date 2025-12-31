@@ -36,7 +36,7 @@ import { calculateHabitStreak, getActiveHabitsForDate, getSmartGoalForHabit, get
 import { ui } from './ui';
 import { t, getTimeOfDayName, formatInteger } from '../i18n';
 import { UI_ICONS, getTimeOfDayIcon } from './icons';
-import { setTextContent, setStyleColor } from './dom';
+import { setTextContent } from './dom';
 import { CSS_CLASSES, DOM_SELECTORS } from './constants'; // TYPE SAFETY IMPORT
 import { parseUTCIsoDate } from '../utils';
 
@@ -184,6 +184,7 @@ function getHabitCardTemplate(): HTMLElement {
                     <div class="consolidation-message" hidden></div>
                 </div>
                 <div class="habit-goal"></div>
+                <div class="ripple-container"></div>
             </div>
         `;
     }
@@ -208,7 +209,7 @@ export function getLiveHabitCards(): IterableIterator<HTMLElement> {
     return habitElementCache.values();
 }
 
-const getUnitString = (habit: Habit, value: number | undefined) => {
+export const getUnitString = (habit: Habit, value: number | undefined) => {
     const unitKey = habit.goal.unitKey || 'unitCheck';
     return t(unitKey, { count: value });
 };
@@ -405,13 +406,8 @@ export function updateHabitCardElement(
     }
     
     // OPTIMIZATION [2025-03-09]: Dirty Check styles to prevent Layout Thrashing
-    // BLEEDING-EDGE FIX: Use Typed OM for color assignment.
-    // Dirty check using attribute/dataset avoids reading style maps unnecessarily.
-    if (icon.getAttribute('data-color') !== newColor) {
-        setStyleColor(icon, 'color', newColor);
-        setStyleColor(icon, 'background-color', newBgColor);
-        icon.setAttribute('data-color', newColor); 
-    }
+    if (icon.style.color !== newColor) icon.style.color = newColor;
+    if (icon.style.backgroundColor !== newBgColor) icon.style.backgroundColor = newBgColor;
 
     if (!wasCompleted && isCompleted) {
         icon.classList.remove('animate-pop');
@@ -474,7 +470,7 @@ export function createHabitCardElement(habit: Habit, time: TimeOfDay, preLoadedD
     // Structure:
     // 0: div.habit-actions-left > button
     // 1: div.habit-actions-right > button
-    // 2: div.habit-content-wrapper > [icon, details, goal]
+    // 2: div.habit-content-wrapper > [icon, details, goal, ripple-container]
     
     const actionsLeft = card.firstElementChild as HTMLElement;
     const actionsRight = actionsLeft.nextElementSibling as HTMLElement;
@@ -487,6 +483,7 @@ export function createHabitCardElement(habit: Habit, time: TimeOfDay, preLoadedD
     // 0: div.habit-icon
     // 1: div.habit-details > [name, subtitle, consolidationMsg]
     // 2: div.habit-goal
+    // 3: div.ripple-container
     
     const icon = contentWrapper.firstElementChild as HTMLElement;
     const details = icon.nextElementSibling as HTMLElement;

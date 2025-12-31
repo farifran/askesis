@@ -25,8 +25,8 @@ try {
 }
 
 // CONSTANTS (Build-time injected)
-// FORCE UPDATE: Incremented version to ensure fresh index.html with #save-note-btn
-const CACHE_NAME = 'habit-tracker-v4';
+// FORCE UPDATE [2025-05-02]: Bumped to v5 to flush old CSS bundles after modularization.
+const CACHE_NAME = 'habit-tracker-v5';
 
 // PERF: Static Asset List (Pre-allocated)
 const CACHE_FILES = [
