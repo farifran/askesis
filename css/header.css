@@ -88,6 +88,10 @@
     .stoic-quote {
         font-size: 12px;
     }
+    
+    /* LAYOUT TWEAK [2025-05-02]: Swap title elements for mobile density */
+    .header-title-desktop { display: none; }
+    .header-title-mobile { display: inline; }
 }
 
 .stoic-quote.visible {

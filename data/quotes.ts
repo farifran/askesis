@@ -257,7 +257,7 @@ export const STOIC_QUOTES: Quote[] = [
         tags: ['resilience', 'suffering']
     },
     {
-        pt: "Nenhum perca é maior que a do tempo.",
+        pt: "Nenhuma perda é maior que a do tempo.",
         en: "No loss is greater than that of time.",
         es: "Ninguna pérdida es mayor que la del tiempo.",
         author: "zeno",

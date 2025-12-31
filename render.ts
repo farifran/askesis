@@ -68,6 +68,13 @@ const OPTS_HEADER_ARIA: Intl.DateTimeFormatOptions = {
     timeZone: 'UTC'
 };
 
+// LOCALIZATION FIX [2025-05-02]: Formato numérico curto adaptável (DD/MM para PT/ES, MM/DD para EN-US)
+const OPTS_HEADER_MOBILE_NUMERIC: Intl.DateTimeFormatOptions = { 
+    day: '2-digit', 
+    month: '2-digit', 
+    timeZone: 'UTC' 
+};
+
 /**
  * Atualiza o cache de datas relativas apenas se o dia mudou.
  */
@@ -128,22 +135,24 @@ function _updateHeaderTitle() {
     let mobileTitle: string;
     let fullLabel: string;
     
+    const date = parseUTCIsoDate(selected);
+
+    // LOCALIZATION FIX [2025-05-02]: Use Intl formatter instead of substring
+    // This ensures 25/05 for PT/ES and 05/25 for EN-US automatically based on active language.
+    const numericDateStr = formatDate(date, OPTS_HEADER_MOBILE_NUMERIC);
+    
     // Lazy Date Parsing: Só aloca o objeto Date se for necessário formatar
     if (titleKey) {
         const localizedTitle = t(titleKey);
         desktopTitle = localizedTitle;
-        mobileTitle = localizedTitle;
         
-        const date = parseUTCIsoDate(selected);
+        // UX REQUEST [2025-05-02]: Mobile shows numeric date for Yesterday/Tomorrow to save space.
+        // Only "Today" keeps the text label.
+        mobileTitle = (selected === todayISO) ? localizedTitle : numericDateStr;
+        
         fullLabel = formatDate(date, OPTS_HEADER_ARIA);
     } else {
-        const date = parseUTCIsoDate(selected);
-        
-        // Optimized Date Formatting for Mobile (Manual)
-        const day = date.getUTCDate();
-        const month = date.getUTCMonth() + 1;
-        // Smi (Small Integer) concatenation is fast
-        mobileTitle = (day < 10 ? '0' : '') + day + '/' + (month < 10 ? '0' : '') + month;
+        mobileTitle = numericDateStr;
         
         desktopTitle = formatDate(date, OPTS_HEADER_DESKTOP);
         fullLabel = formatDate(date, OPTS_HEADER_ARIA);
