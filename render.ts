@@ -11,8 +11,10 @@
  * [MAIN THREAD CONTEXT]:
  * Este módulo atua como o ponto central de despacho para atualizações visuais.
  * 
- * ARQUITETURA (Facade Pattern & Zero-Allocation):
+ * ARQUITETURA (Facade Pattern & SOTA Scheduling):
  * - **Responsabilidade Única:** Centraliza a API de renderização pública.
+ * - **Prioritized Rendering:** Utiliza a `Scheduler API` (`postTask`) para segmentar a renderização
+ *   em tarefas críticas (Lista/Calendário) e secundárias (Gráficos/IA), garantindo TTI instantâneo.
  * - **Memoization de Datas:** Cálculos de datas relativas (Ontem/Amanhã) são cacheados e executados
  *   com aritmética inteira onde possível.
  * - **Static LUTs:** Uso de Tabelas de Busca para dias do mês, evitando lógica condicional complexa.
@@ -288,14 +290,48 @@ export function updateUIText() {
 
 // --- ORQUESTRAÇÃO GLOBAL ---
 
+/**
+ * SOTA UPDATE [2025-05-02]: Prioritized Rendering Pipeline.
+ * Divide o trabalho de renderização em estágios para evitar Long Tasks na Main Thread.
+ * 
+ * 1. Critical Path (Sync): Cabeçalho, Calendário, Hábitos. (Bloqueia até estar pronto - ~5ms)
+ * 2. Secondary (User-Visible): Estado da IA, Gráficos. (PostTask - roda após o próximo paint)
+ * 3. Background: Citações e Modais.
+ */
 export function renderApp() {
+    // Stage 1: Critical Rendering (Above the fold & Primary Interaction)
     _renderHeaderIcons();
     _updateHeaderTitle();
-    renderStoicQuote();
     renderCalendar();
     renderHabits();
-    renderAINotificationState();
-    renderChart();
+
+    // Stage 2: Heavy Calculation Deferral (Chart SVG & AI Logic)
+    if ('scheduler' in window && window.scheduler) {
+        // Scheduler API (Modern Browsers): Prioridade 'user-visible' garante que
+        // isso rode logo após o paint crítico, mas sem bloquear inputs.
+        window.scheduler.postTask(() => {
+            renderAINotificationState();
+            renderChart();
+            // Stage 3: Low Priority (Background)
+            // Agendamos dentro do callback para encadear, ou usamos 'background' priority
+            window.scheduler!.postTask(() => {
+                renderStoicQuote();
+            }, { priority: 'background' });
+        }, { priority: 'user-visible' });
+    } else {
+        // Fallback Strategy (Safari/Legacy):
+        // requestAnimationFrame empurra para o próximo frame de renderização visual.
+        requestAnimationFrame(() => {
+            renderAINotificationState();
+            renderChart();
+            // requestIdleCallback para itens de baixa prioridade (Citações)
+            if ('requestIdleCallback' in window) {
+                requestIdleCallback(() => renderStoicQuote());
+            } else {
+                setTimeout(renderStoicQuote, 50); // Fallback final
+            }
+        });
+    }
 
     if (ui.manageModal.classList.contains('visible')) {
         setupManageModal();

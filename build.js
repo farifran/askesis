@@ -41,8 +41,15 @@ const reloadClients = new Set();
 function notifyLiveReload() {
     if (reloadClients.size === 0) return;
     console.log('🔄 Enviando sinal de Live Reload...');
-    // O formato 'data: ...\n\n' é o protocolo padrão de SSE
-    reloadClients.forEach(res => res.write('data: reload\n\n'));
+    // ROBUSTNESS: Proteção contra EPIPE/Stream Destroyed se a aba fechar durante o build
+    reloadClients.forEach(res => {
+        try {
+            res.write('data: reload\n\n');
+        } catch (e) {
+            // Cliente morto, remove silenciosamente
+            reloadClients.delete(res);
+        }
+    });
 }
 
 // --- SHARED BUILD LOGIC ---
@@ -95,6 +102,9 @@ const esbuildOptions = {
     target: 'es2020', // Alinhado com tsconfig para compatibilidade
     platform: 'browser',
     minify: isProduction,
+    // BUILD OPTIMIZATION: Explicit Tree Shaking and Comment Stripping
+    treeShaking: true,
+    legalComments: 'none',
     sourcemap: !isProduction,
     define: { 
         'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'development') 
@@ -117,55 +127,77 @@ function watchStaticFiles() {
 
     let changedFiles = new Set();
     let debounceTimeout;
+    
+    // MUTEX: Evita condições de corrida (Race Conditions) em I/O de arquivos.
+    // Impede que múltiplos processos de cópia rodem simultaneamente e corrompam arquivos ou travem no Windows (EBUSY).
+    let isProcessing = false;
+    let pendingRun = false;
 
     const processChanges = async () => {
-        if (changedFiles.size === 0) return;
+        if (isProcessing) {
+            pendingRun = true;
+            return;
+        }
         
-        const filesToProcess = [...changedFiles];
-        changedFiles.clear();
-
-        console.log(`Sincronizando ${filesToProcess.length} arquivo(s) estático(s)...`);
-
-        for (const file of filesToProcess) {
-            const destPath = path.join(outdir, path.relative('.', file));
+        isProcessing = true;
+        
+        try {
+            if (changedFiles.size === 0) return;
             
-            try {
-                // Handle deletion
-                if (!fsSync.existsSync(file)) {
-                    if (fsSync.existsSync(destPath)) {
-                        await fs.rm(destPath, { recursive: true, force: true });
-                        console.log(` - Deletado: ${destPath}`);
-                    }
-                    continue;
-                }
-                
-                // Handle copy/update
-                const stats = await fs.stat(file);
-                if (stats.isDirectory()) {
-                    await fs.mkdir(destPath, { recursive: true });
-                } else {
-                    await fs.mkdir(path.dirname(destPath), { recursive: true });
+            const filesToProcess = [...changedFiles];
+            changedFiles.clear();
 
-                    // Isolate sw.js versioning logic
-                    if (path.basename(file) === 'sw.js') {
-                        const swContent = await fs.readFile(file, 'utf-8');
-                        const versionRegex = /const\s+CACHE_NAME\s*=\s*['"][^'"]+['"];/;
-                        const versionedSw = swContent.replace(
-                            versionRegex, 
-                            `const CACHE_NAME = 'habit-tracker-v${Date.now()}';`
-                        );
-                        await fs.writeFile(destPath, versionedSw);
-                    } else {
-                        await fs.copyFile(file, destPath);
+            console.log(`Sincronizando ${filesToProcess.length} arquivo(s) estático(s)...`);
+
+            for (const file of filesToProcess) {
+                const destPath = path.join(outdir, path.relative('.', file));
+                
+                try {
+                    // Handle deletion
+                    if (!fsSync.existsSync(file)) {
+                        if (fsSync.existsSync(destPath)) {
+                            await fs.rm(destPath, { recursive: true, force: true });
+                            console.log(` - Deletado: ${destPath}`);
+                        }
+                        continue;
                     }
+                    
+                    // Handle copy/update
+                    const stats = await fs.stat(file);
+                    if (stats.isDirectory()) {
+                        await fs.mkdir(destPath, { recursive: true });
+                    } else {
+                        await fs.mkdir(path.dirname(destPath), { recursive: true });
+
+                        // Isolate sw.js versioning logic
+                        if (path.basename(file) === 'sw.js') {
+                            const swContent = await fs.readFile(file, 'utf-8');
+                            const versionRegex = /const\s+CACHE_NAME\s*=\s*['"][^'"]+['"];/;
+                            const versionedSw = swContent.replace(
+                                versionRegex, 
+                                `const CACHE_NAME = 'habit-tracker-v${Date.now()}';`
+                            );
+                            await fs.writeFile(destPath, versionedSw);
+                        } else {
+                            await fs.copyFile(file, destPath);
+                        }
+                    }
+                    console.log(` - Atualizado: ${file}`);
+                } catch (err) {
+                     console.error(` - Falha ao processar ${file}:`, err);
                 }
-                console.log(` - Atualizado: ${file}`);
-            } catch (err) {
-                 console.error(` - Falha ao processar ${file}:`, err);
+            }
+            // Dispara o reload APÓS copiar os arquivos
+            notifyLiveReload();
+        } finally {
+            isProcessing = false;
+            // Se houve pedidos de mudança enquanto rodávamos, executa novamente (Tail Call)
+            if (pendingRun) {
+                pendingRun = false;
+                // Re-schedule com um pequeno delay para agrupar
+                setTimeout(processChanges, 100);
             }
         }
-        // Dispara o reload APÓS copiar os arquivos
-        notifyLiveReload();
     };
 
     pathsToWatch.forEach(p => {
@@ -251,81 +283,91 @@ async function startDevServer() {
     await ctx.watch();
 
     const devServer = http.createServer(async (req, res) => {
-        // PERFORMANCE: Headers para prevenir cache agressivo do navegador em ambiente DEV.
-        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-        res.setHeader('Pragma', 'no-cache');
-        res.setHeader('Expires', '0');
-        res.setHeader('Access-Control-Allow-Origin', '*'); 
-
-        // 1. Live Reload Endpoint (SSE)
-        if (req.url === '/_reload') {
-            res.writeHead(200, {
-                'Content-Type': 'text/event-stream',
-                'Cache-Control': 'no-cache',
-                'Connection': 'keep-alive',
-            });
-            reloadClients.add(res);
-            // Cleanup on client disconnect
-            req.on('close', () => reloadClients.delete(res));
-            return;
-        }
-
-        // 2. API Mocking
-        if (req.url.startsWith('/api/sync')) {
-            return handleApiSync(req, res);
-        }
-        if (req.url.startsWith('/api/analyze')) {
-            return handleApiAnalyze(req, res);
-        }
-
-        // 3. Static File Serving
-        let url = req.url.split('?')[0]; 
-        if (url === '/') url = '/index.html';
-        
-        let filePath = path.join(outdir, url);
-        let extname = String(path.extname(filePath)).toLowerCase();
-        
-        const contentType = mimeTypes[extname] || 'application/octet-stream';
-
+        // RELIABILITY: Top-level Error Boundary.
+        // Impede que um erro não tratado em qualquer rota derrube o processo do servidor.
         try {
-            // Verifica existência
-            await fs.access(filePath);
+            // PERFORMANCE: Headers para prevenir cache agressivo do navegador em ambiente DEV.
+            res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+            res.setHeader('Pragma', 'no-cache');
+            res.setHeader('Expires', '0');
+            res.setHeader('Access-Control-Allow-Origin', '*'); 
 
-            // SPECIAL HANDLING: Index.html Injection
-            // Lemos o HTML para memória para injetar o script de reload antes de enviar
-            if (url === '/index.html') {
-                res.writeHead(200, { 'Content-Type': 'text/html' });
-                let html = await fs.readFile(filePath, 'utf-8');
-                // Injeta antes do fechamento do body
-                html = html.replace('</body>', LIVE_RELOAD_SCRIPT);
-                res.end(html);
+            // 1. Live Reload Endpoint (SSE)
+            if (req.url === '/_reload') {
+                res.writeHead(200, {
+                    'Content-Type': 'text/event-stream',
+                    'Cache-Control': 'no-cache',
+                    'Connection': 'keep-alive',
+                });
+                reloadClients.add(res);
+                // Cleanup on client disconnect
+                req.on('close', () => reloadClients.delete(res));
                 return;
             }
 
-            // OPTIMIZATION: Streaming para outros arquivos (JS, CSS, Imagens)
-            // Mantém consumo de RAM baixo (O(1)) mesmo servindo bundles grandes.
-            res.writeHead(200, { 'Content-Type': contentType });
-            const stream = fsSync.createReadStream(filePath);
-            stream.pipe(res);
+            // 2. API Mocking
+            if (req.url.startsWith('/api/sync')) {
+                return await handleApiSync(req, res); // Ensure await to catch errors
+            }
+            if (req.url.startsWith('/api/analyze')) {
+                return await handleApiAnalyze(req, res); // Ensure await to catch errors
+            }
 
-        } catch (error) {
-            if (error.code === 'ENOENT') {
-                // SPA Fallback -> index.html (com injeção)
-                // Se a rota não existe como arquivo, serve o index.html para o router do cliente
-                try {
-                    const fallbackPath = path.join(outdir, 'index.html');
-                    await fs.access(fallbackPath);
+            // 3. Static File Serving
+            let url = req.url.split('?')[0]; 
+            if (url === '/') url = '/index.html';
+            
+            let filePath = path.join(outdir, url);
+            let extname = String(path.extname(filePath)).toLowerCase();
+            
+            const contentType = mimeTypes[extname] || 'application/octet-stream';
+
+            try {
+                // Verifica existência
+                await fs.access(filePath);
+
+                // SPECIAL HANDLING: Index.html Injection
+                // Lemos o HTML para memória para injetar o script de reload antes de enviar
+                if (url === '/index.html') {
                     res.writeHead(200, { 'Content-Type': 'text/html' });
-                    let html = await fs.readFile(fallbackPath, 'utf-8');
+                    let html = await fs.readFile(filePath, 'utf-8');
+                    // Injeta antes do fechamento do body
                     html = html.replace('</body>', LIVE_RELOAD_SCRIPT);
                     res.end(html);
-                } catch (fallbackError) {
-                    res.writeHead(404);
-                    res.end(`Not Found: ${url}`);
+                    return;
                 }
-            } else {
+
+                // OPTIMIZATION: Streaming para outros arquivos (JS, CSS, Imagens)
+                // Mantém consumo de RAM baixo (O(1)) mesmo servindo bundles grandes.
+                res.writeHead(200, { 'Content-Type': contentType });
+                const stream = fsSync.createReadStream(filePath);
+                stream.pipe(res);
+
+            } catch (error) {
+                if (error.code === 'ENOENT') {
+                    // SPA Fallback -> index.html (com injeção)
+                    // Se a rota não existe como arquivo, serve o index.html para o router do cliente
+                    try {
+                        const fallbackPath = path.join(outdir, 'index.html');
+                        await fs.access(fallbackPath);
+                        res.writeHead(200, { 'Content-Type': 'text/html' });
+                        let html = await fs.readFile(fallbackPath, 'utf-8');
+                        html = html.replace('</body>', LIVE_RELOAD_SCRIPT);
+                        res.end(html);
+                    } catch (fallbackError) {
+                        res.writeHead(404);
+                        res.end(`Not Found: ${url}`);
+                    }
+                } else {
+                    res.writeHead(500);
+                    res.end(`Server Error: ${error.code}`);
+                }
+            }
+        } catch (serverError) {
+            console.error("🔥 CRITICAL SERVER ERROR:", serverError);
+            if (!res.headersSent) {
                 res.writeHead(500);
-                res.end(`Server Error: ${error.code}`);
+                res.end("Internal Server Error (Check Terminal)");
             }
         }
     });

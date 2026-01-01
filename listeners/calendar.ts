@@ -18,7 +18,7 @@
  */
 
 import { ui } from '../render/ui';
-import { state, DAYS_IN_CALENDAR, invalidateChartCache } from '../state';
+import { state, DAYS_IN_CALENDAR } from '../state';
 import { renderApp, renderFullCalendar, openModal, scrollToToday, closeModal } from '../render';
 import { parseUTCIsoDate, triggerHaptic, getTodayUTCIso, addDays, toUTCIsoDateString } from '../utils';
 import { DOM_SELECTORS, CSS_CLASSES } from '../render/constants';
@@ -26,6 +26,8 @@ import { markAllHabitsForDate } from '../habitActions';
 
 // --- STATIC CONSTANTS ---
 const LONG_PRESS_DURATION = 500;
+// SECURITY: Strict ISO 8601 Date Format (YYYY-MM-DD)
+const ISO_DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
 // --- STATIC STATE MACHINE (Hot Memory) ---
 const CalendarGestureState = {
@@ -127,6 +129,12 @@ const _handlePointerDown = (e: PointerEvent) => {
     const dayItem = (e.target as HTMLElement).closest<HTMLElement>(DOM_SELECTORS.DAY_ITEM);
     if (!dayItem || !dayItem.dataset.date) return;
 
+    // SECURITY: Validação de Formato de Data antes de processar
+    if (!ISO_DATE_REGEX.test(dayItem.dataset.date)) {
+        console.warn("Invalid date format in calendar item.");
+        return;
+    }
+
     CalendarGestureState.isLongPress = 0;
     CalendarGestureState.targetDayEl = dayItem;
     const dateISO = dayItem.dataset.date;
@@ -150,10 +158,18 @@ const _handleCalendarClick = (e: MouseEvent) => {
     }
 
     const dayItem = (e.target as HTMLElement).closest<HTMLElement>(DOM_SELECTORS.DAY_ITEM);
-    if (!dayItem || !dayItem.dataset.date) return;
+    const dateISO = dayItem?.dataset.date;
+
+    if (!dayItem || !dateISO) return;
+
+    // SECURITY: Validação de Data
+    if (!ISO_DATE_REGEX.test(dateISO)) {
+        console.warn("Attempt to navigate to invalid date detected and blocked.");
+        return;
+    }
 
     triggerHaptic('selection');
-    updateSelectedDateAndRender(dayItem.dataset.date);
+    updateSelectedDateAndRender(dateISO);
 };
 
 const _handleKeyDown = (e: KeyboardEvent) => {
@@ -161,6 +177,11 @@ const _handleKeyDown = (e: KeyboardEvent) => {
     
     e.preventDefault();
     
+    // SECURITY: Garante que a data atual do estado é válida antes de calcular a próxima
+    if (!ISO_DATE_REGEX.test(state.selectedDate)) {
+        state.selectedDate = getTodayUTCIso(); // Reset to safe state
+    }
+
     // Date Math
     const currentDate = parseUTCIsoDate(state.selectedDate);
     const direction = e.key === 'ArrowLeft' ? -1 : 1;
@@ -221,6 +242,11 @@ export function setupCalendarListeners() {
         if (action === 'almanac') {
             triggerHaptic('light');
             // Lazy load state for almanac
+            // SECURITY: Validação básica da data selecionada
+            if (!ISO_DATE_REGEX.test(state.selectedDate)) {
+                state.selectedDate = getTodayUTCIso();
+            }
+            
             state.fullCalendar = {
                 year: parseUTCIsoDate(state.selectedDate).getUTCFullYear(),
                 month: parseUTCIsoDate(state.selectedDate).getUTCMonth()

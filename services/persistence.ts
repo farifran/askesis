@@ -104,7 +104,9 @@ function getDB(): Promise<IDBDatabase> {
                 isSettled = true;
                 
                 console.error("IDB Open Error", event);
-                dbPromise = null; // CRITICAL FIX: Permite retry na próxima chamada se a abertura falhar
+                // CRITICAL FIX: Se a abertura falhar, não podemos cachear a promessa rejeitada para sempre.
+                // Devemos limpar dbPromise para que a próxima chamada a getDB() tente abrir novamente.
+                dbPromise = null; 
                 reject((event.target as IDBOpenDBRequest).error);
             };
 

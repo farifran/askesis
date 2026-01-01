@@ -1,3 +1,4 @@
+
 {
     "_comment": "[ANALYSIS PROGRESS]: 100% - Limpeza de claves no utilizadas realizada [2025-03-22].",
     "aiCelebration21Day": {
@@ -10,6 +11,8 @@
     },
     "aiErrorGeneric": "Ocurrió un error en la comunicación con la Inteligencia Artificial. Por favor, intente nuevamente más tarde.",
     "aiEval_ariaLabel": "Evaluación IA",
+    "aiOfflineMessage": "La conexión a la nube no está disponible. Recuerda: la tecnología es externa, pero tu razón es interna y está bajo tu control.",
+    "aiOfflineTitle": "Sin Conexión",
     "aiOptionHistoricalDesc": "Una visión completa de toda tu trayectoria.",
     "aiOptionHistoricalTitle": "Análisis Histórico",
     "aiOptionMonthlyDesc": "Una reflexión sobre los datos disponibles (máx. 30 dias).",
@@ -19,7 +22,7 @@
     "aiPeriodHistorical": "Historial Completo",
     "aiPeriodMonthly": "Últimos 30 Días",
     "aiPeriodQuarterly": "Últimos 90 Días",
-    "aiPromptGeneral": "Realiza un análisis general de todo el historial de hábitos proporcionado. Tu feedback DEBE centrarse en: 1. Una reflexión estoica profunda sobre la trayectoria general del usuario. 2. Identificar el hábito más consistente (la mayor fortaleza). 3. Identificar el hábito más desafiante. 4. UN consejo de alto nivel para la mejora continua de la disciplina.\n\nDatos:\n- Hábitos Activos: {activeHabitList}\n{graduatedHabitsSection}- Historial Completo:\n{history}",
+    "aiPromptGeneral": "Realiza un análisis general de todo el historial de hábitos proporcionado. Tu feedback DEBE centrarse en: 1. Una reflexión estoica profunda sobre la trayectoria general del usuario. 2. Identificar el hábito más consistente (la mayor fortaleza). 3. Identificar el hábito más desafiante. 4. UN consejo de alto nível para la mejora continua de la disciplina.\n\nDatos:\n- Hábitos Activos: {activeHabitList}\n{graduatedHabitsSection}- Historial Completo:\n{history}",
     "aiPromptGraduatedSection": "- Hábitos Graduados: {graduatedHabitList}\n",
     "aiPromptMonthHeader": "Datos para el Mes de {month}",
     "aiPromptMonthly": "Realiza una revisión de rendimiento del último mes (30 dias). Tu feedback DEBE centrarse en: 1. Una reflexión sobre la consistencia general y las tendencias observadas. 2. Identificar qué hábito fue el mayor desafío y por qué. 3. Dar UNA sugerencia práctica para mejorar la consistencia el próximo mes.\n\nDatos:\n- Hábitos Activos: {activeHabitList}\n{graduatedHabitsSection}- Historial de los Últimos 30 Días:\n{history}",
@@ -217,7 +220,7 @@
     "syncDataFoundTitle": "Datos Encontrados en la Nube",
     "syncDisable": "Desactivar",
     "syncDisableConfirm": "Desactivar",
-    "syncDisableTitle": "Desactivar Sincronización",
+    "syncDisableTitle": "Desativar Sincronización",
     "syncEnable": "Activar Sincronización",
     "syncEnterKey": "Ingresar Clave",
     "syncError": "Error de sincronización",

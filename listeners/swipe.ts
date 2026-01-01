@@ -15,7 +15,7 @@
  * - **Static Memory Layout:** Todo o estado mutável reside em um único objeto estático (`SwipeState`) 
  *   para garantir localidade de cache e evitar alocação de closures.
  * - **Integer Arithmetic:** Coordenadas e Deltas são forçados para Int32 (`| 0`) para otimização V8 Smi.
- * - **Zero-Allocation Loop:** O callback de animação (RAF) é definido estaticamente.
+ * - **SNIPER OPTIMIZATION (Typed OM):** Atualização de layout via `attributeStyleMap` para zero-parsing overhead.
  * 
  * DECISÕES TÉCNICAS:
  * 1. **Direction Locking:** Bloqueia o eixo oposto após exceder o `INTENT_THRESHOLD`.
@@ -50,7 +50,9 @@ const SwipeState = {
     hasHaptics: 0,      // 0 (false) | 1 (true)
     // DOM References (Weakly held logically, managed explicitly)
     card: null as HTMLElement | null,
-    content: null as HTMLElement | null
+    content: null as HTMLElement | null,
+    // SNIPER OPTIMIZATION: Typed OM Detection Cache
+    hasTypedOM: false
 };
 
 // --- LOGIC ---
@@ -67,6 +69,9 @@ function updateCachedLayoutValues() {
     const parsed = parseInt(rawValue, 10);
     // Bitwise OR with 0 forces int, though parseInt does it too. Fallback to 60.
     SwipeState.actionWidth = (isNaN(parsed) || parsed === 0) ? 60 : parsed;
+    
+    // Feature detection for Typed OM
+    SwipeState.hasTypedOM = !!(window.CSS && window.CSSTranslate && CSS.px);
 }
 
 /**
@@ -120,11 +125,6 @@ function _blockSubsequentClick(deltaX: number) {
     window.addEventListener('click', blockClick, true);
 
     // SAFETY VALVE [2025-05-02]: Timeout para limpar o bloqueador.
-    // O problema descrito pelo usuário ("delay entre instruções") ocorre porque o navegador
-    // pode não disparar um evento 'click' após um gesto de swipe agressivo (devido ao preventDefault no move).
-    // Se isso acontecer, o listener 'blockClick' ficava pendurado, comendo o PRÓXIMO clique legítimo do usuário.
-    // Adicionamos um TTL (Time To Live) de 100ms. Se o clique fantasma não chegar nesse tempo,
-    // assumimos que o gesto acabou e liberamos a UI para novas interações.
     setTimeout(() => {
         window.removeEventListener('click', blockClick, true);
     }, 100);
@@ -146,8 +146,12 @@ const _updateVisualsStatic = () => {
     if (SwipeState.wasOpenLeft) translateX = (translateX + SwipeState.actionWidth) | 0;
     if (SwipeState.wasOpenRight) translateX = (translateX - SwipeState.actionWidth) | 0;
 
-    // Direct DOM Write
-    SwipeState.content.style.transform = `translateX(${translateX}px)`;
+    // SNIPER OPTIMIZATION: Direct DOM Write via Typed OM (Fast Path) or String (Fallback)
+    if (SwipeState.hasTypedOM && SwipeState.content.attributeStyleMap) {
+        SwipeState.content.attributeStyleMap.set('transform', new CSSTranslate(CSS.px(translateX), CSS.px(0)));
+    } else {
+        SwipeState.content.style.transform = `translateX(${translateX}px)`;
+    }
 
     // Haptics Logic
     const absDelta = deltaX < 0 ? -deltaX : deltaX;
@@ -183,12 +187,17 @@ const _cleanupAndReset = () => {
         
         const content = SwipeState.content;
         if (content) {
-            content.style.transform = '';
+            if (SwipeState.hasTypedOM && content.attributeStyleMap) {
+                content.attributeStyleMap.clear(); // Clears inline transform
+            } else {
+                content.style.transform = '';
+            }
             content.draggable = true;
         }
     }
     
     // Detach global listeners
+    // PERFORMANCE: 'passive: true' removed here as it is only needed on addEventListener
     window.removeEventListener('pointermove', _handlePointerMove);
     window.removeEventListener('pointerup', _handlePointerUp);
     window.removeEventListener('pointercancel', _cleanupAndReset);
@@ -230,6 +239,7 @@ const _handlePointerMove = (e: PointerEvent) => {
 
             } else {
                 // Vertical Lock (Scroll) - Abort Custom Swipe
+                // O navegador cuidará do scroll nativo pois o listener é passive: true
                 SwipeState.direction = DIR_VERT;
                 _cleanupAndReset();
                 return;
@@ -306,14 +316,10 @@ export function setupSwipeHandler(habitContainer: HTMLElement) {
         SwipeState.wasOpenRight = card.classList.contains(CSS_CLASSES.IS_OPEN_RIGHT) ? 1 : 0;
         SwipeState.hasHaptics = 0;
         
-        // Temporarily disable native drag if it's touch (heuristic)
-        if (e.pointerType !== 'mouse' && SwipeState.content) {
-             // We don't disable draggable immediately to allow long-press drag
-             // But swipe takes precedence if movement starts
-        }
-
         // Attach global listeners
-        window.addEventListener('pointermove', _handlePointerMove, { passive: true }); // passive for scroll perf
+        // PERFORMANCE: passive: true para permitir scroll da página sem bloqueio
+        // O controle horizontal vs vertical é feito via touch-action: pan-y no CSS + lógica de Intent.
+        window.addEventListener('pointermove', _handlePointerMove, { passive: true }); 
         window.addEventListener('pointerup', _handlePointerUp);
         window.addEventListener('pointercancel', _cleanupAndReset);
         window.addEventListener('contextmenu', _cleanupAndReset);

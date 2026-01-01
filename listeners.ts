@@ -13,8 +13,7 @@
  * 
  * ARQUITETURA (Static Dispatch & Dependency Injection):
  * - **Static Handlers:** Callbacks são definidos no escopo do módulo para evitar alocação de closures durante o boot.
- * - **Injeção de Dependência Leve:** Passa referências de DOM cacheadas (`ui.habitContainer`) para os motores de física.
- * - **Event Bus:** O listener 'render-app' desacopla a Lógica da View.
+ * - **Sync-on-Connect:** Garante integridade de dados ao recuperar conexão.
  */
 
 import { ui } from './render/ui';
@@ -25,73 +24,140 @@ import { setupDragHandler } from './listeners/drag';
 import { setupSwipeHandler } from './listeners/swipe';
 import { setupCalendarListeners } from './listeners/calendar';
 import { initChartInteractions } from './render/chart';
-import { pushToOneSignal } from './utils';
+import { pushToOneSignal, getTodayUTCIso, resetTodayCache } from './utils';
+import { state, getPersistableState } from './state';
+import { syncStateWithCloud } from './services/cloud';
+
+// STATE: Proteção contra inicialização dupla (Idempotência)
+let areListenersAttached = false;
+
+// PERFORMANCE: Timer para Debounce de Rede
+let networkDebounceTimer: number | undefined;
 
 // --- STATIC HANDLERS (Zero-Allocation) ---
-// V8 Optimization: Hoisted constants avoid creating closure scopes during initialization.
 
 const _handleRenderAppEvent = () => {
     renderApp();
 };
 
 const _handlePermissionChange = () => {
-    // UX: Adia a atualização da UI para dar tempo ao SDK de atualizar seu estado interno.
-    // Usamos window.setTimeout para evitar busca de escopo global implícita.
     window.setTimeout(updateNotificationUI, 500);
 };
 
 const _handleOneSignalInit = (OneSignal: any) => {
-    // Listener aponta para referência estática.
     OneSignal.Notifications.addEventListener('permissionChange', _handlePermissionChange);
-    // Atualiza a UI no carregamento inicial (Fast Path).
     updateNotificationUI();
 };
 
 /**
- * Handler otimizado para mudanças de rede.
- * Realiza "Dirty Check" estrito antes de invalidar estilos.
+ * NETWORK RELIABILITY: Handler otimizado para mudanças de rede.
+ * BLINDAGEM: Implementa Debounce (500ms) para evitar "Flapping" (oscilação rápida de sinal),
+ * que causaria UI Thrashing e tempestades de sincronização.
  */
 const _handleNetworkChange = () => {
-    const isOffline = !navigator.onLine;
-    const body = document.body;
-    
-    // PERFORMANCE: Dirty Check para evitar 'Recalculate Style' desnecessário.
-    // O acesso a classList.contains é O(1) e muito mais barato que uma escrita no DOM.
-    if (body.classList.contains('is-offline') !== isOffline) {
-        body.classList.toggle('is-offline', isOffline);
-        // Só re-renderiza componentes reativos se o estado realmente mudou.
-        renderAINotificationState();
+    // Cancela execução pendente se houver nova mudança rápida
+    if (networkDebounceTimer) clearTimeout(networkDebounceTimer);
+
+    networkDebounceTimer = window.setTimeout(() => {
+        const isOnline = navigator.onLine;
+        const body = document.body;
+        
+        // UI Update
+        const isOfflineClass = !isOnline;
+        if (body.classList.contains('is-offline') !== isOfflineClass) {
+            body.classList.toggle('is-offline', isOfflineClass);
+            renderAINotificationState();
+        }
+
+        // SYNC TRIGGER: Se voltamos a ficar online e estável, empurramos dados.
+        if (isOnline) {
+            console.log("[Network] Online stable. Attempting to flush pending sync.");
+            syncStateWithCloud(getPersistableState(), true);
+        }
+    }, 500);
+};
+
+/**
+ * PWA LIFECYCLE: Handler para quando o app volta do background (Wake from Sleep).
+ */
+const _handleVisibilityChange = () => {
+    if (document.visibilityState === 'visible') {
+        // 1. Refresh Network State (Immediately check, bypassing debounce for UX responsiveness on wake)
+        // Chamamos a lógica interna diretamente ou deixamos o debounce rodar?
+        // Deixar o debounce rodar é mais seguro para evitar conflitos de boot.
+        _handleNetworkChange();
+
+        // 2. Temporal Consistency Check
+        const cachedToday = getTodayUTCIso(); // Valor atual em cache
+        resetTodayCache(); // Força recálculo
+        const realToday = getTodayUTCIso(); // Novo valor real
+
+        if (cachedToday !== realToday) {
+            console.log("App woke up in a new day. Refreshing context.");
+            if (state.selectedDate === cachedToday) {
+                state.selectedDate = realToday;
+            }
+            document.dispatchEvent(new CustomEvent('dayChanged'));
+        } else {
+            // Re-sync visual state
+            requestAnimationFrame(renderApp);
+        }
     }
 };
 
 export function setupEventListeners() {
-    // 1. Inicializa motores de UI globais
-    initModalEngine();
+    // ROBUSTNESS: Singleton Guard. Impede duplicação de listeners se chamado múltiplas vezes.
+    if (areListenersAttached) {
+        console.warn("setupEventListeners called multiple times. Ignoring.");
+        return;
+    }
+    areListenersAttached = true;
 
-    // 2. Inicializa módulos de listeners especializados (Subsystems)
+    // 1. Critical Path Listeners
+    initModalEngine();
     setupModalListeners();
     setupCardListeners();
     setupCalendarListeners();
-    initChartInteractions(); 
     
-    // 3. Notification System (Async/Callback based)
-    // Passa a referência da função estática, zero alocação de closure.
+    // 2. Notification System
     pushToOneSignal(_handleOneSignalInit);
-    
-    // 4. Inicializa manipuladores de gestos complexos (Physics Engines)
-    // PERFORMANCE: Passamos o elemento cacheado `ui.habitContainer` (Direct Memory Reference).
-    // Isso evita que setupDragHandler precise fazer um querySelector interno.
-    const container = ui.habitContainer;
-    setupDragHandler(container);
-    setupSwipeHandler(container);
 
-    // 5. CRITICAL LOGIC: Application Event Bus.
+    // 3. App Event Bus
     document.addEventListener('render-app', _handleRenderAppEvent);
 
-    // 6. NETWORK STATUS LISTENER (Native Events)
+    // 4. ENVIRONMENT & LIFECYCLE LISTENERS
     window.addEventListener('online', _handleNetworkChange);
     window.addEventListener('offline', _handleNetworkChange);
+    document.addEventListener('visibilitychange', _handleVisibilityChange);
     
-    // Verificação inicial no boot (Fast Path)
-    _handleNetworkChange();
+    // Boot Check (Immediate execution)
+    if (navigator.onLine) {
+        document.body.classList.remove('is-offline');
+    } else {
+        document.body.classList.add('is-offline');
+    }
+
+    // 5. DEFERRED PHYSICS (Input Prioritization)
+    const setupHeavyInteractions = () => {
+        const container = ui.habitContainer;
+        // Se o container não existir (erro de boot), aborta para evitar crash
+        if (!container) return;
+        
+        setupDragHandler(container);
+        setupSwipeHandler(container);
+        initChartInteractions();
+    };
+
+    // UX OPTIMIZATION: Elevado de 'background' para 'user-visible'.
+    // A física de gestos é crítica para a percepção de "App Nativo". 
+    // O usuário espera poder interagir (swipe) imediatamente após ver a lista.
+    if ('scheduler' in window && window.scheduler) {
+        window.scheduler.postTask(setupHeavyInteractions, { priority: 'user-visible' });
+    } else if ('requestIdleCallback' in window) {
+        // Fallback: requestIdleCallback pode demorar muito em main thread ocupada.
+        // Usamos setTimeout curto para garantir execução.
+        setTimeout(setupHeavyInteractions, 50);
+    } else {
+        setTimeout(setupHeavyInteractions, 50);
+    }
 }

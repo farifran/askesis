@@ -16,8 +16,9 @@
  * - **Responsabilidade Única:** Encapsular a lógica de física, gestos e renderização do seletor circular.
  * - **Geometry Caching:** Utiliza `ResizeObserver` para monitorar dimensões sem causar "Layout Thrashing"
  *   (leituras síncronas de DOM) dentro do loop de eventos `pointermove`.
- * - **Zero-Read Animations:** Mantém o estado da transformação em memória para evitar ler o DOM (`getComputedStyle`)
- *   durante o início do gesto, prevenindo reflows forçados.
+ * - **SNIPER OPTIMIZATION (CSS Typed OM):** Usa `attributeStyleMap` para definir transformações. 
+ *   Isso evita a serialização de strings no JS e o parsing no CSS Engine, comunicando valores brutos
+ *   diretamente ao compositor do navegador.
  * 
  * DECISÕES TÉCNICAS:
  * 1. **CSS Transforms:** Movimentação via `translateX` para garantir composição na GPU.
@@ -55,6 +56,9 @@ export function setupReelRotary({
     // PERFORMANCE [2025-02-23]: Cache da largura do item via ResizeObserver.
     let cachedItemWidth = 95; // Valor inicial seguro
     
+    // SNIPER OPTIMIZATION: Feature Detection for Typed OM
+    const hasTypedOM = !!(reelEl.attributeStyleMap && window.CSSTranslate && window.CSS && CSS.px);
+
     // Helper para atualizar a posição visual logicamente e no DOM
     const updatePosition = (index: number, animate: boolean) => {
         // Integer math for pixel alignment
@@ -68,7 +72,13 @@ export function setupReelRotary({
         }
         
         // GPU Composition
-        reelEl.style.transform = `translateX(${targetX}px)`;
+        if (hasTypedOM) {
+            // Fast Path: Direct Compositor Communication
+            reelEl.attributeStyleMap!.set('transform', new CSSTranslate(CSS.px(targetX), CSS.px(0)));
+        } else {
+            // Legacy Path: String Parsing
+            reelEl.style.transform = `translateX(${targetX}px)`;
+        }
     };
 
     const handleIndexChange = async (direction: 'next' | 'prev') => {
@@ -139,8 +149,12 @@ export function setupReelRotary({
         // Update State Tracker
         currentVisualX = clampedTranslateX;
         
-        // GPU Write
-        reelEl.style.transform = `translateX(${clampedTranslateX}px)`;
+        // GPU Write (Sniper Optimized)
+        if (hasTypedOM) {
+            reelEl.attributeStyleMap!.set('transform', new CSSTranslate(CSS.px(clampedTranslateX), CSS.px(0)));
+        } else {
+            reelEl.style.transform = `translateX(${clampedTranslateX}px)`;
+        }
     };
 
     const endSwipe = (e: PointerEvent) => {

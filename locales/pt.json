@@ -1,3 +1,4 @@
+
 {
     "_comment": "[ANALYSIS PROGRESS]: 100% - Limpeza de chaves mortas realizada [2025-03-22].",
     "aiCelebration21Day": {
@@ -10,6 +11,8 @@
     },
     "aiErrorGeneric": "Ocorreu um erro na comunicação com a Inteligência Artificial. Por favor, tente novamente mais tarde.",
     "aiEval_ariaLabel": "Avaliação IA",
+    "aiOfflineMessage": "A conexão com a nuvem não está disponível. Lembre-se: a tecnologia é externa, mas a sua razão é interna e está sob seu controle.",
+    "aiOfflineTitle": "Sem Conexão",
     "aiOptionHistoricalDesc": "Uma visão completa de toda a sua jornada.",
     "aiOptionHistoricalTitle": "Análise Histórica",
     "aiOptionMonthlyDesc": "Uma reflexão sobre os dados disponíveis (máx. 30 dias).",

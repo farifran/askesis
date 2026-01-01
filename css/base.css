@@ -1,10 +1,12 @@
+
 /* --- RESET E ESTILOS GLOBAIS --- */
 html {
     height: 100%;
     overflow: hidden; /* Lock body scroll */
-    overscroll-behavior: none; /* Prevent bounce on body */
-    /* FIX [2025-03-02]: Define a cor de fundo na raiz para cobrir áreas de 'overscroll' e a barra inferior do mobile */
+    /* FIX [2025-05-02]: Define a cor de fundo na raiz para cobrir áreas de 'overscroll' e a barra inferior do mobile */
     background-color: var(--bg-color);
+    /* UX: Desativa o efeito de "bounce" globalmente na raiz */
+    overscroll-behavior: none;
 }
 
 * {
@@ -25,9 +27,6 @@ body {
     -webkit-user-select: none; /* Safari */
     user-select: none;         /* Padrão Moderno */
     touch-action: manipulation; /* BUGFIX [2024-08-29]: Desabilita o zoom por duplo toque em dispositivos móveis para melhorar a resposta de interações personalizadas. */
-    overscroll-behavior-y: none; /* Previne o efeito rubber-banding/pull-to-refresh nativo */
-    /* UX: Evita scroll chaining */
-    overscroll-behavior: contain;
     
     /* MODERN LAYOUT [2025-01-18]: Garante altura total em mobile ignorando a barra de endereços */
     height: 100%;

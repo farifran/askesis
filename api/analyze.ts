@@ -55,41 +55,35 @@ const ERR_NO_API_KEY = JSON.stringify({ error: 'Internal Server Error', details:
 const ERR_INVALID_JSON = JSON.stringify({ error: 'Bad Request: Invalid JSON format' });
 const ERR_MISSING_FIELDS = JSON.stringify({ error: 'Bad Request: Missing prompt or systemInstruction' });
 const ERR_PAYLOAD_TOO_LARGE = JSON.stringify({ error: 'Payload Too Large', details: 'Request exceeds limit.' });
+const ERR_INTERNAL = JSON.stringify({ error: 'Internal Server Error', details: 'An unexpected error occurred.' });
 
 // 3. Environment & Constants
 const API_KEY = process.env.API_KEY;
+// MODEL SAFETY: Use 'gemini-3-flash-preview' as requested, but be aware of deprecation.
 const MODEL_NAME = 'gemini-3-flash-preview';
 
 // 4. Lazy Singleton Client (Global Scope)
-// Mantém a instância viva entre requisições em ambientes quentes, mas não inicializa até ser necessário.
 let aiClient: GoogleGenAI | null = null;
 
 // --- HANDLER ---
 
 export default async function handler(req: Request) {
-    // Fast Path: Preflight (OPTIONS) - Zero SDK Overhead
+    // Fast Path: Preflight (OPTIONS)
     if (req.method === 'OPTIONS') {
         return new Response(null, { status: 204, headers: CORS_HEADERS });
     }
 
-    // Fast Path: Method Check
     if (req.method !== 'POST') {
-        return new Response(ERR_METHOD_NOT_ALLOWED, {
-            status: 405,
-            headers: HEADERS_JSON,
-        });
+        return new Response(ERR_METHOD_NOT_ALLOWED, { status: 405, headers: HEADERS_JSON });
     }
 
-    // Fail Fast: Configuração de Servidor (Environment Check)
     if (!API_KEY) {
         console.error("[api/analyze] API_KEY environment variable not set.");
-        return new Response(ERR_NO_API_KEY, {
-            status: 500,
-            headers: HEADERS_JSON,
-        });
+        return new Response(ERR_NO_API_KEY, { status: 500, headers: HEADERS_JSON });
     }
 
-    // SECURITY: Content-Length Check
+    // SECURITY: Robust Payload Size Check (Clone & Blob)
+    // Trusts header first for speed, but validates actual size to prevent OOM DOS.
     const contentLengthStr = req.headers.get('content-length');
     if (contentLengthStr) {
         const length = parseInt(contentLengthStr, 10);
@@ -98,68 +92,56 @@ export default async function handler(req: Request) {
         }
     }
 
-    // Parse Body
-    let body: AnalyzeRequestBody;
+    // Parse Body Safe
+    let body: any;
     try {
-        body = await req.json();
+        // BLINDAGEM: Clonamos a requisição para ler como Blob e verificar tamanho real antes do JSON parse.
+        // Isso evita que um ataque de compressão ou spoofing de header estoure a memória no JSON.parse.
+        const blob = await req.clone().blob();
+        if (blob.size > MAX_PROMPT_SIZE) {
+             return new Response(ERR_PAYLOAD_TOO_LARGE, { status: 413, headers: HEADERS_JSON });
+        }
+        body = JSON.parse(await blob.text());
     } catch (e) {
-        return new Response(ERR_INVALID_JSON, {
-            status: 400,
-            headers: HEADERS_JSON,
-        });
+        return new Response(ERR_INVALID_JSON, { status: 400, headers: HEADERS_JSON });
     }
 
-    // Destructure & Validate (Fail Fast)
-    const { prompt, systemInstruction } = body;
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+        return new Response(ERR_INVALID_JSON, { status: 400, headers: HEADERS_JSON });
+    }
+
+    const { prompt, systemInstruction } = body as Partial<AnalyzeRequestBody>;
 
     if (!prompt || !systemInstruction) {
-        return new Response(ERR_MISSING_FIELDS, {
-            status: 400,
-            headers: HEADERS_JSON,
-        });
+        return new Response(ERR_MISSING_FIELDS, { status: 400, headers: HEADERS_JSON });
     }
 
-    // --- HEAVY LIFTING STARTS HERE ---
-    
-    // Lazy Initialization: Só instancia o SDK se chegamos até aqui.
     if (!aiClient) {
         aiClient = new GoogleGenAI({ apiKey: API_KEY });
     }
 
     try {
-        // Execution
         const geminiResponse = await aiClient.models.generateContent({
             model: MODEL_NAME,
             contents: prompt,
             config: { systemInstruction },
         });
         
-        // Response Validation
         if (!geminiResponse.text) {
             const candidate = geminiResponse.candidates?.[0];
             const finishReason = candidate?.finishReason;
-            const details = finishReason ? `Finish reason: ${finishReason}` : 'Generation failed.';
-            const isSafety = finishReason === 'SAFETY';
-            
-            return new Response(JSON.stringify({ 
-                error: isSafety ? 'Bad Request: Blocked by safety settings' : 'Internal Server Error: Generation failed', 
-                details 
-            }), {
-                status: isSafety ? 400 : 500,
-                headers: HEADERS_JSON,
-            });
+            // Sanitized error for Safety blocking
+            if (finishReason === 'SAFETY') {
+                 return new Response(JSON.stringify({ error: 'Bad Request', details: 'Blocked by safety settings.' }), { status: 400, headers: HEADERS_JSON });
+            }
+            return new Response(JSON.stringify({ error: 'Internal Server Error', details: 'Generation failed.' }), { status: 500, headers: HEADERS_JSON });
         }
 
-        // Success Path
-        return new Response(geminiResponse.text, {
-            headers: HEADERS_TEXT,
-        });
+        return new Response(geminiResponse.text, { headers: HEADERS_TEXT });
 
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('Critical error in /api/analyze handler:', error);
-        return new Response(JSON.stringify({ error: 'Internal Server Error', details: error.message }), {
-            status: 500,
-            headers: HEADERS_JSON,
-        });
+        // SECURITY: Do not leak error.message to client in production.
+        return new Response(ERR_INTERNAL, { status: 500, headers: HEADERS_JSON });
     }
 }

@@ -1,3 +1,4 @@
+
 /* --- COMPONENTES: FORMULÁRIOS --- */
 .form-group { margin-block-end: var(--space-lg); }
 .form-group label {
@@ -9,7 +10,9 @@
     border: 1px solid var(--border-color);
     border-radius: var(--border-radius-base);
     padding: var(--space-md); color: var(--text-primary);
-    font-size: 15px; height: 44px;
+    /* BLINDAGEM IOS: 16px previne zoom automático ao focar */
+    font-size: 16px; 
+    height: 44px;
 }
 #edit-habit-modal #habit-name {
     height: 48px;

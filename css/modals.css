@@ -1,3 +1,4 @@
+
 /* --- MODAIS --- */
 .modal-overlay {
     position: fixed;
@@ -292,7 +293,9 @@
 #notes-textarea {
     background: var(--bg-color); border: 1px solid var(--border-color);
     border-radius: var(--border-radius-base); padding: var(--space-md); color: var(--text-primary);
-    font-size: 14px; resize: vertical; width: 100%; min-height: 100px;
+    /* BLINDAGEM IOS: 16px previne zoom */
+    font-size: 16px; 
+    resize: vertical; width: 100%; min-height: 100px;
 }
 
 /* Modal: Seletor de Ícones */

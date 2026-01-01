@@ -1,3 +1,4 @@
+
 {
     "_comment": "[ANALYSIS PROGRESS]: 100% - Dead key cleanup performed [2025-03-22].",
     "aiCelebration21Day": {
@@ -10,6 +11,8 @@
     },
     "aiErrorGeneric": "An error occurred while communicating with the AI. Please try again later.",
     "aiEval_ariaLabel": "AI Evaluation",
+    "aiOfflineMessage": "Connection to the cloud is unavailable. Remember: technology is external, but your reason is internal and within your control.",
+    "aiOfflineTitle": "No Connection",
     "aiOptionHistoricalDesc": "A complete overview of your entire journey.",
     "aiOptionHistoricalTitle": "Historical Analysis",
     "aiOptionMonthlyDesc": "A reflection on available data (max 30 days).",

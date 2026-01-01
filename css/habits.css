@@ -1,3 +1,4 @@
+
 /* --- LAYOUT DE HABIT CONTAINER (SMART FLEX SCROLL) --- */
 #habit-container {
     display: flex;
@@ -59,11 +60,9 @@
     min-height: auto;
     overflow: visible;
 
-    /* OTIMIZAÇÃO [2025-03-09]: Content Visibility.
-       Permite que o navegador pule a renderização de grupos fora da tela (ex: Noite quando vendo Manhã).
-       Isso reduz o tempo de paint em telas pequenas com listas longas. */
-    content-visibility: auto;
-    contain-intrinsic-size: 100px; /* Altura estimada de um grupo vazio/pequeno para evitar saltos de scroll */
+    /* ROLLBACK [2025-05-04]: Removido 'content-visibility: auto'.
+       A estimativa de tamanho (contain-intrinsic-size) causava saltos bruscos na barra de rolagem (Scroll Jitter)
+       quando a altura real do grupo diferia da estimada. A reciclagem de DOM no JS já garante performance. */
 }
 
 /* Collapsible state override */
@@ -318,6 +317,14 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     touch-action: pan-y;
     /* MEMORY OPTIMIZATION [2025-01-29]: Removed global will-change: transform. Apply it contextually during interactions (swipe/drag) via classes to save VRAM. */
 }
+
+/* A11Y FIX [2025-05-04]: Garante anel de foco visível mesmo com overflow:hidden no pai. 
+   Usamos inset box-shadow para desenhar o foco DENTRO do elemento. */
+.habit-content-wrapper:focus-visible {
+    outline: none;
+    box-shadow: inset 0 0 0 2px var(--accent-blue), inset 0 0 0 4px var(--bg-color);
+}
+
 /* Only use will-change during interaction to save memory */
 .habit-card.is-swiping .habit-content-wrapper,
 .habit-card.dragging .habit-content-wrapper {
@@ -499,7 +506,8 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     background: transparent; /* UX FIX: Blend with card background */
     border: 1px solid var(--accent-blue);
     color: var(--text-primary);
-    font-size: 14px;
+    /* BLINDAGEM IOS: 16px previne zoom automático ao editar meta */
+    font-size: 16px;
     text-align: center;
     border-radius: var(--space-xs);
     padding: 2px;

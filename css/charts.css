@@ -4,61 +4,66 @@
     padding: var(--space-lg);
     background-color: var(--bg-color); /* TESTE: Alterado para preto puro a pedido do usuário */
     border-radius: var(--border-radius-large);
-    /* BUGFIX [2025-04-24]: Alterado para 'paint' para permitir que tooltips transbordem visualmente sem serem cortados pelo layout. */
-    contain: paint;
-    /* PERFORMANCE [2025-01-18]: Otimização para evitar renderização quando fora da tela. */
-    content-visibility: auto;
-    contain-intrinsic-size: 80px;
+    
+    /* BUGFIX [2025-05-04]: Removido 'content-visibility: auto'.
+       Esta propriedade aplicava 'Paint Containment' implícito, cortando os tooltips 
+       que flutuam para fora da caixa do gráfico.
+       Mantemos apenas 'layout style' que isola o reflow mas permite overflow visual. */
+    contain: layout style;
     
     /* FIX: FLEX ITEM */
     flex-shrink: 0; /* Nunca encolhe, sempre visível */
     max-height: none;
-    overflow: visible;
+    overflow: visible; /* CRÍTICO: Permite que o tooltip saia da caixa */
     
-    /* UI FIX: Margem superior para separar dos cartões.
-       Como o container de hábitos não força altura total, o gráfico sobe
-       naturalmente para ficar perto dos cartões quando há poucos. */
-    /* Reduced margin-top from --space-3xl (48px) to --space-xl (24px) for tighter layout */
+    /* UI FIX: Margem superior para separar dos cartões. */
     margin-top: var(--space-lg);
     margin-inline: var(--space-lg); 
     
     /* Margem inferior para não colar na borda da tela */
-    /* Reduced margin-bottom from --space-lg (16px) to --space-sm (8px) */
     margin-bottom: var(--space-sm);
     
-    /* Estilos visuais normais (não flutuante) */
+    /* Estilos visuais normais */
     z-index: var(--z-index-footer);
     box-shadow: none;
     
     /* [2025-02-23] Add border matching habit cards */
     border: 1px solid rgba(255, 255, 255, 0.3);
 }
+
+/* 
+   🛡️ LANDSCAPE GUARD [2025-05-04]: 
+   Em telas baixas (orientação paisagem em celulares), o gráfico consome espaço vertical crítico,
+   tornando a lista de hábitos inutilizável devido ao teclado virtual ou chrome do navegador.
+*/
+@media (max-height: 500px) and (orientation: landscape) {
+    .chart-container {
+        display: none !important;
+    }
+}
+
 .chart-header {
     display: flex;
     flex-direction: column;
     align-items: flex-start;
-    /* VISUAL UPDATE [2025-03-22]: Margin removed to align chart top with title */
     margin-bottom: 0;
-    /* LAYOUT UPDATE [2025-03-25]: Ajustes para sobreposição visual */
     position: relative;
     z-index: 10;
     pointer-events: none; /* Permite clicar no gráfico atrás do texto */
     padding-bottom: 0;
-    /* Texto legível sobre o gráfico */
     text-shadow: 0 1px 2px var(--bg-color); 
 }
-/* REFINAMENTO DE UI [2024-11-25]: Estilos atualizados para acomodar um novo cabeçalho de gráfico com título e subtítulo. */
+
 .chart-title {
-    /* RESTAURADO: Título 'Askesis' */
     font-size: 18px;
     font-weight: 700;
     line-height: 1.2;
 }
-/* LAYOUT FIX [2025-03-27]: Flex container for title and indicator to allow horizontal alignment. */
+
 .chart-title-row {
     display: flex;
     align-items: baseline;
-    gap: 30px; /* Requested 30px gap */
+    gap: 30px;
 }
 .app-subtitle {
     font-size: 13px;
@@ -83,10 +88,9 @@
 }
 .chart-container:not(.is-empty) .chart-data-view {
     display: block;
-    /* LAYOUT UPDATE [2025-03-25]: Puxa o gráfico para cima para sobrepor o cabeçalho */
     margin-top: -75px; 
     position: relative;
-    /* BUGFIX [2025-04-24]: Aumenta o z-index para 15, garantindo que o gráfico e seu tooltip apareçam sobre o cabeçalho (z-index 10). */
+    /* Garante que o gráfico fique sobre o header */
     z-index: 15;
 }
 .chart-container.is-empty .chart-empty-state {
@@ -94,16 +98,14 @@
 }
 .chart-wrapper { 
     position: relative; 
-    /* VISUAL UPDATE [2025-03-25]: Adjusted to 45px to match design spec */
     height: 75px; 
-    /* UX [2025-01-24]: Permite scroll vertical (pan-y) mas captura horizontal */
     touch-action: pan-y; 
     user-select: none; 
 }
 .chart-svg { 
     width: 100%; 
     height: 100%;
-    /* FIX [2025-03-22]: Permite que o stroke ultrapasse levemente a área de visualização (para não cortar a ponta da linha ou sombras) */
+    /* Permite que o stroke ultrapasse levemente a área de visualização */
     overflow: visible;
 }
 .chart-area { fill: url(#chart-gradient); }
@@ -113,7 +115,6 @@
     stroke-width: 2.5; 
     stroke-linecap: round; 
     stroke-linejoin: round;
-    /* VISUAL ENHANCEMENT: Adiciona um brilho sutil para fazer a linha se destacar. */
     filter: drop-shadow(0 0 3px var(--accent-blue));
 }
 .chart-axis-labels {
@@ -126,7 +127,6 @@
 }
 .chart-tooltip {
     position: absolute; 
-    /* PERFORMANCE [2025-01-18]: Fixa posição em 0 e move via transform para evitar layout thrashing. */
     top: 0; left: 0; 
     background-color: var(--bg-color);
     border: 1px solid var(--border-color);
@@ -135,7 +135,6 @@
     box-shadow: 0 4px 12px rgba(0,0,0,0.3);
     pointer-events: none; opacity: 0;
     transition: opacity var(--transition-duration);
-    /* PERFORMANCE [2025-01-18]: Uso de will-change para promoção de camada GPU. */
     will-change: transform, opacity;
     z-index: var(--z-index-tooltip); min-width: 150px;
 }
@@ -159,7 +158,6 @@
     height: 42px; color: var(--text-tertiary); font-style: italic; text-align: center;
 }
 .chart-evolution-indicator {
-    /* LAYOUT CLEANUP [2025-05-02]: Clean flex item positioning */
     font-size: 16px;
     font-weight: 700;
     background-color: transparent;

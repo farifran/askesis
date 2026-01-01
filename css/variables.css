@@ -1,3 +1,4 @@
+
 :root {
     /* --- CORES --- */
     /* FIX [2025-03-02]: Alterado para #000000 (True Black) a pedido do usuário para eliminar a percepção de 'fundo azulado' em telas OLED/LCD */
@@ -44,12 +45,13 @@
     /* --- CAMADAS (Z-INDEX) --- */
     /* DO NOT REFACTOR: A ordem dessas camadas é crítica para evitar bugs visuais em sobreposições */
     --z-index-base: 1;
-    --z-index-sticky: 20; /* Time markers */
     --z-index-content: 2;
     --z-index-indicator: 3;
-    --z-index-tooltip: 10;
+    --z-index-sticky: 20; /* Time markers */
     --z-index-header: 50; /* Header above scrolling content */
     --z-index-footer: 50; /* Chart footer above scrolling content */
+    /* FIX [2025-05-05]: Tooltip deve flutuar ACIMA de headers e stickies para não ser cortado */
+    --z-index-tooltip: 60;
     --z-index-modal-overlay: 1000;
     --z-index-modal-content: 1001;
     --z-index-stacked-modal: 1010; /* Para modais que aparecem sobre outros modais */

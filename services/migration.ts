@@ -44,15 +44,24 @@ import { AppState, Habit, HabitSchedule } from '../state';
  * @returns An AppState object conforming to the v6 structure.
  */
 function migrateToV6(oldState: any): AppState {
-    const oldHabits = oldState.habits as any[];
-    if (!oldHabits || oldHabits.length === 0) {
-        oldState.version = 6;
-        return oldState;
+    // SECURITY: Defensive check against corrupted state (Null Pointer Exception Protection)
+    if (!oldState || typeof oldState !== 'object') {
+        return { version: 6, habits: [], dailyData: {}, archives: {}, lastModified: Date.now(), notificationsShown: [], pending21DayHabitIds: [], pendingConsolidationHabitIds: [] } as AppState;
+    }
+
+    const oldHabits = Array.isArray(oldState.habits) ? oldState.habits : [];
+    
+    if (oldHabits.length === 0) {
+        return {
+            ...oldState,
+            habits: [],
+            version: 6
+        };
     }
 
     // --- 1. Graph Construction (Adjacency List for an Undirected Graph) ---
     // PERFORMANCE: Map para lookup O(1) de entidades.
-    const habitsMap = new Map(oldHabits.map(h => [h.id, h]));
+    const habitsMap = new Map(oldHabits.map((h: any) => [h.id, h]));
     const adj = new Map<string, string[]>();
 
     const addEdge = (u: string, v: string) => {
@@ -160,9 +169,11 @@ function migrateToV6(oldState: any): AppState {
     
     // --- 5. Remap dailyData using the collected mappings ---
     // DATA INTEGRITY: Move dados de IDs antigos para o novo ID unificado.
-    const newDailyData = oldState.dailyData;
+    const newDailyData = oldState.dailyData || {}; // Safety fallback
     for (const dateStr in newDailyData) {
         const dailyEntry = newDailyData[dateStr];
+        if (!dailyEntry) continue; // Safety check
+
         for (const [oldId, newId] of dailyDataRemap.entries()) {
             if (dailyEntry[oldId]) {
                 const sourceInfo = dailyEntry[oldId];
@@ -208,6 +219,12 @@ const MIGRATIONS = [
  * @returns The state object, migrated to the current version.
  */
 export function migrateState(loadedState: any, targetVersion: number): AppState {
+    // CRASH GUARD: Handle null/undefined loadedState explicitly
+    if (!loadedState) {
+        console.warn("migrateState received null state. Returning default.");
+        return { version: targetVersion, habits: [], dailyData: {}, archives: {}, lastModified: Date.now(), notificationsShown: [], pending21DayHabitIds: [], pendingConsolidationHabitIds: [] } as AppState;
+    }
+
     let migratedState = loadedState;
     const initialVersion = migratedState.version || 0;
 
@@ -219,7 +236,14 @@ export function migrateState(loadedState: any, targetVersion: number): AppState 
         for (const migration of MIGRATIONS) {
             if (migratedState.version < migration.targetVersion && migration.targetVersion <= targetVersion) {
                 console.log(`Applying migration to v${migration.targetVersion}...`);
-                migratedState = migration.migrate(migratedState);
+                try {
+                    migratedState = migration.migrate(migratedState);
+                } catch (e) {
+                    console.error(`Migration v${migration.targetVersion} failed:`, e);
+                    // Fail-safe: Update version to prevent loop, even if migration partially failed.
+                    // Ideally, we should prompt user to reset, but avoiding crash loop is priority.
+                    migratedState.version = migration.targetVersion; 
+                }
             }
         }
     }

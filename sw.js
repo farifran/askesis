@@ -13,9 +13,9 @@
  * Otimizado para latência zero no interceptador de rede (`fetch`).
  * 
  * ARQUITETURA (SOTA / V8 Optimized):
- * - **Zero-Allocation Routing:** Substitui `new URL()` por `indexOf` na string crua da URL.
- * - **Promise Pipelining:** Evita overhead de `async/await` generators em caminhos quentes.
- * - **Atomic Cache Transaction:** Instalação falha se *qualquer* asset falhar.
+ * - **Navigation Preload:** Reduz latência de HTML executando fetch em paralelo com boot do SW.
+ * - **Lie-fi Protection:** Race Condition com timeout para evitar travamentos em redes fantasmas.
+ * - **Dynamic Caching:** Suporte a Code Splitting (Lazy Loading) cacheando chunks sob demanda.
  */
 
 try {
@@ -25,8 +25,8 @@ try {
 }
 
 // CONSTANTS (Build-time injected)
-// FORCE UPDATE [2025-05-02]: Bumped to v5 to flush old CSS bundles after modularization.
-const CACHE_NAME = 'habit-tracker-v5';
+// FORCE UPDATE [2025-05-03]: Bumped to v8 for Navigation Preload support.
+const CACHE_NAME = 'habit-tracker-v8';
 
 // PERF: Static Asset List (Pre-allocated)
 const CACHE_FILES = [
@@ -49,12 +49,15 @@ const CACHE_FILES = [
 const RELOAD_OPTS = { cache: 'reload' };
 const HTML_FALLBACK = '/index.html';
 const MATCH_OPTS = { ignoreSearch: true };
+const NETWORK_TIMEOUT_MS = 3000; // 3 Seconds max wait for Navigation
+
+// HELPER: Timeout Promise
+const timeout = (ms) => new Promise((_, reject) => setTimeout(() => reject(new Error('Network Timeout')), ms));
 
 // --- INSTALL PHASE ---
 
 self.addEventListener('install', (event) => {
     // CRITICAL: Atomic Installation.
-    // Utiliza Promise.all para paralelizar downloads. Falha rápida se algum recurso não carregar.
     event.waitUntil(
         caches.open(CACHE_NAME).then(cache => {
             return Promise.all(CACHE_FILES.map(url => 
@@ -73,9 +76,10 @@ self.addEventListener('activate', (event) => {
     event.waitUntil(
         Promise.all([
             self.clients.claim(),
-            // Navigation Preload: Reduz latência de rede em 20-50ms
+            // OPTIMIZATION: Enable Navigation Preload
+            // Permite que o browser faça o request do HTML enquanto o SW acorda.
             self.registration.navigationPreload ? self.registration.navigationPreload.enable() : Promise.resolve(),
-            // Cache Pruning
+            // Cache Pruning (Buckets Cleanup)
             caches.keys().then(keys => Promise.all(
                 keys.map(k => k !== CACHE_NAME ? caches.delete(k) : Promise.resolve())
             ))
@@ -91,29 +95,45 @@ self.addEventListener('fetch', (event) => {
 
     // OPTIMIZATION: String Scanning vs URL Parsing.
     // `new URL()` aloca objetos e consome CPU. `indexOf` é uma varredura de memória linear (SIMD optimized).
-    // Assumimos que '/api/' é uma assinatura única o suficiente para este domínio.
     if (url.indexOf('/api/') !== -1) {
-        return; // Network-only bypass
+        return; // Network-only bypass for API
     }
 
-    // STRATEGY: Navigation (App Shell)
-    // Otimização: Promise Chaining direto em vez de Async/Await Generator para micro-otimização de stack.
+    // STRATEGY: Navigation (App Shell) with Lie-fi Protection & Cache Update
     if (req.mode === 'navigate') {
         event.respondWith(
             (async () => {
                 try {
-                    // 1. Tenta usar o Navigation Preload se disponível
+                    // 1. Navigation Preload (SOTA Optimization)
                     const preloadResp = await event.preloadResponse;
-                    if (preloadResp) return preloadResp;
+                    if (preloadResp) {
+                        // FIX [SAFETY]: Only update cache if response is valid (200 OK).
+                        // Prevents poisoning the cache with 404/500 pages.
+                        if (preloadResp.ok) {
+                            const cacheCopy = preloadResp.clone();
+                            caches.open(CACHE_NAME).then(cache => cache.put(HTML_FALLBACK, cacheCopy));
+                        }
+                        return preloadResp;
+                    }
 
-                    // 2. Cache First (Fastest LCP)
-                    const cachedResp = await caches.match(HTML_FALLBACK, MATCH_OPTS);
-                    if (cachedResp) return cachedResp;
+                    // 2. Network Race with Timeout (Lie-fi Proof)
+                    // Se a rede demorar mais que 3s, falha e vai para o cache.
+                    const networkResp = await Promise.race([
+                        fetch(req),
+                        timeout(NETWORK_TIMEOUT_MS)
+                    ]);
 
-                    // 3. Network Fallback
-                    return await fetch(req);
+                    // FIX [DATA ROT PREVENTION]: Se a navegação foi bem sucedida, 
+                    // atualizamos o HTML_FALLBACK no cache para que a próxima visita offline seja fresca.
+                    if (networkResp && networkResp.ok) {
+                        const cacheCopy = networkResp.clone();
+                        caches.open(CACHE_NAME).then(cache => cache.put(HTML_FALLBACK, cacheCopy));
+                    }
+
+                    return networkResp;
                 } catch (error) {
-                    // 4. Offline Fallback (Cache again as safety net)
+                    // 3. Offline/Timeout Fallback (Cache First for App Shell)
+                    // console.warn("[SW] Network failed, serving offline shell.", error);
                     return caches.match(HTML_FALLBACK, MATCH_OPTS);
                 }
             })()
@@ -121,8 +141,37 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    // STRATEGY: Static Assets (Stale-While-Revalidate pattern simplified to Cache-First for immutables)
+    // STRATEGY: Static Assets & Dynamic Chunks (Cache First + Dynamic Fill)
+    // Assets versionados (bundle.js, hashes) são imutáveis -> Cache First.
     event.respondWith(
-        caches.match(req).then(cached => cached || fetch(req))
+        caches.match(req).then(cached => {
+            if (cached) return cached;
+
+            // Stale-while-Revalidate logic for new resources
+            return fetch(req).then(networkResponse => {
+                // Check if valid
+                if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {
+                    return networkResponse;
+                }
+
+                // DYNAMIC CACHING: Clona e salva novos assets
+                const responseToCache = networkResponse.clone();
+                caches.open(CACHE_NAME).then(cache => {
+                    // FIX: Catch storage errors (QuotaExceeded)
+                    return cache.put(req, responseToCache).catch(err => {
+                        // Silent fail for storage limits is acceptable, dying SW is not.
+                        // console.warn("[SW] Cache put failed (Quota?)", err);
+                    });
+                });
+
+                return networkResponse;
+            }).catch(err => {
+                // FIX: Unhandled fetch error on resource miss
+                // Se não está no cache E a rede falha, o app não deve travar.
+                // Opcional: retornar placeholder image se for request de imagem.
+                // Por enquanto, apenas propagamos o erro ou retornamos 404 para não quebrar a Promise chain.
+                throw err;
+            });
+        })
     );
 });

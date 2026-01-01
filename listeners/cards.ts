@@ -14,6 +14,7 @@
  * ARQUITETURA (Static Handlers & Singleton State):
  * - **GoalEditState:** Singleton para gerenciar o estado do input de edição, evitando closures.
  * - **Event Delegation:** Interceptação eficiente de eventos no container.
+ * - **Debounce Strategy:** Proteção contra "Render Storm" em cliques rápidos de meta.
  */
 
 import { ui } from '../render/ui';
@@ -27,9 +28,11 @@ import {
     requestHabitEndingFromModal,
 } from '../habitActions';
 import { triggerHaptic } from '../utils';
+import { setTextContent } from '../render/dom'; // Import adicionado para update otimista
 import { DOM_SELECTORS, CSS_CLASSES } from '../render/constants';
 
 const GOAL_STEP = 5;
+const MAX_ALLOWED_GOAL = 9999; // BLINDAGEM: Limite são para evitar quebra de layout/gráfico
 const INTERACTIVE_SELECTOR = `${DOM_SELECTORS.HABIT_CONTENT_WRAPPER}, ${DOM_SELECTORS.GOAL_CONTROL_BTN}, ${DOM_SELECTORS.GOAL_VALUE_WRAPPER}, ${DOM_SELECTORS.SWIPE_DELETE_BTN}, ${DOM_SELECTORS.SWIPE_NOTE_BTN}, ${DOM_SELECTORS.EMPTY_GROUP_PLACEHOLDER}`;
 
 // --- STATIC STATE (Goal Editing) ---
@@ -41,6 +44,15 @@ const GoalEditState = {
     habitId: null as string | null,
     time: null as TimeOfDay | null,
     dateISO: null as string | null
+};
+
+// --- STATIC STATE (Debounce) ---
+// Protege contra "Render Storm" ao clicar rápido nos botões de meta
+const GoalDebouncer = {
+    timer: 0,
+    // Key: "habitId|time|dateISO" -> newValue
+    // FIX: Date included in key to prevent race conditions during navigation
+    pendingValues: new Map<string, number>() 
 };
 
 // --- STATIC HANDLERS (Goal Editing) ---
@@ -75,13 +87,16 @@ const _saveGoal = () => {
     const { activeInput, habitId, time, dateISO, activeWrapper } = GoalEditState;
     if (!activeInput || !habitId || !time || !dateISO || !activeWrapper) return;
 
-    const newGoal = parseInt(activeInput.value, 10);
+    let newGoal = parseInt(activeInput.value, 10);
 
     // Cleanup listeners immediately
     activeInput.removeEventListener('blur', _handleGoalBlur);
     activeInput.removeEventListener('keydown', _handleGoalKeydown);
 
     if (!isNaN(newGoal) && newGoal > 0) {
+        // BLINDAGEM: Clamp value to prevent layout destruction
+        if (newGoal > MAX_ALLOWED_GOAL) newGoal = MAX_ALLOWED_GOAL;
+
         // RACE-TO-IDLE: Skip manual DOM restoration. 
         // setGoalOverride triggers a full app render.
         setGoalOverride(habitId, dateISO, time, newGoal);
@@ -246,7 +261,7 @@ const _handleContainerClick = (e: MouseEvent) => {
         return;
     }
 
-    // --- GOAL CONTROLS ---
+    // --- GOAL CONTROLS (BLINDAGEM CONTRA SPAM) ---
     if (interactiveElement.classList.contains(CSS_CLASSES.GOAL_CONTROL_BTN)) {
         e.stopPropagation();
         
@@ -256,14 +271,51 @@ const _handleContainerClick = (e: MouseEvent) => {
         const action = interactiveElement.dataset.action as 'increment' | 'decrement';
         triggerHaptic('light');
         
-        const currentGoal = getCurrentGoalForInstance(habit, state.selectedDate, time);
-        const newGoal = (action === 'increment') 
-            ? currentGoal + GOAL_STEP 
-            : Math.max(1, currentGoal - GOAL_STEP);
-
-        setGoalOverride(habitId, state.selectedDate, time, newGoal);
+        // BUGFIX: Include Date in key to ensure clicks are attributed to the correct day
+        // even if user navigates away before debounce fires.
+        const key = `${habitId}|${time}|${state.selectedDate}`;
         
-        // Animation
+        // 1. Determine base value (Current State OR Pending Debounced Value)
+        const baseGoal = GoalDebouncer.pendingValues.has(key) 
+            ? GoalDebouncer.pendingValues.get(key)! 
+            : getCurrentGoalForInstance(habit, state.selectedDate, time);
+
+        // 2. Calculate New Value
+        let newGoal = (action === 'increment') 
+            ? baseGoal + GOAL_STEP 
+            : Math.max(1, baseGoal - GOAL_STEP);
+            
+        if (newGoal > MAX_ALLOWED_GOAL) newGoal = MAX_ALLOWED_GOAL;
+
+        // 3. Store in pending map
+        GoalDebouncer.pendingValues.set(key, newGoal);
+
+        // 4. OPTIMISTIC UI UPDATE (Direct DOM Manipulation)
+        // Find sibling value wrapper to update text immediately without waiting for renderApp
+        const parent = interactiveElement.parentElement;
+        const progressEl = parent?.querySelector('.progress');
+        if (progressEl) {
+            setTextContent(progressEl, String(newGoal));
+        }
+        // Update button state immediately
+        const decBtn = parent?.querySelector('[data-action="decrement"]') as HTMLButtonElement;
+        if (decBtn) decBtn.disabled = newGoal <= 1;
+
+        // 5. DEBOUNCE PERSISTENCE
+        if (GoalDebouncer.timer) clearTimeout(GoalDebouncer.timer);
+        
+        GoalDebouncer.timer = window.setTimeout(() => {
+            // Flush all pending updates for all keys/dates
+            GoalDebouncer.pendingValues.forEach((val, mapKey) => {
+                const [hId, tId, dateISO] = mapKey.split('|');
+                // Use stored dateISO, not global state.selectedDate
+                setGoalOverride(hId, dateISO, tId as TimeOfDay, val);
+            });
+            GoalDebouncer.pendingValues.clear();
+            GoalDebouncer.timer = 0;
+        }, 600); // 600ms debounce allows rapid tapping
+
+        // Animation (Visual Feedback)
         const goalWrapper = interactiveElement.parentElement?.querySelector<HTMLElement>(DOM_SELECTORS.GOAL_VALUE_WRAPPER);
         if (goalWrapper) {
             const animationClass = action === 'increment' ? 'increase' : 'decrease';

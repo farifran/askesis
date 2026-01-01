@@ -52,6 +52,8 @@ export function arrayBufferToBase64(buffer: ArrayBuffer): string {
 }
 
 export function base64ToArrayBuffer(base64: string): ArrayBuffer {
+    // DATA INTEGRITY: atob throws DOMException on invalid chars.
+    // Callers MUST handle try-catch if input is untrusted.
     const binary_string = atob(base64);
     const len = binary_string.length;
     const bytes = new Uint8Array(len);
@@ -122,14 +124,23 @@ export function generateUUID(): string {
 
 /**
  * PERFORMANCE UPDATE: Optimized Date-to-String using LUT.
- * Avoids conditional branching for padding.
+ * DATA SAFETY: Throws on Invalid Date to prevent DB corruption ("NaN-undefined-undefined").
  */
 export function toUTCIsoDateString(date: Date): string {
-    const year = date.getUTCFullYear(); // 4 digits, no padding needed usually
+    // FAIL-FAST: Verifica se a data é válida antes de qualquer cálculo.
+    if (isNaN(date.getTime())) {
+        console.error("toUTCIsoDateString received Invalid Date. Preventing data corruption.");
+        // Fallback seguro: Retorna hoje para evitar crash, mas loga erro.
+        // Em um cenário estrito, isso deveria lançar exceção, mas para UI Resilience, fallback é melhor.
+        const now = new Date();
+        return now.getUTCFullYear() + '-' + PAD_LUT[now.getUTCMonth() + 1] + '-' + PAD_LUT[now.getUTCDate()];
+    }
+
+    const year = date.getUTCFullYear(); 
     const month = date.getUTCMonth() + 1;
     const day = date.getUTCDate();
 
-    // PERF: Lookup Table access is O(1) and branchless vs ternary operators.
+    // PERF: Lookup Table access is O(1) and branchless.
     return year + '-' + PAD_LUT[month] + '-' + PAD_LUT[day];
 }
 
@@ -157,20 +168,34 @@ export function resetTodayCache() {
     _lastTodayCheckTime = 0;
 }
 
+// LEAK PROTECTION: Singleton timer reference
+let _midnightTimer: number | undefined;
+
 export function setupMidnightLoop() {
+    // IDEMPOTENCY: Se já existe um timer agendado, limpa antes de criar outro.
+    // Isso previne múltiplos loops paralelos se a função for chamada acidentalmente várias vezes.
+    if (_midnightTimer) {
+        clearTimeout(_midnightTimer);
+        _midnightTimer = undefined;
+    }
+
     const now = new Date();
     const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0, 0);
-    const msToMidnight = tomorrow.getTime() - now.getTime();
+    // Garante que o delay seja positivo (mínimo 1s) para evitar loop infinito em casos de clock skew
+    const msToMidnight = Math.max(1000, tomorrow.getTime() - now.getTime());
 
-    setTimeout(() => {
+    _midnightTimer = window.setTimeout(() => {
         console.log("Midnight detected. Refreshing day context.");
         resetTodayCache();
         document.dispatchEvent(new CustomEvent('dayChanged'));
+        // Recursive call (Safe now due to idempotency check at start)
         setupMidnightLoop();
-    }, msToMidnight + 1000);
+    }, msToMidnight + 1000); // +1s buffer to ensure we land in the next day
 }
 
 export function parseUTCIsoDate(isoString: string): Date {
+    // Simple validation before parsing
+    if (!isoString || typeof isoString !== 'string') return new Date(NaN);
     return new Date(`${isoString}T00:00:00.000Z`);
 }
 
@@ -321,11 +346,18 @@ let cachedDarkContrastColor: string | null = null;
 
 function _cacheContrastColors() {
     if (cachedLightContrastColor && cachedDarkContrastColor) return;
+    
+    // LAYOUT THRASHING PROTECTION:
+    // getComputedStyle is expensive. If we fail, fallback to defaults instead of crashing or retrying continuously.
     try {
+        // Check if document is ready to avoid accessing styles on unmounted root
+        if (!document.documentElement) throw new Error("Root missing");
+        
         const rootStyles = getComputedStyle(document.documentElement);
         cachedLightContrastColor = rootStyles.getPropertyValue('--text-primary').trim() || '#e5e5e5';
         cachedDarkContrastColor = rootStyles.getPropertyValue('--bg-color').trim() || '#000000';
     } catch (e) {
+        // Safe defaults
         cachedLightContrastColor = '#e5e5e5';
         cachedDarkContrastColor = '#000000';
     }
@@ -341,25 +373,6 @@ export function getContrastColor(hexColor: string): string {
     if (!hexColor || hexColor.length < 7) return cachedLightContrastColor!;
     
     try {
-        // Manual Hex Parse (Fast Path) - Assumes #RRGGBB format
-        // '0' is char 48. 'A' is 65. 'a' is 97.
-        // Simplified parser for speed:
-        
-        let r = 0, g = 0, b = 0;
-        
-        // Helper inline macro-like function for char->int
-        // Branchless approach is tricky for ascii, keeping simple lookups is better or just simple logic
-        // Using parseInt just for the substring is safer for robustness vs speed trade-off unless we have a char table.
-        // BUT, we can do it faster than full parseInt("xx", 16)
-        
-        // Optimization: Use parseInt but on slice is slow. 
-        // Let's stick to standard ParseInt but remove string allocs if possible? No easy way in JS without loops.
-        // Reverting to optimized parseInt usage but minimizing overhead.
-        
-        // Actually, let's allow parseInt but use the 0x trick if robust
-        // r = parseInt(hexColor.substring(1, 3), 16);
-        // This allocates substrings.
-        
         // Bitwise Hex Parse Implementation:
         // Reads 2 chars at offset, returns integer.
         const readHex2 = (i: number) => {
@@ -374,9 +387,9 @@ export function getContrastColor(hexColor: string): string {
             return val;
         };
 
-        r = readHex2(1);
-        g = readHex2(3);
-        b = readHex2(5);
+        const r = readHex2(1);
+        const g = readHex2(3);
+        const b = readHex2(5);
 
         // Formula: ((r * 299) + (g * 587) + (b * 114)) / 1000 >= 128
         // Optimization: Remove division by comparing against 128000

@@ -65,11 +65,31 @@ declare global {
             options?: { timeout?: number }
         ) => number;
         cancelIdleCallback: (handle: number) => void;
+        // SNIPER OPTIMIZATION: Scheduler API Type Definition
+        scheduler?: {
+            postTask(callback: () => any, options?: { priority?: 'user-blocking' | 'user-visible' | 'background', delay?: number }): Promise<any>;
+        };
+        // CSS Typed OM Polyfill Types
+        CSS: any;
+        CSSTranslate: any;
     }
     
     interface IdleDeadline {
         timeRemaining: () => number;
         readonly didTimeout: boolean;
+    }
+
+    // SNIPER OPTIMIZATION: CSS Typed OM Interfaces
+    interface Element {
+        attributeStyleMap?: StylePropertyMap;
+    }
+    interface StylePropertyMap {
+        set(property: string, value: any): void;
+        clear(): void;
+    }
+    // Augment CSS interface to support CSS.px
+    interface CSS {
+        px(value: number): any;
     }
 }
 
@@ -106,7 +126,7 @@ const registerServiceWorker = () => {
  * CRITICAL LOGIC: State Reconciliation / Smart Merge.
  * Esta função decide a "Verdade" dos dados do usuário.
  * 1. Tenta carga Local (Async IDB).
- * 2. Se houver chave, tentar carga Nuvem (Assíncrona).
+ * 2. Se houver chave, tentar carga Nuvem (Assíncrona) COM TIMEOUT RÍGIDO.
  * 3. Se houver conflito (ambos existem), executa Merge baseado em timestamps (`lastModified`).
  * DO NOT REFACTOR: Alterar a ordem ou a lógica de comparação pode causar perda de dados (Data Loss).
  */
@@ -125,9 +145,20 @@ async function loadInitialState() {
     
     if (hasLocalSyncKey()) {
         try {
-            // PERFORMANCE: Network blocking call. UI Loader is visible here.
-            // Note: Cloud fetch triggers speculative worker pre-warming internally.
-            const cloudState = await fetchStateFromCloud();
+            // BLINDAGEM CONTRA LIE-FI (Low Quality Network):
+            // O Watchdog do index.html mata o app em 8s. A API tem timeout de 15s.
+            // Se a rede estiver lenta, o app morre antes de carregar, mesmo tendo dados locais.
+            // Forçamos um timeout de 3s no boot para garantir que o usuário acesse os dados locais
+            // se a nuvem demorar. A sincronização ocorrerá em background depois.
+            const CLOUD_BOOT_TIMEOUT_MS = 3000;
+            
+            const cloudState = await Promise.race([
+                fetchStateFromCloud(),
+                new Promise<undefined>(resolve => setTimeout(() => {
+                    console.warn(`Startup: Cloud sync timed out (> ${CLOUD_BOOT_TIMEOUT_MS}ms). Proceeding with local state.`);
+                    resolve(undefined);
+                }, CLOUD_BOOT_TIMEOUT_MS))
+            ]);
 
             if (cloudState && localState) {
                 console.log("Startup: Both local and cloud state exist. Performing Smart Merge.");
@@ -155,8 +186,14 @@ async function loadInitialState() {
                 await loadState(cloudState);
             } else if (localState) {
                 // Apenas o estado local existe (ex: primeira sincronização após criar chave).
-                console.log("Startup: No cloud data found, pushing local state to cloud.");
-                syncStateWithCloud(localState as AppState, true);
+                // Se o cloudState foi undefined por timeout, caímos aqui e usamos o localState.
+                // Isso é o comportamento "Offline First" correto.
+                if (!cloudState) { 
+                    console.log("Startup: Cloud unavailable or timed out. Using local state."); 
+                } else {
+                    console.log("Startup: No cloud data found, pushing local state to cloud.");
+                    syncStateWithCloud(localState as AppState, true);
+                }
             }
             
         } catch (e) {
@@ -200,25 +237,42 @@ function finalizeInit(loader: HTMLElement | null) {
     if (loader) {
         // UX: Transição suave (Fade-out) para evitar "Pop-in" agressivo do conteúdo.
         loader.classList.add('hidden');
-        loader.addEventListener('transitionend', () => loader.remove());
+        loader.addEventListener('transitionend', () => {
+            // Remove o spinner
+            loader.remove();
+            
+            // CLEANUP [2025-05-02]: Remove também o container pai para evitar DOM morto.
+            // O getElementById é seguro mesmo se o elemento já tiver sido removido por outro processo.
+            const container = document.getElementById('initial-loader-container');
+            if (container && container.childNodes.length === 0) {
+                container.remove();
+            }
+        });
     }
     
-    // DATA HYGIENE: Trigger archival process after boot (Low Priority).
-    // This is done here to ensure the worker is ready and the main thread is free.
-    // Moved from persistence.ts to avoid circular dependencies with cloud module.
-    performArchivalCheck();
-    
-    // FIX [2025-02-28]: Injeta Analytics apenas em produção para evitar erros 404 no console de desenvolvimento.
-    // O script /_vercel/insights/script.js é virtual e só existe na infraestrutura da Vercel.
-    // PERFORMANCE: Injeção tardia para não bloquear a thread principal durante o boot.
-    // FIX [2025-04-14]: Indirection via relative import avoids "Module name does not resolve" errors
-    // in development where bundlers might leave dead-code bare imports untouched.
-    if (process.env.NODE_ENV === 'production') {
-        import('./services/analytics').then(({ initAnalytics }) => {
-            initAnalytics();
-        }).catch(err => {
-            console.warn('Analytics skipped:', err);
-        });
+    // SNIPER OPTIMIZATION [2025-05-02]: Scheduler API Integration.
+    // Use window.scheduler.postTask if available to prioritize non-critical background tasks.
+    // This allows the main thread to remain responsive to user input immediately after boot.
+    const runBackgroundTasks = () => {
+        // DATA HYGIENE: Trigger archival process after boot (Low Priority).
+        performArchivalCheck();
+        
+        // ANALYTICS: Injeção tardia.
+        if (process.env.NODE_ENV === 'production') {
+            import('./services/analytics').then(({ initAnalytics }) => {
+                initAnalytics();
+            }).catch(err => {
+                console.warn('Analytics skipped:', err);
+            });
+        }
+    };
+
+    if (window.scheduler && window.scheduler.postTask) {
+        window.scheduler.postTask(runBackgroundTasks, { priority: 'background' });
+    } else if ('requestIdleCallback' in window) {
+        requestIdleCallback(runBackgroundTasks);
+    } else {
+        setTimeout(runBackgroundTasks, 1000);
     }
 }
 
@@ -232,7 +286,7 @@ async function init(loader: HTMLElement | null) {
     // em vez da soma de ambas.
     await Promise.all([
         initI18n(),        // Async Fetch
-        loadInitialState() // Async IndexedDB Read (+ Optional Cloud Fetch)
+        loadInitialState() // Async IndexedDB Read (+ Optional Cloud Fetch with Timeout)
     ]);
 
     handleFirstTimeUser(); // Onboarding logic
@@ -246,6 +300,8 @@ registerServiceWorker();
 
 const startApp = () => {
     // OTIMIZAÇÃO: Busca o loader por ID (O(1)) para passar para a função de init.
+    // UPDATE [2025-05-02]: Passa o elemento interno (.initial-loader) que possui a transição CSS.
+    // O cleanup do pai será feito no callback de transitionend.
     const initialLoader = document.getElementById('initial-loader');
     init(initialLoader).catch(err => {
         console.error("Failed to initialize application:", err);

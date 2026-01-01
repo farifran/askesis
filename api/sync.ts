@@ -85,7 +85,6 @@ const HEADERS_JSON = {
 };
 
 // --- STATIC ERRORS (Pre-serialized) ---
-// Economiza CPU evitando JSON.stringify repetitivo em erros comuns
 const ERR_METHOD_NOT_ALLOWED = JSON.stringify({ error: 'Method not allowed' });
 const ERR_UNAUTHORIZED = JSON.stringify({ error: 'Unauthorized: Missing sync key hash' });
 const ERR_INVALID_JSON = JSON.stringify({ error: 'Bad Request: Invalid JSON format' });
@@ -140,8 +139,13 @@ export default async function handler(req: Request) {
 
             let clientPayload: SyncPayload;
             try {
-                // Now safe to parse
-                clientPayload = await req.json();
+                // BLINDAGEM: Lê como Blob primeiro para verificar tamanho real antes do parse JSON.
+                // Protege contra ataques onde content-length é mentiroso.
+                const blob = await req.clone().blob();
+                if (blob.size > MAX_PAYLOAD_SIZE) {
+                    return new Response(ERR_PAYLOAD_TOO_LARGE, { status: 413, headers: HEADERS_JSON });
+                }
+                clientPayload = JSON.parse(await blob.text());
             } catch (e) {
                 return new Response(ERR_INVALID_JSON, { status: 400, headers: HEADERS_JSON });
             }
@@ -151,17 +155,15 @@ export default async function handler(req: Request) {
                 return new Response(ERR_INVALID_PAYLOAD, { status: 400, headers: HEADERS_JSON });
             }
             
-            // Double check actual string length (Content-Length might be gzipped or inaccurate)
+            // Double check actual string length inside JSON
             if (clientPayload.state.length > MAX_PAYLOAD_SIZE) {
                 return new Response(ERR_PAYLOAD_TOO_LARGE, { status: 413, headers: HEADERS_JSON });
             }
 
             // ATOMIC OPERATION (Redis Lua)
-            // Serializa o payload uma vez para enviar ao Redis
             const payloadStr = JSON.stringify(clientPayload);
             
             // kv.eval(script, keys[], args[])
-            // O cast é necessário pois a tipagem de retorno do eval é genérica
             const result = await kv.eval(
                 LUA_ATOMIC_UPDATE, 
                 [dataKey], 
@@ -171,37 +173,26 @@ export default async function handler(req: Request) {
             const [status, conflictData] = result;
 
             if (status === 'OK') {
-                // Sucesso ou Auto-healing
-                return new Response(SUCCESS_JSON, {
-                    status: 200,
-                    headers: HEADERS_JSON,
-                });
+                return new Response(SUCCESS_JSON, { status: 200, headers: HEADERS_JSON });
             }
             
             if (status === 'NOT_MODIFIED') {
-                // Idempotência
                 return new Response(null, { status: 304, headers: CORS_HEADERS });
             }
 
             if (status === 'CONFLICT' && conflictData) {
-                // Retorna o dado mais novo do servidor para que o cliente faça o Smart Merge
-                return new Response(conflictData, {
-                    status: 409, 
-                    headers: HEADERS_JSON,
-                });
+                return new Response(conflictData, { status: 409, headers: HEADERS_JSON });
             }
 
-            // Fallback para retorno desconhecido do Lua
             throw new Error(`Unexpected Lua result: ${status}`);
         }
 
-        // Fallback
         return new Response(ERR_METHOD_NOT_ALLOWED, { status: 405, headers: HEADERS_JSON });
 
     } catch (error: any) {
         console.error("Critical error in api/sync:", error);
-        // Dynamic error needs dynamic serialization
-        return new Response(JSON.stringify({ error: 'Internal Server Error', details: error.message }), {
+        // SANITIZATION: Generic error message to client
+        return new Response(JSON.stringify({ error: 'Internal Server Error' }), {
             status: 500,
             headers: HEADERS_JSON,
         });

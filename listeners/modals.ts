@@ -26,7 +26,8 @@ import {
     DAYS_IN_CALENDAR, 
     invalidateChartCache, 
     FREQUENCIES,
-    Habit
+    Habit,
+    TimeOfDay
 } from '../state';
 import { saveState } from '../services/persistence';
 import { PREDEFINED_HABITS } from '../data/predefinedHabits';
@@ -64,7 +65,9 @@ import { setupReelRotary } from '../render/rotary';
 import { simpleMarkdownToHTML, pushToOneSignal, getContrastColor, addDays, parseUTCIsoDate, toUTCIsoDateString } from '../utils';
 import { setTextContent } from '../render/dom';
 import { isHabitNameDuplicate } from '../services/selectors';
-import { UI_ICONS } from '../render/icons';
+
+// SECURITY: Limite rígido para inputs de texto para prevenir State Bloat e DoS.
+const MAX_HABIT_NAME_LENGTH = 50; 
 
 // --- STATIC HELPERS ---
 
@@ -247,7 +250,53 @@ const _handleCreateCustomHabitClick = () => {
     openEditModal(null);
 };
 
-const _handleAiEvalClick = () => {
+const _handleAiEvalClick = async () => {
+    // OFFLINE HANDLING
+    if (!navigator.onLine) {
+        try {
+            // Lazy load quotes to keep main bundle small
+            const { STOIC_QUOTES } = await import('../data/quotes');
+            
+            // Filter relevant quotes for tech issues/lack of control
+            const offlineQuotes = STOIC_QUOTES.filter(q => 
+                q.tags.includes('control') || 
+                q.tags.includes('acceptance') ||
+                q.tags.includes('perception')
+            );
+            
+            // Fallback if filter is empty (unlikely given the dataset)
+            const sourceArray = offlineQuotes.length > 0 ? offlineQuotes : STOIC_QUOTES;
+            
+            // Deterministic random (simple)
+            const randomQuote = sourceArray[Math.floor(Math.random() * sourceArray.length)];
+            
+            const lang = state.activeLanguageCode as 'pt'|'en'|'es';
+            const quoteText = randomQuote[lang];
+            const author = t(randomQuote.author);
+
+            const message = `
+                <div style="text-align: center; margin-bottom: 24px;">
+                    <h3 style="margin-bottom: 12px; color: var(--text-primary);">${t('aiOfflineTitle')}</h3>
+                    <p style="font-size: 14px; color: var(--text-secondary); line-height: 1.5;">${t('aiOfflineMessage')}</p>
+                </div>
+                <div style="border-top: 1px solid var(--border-color); padding-top: 24px; margin-top: 12px;">
+                    <blockquote style="border-left: 3px solid var(--accent-blue); padding-left: 16px; margin: 0; font-style: italic; color: var(--text-primary);">
+                        "${quoteText}"
+                    </blockquote>
+                    <div style="text-align: right; margin-top: 12px; font-size: 13px; font-weight: 600; color: var(--text-secondary);">
+                        — ${author}
+                    </div>
+                </div>
+            `;
+
+            ui.aiResponse.innerHTML = message;
+            openModal(ui.aiModal);
+        } catch (e) {
+            console.error("Failed to load offline quote", e);
+        }
+        return;
+    }
+
     const celebration21DayText = _processAndFormatCelebrations(state.pending21DayHabitIds, 'aiCelebration21Day', STREAK_SEMI_CONSOLIDATED);
     const celebration66DayText = _processAndFormatCelebrations(state.pendingConsolidationHabitIds, 'aiCelebration66Day', STREAK_CONSOLIDATED);
     
@@ -396,7 +445,14 @@ const _handleHabitNameInput = () => {
     if (!state.editingHabit) return;
     
     const habitNameInput = ui.editHabitForm.elements.namedItem('habit-name') as HTMLInputElement;
-    const newName = habitNameInput.value;
+    let newName = habitNameInput.value;
+
+    // BLINDAGEM CONTRA DOS: Truncar input excessivo
+    if (newName.length > MAX_HABIT_NAME_LENGTH) {
+        newName = newName.substring(0, MAX_HABIT_NAME_LENGTH);
+        habitNameInput.value = newName; // Reflete na UI
+    }
+
     state.editingHabit.formData.name = newName;
     delete state.editingHabit.formData.nameKey; 
 
@@ -455,7 +511,7 @@ const _handleTimeContainerClick = (e: MouseEvent) => {
     const button = (e.target as HTMLElement).closest<HTMLButtonElement>('.segmented-control-option');
     if (!button) return;
 
-    const time = button.dataset.time as any; 
+    const time = button.dataset.time as TimeOfDay; 
     const currentlySelected = state.editingHabit.formData.times.includes(time);
 
     if (currentlySelected) {
@@ -570,6 +626,8 @@ export function setupModalListeners() {
     
     // Performance Optimized Input Handler
     const habitNameInput = ui.editHabitForm.elements.namedItem('habit-name') as HTMLInputElement;
+    // BROWSER LEVEL GUARD: Define maxLength no DOM para prevenir colagem excessiva
+    habitNameInput.maxLength = MAX_HABIT_NAME_LENGTH;
     habitNameInput.addEventListener('input', _handleHabitNameInput);
 
     // Pickers

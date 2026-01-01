@@ -16,6 +16,7 @@
  * - **Lazy Async Hydration:** Se um arquivo comprimido for solicitado, o sistema retorna um objeto vazio
  *   enquanto dispara a descompressão em background, re-renderizando a UI quando pronto.
  * - **V8 Optimization (Monomorphism):** Uso estrito de Factories para garantir formas de objeto estáveis.
+ * - **LRU Cache Protection:** Gerenciamento de memória para evitar OOM em sessões longas.
  */
 
 import { addDays, getTodayUTC, getTodayUTCIso, decompressString } from './utils';
@@ -134,6 +135,9 @@ export const DAYS_IN_CALENDAR = 61;
 export const STREAK_SEMI_CONSOLIDATED = 21;
 export const STREAK_CONSOLIDATED = 66;
 export const STREAK_LOOKBACK_DAYS = 730;
+// MEMORY GUARD: Limit unarchived years in memory to prevent OOM on mobile.
+// Mantém ~3 anos de histórico em memória + ano atual. O resto é evictado.
+const MAX_UNARCHIVED_CACHE_SIZE = 3;
 
 export const TIMES_OF_DAY = ['Morning', 'Afternoon', 'Evening'] as const;
 export type TimeOfDay = typeof TIMES_OF_DAY[number];
@@ -342,9 +346,9 @@ export function isDateLoading(date: string): boolean {
  * LAZY LOADING ACCESSOR [2025-02-23]:
  * Recupera dados diários com suporte a GZIP Async.
  * 
- * CRITICAL LOGIC: Lazy Hydration.
- * Se o arquivo estiver comprimido, esta função retorna um objeto vazio inicialmente,
- * dispara a descompressão em background e atualiza a UI quando pronto.
+ * CRITICAL LOGIC: Lazy Hydration & LRU Protection.
+ * Se o arquivo estiver comprimido, dispara a descompressão.
+ * Implementa LRU (Least Recently Used) para evitar vazamento de memória.
  */
 export function getHabitDailyInfoForDate(date: string): Record<string, HabitDailyInfo> {
     // 1. Check Hot Storage (Fastest)
@@ -360,12 +364,17 @@ export function getHabitDailyInfoForDate(date: string): Record<string, HabitDail
     // Warm Cache (Memory)
     const cachedYear = state.unarchivedCache.get(year);
     if (cachedYear) {
+        // LRU Promotion: Move accessed year to end (most recent)
+        // Deleting and re-setting moves it to the end of Map iteration order
+        state.unarchivedCache.delete(year);
+        state.unarchivedCache.set(year, cachedYear);
         return cachedYear[date] || (EMPTY_DAILY_INFO as Record<string, HabitDailyInfo>);
     }
 
     // Cold Storage Check
     const rawArchive = state.archives[year];
-    if (rawArchive) {
+    // CORRUPTION GUARD: Ensure rawArchive is actually a string before string ops
+    if (rawArchive && typeof rawArchive === 'string') {
         // NEW: GZIP Handling (Async Hydration)
         if (rawArchive.startsWith('GZIP:')) {
             const pendingKey = `${year}_pending`;
@@ -381,6 +390,21 @@ export function getHabitDailyInfoForDate(date: string): Record<string, HabitDail
                 decompressString(rawArchive.substring(5)).then(json => {
                     try {
                         const parsedYearData = JSON.parse(json);
+                        
+                        // MEMORY PROTECTION: LRU Eviction before setting new data
+                        // If cache is full, remove the oldest entry (first in Map)
+                        if (state.unarchivedCache.size >= MAX_UNARCHIVED_CACHE_SIZE + 1) { // +1 accounts for pending key
+                            const keysIterator = state.unarchivedCache.keys();
+                            // Skip pending keys or current target if possible (simple heuristic: first valid year)
+                            for (const k of keysIterator) {
+                                if (k !== pendingKey && !k.includes('_pending')) {
+                                    console.log(`[LRU] Evicting archive year ${k} from memory`);
+                                    state.unarchivedCache.delete(k);
+                                    break;
+                                }
+                            }
+                        }
+
                         // Save to Cache
                         state.unarchivedCache.set(year, parsedYearData);
                         // Remove Lock
@@ -391,13 +415,11 @@ export function getHabitDailyInfoForDate(date: string): Record<string, HabitDail
                         document.dispatchEvent(new CustomEvent('render-app'));
                     } catch (e) {
                         console.error(`Failed to parse archive ${year}`, e);
-                        // Fix: Set empty object to prevent infinite retry loops for this session
                         state.unarchivedCache.set(year, {}); 
                         state.unarchivedCache.delete(pendingKey);
                     }
                 }).catch(e => {
                     console.error(`Failed to decompress archive ${year}`, e);
-                    // CRITICAL FIX: Handle promise rejection to prevent infinite loops of fetch attempts
                     state.unarchivedCache.set(year, {}); 
                     state.unarchivedCache.delete(pendingKey);
                 });
@@ -412,6 +434,13 @@ export function getHabitDailyInfoForDate(date: string): Record<string, HabitDail
                 // PERFORMANCE WARNING: JSON.parse on main thread for large files.
                 // Only happens for old archives not yet converted to GZIP.
                 const parsedYearData = JSON.parse(rawArchive) as Record<string, Record<string, HabitDailyInfo>>;
+                
+                // LRU Check for synchronous load too
+                if (state.unarchivedCache.size >= MAX_UNARCHIVED_CACHE_SIZE) {
+                    const firstKey = state.unarchivedCache.keys().next().value;
+                    if(firstKey) state.unarchivedCache.delete(firstKey);
+                }
+
                 state.unarchivedCache.set(year, parsedYearData);
                 return parsedYearData[date] || (EMPTY_DAILY_INFO as Record<string, HabitDailyInfo>);
             } catch (e) {
@@ -424,16 +453,30 @@ export function getHabitDailyInfoForDate(date: string): Record<string, HabitDail
 }
 
 export function ensureHabitDailyInfo(date: string, habitId: string): HabitDailyInfo {
+    // RACE CONDITION GUARD (Stage 1): Prevent initializing if known loading state.
+    if (isDateLoading(date)) {
+        console.warn(`[DATA SAFETY] Blocked write to ${date} because archive is loading.`);
+        return _createMonomorphicDailyInfo(); // Dummy return
+    }
+
     // Check key existence directly to avoid prototype chain lookup overhead
     if (!Object.prototype.hasOwnProperty.call(state.dailyData, date)) {
+        // Tenta buscar do arquivo. Se for GZIP, isso vai disparar o carregamento E setar o flag de pending.
         const archivedDay = getHabitDailyInfoForDate(date);
         
         if (archivedDay !== EMPTY_DAILY_INFO) {
             // Thaw: Copy from archive to hot storage
-            // PERF: structuredClone is usually fast enough for day-sized chunks
             state.dailyData[date] = structuredClone(archivedDay);
         } else {
-            // New day
+            // RACE CONDITION GUARD (Stage 2): Double Check Locking.
+            // Se getHabitDailyInfoForDate acabou de iniciar um carregamento, isDateLoading será true AGORA.
+            // Nesse caso, NÃO podemos inicializar um dia vazio, pois sobrescreveria os dados que estão chegando.
+            if (isDateLoading(date)) {
+                console.warn(`[DATA SAFETY] Triggered hydration for ${date}. Write blocked.`);
+                return _createMonomorphicDailyInfo();
+            }
+            
+            // New day (Safe to initialize empty)
             state.dailyData[date] = {};
         }
     }

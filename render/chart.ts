@@ -16,7 +16,7 @@
  * - **Responsabilidade Única:** Visualizar a consistência dos hábitos nos últimos 30 dias (Pontuação Composta).
  * - **Zero Allocations (Render Loop):** Utiliza Object Pooling para os pontos de dados e Memoization 
  *   para evitar recálculos matemáticos se os dados não mudaram.
- * - **Inline Mathematics:** Evita closures e abstrações de escala para permitir otimização agressiva do JIT.
+ * - **SNIPER OPTIMIZATION (Typed OM):** Posicionamento do Tooltip via `attributeStyleMap` para evitar serialização de strings.
  * 
  * DECISÕES TÉCNICAS:
  * 1. **Raw Math vs Abstractions:** Funções de escala (d3-scale style) foram removidas em favor de matemática in-line.
@@ -29,6 +29,7 @@ import { calculateDaySummary } from '../services/selectors';
 import { ui } from './ui';
 import { t, formatDate, formatDecimal, formatEvolution } from '../i18n';
 import { getTodayUTCIso, parseUTCIsoDate, toUTCIsoDateString } from '../utils';
+import { setTextContent } from './dom';
 
 const CHART_DAYS = 30;
 const INITIAL_SCORE = 100;
@@ -104,6 +105,9 @@ let resizeObserver: ResizeObserver | null = null;
 
 let rafId: number | null = null;
 let inputClientX = 0;
+
+// SNIPER OPTIMIZATION: Feature detection
+const hasTypedOM = typeof window !== 'undefined' && !!(window.CSS && window.CSSTranslate && CSS.px);
 
 
 function calculateChartData(): ChartDataPoint[] {
@@ -304,12 +308,6 @@ function _updateAxisLabels(chartData: ChartDataPoint[]) {
     setTextContent(axisEnd, lastLabel);
 }
 
-function setTextContent(element: HTMLElement, text: string) {
-    if (element.textContent !== text) {
-        element.textContent = text;
-    }
-}
-
 function _updateEvolutionIndicator(chartData: ChartDataPoint[]) {
     const { evolutionIndicator } = ui.chart;
     const lastPoint = chartData[chartData.length - 1];
@@ -332,13 +330,16 @@ function _updateEvolutionIndicator(chartData: ChartDataPoint[]) {
         evolutionIndicator.className = newClass;
     }
     setTextContent(evolutionIndicator, `${evolution > 0 ? '+' : ''}${formatEvolution(evolution)}%`);
-    
-    evolutionIndicator.style.cssText = ''; // Reset inline styles
 }
 
 function _updateChartDOM(chartData: ChartDataPoint[]) {
     const { areaPath, linePath } = ui.chart;
     if (!areaPath || !linePath) return;
+
+    // RACE CONDITION GUARD: Se `scheduler.postTask` atrasar o cálculo inicial do gráfico,
+    // o ResizeObserver pode disparar este método com o array vazio inicial.
+    // Retornamos cedo para evitar crash em chartData[0].timestamp.
+    if (!chartData || chartData.length === 0) return;
 
     let svgWidth = currentChartWidth;
     
@@ -411,8 +412,16 @@ function updateTooltipPosition() {
         const pointX = paddingLeft + (pointIndex / (len - 1)) * chartWidth;
         const pointY = CHART_PADDING.top + chartHeight - ((point.value - chartMinVal) / chartValueRange) * chartHeight;
 
-        indicator.style.opacity = '1';
-        indicator.style.transform = `translateX(${pointX}px)`;
+        // SNIPER OPTIMIZATION: Typed OM for Indicator (Fast Path)
+        if (hasTypedOM && indicator.attributeStyleMap) {
+            indicator.style.opacity = '1';
+            // TranslateX only
+            indicator.attributeStyleMap.set('transform', new CSSTranslate(CSS.px(pointX), CSS.px(0)));
+        } else {
+            indicator.style.opacity = '1';
+            indicator.style.transform = `translateX(${pointX}px)`;
+        }
+
         const dot = indicator.querySelector<HTMLElement>('.chart-indicator-dot');
         if (dot) dot.style.top = `${pointY}px`;
         
@@ -431,9 +440,10 @@ function updateTooltipPosition() {
         if (pointX < 50) translateX = '0%';
         else if (pointX > svgWidth - 50) translateX = '-100%';
 
-        // FIX [2025-04-24]: Vertically center the tooltip to prevent it from being clipped at the top.
-        const verticalPosition = `calc(${SVG_HEIGHT / 2}px - 50%)`;
-        tooltip.style.transform = `translate3d(calc(${pointX}px + ${translateX}), ${verticalPosition}, 0)`;
+        // SNIPER OPTIMIZATION: Tooltip positioning
+        // We use standard style.transform for the tooltip because Typed OM doesn't support complex 'calc()' strings 
+        // natively without verbose object construction, which outweighs the performance benefit here.
+        tooltip.style.transform = `translate3d(calc(${pointX}px + ${translateX}), calc(${SVG_HEIGHT / 2}px - 50%), 0)`;
     }
 }
 

@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -48,6 +49,10 @@ const WORKER_TIMEOUT_MS = 30000; // 30s Hard Timeout para tarefas do Worker
 // Garante que apenas uma operação de sync ocorra por vez.
 let isSyncInProgress = false;
 let pendingSyncState: AppState | null = null;
+
+// RELIABILITY: Circuit Breaker para evitar loops infinitos em caso de erro persistente (ex: Payload Corrompido).
+let consecutiveSyncFailures = 0;
+const MAX_CONSECUTIVE_FAILURES = 3;
 
 // --- WORKER INFRASTRUCTURE [2025-02-28] ---
 // Singleton lazy-loaded worker instance.
@@ -193,6 +198,16 @@ async function resolveConflictWithServerState(serverPayload: ServerPayload) {
 
         // 2. Executa a fusão (Main Thread - Lógica Pura)
         const mergedState = mergeStates(localState, serverState);
+        
+        // CLOCK SKEW PROTECTION [2025-05-03]: 
+        // Se o relógio do cliente estiver atrasado em relação ao servidor, o 'lastModified' gerado
+        // pelo mergeStates (Date.now()) pode ser menor que o do servidor, causando um loop infinito de rejeição (409).
+        // Forçamos o tempo para frente para garantir aceitação.
+        if (mergedState.lastModified <= serverPayload.lastModified) {
+            console.warn("Client clock is behind server. Adjusting timestamp to force sync acceptance.");
+            mergedState.lastModified = serverPayload.lastModified + 1;
+        }
+
         console.log("Smart Merge completed successfully.");
 
         // 3. Persiste e Carrega o novo estado unificado
@@ -251,27 +266,39 @@ async function performSync() {
         }, true);
 
         if (response.status === 409) {
+            // Se houve conflito, resetamos o contador de falhas pois é um fluxo de negócio válido, não um erro de sistema.
+            consecutiveSyncFailures = 0;
             const serverPayload: ServerPayload = await response.json();
             await resolveConflictWithServerState(serverPayload);
         } else {
+            // Sucesso
+            consecutiveSyncFailures = 0;
             setSyncStatus('syncSynced');
             document.dispatchEvent(new CustomEvent('habitsChanged'));
         }
     } catch (error) {
-        console.error("Error syncing state to cloud:", error);
+        consecutiveSyncFailures++;
+        console.error(`Error syncing state to cloud (Attempt ${consecutiveSyncFailures}/${MAX_CONSECUTIVE_FAILURES}):`, error);
         setSyncStatus('syncError');
         
-        // FAIL-SAFE: Se falhar (ex: worker timeout), re-agendamos o estado que falhou
-        // para não perder dados, a menos que um mais novo já tenha entrado na fila.
-        if (!pendingSyncState) {
-            pendingSyncState = appState;
+        // POISON PILL PROTECTION: 
+        // Se falharmos repetidamente (ex: crash do worker, erro de rede persistente), 
+        // paramos de tentar reagendar o mesmo estado para evitar loop infinito e drenagem de bateria.
+        if (consecutiveSyncFailures < MAX_CONSECUTIVE_FAILURES) {
+            // FAIL-SAFE: Re-agendamos o estado que falhou se não houver um mais novo na fila.
+            if (!pendingSyncState) {
+                pendingSyncState = appState;
+            }
+        } else {
+            console.error("Max consecutive sync failures reached. Aborting retry loop to protect client resources.");
+            // Não reatribui pendingSyncState, quebrando o loop.
         }
     } finally {
         // Release Mutex
         isSyncInProgress = false;
         
         // Queue Processing (Recursion).
-        if (pendingSyncState) {
+        if (pendingSyncState && consecutiveSyncFailures < MAX_CONSECUTIVE_FAILURES) {
             if (syncTimeout) clearTimeout(syncTimeout);
             performSync();
         }

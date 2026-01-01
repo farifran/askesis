@@ -60,6 +60,9 @@ const collatorCache: Record<string, Intl.Collator> = {};
 const dateTimeWeakCache = new Map<string, WeakMap<object, Intl.DateTimeFormat>>();
 const dateTimeStringCache = new Map<string, Intl.DateTimeFormat>();
 
+// MEMORY GUARD: Limite de cache para evitar leaks em sessões longas.
+const MAX_CACHE_SIZE = 100;
+
 const listFormatCache: Record<string, ListFormatter> = {};
 
 // NUMERIC CACHE [2025-04-14]: Cache para formatadores numéricos (Int, Decimal, Evolution).
@@ -104,9 +107,13 @@ let latestLangRequestId = 0;
 // PERFORMANCE: Pre-compiled Regex.
 const INTERPOLATION_REGEX = /{([^{}]+)}/g;
 
+// NETWORK TIMEOUT: Evita Zombie State.
+const LANG_LOAD_TIMEOUT = 5000;
+
 /**
  * Carrega o arquivo JSON de tradução.
  * Implementa padrão Promise Singleton para evitar Race Conditions de rede.
+ * RELIABILITY: Adicionado AbortController para timeout.
  */
 function loadLanguage(langCode: string): Promise<boolean> {
     // 1. Check Memory Cache (Sync)
@@ -119,10 +126,15 @@ function loadLanguage(langCode: string): Promise<boolean> {
         return inflightRequests.get(langCode)!;
     }
 
-    // 3. Initiate Network Request
+    // 3. Initiate Network Request with Timeout
     const promise = (async () => {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), LANG_LOAD_TIMEOUT);
+
         try {
-            const response = await fetch(`./locales/${langCode}.json`);
+            const response = await fetch(`./locales/${langCode}.json`, { signal: controller.signal });
+            clearTimeout(timeoutId);
+            
             if (!response.ok) {
                 throw new Error(`Status: ${response.status}`);
             }
@@ -130,11 +142,15 @@ function loadLanguage(langCode: string): Promise<boolean> {
             loadedTranslations[langCode] = translations;
             return true;
         } catch (error) {
+            clearTimeout(timeoutId);
             console.error(`Could not load translations for ${langCode}:`, error);
             
             // Fallback Recovery: Garante que PT (base) esteja carregado para o fallbackDict
+            // SECURITY: Evita recursão infinita se 'pt' também falhar.
             if (langCode !== 'pt' && !loadedTranslations['pt']) {
                 try {
+                    // Tentativa única de carregar o fallback
+                    console.warn("Attempting to load fallback 'pt'");
                     await loadLanguage('pt'); 
                 } catch (fallbackError) {
                     console.error(`CRITICAL: Could not load fallback language 'pt'.`, fallbackError);
@@ -180,12 +196,17 @@ function updateHotCache(langCode: string) {
         triggerBackgroundLoad(langCode);
     }
     
-    // 2. Plural Rules
+    // 2. Plural Rules (Crash Guard)
     if (!pluralRulesCache[langCode]) {
         try {
             pluralRulesCache[langCode] = new Intl.PluralRules(langCode);
         } catch (e) {
-            pluralRulesCache[langCode] = new Intl.PluralRules('pt');
+            try {
+                pluralRulesCache[langCode] = new Intl.PluralRules('pt');
+            } catch (e2) {
+                // Fallback final para evitar crash: Mock que retorna sempre 'other'
+                pluralRulesCache[langCode] = { select: () => 'other' } as unknown as Intl.PluralRules;
+            }
         }
     }
     currentPluralRules = pluralRulesCache[langCode];
@@ -195,7 +216,7 @@ function updateHotCache(langCode: string) {
         try {
             collatorCache[langCode] = new Intl.Collator(langCode, { sensitivity: 'base', numeric: true });
         } catch (e) {
-            collatorCache[langCode] = new Intl.Collator('pt');
+            collatorCache[langCode] = new Intl.Collator('pt'); // Se falhar aqui, o browser está quebrado
         }
     }
     currentCollator = collatorCache[langCode];
@@ -227,11 +248,20 @@ function updateHotCache(langCode: string) {
             const optsDec = { minimumFractionDigits: 2, maximumFractionDigits: 2 };
             const optsEvo = { minimumFractionDigits: 1, maximumFractionDigits: 1 };
             
-            numberFormatCache[langCode] = { 
-                int: new Intl.NumberFormat('pt', optsInt), 
-                dec: new Intl.NumberFormat('pt', optsDec), 
-                evo: new Intl.NumberFormat('pt', optsEvo) 
-            };
+            // Se 'pt' também falhar, usa padrão do sistema (undefined locale)
+            try {
+                numberFormatCache[langCode] = { 
+                    int: new Intl.NumberFormat('pt', optsInt), 
+                    dec: new Intl.NumberFormat('pt', optsDec), 
+                    evo: new Intl.NumberFormat('pt', optsEvo) 
+                };
+            } catch (e2) {
+                numberFormatCache[langCode] = { 
+                    int: new Intl.NumberFormat(undefined, optsInt), 
+                    dec: new Intl.NumberFormat(undefined, optsDec), 
+                    evo: new Intl.NumberFormat(undefined, optsEvo) 
+                };
+            }
         }
     }
     currentNumberFormat = numberFormatCache[langCode];
@@ -280,7 +310,8 @@ export function t(key: string, options?: { [key: string]: string | number | unde
     } else {
         // Pluralization
         if (options?.count !== undefined) {
-            const rules = currentPluralRules!;
+            // CRASH GUARD: Ensure rules exist
+            const rules = currentPluralRules || pluralRulesCache['pt'] || new Intl.PluralRules('en'); 
             const pluralKey = rules.select(options.count as number);
             
             const foundString = translationValue[pluralKey] || translationValue.other;
@@ -351,6 +382,10 @@ export function formatDate(date: Date | number, options: Intl.DateTimeFormatOpti
     // 3. String Cache Lookup
     formatter = dateTimeStringCache.get(stringKey);
     if (!formatter) {
+        // MEMORY LEAK GUARD: Limpa o cache se crescer demais (ex: widgets dinâmicos infinitos).
+        if (dateTimeStringCache.size > MAX_CACHE_SIZE) {
+            dateTimeStringCache.clear();
+        }
         formatter = new Intl.DateTimeFormat(currentLangCode!, options);
         dateTimeStringCache.set(stringKey, formatter);
     }

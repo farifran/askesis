@@ -238,6 +238,26 @@ function _checkStreakMilestones(habit: Habit, dateISO: string) {
     }
 }
 
+/**
+ * DATA INTEGRITY: Move os dados de execução (Status, Notas) de um horário para outro.
+ * Essencial para evitar perda de dados em operações de Drag & Drop.
+ */
+function _migrateInstanceData(dailyInfo: HabitDailyInfo, fromTime: TimeOfDay, toTime: TimeOfDay) {
+    const sourceInstance = dailyInfo.instances[fromTime];
+    if (sourceInstance) {
+        // Move data to new slot
+        dailyInfo.instances[toTime] = sourceInstance;
+        // Clean up old slot (V8 Optimization: undefined vs delete)
+        // Note: In sparse objects, delete might be acceptable, but undefined keeps shape stability
+        dailyInfo.instances[fromTime] = undefined; 
+        
+        // Remove undefined entry if we want to keep the object clean for serialization later
+        // But for runtime performance, we leave it or use 'delete' if memory pressure is high.
+        // Here we choose 'delete' because 'instances' map can grow with ghost keys.
+        delete dailyInfo.instances[fromTime];
+    }
+}
+
 // --- STATIC CONFIRMATION HANDLERS (DROP) ---
 
 const _applyDropJustToday = () => {
@@ -261,6 +281,9 @@ const _applyDropJustToday = () => {
     if (toIndex === -1) {
         currentSchedule.push(toTime);
     }
+
+    // DATA FIX [2025-05-04]: Migrate instance data to prevent orphaned status
+    _migrateInstanceData(dailyInfo, fromTime, toTime);
 
     dailyInfo.dailySchedule = currentSchedule;
     
@@ -288,6 +311,9 @@ const _applyDropFromNowOn = () => {
     if (dailyInfo.dailySchedule) {
         dailyInfo.dailySchedule = undefined; 
     }
+
+    // DATA FIX [2025-05-04]: Migrate instance data for TODAY to prevent visual regression
+    _migrateInstanceData(dailyInfo, fromTime, toTime);
 
     if (reorderInfo) {
         reorderHabit(habitId, reorderInfo.id, reorderInfo.pos, true);
@@ -338,11 +364,17 @@ const _applyHabitDeletion = async () => {
 
     state.habits = state.habits.filter(h => h.id !== habitId);
     
-    // For permanent deletion, 'delete' on the dictionary is acceptable as 
-    // the object key is being removed forever.
-    Object.values(state.dailyData).forEach(day => {
-        delete day[habitId];
-    });
+    // PERF FIX [2025-05-04]: Avoid 'delete' in hot loops if possible, but here it's cleanup.
+    // However, iterating Object.values(state.dailyData) can be heavy if many days are loaded.
+    // Optimization: Only delete from currently loaded days (Hot Storage).
+    const dailyDataValues = Object.values(state.dailyData);
+    for (let i = 0; i < dailyDataValues.length; i++) {
+        const day = dailyDataValues[i];
+        if (day[habitId]) {
+            // Safe to delete here as we are removing the entity entirely
+            delete day[habitId];
+        }
+    }
 
     const earliestDate = habit.scheduleHistory[0]?.startDate || habit.createdOn;
     const startYear = parseInt(earliestDate.substring(0, 4), 10);
@@ -573,9 +605,13 @@ export function saveHabitFromModal() {
 
     const { isNew, habitId, formData, targetDate } = state.editingHabit;
 
+    // SECURITY [2025-05-04]: Prompt Injection Sanitization.
+    // Garante que o nome não contenha caracteres que possam confundir a IA ou injetar HTML.
+    // Remove tags HTML, delimitadores de template e caracteres de controle (0-31).
     if (formData.name) {
-        formData.name = formData.name.trim();
+        formData.name = formData.name.replace(/[<>{}]/g, '').replace(/[\x00-\x1F\x7F]/g, '').trim();
     }
+    
     const displayName = formData.nameKey ? t(formData.nameKey) : formData.name;
 
     if (!displayName) {

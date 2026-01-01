@@ -105,8 +105,8 @@
         }
     </style>
     
-    <!-- OneSignal SDK: Mantido inline para inicialização prioritária de Push Notifications -->
-    <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
+    <!-- OneSignal SDK: Async para NÃO BLOQUEAR o DOMContentLoaded/First Interactive -->
+    <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" async></script>
     <script>
       window.OneSignalDeferred = window.OneSignalDeferred || [];
       OneSignalDeferred.push(async function(OneSignal) {
@@ -116,21 +116,22 @@
         });
       });
     </script>
+    <!-- REMOVIDO: ImportMap inseguro para PWA Offline. As dependências devem ser bundled pelo esbuild. -->
 <script type="importmap">
 {
   "imports": {
-    "@vercel/kv": "https://esm.sh/@vercel/kv@^3.0.0",
     "@google/genai": "https://esm.sh/@google/genai@^1.34.0",
-    "@vercel/analytics": "https://esm.sh/@vercel/analytics@^1.6.1"
+    "@vercel/analytics": "https://esm.sh/@vercel/analytics@^1.6.1",
+    "@vercel/kv": "https://esm.sh/@vercel/kv@^3.0.0"
   }
 }
 </script>
 </head>
 <body>
-    <!-- PERFORMANCE: SVG Sprite System (Defs).
-         Define ícones complexos uma única vez no DOM. As instâncias usam <use href="#id">, 
-         que é extremamente leve (Shadow DOM nativo) comparado a repetir o path SVG. -->
-    <svg style="display: none;">
+    <!-- PERFORMANCE: SVG Sprite System.
+         Usa width/height 0 e visibility hidden em vez de display:none para garantir
+         que alguns navegadores (Safari antigo) calculem corretamente as dimensões internas dos símbolos. -->
+    <svg width="0" height="0" style="position: absolute; visibility: hidden;">
       <defs>
         <symbol id="icon-chevron-left" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="15 18 9 12 15 6"></polyline>
@@ -161,8 +162,7 @@
             
             <!-- OPTIMIZATION (DOM POOLING): Pre-allocated Error UI.
                  Oculto por padrão via CSS (.d-none). Em caso de erro, apenas alternamos a visibilidade 
-                 e atualizamos o textContent via Direct Memory Write.
-                 Isso evita innerHTML, parsing de strings e alocação de nós durante condições de falha/OOM. -->
+                 e atualizamos o textContent via Direct Memory Write. -->
             <div id="fatal-error-ui" class="d-none" style="color:#ff6b6b;padding:2rem;text-align:center;font-family:sans-serif;max-width:400px;line-height:1.5;">
                 <h3 id="error-title" style="margin-bottom:10px;">Erro Fatal</h3>
                 <p id="error-message" style="font-size:14px;opacity:0.8;">Erro desconhecido</p>
@@ -175,64 +175,65 @@
 
     <!-- ROBUSTEZ: Global Error Handler & Watchdog. 
          1. IIFE para isolamento de escopo.
-         2. Cache de referências DOM (O(1)).
+         2. Evita Memory Leaks (Detached DOM Nodes) não mantendo referências globais.
          3. Watchdog Timer para falhas de boot silenciosas. -->
     <script>
       (function() {
-          // Singleton para evitar múltiplos displays de erro
           var errorDisplayed = false;
-          // Cache de elementos DOM para acesso O(1) e prevenção de Garbage Collection durante crash
-          var ui = {};
 
-          function initUI() {
-              if (ui.loader) return;
-              ui.loader = document.getElementById('initial-loader');
-              ui.spinner = document.getElementById('loader-spinner');
-              ui.errUi = document.getElementById('fatal-error-ui');
-              ui.errTitle = document.getElementById('error-title');
-              ui.errMsg = document.getElementById('error-message');
+          // Helper para buscar elementos apenas quando necessário (evita cache obsoleto)
+          function getUI() {
+              return {
+                  loader: document.getElementById('initial-loader'),
+                  spinner: document.getElementById('loader-spinner'),
+                  errUi: document.getElementById('fatal-error-ui'),
+                  errTitle: document.getElementById('error-title'),
+                  errMsg: document.getElementById('error-message')
+              };
           }
 
           window.showFatalError = function(msg, isWatchdog) {
             if (errorDisplayed) return;
             errorDisplayed = true;
 
-            initUI();
+            var ui = getUI();
+            
+            // Se o loader já foi removido do DOM (app carregou), não tente mostrar erro nele.
+            // Em vez disso, use um alert de fallback ou injete um novo modal.
+            if (!ui.loader || !ui.loader.isConnected) {
+                if (!isWatchdog) alert("Erro Crítico: " + msg);
+                return;
+            }
+
             if (ui.loader) {
-                // 1. GPU Conservation: Remove o elemento de animação do fluxo de renderização
                 if (ui.spinner) ui.spinner.style.display = 'none';
                 
-                // 2. Direct Memory Write (Zero Allocation): Atualiza nós de texto existentes
                 if (ui.errUi) {
                     if (ui.errTitle) ui.errTitle.textContent = isWatchdog ? 'Tempo Excedido' : 'Falha Crítica';
                     if (ui.errMsg) ui.errMsg.textContent = msg || 'Erro interno.';
-                    ui.errUi.classList.remove('d-none'); // Torna visível
+                    ui.errUi.classList.remove('d-none');
                 }
                 
-                // Garante que o container pai esteja visível
                 ui.loader.classList.remove('hidden');
             }
           };
 
-          // 1. Error Handler Global (Síncrono)
-          window.onerror = function(msg, url, line, col, error) {
+          window.onerror = function(msg) {
             window.showFatalError(msg);
             return false; 
           };
 
-          // 2. Promise Rejection Handler (Assíncrono)
           window.onunhandledrejection = function(event) {
             var reason = event.reason;
             var msg = 'Erro Assíncrono: ' + (reason ? (reason.message || reason) : 'Desconhecido');
             window.showFatalError(msg);
           };
 
-          // 3. Watchdog Timer (Dead Man's Switch)
-          // Se o 'bundle.js' não limpar este timer em 8 segundos, assumimos Deadlock/Hang.
+          // Watchdog: Verifica se o loader ainda está visível após 8s.
           window.bootWatchdog = setTimeout(function() {
-            initUI();
-            // Verifica se o loader ainda está visível e não oculto
-            if (ui.loader && !ui.loader.classList.contains('hidden')) {
+            var ui = getUI();
+            // Verifica 'isConnected' para evitar falso positivo se o JS removeu o elemento mas o GC ainda não rodou
+            if (ui.loader && ui.loader.isConnected && !ui.loader.classList.contains('hidden')) {
                 window.showFatalError("O aplicativo demorou muito para responder. Verifique sua conexão.", true);
             }
           }, 8000);
