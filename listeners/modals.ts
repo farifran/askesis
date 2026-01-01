@@ -274,16 +274,17 @@ const _handleAiEvalClick = async () => {
             const quoteText = randomQuote[lang];
             const author = t(randomQuote.author);
 
+            // HTML Structure: Using classes defined in css/modals.css
             const message = `
-                <div style="text-align: center; margin-bottom: 24px;">
-                    <h3 style="margin-bottom: 12px; color: var(--text-primary);">${t('aiOfflineTitle')}</h3>
-                    <p style="font-size: 14px; color: var(--text-secondary); line-height: 1.5;">${t('aiOfflineMessage')}</p>
+                <div class="offline-header">
+                    <h3 class="offline-title">${t('aiOfflineTitle')}</h3>
+                    <p class="offline-desc">${t('aiOfflineMessage')}</p>
                 </div>
-                <div style="border-top: 1px solid var(--border-color); padding-top: 24px; margin-top: 12px;">
-                    <blockquote style="border-left: 3px solid var(--accent-blue); padding-left: 16px; margin: 0; font-style: italic; color: var(--text-primary);">
+                <div class="offline-quote-box">
+                    <blockquote class="offline-quote-text">
                         "${quoteText}"
                     </blockquote>
-                    <div style="text-align: right; margin-top: 12px; font-size: 13px; font-weight: 600; color: var(--text-secondary);">
+                    <div class="offline-quote-author">
                         — ${author}
                     </div>
                 </div>

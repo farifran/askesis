@@ -131,7 +131,6 @@ export function toUTCIsoDateString(date: Date): string {
     if (isNaN(date.getTime())) {
         console.error("toUTCIsoDateString received Invalid Date. Preventing data corruption.");
         // Fallback seguro: Retorna hoje para evitar crash, mas loga erro.
-        // Em um cenário estrito, isso deveria lançar exceção, mas para UI Resilience, fallback é melhor.
         const now = new Date();
         return now.getUTCFullYear() + '-' + PAD_LUT[now.getUTCMonth() + 1] + '-' + PAD_LUT[now.getUTCDate()];
     }
@@ -226,6 +225,8 @@ const ESCAPE_REPLACEMENTS: Record<string, string> = {
 };
 
 export function escapeHTML(str: string): string {
+    // SAFETY: Retorna vazio se input for nulo/indefinido para evitar crash.
+    if (!str) return '';
     return str.replace(ESCAPE_HTML_REGEX, match => ESCAPE_REPLACEMENTS[match]);
 }
 
@@ -250,6 +251,9 @@ const MD_H1_REGEX = /^# /;
 const MD_UL_REGEX = /^[*+-\s] /; 
 
 export function simpleMarkdownToHTML(text: string): string {
+    // SAFETY: Retorna vazio se input for nulo/indefinido para evitar crash.
+    if (!text) return '';
+
     // PERF: Avoid splitting string into huge array. Iterate manually.
     // 'text' can be large, splitting allocates unnecessary memory.
     const html: string[] = [];
@@ -314,6 +318,9 @@ export function simpleMarkdownToHTML(text: string): string {
 }
 
 export function pushToOneSignal(callback: (oneSignal: any) => void) {
+    // ISOMORPHIC GUARD: Ensure window exists before accessing (for Worker compatibility)
+    if (typeof window === 'undefined') return;
+
     if (typeof window.OneSignal === 'undefined') {
         window.OneSignalDeferred = window.OneSignalDeferred || [];
         window.OneSignalDeferred.push(callback);
@@ -333,7 +340,7 @@ const HAPTIC_PATTERNS = {
 };
 
 export function triggerHaptic(type: keyof typeof HAPTIC_PATTERNS) {
-    if (!navigator.vibrate) return;
+    if (typeof navigator === 'undefined' || !navigator.vibrate) return;
     try {
         navigator.vibrate(HAPTIC_PATTERNS[type]);
     } catch (e) {
@@ -351,7 +358,7 @@ function _cacheContrastColors() {
     // getComputedStyle is expensive. If we fail, fallback to defaults instead of crashing or retrying continuously.
     try {
         // Check if document is ready to avoid accessing styles on unmounted root
-        if (!document.documentElement) throw new Error("Root missing");
+        if (typeof document === 'undefined' || !document.documentElement) throw new Error("Root missing");
         
         const rootStyles = getComputedStyle(document.documentElement);
         cachedLightContrastColor = rootStyles.getPropertyValue('--text-primary').trim() || '#e5e5e5';

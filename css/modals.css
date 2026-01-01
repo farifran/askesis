@@ -271,6 +271,32 @@
 #ai-response li svg { width: 20px; height: 20px; flex-shrink: 0; }
 #confirm-modal-text { color: var(--text-secondary); line-height: 1.6; margin-block-end: var(--space-sm); }
 
+/* Modal: Mensagem Offline */
+.offline-header { text-align: center; margin-bottom: var(--space-xl); }
+.offline-title { margin-bottom: var(--space-md); color: var(--text-primary); font-size: 18px; font-weight: 600; }
+.offline-desc { font-size: 14px; color: var(--text-secondary); line-height: 1.5; }
+.offline-quote-box {
+    border-top: 1px solid var(--border-color);
+    padding-top: var(--space-xl);
+    margin-top: var(--space-md);
+}
+.offline-quote-text {
+    border-left: 3px solid var(--accent-blue);
+    padding-left: var(--space-lg);
+    margin: 0;
+    font-style: italic;
+    color: var(--text-primary);
+    font-size: 15px;
+    line-height: 1.5;
+}
+.offline-quote-author {
+    text-align: right;
+    margin-top: var(--space-md);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
 /* Modal: Opções da IA */
 #ai-options-modal .modal-content { gap: var(--space-section); }
 .ai-options-list { display: flex; flex-direction: column; gap: var(--space-md); }

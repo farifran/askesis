@@ -387,8 +387,12 @@ export function renderAINotificationState() {
     const classList = ui.aiEvalBtn.classList;
     if (classList.contains('loading') !== isLoading) classList.toggle('loading', isLoading);
     
-    const shouldDisable = isLoading || isOffline;
+    // OFFLINE SUPPORT [2025-05-05]: Botão habilitado mesmo offline para mostrar mensagem.
+    const shouldDisable = isLoading;
     if (ui.aiEvalBtn.disabled !== shouldDisable) ui.aiEvalBtn.disabled = shouldDisable;
+    
+    // CSS Toggle para estado Offline (ícone visual)
+    if (classList.contains('offline') !== isOffline) classList.toggle('offline', isOffline);
     
     const shouldNotify = hasCelebrations || hasUnseenResult;
     if (classList.contains('has-notification') !== shouldNotify) classList.toggle('has-notification', shouldNotify);
