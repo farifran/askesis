@@ -1,12 +1,13 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// ANÁLISE DO ARQUIVO: 100% concluído.
-// O que foi feito: A análise foi finalizada. A lógica de validação do nome do hábito no modal de edição foi refatorada para uma função auxiliar (`_validateHabitName`), melhorando a modularidade e o feedback ao usuário para nomes vazios. Todos os listeners foram revisados e otimizados, incluindo a refatoração do listener de frequência e a lógica de prevenção de duplicatas no modal 'Explorar'.
-// O que falta: Nenhuma análise futura é necessária. O arquivo está totalmente otimizado.
+// [ANALYSIS PROGRESS]: 100% - Análise concluída.
+// [NOTA COMPARATIVA]: Este arquivo atua como o 'Controlador de Interações Modais'. Diferente de 'habitActions.ts' (Regras de Negócio) ou 'render.ts' (Manipulação DOM), este módulo foca exclusivamente em capturar a intenção do usuário e delegar a execução. O código está bem desacoplado, utilizando event delegation para listas e helpers privados para lógica de formulário.
+
 import { ui } from './ui';
-import { state, LANGUAGES, PREDEFINED_HABITS, TimeOfDay, saveState, STREAK_SEMI_CONSOLIDATED, STREAK_CONSOLIDATED, Frequency, FREQUENCIES } from './state';
+import { state, LANGUAGES, PREDEFINED_HABITS, saveState, STREAK_SEMI_CONSOLIDATED, STREAK_CONSOLIDATED, FREQUENCIES, invalidateChartCache, DAYS_IN_CALENDAR } from './state';
 import {
     openModal,
     closeModal,
@@ -33,11 +34,12 @@ import {
     handleSaveNote,
     graduateHabit,
     performAIAnalysis,
+    exportData,
+    importData,
 } from './habitActions';
 import { setLanguage, t, getHabitDisplayInfo } from './i18n';
 import { setupReelRotary } from './rotary';
 import { simpleMarkdownToHTML, pushToOneSignal, getContrastColor, addDays, parseUTCIsoDate, toUTCIsoDateString } from './utils';
-import { icons } from './icons';
 
 // REFACTOR [2024-09-02]: Centraliza a lógica de processamento e formatação de celebrações
 // para remover duplicação de código e melhorar a legibilidade no listener do botão de IA.
@@ -135,15 +137,41 @@ function _handleIntervalControlChange(button: HTMLButtonElement) {
 function _validateHabitName(newName: string, currentHabitId?: string): boolean {
     const duplicateNoticeEl = ui.editHabitForm.querySelector<HTMLElement>('.duplicate-habit-notice')!;
     const formNoticeEl = ui.editHabitForm.querySelector<HTMLElement>('.form-notice')!;
+    const habitNameInput = ui.editHabitForm.elements.namedItem('habit-name') as HTMLInputElement;
 
-    // Reseta as notificações
+    // Reseta as notificações e animações
     duplicateNoticeEl.classList.remove('visible');
     formNoticeEl.classList.remove('visible');
+    habitNameInput.classList.remove('shake');
 
     // Verifica se está vazio
     if (newName.length === 0) {
         formNoticeEl.textContent = t('noticeNameCannotBeEmpty');
         formNoticeEl.classList.add('visible');
+        
+        // Trigger shake animation for visual feedback
+        requestAnimationFrame(() => {
+            habitNameInput.classList.add('shake');
+            habitNameInput.addEventListener('animationend', () => {
+                habitNameInput.classList.remove('shake');
+            }, { once: true });
+        });
+        
+        return false;
+    }
+
+    // Verifica tamanho máximo (20 caracteres)
+    if (newName.length > 20) {
+        formNoticeEl.textContent = t('noticeNameTooLong');
+        formNoticeEl.classList.add('visible');
+        
+        requestAnimationFrame(() => {
+            habitNameInput.classList.add('shake');
+            habitNameInput.addEventListener('animationend', () => {
+                habitNameInput.classList.remove('shake');
+            }, { once: true });
+        });
+        
         return false;
     }
 
@@ -156,6 +184,15 @@ function _validateHabitName(newName: string, currentHabitId?: string): boolean {
     if (isDuplicate) {
         duplicateNoticeEl.textContent = t('noticeDuplicateHabitWithName');
         duplicateNoticeEl.classList.add('visible');
+        
+        // Trigger shake animation for visual feedback
+        requestAnimationFrame(() => {
+            habitNameInput.classList.add('shake');
+            habitNameInput.addEventListener('animationend', () => {
+                habitNameInput.classList.remove('shake');
+            }, { once: true });
+        });
+        
         return false;
     }
 
@@ -211,6 +248,7 @@ export function setupModalListeners() {
     });
     
     // --- Modal de Gerenciamento de Hábitos (Manage) ---
+    // Listeners para os botões de lista (via delegação no elemento pai)
     ui.habitList.addEventListener('click', (e) => {
         const target = e.target as HTMLElement;
         const button = target.closest<HTMLButtonElement>('button');
@@ -227,6 +265,17 @@ export function setupModalListeners() {
             requestHabitEditingFromModal(habitId);
         } else if (button.classList.contains('graduate-habit-btn')) {
             graduateHabit(habitId);
+        }
+    });
+
+    // Listeners para os botões de Dados e Privacidade (Adicionados dinamicamente)
+    // Usamos delegação no modal de gerenciamento para capturar o clique, pois os botões são injetados.
+    ui.manageModal.addEventListener('click', (e) => {
+        const target = e.target as HTMLElement;
+        if (target.id === 'export-data-btn') {
+            exportData();
+        } else if (target.id === 'import-data-btn') {
+            importData();
         }
     });
 
@@ -275,6 +324,7 @@ export function setupModalListeners() {
 
 
     // --- Modal de Exploração de Hábitos (Explore) ---
+    // Lida com o clique do mouse
     ui.exploreHabitList.addEventListener('click', (e) => {
         const item = (e.target as HTMLElement).closest<HTMLElement>('.explore-habit-item');
         if (!item) return;
@@ -297,6 +347,18 @@ export function setupModalListeners() {
             closeModal(ui.exploreModal);
             // Abre o modal de edição com o hábito existente (se encontrado e ativo) ou com o modelo padrão.
             openEditModal(existingActiveHabit || habitTemplate);
+        }
+    });
+
+    // A11Y [2025-01-16]: Adiciona suporte a teclado (Enter/Space) para itens da lista de exploração.
+    // Como são divs com role="button", eles não disparam 'click' nativamente com teclas.
+    ui.exploreHabitList.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault(); // Previne rolagem com a barra de espaço
+            const item = (e.target as HTMLElement).closest<HTMLElement>('.explore-habit-item');
+            if (item) {
+                item.click(); // Dispara programaticamente o handler de clique existente
+            }
         }
     });
 
@@ -330,23 +392,37 @@ export function setupModalListeners() {
     ui.aiOptionsModal.addEventListener('click', e => {
         const button = (e.target as HTMLElement).closest<HTMLButtonElement>('.ai-option-btn');
         if (!button) return;
-        const analysisType = button.dataset.analysisType as 'weekly' | 'monthly' | 'general';
+        const analysisType = button.dataset.analysisType as 'monthly' | 'quarterly' | 'historical';
         performAIAnalysis(analysisType);
     });
 
     // --- Modal de Confirmação ---
+    // UX FIX [2025-02-15]: "Close-First" Pattern.
+    // O modal deve ser fechado ANTES de executar a ação. Isso previne problemas em fluxos
+    // onde a ação abre *outro* modal (Nested Modals), garantindo que o novo modal não seja
+    // fechado acidentalmente pela limpeza do antigo.
     ui.confirmModalConfirmBtn.addEventListener('click', () => {
-        state.confirmAction?.();
+        const action = state.confirmAction;
+        
+        // Limpa o estado e fecha o modal primeiro
         state.confirmAction = null;
         state.confirmEditAction = null;
         closeModal(ui.confirmModal);
+        
+        // Executa a ação (se houver)
+        action?.();
     });
     
     ui.confirmModalEditBtn.addEventListener('click', () => {
-        state.confirmEditAction?.();
+        const editAction = state.confirmEditAction;
+        
+        // Limpa o estado e fecha o modal primeiro
         state.confirmAction = null;
         state.confirmEditAction = null;
         closeModal(ui.confirmModal);
+        
+        // Executa a ação de edição (se houver)
+        editAction?.();
     });
 
     // --- Modal de Notas ---
@@ -375,8 +451,28 @@ export function setupModalListeners() {
         const dayEl = (e.target as HTMLElement).closest<HTMLElement>('.full-calendar-day');
         if (dayEl && dayEl.dataset.date) {
             state.selectedDate = dayEl.dataset.date;
+            
+            // UX UPDATE [2025-02-16]: Recentraliza a faixa de calendário.
+            // Ao saltar para uma data distante via almanaque, a faixa horizontal (calendarStrip)
+            // deve ser regenerada para mostrar a data selecionada no centro/foco.
+            const newDate = parseUTCIsoDate(state.selectedDate);
+            state.calendarDates = Array.from({ length: DAYS_IN_CALENDAR }, (_, i) => 
+                addDays(newDate, i - 30) // 30 dias atrás, 30 dias à frente
+            );
+
             closeModal(ui.fullCalendarModal);
+            
+            state.uiDirtyState.calendarVisuals = true;
+            state.uiDirtyState.habitListStructure = true;
+            invalidateChartCache();
+            
             renderApp();
+
+            // Force scroll to the new selection
+            requestAnimationFrame(() => {
+                const selectedEl = ui.calendarStrip.querySelector('.day-item.selected');
+                selectedEl?.scrollIntoView({ behavior: 'auto', block: 'nearest', inline: 'center' });
+            });
         }
     });
 
@@ -388,7 +484,23 @@ export function setupModalListeners() {
     
         if (e.key === 'Enter' || e.key === ' ') {
             closeModal(ui.fullCalendarModal);
+            
+            // Também regenera a faixa no enter para consistência
+            const newDate = parseUTCIsoDate(state.selectedDate);
+            state.calendarDates = Array.from({ length: DAYS_IN_CALENDAR }, (_, i) => 
+                addDays(newDate, i - 30)
+            );
+
+            state.uiDirtyState.calendarVisuals = true;
+            state.uiDirtyState.habitListStructure = true;
+            invalidateChartCache();
+            
             renderApp();
+            
+            requestAnimationFrame(() => {
+                const selectedEl = ui.calendarStrip.querySelector('.day-item.selected');
+                selectedEl?.scrollIntoView({ behavior: 'auto', block: 'nearest', inline: 'center' });
+            });
             return;
         }
     
@@ -494,7 +606,7 @@ export function setupModalListeners() {
         const button = (e.target as HTMLElement).closest<HTMLButtonElement>('.segmented-control-option');
         if (!button) return;
 
-        const time = button.dataset.time as TimeOfDay;
+        const time = button.dataset.time as any; // Using any cast to avoid explicit import of TimeOfDay for local DOM handling
         const currentlySelected = state.editingHabit.formData.times.includes(time);
 
         if (currentlySelected) {

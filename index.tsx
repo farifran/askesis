@@ -1,143 +1,206 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// ANÁLISE DO ARQUIVO: 100% concluído (Revisão Final).
-// O que foi feito: A análise do ponto de entrada foi finalizada. Primeiramente, a função de registro do Service Worker foi modernizada para `async/await`. Em seguida, a orquestração de inicialização foi refatorada para obter o elemento do loader inicial apenas uma vez, passando-o como parâmetro para as funções `init` e `finalizeInit`. Isso elimina chamadas repetidas ao DOM, melhora a clareza e segue o princípio DRY.
-// O que falta: Nenhuma análise futura é necessária. O arquivo está totalmente otimizado.
-import { inject } from '@vercel/analytics';
-import './index.css';
-import { loadState, saveState, state } from './state';
-import { ui, initUI } from './ui';
-import { renderApp } from './render';
+
+/**
+ * @file index.tsx
+ * @description Bootstrapper e Orquestrador de Ciclo de Vida da Aplicação.
+ */
+
+import './css/variables.css';
+import './css/base.css';
+import './css/layout.css';
+import './css/header.css';
+import './css/components.css';
+import './css/calendar.css';
+import './css/habits.css';
+import './css/charts.css';
+import './css/forms.css';
+import './css/modals.css';
+
+import { state, AppState } from './state';
+import { loadState, persistStateLocally, registerSyncHandler } from './services/persistence';
+import { renderApp, initI18n, updateUIText } from './render';
 import { setupEventListeners } from './listeners';
-import { initI18n } from './i18n';
-import { createDefaultHabit } from './habitActions';
-import { initSync } from './sync';
-import { fetchStateFromCloud, hasSyncKey, setupNotificationListeners } from './cloud';
-import { updateAppBadge } from './badge';
+import { createDefaultHabit, handleDayTransition, performArchivalCheck } from './habitActions';
+import { initSync } from './listeners/sync';
+import { fetchStateFromCloud, syncStateWithCloud, setSyncStatus } from './services/cloud';
+import { hasLocalSyncKey, initAuth } from './services/api';
+import { updateAppBadge } from './services/badge';
+import { mergeStates } from './services/dataMerge';
+import { setupMidnightLoop } from './utils';
+
+// --- STATE MACHINE: BOOT LOCK ---
+let isInitializing = false;
+let isInitialized = false;
 
 // --- SERVICE WORKER REGISTRATION ---
-/**
- * REATORAÇÃO DE ROBUSTEZ: Registra o Service Worker. A lógica foi aprimorada para
- * lidar com o caso em que o evento 'load' da janela já ocorreu, verificando
- * `document.readyState`. Também utiliza `console.error` para falhas.
- */
 const registerServiceWorker = () => {
-    if ('serviceWorker' in navigator) {
-        // REATORAÇÃO DE ESTILO DE CÓDIGO: A função interna 'doRegister' foi
-        // convertida para async/await para alinhar-se ao estilo de código moderno
-        // usado no restante da aplicação, melhorando a legibilidade e a consistência.
-        const doRegister = async () => {
-            try {
-                // CORREÇÃO DE ROBUSTEZ: A lógica anterior de construção de caminho dinâmico era
-                // propensa a erros de "origem de script não correspondente" em certos ambientes de
-                // hospedagem. Ao registrar '/sw.js', assumimos que o service worker está na raiz
-                // do diretório servido (conforme configurado em build.js). O navegador definirá
-                // o escopo padrão como '/', que é o escopo máximo e correto para a aplicação.
-                // Esta abordagem é mais simples e resiliente.
-                const registration = await navigator.serviceWorker.register('/sw.js');
-                console.log('ServiceWorker registration successful with scope: ', registration.scope);
-            } catch (err) {
-                console.error('ServiceWorker registration failed: ', err);
-            }
-        };
-
-        if (document.readyState === 'complete') {
-            doRegister();
-        } else {
-            window.addEventListener('load', doRegister);
-        }
+    if ('serviceWorker' in navigator && !window.location.protocol.startsWith('file')) {
+        const loadSW = () => navigator.serviceWorker.register('/sw.js').catch(console.warn);
+        if (document.readyState === 'complete') loadSW();
+        else window.addEventListener('load', loadSW);
     }
 };
 
+const NETWORK_TIMEOUT = Symbol('NETWORK_TIMEOUT');
 
-// --- PRIVATE HELPERS (INIT ORCHESTRATION) ---
-
-/**
- * REATORAÇÃO DE MODULARIDADE: Lida com o carregamento de traduções e a inicialização da UI.
- */
-async function setupBase() {
-    // CORREÇÃO DE INICIALIZAÇÃO: `initUI()` deve ser chamado ANTES de `initI18n()`
-    // para garantir que o objeto `ui` seja populado com referências do DOM antes que as
-    // funções de internacionalização e renderização tentem usá-lo.
-    initUI(); // Mapeia os elementos do DOM
-    await initI18n(); // Carrega as traduções
-}
-
-/**
- * REATORAÇÃO DE MODULARIDADE: Carrega o estado da aplicação, seja da nuvem ou localmente.
- */
 async function loadInitialState() {
-    let cloudState;
-    if (hasSyncKey()) {
+    const localState = await loadState(); 
+    
+    if (hasLocalSyncKey()) {
         try {
-            cloudState = await fetchStateFromCloud();
+            const CLOUD_BOOT_TIMEOUT_MS = 3000;
+            const raceResult = await Promise.race([
+                fetchStateFromCloud(),
+                new Promise<typeof NETWORK_TIMEOUT>(resolve => setTimeout(() => resolve(NETWORK_TIMEOUT), CLOUD_BOOT_TIMEOUT_MS))
+            ]);
+
+            if (raceResult === NETWORK_TIMEOUT) {
+                console.warn("Startup: Network timed out.");
+                setSyncStatus('syncError');
+                if (!localState) return; 
+            } 
+            
+            const cloudState = raceResult === NETWORK_TIMEOUT ? undefined : raceResult;
+            const isCloudEmpty = raceResult === undefined;
+
+            if (cloudState && localState) {
+                const localIsNewer = localState.lastModified > cloudState.lastModified;
+                const stateToLoad = await mergeStates(
+                    localIsNewer ? cloudState : localState, 
+                    localIsNewer ? localState : cloudState
+                );
+                
+                if (localIsNewer) syncStateWithCloud(stateToLoad, true);
+                await persistStateLocally(stateToLoad);
+                await loadState(stateToLoad);
+                
+            } else if (cloudState) {
+                await persistStateLocally(cloudState);
+                await loadState(cloudState);
+                
+            } else if (localState) {
+                if (isCloudEmpty) syncStateWithCloud(localState as AppState, true);
+                await loadState(localState);
+            }
+            
         } catch (e) {
-            console.error("Failed to fetch from cloud on startup, using local state.", e);
+            console.error("Startup: Cloud sync failed, using local.", e);
+            setSyncStatus('syncError');
+            if (localState) await loadState(localState);
         }
+    } else if (localState) {
+        await loadState(localState);
     }
-    loadState(cloudState);
 }
 
-/**
- * REATORAÇÃO DE MODULARIDADE: Lida com a inicialização de primeira vez.
- */
 function handleFirstTimeUser() {
     if (state.habits.length === 0) {
+        if (hasLocalSyncKey() && state.syncState === 'syncError') {
+            console.warn("Startup: Aborting default habit creation due to Sync Error.");
+            return;
+        }
         createDefaultHabit();
-        saveState();
     }
 }
 
 /**
- * REATORAÇÃO DE MODULARIDADE: Configura todos os listeners de eventos.
+ * Orquestra Listeners. 
+ * CRÍTICO: syncHandler registrado após o carregamento de dados para evitar Race Condition de boot.
  */
 function setupAppListeners() {
     setupEventListeners();
-    setupNotificationListeners();
     initSync();
+    document.addEventListener('habitsChanged', updateAppBadge);
+    setupMidnightLoop();
+    document.addEventListener('dayChanged', handleDayTransition);
+    // Ativa o canal de saída de dados apenas após estabilização do estado
+    registerSyncHandler(syncStateWithCloud);
 }
 
-/**
- * REATORAÇÃO DE MODULARIDADE: Esconde o loader inicial e injeta analytics.
- * REATORAÇÃO DE DRY: O elemento do loader é recebido como parâmetro para evitar
- * uma consulta repetida ao DOM.
- */
 function finalizeInit(loader: HTMLElement | null) {
     if (loader) {
         loader.classList.add('hidden');
-        loader.addEventListener('transitionend', () => loader.remove());
+        // RELIABILITY: Garante remoção mesmo se a transição CSS falhar/for desativada (Reduced Motion)
+        const cleanup = () => {
+            loader.remove();
+            document.getElementById('initial-loader-container')?.remove();
+        };
+        const timer = setTimeout(cleanup, 400); // Buffer para a transição de 0.3s
+        loader.addEventListener('transitionend', () => { clearTimeout(timer); cleanup(); }, { once: true });
     }
-    inject(); // Vercel Analytics
+    
+    const runBackgroundTasks = () => {
+        performArchivalCheck();
+        if (process.env.NODE_ENV === 'production') {
+            import('./services/analytics').then(({ initAnalytics }) => initAnalytics()).catch(() => {});
+        }
+    };
+
+    // @fix: Cast to any to handle scheduler which might be missing in some global Window types
+    if ((window as any).scheduler?.postTask) {
+        (window as any).scheduler.postTask(runBackgroundTasks, { priority: 'background' });
+    } else {
+        (window.requestIdleCallback || ((cb) => setTimeout(cb, 1000)))(runBackgroundTasks);
+    }
 }
 
-// --- MAIN INITIALIZATION ---
-/**
- * REATORAÇÃO DE MODULARIDADE: Orquestra a sequência de inicialização da aplicação.
- * A função foi dividida em múltiplos helpers privados para clareza e manutenibilidade.
- * REATORAÇÃO DE DRY: Recebe a referência ao elemento do loader para passá-la adiante.
- */
 async function init(loader: HTMLElement | null) {
-    await setupBase();
+    // SINGLETON GUARD
+    if (isInitializing || isInitialized) return;
+    isInitializing = true;
+
+    // @fix: Cast to any to access bootWatchdog property
+    if ((window as any).bootWatchdog) {
+        clearTimeout((window as any).bootWatchdog);
+        delete (window as any).bootWatchdog;
+    }
+
+    initAuth();
+    await Promise.all([initI18n(), updateUIText()]);
+
+    // 1. Data Loading (Local -> Cloud -> Merge)
     await loadInitialState();
-    handleFirstTimeUser();
-    renderApp();
+
+    // 2. Setup Listeners POST-DATA
     setupAppListeners();
-    updateAppBadge(); // Define o emblema inicial
+
+    // 3. Logic & Render
+    handleFirstTimeUser();
+    renderApp(); 
+    
+    updateAppBadge();
     finalizeInit(loader);
+    
+    isInitialized = true;
+    isInitializing = false;
 }
 
-// Inicia a aplicação.
 registerServiceWorker();
 
-// REATORAÇÃO DE DRY: O elemento do loader é obtido apenas uma vez e reutilizado
-// tanto na inicialização bem-sucedida quanto no tratamento de erros.
-const initialLoader = document.getElementById('initial-loader');
-init(initialLoader).catch(err => {
-    console.error("Failed to initialize application:", err);
-    // Exibe uma mensagem de erro para o usuário
-    if(initialLoader) {
-        initialLoader.innerHTML = '<h2>Falha ao carregar a aplicação. Por favor, tente novamente.</h2>'
-    }
-});
+const startApp = () => {
+    // PREVENT DOUBLE BOOT
+    if (isInitializing || isInitialized) return;
+    
+    const loader = document.getElementById('initial-loader');
+    init(loader).catch(err => {
+        console.error("Boot failed:", err);
+        isInitializing = false;
+        // UX: Fallback visual robusto
+        // @fix: Cast to any to check and call showFatalError
+        if ((window as any).showFatalError) {
+            (window as any).showFatalError("Erro na inicialização: " + (err.message || err));
+        } else if(loader && loader.isConnected) {
+            loader.innerHTML = '<div style="color:#ff6b6b;padding:2rem;text-align:center;"><h3>Falha Crítica</h3><button onclick="location.reload()">Tentar Novamente</button></div>';
+        }
+    });
+};
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', startApp);
+} else {
+    startApp();
+}

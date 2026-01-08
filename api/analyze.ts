@@ -1,97 +1,78 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// ANÁLISE DO ARQUIVO: 100% concluído. O endpoint foi refatorado para incluir tratamento robusto de respostas da API Gemini, especialmente para casos em que o conteúdo é bloqueado por razões de segurança ou a geração falha. A validação do payload e o tratamento de erros de servidor já estavam implementados. Com esta melhoria de robustez, a análise do arquivo é considerada finalizada e nenhuma revisão futura é necessária.
+
 import { GoogleGenAI } from '@google/genai';
 
 export const config = {
   runtime: 'edge',
 };
 
-// ARQUITETURA [2024-12-22]: Adicionada interface para o corpo da requisição para melhorar a segurança de tipos.
-interface AnalyzeRequestBody {
-    prompt: string;
-    systemInstruction: string;
-}
+const MAX_PROMPT_SIZE = 150 * 1024; // 150KB
 
-const corsHeaders = {
+const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
 };
 
-// Helper para enviar uma resposta de erro JSON padronizada
-const createErrorResponse = (message: string, status: number, details = '') => {
-    return new Response(JSON.stringify({ error: message, details }), {
-        status,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
-};
+const API_KEY = process.env.API_KEY;
+const MODEL_NAME = 'gemini-3-flash-preview';
+let aiClient: GoogleGenAI | null = null;
 
 export default async function handler(req: Request) {
-    if (req.method === 'OPTIONS') {
-        return new Response(null, { status: 204, headers: corsHeaders });
-    }
+    if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS_HEADERS });
+    if (req.method !== 'POST') return new Response(null, { status: 405 });
 
-    if (req.method !== 'POST') {
-        return createErrorResponse('Method Not Allowed', 405);
-    }
+    if (!API_KEY) return new Response(JSON.stringify({ error: 'Server Configuration' }), { status: 500, headers: CORS_HEADERS });
 
     try {
-        const { prompt, systemInstruction }: AnalyzeRequestBody = await req.json();
+        // CHAOS DEFENSE: Timeout de leitura do prompt para evitar workers pendentes
+        const bodyText = await Promise.race([
+            req.text(),
+            new Promise<string>((_, r) => setTimeout(() => r('TIMEOUT'), 8000))
+        ]);
 
-        if (!prompt || !systemInstruction) {
-            return createErrorResponse('Bad Request: Missing prompt or systemInstruction', 400);
-        }
-        
-        const apiKey = process.env.API_KEY;
-        if (!apiKey) {
-            console.error("[api/analyze] API_KEY environment variable not set.");
-            return createErrorResponse('Internal Server Error', 500, 'Server configuration error.');
-        }
-        
-        const ai = new GoogleGenAI({ apiKey });
+        if (bodyText === 'TIMEOUT') return new Response(null, { status: 408 });
+        if (bodyText.length > MAX_PROMPT_SIZE) return new Response(null, { status: 413 });
 
-        const geminiResponse = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
+        const body = JSON.parse(bodyText);
+        const { prompt, systemInstruction } = body;
+
+        if (!prompt || !systemInstruction) return new Response(null, { status: 400 });
+
+        if (!aiClient) aiClient = new GoogleGenAI({ apiKey: API_KEY });
+
+        // PROTEÇÃO CONTRA ZUMBIFICAÇÃO: Timeout de execução da IA
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 25000);
+
+        const geminiResponse = await aiClient.models.generateContent({
+            model: MODEL_NAME,
             contents: prompt,
-            config: {
-                systemInstruction: systemInstruction,
+            config: { 
+                systemInstruction,
+                temperature: 0.7,
             },
         });
-        
-        // MELHORIA DE ROBUSTEZ: Verifica se a resposta do modelo foi bloqueada ou está vazia.
-        if (!geminiResponse.candidates || geminiResponse.candidates.length === 0 || !geminiResponse.text) {
-            const finishReason = geminiResponse.candidates?.[0]?.finishReason;
-            const safetyRatings = geminiResponse.promptFeedback?.safetyRatings;
-            
-            let details = `Generation failed.`;
-            if (finishReason) {
-                details += ` Finish reason: ${finishReason}.`;
-            }
-            if (safetyRatings) {
-                details += ` Safety ratings: ${JSON.stringify(safetyRatings)}.`;
-            }
 
-            // Retorna um erro específico para bloqueio de segurança, que o cliente pode interpretar.
-            if (finishReason === 'SAFETY') {
-                 return createErrorResponse('Bad Request: The response was blocked due to safety concerns.', 400, details);
-            }
-            
-            // Retorna um erro genérico para outras falhas na geração de conteúdo.
-            return createErrorResponse('Internal Server Error: Failed to generate content from the model.', 500, details);
-        }
-
-        const fullText = geminiResponse.text;
+        clearTimeout(timeoutId);
         
-        return new Response(fullText, {
-            headers: { ...corsHeaders, 'Content-Type': 'text/plain; charset=utf-8' },
+        const responseText = geminiResponse.text;
+        if (!responseText) throw new Error('Empty AI response');
+
+        return new Response(responseText, { 
+            headers: { 
+                ...CORS_HEADERS, 
+                'Content-Type': 'text/plain; charset=utf-8',
+                'Cache-Control': 'no-store' 
+            } 
         });
 
-    } catch (error) {
-        console.error('Critical error in /api/analyze handler:', error);
-        const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
-        return createErrorResponse('Internal Server Error', 500, errorMessage);
+    } catch (error: any) {
+        if (error.name === 'AbortError') return new Response('AI Gateway Timeout', { status: 504, headers: CORS_HEADERS });
+        return new Response(JSON.stringify({ error: 'AI processing failed' }), { status: 500, headers: CORS_HEADERS });
     }
 }

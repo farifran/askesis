@@ -1,21 +1,20 @@
-// ANÁLISE DO ARQUIVO: 100% concluído.
-// O que foi feito: A análise do módulo de UI foi finalizada. Para aumentar a robustez e a manutenibilidade, a função `initUI` foi refatorada. Uma nova função auxiliar, `queryElement`, foi introduzida para centralizar e proteger as consultas ao DOM. Esta função substitui as chamadas diretas a `getElementById` e `querySelector`, eliminando o uso do operador de asserção não nulo (`!`) e fornecendo mensagens de erro claras caso um elemento da UI não seja encontrado. Isso previne potenciais erros de tempo de execução e melhora a experiência de desenvolvimento.
-// O que falta: Nenhuma análise futura é necessária.
+
 type UIElements = {
     calendarStrip: HTMLElement;
+    headerTitle: HTMLElement; // [2025-01-16] Added to allow click listener on the full title container
     headerTitleDesktop: HTMLElement;
     headerTitleMobile: HTMLElement;
     stoicQuoteDisplay: HTMLElement;
     habitContainer: HTMLElement;
     chartContainer: HTMLElement;
-    manageHabitsBtn: HTMLElement;
-    fabAddHabit: HTMLElement;
+    manageHabitsBtn: HTMLButtonElement; // TYPE FIX [2025-02-23]: Specific type
+    fabAddHabit: HTMLButtonElement;     // TYPE FIX [2025-02-23]: Specific type
     manageModal: HTMLElement;
     manageModalTitle: HTMLElement;
     habitListTitle: HTMLElement;
     exploreModal: HTMLElement;
     exploreHabitList: HTMLElement;
-    createCustomHabitBtn: HTMLElement;
+    createCustomHabitBtn: HTMLButtonElement; // TYPE FIX [2025-02-23]: Specific type
     aiEvalBtn: HTMLButtonElement;
     aiModal: HTMLElement;
     aiOptionsModal: HTMLElement;
@@ -23,16 +22,16 @@ type UIElements = {
     habitList: HTMLElement;
     aiResponse: HTMLElement;
     confirmModalText: HTMLElement;
-    confirmModalConfirmBtn: HTMLElement;
-    confirmModalEditBtn: HTMLElement;
+    confirmModalConfirmBtn: HTMLButtonElement; // TYPE FIX [2025-02-23]: Specific type
+    confirmModalEditBtn: HTMLButtonElement;    // TYPE FIX [2025-02-23]: Specific type
     undoToast: HTMLElement;
-    undoBtn: HTMLElement;
+    undoBtn: HTMLButtonElement; // TYPE FIX [2025-02-23]: Specific type
     notesModal: HTMLElement;
     notesModalTitle: HTMLElement;
     notesModalSubtitle: HTMLElement;
     notesTextarea: HTMLTextAreaElement;
-    saveNoteBtn: HTMLElement;
-    resetAppBtn: HTMLElement;
+    saveNoteBtn: HTMLButtonElement; // TYPE FIX [2025-02-23]: Specific type
+    resetAppBtn: HTMLButtonElement; // TYPE FIX [2025-02-23]: Specific type
     languagePrevBtn: HTMLButtonElement;
     languageViewport: HTMLElement;
     languageReel: HTMLElement;
@@ -96,21 +95,26 @@ function queryElement<T extends HTMLElement>(selector: string): T {
 
 
 export function initUI(): void {
+    // [ANALYSIS PROGRESS]: 100% - Análise concluída. Mapeamento Singleton do DOM.
+    // [NOTA COMPARATIVA]: Infraestrutura crítica mas de baixa complexidade lógica. 
+    // Garante Type Safety entre o HTML e o TypeScript.
+    
     Object.assign(ui, {
         calendarStrip: queryElement('#calendar-strip'),
+        headerTitle: queryElement('#header-title'), 
         headerTitleDesktop: queryElement('#header-title .header-title-desktop'),
         headerTitleMobile: queryElement('#header-title .header-title-mobile'),
         stoicQuoteDisplay: queryElement('#stoic-quote-display'),
         habitContainer: queryElement('#habit-container'),
         chartContainer: queryElement('#chart-container'),
-        manageHabitsBtn: queryElement('#manage-habits-btn'),
-        fabAddHabit: queryElement('#fab-add-habit'),
+        manageHabitsBtn: queryElement<HTMLButtonElement>('#manage-habits-btn'),
+        fabAddHabit: queryElement<HTMLButtonElement>('#fab-add-habit'),
         manageModal: queryElement('#manage-modal'),
         manageModalTitle: queryElement('#manage-modal-title'),
         habitListTitle: queryElement('#habit-list-title'),
         exploreModal: queryElement('#explore-modal'),
         exploreHabitList: queryElement('#explore-habit-list'),
-        createCustomHabitBtn: queryElement('#create-custom-habit-btn'),
+        createCustomHabitBtn: queryElement<HTMLButtonElement>('#create-custom-habit-btn'),
         aiEvalBtn: queryElement<HTMLButtonElement>('#ai-eval-btn'),
         aiModal: queryElement('#ai-modal'),
         aiOptionsModal: queryElement('#ai-options-modal'),
@@ -118,16 +122,16 @@ export function initUI(): void {
         habitList: queryElement('#habit-list'),
         aiResponse: queryElement('#ai-response'),
         confirmModalText: queryElement('#confirm-modal-text'),
-        confirmModalConfirmBtn: queryElement('#confirm-modal-confirm-btn'),
-        confirmModalEditBtn: queryElement('#confirm-modal-edit-btn'),
+        confirmModalConfirmBtn: queryElement<HTMLButtonElement>('#confirm-modal-confirm-btn'),
+        confirmModalEditBtn: queryElement<HTMLButtonElement>('#confirm-modal-edit-btn'),
         undoToast: queryElement('#undo-toast'),
-        undoBtn: queryElement('#undo-btn'),
+        undoBtn: queryElement<HTMLButtonElement>('#undo-btn'),
         notesModal: queryElement('#notes-modal'),
         notesModalTitle: queryElement('#notes-modal-title'),
         notesModalSubtitle: queryElement('#notes-modal-subtitle'),
         notesTextarea: queryElement<HTMLTextAreaElement>('#notes-textarea'),
-        saveNoteBtn: queryElement('#save-note-btn'),
-        resetAppBtn: queryElement('#reset-app-btn'),
+        saveNoteBtn: queryElement<HTMLButtonElement>('#save-note-btn'),
+        resetAppBtn: queryElement<HTMLButtonElement>('#reset-app-btn'),
         languagePrevBtn: queryElement<HTMLButtonElement>('#language-prev'),
         languageViewport: queryElement('#language-viewport'),
         languageReel: queryElement('#language-reel'),

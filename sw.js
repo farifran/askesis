@@ -1,91 +1,153 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// ANÁLISE DO ARQUIVO: 100% concluído.
-// O que foi feito: A análise e otimização do Service Worker foram finalizadas. O ciclo de vida foi aprimorado para atualizações mais rápidas, adicionando `self.skipWaiting()` e `clients.claim()`. Além disso, todos os manipuladores de eventos (`install`, `activate`, `fetch`) foram refatorados para usar a sintaxe `async/await`, melhorando a legibilidade e a manutenibilidade do código.
-// O que falta: Nenhuma análise futura é necessária. O módulo é considerado finalizado e robusto.
 
-// IMPORTANTE: Importa o script do worker do OneSignal. Deve ser a primeira linha.
-// Isso unifica nosso worker de cache com a funcionalidade de push do OneSignal.
-importScripts("https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js");
+/**
+ * @file sw.js
+ * @description Service Worker: Proxy de Rede e Gerenciador de Cache (Offline Engine).
+ * 
+ * [SERVICE WORKER CONTEXT]:
+ * Execução em Thread de Background. 
+ * Otimizado para latência zero no interceptador de rede (`fetch`).
+ */
 
-// O nome do cache é versionado para garantir que as atualizações do Service Worker
-// acionem a limpeza de caches antigos e a criação de novos.
-const CACHE_NAME = 'habit-tracker-v1';
+try {
+    importScripts("https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js");
+} catch (e) {
+    // Non-blocking failure for optional SDK
+}
 
-// Lista de arquivos essenciais para o funcionamento do App Shell offline.
+// CONSTANTS (Build-time injected)
+const CACHE_NAME = 'habit-tracker-v9';
+
+// PERF: Static Asset List (Pre-allocated)
 const CACHE_FILES = [
-    './',
-    './index.html',
-    './bundle.js',
-    './bundle.css',
-    './manifest.json',
-    './locales/pt.json',
-    './locales/en.json',
-    './locales/es.json',
-    './icons/icon-192.svg',
-    './icons/icon-512.svg',
-    './icons/icon-maskable-512.svg',
-    './icons/badge.svg'
+    '/',
+    '/index.html',
+    '/bundle.js',
+    '/bundle.css',
+    '/sync-worker.js',
+    '/manifest.json',
+    '/locales/pt.json',
+    '/locales/en.json',
+    '/locales/es.json',
+    '/icons/icon-192.svg',
+    '/icons/icon-512.svg',
+    '/icons/icon-maskable-512.svg',
+    '/icons/badge.svg'
 ];
 
-// Evento de instalação: acionado quando o Service Worker é instalado pela primeira vez.
+// PERF: Hoisted Option Objects (Zero GC per request)
+const RELOAD_OPTS = { cache: 'reload' };
+const HTML_FALLBACK = '/index.html';
+const MATCH_OPTS = { ignoreSearch: true };
+const NETWORK_TIMEOUT_MS = 3000; // 3 Seconds max wait for Navigation
+
+// HELPER: Timeout Promise
+const timeout = (ms) => new Promise((_, reject) => setTimeout(() => reject(new Error('Network Timeout')), ms));
+
+// HELPER: Update App Shell Cache (DRY)
+const updateShellCache = (res) => {
+    if (res && res.ok) {
+        const copy = res.clone();
+        caches.open(CACHE_NAME).then(c => c.put(HTML_FALLBACK, copy));
+    }
+    return res;
+};
+
+// --- INSTALL PHASE ---
+
 self.addEventListener('install', (event) => {
-    event.waitUntil((async () => {
-        try {
-            const cache = await caches.open(CACHE_NAME);
-            console.log('Service Worker: Caching App Shell');
-            await cache.addAll(CACHE_FILES);
-            // Força o novo Service Worker a se tornar ativo imediatamente.
-            self.skipWaiting();
-        } catch (error) {
-            console.error('Service Worker: Failed to cache App Shell', error);
-        }
-    })());
-});
-
-// Evento de ativação: acionado quando o Service Worker é ativado.
-self.addEventListener('activate', (event) => {
-    event.waitUntil((async () => {
-        // Permite que o Service Worker ativo tome controle imediato das páginas em seu escopo.
-        await self.clients.claim();
-        
-        const cacheNames = await caches.keys();
-        await Promise.all(
-            cacheNames
-                .filter(cacheName => cacheName !== CACHE_NAME)
-                .map(cacheName => {
-                    console.log('Service Worker: Clearing old cache', cacheName);
-                    return caches.delete(cacheName);
+    event.waitUntil(
+        caches.open(CACHE_NAME).then(cache => {
+            return Promise.all(CACHE_FILES.map(url => 
+                fetch(url, RELOAD_OPTS).then(res => {
+                    if (!res.ok) throw new Error(`[SW] Failed to cache: ${url} (${res.status})`);
+                    return cache.put(url, res);
                 })
-        );
-    })());
+            ));
+        }).then(() => self.skipWaiting())
+    );
 });
 
-// Evento de fetch: acionado para cada requisição feita pela página.
-self.addEventListener('fetch', (event) => {
-    const url = new URL(event.request.url);
+// --- ACTIVATE PHASE ---
 
-    // Ignora o cache para requisições de API, indo direto para a rede.
-    // O navegador lida com a requisição se não chamarmos event.respondWith.
-    if (url.pathname.startsWith('/api/')) {
+self.addEventListener('activate', (event) => {
+    event.waitUntil(
+        Promise.all([
+            self.clients.claim(),
+            self.registration.navigationPreload ? self.registration.navigationPreload.enable() : Promise.resolve(),
+            caches.keys().then(keys => Promise.all(
+                keys.map(k => k !== CACHE_NAME ? caches.delete(k) : Promise.resolve())
+            ))
+        ])
+    );
+});
+
+// --- FETCH PHASE (HOT PATH) ---
+
+self.addEventListener('fetch', (event) => {
+    const req = event.request;
+    // Otimização: No contexto do SW, a URL é garantida.
+    const url = new URL(req.url); 
+
+    // 1. Strict API Bypass
+    if (url.pathname.startsWith('/api/')) return;
+
+    // 2. Navigation Strategy (App Shell) with Lie-fi Protection & Cache Update
+    if (req.mode === 'navigate') {
+        event.respondWith(
+            (async () => {
+                try {
+                    // A. Navigation Preload (SOTA Optimization)
+                    const preloadResp = await event.preloadResponse;
+                    if (preloadResp) return updateShellCache(preloadResp);
+
+                    // B. Network Race with Timeout
+                    const networkResp = await Promise.race([
+                        fetch(req),
+                        timeout(NETWORK_TIMEOUT_MS)
+                    ]);
+                    return updateShellCache(networkResp);
+                } catch (error) {
+                    // C. Offline Fallback
+                    return caches.match(HTML_FALLBACK, MATCH_OPTS);
+                }
+            })()
+        );
         return;
     }
 
-    // Para todos os outros assets, usa a estratégia cache-first.
-    event.respondWith((async () => {
-        try {
-            const cachedResponse = await caches.match(event.request);
-            if (cachedResponse) {
-                return cachedResponse;
-            }
-            return await fetch(event.request);
-        } catch (error) {
-            console.error('Service Worker: Error fetching asset', event.request.url, error);
-            // Em caso de falha de rede para um asset não cacheado, o navegador
-            // lidará com o erro, o que é um comportamento aceitável para assets.
-            // Para uma experiência offline completa, poderíamos retornar um asset de fallback aqui.
-        }
-    })());
+    // 3. Asset Strategy (Stale-while-Revalidate)
+    event.respondWith(
+        caches.match(req).then(cached => {
+            if (cached) return cached;
+
+            return fetch(req).then(networkResponse => {
+                // Validation
+                if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {
+                    return networkResponse;
+                }
+
+                // Captive Portal Protection
+                const contentType = networkResponse.headers.get('content-type');
+                const isAsset = req.destination && ['script', 'style', 'image'].includes(req.destination);
+                
+                if (isAsset && contentType && contentType.includes('text/html')) {
+                    console.warn(`[SW] Captive Portal detected. Blocked caching of HTML for ${req.destination}.`);
+                    return networkResponse;
+                }
+
+                // Dynamic Caching (Fire & Forget)
+                const responseToCache = networkResponse.clone();
+                caches.open(CACHE_NAME).then(cache => {
+                    cache.put(req, responseToCache).catch(() => {}); // Silent fail for quota
+                });
+
+                return networkResponse;
+            });
+        })
+    );
 });

@@ -1,130 +1,148 @@
-// build.js
-/**
- * ANÁLISE DO ARQUIVO: 100% concluído.
- * O que foi feito: O script de build foi totalmente revisado e otimizado. Na primeira etapa (50%), foi adicionado um watcher para arquivos estáticos, corrigindo uma falha crítica no fluxo de desenvolvimento. Nesta etapa final, a experiência do desenvolvedor foi aprimorada com a adição de um plugin customizado para o `esbuild`. Este plugin agora fornece feedback claro no console sobre o início e o fim das reconstruções de código-fonte, incluindo a duração, tornando o processo de desenvolvimento mais transparente e informativo.
- * O que falta: Nenhuma análise futura é necessária. O script de build está robusto e completo para os ambientes de desenvolvimento e produção.
-*/
-// Este script é responsável por compilar e empacotar os arquivos da aplicação
-// para produção. Ele utiliza 'esbuild' para uma compilação rápida e eficiente.
+
 const esbuild = require('esbuild');
-const fs = require('fs/promises'); // API de sistema de arquivos baseada em Promises do Node.js
-const path = require('path'); // Módulo para lidar com caminhos de arquivo
+const fs = require('fs/promises');
+const fsSync = require('fs');
+const path = require('path'); 
+const http = require('http');
+const { handleApiSync, handleApiAnalyze } = require('./scripts/dev-api-mock.js');
 
 const isProduction = process.env.NODE_ENV === 'production';
-const outdir = 'public';
+const outdir = path.resolve(__dirname, 'public');
+const toOut = (...p) => path.join(outdir, ...p);
 
-async function copyStaticFiles() {
-    console.log('Copiando arquivos estáticos...');
-    await fs.copyFile('index.html', path.join(outdir, 'index.html'));
-    await fs.copyFile('manifest.json', path.join(outdir, 'manifest.json'));
-    await fs.copyFile('sw.js', path.join(outdir, 'sw.js'));
-    await fs.cp('icons', path.join(outdir, 'icons'), { recursive: true });
-    await fs.cp('locales', path.join(outdir, 'locales'), { recursive: true });
-    console.log('Arquivos estáticos copiados.');
-}
-
-/**
- * MELHORIA DE DX [2024-12-23]: Adiciona um watcher para arquivos estáticos no modo de desenvolvimento.
- * Isso garante que mudanças em arquivos como index.html ou assets sejam automaticamente
- * copiadas para o diretório de saída sem a necessidade de reiniciar o servidor.
- */
-function watchStaticFiles() {
-    const pathsToWatch = [
-        'index.html',
-        'manifest.json',
-        'sw.js',
-        'icons',
-        'locales'
-    ];
-
-    console.log('Observando arquivos estáticos para mudanças...');
-
-    pathsToWatch.forEach(p => {
-        let debounceTimeout;
-        fs.watch(p, { recursive: ['icons', 'locales'].includes(p) }, (eventType, filename) => {
-            clearTimeout(debounceTimeout);
-            debounceTimeout = setTimeout(() => {
-                console.log(`Mudança detectada em '${p}/${filename || ''}'. Recopiando arquivos estáticos...`);
-                copyStaticFiles().catch(err => console.error('Falha ao recopiar arquivos estáticos:', err));
-            }, 100);
-        });
-    });
-}
-
-// MELHORIA DE DX [2024-12-24]: Plugin customizado para esbuild que fornece feedback detalhado
-// sobre o processo de reconstrução no modo de desenvolvimento.
-const watchLoggerPlugin = {
-    name: 'watch-logger',
-    setup(build) {
-        let startTime;
-        build.onStart(() => {
-            startTime = Date.now();
-            console.log('Iniciando reconstrução do código-fonte...');
-        });
-        build.onEnd(result => {
-            const duration = Date.now() - startTime;
-            if (result.errors.length > 0) {
-                console.error(`Reconstrução falhou após ${duration}ms.`);
-            } else {
-                console.log(`✅ Reconstrução do código-fonte concluída em ${duration}ms.`);
-            }
-        });
-    },
+const MIME_TYPES = {
+    '.html': 'text/html',
+    '.js': 'text/javascript',
+    '.css': 'text/css',
+    '.json': 'application/json',
+    '.svg': 'image/svg+xml',
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.ico': 'image/x-icon',
+    '.woff2': 'font/woff2',
 };
 
+const LIVE_RELOAD_SCRIPT = `
+<script>
+  (function() {
+    const source = new EventSource('/_reload');
+    source.onmessage = (e) => e.data === 'reload' && location.reload();
+    source.onerror = () => setTimeout(() => location.reload(), 2000);
+  })();
+</script>
+</body>`;
 
-async function build() {
+// --- LIVE RELOAD ---
+const reloadClients = new Set();
+let reloadTimeout = null;
+
+function notifyLiveReload() {
+    clearTimeout(reloadTimeout);
+    reloadTimeout = setTimeout(() => {
+        if (!reloadClients.size) return;
+        console.log('🔄 Live Reload...');
+        reloadClients.forEach(res => res.write('data: reload\n\n'));
+    }, 100);
+}
+
+// --- BUILD LOGIC ---
+async function atomicWrite(dest, content) {
+    const tmp = `${dest}.tmp`;
+    await fs.writeFile(tmp, content);
+    await fs.rename(tmp, dest);
+}
+
+async function copyStaticFiles() {
+    await fs.mkdir(outdir, { recursive: true });
+    
+    await atomicWrite(toOut('index.html'), await fs.readFile('index.html', 'utf-8'));
+    await fs.copyFile('manifest.json', toOut('manifest.json'));
+    
     try {
-        console.log(`Iniciando build de ${isProduction ? 'produção' : 'desenvolvimento'}...`);
-        // --- 1. Limpeza e Preparação do Diretório de Saída ---
-        console.log(`Limpando diretório de saída: ${outdir}...`);
-        await fs.rm(outdir, { recursive: true, force: true });
-        await fs.mkdir(outdir, { recursive: true });
-        console.log('Diretório de saída preparado.');
-
-        // --- 2. Cópia de Arquivos Estáticos ---
-        await copyStaticFiles();
-
-        // --- 3. Compilação do Código TypeScript/CSS com esbuild ---
-        const esbuildOptions = {
-            entryPoints: ['index.tsx'],
-            bundle: true,
-            outdir: outdir,
-            entryNames: 'bundle',
-            format: 'esm',
-            platform: 'browser',
-            minify: isProduction,
-            sourcemap: !isProduction,
-        };
-        
-        if (isProduction) {
-            // --- Build de Produção: Execução única e otimizada ---
-            console.log('Compilando aplicação para produção com esbuild...');
-            await esbuild.build(esbuildOptions);
-            console.log('Aplicação compilada com sucesso.');
-            console.log(`\nBuild de produção concluído com sucesso!`);
-        } else {
-            // --- Build de Desenvolvimento: Modo de Observação (Watch) ---
-            // Adiciona o plugin de logging apenas no modo de desenvolvimento
-            esbuildOptions.plugins = [watchLoggerPlugin];
-            
-            console.log('Configurando esbuild em modo de observação para desenvolvimento...');
-            const ctx = await esbuild.context(esbuildOptions);
-            await ctx.watch();
-            console.log('Observação do código-fonte ativada.');
-
-            // Inicia o monitoramento de arquivos estáticos também.
-            watchStaticFiles();
-
-            console.log('\nPronto! Observando por mudanças de arquivo. Pressione Ctrl+C para sair.');
-        }
-
+        const sw = await fs.readFile('sw.js', 'utf-8');
+        await atomicWrite(toOut('sw.js'), sw.replace(/const\s+CACHE_NAME\s*=\s*['"]([^'"]+)['"];/, `const CACHE_NAME = 'askesis-v${Date.now()}';`));
     } catch (e) {
-        // Em caso de falha, exibe o erro e encerra o processo com um código de erro.
-        console.error('O build falhou:', e);
-        process.exit(1);
+        await fs.copyFile('sw.js', toOut('sw.js'));
+    }
+
+    const assets = ['icons', 'locales'];
+    for (const asset of assets) {
+        try { await fs.cp(asset, toOut(asset), { recursive: true }); } catch {}
     }
 }
 
-// Executa a função de build.
-build();
+const esbuildOptions = {
+    entryPoints: { 'bundle': 'index.tsx', 'sync-worker': 'services/sync.worker.ts' },
+    bundle: true,
+    splitting: true,
+    outdir: outdir,
+    format: 'esm',
+    target: 'es2020',
+    minify: isProduction,
+    sourcemap: !isProduction,
+    define: { 'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'development') }
+};
+
+function watchStaticFiles() {
+    let isProcessing = false;
+    const processChanges = async () => {
+        if (isProcessing) return;
+        isProcessing = true;
+        try { await copyStaticFiles(); notifyLiveReload(); } 
+        finally { isProcessing = false; }
+    };
+
+    ['index.html', 'manifest.json', 'sw.js', 'icons', 'locales'].forEach(p => {
+        if (!fsSync.existsSync(p)) return;
+        fsSync.watch(p, { recursive: true }, (ev) => ev && processChanges()).on('error', () => {});
+    });
+}
+
+// --- DEV SERVER ---
+async function startDevServer() {
+    const ctx = await esbuild.context({
+        ...esbuildOptions,
+        plugins: [{ name: 'watch-logger', setup(b) { b.onEnd(r => !r.errors.length && notifyLiveReload()); } }]
+    });
+    await ctx.watch();
+
+    http.createServer(async (req, res) => {
+        res.setHeader('Access-Control-Allow-Origin', '*'); 
+
+        if (req.url === '/_reload') {
+            res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' });
+            reloadClients.add(res);
+            return req.on('close', () => reloadClients.delete(res));
+        }
+
+        if (req.url.startsWith('/api/sync')) return await handleApiSync(req, res);
+        if (req.url.startsWith('/api/analyze')) return await handleApiAnalyze(req, res);
+
+        let url = req.url.split('?')[0]; 
+        const normalized = path.normalize(url).replace(/^(\.\.(\/|\\|$))+/, '');
+        let filePath = toOut(normalized);
+
+        if (!fsSync.existsSync(filePath) || fsSync.statSync(filePath).isDirectory()) {
+            filePath = toOut('index.html');
+        }
+
+        const ext = path.extname(filePath);
+        res.writeHead(200, { 'Content-Type': MIME_TYPES[ext] || 'application/octet-stream' });
+
+        if (filePath.endsWith('index.html')) {
+            const html = await fs.readFile(filePath, 'utf-8');
+            res.end(html.replace('</body>', LIVE_RELOAD_SCRIPT));
+        } else {
+            fsSync.createReadStream(filePath).pipe(res);
+        }
+    }).listen(8000, () => {
+        console.log(`🚀 http://localhost:8000`);
+        watchStaticFiles();
+    });
+}
+
+(async function() {
+    await fs.rm(outdir, { recursive: true, force: true });
+    await copyStaticFiles();
+    isProduction ? await esbuild.build(esbuildOptions) : await startDevServer();
+})().catch(err => { console.error(err); process.exit(1); });
