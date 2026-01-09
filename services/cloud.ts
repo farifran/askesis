@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -10,7 +9,6 @@ import { generateUUID } from '../utils';
 import { ui } from '../render/ui';
 import { t } from '../i18n';
 import { hasLocalSyncKey, getSyncKey, apiFetch } from './api';
-import { mergeStates } from './dataMerge';
 
 const DEBOUNCE_DELAY = 2000;
 const WORKER_TIMEOUT_MS = 30000;
@@ -25,7 +23,6 @@ let syncWorker: Worker | null = null;
 const workerCallbacks = new Map<string, { resolve: (val: any) => void, reject: (err: any) => void, timer: any }>();
 
 function terminateWorker(reason: string) {
-    console.warn(`[Cloud] Terminating worker: ${reason}`);
     syncWorker?.terminate();
     syncWorker = null;
     workerCallbacks.forEach(cb => { clearTimeout(cb.timer); cb.reject(new Error(`Worker Reset: ${reason}`)); });
@@ -34,7 +31,7 @@ function terminateWorker(reason: string) {
 
 function getWorker(): Worker {
     if (!syncWorker) {
-        syncWorker = new Worker('/sync-worker.js', { type: 'module' });
+        syncWorker = new Worker('./sync-worker.js', { type: 'module' });
         syncWorker.onmessage = (e) => {
             const { id, status, result, error } = e.data;
             const cb = workerCallbacks.get(id);
@@ -43,20 +40,14 @@ function getWorker(): Worker {
             status === 'success' ? cb.resolve(result) : cb.reject(new Error(error));
             workerCallbacks.delete(id);
         };
-        syncWorker.onerror = (e) => {
-            console.error("[Cloud] Worker Error:", e);
-            terminateWorker("Crash");
-        };
+        syncWorker.onerror = () => terminateWorker("Crash");
     }
     return syncWorker;
 }
 
 const _getAuthKey = () => {
     const k = getSyncKey();
-    if (!k) {
-        console.warn("[Cloud] No sync key found locally.");
-        setSyncStatus('syncError');
-    }
+    if (!k) setSyncStatus('syncError');
     return k;
 };
 
@@ -67,13 +58,7 @@ export function runWorkerTask<T>(type: string, payload: any, key?: string): Prom
         const id = generateUUID();
         const timer = setTimeout(() => { if (workerCallbacks.has(id)) terminateWorker(`Timeout:${type}`); }, WORKER_TIMEOUT_MS);
         workerCallbacks.set(id, { resolve, reject, timer });
-        try {
-            getWorker().postMessage({ id, type, payload, key });
-        } catch (e) {
-            clearTimeout(timer);
-            workerCallbacks.delete(id);
-            reject(e);
-        }
+        getWorker().postMessage({ id, type, payload, key });
     });
 }
 
@@ -83,76 +68,47 @@ export function setSyncStatus(statusKey: 'syncSaving' | 'syncSynced' | 'syncErro
 }
 
 async function resolveConflictWithServerState(serverPayload: { lastModified: number; state: string }) {
-    console.log("[Cloud] Resolving conflict...");
     const key = _getAuthKey();
     if (!key) return;
     try {
         const serverState = await runWorkerTask<AppState>('decrypt', serverPayload.state, key);
         const merged = await runWorkerTask<AppState>('merge', { local: getPersistableState(), incoming: serverState });
-        
         if (merged.lastModified <= serverPayload.lastModified) merged.lastModified = serverPayload.lastModified + 1;
-        
         await persistStateLocally(merged);
         await loadState(merged);
         document.dispatchEvent(new CustomEvent('render-app'));
         setSyncStatus('syncSynced');
         document.dispatchEvent(new CustomEvent('habitsChanged'));
-        
-        console.log("[Cloud] Conflict resolved. Pushing merged state.");
         syncStateWithCloud(merged, true);
-    } catch (e) { 
-        console.error("[Cloud] Conflict resolution failed:", e);
-        setSyncStatus('syncError'); 
-    }
+    } catch { setSyncStatus('syncError'); }
 }
 
 async function performSync() {
     if (isSyncInProgress || !pendingSyncState) return;
-    
     const key = _getAuthKey();
     const appState = pendingSyncState;
     if (!key) { isSyncInProgress = false; return; }
     
-    console.log(`[Cloud] Starting sync. LastModified: ${appState.lastModified}`);
     isSyncInProgress = true;
     pendingSyncState = null;
-    
     try {
         const encrypted = await runWorkerTask<string>('encrypt', appState, key);
-        
-        if (encrypted.length > MAX_PAYLOAD_SIZE) {
-            throw new Error(`Payload too large: ${(encrypted.length/1024).toFixed(2)}KB`);
-        }
+        if (encrypted.length > MAX_PAYLOAD_SIZE) throw new Error("Size limit");
 
         const res = await apiFetch('/api/sync', {
             method: 'POST',
             body: JSON.stringify({ lastModified: appState.lastModified, state: encrypted }),
         }, true);
 
-        if (res.status === 409) {
-            console.warn("[Cloud] Server conflict (409).");
-            await resolveConflictWithServerState(await res.json());
-        } else { 
-            console.log("[Cloud] Sync success.");
-            setSyncStatus('syncSynced'); 
-            document.dispatchEvent(new CustomEvent('habitsChanged')); 
-        }
+        if (res.status === 409) await resolveConflictWithServerState(await res.json());
+        else { setSyncStatus('syncSynced'); document.dispatchEvent(new CustomEvent('habitsChanged')); }
         syncFailCount = 0;
-    } catch (e: any) {
-        // DETAILED ERROR LOGGING
-        // O erro agora contém o texto do servidor (ex: "Database Configuration Missing")
-        console.error("[Cloud] Sync Failed Detailed:", e.message || e);
-        
+    } catch {
         setSyncStatus('syncError');
-        if (++syncFailCount < MAX_RETRIES) {
-            console.log(`[Cloud] Retrying sync (${syncFailCount}/${MAX_RETRIES})...`);
-            pendingSyncState = appState;
-        }
+        if (++syncFailCount < MAX_RETRIES) pendingSyncState = appState;
     } finally {
         isSyncInProgress = false;
-        if (pendingSyncState && syncFailCount < MAX_RETRIES) {
-            performSync();
-        }
+        if (pendingSyncState && syncFailCount < MAX_RETRIES) performSync();
     }
 }
 
@@ -161,11 +117,7 @@ export function syncStateWithCloud(appState: AppState, immediate = false) {
     pendingSyncState = appState;
     setSyncStatus('syncSaving');
     clearTimeout(syncTimeout);
-    
-    if (isSyncInProgress) {
-        return;
-    }
-    
+    if (isSyncInProgress) return;
     if (immediate) performSync();
     else syncTimeout = setTimeout(performSync, DEBOUNCE_DELAY);
 }
@@ -173,28 +125,15 @@ export function syncStateWithCloud(appState: AppState, immediate = false) {
 export async function fetchStateFromCloud(): Promise<AppState | undefined> {
     const key = _getAuthKey();
     if (!key) return;
-    
     prewarmWorker();
     try {
-        console.log("[Cloud] Fetching state...");
         const res = await apiFetch('/api/sync', {}, true);
         const data = await res.json();
-        
         if (data?.state) {
-            console.log("[Cloud] Data received. Decrypting...");
             const appState = await runWorkerTask<AppState>('decrypt', data.state, key);
             setSyncStatus('syncSynced');
             return appState;
         }
-        
-        console.log("[Cloud] No data on server.");
-        if (state.habits.length) {
-            console.log("[Cloud] Pushing initial local state.");
-            syncStateWithCloud(getPersistableState(), true);
-        }
-    } catch (e: any) { 
-        console.error("[Cloud] Fetch failed Detailed:", e.message || e);
-        setSyncStatus('syncError'); 
-        throw e; 
-    }
+        if (state.habits.length) syncStateWithCloud(getPersistableState(), true);
+    } catch (e) { setSyncStatus('syncError'); throw e; }
 }

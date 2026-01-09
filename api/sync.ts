@@ -12,12 +12,16 @@ export const config = {
 
 const MAX_PAYLOAD_SIZE = 1024 * 1024; // 1MB
 
+/**
+ * Script LUA Atômico: Resolve conflitos de concorrência no Redis.
+ * Garante que apenas o dado com o timestamp mais recente persista.
+ */
 const LUA_ATOMIC_UPDATE = `
 local key = KEYS[1]
 local newPayload = ARGV[1]
 local newTs = tonumber(ARGV[2])
 
-if not newTs then return { "ERROR", "Invalid Timestamp Argument" } end
+if not newTs then return { "ERROR", "Invalid Timestamp" } end
 
 local currentVal = redis.call("GET", key)
 if not currentVal then
@@ -26,6 +30,8 @@ if not currentVal then
 end
 
 local status, currentJson = pcall(cjson.decode, currentVal)
+-- SEGURANÇA: Só confia no registro existente se for uma tabela com lastModified numérico.
+-- Se houver corrupção prévia, o novo payload (assumido válido) sobrescreve.
 if not status or type(currentJson) ~= "table" or type(currentJson.lastModified) ~= "number" then
     redis.call("SET", key, newPayload)
     return { "OK" }
@@ -49,17 +55,10 @@ const HEADERS_BASE = {
 export default async function handler(req: Request) {
     if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: HEADERS_BASE });
 
-    // DIAGNOSTIC CHECK: Verifica se o DB está conectado no ambiente Vercel.
-    // Isso evita o erro 500 genérico se o usuário esqueceu de conectar o KV.
-    if (!process.env.KV_REST_API_URL || !process.env.KV_REST_API_TOKEN) {
-         console.error("Missing Vercel KV Environment Variables");
-         return new Response(JSON.stringify({ error: 'Server Error: Database Configuration Missing' }), { status: 500, headers: HEADERS_BASE });
-    }
-
     try {
         const keyHash = req.headers.get('x-sync-key-hash');
         if (!keyHash || !/^[a-f0-9]{64}$/i.test(keyHash)) {
-            return new Response(JSON.stringify({ error: 'Unauthorized: Missing or Invalid Key Hash' }), { status: 401, headers: HEADERS_BASE });
+            return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: HEADERS_BASE });
         }
         
         const dataKey = `sync_v2:${keyHash}`;
@@ -70,6 +69,7 @@ export default async function handler(req: Request) {
         }
 
         if (req.method === 'POST') {
+            // CHAOS DEFENSE: Proteção contra leitura infinita (Timeout de 10s para o corpo)
             const bodyPromise = req.text();
             const timeoutPromise = new Promise<string>((_, reject) => 
                 setTimeout(() => reject(new Error('Body Timeout')), 10000)
@@ -92,8 +92,7 @@ export default async function handler(req: Request) {
                 return new Response(JSON.stringify({ error: 'Invalid Metadata' }), { status: 400, headers: HEADERS_BASE });
             }
 
-            // CRITICAL FIX: Explicit string cast for Lua args to avoid Redis protocol errors.
-            const result = await kv.eval(LUA_ATOMIC_UPDATE, [dataKey], [bodyText, String(clientPayload.lastModified)]) as [string, string?];
+            const result = await kv.eval(LUA_ATOMIC_UPDATE, [dataKey], [bodyText, clientPayload.lastModified]) as [string, string?];
 
             if (result[0] === 'OK') return new Response('{"success":true}', { status: 200, headers: HEADERS_BASE });
             if (result[0] === 'NOT_MODIFIED') return new Response(null, { status: 304, headers: HEADERS_BASE });
@@ -103,7 +102,6 @@ export default async function handler(req: Request) {
 
         return new Response(null, { status: 405 });
     } catch (error: any) {
-        console.error("API Sync Error:", error);
         const status = error.message === 'Body Timeout' ? 408 : 500;
         return new Response(JSON.stringify({ error: error.message || 'Server Error' }), { status, headers: HEADERS_BASE });
     }

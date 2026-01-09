@@ -139,6 +139,30 @@ body.is-interaction-active * {
     border-color: var(--color-red) !important;
 }
 
+/* --- ANIMAÇÕES DE NAVEGAÇÃO (SLIDE) --- */
+/* V7.3: Slide suave sem View Transitions API para evitar flashes */
+/* Direção: Entrando da Direita (Futuro) */
+@keyframes slide-in-from-right {
+    0% { opacity: 0; transform: translateX(30px); }
+    100% { opacity: 1; transform: translateX(0); }
+}
+
+/* Direção: Entrando da Esquerda (Passado) */
+@keyframes slide-in-from-left {
+    0% { opacity: 0; transform: translateX(-30px); }
+    100% { opacity: 1; transform: translateX(0); }
+}
+
+/* Classes utilitárias aplicadas via JS */
+.anim-slide-left {
+    /* 0.35s = Velocidade padrão nativa (suave mas perceptível) */
+    animation: slide-in-from-left 0.35s cubic-bezier(0.2, 0.0, 0.2, 1) forwards;
+}
+
+.anim-slide-right {
+    animation: slide-in-from-right 0.35s cubic-bezier(0.2, 0.0, 0.2, 1) forwards;
+}
+
 /* A11Y & PERFORMANCE: Respeita a preferência do usuário por movimento reduzido. */
 /* CRITICAL LOGIC: Evita desconforto vestibular e economiza bateria em dispositivos configurados para isso. */
 @media (prefers-reduced-motion: reduce) {

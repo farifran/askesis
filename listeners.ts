@@ -27,7 +27,6 @@ import { initChartInteractions } from './render/chart';
 import { pushToOneSignal, getTodayUTCIso, resetTodayCache } from './utils';
 import { state, getPersistableState } from './state';
 import { syncStateWithCloud } from './services/cloud';
-import { checkAndAnalyzeDayContext } from './services/analysis';
 
 // CONSTANTS
 const NETWORK_DEBOUNCE_MS = 500;
@@ -130,13 +129,6 @@ export function setupEventListeners() {
 
     // 3. App Event Bus (Direct reference)
     document.addEventListener('render-app', renderApp);
-    // EVENT BUS: Bridge between View (render.ts) and Logic (analysis.ts) without circular imports.
-    document.addEventListener('request-analysis', (e: Event) => {
-        const ce = e as CustomEvent;
-        if (ce.detail?.date) {
-            checkAndAnalyzeDayContext(ce.detail.date);
-        }
-    });
 
     // 4. ENVIRONMENT & LIFECYCLE LISTENERS
     window.addEventListener('online', _handleNetworkChange);

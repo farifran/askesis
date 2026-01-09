@@ -14,8 +14,8 @@ import { parseUTCIsoDate, toUTCIsoDateString, addDays, pushToOneSignal, getToday
 import { ui } from './render/ui';
 import { t, setLanguage, formatDate } from './i18n'; 
 import { UI_ICONS } from './render/icons';
-// FIX: Static Import. Garante que os dados estejam disponíveis imediatamente sem promessas falhas.
-import { STOIC_QUOTES, Quote } from '../data/quotes';
+import type { Quote } from './data/quotes';
+import { checkAndAnalyzeDayContext } from './habitActions';
 import { selectBestQuote } from './services/quoteEngine';
 import { calculateDaySummary } from './services/selectors';
 
@@ -35,68 +35,37 @@ let _lastTitleDate: string | null = null;
 let _lastTitleLang: string | null = null;
 let _cachedQuoteState: { id: string, contextKey: string } | null = null;
 
+let stoicQuotesModule: { STOIC_QUOTES: readonly Quote[] } | null = null;
+let _quotesImportPromise: Promise<typeof import('../data/quotes')> | null = null;
+
 let _cachedRefToday: string | null = null;
-let _cachedYesterdayISO: string | null = null;
-let _cachedTomorrowISO: string | null = null;
 let _renderTaskController: AbortController | null = null;
 let _rafHandle: number | null = null;
 
-const OPTS_HEADER_DESKTOP: Intl.DateTimeFormatOptions = { month: 'long', day: 'numeric', timeZone: 'UTC' };
 const OPTS_HEADER_ARIA: Intl.DateTimeFormatOptions = { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'UTC' };
-const OPTS_HEADER_MOBILE_NUMERIC: Intl.DateTimeFormatOptions = { day: '2-digit', month: '2-digit', timeZone: 'UTC' };
 
-function _ensureRelativeDateCache(todayISO: string) {
-    if (_cachedRefToday !== todayISO) {
-        _cachedRefToday = todayISO;
-        const todayDate = parseUTCIsoDate(todayISO);
-        _cachedYesterdayISO = toUTCIsoDateString(addDays(todayDate, -1));
-        _cachedTomorrowISO = toUTCIsoDateString(addDays(todayDate, 1));
-    }
-}
-
+/**
+ * Atualiza o título do cabeçalho com lógica simplificada.
+ */
 function _updateHeaderTitle() {
     if (_lastTitleDate === state.selectedDate && _lastTitleLang === state.activeLanguageCode) return;
 
     const todayISO = getTodayUTCIso();
-    _ensureRelativeDateCache(todayISO);
-
     const selected = state.selectedDate;
-    let titleKey: string | null = null;
-
-    if (selected === todayISO) titleKey = 'headerTitleToday';
-    else if (selected === _cachedYesterdayISO) titleKey = 'headerTitleYesterday';
-    else if (selected === _cachedTomorrowISO) titleKey = 'headerTitleTomorrow';
-
-    let desktopTitle: string;
-    let mobileTitle: string;
-    let fullLabel: string;
-    
     const date = parseUTCIsoDate(selected);
-    const numericDateStr = formatDate(date, OPTS_HEADER_MOBILE_NUMERIC);
     
-    if (titleKey) {
-        const localizedTitle = t(titleKey);
-        desktopTitle = localizedTitle;
-        mobileTitle = (selected === todayISO) ? localizedTitle : numericDateStr;
-        fullLabel = formatDate(date, OPTS_HEADER_ARIA);
-    } else {
-        mobileTitle = numericDateStr;
-        desktopTitle = formatDate(date, OPTS_HEADER_DESKTOP);
-        fullLabel = formatDate(date, OPTS_HEADER_ARIA);
-    }
+    const displayTitle = (selected === todayISO) 
+        ? t('headerTitleToday') 
+        : `${String(date.getUTCDate()).padStart(2, '0')}/${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
     
-    setTextContent(ui.headerTitleDesktop, desktopTitle);
-    setTextContent(ui.headerTitleMobile, mobileTitle);
+    setTextContent(ui.headerTitleDesktop, displayTitle);
+    setTextContent(ui.headerTitleMobile, displayTitle);
     
-    if (ui.headerTitle.getAttribute('aria-label') !== fullLabel) {
-        ui.headerTitle.setAttribute('aria-label', fullLabel);
-    }
+    const fullLabel = formatDate(date, OPTS_HEADER_ARIA);
+    if (ui.headerTitle.getAttribute('aria-label') !== fullLabel) ui.headerTitle.setAttribute('aria-label', fullLabel);
 
-    const isPast = selected < todayISO;
-    const isFuture = selected > todayISO;
-    
-    if (ui.navArrowPast.classList.contains('hidden') === isPast) ui.navArrowPast.classList.toggle('hidden', !isPast);
-    if (ui.navArrowFuture.classList.contains('hidden') === isFuture) ui.navArrowFuture.classList.toggle('hidden', !isFuture);
+    ui.navArrowPast.classList.toggle('hidden', !(selected < todayISO));
+    ui.navArrowFuture.classList.toggle('hidden', !(selected > todayISO));
 
     _lastTitleDate = selected;
     _lastTitleLang = state.activeLanguageCode;
@@ -256,20 +225,18 @@ function _setupQuoteAutoCollapse() {
 }
 
 export async function renderStoicQuote() {
-    // FIX: Decoupled Analysis Trigger via Event Bus.
-    // Instead of importing the logic (circular dependency), we signal the need.
-    if (!state.dailyDiagnoses[state.selectedDate]) {
-        document.dispatchEvent(new CustomEvent('request-analysis', { detail: { date: state.selectedDate } }));
-    }
-
+    checkAndAnalyzeDayContext(state.selectedDate);
     const hour = new Date().getHours(), tod = hour < 12 ? 'Morning' : (hour < 18 ? 'Afternoon' : 'Evening');
     const summ = calculateDaySummary(state.selectedDate), sig = `${summ.completed}/${summ.total}`;
     const ctxKey = `${state.selectedDate}|${state.activeLanguageCode}|${tod}|${sig}`;
 
     if (_cachedQuoteState?.contextKey === ctxKey) return;
+    if (!stoicQuotesModule) {
+        _quotesImportPromise = _quotesImportPromise || import('../data/quotes');
+        try { stoicQuotesModule = await _quotesImportPromise; } catch { _quotesImportPromise = null; return; }
+    }
 
-    // FIX: Use statically imported STOIC_QUOTES. No dynamic loading required.
-    const sel = selectBestQuote(STOIC_QUOTES, state.selectedDate);
+    const sel = selectBestQuote(stoicQuotesModule.STOIC_QUOTES, state.selectedDate);
     _cachedQuoteState = { id: sel.id, contextKey: ctxKey };
 
     const diag = state.dailyDiagnoses[state.selectedDate], lvl = diag ? diag.level : 1;
@@ -306,11 +273,6 @@ export async function renderStoicQuote() {
 
 document.addEventListener('language-changed', () => { initLanguageFilter(); renderLanguageFilter(); updateUIText(); if (ui.syncStatus) setTextContent(ui.syncStatus, t(state.syncState)); renderApp(); });
 document.addEventListener('habitsChanged', () => { _cachedQuoteState = null; 'requestIdleCallback' in window ? requestIdleCallback(() => renderStoicQuote()) : setTimeout(renderStoicQuote, 1000); });
-// FIX: Listen for analysis completion to re-render quote.
-document.addEventListener('quote-updated', () => { 
-    _cachedQuoteState = null; 
-    'requestIdleCallback' in window ? requestIdleCallback(() => renderStoicQuote()) : setTimeout(renderStoicQuote, 100); 
-});
 
 export async function initI18n() {
     const saved = localStorage.getItem('habitTrackerLanguage'), browser = navigator.language.split('-')[0];
