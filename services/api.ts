@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 
-import { HEX_LUT } from '../utils';
+import { HEX_LUT, sha256Fallback } from '../utils';
 
 const SYNC_KEY_STORAGE_KEY = 'habitTrackerSyncKey';
 const UUID_REGEX = /^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$/;
@@ -30,15 +30,21 @@ export const isValidKeyFormat = (k: string) => UUID_REGEX.test(k);
 async function hashKey(key: string): Promise<string> {
     if (!key) return '';
     
-    if (!crypto.subtle) {
-        console.warn("CRITICAL: Crypto API unavailable. Sync requires a Secure Context (HTTPS or localhost).");
-        return '';
+    // Check for Secure Context Native Crypto
+    if (crypto && crypto.subtle) {
+        try {
+            const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', encoder.encode(key)));
+            let hex = '';
+            for (let i = 0; i < hash.length; i++) hex += HEX_LUT[hash[i]];
+            return hex;
+        } catch (e) {
+            console.warn("Crypto.subtle failed, using fallback.", e);
+        }
     }
     
-    const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', encoder.encode(key)));
-    let hex = '';
-    for (let i = 0; i < hash.length; i++) hex += HEX_LUT[hash[i]];
-    return hex;
+    // FALLBACK: Pure JS SHA-256 for HTTP/LAN debugging or legacy browsers
+    console.warn("Using pure JS SHA-256 fallback for Sync Key Hash.");
+    return await sha256Fallback(key);
 }
 
 export async function getSyncKeyHash(): Promise<string | null> {
@@ -58,7 +64,7 @@ export async function apiFetch(endpoint: string, options: ExtendedRequestInit = 
         if (hash) {
             headers.set('X-Sync-Key-Hash', hash);
         } else if (hasLocalSyncKey()) {
-            console.error("API call aborted: Could not generate Key Hash (likely due to insecure context or crypto timeout).");
+            console.error("API call aborted: Could not generate Key Hash.");
             throw new Error("Crypto Failure");
         }
     }
@@ -69,8 +75,20 @@ export async function apiFetch(endpoint: string, options: ExtendedRequestInit = 
         try {
             const res = await fetch(endpoint, { ...fetchOpts, headers, signal: ctrl.signal, keepalive: true });
             clearTimeout(tId);
+            
+            // Success or acceptable semantic errors
             if (res.ok || res.status === 409) return res;
-            if (res.status < 500 || n === retries) throw new Error(await res.text());
+            
+            // Get error text for debugging
+            const errText = await res.text();
+            
+            // FAIL FAST: If it's a configuration error (500), do not retry.
+            // This prevents endless loops when DB is not connected.
+            if (res.status === 500 && errText.includes('Configuration')) {
+                throw new Error(errText);
+            }
+
+            if (res.status < 500 || n === retries) throw new Error(errText);
         } catch (e) {
             clearTimeout(tId);
             if (n === retries) throw e;

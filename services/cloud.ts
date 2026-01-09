@@ -33,7 +33,6 @@ function terminateWorker(reason: string) {
 
 function getWorker(): Worker {
     if (!syncWorker) {
-        // Ensure relative path logic works in PWA/SPA contexts
         syncWorker = new Worker('/sync-worker.js', { type: 'module' });
         syncWorker.onmessage = (e) => {
             const { id, status, result, error } = e.data;
@@ -90,7 +89,6 @@ async function resolveConflictWithServerState(serverPayload: { lastModified: num
         const serverState = await runWorkerTask<AppState>('decrypt', serverPayload.state, key);
         const merged = await runWorkerTask<AppState>('merge', { local: getPersistableState(), incoming: serverState });
         
-        // Logical Clock adjustment
         if (merged.lastModified <= serverPayload.lastModified) merged.lastModified = serverPayload.lastModified + 1;
         
         await persistStateLocally(merged);
@@ -119,14 +117,12 @@ async function performSync() {
     pendingSyncState = null;
     
     try {
-        // Step 1: Encrypt in Worker
         const encrypted = await runWorkerTask<string>('encrypt', appState, key);
         
         if (encrypted.length > MAX_PAYLOAD_SIZE) {
             throw new Error(`Payload too large: ${(encrypted.length/1024).toFixed(2)}KB`);
         }
 
-        // Step 2: Network Upload
         const res = await apiFetch('/api/sync', {
             method: 'POST',
             body: JSON.stringify({ lastModified: appState.lastModified, state: encrypted }),
@@ -141,8 +137,11 @@ async function performSync() {
             document.dispatchEvent(new CustomEvent('habitsChanged')); 
         }
         syncFailCount = 0;
-    } catch (e) {
-        console.error("[Cloud] Sync Failed:", e);
+    } catch (e: any) {
+        // DETAILED ERROR LOGGING
+        // O erro agora contém o texto do servidor (ex: "Database Configuration Missing")
+        console.error("[Cloud] Sync Failed Detailed:", e.message || e);
+        
         setSyncStatus('syncError');
         if (++syncFailCount < MAX_RETRIES) {
             console.log(`[Cloud] Retrying sync (${syncFailCount}/${MAX_RETRIES})...`);
@@ -163,7 +162,6 @@ export function syncStateWithCloud(appState: AppState, immediate = false) {
     clearTimeout(syncTimeout);
     
     if (isSyncInProgress) {
-        console.log("[Cloud] Sync already in progress, queuing state.");
         return;
     }
     
@@ -193,8 +191,8 @@ export async function fetchStateFromCloud(): Promise<AppState | undefined> {
             console.log("[Cloud] Pushing initial local state.");
             syncStateWithCloud(getPersistableState(), true);
         }
-    } catch (e) { 
-        console.error("[Cloud] Fetch failed:", e);
+    } catch (e: any) { 
+        console.error("[Cloud] Fetch failed Detailed:", e.message || e);
         setSyncStatus('syncError'); 
         throw e; 
     }
