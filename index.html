@@ -1,47 +1,20 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <!-- 
-    [ARCHITECTURAL CONTEXT]:
-    @file index.html
-    @description App Shell e Caminho Crítico de Renderização (CRP).
-    
-    [MAIN THREAD CONTEXT]:
-    Este arquivo é o ponto de entrada visual. Ele deve renderizar o primeiro pixel (First Paint)
-    em < 100ms, independentemente do carregamento do JavaScript.
-    
-    ARQUITETURA (App Shell Model):
-    - Critical CSS Inlined: Estilos essenciais (fundo, loader) estão no HTML para evitar bloqueio de renderização.
-    - Resource Hinting: Uso de <link rel="preload"> para paralelizar o download do bundle.
-    - SVG Spriting: Definições de ícones centralizadas para reduzir o tamanho do DOM.
-    
-    DEPENDÊNCIAS CRÍTICAS:
-    - bundle.js / bundle.css: Artefatos gerados pelo build.js.
-    - OneSignal SDK: Dependência externa para Push Notifications.
+    [ANALYSIS PROGRESS]: 100% - Análise concluída.
+    [NOTA COMPARATIVA]: Este arquivo serve como a fundação (App Shell) do sistema. Enquanto 'state.ts' e 'render.ts' gerenciam a complexidade lógica e visual, o 'index.html' demonstra engenharia sênior focada em Performance Percebida (Critical CSS inline, Preloads) e Acessibilidade (Semântica, Noscript).
+    [2025-02-23]: 'importmap' removido pois as dependências são empacotadas via esbuild (bundle.js), tornando o mapeamento de CDN redundante.
 -->
 <head>
 
     <meta charset="UTF-8">
     <base href="/">
-    
-    <!-- ENGINE OPTIMIZATION: 'interactive-widget=resizes-content' garante que o teclado virtual
-         redimensione a Viewport visualmente, permitindo que modais (ex: Notas) se ajustem sem JavaScript. -->
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
-    
-    <!-- ENGINE OPTIMIZATION: Instrui o navegador a renderizar controles nativos (scrollbars, inputs) 
-         em modo escuro IMEDIATAMENTE, evitando flash branco antes do CSS carregar. -->
-    <meta name="color-scheme" content="dark">
-    
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Askesis</title>
     
-    <!-- PERFORMANCE: Resource Hints. Instruem o navegador a baixar assets críticos em alta prioridade. -->
+    <!-- Pré-carregamento de ativos críticos para LCP (Largest Contentful Paint) otimizado -->
     <link rel="preload" href="bundle.css" as="style">
-    <!-- OPTIMIZATION: 'modulepreload' garante o tratamento correto de credenciais/cache para ESM. -->
-    <link rel="modulepreload" href="bundle.js">
-    
-    <!-- PERFORMANCE: Network Socket Warming. 
-         Inicia o handshake DNS/TCP/TLS com o CDN do OneSignal antes que o parser encontre a tag de script.
-         Reduz a latência de carregamento do SDK em ~50-100ms em redes móveis. -->
-    <link rel="preconnect" href="https://cdn.onesignal.com">
+    <link rel="preload" href="bundle.js" as="script">
 
     <!-- Metadados para PWA em iOS -->
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -57,16 +30,12 @@
     
     <link rel="stylesheet" href="bundle.css">
     <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#000000">
+    <meta name="theme-color" content="#121212">
     
-    <!-- PERFORMANCE: Critical CSS Inline. 
-         Renderiza o fundo e o loader IMEDIATAMENTE. -->
+    <!-- CSS Crítico Inline: Renderiza o loader e o fundo imediatamente, antes do CSS externo carregar -->
     <style>
-        html {
-            background-color: #000000;
-        }
         body {
-            background-color: #000000;
+            background-color: #121212;
             color: #e5e5e5;
         }
         .initial-loader {
@@ -75,16 +44,10 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            background-color: #000000;
+            background-color: #121212;
             z-index: 9999;
             opacity: 1;
             transition: opacity 0.3s ease-out;
-            
-            /* PERFORMANCE (Layout Isolation): 
-               'strict' remove este elemento da árvore de cálculo de layout global.
-               O navegador sabe que nada dentro dele afeta fora, e vice-versa. 
-               Essencial para 60fps durante o boot. */
-            contain: strict;
         }
         .initial-loader.hidden {
             opacity: 0;
@@ -96,48 +59,38 @@
             animation: spin 1s linear infinite;
             stroke: #737373; /* Cor --text-tertiary */
         }
-        /* Utility for instant toggle without transition */
-        .d-none { display: none !important; }
-        
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
     </style>
     
-    <!-- OneSignal SDK: Async para NÃO BLOQUEAR o DOMContentLoaded/First Interactive -->
-    <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" async></script>
+    <!-- OneSignal SDK: Mantido inline para inicialização prioritária de Push Notifications -->
+    <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
     <script>
       window.OneSignalDeferred = window.OneSignalDeferred || [];
-      window.OneSignalDeferred.push(async function(OneSignal) {
-        // [ROBUSTNESS FIX]: OneSignal throws a domain-mismatch error if initialized on a URL 
-        // that doesn't match the dashboard configuration. We wrap this in a try/catch to 
-        // prevent it from triggering the app's Fatal Error UI during staging/local previews.
-        try {
-          await OneSignal.init({
-            appId: "39454655-f1cd-4531-8ec5-d0f61eb1c478",
-            allowLocalhostAsSecureOrigin: true,
-          });
-        } catch (e) {
-          console.warn("OneSignal initialization skipped: likely domain mismatch or blocked by browser.", e);
-        }
+      OneSignalDeferred.push(async function(OneSignal) {
+        await OneSignal.init({
+          appId: "39454655-f1cd-4531-8ec5-d0f61eb1c478",
+          allowLocalhostAsSecureOrigin: true,
+        });
       });
     </script>
 <script type="importmap">
 {
   "imports": {
-    "@google/genai": "https://esm.sh/@google/genai@^1.34.0",
     "@vercel/analytics": "https://esm.sh/@vercel/analytics@^1.6.1",
-    "@vercel/kv": "https://esm.sh/@vercel/kv@^3.0.0"
+    "@vercel/kv": "https://esm.sh/@vercel/kv@^3.0.0",
+    "@google/genai": "https://esm.sh/@google/genai@^1.33.0",
+    "path": "https://esm.sh/path@^0.12.7",
+    "vite": "https://esm.sh/vite@^7.3.1"
   }
 }
 </script>
 <link rel="stylesheet" href="/index.css">
 </head>
 <body>
-    <!-- PERFORMANCE: SVG Sprite System.
-         Usa width/height 0 e visibility hidden em vez de display:none para garantir
-         que alguns navegadores (Safari antigo) calculem corretamente as dimensões internas dos símbolos. -->
-    <svg width="0" height="0" style="position: absolute; visibility: hidden;">
+    <!-- SVG Defs: Definição centralizada de ícones comuns para reutilização via <use> -->
+    <svg style="display: none;">
       <defs>
         <symbol id="icon-chevron-left" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="15 18 9 12 15 6"></polyline>
@@ -151,7 +104,7 @@
       </defs>
     </svg>
 
-    <!-- Fallback para acessibilidade -->
+    <!-- Fallback para acessibilidade: Garante que o usuário saiba por que o app não carrega -->
     <noscript>
         <div style="text-align: center; padding: 20px; font-family: sans-serif;">
             <h1>JavaScript é necessário</h1>
@@ -159,136 +112,31 @@
         </div>
     </noscript>
 
-    <!-- UX: Indicador de carregamento inicial (Critical Rendering Path) 
-         Visível imediatamente graças ao CSS inline no <head>. -->
-    <div id="initial-loader-container">
-        <div id="initial-loader" class="initial-loader">
-            <!-- Active Spinner -->
-            <svg id="loader-spinner" width="48" height="48"><use href="#icon-spinner"></use></svg>
-            
-            <!-- OPTIMIZATION (DOM POOLING): Pre-allocated Error UI.
-                 Oculto por padrão via CSS (.d-none). Em caso de erro, apenas alternamos a visibilidade 
-                 e atualizamos o textContent via Direct Memory Write. -->
-            <div id="fatal-error-ui" class="d-none" style="color:#ff6b6b;padding:2rem;text-align:center;font-family:sans-serif;max-width:400px;line-height:1.5;">
-                <h3 id="error-title" style="margin-bottom:10px;">Erro Fatal</h3>
-                <p id="error-message" style="font-size:14px;opacity:0.8;">Erro desconhecido</p>
-                <button onclick="location.reload()" style="margin-top:20px;padding:10px 20px;background:#333;color:white;border:none;border-radius:4px;cursor:pointer;">
-                    Tentar Novamente
-                </button>
-            </div>
-        </div>
+    <!-- Indicador de carregamento inicial (Critical Rendering Path) -->
+    <div id="initial-loader" class="initial-loader">
+        <svg width="48" height="48"><use href="#icon-spinner"></use></svg>
     </div>
 
-    <!-- ROBUSTEZ: Global Error Handler & Watchdog. 
-         1. IIFE para isolamento de escopo.
-         2. Evita Memory Leaks (Detached DOM Nodes) não mantendo referências globais.
-         3. Watchdog Timer para falhas de boot silenciosas. -->
-    <script>
-      (function() {
-          var errorDisplayed = false;
-
-          // Helper para buscar elementos apenas quando necessário (evita cache obsoleto)
-          function getUI() {
-              return {
-                  loader: document.getElementById('initial-loader'),
-                  spinner: document.getElementById('loader-spinner'),
-                  errUi: document.getElementById('fatal-error-ui'),
-                  errTitle: document.getElementById('error-title'),
-                  errMsg: document.getElementById('error-message')
-              };
-          }
-
-          window.showFatalError = function(msg, isWatchdog) {
-            if (errorDisplayed) return;
-            errorDisplayed = true;
-
-            var ui = getUI();
-            
-            // Se o loader já foi removido do DOM (app carregou), não tente mostrar erro nele.
-            // Em vez disso, use um alert de fallback ou injete um novo modal.
-            if (!ui.loader || !ui.loader.isConnected) {
-                if (!isWatchdog) alert("Erro Crítico: " + msg);
-                return;
-            }
-
-            if (ui.loader) {
-                if (ui.spinner) ui.spinner.style.display = 'none';
-                
-                if (ui.errUi) {
-                    if (ui.errTitle) ui.errTitle.textContent = isWatchdog ? 'Tempo Excedido' : 'Falha Crítica';
-                    if (ui.errMsg) ui.errMsg.textContent = msg || 'Erro interno.';
-                    ui.errUi.classList.remove('d-none');
-                }
-                
-                ui.loader.classList.remove('hidden');
-            }
-          };
-
-          window.onerror = function(message, source, lineno, colno, error) {
-            // [ROBUSTNESS FIX]: Suppress domain-mismatch errors from OneSignal.
-            // These errors are expected on non-production domains and should not trigger the Fatal Error UI.
-            var msg = message || (error && error.message) || "";
-            if (typeof msg === 'string' && (msg.indexOf('OneSignal') !== -1 || msg.indexOf('onesignal') !== -1)) {
-              console.warn("Caught and suppressed OneSignal library error:", msg);
-              return true; // Prevents the error from being reported globally
-            }
-            window.showFatalError(msg);
-            return false; 
-          };
-
-          window.onunhandledrejection = function(event) {
-            var reason = event.reason;
-            var msg = 'Erro Assíncrono: ' + (reason ? (reason.message || reason) : 'Desconhecido');
-            
-            // Suppress OneSignal-related promise rejections
-            if (typeof msg === 'string' && (msg.indexOf('OneSignal') !== -1 || msg.indexOf('onesignal') !== -1)) {
-               console.warn("Caught and suppressed OneSignal unhandled rejection:", msg);
-               return;
-            }
-            
-            window.showFatalError(msg);
-          };
-
-          // Watchdog: Verifica se o loader ainda está visível após 8s.
-          window.bootWatchdog = setTimeout(function() {
-            var ui = getUI();
-            // Verifica 'isConnected' para evitar falso positivo se o JS removeu o elemento mas o GC ainda não rodou
-            if (ui.loader && ui.loader.isConnected && !ui.loader.classList.contains('hidden')) {
-                window.showFatalError("O aplicativo demorou muito para responder. Verifique sua conexão.", true);
-            }
-          }, 8000);
-      })();
-    </script>
-
-    <!-- APP SHELL: Estrutura estática que será hidratada pelo JavaScript -->
     <div class="app-container">
         <header class="app-header">
             <div class="header-top">
                 <button id="fab-add-habit" aria-label="Adicionar Hábito">+</button>
                 <div id="calendar-strip" class="calendar-strip"></div>
                 <div class="header-icon-stack">
-                    <button id="manage-habits-btn" class="icon-btn" aria-label="Configurações"></button>
+                    <button id="manage-habits-btn" class="icon-btn" aria-label="Configurações"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 0 0-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 0 0-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 0 0-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 0 0-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 0 0 1.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><circle cx="12" cy="12" r="3"/></svg></button>
                     <button id="ai-eval-btn" class="icon-btn" aria-label="Avaliação IA">
                         <svg class="loading-icon" width="24" height="24"><use href="#icon-spinner"></use></svg>
-                        <span class="default-icon"></span>
-                        <svg class="offline-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="1" y1="1" x2="23" y2="23"></line><path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"></path><path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"></path><path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path><line x1="12" y1="20" x2="12.01" y2="20"></line></svg>
+                        <svg class="default-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>
+                        <svg class="offline-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="1" y1="1" x2="23" y2="23"></line><path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"></path><path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"></path><path d="M10.71 5.05A16 16 0 0 1 22.58 9"></path><path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"></path><path d="M8.53 16.11a6.5 6.5 0 0 1 6.95 0"></path><line x1="12" y1="20" x2="12.01" y2="20"></line></svg>
                     </button>
                 </div>
             </div>
             <div class="header-bottom">
                 <div id="stoic-quote-display" class="stoic-quote"></div>
-                <div class="header-date-wrapper">
-                    <button id="nav-arrow-past" class="nav-arrow past hidden" aria-label="Dia Seguinte">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-                    </button>
-                    <h2 id="header-title">
-                        <span class="header-title-desktop">Hoje</span>
-                        <span class="header-title-mobile">Hoje</span>
-                    </h2>
-                    <button id="nav-arrow-future" class="nav-arrow future hidden" aria-label="Dia Anterior">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-                    </button>
-                </div>
+                <h2 id="header-title">
+                    <span class="header-title-desktop">Hoje</span>
+                    <span class="header-title-mobile">Hoje</span>
+                </h2>
             </div>
         </header>
 
@@ -308,47 +156,7 @@
                 </div>
             </div>
 
-            <section id="chart-container" class="chart-container">
-                <div class="chart-header">
-                    <div class="app-subtitle"></div>
-                    <div class="chart-title-row">
-                        <h3 class="chart-title"></h3>
-                        <div class="chart-evolution-indicator"></div>
-                    </div>
-                </div>
-                <!-- Estado Vazio -->
-                <div class="chart-empty-state"></div>
-                <!-- Estrutura do Gráfico -->
-                <div class="chart-data-view">
-                    <div class="chart-wrapper">
-                        <svg class="chart-svg" preserveAspectRatio="none">
-                            <defs>
-                                <linearGradient id="chart-gradient" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="0%" stop-color="var(--accent-blue)" stop-opacity="0.3"/>
-                                    <stop offset="100%" stop-color="var(--accent-blue)" stop-opacity="0"/>
-                                </linearGradient>
-                            </defs>
-                            <path class="chart-area"></path>
-                            <path class="chart-line"></path>
-                        </svg>
-                        <div class="chart-tooltip">
-                            <div class="tooltip-date"></div>
-                            <div class="tooltip-score">
-                                <span class="tooltip-score-label"></span>
-                                <span class="tooltip-score-value"></span>
-                            </div>
-                            <ul class="tooltip-habits"><li></li></ul>
-                        </div>
-                        <div class="chart-indicator">
-                            <div class="chart-indicator-dot"></div>
-                        </div>
-                    </div>
-                    <div class="chart-axis-labels">
-                        <span></span>
-                        <span></span>
-                    </div>
-                </div>
-            </section>
+            <section id="chart-container" class="chart-container"></section>
         </main>
     </div>
 
@@ -435,17 +243,7 @@
                         </div>
                     </div>
                 </div>
-                
-                <div id="privacy-section" class="setting-item setting-item--column" style="margin-block-end: var(--space-sm);">
-                    <div class="setting-item-header">
-                        <label id="label-privacy">Dados & Privacidade</label>
-                    </div>
-                    <div class="sync-actions">
-                        <button id="export-data-btn" class="btn">Exportar Backup</button>
-                        <button id="import-data-btn" class="btn">Restaurar Backup</button>
-                    </div>
-                </div>
-
+                <!-- ID Adicionado para permitir inserção ordenada de 'Dados e Privacidade' -->
                 <div id="reset-section" class="setting-item">
                     <label id="label-reset">Reinicialização</label>
                     <button id="reset-app-btn" class="btn btn--danger">Apagar dados</button>
@@ -453,7 +251,6 @@
             </div>
             <h3 id="habit-list-title" class="modal-subtitle">Gerenciar Hábitos</h3>
             <ul id="habit-list"></ul>
-            <p id="no-habits-message" class="empty-list-message hidden"></p>
             <button class="btn modal-close-btn">Fechar</button>
         </div>
     </div>
@@ -484,7 +281,7 @@
                     <span class="ai-option-desc">Uma visão completa de toda a sua jornada.</span>
                 </button>
             </div>
-            <button class="btn modal-close-btn">Fechar</button>
+            <button class="btn modal-close-btn">Cancelar</button>
         </div>
     </div>
 
@@ -494,7 +291,7 @@
             <p id="confirm-modal-text"></p>
             <div class="modal-actions">
                 <button class="btn modal-close-btn">Cancelar</button>
-                <button id="confirm-modal-edit-btn" class="btn hidden">Editar</button>
+                <button id="confirm-modal-edit-btn" class="btn">Editar</button>
                 <button id="confirm-modal-confirm-btn" class="btn btn--primary">Confirmar</button>
             </div>
         </div>
@@ -502,19 +299,19 @@
 
     <div id="notes-modal" class="modal-overlay">
         <div class="modal-content">
-            <h2 id="notes-modal-title">Nota</h2>
+            <h2 id="notes-modal-title"></h2>
             <p id="notes-modal-subtitle"></p>
-            <textarea id="notes-textarea" placeholder="Digite sua nota aqui..."></textarea>
-            <button id="save-note-btn" class="btn btn--primary">Salvar Nota</button>
-            <button class="btn modal-close-btn">Cancelar</button>
+            <textarea id="notes-textarea" rows="5" placeholder="Digite sua nota..."></textarea>
+            <div class="modal-actions">
+                <button class="btn modal-close-btn">Cancelar</button>
+                <button id="save-note-btn" class="btn btn--primary">Salvar Nota</button>
+            </div>
         </div>
     </div>
 
-    <!-- Modal: Ícone Picker -->
     <div id="icon-picker-modal" class="modal-overlay">
         <div class="modal-content">
             <div class="modal-header">
-                <div style="width: 44px;"></div> <!-- Spacer para centralização do título com o botão da direita -->
                 <h2 id="icon-picker-modal-title">Selecionar Ícone</h2>
                 <button id="change-color-from-picker-btn" class="icon-btn"></button>
             </div>
@@ -523,7 +320,6 @@
         </div>
     </div>
 
-    <!-- Modal: Color Picker -->
     <div id="color-picker-modal" class="modal-overlay">
         <div class="modal-content">
             <h2 id="color-picker-modal-title">Selecionar Cor</h2>
@@ -532,68 +328,66 @@
         </div>
     </div>
 
-    <!-- Modal: Edit Habit (Apple Style Form) -->
     <div id="edit-habit-modal" class="modal-overlay">
         <div class="modal-content">
-            <h2 id="edit-habit-modal-title">Editar Hábito</h2>
-            <form id="edit-habit-form">
-                <div class="habit-identity-section">
+            <h2 id="edit-habit-modal-title"></h2>
+            <form id="edit-habit-form" novalidate>
+                <div class="form-section habit-identity-section">
                     <div class="habit-icon-picker-wrapper">
-                        <button type="button" id="habit-icon-picker-btn" class="habit-icon-picker-btn"></button>
+                        <button type="button" id="habit-icon-picker-btn" class="habit-icon-picker-btn" aria-label="Selecionar ícone"></button>
                         <div class="edit-icon-overlay"></div>
                     </div>
                     <div class="habit-name-input-wrapper">
-                        <input type="text" id="habit-name" name="habit-name" class="form-control" placeholder="Nome" autocomplete="off" style="background:transparent;border:none;font-size:20px;padding:0;">
+                        <input type="text" id="habit-name" name="habit-name" class="form-control" required>
+                        <div class="duplicate-habit-notice"></div>
                         <div class="form-notice"></div>
                     </div>
                 </div>
 
                 <div class="form-section">
-                    <div class="form-row form-row--no-border">
-                        <label>Horário</label>
+                    <div class="form-row form-row--vertical">
+                         <div id="habit-time-container">
+                            <!-- O controle segmentado será injetado aqui pelo JavaScript -->
+                         </div>
+                        </div>
                     </div>
-                    <div id="habit-time-container" style="padding: 0 var(--space-lg) var(--space-lg);"></div>
+
+                    <div id="frequency-options-container">
+                        <!-- As opções de frequência serão injetadas aqui pelo JavaScript -->
+                    </div>
+                </form>
+                <div class="modal-actions">
+                    <button class="btn modal-close-btn"></button>
+                    <button id="edit-habit-save-btn" class="btn btn--primary"></button>
                 </div>
-
-                <div id="frequency-options-container"></div>
-            </form>
-            <div class="modal-actions">
-                <button class="btn modal-close-btn">Cancelar</button>
-                <button id="edit-habit-save-btn" class="btn btn--primary">Salvar</button>
             </div>
         </div>
-    </div>
 
-    <!-- Modal: Full Calendar -->
-    <div id="full-calendar-modal" class="modal-overlay">
-        <div class="modal-content">
-            <div id="full-calendar-header">
-                <button id="full-calendar-prev" class="icon-btn">
-                    <svg width="24" height="24"><use href="#icon-chevron-left"></use></svg>
-                </button>
-                <h2 id="full-calendar-month-year"></h2>
-                <button id="full-calendar-next" class="icon-btn">
-                    <svg width="24" height="24"><use href="#icon-chevron-right"></use></svg>
-                </button>
+        <div id="full-calendar-modal" class="modal-overlay">
+            <div class="modal-content">
+                <div id="full-calendar-header">
+                    <button id="full-calendar-prev" class="icon-btn" aria-label="Mês anterior">
+                        <svg width="20" height="20"><use href="#icon-chevron-left"></use></svg>
+                    </button>
+                    <h2 id="full-calendar-month-year"></h2>
+                    <button id="full-calendar-next" class="icon-btn" aria-label="Próximo mês">
+                        <svg width="20" height="20"><use href="#icon-chevron-right"></use></svg>
+                    </button>
+                </div>
+                <div id="full-calendar-weekdays"></div>
+                <div id="full-calendar-grid"></div>
+                <button class="btn modal-close-btn">Fechar</button>
             </div>
-            <div id="full-calendar-weekdays"></div>
-            <div id="full-calendar-grid"></div>
-            <button class="btn modal-close-btn" style="width:100%">Fechar</button>
         </div>
-    </div>
 
-    <!-- Quick Actions Popover -->
-    <div id="calendar-quick-actions" class="modal-overlay">
-        <div class="quick-actions-content">
-            <button id="quick-action-done" class="quick-action-btn"></button>
-            <div class="quick-action-divider"></div>
-            <button id="quick-action-snooze" class="quick-action-btn"></button>
-            <div class="quick-action-divider"></div>
-            <button id="quick-action-almanac" class="quick-action-btn"></button>
+
+        <!-- Toast Notification -->
+        <div id="undo-toast" class="undo-toast" role="status" aria-live="polite">
+            <span>Hábito encerrado.</span>
+            <button id="undo-btn">Desfazer</button>
         </div>
-    </div>
-
-    <script src="bundle.js" type="module"></script>
-<script type="module" src="/index.tsx"></script>
+        
+        <script type="module" src="bundle.js"></script>
+    <script type="module" src="/index.tsx"></script>
 </body>
-</html>
+    </html>

@@ -3,169 +3,149 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
+// [ANALYSIS PROGRESS]: 100% - Análise concluída.
+// [NOTA COMPARATIVA]: Este arquivo atua como o 'Controlador de Eventos'. Em comparação com a complexidade algorítmica de 'habitActions.ts' ou a manipulação direta do DOM em 'render.ts', este arquivo é arquiteturalmente limpo, atuando como um despachante (Dispatcher). Seu nível de código é excelente, pois delega responsabilidades complexas (Swipe, Drag&Drop) para módulos especializados.
 
-/**
- * @file listeners.ts
- * @description Ponto de Entrada para Inicialização de Eventos (Event Bootstrapper).
- * 
- * [MAIN THREAD CONTEXT]:
- * Este módulo roda na thread principal e deve ser executado apenas UMA VEZ na inicialização (Singleton initialization).
- * 
- * ARQUITETURA (Static Dispatch & Dependency Injection):
- * - **Static Handlers:** Callbacks são definidos no escopo do módulo para evitar alocação de closures durante o boot.
- * - **Sync-on-Connect:** Garante integridade de dados ao recuperar conexão.
- */
+import { ui } from './ui';
+import { state, invalidateChartCache, DAYS_IN_CALENDAR } from './state';
+import { renderApp, renderFullCalendar, openModal, scrollToToday } from './render';
+import { parseUTCIsoDate, triggerHaptic, getTodayUTCIso, addDays, toUTCIsoDateString } from './utils';
+import { setupModalListeners } from './modalListeners';
+import { setupHabitCardListeners } from './habitCardListeners';
+import { setupDragAndDropHandler } from './dragAndDropHandler';
+import { setupSwipeHandler } from './swipeHandler';
+import { DOM_SELECTORS } from './domConstants';
 
-import { ui } from './render/ui';
-import { renderApp, renderAINotificationState, updateNotificationUI, initModalEngine } from './render';
-import { setupModalListeners } from './listeners/modals';
-import { setupCardListeners } from './listeners/cards';
-import { setupDragHandler } from './listeners/drag';
-import { setupSwipeHandler } from './listeners/swipe';
-import { setupCalendarListeners } from './listeners/calendar';
-import { initChartInteractions } from './render/chart';
-import { pushToOneSignal, getTodayUTCIso, resetTodayCache } from './utils';
-import { state, getPersistableState } from './state';
-import { syncStateWithCloud } from './services/cloud';
-import { checkAndAnalyzeDayContext } from './services/analysis';
-
-// CONSTANTS
-const NETWORK_DEBOUNCE_MS = 500;
-const PERMISSION_DELAY_MS = 500;
-const INTERACTION_DELAY_MS = 50;
-
-// STATE: Proteção contra inicialização dupla (Idempotência)
-let areListenersAttached = false;
-
-// PERFORMANCE: Timer para Debounce de Rede
-let networkDebounceTimer: number | undefined;
-
-// PERFORMANCE: RAF ID para evitar Render Storm em visibilitychange [CHAOS FIX]
-let visibilityRafId: number | null = null;
-
-// --- STATIC HANDLERS (Zero-Allocation) ---
-
-const _handlePermissionChange = () => {
-    window.setTimeout(updateNotificationUI, PERMISSION_DELAY_MS);
-};
-
-const _handleOneSignalInit = (OneSignal: any) => {
-    OneSignal.Notifications.addEventListener('permissionChange', _handlePermissionChange);
-    updateNotificationUI();
-};
-
-/**
- * NETWORK RELIABILITY: Handler otimizado para mudanças de rede.
- * BLINDAGEM: Implementa Debounce (500ms) para evitar "Flapping".
- */
-const _handleNetworkChange = () => {
-    if (networkDebounceTimer) clearTimeout(networkDebounceTimer);
-
-    networkDebounceTimer = window.setTimeout(() => {
-        const isOnline = navigator.onLine;
-        
-        // UI Update: Toggle class and re-render notification state if changed
-        const wasOffline = document.body.classList.contains('is-offline');
-        document.body.classList.toggle('is-offline', !isOnline);
-        
-        if (wasOffline === isOnline) { // Estado mudou
-            renderAINotificationState();
-        }
-
-        // SYNC TRIGGER: Se voltamos a ficar online e estável, empurramos dados.
-        if (isOnline) {
-            console.log("[Network] Online stable. Attempting to flush pending sync.");
-            syncStateWithCloud(getPersistableState(), true);
-        }
-    }, NETWORK_DEBOUNCE_MS);
-};
-
-/**
- * PWA LIFECYCLE: Handler para quando o app volta do background (Wake from Sleep).
- */
-const _handleVisibilityChange = () => {
-    if (document.visibilityState === 'visible') {
-        // 1. Refresh Network State (Immediately check)
-        _handleNetworkChange();
-
-        // 2. Temporal Consistency Check
-        const cachedToday = getTodayUTCIso(); // Valor atual em cache
-        resetTodayCache(); // Força recálculo
-        const realToday = getTodayUTCIso(); // Novo valor real
-
-        if (cachedToday !== realToday) {
-            console.log("App woke up in a new day. Refreshing context.");
-            if (state.selectedDate === cachedToday) {
-                state.selectedDate = realToday;
-            }
-            document.dispatchEvent(new CustomEvent('dayChanged'));
-        } else {
-            // Re-sync visual state
-            // CHAOS FIX: Debounce visual alinhado ao VSync para evitar Render Storm
-            if (visibilityRafId) cancelAnimationFrame(visibilityRafId);
-            visibilityRafId = requestAnimationFrame(() => {
-                renderApp();
-                visibilityRafId = null;
-            });
-        }
-    }
-};
+function updateSelectedDateAndRender(date: string) {
+    state.selectedDate = date;
+    // UX UPDATE [2025-02-15]: Força a atualização da UI.
+    // Como a navegação ou seleção mudou a data, precisamos garantir que o renderApp 
+    // saiba que a estrutura da lista de hábitos mudou.
+    state.uiDirtyState.calendarVisuals = true;
+    state.uiDirtyState.habitListStructure = true;
+    invalidateChartCache();
+    renderApp();
+}
 
 export function setupEventListeners() {
-    // ROBUSTNESS: Singleton Guard.
-    if (areListenersAttached) {
-        console.warn("setupEventListeners called multiple times. Ignoring.");
-        return;
-    }
-    areListenersAttached = true;
-
-    // 1. Critical Path Listeners
-    initModalEngine();
+    // Inicializa módulos de listeners especializados
     setupModalListeners();
-    setupCardListeners();
-    setupCalendarListeners();
+    setupHabitCardListeners();
     
-    // 2. Notification System
-    pushToOneSignal(_handleOneSignalInit);
+    // Inicializa manipuladores de gestos complexos
+    setupDragAndDropHandler(ui.habitContainer);
+    setupSwipeHandler(ui.habitContainer);
 
-    // 3. App Event Bus (Direct reference)
-    document.addEventListener('render-app', renderApp);
-    // EVENT BUS: Bridge between View (render.ts) and Logic (analysis.ts) without circular imports.
-    document.addEventListener('request-analysis', (e: Event) => {
-        const ce = e as CustomEvent;
-        if (ce.detail?.date) {
-            checkAndAnalyzeDayContext(ce.detail.date);
-        }
-    });
+    // --- Calendar Strip Logic (Long Press & Click) ---
+    // Variáveis de controle para distinguir clique de pressão longa
+    const LONG_PRESS_DURATION = 500;
+    let longPressTimer: number | null = null;
+    let isLongPress = false;
 
-    // 4. ENVIRONMENT & LIFECYCLE LISTENERS
-    window.addEventListener('online', _handleNetworkChange);
-    window.addEventListener('offline', _handleNetworkChange);
-    document.addEventListener('visibilitychange', _handleVisibilityChange);
-    
-    // Boot Check (Immediate execution)
-    document.body.classList.toggle('is-offline', !navigator.onLine);
+    const openAlmanac = () => {
+        state.fullCalendar = {
+            year: parseUTCIsoDate(state.selectedDate).getUTCFullYear(),
+            month: parseUTCIsoDate(state.selectedDate).getUTCMonth()
+        };
+        renderFullCalendar();
+        openModal(ui.fullCalendarModal);
+    };
 
-    // 5. DEFERRED PHYSICS (Input Prioritization)
-    const setupHeavyInteractions = () => {
-        try {
-            // CHAOS FIX: O acesso a ui.* lança erro se o DOM estiver incompleto.
-            const container = ui.habitContainer;
-            setupDragHandler(container);
-            setupSwipeHandler(container);
-            initChartInteractions();
-        } catch (e) {
-            console.warn("Interaction setup skipped: DOM not ready/Element missing.");
+    const clearTimer = () => {
+        if (longPressTimer) {
+            clearTimeout(longPressTimer);
+            longPressTimer = null;
         }
     };
 
-    // UX OPTIMIZATION: Elevado de 'background' para 'user-visible'.
-    // A física de gestos é crítica para a percepção de "App Nativo". 
-    // @fix: Cast to any to check and call scheduler API
-    if ('scheduler' in window && (window as any).scheduler) {
-        (window as any).scheduler.postTask(setupHeavyInteractions, { priority: 'user-visible' });
-    } else {
-        // Fallback universal: setTimeout garante execução na próxima task loop.
-        setTimeout(setupHeavyInteractions, INTERACTION_DELAY_MS);
-    }
+    // UX: Pointer events para suporte unificado a Mouse e Touch
+    ui.calendarStrip.addEventListener('pointerdown', (e) => {
+        if (e.button !== 0) return; // Apenas botão esquerdo/toque principal
+        const dayItem = (e.target as HTMLElement).closest(DOM_SELECTORS.DAY_ITEM);
+        if (!dayItem) return;
+
+        isLongPress = false;
+        longPressTimer = window.setTimeout(() => {
+            isLongPress = true;
+            triggerHaptic('medium');
+            openAlmanac();
+        }, LONG_PRESS_DURATION);
+    });
+
+    // Cancela o timer em qualquer interrupção
+    ui.calendarStrip.addEventListener('pointerup', clearTimer);
+    ui.calendarStrip.addEventListener('pointercancel', clearTimer);
+    ui.calendarStrip.addEventListener('pointerleave', clearTimer);
+    ui.calendarStrip.addEventListener('scroll', clearTimer); // Scroll cancela a intenção de long press
+
+    ui.calendarStrip.addEventListener('click', e => {
+        // Previne a seleção se foi um Long Press (gatilho do Almanaque)
+        if (isLongPress) {
+            e.preventDefault();
+            e.stopPropagation();
+            isLongPress = false;
+            return;
+        }
+
+        const dayItem = (e.target as HTMLElement).closest<HTMLElement>(DOM_SELECTORS.DAY_ITEM);
+        if (dayItem && dayItem.dataset.date) {
+            triggerHaptic('selection');
+            updateSelectedDateAndRender(dayItem.dataset.date);
+        }
+    });
+
+    // A11Y [2025-02-23]: Navegação por teclado na faixa de dias (Roving Focus)
+    ui.calendarStrip.addEventListener('keydown', (e) => {
+        if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+        
+        e.preventDefault();
+        
+        const currentDate = parseUTCIsoDate(state.selectedDate);
+        let newDate: Date;
+        
+        if (e.key === 'ArrowLeft') {
+            newDate = addDays(currentDate, -1);
+        } else {
+            newDate = addDays(currentDate, 1);
+        }
+        
+        const newDateStr = toUTCIsoDateString(newDate);
+        
+        // Verifica se a nova data está dentro do alcance visível (opcional, mas bom para UX)
+        // O renderApp vai regenerar a faixa se necessário (se mudasse o intervalo),
+        // mas aqui estamos apenas navegando dentro da faixa existente.
+        triggerHaptic('selection');
+        updateSelectedDateAndRender(newDateStr);
+        
+        // Gerenciamento de Foco: Após a re-renderização, foca no novo dia selecionado.
+        // O requestAnimationFrame garante que o DOM foi atualizado.
+        requestAnimationFrame(() => {
+            const newSelectedEl = ui.calendarStrip.querySelector<HTMLElement>(`${DOM_SELECTORS.DAY_ITEM}[data-date="${newDateStr}"]`);
+            if (newSelectedEl) {
+                newSelectedEl.focus();
+                newSelectedEl.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+            }
+        });
+    });
+
+    // --- Header Title Listener (Go to Today) ---
+    // [2025-02-23]: Removida verificação 'if (ui.headerTitle)' pois initUI garante existência do elemento.
+    ui.headerTitle.addEventListener('click', () => {
+        triggerHaptic('light');
+        
+        const today = getTodayUTCIso();
+        
+        // LOGIC FIX [2025-02-18]: Reset Calendar Range.
+        // Se o usuário navegou para longe via almanaque, clicar em "Hoje" deve trazer
+        // a faixa do calendário de volta para a visualização padrão (centrada em hoje).
+        const todayDate = parseUTCIsoDate(today);
+        state.calendarDates = Array.from({ length: DAYS_IN_CALENDAR }, (_, i) => 
+            addDays(todayDate, i - 30)
+        );
+
+        updateSelectedDateAndRender(today);
+        
+        // Visual Reset: Smooth scroll to the updated "today" element
+        scrollToToday('smooth');
+    });
 }

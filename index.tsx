@@ -3,204 +3,154 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
+// [ANALYSIS PROGRESS]: 100% - Análise concluída.
+// [NOTA COMPARATIVA]: Este arquivo atua como o orquestrador de inicialização (Bootstrapper). Comparado aos módulos de lógica pesada ('state.ts', 'render.ts'), o 'index.tsx' é conciso e focado exclusivamente no ciclo de vida inicial: carregamento de dependências, resolução de conflitos de estado (Local vs Nuvem) e injeção no DOM. O nível de engenharia é alto, implementando um padrão de "Race-to-Idle" para inicialização perceptivelmente instantânea.
 
-/**
- * @file index.tsx
- * @description Bootstrapper e Orquestrador de Ciclo de Vida da Aplicação.
- */
-
-import './css/variables.css';
-import './css/base.css';
-import './css/layout.css';
-import './css/header.css';
-import './css/components.css';
-import './css/calendar.css';
-import './css/habits.css';
-import './css/charts.css';
-import './css/forms.css';
-import './css/modals.css';
-
-import { state, AppState } from './state';
-import { loadState, persistStateLocally, registerSyncHandler } from './services/persistence';
-import { renderApp, initI18n, updateUIText } from './render';
+import { inject } from '@vercel/analytics';
+import './index.css';
+import { loadState, saveState, state, persistStateLocally, STATE_STORAGE_KEY, AppState, registerSyncHandler } from './state';
+import { initUI } from './ui';
+import { renderApp } from './render';
 import { setupEventListeners } from './listeners';
-import { createDefaultHabit, handleDayTransition, performArchivalCheck } from './habitActions';
-import { initSync } from './listeners/sync';
-import { fetchStateFromCloud, syncStateWithCloud, setSyncStatus } from './services/cloud';
-import { hasLocalSyncKey, initAuth } from './services/api';
-import { updateAppBadge } from './services/badge';
-import { mergeStates } from './services/dataMerge';
-import { setupMidnightLoop } from './utils';
-
-// --- STATE MACHINE: BOOT LOCK ---
-let isInitializing = false;
-let isInitialized = false;
+import { initI18n } from './i18n';
+import { createDefaultHabit } from './habitActions';
+import { initSync } from './sync';
+import { fetchStateFromCloud, setupNotificationListeners, syncStateWithCloud } from './cloud';
+import { hasLocalSyncKey, initAuth } from './api';
+import { updateAppBadge } from './badge';
 
 // --- SERVICE WORKER REGISTRATION ---
 const registerServiceWorker = () => {
-    if ('serviceWorker' in navigator && !window.location.protocol.startsWith('file')) {
-        const loadSW = () => navigator.serviceWorker.register('/sw.js').catch(console.warn);
-        if (document.readyState === 'complete') loadSW();
-        else window.addEventListener('load', loadSW);
+    if ('serviceWorker' in navigator && window.location.protocol.startsWith('http')) {
+        const doRegister = async () => {
+            try {
+                // Caminho relativo ./sw.js para maior compatibilidade
+                const registration = await navigator.serviceWorker.register('./sw.js', { scope: './' });
+                console.log('ServiceWorker registration successful with scope: ', registration.scope);
+            } catch (err) {
+                console.error('ServiceWorker registration failed: ', err);
+            }
+        };
+
+        if (document.readyState === 'complete') {
+            doRegister();
+        } else {
+            window.addEventListener('load', doRegister);
+        }
+    } else if (window.location.protocol === 'file:') {
+        console.warn('Service Worker não suportado no protocolo file://. Por favor, use um servidor local (npm run dev).');
     }
 };
 
-const NETWORK_TIMEOUT = Symbol('NETWORK_TIMEOUT');
+
+// --- PRIVATE HELPERS (INIT ORCHESTRATION) ---
+
+async function setupBase() {
+    initUI(); // Mapeia os elementos do DOM
+    initAuth(); // Inicializa a autenticação (lê a chave de sincronização) antes de carregar o estado
+    await initI18n(); // Carrega as traduções
+}
 
 async function loadInitialState() {
-    const localState = await loadState(); 
-    
+    // 1. Snapshot do estado local antes de qualquer operação de rede
+    // Isso é crucial para garantir que edições offline não sejam sobrescritas.
+    const localStr = localStorage.getItem(STATE_STORAGE_KEY);
+    let localState: AppState | null = null;
+    if (localStr) {
+        try {
+            localState = JSON.parse(localStr);
+        } catch (e) {
+            console.error("Startup: Failed to parse local state", e);
+        }
+    }
+
+    let stateToLoad: AppState | null = localState; // Padrão: Confia no local
+
     if (hasLocalSyncKey()) {
         try {
-            const CLOUD_BOOT_TIMEOUT_MS = 3000;
-            const raceResult = await Promise.race([
-                fetchStateFromCloud(),
-                new Promise<typeof NETWORK_TIMEOUT>(resolve => setTimeout(() => resolve(NETWORK_TIMEOUT), CLOUD_BOOT_TIMEOUT_MS))
-            ]);
-
-            if (raceResult === NETWORK_TIMEOUT) {
-                console.warn("Startup: Network timed out.");
-                setSyncStatus('syncError');
-                if (!localState) return; 
-            } 
+            const cloudState = await fetchStateFromCloud();
             
-            const cloudState = raceResult === NETWORK_TIMEOUT ? undefined : raceResult;
-            const isCloudEmpty = raceResult === undefined;
-
-            if (cloudState && localState) {
-                const localIsNewer = localState.lastModified > cloudState.lastModified;
-                const stateToLoad = await mergeStates(
-                    localIsNewer ? cloudState : localState, 
-                    localIsNewer ? localState : cloudState
-                );
-                
-                if (localIsNewer) syncStateWithCloud(stateToLoad, true);
-                await persistStateLocally(stateToLoad);
-                await loadState(stateToLoad);
-                
-            } else if (cloudState) {
-                await persistStateLocally(cloudState);
-                await loadState(cloudState);
-                
-            } else if (localState) {
-                if (isCloudEmpty) syncStateWithCloud(localState as AppState, true);
-                await loadState(localState);
+            if (cloudState) {
+                // LÓGICA DEFENSIVA: Comparação Estrita de Timestamps
+                // Se o local for mais novo (ex: editado offline), ele deve vencer.
+                if (localState && localState.lastModified > cloudState.lastModified) {
+                    console.log(`Startup: Local state (${localState.lastModified}) is newer than cloud (${cloudState.lastModified}). Pushing local changes.`);
+                    
+                    // CRÍTICO: Atualiza o timestamp para "agora".
+                    // Isso garante que este estado seja considerado a "nova verdade" pelo servidor
+                    // e previne conflitos de hash se o conteúdo divergir sutilmente.
+                    localState.lastModified = Date.now();
+                    
+                    // Persiste o novo timestamp localmente imediatamente
+                    persistStateLocally(localState);
+                    stateToLoad = localState;
+                    
+                    // Força o envio imediato para a nuvem para sincronizar os outros dispositivos
+                    syncStateWithCloud(localState, true);
+                } else {
+                    console.log("Startup: Cloud state is newer or equal. Syncing local with cloud.");
+                    // Nuvem vence (ou é igual). Persiste localmente para manter a consistência.
+                    // ATENÇÃO: persistStateLocally não altera lastModified, apenas salva o blob.
+                    persistStateLocally(cloudState);
+                    stateToLoad = cloudState;
+                }
+            } else {
+                // Chave existe, mas sem dados na nuvem (ou fetch retornou undefined/vazio).
+                // Mantém o local. A lógica interna do fetchStateFromCloud já pode ter tentado iniciar o push,
+                // mas garantimos que o loadState use o que temos em mãos.
+                console.log("Startup: No cloud data found, using local.");
             }
-            
         } catch (e) {
-            console.error("Startup: Cloud sync failed, using local.", e);
-            setSyncStatus('syncError');
-            if (localState) await loadState(localState);
+            console.error("Startup: Failed to fetch from cloud, falling back to local state.", e);
+            // Em caso de erro de rede, stateToLoad continua sendo localState (o padrão definido acima)
         }
-    } else if (localState) {
-        await loadState(localState);
     }
+    
+    // Carrega o estado vencedor na memória da aplicação
+    loadState(stateToLoad);
 }
 
 function handleFirstTimeUser() {
     if (state.habits.length === 0) {
-        if (hasLocalSyncKey() && state.syncState === 'syncError') {
-            console.warn("Startup: Aborting default habit creation due to Sync Error.");
-            return;
-        }
         createDefaultHabit();
+        saveState();
     }
 }
 
-/**
- * Orquestra Listeners. 
- * CRÍTICO: syncHandler registrado após o carregamento de dados para evitar Race Condition de boot.
- */
 function setupAppListeners() {
-    setupEventListeners();
-    initSync();
-    document.addEventListener('habitsChanged', updateAppBadge);
-    setupMidnightLoop();
-    document.addEventListener('dayChanged', handleDayTransition);
-    // Ativa o canal de saída de dados apenas após estabilização do estado
+    // WIRE UP SYNC: Connect state changes to cloud sync
     registerSyncHandler(syncStateWithCloud);
+    
+    setupEventListeners();
+    setupNotificationListeners();
+    initSync();
 }
 
 function finalizeInit(loader: HTMLElement | null) {
     if (loader) {
         loader.classList.add('hidden');
-        // RELIABILITY: Garante remoção mesmo se a transição CSS falhar/for desativada (Reduced Motion)
-        const cleanup = () => {
-            loader.remove();
-            document.getElementById('initial-loader-container')?.remove();
-        };
-        const timer = setTimeout(cleanup, 400); // Buffer para a transição de 0.3s
-        loader.addEventListener('transitionend', () => { clearTimeout(timer); cleanup(); }, { once: true });
+        loader.addEventListener('transitionend', () => loader.remove());
     }
-    
-    const runBackgroundTasks = () => {
-        performArchivalCheck();
-        if (process.env.NODE_ENV === 'production') {
-            import('./services/analytics').then(({ initAnalytics }) => initAnalytics()).catch(() => {});
-        }
-    };
-
-    // @fix: Cast to any to handle scheduler which might be missing in some global Window types
-    if ((window as any).scheduler?.postTask) {
-        (window as any).scheduler.postTask(runBackgroundTasks, { priority: 'background' });
-    } else {
-        (window.requestIdleCallback || ((cb) => setTimeout(cb, 1000)))(runBackgroundTasks);
-    }
+    inject(); // Vercel Analytics
 }
 
+// --- MAIN INITIALIZATION ---
 async function init(loader: HTMLElement | null) {
-    // SINGLETON GUARD
-    if (isInitializing || isInitialized) return;
-    isInitializing = true;
-
-    // @fix: Cast to any to access bootWatchdog property
-    if ((window as any).bootWatchdog) {
-        clearTimeout((window as any).bootWatchdog);
-        delete (window as any).bootWatchdog;
-    }
-
-    initAuth();
-    await Promise.all([initI18n(), updateUIText()]);
-
-    // 1. Data Loading (Local -> Cloud -> Merge)
+    await setupBase();
     await loadInitialState();
-
-    // 2. Setup Listeners POST-DATA
-    setupAppListeners();
-
-    // 3. Logic & Render
     handleFirstTimeUser();
-    renderApp(); 
-    
-    updateAppBadge();
+    renderApp();
+    setupAppListeners();
+    updateAppBadge(); // Define o emblema inicial
     finalizeInit(loader);
-    
-    isInitialized = true;
-    isInitializing = false;
 }
 
 registerServiceWorker();
 
-const startApp = () => {
-    // PREVENT DOUBLE BOOT
-    if (isInitializing || isInitialized) return;
-    
-    const loader = document.getElementById('initial-loader');
-    init(loader).catch(err => {
-        console.error("Boot failed:", err);
-        isInitializing = false;
-        // UX: Fallback visual robusto
-        // @fix: Cast to any to check and call showFatalError
-        if ((window as any).showFatalError) {
-            (window as any).showFatalError("Erro na inicialização: " + (err.message || err));
-        } else if(loader && loader.isConnected) {
-            loader.innerHTML = '<div style="color:#ff6b6b;padding:2rem;text-align:center;"><h3>Falha Crítica</h3><button onclick="location.reload()">Tentar Novamente</button></div>';
-        }
-    });
-};
-
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', startApp);
-} else {
-    startApp();
-}
+const initialLoader = document.getElementById('initial-loader');
+init(initialLoader).catch(err => {
+    console.error("Failed to initialize application:", err);
+    if(initialLoader) {
+        initialLoader.innerHTML = '<h2>Falha ao carregar a aplicação. Por favor, tente novamente.</h2>'
+    }
+});

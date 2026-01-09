@@ -1,194 +1,460 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
- */
+*/
+// [ANALYSIS PROGRESS]: 100% - Módulo criado. Isola a lógica complexa de renderização e atualização cirúrgica de cartões de hábito.
 
-/**
- * @file render/habits.ts
- * @description Motor de Renderização de Cartões de Hábito (Virtual DOM-lite).
- */
-
-import { state, Habit, HabitStatus, HabitDayData, STREAK_CONSOLIDATED, STREAK_SEMI_CONSOLIDATED, TimeOfDay, getHabitDailyInfoForDate, TIMES_OF_DAY, HabitDailyInfo } from '../state';
-import { calculateHabitStreak, getActiveHabitsForDate, getSmartGoalForHabit, getHabitDisplayInfo } from '../services/selectors';
-import { ui } from './ui';
-import { t, getTimeOfDayName, formatInteger } from '../i18n';
-import { UI_ICONS, getTimeOfDayIcon } from './icons';
+import { state, Habit, HabitStatus, HabitDayData, getSmartGoalForHabit, calculateHabitStreak, STREAK_CONSOLIDATED, STREAK_SEMI_CONSOLIDATED, TimeOfDay, getHabitDailyInfoForDate, getActiveHabitsForDate, TIMES_OF_DAY } from '../state';
+import { ui } from '../ui';
+import { t, getHabitDisplayInfo, getTimeOfDayName } from '../i18n';
+import { icons, getTimeOfDayIcon } from '../icons';
 import { setTextContent } from './dom';
-import { CSS_CLASSES, DOM_SELECTORS } from './constants';
-import { parseUTCIsoDate } from '../utils';
+import { openNotesModal, renderExploreHabits, openModal } from './modals';
+import { CSS_CLASSES, DOM_SELECTORS } from '../domConstants'; // TYPE SAFETY IMPORT
 
+// OTIMIZAÇÃO [2025-01-24]: Cache persistente para cartões de hábitos.
 const habitElementCache = new Map<string, HTMLElement>();
-const habitsByTimePool: Record<TimeOfDay, Habit[]> = { 'Morning': [], 'Afternoon': [], 'Evening': [] };
-const groupDomCache = new Map<TimeOfDay, { wrapper: HTMLElement; group: HTMLElement; marker: HTMLElement }>();
 
-type CardElements = {
-    icon: HTMLElement; contentWrapper: HTMLElement; name: HTMLElement; subtitle: HTMLElement;
-    details: HTMLElement; consolidationMsg: HTMLElement; noteBtn: HTMLElement; deleteBtn: HTMLElement;
-    goal: HTMLElement; goalProgress?: HTMLElement; goalUnit?: HTMLElement;
-    goalDecBtn?: HTMLButtonElement; goalIncBtn?: HTMLButtonElement; cachedIconHtml?: string;
-};
-const cardElementsCache = new WeakMap<HTMLElement, CardElements>();
+export function getCachedHabitCard(habitId: string, time: TimeOfDay): HTMLElement | undefined {
+    return habitElementCache.get(`${habitId}|${time}`);
+}
 
-function getGroupDOM(time: TimeOfDay) {
-    let cached = groupDomCache.get(time);
-    if (!cached && ui.habitContainer) {
-        const wrapper = ui.habitContainer.querySelector<HTMLElement>(`.habit-group-wrapper[data-time-wrapper="${time}"]`);
-        const group = wrapper?.querySelector<HTMLElement>(`.${CSS_CLASSES.HABIT_GROUP}[data-time="${time}"]`);
-        const marker = wrapper?.querySelector<HTMLElement>('.time-marker');
-        if (wrapper && group && marker) {
-            cached = { wrapper, group, marker };
-            groupDomCache.set(time, cached);
+export function removeHabitFromCache(habitId: string) {
+    for (const key of habitElementCache.keys()) {
+        if (key.startsWith(`${habitId}|`)) {
+            const el = habitElementCache.get(key);
+            el?.remove(); // Garante remoção do DOM
+            habitElementCache.delete(key);
         }
     }
-    return cached;
 }
 
-// TEMPLATES
-let goalControlsTemplate: HTMLElement | null = null;
-const statusTemplates: Record<string, HTMLElement> = {};
-let habitCardTemplate: HTMLElement | null = null;
-let placeholderTemplate: HTMLElement | null = null;
+export const getUnitString = (habit: Habit, value: number | undefined) => {
+    const unitKey = habit.goal.unitKey || 'unitCheck';
+    return t(unitKey, { count: value });
+};
 
-const getGoalControlsTemplate = () => goalControlsTemplate || (goalControlsTemplate = (() => {
-    const div = document.createElement('div');
-    div.className = CSS_CLASSES.HABIT_GOAL_CONTROLS;
-    div.innerHTML = `<button type="button" class="${CSS_CLASSES.GOAL_CONTROL_BTN}" data-action="decrement">-</button><div class="${CSS_CLASSES.GOAL_VALUE_WRAPPER}"><div class="progress"></div><div class="unit"></div></div><button type="button" class="${CSS_CLASSES.GOAL_CONTROL_BTN}" data-action="increment">+</button>`;
-    return div;
-})());
+export const formatGoalForDisplay = (goal: number): string => {
+    if (goal < 5) return '< 5';
+    if (goal > 95) return '> 95';
+    return goal.toString();
+};
 
-const getStatusWrapperTemplate = (cls: string, icon: string) => statusTemplates[cls] || (statusTemplates[cls] = (() => {
-    const w = document.createElement('div'); w.className = cls; w.innerHTML = icon; return w;
-})());
+export function updateGoalContentElement(goalEl: HTMLElement, status: HabitStatus, habit: Habit, time: TimeOfDay, dayDataForInstance: HabitDayData | undefined) {
+    // PERFORMANCE [2025-01-18]: Eliminação de innerHTML e Reconciliação DOM granular.
+    const hasNumericGoal = habit.goal.type === 'pages' || habit.goal.type === 'minutes';
 
-const getPlaceholderTemplate = () => placeholderTemplate || (placeholderTemplate = (() => {
-    const p = document.createElement('div'); p.className = CSS_CLASSES.EMPTY_GROUP_PLACEHOLDER;
-    p.setAttribute('role', 'button'); p.setAttribute('tabindex', '0'); return p;
-})());
+    if (status === CSS_CLASSES.COMPLETED) {
+        // VISUAL UPDATE [2025-02-27]: Simplificação total.
+        // Se está completo, mostramos APENAS o ícone de Check dentro da pílula.
+        // A quantidade numérica desaparece para focar na conclusão.
+        // O texto "FEITO" também foi removido.
+        
+        if (goalEl.querySelector('.completed-wrapper')) return;
 
-const getHabitCardTemplate = () => habitCardTemplate || (habitCardTemplate = (() => {
-    const li = document.createElement('li'); li.className = CSS_CLASSES.HABIT_CARD;
-    li.innerHTML = `<div class="habit-actions-left"><button type="button" class="${CSS_CLASSES.SWIPE_DELETE_BTN}">${UI_ICONS.swipeDelete}</button></div><div class="habit-actions-right"><button type="button" class="${CSS_CLASSES.SWIPE_NOTE_BTN}">${UI_ICONS.swipeNote}</button></div><div class="${CSS_CLASSES.HABIT_CONTENT_WRAPPER}" role="button" tabindex="0" draggable="true"><div class="habit-icon"></div><div class="${CSS_CLASSES.HABIT_DETAILS}"><div class="name"></div><div class="subtitle"></div><div class="consolidation-message" hidden></div></div><div class="habit-goal"></div><div class="ripple-container"></div></div>`;
-    return li;
-})());
+        goalEl.replaceChildren();
+        
+        const wrapper = document.createElement('div');
+        wrapper.className = 'completed-wrapper';
+        wrapper.innerHTML = icons.check; // Apenas o ícone
+        // Sem texto adicional
+        
+        goalEl.appendChild(wrapper);
 
-export const clearHabitDomCache = () => habitElementCache.clear();
-export const getCachedHabitCard = (id: string, t: TimeOfDay) => habitElementCache.get(`${id}|${t}`);
+    } else if (status === CSS_CLASSES.SNOOZED) {
+        // VISUAL UPDATE [2025-02-27]: Simplificação total.
+        // Se está adiado, mostramos APENAS o ícone de Snooze.
+        // O texto "ADIADO" foi removido.
 
-function _renderPendingGoalControls(habit: Habit, time: TimeOfDay, dayData: HabitDayData | undefined, els: CardElements) {
-    if (habit.goal.type === 'check') { if (els.goal.hasChildNodes()) els.goal.replaceChildren(); return; }
-    if (!els.goal.querySelector(`.${CSS_CLASSES.HABIT_GOAL_CONTROLS}`)) {
-        els.goal.replaceChildren(getGoalControlsTemplate().cloneNode(true));
-        els.goalDecBtn = els.goal.querySelector(`[data-action="decrement"]`) as HTMLButtonElement;
-        els.goalIncBtn = els.goal.querySelector(`[data-action="increment"]`) as HTMLButtonElement;
-        els.goalProgress = els.goal.querySelector('.progress') as HTMLElement;
-        els.goalUnit = els.goal.querySelector('.unit') as HTMLElement;
+        if (goalEl.querySelector('.snoozed-wrapper')) return;
+
+        goalEl.replaceChildren();
+        
+        const wrapper = document.createElement('div');
+        wrapper.className = 'snoozed-wrapper';
+        wrapper.innerHTML = icons.snoozed; // Apenas o ícone
+        // Sem texto adicional
+        
+        goalEl.appendChild(wrapper);
+
+    } else { 
+        // Pending (Controls)
+        if (hasNumericGoal) {
+            const smartGoal = getSmartGoalForHabit(habit, state.selectedDate, time);
+            const currentGoal = dayDataForInstance?.goalOverride ?? smartGoal;
+            const displayVal = formatGoalForDisplay(currentGoal);
+            const unitVal = getUnitString(habit, currentGoal);
+
+            let controls = goalEl.querySelector(`.${CSS_CLASSES.HABIT_GOAL_CONTROLS}`);
+            
+            if (!controls) {
+                goalEl.replaceChildren();
+                controls = document.createElement('div');
+                controls.className = CSS_CLASSES.HABIT_GOAL_CONTROLS;
+                
+                const decBtn = document.createElement('button');
+                decBtn.type = 'button';
+                decBtn.className = CSS_CLASSES.GOAL_CONTROL_BTN;
+                decBtn.dataset.habitId = habit.id;
+                decBtn.dataset.time = time;
+                decBtn.dataset.action = 'decrement';
+                decBtn.setAttribute('aria-label', t('habitGoalDecrement_ariaLabel'));
+                decBtn.textContent = '-';
+                
+                const valWrapper = document.createElement('div');
+                valWrapper.className = CSS_CLASSES.GOAL_VALUE_WRAPPER;
+                
+                const progDiv = document.createElement('div');
+                progDiv.className = 'progress';
+                
+                const unitDiv = document.createElement('div');
+                unitDiv.className = 'unit';
+                
+                valWrapper.append(progDiv, unitDiv);
+                
+                const incBtn = document.createElement('button');
+                incBtn.type = 'button';
+                incBtn.className = CSS_CLASSES.GOAL_CONTROL_BTN;
+                incBtn.dataset.habitId = habit.id;
+                incBtn.dataset.time = time;
+                incBtn.dataset.action = 'increment';
+                incBtn.setAttribute('aria-label', t('habitGoalIncrement_ariaLabel'));
+                incBtn.textContent = '+';
+                
+                controls.append(decBtn, valWrapper, incBtn);
+                goalEl.appendChild(controls);
+            }
+
+            const prog = controls.querySelector('.progress');
+            const unit = controls.querySelector('.unit');
+            setTextContent(prog, displayVal);
+            setTextContent(unit, unitVal);
+            
+            const decBtn = controls.querySelector<HTMLButtonElement>(`.${CSS_CLASSES.GOAL_CONTROL_BTN}[data-action="decrement"]`);
+            if (decBtn) {
+                decBtn.disabled = currentGoal <= 1;
+            }
+
+        } else {
+            if (goalEl.hasChildNodes()) goalEl.replaceChildren();
+        }
     }
-    const cur = dayData?.goalOverride ?? getSmartGoalForHabit(habit, state.selectedDate, time);
-    els.goalDecBtn!.disabled = cur <= 1;
-    setTextContent(els.goalProgress!, formatInteger(cur));
-    setTextContent(els.goalUnit!, t(habit.goal.unitKey || 'unitCheck', { count: cur }));
 }
 
-export function updateHabitCardElement(card: HTMLElement, habit: Habit, time: TimeOfDay, preInfo?: Record<string, HabitDailyInfo>) {
-    const els = cardElementsCache.get(card)!;
-    const info = (preInfo || getHabitDailyInfoForDate(state.selectedDate))[habit.id]?.instances?.[time];
-    const status = info?.status ?? CSS_CLASSES.PENDING;
-    const streak = calculateHabitStreak(habit, state.selectedDate);
+export function _updateConsolidationMessage(detailsEl: HTMLElement, streak: number) {
+    let msgEl = detailsEl.querySelector<HTMLElement>('.consolidation-message');
+
+    let messageText: string | null = null;
+    if (streak >= STREAK_CONSOLIDATED) {
+        messageText = t('habitConsolidatedMessage');
+    } else if (streak >= STREAK_SEMI_CONSOLIDATED) {
+        messageText = t('habitSemiConsolidatedMessage');
+    }
+
+    if (messageText) {
+        if (!msgEl) {
+            msgEl = document.createElement('div');
+            msgEl.className = 'consolidation-message';
+            detailsEl.appendChild(msgEl);
+        }
+        setTextContent(msgEl, messageText);
+    } else if (msgEl) {
+        msgEl.remove();
+    }
+}
+
+export function updateHabitCardElement(card: HTMLElement, habit: Habit, time: TimeOfDay): void {
+    // USE LAZY ACCESSOR
+    const dailyInfo = getHabitDailyInfoForDate(state.selectedDate);
+    const habitInstanceData = dailyInfo[habit.id]?.instances?.[time];
+    const status = habitInstanceData?.status ?? CSS_CLASSES.PENDING;
+    const hasNote = habitInstanceData?.note && habitInstanceData.note.length > 0;
+    const streak = calculateHabitStreak(habit.id, state.selectedDate);
     const { name, subtitle } = getHabitDisplayInfo(habit, state.selectedDate);
 
+    const wasCompleted = card.classList.contains(CSS_CLASSES.COMPLETED);
     if (!card.classList.contains(status)) {
         card.classList.remove(CSS_CLASSES.PENDING, CSS_CLASSES.COMPLETED, CSS_CLASSES.SNOOZED);
         card.classList.add(status);
-        if (status === CSS_CLASSES.COMPLETED) {
-            els.icon.classList.remove('animate-pop'); void els.icon.offsetWidth; els.icon.classList.add('animate-pop');
+    }
+
+    // UX: Adiciona classe para nomes longos (mobile wrap)
+    if (name.length > 17) {
+        card.classList.add('long-name');
+    } else {
+        card.classList.remove('long-name');
+    }
+
+    const isCompleted = status === CSS_CLASSES.COMPLETED;
+    const icon = card.querySelector<HTMLElement>('.habit-icon');
+    
+    if (icon) {
+        const newIconHtml = habit.icon;
+        const newColor = habit.color;
+        const newBgColor = `${habit.color}30`;
+
+        if (icon.innerHTML !== newIconHtml) icon.innerHTML = newIconHtml;
+        if (icon.style.color !== newColor) icon.style.color = newColor;
+        if (icon.style.backgroundColor !== newBgColor) icon.style.backgroundColor = newBgColor;
+
+        if (!wasCompleted && isCompleted) {
+            icon.classList.remove('animate-pop');
+            void icon.offsetWidth;
+            icon.classList.add('animate-pop');
+            icon.addEventListener('animationend', () => icon.classList.remove('animate-pop'), { once: true });
         }
     }
 
-    if (els.cachedIconHtml !== habit.icon) { els.icon.innerHTML = els.cachedIconHtml = habit.icon; }
-    els.icon.style.color = habit.color; els.icon.style.backgroundColor = `${habit.color}30`;
+    const isConsolidated = streak >= STREAK_CONSOLIDATED;
+    const isSemi = streak >= STREAK_SEMI_CONSOLIDATED && !isConsolidated;
     
-    const isCons = streak >= STREAK_CONSOLIDATED, isSemi = streak >= STREAK_SEMI_CONSOLIDATED && !isCons;
-    card.classList.toggle('consolidated', isCons); card.classList.toggle('semi-consolidated', isSemi);
+    if (card.classList.contains('consolidated') !== isConsolidated) {
+        card.classList.toggle('consolidated', isConsolidated);
+    }
+    if (card.classList.contains('semi-consolidated') !== isSemi) {
+        card.classList.toggle('semi-consolidated', isSemi);
+    }
     
-    setTextContent(els.name, name); setTextContent(els.subtitle, subtitle);
-    const msg = isCons ? t('habitConsolidatedMessage') : (isSemi ? t('habitSemiConsolidatedMessage') : '');
-    setTextContent(els.consolidationMsg, msg); els.consolidationMsg.hidden = !msg;
+    const contentWrapper = card.querySelector<HTMLElement>(`.${CSS_CLASSES.HABIT_CONTENT_WRAPPER}`);
+    if (contentWrapper) {
+        const newLabel = `${name}, ${t(`filter${time}`)}, ${status}`;
+        if (contentWrapper.getAttribute('aria-label') !== newLabel) {
+            contentWrapper.setAttribute('aria-label', newLabel);
+        }
+    }
+    
+    setTextContent(card.querySelector(`.${CSS_CLASSES.HABIT_DETAILS} .name`), name);
+    setTextContent(card.querySelector(`.${CSS_CLASSES.HABIT_DETAILS} .subtitle`), subtitle);
 
-    const hasN = !!info?.note;
-    if (els.noteBtn.dataset.hasNote !== String(hasN)) {
-        els.noteBtn.innerHTML = hasN ? UI_ICONS.swipeNoteHasNote : UI_ICONS.swipeNote;
-        els.noteBtn.dataset.hasNote = String(hasN);
+    const detailsEl = card.querySelector<HTMLElement>(`.${CSS_CLASSES.HABIT_DETAILS}`);
+    if(detailsEl) {
+        _updateConsolidationMessage(detailsEl, streak);
+    }
+    
+    const noteBtn = card.querySelector<HTMLElement>(`.${CSS_CLASSES.SWIPE_NOTE_BTN}`);
+    if (noteBtn) {
+        const hasNoteStr = String(hasNote);
+        if (noteBtn.dataset.hasNote !== hasNoteStr) {
+            noteBtn.innerHTML = hasNote ? icons.swipeNoteHasNote : icons.swipeNote;
+            noteBtn.setAttribute('aria-label', t(hasNote ? 'habitNoteEdit_ariaLabel' : 'habitNoteAdd_ariaLabel'));
+            noteBtn.dataset.hasNote = hasNoteStr;
+        }
     }
 
-    if (status === 'completed') els.goal.replaceChildren(getStatusWrapperTemplate('completed-wrapper', UI_ICONS.check).cloneNode(true));
-    else if (status === 'snoozed') els.goal.replaceChildren(getStatusWrapperTemplate('snoozed-wrapper', UI_ICONS.snoozed).cloneNode(true));
-    else _renderPendingGoalControls(habit, time, info, els);
+    const goalEl = card.querySelector<HTMLElement>('.habit-goal');
+    if (goalEl) {
+        updateGoalContentElement(goalEl, status, habit, time, habitInstanceData);
+    }
 }
 
-export function createHabitCardElement(habit: Habit, time: TimeOfDay, preInfo?: Record<string, HabitDailyInfo>): HTMLElement {
-    const card = getHabitCardTemplate().cloneNode(true) as HTMLElement;
-    card.dataset.habitId = habit.id; card.dataset.time = time;
+/**
+ * SURGICAL UPDATE: Atualiza apenas o cartão de hábito especificado no DOM.
+ */
+export function renderHabitCardState(habitId: string, time: TimeOfDay) {
+    const card = getCachedHabitCard(habitId, time);
+    const habit = state.habits.find(h => h.id === habitId);
+    
+    if (card && habit) {
+        updateHabitCardElement(card, habit, time);
+    }
+}
+
+export function createHabitCardElement(habit: Habit, time: TimeOfDay): HTMLElement {
+    // USE LAZY ACCESSOR
+    const dailyInfo = getHabitDailyInfoForDate(state.selectedDate);
+    const habitInstanceData = dailyInfo[habit.id]?.instances?.[time];
+    const status = habitInstanceData?.status ?? CSS_CLASSES.PENDING;
+    const hasNote = habitInstanceData?.note && habitInstanceData.note.length > 0;
+    const streak = calculateHabitStreak(habit.id, state.selectedDate);
+    
+    const card = document.createElement('li');
+    card.className = `${CSS_CLASSES.HABIT_CARD} ${status}`;
+    card.dataset.habitId = habit.id;
+    card.dataset.time = time;
+
+    const { name, subtitle } = getHabitDisplayInfo(habit, state.selectedDate);
+
+    // UX: Adiciona classe para nomes longos (mobile wrap)
+    if (name.length > 17) {
+        card.classList.add('long-name');
+    }
+
+    if (streak >= STREAK_CONSOLIDATED) card.classList.add('consolidated');
+    else if (streak >= STREAK_SEMI_CONSOLIDATED) card.classList.add('semi-consolidated');
+
+    const actionsLeft = document.createElement('div');
+    actionsLeft.className = 'habit-actions-left';
+    actionsLeft.innerHTML = `<button type="button" class="${CSS_CLASSES.SWIPE_DELETE_BTN}" aria-label="${t('habitEnd_ariaLabel')}">${icons.swipeDelete}</button>`;
+
+    const actionsRight = document.createElement('div');
+    actionsRight.className = 'habit-actions-right';
+    actionsRight.innerHTML = `<button type="button" class="${CSS_CLASSES.SWIPE_NOTE_BTN}" data-has-note="${hasNote}" aria-label="${t(hasNote ? 'habitNoteEdit_ariaLabel' : 'habitNoteAdd_ariaLabel')}">${hasNote ? icons.swipeNoteHasNote : icons.swipeNote}</button>`;
+    
+    const contentWrapper = document.createElement('div');
+    contentWrapper.className = CSS_CLASSES.HABIT_CONTENT_WRAPPER;
+    contentWrapper.draggable = true;
+    
+    contentWrapper.setAttribute('role', 'button');
+    contentWrapper.setAttribute('tabindex', '0');
+    contentWrapper.setAttribute('aria-label', `${name}, ${t(`filter${time}`)}, ${status}`);
+
+    const icon = document.createElement('div');
+    icon.className = 'habit-icon';
+    icon.style.backgroundColor = `${habit.color}30`;
+    icon.style.color = habit.color;
+    icon.innerHTML = habit.icon;
+
+    const details = document.createElement('div');
+    details.className = CSS_CLASSES.HABIT_DETAILS;
+    const nameEl = document.createElement('div');
+    nameEl.className = 'name';
+    nameEl.textContent = name;
+    const subtitleEl = document.createElement('div');
+    subtitleEl.className = 'subtitle';
+    subtitleEl.textContent = subtitle;
+    details.append(nameEl, subtitleEl);
+    
+    _updateConsolidationMessage(details, streak);
+
+    const goal = document.createElement('div');
+    goal.className = 'habit-goal';
+    updateGoalContentElement(goal, status, habit, time, habitInstanceData);
+
+    // FIX [2025-02-26]: Removed redundant 'timeOfDayIcon' from append to clean up card layout.
+    contentWrapper.append(icon, details, goal);
+    card.append(actionsLeft, actionsRight, contentWrapper);
+    
     habitElementCache.set(`${habit.id}|${time}`, card);
 
-    const al = card.firstElementChild!, ar = al.nextElementSibling!, cw = ar.nextElementSibling!;
-    const det = cw.children[1] as HTMLElement, goal = cw.children[2] as HTMLElement;
-    cardElementsCache.set(card, {
-        icon: cw.children[0] as HTMLElement, contentWrapper: cw as HTMLElement,
-        name: det.children[0] as HTMLElement, subtitle: det.children[1] as HTMLElement,
-        details: det, consolidationMsg: det.children[2] as HTMLElement,
-        noteBtn: ar.firstElementChild as HTMLElement, deleteBtn: al.firstElementChild as HTMLElement, goal
-    });
-    updateHabitCardElement(card, habit, time, preInfo);
     return card;
 }
 
-export function renderHabits() {
-    if (document.body.classList.contains('is-interaction-active') || !state.uiDirtyState.habitListStructure) return;
-    const selDate = parseUTCIsoDate(state.selectedDate), dInfo = getHabitDailyInfoForDate(state.selectedDate);
-    const active = getActiveHabitsForDate(state.selectedDate, selDate);
+export function updatePlaceholderForGroup(groupEl: HTMLElement, time: TimeOfDay, hasHabits: boolean, isSmartPlaceholder: boolean, emptyTimes: TimeOfDay[]) {
+    let placeholder = groupEl.querySelector<HTMLElement>(DOM_SELECTORS.EMPTY_GROUP_PLACEHOLDER);
     
-    TIMES_OF_DAY.forEach(t => habitsByTimePool[t].length = 0);
-    for (let i = 0; i < active.length; i++) {
-        const { habit, schedule } = active[i];
-        for (let j = 0; j < schedule.length; j++) habitsByTimePool[schedule[j]].push(habit);
+    if (!hasHabits) {
+        if (!placeholder) {
+            placeholder = document.createElement('div');
+            placeholder.className = CSS_CLASSES.EMPTY_GROUP_PLACEHOLDER;
+            placeholder.setAttribute('role', 'button');
+            placeholder.setAttribute('tabindex', '0');
+            groupEl.appendChild(placeholder);
+        }
+        placeholder.classList.toggle('show-smart-placeholder', isSmartPlaceholder);
+        
+        const text = t('dragToAddHabit');
+        let iconHTML = '';
+
+        if (isSmartPlaceholder) {
+            const genericIconHTML = emptyTimes
+                .map(getTimeOfDayIcon)
+                .join('<span class="icon-separator">/</span>');
+            const specificIconHTML = getTimeOfDayIcon(time);
+            
+            iconHTML = `
+                <span class="placeholder-icon-generic">${genericIconHTML}</span>
+                <span class="placeholder-icon-specific">${specificIconHTML}</span>
+            `;
+        } else {
+            iconHTML = `<span class="placeholder-icon-specific">${getTimeOfDayIcon(time)}</span>`;
+        }
+        
+        placeholder.innerHTML = `<div class="time-of-day-icon">${iconHTML}</div><span>${text}</span>`;
+
+    } else if (placeholder) {
+        placeholder.remove();
+    }
+}
+
+export function renderHabits() {
+    if (!state.uiDirtyState.habitListStructure) {
+        return;
     }
 
-    const empty = TIMES_OF_DAY.filter(t => habitsByTimePool[t].length === 0);
-    TIMES_OF_DAY.forEach(time => {
-        const dom = getGroupDOM(time); if (!dom) return;
-        const habits = habitsByTimePool[time], hasH = habits.length > 0;
-        dom.marker.style.display = hasH ? '' : 'none';
-        if (hasH) dom.marker.innerHTML = getTimeOfDayIcon(time);
+    const activeHabitsData = getActiveHabitsForDate(state.selectedDate);
+    const habitsByTime: Record<TimeOfDay, Habit[]> = { 'Morning': [], 'Afternoon': [], 'Evening': [] };
+    
+    activeHabitsData.forEach(({ habit, schedule }) => {
+        schedule.forEach(time => {
+            if (habitsByTime[time]) {
+                habitsByTime[time].push(habit);
+            }
+        });
+    });
 
-        let curIdx = 0;
-        for (let h = 0; h < habits.length; h++) {
-            const habit = habits[h], key = `${habit.id}|${time}`;
+    const groupHasHabits: Record<TimeOfDay, boolean> = { 'Morning': false, 'Afternoon': false, 'Evening': false };
+    TIMES_OF_DAY.forEach(time => {
+        groupHasHabits[time] = habitsByTime[time].length > 0;
+    });
+
+    const emptyTimes = TIMES_OF_DAY.filter(time => !groupHasHabits[time]);
+    const smartPlaceholderTargetTime: TimeOfDay | undefined = emptyTimes[0];
+
+    TIMES_OF_DAY.forEach(time => {
+        const wrapperEl = ui.habitContainer.querySelector(`.habit-group-wrapper[data-time-wrapper="${time}"]`);
+        const groupEl = wrapperEl?.querySelector<HTMLElement>(`.${CSS_CLASSES.HABIT_GROUP}[data-time="${time}"]`);
+        if (!wrapperEl || !groupEl) return;
+        
+        const hasHabits = groupHasHabits[time];
+
+        const marker = wrapperEl.querySelector('.time-marker') as HTMLElement;
+        if (marker) {
+            if (hasHabits) {
+                marker.innerHTML = getTimeOfDayIcon(time);
+                marker.style.display = '';
+                marker.style.opacity = '1';
+            } else {
+                marker.style.display = 'none'; 
+                marker.innerHTML = ''; 
+            }
+        }
+
+        groupEl.setAttribute('aria-label', getTimeOfDayName(time));
+
+        const desiredHabits = habitsByTime[time];
+        const processedHabitIds = new Set<string>();
+        let currentIndex = 0;
+
+        desiredHabits.forEach(habit => {
+            if (processedHabitIds.has(habit.id)) return; 
+            processedHabitIds.add(habit.id);
+
+            const key = `${habit.id}|${time}`;
+            
             let card = habitElementCache.get(key);
+            
             if (card) {
                 card.classList.remove(CSS_CLASSES.IS_OPEN_LEFT, CSS_CLASSES.IS_OPEN_RIGHT, CSS_CLASSES.IS_SWIPING, CSS_CLASSES.DRAGGING);
-                updateHabitCardElement(card, habit, time, dInfo);
-            } else card = createHabitCardElement(habit, time, dInfo);
+                updateHabitCardElement(card, habit, time);
+            } else {
+                card = createHabitCardElement(habit, time);
+            }
             
-            if (dom.group.children[curIdx] !== card) dom.group.insertBefore(card, dom.group.children[curIdx] || null);
-            curIdx++;
-        }
-        while (dom.group.children.length > curIdx) {
-            const rem = dom.group.lastChild as HTMLElement;
-            if (rem.dataset?.habitId) habitElementCache.delete(`${rem.dataset.habitId}|${rem.dataset.time}`);
-            rem.remove();
-        }
+            if (card) {
+                const currentChildAtIndex = groupEl.children[currentIndex];
+                if (currentChildAtIndex !== card) {
+                    if (currentChildAtIndex) {
+                        groupEl.insertBefore(card, currentChildAtIndex);
+                    } else {
+                        groupEl.appendChild(card);
+                    }
+                }
+                currentIndex++;
+            }
+        });
 
-        const isSmart = time === empty[0];
-        dom.wrapper.classList.toggle('has-habits', hasH);
-        dom.wrapper.classList.toggle('is-collapsible', !hasH && !isSmart);
+        while (groupEl.children.length > currentIndex) {
+            groupEl.lastChild?.remove();
+        }
+        
+        const isSmartPlaceholder = time === smartPlaceholderTargetTime;
+        
+        wrapperEl.classList.toggle('has-habits', hasHabits);
+        wrapperEl.classList.toggle('is-collapsible', !hasHabits && !isSmartPlaceholder);
 
-        let ph = dom.group.querySelector<HTMLElement>(DOM_SELECTORS.EMPTY_GROUP_PLACEHOLDER);
-        if (!hasH) {
-            if (!ph) { ph = getPlaceholderTemplate().cloneNode(true) as HTMLElement; dom.group.appendChild(ph); }
-            ph.classList.toggle('show-smart-placeholder', isSmart);
-            const iconHtml = isSmart ? `<span class="placeholder-icon-generic">${empty.map(getTimeOfDayIcon).join('<span class="icon-separator">/</span>')}</span><span class="placeholder-icon-specific">${getTimeOfDayIcon(time)}</span>` : `<span class="placeholder-icon-specific">${getTimeOfDayIcon(time)}</span>`;
-            ph.innerHTML = `<div class="time-of-day-icon">${iconHtml}</div><span class="placeholder-arrow">→</span><span>${t('dragToAddHabit')}</span>`;
-        } else ph?.remove();
+        updatePlaceholderForGroup(groupEl, time, hasHabits, isSmartPlaceholder, emptyTimes);
     });
+
     state.uiDirtyState.habitListStructure = false;
 }
