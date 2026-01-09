@@ -15,7 +15,8 @@ import { ui } from './render/ui';
 import { t, setLanguage, formatDate } from './i18n'; 
 import { UI_ICONS } from './render/icons';
 import type { Quote } from './data/quotes';
-import { checkAndAnalyzeDayContext } from './habitActions';
+// FIX: Removed import of 'checkAndAnalyzeDayContext' to break circular dependency with habitActions.ts.
+// The analysis is now triggered via 'request-analysis' event.
 import { selectBestQuote } from './services/quoteEngine';
 import { calculateDaySummary } from './services/selectors';
 
@@ -225,7 +226,12 @@ function _setupQuoteAutoCollapse() {
 }
 
 export async function renderStoicQuote() {
-    checkAndAnalyzeDayContext(state.selectedDate);
+    // PATTERN: Event-driven Analysis trigger
+    // Instead of calling the function directly (which causes circular imports), we signal the need.
+    if (!state.dailyDiagnoses[state.selectedDate]) {
+        document.dispatchEvent(new CustomEvent('request-analysis', { detail: { date: state.selectedDate } }));
+    }
+
     const hour = new Date().getHours(), tod = hour < 12 ? 'Morning' : (hour < 18 ? 'Afternoon' : 'Evening');
     const summ = calculateDaySummary(state.selectedDate), sig = `${summ.completed}/${summ.total}`;
     const ctxKey = `${state.selectedDate}|${state.activeLanguageCode}|${tod}|${sig}`;
@@ -273,6 +279,11 @@ export async function renderStoicQuote() {
 
 document.addEventListener('language-changed', () => { initLanguageFilter(); renderLanguageFilter(); updateUIText(); if (ui.syncStatus) setTextContent(ui.syncStatus, t(state.syncState)); renderApp(); });
 document.addEventListener('habitsChanged', () => { _cachedQuoteState = null; 'requestIdleCallback' in window ? requestIdleCallback(() => renderStoicQuote()) : setTimeout(renderStoicQuote, 1000); });
+// LISTENER: Re-render quote when analysis completes (Event Bus pattern)
+document.addEventListener('quote-updated', () => { 
+    _cachedQuoteState = null; 
+    'requestIdleCallback' in window ? requestIdleCallback(() => renderStoicQuote()) : setTimeout(renderStoicQuote, 100); 
+});
 
 export async function initI18n() {
     const saved = localStorage.getItem('habitTrackerLanguage'), browser = navigator.language.split('-')[0];
