@@ -73,6 +73,17 @@ const _handleContainerClick = (e: MouseEvent) => {
         if (!habit) return;
         const act = el.dataset.action, cur = getCurrentGoalForInstance(habit, state.selectedDate, t);
         const next = act === 'increment' ? Math.min(MAX_GOAL, cur + GOAL_STEP) : Math.max(1, cur - GOAL_STEP);
+        
+        // VISUAL FEEDBACK FIX [2025-06-03]: Add animation class to wrapper
+        const wrapper = el.parentElement?.querySelector(`.${CSS_CLASSES.GOAL_VALUE_WRAPPER}`);
+        if (wrapper) {
+            wrapper.classList.remove('increase', 'decrease');
+            void (wrapper as HTMLElement).offsetWidth; // Force Reflow
+            wrapper.classList.add(next > cur ? 'increase' : 'decrease');
+            // Cleanup class to allow re-triggering later
+            setTimeout(() => wrapper.classList.remove('increase', 'decrease'), 700);
+        }
+
         setGoalOverride(hId, state.selectedDate, t, next);
         triggerHaptic('light'); return;
     }

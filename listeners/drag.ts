@@ -16,6 +16,7 @@
  * - **Relative Positioning:** Calcula posições baseadas em `offsetTop` relativo ao container, robusto contra reflows.
  * - **Dynamic Auto-Scroll:** Zonas de scroll calculadas dinamicamente baseadas no Viewport do container.
  * - **Geometry Caching (Update):** Cache de `getBoundingClientRect` no início do arrasto para evitar Layout Thrashing.
+ * - **CSS Typed OM:** Renderização direta via `attributeStyleMap` para performance máxima (Zero String Parsing).
  */
 
 import { handleHabitDrop, reorderHabit } from '../habitActions';
@@ -30,6 +31,9 @@ import { renderApp } from '../render'; // CHAOS FIX: Import renderApp for catch-
 const SCROLL_ZONE_PX = 80; // Zona ativa para scroll
 const MAX_SCROLL_SPEED = 15; // Velocidade máxima (px/frame)
 const DROP_INDICATOR_GAP = 4; // Espaçamento visual
+
+// SNIPER OPTIMIZATION: Feature detection for Typed OM
+const hasTypedOM = typeof window !== 'undefined' && !!(window.CSS && window.CSSTranslate && CSS.px);
 
 // --- STATE MACHINE ---
 const DragState = {
@@ -117,13 +121,9 @@ function _scrollLoop() {
                 }
             } else {
                 // Fallback: Se não há cartão alvo, joga no final ou início dependendo da zona
-                // (Geralmente no final se a zona estiver vazia ou mouse no fim)
-                // Aqui simplificamos para 0 se vazio, ou append.
                 if (DragState.targetZone.children.length === 0) {
                     topPos = DROP_INDICATOR_GAP;
                 } else {
-                    // Mantém onde estava ou define lógica padrão
-                    // Se não temos targetCard mas estamos na zona, pode ser no final.
                     const lastChild = DragState.targetZone.lastElementChild as HTMLElement;
                     if (lastChild && lastChild !== DragState.indicator) {
                          topPos = lastChild.offsetTop + lastChild.offsetHeight + DROP_INDICATOR_GAP;
@@ -131,7 +131,14 @@ function _scrollLoop() {
                 }
             }
             
-            DragState.indicator.style.transform = `translate3d(0, ${topPos}px, 0)`;
+            // PERFORMANCE: Typed OM vs String Fallback
+            if (hasTypedOM && DragState.indicator.attributeStyleMap) {
+                // Direct GPU Communication (No String Parsing)
+                DragState.indicator.attributeStyleMap.set('transform', new CSSTranslate(CSS.px(0), CSS.px(topPos), CSS.px(0)));
+            } else {
+                // Legacy Fallback
+                DragState.indicator.style.transform = `translate3d(0, ${topPos}px, 0)`;
+            }
         } else {
             DragState.indicator.classList.remove('visible');
         }

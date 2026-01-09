@@ -75,7 +75,7 @@ export function setupManageModal() {
         return (order[a.st] - order[b.st]) || compareStrings(a.name, b.name);
     });
     const today = getTodayUTCIso();
-    ui.habitList.innerHTML = items.map(({ h, st, name, subtitle }) => `<li class="habit-list-item ${st}" data-habit-id="${h.id}"><span class="habit-main-info"><span class="habit-icon-slot" style="color:${h.color}">${h.icon}</span><div style="display:flex;flex-direction:column"><span class="habit-name">${name}</span>${subtitle ? `<span class="habit-subtitle" style="font-size:11px;color:var(--text-tertiary)">${subtitle}</span>` : ''}</div>${st !== 'active' ? `<span class="habit-name-status">${t(st === 'graduated' ? 'modalStatusGraduated' : 'modalStatusEnded')}</span>` : ''}</span><div class="habit-list-actions">${st === 'active' ? `<button class="edit-habit-btn" aria-label="${t('aria_edit', { name })}">${UI_ICONS.editAction}</button>${calculateHabitStreak(h.id, today) >= STREAK_CONSOLIDATED ? `<button class="graduate-habit-btn" aria-label="${t('aria_graduate', { name })}">${UI_ICONS.graduateAction}</button>` : `<button class="end-habit-btn" aria-label="${t('aria_end', { name })}">${UI_ICONS.endAction}</button>`}` : `<button class="permanent-delete-habit-btn" aria-label="${t('aria_delete_permanent', { name })}">${UI_ICONS.deletePermanentAction}</button>`}</div></li>`).join('');
+    ui.habitList.innerHTML = items.map(({ h, st, name, subtitle }) => `<li class="habit-list-item ${st}" data-habit-id="${h.id}"><span class="habit-main-info"><span class="habit-icon-slot" style="color:${h.color}">${h.icon}</span><div style="display:flex;flex-direction:column"><span class="habit-name">${name}</span>${subtitle ? `<span class="habit-subtitle" style="font-size:11px;color:var(--text-tertiary)">${subtitle}</span>` : ''}</div>${st !== 'active' ? `<span class="habit-name-status">${t(st === 'graduated' ? 'modalStatusGraduated' : 'modalStatusEnded')}</span>` : ''}</span><div class="habit-list-actions">${st === 'active' ? `${calculateHabitStreak(h.id, today) >= STREAK_CONSOLIDATED ? `<button class="graduate-habit-btn" aria-label="${t('aria_graduate', { name })}">${UI_ICONS.graduateAction}</button>` : `<button class="end-habit-btn" aria-label="${t('aria_end', { name })}">${UI_ICONS.endAction}</button>`}` : `<button class="permanent-delete-habit-btn" aria-label="${t('aria_delete_permanent', { name })}">${UI_ICONS.deletePermanentAction}</button>`}</div></li>`).join('');
 }
 
 export function showConfirmationModal(text: string, onConfirm: () => void, opts?: any) {
@@ -136,8 +136,9 @@ export function refreshEditModalUI() {
     if (ce) { const p = fd.philosophy; if (p?.conscienceKey) { setTextContent(ce, t(p.conscienceKey)); ce.style.display = 'block'; } else ce.style.display = 'none'; }
 }
 
-export function openEditModal(habit: any) {
-    const isN = !habit || !habit.id, safe = getSafeDate(state.selectedDate);
+export function openEditModal(habit: any, targetDateOverride?: string) {
+    const isN = !habit || !habit.id;
+    const safe = getSafeDate(targetDateOverride || state.selectedDate);
     const fd = isN ? { icon: HABIT_ICONS.custom, color: _getLeastUsedColor(), times: ['Morning'], goal: { type: 'check' }, frequency: { type: 'daily' }, name: '', subtitleKey: 'customHabitSubtitle', ...habit } : { ...habit, times: [...(getScheduleForDate(habit, safe) || habit.scheduleHistory[0]).times], frequency: { ...(getScheduleForDate(habit, safe) || habit.scheduleHistory[0]).frequency } };
     state.editingHabit = { isNew: isN, habitId: isN ? undefined : habit.id, originalData: isN ? undefined : habit, formData: fd as any, targetDate: safe };
     const ni = ui.editHabitForm.elements.namedItem('habit-name') as HTMLInputElement;

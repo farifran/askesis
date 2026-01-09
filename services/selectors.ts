@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -162,27 +163,55 @@ export function calculateHabitStreak(habitOrId: string | Habit, endDateISO: stri
 export function getSmartGoalForHabit(habit: Habit, dateISO: string, time: TimeOfDay): number {
     if (habit.goal.type === 'check' || !habit.goal.total) return 1;
     const dailyInfo = getHabitDailyInfoForDate(dateISO)[habit.id];
+    
+    // 1. Explicit Override for this specific date takes precedence
     if (dailyInfo?.instances[time]?.goalOverride !== undefined) return dailyInfo.instances[time].goalOverride!;
     
     const baseGoal = habit.goal.total;
     const targetTs = parseUTCIsoDate(dateISO).getTime();
-    let validIncreases = 0;
-    let minIncrease = 999999;
-    const iterDate = new Date();
-
-    for (let i = 1; i <= 3; i++) {
-        iterDate.setTime(targetTs - (MS_PER_DAY * i));
-        const past = getHabitDailyInfoForDate(toUTCIsoDateString(iterDate))[habit.id]?.instances?.[time];
-        if (past?.status === 'completed') {
-            const val = past.goalOverride ?? baseGoal;
-            if (val > baseGoal) {
-                validIncreases++;
-                if (val < minIncrease) minIncrease = val;
-            } else break;
-        } else break;
+    
+    // --- SMART ADAPTATION LOGIC (Historical Lookback) ---
+    const todayTs = parseUTCIsoDate(getTodayUTCIso()).getTime();
+    let searchTs = (targetTs > todayTs) ? todayTs : (targetTs - MS_PER_DAY);
+    let iterDate = new Date(searchTs);
+    
+    let consistentValue: number | null = null;
+    let matchesFound = 0;
+    
+    for (let i = 0; i < 14; i++) {
+        const iterISO = toUTCIsoDateString(iterDate);
+        if (iterISO < habit.createdOn) break;
+        
+        if (shouldHabitAppearOnDate(habit, iterISO, iterDate)) {
+            const pastInfo = getHabitDailyInfoForDate(iterISO)[habit.id];
+            const instance = pastInfo?.instances?.[time];
+            const isToday = iterISO === getTodayUTCIso();
+            
+            if (!instance || instance.status === 'pending') {
+                if (!isToday) break; 
+            } else if (instance.status === 'snoozed') {
+                break;
+            } else if (instance.status === 'completed') {
+                if (instance.goalOverride !== undefined) {
+                    if (consistentValue === null) {
+                        consistentValue = instance.goalOverride;
+                        matchesFound++;
+                    } else if (consistentValue === instance.goalOverride) {
+                        matchesFound++;
+                    } else {
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            }
+        }
+        
+        if (matchesFound >= 2) return consistentValue!;
+        iterDate.setTime(iterDate.getTime() - MS_PER_DAY);
     }
 
-    if (validIncreases === 3) return minIncrease;
+    // Rule 2: Progressive Overload (Streak Bonus) - Fallback
     const streak = calculateHabitStreak(habit, toUTCIsoDateString(new Date(targetTs - MS_PER_DAY)));
     return Math.max(5, baseGoal + (Math.floor(streak / 7) * 5));
 }
@@ -211,41 +240,70 @@ export function calculateDaySummary(dateISO: string, preParsedDate?: Date) {
     const cached = state.daySummaryCache.get(dateISO);
     if (cached) return cached;
 
-    let total = 0, completed = 0, snoozed = 0, pending = 0, hasPlus = false;
+    let total = 0, completed = 0, snoozed = 0, pending = 0;
     const dayData = getHabitDailyInfoForDate(dateISO);
     const dateObj = preParsedDate || parseUTCIsoDate(dateISO);
+
+    // Track potentially upgradable habits for the Plus calculation
+    const activeHabitsForPlusCheck: { habit: Habit, time: TimeOfDay }[] = [];
 
     for (let i = 0; i < state.habits.length; i++) {
         const h = state.habits[i];
         if (!shouldHabitAppearOnDate(h, dateISO, dateObj)) continue;
         const sch = getEffectiveScheduleForHabitOnDate(h, dateISO);
         const info = dayData[h.id];
+        
         for (let j = 0; j < sch.length; j++) {
             const t = sch[j];
             const status = info?.instances[t]?.status || 'pending';
             total++;
             if (status === 'completed') {
                 completed++;
+                // Track habits that track quantity (not simple checks) for the intensity increase rule
                 if (h.goal.type !== 'check' && h.goal.total) {
-                    if (getCurrentGoalForInstance(h, dateISO, t) > h.goal.total && calculateHabitStreak(h, toUTCIsoDateString(new Date(dateObj.getTime() - MS_PER_DAY))) >= 2) hasPlus = true;
+                    activeHabitsForPlusCheck.push({ habit: h, time: t });
                 }
             } else if (status === 'snoozed') snoozed++;
             else pending++;
         }
     }
     
+    let hasPlus = false;
+
+    // RULE 1: All scheduled habits for today must be completed (100% score)
+    if (total > 0 && completed === total) {
+        
+        // RULE 2: The previous 2 days must also have been perfect (100% score)
+        const d1 = toUTCIsoDateString(new Date(dateObj.getTime() - MS_PER_DAY));
+        const d2 = toUTCIsoDateString(new Date(dateObj.getTime() - MS_PER_DAY * 2));
+
+        // Recursively check past summaries (safe due to cache and DAG structure)
+        const sum1 = calculateDaySummary(d1);
+        const sum2 = calculateDaySummary(d2);
+
+        if (sum1.total > 0 && sum1.completed === sum1.total && 
+            sum2.total > 0 && sum2.completed === sum2.total) {
+            
+            // RULE 3: Progressive Overload
+            // At least ONE numeric habit must have a value STRICTLY greater than BOTH previous days.
+            for (const item of activeHabitsForPlusCheck) {
+                const { habit, time } = item;
+                
+                // Get actual performance values (Override or Default)
+                const valToday = getCurrentGoalForInstance(habit, dateISO, time);
+                const valD1 = getCurrentGoalForInstance(habit, d1, time);
+                const valD2 = getCurrentGoalForInstance(habit, d2, time);
+
+                // Strict increase relative to BOTH previous days, and must exceed base goal.
+                if (valToday > habit.goal.total && valToday > valD1 && valToday > valD2) {
+                    hasPlus = true;
+                    break; // Found the "Spark" habit, day is Plus.
+                }
+            }
+        }
+    }
+    
     const res = { total, completed, snoozed, pending, completedPercent: total ? (completed / total) * 100 : 0, snoozedPercent: total ? (snoozed / total) * 100 : 0, showPlusIndicator: hasPlus };
     state.daySummaryCache.set(dateISO, res);
     return res;
-}
-
-export function isHabitNameDuplicate(name: string, currentHabitId?: string): boolean {
-    const norm = name.trim().toLowerCase();
-    if (!norm) return false;
-    const today = getTodayUTCIso();
-    for (let i = 0; i < state.habits.length; i++) {
-        const h = state.habits[i];
-        if (h.id !== currentHabitId && getHabitDisplayInfo(h, today).name.trim().toLowerCase() === norm) return true;
-    }
-    return false;
 }

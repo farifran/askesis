@@ -51,7 +51,6 @@ import {
     saveHabitFromModal,
     requestHabitEndingFromModal,
     requestHabitPermanentDeletion,
-    requestHabitEditingFromModal,
     resetApplicationData,
     handleSaveNote,
     graduateHabit,
@@ -64,7 +63,6 @@ import { getHabitDisplayInfo } from '../services/selectors';
 import { setupReelRotary } from '../render/rotary';
 import { simpleMarkdownToHTML, pushToOneSignal, getContrastColor, addDays, parseUTCIsoDate, toUTCIsoDateString } from '../utils';
 import { setTextContent } from '../render/dom';
-import { isHabitNameDuplicate } from '../services/selectors';
 
 // SECURITY: Limite rígido para inputs de texto para prevenir State Bloat e DoS.
 const MAX_HABIT_NAME_LENGTH = 50; 
@@ -136,26 +134,24 @@ function _validateAndFeedback(newName: string): boolean {
     
     const trimmedName = newName.trim();
     let errorKey: string | null = null;
+    const isBlockingError = trimmedName.length === 0;
 
-    if (trimmedName.length === 0) {
+    if (isBlockingError) {
         errorKey = 'noticeNameCannotBeEmpty';
     } else if (trimmedName.length > 16) {
-        errorKey = 'noticeNameTooLong';
-    } else if (isHabitNameDuplicate(trimmedName, state.editingHabit?.habitId)) {
-        errorKey = 'noticeDuplicateHabitWithName';
+        errorKey = 'noticeNameTooLong'; // Apenas um aviso não-bloqueante
     }
 
-    const isValid = errorKey === null;
+    const isValid = !isBlockingError;
 
     // UI Updates (DOM Writes)
-    if (isValid) {
+    if (!errorKey) {
         if (formNoticeEl.classList.contains('visible')) {
             formNoticeEl.classList.remove('visible');
             habitNameInput.classList.remove('shake');
         }
     } else {
-        const errorText = t(errorKey!);
-        // Dirty check text content
+        const errorText = t(errorKey);
         if (formNoticeEl.textContent !== errorText) {
             formNoticeEl.textContent = errorText;
         }
@@ -163,16 +159,16 @@ function _validateAndFeedback(newName: string): boolean {
         if (!formNoticeEl.classList.contains('visible')) {
             formNoticeEl.classList.add('visible');
             
-            // Trigger animation frame only when showing error
-            requestAnimationFrame(() => {
-                habitNameInput.classList.add('shake');
-                habitNameInput.addEventListener('animationend', () => {
-                    habitNameInput.classList.remove('shake');
-                }, { once: true });
-            });
+            if (isBlockingError) {
+                requestAnimationFrame(() => {
+                    habitNameInput.classList.add('shake');
+                    habitNameInput.addEventListener('animationend', () => habitNameInput.classList.remove('shake'), { once: true });
+                });
+            }
         }
     }
-
+    
+    ui.editHabitSaveBtn.disabled = isBlockingError;
     return isValid;
 }
 
@@ -210,8 +206,6 @@ const _handleHabitListClick = (e: MouseEvent) => {
         requestHabitEndingFromModal(habitId);
     } else if (button.classList.contains('permanent-delete-habit-btn')) {
         requestHabitPermanentDeletion(habitId);
-    } else if (button.classList.contains('edit-habit-btn')) {
-        requestHabitEditingFromModal(habitId);
     } else if (button.classList.contains('graduate-habit-btn')) {
         graduateHabit(habitId);
     }
@@ -260,17 +254,10 @@ const _handleExploreHabitListClick = (e: MouseEvent) => {
     const index = parseInt(item.dataset.index!, 10);
     const habitTemplate = PREDEFINED_HABITS[index];
     if (habitTemplate) {
-        const anyExistingHabit = state.habits.find(h =>
-            h.scheduleHistory.some(s => s.nameKey === habitTemplate.nameKey)
-        );
-
         closeModal(ui.exploreModal);
-
-        if (anyExistingHabit) {
-            openEditModal(anyExistingHabit);
-        } else {
-            openEditModal(habitTemplate);
-        }
+        // LÓGICA RADICAL: Sempre abre o modal de edição para criar um NOVO hábito a partir do modelo,
+        // mesmo que um com nome parecido já exista. Elimina a ambiguidade.
+        openEditModal(habitTemplate);
     }
 };
 
@@ -466,8 +453,7 @@ const _handleHabitNameInput = () => {
     delete state.editingHabit.formData.nameKey; 
 
     // Validation Logic decoupled
-    const isValid = _validateAndFeedback(newName);
-    ui.editHabitSaveBtn.disabled = !isValid;
+    _validateAndFeedback(newName);
 };
 
 const _handleIconPickerClick = () => {
@@ -524,10 +510,8 @@ const _handleTimeContainerClick = (e: MouseEvent) => {
     const currentlySelected = state.editingHabit.formData.times.includes(time);
 
     if (currentlySelected) {
-        if (state.editingHabit.formData.times.length > 1) {
-            state.editingHabit.formData.times = state.editingHabit.formData.times.filter(t => t !== time);
-            button.classList.remove('selected');
-        }
+        state.editingHabit.formData.times = state.editingHabit.formData.times.filter(t => t !== time);
+        button.classList.remove('selected');
     } else {
         state.editingHabit.formData.times.push(time);
         button.classList.add('selected');

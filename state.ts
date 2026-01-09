@@ -232,6 +232,7 @@ export const state: {
     lastAIResult: string | null;
     lastAIError: string | null;
     syncState: 'syncSaving' | 'syncSynced' | 'syncError' | 'syncInitial';
+    syncLastError: string | null;
     fullCalendar: {
         year: number;
         month: number;
@@ -269,6 +270,7 @@ export const state: {
     lastAIResult: null,
     lastAIError: null,
     syncState: 'syncInitial',
+    syncLastError: null,
     fullCalendar: {
         year: new Date().getFullYear(),
         month: new Date().getMonth(),

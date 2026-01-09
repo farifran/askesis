@@ -64,11 +64,6 @@ type QuoteAnalysisPayload = {
     };
 };
 
-type MergePayload = {
-    local: AppState;
-    incoming: AppState;
-};
-
 // --- WORKER-SIDE CACHE & LIMITS ---
 const unarchivedCache = new Map<string, any>();
 const _anchorDateCache = new Map<string, Date>();
@@ -240,6 +235,19 @@ async function buildAIPrompt(payload: AIPromptPayload) {
     return { prompt, systemInstruction: t['aiSystemInstruction'].replace('{languageName}', languageName) };
 }
 
+// BUG FIX: Implementada a função de construção de prompt para análise de citações
+async function buildQuoteAnalysisPrompt(payload: QuoteAnalysisPayload) {
+    const { notes, themeList, languageName, translations } = payload;
+    const prompt = translations.aiPromptQuote
+        .replace('{notes}', notes)
+        .replace('{theme_list}', themeList);
+        
+    return { 
+        prompt, 
+        systemInstruction: translations.aiSystemInstructionQuote.replace('{languageName}', languageName) 
+    };
+}
+
 self.onmessage = async (e: MessageEvent<any>) => {
     const { id, type, payload, key } = e.data;
     try {
@@ -247,8 +255,9 @@ self.onmessage = async (e: MessageEvent<any>) => {
         if (type === 'encrypt') result = await encrypt(JSON.stringify(payload), key);
         else if (type === 'decrypt') result = JSON.parse(await decrypt(payload, key));
         else if (type === 'build-ai-prompt') result = await buildAIPrompt(payload);
+        else if (type === 'build-quote-analysis-prompt') result = await buildQuoteAnalysisPrompt(payload); // FIX: Handler adicionado
         else if (type === 'merge') result = await mergeStates(payload.local, payload.incoming);
-        else throw new Error("Unknown type");
+        else throw new Error(`Unknown type: ${type}`);
         self.postMessage({ id, status: 'success', result });
     } catch (err: any) {
         self.postMessage({ id, status: 'error', error: err.message });

@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -110,6 +111,7 @@ export interface UIElements {
     syncActiveDesc: HTMLElement;
     iconPickerTitle: HTMLElement;
     colorPickerTitle: HTMLElement;
+    syncErrorMsg: HTMLElement;
     
     // Dynamic Injected Elements
     habitConscienceDisplay: HTMLElement;
@@ -284,6 +286,7 @@ defineLazy(ui, 'syncActiveDesc', '#sync-active-desc', uiCache);
 defineLazy(ui, 'iconPickerTitle', '#icon-picker-modal-title', uiCache);
 defineLazy(ui, 'colorPickerTitle', '#color-picker-modal-title', uiCache);
 defineLazy(ui, 'habitConscienceDisplay', '#habit-conscience-display', uiCache);
+defineLazy(ui, 'syncErrorMsg', '#sync-error-msg', uiCache);
 
 // --- CHART ELEMENTS SUB-OBJECT ---
 ui.chart = {} as UIElements['chart'];

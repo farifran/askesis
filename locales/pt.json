@@ -1,3 +1,4 @@
+
 {
     "_comment": "[ANALYSIS PROGRESS]: 100% - Limpeza de chaves mortas realizada [2025-03-22].",
     "aiCelebration21Day": {
@@ -45,7 +46,6 @@
     "appName": "<strong>A</strong>skes<strong>I</strong>s",
     "appSubtitle": "Aja até ser, você é o somatório dos seus hábitos.",
     "aria_delete_permanent": "Apagar permanentemente {habitName}",
-    "aria_edit": "Editar {habitName}",
     "aria_end": "Encerrar {habitName}",
     "aria_graduate": "Graduar Hábito {habitName}",
     "buttonDelete": "Apagar",
@@ -73,7 +73,6 @@
     "customHabitSubtitle": "Hábito personalizado",
     "deleteButton": "Apagar",
     "dragToAddHabit": "Adicione um hábito",
-    "editButton": "Editar",
     "endButton": "Encerrar",
     "epictetus": "Epicteto",
     "expandQuote": "Ver original",
@@ -158,7 +157,7 @@
     "modalColorPickerTitle": "Selecionar Cor",
     "modalConfirmTitle": "Confirmar Ação",
     "modalEditFormNameLabel": "Nome",
-    "modalEditFormNotice": "Por favor, dê um nome ao hábito e selecione pelo menos um horário.",
+    "modalEditFormNotice": "Por favor, dê um nome ao hábito.",
     "modalEditNewTitle": "Adicionar Hábito",
     "modalEditSaveButton": "Salvar Hábito",
     "modalEditTitle": "Editar Hábito",
@@ -180,7 +179,6 @@
     "modalStatusEnded": "(Encerrado)",
     "modalStatusGraduated": "(Graduado)",
     "musoniusRufus": "Musônio Rufo",
-    "noticeDuplicateHabitWithName": "Um hábito com este nome já existe.",
     "noticeHabitAlreadyExistsInTime": "O hábito '{habitName}' já está ativo em: {times}.",
     "noticeNameCannotBeEmpty": "O nome do hábito não pode estar vazio.",
     "noticeNameTooLong": "Máx 16 caracteres. Use uma descrição sucinta.",

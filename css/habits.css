@@ -22,7 +22,7 @@
     padding-top: var(--space-lg); /* Space between header and habits, matches chart margin. */
     
     /* UX FIX [2025-04-01]: Reduzido de space-xl para space-sm. 
-       Evita criar um grande espaço vazio no final da rolagem, já que o gráfico possui sua própria margem superior. */
+       Evita criar um grande espaço vazio no final da lista, já que o gráfico possui sua própria margem superior. */
     padding-bottom: var(--space-sm);
     
     /* UX: Smooth scrolling */
@@ -60,9 +60,12 @@
     min-height: auto;
     overflow: visible;
 
-    /* ROLLBACK [2025-05-04]: Removido 'content-visibility: auto'.
-       A estimativa de tamanho (contain-intrinsic-size) causava saltos bruscos na barra de rolagem (Scroll Jitter)
-       quando a altura real do grupo diferia da estimada. A reciclagem de DOM no JS já garante performance. */
+    /* PERFORMANCE [2025-06-03]: Reativado CSS Containment.
+       Virtualização nativa para saltar renderização de grupos fora da tela.
+       FIX JITTER: 'contain-intrinsic-size' configurado para a altura aproximada de 1 cartão + gap (~100px).
+       Isso fornece ao navegador uma estimativa estável, evitando pulos na barra de rolagem. */
+    content-visibility: auto;
+    contain-intrinsic-size: auto 100px;
 }
 
 /* Collapsible state override */
@@ -156,10 +159,12 @@ body.is-dragging-active .habit-group {
     right: var(--space-sm);
     opacity: 0;
     pointer-events: none;
+    /* PERFORMANCE: Typed OM controla o transform diretamente, não precisamos de transição JS aqui se a frame rate for alta, 
+       mas mantemos para suavização extra em setups híbridos. */
     transition: top var(--transition-duration-fast) ease-out, opacity var(--transition-duration-fast) ease-out;
     z-index: var(--z-index-indicator);
     /* PERFORMANCE [2025-01-16]: Otimiza animação de drag & drop. */
-    will-change: top, opacity;
+    will-change: transform, opacity;
 }
 .drop-indicator.visible {
     opacity: 1;

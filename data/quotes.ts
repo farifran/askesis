@@ -197,9 +197,9 @@ const MIND_QUOTES: Quote[] = [
                 es: "Enfócate en lo que controlas. Igora el resto."
             },
             level_2: {
-                pt: "A liberdade começa com a distinção entre o que depende de nós e o que não depende. Aceite o resto.",
-                en: "Freedom begins with the distinction between what depends on us and what does not. Accept the rest.",
-                es: "La libertad comienza con la distinción entre lo que depende de nosotros y lo que no. Acepta el resto."
+                pt: "A liberdade começa com a distinção entre o que depende de nós e o que não depende. Ignore o resto.",
+                en: "Freedom begins with the distinction between what depends on us and what does not. Ignore the rest.",
+                es: "La libertad comienza con la distinción entre lo que depende de nosotros y lo que no. Ignora el resto."
             },
             level_3: {
                 pt: "Distingua e renuncie.",
@@ -407,7 +407,7 @@ const MIND_QUOTES: Quote[] = [
                 es: "Atención total. El descuido cuesta."
             },
             level_2: {
-                pt: "A 'Prosoche' (atenção plena) deve ser constante. Uma exceção abre a porta para o vício.",
+                pt: "La 'Prosoche' (atenção plena) deve ser constante. Uma exceção abre a porta para o vício.",
                 en: "'Prosoche' (mindfulness) must be constant. An exception opens the door to vice.",
                 es: "La 'Prosoche' (atención plena) debe ser constante. Una excepción abre la puerta al vicio."
             },
@@ -477,9 +477,9 @@ const MIND_QUOTES: Quote[] = [
                 es: "Agarra donde puedas llevar."
             },
             level_2: {
-                pt: "Toda situação tem dois lados: um que pesa e outro que suporta. Escolha focar no aspecto que lhe permite seguir em frente.",
-                en: "Every situation has two sides: one that burdens and one that supports. Choose to focus on the aspect that allows you to move forward.",
-                es: "Toda situación tiene dos lados: uno que pesa y otro que soporta. Elige enfocarte en el aspecto que te permite seguir adelante."
+                pt: "Não foque na injustiça do irmão, mas no fato de que ele é seu irmão. Segure a alça que sustenta.",
+                en: "Focus not on the brother's injustice, but that he is your brother. Grasp the handle that holds.",
+                es: "No te enfoques en la injusticia del hermano, sino en que es tu hermano. Agarra el asa que sostiene."
             },
             level_3: {
                 pt: "Segure pela alça suportável.",

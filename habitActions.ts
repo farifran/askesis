@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -18,8 +19,8 @@ import {
 import { saveState, loadState, clearLocalPersistence } from './services/persistence';
 import { PREDEFINED_HABITS } from './data/predefinedHabits';
 import { 
-    getEffectiveScheduleForHabitOnDate, isHabitNameDuplicate, clearSelectorInternalCaches,
-    calculateHabitStreak, shouldHabitAppearOnDate, getHabitDisplayInfo
+    getEffectiveScheduleForHabitOnDate, clearSelectorInternalCaches,
+    calculateHabitStreak, shouldHabitAppearOnDate, getHabitDisplayInfo, getScheduleForDate
 } from './services/selectors';
 import { 
     generateUUID, getTodayUTCIso, parseUTCIsoDate, triggerHaptic,
@@ -27,7 +28,7 @@ import {
 } from './utils';
 import { 
     closeModal, showConfirmationModal, openEditModal, renderAINotificationState,
-    clearHabitDomCache, renderStoicQuote
+    clearHabitDomCache
 } from './render';
 import { ui } from './render/ui';
 import { t, getTimeOfDayName, formatDate } from './i18n'; 
@@ -40,7 +41,6 @@ const BATCH_IDS_POOL: string[] = [];
 const BATCH_HABITS_POOL: Habit[] = [];
 
 // --- CONCURRENCY CONTROL ---
-const _analysisInFlight = new Map<string, Promise<void>>();
 let _isBatchOpActive = false;
 
 const ActionContext = {
@@ -224,42 +224,87 @@ export function reorderHabit(movedHabitId: string, targetHabitId: string, pos: '
 export function saveHabitFromModal() {
     if (!state.editingHabit) return;
     const { isNew, habitId, formData, targetDate } = state.editingHabit;
+
     if (formData.name) formData.name = formData.name.replace(/[<>{}]/g, '').trim();
-    if (!formData.name && !formData.nameKey) return;
-    if (isHabitNameDuplicate(formData.nameKey ? t(formData.nameKey) : formData.name!, habitId)) return;
+    const nameToUse = formData.nameKey ? t(formData.nameKey) : formData.name!;
+    if (!nameToUse) return;
 
     if (isNew) {
-        state.habits.push({ id: generateUUID(), icon: formData.icon, color: formData.color, goal: formData.goal, createdOn: targetDate, philosophy: formData.philosophy,
-            scheduleHistory: [{ startDate: targetDate, times: formData.times, frequency: formData.frequency, name: formData.name, nameKey: formData.nameKey, subtitleKey: formData.subtitleKey, scheduleAnchor: targetDate }]
+        // Procure por um hábito ativo existente com o mesmo nome.
+        const existingHabit = state.habits.find(h => {
+            const lastSchedule = h.scheduleHistory[h.scheduleHistory.length - 1];
+            if (h.graduatedOn || (lastSchedule.endDate && targetDate >= lastSchedule.endDate)) {
+                return false; // Não fundir com hábitos arquivados/encerrados
+            }
+            const info = getHabitDisplayInfo(h, targetDate);
+            return info.name.trim().toLowerCase() === nameToUse.trim().toLowerCase();
         });
-        _notifyChanges(true);
+
+        if (existingHabit) {
+            // LÓGICA DE FUSÃO: Adiciona os horários ao hábito existente.
+            const existingSchedule = getScheduleForDate(existingHabit, targetDate) || existingHabit.scheduleHistory[existingHabit.scheduleHistory.length - 1];
+            const existingTimes = existingSchedule.times;
+            const newTimes = Array.from(new Set([...existingTimes, ...formData.times]));
+
+            // Atualiza outras propriedades do formulário, tratando-o como a fonte da verdade.
+            Object.assign(existingHabit, {
+                icon: formData.icon,
+                color: formData.color,
+                goal: formData.goal,
+                philosophy: formData.philosophy ?? existingHabit.philosophy
+            });
+            
+            _requestFutureScheduleChange(existingHabit.id, targetDate, (s) => ({
+                ...s,
+                name: formData.name,
+                nameKey: formData.nameKey,
+                subtitleKey: formData.subtitleKey,
+                times: newTimes,
+                frequency: formData.frequency,
+            }));
+        } else {
+            // LÓGICA DE CRIAÇÃO: Cria um novo hábito.
+            state.habits.push({ 
+                id: generateUUID(), 
+                icon: formData.icon, 
+                color: formData.color, 
+                goal: formData.goal, 
+                createdOn: targetDate, 
+                philosophy: formData.philosophy,
+                scheduleHistory: [{ 
+                    startDate: targetDate, 
+                    times: formData.times, 
+                    frequency: formData.frequency, 
+                    name: formData.name, 
+                    nameKey: formData.nameKey, 
+                    subtitleKey: formData.subtitleKey, 
+                    scheduleAnchor: targetDate 
+                }]
+            });
+            _notifyChanges(true);
+        }
     } else {
+        // LÓGICA DE EDIÇÃO: Sobrescreve o horário do hábito existente.
         const h = state.habits.find(x => x.id === habitId);
         if (!h) return;
+        
         Object.assign(h, { icon: formData.icon, color: formData.color, goal: formData.goal });
         if (formData.philosophy) h.philosophy = formData.philosophy;
+        
         ensureHabitDailyInfo(targetDate, h.id).dailySchedule = undefined;
-        const first = h.scheduleHistory[0];
-        if (targetDate < first.startDate) { Object.assign(first, { startDate: targetDate, name: formData.name, nameKey: formData.nameKey, times: formData.times, frequency: formData.frequency, scheduleAnchor: targetDate }); _notifyChanges(true); }
-        else _requestFutureScheduleChange(h.id, targetDate, (s) => ({ ...s, name: formData.name, nameKey: formData.nameKey, times: formData.times, frequency: formData.frequency }));
-    }
-    closeModal(ui.editHabitModal);
-}
+        if (targetDate < h.createdOn) h.createdOn = targetDate;
 
-export async function checkAndAnalyzeDayContext(dateISO: string) {
-    if (state.dailyDiagnoses[dateISO] || _analysisInFlight.has(dateISO)) return state.dailyDiagnoses[dateISO] ? renderStoicQuote() : _analysisInFlight.get(dateISO);
-    const task = async () => {
-        let notes = ''; const day = getHabitDailyInfoForDate(dateISO);
-        Object.keys(day).forEach(id => Object.keys(day[id].instances).forEach(t => { const n = day[id].instances[t as TimeOfDay]?.note; if (n) notes += `- ${n}\n`; }));
-        if (!notes.trim() || !navigator.onLine) return;
-        try {
-            const { prompt, systemInstruction } = await runWorkerTask<any>('build-quote-analysis-prompt', { notes, themeList: t('aiThemeList'), languageName: _getAiLang(), translations: { aiPromptQuote: t('aiPromptQuote'), aiSystemInstructionQuote: t('aiSystemInstructionQuote') } });
-            const res = await apiFetch('/api/analyze', { method: 'POST', body: JSON.stringify({ prompt, systemInstruction }) });
-            const json = JSON.parse((await res.text()).replace(/```json|```/g, '').trim());
-            if (json?.analysis) { state.dailyDiagnoses[dateISO] = { level: json.analysis.determined_level, themes: json.relevant_themes, timestamp: Date.now() }; saveState(); renderStoicQuote(); }
-        } catch (e) { console.error(e); } finally { _analysisInFlight.delete(dateISO); }
-    };
-    const p = task(); _analysisInFlight.set(dateISO, p); return p;
+        _requestFutureScheduleChange(h.id, targetDate, (s) => ({ 
+            ...s, 
+            name: formData.name, 
+            nameKey: formData.nameKey, 
+            subtitleKey: formData.subtitleKey, 
+            times: formData.times, 
+            frequency: formData.frequency 
+        }));
+    }
+
+    closeModal(ui.editHabitModal);
 }
 
 export async function performAIAnalysis(type: 'monthly' | 'quarterly' | 'historical') {
@@ -336,7 +381,6 @@ export function requestHabitEndingFromModal(habitId: string) {
 }
 
 export function requestHabitPermanentDeletion(habitId: string) { if (_lockActionHabit(habitId)) { ActionContext.deletion = { habitId }; showConfirmationModal(t('confirmPermanentDelete', { habitName: getHabitDisplayInfo(state.habits.find(x => x.id === habitId)!).name }), _applyHabitDeletion, { confirmButtonStyle: 'danger', confirmText: t('deleteButton') }); } }
-export function requestHabitEditingFromModal(habitId: string) { const h = state.habits.find(x => x.id === habitId); if (h) { closeModal(ui.manageModal); openEditModal(h); } }
 export function graduateHabit(habitId: string) { const h = state.habits.find(x => x.id === habitId); if (h) { h.graduatedOn = getSafeDate(state.selectedDate); _notifyChanges(true); closeModal(ui.manageModal); triggerHaptic('success'); } }
 export async function resetApplicationData() { state.habits = []; state.dailyData = {}; state.archives = {}; state.notificationsShown = state.pending21DayHabitIds = state.pendingConsolidationHabitIds = []; try { await clearLocalPersistence(); } finally { clearKey(); location.reload(); } }
 export function handleSaveNote() { if (!state.editingNoteFor) return; const { habitId, date, time } = state.editingNoteFor, val = ui.notesTextarea.value.trim(), inst = ensureHabitInstanceData(date, habitId, time); if ((inst.note || '') !== val) { inst.note = val || undefined; state.uiDirtyState.habitListStructure = true; saveState(); document.dispatchEvent(new CustomEvent('render-app')); } closeModal(ui.notesModal); }
