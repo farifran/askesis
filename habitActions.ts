@@ -29,7 +29,6 @@ import {
 import { 
     closeModal, showConfirmationModal, openEditModal, renderAINotificationState,
     clearHabitDomCache 
-    // REMOVED: renderStoicQuote (Breaks circular dependency)
 } from './render';
 import { ui } from './render/ui';
 import { t, getTimeOfDayName, formatDate } from './i18n'; 
@@ -42,7 +41,6 @@ const BATCH_IDS_POOL: string[] = [];
 const BATCH_HABITS_POOL: Habit[] = [];
 
 // --- CONCURRENCY CONTROL ---
-const _analysisInFlight = new Map<string, Promise<void>>();
 let _isBatchOpActive = false;
 
 const ActionContext = {
@@ -248,30 +246,7 @@ export function saveHabitFromModal() {
     closeModal(ui.editHabitModal);
 }
 
-export async function checkAndAnalyzeDayContext(dateISO: string) {
-    // FIX: If cached, just return. Do NOT trigger render here (prevents infinite loop/flicker)
-    if (state.dailyDiagnoses[dateISO] || _analysisInFlight.has(dateISO)) {
-        return _analysisInFlight.get(dateISO);
-    }
-
-    const task = async () => {
-        let notes = ''; const day = getHabitDailyInfoForDate(dateISO);
-        Object.keys(day).forEach(id => Object.keys(day[id].instances).forEach(t => { const n = day[id].instances[t as TimeOfDay]?.note; if (n) notes += `- ${n}\n`; }));
-        if (!notes.trim() || !navigator.onLine) return;
-        try {
-            const { prompt, systemInstruction } = await runWorkerTask<any>('build-quote-analysis-prompt', { notes, themeList: t('aiThemeList'), languageName: _getAiLang(), translations: { aiPromptQuote: t('aiPromptQuote'), aiSystemInstructionQuote: t('aiSystemInstructionQuote') } });
-            const res = await apiFetch('/api/analyze', { method: 'POST', body: JSON.stringify({ prompt, systemInstruction }) });
-            const json = JSON.parse((await res.text()).replace(/```json|```/g, '').trim());
-            if (json?.analysis) { 
-                state.dailyDiagnoses[dateISO] = { level: json.analysis.determined_level, themes: json.relevant_themes, timestamp: Date.now() }; 
-                saveState(); 
-                // FIX: Dispatch event instead of calling function directly to break circular dependency
-                document.dispatchEvent(new CustomEvent('quote-updated'));
-            }
-        } catch (e) { console.error(e); } finally { _analysisInFlight.delete(dateISO); }
-    };
-    const p = task(); _analysisInFlight.set(dateISO, p); return p;
-}
+// NOTE: checkAndAnalyzeDayContext moved to services/analysis.ts to prevent circular dependency
 
 export async function performAIAnalysis(type: 'monthly' | 'quarterly' | 'historical') {
     if (state.aiState === 'loading') return;

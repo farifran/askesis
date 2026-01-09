@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -15,7 +14,7 @@ import { ui } from './render/ui';
 import { t, setLanguage, formatDate } from './i18n'; 
 import { UI_ICONS } from './render/icons';
 import { STOIC_QUOTES } from '../data/quotes'; 
-import { checkAndAnalyzeDayContext } from '../habitActions';
+import { checkAndAnalyzeDayContext } from '../services/analysis';
 import { selectBestQuote } from './services/quoteEngine';
 import { calculateDaySummary } from './services/selectors';
 
@@ -214,11 +213,13 @@ function _setupQuoteAutoCollapse() {
         if ((e.target as HTMLElement).closest('.stoic-quote')) return;
         if (ui.stoicQuoteDisplay.querySelector('.quote-expanded')) { _cachedQuoteState = null; renderStoicQuote(); }
         document.removeEventListener('click', _quoteCollapseListener!, { capture: true });
-        ui.habitContainer.removeEventListener('scroll', _quoteCollapseListener!, { passive: true });
+        // Fix: Removed { passive: true } from removeEventListener as it's not a valid option for removal
+        ui.habitContainer.removeEventListener('scroll', _quoteCollapseListener!);
         _quoteCollapseListener = null;
     };
     document.addEventListener('click', _quoteCollapseListener, { capture: true });
-    ui.habitContainer.addEventListener('scroll', _quoteCollapseListener, { passive: true });
+    // Fix: Removed { passive: true } to avoid overload error, scroll is on div so performance impact is minimal
+    ui.habitContainer.addEventListener('scroll', _quoteCollapseListener);
 }
 
 export async function renderStoicQuote() {
