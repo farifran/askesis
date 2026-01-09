@@ -9,35 +9,31 @@
  * @description Orquestrador de Renderização (View Orchestrator / Facade).
  */
 
-import { state, LANGUAGES } from './state';
-import { parseUTCIsoDate, toUTCIsoDateString, addDays, pushToOneSignal, getTodayUTCIso } from './utils';
-import { ui } from './render/ui';
-import { t, setLanguage, formatDate } from './i18n'; 
-import { UI_ICONS } from './render/icons';
-import type { Quote } from './data/quotes';
-// FIX: Removed import of 'checkAndAnalyzeDayContext' to break circular dependency with habitActions.ts.
-// The analysis is now triggered via 'request-analysis' event.
-import { selectBestQuote } from './services/quoteEngine';
-import { calculateDaySummary } from './services/selectors';
+import { state, LANGUAGES } from '../state';
+import { parseUTCIsoDate, toUTCIsoDateString, addDays, pushToOneSignal, getTodayUTCIso } from '../utils';
+import { ui } from './ui';
+import { t, setLanguage, formatDate } from '../i18n'; 
+import { UI_ICONS } from './icons';
+import { STOIC_QUOTES } from '../data/quotes'; 
+import { checkAndAnalyzeDayContext } from '../services/analysis';
+import { selectBestQuote } from '../services/quoteEngine';
+import { calculateDaySummary } from '../services/selectors';
 
-import { setTextContent, updateReelRotaryARIA } from './render/dom';
-import { renderCalendar, renderFullCalendar } from './render/calendar';
-import { renderHabits } from './render/habits';
-import { renderChart } from './render/chart';
-import { setupManageModal, refreshEditModalUI, renderLanguageFilter, renderIconPicker, renderFrequencyOptions } from './render/modals';
+import { setTextContent, updateReelRotaryARIA } from './dom';
+import { renderCalendar, renderFullCalendar } from './calendar';
+import { renderHabits } from './habits';
+import { renderChart } from './chart';
+import { setupManageModal, refreshEditModalUI, renderLanguageFilter, renderIconPicker, renderFrequencyOptions } from './modals';
 
-export * from './render/dom';
-export * from './render/calendar';
-export * from './render/habits';
-export * from './render/modals';
-export * from './render/chart';
+export * from './dom';
+export * from './calendar';
+export * from './habits';
+export * from './modals';
+export * from './chart';
 
 let _lastTitleDate: string | null = null;
 let _lastTitleLang: string | null = null;
 let _cachedQuoteState: { id: string, contextKey: string } | null = null;
-
-let stoicQuotesModule: { STOIC_QUOTES: readonly Quote[] } | null = null;
-let _quotesImportPromise: Promise<typeof import('../data/quotes')> | null = null;
 
 let _cachedRefToday: string | null = null;
 let _renderTaskController: AbortController | null = null;
@@ -226,23 +222,18 @@ function _setupQuoteAutoCollapse() {
 }
 
 export async function renderStoicQuote() {
-    // PATTERN: Event-driven Analysis trigger
-    // Instead of calling the function directly (which causes circular imports), we signal the need.
-    if (!state.dailyDiagnoses[state.selectedDate]) {
-        document.dispatchEvent(new CustomEvent('request-analysis', { detail: { date: state.selectedDate } }));
-    }
+    // Analysis is now triggered asynchronously. We don't wait for it to render the quote.
+    // If analysis arrives later, the 'quote-updated' event will trigger a re-render.
+    checkAndAnalyzeDayContext(state.selectedDate);
 
     const hour = new Date().getHours(), tod = hour < 12 ? 'Morning' : (hour < 18 ? 'Afternoon' : 'Evening');
     const summ = calculateDaySummary(state.selectedDate), sig = `${summ.completed}/${summ.total}`;
     const ctxKey = `${state.selectedDate}|${state.activeLanguageCode}|${tod}|${sig}`;
 
     if (_cachedQuoteState?.contextKey === ctxKey) return;
-    if (!stoicQuotesModule) {
-        _quotesImportPromise = _quotesImportPromise || import('../data/quotes');
-        try { stoicQuotesModule = await _quotesImportPromise; } catch { _quotesImportPromise = null; return; }
-    }
 
-    const sel = selectBestQuote(stoicQuotesModule.STOIC_QUOTES, state.selectedDate);
+    // USE STATIC IMPORT ONLY - Removes complexity and potential race conditions
+    const sel = selectBestQuote(STOIC_QUOTES, state.selectedDate);
     _cachedQuoteState = { id: sel.id, contextKey: ctxKey };
 
     const diag = state.dailyDiagnoses[state.selectedDate], lvl = diag ? diag.level : 1;
@@ -262,15 +253,20 @@ export async function renderStoicQuote() {
     };
 
     container.append(span, exp);
+    
+    // Simplifed visibility toggle ensuring it runs in the next frame
     requestAnimationFrame(() => {
         if (!span.isConnected) return;
         const rects = span.getClientRects();
         let isS = rects.length === 1;
+        
+        // Geometric heuristic for multi-line detection
         if (rects.length > 1) {
             const firstTop = rects[0].top;
             const lastTop = rects[rects.length - 1].top;
             if (Math.abs(lastTop - firstTop) < 5) isS = true;
         }
+        
         container.style.justifyContent = isS ? 'flex-end' : 'flex-start';
         container.style.textAlign = isS ? 'right' : 'left';
         container.classList.add('visible');
@@ -279,10 +275,11 @@ export async function renderStoicQuote() {
 
 document.addEventListener('language-changed', () => { initLanguageFilter(); renderLanguageFilter(); updateUIText(); if (ui.syncStatus) setTextContent(ui.syncStatus, t(state.syncState)); renderApp(); });
 document.addEventListener('habitsChanged', () => { _cachedQuoteState = null; 'requestIdleCallback' in window ? requestIdleCallback(() => renderStoicQuote()) : setTimeout(renderStoicQuote, 1000); });
-// LISTENER: Re-render quote when analysis completes (Event Bus pattern)
+
+// EVENT LISTENER FOR ASYNC ANALYSIS
 document.addEventListener('quote-updated', () => { 
     _cachedQuoteState = null; 
-    'requestIdleCallback' in window ? requestIdleCallback(() => renderStoicQuote()) : setTimeout(renderStoicQuote, 100); 
+    renderStoicQuote(); 
 });
 
 export async function initI18n() {

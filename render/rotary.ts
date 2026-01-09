@@ -74,7 +74,6 @@ export function setupReelRotary({
         // GPU Composition
         if (hasTypedOM) {
             // Fast Path: Direct Compositor Communication
-            // @fix: Typed OM Typedefs
             reelEl.attributeStyleMap!.set('transform', new CSSTranslate(CSS.px(targetX), CSS.px(0)));
         } else {
             // Legacy Path: String Parsing

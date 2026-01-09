@@ -60,10 +60,9 @@
     min-height: auto;
     overflow: visible;
 
-    /* PERF: CSS Containment for List Virtualization.
-       Isolates layout/paint of each group. Browser can skip rendering off-screen groups. */
-    content-visibility: auto;
-    contain-intrinsic-size: 100px 300px;
+    /* ROLLBACK [2025-05-04]: Removido 'content-visibility: auto'.
+       A estimativa de tamanho (contain-intrinsic-size) causava saltos bruscos na barra de rolagem (Scroll Jitter)
+       quando a altura real do grupo diferia da estimada. A reciclagem de DOM no JS já garante performance. */
 }
 
 /* Collapsible state override */

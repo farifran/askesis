@@ -31,6 +31,7 @@ import { hasLocalSyncKey, initAuth } from './services/api';
 import { updateAppBadge } from './services/badge';
 import { mergeStates } from './services/dataMerge';
 import { setupMidnightLoop } from './utils';
+import { inject as injectVercelAnalytics } from '@vercel/analytics';
 
 // --- STATE MACHINE: BOOT LOCK ---
 let isInitializing = false;
@@ -136,7 +137,11 @@ function finalizeInit(loader: HTMLElement | null) {
     const runBackgroundTasks = () => {
         performArchivalCheck();
         if (process.env.NODE_ENV === 'production') {
-            import('./services/analytics').then(({ initAnalytics }) => initAnalytics()).catch(() => {});
+            try {
+                injectVercelAnalytics();
+            } catch (e) {
+                console.warn('Vercel Analytics injection failed:', e);
+            }
         }
     };
 
