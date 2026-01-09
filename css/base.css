@@ -7,6 +7,9 @@ html {
     background-color: var(--bg-color);
     /* UX: Desativa o efeito de "bounce" globalmente na raiz */
     overscroll-behavior: none;
+    
+    /* BLEEDING-EDGE [2025-06-03]: Define uma view-transition-name raiz explícita para evitar conflitos de nomes automáticos */
+    view-transition-name: root;
 }
 
 * {
@@ -139,28 +142,43 @@ body.is-interaction-active * {
     border-color: var(--color-red) !important;
 }
 
-/* --- ANIMAÇÕES DE NAVEGAÇÃO (SLIDE) --- */
-/* V7.3: Slide suave sem View Transitions API para evitar flashes */
-/* Direção: Entrando da Direita (Futuro) */
+/* --- VIEW TRANSITIONS API (BLEEDING EDGE) --- */
+/* Substitui as animações manuais por transições nativas do navegador */
+
+::view-transition-group(root) {
+    animation-duration: 0.3s;
+    animation-timing-function: cubic-bezier(0.2, 0, 0.2, 1);
+}
+
+/* SLIDE TO LEFT (Moving to Past) */
+:root[data-transition="prev"]::view-transition-old(root) {
+    animation-name: slide-out-to-right;
+}
+:root[data-transition="prev"]::view-transition-new(root) {
+    animation-name: slide-in-from-left;
+    mix-blend-mode: normal;
+}
+
+/* SLIDE TO RIGHT (Moving to Future) */
+:root[data-transition="next"]::view-transition-old(root) {
+    animation-name: slide-out-to-left;
+}
+:root[data-transition="next"]::view-transition-new(root) {
+    animation-name: slide-in-from-right;
+    mix-blend-mode: normal;
+}
+
+@keyframes slide-out-to-left {
+    to { transform: translateX(-30px); opacity: 0; }
+}
 @keyframes slide-in-from-right {
-    0% { opacity: 0; transform: translateX(30px); }
-    100% { opacity: 1; transform: translateX(0); }
+    from { transform: translateX(30px); opacity: 0; }
 }
-
-/* Direção: Entrando da Esquerda (Passado) */
+@keyframes slide-out-to-right {
+    to { transform: translateX(30px); opacity: 0; }
+}
 @keyframes slide-in-from-left {
-    0% { opacity: 0; transform: translateX(-30px); }
-    100% { opacity: 1; transform: translateX(0); }
-}
-
-/* Classes utilitárias aplicadas via JS */
-.anim-slide-left {
-    /* 0.35s = Velocidade padrão nativa (suave mas perceptível) */
-    animation: slide-in-from-left 0.35s cubic-bezier(0.2, 0.0, 0.2, 1) forwards;
-}
-
-.anim-slide-right {
-    animation: slide-in-from-right 0.35s cubic-bezier(0.2, 0.0, 0.2, 1) forwards;
+    from { transform: translateX(-30px); opacity: 0; }
 }
 
 /* A11Y & PERFORMANCE: Respeita a preferência do usuário por movimento reduzido. */
@@ -171,5 +189,10 @@ body.is-interaction-active * {
         animation-iteration-count: 1 !important;
         transition-duration: 0.01ms !important;
         scroll-behavior: auto !important;
+    }
+    ::view-transition-group(*),
+    ::view-transition-old(*),
+    ::view-transition-new(*) {
+        animation-duration: 0s !important;
     }
 }
