@@ -6,8 +6,6 @@
 
 import { kv } from '@vercel/kv';
 
-export const config = { runtime: 'edge' };
-
 const MAX_PAYLOAD_SIZE = 1024 * 1024; // 1MB
 
 /**
