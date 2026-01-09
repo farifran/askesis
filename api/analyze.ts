@@ -6,7 +6,9 @@
 
 import { GoogleGenAI } from '@google/genai';
 
-export const config = { runtime: 'edge' };
+export const config = {
+  runtime: 'edge',
+};
 
 const MAX_PROMPT_SIZE = 150 * 1024; // 150KB
 
