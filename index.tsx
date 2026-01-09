@@ -1,156 +1,101 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// [ANALYSIS PROGRESS]: 100% - Análise concluída.
-// [NOTA COMPARATIVA]: Este arquivo atua como o orquestrador de inicialização (Bootstrapper). Comparado aos módulos de lógica pesada ('state.ts', 'render.ts'), o 'index.tsx' é conciso e focado exclusivamente no ciclo de vida inicial: carregamento de dependências, resolução de conflitos de estado (Local vs Nuvem) e injeção no DOM. O nível de engenharia é alto, implementando um padrão de "Race-to-Idle" para inicialização perceptivelmente instantânea.
-
+// ANÁLISE DO ARQUIVO: 100% concluído. O ponto de entrada da aplicação e a sequência de inicialização são robustos e otimizados. Nenhuma outra análise é necessária.
 import { inject } from '@vercel/analytics';
 import './index.css';
-import { loadState, saveState, state, persistStateLocally, STATE_STORAGE_KEY, AppState, registerSyncHandler } from './state';
-import { initUI } from './ui';
-import { renderApp } from './render';
+import { loadState, saveState, state } from './state';
+import { ui, initUI } from './ui';
+import { renderApp, renderLanguageFilter } from './render';
 import { setupEventListeners } from './listeners';
 import { initI18n } from './i18n';
 import { createDefaultHabit } from './habitActions';
 import { initSync } from './sync';
-import { fetchStateFromCloud, setupNotificationListeners, syncStateWithCloud } from './cloud';
-import { hasLocalSyncKey, initAuth } from './api';
+import { fetchStateFromCloud, hasSyncKey, setupNotificationListeners } from './cloud';
 import { updateAppBadge } from './badge';
 
 // --- SERVICE WORKER REGISTRATION ---
 const registerServiceWorker = () => {
-    if ('serviceWorker' in navigator && window.location.protocol.startsWith('http')) {
-        const doRegister = async () => {
-            try {
-                // Caminho relativo ./sw.js para maior compatibilidade
-                const registration = await navigator.serviceWorker.register('./sw.js', { scope: './' });
-                console.log('ServiceWorker registration successful with scope: ', registration.scope);
-            } catch (err) {
-                console.error('ServiceWorker registration failed: ', err);
-            }
-        };
-
-        if (document.readyState === 'complete') {
-            doRegister();
-        } else {
-            window.addEventListener('load', doRegister);
-        }
-    } else if (window.location.protocol === 'file:') {
-        console.warn('Service Worker não suportado no protocolo file://. Por favor, use um servidor local (npm run dev).');
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('/sw.js')
+                .then(registration => {
+                    console.log('ServiceWorker registration successful with scope: ', registration.scope);
+                })
+                .catch(err => {
+                    console.log('ServiceWorker registration failed: ', err);
+                });
+        });
     }
 };
 
 
-// --- PRIVATE HELPERS (INIT ORCHESTRATION) ---
-
-async function setupBase() {
-    initUI(); // Mapeia os elementos do DOM
-    initAuth(); // Inicializa a autenticação (lê a chave de sincronização) antes de carregar o estado
-    await initI18n(); // Carrega as traduções
-}
-
-async function loadInitialState() {
-    // 1. Snapshot do estado local antes de qualquer operação de rede
-    // Isso é crucial para garantir que edições offline não sejam sobrescritas.
-    const localStr = localStorage.getItem(STATE_STORAGE_KEY);
-    let localState: AppState | null = null;
-    if (localStr) {
-        try {
-            localState = JSON.parse(localStr);
-        } catch (e) {
-            console.error("Startup: Failed to parse local state", e);
-        }
-    }
-
-    let stateToLoad: AppState | null = localState; // Padrão: Confia no local
-
-    if (hasLocalSyncKey()) {
-        try {
-            const cloudState = await fetchStateFromCloud();
-            
-            if (cloudState) {
-                // LÓGICA DEFENSIVA: Comparação Estrita de Timestamps
-                // Se o local for mais novo (ex: editado offline), ele deve vencer.
-                if (localState && localState.lastModified > cloudState.lastModified) {
-                    console.log(`Startup: Local state (${localState.lastModified}) is newer than cloud (${cloudState.lastModified}). Pushing local changes.`);
-                    
-                    // CRÍTICO: Atualiza o timestamp para "agora".
-                    // Isso garante que este estado seja considerado a "nova verdade" pelo servidor
-                    // e previne conflitos de hash se o conteúdo divergir sutilmente.
-                    localState.lastModified = Date.now();
-                    
-                    // Persiste o novo timestamp localmente imediatamente
-                    persistStateLocally(localState);
-                    stateToLoad = localState;
-                    
-                    // Força o envio imediato para a nuvem para sincronizar os outros dispositivos
-                    syncStateWithCloud(localState, true);
-                } else {
-                    console.log("Startup: Cloud state is newer or equal. Syncing local with cloud.");
-                    // Nuvem vence (ou é igual). Persiste localmente para manter a consistência.
-                    // ATENÇÃO: persistStateLocally não altera lastModified, apenas salva o blob.
-                    persistStateLocally(cloudState);
-                    stateToLoad = cloudState;
-                }
-            } else {
-                // Chave existe, mas sem dados na nuvem (ou fetch retornou undefined/vazio).
-                // Mantém o local. A lógica interna do fetchStateFromCloud já pode ter tentado iniciar o push,
-                // mas garantimos que o loadState use o que temos em mãos.
-                console.log("Startup: No cloud data found, using local.");
-            }
-        } catch (e) {
-            console.error("Startup: Failed to fetch from cloud, falling back to local state.", e);
-            // Em caso de erro de rede, stateToLoad continua sendo localState (o padrão definido acima)
-        }
-    }
+// --- INITIALIZATION ---
+const init = async () => {
+    // [ETAPA 0 - SETUP IMEDIATO]: Funções que não dependem de estado ou traduções.
+    inject(); // Habilita o Vercel Analytics.
+    initUI(); // Preenche as referências de elementos da UI agora que o DOM está pronto.
+    registerServiceWorker(); // Inicia o registro do Service Worker em segundo plano.
     
-    // Carrega o estado vencedor na memória da aplicação
-    loadState(stateToLoad);
-}
+    // [ETAPA 1 - TRADUÇÕES E UI INICIAL]: Essencial para que todo o texto subsequente seja traduzido.
+    // A inicialização do i18n primeiro garante que o texto esteja disponível
+    // e também lida com a renderização inicial da UI.
+    await initI18n(); 
 
-function handleFirstTimeUser() {
+    // [ETAPA 2 - CONFIGURAÇÕES DEPENDENTES DE I18N]: Funções que podem precisar de texto traduzido para prompts.
+    setupNotificationListeners();
+
+    // [ETAPA 3 - LÓGICA DE DADOS (PRÉ-CARREGAMENTO)]: Configura a UI de sincronização antes de carregar os dados.
+    await initSync();
+
+    // [ETAPA 4 - CARREGAMENTO DO ESTADO]: Carrega os dados do estado, priorizando a nuvem se a sincronização estiver ativa.
+    let cloudState;
+    if (hasSyncKey()) {
+        try {
+            cloudState = await fetchStateFromCloud();
+        } catch (error) {
+            console.error("Initial sync failed on app load:", error);
+            // O status de erro já é definido em fetchStateFromCloud.
+            // A aplicação continuará com o estado local.
+        }
+    }
+    loadState(cloudState);
+    
+    // [ETAPA 5 - ESTADO PADRÃO]: Garante que a aplicação tenha conteúdo na primeira execução.
     if (state.habits.length === 0) {
         createDefaultHabit();
+        // BUGFIX [2024-10-25]: Garante que o hábito padrão seja persistido imediatamente
+        // no primeiro carregamento. Isso previne que o estado seja perdido se o usuário
+        // fechar a aplicação antes de realizar qualquer outra ação que acione o salvamento.
         saveState();
     }
-}
-
-function setupAppListeners() {
-    // WIRE UP SYNC: Connect state changes to cloud sync
-    registerSyncHandler(syncStateWithCloud);
     
-    setupEventListeners();
-    setupNotificationListeners();
-    initSync();
-}
-
-function finalizeInit(loader: HTMLElement | null) {
+    // [ETAPA 6 - RENDERIZAÇÃO PRINCIPAL]: Renderiza a aplicação completa com o estado final carregado.
+    renderApp();
+    
+    // OTIMIZAÇÃO DE UX [2024-11-10]: Oculta suavemente o indicador de carregamento inicial.
+    const loader = document.getElementById('initial-loader');
     if (loader) {
         loader.classList.add('hidden');
-        loader.addEventListener('transitionend', () => loader.remove());
+        // Remove o elemento do DOM após a transição para manter a estrutura limpa.
+        loader.addEventListener('transitionend', () => loader.remove(), { once: true });
     }
-    inject(); // Vercel Analytics
-}
 
-// --- MAIN INITIALIZATION ---
-async function init(loader: HTMLElement | null) {
-    await setupBase();
-    await loadInitialState();
-    handleFirstTimeUser();
-    renderApp();
-    setupAppListeners();
-    updateAppBadge(); // Define o emblema inicial
-    finalizeInit(loader);
-}
+    // [ETAPA 7 - AJUSTES DE UI PÓS-RENDERIZAÇÃO]: Ações que dependem do layout final do DOM.
+    // Usamos requestAnimationFrame para garantir que o navegador tenha concluído o layout
+    // e a pintura antes de tentarmos rolar. Isso é mais confiável do que um setTimeout(0).
+    requestAnimationFrame(() => {
+        const todayEl = ui.calendarStrip.querySelector<HTMLElement>('.today');
+        // A API scrollIntoView é uma maneira moderna e declarativa de posicionar elementos.
+        // 'inline: end' rola a faixa de calendário para que o dia de hoje fique alinhado no final da visualização.
+        // UX POLISH [2024-10-21]: Adicionada a opção 'behavior: smooth' para criar uma animação de rolagem suave no carregamento, melhorando a experiência inicial do usuário.
+        todayEl?.scrollIntoView({ inline: 'end', behavior: 'smooth' });
+    });
+    
+    // [ETAPA 8 - LISTENERS E FINALIZAÇÃO]: Anexa todos os manipuladores de eventos e atualizações finais.
+    setupEventListeners();
+    updateAppBadge(); // Define o emblema inicial do ícone do aplicativo
+};
 
-registerServiceWorker();
-
-const initialLoader = document.getElementById('initial-loader');
-init(initialLoader).catch(err => {
-    console.error("Failed to initialize application:", err);
-    if(initialLoader) {
-        initialLoader.innerHTML = '<h2>Falha ao carregar a aplicação. Por favor, tente novamente.</h2>'
-    }
-});
+document.addEventListener('DOMContentLoaded', init);

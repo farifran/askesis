@@ -1,21 +1,16 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// [ANALYSIS PROGRESS]: 100% - Análise concluída. O módulo de internacionalização gerencia corretamente o carregamento dinâmico de JSONs, cache de PluralRules e atualização imperativa do DOM. Imports não utilizados removidos.
-
-import { state, Habit, LANGUAGES, PredefinedHabit, TimeOfDay, getScheduleForDate, invalidateChartCache } from './state';
+// ANÁLISE DO ARQUIVO: 100% concluído. A implementação de internacionalização é completa e correta. Nenhuma outra análise é necessária.
+import { state, Habit, LANGUAGES, PredefinedHabit, TimeOfDay, getScheduleForDate } from './state';
 import { ui } from './ui';
-import { renderApp, setupManageModal, initLanguageFilter } from './render';
-import { pushToOneSignal, getDateTimeFormat } from './utils';
+import { renderApp, updateHeaderTitle, setupManageModal, initLanguageFilter } from './render';
+import { pushToOneSignal } from './utils';
 
 type PluralableTranslation = { one: string; other: string };
 type TranslationValue = string | PluralableTranslation;
 type Translations = Record<string, TranslationValue>;
-
-// Cache para instâncias de PluralRules para evitar recriação custosa a cada tradução
-const pluralRulesCache: Record<string, Intl.PluralRules> = {};
 
 export function getTimeOfDayName(time: TimeOfDay): string {
     return t(`filter${time}`);
@@ -36,15 +31,8 @@ async function loadLanguage(langCode: 'pt' | 'en' | 'es'): Promise<void> {
         loadedTranslations[langCode] = translations;
     } catch (error) {
         console.error(`Could not load translations for ${langCode}:`, error);
-        // MELHORIA DE ROBUSTEZ: Se o idioma solicitado falhar, tenta carregar o idioma
-        // de fallback (pt), mas apenas se ainda não tiver sido carregado. Adiciona
-        // tratamento de erro para o próprio fallback, prevenindo uma exceção não capturada.
-        if (langCode !== 'pt' && !loadedTranslations['pt']) {
-            try {
-                await loadLanguage('pt');
-            } catch (fallbackError) {
-                console.error(`CRITICAL: Could not load fallback language 'pt'. UI text will not be available.`, fallbackError);
-            }
+        if (langCode !== 'pt') {
+            await loadLanguage('pt');
         }
     }
 }
@@ -52,53 +40,26 @@ async function loadLanguage(langCode: 'pt' | 'en' | 'es'): Promise<void> {
 export function t(key: string, options?: { [key: string]: string | number | undefined }): string {
     const lang = state.activeLanguageCode || 'pt';
     const dict = loadedTranslations[lang] || loadedTranslations['pt'];
-
+    
     if (!dict) {
         return key;
     }
 
-    const translationValue = dict[key];
+    let translation = dict[key] || key;
 
-    if (translationValue === undefined) {
-        return key;
+    if (typeof translation === 'object' && options?.count !== undefined) {
+        const pluralKey = new Intl.PluralRules(lang).select(options.count as number);
+        translation = (translation as PluralableTranslation)[pluralKey as keyof PluralableTranslation] || (translation as PluralableTranslation).other;
     }
 
-    let translationString: string;
-
-    if (typeof translationValue === 'object') {
-        if (options?.count !== undefined) {
-            // PERFORMANCE [2025-01-16]: Uso de cache para Intl.PluralRules.
-            let pluralRules = pluralRulesCache[lang];
-            if (!pluralRules) {
-                pluralRules = new Intl.PluralRules(lang);
-                pluralRulesCache[lang] = pluralRules;
-            }
-            
-            const pluralKey = pluralRules.select(options.count as number);
-            translationString = (translationValue as PluralableTranslation)[pluralKey as keyof PluralableTranslation] || (translationValue as PluralableTranslation).other;
-        } else {
-            // CORREÇÃO DE BUG: Retorna a chave se uma tradução pluralizável for usada sem 'count',
-            // em vez de retornar "[object Object]".
-            return key;
-        }
-    } else {
-        translationString = translationValue;
-    }
-
-    if (options) {
+    if (typeof translation === 'string' && options) {
         return Object.entries(options).reduce((acc, [optKey, optValue]) => {
-            // MELHORIA DE ROBUSTEZ: Ignora a substituição se o valor for indefinido para evitar
-            // a inserção da string "undefined" na UI.
-            if (optValue !== undefined) {
-                return acc.split(`{${optKey}}`).join(String(optValue));
-            }
-            return acc;
-        }, translationString);
+            return acc.replace(new RegExp(`{${optKey}}`, 'g'), String(optValue));
+        }, translation);
     }
 
-    return translationString;
+    return String(translation);
 }
-
 
 /**
  * CORREÇÃO DE DADOS HISTÓRICOS [2024-09-20]: A função agora aceita um `dateISO` opcional.
@@ -135,8 +96,7 @@ export function getHabitDisplayInfo(habit: Habit | PredefinedHabit, dateISO?: st
 }
 
 export function getLocaleDayName(date: Date): string {
-    // PERFORMANCE [2025-01-16]: Uso de cache para Intl.DateTimeFormat para evitar recriação em loops de calendário.
-    return getDateTimeFormat(state.activeLanguageCode, { weekday: 'short', timeZone: 'UTC' }).format(date).toUpperCase();
+    return date.toLocaleDateString(state.activeLanguageCode, { weekday: 'short', timeZone: 'UTC' }).toUpperCase();
 }
 
 function updateUIText() {
@@ -157,48 +117,25 @@ function updateUIText() {
 
     ui.manageModalTitle.textContent = t('modalManageTitle');
     ui.habitListTitle.textContent = t('modalManageHabitsSubtitle');
-    
-    // Elementos que não estão no objeto 'ui' precisam ser buscados
-    const labelLanguage = document.getElementById('label-language');
-    if (labelLanguage) labelLanguage.textContent = t('modalManageLanguage');
-
+    document.getElementById('label-language')!.textContent = t('modalManageLanguage');
     ui.languagePrevBtn.setAttribute('aria-label', t('languagePrev_ariaLabel'));
     ui.languageNextBtn.setAttribute('aria-label', t('languageNext_ariaLabel'));
-    
-    const labelSync = document.getElementById('label-sync');
-    if (labelSync) labelSync.textContent = t('syncLabel');
-
-    const labelNotifications = document.getElementById('label-notifications');
-    if (labelNotifications) labelNotifications.textContent = t('modalManageNotifications');
-
+    document.getElementById('label-sync')!.textContent = t('syncLabel');
+    document.getElementById('label-notifications')!.textContent = t('modalManageNotifications');
     ui.notificationStatusDesc.textContent = t('modalManageNotificationsStaticDesc');
-    
-    const labelReset = document.getElementById('label-reset');
-    if (labelReset) labelReset.textContent = t('modalManageReset');
-
+    document.getElementById('label-reset')!.textContent = t('modalManageReset');
     ui.resetAppBtn.textContent = t('modalManageResetButton');
     ui.manageModal.querySelector('.modal-close-btn')!.textContent = t('closeButton');
     
-    const syncInactiveDesc = document.getElementById('sync-inactive-desc');
-    if (syncInactiveDesc) syncInactiveDesc.textContent = t('syncInactiveDesc');
-
+    document.getElementById('sync-inactive-desc')!.textContent = t('syncInactiveDesc');
     ui.enableSyncBtn.textContent = t('syncEnable');
     ui.enterKeyViewBtn.textContent = t('syncEnterKey');
-    
-    const labelEnterKey = document.getElementById('label-enter-key');
-    if (labelEnterKey) labelEnterKey.textContent = t('syncLabelEnterKey');
-
+    document.getElementById('label-enter-key')!.textContent = t('syncLabelEnterKey');
     ui.cancelEnterKeyBtn.textContent = t('cancelButton');
     ui.submitKeyBtn.textContent = t('syncSubmitKey');
-    
-    const syncWarningText = document.getElementById('sync-warning-text');
-    if (syncWarningText) syncWarningText.innerHTML = t('syncWarning');
-
+    document.getElementById('sync-warning-text')!.innerHTML = t('syncWarning');
     ui.keySavedBtn.textContent = t('syncKeySaved');
-    
-    const syncActiveDesc = document.getElementById('sync-active-desc');
-    if (syncActiveDesc) syncActiveDesc.textContent = t('syncActiveDesc');
-
+    document.getElementById('sync-active-desc')!.textContent = t('syncActiveDesc');
     ui.viewKeyBtn.textContent = t('syncViewKey');
     ui.disableSyncBtn.textContent = t('syncDisable');
     
@@ -206,24 +143,12 @@ function updateUIText() {
     ui.aiModal.querySelector('.modal-close-btn')!.textContent = t('closeButton');
     
     ui.aiOptionsModal.querySelector('h2')!.textContent = t('modalAIOptionsTitle');
-    
-    const monthlyBtn = ui.aiOptionsModal.querySelector<HTMLElement>('[data-analysis-type="monthly"]');
-    if (monthlyBtn) {
-        monthlyBtn.querySelector('.ai-option-title')!.textContent = t('aiOptionMonthlyTitle');
-        monthlyBtn.querySelector('.ai-option-desc')!.textContent = t('aiOptionMonthlyDesc');
-    }
-
-    const quarterlyBtn = ui.aiOptionsModal.querySelector<HTMLElement>('[data-analysis-type="quarterly"]');
-    if (quarterlyBtn) {
-        quarterlyBtn.querySelector('.ai-option-title')!.textContent = t('aiOptionQuarterlyTitle');
-        quarterlyBtn.querySelector('.ai-option-desc')!.textContent = t('aiOptionQuarterlyDesc');
-    }
-
-    const historicalBtn = ui.aiOptionsModal.querySelector<HTMLElement>('[data-analysis-type="historical"]');
-    if (historicalBtn) {
-        historicalBtn.querySelector('.ai-option-title')!.textContent = t('aiOptionHistoricalTitle');
-        historicalBtn.querySelector('.ai-option-desc')!.textContent = t('aiOptionHistoricalDesc');
-    }
+    ui.aiOptionsModal.querySelector<HTMLSpanElement>('[data-analysis-type="weekly"] .ai-option-title')!.textContent = t('aiOptionWeeklyTitle');
+    ui.aiOptionsModal.querySelector<HTMLSpanElement>('[data-analysis-type="weekly"] .ai-option-desc')!.textContent = t('aiOptionWeeklyDesc');
+    ui.aiOptionsModal.querySelector<HTMLSpanElement>('[data-analysis-type="monthly"] .ai-option-title')!.textContent = t('aiOptionMonthlyTitle');
+    ui.aiOptionsModal.querySelector<HTMLSpanElement>('[data-analysis-type="monthly"] .ai-option-desc')!.textContent = t('aiOptionMonthlyDesc');
+    ui.aiOptionsModal.querySelector<HTMLSpanElement>('[data-analysis-type="general"] .ai-option-title')!.textContent = t('aiOptionGeneralTitle');
+    ui.aiOptionsModal.querySelector<HTMLSpanElement>('[data-analysis-type="general"] .ai-option-desc')!.textContent = t('aiOptionGeneralDesc');
 
     ui.confirmModal.querySelector('h2')!.textContent = t('modalConfirmTitle');
     ui.confirmModal.querySelector('.modal-close-btn')!.textContent = t('cancelButton');
@@ -234,14 +159,10 @@ function updateUIText() {
     ui.saveNoteBtn.textContent = t('modalNotesSaveButton');
     ui.notesTextarea.placeholder = t('modalNotesTextareaPlaceholder');
 
-    const iconPickerTitle = document.getElementById('icon-picker-modal-title');
-    if (iconPickerTitle) iconPickerTitle.textContent = t('modalIconPickerTitle');
-    
+    (document.getElementById('icon-picker-modal-title') as HTMLElement).textContent = t('modalIconPickerTitle');
     ui.iconPickerModal.querySelector('.modal-close-btn')!.textContent = t('cancelButton');
 
-    const colorPickerTitle = document.getElementById('color-picker-modal-title');
-    if (colorPickerTitle) colorPickerTitle.textContent = t('modalColorPickerTitle');
-    
+    (document.getElementById('color-picker-modal-title') as HTMLElement).textContent = t('modalColorPickerTitle');
     ui.colorPickerModal.querySelector('.modal-close-btn')!.textContent = t('cancelButton');
 
     const editModalActions = ui.editHabitModal.querySelector('.modal-actions');
@@ -250,9 +171,7 @@ function updateUIText() {
         editModalActions.querySelector('#edit-habit-save-btn')!.textContent = t('modalEditSaveButton');
     }
     
-    if (ui.undoToast.firstElementChild) {
-        ui.undoToast.firstElementChild.textContent = t('undoToastText');
-    }
+    ui.undoToast.firstElementChild!.textContent = t('undoToastText');
     ui.undoBtn.textContent = t('undoButton');
 }
 
@@ -270,14 +189,6 @@ export async function setLanguage(langCode: 'pt' | 'en' | 'es') {
     });
     
     initLanguageFilter();
-
-    // CRITICAL FIX [2025-02-05]: Invalidação de cache de UI (Dirty Checking).
-    // Ao trocar o idioma, a lógica de renderApp() normalmente pularia a renderização
-    // porque os dados em si não mudaram. Aqui forçamos as flags de 'dirty' para true,
-    // obrigando o redesenho imediato do calendário, lista de hábitos e gráficos com o novo idioma.
-    state.uiDirtyState.calendarVisuals = true;
-    state.uiDirtyState.habitListStructure = true;
-    invalidateChartCache();
 
     updateUIText();
     // Garante que o status de sincronização dinâmico seja re-traduzido a partir do estado.
