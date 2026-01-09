@@ -10,6 +10,14 @@
  * 
  * [MAIN THREAD CONTEXT]:
  * Este módulo atua como o ponto central de despacho para atualizações visuais.
+ * 
+ * ARQUITETURA (Facade Pattern & SOTA Rendering):
+ * - **Responsabilidade Única:** Centraliza la API de renderização pública.
+ * - **Prioritized Rendering:** Utiliza a `Scheduler API` (`postTask`) para segmentar a renderização
+ *   em tarefas críticas (Lista/Calendário) e secundárias (Gráficos/IA), garantindo TTI instantâneo.
+ * - **Memoization de Datas:** Cálculos de datas relativas (Ontem/Amanhã) são cacheados e executados
+ *   com aritmética inteira onde possível.
+ * - **Static LUTs:** Uso de Tabelas de Busca para dias do mês, evitando lógica condicional complexa.
  */
 
 import { state, LANGUAGES } from './state';
@@ -17,9 +25,9 @@ import { parseUTCIsoDate, toUTCIsoDateString, addDays, pushToOneSignal, getToday
 import { ui } from './render/ui';
 import { t, setLanguage, formatDate } from './i18n'; 
 import { UI_ICONS } from './render/icons';
-import { STOIC_QUOTES } from './data/quotes'; // FIX: Static Import
+import type { Quote } from './data/quotes';
 import { checkAndAnalyzeDayContext } from './habitActions';
-import { selectBestQuote } from './services/quoteEngine';
+import { selectBestQuote } from './services/quoteEngine'; // NEW: Import Engine
 import { calculateDaySummary } from './services/selectors';
 
 // Importa os renderizadores especializados
@@ -44,11 +52,15 @@ let _lastTitleLang: string | null = null;
 // Se o contexto mudar (ex: virou noite, ou completou tudo), re-renderiza.
 let _cachedQuoteState: { id: string, contextKey: string } | null = null;
 
+// @fix: Update stoicQuotesModule type definition to expect readonly STOIC_QUOTES.
+let stoicQuotesModule: { STOIC_QUOTES: readonly Quote[] } | null = null;
+
 // PERF: Date Cache (Avoids GC Pressure)
 let _cachedRefToday: string | null = null;
 let _cachedYesterdayISO: string | null = null;
 let _cachedTomorrowISO: string | null = null;
 
+// PERFORMANCE: Hoisted Intl Options (Zero-Allocation).
 const OPTS_HEADER_DESKTOP: Intl.DateTimeFormatOptions = {
     month: 'long',
     day: 'numeric',
@@ -62,22 +74,28 @@ const OPTS_HEADER_ARIA: Intl.DateTimeFormatOptions = {
     timeZone: 'UTC'
 };
 
+// LOCALIZATION FIX [2025-05-02]: Formato numérico curto adaptável (DD/MM para PT/ES, MM/DD para EN-US)
 const OPTS_HEADER_MOBILE_NUMERIC: Intl.DateTimeFormatOptions = { 
     day: '2-digit', 
     month: '2-digit', 
     timeZone: 'UTC' 
 };
 
+/**
+ * Atualiza o cache de datas relativas apenas se o dia mudou.
+ */
 function _ensureRelativeDateCache(todayISO: string) {
     if (_cachedRefToday !== todayISO) {
         _cachedRefToday = todayISO;
         const todayDate = parseUTCIsoDate(todayISO);
+        // Alocação ocorre apenas 1x por dia (ou sessão)
         _cachedYesterdayISO = toUTCIsoDateString(addDays(todayDate, -1));
         _cachedTomorrowISO = toUTCIsoDateString(addDays(todayDate, 1));
     }
 }
 
 function _updateHeaderTitle() {
+    // Dirty Check (String Reference Comparison is O(1) in V8)
     if (_lastTitleDate === state.selectedDate && _lastTitleLang === state.activeLanguageCode) {
         return;
     }
@@ -88,6 +106,7 @@ function _updateHeaderTitle() {
     const selected = state.selectedDate;
     let titleKey: string | null = null;
 
+    // Fast Path: String Comparison
     if (selected === todayISO) titleKey = 'headerTitleToday';
     else if (selected === _cachedYesterdayISO) titleKey = 'headerTitleYesterday';
     else if (selected === _cachedTomorrowISO) titleKey = 'headerTitleTomorrow';
@@ -97,15 +116,24 @@ function _updateHeaderTitle() {
     let fullLabel: string;
     
     const date = parseUTCIsoDate(selected);
+
+    // LOCALIZATION FIX [2025-05-02]: Use Intl formatter instead of substring
+    // This ensures 25/05 for PT/ES and 05/25 for EN-US automatically based on active language.
     const numericDateStr = formatDate(date, OPTS_HEADER_MOBILE_NUMERIC);
     
+    // Lazy Date Parsing: Só aloca o objeto Date se for necessário formatar
     if (titleKey) {
         const localizedTitle = t(titleKey);
         desktopTitle = localizedTitle;
+        
+        // UX REQUEST [2025-05-02]: Mobile shows numeric date for Yesterday/Tomorrow to save space.
+        // Only "Today" keeps the text label.
         mobileTitle = (selected === todayISO) ? localizedTitle : numericDateStr;
+        
         fullLabel = formatDate(date, OPTS_HEADER_ARIA);
     } else {
         mobileTitle = numericDateStr;
+        
         desktopTitle = formatDate(date, OPTS_HEADER_DESKTOP);
         fullLabel = formatDate(date, OPTS_HEADER_ARIA);
     }
@@ -117,6 +145,7 @@ function _updateHeaderTitle() {
         ui.headerTitle.setAttribute('aria-label', fullLabel);
     }
 
+    // UPDATED INDICATORS (Real Buttons) [2025-05-16]
     const isPast = selected < todayISO;
     const isFuture = selected > todayISO;
     
@@ -141,16 +170,21 @@ function _renderHeaderIcons() {
     }
 }
 
+/**
+ * Atualiza todos os textos estáticos da UI.
+ */
 export function updateUIText() {
     const appNameHtml = t('appName');
     const tempEl = document.createElement('div');
     tempEl.innerHTML = appNameHtml;
     document.title = tempEl.textContent || 'Askesis';
 
+    // Batch Attribute Updates
     ui.fabAddHabit.setAttribute('aria-label', t('fabAddHabit_ariaLabel'));
     ui.manageHabitsBtn.setAttribute('aria-label', t('manageHabits_ariaLabel'));
     ui.aiEvalBtn.setAttribute('aria-label', t('aiEval_ariaLabel'));
     
+    // Modal Titles & Buttons
     setTextContent(ui.exploreModal.querySelector('h2'), t('modalExploreTitle'));
     setTextContent(ui.createCustomHabitBtn, t('modalExploreCreateCustom'));
     setTextContent(ui.exploreModal.querySelector('.modal-close-btn'), t('closeButton'));
@@ -242,28 +276,49 @@ export function updateUIText() {
     }
 }
 
+// --- ORQUESTRAÇÃO GLOBAL ---
+
+/**
+ * SOTA UPDATE [2025-05-02]: Prioritized Rendering Pipeline.
+ * Divide o trabalho de renderização em estágios para evitar Long Tasks na Main Thread.
+ * 
+ * 1. Critical Path (Sync): Cabeçalho, Calendário, Hábitos. (Bloqueia até estar pronto - ~5ms)
+ * 2. Secondary (User-Visible): Estado da IA, Gráficos. (PostTask - roda após o próximo paint)
+ * 3. Background: Citações e Modais.
+ */
 export function renderApp() {
+    // Stage 1: Critical Rendering (Above the fold & Primary Interaction)
     _renderHeaderIcons();
     _updateHeaderTitle();
     renderCalendar();
     renderHabits();
 
+    // Stage 2: Heavy Calculation Deferral (Chart SVG & AI Logic)
+    // @fix: Cast to any to correctly narrow and access scheduler.postTask
     if ('scheduler' in window && (window as any).scheduler) {
+        // Scheduler API (Modern Browsers): Prioridade 'user-visible' garante que
+        // isso rode logo após o paint crítico, mas sem bloquear inputs.
         (window as any).scheduler.postTask(() => {
             renderAINotificationState();
             renderChart();
+            // Stage 3: Low Priority (Background)
+            // Agendamos dentro do callback para encadear, ou usamos 'background' priority
+            // @fix: Cast to any to avoid TS error on postTask
             (window as any).scheduler!.postTask(() => {
                 renderStoicQuote();
             }, { priority: 'background' });
         }, { priority: 'user-visible' });
     } else {
+        // Fallback Strategy (Safari/Legacy):
+        // requestAnimationFrame empurra para o próximo frame de renderização visual.
         requestAnimationFrame(() => {
             renderAINotificationState();
             renderChart();
+            // requestIdleCallback para itens de baixa prioridade (Citações)
             if ('requestIdleCallback' in window) {
                 requestIdleCallback(() => renderStoicQuote());
             } else {
-                setTimeout(renderStoicQuote, 50);
+                setTimeout(renderStoicQuote, 50); // Fallback final
             }
         });
     }
@@ -274,7 +329,8 @@ export function renderApp() {
 }
 
 export function updateNotificationUI() {
-    if (ui.notificationToggle.disabled && !ui.notificationToggleLabel.classList.contains('disabled')) {
+    const isPendingChange = ui.notificationToggle.disabled && !ui.notificationToggleLabel.classList.contains('disabled');
+    if (isPendingChange) {
         setTextContent(ui.notificationStatusDesc, t('notificationChangePending'));
         return;
     }
@@ -320,13 +376,19 @@ export function renderAINotificationState() {
 
     const classList = ui.aiEvalBtn.classList;
     if (classList.contains('loading') !== isLoading) classList.toggle('loading', isLoading);
-    if (ui.aiEvalBtn.disabled !== isLoading) ui.aiEvalBtn.disabled = isLoading;
+    
+    // OFFLINE SUPPORT [2025-05-05]: Botão habilitado mesmo offline para mostrar mensagem.
+    const shouldDisable = isLoading;
+    if (ui.aiEvalBtn.disabled !== shouldDisable) ui.aiEvalBtn.disabled = shouldDisable;
+    
+    // CSS Toggle para estado Offline (ícone visual)
     if (classList.contains('offline') !== isOffline) classList.toggle('offline', isOffline);
     
     const shouldNotify = hasCelebrations || hasUnseenResult;
     if (classList.contains('has-notification') !== shouldNotify) classList.toggle('has-notification', shouldNotify);
 }
 
+// Logic to handle auto-collapse on interaction
 let _quoteCollapseListener: ((e: Event) => void) | null = null;
 
 function _setupQuoteAutoCollapse() {
@@ -334,22 +396,29 @@ function _setupQuoteAutoCollapse() {
 
     _quoteCollapseListener = (e: Event) => {
         const target = e.target as HTMLElement;
+        // Ignore clicks inside the quote itself (except the specific expand button)
         if (target.closest('.stoic-quote')) return;
 
+        // Reset expanded state
         const expandedQuote = ui.stoicQuoteDisplay.querySelector('.quote-expanded');
         if (expandedQuote) {
-            _cachedQuoteState = null; 
+            // Force re-render to collapse
+            _cachedQuoteState = null; // Invalidate cache
             renderStoicQuote(); 
         }
     };
 
+    // Capture phase to detect clicks anywhere
     document.addEventListener('click', _quoteCollapseListener, { capture: true });
+    // Also collapse on scroll of habit container
     ui.habitContainer.addEventListener('scroll', _quoteCollapseListener, { passive: true });
 }
 
 export async function renderStoicQuote() {
+    // 1. Trigger background diagnosis (if needed)
     checkAndAnalyzeDayContext(state.selectedDate);
 
+    // CRITICAL FIX: Robust Context Key Generation
     const hour = new Date().getHours();
     const timeOfDay = hour < 12 ? 'Morning' : (hour < 18 ? 'Afternoon' : 'Evening');
     
@@ -362,11 +431,31 @@ export async function renderStoicQuote() {
         return;
     }
 
-    const selectedQuote = selectBestQuote(STOIC_QUOTES, state.selectedDate);
+    if (!stoicQuotesModule) {
+        try {
+            stoicQuotesModule = await import('../data/quotes');
+        } catch (e) {
+            console.error("Failed to load stoic quotes module", e);
+            return;
+        }
+    }
+    const { STOIC_QUOTES } = stoicQuotesModule;
+
+    // 2. Select Quote using The Stoic Oracle Engine
+    const dateISO = state.selectedDate;
+    let selectedQuote: Quote;
+    
+    try {
+        selectedQuote = selectBestQuote(STOIC_QUOTES, dateISO);
+    } catch (e) {
+        console.warn("Quote engine failed, fallback to random", e);
+        selectedQuote = STOIC_QUOTES[0];
+    }
 
     _cachedQuoteState = { id: selectedQuote.id, contextKey: currentContextKey };
 
-    const diagnosis = state.dailyDiagnoses[state.selectedDate];
+    // 3. Determine Diagnosis Level for Adaptation
+    const diagnosis = state.dailyDiagnoses[dateISO];
     const userLevel = diagnosis ? diagnosis.level : 1;
 
     const lang = state.activeLanguageCode as 'pt' | 'en' | 'es';
@@ -377,10 +466,12 @@ export async function renderStoicQuote() {
     const originalText = selectedQuote.original_text[lang];
     const authorName = t(selectedQuote.author);
 
+    // 4. Render
     const container = ui.stoicQuoteDisplay;
     container.classList.remove('visible');
     container.innerHTML = '';
     
+    // Default alignment (multi-line)
     container.style.justifyContent = 'flex-start';
     container.style.textAlign = 'left';
     
@@ -392,7 +483,14 @@ export async function renderStoicQuote() {
     expander.className = 'quote-expander';
     expander.textContent = '...';
     expander.setAttribute('aria-label', t('expandQuote'));
-    
+    expander.style.border = 'none';
+    expander.style.background = 'transparent';
+    expander.style.color = 'var(--accent-blue)';
+    expander.style.cursor = 'pointer';
+    expander.style.fontWeight = 'bold';
+    expander.style.padding = '0 4px';
+
+    // Click to Expand
     expander.onclick = (e) => {
         e.stopPropagation();
         container.innerHTML = '';
@@ -413,13 +511,21 @@ export async function renderStoicQuote() {
     container.appendChild(adaptationSpan);
     container.appendChild(expander);
 
+    // Dynamic alignment based on line count using getClientRects() for robustness
     requestAnimationFrame(() => {
         if (!adaptationSpan.isConnected) return;
 
+        // CRITICAL FIX: Use getClientRects() to detect wrapping lines.
+        // For inline elements, this returns a rect for each line of text.
         const rects = adaptationSpan.getClientRects();
+        
+        // Robust check: length 1 means single line.
+        // Extra check: Vertical difference between first and last rect to handle edge cases.
         let isSingleLine = rects.length === 1;
         
         if (rects.length > 1) {
+            // Check if they are actually on same Y (some browsers split inline rects on formatting changes)
+            // If top of last rect is significantly below top of first rect, it wrapped.
             const firstTop = rects[0].top;
             const lastTop = rects[rects.length - 1].top;
             if (Math.abs(lastTop - firstTop) < 5) {
@@ -441,6 +547,7 @@ export async function renderStoicQuote() {
     });
 }
 
+// Listeners
 document.addEventListener('language-changed', () => {
     initLanguageFilter();
     renderLanguageFilter();

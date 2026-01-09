@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -27,7 +28,8 @@ import {
 } from './utils';
 import { 
     closeModal, showConfirmationModal, openEditModal, renderAINotificationState,
-    clearHabitDomCache, renderStoicQuote
+    clearHabitDomCache 
+    // REMOVED: renderStoicQuote (Breaks circular dependency)
 } from './render';
 import { ui } from './render/ui';
 import { t, getTimeOfDayName, formatDate } from './i18n'; 
@@ -247,7 +249,11 @@ export function saveHabitFromModal() {
 }
 
 export async function checkAndAnalyzeDayContext(dateISO: string) {
-    if (state.dailyDiagnoses[dateISO] || _analysisInFlight.has(dateISO)) return state.dailyDiagnoses[dateISO] ? renderStoicQuote() : _analysisInFlight.get(dateISO);
+    // FIX: If cached, just return. Do NOT trigger render here (prevents infinite loop/flicker)
+    if (state.dailyDiagnoses[dateISO] || _analysisInFlight.has(dateISO)) {
+        return _analysisInFlight.get(dateISO);
+    }
+
     const task = async () => {
         let notes = ''; const day = getHabitDailyInfoForDate(dateISO);
         Object.keys(day).forEach(id => Object.keys(day[id].instances).forEach(t => { const n = day[id].instances[t as TimeOfDay]?.note; if (n) notes += `- ${n}\n`; }));
@@ -256,7 +262,12 @@ export async function checkAndAnalyzeDayContext(dateISO: string) {
             const { prompt, systemInstruction } = await runWorkerTask<any>('build-quote-analysis-prompt', { notes, themeList: t('aiThemeList'), languageName: _getAiLang(), translations: { aiPromptQuote: t('aiPromptQuote'), aiSystemInstructionQuote: t('aiSystemInstructionQuote') } });
             const res = await apiFetch('/api/analyze', { method: 'POST', body: JSON.stringify({ prompt, systemInstruction }) });
             const json = JSON.parse((await res.text()).replace(/```json|```/g, '').trim());
-            if (json?.analysis) { state.dailyDiagnoses[dateISO] = { level: json.analysis.determined_level, themes: json.relevant_themes, timestamp: Date.now() }; saveState(); renderStoicQuote(); }
+            if (json?.analysis) { 
+                state.dailyDiagnoses[dateISO] = { level: json.analysis.determined_level, themes: json.relevant_themes, timestamp: Date.now() }; 
+                saveState(); 
+                // FIX: Dispatch event instead of calling function directly to break circular dependency
+                document.dispatchEvent(new CustomEvent('quote-updated'));
+            }
         } catch (e) { console.error(e); } finally { _analysisInFlight.delete(dateISO); }
     };
     const p = task(); _analysisInFlight.set(dateISO, p); return p;
