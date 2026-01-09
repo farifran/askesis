@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -213,12 +214,10 @@ function _setupQuoteAutoCollapse() {
         if ((e.target as HTMLElement).closest('.stoic-quote')) return;
         if (ui.stoicQuoteDisplay.querySelector('.quote-expanded')) { _cachedQuoteState = null; renderStoicQuote(); }
         document.removeEventListener('click', _quoteCollapseListener!, { capture: true });
-        // Fix: Removed { passive: true } from removeEventListener as it's not a valid option for removal
         ui.habitContainer.removeEventListener('scroll', _quoteCollapseListener!);
         _quoteCollapseListener = null;
     };
     document.addEventListener('click', _quoteCollapseListener, { capture: true });
-    // Fix: Removed { passive: true } to avoid overload error, scroll is on div so performance impact is minimal
     ui.habitContainer.addEventListener('scroll', _quoteCollapseListener);
 }
 

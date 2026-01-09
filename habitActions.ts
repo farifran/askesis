@@ -246,8 +246,6 @@ export function saveHabitFromModal() {
     closeModal(ui.editHabitModal);
 }
 
-// NOTE: checkAndAnalyzeDayContext moved to services/analysis.ts to prevent circular dependency
-
 export async function performAIAnalysis(type: 'monthly' | 'quarterly' | 'historical') {
     if (state.aiState === 'loading') return;
     const id = ++state.aiReqId; state.aiState = 'loading'; state.hasSeenAIResult = false;

@@ -17,11 +17,9 @@ import { saveState } from './persistence';
 
 const _analysisInFlight = new Map<string, Promise<any>>();
 
-// Helper local para obter nome do idioma (duplicado de habitActions para evitar dependência)
 const _getAiLang = () => t(LANGUAGES.find(l => l.code === state.activeLanguageCode)?.nameKey || 'langEnglish');
 
 export async function checkAndAnalyzeDayContext(dateISO: string) {
-    // Check cache or inflight requests to avoid redundant calls
     if (state.dailyDiagnoses[dateISO] || _analysisInFlight.has(dateISO)) {
         return _analysisInFlight.get(dateISO);
     }
@@ -29,13 +27,11 @@ export async function checkAndAnalyzeDayContext(dateISO: string) {
     const task = async () => {
         let notes = ''; 
         const day = getHabitDailyInfoForDate(dateISO);
-        // Collect all notes from the day
         Object.keys(day).forEach(id => Object.keys(day[id].instances).forEach(t => { 
             const n = day[id].instances[t as TimeOfDay]?.note; 
             if (n) notes += `- ${n}\n`; 
         }));
         
-        // If no notes or offline, skip analysis
         if (!notes.trim() || !navigator.onLine) return;
         
         try {
@@ -49,7 +45,6 @@ export async function checkAndAnalyzeDayContext(dateISO: string) {
                 } 
             };
             
-            // Build prompt in worker to avoid main thread jank
             const { prompt, systemInstruction } = await runWorkerTask<any>('build-quote-analysis-prompt', promptPayload);
 
             const res = await apiFetch('/api/analyze', { 
@@ -68,9 +63,6 @@ export async function checkAndAnalyzeDayContext(dateISO: string) {
                     timestamp: Date.now() 
                 }; 
                 saveState(); 
-                
-                // Dispatch event to notify listeners (e.g., renderStoicQuote) that data is ready.
-                // This decouples the analysis from the UI update logic.
                 document.dispatchEvent(new CustomEvent('quote-updated'));
             }
         } catch (e) { 

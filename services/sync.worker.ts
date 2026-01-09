@@ -240,14 +240,6 @@ async function buildAIPrompt(payload: AIPromptPayload) {
     return { prompt, systemInstruction: t['aiSystemInstruction'].replace('{languageName}', languageName) };
 }
 
-// Added this function to handle quote analysis requests
-async function buildQuoteAnalysisPrompt(payload: QuoteAnalysisPayload) {
-    const { notes, themeList, languageName, translations } = payload;
-    const systemInstruction = translations.aiSystemInstructionQuote.replace('{languageName}', languageName);
-    const prompt = translations.aiPromptQuote.replace('{notes}', notes).replace('{themeList}', themeList);
-    return { prompt, systemInstruction };
-}
-
 self.onmessage = async (e: MessageEvent<any>) => {
     const { id, type, payload, key } = e.data;
     try {
@@ -255,9 +247,8 @@ self.onmessage = async (e: MessageEvent<any>) => {
         if (type === 'encrypt') result = await encrypt(JSON.stringify(payload), key);
         else if (type === 'decrypt') result = JSON.parse(await decrypt(payload, key));
         else if (type === 'build-ai-prompt') result = await buildAIPrompt(payload);
-        else if (type === 'build-quote-analysis-prompt') result = await buildQuoteAnalysisPrompt(payload);
         else if (type === 'merge') result = await mergeStates(payload.local, payload.incoming);
-        else throw new Error("Unknown type: " + type);
+        else throw new Error("Unknown type");
         self.postMessage({ id, status: 'success', result });
     } catch (err: any) {
         self.postMessage({ id, status: 'error', error: err.message });
