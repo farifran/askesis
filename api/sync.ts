@@ -1,116 +1,111 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// ANÁLISE DO ARQUIVO: 100% concluído. O endpoint está robusto, com validação de payload, tratamento de conflitos (409) e de não modificação (304), sendo considerado finalizado.
+
 import { kv } from '@vercel/kv';
 
 export const config = {
   runtime: 'edge',
 };
 
-// --- Tipos e Interfaces ---
-// A estrutura que o cliente envia. O 'state' é uma string criptografada.
-interface ClientPayload {
-    lastModified: number;
-    state: string;
-}
+const MAX_PAYLOAD_SIZE = 1024 * 1024; // 1MB
 
-// A estrutura que realmente armazenamos no Vercel KV.
-interface StoredData {
-    lastModified: number;
-    state: string; // string criptografada
-}
+/**
+ * Script LUA Atômico: Resolve conflitos de concorrência no Redis.
+ * Garante que apenas o dado com o timestamp mais recente persista.
+ */
+const LUA_ATOMIC_UPDATE = `
+local key = KEYS[1]
+local newPayload = ARGV[1]
+local newTs = tonumber(ARGV[2])
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
+if not newTs then return { "ERROR", "Invalid Timestamp Argument" } end
+
+local currentVal = redis.call("GET", key)
+if not currentVal then
+    redis.call("SET", key, newPayload)
+    return { "OK" }
+end
+
+local status, currentJson = pcall(cjson.decode, currentVal)
+-- SEGURANÇA: Só confia no registro existente se for uma tabela com lastModified numérico.
+-- Se houver corrupção prévia, o novo payload (assumido válido) sobrescreve.
+if not status or type(currentJson) ~= "table" or type(currentJson.lastModified) ~= "number" then
+    redis.call("SET", key, newPayload)
+    return { "OK" }
+end
+
+local currentTs = tonumber(currentJson.lastModified)
+if newTs == currentTs then return { "NOT_MODIFIED" } end
+if newTs < currentTs then return { "CONFLICT", currentVal } end
+
+redis.call("SET", key, newPayload)
+return { "OK" }
+`;
+
+const HEADERS_BASE = {
+  'Content-Type': 'application/json',
+  'Access-Control-Allow-Origin': '*', 
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, X-Sync-Key-Hash',
 };
 
-// REFACTOR [2024-08-08]: Introduz a função createErrorResponse para centralizar
-// a criação de respostas de erro, melhorando a consistência do código e reduzindo a redundância,
-// alinhando-se com as práticas de outros endpoints da API como /api/analyze.
-const createErrorResponse = (message: string, status: number, details = '') => {
-    return new Response(JSON.stringify({ error: message, details }), {
-        status,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
-};
-
-const getSyncKeyHash = (req: Request): string | null => {
-    return req.headers.get('x-sync-key-hash');
-};
-
 export default async function handler(req: Request) {
-    if (req.method === 'OPTIONS') {
-        return new Response(null, { status: 204, headers: corsHeaders });
-    }
+    if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: HEADERS_BASE });
 
     try {
-        const keyHash = getSyncKeyHash(req);
-
-        if (!keyHash) {
-            return createErrorResponse('Unauthorized: Missing sync key hash', 401);
+        const keyHash = req.headers.get('x-sync-key-hash');
+        if (!keyHash || !/^[a-f0-9]{64}$/i.test(keyHash)) {
+            return new Response(JSON.stringify({ error: 'Unauthorized: Missing or Invalid Key Hash' }), { status: 401, headers: HEADERS_BASE });
         }
         
-        const dataKey = `sync_data:${keyHash}`;
+        const dataKey = `sync_v2:${keyHash}`;
 
         if (req.method === 'GET') {
-            const storedData = await kv.get<StoredData>(dataKey);
-            // Retorna o objeto StoredData completo ou nulo se não encontrado.
-            return new Response(JSON.stringify(storedData || null), {
-                status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            });
+            const storedData = await kv.get(dataKey);
+            return new Response(JSON.stringify(storedData || null), { status: 200, headers: HEADERS_BASE });
         }
 
         if (req.method === 'POST') {
-            const clientPayload: ClientPayload = await req.json();
+            // CHAOS DEFENSE: Proteção contra leitura infinita (Timeout de 10s para o corpo)
+            const bodyPromise = req.text();
+            const timeoutPromise = new Promise<string>((_, reject) => 
+                setTimeout(() => reject(new Error('Body Timeout')), 10000)
+            );
 
-            // MELHORIA DE ROBUSTEZ [2024-11-15]: Adiciona validação de payload para garantir que
-            // o cliente envie os dados necessários, prevenindo escritas nulas no banco de dados.
-            if (!clientPayload || typeof clientPayload.lastModified !== 'number' || typeof clientPayload.state !== 'string') {
-                return createErrorResponse('Bad Request: Invalid or missing payload data', 400);
+            const bodyText = await Promise.race([bodyPromise, timeoutPromise]);
+
+            if (bodyText.length > MAX_PAYLOAD_SIZE * 1.1) {
+                return new Response(JSON.stringify({ error: 'Payload Too Large' }), { status: 413, headers: HEADERS_BASE });
             }
 
-            const storedData = await kv.get<StoredData>(dataKey);
-
-            if (storedData) {
-                // OTIMIZAÇÃO DE PERFORMANCE E ROBUSTEZ [2024-11-08]: Adiciona uma verificação para o caso de os timestamps serem iguais.
-                // Isso previne uma escrita desnecessária no banco de dados se o cliente tentar sincronizar um estado que já é o mais recente no servidor.
-                // Retornar 304 Not Modified é semanticamente correto e economiza recursos.
-                if (clientPayload.lastModified === storedData.lastModified) {
-                    return new Response(null, {
-                        status: 304, // Not Modified
-                        headers: corsHeaders,
-                    });
-                }
-                
-                // Conflito: os dados do cliente são mais antigos que os do servidor.
-                if (clientPayload.lastModified < storedData.lastModified) {
-                    return new Response(JSON.stringify(storedData), {
-                        status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-                    });
-                }
+            let clientPayload;
+            try {
+                clientPayload = JSON.parse(bodyText);
+            } catch (e) {
+                return new Response(JSON.stringify({ error: 'Malformed JSON' }), { status: 400, headers: HEADERS_BASE });
             }
 
-            // Sem conflitos, ou é a primeira sincronização. Salva o payload do cliente.
-            const dataToStore: StoredData = {
-                lastModified: clientPayload.lastModified,
-                state: clientPayload.state,
-            };
-            await kv.set(dataKey, dataToStore);
-            
-            return new Response(JSON.stringify({ success: true }), {
-                status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            });
+            if (!clientPayload?.lastModified || typeof clientPayload.lastModified !== 'number') {
+                return new Response(JSON.stringify({ error: 'Invalid Metadata' }), { status: 400, headers: HEADERS_BASE });
+            }
+
+            // CRITICAL FIX: Ensure ARGV[2] is explicitly a string for Redis Lua compatibility.
+            // Some drivers might fail if a raw number is passed as an argument.
+            const result = await kv.eval(LUA_ATOMIC_UPDATE, [dataKey], [bodyText, String(clientPayload.lastModified)]) as [string, string?];
+
+            if (result[0] === 'OK') return new Response('{"success":true}', { status: 200, headers: HEADERS_BASE });
+            if (result[0] === 'NOT_MODIFIED') return new Response(null, { status: 304, headers: HEADERS_BASE });
+            if (result[0] === 'CONFLICT') return new Response(result[1], { status: 409, headers: HEADERS_BASE });
+            if (result[0] === 'ERROR') return new Response(JSON.stringify({ error: result[1] }), { status: 400, headers: HEADERS_BASE });
         }
 
-        return createErrorResponse('Method not allowed', 405);
-
-    } catch (error) {
-        console.error("Error in sync API handler:", error);
-        const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
-        return createErrorResponse('Internal Server Error', 500, errorMessage);
+        return new Response(null, { status: 405 });
+    } catch (error: any) {
+        console.error("API Sync Error:", error);
+        const status = error.message === 'Body Timeout' ? 408 : 500;
+        return new Response(JSON.stringify({ error: error.message || 'Server Error' }), { status, headers: HEADERS_BASE });
     }
 }

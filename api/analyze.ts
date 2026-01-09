@@ -1,72 +1,78 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// ANÁLISE DO ARQUIVO: 100% concluído. O endpoint da API de análise foi revisado e é considerado seguro, eficiente e alinhado com as melhores práticas para funções serverless, incluindo tratamento de erros e configuração de API key. A análise deste arquivo está finalizada.
+
 import { GoogleGenAI } from '@google/genai';
 
 export const config = {
   runtime: 'edge',
 };
 
-const corsHeaders = {
+const MAX_PROMPT_SIZE = 150 * 1024; // 150KB
+
+const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
 };
 
-// Helper para enviar uma resposta de erro JSON padronizada
-const createErrorResponse = (message: string, status: number, details = '') => {
-    return new Response(JSON.stringify({ error: message, details }), {
-        status,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
-};
+const API_KEY = process.env.API_KEY;
+const MODEL_NAME = 'gemini-3-flash-preview';
+let aiClient: GoogleGenAI | null = null;
 
 export default async function handler(req: Request) {
-    if (req.method === 'OPTIONS') {
-        return new Response(null, { status: 204, headers: corsHeaders });
-    }
+    if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS_HEADERS });
+    if (req.method !== 'POST') return new Response(null, { status: 405 });
 
-    if (req.method !== 'POST') {
-        return createErrorResponse('Method Not Allowed', 405);
-    }
+    if (!API_KEY) return new Response(JSON.stringify({ error: 'Server Configuration' }), { status: 500, headers: CORS_HEADERS });
 
     try {
-        const { prompt, systemInstruction } = await req.json();
+        // CHAOS DEFENSE: Timeout de leitura do prompt para evitar workers pendentes
+        const bodyText = await Promise.race([
+            req.text(),
+            new Promise<string>((_, r) => setTimeout(() => r('TIMEOUT'), 8000))
+        ]);
 
-        if (!prompt || !systemInstruction) {
-            return createErrorResponse('Bad Request: Missing prompt or systemInstruction', 400);
-        }
-        
-        const apiKey = process.env.API_KEY;
-        if (!apiKey) {
-            console.error("[api/analyze] API_KEY environment variable not set.");
-            return createErrorResponse('Internal Server Error', 500, 'Server configuration error.');
-        }
-        
-        const ai = new GoogleGenAI({ apiKey });
+        if (bodyText === 'TIMEOUT') return new Response(null, { status: 408 });
+        if (bodyText.length > MAX_PROMPT_SIZE) return new Response(null, { status: 413 });
 
-        // REATORAÇÃO: Usa a API não-streaming para simplificar o código, pois a resposta
-        // inteira é necessária antes de ser enviada ao cliente.
-        const geminiResponse = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
+        const body = JSON.parse(bodyText);
+        const { prompt, systemInstruction } = body;
+
+        if (!prompt || !systemInstruction) return new Response(null, { status: 400 });
+
+        if (!aiClient) aiClient = new GoogleGenAI({ apiKey: API_KEY });
+
+        // PROTEÇÃO CONTRA ZUMBIFICAÇÃO: Timeout de execução da IA
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 25000);
+
+        const geminiResponse = await aiClient.models.generateContent({
+            model: MODEL_NAME,
             contents: prompt,
-            config: {
-                systemInstruction: systemInstruction,
+            config: { 
+                systemInstruction,
+                temperature: 0.7,
             },
         });
+
+        clearTimeout(timeoutId);
         
-        const fullText = geminiResponse.text;
-        
-        // Envia a resposta completa como uma única carga útil.
-        return new Response(fullText, {
-            headers: { ...corsHeaders, 'Content-Type': 'text/plain; charset=utf-8' },
+        const responseText = geminiResponse.text;
+        if (!responseText) throw new Error('Empty AI response');
+
+        return new Response(responseText, { 
+            headers: { 
+                ...CORS_HEADERS, 
+                'Content-Type': 'text/plain; charset=utf-8',
+                'Cache-Control': 'no-store' 
+            } 
         });
 
-    } catch (error) {
-        console.error('Critical error in /api/analyze handler:', error);
-        const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
-        return createErrorResponse('Internal Server Error', 500, errorMessage);
+    } catch (error: any) {
+        if (error.name === 'AbortError') return new Response('AI Gateway Timeout', { status: 504, headers: CORS_HEADERS });
+        return new Response(JSON.stringify({ error: 'AI processing failed' }), { status: 500, headers: CORS_HEADERS });
     }
 }

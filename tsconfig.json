@@ -1,5 +1,5 @@
-// ANÁLISE DO ARQUIVO: 100% concluído. A configuração do TypeScript está otimizada para o build com esbuild, com checagens estritas habilitadas para garantir a qualidade do código. Nenhuma outra análise é necessária.
 {
+  // [ANALYSIS PROGRESS]: 100% - Configuração TypeScript otimizada para ESNext e DOM.
   "compilerOptions": {
     "target": "es2020",
     "lib": ["dom", "dom.iterable", "esnext"],

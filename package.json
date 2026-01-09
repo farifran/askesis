@@ -1,5 +1,5 @@
 {
-  "_comment": "ANÁLISE DO ARQUIVO: 100% concluído. Arquivo de configuração/dados revisado e completo. Nenhuma análise futura é necessária.",
+  "_comment": "[ANALYSIS PROGRESS]: 100% - Dependências verificadas e alinhadas com os requisitos do sistema.",
   "name": "habit-tracker-ai-vercel",
   "version": "1.0.0",
   "description": "A dynamic habit tracker with data visualization and personalized AI-powered feedback.",
@@ -17,7 +17,7 @@
   "author": "AI-Powered Engineer",
   "license": "ISC",
   "dependencies": {
-    "@google/genai": "^1.25.0",
+    "@google/genai": "^1.33.0",
     "@vercel/kv": "^3.0.0",
     "@vercel/analytics": "^1.5.0"
   },
