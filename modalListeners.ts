@@ -7,13 +7,14 @@
 // [NOTA COMPARATIVA]: Este arquivo atua como o 'Controlador de Interações Modais'. Diferente de 'habitActions.ts' (Regras de Negócio) ou 'render.ts' (Manipulação DOM), este módulo foca exclusivamente em capturar a intenção do usuário e delegar a execução. O código está bem desacoplado, utilizando event delegation para listas e helpers privados para lógica de formulário.
 
 import { ui } from './ui';
-import { state, LANGUAGES, PREDEFINED_HABITS, saveState, STREAK_SEMI_CONSOLIDATED, STREAK_CONSOLIDATED, FREQUENCIES, invalidateChartCache, DAYS_IN_CALENDAR } from './state';
+import { state, LANGUAGES, STREAK_SEMI_CONSOLIDATED, STREAK_CONSOLIDATED, FREQUENCIES, invalidateChartCache, DAYS_IN_CALENDAR, TimeOfDay } from './state';
+import { saveState } from './services/persistence';
+import { PREDEFINED_HABITS } from './data/predefinedHabits';
 import {
     openModal,
     closeModal,
     setupManageModal,
     renderExploreHabits,
-    initializeModalClosing,
     showConfirmationModal,
     renderLanguageFilter,
     renderAINotificationState,
@@ -37,7 +38,8 @@ import {
     exportData,
     importData,
 } from './habitActions';
-import { setLanguage, t, getHabitDisplayInfo } from './i18n';
+import { setLanguage, t, formatList } from './i18n';
+import { getHabitDisplayInfo, isHabitNameDuplicate } from './services/selectors';
 import { setupReelRotary } from './rotary';
 import { simpleMarkdownToHTML, pushToOneSignal, getContrastColor, addDays, parseUTCIsoDate, toUTCIsoDateString } from './utils';
 
@@ -51,11 +53,10 @@ const _processAndFormatCelebrations = (
 ): string => {
     if (pendingIds.length === 0) return '';
     
-    const habitNames = pendingIds
+    const habitNamesList = pendingIds
         .map(id => state.habits.find(h => h.id === id))
         .filter(Boolean)
-        .map(h => getHabitDisplayInfo(h!).name)
-        .join(', ');
+        .map(h => getHabitDisplayInfo(h!).name);
         
     // CORREÇÃO DE LÓGICA [2024-10-23]: Utiliza a chave composta ('habitId-dias') para marcar
     // as celebrações como "vistas", garantindo que cada marco seja rastreado independentemente.
@@ -66,7 +67,7 @@ const _processAndFormatCelebrations = (
         }
     });
 
-    return t(translationKey, { count: pendingIds.length, habitNames });
+    return t(translationKey, { count: pendingIds.length, habitNames: formatList(habitNamesList) });
 };
 
 // --- PRIVATE HELPERS (MODAL FORMS) ---
@@ -176,10 +177,7 @@ function _validateHabitName(newName: string, currentHabitId?: string): boolean {
     }
 
     // Verifica se há duplicatas
-    const isDuplicate = state.habits.some(h => {
-        const { name } = getHabitDisplayInfo(h, state.selectedDate);
-        return name.toLowerCase() === newName.toLowerCase() && h.id !== currentHabitId;
-    });
+    const isDuplicate = isHabitNameDuplicate(newName, currentHabitId);
 
     if (isDuplicate) {
         duplicateNoticeEl.textContent = t('noticeDuplicateHabitWithName');
@@ -206,34 +204,7 @@ export function setupModalListeners() {
     // foi separada para incluir callbacks `onClose`. Isso previne "vazamentos de estado"
     // onde dados temporários (state.editingHabit, state.editingNoteFor) persistiam
     // desnecessariamente após o cancelamento, tornando a aplicação mais robusta.
-    const modalsToInitialize = [
-        ui.manageModal,
-        ui.exploreModal,
-        ui.confirmModal,
-        ui.aiOptionsModal,
-        ui.fullCalendarModal,
-    ];
-    modalsToInitialize.forEach(modal => initializeModalClosing(modal));
-
-    // Lida com o fechamento dos modais de edição para limpar o estado temporário
-    initializeModalClosing(ui.editHabitModal, () => {
-        state.editingHabit = null;
-    });
-    initializeModalClosing(ui.notesModal, () => {
-        state.editingNoteFor = null;
-    });
-    initializeModalClosing(ui.iconPickerModal);
-    initializeModalClosing(ui.colorPickerModal, () => {
-        ui.iconPickerModal.classList.remove('is-picking-color');
-        renderIconPicker();
-    });
-
-
-    // A lógica de fechamento customizada para o modal de IA agora é injetada como um callback.
-    initializeModalClosing(ui.aiModal, () => {
-        state.hasSeenAIResult = true;
-        renderAINotificationState();
-    });
+    // NOTE: Global modal init is handled in initModalEngine called from listeners.ts
 
     // --- Botões para Abrir Modais Principais ---
     ui.manageHabitsBtn.addEventListener('click', () => {
@@ -376,14 +347,20 @@ export function setupModalListeners() {
 
         if (allCelebrations) {
             ui.aiResponse.innerHTML = simpleMarkdownToHTML(allCelebrations);
-            openModal(ui.aiModal);
+            openModal(ui.aiModal, undefined, () => {
+                state.hasSeenAIResult = true;
+                renderAINotificationState();
+            });
             state.pending21DayHabitIds = [];
             state.pendingConsolidationHabitIds = [];
             saveState(); // Salva que as notificações foram vistas
             renderAINotificationState();
         } else if ((state.aiState === 'completed' || state.aiState === 'error') && !state.hasSeenAIResult && state.lastAIResult) {
             ui.aiResponse.innerHTML = simpleMarkdownToHTML(state.lastAIResult);
-            openModal(ui.aiModal);
+            openModal(ui.aiModal, undefined, () => {
+                state.hasSeenAIResult = true;
+                renderAINotificationState();
+            });
         } else {
             openModal(ui.aiOptionsModal);
         }
@@ -398,9 +375,6 @@ export function setupModalListeners() {
 
     // --- Modal de Confirmação ---
     // UX FIX [2025-02-15]: "Close-First" Pattern.
-    // O modal deve ser fechado ANTES de executar a ação. Isso previne problemas em fluxos
-    // onde a ação abre *outro* modal (Nested Modals), garantindo que o novo modal não seja
-    // fechado acidentalmente pela limpeza do antigo.
     ui.confirmModalConfirmBtn.addEventListener('click', () => {
         const action = state.confirmAction;
         
@@ -597,7 +571,10 @@ export function setupModalListeners() {
     ui.changeColorFromPickerBtn.addEventListener('click', () => {
         renderColorPicker();
         ui.iconPickerModal.classList.add('is-picking-color');
-        openModal(ui.colorPickerModal);
+        openModal(ui.colorPickerModal, undefined, () => {
+            ui.iconPickerModal.classList.remove('is-picking-color');
+            renderIconPicker();
+        });
     });
 
     // Controle Segmentado de Horário
@@ -606,7 +583,7 @@ export function setupModalListeners() {
         const button = (e.target as HTMLElement).closest<HTMLButtonElement>('.segmented-control-option');
         if (!button) return;
 
-        const time = button.dataset.time as any; // Using any cast to avoid explicit import of TimeOfDay for local DOM handling
+        const time = button.dataset.time as TimeOfDay;
         const currentlySelected = state.editingHabit.formData.times.includes(time);
 
         if (currentlySelected) {

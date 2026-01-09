@@ -6,8 +6,10 @@
 // [ANALYSIS PROGRESS]: 100% - Análise concluída. Imports limpos. Lógica de manipulação de eventos validada para performance e acessibilidade.
 
 import { ui } from './ui';
-import { state, Habit, getCurrentGoalForInstance, TimeOfDay } from './state';
-import { openNotesModal, getUnitString, formatGoalForDisplay, renderExploreHabits, openModal } from './render';
+import { state, Habit, TimeOfDay } from './state';
+import { getCurrentGoalForInstance } from './services/selectors';
+import { openNotesModal, renderExploreHabits, openModal } from './render';
+import { t, formatInteger } from './i18n';
 import {
     toggleHabitStatus,
     setGoalOverride,
@@ -17,6 +19,15 @@ import { triggerHaptic } from './utils';
 import { DOM_SELECTORS, CSS_CLASSES } from './domConstants';
 
 const GOAL_STEP = 5;
+
+// Local helpers replacing missing imports
+function formatGoalForDisplay(goal: number): string {
+    return formatInteger(goal);
+}
+
+function getUnitString(habit: Habit, count: number): string {
+    return t(habit.goal.unitKey || 'unitCheck', { count });
+}
 
 /**
  * REATORAÇÃO [2024-09-11]: Centraliza a lógica de atualização da UI da meta para evitar duplicação.

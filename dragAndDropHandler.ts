@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -7,7 +8,8 @@
 import { ui } from './ui';
 import { isCurrentlySwiping } from './swipeHandler';
 import { handleHabitDrop, reorderHabit } from './habitActions';
-import { state, TimeOfDay, Habit, getEffectiveScheduleForHabitOnDate } from './state';
+import { state, TimeOfDay, Habit } from './state';
+import { getEffectiveScheduleForHabitOnDate } from './services/selectors';
 import { triggerHaptic } from './utils';
 import { DOM_SELECTORS, CSS_CLASSES } from './domConstants';
 

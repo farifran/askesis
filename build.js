@@ -74,7 +74,7 @@ async function copyStaticFiles() {
 const esbuildOptions = {
     entryPoints: { 'bundle': 'index.tsx', 'sync-worker': 'services/sync.worker.ts' },
     bundle: true,
-    splitting: true,
+    splitting: false, // FIX: Disable splitting to ensure atomic loading of all modules including quotes
     outdir: outdir,
     format: 'esm',
     target: 'es2020',

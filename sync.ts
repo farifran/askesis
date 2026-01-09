@@ -7,9 +7,9 @@
 import { ui } from "./ui";
 import { t } from "./i18n";
 import { fetchStateFromCloud, setSyncStatus } from "./cloud";
-import { loadState, saveState } from "./state";
+import { loadState, saveState } from "./services/persistence";
 import { renderApp, showConfirmationModal } from "./render";
-import { storeKey, clearKey, hasLocalSyncKey, getSyncKey, isValidKeyFormat, initAuth } from "./api";
+import { storeKey, clearKey, hasLocalSyncKey, getSyncKey, isValidKeyFormat, initAuth } from "./services/api";
 
 // --- Funções de UI ---
 
@@ -83,10 +83,10 @@ async function _processKey(key: string) {
         if (cloudState) {
             showConfirmationModal(
                 t('confirmSyncOverwrite'),
-                () => { // onConfirm
+                async () => { // onConfirm
                     storeKey(key); // Persiste a nova chave
-                    loadState(cloudState);
-                    saveState();
+                    await loadState(cloudState);
+                    await saveState();
                     renderApp();
                     showView('active');
                 },

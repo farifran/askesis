@@ -31,6 +31,7 @@ import {
 } from '../state';
 import { saveState } from '../services/persistence';
 import { PREDEFINED_HABITS } from '../data/predefinedHabits';
+import { STOIC_QUOTES } from '../data/quotes'; // FIX: Static import
 import {
     openModal,
     closeModal,
@@ -301,7 +302,7 @@ const _handleAiEvalClick = async () => {
         // OFFLINE HANDLING
         if (!navigator.onLine) {
             try {
-                const { STOIC_QUOTES } = await import('../data/quotes');
+                // FIX: Use static STOIC_QUOTES
                 const offlineQuotes = STOIC_QUOTES.filter(q => 
                     q.metadata.tags.includes('control') || 
                     q.metadata.tags.includes('acceptance') ||

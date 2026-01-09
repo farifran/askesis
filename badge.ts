@@ -3,45 +3,34 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// [ANALYSIS PROGRESS]: 100% - Análise concluída. O módulo de Badge está robusto, seguro e performático. Lógica de contagem otimizada e tratamento de erros da API experimental implementado corretamente. Nenhuma ação adicional requerida.
 
-import { getHabitDailyInfoForDate, getActiveHabitsForDate } from './state';
-import { getTodayUTCIso } from './utils';
+/**
+ * @file services/badge.ts
+ * @description Controlador de Integração com o Sistema Operacional (App Badging API).
+ * 
+ * [MAIN THREAD CONTEXT]:
+ * Este módulo roda na thread principal, mas utiliza APIs assíncronas do navegador
+ * para não bloquear a renderização.
+ * 
+ * ARQUITETURA (Progressive Enhancement):
+ * - **Responsabilidade Única:** Sincronizar o contador de pendências do estado interno
+ *   com o ícone do aplicativo no OS (Homescreen/Dock).
+ * - **Falha Silenciosa:** Como é uma funcionalidade decorativa ("Delighter"), falhas não
+ *   devem interromper o fluxo do usuário.
+ * 
+ * DEPENDÊNCIAS CRÍTICAS:
+ * - `services/selectors.ts`: Lógica de cálculo de pendências.
+ */
+
+import { calculateDaySummary } from './selectors';
+import { getTodayUTCIso } from '../utils';
 
 // [2025-01-15] TYPE SAFETY: Definição de interface local para a Badging API.
 // Evita o uso repetido de 'as any' e fornece autocompletar/verificação se o TS for atualizado.
+// Esta API ainda é considerada experimental em alguns contextos.
 interface NavigatorWithBadging extends Navigator {
     setAppBadge(contents?: number): Promise<void>;
     clearAppBadge(): Promise<void>;
-}
-
-/**
- * Calcula o número de instâncias de hábitos pendentes para o dia atual.
- * @returns O número total de hábitos pendentes para hoje.
- */
-function calculateTodayPendingCount(): number {
-    const todayISO = getTodayUTCIso();
-    // PERFORMANCE [2025-02-23]: Passamos a string ISO diretamente.
-    // getActiveHabitsForDate lida eficientemente com strings, evitando parsing desnecessário aqui.
-    // USE LAZY ACCESSOR: Ensure compatibility with archive/lazy-loading architecture.
-    const dailyInfo = getHabitDailyInfoForDate(todayISO);
-    
-    let pendingCount = 0;
-    
-    const activeHabitsToday = getActiveHabitsForDate(todayISO);
-
-    activeHabitsToday.forEach(({ habit, schedule }) => {
-        const instances = dailyInfo[habit.id]?.instances || {};
-        
-        schedule.forEach(time => {
-            const status = instances[time]?.status ?? 'pending';
-            if (status === 'pending') {
-                pendingCount++;
-            }
-        });
-    });
-    
-    return pendingCount;
 }
 
 /**
@@ -50,10 +39,14 @@ function calculateTodayPendingCount(): number {
  * Esta função verifica o suporte do navegador antes de tentar definir o emblema.
  */
 export async function updateAppBadge(): Promise<void> {
-    // A API de Emblema é suportada no objeto navigator.
+    // PROGRESSIVE ENHANCEMENT: Verifica suporte antes de executar.
+    // Evita erros em navegadores que não suportam PWA Badging (ex: Firefox Desktop antigo).
     if ('setAppBadge' in navigator && 'clearAppBadge' in navigator) {
         try {
-            const count = calculateTodayPendingCount();
+            // REFACTOR [2025-03-05]: Remove a função local redundante e usa a função
+            // centralizada e cacheada 'calculateDaySummary' para obter a contagem de pendentes.
+            // PERFORMANCE: calculateDaySummary usa cache interno (memoization), então o custo é O(1) na maioria das chamadas.
+            const { pending: count } = calculateDaySummary(getTodayUTCIso());
             const nav = navigator as NavigatorWithBadging;
 
             if (count > 0) {
@@ -62,7 +55,8 @@ export async function updateAppBadge(): Promise<void> {
                 await nav.clearAppBadge();
             }
         } catch (error) {
-            // Falha silenciosa ou log discreto é aceitável para funcionalidades de UI progressivas
+            // ROBUSTEZ: Falha silenciosa ou log discreto é aceitável para funcionalidades de UI progressivas.
+            // Não queremos alertar o usuário se o OS rejeitar o badge (ex: permissões).
             console.error('Failed to set app badge:', error);
         }
     }
