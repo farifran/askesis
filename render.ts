@@ -1,4 +1,5 @@
 
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -26,7 +27,6 @@ import { ui } from './render/ui';
 import { t, setLanguage, formatDate } from './i18n'; 
 import { UI_ICONS } from './render/icons';
 import type { Quote } from './data/quotes';
-import { checkAndAnalyzeDayContext } from './habitActions';
 import { selectBestQuote } from './services/quoteEngine'; // NEW: Import Engine
 import { calculateDaySummary } from './services/selectors';
 
@@ -416,7 +416,10 @@ function _setupQuoteAutoCollapse() {
 
 export async function renderStoicQuote() {
     // 1. Trigger background diagnosis (if needed)
-    checkAndAnalyzeDayContext(state.selectedDate);
+    // FIX: Decoupled Analysis Trigger via Event Bus.
+    if (!state.dailyDiagnoses[state.selectedDate]) {
+        document.dispatchEvent(new CustomEvent('request-analysis', { detail: { date: state.selectedDate } }));
+    }
 
     // CRITICAL FIX: Robust Context Key Generation
     const hour = new Date().getHours();
@@ -433,7 +436,7 @@ export async function renderStoicQuote() {
 
     if (!stoicQuotesModule) {
         try {
-            stoicQuotesModule = await import('../data/quotes');
+            stoicQuotesModule = await import('./data/quotes');
         } catch (e) {
             console.error("Failed to load stoic quotes module", e);
             return;
