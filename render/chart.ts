@@ -425,6 +425,7 @@ function updateTooltipPosition() {
         if (hasTypedOM && indicator.attributeStyleMap) {
             indicator.style.opacity = '1';
             // TranslateX only
+            // @fix: Typed OM Typedefs
             indicator.attributeStyleMap.set('transform', new CSSTranslate(CSS.px(pointX), CSS.px(0)));
         } else {
             indicator.style.opacity = '1';

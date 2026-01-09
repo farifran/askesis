@@ -29,6 +29,20 @@ declare global {
         bootWatchdog?: any;
         // @fix: Added showFatalError to global Window interface
         showFatalError?: (message: string) => void;
+        // @fix: CSS Typed OM Support
+        CSSTranslate?: any;
+        CSS?: {
+            px(value: number): any;
+            number(value: number): any;
+        };
+    }
+    
+    interface Element {
+        attributeStyleMap?: {
+            set(property: string, value: any): void;
+            get(property: string): any;
+            clear(): void;
+        };
     }
 }
 
