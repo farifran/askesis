@@ -9,13 +9,13 @@
  * @description Orquestrador de Renderização (View Orchestrator / Facade).
  */
 
-import { state, LANGUAGES } from './state';
-import { parseUTCIsoDate, toUTCIsoDateString, addDays, pushToOneSignal, getTodayUTCIso } from './utils';
+import { state, LANGUAGES } from '../state';
+import { parseUTCIsoDate, toUTCIsoDateString, addDays, pushToOneSignal, getTodayUTCIso } from '../utils';
 import { ui } from './render/ui';
 import { t, setLanguage, formatDate } from './i18n'; 
 import { UI_ICONS } from './render/icons';
-import type { Quote } from './data/quotes';
-import { checkAndAnalyzeDayContext } from './habitActions';
+import { STOIC_QUOTES } from '../data/quotes'; // FIX: Static import
+import { checkAndAnalyzeDayContext } from '../habitActions';
 import { selectBestQuote } from './services/quoteEngine';
 import { calculateDaySummary } from './services/selectors';
 
@@ -34,9 +34,6 @@ export * from './render/chart';
 let _lastTitleDate: string | null = null;
 let _lastTitleLang: string | null = null;
 let _cachedQuoteState: { id: string, contextKey: string } | null = null;
-
-let stoicQuotesModule: { STOIC_QUOTES: readonly Quote[] } | null = null;
-let _quotesImportPromise: Promise<typeof import('../data/quotes')> | null = null;
 
 let _cachedRefToday: string | null = null;
 let _renderTaskController: AbortController | null = null;
@@ -231,12 +228,9 @@ export async function renderStoicQuote() {
     const ctxKey = `${state.selectedDate}|${state.activeLanguageCode}|${tod}|${sig}`;
 
     if (_cachedQuoteState?.contextKey === ctxKey) return;
-    if (!stoicQuotesModule) {
-        _quotesImportPromise = _quotesImportPromise || import('../data/quotes');
-        try { stoicQuotesModule = await _quotesImportPromise; } catch { _quotesImportPromise = null; return; }
-    }
 
-    const sel = selectBestQuote(stoicQuotesModule.STOIC_QUOTES, state.selectedDate);
+    // FIX: Using static import for robust loading
+    const sel = selectBestQuote(STOIC_QUOTES, state.selectedDate);
     _cachedQuoteState = { id: sel.id, contextKey: ctxKey };
 
     const diag = state.dailyDiagnoses[state.selectedDate], lvl = diag ? diag.level : 1;
