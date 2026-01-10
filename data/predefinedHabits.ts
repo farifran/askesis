@@ -22,7 +22,7 @@ export const PREDEFINED_HABITS: readonly PredefinedHabit[] = Object.freeze([
         subtitleKey: 'predefinedHabitSustenanceSubtitle',
         icon: HABIT_ICONS.sustenance,
         color: '#3498DB',
-        times: ['Morning', 'Afternoon', 'Evening'],
+        times: ['Morning'],
         goal: GOAL_CHECK,
         frequency: FREQ_DAILY,
         isDefault: true,
