@@ -170,7 +170,13 @@
     display: flex; justify-content: space-between; align-items: center;
     padding-block: var(--space-md);
 }
-#habit-list li span { display: flex; align-items: center; gap: var(--space-md); }
+.habit-main-info {
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+    flex-grow: 1;
+    min-width: 0;
+}
 #habit-list li svg { width: 20px; height: 20px; flex-shrink: 0; }
 .habit-list-item.ended { opacity: 0.6; }
 .habit-list-item.graduated { opacity: 0.8; }
