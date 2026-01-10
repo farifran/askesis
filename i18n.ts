@@ -1,4 +1,5 @@
 
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -21,7 +22,7 @@
  * - `locales/*.json`: Arquivos de tradução.
  */
 
-import { state, TimeOfDay } from './state';
+import { state, TimeOfDay, LANGUAGES } from './state';
 import { pushToOneSignal } from './utils';
 
 // TYPE POLYFILL: Garante que Intl.ListFormat seja reconhecido mesmo em configurações TS antigas (ES2020 ou inferior).
@@ -478,6 +479,16 @@ export function getLocaleDayName(date: Date): string {
     }
     // getUTCDay() returns 0 for Sunday, matches array index
     return currentWeekdayNames[date.getUTCDay()] || '';
+}
+
+/**
+ * Obtém o nome localizado do idioma ativo para ser usado nos prompts da IA.
+ */
+export function getAiLanguageName(): string {
+    if (state.activeLanguageCode !== currentLangCode) {
+        updateHotCache(state.activeLanguageCode);
+    }
+    return t(LANGUAGES.find(l => l.code === state.activeLanguageCode)?.nameKey || 'langEnglish');
 }
 
 export async function setLanguage(langCode: 'pt' | 'en' | 'es') {

@@ -57,6 +57,7 @@ const _handleContainerClick = (e: MouseEvent) => {
     const t = time as TimeOfDay;
 
     if (el.classList.contains(CSS_CLASSES.SWIPE_DELETE_BTN)) {
+        triggerHaptic('light');
         const h = state.habits.find(x => x.id === hId);
         if (h && getEffectiveScheduleForHabitOnDate(h, state.selectedDate).length <= 1) requestHabitEndingFromModal(hId);
         else requestHabitTimeRemoval(hId, t);

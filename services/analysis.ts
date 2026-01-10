@@ -12,12 +12,10 @@
 import { state, getHabitDailyInfoForDate, TimeOfDay, LANGUAGES } from '../state';
 import { runWorkerTask } from './cloud';
 import { apiFetch } from './api';
-import { t } from '../i18n';
+import { t, getAiLanguageName } from '../i18n';
 import { saveState } from './persistence';
 
 const _analysisInFlight = new Map<string, Promise<any>>();
-
-const _getAiLang = () => t(LANGUAGES.find(l => l.code === state.activeLanguageCode)?.nameKey || 'langEnglish');
 
 export async function checkAndAnalyzeDayContext(dateISO: string) {
     if (state.dailyDiagnoses[dateISO] || _analysisInFlight.has(dateISO)) {
@@ -38,7 +36,7 @@ export async function checkAndAnalyzeDayContext(dateISO: string) {
             const promptPayload = { 
                 notes, 
                 themeList: t('aiThemeList'), 
-                languageName: _getAiLang(), 
+                languageName: getAiLanguageName(), 
                 translations: { 
                     aiPromptQuote: t('aiPromptQuote'), 
                     aiSystemInstructionQuote: t('aiSystemInstructionQuote') 

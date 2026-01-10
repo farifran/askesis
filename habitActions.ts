@@ -31,7 +31,7 @@ import {
     clearHabitDomCache
 } from './render';
 import { ui } from './render/ui';
-import { t, getTimeOfDayName, formatDate } from './i18n'; 
+import { t, getTimeOfDayName, formatDate, getAiLanguageName } from './i18n'; 
 import { runWorkerTask } from './services/cloud';
 import { apiFetch, clearKey } from './services/api';
 
@@ -56,8 +56,6 @@ const ActionContext = {
 };
 
 // --- PRIVATE HELPERS ---
-
-const _getAiLang = () => t(LANGUAGES.find(l => l.code === state.activeLanguageCode)?.nameKey || 'langEnglish');
 
 function _notifyChanges(fullRebuild = false) {
     if (fullRebuild) {
@@ -313,7 +311,7 @@ export async function performAIAnalysis(type: 'monthly' | 'quarterly' | 'histori
         const trans: Record<string, string> = { promptTemplate: t(type === 'monthly' ? 'aiPromptMonthly' : (type === 'quarterly' ? 'aiPromptQuarterly' : 'aiPromptGeneral')), aiDaysUnit: t('unitDays', { count: 2 }) };
         ['aiPromptGraduatedSection', 'aiPromptNoData', 'aiPromptNone', 'aiSystemInstruction', 'aiPromptHabitDetails', 'aiVirtue', 'aiDiscipline', 'aiSphere', 'stoicVirtueWisdom', 'stoicVirtueCourage', 'stoicVirtueJustice', 'stoicVirtueTemperance', 'stoicDisciplineDesire', 'stoicDisciplineAction', 'stoicDisciplineAssent', 'governanceSphereBiological', 'governanceSphereStructural', 'governanceSphereSocial', 'governanceSphereMental', 'aiPromptNotesSectionHeader', 'aiStreakLabel', 'aiSuccessRateLabelMonthly', 'aiSuccessRateLabelQuarterly', 'aiSuccessRateLabelHistorical'].forEach(k => trans[k] = t(k));
         PREDEFINED_HABITS.forEach(h => trans[h.nameKey] = t(h.nameKey));
-        const { prompt, systemInstruction } = await runWorkerTask<any>('build-ai-prompt', { analysisType: type, habits: state.habits, dailyData: state.dailyData, archives: state.archives, languageName: _getAiLang(), translations: trans, todayISO: getTodayUTCIso() });
+        const { prompt, systemInstruction } = await runWorkerTask<any>('build-ai-prompt', { analysisType: type, habits: state.habits, dailyData: state.dailyData, archives: state.archives, languageName: getAiLanguageName(), translations: trans, todayISO: getTodayUTCIso() });
         if (id !== state.aiReqId) return;
         const res = await apiFetch('/api/analyze', { method: 'POST', body: JSON.stringify({ prompt, systemInstruction }) });
         if (id === state.aiReqId) { state.lastAIResult = await res.text(); state.aiState = 'completed'; }

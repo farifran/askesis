@@ -421,10 +421,11 @@ function updateTooltipPosition() {
         const pointX = paddingLeft + (pointIndex / (len - 1)) * chartWidth;
         const pointY = CHART_PADDING.top + chartHeight - ((point.value - chartMinVal) / chartValueRange) * chartHeight;
 
-        // SNIPER OPTIMIZATION: Typed OM for Indicator (Fast Path)
+        // BLEEDING-EDGE PERF (CSS Typed OM): No "hot path" da interação com o gráfico,
+        // o `transform` do indicador é atualizado via Typed OM para evitar o custo de
+        // strings, garantindo a resposta mais rápida possível ao movimento do cursor.
         if (hasTypedOM && indicator.attributeStyleMap) {
             indicator.style.opacity = '1';
-            // TranslateX only
             indicator.attributeStyleMap.set('transform', new CSSTranslate(CSS.px(pointX), CSS.px(0)));
         } else {
             indicator.style.opacity = '1';

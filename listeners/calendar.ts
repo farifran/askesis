@@ -220,18 +220,31 @@ const _handleCalendarClick = (e: MouseEvent) => {
 const _handleResetToToday = () => {
     triggerHaptic('light');
     const today = getTodayUTCIso();
-    if (state.selectedDate === today) return;
+    
+    // UX FIX [2025-06-03]: Removida a guarda 'if (state.selectedDate === today) return;'.
+    // Isso permite que o usuário clique em "Hoje" (ou nas setas) para resetar a posição visual do calendário
+    // (scroll) mesmo que já esteja na data de hoje.
 
     const todayDate = parseUTCIsoDate(today);
     _regenerateCalendarDates(todayDate);
 
-    const dir = today > state.selectedDate ? 1 : -1;
-    updateSelectedDateAndRender(today, dir);
-    
-    const todayEl = ui.calendarStrip.querySelector<HTMLElement>(`${DOM_SELECTORS.DAY_ITEM}[data-date="${today}"]`);
-    if (todayEl) {
-        todayEl.scrollIntoView({ behavior: 'auto', block: 'nearest', inline: 'end' });
+    if (state.selectedDate !== today) {
+        const dir = today > state.selectedDate ? 1 : -1;
+        updateSelectedDateAndRender(today, dir);
+    } else {
+        // Se já é hoje, forçamos o render para atualizar a faixa do calendário (que foi regenerada acima)
+        // sem disparar as animações de transição de página.
+        renderApp();
     }
+    
+    requestAnimationFrame(() => {
+        const todayEl = ui.calendarStrip.querySelector<HTMLElement>(`${DOM_SELECTORS.DAY_ITEM}[data-date="${today}"]`);
+        if (todayEl) {
+            // Smooth scroll se já estamos na data (apenas ajuste de posição), auto/instantâneo se viemos de longe?
+            // "Smooth" é sempre mais agradável para "resetar posição".
+            todayEl.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'end' });
+        }
+    });
 };
 
 const _handleStep = (direction: number) => {

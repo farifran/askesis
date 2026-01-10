@@ -159,9 +159,10 @@ export function setupEventListeners() {
         }
     };
 
-    // UX OPTIMIZATION: Elevado de 'background' para 'user-visible'.
-    // A física de gestos é crítica para a percepção de "App Nativo". 
-    // @fix: Cast to any to check and call scheduler API
+    // BLEEDING-EDGE PERF (Scheduler API): A inicialização da física de gestos (drag, swipe)
+    // é adiada para depois do primeiro paint. A prioridade 'user-visible' garante que
+    // isso aconteça rapidamente, mas sem competir com a renderização inicial crítica,
+    // resultando em uma percepção de carregamento mais rápido.
     if ('scheduler' in window && (window as any).scheduler) {
         (window as any).scheduler.postTask(setupHeavyInteractions, { priority: 'user-visible' });
     } else {

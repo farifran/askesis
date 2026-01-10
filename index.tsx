@@ -140,6 +140,8 @@ function finalizeInit(loader: HTMLElement | null) {
         }
     };
 
+    // BLEEDING-EDGE PERF: Utiliza a Scheduler API para executar tarefas de baixa prioridade (arquivamento, analytics)
+    // sem bloquear a thread principal, garantindo uma inicialização mais fluida.
     // @fix: Cast to any to handle scheduler which might be missing in some global Window types
     if ((window as any).scheduler?.postTask) {
         (window as any).scheduler.postTask(runBackgroundTasks, { priority: 'background' });

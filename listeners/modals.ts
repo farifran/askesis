@@ -61,7 +61,7 @@ import {
 import { t, setLanguage, formatList } from '../i18n';
 import { getHabitDisplayInfo } from '../services/selectors';
 import { setupReelRotary } from '../render/rotary';
-import { simpleMarkdownToHTML, pushToOneSignal, getContrastColor, addDays, parseUTCIsoDate, toUTCIsoDateString } from '../utils';
+import { simpleMarkdownToHTML, pushToOneSignal, getContrastColor, addDays, parseUTCIsoDate, toUTCIsoDateString, triggerHaptic } from '../utils';
 import { setTextContent } from '../render/dom';
 
 // SECURITY: Limite rígido para inputs de texto para prevenir State Bloat e DoS.
@@ -178,6 +178,7 @@ const _handleManageHabitsClick = () => {
     // CHAOS FIX: Prevents modal stacking
     if (ui.manageModal.classList.contains('visible')) return;
     
+    triggerHaptic('light');
     setupManageModal();
     updateNotificationUI();
     openModal(ui.manageModal);
@@ -187,6 +188,7 @@ const _handleFabClick = () => {
     // CHAOS FIX: Prevents modal stacking
     if (ui.exploreModal.classList.contains('visible')) return;
 
+    triggerHaptic('light');
     renderExploreHabits();
     openModal(ui.exploreModal);
 };
@@ -201,6 +203,8 @@ const _handleHabitListClick = (e: MouseEvent) => {
 
     // CHAOS FIX: Prevent opening confirmation if already open
     if (ui.confirmModal.classList.contains('visible')) return;
+
+    triggerHaptic('light');
 
     if (button.classList.contains('end-habit-btn')) {
         requestHabitEndingFromModal(habitId);
@@ -224,6 +228,7 @@ const _handleResetAppClick = () => {
     // CHAOS FIX: Prevent stacking confirmation
     if (ui.confirmModal.classList.contains('visible')) return;
 
+    triggerHaptic('light');
     showConfirmationModal(
         t('confirmResetApp'),
         resetApplicationData,
@@ -251,6 +256,7 @@ const _handleNotificationToggleChange = () => {
 const _handleExploreHabitListClick = (e: MouseEvent) => {
     const item = (e.target as HTMLElement).closest<HTMLElement>('.explore-habit-item');
     if (!item) return;
+    triggerHaptic('light');
     const index = parseInt(item.dataset.index!, 10);
     const habitTemplate = PREDEFINED_HABITS[index];
     if (habitTemplate) {
@@ -272,6 +278,7 @@ const _handleExploreHabitListKeydown = (e: KeyboardEvent) => {
 };
 
 const _handleCreateCustomHabitClick = () => {
+    triggerHaptic('light');
     closeModal(ui.exploreModal);
     openEditModal(null);
 };
@@ -282,6 +289,7 @@ const _handleAiEvalClick = async () => {
         return;
     }
     
+    triggerHaptic('light');
     isAiEvalProcessing = true;
 
     try {
@@ -355,11 +363,13 @@ const _handleAiEvalClick = async () => {
 const _handleAiOptionsClick = (e: MouseEvent) => {
     const button = (e.target as HTMLElement).closest<HTMLButtonElement>('.ai-option-btn');
     if (!button) return;
+    triggerHaptic('light');
     const analysisType = button.dataset.analysisType as 'monthly' | 'quarterly' | 'historical';
     performAIAnalysis(analysisType);
 };
 
 const _handleConfirmClick = () => {
+    triggerHaptic('light');
     const action = state.confirmAction;
     state.confirmAction = null;
     state.confirmEditAction = null;
@@ -368,6 +378,7 @@ const _handleConfirmClick = () => {
 };
 
 const _handleEditClick = () => {
+    triggerHaptic('light');
     const editAction = state.confirmEditAction;
     state.confirmAction = null;
     state.confirmEditAction = null;
@@ -465,6 +476,7 @@ const _handleIconGridClick = (e: MouseEvent) => {
     const target = e.target as HTMLElement;
     const item = target.closest<HTMLButtonElement>('.icon-picker-item');
     if (item && state.editingHabit) {
+        triggerHaptic('light');
         const iconSVG = item.dataset.iconSvg!;
         state.editingHabit.formData.icon = iconSVG;
         ui.habitIconPickerBtn.innerHTML = iconSVG;
@@ -476,6 +488,7 @@ const _handleColorGridClick = (e: MouseEvent) => {
     const target = e.target as HTMLElement;
     const swatch = target.closest<HTMLButtonElement>('.color-swatch');
     if (swatch && state.editingHabit) {
+        triggerHaptic('light');
         const color = swatch.dataset.color!;
         state.editingHabit.formData.color = color;
 
@@ -506,6 +519,7 @@ const _handleTimeContainerClick = (e: MouseEvent) => {
     const button = (e.target as HTMLElement).closest<HTMLButtonElement>('.segmented-control-option');
     if (!button) return;
 
+    triggerHaptic('light');
     const time = button.dataset.time as TimeOfDay; 
     const currentlySelected = state.editingHabit.formData.times.includes(time);
 
@@ -606,7 +620,7 @@ export function setupModalListeners() {
     // Dialogs
     ui.confirmModalConfirmBtn.addEventListener('click', _handleConfirmClick);
     ui.confirmModalEditBtn.addEventListener('click', _handleEditClick);
-    ui.saveNoteBtn.addEventListener('click', handleSaveNote);
+    ui.saveNoteBtn.addEventListener('click', () => { triggerHaptic('light'); handleSaveNote(); });
 
     // Full Calendar
     ui.fullCalendarPrevBtn.addEventListener('click', _handleFullCalendarPrevClick);
@@ -615,7 +629,7 @@ export function setupModalListeners() {
     ui.fullCalendarGrid.addEventListener('keydown', _handleFullCalendarGridKeydown);
 
     // Habit Editing Form
-    ui.editHabitSaveBtn.addEventListener('click', saveHabitFromModal);
+    ui.editHabitSaveBtn.addEventListener('click', () => { triggerHaptic('light'); saveHabitFromModal(); });
     
     // Performance Optimized Input Handler
     const habitNameInput = ui.editHabitForm.elements.namedItem('habit-name') as HTMLInputElement;

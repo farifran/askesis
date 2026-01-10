@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -75,6 +76,9 @@ const _updateVisuals = () => {
     if (SwipeState.wasOpenLeft) tx += SwipeState.actionWidth;
     if (SwipeState.wasOpenRight) tx -= SwipeState.actionWidth;
 
+    // BLEEDING-EDGE PERF (CSS Typed OM): No "hot path" do gesto de swipe,
+    // atualizamos o `transform` diretamente no motor de composição do navegador
+    // sem o custo de serializar/parsear strings, garantindo a máxima fluidez.
     if (SwipeState.hasTypedOM && SwipeState.content.attributeStyleMap) {
         SwipeState.content.attributeStyleMap.set('transform', new CSSTranslate(CSS.px(tx), CSS.px(0)));
     } else {

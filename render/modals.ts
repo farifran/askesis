@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -15,7 +16,7 @@ import { ui } from './ui';
 import { t, compareStrings, formatDate, formatInteger, getTimeOfDayName } from '../i18n';
 import { HABIT_ICONS, UI_ICONS, getTimeOfDayIcon } from './icons';
 import { setTextContent, updateReelRotaryARIA } from './dom';
-import { escapeHTML, getContrastColor, parseUTCIsoDate, getTodayUTCIso, getSafeDate } from '../utils';
+import { escapeHTML, getContrastColor, parseUTCIsoDate, getTodayUTCIso, getSafeDate, triggerHaptic } from '../utils';
 
 interface ModalContext { element: HTMLElement; previousFocus: HTMLElement | null; onClose?: () => void; firstFocusable?: HTMLElement; lastFocusable?: HTMLElement; }
 const modalStack: ModalContext[] = [];
@@ -33,7 +34,10 @@ function _getLeastUsedColor(): string {
 export function initModalEngine() {
     document.addEventListener('keydown', e => {
         const ctx = modalStack[modalStack.length - 1]; if (!ctx) return;
-        if (e.key === 'Escape') closeModal(ctx.element);
+        if (e.key === 'Escape') {
+            triggerHaptic('light');
+            closeModal(ctx.element);
+        }
         else if (e.key === 'Tab') {
             const { firstFocusable: f, lastFocusable: l } = ctx;
             if (f && l) {
@@ -44,7 +48,10 @@ export function initModalEngine() {
     });
     document.addEventListener('click', e => {
         const ctx = modalStack[modalStack.length - 1]; if (!ctx) return;
-        if (e.target === ctx.element || (e.target as HTMLElement).closest('.modal-close-btn')) closeModal(ctx.element);
+        if (e.target === ctx.element || (e.target as HTMLElement).closest('.modal-close-btn')) {
+            triggerHaptic('light');
+            closeModal(ctx.element);
+        }
     });
 }
 

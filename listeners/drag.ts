@@ -131,12 +131,13 @@ function _scrollLoop() {
                 }
             }
             
-            // PERFORMANCE: Typed OM vs String Fallback
+            // BLEEDING-EDGE PERF (CSS Typed OM): No "hot path" do loop de arrastar,
+            // evitamos a criação e o parsing de strings de `transform`. Em vez disso,
+            // escrevemos valores numéricos diretamente no motor de composição do navegador
+            // para performance máxima, com fallback para o método tradicional.
             if (hasTypedOM && DragState.indicator.attributeStyleMap) {
-                // Direct GPU Communication (No String Parsing)
                 DragState.indicator.attributeStyleMap.set('transform', new CSSTranslate(CSS.px(0), CSS.px(topPos), CSS.px(0)));
             } else {
-                // Legacy Fallback
                 DragState.indicator.style.transform = `translate3d(0, ${topPos}px, 0)`;
             }
         } else {
