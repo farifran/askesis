@@ -241,10 +241,8 @@ export function saveHabitFromModal() {
         });
 
         if (existingHabit) {
-            // LÓGICA DE FUSÃO: Adiciona os horários ao hábito existente.
-            const existingSchedule = getScheduleForDate(existingHabit, targetDate) || existingHabit.scheduleHistory[existingHabit.scheduleHistory.length - 1];
-            const existingTimes = existingSchedule.times;
-            const newTimes = Array.from(new Set([...existingTimes, ...formData.times]));
+            // LÓGICA DE SOBRESCRITA: Atualiza o hábito existente a partir da data alvo.
+            const newTimes = formData.times;
 
             // Atualiza outras propriedades do formulário, tratando-o como a fonte da verdade.
             Object.assign(existingHabit, {
