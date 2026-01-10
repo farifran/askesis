@@ -37,7 +37,7 @@ export const isCurrentlySwiping = () => SwipeState.isActive === 1;
 function updateCachedLayoutValues() {
     const root = getComputedStyle(document.documentElement);
     SwipeState.actionWidth = parseInt(root.getPropertyValue('--swipe-action-width')) || 60;
-    SwipeState.hasTypedOM = !!(window.CSS && window.CSSTranslate && CSS.px);
+    SwipeState.hasTypedOM = typeof window !== 'undefined' && !!(window.CSS && window.CSSTranslate && CSS.px);
 }
 
 function _finalizeSwipeState(deltaX: number) {

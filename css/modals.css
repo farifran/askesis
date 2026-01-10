@@ -38,6 +38,26 @@
     flex-direction: column;
 }
 
+/* NEW: Layout for modals with sticky headers/footers */
+.modal-content--sticky-header {
+    padding: 0;
+    overflow: hidden; /* Disable scroll on the main container */
+}
+
+.modal-content--sticky-header > h2 {
+    padding: var(--space-xl) var(--space-xl) var(--space-lg);
+    margin: 0;
+    /* No need for sticky, as it's a flex item and the sibling will scroll */
+}
+
+.modal-content--sticky-header > .modal-scroll-wrapper {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 0 var(--space-xl);
+    flex: 1;
+    min-height: 0; /* Crucial for flex child scrolling */
+}
+
 /* REFINAMENTO DE ARQUITETURA [2024-12-05]: A estilização dos títulos dos modais foi refatorada. */
 :is(#explore-modal, #manage-modal, #ai-modal, #ai-options-modal, #confirm-modal, #notes-modal) h2,
 #icon-picker-modal h2,
@@ -121,6 +141,10 @@
     padding: var(--space-lg);
     flex-shrink: 0;
     border-top: 1px solid var(--border-color);
+}
+.modal-content--sticky-header > .modal-actions {
+    margin-block-start: 0;
+    padding: var(--space-lg) var(--space-xl) var(--space-xl);
 }
 .modal-actions .btn {
     flex-grow: 1;

@@ -10,7 +10,7 @@
  */
 
 import { ui } from '../render/ui';
-import { state, TimeOfDay, getNextStatus, HabitStatus } from '../state';
+import { state, TimeOfDay } from '../state';
 import { getCurrentGoalForInstance, getEffectiveScheduleForHabitOnDate } from '../services/selectors';
 import { openNotesModal, renderExploreHabits, openModal } from '../render';
 import { toggleHabitStatus, setGoalOverride, requestHabitTimeRemoval, requestHabitEndingFromModal } from '../habitActions';
@@ -19,9 +19,6 @@ import { DOM_SELECTORS, CSS_CLASSES } from '../render/constants';
 
 const GOAL_STEP = 5, MAX_GOAL = 9999;
 const SELECTOR = `${DOM_SELECTORS.HABIT_CONTENT_WRAPPER}, ${DOM_SELECTORS.GOAL_CONTROL_BTN}, ${DOM_SELECTORS.GOAL_VALUE_WRAPPER}, ${DOM_SELECTORS.SWIPE_DELETE_BTN}, ${DOM_SELECTORS.SWIPE_NOTE_BTN}, ${DOM_SELECTORS.EMPTY_GROUP_PLACEHOLDER}`;
-
-// PERFORMANCE: Reduzido de 250ms para 200ms para maior responsividade tátil.
-const StatusDebouncer = { timer: 0, counts: new Map<string, number>() };
 
 /**
  * Cria o efeito visual de ripple (onda) na posição do clique.
@@ -100,41 +97,12 @@ const _handleContainerClick = (e: MouseEvent) => {
             createRipple(e, rippleContainer);
         }
 
-        // --- UI OTIMISTA (Feedback Instantâneo) ---
-        const currentStatus: HabitStatus = card!.classList.contains(CSS_CLASSES.COMPLETED) ? 'completed' : 
-                                          (card!.classList.contains(CSS_CLASSES.SNOOZED) ? 'snoozed' : 'pending');
-        
-        const nextStatus = getNextStatus(currentStatus);
-        
-        requestAnimationFrame(() => {
-            card!.classList.remove(CSS_CLASSES.PENDING, CSS_CLASSES.COMPLETED, CSS_CLASSES.SNOOZED);
-            card!.classList.add(nextStatus);
-            
-            if (nextStatus === 'completed') {
-                const icon = card!.querySelector('.habit-icon');
-                if (icon) {
-                    icon.classList.remove('animate-pop');
-                    void (icon as HTMLElement).offsetWidth; // Force Reflow
-                    icon.classList.add('animate-pop');
-                }
-            }
-        });
-
-        const key = `${hId}|${t}`, count = (StatusDebouncer.counts.get(key) || 0) + 1;
-        StatusDebouncer.counts.set(key, count);
         triggerHaptic('light');
 
-        if (StatusDebouncer.timer) clearTimeout(StatusDebouncer.timer);
-        StatusDebouncer.timer = window.setTimeout(() => {
-            StatusDebouncer.counts.forEach((c, k) => {
-                const [id, tm] = k.split('|');
-                const rotations = c % 3;
-                for(let i=0; i < rotations; i++) {
-                    toggleHabitStatus(id, tm as TimeOfDay, state.selectedDate);
-                }
-            });
-            StatusDebouncer.counts.clear();
-        }, 200);
+        // --- AÇÃO IMEDIATA ---
+        // A lógica do debouncer anterior foi removida por ser excessivamente complexa e uma fonte potencial 
+        // de bugs de evento. A mudança de estado agora é imediata, tornando a UI mais responsiva e o código mais robusto.
+        toggleHabitStatus(hId, t, state.selectedDate);
     }
 };
 

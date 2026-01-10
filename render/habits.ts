@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -8,7 +9,7 @@
  * @description Motor de Renderização de Cartões de Hábito (Virtual DOM-lite).
  */
 
-import { state, Habit, HabitStatus, HabitDayData, STREAK_CONSOLIDATED, STREAK_SEMI_CONSOLIDATED, TimeOfDay, getHabitDailyInfoForDate, TIMES_OF_DAY, HabitDailyInfo } from '../state';
+import { state, Habit, HabitDayData, STREAK_CONSOLIDATED, STREAK_SEMI_CONSOLIDATED, TimeOfDay, getHabitDailyInfoForDate, TIMES_OF_DAY, HabitDailyInfo } from '../state';
 import { calculateHabitStreak, getActiveHabitsForDate, getSmartGoalForHabit, getHabitDisplayInfo } from '../services/selectors';
 import { ui } from './ui';
 import { t, getTimeOfDayName, formatInteger } from '../i18n';
@@ -71,8 +72,11 @@ const getHabitCardTemplate = () => habitCardTemplate || (habitCardTemplate = (()
     return li;
 })());
 
+// Otimiza a criação de chaves de cache para evitar repetição de string literal.
+const _getCacheKey = (habitId: string, time: TimeOfDay): string => `${habitId}|${time}`;
+
 export const clearHabitDomCache = () => habitElementCache.clear();
-export const getCachedHabitCard = (id: string, t: TimeOfDay) => habitElementCache.get(`${id}|${t}`);
+export const getCachedHabitCard = (id: string, t: TimeOfDay) => habitElementCache.get(_getCacheKey(id, t));
 
 function _renderPendingGoalControls(habit: Habit, time: TimeOfDay, dayData: HabitDayData | undefined, els: CardElements) {
     if (habit.goal.type === 'check') { if (els.goal.hasChildNodes()) els.goal.replaceChildren(); return; }
@@ -89,7 +93,7 @@ function _renderPendingGoalControls(habit: Habit, time: TimeOfDay, dayData: Habi
     setTextContent(els.goalUnit!, t(habit.goal.unitKey || 'unitCheck', { count: cur }));
 }
 
-export function updateHabitCardElement(card: HTMLElement, habit: Habit, time: TimeOfDay, preInfo?: Record<string, HabitDailyInfo>) {
+export function updateHabitCardElement(card: HTMLElement, habit: Habit, time: TimeOfDay, preInfo?: Record<string, HabitDailyInfo>, options?: { animate?: boolean }) {
     const els = cardElementsCache.get(card)!;
     const info = (preInfo || getHabitDailyInfoForDate(state.selectedDate))[habit.id]?.instances?.[time];
     const status = info?.status ?? CSS_CLASSES.PENDING;
@@ -99,7 +103,7 @@ export function updateHabitCardElement(card: HTMLElement, habit: Habit, time: Ti
     if (!card.classList.contains(status)) {
         card.classList.remove(CSS_CLASSES.PENDING, CSS_CLASSES.COMPLETED, CSS_CLASSES.SNOOZED);
         card.classList.add(status);
-        if (status === CSS_CLASSES.COMPLETED) {
+        if (status === CSS_CLASSES.COMPLETED && options?.animate) {
             els.icon.classList.remove('animate-pop'); void els.icon.offsetWidth; els.icon.classList.add('animate-pop');
         }
     }
@@ -128,7 +132,8 @@ export function updateHabitCardElement(card: HTMLElement, habit: Habit, time: Ti
 export function createHabitCardElement(habit: Habit, time: TimeOfDay, preInfo?: Record<string, HabitDailyInfo>): HTMLElement {
     const card = getHabitCardTemplate().cloneNode(true) as HTMLElement;
     card.dataset.habitId = habit.id; card.dataset.time = time;
-    habitElementCache.set(`${habit.id}|${time}`, card);
+    const key = _getCacheKey(habit.id, time);
+    habitElementCache.set(key, card);
 
     const al = card.firstElementChild!, ar = al.nextElementSibling!, cw = ar.nextElementSibling!;
     const det = cw.children[1] as HTMLElement, goal = cw.children[2] as HTMLElement;
@@ -154,41 +159,67 @@ export function renderHabits() {
     }
 
     const empty = TIMES_OF_DAY.filter(t => habitsByTimePool[t].length === 0);
+    const activeKeysThisRender = new Set<string>();
+
     TIMES_OF_DAY.forEach(time => {
         const dom = getGroupDOM(time); if (!dom) return;
         const habits = habitsByTimePool[time], hasH = habits.length > 0;
+        
         dom.marker.style.display = hasH ? '' : 'none';
         if (hasH) dom.marker.innerHTML = getTimeOfDayIcon(time);
 
-        let curIdx = 0;
-        for (let h = 0; h < habits.length; h++) {
-            const habit = habits[h], key = `${habit.id}|${time}`;
-            let card = habitElementCache.get(key);
-            if (card) {
-                card.classList.remove(CSS_CLASSES.IS_OPEN_LEFT, CSS_CLASSES.IS_OPEN_RIGHT, CSS_CLASSES.IS_SWIPING, CSS_CLASSES.DRAGGING);
-                updateHabitCardElement(card, habit, time, dInfo);
-            } else card = createHabitCardElement(habit, time, dInfo);
-            
-            if (dom.group.children[curIdx] !== card) dom.group.insertBefore(card, dom.group.children[curIdx] || null);
-            curIdx++;
-        }
-        while (dom.group.children.length > curIdx) {
-            const rem = dom.group.lastChild as HTMLElement;
-            if (rem.dataset?.habitId) habitElementCache.delete(`${rem.dataset.habitId}|${rem.dataset.time}`);
-            rem.remove();
+        const newChildren: HTMLElement[] = [];
+        if (hasH) {
+            for (let i = 0; i < habits.length; i++) {
+                const habit = habits[i];
+                const key = _getCacheKey(habit.id, time);
+                activeKeysThisRender.add(key);
+
+                let card = habitElementCache.get(key);
+                if (card) {
+                    card.classList.remove(CSS_CLASSES.IS_OPEN_LEFT, CSS_CLASSES.IS_OPEN_RIGHT, CSS_CLASSES.IS_SWIPING, CSS_CLASSES.DRAGGING);
+                    updateHabitCardElement(card, habit, time, dInfo);
+                } else {
+                    card = createHabitCardElement(habit, time, dInfo);
+                }
+                newChildren.push(card);
+            }
         }
 
         const isSmart = time === empty[0];
         dom.wrapper.classList.toggle('has-habits', hasH);
         dom.wrapper.classList.toggle('is-collapsible', !hasH && !isSmart);
 
-        let ph = dom.group.querySelector<HTMLElement>(DOM_SELECTORS.EMPTY_GROUP_PLACEHOLDER);
         if (!hasH) {
-            if (!ph) { ph = getPlaceholderTemplate().cloneNode(true) as HTMLElement; dom.group.appendChild(ph); }
+            let ph = dom.group.querySelector<HTMLElement>(DOM_SELECTORS.EMPTY_GROUP_PLACEHOLDER);
+            if (!ph) {
+                ph = getPlaceholderTemplate().cloneNode(true) as HTMLElement;
+            }
             ph.classList.toggle('show-smart-placeholder', isSmart);
             const iconHtml = isSmart ? `<span class="placeholder-icon-generic">${empty.map(getTimeOfDayIcon).join('<span class="icon-separator">/</span>')}</span><span class="placeholder-icon-specific">${getTimeOfDayIcon(time)}</span>` : `<span class="placeholder-icon-specific">${getTimeOfDayIcon(time)}</span>`;
             ph.innerHTML = `<div class="time-of-day-icon">${iconHtml}</div><span class="placeholder-arrow">→</span><span>${t('dragToAddHabit')}</span>`;
-        } else ph?.remove();
+            newChildren.push(ph);
+        }
+        
+        // Limpeza do cache de elementos que não estão mais no DOM
+        const newChildrenSet = new Set(newChildren);
+        for (let i = 0; i < dom.group.children.length; i++) {
+            const child = dom.group.children[i] as HTMLElement;
+            if (!newChildrenSet.has(child) && child.dataset.habitId) {
+                const key = _getCacheKey(child.dataset.habitId, child.dataset.time as TimeOfDay);
+                habitElementCache.delete(key);
+            }
+        }
+
+        dom.group.replaceChildren(...newChildren);
     });
+
+    // Limpeza global do cache para hábitos que não estão mais ativos hoje
+    for (const key of habitElementCache.keys()) {
+        if (!activeKeysThisRender.has(key)) {
+            habitElementCache.delete(key);
+        }
+    }
+
     state.uiDirtyState.habitListStructure = false;
 }

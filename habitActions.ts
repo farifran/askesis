@@ -70,6 +70,14 @@ function _notifyChanges(fullRebuild = false) {
     ['render-app', 'habitsChanged'].forEach(ev => document.dispatchEvent(new CustomEvent(ev)));
 }
 
+function _notifyPartialUIRefresh(date: string, habitIds: string[]) {
+    invalidateCachesForDateChange(date, habitIds);
+    state.uiDirtyState.calendarVisuals = true;
+    saveState();
+    // NOTA: state.uiDirtyState.habitListStructure não é definido como true aqui.
+    ['render-app', 'habitsChanged'].forEach(ev => document.dispatchEvent(new CustomEvent(ev)));
+}
+
 function _lockActionHabit(habitId: string): Habit | null {
     if (ActionContext.isLocked) return null;
     ActionContext.isLocked = true;
@@ -337,9 +345,14 @@ export function toggleHabitStatus(habitId: string, time: TimeOfDay, date: string
     if (h) {
         const inst = ensureHabitInstanceData(date, habitId, time);
         if (_updateHabitInstanceStatus(h, inst, getNextStatus(inst.status))) {
-            invalidateCachesForDateChange(date, [habitId]);
             if (inst.status === 'completed') _checkStreakMilestones(h, date);
-            _notifyChanges(false);
+            
+            // Dispara um evento específico para que a UI possa fazer uma atualização direcionada com animação.
+            document.dispatchEvent(new CustomEvent('card-status-changed', { 
+                detail: { habitId, time, date } 
+            }));
+            
+            _notifyPartialUIRefresh(date, [habitId]);
         }
     }
 }
@@ -380,7 +393,7 @@ export function requestHabitPermanentDeletion(habitId: string) { if (_lockAction
 export function graduateHabit(habitId: string) { const h = state.habits.find(x => x.id === habitId); if (h) { h.graduatedOn = getSafeDate(state.selectedDate); _notifyChanges(true); closeModal(ui.manageModal); triggerHaptic('success'); } }
 export async function resetApplicationData() { state.habits = []; state.dailyData = {}; state.archives = {}; state.notificationsShown = state.pending21DayHabitIds = state.pendingConsolidationHabitIds = []; try { await clearLocalPersistence(); } finally { clearKey(); location.reload(); } }
 export function handleSaveNote() { if (!state.editingNoteFor) return; const { habitId, date, time } = state.editingNoteFor, val = ui.notesTextarea.value.trim(), inst = ensureHabitInstanceData(date, habitId, time); if ((inst.note || '') !== val) { inst.note = val || undefined; state.uiDirtyState.habitListStructure = true; saveState(); document.dispatchEvent(new CustomEvent('render-app')); } closeModal(ui.notesModal); }
-export function setGoalOverride(habitId: string, d: string, t: TimeOfDay, v: number) { try { ensureHabitInstanceData(d, habitId, t).goalOverride = v; invalidateCachesForDateChange(d, [habitId]); _notifyChanges(false); } catch (e) { console.error(e); } }
+export function setGoalOverride(habitId: string, d: string, t: TimeOfDay, v: number) { try { ensureHabitInstanceData(d, habitId, t).goalOverride = v; document.dispatchEvent(new CustomEvent('card-goal-changed', { detail: { habitId, time: t, date: d } })); _notifyPartialUIRefresh(d, [habitId]); } catch (e) { console.error(e); } }
 export function requestHabitTimeRemoval(habitId: string, time: TimeOfDay) { const h = _lockActionHabit(habitId), target = getSafeDate(state.selectedDate); if (!h) return; ActionContext.removal = { habitId, time, targetDate: target }; showConfirmationModal(t('confirmRemoveTimePermanent', { habitName: getHabitDisplayInfo(h, target).name, time: getTimeOfDayName(time) }), () => { ensureHabitDailyInfo(target, habitId).dailySchedule = undefined; _requestFutureScheduleChange(habitId, target, s => ({ ...s, times: s.times.filter(x => x !== time) })); ActionContext.reset(); }, { title: t('modalRemoveTimeTitle'), confirmText: t('deleteButton'), confirmButtonStyle: 'danger' }); }
 export function exportData() { const blob = new Blob([JSON.stringify(getPersistableState(), null, 2)], { type: 'application/json' }), url = URL.createObjectURL(blob), a = document.createElement('a'); a.href = url; a.download = `askesis-backup-${getTodayUTCIso()}.json`; a.click(); URL.revokeObjectURL(url); }
 export function handleDayTransition() { const today = getTodayUTCIso(); clearActiveHabitsCache(); state.uiDirtyState.calendarVisuals = state.uiDirtyState.habitListStructure = state.uiDirtyState.chartData = true; state.calendarDates = []; if (state.selectedDate !== today) state.selectedDate = today; document.dispatchEvent(new CustomEvent('render-app')); }

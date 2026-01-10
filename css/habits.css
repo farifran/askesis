@@ -562,7 +562,10 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 
 .habit-card.is-open-left .habit-content-wrapper { transform: translateX(var(--swipe-action-width)); }
 .habit-card.is-open-right .habit-content-wrapper { transform: translateX(calc(-1 * var(--swipe-action-width))); }
-.habit-card:is(.is-open-left, .is-open-right) :is(.habit-goal-controls, .time-of-day-icon, .habit-icon) {
+
+/* UX FIX: Oculta APENAS controles de meta e ícone de horário ao deslizar.
+   Mantém o ícone do hábito visível para contexto. */
+.habit-card:is(.is-open-left, .is-open-right) :is(.habit-goal-controls, .time-of-day-icon) {
     opacity: 0;
     pointer-events: none;
 }

@@ -364,101 +364,105 @@
     </div>
     
     <div id="manage-modal" class="modal-overlay">
-        <div class="modal-content">
+        <div class="modal-content modal-content--sticky-header">
             <h2 id="manage-modal-title">Configurações Gerais</h2>
-            <div class="modal-settings-section">
-                <div class="setting-item">
-                    <label id="label-language">Idioma</label>
-                    <div id="language-rotary" class="reel-rotary">
-                        <button id="language-prev" class="reel-btn">
-                            <svg width="16" height="16"><use href="#icon-chevron-left"></use></svg>
-                        </button>
-                        <div id="language-viewport" class="reel-viewport">
-                            <div id="language-reel" class="reel-reel"></div>
-                        </div>
-                        <button id="language-next" class="reel-btn">
-                            <svg width="16" height="16"><use href="#icon-chevron-right"></use></svg>
-                        </button>
-                    </div>
-                </div>
-                <div class="setting-item setting-item--column">
+            <div class="modal-scroll-wrapper">
+                <div class="modal-settings-section">
                     <div class="setting-item">
-                        <label for="notification-toggle" id="label-notifications">Notificações</label>
-                        <label class="toggle-switch" for="notification-toggle" id="notification-toggle-label">
-                            <input type="checkbox" id="notification-toggle">
-                            <span class="slider"></span>
-                        </label>
+                        <label id="label-language">Idioma</label>
+                        <div id="language-rotary" class="reel-rotary">
+                            <button id="language-prev" class="reel-btn">
+                                <svg width="16" height="16"><use href="#icon-chevron-left"></use></svg>
+                            </button>
+                            <div id="language-viewport" class="reel-viewport">
+                                <div id="language-reel" class="reel-reel"></div>
+                            </div>
+                            <button id="language-next" class="reel-btn">
+                                <svg width="16" height="16"><use href="#icon-chevron-right"></use></svg>
+                            </button>
+                        </div>
                     </div>
-                    <p id="notification-status-desc" class="setting-item-desc"></p>
-                </div>
-                 <div class="setting-item setting-item--column">
-                    <div class="setting-item-header">
-                         <label id="label-sync">Sincronização na Nuvem</label>
-                         <span id="sync-status"></span>
+                    <div class="setting-item setting-item--column">
+                        <div class="setting-item">
+                            <label for="notification-toggle" id="label-notifications">Notificações</label>
+                            <label class="toggle-switch" for="notification-toggle" id="notification-toggle-label">
+                                <input type="checkbox" id="notification-toggle">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        <p id="notification-status-desc" class="setting-item-desc"></p>
                     </div>
-                    <!-- UI UPDATE: Placeholder for detailed error message -->
-                    <p id="sync-error-msg" class="form-notice hidden" style="margin-top:0; margin-bottom:10px;"></p>
+                     <div class="setting-item setting-item--column">
+                        <div class="setting-item-header">
+                             <label id="label-sync">Sincronização na Nuvem</label>
+                             <span id="sync-status"></span>
+                        </div>
+                        <!-- UI UPDATE: Placeholder for detailed error message -->
+                        <p id="sync-error-msg" class="form-notice hidden" style="margin-top:0; margin-bottom:10px;"></p>
+                        
+                        <div id="sync-section">
+                            <!-- Estado: Sincronização Inativa -->
+                            <div class="sync-view" id="sync-inactive-view">
+                                <p id="sync-inactive-desc"></p>
+                                <div class="sync-actions">
+                                    <button id="enable-sync-btn" class="btn btn--primary"></button>
+                                    <button id="enter-key-view-btn" class="btn"></button>
+                                </div>
+                            </div>
+                            <!-- Estado: Entrada de Chave -->
+                            <div class="sync-view" id="sync-enter-key-view" style="display: none;">
+                                 <div class="form-group">
+                                    <label for="sync-key-input" id="label-enter-key"></label>
+                                    <!-- UX IMPROVEMENT [2025-01-18]: Desativa correções automáticas para chaves complexas (UUID) -->
+                                    <input type="text" id="sync-key-input" class="form-control" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+                                </div>
+                                <div class="sync-actions">
+                                    <button id="cancel-enter-key-btn" class="btn"></button>
+                                    <button id="submit-key-btn" class="btn btn--primary"></button>
+                                </div>
+                            </div>
+                             <!-- Estado: Exibição da Chave Gerada -->
+                            <div class="sync-view" id="sync-display-key-view" style="display: none;">
+                                <p class="sync-warning" id="sync-warning-text"></p>
+                                <div class="sync-key-display">
+                                    <span id="sync-key-text"></span>
+                                    <button id="copy-key-btn" class="icon-btn" aria-label="Copiar Chave"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg></button>
+                                </div>
+                                <button id="key-saved-btn" class="btn btn--primary"></button>
+                            </div>
+                            <!-- Estado: Sincronização Ativa -->
+                            <div class="sync-view" id="sync-active-view" style="display: none;">
+                                <p id="sync-active-desc"></p>
+                                <div class="sync-actions">
+                                    <button id="view-key-btn" class="btn"></button>
+                                    <button id="disable-sync-btn" class="btn btn--danger"></button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                     
-                    <div id="sync-section">
-                        <!-- Estado: Sincronização Inativa -->
-                        <div class="sync-view" id="sync-inactive-view">
-                            <p id="sync-inactive-desc"></p>
-                            <div class="sync-actions">
-                                <button id="enable-sync-btn" class="btn btn--primary"></button>
-                                <button id="enter-key-view-btn" class="btn"></button>
-                            </div>
+                    <div id="privacy-section" class="setting-item setting-item--column" style="margin-block-end: var(--space-sm);">
+                        <div class="setting-item-header">
+                            <label id="label-privacy">Dados & Privacidade</label>
                         </div>
-                        <!-- Estado: Entrada de Chave -->
-                        <div class="sync-view" id="sync-enter-key-view" style="display: none;">
-                             <div class="form-group">
-                                <label for="sync-key-input" id="label-enter-key"></label>
-                                <!-- UX IMPROVEMENT [2025-01-18]: Desativa correções automáticas para chaves complexas (UUID) -->
-                                <input type="text" id="sync-key-input" class="form-control" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
-                            </div>
-                            <div class="sync-actions">
-                                <button id="cancel-enter-key-btn" class="btn"></button>
-                                <button id="submit-key-btn" class="btn btn--primary"></button>
-                            </div>
-                        </div>
-                         <!-- Estado: Exibição da Chave Gerada -->
-                        <div class="sync-view" id="sync-display-key-view" style="display: none;">
-                            <p class="sync-warning" id="sync-warning-text"></p>
-                            <div class="sync-key-display">
-                                <span id="sync-key-text"></span>
-                                <button id="copy-key-btn" class="icon-btn" aria-label="Copiar Chave"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg></button>
-                            </div>
-                            <button id="key-saved-btn" class="btn btn--primary"></button>
-                        </div>
-                        <!-- Estado: Sincronização Ativa -->
-                        <div class="sync-view" id="sync-active-view" style="display: none;">
-                            <p id="sync-active-desc"></p>
-                            <div class="sync-actions">
-                                <button id="view-key-btn" class="btn"></button>
-                                <button id="disable-sync-btn" class="btn btn--danger"></button>
-                            </div>
+                        <div class="sync-actions">
+                            <button id="export-data-btn" class="btn">Exportar Backup</button>
+                            <button id="import-data-btn" class="btn">Restaurar Backup</button>
                         </div>
                     </div>
-                </div>
-                
-                <div id="privacy-section" class="setting-item setting-item--column" style="margin-block-end: var(--space-sm);">
-                    <div class="setting-item-header">
-                        <label id="label-privacy">Dados & Privacidade</label>
-                    </div>
-                    <div class="sync-actions">
-                        <button id="export-data-btn" class="btn">Exportar Backup</button>
-                        <button id="import-data-btn" class="btn">Restaurar Backup</button>
+    
+                    <div id="reset-section" class="setting-item">
+                        <label id="label-reset">Reinicialização</label>
+                        <button id="reset-app-btn" class="btn btn--danger">Apagar dados</button>
                     </div>
                 </div>
-
-                <div id="reset-section" class="setting-item">
-                    <label id="label-reset">Reinicialização</label>
-                    <button id="reset-app-btn" class="btn btn--danger">Apagar dados</button>
-                </div>
+                <h3 id="habit-list-title" class="modal-subtitle">Gerenciar Hábitos</h3>
+                <ul id="habit-list"></ul>
+                <p id="no-habits-message" class="empty-list-message hidden"></p>
             </div>
-            <h3 id="habit-list-title" class="modal-subtitle">Gerenciar Hábitos</h3>
-            <ul id="habit-list"></ul>
-            <p id="no-habits-message" class="empty-list-message hidden"></p>
-            <button class="btn modal-close-btn">Fechar</button>
+            <div class="modal-actions">
+                <button class="btn modal-close-btn">Fechar</button>
+            </div>
         </div>
     </div>
 

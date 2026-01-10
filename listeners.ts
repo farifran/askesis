@@ -17,7 +17,7 @@
  */
 
 import { ui } from './render/ui';
-import { renderApp, renderAINotificationState, updateNotificationUI, initModalEngine } from './render';
+import { renderApp, renderAINotificationState, updateNotificationUI, initModalEngine, getCachedHabitCard, updateHabitCardElement } from './render';
 import { setupModalListeners } from './listeners/modals';
 import { setupCardListeners } from './listeners/cards';
 import { setupDragHandler } from './listeners/drag';
@@ -137,6 +137,20 @@ export function setupEventListeners() {
             checkAndAnalyzeDayContext(ce.detail.date);
         }
     });
+
+    // EVENT BUS: Targeted UI updates for performance
+    const handleCardUpdate = (e: Event) => {
+        const { habitId, time } = (e as CustomEvent).detail;
+        const habit = state.habits.find(h => h.id === habitId);
+        const cardElement = getCachedHabitCard(habitId, time);
+
+        if (habit && cardElement) {
+            const shouldAnimate = e.type === 'card-status-changed';
+            updateHabitCardElement(cardElement, habit, time, undefined, { animate: shouldAnimate });
+        }
+    };
+    document.addEventListener('card-status-changed', handleCardUpdate);
+    document.addEventListener('card-goal-changed', handleCardUpdate);
 
     // 4. ENVIRONMENT & LIFECYCLE LISTENERS
     window.addEventListener('online', _handleNetworkChange);
