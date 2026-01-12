@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -10,7 +9,7 @@
  */
 
 import { state, Habit, HabitDayData, STREAK_CONSOLIDATED, STREAK_SEMI_CONSOLIDATED, TimeOfDay, getHabitDailyInfoForDate, TIMES_OF_DAY, HabitDailyInfo } from '../state';
-import { calculateHabitStreak, getActiveHabitsForDate, getSmartGoalForHabit, getHabitDisplayInfo } from '../services/selectors';
+import { calculateHabitStreak, getActiveHabitsForDate, getSmartGoalForHabit, getHabitDisplayInfo, getHabitPropertiesForDate } from '../services/selectors';
 import { ui } from './ui';
 import { t, getTimeOfDayName, formatInteger } from '../i18n';
 import { UI_ICONS, getTimeOfDayIcon } from './icons';
@@ -79,7 +78,11 @@ export const clearHabitDomCache = () => habitElementCache.clear();
 export const getCachedHabitCard = (id: string, t: TimeOfDay) => habitElementCache.get(_getCacheKey(id, t));
 
 function _renderPendingGoalControls(habit: Habit, time: TimeOfDay, dayData: HabitDayData | undefined, els: CardElements) {
-    if (habit.goal.type === 'check') { if (els.goal.hasChildNodes()) els.goal.replaceChildren(); return; }
+    // @fix: Get schedule for the selected date to access goal properties.
+    const schedule = getHabitPropertiesForDate(habit, state.selectedDate);
+    if (!schedule) { if (els.goal.hasChildNodes()) els.goal.replaceChildren(); return; }
+
+    if (schedule.goal.type === 'check') { if (els.goal.hasChildNodes()) els.goal.replaceChildren(); return; }
     if (!els.goal.querySelector(`.${CSS_CLASSES.HABIT_GOAL_CONTROLS}`)) {
         els.goal.replaceChildren(getGoalControlsTemplate().cloneNode(true));
         els.goalDecBtn = els.goal.querySelector(`[data-action="decrement"]`) as HTMLButtonElement;
@@ -90,7 +93,8 @@ function _renderPendingGoalControls(habit: Habit, time: TimeOfDay, dayData: Habi
     const cur = dayData?.goalOverride ?? getSmartGoalForHabit(habit, state.selectedDate, time);
     els.goalDecBtn!.disabled = cur <= 1;
     setTextContent(els.goalProgress!, formatInteger(cur));
-    setTextContent(els.goalUnit!, t(habit.goal.unitKey || 'unitCheck', { count: cur }));
+    // @fix: Use goal from the schedule object.
+    setTextContent(els.goalUnit!, t(schedule.goal.unitKey || 'unitCheck', { count: cur }));
 }
 
 export function updateHabitCardElement(card: HTMLElement, habit: Habit, time: TimeOfDay, preInfo?: Record<string, HabitDailyInfo>, options?: { animate?: boolean }) {
@@ -108,8 +112,12 @@ export function updateHabitCardElement(card: HTMLElement, habit: Habit, time: Ti
         }
     }
 
-    if (els.cachedIconHtml !== habit.icon) { els.icon.innerHTML = els.cachedIconHtml = habit.icon; }
-    els.icon.style.color = habit.color; els.icon.style.backgroundColor = `${habit.color}30`;
+    // @fix: Get schedule to access icon and color properties.
+    const schedule = getHabitPropertiesForDate(habit, state.selectedDate);
+    if (!schedule) return;
+
+    if (els.cachedIconHtml !== schedule.icon) { els.icon.innerHTML = els.cachedIconHtml = schedule.icon; }
+    els.icon.style.color = schedule.color; els.icon.style.backgroundColor = `${schedule.color}30`;
     
     const isCons = streak >= STREAK_CONSOLIDATED, isSemi = streak >= STREAK_SEMI_CONSOLIDATED && !isCons;
     card.classList.toggle('consolidated', isCons); card.classList.toggle('semi-consolidated', isSemi);

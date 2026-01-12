@@ -48,21 +48,30 @@ export function getScheduleForDate(habit: Habit, dateISO: string): HabitSchedule
     return schedule;
 }
 
+export function getEffectiveScheduleForHabitOnDate(habit: Habit, dateISO: string): TimeOfDay[] {
+    const dailyInfo = getHabitDailyInfoForDate(dateISO)[habit.id];
+    if (dailyInfo?.dailySchedule) {
+        return dailyInfo.dailySchedule;
+    }
+    const schedule = getScheduleForDate(habit, dateISO);
+    return schedule?.times || [];
+}
+
+export function getHabitPropertiesForDate(habit: Habit, dateISO: string): HabitSchedule | null {
+    const schedule = getScheduleForDate(habit, dateISO);
+    return schedule || habit.scheduleHistory[habit.scheduleHistory.length - 1] || null;
+}
+
 export function getHabitDisplayInfo(habit: Habit | PredefinedHabit, dateISO?: string): { name: string, subtitle: string } {
     let source: any = habit;
     if ('scheduleHistory' in habit && habit.scheduleHistory.length > 0) {
-        const sched = dateISO ? getScheduleForDate(habit as Habit, dateISO) : null;
-        source = sched || habit.scheduleHistory[habit.scheduleHistory.length - 1];
+        const effectiveDate = dateISO || getTodayUTCIso();
+        source = getHabitPropertiesForDate(habit as Habit, effectiveDate) || habit.scheduleHistory[habit.scheduleHistory.length-1];
     }
     return {
         name: source.nameKey ? t(source.nameKey) : (source.name || ''),
         subtitle: source.subtitleKey ? t(source.subtitleKey) : (source.subtitle || '')
     };
-}
-
-export function getEffectiveScheduleForHabitOnDate(habit: Habit, dateISO: string): TimeOfDay[] {
-    const dailyInfo = getHabitDailyInfoForDate(dateISO)[habit.id];
-    return dailyInfo?.dailySchedule || getScheduleForDate(habit, dateISO)?.times || [];
 }
 
 export function shouldHabitAppearOnDate(habit: Habit, dateISO: string, preParsedDate?: Date): boolean {
@@ -161,13 +170,16 @@ export function calculateHabitStreak(habitOrId: string | Habit, endDateISO: stri
 }
 
 export function getSmartGoalForHabit(habit: Habit, dateISO: string, time: TimeOfDay): number {
-    if (habit.goal.type === 'check' || !habit.goal.total) return 1;
+    const schedule = getHabitPropertiesForDate(habit, dateISO);
+    if (!schedule) return 1;
+    
+    if (schedule.goal.type === 'check' || !schedule.goal.total) return 1;
     const dailyInfo = getHabitDailyInfoForDate(dateISO)[habit.id];
     
     // 1. Explicit Override for this specific date takes precedence
     if (dailyInfo?.instances[time]?.goalOverride !== undefined) return dailyInfo.instances[time].goalOverride!;
     
-    const baseGoal = habit.goal.total;
+    const baseGoal = schedule.goal.total;
     const targetTs = parseUTCIsoDate(dateISO).getTime();
     
     // --- SMART ADAPTATION LOGIC (Historical Lookback) ---
@@ -252,6 +264,7 @@ export function calculateDaySummary(dateISO: string, preParsedDate?: Date) {
         if (!shouldHabitAppearOnDate(h, dateISO, dateObj)) continue;
         const sch = getEffectiveScheduleForHabitOnDate(h, dateISO);
         const info = dayData[h.id];
+        const scheduleProps = getHabitPropertiesForDate(h, dateISO);
         
         for (let j = 0; j < sch.length; j++) {
             const t = sch[j];
@@ -260,7 +273,7 @@ export function calculateDaySummary(dateISO: string, preParsedDate?: Date) {
             if (status === 'completed') {
                 completed++;
                 // Track habits that track quantity (not simple checks) for the intensity increase rule
-                if (h.goal.type !== 'check' && h.goal.total) {
+                if (scheduleProps && scheduleProps.goal.type !== 'check' && scheduleProps.goal.total) {
                     activeHabitsForPlusCheck.push({ habit: h, time: t });
                 }
             } else if (status === 'snoozed') snoozed++;
@@ -288,6 +301,8 @@ export function calculateDaySummary(dateISO: string, preParsedDate?: Date) {
             // At least ONE numeric habit must have a value STRICTLY greater than BOTH previous days.
             for (const item of activeHabitsForPlusCheck) {
                 const { habit, time } = item;
+                const scheduleProps = getHabitPropertiesForDate(habit, dateISO);
+                if (!scheduleProps?.goal.total) continue;
                 
                 // Get actual performance values (Override or Default)
                 const valToday = getCurrentGoalForInstance(habit, dateISO, time);
@@ -295,7 +310,7 @@ export function calculateDaySummary(dateISO: string, preParsedDate?: Date) {
                 const valD2 = getCurrentGoalForInstance(habit, d2, time);
 
                 // Strict increase relative to BOTH previous days, and must exceed base goal.
-                if (valToday > habit.goal.total && valToday > valD1 && valToday > valD2) {
+                if (valToday > scheduleProps.goal.total && valToday > valD1 && valToday > valD2) {
                     hasPlus = true;
                     break; // Found the "Spark" habit, day is Plus.
                 }

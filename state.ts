@@ -58,9 +58,20 @@ export interface HabitDailyInfo {
     dailySchedule: TimeOfDay[] | undefined;
 }
 
+export interface HabitGoal { 
+    type: 'pages' | 'minutes' | 'check'; 
+    total?: number; 
+    unitKey?: string;
+}
+
 export interface HabitSchedule {
     startDate: string;
     endDate?: string;
+    // Versioned properties
+    icon: string;
+    color: string;
+    goal: HabitGoal;
+    philosophy?: HabitPhilosophy;
     name?: string;
     subtitle?: string;
     nameKey?: string;
@@ -72,16 +83,8 @@ export interface HabitSchedule {
 
 export interface Habit {
     id: string;
-    icon: string;
-    color: string;
-    goal: { 
-        type: 'pages' | 'minutes' | 'check'; 
-        total?: number; 
-        unitKey?: string;
-    };
     createdOn: string;
     graduatedOn?: string;
-    philosophy?: HabitPhilosophy;
     scheduleHistory: HabitSchedule[];
 }
 
@@ -91,11 +94,7 @@ export type PredefinedHabit = {
     icon: string;
     color: string;
     times: TimeOfDay[];
-    goal: {
-        type: 'pages' | 'minutes' | 'check';
-        total?: number;
-        unitKey: string;
-    };
+    goal: HabitGoal;
     frequency: Frequency;
     isDefault?: boolean;
     philosophy?: HabitPhilosophy;
@@ -105,7 +104,7 @@ export type HabitTemplate = {
     icon: string;
     color: string;
     times: TimeOfDay[];
-    goal: Habit['goal'];
+    goal: HabitGoal;
     frequency: Frequency;
     philosophy?: HabitPhilosophy;
 } & ({
@@ -150,7 +149,7 @@ export interface AppState {
 }
 
 // --- CONSTANTS ---
-export const APP_VERSION = 6; 
+export const APP_VERSION = 7; 
 export const DAYS_IN_CALENDAR = 61;
 export const STREAK_SEMI_CONSOLIDATED = 21;
 export const STREAK_CONSOLIDATED = 66;

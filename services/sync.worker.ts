@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -216,8 +215,14 @@ async function buildAIPrompt(payload: AIPromptPayload) {
             const streak = await _calculateHabitStreakInWorker(h, todayISO, dailyData, archives);
             const success = await _calculateSuccessRateInWorker(h, todayISO, dailyData, archives, type === 'quarterly' ? 90 : (type === 'historical' ? 365 : 30));
             let line = t['aiPromptHabitDetails'].replace('{habitName}', name).replace('{streak}', String(streak)).replace('{successRate}', String(success)).replace('{aiStreakLabel}', t['aiStreakLabel']).replace('{successRateLabel}', t[type === 'quarterly' ? 'aiSuccessRateLabelQuarterly' : (type === 'historical' ? 'aiSuccessRateLabelHistorical' : 'aiSuccessRateLabelMonthly')]).replace('{aiDaysUnit}', t['aiDaysUnit']);
-            if (h.philosophy) line = line.replace('{aiVirtue}', t['aiVirtue']).replace('{virtue}', t[`stoicVirtue${h.philosophy.virtue}`] || h.philosophy.virtue).replace('{aiDiscipline}', t['aiDiscipline']).replace('{discipline}', t[`stoicDiscipline${h.philosophy.discipline}`] || h.philosophy.discipline).replace('{aiSphere}', t['aiSphere']).replace('{sphere}', t[`governanceSphere${h.philosophy.sphere}`] || h.philosophy.sphere);
-            else line = line.substring(0, line.indexOf('(')).trim() + '\n';
+            // @fix: Get philosophy from the schedule for the current date.
+            const schedule = _getScheduleForDateInWorker(h, todayISO);
+            if (schedule?.philosophy) {
+                const p = schedule.philosophy;
+                line = line.replace('{aiVirtue}', t['aiVirtue']).replace('{virtue}', t[`stoicVirtue${p.virtue}`] || p.virtue).replace('{aiDiscipline}', t['aiDiscipline']).replace('{discipline}', t[`stoicDiscipline${p.discipline}`] || p.discipline).replace('{aiSphere}', t['aiSphere']).replace('{sphere}', t[`governanceSphere${p.sphere}`] || p.sphere);
+            } else {
+                line = line.substring(0, line.indexOf('(')).trim() + '\n';
+            }
             res += line;
         }
         return res;

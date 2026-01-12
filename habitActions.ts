@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -113,10 +112,12 @@ function _requestFutureScheduleChange(habitId: string, targetDate: string, updat
     _notifyChanges(true);
 }
 
-function _updateHabitInstanceStatus(habit: Habit, instance: HabitDayData, newStatus: HabitStatus): boolean {
+// @fix: Added date parameter to correctly fetch schedule and goal.
+function _updateHabitInstanceStatus(habit: Habit, instance: HabitDayData, newStatus: HabitStatus, date: string): boolean {
     if (instance.status === newStatus) return false;
     instance.status = newStatus;
-    if (habit.goal.type === 'check') instance.goalOverride = (newStatus === 'completed') ? 1 : undefined;
+    const schedule = getScheduleForDate(habit, date);
+    if (schedule?.goal.type === 'check') instance.goalOverride = (newStatus === 'completed') ? 1 : undefined;
     return true;
 }
 
@@ -212,8 +213,9 @@ export function performArchivalCheck() {
 export function createDefaultHabit() {
     const t = PREDEFINED_HABITS.find(h => h.isDefault);
     if (!t) return;
-    state.habits.push({ id: generateUUID(), icon: t.icon, color: t.color, goal: t.goal, createdOn: getTodayUTCIso(), philosophy: t.philosophy,
-        scheduleHistory: [{ startDate: getTodayUTCIso(), nameKey: t.nameKey, subtitleKey: t.subtitleKey, times: t.times, frequency: t.frequency, scheduleAnchor: getTodayUTCIso() }]
+    // @fix: Moved icon, color, goal, and philosophy into the scheduleHistory object to match the Habit type.
+    state.habits.push({ id: generateUUID(), createdOn: getTodayUTCIso(),
+        scheduleHistory: [{ startDate: getTodayUTCIso(), nameKey: t.nameKey, subtitleKey: t.subtitleKey, times: t.times, frequency: t.frequency, scheduleAnchor: getTodayUTCIso(), icon: t.icon, color: t.color, goal: t.goal, philosophy: t.philosophy }]
     });
     _notifyChanges(true);
 }
@@ -249,16 +251,15 @@ export function saveHabitFromModal() {
             // LÓGICA DE SOBRESCRITA: Atualiza o hábito existente a partir da data alvo.
             const newTimes = formData.times;
 
-            // Atualiza outras propriedades do formulário, tratando-o como a fonte da verdade.
-            Object.assign(existingHabit, {
-                icon: formData.icon,
-                color: formData.color,
-                goal: formData.goal,
-                philosophy: formData.philosophy ?? existingHabit.philosophy
-            });
+            // @fix: Removed Object.assign that was incorrectly modifying the Habit object. Properties are now passed into _requestFutureScheduleChange.
             
             _requestFutureScheduleChange(existingHabit.id, targetDate, (s) => ({
                 ...s,
+                // @fix: Added icon, color, goal, and philosophy to the schedule update.
+                icon: formData.icon,
+                color: formData.color,
+                goal: formData.goal,
+                philosophy: formData.philosophy ?? s.philosophy,
                 name: formData.name,
                 nameKey: formData.nameKey,
                 subtitleKey: formData.subtitleKey,
@@ -269,11 +270,8 @@ export function saveHabitFromModal() {
             // LÓGICA DE CRIAÇÃO: Cria um novo hábito.
             state.habits.push({ 
                 id: generateUUID(), 
-                icon: formData.icon, 
-                color: formData.color, 
-                goal: formData.goal, 
                 createdOn: targetDate, 
-                philosophy: formData.philosophy,
+                // @fix: Moved icon, color, goal, and philosophy into the scheduleHistory object.
                 scheduleHistory: [{ 
                     startDate: targetDate, 
                     times: formData.times, 
@@ -281,7 +279,11 @@ export function saveHabitFromModal() {
                     name: formData.name, 
                     nameKey: formData.nameKey, 
                     subtitleKey: formData.subtitleKey, 
-                    scheduleAnchor: targetDate 
+                    scheduleAnchor: targetDate,
+                    icon: formData.icon,
+                    color: formData.color,
+                    goal: formData.goal,
+                    philosophy: formData.philosophy
                 }]
             });
             _notifyChanges(true);
@@ -291,14 +293,18 @@ export function saveHabitFromModal() {
         const h = state.habits.find(x => x.id === habitId);
         if (!h) return;
         
-        Object.assign(h, { icon: formData.icon, color: formData.color, goal: formData.goal });
-        if (formData.philosophy) h.philosophy = formData.philosophy;
+        // @fix: Removed Object.assign and direct property setting; properties are now updated in _requestFutureScheduleChange.
         
         ensureHabitDailyInfo(targetDate, h.id).dailySchedule = undefined;
         if (targetDate < h.createdOn) h.createdOn = targetDate;
 
         _requestFutureScheduleChange(h.id, targetDate, (s) => ({ 
             ...s, 
+            // @fix: Added icon, color, goal, and philosophy to the schedule update.
+            icon: formData.icon,
+            color: formData.color,
+            goal: formData.goal,
+            philosophy: formData.philosophy ?? s.philosophy,
             name: formData.name, 
             nameKey: formData.nameKey, 
             subtitleKey: formData.subtitleKey, 
@@ -343,7 +349,8 @@ export function toggleHabitStatus(habitId: string, time: TimeOfDay, date: string
     const h = state.habits.find(x => x.id === habitId);
     if (h) {
         const inst = ensureHabitInstanceData(date, habitId, time);
-        if (_updateHabitInstanceStatus(h, inst, getNextStatus(inst.status))) {
+        // @fix: Pass date to _updateHabitInstanceStatus.
+        if (_updateHabitInstanceStatus(h, inst, getNextStatus(inst.status), date)) {
             if (inst.status === 'completed') _checkStreakMilestones(h, date);
             
             // Dispara um evento específico para que a UI possa fazer uma atualização direcionada com animação.
@@ -366,7 +373,7 @@ export function markAllHabitsForDate(dateISO: string, status: HabitStatus): bool
             if (!shouldHabitAppearOnDate(h, dateISO, dateObj)) return;
             const sch = getEffectiveScheduleForHabitOnDate(h, dateISO); if (!sch.length) return;
             day[h.id] ??= { instances: {}, dailySchedule: undefined };
-            let hChanged = false; sch.forEach(t => { day[h.id].instances[t] ??= { status: 'pending', goalOverride: undefined, note: undefined }; if (_updateHabitInstanceStatus(h, day[h.id].instances[t]!, status)) hChanged = changed = true; });
+            let hChanged = false; sch.forEach(t => { day[h.id].instances[t] ??= { status: 'pending', goalOverride: undefined, note: undefined }; if (_updateHabitInstanceStatus(h, day[h.id].instances[t]!, status, dateISO)) hChanged = changed = true; });
             if (hChanged) { BATCH_IDS_POOL.push(h.id); BATCH_HABITS_POOL.push(h); }
         });
         if (changed) { invalidateCachesForDateChange(dateISO, BATCH_IDS_POOL); if (status === 'completed') BATCH_HABITS_POOL.forEach(h => _checkStreakMilestones(h, dateISO)); _notifyChanges(false); }

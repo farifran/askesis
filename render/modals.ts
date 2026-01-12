@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -25,7 +24,13 @@ const COLORS = ['#e74c3c', '#f1c40f', '#3498db', '#2ecc71', '#9b59b6', '#1abc9c'
 
 function _getLeastUsedColor(): string {
     const counts = new Map(COLORS.map(c => [c, 0]));
-    state.habits.forEach(h => { if (!h.graduatedOn && counts.has(h.color)) counts.set(h.color, counts.get(h.color)! + 1); });
+    // @fix: Get color from the last schedule in history, as it's no longer on the Habit object.
+    state.habits.forEach(h => {
+        const lastSchedule = h.scheduleHistory[h.scheduleHistory.length - 1];
+        if (!h.graduatedOn && lastSchedule && counts.has(lastSchedule.color)) {
+            counts.set(lastSchedule.color, counts.get(lastSchedule.color)! + 1);
+        }
+    });
     let min = Math.min(...counts.values());
     const candidates = COLORS.filter(c => counts.get(c) === min);
     return candidates[state.habits.length % candidates.length];
@@ -108,7 +113,11 @@ export function setupManageModal() {
         return (order[a.st] - order[b.st]) || compareStrings(a.name, b.name);
     });
     const today = getTodayUTCIso();
-    ui.habitList.innerHTML = items.map(({ h, st, name, subtitle }) => `<li class="habit-list-item ${st}" data-habit-id="${h.id}"><span class="habit-main-info"><span class="habit-icon-slot" style="color:${h.color}">${h.icon}</span><div style="display:flex;flex-direction:column;flex-grow:1;"><span class="habit-name">${name}</span>${subtitle ? `<span class="habit-subtitle" style="font-size:11px;color:var(--text-tertiary)">${subtitle}</span>` : ''}</div>${st !== 'active' ? `<span class="habit-name-status">${t(st === 'graduated' ? 'modalStatusGraduated' : 'modalStatusEnded')}</span>` : ''}</span><div class="habit-list-actions">${st === 'active' ? `${calculateHabitStreak(h.id, today) >= STREAK_CONSOLIDATED ? `<button class="graduate-habit-btn" aria-label="${t('aria_graduate', { name })}">${UI_ICONS.graduateAction}</button>` : `<button class="end-habit-btn" aria-label="${t('aria_end', { name })}">${UI_ICONS.endAction}</button>`}` : `<button class="permanent-delete-habit-btn" aria-label="${t('aria_delete_permanent', { name })}">${UI_ICONS.deletePermanentAction}</button>`}</div></li>`).join('');
+    ui.habitList.innerHTML = items.map(({ h, st, name, subtitle }) => {
+        // @fix: Get icon and color from the last schedule in history.
+        const lastSchedule = h.scheduleHistory[h.scheduleHistory.length - 1];
+        return `<li class="habit-list-item ${st}" data-habit-id="${h.id}"><span class="habit-main-info"><span class="habit-icon-slot" style="color:${lastSchedule.color}">${lastSchedule.icon}</span><div style="display:flex;flex-direction:column;flex-grow:1;"><span class="habit-name">${name}</span>${subtitle ? `<span class="habit-subtitle" style="font-size:11px;color:var(--text-tertiary)">${subtitle}</span>` : ''}</div>${st !== 'active' ? `<span class="habit-name-status">${t(st === 'graduated' ? 'modalStatusGraduated' : 'modalStatusEnded')}</span>` : ''}</span><div class="habit-list-actions">${st === 'active' ? `${calculateHabitStreak(h, today) >= STREAK_CONSOLIDATED ? `<button class="graduate-habit-btn" aria-label="${t('aria_graduate', { name })}">${UI_ICONS.graduateAction}</button>` : `<button class="end-habit-btn" aria-label="${t('aria_end', { name })}">${UI_ICONS.endAction}</button>`}` : `<button class="permanent-delete-habit-btn" aria-label="${t('aria_delete_permanent', { name })}">${UI_ICONS.deletePermanentAction}</button>`}</div></li>`;
+    }).join('');
 }
 
 export function showConfirmationModal(text: string, onConfirm: () => void, opts?: any) {

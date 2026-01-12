@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -21,7 +20,7 @@
 
 import { state, Habit, StoicVirtue, GovernanceSphere } from '../state';
 import { Quote, StoicTag } from '../data/quotes';
-import { calculateDaySummary, getEffectiveScheduleForHabitOnDate, calculateHabitStreak } from './selectors';
+import { calculateDaySummary, getEffectiveScheduleForHabitOnDate, calculateHabitStreak, getScheduleForDate } from './selectors';
 import { toUTCIsoDateString, parseUTCIsoDate, getTodayUTCIso } from '../utils';
 
 // --- TUNING CONSTANTS ---
@@ -107,10 +106,11 @@ function _analyzeRecentHistory(todayISO: string): number {
 function _getDominantVirtues(habits: Habit[], dateISO: string): Set<StoicVirtue> {
     const counts: Record<string, number> = {};
     
+    // @fix: Get philosophy from the habit's schedule for the given date.
     habits.forEach(h => {
-        const schedule = getEffectiveScheduleForHabitOnDate(h, dateISO);
-        if (schedule.length > 0 && h.philosophy) {
-            const v = h.philosophy.virtue;
+        const habitSchedule = getScheduleForDate(h, dateISO);
+        if (habitSchedule?.times.length > 0 && habitSchedule.philosophy) {
+            const v = habitSchedule.philosophy.virtue;
             counts[v] = (counts[v] || 0) + 1;
         }
     });
@@ -129,15 +129,16 @@ function _getDominantVirtues(habits: Habit[], dateISO: string): Set<StoicVirtue>
 
 function _getNeglectedSphere(habits: Habit[], dateISO: string): GovernanceSphere | null {
     const sphereStats: Record<string, { total: number, done: number }> = {};
-    const dailyData = state.dailyData[dateISO] || {};
+    const dailyData = getHabitDailyInfoForDate(dateISO);
 
+    // @fix: Get philosophy from the habit's schedule for the given date.
     habits.forEach(h => {
-        const schedule = getEffectiveScheduleForHabitOnDate(h, dateISO);
-        if (schedule.length > 0 && h.philosophy) {
-            const sph = h.philosophy.sphere;
+        const habitSchedule = getScheduleForDate(h, dateISO);
+        if (habitSchedule?.times.length > 0 && habitSchedule.philosophy) {
+            const sph = habitSchedule.philosophy.sphere;
             if (!sphereStats[sph]) sphereStats[sph] = { total: 0, done: 0 };
             
-            schedule.forEach(time => {
+            habitSchedule.times.forEach(time => {
                 sphereStats[sph].total++;
                 const status = dailyData[h.id]?.instances[time]?.status;
                 if (status === 'completed') sphereStats[sph].done++;

@@ -143,7 +143,7 @@ function migrateToV6(oldState: any): AppState {
         const lastHabit = sortedHabits[sortedHabits.length - 1];
 
         // 3. Create Unified Habit (Identity Preservation)
-        const newHabit: Habit = {
+        const newHabit: any = { // Use 'any' temporarily for migration
             id: lastHabit.id,
             icon: lastHabit.icon,
             color: lastHabit.color,
@@ -175,7 +175,7 @@ function migrateToV6(oldState: any): AppState {
                 times: oldVersion.times,
                 frequency: oldVersion.frequency,
                 scheduleAnchor: oldVersion.scheduleAnchor || oldVersion.createdOn,
-            };
+            } as any;
             newHabit.scheduleHistory.push(schedule);
         }
         
@@ -216,8 +216,43 @@ function migrateToV6(oldState: any): AppState {
     };
 }
 
+function migrateToV7(oldState: any): AppState {
+    const habitsV6 = (oldState.habits || []) as any[];
+    const newHabits: Habit[] = [];
+
+    for (const oldHabit of habitsV6) {
+        if (!oldHabit.scheduleHistory || oldHabit.scheduleHistory.length === 0) continue;
+
+        const newScheduleHistory: HabitSchedule[] = oldHabit.scheduleHistory.map((oldSchedule: any) => {
+            return {
+                ...oldSchedule,
+                icon: oldHabit.icon,
+                color: oldHabit.color,
+                goal: oldHabit.goal,
+                philosophy: oldHabit.philosophy,
+            };
+        });
+
+        const newHabit: Habit = {
+            id: oldHabit.id,
+            createdOn: oldHabit.createdOn,
+            graduatedOn: oldHabit.graduatedOn,
+            scheduleHistory: newScheduleHistory,
+        };
+        newHabits.push(newHabit);
+    }
+    
+    return {
+        ...oldState,
+        habits: newHabits,
+        version: 7,
+    };
+}
+
+
 const MIGRATIONS = [
     { targetVersion: 6, migrate: migrateToV6 },
+    { targetVersion: 7, migrate: migrateToV7 },
 ];
 
 export function migrateState(loadedState: any, targetVersion: number): AppState {
