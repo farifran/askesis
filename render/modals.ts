@@ -152,6 +152,13 @@ export function openEditModal(habit: any, targetDateOverride?: string) {
     if (ni) ni.value = isN ? (habit?.nameKey ? t(habit.nameKey) : '') : getHabitDisplayInfo(habit, safe).name;
     const btn = ui.habitIconPickerBtn; btn.innerHTML = fd.icon; btn.style.backgroundColor = fd.color; btn.style.color = getContrastColor(fd.color);
     
+    const subtitle = isN 
+        ? (fd.subtitleKey ? t(fd.subtitleKey) : '') 
+        : getHabitDisplayInfo(habit, safe).subtitle;
+    if (ui.habitSubtitleDisplay) {
+        setTextContent(ui.habitSubtitleDisplay, subtitle);
+    }
+    
     const overlay = btn.nextElementSibling as HTMLElement;
     if (overlay && overlay.classList.contains('edit-icon-overlay')) {
         overlay.innerHTML = HABIT_ICONS.learnSkill;

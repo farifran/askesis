@@ -1,3 +1,4 @@
+
 /* --- COMPONENTES: FORMULÁRIOS --- */
 .form-group { margin-block-end: var(--space-lg); }
 .form-group label {
@@ -156,6 +157,15 @@
     flex-grow: 1;
     position: relative;
 }
+
+.habit-subtitle-display {
+    font-size: 13px;
+    color: var(--text-tertiary);
+    margin-top: -9px;
+    min-height: 1.2em;
+    transition: color var(--transition-duration);
+}
+
 .form-notice {
     font-size: 11px;
     color: var(--color-red);
@@ -357,7 +367,7 @@ input:disabled + .slider {
 .habit-conscience-text {
     font-size: 13px;
     line-height: 1.5;
-    color: var(--text-secondary);
+    color: var(--text-tertiary);
     font-style: italic;
     text-align: center;
     padding: 0 var(--space-md);

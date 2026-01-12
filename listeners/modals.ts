@@ -454,16 +454,21 @@ const _handleHabitNameInput = () => {
     const habitNameInput = ui.editHabitForm.elements.namedItem('habit-name') as HTMLInputElement;
     let newName = habitNameInput.value;
 
-    // BLINDAGEM CONTRA DOS: Truncar input excessivo
     if (newName.length > MAX_HABIT_NAME_LENGTH) {
         newName = newName.substring(0, MAX_HABIT_NAME_LENGTH);
-        habitNameInput.value = newName; // Reflete na UI
+        habitNameInput.value = newName;
+    }
+
+    if (state.editingHabit.formData.nameKey) {
+        delete state.editingHabit.formData.nameKey;
+        state.editingHabit.formData.subtitleKey = 'customHabitSubtitle';
+        if (ui.habitSubtitleDisplay) {
+            setTextContent(ui.habitSubtitleDisplay, t('customHabitSubtitle'));
+        }
     }
 
     state.editingHabit.formData.name = newName;
-    delete state.editingHabit.formData.nameKey; 
-
-    // Validation Logic decoupled
+    
     _validateAndFeedback(newName);
 };
 
@@ -583,14 +588,15 @@ const _handleFrequencyClick = (e: MouseEvent) => {
 };
 
 export function setupModalListeners() {
-    // --- UI CONSISTENCY REFINEMENT ---
-    // The user requested the General Settings modal's footer to have the same design as other modals,
-    // which means removing the top border that visually subdivides it.
-    // As CSS files cannot be modified, we apply this style adjustment directly via JavaScript.
+    // --- REFINAMENTO DE CONSISTÊNCIA DA UI ---
+    // Atendendo ao pedido do usuário para que o rodapé do modal de Configurações Gerais
+    // tenha o mesmo design de outros modais, como o seletor de ícones. Isso significa
+    // remover a borda superior e uniformizar o espaçamento para que não pareça um rodapé subdividido.
     const manageModalActions = ui.manageModal.querySelector<HTMLElement>('.modal-actions');
     if (manageModalActions) {
         manageModalActions.style.borderTop = 'none';
-        manageModalActions.style.paddingTop = '0';
+        // Ajusta o preenchimento para ser uniforme, espelhando a margem do botão do seletor de ícones.
+        manageModalActions.style.padding = 'var(--space-lg)';
     }
 
     // Main Actions
