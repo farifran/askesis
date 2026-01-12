@@ -33,7 +33,7 @@ const MAX_SCROLL_SPEED = 15; // Velocidade máxima (px/frame)
 const DROP_INDICATOR_GAP = 4; // Espaçamento visual
 
 // SNIPER OPTIMIZATION: Feature detection for Typed OM
-const hasTypedOM = typeof window !== 'undefined' && !!(window.CSS && window.CSSTranslate && CSS.px);
+const hasTypedOM = typeof window !== 'undefined' && !!(window.CSS && (window as any).CSSTranslate && CSS.px);
 
 // --- STATE MACHINE ---
 const DragState = {
@@ -136,7 +136,7 @@ function _scrollLoop() {
             // escrevemos valores numéricos diretamente no motor de composição do navegador
             // para performance máxima, com fallback para o método tradicional.
             if (hasTypedOM && DragState.indicator.attributeStyleMap) {
-                DragState.indicator.attributeStyleMap.set('transform', new CSSTranslate(CSS.px(0), CSS.px(topPos), CSS.px(0)));
+                DragState.indicator.attributeStyleMap.set('transform', new (window as any).CSSTranslate(CSS.px(0), CSS.px(topPos), CSS.px(0)));
             } else {
                 DragState.indicator.style.transform = `translate3d(0, ${topPos}px, 0)`;
             }

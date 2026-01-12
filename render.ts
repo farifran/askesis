@@ -1,5 +1,4 @@
 
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -197,7 +196,7 @@ export function updateUIText() {
     setTextContent(ui.labelNotifications, t('modalManageNotifications'));
     setTextContent(ui.labelReset, t('modalManageReset'));
     setTextContent(ui.resetAppBtn, t('modalManageResetButton'));
-    setTextContent(ui.manageModal.querySelector('.modal-close-btn'), t('closeButton'));
+    setTextContent(ui.manageModal.querySelector('.modal-close-btn'), t('cancelButton'));
     
     setTextContent(ui.labelPrivacy, t('privacyLabel'));
     setTextContent(ui.exportDataBtn, t('exportButton'));

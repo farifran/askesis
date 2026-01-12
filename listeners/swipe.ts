@@ -37,7 +37,7 @@ export const isCurrentlySwiping = () => SwipeState.isActive === 1;
 function updateCachedLayoutValues() {
     const root = getComputedStyle(document.documentElement);
     SwipeState.actionWidth = parseInt(root.getPropertyValue('--swipe-action-width')) || 60;
-    SwipeState.hasTypedOM = typeof window !== 'undefined' && !!(window.CSS && window.CSSTranslate && CSS.px);
+    SwipeState.hasTypedOM = typeof window !== 'undefined' && !!(window.CSS && (window as any).CSSTranslate && CSS.px);
 }
 
 function _finalizeSwipeState(deltaX: number) {
@@ -80,7 +80,7 @@ const _updateVisuals = () => {
     // atualizamos o `transform` diretamente no motor de composição do navegador
     // sem o custo de serializar/parsear strings, garantindo a máxima fluidez.
     if (SwipeState.hasTypedOM && SwipeState.content.attributeStyleMap) {
-        SwipeState.content.attributeStyleMap.set('transform', new CSSTranslate(CSS.px(tx), CSS.px(0)));
+        SwipeState.content.attributeStyleMap.set('transform', new (window as any).CSSTranslate(CSS.px(tx), CSS.px(0)));
     } else {
         SwipeState.content.style.transform = `translateX(${tx}px)`;
     }

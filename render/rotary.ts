@@ -57,7 +57,7 @@ export function setupReelRotary({
     let cachedItemWidth = 95; // Valor inicial seguro
     
     // SNIPER OPTIMIZATION: Feature Detection for Typed OM
-    const hasTypedOM = typeof window !== 'undefined' && !!(reelEl.attributeStyleMap && window.CSSTranslate && window.CSS && CSS.px);
+    const hasTypedOM = typeof window !== 'undefined' && !!(reelEl.attributeStyleMap && (window as any).CSSTranslate && window.CSS && CSS.px);
 
     // Helper para atualizar a posição visual logicamente e no DOM
     const updatePosition = (index: number, animate: boolean) => {
@@ -74,7 +74,7 @@ export function setupReelRotary({
         // BLEEDING-EDGE PERF (CSS Typed OM):
         // Comunicação direta com o compositor da GPU para animações de "snap".
         if (hasTypedOM && reelEl.attributeStyleMap) {
-            reelEl.attributeStyleMap.set('transform', new CSSTranslate(CSS.px(targetX), CSS.px(0)));
+            reelEl.attributeStyleMap.set('transform', new (window as any).CSSTranslate(CSS.px(targetX), CSS.px(0)));
         } else {
             reelEl.style.transform = `translateX(${targetX}px)`;
         }
@@ -152,7 +152,7 @@ export function setupReelRotary({
         // No "hot path" do gesto, evitamos criar e parsear strings de `transform`,
         // escrevendo os valores numéricos diretamente no motor de composição para fluidez máxima.
         if (hasTypedOM && reelEl.attributeStyleMap) {
-            reelEl.attributeStyleMap.set('transform', new CSSTranslate(CSS.px(clampedTranslateX), CSS.px(0)));
+            reelEl.attributeStyleMap.set('transform', new (window as any).CSSTranslate(CSS.px(clampedTranslateX), CSS.px(0)));
         } else {
             reelEl.style.transform = `translateX(${clampedTranslateX}px)`;
         }

@@ -151,6 +151,12 @@ export function openEditModal(habit: any, targetDateOverride?: string) {
     const ni = ui.editHabitForm.elements.namedItem('habit-name') as HTMLInputElement;
     if (ni) ni.value = isN ? (habit?.nameKey ? t(habit.nameKey) : '') : getHabitDisplayInfo(habit, safe).name;
     const btn = ui.habitIconPickerBtn; btn.innerHTML = fd.icon; btn.style.backgroundColor = fd.color; btn.style.color = getContrastColor(fd.color);
+    
+    const overlay = btn.nextElementSibling as HTMLElement;
+    if (overlay && overlay.classList.contains('edit-icon-overlay')) {
+        overlay.innerHTML = HABIT_ICONS.learnSkill;
+    }
+
     refreshEditModalUI(); openModal(ui.editHabitModal);
 }
 

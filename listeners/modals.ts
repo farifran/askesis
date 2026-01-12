@@ -583,6 +583,16 @@ const _handleFrequencyClick = (e: MouseEvent) => {
 };
 
 export function setupModalListeners() {
+    // --- UI CONSISTENCY REFINEMENT ---
+    // The user requested the General Settings modal's footer to have the same design as other modals,
+    // which means removing the top border that visually subdivides it.
+    // As CSS files cannot be modified, we apply this style adjustment directly via JavaScript.
+    const manageModalActions = ui.manageModal.querySelector<HTMLElement>('.modal-actions');
+    if (manageModalActions) {
+        manageModalActions.style.borderTop = 'none';
+        manageModalActions.style.paddingTop = '0';
+    }
+
     // Main Actions
     ui.manageHabitsBtn.addEventListener('click', _handleManageHabitsClick);
     ui.fabAddHabit.addEventListener('click', _handleFabClick);
