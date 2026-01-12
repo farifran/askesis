@@ -21,7 +21,7 @@ import { escapeHTML, getContrastColor, parseUTCIsoDate, getTodayUTCIso, getSafeD
 interface ModalContext { element: HTMLElement; previousFocus: HTMLElement | null; onClose?: () => void; firstFocusable?: HTMLElement; lastFocusable?: HTMLElement; }
 const modalStack: ModalContext[] = [];
 const OPTS_NOTES = { day: 'numeric', month: 'long', timeZone: 'UTC' } as const;
-const COLORS = ['#e74c3c', '#f1c40f', '#3498db', '#2ecc71', '#9b59b6', '#1abc9c', '#34495e', '#e67e22', '#e84393', '#7f8c8d'];
+const COLORS = ['#e74c3c', '#f1c40f', '#3498db', '#2ecc71', '#9b59b6', '#1abc9c', '#34495e', '#e67e22', '#e84393', '#7f8c8d', '#26A69A', '#FFA726', '#5C6BC0', '#EC407A', '#9CCC65'];
 
 function _getLeastUsedColor(): string {
     const counts = new Map(COLORS.map(c => [c, 0]));
