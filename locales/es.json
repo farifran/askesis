@@ -46,6 +46,7 @@
     "appSubtitle": "Actúa hasta ser, eres la suma de tus hábitos.",
     "aria_delete_permanent": "Borrar permanentemente {habitName}",
     "aria_end": "Cerrar {habitName}",
+    "aria_go_back": "Volver",
     "aria_graduate": "Graduar Hábito {habitName}",
     "buttonDelete": "Borrar",
     "buttonEnd": "Cerrar",

@@ -588,17 +588,6 @@ const _handleFrequencyClick = (e: MouseEvent) => {
 };
 
 export function setupModalListeners() {
-    // --- REFINAMENTO DE CONSISTÊNCIA DA UI ---
-    // Atendendo ao pedido do usuário para que o rodapé do modal de Configurações Gerais
-    // tenha o mesmo design de outros modais, como o seletor de ícones. Isso significa
-    // remover a borda superior e uniformizar o espaçamento para que não pareça um rodapé subdividido.
-    const manageModalActions = ui.manageModal.querySelector<HTMLElement>('.modal-actions');
-    if (manageModalActions) {
-        manageModalActions.style.borderTop = 'none';
-        // Ajusta o preenchimento para ser uniforme, espelhando a margem do botão do seletor de ícones.
-        manageModalActions.style.padding = 'var(--space-lg)';
-    }
-
     // Main Actions
     ui.manageHabitsBtn.addEventListener('click', _handleManageHabitsClick);
     ui.fabAddHabit.addEventListener('click', _handleFabClick);

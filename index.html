@@ -356,16 +356,23 @@
     <!-- Modals -->
     <div id="explore-modal" class="modal-overlay">
         <div class="modal-content">
-            <h2>Explorar Hábitos</h2>
+            <div class="modal-header">
+                <div class="modal-header-spacer"></div>
+                <h2>Explorar Hábitos</h2>
+                <div class="modal-header-spacer"></div>
+            </div>
             <div id="explore-habit-list"></div>
             <button id="create-custom-habit-btn" class="btn btn--primary">Criar hábito personalizado</button>
-            <button class="btn modal-close-btn">Fechar</button>
         </div>
     </div>
     
     <div id="manage-modal" class="modal-overlay">
         <div class="modal-content modal-content--sticky-header">
-            <h2 id="manage-modal-title">Configurações Gerais</h2>
+            <div class="modal-header">
+                <div class="modal-header-spacer"></div>
+                <h2 id="manage-modal-title">Configurações Gerais</h2>
+                <div class="modal-header-spacer"></div>
+            </div>
             <div class="modal-scroll-wrapper">
                 <div class="modal-settings-section">
                     <div class="setting-item">
@@ -460,23 +467,27 @@
                 <ul id="habit-list"></ul>
                 <p id="no-habits-message" class="empty-list-message hidden"></p>
             </div>
-            <div class="modal-actions">
-                <button class="btn modal-close-btn">Fechar</button>
-            </div>
         </div>
     </div>
 
     <div id="ai-modal" class="modal-overlay">
         <div class="modal-content">
-            <h2>Avaliação da IA</h2>
+            <div class="modal-header">
+                <div class="modal-header-spacer"></div>
+                <h2>Avaliação da IA</h2>
+                <div class="modal-header-spacer"></div>
+            </div>
             <div id="ai-response"></div>
-            <button class="btn modal-close-btn">Fechar</button>
         </div>
     </div>
 
     <div id="ai-options-modal" class="modal-overlay">
         <div class="modal-content">
-            <h2>Análise da IA</h2>
+            <div class="modal-header">
+                <div class="modal-header-spacer"></div>
+                <h2>Análise da IA</h2>
+                <div class="modal-header-spacer"></div>
+            </div>
             <div class="ai-options-list">
                 <!-- UPDATE [2025-02-23]: Textos ajustados para 'Análise Atual' e descrições contextuais -->
                 <button class="ai-option-btn" data-analysis-type="monthly">
@@ -492,16 +503,18 @@
                     <span class="ai-option-desc">Uma visão completa de toda a sua jornada.</span>
                 </button>
             </div>
-            <button class="btn modal-close-btn">Fechar</button>
         </div>
     </div>
 
     <div id="confirm-modal" class="modal-overlay">
         <div class="modal-content">
-            <h2>Confirmar Ação</h2>
+            <div class="modal-header">
+                <div class="modal-header-spacer"></div>
+                <h2>Confirmar Ação</h2>
+                <div class="modal-header-spacer"></div>
+            </div>
             <p id="confirm-modal-text"></p>
             <div class="modal-actions">
-                <button class="btn modal-close-btn">Cancelar</button>
                 <button id="confirm-modal-edit-btn" class="btn hidden">Editar</button>
                 <button id="confirm-modal-confirm-btn" class="btn btn--primary">Confirmar</button>
             </div>
@@ -510,11 +523,16 @@
 
     <div id="notes-modal" class="modal-overlay">
         <div class="modal-content">
-            <h2 id="notes-modal-title">Nota</h2>
+            <div class="modal-header">
+                <div class="modal-header-spacer"></div>
+                <h2 id="notes-modal-title">Nota</h2>
+                <div class="modal-header-spacer"></div>
+            </div>
             <p id="notes-modal-subtitle"></p>
             <textarea id="notes-textarea" placeholder="Digite sua nota aqui..."></textarea>
-            <button id="save-note-btn" class="btn btn--primary">Salvar Nota</button>
-            <button class="btn modal-close-btn">Cancelar</button>
+            <div class="modal-actions">
+                <button id="save-note-btn" class="btn btn--primary">Salvar Nota</button>
+            </div>
         </div>
     </div>
 
@@ -522,28 +540,34 @@
     <div id="icon-picker-modal" class="modal-overlay">
         <div class="modal-content">
             <div class="modal-header">
-                <div style="width: 44px;"></div> <!-- Spacer para centralização do título com o botão da direita -->
+                <div class="modal-header-spacer"></div>
                 <h2 id="icon-picker-modal-title">Selecionar Ícone</h2>
                 <button id="change-color-from-picker-btn" class="icon-btn"></button>
             </div>
             <div id="icon-picker-grid"></div>
-            <button class="btn modal-close-btn">Cancelar</button>
         </div>
     </div>
 
     <!-- Modal: Color Picker -->
     <div id="color-picker-modal" class="modal-overlay">
         <div class="modal-content">
-            <h2 id="color-picker-modal-title">Selecionar Cor</h2>
+            <div class="modal-header">
+                <div class="modal-header-spacer"></div>
+                <h2 id="color-picker-modal-title">Selecionar Cor</h2>
+                <div class="modal-header-spacer"></div>
+            </div>
             <div id="color-picker-grid"></div>
-            <button class="btn modal-close-btn">Cancelar</button>
         </div>
     </div>
 
     <!-- Modal: Edit Habit (Apple Style Form) -->
     <div id="edit-habit-modal" class="modal-overlay">
         <div class="modal-content">
-            <h2 id="edit-habit-modal-title">Editar Hábito</h2>
+            <div class="modal-header">
+                <div class="modal-header-spacer"></div>
+                <h2 id="edit-habit-modal-title">Editar Hábito</h2>
+                <div class="modal-header-spacer"></div>
+            </div>
             <form id="edit-habit-form">
                 <div class="habit-identity-section">
                     <div class="habit-icon-picker-wrapper">
@@ -567,7 +591,6 @@
                 <div id="frequency-options-container"></div>
             </form>
             <div class="modal-actions">
-                <button class="btn modal-close-btn">Cancelar</button>
                 <button id="edit-habit-save-btn" class="btn btn--primary">Salvar</button>
             </div>
         </div>
@@ -576,7 +599,7 @@
     <!-- Modal: Full Calendar -->
     <div id="full-calendar-modal" class="modal-overlay">
         <div class="modal-content">
-            <div id="full-calendar-header">
+            <div id="full-calendar-header" class="modal-header">
                 <button id="full-calendar-prev" class="icon-btn">
                     <svg width="24" height="24"><use href="#icon-chevron-left"></use></svg>
                 </button>
@@ -587,7 +610,6 @@
             </div>
             <div id="full-calendar-weekdays"></div>
             <div id="full-calendar-grid"></div>
-            <button class="btn modal-close-btn" style="width:100%">Fechar</button>
         </div>
     </div>
 

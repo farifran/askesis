@@ -46,6 +46,7 @@
     "appSubtitle": "Act until you become; you are the sum of your habits.",
     "aria_delete_permanent": "Permanently delete {habitName}",
     "aria_end": "End {habitName}",
+    "aria_go_back": "Go Back",
     "aria_graduate": "Graduate Habit {habitName}",
     "buttonDelete": "Delete",
     "buttonEnd": "End",

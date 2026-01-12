@@ -48,7 +48,7 @@ export function initModalEngine() {
     });
     document.addEventListener('click', e => {
         const ctx = modalStack[modalStack.length - 1]; if (!ctx) return;
-        if (e.target === ctx.element || (e.target as HTMLElement).closest('.modal-close-btn')) {
+        if (e.target === ctx.element) {
             triggerHaptic('light');
             closeModal(ctx.element);
         }
@@ -57,6 +57,23 @@ export function initModalEngine() {
 
 export function openModal(modal: HTMLElement, focusEl?: HTMLElement, onClose?: () => void) {
     const ctx: ModalContext = { element: modal, previousFocus: document.activeElement as HTMLElement, onClose };
+    
+    const header = modal.querySelector('.modal-header');
+    if (header) {
+        const spacer = header.querySelector('.modal-header-spacer');
+        if (spacer && !spacer.previousElementSibling?.classList.contains('modal-back-btn')) {
+            const backBtn = document.createElement('button');
+            backBtn.className = 'modal-back-btn';
+            backBtn.innerHTML = UI_ICONS.backArrow;
+            backBtn.setAttribute('aria-label', t('aria_go_back'));
+            backBtn.addEventListener('click', () => {
+                triggerHaptic('light');
+                closeModal(modal);
+            });
+            spacer.replaceWith(backBtn);
+        }
+    }
+    
     modal.classList.add('visible');
     const fobs = modal.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
     if (fobs.length) { ctx.firstFocusable = fobs[0]; ctx.lastFocusable = fobs[fobs.length - 1]; setTimeout(() => (focusEl || fobs[0]).focus(), 100); }
@@ -67,6 +84,15 @@ export function closeModal(modal: HTMLElement) {
     const idx = modalStack.findIndex(c => c.element === modal); if (idx === -1) return;
     const [ctx] = modalStack.splice(idx, 1); modal.classList.remove('visible');
     if (modalStack.length === 0) ui.appContainer.removeAttribute('inert');
+    
+    const header = modal.querySelector('.modal-header');
+    const backBtn = header?.querySelector('.modal-back-btn');
+    if (header && backBtn) {
+        const spacer = document.createElement('div');
+        spacer.className = 'modal-header-spacer';
+        backBtn.replaceWith(spacer);
+    }
+
     ctx.onClose?.(); ctx.previousFocus?.focus();
 }
 
@@ -92,8 +118,6 @@ export function showConfirmationModal(text: string, onConfirm: () => void, opts?
     setTextContent(ui.confirmModalConfirmBtn, opts?.confirmText || t('confirmButton'));
     ui.confirmModalEditBtn.classList.toggle('hidden', !opts?.onEdit);
     if (opts?.editText) setTextContent(ui.confirmModalEditBtn, opts.editText);
-    const cb = ui.confirmModal.querySelector<HTMLElement>('.modal-close-btn')!;
-    setTextContent(cb, opts?.cancelText || t('cancelButton')); cb.style.display = opts?.hideCancel ? 'none' : '';
     openModal(ui.confirmModal);
 }
 
@@ -134,7 +158,8 @@ export function refreshEditModalUI() {
     if (!state.editingHabit) return;
     renderFrequencyOptions();
     const fd = state.editingHabit.formData;
-    ui.habitTimeContainer.innerHTML = `<div class="segmented-control">${TIMES_OF_DAY.map(t => `<button type="button" class="segmented-control-option ${fd.times.includes(t) ? 'selected' : ''}" data-time="${t}">${getTimeOfDayIcon(t)}${getTimeOfDayName(t)}</button>`).join('')}</div>`;
+    // FIX: Renamed map variable 't' to 'time' to avoid shadowing the imported 't' function.
+    ui.habitTimeContainer.innerHTML = `<div class="segmented-control">${TIMES_OF_DAY.map(time => `<button type="button" class="segmented-control-option ${fd.times.includes(time) ? 'selected' : ''}" data-time="${time}">${getTimeOfDayIcon(time)}${getTimeOfDayName(time)}</button>`).join('')}</div>`;
     const nameIn = ui.editHabitForm.elements.namedItem('habit-name') as HTMLInputElement;
     if (nameIn) { nameIn.placeholder = t('modalEditFormNameLabel'); if (fd.nameKey) nameIn.value = t(fd.nameKey); }
     
@@ -168,7 +193,22 @@ export function openEditModal(habit: any, targetDateOverride?: string) {
 }
 
 export function renderExploreHabits() {
-    ui.exploreHabitList.innerHTML = PREDEFINED_HABITS.map((h, i) => `<div class="explore-habit-item" data-index="${i}" role="button" tabindex="0"><div class="explore-habit-icon" style="background-color:${h.color}30;color:${h.color}">${h.icon}</div><div class="explore-habit-details"><div class="name">${t(h.nameKey)}</div></div></div>`).join('');
+    const STAGGER_DELAY_MS = 50;
+    ui.exploreHabitList.innerHTML = PREDEFINED_HABITS.map((h, i) => 
+        `<div 
+            class="explore-habit-item" 
+            data-index="${i}" 
+            role="button" 
+            tabindex="0"
+            style="--delay: ${i * STAGGER_DELAY_MS}ms;"
+        >
+            <div class="explore-habit-icon" style="background-color:${h.color}30;color:${h.color}">${h.icon}</div>
+            <div class="explore-habit-details">
+                <div class="name">${t(h.nameKey)}</div>
+                <div class="subtitle">${t(h.subtitleKey)}</div>
+            </div>
+        </div>`
+    ).join('');
 }
 
 export function renderLanguageFilter() {

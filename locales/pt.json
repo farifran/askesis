@@ -47,6 +47,7 @@
     "appSubtitle": "Aja até ser, você é o somatório dos seus hábitos.",
     "aria_delete_permanent": "Apagar permanentemente {habitName}",
     "aria_end": "Encerrar {habitName}",
+    "aria_go_back": "Voltar",
     "aria_graduate": "Graduar Hábito {habitName}",
     "buttonDelete": "Apagar",
     "buttonEnd": "Encerrar",
