@@ -34,8 +34,7 @@ function terminateWorker(reason: string) {
 
 function getWorker(): Worker {
     if (!syncWorker) {
-        // FIX: Path relative to enable correct loading in subdirectories/dev environments
-        syncWorker = new Worker('sync-worker.js', { type: 'module' });
+        syncWorker = new Worker('/sync-worker.js', { type: 'module' });
         syncWorker.onmessage = (e) => {
             const { id, status, result, error } = e.data;
             const cb = workerCallbacks.get(id);
@@ -116,4 +115,113 @@ async function resolveConflictWithServerState(serverPayload: { lastModified: num
         setSyncStatus('syncSynced');
         document.dispatchEvent(new CustomEvent('habitsChanged'));
         
-        console.log
+        console.log("[Cloud] Conflict resolved. Pushing merged state.");
+        syncStateWithCloud(merged, true);
+    } catch (e) { 
+        console.error("[Cloud] Conflict resolution failed:", e);
+        setSyncStatus('syncError'); 
+    }
+}
+
+async function performSync() {
+    if (isSyncInProgress || !pendingSyncState) return;
+    
+    const key = _getAuthKey();
+    const appState = pendingSyncState;
+    if (!key) { isSyncInProgress = false; return; }
+    
+    console.log(`[Cloud] Starting sync. LastModified: ${appState.lastModified}`);
+    isSyncInProgress = true;
+    pendingSyncState = null;
+    
+    try {
+        const encrypted = await runWorkerTask<string>('encrypt', appState, key);
+        
+        if (encrypted.length > MAX_PAYLOAD_SIZE) {
+            throw new Error(`Payload too large: ${(encrypted.length/1024).toFixed(2)}KB`);
+        }
+
+        const res = await apiFetch('/api/sync', {
+            method: 'POST',
+            body: JSON.stringify({ lastModified: appState.lastModified, state: encrypted }),
+        }, true);
+
+        if (res.status === 409) {
+            console.warn("[Cloud] Server conflict (409).");
+            await resolveConflictWithServerState(await res.json());
+        } else { 
+            console.log("[Cloud] Sync success.");
+            setSyncStatus('syncSynced'); 
+            document.dispatchEvent(new CustomEvent('habitsChanged')); 
+        }
+        syncFailCount = 0;
+        state.syncLastError = null; // Clear error on success
+    } catch (e: any) {
+        let msg = e.message || String(e);
+        
+        // Translate common errors for better UX
+        if (msg.includes('Database Configuration Missing')) msg = "Erro: Banco de Dados não conectado na Vercel.";
+        if (msg.includes('Unauthorized')) msg = "Erro: Chave de sincronização inválida.";
+        
+        console.error("[Cloud] Sync Failed Detailed:", msg);
+        
+        state.syncLastError = msg;
+        setSyncStatus('syncError');
+        
+        if (++syncFailCount < MAX_RETRIES) {
+            console.log(`[Cloud] Retrying sync (${syncFailCount}/${MAX_RETRIES})...`);
+            pendingSyncState = appState;
+        }
+    } finally {
+        isSyncInProgress = false;
+        if (pendingSyncState && syncFailCount < MAX_RETRIES) {
+            performSync();
+        }
+    }
+}
+
+export function syncStateWithCloud(appState: AppState, immediate = false) {
+    if (!hasLocalSyncKey()) return;
+    pendingSyncState = appState;
+    setSyncStatus('syncSaving');
+    clearTimeout(syncTimeout);
+    
+    if (isSyncInProgress) {
+        return;
+    }
+    
+    if (immediate) performSync();
+    else syncTimeout = setTimeout(performSync, DEBOUNCE_DELAY);
+}
+
+export async function fetchStateFromCloud(): Promise<AppState | undefined> {
+    const key = _getAuthKey();
+    if (!key) return;
+    
+    prewarmWorker();
+    try {
+        console.log("[Cloud] Fetching state...");
+        const res = await apiFetch('/api/sync', {}, true);
+        const data = await res.json();
+        
+        if (data?.state) {
+            console.log("[Cloud] Data received. Decrypting...");
+            const appState = await runWorkerTask<AppState>('decrypt', data.state, key);
+            setSyncStatus('syncSynced');
+            state.syncLastError = null;
+            return appState;
+        }
+        
+        console.log("[Cloud] No data on server.");
+        if (state.habits.length) {
+            console.log("[Cloud] Pushing initial local state.");
+            syncStateWithCloud(getPersistableState(), true);
+        }
+    } catch (e: any) { 
+        const msg = e.message || String(e);
+        console.error("[Cloud] Fetch failed Detailed:", msg);
+        state.syncLastError = msg;
+        setSyncStatus('syncError'); 
+        throw e; 
+    }
+}
