@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -224,19 +223,6 @@ const _applyHabitDeletion = async () => {
     const [deletedHabit] = state.habits.splice(index, 1);
 
     Object.keys(state.dailyData).forEach(d => delete state.dailyData[d][ctx.habitId]);
-
-    // --- CORREÇÃO: Limpar rastro do Bitmask (Novo) ---
-    // Remove todas as entradas de meses vinculadas a este ID
-    if (state.monthlyLogs) {
-        const keysToRemove: string[] = [];
-        state.monthlyLogs.forEach((_, key) => {
-            if (key.startsWith(ctx.habitId + '_')) {
-                keysToRemove.push(key);
-            }
-        });
-        keysToRemove.forEach(k => state.monthlyLogs.delete(k));
-    }
-    // -------------------------------------------------
 
     const startYear = parseInt((deletedHabit.scheduleHistory[0]?.startDate || deletedHabit.createdOn).substring(0, 4), 10);
     try {
@@ -506,32 +492,7 @@ export function requestHabitPermanentDeletion(habitId: string) {
     }
 }
 export function graduateHabit(habitId: string) { const h = state.habits.find(x => x.id === habitId); if (h) { h.graduatedOn = getSafeDate(state.selectedDate); _notifyChanges(true); triggerHaptic('success'); } }
-
-export async function resetApplicationData() { 
-    // 1. Limpa memória RAM
-    state.habits = []; 
-    state.dailyData = {}; 
-    state.archives = {}; 
-    state.notificationsShown = state.pending21DayHabitIds = state.pendingConsolidationHabitIds = []; 
-    
-    // --- CORREÇÃO: Limpar Bitmask ---
-    state.monthlyLogs = new Map();
-    // -------------------------------
-
-    try { 
-        // 2. Força salvar o estado VAZIO no disco (sobrescreve dados antigos)
-        // Isso garante que, mesmo se clearLocalPersistence falhar em limpar a chave nova,
-        // o banco terá um Map vazio salvo.
-        await saveState();
-
-        // 3. Tenta limpar a persistência completamente
-        await clearLocalPersistence(); 
-    } finally { 
-        clearKey(); 
-        location.reload(); 
-    } 
-}
-
+export async function resetApplicationData() { state.habits = []; state.dailyData = {}; state.archives = {}; state.notificationsShown = state.pending21DayHabitIds = state.pendingConsolidationHabitIds = []; try { await clearLocalPersistence(); } finally { clearKey(); location.reload(); } }
 export function handleSaveNote() { if (!state.editingNoteFor) return; const { habitId, date, time } = state.editingNoteFor, val = ui.notesTextarea.value.trim(), inst = ensureHabitInstanceData(date, habitId, time); if ((inst.note || '') !== val) { inst.note = val || undefined; state.uiDirtyState.habitListStructure = true; saveState(); document.dispatchEvent(new CustomEvent('render-app')); } closeModal(ui.notesModal); }
 export function setGoalOverride(habitId: string, d: string, t: TimeOfDay, v: number) { 
     try { 
