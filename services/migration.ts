@@ -1,5 +1,4 @@
 
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -223,6 +222,7 @@ function migrateToV6(oldState: any): AppState {
 }
 
 function migrateToV7(oldState: any): AppState {
+    // FAILSAFE: Synchronous logic fallback for main thread
     const habitsV6 = (oldState.habits || []) as any[];
     const newHabits: Habit[] = [];
 
@@ -284,6 +284,7 @@ export function migrateState(loadedState: any, targetVersion: number): AppState 
                     migratedState = migration.migrate(migratedState);
                 } catch (e) {
                     console.error(`Migration v${migration.targetVersion} failed:`, e);
+                    // FORCE UPDATE: Advance version to break loop even if data migration was partial
                     migratedState.version = migration.targetVersion; 
                 }
             }

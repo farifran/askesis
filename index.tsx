@@ -128,15 +128,22 @@ async function loadInitialState() {
                 
             } else if (localState) {
                 if (isCloudEmpty) syncStateWithCloud(localState as AppState, true);
+                // FIX: Persist locally to save any migrations (v6 -> v7) that happened in memory inside loadState()
+                await persistStateLocally(localState);
                 await loadState(localState);
             }
             
         } catch (e) {
             console.error("Startup: Cloud sync failed, using local.", e);
             setSyncStatus('syncError');
-            if (localState) await loadState(localState);
+            if (localState) {
+                await persistStateLocally(localState); // Ensure migration persistence
+                await loadState(localState);
+            }
         }
     } else if (localState) {
+        // FIX: Persist locally to save any migrations (v6 -> v7) that happened in memory inside loadState()
+        await persistStateLocally(localState);
         await loadState(localState);
     }
 }
