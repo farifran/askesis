@@ -34,7 +34,9 @@ function terminateWorker(reason: string) {
 
 function getWorker(): Worker {
     if (!syncWorker) {
-        syncWorker = new Worker('/sync-worker.js', { type: 'module' });
+        // FIX: Path relative to enable correct loading in subdirectories/dev environments.
+        // Previously '/sync-worker.js' caused 404s returning HTML, leading to "Script origin" errors.
+        syncWorker = new Worker('sync-worker.js', { type: 'module' });
         syncWorker.onmessage = (e) => {
             const { id, status, result, error } = e.data;
             const cb = workerCallbacks.get(id);
@@ -43,8 +45,15 @@ function getWorker(): Worker {
             status === 'success' ? cb.resolve(result) : cb.reject(new Error(error));
             workerCallbacks.delete(id);
         };
-        syncWorker.onerror = (e) => {
-            console.error("[Cloud] Worker Error:", e);
+        syncWorker.onerror = (e: any) => {
+            let msg = 'Unknown Worker Error';
+            if (e instanceof ErrorEvent) {
+                msg = e.message || e.error?.message || 'Script Error';
+            } else if (e instanceof Event) {
+                // Frequentemente causado por 404 (Script load failed)
+                msg = 'Worker Script Load Failed (Check network/path)';
+            }
+            console.error(`[Cloud] Worker Error: ${msg}`, e);
             terminateWorker("Crash");
         };
     }
@@ -108,113 +117,114 @@ async function resolveConflictWithServerState(serverPayload: { lastModified: num
         setSyncStatus('syncSynced');
         document.dispatchEvent(new CustomEvent('habitsChanged'));
         
-        console.log("[Cloud] Conflict resolved. Pushing merged state.");
-        syncStateWithCloud(merged, true);
-    } catch (e) { 
+        console.log("[Cloud] Conflict resolved via Merge.");
+    } catch (e) {
         console.error("[Cloud] Conflict resolution failed:", e);
-        setSyncStatus('syncError'); 
-    }
-}
-
-async function performSync() {
-    if (isSyncInProgress || !pendingSyncState) return;
-    
-    const key = _getAuthKey();
-    const appState = pendingSyncState;
-    if (!key) { isSyncInProgress = false; return; }
-    
-    console.log(`[Cloud] Starting sync. LastModified: ${appState.lastModified}`);
-    isSyncInProgress = true;
-    pendingSyncState = null;
-    
-    try {
-        const encrypted = await runWorkerTask<string>('encrypt', appState, key);
-        
-        if (encrypted.length > MAX_PAYLOAD_SIZE) {
-            throw new Error(`Payload too large: ${(encrypted.length/1024).toFixed(2)}KB`);
-        }
-
-        const res = await apiFetch('/api/sync', {
-            method: 'POST',
-            body: JSON.stringify({ lastModified: appState.lastModified, state: encrypted }),
-        }, true);
-
-        if (res.status === 409) {
-            console.warn("[Cloud] Server conflict (409).");
-            await resolveConflictWithServerState(await res.json());
-        } else { 
-            console.log("[Cloud] Sync success.");
-            setSyncStatus('syncSynced'); 
-            document.dispatchEvent(new CustomEvent('habitsChanged')); 
-        }
-        syncFailCount = 0;
-        state.syncLastError = null; // Clear error on success
-    } catch (e: any) {
-        let msg = e.message || String(e);
-        
-        // Translate common errors for better UX
-        if (msg.includes('Database Configuration Missing')) msg = "Erro: Banco de Dados não conectado na Vercel.";
-        if (msg.includes('Unauthorized')) msg = "Erro: Chave de sincronização inválida.";
-        
-        console.error("[Cloud] Sync Failed Detailed:", msg);
-        
-        state.syncLastError = msg;
+        state.syncLastError = "Merge Failed";
         setSyncStatus('syncError');
-        
-        if (++syncFailCount < MAX_RETRIES) {
-            console.log(`[Cloud] Retrying sync (${syncFailCount}/${MAX_RETRIES})...`);
-            pendingSyncState = appState;
-        }
-    } finally {
-        isSyncInProgress = false;
-        if (pendingSyncState && syncFailCount < MAX_RETRIES) {
-            performSync();
-        }
     }
-}
-
-export function syncStateWithCloud(appState: AppState, immediate = false) {
-    if (!hasLocalSyncKey()) return;
-    pendingSyncState = appState;
-    setSyncStatus('syncSaving');
-    clearTimeout(syncTimeout);
-    
-    if (isSyncInProgress) {
-        return;
-    }
-    
-    if (immediate) performSync();
-    else syncTimeout = setTimeout(performSync, DEBOUNCE_DELAY);
 }
 
 export async function fetchStateFromCloud(): Promise<AppState | undefined> {
+    if (!hasLocalSyncKey()) return undefined;
+    const key = _getAuthKey();
+    if (!key) return undefined;
+
+    try {
+        const res = await apiFetch('/api/sync', { method: 'GET' }, true);
+        if (res.status === 401) {
+            clearLocalAuth();
+            return undefined;
+        }
+        
+        const data = await res.json();
+        if (!data || !data.state) return undefined;
+
+        try {
+            return await runWorkerTask<AppState>('decrypt', data.state, key);
+        } catch (e) {
+            console.error("Decrypt failed during fetch:", e);
+            state.syncLastError = "Decryption Failed";
+            setSyncStatus('syncError');
+            return undefined;
+        }
+    } catch (e: any) {
+        console.warn("[Cloud] Fetch failed:", e);
+        // Não define erro global aqui para não assustar no boot offline
+        return undefined;
+    }
+}
+
+function clearLocalAuth() {
+    state.syncLastError = "Auth Invalid";
+    setSyncStatus('syncError');
+}
+
+export async function syncStateWithCloud(currentState: AppState, force = false) {
+    if (!hasLocalSyncKey()) return;
+    if (isSyncInProgress) {
+        pendingSyncState = currentState;
+        return;
+    }
+
+    // Debounce
+    if (syncTimeout) clearTimeout(syncTimeout);
+    syncTimeout = setTimeout(() => _performSync(currentState), DEBOUNCE_DELAY);
+}
+
+async function _performSync(currentState: AppState) {
     const key = _getAuthKey();
     if (!key) return;
+
+    isSyncInProgress = true;
+    setSyncStatus('syncSaving');
     
-    prewarmWorker();
     try {
-        console.log("[Cloud] Fetching state...");
-        const res = await apiFetch('/api/sync', {}, true);
-        const data = await res.json();
+        const encryptedState = await runWorkerTask<string>('encrypt', currentState, key);
         
-        if (data?.state) {
-            console.log("[Cloud] Data received. Decrypting...");
-            const appState = await runWorkerTask<AppState>('decrypt', data.state, key);
+        const payload = {
+            lastModified: currentState.lastModified,
+            state: encryptedState
+        };
+
+        // Retry Logic inside apiFetch handles network glitches
+        const res = await apiFetch('/api/sync', {
+            method: 'POST',
+            body: JSON.stringify(payload)
+        }, true);
+
+        if (res.ok) {
             setSyncStatus('syncSynced');
             state.syncLastError = null;
-            return appState;
+            syncFailCount = 0;
+        } else if (res.status === 409) {
+            // Conflict
+            const serverData = await res.json();
+            await resolveConflictWithServerState(serverData);
+        } else if (res.status === 401) {
+            clearLocalAuth();
+        } else {
+            throw new Error(`Server status: ${res.status}`);
         }
+
+    } catch (e: any) {
+        console.error("[Cloud] Sync failed:", e);
+        syncFailCount++;
+        state.syncLastError = e.message || "Network Error";
+        setSyncStatus('syncError');
         
-        console.log("[Cloud] No data on server.");
-        if (state.habits.length) {
-            console.log("[Cloud] Pushing initial local state.");
-            syncStateWithCloud(getPersistableState(), true);
+        // Exponential Backoff for auto-retry
+        if (syncFailCount <= MAX_RETRIES) {
+            const delay = 5000 * Math.pow(2, syncFailCount - 1);
+            console.log(`[Cloud] Retrying in ${delay}ms...`);
+            syncTimeout = setTimeout(() => _performSync(currentState), delay);
         }
-    } catch (e: any) { 
-        const msg = e.message || String(e);
-        console.error("[Cloud] Fetch failed Detailed:", msg);
-        state.syncLastError = msg;
-        setSyncStatus('syncError'); 
-        throw e; 
+    } finally {
+        isSyncInProgress = false;
+        if (pendingSyncState) {
+            const next = pendingSyncState;
+            pendingSyncState = null;
+            syncStateWithCloud(next);
+        }
     }
 }
