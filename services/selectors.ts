@@ -163,8 +163,8 @@ function _isHabitConsistentlyDone(habit: Habit, dateISO: string): boolean {
         const time = schedule[i];
         const status = HabitService.getStatus(habit.id, dateISO, time);
         
-        // Verifica se é DONE (1) ou DEFERRED (2)
-        if (status !== HABIT_STATE.DONE && status !== HABIT_STATE.DEFERRED) return false;
+        // Verifica se é DONE (1) ou DEFERRED (2) ou DONE_PLUS (3)
+        if (status !== HABIT_STATE.DONE && status !== HABIT_STATE.DEFERRED && status !== HABIT_STATE.DONE_PLUS) return false;
     }
     return true;
 }
@@ -333,7 +333,7 @@ export function calculateDaySummary(dateISO: string, preParsedDate?: Date) {
             
             total++;
             
-            if (status === HABIT_STATE.DONE) {
+            if (status === HABIT_STATE.DONE || status === HABIT_STATE.DONE_PLUS) {
                 completed++;
                 // Track habits that track quantity (not simple checks) for intensity increase
                 if (scheduleProps && scheduleProps.goal.type !== 'check' && scheduleProps.goal.total) {

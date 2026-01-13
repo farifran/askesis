@@ -136,7 +136,7 @@ export interface QuoteDisplayState {
 
 // --- NOVAS ESTRUTURAS (Bitmask) ---
 export const PERIOD_OFFSET = { Morning: 0, Afternoon: 2, Evening: 4 } as const;
-export const HABIT_STATE = { NULL: 0, DONE: 1, DEFERRED: 2, MISSED: 3 } as const;
+export const HABIT_STATE = { NULL: 0, DONE: 1, DEFERRED: 2, DONE_PLUS: 3 } as const;
 
 export interface MonthlyHabitLog {
     habitId: string;
