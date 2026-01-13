@@ -32,6 +32,50 @@ import { updateAppBadge } from './services/badge';
 import { mergeStates } from './services/dataMerge';
 import { setupMidnightLoop } from './utils';
 
+// --- AUTO-HEALING & INTEGRITY CHECK ---
+const BOOT_ATTEMPTS_KEY = 'askesis_boot_attempts';
+const MAX_BOOT_ATTEMPTS = 3;
+
+/**
+ * Verifica se o app está em loop de inicialização.
+ * Se falhar repetidamente, limpa o Service Worker e Caches para forçar uma atualização limpa.
+ */
+function checkIntegrityAndHeal() {
+    const attempts = parseInt(sessionStorage.getItem(BOOT_ATTEMPTS_KEY) || '0', 10);
+    
+    if (attempts >= MAX_BOOT_ATTEMPTS) {
+        console.warn("🚨 Detected boot loop. Initiating Auto-Healing...");
+        
+        // Exorcismo do Service Worker Zumbi
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then(registrations => {
+                for (const registration of registrations) {
+                    registration.unregister();
+                    console.log("Service Worker Unregistered.");
+                }
+            });
+        }
+
+        // Limpeza de Cache (Assets corrompidos)
+        if ('caches' in window) {
+            caches.keys().then(names => {
+                for (const name of names) {
+                    caches.delete(name);
+                    console.log(`Cache ${name} Deleted.`);
+                }
+            });
+        }
+
+        sessionStorage.removeItem(BOOT_ATTEMPTS_KEY);
+        // Pequeno delay para garantir que as Promises de limpeza terminem antes do reload
+        setTimeout(() => window.location.reload(), 500);
+        return false; // Interrompe o boot atual
+    }
+
+    sessionStorage.setItem(BOOT_ATTEMPTS_KEY, (attempts + 1).toString());
+    return true;
+}
+
 // --- STATE MACHINE: BOOT LOCK ---
 let isInitializing = false;
 let isInitialized = false;
@@ -122,6 +166,9 @@ function setupAppListeners() {
 }
 
 function finalizeInit(loader: HTMLElement | null) {
+    // SUCCESS SIGNAL: Reset boot attempt counter
+    sessionStorage.removeItem(BOOT_ATTEMPTS_KEY);
+
     if (loader) {
         loader.classList.add('hidden');
         // RELIABILITY: Garante remoção mesmo se a transição CSS falhar/for desativada (Reduced Motion)
@@ -184,6 +231,9 @@ async function init(loader: HTMLElement | null) {
 registerServiceWorker();
 
 const startApp = () => {
+    // 0. AUTO-HEALING CHECK (Prevent Boot Loop)
+    if (!checkIntegrityAndHeal()) return;
+
     // PREVENT DOUBLE BOOT
     if (isInitializing || isInitialized) return;
     

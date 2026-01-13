@@ -20,7 +20,7 @@ try {
 }
 
 // CONSTANTS (Build-time injected)
-const CACHE_NAME = 'habit-tracker-v11';
+const CACHE_NAME = 'habit-tracker-v12';
 
 // PERF: Static Asset List (Pre-allocated)
 const CACHE_FILES = [
@@ -60,6 +60,9 @@ const updateShellCache = (res) => {
 // --- INSTALL PHASE ---
 
 self.addEventListener('install', (event) => {
+    // FORCE UPDATE: Assume control immediately
+    self.skipWaiting();
+    
     event.waitUntil(
         caches.open(CACHE_NAME).then(cache => {
             return Promise.all(CACHE_FILES.map(url => 
@@ -68,13 +71,14 @@ self.addEventListener('install', (event) => {
                     return cache.put(url, res);
                 })
             ));
-        }).then(() => self.skipWaiting())
+        })
     );
 });
 
 // --- ACTIVATE PHASE ---
 
 self.addEventListener('activate', (event) => {
+    // FORCE UPDATE: Claim clients immediately to serve new files
     event.waitUntil(
         Promise.all([
             self.clients.claim(),
@@ -151,8 +155,8 @@ self.addEventListener('fetch', (event) => {
                 // NETWORK FAILSAFE: If fetch fails (e.g. offline and not in cache, or zombie SW)
                 // Return a 408 (Timeout) or 404 to allow client code to handle it gracefully
                 // instead of crashing with "TypeError: Load failed".
-                console.warn('[SW] Network fetch failed:', req.url);
-                return new Response(null, { status: 408, statusText: "Network Failure" });
+                console.warn('[SW] Network fetch failed (Zombie SW Protection):', req.url);
+                return new Response(null, { status: 408, statusText: "Network Failure - Auto Healing Triggered" });
             });
         })
     );
