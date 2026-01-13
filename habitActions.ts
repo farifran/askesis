@@ -101,10 +101,10 @@ function _requestFutureScheduleChange(habitId: string, targetDate: string, updat
         
         // Se a mudança começar no mesmo dia que o segmento, basta atualizá-lo.
         if (activeSchedule.startDate === targetDate) {
+            const originalEndDate = activeSchedule.endDate;
             const updatedSchedule = updateFn({ ...activeSchedule });
-            // BUGFIX: Não sobrescrever o endDate definido pela função de atualização.
-            // A função `updateFn` é agora a única fonte da verdade para o novo estado do cronograma.
-            history[activeIndex] = updatedSchedule;
+            // Preserva o endDate original para não sobrescrever o futuro
+            history[activeIndex] = { ...updatedSchedule, endDate: originalEndDate };
         } else {
             // Divide o segmento
             const originalEndDate = activeSchedule.endDate;
@@ -212,30 +212,19 @@ const _applyDropFromNowOn = () => {
 
 const _applyHabitDeletion = async () => {
     const ctx = ActionContext.deletion;
-    if (!ctx) return ActionContext.reset();
+    if (!ctx) return;
+    const h = state.habits.find(x => x.id === ctx.habitId);
+    if (!h) return ActionContext.reset();
 
-    const index = state.habits.findIndex(x => x.id === ctx.habitId);
-    if (index === -1) {
-        console.warn(`[Action] Habit deletion failed: Habit with ID ${ctx.habitId} not found.`);
-        return ActionContext.reset();
-    }
-
-    const [deletedHabit] = state.habits.splice(index, 1);
-
+    state.habits = state.habits.filter(x => x.id !== ctx.habitId);
     Object.keys(state.dailyData).forEach(d => delete state.dailyData[d][ctx.habitId]);
 
-    const startYear = parseInt((deletedHabit.scheduleHistory[0]?.startDate || deletedHabit.createdOn).substring(0, 4), 10);
+    const startYear = parseInt((h.scheduleHistory[0]?.startDate || h.createdOn).substring(0, 4), 10);
     try {
         const up = await runWorkerTask<AppState['archives']>('prune-habit', { habitId: ctx.habitId, archives: state.archives, startYear });
-        Object.keys(up).forEach(y => {
-            if (up[y] === "") delete state.archives[y];
-            else state.archives[y] = up[y];
-            state.unarchivedCache.delete(y);
-        });
-    } catch (e) {
-        console.error(e);
-    }
-
+        Object.keys(up).forEach(y => { if (up[y] === "") delete state.archives[y]; else state.archives[y] = up[y]; state.unarchivedCache.delete(y); });
+    } catch (e) { console.error(e); }
+    
     _notifyChanges(true);
     ActionContext.reset();
 };
@@ -467,30 +456,17 @@ export function handleHabitDrop(habitId: string, fromTime: TimeOfDay, toTime: Ti
     const h = _lockActionHabit(habitId); if (!h) return;
     ActionContext.drop = { habitId, fromTime, toTime, reorderInfo };
     showConfirmationModal(t('confirmHabitMove', { habitName: getHabitDisplayInfo(h, state.selectedDate).name, oldTime: getTimeOfDayName(fromTime), newTime: getTimeOfDayName(toTime) }), 
-        _applyDropFromNowOn, { title: t('modalMoveHabitTitle'), confirmText: t('buttonFromNowOn'), editText: t('buttonJustToday'), onEdit: _applyDropJustToday, onCancel: () => ActionContext.reset() });
+        _applyDropFromNowOn, { title: t('modalMoveHabitTitle'), confirmText: t('buttonFromNowOn'), editText: t('buttonJustToday'), onEdit: _applyDropJustToday });
 }
 
 export function requestHabitEndingFromModal(habitId: string) {
     const h = _lockActionHabit(habitId), target = getSafeDate(state.selectedDate); if (!h) return;
     ActionContext.ending = { habitId, targetDate: target };
     showConfirmationModal(t('confirmEndHabit', { habitName: getHabitDisplayInfo(h, target).name, date: formatDate(parseUTCIsoDate(target), { day: 'numeric', month: 'long', timeZone: 'UTC' }) }), 
-        () => { _requestFutureScheduleChange(habitId, target, s => ({ ...s, endDate: target })); ActionContext.reset(); }, { confirmButtonStyle: 'danger', confirmText: t('endButton'), onCancel: () => ActionContext.reset() });
+        () => { _requestFutureScheduleChange(habitId, target, s => ({ ...s, endDate: target })); ActionContext.reset(); }, { confirmButtonStyle: 'danger', confirmText: t('endButton') });
 }
 
-export function requestHabitPermanentDeletion(habitId: string) {
-    if (_lockActionHabit(habitId)) {
-        ActionContext.deletion = { habitId };
-        showConfirmationModal(
-            t('confirmPermanentDelete', { habitName: getHabitDisplayInfo(state.habits.find(x => x.id === habitId)!).name }),
-            _applyHabitDeletion,
-            { 
-                confirmButtonStyle: 'danger', 
-                confirmText: t('deleteButton'), 
-                onCancel: () => ActionContext.reset() 
-            }
-        );
-    }
-}
+export function requestHabitPermanentDeletion(habitId: string) { if (_lockActionHabit(habitId)) { ActionContext.deletion = { habitId }; showConfirmationModal(t('confirmPermanentDelete', { habitName: getHabitDisplayInfo(state.habits.find(x => x.id === habitId)!).name }), _applyHabitDeletion, { confirmButtonStyle: 'danger', confirmText: t('deleteButton') }); } }
 export function graduateHabit(habitId: string) { const h = state.habits.find(x => x.id === habitId); if (h) { h.graduatedOn = getSafeDate(state.selectedDate); _notifyChanges(true); triggerHaptic('success'); } }
 export async function resetApplicationData() { state.habits = []; state.dailyData = {}; state.archives = {}; state.notificationsShown = state.pending21DayHabitIds = state.pendingConsolidationHabitIds = []; try { await clearLocalPersistence(); } finally { clearKey(); location.reload(); } }
 export function handleSaveNote() { if (!state.editingNoteFor) return; const { habitId, date, time } = state.editingNoteFor, val = ui.notesTextarea.value.trim(), inst = ensureHabitInstanceData(date, habitId, time); if ((inst.note || '') !== val) { inst.note = val || undefined; state.uiDirtyState.habitListStructure = true; saveState(); document.dispatchEvent(new CustomEvent('render-app')); } closeModal(ui.notesModal); }
@@ -521,24 +497,7 @@ export function setGoalOverride(habitId: string, d: string, t: TimeOfDay, v: num
         console.error(e); 
     } 
 }
-export function requestHabitTimeRemoval(habitId: string, time: TimeOfDay) {
-    const h = _lockActionHabit(habitId), target = getSafeDate(state.selectedDate); if (!h) return;
-    ActionContext.removal = { habitId, time, targetDate: target };
-    showConfirmationModal(
-        t('confirmRemoveTimePermanent', { habitName: getHabitDisplayInfo(h, target).name, time: getTimeOfDayName(time) }), 
-        () => { 
-            ensureHabitDailyInfo(target, habitId).dailySchedule = undefined; 
-            _requestFutureScheduleChange(habitId, target, s => ({ ...s, times: s.times.filter(x => x !== time) })); 
-            ActionContext.reset(); 
-        }, 
-        { 
-            title: t('modalRemoveTimeTitle'), 
-            confirmText: t('deleteButton'), 
-            confirmButtonStyle: 'danger', 
-            onCancel: () => ActionContext.reset() 
-        }
-    );
-}
+export function requestHabitTimeRemoval(habitId: string, time: TimeOfDay) { const h = _lockActionHabit(habitId), target = getSafeDate(state.selectedDate); if (!h) return; ActionContext.removal = { habitId, time, targetDate: target }; showConfirmationModal(t('confirmRemoveTimePermanent', { habitName: getHabitDisplayInfo(h, target).name, time: getTimeOfDayName(time) }), () => { ensureHabitDailyInfo(target, habitId).dailySchedule = undefined; _requestFutureScheduleChange(habitId, target, s => ({ ...s, times: s.times.filter(x => x !== time) })); ActionContext.reset(); }, { title: t('modalRemoveTimeTitle'), confirmText: t('deleteButton'), confirmButtonStyle: 'danger' }); }
 export function exportData() { const blob = new Blob([JSON.stringify(getPersistableState(), null, 2)], { type: 'application/json' }), url = URL.createObjectURL(blob), a = document.createElement('a'); a.href = url; a.download = `askesis-backup-${getTodayUTCIso()}.json`; a.click(); URL.revokeObjectURL(url); }
 export function handleDayTransition() { const today = getTodayUTCIso(); clearActiveHabitsCache(); state.uiDirtyState.calendarVisuals = state.uiDirtyState.habitListStructure = state.uiDirtyState.chartData = true; state.calendarDates = []; if (state.selectedDate !== today) state.selectedDate = today; document.dispatchEvent(new CustomEvent('render-app')); }
 

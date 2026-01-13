@@ -121,22 +121,13 @@ export function setupManageModal() {
 }
 
 export function showConfirmationModal(text: string, onConfirm: () => void, opts?: any) {
-    ui.confirmModalText.innerHTML = text;
-    state.confirmAction = onConfirm;
-    state.confirmEditAction = opts?.onEdit || null;
+    ui.confirmModalText.innerHTML = text; state.confirmAction = onConfirm; state.confirmEditAction = opts?.onEdit || null;
     setTextContent(ui.confirmModal.querySelector('h2'), opts?.title || t('modalConfirmTitle'));
     ui.confirmModalConfirmBtn.className = `btn ${opts?.confirmButtonStyle === 'danger' ? 'btn--danger' : 'btn--primary'}`;
     setTextContent(ui.confirmModalConfirmBtn, opts?.confirmText || t('confirmButton'));
     ui.confirmModalEditBtn.classList.toggle('hidden', !opts?.onEdit);
     if (opts?.editText) setTextContent(ui.confirmModalEditBtn, opts.editText);
-
-    const onCancel = () => {
-        state.confirmAction = null;
-        state.confirmEditAction = null;
-        opts?.onCancel?.(); // Chain the onCancel if it exists for context reset
-    };
-
-    openModal(ui.confirmModal, undefined, onCancel);
+    openModal(ui.confirmModal);
 }
 
 export function openNotesModal(habitId: string, date: string, time: TimeOfDay) {
