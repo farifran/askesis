@@ -1,4 +1,5 @@
 
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -88,7 +89,9 @@ function findConnectedComponent(startNodeId: string, adj: Map<string, string[]>,
  */
 function migrateToV6(oldState: any): AppState {
     if (!oldState || typeof oldState !== 'object') {
-        return { version: 6, habits: [], dailyData: {}, archives: {}, lastModified: Date.now(), notificationsShown: [], pending21DayHabitIds: [], pendingConsolidationHabitIds: [] } as AppState;
+        // @fix: Added missing `dailyDiagnoses` property to conform to `AppState`.
+        // FIX: Added missing `monthlyLogs` property to conform to `AppState`.
+        return { version: 6, habits: [], dailyData: {}, archives: {}, dailyDiagnoses: {}, lastModified: Date.now(), notificationsShown: [], pending21DayHabitIds: [], pendingConsolidationHabitIds: [], monthlyLogs: new Map() } as AppState;
     }
 
     // TYPE SAFETY [2025-06-01]: Explicit legacy interface definition.
@@ -114,7 +117,8 @@ function migrateToV6(oldState: any): AppState {
     const oldHabits = (Array.isArray(oldState.habits) ? oldState.habits : []) as LegacyHabit[];
     
     if (oldHabits.length === 0) {
-        return { ...oldState, habits: [], version: 6 };
+        // FIX: Ensure `monthlyLogs` is present to conform to AppState.
+        return { ...oldState, habits: [], version: 6, monthlyLogs: oldState.monthlyLogs || new Map() };
     }
 
     // 1. Graph Construction
@@ -208,11 +212,13 @@ function migrateToV6(oldState: any): AppState {
         }
     }
 
+    // FIX: Ensure `monthlyLogs` is present to conform to AppState.
     return {
         ...oldState,
         habits: newHabits,
         dailyData: newDailyData,
         version: 6,
+        monthlyLogs: oldState.monthlyLogs || new Map(),
     };
 }
 
@@ -242,10 +248,12 @@ function migrateToV7(oldState: any): AppState {
         newHabits.push(newHabit);
     }
     
+    // FIX: Ensure `monthlyLogs` is present to conform to AppState.
     return {
         ...oldState,
         habits: newHabits,
         version: 7,
+        monthlyLogs: oldState.monthlyLogs || new Map(),
     };
 }
 
@@ -258,7 +266,9 @@ const MIGRATIONS = [
 export function migrateState(loadedState: any, targetVersion: number): AppState {
     if (!loadedState) {
         console.warn("migrateState received null state. Returning default.");
-        return { version: targetVersion, habits: [], dailyData: {}, archives: {}, lastModified: Date.now(), notificationsShown: [], pending21DayHabitIds: [], pendingConsolidationHabitIds: [] } as AppState;
+        // @fix: Added missing `dailyDiagnoses` property to conform to `AppState`.
+        // FIX: Added missing `monthlyLogs` property to conform to `AppState`.
+        return { version: targetVersion, habits: [], dailyData: {}, archives: {}, dailyDiagnoses: {}, lastModified: Date.now(), notificationsShown: [], pending21DayHabitIds: [], pendingConsolidationHabitIds: [], monthlyLogs: new Map() } as AppState;
     }
 
     let migratedState = loadedState;

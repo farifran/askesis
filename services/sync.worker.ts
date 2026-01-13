@@ -9,7 +9,7 @@
  */
 
 import type { AppState, Habit, HabitDailyInfo, TimeOfDay, HabitSchedule } from '../state';
-import { toUTCIsoDateString, parseUTCIsoDate, decompressString, MS_PER_DAY } from '../utils';
+import { toUTCIsoDateString, parseUTCIsoDate, decompressString, MS_PER_DAY, compressString } from '../utils';
 import { encrypt, decrypt } from './crypto';
 import { mergeStates } from './dataMerge';
 
@@ -48,6 +48,10 @@ type AIPromptPayload = {
         aiSuccessRateLabelQuarterly: string;
         aiSuccessRateLabelHistorical: string;
         aiDaysUnit: string;
+        aiHistoryChange: string;
+        aiHistoryChangeFrequency: string;
+        aiHistoryChangeGoal: string;
+        aiHistoryChangeTimes: string;
         [key: string]: string;
     };
     todayISO: string;
@@ -214,8 +218,39 @@ async function buildAIPrompt(payload: AIPromptPayload) {
             const { name } = getHabitDisplayInfo(h, t, todayISO);
             const streak = await _calculateHabitStreakInWorker(h, todayISO, dailyData, archives);
             const success = await _calculateSuccessRateInWorker(h, todayISO, dailyData, archives, type === 'quarterly' ? 90 : (type === 'historical' ? 365 : 30));
-            let line = t['aiPromptHabitDetails'].replace('{habitName}', name).replace('{streak}', String(streak)).replace('{successRate}', String(success)).replace('{aiStreakLabel}', t['aiStreakLabel']).replace('{successRateLabel}', t[type === 'quarterly' ? 'aiSuccessRateLabelQuarterly' : (type === 'historical' ? 'aiSuccessRateLabelHistorical' : 'aiSuccessRateLabelMonthly')]).replace('{aiDaysUnit}', t['aiDaysUnit']);
-            // @fix: Get philosophy from the schedule for the current date.
+            
+            let historySummary = '';
+            if (h.scheduleHistory && h.scheduleHistory.length > 1) {
+                const changes: string[] = [];
+                for (let i = 1; i < h.scheduleHistory.length; i++) {
+                    const prev = h.scheduleHistory[i - 1];
+                    const curr = h.scheduleHistory[i];
+                    const date = curr.startDate;
+
+                    if (JSON.stringify(prev.frequency) !== JSON.stringify(curr.frequency)) {
+                        changes.push(t.aiHistoryChangeFrequency.replace('{date}', date));
+                    }
+                    if (JSON.stringify(prev.goal) !== JSON.stringify(curr.goal)) {
+                        changes.push(t.aiHistoryChangeGoal.replace('{date}', date));
+                    }
+                    if (prev.times.join(',') !== curr.times.join(',')) {
+                        changes.push(t.aiHistoryChangeTimes.replace('{date}', date));
+                    }
+                }
+                if (changes.length > 0) {
+                    historySummary = `  ${t.aiHistoryChange}\n${changes.map(c => `  ${c}`).join('\n')}\n`;
+                }
+            }
+
+            let line = t['aiPromptHabitDetails']
+                .replace('{habitName}', name)
+                .replace('{streak}', String(streak))
+                .replace('{successRate}', String(success))
+                .replace('{aiStreakLabel}', t['aiStreakLabel'])
+                .replace('{successRateLabel}', t[type === 'quarterly' ? 'aiSuccessRateLabelQuarterly' : (type === 'historical' ? 'aiSuccessRateLabelHistorical' : 'aiSuccessRateLabelMonthly')])
+                .replace('{aiDaysUnit}', t['aiDaysUnit'])
+                .replace('{historySummary}', historySummary);
+
             const schedule = _getScheduleForDateInWorker(h, todayISO);
             if (schedule?.philosophy) {
                 const p = schedule.philosophy;
@@ -257,8 +292,16 @@ self.onmessage = async (e: MessageEvent<any>) => {
     const { id, type, payload, key } = e.data;
     try {
         let result;
-        if (type === 'encrypt') result = await encrypt(JSON.stringify(payload), key);
-        else if (type === 'decrypt') result = JSON.parse(await decrypt(payload, key));
+        if (type === 'encrypt') {
+            const jsonString = JSON.stringify(payload);
+            const compressed = await compressString(jsonString);
+            result = await encrypt(compressed, key);
+        }
+        else if (type === 'decrypt') {
+            const decrypted = await decrypt(payload, key);
+            const decompressed = await decompressString(decrypted);
+            result = JSON.parse(decompressed);
+        }
         else if (type === 'build-ai-prompt') result = await buildAIPrompt(payload);
         else if (type === 'build-quote-analysis-prompt') result = await buildQuoteAnalysisPrompt(payload); // FIX: Handler adicionado
         else if (type === 'merge') result = await mergeStates(payload.local, payload.incoming);

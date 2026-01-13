@@ -1,4 +1,5 @@
 
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -58,7 +59,8 @@ export const registerSyncHandler = (h: (s: AppState) => void) => syncHandler = h
 /**
  * Poda de dados órfãos: remove registros de hábitos deletados para economizar espaço e RAM.
  */
-function pruneOrphanedDailyData(habits: Habit[], dailyData: Record<string, Record<string, HabitDailyInfo>>) {
+// @fix: Accept `readonly Habit[]` to be compatible with `AppState.habits`.
+function pruneOrphanedDailyData(habits: readonly Habit[], dailyData: Record<string, Record<string, HabitDailyInfo>>) {
     if (habits.length === 0) return; 
     const validIds = new Set(habits.map(h => h.id));
     let prunedCount = 0;
@@ -105,7 +107,7 @@ export async function saveState(): Promise<void> {
 export const persistStateLocally = (data: AppState) => performIDB('readwrite', s => s.put(data, STATE_STORAGE_KEY));
 
 export async function loadState(cloudState?: AppState): Promise<AppState | null> {
-    let loaded: AppState | null = cloudState || await performIDB<AppState>('readonly', s => s.get(STATE_STORAGE_KEY)) || null;
+    let loaded: any = cloudState || await performIDB<AppState>('readonly', s => s.get(STATE_STORAGE_KEY)) || null;
     if (!loaded) {
         const legacy = localStorage.getItem(STATE_STORAGE_KEY);
         if (legacy) {
@@ -120,20 +122,48 @@ export async function loadState(cloudState?: AppState): Promise<AppState | null>
     }
 
     if (loaded) {
-        const migrated = migrateState(loaded, APP_VERSION);
-        migrated.habits = (migrated.habits || []).filter(h => h && h.id && h.scheduleHistory?.length > 0);
+        // @fix: Cannot assign to 'habits' because it is a read-only property.
+        let migrated = migrateState(loaded, APP_VERSION);
+        migrated = {
+            ...migrated,
+            habits: (migrated.habits || []).filter(h => h && h.id && h.scheduleHistory?.length > 0)
+        };
         
         // PERFORMANCE & INTEGRITY: Pruning rodando fora do caminho crítico do boot.
         const runCleanup = () => pruneOrphanedDailyData(migrated.habits, migrated.dailyData || {});
         if ('requestIdleCallback' in window) requestIdleCallback(runCleanup);
         else setTimeout(runCleanup, 3000);
         
-        Object.assign(state, { 
-            habits: migrated.habits, dailyData: migrated.dailyData || {}, archives: migrated.archives || {},
-            notificationsShown: migrated.notificationsShown || [], pending21DayHabitIds: migrated.pending21DayHabitIds || [],
-            pendingConsolidationHabitIds: migrated.pendingConsolidationHabitIds || []
-        });
+        // @fix: Assign properties individually and create a mutable copy of habits to resolve readonly type mismatch.
+        state.habits = [...migrated.habits];
+        state.dailyData = migrated.dailyData || {};
+        state.archives = migrated.archives || {};
+        // @fix: The type 'readonly string[]' is 'readonly' and cannot be assigned to the mutable type 'string[]'.
+        state.notificationsShown = [...(migrated.notificationsShown || [])];
+        // @fix: The type 'readonly string[]' is 'readonly' and cannot be assigned to the mutable type 'string[]'.
+        state.pending21DayHabitIds = [...(migrated.pending21DayHabitIds || [])];
+        // @fix: The type 'readonly string[]' is 'readonly' and cannot be assigned to the mutable type 'string[]'.
+        state.pendingConsolidationHabitIds = [...(migrated.pendingConsolidationHabitIds || [])];
         
+        // --- HIDRATAÇÃO DO BITMASK (NOVO) ---
+        if (migrated.monthlyLogsSerialized && Array.isArray(migrated.monthlyLogsSerialized)) {
+            try {
+                const map = new Map<string, bigint>();
+                migrated.monthlyLogsSerialized.forEach(([key, hexVal]: [string, string]) => {
+                    // Converte HEX de volta para BigInt
+                    map.set(key, BigInt("0x" + hexVal));
+                });
+                state.monthlyLogs = map;
+                console.log(`[Persistence] Bitmasks carregados: ${map.size} meses.`);
+            } catch (e) {
+                console.error("Erro ao hidratar Bitmasks:", e);
+                state.monthlyLogs = new Map();
+            }
+        } else {
+            // Se não houver dados novos, inicia vazio (o sistema híbrido fará fallback para o legado)
+            state.monthlyLogs = new Map();
+        }
+
         ['streaksCache', 'scheduleCache', 'activeHabitsCache', 'unarchivedCache', 'habitAppearanceCache', 'daySummaryCache'].forEach(k => (state as any)[k].clear());
         Object.assign(state.uiDirtyState, { calendarVisuals: true, habitListStructure: true, chartData: true });
         return migrated;

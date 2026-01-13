@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -46,7 +45,8 @@ const DragState = {
     sourceEl: null as HTMLElement | null,
     sourceId: null as string | null,
     sourceTime: null as TimeOfDay | null,
-    cachedSchedule: null as TimeOfDay[] | null,
+    // @fix: The type 'readonly ("Morning" | "Afternoon" | "Evening")[]' is 'readonly' and cannot be assigned to the mutable type '("Morning" | "Afternoon" | "Evening")[]'.
+    cachedSchedule: null as readonly TimeOfDay[] | null,
     
     // Targets
     targetZone: null as HTMLElement | null,

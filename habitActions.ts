@@ -13,7 +13,7 @@ import {
     ensureHabitInstanceData, getNextStatus, HabitStatus, clearScheduleCache,
     clearActiveHabitsCache, invalidateCachesForDateChange, getPersistableState,
     HabitDayData, STREAK_SEMI_CONSOLIDATED, STREAK_CONSOLIDATED,
-    getHabitDailyInfoForDate, AppState, isDateLoading, HabitDailyInfo, LANGUAGES
+    getHabitDailyInfoForDate, AppState, isDateLoading, HabitDailyInfo, LANGUAGES, HABIT_STATE
 } from './state';
 import { saveState, loadState, clearLocalPersistence } from './services/persistence';
 import { PREDEFINED_HABITS } from './data/predefinedHabits';
@@ -33,6 +33,7 @@ import { ui } from './render/ui';
 import { t, getTimeOfDayName, formatDate, getAiLanguageName } from './i18n'; 
 import { runWorkerTask } from './services/cloud';
 import { apiFetch, clearKey } from './services/api';
+import { HabitService } from './services/HabitService';
 
 // --- CONSTANTS ---
 const ARCHIVE_DAYS_THRESHOLD = 90;
@@ -322,7 +323,7 @@ export async function performAIAnalysis(type: 'monthly' | 'quarterly' | 'histori
     renderAINotificationState(); closeModal(ui.aiOptionsModal);
     try {
         const trans: Record<string, string> = { promptTemplate: t(type === 'monthly' ? 'aiPromptMonthly' : (type === 'quarterly' ? 'aiPromptQuarterly' : 'aiPromptGeneral')), aiDaysUnit: t('unitDays', { count: 2 }) };
-        ['aiPromptGraduatedSection', 'aiPromptNoData', 'aiPromptNone', 'aiSystemInstruction', 'aiPromptHabitDetails', 'aiVirtue', 'aiDiscipline', 'aiSphere', 'stoicVirtueWisdom', 'stoicVirtueCourage', 'stoicVirtueJustice', 'stoicVirtueTemperance', 'stoicDisciplineDesire', 'stoicDisciplineAction', 'stoicDisciplineAssent', 'governanceSphereBiological', 'governanceSphereStructural', 'governanceSphereSocial', 'governanceSphereMental', 'aiPromptNotesSectionHeader', 'aiStreakLabel', 'aiSuccessRateLabelMonthly', 'aiSuccessRateLabelQuarterly', 'aiSuccessRateLabelHistorical'].forEach(k => trans[k] = t(k));
+        ['aiPromptGraduatedSection', 'aiPromptNoData', 'aiPromptNone', 'aiSystemInstruction', 'aiPromptHabitDetails', 'aiVirtue', 'aiDiscipline', 'aiSphere', 'stoicVirtueWisdom', 'stoicVirtueCourage', 'stoicVirtueJustice', 'stoicVirtueTemperance', 'stoicDisciplineDesire', 'stoicDisciplineAction', 'stoicDisciplineAssent', 'governanceSphereBiological', 'governanceSphereStructural', 'governanceSphereSocial', 'governanceSphereMental', 'aiPromptNotesSectionHeader', 'aiStreakLabel', 'aiSuccessRateLabelMonthly', 'aiSuccessRateLabelQuarterly', 'aiSuccessRateLabelHistorical', 'aiHistoryChange', 'aiHistoryChangeFrequency', 'aiHistoryChangeGoal', 'aiHistoryChangeTimes'].forEach(k => trans[k] = t(k));
         PREDEFINED_HABITS.forEach(h => trans[h.nameKey] = t(h.nameKey));
         const { prompt, systemInstruction } = await runWorkerTask<any>('build-ai-prompt', { analysisType: type, habits: state.habits, dailyData: state.dailyData, archives: state.archives, languageName: getAiLanguageName(), translations: trans, todayISO: getTodayUTCIso() });
         if (id !== state.aiReqId) return;
@@ -349,11 +350,25 @@ export function toggleHabitStatus(habitId: string, time: TimeOfDay, date: string
     const h = state.habits.find(x => x.id === habitId);
     if (h) {
         const inst = ensureHabitInstanceData(date, habitId, time);
+        const nextStatusString = getNextStatus(inst.status); // Pega o próximo status (string)
+        
+        // --- 1. ESCRITA NO SISTEMA LEGADO (MANTIDO) ---
         // @fix: Pass date to _updateHabitInstanceStatus.
-        if (_updateHabitInstanceStatus(h, inst, getNextStatus(inst.status), date)) {
+        if (_updateHabitInstanceStatus(h, inst, nextStatusString, date)) {
             if (inst.status === 'completed') _checkStreakMilestones(h, date);
             
-            // Dispara um evento específico para que a UI possa fazer uma atualização direcionada com animação.
+            // --- 2. ESCRITA NO SISTEMA NOVO (ADICIONADO) ---
+            // Mapeamento: string -> number (Bitmask)
+            // @fix: Explicitly type bitStatus as number to avoid literal type inference issue.
+            let bitStatus: number = HABIT_STATE.NULL;
+            if (nextStatusString === 'completed') bitStatus = HABIT_STATE.DONE;
+            else if (nextStatusString === 'snoozed') bitStatus = HABIT_STATE.DEFERRED;
+            
+            // Gravação segura no BigInt
+            HabitService.setStatus(habitId, date, time, bitStatus);
+            // ------------------------------------------------
+
+            // Dispara evento UI
             document.dispatchEvent(new CustomEvent('card-status-changed', { 
                 detail: { habitId, time, date } 
             }));
@@ -373,7 +388,22 @@ export function markAllHabitsForDate(dateISO: string, status: HabitStatus): bool
             if (!shouldHabitAppearOnDate(h, dateISO, dateObj)) return;
             const sch = getEffectiveScheduleForHabitOnDate(h, dateISO); if (!sch.length) return;
             day[h.id] ??= { instances: {}, dailySchedule: undefined };
-            let hChanged = false; sch.forEach(t => { day[h.id].instances[t] ??= { status: 'pending', goalOverride: undefined, note: undefined }; if (_updateHabitInstanceStatus(h, day[h.id].instances[t]!, status, dateISO)) hChanged = changed = true; });
+            let hChanged = false;
+            sch.forEach(t => {
+                day[h.id].instances[t] ??= { status: 'pending', goalOverride: undefined, note: undefined };
+                if (_updateHabitInstanceStatus(h, day[h.id].instances[t]!, status, dateISO)) {
+                    hChanged = changed = true;
+            
+                    // --- ESCRITA NOVA (ADICIONADO) ---
+                    // @fix: Explicitly type bitStatus as number to avoid literal type inference issue.
+                    let bitStatus: number = HABIT_STATE.NULL;
+                    if (status === 'completed') bitStatus = HABIT_STATE.DONE;
+                    else if (status === 'snoozed') bitStatus = HABIT_STATE.DEFERRED;
+            
+                    HabitService.setStatus(h.id, dateISO, t, bitStatus);
+                    // ---------------------------------
+                }
+            });
             if (hChanged) { BATCH_IDS_POOL.push(h.id); BATCH_HABITS_POOL.push(h); }
         });
         if (changed) { invalidateCachesForDateChange(dateISO, BATCH_IDS_POOL); if (status === 'completed') BATCH_HABITS_POOL.forEach(h => _checkStreakMilestones(h, dateISO)); _notifyChanges(false); }

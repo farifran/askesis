@@ -1,4 +1,5 @@
 
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -27,23 +28,23 @@ export type GovernanceSphere = 'Biological' | 'Structural' | 'Social' | 'Mental'
 export type HabitNature = 'Addition' | 'Subtraction';
 
 export interface HabitPhilosophy {
-  sphere: GovernanceSphere;
-  level: StoicLevel;
-  virtue: StoicVirtue;
-  discipline: StoicDiscipline;
-  nature: HabitNature;
-  conscienceKey: string;
-  stoicConcept: string;
-  masterQuoteId: string;
+  readonly sphere: GovernanceSphere;
+  readonly level: StoicLevel;
+  readonly virtue: StoicVirtue;
+  readonly discipline: StoicDiscipline;
+  readonly nature: HabitNature;
+  readonly conscienceKey: string;
+  readonly stoicConcept: string;
+  readonly masterQuoteId: string;
 }
 
 // --- TYPES & INTERFACES ---
 export type HabitStatus = 'completed' | 'snoozed' | 'pending';
 
 export type Frequency =
-    | { type: 'daily' }
-    | { type: 'interval'; unit: 'days' | 'weeks'; amount: number }
-    | { type: 'specific_days_of_week'; days: number[] };
+    | { readonly type: 'daily' }
+    | { readonly type: 'interval'; readonly unit: 'days' | 'weeks'; readonly amount: number }
+    | { readonly type: 'specific_days_of_week'; readonly days: readonly number[] };
 
 export interface HabitDayData {
     status: HabitStatus;
@@ -59,47 +60,49 @@ export interface HabitDailyInfo {
 }
 
 export interface HabitGoal { 
-    type: 'pages' | 'minutes' | 'check'; 
-    total?: number; 
-    unitKey?: string;
+    readonly type: 'pages' | 'minutes' | 'check'; 
+    readonly total?: number; 
+    readonly unitKey?: string;
 }
 
 export interface HabitSchedule {
-    startDate: string;
-    endDate?: string;
+    readonly startDate: string;
+    endDate?: string; // This can be mutated when a new schedule is created.
     // Versioned properties
-    icon: string;
-    color: string;
-    goal: HabitGoal;
-    philosophy?: HabitPhilosophy;
-    name?: string;
-    subtitle?: string;
-    nameKey?: string;
-    subtitleKey?: string;
-    times: TimeOfDay[];
-    frequency: Frequency;
-    scheduleAnchor: string;
+    readonly icon: string;
+    readonly color: string;
+    readonly goal: HabitGoal;
+    readonly philosophy?: HabitPhilosophy;
+    readonly name?: string;
+    readonly subtitle?: string;
+    readonly nameKey?: string;
+    readonly subtitleKey?: string;
+    readonly times: readonly TimeOfDay[];
+    readonly frequency: Frequency;
+    readonly scheduleAnchor: string;
 }
 
 export interface Habit {
-    id: string;
-    createdOn: string;
-    graduatedOn?: string;
+    readonly id: string;
+    createdOn: string; // Can be mutated if an edit targets a date before creation
+    graduatedOn?: string; // This can be mutated.
+    // @fix: Made scheduleHistory mutable to allow for adding/modifying schedules.
     scheduleHistory: HabitSchedule[];
 }
 
 export type PredefinedHabit = {
-    nameKey: string;
-    subtitleKey: string;
-    icon: string;
-    color: string;
-    times: TimeOfDay[];
-    goal: HabitGoal;
-    frequency: Frequency;
-    isDefault?: boolean;
-    philosophy?: HabitPhilosophy;
+    readonly nameKey: string;
+    readonly subtitleKey: string;
+    readonly icon: string;
+    readonly color: string;
+    readonly times: readonly TimeOfDay[];
+    readonly goal: HabitGoal;
+    readonly frequency: Frequency;
+    readonly isDefault?: boolean;
+    readonly philosophy?: HabitPhilosophy;
 };
 
+// NOTE: HabitTemplate remains MUTABLE as it's used to build form data before saving.
 export type HabitTemplate = {
     icon: string;
     color: string;
@@ -120,32 +123,45 @@ export type HabitTemplate = {
 });
 
 export interface DailyStoicDiagnosis {
-    level: StoicLevel;
-    themes: string[];
-    timestamp: number;
+    readonly level: StoicLevel;
+    readonly themes: readonly string[];
+    readonly timestamp: number;
 }
 
 export interface QuoteDisplayState {
-    currentId: string;
-    displayedAt: number;
-    lockedContext: string;
+    readonly currentId: string;
+    readonly displayedAt: number;
+    readonly lockedContext: string;
+}
+
+// --- NOVAS ESTRUTURAS (Bitmask) ---
+export const PERIOD_OFFSET = { Morning: 0, Afternoon: 2, Evening: 4 } as const;
+export const HABIT_STATE = { NULL: 0, DONE: 1, DEFERRED: 2, MISSED: 3 } as const;
+
+export interface MonthlyHabitLog {
+    habitId: string;
+    monthKey: string; // "YYYY-MM"
+    data: bigint;     // 186 bits representando o mês inteiro
 }
 
 export interface AppState {
-    version: number;
-    lastModified: number;
-    habits: Habit[];
-    dailyData: Record<string, Record<string, HabitDailyInfo>>;
-    archives: Record<string, string>; 
-    dailyDiagnoses: Record<string, DailyStoicDiagnosis>;
-    notificationsShown: string[];
-    pending21DayHabitIds: string[];
-    pendingConsolidationHabitIds: string[];
-    quoteState?: QuoteDisplayState;
+    readonly version: number;
+    lastModified: number; // This must be mutable
+    readonly habits: readonly Habit[];
+    readonly dailyData: Readonly<Record<string, Readonly<Record<string, HabitDailyInfo>>>>;
+    readonly archives: Readonly<Record<string, string>>; 
+    readonly dailyDiagnoses: Readonly<Record<string, DailyStoicDiagnosis>>;
+    readonly notificationsShown: readonly string[];
+    readonly pending21DayHabitIds: readonly string[];
+    readonly pendingConsolidationHabitIds: readonly string[];
+    readonly quoteState?: QuoteDisplayState;
     aiState?: 'idle' | 'loading' | 'completed' | 'error';
     lastAIResult?: string | null;
     lastAIError?: string | null;
     hasSeenAIResult?: boolean;
+    // NOVO: Cache para a estrutura otimizada
+    monthlyLogs?: Map<string, bigint>;
+    monthlyLogsSerialized?: [string, string][];
 }
 
 // --- CONSTANTS ---
@@ -241,6 +257,7 @@ export const state: {
         habitListStructure: boolean;
         chartData: boolean;
     };
+    monthlyLogs: Map<string, bigint>;
 } = {
     habits: [],
     dailyData: {},
@@ -278,7 +295,8 @@ export const state: {
         calendarVisuals: true,
         habitListStructure: true,
         chartData: true,
-    }
+    },
+    monthlyLogs: new Map(),
 };
 
 // --- CACHE MANAGEMENT ---
@@ -293,6 +311,13 @@ export function invalidateChartCache() {
 }
 
 export function getPersistableState(): AppState {
+    // Conversão Manual: Map<string, bigint> -> Array<[string, string(hex)]>
+    // Isso é necessário pois JSON.stringify não suporta BigInt nativamente.
+    const serializedLogs = Array.from(state.monthlyLogs.entries()).map(([key, val]) => {
+        return [key, val.toString(16)] as [string, string]; // Salva como HEX para economizar espaço
+    });
+
+    // Retorna o objeto misturando o estado legado com o novo serializado
     return {
         version: APP_VERSION,
         lastModified: Date.now(),
@@ -303,7 +328,9 @@ export function getPersistableState(): AppState {
         notificationsShown: state.notificationsShown,
         pending21DayHabitIds: state.pending21DayHabitIds,
         pendingConsolidationHabitIds: state.pendingConsolidationHabitIds,
-        quoteState: state.quoteState
+        quoteState: state.quoteState,
+        // Propriedade injetada dinamicamente para persistência
+        monthlyLogsSerialized: serializedLogs 
     };
 }
 

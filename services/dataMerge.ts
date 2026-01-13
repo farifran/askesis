@@ -98,7 +98,8 @@ async function hydrateArchive(content: string): Promise<Record<string, any>> {
  * Combina dois estados de forma inteligente preservando o progresso.
  */
 export async function mergeStates(local: AppState, incoming: AppState): Promise<AppState> {
-    const merged: AppState = structuredClone(incoming);
+    // @fix: Cast to `any` to allow mutation of the cloned state object, which is mutable at runtime but typed as readonly.
+    const merged: any = structuredClone(incoming);
 
     // 1. Fusão de Definições de Hábitos
     const incomingIds = new Set();

@@ -18,7 +18,8 @@
  * - Historical Determinism: O passado é imutável.
  */
 
-import { state, Habit, StoicVirtue, GovernanceSphere } from '../state';
+// @fix: Import `getHabitDailyInfoForDate` to make it available in this module.
+import { state, Habit, StoicVirtue, GovernanceSphere, getHabitDailyInfoForDate } from '../state';
 import { Quote, StoicTag } from '../data/quotes';
 import { calculateDaySummary, getEffectiveScheduleForHabitOnDate, calculateHabitStreak, getScheduleForDate } from './selectors';
 import { toUTCIsoDateString, parseUTCIsoDate, getTodayUTCIso } from '../utils';
