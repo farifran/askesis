@@ -14,7 +14,6 @@ import { mergeStates } from './dataMerge';
 
 const DEBOUNCE_DELAY = 2000;
 const WORKER_TIMEOUT_MS = 30000;
-const MAX_PAYLOAD_SIZE = 1000000;
 const MAX_RETRIES = 3;
 
 let syncTimeout: any = null;
@@ -34,9 +33,10 @@ function terminateWorker(reason: string) {
 
 function getWorker(): Worker {
     if (!syncWorker) {
-        // FIX: Path relative to enable correct loading in subdirectories/dev environments.
-        // Previously '/sync-worker.js' caused 404s returning HTML, leading to "Script origin" errors.
+        // FIX: Caminho relativo ('sync-worker.js') para evitar erros 404/MIME type 
+        // quando o app não está na raiz do domínio.
         syncWorker = new Worker('sync-worker.js', { type: 'module' });
+        
         syncWorker.onmessage = (e) => {
             const { id, status, result, error } = e.data;
             const cb = workerCallbacks.get(id);
@@ -45,12 +45,12 @@ function getWorker(): Worker {
             status === 'success' ? cb.resolve(result) : cb.reject(new Error(error));
             workerCallbacks.delete(id);
         };
+        
         syncWorker.onerror = (e: any) => {
             let msg = 'Unknown Worker Error';
             if (e instanceof ErrorEvent) {
                 msg = e.message || e.error?.message || 'Script Error';
             } else if (e instanceof Event) {
-                // Frequentemente causado por 404 (Script load failed)
                 msg = 'Worker Script Load Failed (Check network/path)';
             }
             console.error(`[Cloud] Worker Error: ${msg}`, e);
@@ -90,7 +90,6 @@ export function setSyncStatus(statusKey: 'syncSaving' | 'syncSynced' | 'syncErro
     state.syncState = statusKey;
     if (ui.syncStatus) ui.syncStatus.textContent = t(statusKey);
     
-    // UI FEEDBACK: Show/Hide detailed error message
     if (ui.syncErrorMsg) {
         if (statusKey === 'syncError' && state.syncLastError) {
             ui.syncErrorMsg.textContent = state.syncLastError;
@@ -150,7 +149,6 @@ export async function fetchStateFromCloud(): Promise<AppState | undefined> {
         }
     } catch (e: any) {
         console.warn("[Cloud] Fetch failed:", e);
-        // Não define erro global aqui para não assustar no boot offline
         return undefined;
     }
 }
@@ -167,7 +165,6 @@ export async function syncStateWithCloud(currentState: AppState, force = false) 
         return;
     }
 
-    // Debounce
     if (syncTimeout) clearTimeout(syncTimeout);
     syncTimeout = setTimeout(() => _performSync(currentState), DEBOUNCE_DELAY);
 }
@@ -187,7 +184,6 @@ async function _performSync(currentState: AppState) {
             state: encryptedState
         };
 
-        // Retry Logic inside apiFetch handles network glitches
         const res = await apiFetch('/api/sync', {
             method: 'POST',
             body: JSON.stringify(payload)
@@ -198,7 +194,6 @@ async function _performSync(currentState: AppState) {
             state.syncLastError = null;
             syncFailCount = 0;
         } else if (res.status === 409) {
-            // Conflict
             const serverData = await res.json();
             await resolveConflictWithServerState(serverData);
         } else if (res.status === 401) {
@@ -213,7 +208,6 @@ async function _performSync(currentState: AppState) {
         state.syncLastError = e.message || "Network Error";
         setSyncStatus('syncError');
         
-        // Exponential Backoff for auto-retry
         if (syncFailCount <= MAX_RETRIES) {
             const delay = 5000 * Math.pow(2, syncFailCount - 1);
             console.log(`[Cloud] Retrying in ${delay}ms...`);
