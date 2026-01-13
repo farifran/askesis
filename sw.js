@@ -20,7 +20,7 @@ try {
 }
 
 // CONSTANTS (Build-time injected)
-const CACHE_NAME = 'habit-tracker-v9';
+const CACHE_NAME = 'habit-tracker-v10';
 
 // PERF: Static Asset List (Pre-allocated)
 const CACHE_FILES = [
@@ -147,6 +147,12 @@ self.addEventListener('fetch', (event) => {
                 });
 
                 return networkResponse;
+            }).catch(err => {
+                // NETWORK FAILSAFE: If fetch fails (e.g. offline and not in cache, or zombie SW)
+                // Return a 408 (Timeout) or 404 to allow client code to handle it gracefully
+                // instead of crashing with "TypeError: Load failed".
+                console.warn('[SW] Network fetch failed:', req.url);
+                return new Response(null, { status: 408, statusText: "Network Failure" });
             });
         })
     );
