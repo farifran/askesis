@@ -20,7 +20,7 @@ try {
 }
 
 // CONSTANTS (Build-time injected)
-const CACHE_NAME = 'habit-tracker-v10';
+const CACHE_NAME = 'habit-tracker-v11';
 
 // PERF: Static Asset List (Pre-allocated)
 const CACHE_FILES = [
