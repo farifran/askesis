@@ -43,15 +43,8 @@ function getWorker(): Worker {
             status === 'success' ? cb.resolve(result) : cb.reject(new Error(error));
             workerCallbacks.delete(id);
         };
-        syncWorker.onerror = (e: any) => {
-            let msg = 'Unknown Worker Error';
-            if (e instanceof ErrorEvent) {
-                msg = e.message || e.error?.message || 'Script Error';
-            } else if (e instanceof Event) {
-                // Frequentemente causado por 404 (Script load failed)
-                msg = 'Worker Script Load Failed (Check network/path)';
-            }
-            console.error(`[Cloud] Worker Error: ${msg}`, e);
+        syncWorker.onerror = (e) => {
+            console.error("[Cloud] Worker Error:", e);
             terminateWorker("Crash");
         };
     }
