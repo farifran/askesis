@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -288,6 +289,80 @@ async function buildQuoteAnalysisPrompt(payload: QuoteAnalysisPayload) {
     };
 }
 
+async function pruneHabitFromArchives(payload: { habitId: string, archives: AppState['archives'], startYear: number }) {
+    const { habitId, archives, startYear } = payload;
+    const updates: Record<string, string> = {};
+    const currentYear = new Date().getUTCFullYear();
+
+    for (let y = startYear; y <= currentYear; y++) {
+        const yearKey = String(y);
+        if (!archives[yearKey]) continue;
+
+        try {
+            const raw = archives[yearKey];
+            let data: Record<string, HabitDailyInfo>;
+            
+            if (raw.startsWith('GZIP:')) {
+                data = JSON.parse(await decompressString(raw.substring(5)));
+            } else {
+                data = JSON.parse(raw);
+            }
+
+            let dirty = false;
+            const dates = Object.keys(data);
+            
+            for (const date of dates) {
+                if (data[date][habitId]) {
+                    delete data[date][habitId];
+                    dirty = true;
+                    if (Object.keys(data[date]).length === 0) {
+                        delete data[date];
+                    }
+                }
+            }
+
+            if (dirty) {
+                if (Object.keys(data).length === 0) {
+                    updates[yearKey] = ""; // Signal deletion
+                } else {
+                    const compressed = await compressString(JSON.stringify(data));
+                    updates[yearKey] = `GZIP:${compressed}`;
+                }
+            }
+        } catch (e) {
+            console.error(`Prune error for year ${y}`, e);
+        }
+    }
+    return updates;
+}
+
+async function processArchival(buckets: Record<string, { additions: Record<string, HabitDailyInfo>, base: string | undefined }>) {
+    const updates: Record<string, string> = {};
+    
+    for (const year in buckets) {
+        const { additions, base } = buckets[year];
+        let currentData: Record<string, HabitDailyInfo> = {};
+        
+        try {
+            if (base) {
+                if (base.startsWith('GZIP:')) {
+                    currentData = JSON.parse(await decompressString(base.substring(5)));
+                } else {
+                    currentData = JSON.parse(base);
+                }
+            }
+
+            Object.assign(currentData, additions);
+            
+            const compressed = await compressString(JSON.stringify(currentData));
+            updates[year] = `GZIP:${compressed}`;
+        } catch (e) {
+            console.error(`Archival error for year ${year}`, e);
+        }
+    }
+    return updates;
+}
+
 self.onmessage = async (e: MessageEvent<any>) => {
     const { id, type, payload, key } = e.data;
     try {
@@ -303,8 +378,10 @@ self.onmessage = async (e: MessageEvent<any>) => {
             result = JSON.parse(decompressed);
         }
         else if (type === 'build-ai-prompt') result = await buildAIPrompt(payload);
-        else if (type === 'build-quote-analysis-prompt') result = await buildQuoteAnalysisPrompt(payload); // FIX: Handler adicionado
+        else if (type === 'build-quote-analysis-prompt') result = await buildQuoteAnalysisPrompt(payload);
         else if (type === 'merge') result = await mergeStates(payload.local, payload.incoming);
+        else if (type === 'prune-habit') result = await pruneHabitFromArchives(payload);
+        else if (type === 'archive') result = await processArchival(payload);
         else throw new Error(`Unknown type: ${type}`);
         self.postMessage({ id, status: 'success', result });
     } catch (err: any) {

@@ -371,19 +371,37 @@ const _handleAiOptionsClick = (e: MouseEvent) => {
 const _handleConfirmClick = () => {
     triggerHaptic('light');
     const action = state.confirmAction;
+    
+    // RACE CONDITION FIX [2025-06-03]: Execute action BEFORE closing modal.
+    // This ensures that contexts (ActionContext) are captured/used before
+    // the modal's onCancel/onClose handler wipes them out.
+    // If the action relies on ActionContext (like deletions), this order is critical.
+    try {
+        action?.();
+    } catch (e) {
+        console.error("Action execution failed", e);
+    }
+
     state.confirmAction = null;
     state.confirmEditAction = null;
     closeModal(ui.confirmModal);
-    action?.();
 };
 
 const _handleEditClick = () => {
     triggerHaptic('light');
     const editAction = state.confirmEditAction;
+    
+    // RACE CONDITION FIX [2025-06-03]: Same logic as Confirm. 
+    // Capture context/execute action first.
+    try {
+        editAction?.();
+    } catch (e) {
+        console.error("Edit Action execution failed", e);
+    }
+
     state.confirmAction = null;
     state.confirmEditAction = null;
     closeModal(ui.confirmModal);
-    editAction?.();
 };
 
 const _handleFullCalendarPrevClick = () => {

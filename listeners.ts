@@ -142,7 +142,15 @@ export function setupEventListeners() {
     const handleCardUpdate = (e: Event) => {
         const { habitId, time } = (e as CustomEvent).detail;
         const habit = state.habits.find(h => h.id === habitId);
-        const cardElement = getCachedHabitCard(habitId, time);
+        
+        let cardElement = getCachedHabitCard(habitId, time);
+
+        // ROBUSTNESS FIX [2025-06-03]: Fallback to DOM query if cache is stale or desynchronized.
+        // This ensures the visual update happens even if the cache entry was lost or key mismatch occurred.
+        // Critical for "Morning" habits or newly created ones where cache race conditions might exist.
+        if (!cardElement) {
+             cardElement = document.querySelector(`.habit-card[data-habit-id="${habitId}"][data-time="${time}"]`) as HTMLElement;
+        }
 
         if (habit && cardElement) {
             const shouldAnimate = e.type === 'card-status-changed';

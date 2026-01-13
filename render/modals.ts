@@ -121,13 +121,22 @@ export function setupManageModal() {
 }
 
 export function showConfirmationModal(text: string, onConfirm: () => void, opts?: any) {
-    ui.confirmModalText.innerHTML = text; state.confirmAction = onConfirm; state.confirmEditAction = opts?.onEdit || null;
+    ui.confirmModalText.innerHTML = text;
+    state.confirmAction = onConfirm;
+    state.confirmEditAction = opts?.onEdit || null;
     setTextContent(ui.confirmModal.querySelector('h2'), opts?.title || t('modalConfirmTitle'));
     ui.confirmModalConfirmBtn.className = `btn ${opts?.confirmButtonStyle === 'danger' ? 'btn--danger' : 'btn--primary'}`;
     setTextContent(ui.confirmModalConfirmBtn, opts?.confirmText || t('confirmButton'));
     ui.confirmModalEditBtn.classList.toggle('hidden', !opts?.onEdit);
     if (opts?.editText) setTextContent(ui.confirmModalEditBtn, opts.editText);
-    openModal(ui.confirmModal);
+
+    const onCancel = () => {
+        state.confirmAction = null;
+        state.confirmEditAction = null;
+        opts?.onCancel?.(); // Chain the onCancel if it exists for context reset
+    };
+
+    openModal(ui.confirmModal, undefined, onCancel);
 }
 
 export function openNotesModal(habitId: string, date: string, time: TimeOfDay) {
@@ -180,10 +189,31 @@ export function refreshEditModalUI() {
 export function openEditModal(habit: any, targetDateOverride?: string) {
     const isN = !habit || !habit.id;
     const safe = getSafeDate(targetDateOverride || state.selectedDate);
-    const fd = isN ? { icon: HABIT_ICONS.custom, color: _getLeastUsedColor(), times: ['Morning'], goal: { type: 'check' }, frequency: { type: 'daily' }, name: '', subtitleKey: 'customHabitSubtitle', ...habit } : { ...habit, times: [...(getScheduleForDate(habit, safe) || habit.scheduleHistory[0]).times], frequency: { ...(getScheduleForDate(habit, safe) || habit.scheduleHistory[0]).frequency } };
-    state.editingHabit = { isNew: isN, habitId: isN ? undefined : habit.id, originalData: isN ? undefined : habit, formData: fd as any, targetDate: safe };
+
+    let fd: HabitTemplate;
+    if (isN) {
+        // Para novos hábitos (a partir de template ou customizado), não há risco de mutação
+        fd = { icon: HABIT_ICONS.custom, color: _getLeastUsedColor(), times: ['Morning'], goal: { type: 'check' }, frequency: { type: 'daily' }, name: '', subtitleKey: 'customHabitSubtitle', ...habit };
+    } else {
+        // Para edição, cria cópias defensivas para isolar o formulário do estado original
+        const scheduleToEdit = getScheduleForDate(habit, safe) || habit.scheduleHistory[0];
+        
+        const originalFrequency = scheduleToEdit.frequency;
+        const newFrequency: Frequency = originalFrequency.type === 'specific_days_of_week' 
+            ? { ...originalFrequency, days: [...originalFrequency.days] } 
+            : { ...originalFrequency };
+
+        fd = {
+            ...(scheduleToEdit as any), // Cast para evitar erro de tipo com name/nameKey
+            times: [...scheduleToEdit.times],
+            frequency: newFrequency,
+            goal: { ...scheduleToEdit.goal }
+        };
+    }
+
+    state.editingHabit = { isNew: isN, habitId: isN ? undefined : habit.id, originalData: isN ? undefined : habit, formData: fd, targetDate: safe };
     const ni = ui.editHabitForm.elements.namedItem('habit-name') as HTMLInputElement;
-    if (ni) ni.value = isN ? (habit?.nameKey ? t(habit.nameKey) : '') : getHabitDisplayInfo(habit, safe).name;
+    if (ni) ni.value = isN ? (fd.nameKey ? t(fd.nameKey) : '') : getHabitDisplayInfo(habit, safe).name;
     const btn = ui.habitIconPickerBtn; btn.innerHTML = fd.icon; btn.style.backgroundColor = fd.color; btn.style.color = getContrastColor(fd.color);
     
     const subtitle = isN 
