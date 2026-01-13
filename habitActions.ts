@@ -91,24 +91,65 @@ function _requestFutureScheduleChange(habitId: string, targetDate: string, updat
     if (!habit || !/^\d{4}-\d{2}-\d{2}$/.test(targetDate)) return;
 
     const history = habit.scheduleHistory;
-    const idx = history.findIndex(s => targetDate >= s.startDate && (!s.endDate || targetDate < s.endDate));
 
-    if (idx !== -1) {
-        const cur = history[idx];
-        if (cur.startDate === targetDate) {
-            history[idx] = updateFn({ ...cur });
+    // Encontra o cronograma ativo na data alvo
+    const activeIndex = history.findIndex(s => targetDate >= s.startDate && (!s.endDate || targetDate < s.endDate));
+
+    if (activeIndex !== -1) {
+        // A mudança ocorre dentro de um segmento de cronograma existente
+        const activeSchedule = history[activeIndex];
+        
+        // Se a mudança começar no mesmo dia que o segmento, basta atualizá-lo.
+        if (activeSchedule.startDate === targetDate) {
+            const originalEndDate = activeSchedule.endDate;
+            const updatedSchedule = updateFn({ ...activeSchedule });
+            // Preserva o endDate original para não sobrescrever o futuro
+            history[activeIndex] = { ...updatedSchedule, endDate: originalEndDate };
         } else {
-            cur.endDate = targetDate;
-            history.push(updateFn({ ...cur, startDate: targetDate, endDate: undefined }));
+            // Divide o segmento
+            const originalEndDate = activeSchedule.endDate;
+            // 1. Termina o segmento antigo
+            activeSchedule.endDate = targetDate;
+            // 2. Insere o novo segmento, preservando o endDate original
+            const newSchedule = updateFn({ ...activeSchedule, startDate: targetDate, endDate: originalEndDate });
+            history.push(newSchedule);
         }
     } else {
-        const last = history[history.length - 1];
-        if (last) {
-            if (last.endDate && last.endDate > targetDate) last.endDate = targetDate;
-            history.push(updateFn({ ...last, startDate: targetDate, endDate: undefined }));
+        // A mudança está fora de qualquer segmento atual (antes do primeiro ou depois do último)
+        // Encontra onde inseri-lo cronologicamente
+        const insertionIndex = history.findIndex(s => targetDate < s.startDate);
+
+        if (insertionIndex === -1) {
+            // Insere no final. O novo cronograma executa indefinidamente.
+            const lastSchedule = history[history.length - 1];
+            // Termina o último cronograma anterior se ele estava em aberto
+            if (lastSchedule && !lastSchedule.endDate) {
+                lastSchedule.endDate = targetDate;
+            }
+            // Cria o novo cronograma baseado no último (ou vazio se for o primeiro)
+            history.push(updateFn({ ...(lastSchedule || {} as any), startDate: targetDate, endDate: undefined }));
+        } else {
+            // Insere no meio ou no início
+            const nextSchedule = history[insertionIndex];
+            const prevSchedule = history[insertionIndex - 1];
+
+            // O novo cronograma deve terminar onde o próximo começa
+            const newEndDate = nextSchedule.startDate;
+            // Baseia as propriedades do novo cronograma no anterior (se existir), senão no próximo.
+            const baseSchedule = prevSchedule || nextSchedule; 
+            
+            history.push(updateFn({ ...baseSchedule, startDate: targetDate, endDate: newEndDate }));
+            
+            // Termina o cronograma anterior se ele estava em aberto
+            if (prevSchedule && !prevSchedule.endDate) {
+                prevSchedule.endDate = targetDate;
+            }
         }
     }
+
+    // Garante que a história esteja sempre ordenada
     history.sort((a, b) => a.startDate.localeCompare(b.startDate));
+    // Qualquer mudança no cronograma invalida uma graduação
     habit.graduatedOn = undefined;
     _notifyChanges(true);
 }
@@ -460,7 +501,7 @@ window.auditIntegrity = () => {
     
     allDates.forEach(date => {
         state.habits.forEach(habit => {
-            // Verifica Morning, Afternoon, Evening
+            // Verifica Morning (0), Afternoon (2), Evening (4)
             ([0, 2, 4] as const).forEach(offset => {
                 let time: TimeOfDay = 'Morning';
                 if (offset === 2) time = 'Afternoon';
@@ -482,13 +523,12 @@ window.auditIntegrity = () => {
                 if (log !== undefined) {
                     const day = parseInt(date.substring(8, 10), 10);
                     const bitPos = BigInt(((day - 1) * 6) + offset);
-                    // @fix: assignment to bitStatus (typed as number) fix for error line 483
                     bitStatus = Number((log >> bitPos) & 0b11n);
                 }
 
                 if (legacyStatus !== bitStatus) {
                     if (legacyStatus === HABIT_STATE.NULL && bitStatus === 0) return;
-                    console.error(`❌ DISCREPÂNCIA ${date} [${habit.id}]: L=${legacyStatus} vs B=${bitStatus}`);
+                    //console.error(`❌ DISCREPÂNCIA ${date} [${habit.id}]: L=${legacyStatus} vs B=${bitStatus}`);
                     errors++;
                 }
                 checked++;
