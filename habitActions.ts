@@ -13,7 +13,7 @@ import {
     ensureHabitInstanceData, getNextStatus, HabitStatus, clearScheduleCache,
     clearActiveHabitsCache, invalidateCachesForDateChange, getPersistableState,
     HabitDayData, STREAK_SEMI_CONSOLIDATED, STREAK_CONSOLIDATED,
-    getHabitDailyInfoForDate, AppState, isDateLoading, HabitDailyInfo, LANGUAGES, HABIT_STATE
+    getHabitDailyInfoForDate, AppState, isDateLoading, HabitDailyInfo, LANGUAGES, HABIT_STATE, PERIOD_OFFSET
 } from './state';
 import { saveState, loadState, clearLocalPersistence } from './services/persistence';
 import { PREDEFINED_HABITS } from './data/predefinedHabits';
@@ -433,3 +433,85 @@ export function setGoalOverride(habitId: string, d: string, t: TimeOfDay, v: num
 export function requestHabitTimeRemoval(habitId: string, time: TimeOfDay) { const h = _lockActionHabit(habitId), target = getSafeDate(state.selectedDate); if (!h) return; ActionContext.removal = { habitId, time, targetDate: target }; showConfirmationModal(t('confirmRemoveTimePermanent', { habitName: getHabitDisplayInfo(h, target).name, time: getTimeOfDayName(time) }), () => { ensureHabitDailyInfo(target, habitId).dailySchedule = undefined; _requestFutureScheduleChange(habitId, target, s => ({ ...s, times: s.times.filter(x => x !== time) })); ActionContext.reset(); }, { title: t('modalRemoveTimeTitle'), confirmText: t('deleteButton'), confirmButtonStyle: 'danger' }); }
 export function exportData() { const blob = new Blob([JSON.stringify(getPersistableState(), null, 2)], { type: 'application/json' }), url = URL.createObjectURL(blob), a = document.createElement('a'); a.href = url; a.download = `askesis-backup-${getTodayUTCIso()}.json`; a.click(); URL.revokeObjectURL(url); }
 export function handleDayTransition() { const today = getTodayUTCIso(); clearActiveHabitsCache(); state.uiDirtyState.calendarVisuals = state.uiDirtyState.habitListStructure = state.uiDirtyState.chartData = true; state.calendarDates = []; if (state.selectedDate !== today) state.selectedDate = today; document.dispatchEvent(new CustomEvent('render-app')); }
+// --- FERRAMENTA DE AUDITORIA (DEBUG) ---
+// Adicione isto ao FINAL de src/habitActions.ts
+
+declare global {
+    interface Window {
+        auditIntegrity: () => void;
+    }
+}
+
+// @ts-ignore
+window.auditIntegrity = () => {
+    // Importações dinâmicas ou locais para garantir acesso ao escopo do módulo
+    // (Como estamos dentro de habitActions.ts, já temos acesso a state, HABIT_STATE, etc.)
+    
+    console.group("🕵️ Iniciando Auditoria de Integridade (Legacy vs Bitmask)");
+    let errors = 0;
+    let checked = 0;
+
+    // Verificação de segurança: O Mapa Novo existe?
+    if (!state.monthlyLogs || state.monthlyLogs.size === 0) {
+        console.warn("⚠️ O mapa 'monthlyLogs' está vazio na memória. Isso é normal se você acabou de recarregar a página e ainda não clicou em nada (Lazy Loading).");
+    }
+
+    const allDates = Object.keys(state.dailyData);
+    
+    if (allDates.length === 0) {
+        console.log("ℹ️ Nenhum dado legado encontrado para auditar.");
+        console.groupEnd();
+        return;
+    }
+
+    allDates.forEach(date => {
+        state.habits.forEach(habit => {
+            // Verifica os 3 períodos
+            [PERIOD_OFFSET.Morning, PERIOD_OFFSET.Afternoon, PERIOD_OFFSET.Evening].forEach(offset => {
+                // Recupera o nome do período baseado no offset
+                let time: TimeOfDay = 'Morning';
+                if (offset === PERIOD_OFFSET.Afternoon) time = 'Afternoon';
+                if (offset === PERIOD_OFFSET.Evening) time = 'Evening';
+                
+                // 1. Ler do Legado
+                const legacyInfo = state.dailyData[date]?.[habit.id]?.instances[time];
+                let legacyStatus: number = HABIT_STATE.NULL;
+                if (legacyInfo?.status === 'completed') legacyStatus = HABIT_STATE.DONE;
+                if (legacyInfo?.status === 'snoozed') legacyStatus = HABIT_STATE.DEFERRED;
+
+                // 2. Ler do Bitmask (Manual)
+                const logKey = `${habit.id}_${date.substring(0, 7)}`;
+                const log = state.monthlyLogs.get(logKey);
+                let bitStatus: number = HABIT_STATE.NULL;
+                
+                if (log !== undefined) {
+                    const day = parseInt(date.substring(8, 10), 10);
+                    const bitPos = BigInt(((day - 1) * 6) + offset);
+                    bitStatus = Number((log >> bitPos) & 0b11n);
+                }
+
+                // 3. Comparar
+                // Só consideramos erro se o Legado diz uma coisa e o Bitmask diz outra (e não é o caso de ambos nulos)
+                if (legacyStatus !== bitStatus) {
+                    // Se o legado é NULL e o Bitmask é 0, está tudo certo.
+                    if (legacyStatus === HABIT_STATE.NULL && bitStatus === 0) return;
+
+                    // Erro real
+                    console.error(`❌ DISCREPÂNCIA em ${date} [${habit.id} - ${time}]: Legado=${legacyStatus} vs Bitmask=${bitStatus}`);
+                    errors++;
+                }
+                checked++;
+            });
+        });
+    });
+
+    console.log(`Auditoria Finalizada: ${checked} pontos verificados.`);
+    
+    if (errors === 0) {
+        console.log("%c✅ INTEGRIDADE PERFEITA! O Bitmask reflete o Legado.", "color: green; font-weight: bold; font-size: 14px;");
+    } else {
+        console.log(`%c⚠️ Encontrados ${errors} erros de sincronia.`, "color: red; font-weight: bold; font-size: 14px;");
+        console.log("Dica: Tente clicar no hábito novamente para forçar o 'Dual Write' e corrigir.");
+    }
+    console.groupEnd();
+};

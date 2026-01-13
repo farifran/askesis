@@ -10,9 +10,6 @@
  * @description Biblioteca de Utilitários de Infraestrutura e Helpers de Baixo Nível.
  */
 
-import { state, getHabitDailyInfoForDate, HABIT_STATE, PERIOD_OFFSET } from './state';
-import { HabitService } from './services/HabitService';
-
 declare global {
     // CSS Typed OM Polyfill Types
     // Removed duplicate definitions of CSS and CSSTranslate to avoid conflicts with lib.dom.d.ts
@@ -372,62 +369,3 @@ export function getContrastColor(hexColor: string): string {
         return result;
     } catch { return cachedLightContrastColor!; }
 }
-
-/**
- * FERRAMENTA DE AUDITORIA:
- * Compara o banco de dados Legado (JSON) com o Novo (Bitmask) dia a dia.
- * Execute no console: window.auditIntegrity()
- */
-// @ts-ignore
-window.auditIntegrity = () => {
-    console.group("🕵️ Iniciando Auditoria de Integridade (Legacy vs Bitmask)");
-    let errors = 0;
-    let checked = 0;
-
-    // Percorre todos os dias que temos dados
-    const allDates = Object.keys(state.dailyData);
-    
-    allDates.forEach(date => {
-        state.habits.forEach(habit => {
-            ['Morning', 'Afternoon', 'Evening'].forEach(timeStr => {
-                const time = timeStr as keyof typeof PERIOD_OFFSET;
-                
-                // 1. Ler do Legado
-                const legacyInfo = state.dailyData[date]?.[habit.id]?.instances[time];
-                // FIX: Add explicit number type to allow assignment of different HABIT_STATE values.
-                let legacyStatus: number = HABIT_STATE.NULL;
-                if (legacyInfo?.status === 'completed') legacyStatus = HABIT_STATE.DONE;
-                if (legacyInfo?.status === 'snoozed') legacyStatus = HABIT_STATE.DEFERRED;
-
-                // 2. Ler do Bitmask (Direto do Map, ignorando fallback do Service para teste real)
-                // Precisamos simular a leitura pura para garantir que o dado foi GRAVADO
-                const logKey = `${habit.id}_${date.substring(0, 7)}`;
-                const log = state.monthlyLogs.get(logKey);
-                // FIX: Add explicit number type to allow assignment of different HABIT_STATE values.
-                let bitStatus: number = HABIT_STATE.NULL;
-                
-                if (log !== undefined) {
-                    const day = parseInt(date.substring(8, 10), 10);
-                    const bitPos = BigInt(((day - 1) * 6) + PERIOD_OFFSET[time]);
-                    bitStatus = Number((log >> bitPos) & 0b11n);
-                }
-
-                // 3. Comparar (Só nos importamos se o Legado tiver dado e o Bitmask não)
-                // Se o legado for NULL, o Bitmask também deve ser NULL (ou 0).
-                if (legacyStatus !== bitStatus) {
-                    // Ignora se o legado for NULL e o Bitmask for 0 (são equivalentes)
-                    if (legacyStatus === HABIT_STATE.NULL && bitStatus === 0) return;
-
-                    console.error(`❌ DISCREPÂNCIA em ${date} [${habit.id} - ${time}]: Legado=${legacyStatus} vs Bitmask=${bitStatus}`);
-                    errors++;
-                }
-                checked++;
-            });
-        });
-    });
-
-    console.log(`Auditoria Finalizada: ${checked} pontos verificados.`);
-    if (errors === 0) console.log("%c✅ INTEGRIDADE PERFEITA! O Bitmask reflete o Legado.", "color: green; font-weight: bold;");
-    else console.log(`%c⚠️ Encontrados ${errors} erros de sincronia.`, "color: red; font-weight: bold;");
-    console.groupEnd();
-};
