@@ -77,7 +77,7 @@
 .time-marker {
     flex-shrink: 0;
     width: 30px;
-    padding-top: 25px; /* [2025-02-26]: Ajuste fino para alinhar visualmente à base do cartão */
+    padding-top: 21px; /* Default alignment for Afternoon & Evening */
     padding-bottom: 2px;
     color: #ffffff; /* Changed from var(--text-tertiary) */
     display: flex;
@@ -93,6 +93,12 @@
     /* UX FIX [2025-02-25]: Disable pointer events so dragging over the icon hits the drop zone behind it */
     pointer-events: none;
 }
+
+/* UX ADJUSTMENT [2025-06-03]: Specific vertical alignment for Morning icon only */
+.habit-group-wrapper[data-time-wrapper="Morning"] .time-marker {
+    padding-top: 7px;
+}
+
 .time-marker svg {
     /* Reduced size from 24px to 21px (~10%) */
     width: 21px;
