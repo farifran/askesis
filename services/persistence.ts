@@ -1,5 +1,4 @@
 
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -12,8 +11,14 @@
 
 import { state, AppState, Habit, HabitDailyInfo, APP_VERSION, getPersistableState } from '../state';
 import { migrateState } from './migration';
+import { HabitService } from './HabitService';
 
-const DB_NAME = 'AskesisDB', DB_VERSION = 1, STORE_NAME = 'app_state', STATE_STORAGE_KEY = 'habitTrackerState_v1', DB_OPEN_TIMEOUT_MS = 15000, IDB_SAVE_DEBOUNCE_MS = 500;
+const DB_NAME = 'AskesisDB', DB_VERSION = 1, STORE_NAME = 'app_state';
+const LEGACY_STORAGE_KEY = 'habitTrackerState_v1';
+const KEY_MAIN = 'askesis_state_main';
+const KEY_LOGS = 'askesis_state_logs';
+
+const DB_OPEN_TIMEOUT_MS = 15000, IDB_SAVE_DEBOUNCE_MS = 500;
 let dbPromise: Promise<IDBDatabase> | null = null, saveTimeout: number | undefined;
 
 function getDB(): Promise<IDBDatabase> {
@@ -53,6 +58,25 @@ async function performIDB<T>(mode: IDBTransactionMode, op: (s: IDBObjectStore) =
     }
 }
 
+/**
+ * [ZERO-COST PERSISTENCE]
+ * Salva o estado separando dados estruturados de dados binários.
+ * Usa uma transação para garantir atomicidade.
+ */
+async function saveSplitState(main: AppState, logs: Map<string, ArrayBuffer>): Promise<void> {
+    const db = await getDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        const store = tx.objectStore(STORE_NAME);
+        
+        store.put(main, KEY_MAIN);
+        store.put(logs, KEY_LOGS);
+        
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+    });
+}
+
 let syncHandler: ((state: AppState) => void) | null = null;
 export const registerSyncHandler = (h: (s: AppState) => void) => syncHandler = h;
 
@@ -76,54 +100,92 @@ function pruneOrphanedDailyData(habits: readonly Habit[], dailyData: Record<stri
     if (prunedCount > 0) console.log(`[Persistence] ${prunedCount} registros órfãos podados.`);
 }
 
+async function saveStateInternal() {
+    // 1. Full State (para Sync/Export)
+    const fullData = getPersistableState(); // Contém monthlyLogsSerialized (strings)
+    
+    // 2. Optimized State (para Local IDB)
+    const localData = { ...fullData };
+    // REMOÇÃO CRÍTICA: Não salvamos o array gigante de strings no JSON local.
+    delete (localData as any).monthlyLogsSerialized; 
+    
+    // Empacota logs como binário puro
+    const binaryLogs = HabitService.packBinaryLogs();
+    
+    try {
+        await saveSplitState(localData, binaryLogs);
+    } catch (e) { 
+        console.error("IDB Save Failed:", e); 
+    }
+    
+    // 3. Trigger Sync com dados completos (O Sync Worker cuida da criptografia/compressão)
+    syncHandler?.(fullData);
+}
+
 export async function flushSaveBuffer(): Promise<void> {
     if (saveTimeout !== undefined) {
         clearTimeout(saveTimeout);
         saveTimeout = undefined;
-        const data = getPersistableState();
-        try {
-            await performIDB('readwrite', s => s.put(data, STATE_STORAGE_KEY));
-            syncHandler?.(data);
-        } catch (e) {
-            console.error("Flush failed:", e);
-        }
+        await saveStateInternal();
     }
 }
 
 export async function saveState(): Promise<void> {
     if (saveTimeout) clearTimeout(saveTimeout);
-    saveTimeout = self.setTimeout(async () => {
-        saveTimeout = undefined;
-        const data = getPersistableState();
-        try {
-            await performIDB('readwrite', s => s.put(data, STATE_STORAGE_KEY));
-        } catch (e) { 
-            console.error("IDB Save Failed:", e); 
-        }
-        syncHandler?.(data);
-    }, IDB_SAVE_DEBOUNCE_MS);
+    saveTimeout = self.setTimeout(saveStateInternal, IDB_SAVE_DEBOUNCE_MS);
 }
 
-export const persistStateLocally = (data: AppState) => performIDB('readwrite', s => s.put(data, STATE_STORAGE_KEY));
+export const persistStateLocally = (data: AppState) => {
+    // Save immediate split state (e.g. after migration or merge)
+    const dataClone = { ...data };
+    delete (dataClone as any).monthlyLogsSerialized;
+    const binaryLogs = HabitService.packBinaryLogs();
+    return saveSplitState(dataClone, binaryLogs);
+};
 
 export async function loadState(cloudState?: AppState): Promise<AppState | null> {
-    let loaded: any = cloudState || await performIDB<AppState>('readonly', s => s.get(STATE_STORAGE_KEY)) || null;
-    if (!loaded) {
-        const legacy = localStorage.getItem(STATE_STORAGE_KEY);
-        if (legacy) {
-            try {
-                loaded = JSON.parse(legacy);
-                if (loaded) { 
-                    await performIDB('readwrite', s => s.put(loaded!, STATE_STORAGE_KEY)); 
-                    localStorage.removeItem(STATE_STORAGE_KEY); 
-                }
-            } catch (e) { console.error("Legacy Corrupt", e); }
+    // 1. Load Split State (Main + Binary Logs)
+    let mainState = cloudState;
+    let binaryLogs: Map<string, ArrayBuffer> | undefined;
+
+    if (!mainState) {
+        // Parallel fetch of main state and logs
+        try {
+            const db = await getDB();
+            await new Promise<void>((resolve) => {
+                const tx = db.transaction(STORE_NAME, 'readonly');
+                const store = tx.objectStore(STORE_NAME);
+                
+                const reqMain = store.get(KEY_MAIN);
+                const reqLogs = store.get(KEY_LOGS);
+                
+                tx.oncomplete = () => {
+                    mainState = reqMain.result;
+                    binaryLogs = reqLogs.result;
+                    resolve();
+                };
+                tx.onerror = () => resolve(); // Fail gracefully
+            });
+        } catch (e) {
+            console.warn("[Persistence] Failed to read split state from IDB", e);
         }
     }
 
-    if (loaded) {
+    // 2. Fallback to Legacy Key (Migration Path)
+    if (!mainState) {
+        mainState = await performIDB<AppState>('readonly', s => s.get(LEGACY_STORAGE_KEY));
+        // Check localStorage fallback
+        if (!mainState) {
+            const legacy = localStorage.getItem(LEGACY_STORAGE_KEY);
+            if (legacy) {
+                try { mainState = JSON.parse(legacy); } catch {}
+            }
+        }
+    }
+
+    if (mainState) {
         // @fix: Cannot assign to 'habits' because it is a read-only property.
-        let migrated = migrateState(loaded, APP_VERSION);
+        let migrated = migrateState(mainState, APP_VERSION);
         migrated = {
             ...migrated,
             habits: (migrated.habits || []).filter(h => h && h.id && h.scheduleHistory?.length > 0)
@@ -145,8 +207,14 @@ export async function loadState(cloudState?: AppState): Promise<AppState | null>
         // @fix: The type 'readonly string[]' is 'readonly' and cannot be assigned to the mutable type 'string[]'.
         state.pendingConsolidationHabitIds = [...(migrated.pendingConsolidationHabitIds || [])];
         
-        // --- HIDRATAÇÃO DO BITMASK (NOVO) ---
-        if (migrated.monthlyLogsSerialized && Array.isArray(migrated.monthlyLogsSerialized)) {
+        // --- HIDRATAÇÃO DO BITMASK ---
+        if (binaryLogs instanceof Map) {
+            // [A] Fast Path: Restaura direto do binário (Zero Copy)
+            HabitService.unpackBinaryLogs(binaryLogs);
+            console.log(`[Persistence] Bitmasks binários carregados: ${binaryLogs.size} meses.`);
+        } else if (migrated.monthlyLogsSerialized && Array.isArray(migrated.monthlyLogsSerialized)) {
+            // [B] Legacy Path: Converte Hex Strings (Slow Path)
+            console.log("[Persistence] Migrando logs hexadecimais legados...");
             try {
                 const map = new Map<string, bigint>();
                 migrated.monthlyLogsSerialized.forEach(([key, hexVal]: [string, string]) => {
@@ -154,13 +222,12 @@ export async function loadState(cloudState?: AppState): Promise<AppState | null>
                     map.set(key, BigInt("0x" + hexVal));
                 });
                 state.monthlyLogs = map;
-                console.log(`[Persistence] Bitmasks carregados: ${map.size} meses.`);
             } catch (e) {
-                console.error("Erro ao hidratar Bitmasks:", e);
+                console.error("Erro ao hidratar Bitmasks legados:", e);
                 state.monthlyLogs = new Map();
             }
         } else {
-            // Se não houver dados novos, inicia vazio (o sistema híbrido fará fallback para o legado)
+            // Init empty
             state.monthlyLogs = new Map();
         }
 
@@ -171,7 +238,15 @@ export async function loadState(cloudState?: AppState): Promise<AppState | null>
     return null;
 }
 
-export const clearLocalPersistence = () => Promise.all([performIDB('readwrite', s => s.delete(STATE_STORAGE_KEY)), localStorage.removeItem(STATE_STORAGE_KEY)]);
+export const clearLocalPersistence = () => Promise.all([
+    performIDB('readwrite', s => {
+        s.delete(KEY_MAIN);
+        s.delete(KEY_LOGS);
+        s.delete(LEGACY_STORAGE_KEY);
+        return {} as any; // Dummy
+    }), 
+    localStorage.removeItem(LEGACY_STORAGE_KEY)
+]);
 
 if (typeof window !== 'undefined') {
     window.addEventListener('beforeunload', () => { flushSaveBuffer(); });

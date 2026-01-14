@@ -1,3 +1,4 @@
+
 import { state, HABIT_STATE, PERIOD_OFFSET, TimeOfDay, getHabitDailyInfoForDate } from '../state';
 import { getHabitPropertiesForDate } from './selectors';
 
@@ -74,5 +75,44 @@ export class HabitService {
         
         // Marcar UI como suja para re-render
         state.uiDirtyState.calendarVisuals = true;
+    }
+
+    /**
+     * [ZERO-COST] Compacta logs para binário (ArrayBuffer).
+     * Transforma Map<string, bigint> em Map<string, ArrayBuffer>.
+     * Isso permite que o IndexedDB use Structured Clone para salvar bytes puros, sem stringify.
+     */
+    static packBinaryLogs(): Map<string, ArrayBuffer> {
+        const packed = new Map<string, ArrayBuffer>();
+        // Check if state.monthlyLogs exists and is a Map
+        if (state.monthlyLogs && state.monthlyLogs instanceof Map) {
+            state.monthlyLogs.forEach((val, key) => {
+                // BigInt64 requires 8 bytes (64 bits)
+                const buffer = new ArrayBuffer(8);
+                const view = new DataView(buffer);
+                view.setBigUint64(0, val, false); // Big Endian para consistência
+                packed.set(key, buffer);
+            });
+        }
+        return packed;
+    }
+
+    /**
+     * [ZERO-COST] Restaura logs a partir de binário.
+     */
+    static unpackBinaryLogs(packed: Map<string, ArrayBuffer>) {
+        if (!packed || !(packed instanceof Map)) return;
+        
+        const targetMap = state.monthlyLogs || new Map();
+        
+        packed.forEach((buffer, key) => {
+            if (buffer.byteLength === 8) {
+                const view = new DataView(buffer);
+                const val = view.getBigUint64(0, false);
+                targetMap.set(key, val);
+            }
+        });
+        
+        state.monthlyLogs = targetMap;
     }
 }

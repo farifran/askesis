@@ -11,7 +11,7 @@
 
 import { 
     state, Habit, HabitSchedule, TimeOfDay, ensureHabitDailyInfo, 
-    ensureHabitInstanceData, getNextStatus, HabitStatus, clearScheduleCache,
+    ensureHabitInstanceData, HabitStatus, clearScheduleCache,
     clearActiveHabitsCache, invalidateCachesForDateChange, getPersistableState,
     HabitDayData, STREAK_SEMI_CONSOLIDATED, STREAK_CONSOLIDATED,
     getHabitDailyInfoForDate, AppState, isDateLoading, HabitDailyInfo, LANGUAGES, HABIT_STATE, PERIOD_OFFSET
@@ -24,7 +24,7 @@ import {
 } from './services/selectors';
 import { 
     generateUUID, getTodayUTCIso, parseUTCIsoDate, triggerHaptic,
-    getSafeDate, addDays, toUTCIsoDateString
+    getSafeDate, addDays, toUTCIsoDateString, decompressString
 } from './utils';
 import { 
     closeModal, showConfirmationModal, openEditModal, renderAINotificationState,
@@ -155,15 +155,6 @@ function _requestFutureScheduleChange(habitId: string, targetDate: string, updat
     _notifyChanges(true);
 }
 
-// @fix: Added date parameter to correctly fetch schedule and goal.
-function _updateHabitInstanceStatus(habit: Habit, instance: HabitDayData, newStatus: HabitStatus, date: string): boolean {
-    if (instance.status === newStatus) return false;
-    instance.status = newStatus;
-    const schedule = getScheduleForDate(habit, date);
-    if (schedule?.goal.type === 'check') instance.goalOverride = (newStatus === 'completed') ? 1 : undefined;
-    return true;
-}
-
 function _checkStreakMilestones(habit: Habit, dateISO: string) {
     const streak = calculateHabitStreak(habit, dateISO);
     const m = streak === STREAK_SEMI_CONSOLIDATED ? state.pending21DayHabitIds : (streak === STREAK_CONSOLIDATED ? state.pendingConsolidationHabitIds : null);
@@ -181,12 +172,21 @@ const _applyDropJustToday = () => {
     
     const habit = state.habits.find(h => h.id === ctx.habitId);
     if (habit) {
+        // 1. Migração de Dados Legados (Notes/Override)
         const info = ensureHabitDailyInfo(target, ctx.habitId), sch = [...getEffectiveScheduleForHabitOnDate(habit, target)];
         const fIdx = sch.indexOf(ctx.fromTime);
         if (fIdx > -1) sch.splice(fIdx, 1);
         if (!sch.includes(ctx.toTime)) sch.push(ctx.toTime);
         if (info.instances[ctx.fromTime]) { info.instances[ctx.toTime] = info.instances[ctx.fromTime]; delete info.instances[ctx.fromTime]; }
         info.dailySchedule = sch;
+
+        // 2. Migração de Status Bitmask (ZC-Architecture)
+        const currentBit = HabitService.getStatus(ctx.habitId, target, ctx.fromTime);
+        if (currentBit !== HABIT_STATE.NULL) {
+            HabitService.setStatus(ctx.habitId, target, ctx.toTime, currentBit);
+            HabitService.setStatus(ctx.habitId, target, ctx.fromTime, HABIT_STATE.NULL);
+        }
+
         if (ctx.reorderInfo) reorderHabit(ctx.habitId, ctx.reorderInfo.id, ctx.reorderInfo.pos, true);
         _notifyChanges(false);
     }
@@ -199,7 +199,17 @@ const _applyDropFromNowOn = () => {
 
     const info = ensureHabitDailyInfo(target, ctx.habitId), curOverride = info.dailySchedule ? [...info.dailySchedule] : null;
     info.dailySchedule = undefined;
+    
+    // 1. Migração de Dados Legados (Notes/Override) para o dia atual
     if (info.instances[ctx.fromTime]) { info.instances[ctx.toTime] = info.instances[ctx.fromTime]; delete info.instances[ctx.fromTime]; }
+    
+    // 2. Migração de Status Bitmask para o dia atual (ZC-Architecture)
+    const currentBit = HabitService.getStatus(ctx.habitId, target, ctx.fromTime);
+    if (currentBit !== HABIT_STATE.NULL) {
+        HabitService.setStatus(ctx.habitId, target, ctx.toTime, currentBit);
+        HabitService.setStatus(ctx.habitId, target, ctx.fromTime, HABIT_STATE.NULL);
+    }
+
     if (ctx.reorderInfo) reorderHabit(ctx.habitId, ctx.reorderInfo.id, ctx.reorderInfo.pos, true);
 
     _requestFutureScheduleChange(ctx.habitId, target, (s) => {
@@ -412,67 +422,90 @@ export function importData() {
     input.click();
 }
 
+/**
+ * ZC-ARCHITECTURE: Toggles status using Bitmask as the ONLY source of truth.
+ * Legacy `dailyData` is NOT touched, preventing object creation for simple checks.
+ */
 export function toggleHabitStatus(habitId: string, time: TimeOfDay, date: string) {
     const h = state.habits.find(x => x.id === habitId);
-    if (h) {
-        const inst = ensureHabitInstanceData(date, habitId, time);
-        const nextStatusString = getNextStatus(inst.status); // Pega o próximo status (string)
-        
-        // --- 1. ESCRITA NO SISTEMA LEGADO (MANTIDO) ---
-        // @fix: Pass date to _updateHabitInstanceStatus.
-        if (_updateHabitInstanceStatus(h, inst, nextStatusString, date)) {
-            if (inst.status === 'completed') _checkStreakMilestones(h, date);
-            
-            // --- 2. ESCRITA NO SISTEMA NOVO (ADICIONADO) ---
-            // Mapeamento: string -> number (Bitmask)
-            // @fix: Explicitly cast bitStatus to number to avoid literal type narrowing from HABIT_STATE members (0, 1, 2)
-            let bitStatus: number = HABIT_STATE.NULL as number;
-            if (nextStatusString === 'completed') bitStatus = HABIT_STATE.DONE;
-            else if (nextStatusString === 'snoozed') bitStatus = HABIT_STATE.DEFERRED;
-            
-            // Gravação segura no BigInt
-            HabitService.setStatus(habitId, date, time, bitStatus);
-            // ------------------------------------------------
+    if (!h) return;
 
-            // Dispara evento UI
-            document.dispatchEvent(new CustomEvent('card-status-changed', { 
-                detail: { habitId, time, date } 
-            }));
-            
-            _notifyPartialUIRefresh(date, [habitId]);
-        }
+    // 1. LEITURA (Fonte: Bitmask)
+    const currentBit = HabitService.getStatus(habitId, date, time);
+    
+    // 2. LÓGICA DE ROTAÇÃO (3 Estados: Pendente -> Feito -> Adiado -> Pendente)
+    let nextBit: number;
+    
+    if (currentBit === HABIT_STATE.NULL) {
+        nextBit = HABIT_STATE.DONE;
+    } else if (currentBit === HABIT_STATE.DONE || currentBit === HABIT_STATE.DONE_PLUS) {
+        nextBit = HABIT_STATE.DEFERRED;
+    } else { // DEFERRED
+        nextBit = HABIT_STATE.NULL;
     }
+
+    // 3. ESCRITA (Destino: Bitmask)
+    HabitService.setStatus(habitId, date, time, nextBit);
+
+    // 4. SIDE EFFECTS
+    if (nextBit === HABIT_STATE.DONE) {
+        _checkStreakMilestones(h, date);
+        triggerHaptic('light');
+    } else if (nextBit === HABIT_STATE.DEFERRED) {
+        triggerHaptic('medium');
+    } else {
+        triggerHaptic('selection');
+    }
+
+    document.dispatchEvent(new CustomEvent('card-status-changed', { 
+        detail: { habitId, time, date } 
+    }));
+    
+    _notifyPartialUIRefresh(date, [habitId]);
 }
 
+/**
+ * ZC-ARCHITECTURE: Batch update using Bitmask exclusively.
+ */
 export function markAllHabitsForDate(dateISO: string, status: HabitStatus): boolean {
     if (_isBatchOpActive || isDateLoading(dateISO)) return false;
     _isBatchOpActive = true;
-    const dateObj = parseUTCIsoDate(dateISO); if (!state.dailyData[dateISO]) state.dailyData[dateISO] = structuredClone(getHabitDailyInfoForDate(dateISO) || {});
-    const day = state.dailyData[dateISO]; let changed = false; BATCH_IDS_POOL.length = BATCH_HABITS_POOL.length = 0;
+    
+    // We don't need to instantiate dailyData just to set bitmasks!
+    const dateObj = parseUTCIsoDate(dateISO);
+    let changed = false; 
+    BATCH_IDS_POOL.length = 0; 
+    BATCH_HABITS_POOL.length = 0;
+
     try {
         state.habits.forEach(h => {
             if (!shouldHabitAppearOnDate(h, dateISO, dateObj)) return;
-            const sch = getEffectiveScheduleForHabitOnDate(h, dateISO); if (!sch.length) return;
-            day[h.id] ??= { instances: {}, dailySchedule: undefined };
-            let hChanged = false;
+            const sch = getEffectiveScheduleForHabitOnDate(h, dateISO); 
+            if (!sch.length) return;
+            
+            // Map string status to bit status
+            let bitStatus: number = (status === 'completed') ? HABIT_STATE.DONE : HABIT_STATE.DEFERRED;
+
             sch.forEach(t => {
-                day[h.id].instances[t] ??= { status: 'pending', goalOverride: undefined, note: undefined };
-                if (_updateHabitInstanceStatus(h, day[h.id].instances[t]!, status, dateISO)) {
-                    hChanged = changed = true;
-            
-                    // --- ESCRITA NOVA (ADICIONADO) ---
-                    // @fix: Explicitly cast bitStatus to number to avoid literal type narrowing
-                    let bitStatus: number = HABIT_STATE.NULL as number;
-                    if (status === 'completed') bitStatus = HABIT_STATE.DONE;
-                    else if (status === 'snoozed') bitStatus = HABIT_STATE.DEFERRED;
-            
+                // Verificamos se o status já é o pretendido via Bitmask
+                if (HabitService.getStatus(h.id, dateISO, t) !== bitStatus) {
+                    // ESCRITA DIRETA NO BITMASK
                     HabitService.setStatus(h.id, dateISO, t, bitStatus);
-                    // ---------------------------------
+                    changed = true;
                 }
             });
-            if (hChanged) { BATCH_IDS_POOL.push(h.id); BATCH_HABITS_POOL.push(h); }
+
+            if (changed) { 
+                BATCH_IDS_POOL.push(h.id); 
+                BATCH_HABITS_POOL.push(h); 
+            }
         });
-        if (changed) { invalidateCachesForDateChange(dateISO, BATCH_IDS_POOL); if (status === 'completed') BATCH_HABITS_POOL.forEach(h => _checkStreakMilestones(h, dateISO)); _notifyChanges(false); }
+        
+        if (changed) { 
+            invalidateCachesForDateChange(dateISO, BATCH_IDS_POOL); 
+            if (status === 'completed') BATCH_HABITS_POOL.forEach(h => _checkStreakMilestones(h, dateISO)); 
+            _notifyChanges(false); 
+        }
     } finally { _isBatchOpActive = false; }
     return changed;
 }
@@ -536,6 +569,7 @@ export function handleSaveNote() { if (!state.editingNoteFor) return; const { ha
 export function setGoalOverride(habitId: string, d: string, t: TimeOfDay, v: number) { 
     try { 
         // 1. Escrita Legada (JSON)
+        // Mantém escrita no JSON para dados numéricos
         ensureHabitInstanceData(d, habitId, t).goalOverride = v; 
         
         // 2. Escrita Bitmask (NOVO - Lógica Arete)
@@ -589,6 +623,7 @@ declare global {
     interface Window {
         auditIntegrity: () => void;
         migrateLegacyToBitmask: () => void;
+        migrateDeepToBitmask: () => Promise<void>;
     }
 }
 
@@ -616,7 +651,7 @@ window.auditIntegrity = () => {
                 // Legado
                 const legacyInfo = state.dailyData[date]?.[habit.id]?.instances[time];
                 // @fix: Explicitly type as number to prevent literal type narrowing to 0
-                let legacyStatus: number = HABIT_STATE.NULL;
+                let legacyStatus: number = HABIT_STATE.NULL as number;
                 if (legacyInfo?.status === 'completed') legacyStatus = HABIT_STATE.DONE;
                 if (legacyInfo?.status === 'snoozed') legacyStatus = HABIT_STATE.DEFERRED;
 
@@ -671,7 +706,7 @@ window.migrateLegacyToBitmask = () => {
                 if (!instance) return;
 
                 // @fix: Explicitly type as number to prevent literal type narrowing to 0
-                let targetStatus: number = HABIT_STATE.NULL;
+                let targetStatus = HABIT_STATE.NULL as number;
                 if (instance.status === 'completed') targetStatus = HABIT_STATE.DONE;
                 else if (instance.status === 'snoozed') targetStatus = HABIT_STATE.DEFERRED;
 
@@ -689,6 +724,116 @@ window.migrateLegacyToBitmask = () => {
     console.log(`💾 ${migratedCount} registros migrados.`);
     
     // Roda auditoria para confirmar
+    window.auditIntegrity();
+    console.groupEnd();
+};
+
+// 3. MIGRAÇÃO PROFUNDA (DEEP MIGRATION)
+// @ts-ignore
+window.migrateDeepToBitmask = async () => {
+    console.group("🏛️ Iniciando Migração Profunda (Memória + Arquivos)");
+    const startTime = performance.now();
+    let totalMigrated = 0;
+
+    // 1. MIGRAR DADOS EM RAM (dailyData)
+    const activeDates = Object.keys(state.dailyData);
+    console.log(`🧠 Processando ${activeDates.length} dias em memória ativa...`);
+    
+    activeDates.forEach(dateISO => {
+        const dayData = state.dailyData[dateISO];
+        if (!dayData) return;
+
+        Object.keys(dayData).forEach(habitId => {
+            const habitInfo = dayData[habitId];
+            if (!habitInfo?.instances) return;
+
+            (['Morning', 'Afternoon', 'Evening'] as TimeOfDay[]).forEach(time => {
+                const instance = habitInfo.instances[time];
+                if (!instance) return;
+
+                let targetStatus = HABIT_STATE.NULL as number;
+                if (instance.status === 'completed') {
+                    // Lógica Arete: Verifica superação de meta
+                    const h = state.habits.find(x => x.id === habitId);
+                    const props = h ? getHabitPropertiesForDate(h, dateISO) : null;
+                    if (props?.goal?.total && instance.goalOverride && instance.goalOverride > props.goal.total) {
+                        targetStatus = HABIT_STATE.DONE_PLUS;
+                    } else {
+                        targetStatus = HABIT_STATE.DONE;
+                    }
+                } else if (instance.status === 'snoozed') {
+                    targetStatus = HABIT_STATE.DEFERRED;
+                }
+
+                if (targetStatus !== HABIT_STATE.NULL) {
+                    HabitService.setStatus(habitId, dateISO, time, targetStatus);
+                    totalMigrated++;
+                }
+            });
+        });
+    });
+
+    // 2. MIGRAR DADOS ARQUIVADOS (archives)
+    const archiveYears = Object.keys(state.archives);
+    console.log(`📦 Processando ${archiveYears.length} anos de arquivos...`);
+
+    for (const year of archiveYears) {
+        try {
+            // Em Askesis, os arquivos são strings JSON (muitas vezes comprimidas)
+            let archivedData;
+            const rawArchive = state.archives[year];
+            if (rawArchive.startsWith('GZIP:')) {
+                // @fix: Import decompressString from utils at top of file, or use global
+                // But wait, decompressString is async.
+                // Assuming it's available via module import since this is a module file.
+                // Re-importing decompressString at top of file would be cleaner but I can't easily edit top of file here.
+                // Actually, decompressString is not imported in original habitActions.ts but is in the context.
+                // Ah, the file content provided has imports at top. I will ensure decompressString is imported.
+                // Wait, decompressString is NOT imported in the original habitActions.ts provided in context.
+                // I will add it to the import list from `./utils`.
+                // Checking `utils` import...
+                // `import { generateUUID, getTodayUTCIso, parseUTCIsoDate, triggerHaptic, getSafeDate, addDays, toUTCIsoDateString } from './utils';`
+                // I need to add `decompressString` there.
+                
+                // Hack: Dynamic import or assume it's added. I will add it to the import statement.
+                const { decompressString } = await import('./utils');
+                archivedData = JSON.parse(await decompressString(rawArchive.substring(5)));
+            } else {
+                archivedData = JSON.parse(rawArchive);
+            }
+            
+            Object.keys(archivedData).forEach(dateISO => {
+                const dayData = archivedData[dateISO];
+                Object.keys(dayData).forEach((habitId: string) => {
+                    const habitInfo = dayData[habitId];
+                    if (!habitInfo?.instances) return;
+
+                    (['Morning', 'Afternoon', 'Evening'] as TimeOfDay[]).forEach(time => {
+                        const inst = habitInfo.instances[time];
+                        if (!inst || inst.status === 'pending') return;
+
+                        let status = HABIT_STATE.NULL as number;
+                        if (inst.status === 'completed') status = HABIT_STATE.DONE;
+                        else if (inst.status === 'snoozed') status = HABIT_STATE.DEFERRED;
+
+                        if (status !== HABIT_STATE.NULL) {
+                            HabitService.setStatus(habitId, dateISO, time, status);
+                            totalMigrated++;
+                        }
+                    });
+                });
+            });
+            console.log(`✅ Ano ${year} migrado.`);
+        } catch (e) {
+            console.error(`❌ Erro ao processar arquivo do ano ${year}:`, e);
+        }
+    }
+
+    await saveState(); // Persiste os novos Bitmasks no IndexedDB
+    
+    console.log(`🏁 Migração Concluída!`);
+    console.log(`📊 Total de registros convertidos: ${totalMigrated}`);
+    console.log(`⏱️ Tempo total: ${(performance.now() - startTime).toFixed(0)}ms`);
     window.auditIntegrity();
     console.groupEnd();
 };

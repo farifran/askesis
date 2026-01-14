@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -8,7 +9,7 @@
  * @description Motor de Renderização de Cartões de Hábito (Virtual DOM-lite).
  */
 
-import { state, Habit, HabitDayData, STREAK_CONSOLIDATED, STREAK_SEMI_CONSOLIDATED, TimeOfDay, getHabitDailyInfoForDate, TIMES_OF_DAY, HabitDailyInfo } from '../state';
+import { state, Habit, HabitDayData, STREAK_CONSOLIDATED, STREAK_SEMI_CONSOLIDATED, TimeOfDay, getHabitDailyInfoForDate, TIMES_OF_DAY, HabitDailyInfo, HABIT_STATE } from '../state';
 import { calculateHabitStreak, getActiveHabitsForDate, getSmartGoalForHabit, getHabitDisplayInfo, getHabitPropertiesForDate } from '../services/selectors';
 import { ui } from './ui';
 import { t, getTimeOfDayName, formatInteger } from '../i18n';
@@ -16,6 +17,7 @@ import { UI_ICONS, getTimeOfDayIcon } from './icons';
 import { setTextContent } from './dom';
 import { CSS_CLASSES, DOM_SELECTORS } from './constants';
 import { parseUTCIsoDate } from '../utils';
+import { HabitService } from '../services/HabitService';
 
 const habitElementCache = new Map<string, HTMLElement>();
 const habitsByTimePool: Record<TimeOfDay, Habit[]> = { 'Morning': [], 'Afternoon': [], 'Evening': [] };
@@ -99,8 +101,20 @@ function _renderPendingGoalControls(habit: Habit, time: TimeOfDay, dayData: Habi
 
 export function updateHabitCardElement(card: HTMLElement, habit: Habit, time: TimeOfDay, preInfo?: Record<string, HabitDailyInfo>, options?: { animate?: boolean }) {
     const els = cardElementsCache.get(card)!;
+    
+    // 1. LEITURA DE STATUS VIA BITMASK (Fonte da Verdade)
+    const bitStatus = HabitService.getStatus(habit.id, state.selectedDate, time);
+    let status: string = CSS_CLASSES.PENDING;
+    
+    if (bitStatus === HABIT_STATE.DONE || bitStatus === HABIT_STATE.DONE_PLUS) {
+        status = CSS_CLASSES.COMPLETED;
+    } else if (bitStatus === HABIT_STATE.DEFERRED) {
+        status = CSS_CLASSES.SNOOZED;
+    }
+
+    // 2. LEITURA DE DADOS RICOS (Legado JSON - Notas/Override)
     const info = (preInfo || getHabitDailyInfoForDate(state.selectedDate))[habit.id]?.instances?.[time];
-    const status = info?.status ?? CSS_CLASSES.PENDING;
+    
     const streak = calculateHabitStreak(habit, state.selectedDate);
     const { name, subtitle } = getHabitDisplayInfo(habit, state.selectedDate);
 
@@ -132,8 +146,8 @@ export function updateHabitCardElement(card: HTMLElement, habit: Habit, time: Ti
         els.noteBtn.dataset.hasNote = String(hasN);
     }
 
-    if (status === 'completed') els.goal.replaceChildren(getStatusWrapperTemplate('completed-wrapper', UI_ICONS.check).cloneNode(true));
-    else if (status === 'snoozed') els.goal.replaceChildren(getStatusWrapperTemplate('snoozed-wrapper', UI_ICONS.snoozed).cloneNode(true));
+    if (status === CSS_CLASSES.COMPLETED) els.goal.replaceChildren(getStatusWrapperTemplate('completed-wrapper', UI_ICONS.check).cloneNode(true));
+    else if (status === CSS_CLASSES.SNOOZED) els.goal.replaceChildren(getStatusWrapperTemplate('snoozed-wrapper', UI_ICONS.snoozed).cloneNode(true));
     else _renderPendingGoalControls(habit, time, info, els);
 }
 
