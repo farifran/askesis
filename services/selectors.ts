@@ -1,5 +1,4 @@
 
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -12,6 +11,7 @@ import { HabitService } from './HabitService';
 
 const _anchorDateCache = new Map<string, Date>();
 const MAX_ANCHOR_CACHE_SIZE = 365;
+const MAX_CACHE_SIZE = 100; // Memory Guard for generic caches
 
 function _getMemoizedDate(dateISO: string): Date {
     let date = _anchorDateCache.get(dateISO);
@@ -50,6 +50,7 @@ export function getScheduleForDate(habit: Habit, dateISO: string): HabitSchedule
     // 2. Data Integrity Guard (Robustness)
     const history = habit.scheduleHistory;
     if (!history || !Array.isArray(history) || history.length === 0) {
+        if (subCache.size > MAX_CACHE_SIZE) subCache.clear();
         subCache.set(dateISO, null); // Cache the failure to avoid re-computation
         return null;
     }
@@ -72,6 +73,7 @@ export function getScheduleForDate(habit: Habit, dateISO: string): HabitSchedule
     }
     
     // 4. Cache & Return
+    if (subCache.size > MAX_CACHE_SIZE) subCache.clear();
     subCache.set(dateISO, schedule);
     return schedule;
 }
@@ -126,6 +128,7 @@ export function shouldHabitAppearOnDate(habit: Habit, dateISO: string, preParsed
 
     const schedule = getScheduleForDate(habit, dateISO);
     if (!schedule || habit.graduatedOn) {
+        if (subCache.size > MAX_CACHE_SIZE) subCache.clear();
         subCache.set(dateISO, false);
         return false;
     }
@@ -150,6 +153,7 @@ export function shouldHabitAppearOnDate(habit: Habit, dateISO: string, preParsed
             break;
     }
 
+    if (subCache.size > MAX_CACHE_SIZE) subCache.clear();
     subCache.set(dateISO, appears);
     return appears;
 }
@@ -158,13 +162,15 @@ function _isHabitConsistentlyDone(habit: Habit, dateISO: string): boolean {
     const schedule = getEffectiveScheduleForHabitOnDate(habit, dateISO);
     if (schedule.length === 0) return true;
     
-    // MUDANÇA: Usando HabitService (Bitmask) em vez de dailyData direto
+    // MUDANÇA: Usando HabitService com otimização de objeto
     for (let i = 0; i < schedule.length; i++) {
         const time = schedule[i];
-        const status = HabitService.getStatus(habit.id, dateISO, time);
+        const status = HabitService.getStatus(habit.id, dateISO, time, habit);
         
-        // Verifica se é DONE (1) ou DEFERRED (2) ou DONE_PLUS (3)
-        if (status !== HABIT_STATE.DONE && status !== HABIT_STATE.DEFERRED && status !== HABIT_STATE.DONE_PLUS) return false;
+        // Snoozed (2) não conta como "feito" para uma sequência. Apenas DONE (1) e DONE_PLUS (3) contam.
+        if (status !== HABIT_STATE.DONE && status !== HABIT_STATE.DONE_PLUS) {
+            return false;
+        }
     }
     return true;
 }
@@ -197,6 +203,7 @@ export function calculateHabitStreak(habitOrId: string | Habit, endDateISO: stri
 
     if (cachedYesterday !== undefined) {
         const res = !shouldHabitAppearOnDate(habit, endDateISO, endDateObj) ? cachedYesterday : (_isHabitConsistentlyDone(habit, endDateISO) ? cachedYesterday + 1 : 0);
+        if (subCache.size > MAX_CACHE_SIZE) subCache.clear();
         subCache.set(endDateISO, res);
         return res;
     }
@@ -215,6 +222,7 @@ export function calculateHabitStreak(habitOrId: string | Habit, endDateISO: stri
         }
         currentTs -= MS_PER_DAY;
     }
+    if (subCache.size > MAX_CACHE_SIZE) subCache.clear();
     subCache.set(endDateISO, streak);
     return streak;
 }
@@ -233,6 +241,7 @@ export function getSmartGoalForHabit(habit: Habit, dateISO: string, time: TimeOf
     const targetTs = parseUTCIsoDate(dateISO).getTime();
     
     // --- SMART ADAPTATION LOGIC (Historical Lookback) ---
+    // MIGRATION: Usar HabitService.getStatus com otimização
     const todayTs = parseUTCIsoDate(getTodayUTCIso()).getTime();
     let searchTs = (targetTs > todayTs) ? todayTs : (targetTs - MS_PER_DAY);
     let iterDate = new Date(searchTs);
@@ -245,16 +254,19 @@ export function getSmartGoalForHabit(habit: Habit, dateISO: string, time: TimeOf
         if (iterISO < habit.createdOn) break;
         
         if (shouldHabitAppearOnDate(habit, iterISO, iterDate)) {
-            const pastInfo = getHabitDailyInfoForDate(iterISO)[habit.id];
-            const instance = pastInfo?.instances?.[time];
+            const status = HabitService.getStatus(habit.id, iterISO, time, habit);
             const isToday = iterISO === getTodayUTCIso();
             
-            if (!instance || instance.status === 'pending') {
+            if (status === HABIT_STATE.NULL) {
                 if (!isToday) break; 
-            } else if (instance.status === 'snoozed') {
+            } else if (status === HABIT_STATE.DEFERRED) {
                 break;
-            } else if (instance.status === 'completed') {
-                if (instance.goalOverride !== undefined) {
+            } else if (status === HABIT_STATE.DONE || status === HABIT_STATE.DONE_PLUS) {
+                // Só precisamos acessar o JSON se o hábito foi feito, para ver se há override
+                const pastInfo = getHabitDailyInfoForDate(iterISO)[habit.id];
+                const instance = pastInfo?.instances?.[time];
+                
+                if (instance && instance.goalOverride !== undefined) {
                     if (consistentValue === null) {
                         consistentValue = instance.goalOverride;
                         matchesFound++;
@@ -298,6 +310,7 @@ export function getActiveHabitsForDate(dateISO: string, preParsedDate?: Date): A
             if (sch.length > 0) active.push({ habit: h, schedule: sch as TimeOfDay[] });
         }
     }
+    if (state.activeHabitsCache.size > MAX_CACHE_SIZE) state.activeHabitsCache.clear();
     state.activeHabitsCache.set(dateISO, active);
     return active;
 }
@@ -317,7 +330,7 @@ export function calculateDaySummary(dateISO: string, preParsedDate?: Date) {
     const dateObj = preParsedDate || parseUTCIsoDate(dateISO);
 
     // Track potentially upgradable habits for the Plus calculation
-    const activeHabitsForPlusCheck: { habit: Habit, time: TimeOfDay }[] = [];
+    const activeHabitsForPlusCheck: { habit: Habit, time: TimeOfDay, status: number }[] = [];
 
     for (let i = 0; i < state.habits.length; i++) {
         const h = state.habits[i];
@@ -328,8 +341,8 @@ export function calculateDaySummary(dateISO: string, preParsedDate?: Date) {
         for (let j = 0; j < sch.length; j++) {
             const t = sch[j];
             
-            // MUDANÇA: Leitura via HabitService (Bitmask Priority)
-            const status = HabitService.getStatus(h.id, dateISO, t);
+            // MUDANÇA: Leitura via HabitService (Bitmask Priority) com objeto
+            const status = HabitService.getStatus(h.id, dateISO, t, h);
             
             total++;
             
@@ -337,7 +350,7 @@ export function calculateDaySummary(dateISO: string, preParsedDate?: Date) {
                 completed++;
                 // Track habits that track quantity (not simple checks) for intensity increase
                 if (scheduleProps && scheduleProps.goal.type !== 'check' && scheduleProps.goal.total) {
-                    activeHabitsForPlusCheck.push({ habit: h, time: t });
+                    activeHabitsForPlusCheck.push({ habit: h, time: t, status });
                 }
             } else if (status === HABIT_STATE.DEFERRED) {
                 snoozed++;
@@ -363,25 +376,29 @@ export function calculateDaySummary(dateISO: string, preParsedDate?: Date) {
             sum2.total > 0 && sum2.completed === sum2.total) {
             
             // RULE 3: Progressive Overload
+            // OTIMIZAÇÃO: Se o status já é DONE_PLUS, sabemos que a meta foi superada.
+            // Precisamos apenas confirmar que houve crescimento em relação aos dias anteriores.
             for (const item of activeHabitsForPlusCheck) {
-                const { habit, time } = item;
-                const scheduleProps = getHabitPropertiesForDate(habit, dateISO);
-                if (!scheduleProps?.goal.total) continue;
-                
-                // NOTA: Para valores numéricos (Goals), mantemos a leitura legada por enquanto
-                const valToday = getCurrentGoalForInstance(habit, dateISO, time);
-                const valD1 = getCurrentGoalForInstance(habit, d1, time);
-                const valD2 = getCurrentGoalForInstance(habit, d2, time);
+                // Fast flag: Se o bit indica Plus, metade do caminho andado.
+                if (item.status === HABIT_STATE.DONE_PLUS) {
+                    const { habit, time } = item;
+                    // Ainda lemos os valores para garantir que é maior que ontem (Growth rule)
+                    // e não apenas maior que a meta base.
+                    const valToday = getCurrentGoalForInstance(habit, dateISO, time);
+                    const valD1 = getCurrentGoalForInstance(habit, d1, time);
+                    const valD2 = getCurrentGoalForInstance(habit, d2, time);
 
-                if (valToday > scheduleProps.goal.total && valToday > valD1 && valToday > valD2) {
-                    hasPlus = true;
-                    break; 
+                    if (valToday > valD1 && valToday > valD2) {
+                        hasPlus = true;
+                        break; 
+                    }
                 }
             }
         }
     }
     
     const res = { total, completed, snoozed, pending, completedPercent: total ? (completed / total) * 100 : 0, snoozedPercent: total ? (snoozed / total) * 100 : 0, showPlusIndicator: hasPlus };
+    if (state.daySummaryCache.size > MAX_CACHE_SIZE) state.daySummaryCache.clear();
     state.daySummaryCache.set(dateISO, res);
     return res;
 }

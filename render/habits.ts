@@ -128,7 +128,7 @@ export function updateHabitCardElement(card: HTMLElement, habit: Habit, time: Ti
     const els = cardElementsCache.get(card)!;
     
     // 1. LEITURA DE STATUS VIA BITMASK (Fonte da Verdade)
-    const bitStatus = HabitService.getStatus(habit.id, state.selectedDate, time);
+    const bitStatus = HabitService.getStatus(habit.id, state.selectedDate, time, habit);
     let status: string = CSS_CLASSES.PENDING;
     
     if (bitStatus === HABIT_STATE.DONE || bitStatus === HABIT_STATE.DONE_PLUS) {

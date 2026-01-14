@@ -1,5 +1,4 @@
 
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -127,25 +126,41 @@ export function base64ToArrayBuffer(base64: string): ArrayBuffer {
     return bytes.buffer;
 }
 
-// --- GZIP COMPRESSION ---
-export async function compressString(data: string): Promise<string> {
+// --- GZIP COMPRESSION (NATIVE BINARY) ---
+
+/**
+ * Comprime uma string para um Uint8Array GZIP.
+ * Retorna um formato binário puro, ideal para armazenamento (IndexedDB).
+ */
+export async function compressToBuffer(data: string): Promise<Uint8Array> {
     if (typeof CompressionStream === 'undefined') {
         throw new Error("CompressionStream not supported on this device.");
     }
     const stream = new Blob([data]).stream();
     const compressedReadableStream = stream.pipeThrough(new CompressionStream('gzip'));
     const compressedResponse = new Response(compressedReadableStream);
-    const blob = await compressedResponse.blob();
-    const buffer = await blob.arrayBuffer();
-    return arrayBufferToBase64(buffer);
+    const arrayBuffer = await compressedResponse.arrayBuffer();
+    return new Uint8Array(arrayBuffer);
 }
 
-export async function decompressString(base64Data: string): Promise<string> {
+/**
+ * Comprime uma string para Base64 (Compatibilidade Legada).
+ * Reutiliza a lógica binária mas converte para string no final.
+ */
+export async function compressString(data: string): Promise<string> {
+    const buffer = await compressToBuffer(data);
+    return arrayBufferToBase64(buffer.buffer);
+}
+
+/**
+ * Descomprime um Buffer Binário GZIP diretamente para string.
+ * Aceita BufferSource (ArrayBuffer ou ArrayBufferView) para flexibilidade.
+ */
+export async function decompressFromBuffer(buffer: BufferSource): Promise<string> {
     if (typeof DecompressionStream === 'undefined') {
         throw new Error("DecompressionStream not supported on this device.");
     }
     try {
-        const buffer = base64ToArrayBuffer(base64Data);
         const stream = new Blob([buffer]).stream();
         const decompressedStream = stream.pipeThrough(new DecompressionStream('gzip'));
         const response = new Response(decompressedStream);
@@ -154,6 +169,14 @@ export async function decompressString(base64Data: string): Promise<string> {
         console.error("Decompression failed", e);
         throw new Error("Failed to decompress data.");
     }
+}
+
+/**
+ * Descomprime uma string Base64 GZIP (Compatibilidade Legada).
+ */
+export async function decompressString(base64Data: string): Promise<string> {
+    const buffer = base64ToArrayBuffer(base64Data);
+    return await decompressFromBuffer(buffer);
 }
 
 // --- UUID ---

@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -12,14 +13,7 @@
  */
 
 import { AppState, HabitDailyInfo, TimeOfDay } from '../state';
-import { decompressString, compressString } from '../utils';
-
-// PERFORMANCE: Lookup Table para pesos de status (Smi Values).
-const STATUS_WEIGHTS: Record<string, number> = {
-    'completed': 3,
-    'snoozed': 2,
-    'pending': 1
-};
+import { decompressString, compressString, decompressFromBuffer, compressToBuffer } from '../utils';
 
 // CONSTANTS
 const GZIP_PREFIX = 'GZIP:';
@@ -55,16 +49,11 @@ function mergeDayRecord(localDay: Record<string, HabitDailyInfo>, mergedDay: Rec
             if (!mergedInst) {
                 mergedInstances[time] = localInst;
             } else {
-                // CONFLITO SEMÂNTICO: Decoupled Merge Strategy.
-                const lWeight = STATUS_WEIGHTS[localInst.status] ?? 1;
-                const mWeight = STATUS_WEIGHTS[mergedInst.status] ?? 1;
-
-                if (lWeight > mWeight) {
-                    mergedInst.status = localInst.status;
-                    if (localInst.goalOverride !== undefined) {
-                        mergedInst.goalOverride = localInst.goalOverride;
-                    }
-                } else if (mergedInst.goalOverride === undefined && localInst.goalOverride !== undefined) {
+                // CONFLITO SEMÂNTICO: Note & Goal Override Merge
+                // Status agora é gerenciado pelo monthlyLogs (Bitmask), então focamos nos metadados.
+                
+                // Goal Override: Local prevalece se merged for undefined (sem conflito destrutivo simples)
+                if (mergedInst.goalOverride === undefined && localInst.goalOverride !== undefined) {
                     mergedInst.goalOverride = localInst.goalOverride;
                 }
 
@@ -80,13 +69,23 @@ function mergeDayRecord(localDay: Record<string, HabitDailyInfo>, mergedDay: Rec
     }
 }
 
-async function hydrateArchive(content: string): Promise<Record<string, any>> {
+async function hydrateArchive(content: string | Uint8Array): Promise<Record<string, any>> {
     try {
-        if (content.startsWith(GZIP_PREFIX)) {
-            const json = await decompressString(content.substring(GZIP_PREFIX.length));
+        // Hybrid Reader
+        if (content instanceof Uint8Array) {
+            const json = await decompressFromBuffer(content);
             return JSON.parse(json);
         }
-        return JSON.parse(content);
+        
+        if (typeof content === 'string') {
+            if (content.startsWith(GZIP_PREFIX)) {
+                const json = await decompressString(content.substring(GZIP_PREFIX.length));
+                return JSON.parse(json);
+            }
+            return JSON.parse(content);
+        }
+        
+        return {};
     } catch (e) {
         console.error("Merge: Hydration failed", e);
         return {};
@@ -111,7 +110,7 @@ export async function mergeStates(local: AppState, incoming: AppState): Promise<
         }
     }
 
-    // 2. Mesclar Daily Data (Hot Storage)
+    // 2. Mesclar Daily Data (Hot Storage - Metadados)
     for (const date in local.dailyData) {
         if (!merged.dailyData[date]) {
             merged.dailyData[date] = local.dailyData[date];
@@ -120,7 +119,20 @@ export async function mergeStates(local: AppState, incoming: AppState): Promise<
         }
     }
 
-    // 3. Fusão de Arquivos (Cold Storage)
+    // 3. Mesclar Logs Binários (Monthly Logs)
+    // Se o estado local tiver logs que o estado remoto (merged) não tem, preserva os locais.
+    // Conflitos de bitmask (mesmo mês/hábito modificado em ambos) favorecem 'incoming' (Server) por padrão.
+    if (local.monthlyLogs) {
+        if (!merged.monthlyLogs) merged.monthlyLogs = new Map();
+        
+        local.monthlyLogs.forEach((val, key) => {
+            if (!merged.monthlyLogs.has(key)) {
+                merged.monthlyLogs.set(key, val);
+            }
+        });
+    }
+
+    // 4. Fusão de Arquivos (Cold Storage)
     if (local.archives) {
         merged.archives = merged.archives || {};
         for (const year in local.archives) {
@@ -141,8 +153,10 @@ export async function mergeStates(local: AppState, incoming: AppState): Promise<
                         }
                     }
                     
-                    const compressed = await compressString(JSON.stringify(incomingYearData));
-                    merged.archives[year] = `${GZIP_PREFIX}${compressed}`;
+                    // BINARY OPTIMIZATION: Salva o resultado do merge como Uint8Array direto
+                    // Isso evita o overhead de Base64 e mantém a consistência com o novo formato binário.
+                    const compressed = await compressToBuffer(JSON.stringify(incomingYearData));
+                    merged.archives[year] = compressed;
                 } catch (e) {
                     console.error(`Deep merge failed for ${year}`, e);
                 }
@@ -150,7 +164,7 @@ export async function mergeStates(local: AppState, incoming: AppState): Promise<
         }
     }
 
-    // 4. Metadados
+    // 5. Metadados
     merged.lastModified = Date.now();
     merged.version = Math.max(local.version, incoming.version);
     

@@ -10,11 +10,11 @@
  * 
  * [ISOMORPHIC CONTEXT]:
  * Este módulo é seguro para execução tanto na Main Thread quanto em Web Workers.
- * Atualmente, é utilizado intensivamente pelo `sync.worker.ts` para offloading de CPU.
  * 
  * ARQUITETURA (Security & Performance):
  * - **Responsabilidade Única:** Prover criptografia autenticada (AES-GCM) derivada de senha (PBKDF2).
  * - **Zero Dependencies:** Utiliza exclusivamente a `crypto.subtle` nativa do navegador.
+ * - **Zero-Copy Support:** Suporta encriptação direta de ArrayBuffers para evitar overhead de string em dados binários.
  * 
  * DEPENDÊNCIAS CRÍTICAS:
  * - `crypto.subtle`: Requer contexto seguro (HTTPS/localhost).
@@ -63,25 +63,37 @@ async function deriveKey(password: string, salt: Uint8Array): Promise<CryptoKey>
 }
 
 /**
- * Criptografa uma string usando AES-GCM com uma chave derivada de uma senha.
- * @param data A string de dados a ser criptografada.
+ * Criptografa dados (string ou binário) usando AES-GCM com uma chave derivada de uma senha.
+ * 
+ * ZERO-COPY OPTIMIZATION: Se 'data' for ArrayBuffer ou Uint8Array, ele é passado diretamente
+ * para o motor criptográfico, evitando a conversão dispendiosa para string UTF-8.
+ * 
+ * @param data A string ou buffer a ser criptografado.
  * @param password A senha usada para derivar a chave.
  * @returns Uma string JSON contendo o salt, IV e os dados criptografados em Base64.
  */
-export async function encrypt(data: string, password: string): Promise<string> {
+export async function encrypt(data: string | ArrayBuffer | Uint8Array, password: string): Promise<string> {
     // SECURITY: Gera Salt e IV aleatórios a cada criptografia.
-    // Isso garante que cifrar o mesmo dado duas vezes resulte em saídas diferentes.
     const salt = crypto.getRandomValues(new Uint8Array(16));
     const key = await deriveKey(password, salt);
     
     const iv = crypto.getRandomValues(new Uint8Array(12)); // IV de 12 bytes é recomendado para AES-GCM (96 bits).
+    
+    // PREPARE DATA: Avoid GC if possible
+    let dataBuffer: BufferSource;
+    if (typeof data === 'string') {
+        dataBuffer = encoder.encode(data);
+    } else {
+        dataBuffer = data;
+    }
+
     const encrypted = await crypto.subtle.encrypt(
         {
             name: 'AES-GCM',
             iv: iv,
         },
         key,
-        encoder.encode(data)
+        dataBuffer
     );
 
     // Combina o salt, IV e os dados criptografados em um único objeto para armazenamento.
@@ -95,13 +107,14 @@ export async function encrypt(data: string, password: string): Promise<string> {
 }
 
 /**
- * Descriptografa uma string JSON que foi criptografada com a função `encrypt`.
+ * Descriptografa uma string JSON para um ArrayBuffer bruto.
+ * Útil para recuperar dados binários (como Bitmasks ou GZIP) sem forçar decode para string.
+ * 
  * @param encryptedDataJSON A string JSON contendo salt, IV e dados criptografados.
  * @param password A senha usada para derivar a chave.
- * @returns A string de dados original.
- * @throws Lança um erro se a descriptografia falhar (chave incorreta ou dados corrompidos).
+ * @returns O ArrayBuffer descriptografado.
  */
-export async function decrypt(encryptedDataJSON: string, password: string): Promise<string> {
+export async function decryptToBuffer(encryptedDataJSON: string, password: string): Promise<ArrayBuffer> {
     try {
         const { salt: saltBase64, iv: ivBase64, encrypted: encryptedBase64 } = JSON.parse(encryptedDataJSON);
 
@@ -120,10 +133,22 @@ export async function decrypt(encryptedDataJSON: string, password: string): Prom
             key,
             encrypted
         );
-        return decoder.decode(decrypted);
+        return decrypted;
     } catch (e) {
         console.error("Decryption or Parsing failed:", e);
-        // Lança um erro mais informativo para o chamador (geralmente capturado pelo Worker e enviado à UI).
         throw new Error("Decryption failed. The sync key may be incorrect or the data corrupted.");
     }
+}
+
+/**
+ * Descriptografa uma string JSON e retorna como String UTF-8.
+ * Wrapper de compatibilidade sobre `decryptToBuffer`.
+ * 
+ * @param encryptedDataJSON A string JSON.
+ * @param password A senha.
+ * @returns A string original.
+ */
+export async function decrypt(encryptedDataJSON: string, password: string): Promise<string> {
+    const buffer = await decryptToBuffer(encryptedDataJSON, password);
+    return decoder.decode(buffer);
 }

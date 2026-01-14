@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -19,10 +20,11 @@
  */
 
 // @fix: Import `getHabitDailyInfoForDate` to make it available in this module.
-import { state, Habit, StoicVirtue, GovernanceSphere, getHabitDailyInfoForDate } from '../state';
+import { state, Habit, StoicVirtue, GovernanceSphere, getHabitDailyInfoForDate, HABIT_STATE } from '../state';
 import { Quote, StoicTag } from '../data/quotes';
 import { calculateDaySummary, getEffectiveScheduleForHabitOnDate, calculateHabitStreak, getScheduleForDate } from './selectors';
 import { toUTCIsoDateString, parseUTCIsoDate, getTodayUTCIso } from '../utils';
+import { HabitService } from './HabitService';
 
 // --- TUNING CONSTANTS ---
 const WEIGHTS = {
@@ -130,8 +132,7 @@ function _getDominantVirtues(habits: Habit[], dateISO: string): Set<StoicVirtue>
 
 function _getNeglectedSphere(habits: Habit[], dateISO: string): GovernanceSphere | null {
     const sphereStats: Record<string, { total: number, done: number }> = {};
-    const dailyData = getHabitDailyInfoForDate(dateISO);
-
+    
     // @fix: Get philosophy from the habit's schedule for the given date.
     habits.forEach(h => {
         const habitSchedule = getScheduleForDate(h, dateISO);
@@ -141,8 +142,9 @@ function _getNeglectedSphere(habits: Habit[], dateISO: string): GovernanceSphere
             
             habitSchedule.times.forEach(time => {
                 sphereStats[sph].total++;
-                const status = dailyData[h.id]?.instances[time]?.status;
-                if (status === 'completed') sphereStats[sph].done++;
+                // FIX: Use HabitService for status check with habit object passed
+                const status = HabitService.getStatus(h.id, dateISO, time, h);
+                if (status === HABIT_STATE.DONE || status === HABIT_STATE.DONE_PLUS) sphereStats[sph].done++;
             });
         }
     });

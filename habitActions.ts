@@ -24,7 +24,7 @@ import {
 } from './services/selectors';
 import { 
     generateUUID, getTodayUTCIso, parseUTCIsoDate, triggerHaptic,
-    getSafeDate, addDays, toUTCIsoDateString, decompressString
+    getSafeDate, addDays, toUTCIsoDateString
 } from './utils';
 import { 
     closeModal, showConfirmationModal, openEditModal, renderAINotificationState,
@@ -181,8 +181,8 @@ const _applyDropJustToday = () => {
         if (info.instances[ctx.fromTime]) { 
             // CLEANUP: Move apenas dados relevantes, remove 'status' para evitar "Ghost Data"
             const movedData = { ...info.instances[ctx.fromTime] };
-            delete movedData.status; // Remove status legado
-            info.instances[ctx.toTime] = movedData; 
+            delete (movedData as any).status; // Remove status legado
+            info.instances[ctx.toTime] = movedData as HabitDayData; 
             delete info.instances[ctx.fromTime]; 
         }
         info.dailySchedule = sch;
@@ -210,8 +210,8 @@ const _applyDropFromNowOn = () => {
     // 1. Migração de Dados Legados (Notes/Override) para o dia atual
     if (info.instances[ctx.fromTime]) { 
         const movedData = { ...info.instances[ctx.fromTime] };
-        delete movedData.status; // Remove status legado
-        info.instances[ctx.toTime] = movedData; 
+        delete (movedData as any).status; // Remove status legado
+        info.instances[ctx.toTime] = movedData as HabitDayData; 
         delete info.instances[ctx.fromTime]; 
     }
     
@@ -228,7 +228,7 @@ const _applyDropFromNowOn = () => {
         const times = curOverride || [...s.times], fIdx = times.indexOf(ctx.fromTime);
         if (fIdx > -1) times.splice(fIdx, 1);
         if (!times.includes(ctx.toTime)) times.push(ctx.toTime);
-        return { ...s, times };
+        return { ...s, times: times as readonly TimeOfDay[] };
     });
     ActionContext.reset();
 };
@@ -356,7 +356,7 @@ export function saveHabitFromModal() {
                 name: cleanFormData.name,
                 nameKey: cleanFormData.nameKey,
                 subtitleKey: cleanFormData.subtitleKey,
-                times: cleanFormData.times,
+                times: cleanFormData.times as readonly TimeOfDay[],
                 frequency: cleanFormData.frequency,
             }));
         } else {
@@ -366,7 +366,7 @@ export function saveHabitFromModal() {
                 createdOn: targetDate, 
                 scheduleHistory: [{ 
                     startDate: targetDate, 
-                    times: cleanFormData.times, 
+                    times: cleanFormData.times as readonly TimeOfDay[], 
                     frequency: cleanFormData.frequency, 
                     name: cleanFormData.name, 
                     nameKey: cleanFormData.nameKey, 
@@ -397,7 +397,7 @@ export function saveHabitFromModal() {
             name: cleanFormData.name, 
             nameKey: cleanFormData.nameKey, 
             subtitleKey: cleanFormData.subtitleKey, 
-            times: cleanFormData.times, 
+            times: cleanFormData.times as readonly TimeOfDay[], 
             frequency: cleanFormData.frequency 
         }));
     }
@@ -442,8 +442,8 @@ export function toggleHabitStatus(habitId: string, time: TimeOfDay, date: string
     const h = state.habits.find(x => x.id === habitId);
     if (!h) return;
 
-    // 1. LEITURA (Fonte: Bitmask)
-    const currentBit = HabitService.getStatus(habitId, date, time);
+    // 1. LEITURA (Fonte: Bitmask) - Com otimização de objeto
+    const currentBit = HabitService.getStatus(habitId, date, time, h);
     
     // 2. LÓGICA DE ROTAÇÃO (3 Estados: Pendente -> Feito -> Adiado -> Pendente)
     let nextBit: number;
@@ -459,7 +459,27 @@ export function toggleHabitStatus(habitId: string, time: TimeOfDay, date: string
     // 3. ESCRITA (Destino: Bitmask)
     HabitService.setStatus(habitId, date, time, nextBit);
 
-    // 4. SIDE EFFECTS
+    // 4. GARBAGE COLLECTION [ZERO-COST]
+    // Se o novo estado é nulo e não há metadados (notas/override), removemos o objeto do JSON.
+    if (nextBit === HABIT_STATE.NULL) {
+        try {
+            const dayData = getHabitDailyInfoForDate(date);
+            const habitInfo = dayData[habitId];
+            if (habitInfo) {
+                const instance = habitInfo.instances[time];
+                if (instance && instance.note === undefined && instance.goalOverride === undefined) {
+                    delete state.dailyData[date][habitId].instances[time];
+                    if (Object.keys(state.dailyData[date][habitId].instances).length === 0) {
+                        delete state.dailyData[date][habitId];
+                    }
+                }
+            }
+        } catch (e) {
+            // Ignora erros de `getHabitDailyInfoForDate` (ex: data carregando)
+        }
+    }
+
+    // 5. SIDE EFFECTS
     if (nextBit === HABIT_STATE.DONE) {
         _checkStreakMilestones(h, date);
         triggerHaptic('light');
@@ -500,7 +520,7 @@ export function markAllHabitsForDate(dateISO: string, status: HabitStatus): bool
 
             sch.forEach(t => {
                 // Verificamos se o status já é o pretendido via Bitmask
-                if (HabitService.getStatus(h.id, dateISO, t) !== bitStatus) {
+                if (HabitService.getStatus(h.id, dateISO, t, h) !== bitStatus) {
                     // ESCRITA DIRETA NO BITMASK
                     HabitService.setStatus(h.id, dateISO, t, bitStatus);
                     changed = true;
@@ -557,7 +577,9 @@ export async function resetApplicationData() {
     state.habits = []; 
     state.dailyData = {}; 
     state.archives = {}; 
-    state.notificationsShown = state.pending21DayHabitIds = state.pendingConsolidationHabitIds = []; 
+    state.notificationsShown = []; 
+    state.pending21DayHabitIds = []; 
+    state.pendingConsolidationHabitIds = [];
     
     // --- CORREÇÃO: Limpar Bitmask ---
     state.monthlyLogs = new Map();
@@ -580,38 +602,19 @@ export async function resetApplicationData() {
 export function handleSaveNote() { if (!state.editingNoteFor) return; const { habitId, date, time } = state.editingNoteFor, val = ui.notesTextarea.value.trim(), inst = ensureHabitInstanceData(date, habitId, time); if ((inst.note || '') !== val) { inst.note = val || undefined; state.uiDirtyState.habitListStructure = true; saveState(); document.dispatchEvent(new CustomEvent('render-app')); } closeModal(ui.notesModal); }
 
 export function setGoalOverride(habitId: string, d: string, t: TimeOfDay, v: number) { 
-    try { 
-        // 1. Escrita Legada (JSON)
-        // Mantém escrita no JSON para dados numéricos
-        ensureHabitInstanceData(d, habitId, t).goalOverride = v; 
-        
-        // 2. Escrita Bitmask (NOVO - Lógica Arete)
+    try {
         const h = state.habits.find(x => x.id === habitId);
-        if (h) {
-            // FIX CIRÚRGICO: Desacoplamento de Estado.
-            // A alteração de quantidade NÃO deve forçar o hábito para 'DONE' se ele estiver 'PENDING' ou 'SNOOZED'.
-            // O usuário deve ter a liberdade de ajustar a meta sem perder o controle do "Check".
-            
-            const currentBit = HabitService.getStatus(habitId, d, t);
-            let nextBit = currentBit;
+        if (!h) return;
 
-            // Só atualizamos o Bitmask se o hábito JÁ ESTIVER concluído (DONE ou DONE_PLUS).
-            // Nesse caso, verificamos se a nova quantidade ultrapassa a meta para alternar entre 1 e 3.
-            if (currentBit === HABIT_STATE.DONE || currentBit === HABIT_STATE.DONE_PLUS) {
-                const props = getHabitPropertiesForDate(h, d);
-                if (props?.goal?.total && v > props.goal.total) {
-                    nextBit = HABIT_STATE.DONE_PLUS;
-                } else {
-                    nextBit = HABIT_STATE.DONE;
-                }
-            }
-            
-            // Se o estado for NULL (Pendente) ou DEFERRED (Adiado), mantemos o estado inalterado no Bitmask.
-            // Apenas o JSON 'goalOverride' foi atualizado acima.
-            
-            if (nextBit !== currentBit) {
-                HabitService.setStatus(habitId, d, t, nextBit);
-            }
+        // Grava o valor numérico (Necessário JSON)
+        ensureHabitInstanceData(d, habitId, t).goalOverride = v;
+
+        // Atualiza AUTOMATICAMENTE o Bitmask para Arete se a meta for superada
+        const props = getHabitPropertiesForDate(h, d);
+        if (props?.goal?.total && v > props.goal.total) {
+            HabitService.setStatus(habitId, d, t, HABIT_STATE.DONE_PLUS);
+        } else if (v > 0) {
+            HabitService.setStatus(habitId, d, t, HABIT_STATE.DONE);
         }
 
         // Notificações UI
@@ -630,7 +633,7 @@ export function requestHabitTimeRemoval(habitId: string, time: TimeOfDay) {
         t('confirmRemoveTimePermanent', { habitName: getHabitDisplayInfo(h, target).name, time: getTimeOfDayName(time) }), 
         () => { 
             ensureHabitDailyInfo(target, habitId).dailySchedule = undefined; 
-            _requestFutureScheduleChange(habitId, target, s => ({ ...s, times: s.times.filter(x => x !== time) })); 
+            _requestFutureScheduleChange(habitId, target, s => ({ ...s, times: s.times.filter(x => x !== time) as readonly TimeOfDay[] })); 
             ActionContext.reset(); 
         }, 
         { 
@@ -643,226 +646,3 @@ export function requestHabitTimeRemoval(habitId: string, time: TimeOfDay) {
 }
 export function exportData() { const blob = new Blob([JSON.stringify(getPersistableState(), null, 2)], { type: 'application/json' }), url = URL.createObjectURL(blob), a = document.createElement('a'); a.href = url; a.download = `askesis-backup-${getTodayUTCIso()}.json`; a.click(); URL.revokeObjectURL(url); }
 export function handleDayTransition() { const today = getTodayUTCIso(); clearActiveHabitsCache(); state.uiDirtyState.calendarVisuals = state.uiDirtyState.habitListStructure = state.uiDirtyState.chartData = true; state.calendarDates = []; if (state.selectedDate !== today) state.selectedDate = today; document.dispatchEvent(new CustomEvent('render-app')); }
-
-// ============================================================================
-// ÁREA DE DEBUG & MIGRAÇÃO (FINAL DO ARQUIVO)
-// ============================================================================
-
-declare global {
-    interface Window {
-        auditIntegrity: () => void;
-        migrateLegacyToBitmask: () => void;
-        migrateDeepToBitmask: () => Promise<void>;
-    }
-}
-
-// 1. AUDITORIA DE INTEGRIDADE
-// @ts-ignore
-window.auditIntegrity = () => {
-    console.group("🕵️ Iniciando Auditoria de Integridade (Legacy vs Bitmask)");
-    let errors = 0;
-    let checked = 0;
-
-    if (!state.monthlyLogs || state.monthlyLogs.size === 0) {
-        console.warn("⚠️ monthlyLogs vazio (Lazy Load). Interaja com o app para carregar.");
-    }
-
-    const allDates = Object.keys(state.dailyData);
-    
-    allDates.forEach(date => {
-        state.habits.forEach(habit => {
-            // Verifica Morning (0), Afternoon (2), Evening (4)
-            ([0, 2, 4] as const).forEach(offset => {
-                let time: TimeOfDay = 'Morning';
-                if (offset === 2) time = 'Afternoon';
-                if (offset === 4) time = 'Evening';
-                
-                // Legado
-                const legacyInfo = state.dailyData[date]?.[habit.id]?.instances[time];
-                // @fix: Explicitly type as number to prevent literal type narrowing to 0
-                let legacyStatus: number = HABIT_STATE.NULL as number;
-                if (legacyInfo?.status === 'completed') legacyStatus = HABIT_STATE.DONE;
-                if (legacyInfo?.status === 'snoozed') legacyStatus = HABIT_STATE.DEFERRED;
-
-                // Bitmask
-                const logKey = `${habit.id}_${date.substring(0, 7)}`;
-                const log = state.monthlyLogs.get(logKey);
-                // @fix: Explicitly type as number to prevent literal type narrowing to 0
-                let bitStatus: number = HABIT_STATE.NULL;
-                
-                if (log !== undefined) {
-                    const day = parseInt(date.substring(8, 10), 10);
-                    const bitPos = BigInt(((day - 1) * 6) + offset);
-                    bitStatus = Number((log >> bitPos) & 0b11n);
-                }
-
-                if (legacyStatus !== bitStatus) {
-                    if (legacyStatus === HABIT_STATE.NULL && bitStatus === 0) return;
-                    //console.error(`❌ DISCREPÂNCIA ${date} [${habit.id}]: L=${legacyStatus} vs B=${bitStatus}`);
-                    errors++;
-                }
-                checked++;
-            });
-        });
-    });
-
-    console.log(`Auditoria: ${checked} pontos verificados.`);
-    if (errors === 0) console.log("%c✅ INTEGRIDADE PERFEITA!", "color: green; font-weight: bold;");
-    else console.log(`%c⚠️ ${errors} erros encontrados.`, "color: red; font-weight: bold;");
-    console.groupEnd();
-};
-
-// 2. MIGRAÇÃO DE DADOS (BACKFILL)
-// @ts-ignore
-window.migrateLegacyToBitmask = () => {
-    console.group("🚀 Iniciando Migração de Histórico (JSON -> Bitmask)");
-    const startTime = performance.now();
-    let migratedCount = 0;
-    
-    const allDates = Object.keys(state.dailyData);
-    console.log(`📅 Processando ${allDates.length} dias...`);
-
-    allDates.forEach(dateISO => {
-        const dayData = state.dailyData[dateISO];
-        if (!dayData) return;
-
-        Object.keys(dayData).forEach(habitId => {
-            const habitInfo = dayData[habitId];
-            if (!habitInfo || !habitInfo.instances) return;
-
-            (['Morning', 'Afternoon', 'Evening'] as TimeOfDay[]).forEach(time => {
-                const instance = habitInfo.instances[time];
-                if (!instance) return;
-
-                // @fix: Explicitly type as number to prevent literal type narrowing to 0
-                let targetStatus = HABIT_STATE.NULL as number;
-                if (instance.status === 'completed') targetStatus = HABIT_STATE.DONE;
-                else if (instance.status === 'snoozed') targetStatus = HABIT_STATE.DEFERRED;
-
-                if (targetStatus !== HABIT_STATE.NULL) {
-                    HabitService.setStatus(habitId, dateISO, time, targetStatus);
-                    migratedCount++;
-                }
-            });
-        });
-    });
-
-    saveState(); // Salva no disco
-    
-    console.log(`✅ Migração Concluída (${(performance.now() - startTime).toFixed(0)}ms).`);
-    console.log(`💾 ${migratedCount} registros migrados.`);
-    
-    // Roda auditoria para confirmar
-    window.auditIntegrity();
-    console.groupEnd();
-};
-
-// 3. MIGRAÇÃO PROFUNDA (DEEP MIGRATION)
-// @ts-ignore
-window.migrateDeepToBitmask = async () => {
-    console.group("🏛️ Iniciando Migração Profunda (Memória + Arquivos)");
-    const startTime = performance.now();
-    let totalMigrated = 0;
-
-    // 1. MIGRAR DADOS EM RAM (dailyData)
-    const activeDates = Object.keys(state.dailyData);
-    console.log(`🧠 Processando ${activeDates.length} dias em memória ativa...`);
-    
-    activeDates.forEach(dateISO => {
-        const dayData = state.dailyData[dateISO];
-        if (!dayData) return;
-
-        Object.keys(dayData).forEach(habitId => {
-            const habitInfo = dayData[habitId];
-            if (!habitInfo?.instances) return;
-
-            (['Morning', 'Afternoon', 'Evening'] as TimeOfDay[]).forEach(time => {
-                const instance = habitInfo.instances[time];
-                if (!instance) return;
-
-                let targetStatus = HABIT_STATE.NULL as number;
-                if (instance.status === 'completed') {
-                    // Lógica Arete: Verifica superação de meta
-                    const h = state.habits.find(x => x.id === habitId);
-                    const props = h ? getHabitPropertiesForDate(h, dateISO) : null;
-                    if (props?.goal?.total && instance.goalOverride && instance.goalOverride > props.goal.total) {
-                        targetStatus = HABIT_STATE.DONE_PLUS;
-                    } else {
-                        targetStatus = HABIT_STATE.DONE;
-                    }
-                } else if (instance.status === 'snoozed') {
-                    targetStatus = HABIT_STATE.DEFERRED;
-                }
-
-                if (targetStatus !== HABIT_STATE.NULL) {
-                    HabitService.setStatus(habitId, dateISO, time, targetStatus);
-                    totalMigrated++;
-                }
-            });
-        });
-    });
-
-    // 2. MIGRAR DADOS ARQUIVADOS (archives)
-    const archiveYears = Object.keys(state.archives);
-    console.log(`📦 Processando ${archiveYears.length} anos de arquivos...`);
-
-    for (const year of archiveYears) {
-        try {
-            // Em Askesis, os arquivos são strings JSON (muitas vezes comprimidas)
-            let archivedData;
-            const rawArchive = state.archives[year];
-            if (rawArchive.startsWith('GZIP:')) {
-                // @fix: Import decompressString from utils at top of file, or use global
-                // But wait, decompressString is async.
-                // Assuming it's available via module import since this is a module file.
-                // Re-importing decompressString at top of file would be cleaner but I can't easily edit top of file here.
-                // Actually, decompressString is not imported in original habitActions.ts but is in the context.
-                // Ah, the file content provided has imports at top. I will ensure decompressString is imported.
-                // Wait, decompressString is NOT imported in the original habitActions.ts provided in context.
-                // I will add it to the import list from `./utils`.
-                // Checking `utils` import...
-                // `import { generateUUID, getTodayUTCIso, parseUTCIsoDate, triggerHaptic, getSafeDate, addDays, toUTCIsoDateString } from './utils';`
-                // I need to add `decompressString` there.
-                
-                // Hack: Dynamic import or assume it's added. I will add it to the import statement.
-                const { decompressString } = await import('./utils');
-                archivedData = JSON.parse(await decompressString(rawArchive.substring(5)));
-            } else {
-                archivedData = JSON.parse(rawArchive);
-            }
-            
-            Object.keys(archivedData).forEach(dateISO => {
-                const dayData = archivedData[dateISO];
-                Object.keys(dayData).forEach((habitId: string) => {
-                    const habitInfo = dayData[habitId];
-                    if (!habitInfo?.instances) return;
-
-                    (['Morning', 'Afternoon', 'Evening'] as TimeOfDay[]).forEach(time => {
-                        const inst = habitInfo.instances[time];
-                        if (!inst || inst.status === 'pending') return;
-
-                        let status = HABIT_STATE.NULL as number;
-                        if (inst.status === 'completed') status = HABIT_STATE.DONE;
-                        else if (inst.status === 'snoozed') status = HABIT_STATE.DEFERRED;
-
-                        if (status !== HABIT_STATE.NULL) {
-                            HabitService.setStatus(habitId, dateISO, time, status);
-                            totalMigrated++;
-                        }
-                    });
-                });
-            });
-            console.log(`✅ Ano ${year} migrado.`);
-        } catch (e) {
-            console.error(`❌ Erro ao processar arquivo do ano ${year}:`, e);
-        }
-    }
-
-    await saveState(); // Persiste os novos Bitmasks no IndexedDB
-    
-    console.log(`🏁 Migração Concluída!`);
-    console.log(`📊 Total de registros convertidos: ${totalMigrated}`);
-    console.log(`⏱️ Tempo total: ${(performance.now() - startTime).toFixed(0)}ms`);
-    window.auditIntegrity();
-    console.groupEnd();
-};

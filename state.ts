@@ -9,7 +9,7 @@
  * @description Definição do Estado Global e Estruturas de Dados (Single Source of Truth).
  */
 
-import { addDays, getTodayUTC, getTodayUTCIso, decompressString } from './utils';
+import { addDays, getTodayUTC, getTodayUTCIso, decompressString, decompressFromBuffer } from './utils';
 
 // --- ERROR TYPES ---
 export class DataLoadingError extends Error {
@@ -46,7 +46,8 @@ export type Frequency =
     | { readonly type: 'specific_days_of_week'; readonly days: readonly number[] };
 
 export interface HabitDayData {
-    status: HabitStatus; // DEPRECATED: Mantido apenas para compatibilidade de tipos, leitura via Bitmask
+    // STATUS REMOVIDO: O estado de conclusão agora reside exclusivamente em 'monthlyLogs' (Bitmask).
+    // Este objeto armazena apenas metadados ricos opcionais.
     goalOverride: number | undefined;
     note: string | undefined;
 }
@@ -148,7 +149,8 @@ export interface AppState {
     lastModified: number; // This must be mutable
     readonly habits: readonly Habit[];
     readonly dailyData: Readonly<Record<string, Readonly<Record<string, HabitDailyInfo>>>>;
-    readonly archives: Readonly<Record<string, string>>; 
+    // UPDATED [2025-06-03]: Suporte a Binário (Uint8Array) e Legado (String)
+    readonly archives: Readonly<Record<string, string | Uint8Array>>; 
     readonly dailyDiagnoses: Readonly<Record<string, DailyStoicDiagnosis>>;
     readonly notificationsShown: readonly string[];
     readonly pending21DayHabitIds: readonly string[];
@@ -158,11 +160,8 @@ export interface AppState {
     lastAIResult?: string | null;
     lastAIError?: string | null;
     hasSeenAIResult?: boolean;
-    // NOVO: Cache para a estrutura otimizada
+    // Cache runtime para a estrutura otimizada (Bitmasks)
     monthlyLogs?: Map<string, bigint>;
-    // REMOVIDO: monthlyLogsSerialized não faz mais parte do estado em runtime/persistência local.
-    // É gerado on-demand apenas para Sync.
-    monthlyLogsSerialized?: any; 
 }
 
 // --- CONSTANTS ---
@@ -198,7 +197,6 @@ const _createMonomorphicDailyInfo = (): HabitDailyInfo => ({
 });
 
 const _createMonomorphicInstance = (): HabitDayData => ({
-    status: 'pending',
     goalOverride: undefined,
     note: undefined
 });
@@ -207,7 +205,7 @@ const _createMonomorphicInstance = (): HabitDayData => ({
 export const state: {
     habits: Habit[];
     dailyData: Record<string, Record<string, HabitDailyInfo>>;
-    archives: Record<string, string>;
+    archives: Record<string, string | Uint8Array>;
     dailyDiagnoses: Record<string, DailyStoicDiagnosis>;
     unarchivedCache: Map<string, Record<string, Record<string, HabitDailyInfo>>>;
     streaksCache: Map<string, Map<string, number>>;
@@ -302,10 +300,8 @@ export function invalidateChartCache() {
 }
 
 export function getPersistableState(): AppState {
-    // ZERO-COST UPDATE: Não serializamos monthlyLogs aqui.
-    // A serialização (Hex/Base64) custa CPU e não é necessária para o IndexedDB local (que usa ArrayBuffer).
-    // O Cloud Service deve lidar com a serialização quando necessário.
-    
+    // ZERO-COST UPDATE: Estado limpo para persistência.
+    // 'monthlyLogs' é persistido separadamente em binário e removido deste objeto.
     return {
         version: APP_VERSION,
         lastModified: Date.now(),
@@ -317,7 +313,6 @@ export function getPersistableState(): AppState {
         pending21DayHabitIds: state.pending21DayHabitIds,
         pendingConsolidationHabitIds: state.pendingConsolidationHabitIds,
         quoteState: state.quoteState,
-        // REMOVIDO: monthlyLogsSerialized (Use HabitService.serializeLogsForCloud se precisar exportar)
     };
 }
 
@@ -372,6 +367,10 @@ export function isDateLoading(date: string): boolean {
     return state.unarchivedCache.has(`${date.substring(0, 4)}_pending`);
 }
 
+/**
+ * Recupera dados diários, gerenciando cache e descompressão de arquivos (String e Binário).
+ * SNIFFER LOGIC: Detecta automaticamente o formato do arquivo para manter retrocompatibilidade.
+ */
 export function getHabitDailyInfoForDate(date: string): Record<string, HabitDailyInfo> {
     pruneSelectorCaches();
     const hotData = state.dailyData[date];
@@ -386,12 +385,13 @@ export function getHabitDailyInfoForDate(date: string): Record<string, HabitDail
     }
 
     const rawArchive = state.archives[year];
-    if (rawArchive && typeof rawArchive === 'string') {
-        if (rawArchive.startsWith('GZIP:')) {
+    if (rawArchive) {
+        // [A] Binary Path (New Standard)
+        if (rawArchive instanceof Uint8Array) {
             const pendingKey = `${year}_pending`;
             if (!state.unarchivedCache.has(pendingKey)) {
                 state.unarchivedCache.set(pendingKey, {});
-                decompressString(rawArchive.substring(5)).then(json => {
+                decompressFromBuffer(rawArchive).then(json => {
                     try {
                         const parsedYearData = JSON.parse(json);
                         _enforceCacheLimit(pendingKey);
@@ -408,14 +408,41 @@ export function getHabitDailyInfoForDate(date: string): Record<string, HabitDail
                 });
             }
             return (EMPTY_DAILY_INFO as Record<string, HabitDailyInfo>);
-        } else {
-            try {
-                const parsedYearData = JSON.parse(rawArchive);
-                _enforceCacheLimit(year);
-                state.unarchivedCache.set(year, parsedYearData);
-                return parsedYearData[date] || (EMPTY_DAILY_INFO as Record<string, HabitDailyInfo>);
-            } catch {
-                console.error(`Error parsing legacy archive for ${year}`);
+        }
+        
+        // [B] String Paths (Legacy)
+        else if (typeof rawArchive === 'string') {
+            if (rawArchive.startsWith('GZIP:')) {
+                const pendingKey = `${year}_pending`;
+                if (!state.unarchivedCache.has(pendingKey)) {
+                    state.unarchivedCache.set(pendingKey, {});
+                    decompressString(rawArchive.substring(5)).then(json => {
+                        try {
+                            const parsedYearData = JSON.parse(json);
+                            _enforceCacheLimit(pendingKey);
+                            state.unarchivedCache.set(year, parsedYearData);
+                            state.unarchivedCache.delete(pendingKey);
+                            document.dispatchEvent(new CustomEvent('render-app'));
+                        } catch {
+                            state.unarchivedCache.set(year, {}); 
+                            state.unarchivedCache.delete(pendingKey);
+                        }
+                    }).catch(() => {
+                        state.unarchivedCache.set(year, {}); 
+                        state.unarchivedCache.delete(pendingKey);
+                    });
+                }
+                return (EMPTY_DAILY_INFO as Record<string, HabitDailyInfo>);
+            } else {
+                // [C] Plain JSON (Ancient Legacy)
+                try {
+                    const parsedYearData = JSON.parse(rawArchive);
+                    _enforceCacheLimit(year);
+                    state.unarchivedCache.set(year, parsedYearData);
+                    return parsedYearData[date] || (EMPTY_DAILY_INFO as Record<string, HabitDailyInfo>);
+                } catch {
+                    console.error(`Error parsing legacy archive for ${year}`);
+                }
             }
         }
     }

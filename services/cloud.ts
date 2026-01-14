@@ -10,7 +10,6 @@ import { generateUUID } from '../utils';
 import { ui } from '../render/ui';
 import { t } from '../i18n';
 import { hasLocalSyncKey, getSyncKey, apiFetch } from './api';
-import { HabitService } from './HabitService';
 
 const DEBOUNCE_DELAY = 2000;
 const WORKER_TIMEOUT_MS = 30000;
@@ -24,7 +23,7 @@ let syncWorker: Worker | null = null;
 const workerCallbacks = new Map<string, { resolve: (val: any) => void, reject: (err: any) => void, timer: any }>();
 
 function terminateWorker(reason: string) {
-    console.warn(`[Cloud] Terminating worker: ${reason}`);
+    // console.debug(`[Cloud] Terminating worker: ${reason}`); // Verbose debug off
     syncWorker?.terminate();
     syncWorker = null;
     workerCallbacks.forEach(cb => { clearTimeout(cb.timer); cb.reject(new Error(`Worker Reset: ${reason}`)); });
@@ -47,14 +46,10 @@ function getWorker(): Worker {
         };
         
         syncWorker.onerror = (e: any) => {
-            let msg = 'Unknown Worker Error';
-            if (e instanceof ErrorEvent) {
-                msg = e.message || e.error?.message || 'Script Error';
-            } else if (e instanceof Event) {
-                msg = 'Worker Script Load Failed (Check network/path)';
-            }
-            console.error(`[Cloud] Worker Error: ${msg}`, e);
-            terminateWorker("Crash");
+            // ZERO-KNOWLEDGE LOGGING: Não expor detalhes sensíveis, apenas o tipo de erro.
+            const msg = (e instanceof ErrorEvent) ? (e.message || 'Script Error') : 'Worker Load Failed';
+            console.error(`[Cloud] Worker Fault: ${msg}`);
+            terminateWorker("Crash/Error");
         };
     }
     return syncWorker;
@@ -74,9 +69,15 @@ export const prewarmWorker = () => getWorker();
 export function runWorkerTask<T>(type: string, payload: any, key?: string): Promise<T> {
     return new Promise((resolve, reject) => {
         const id = generateUUID();
-        const timer = setTimeout(() => { if (workerCallbacks.has(id)) terminateWorker(`Timeout:${type}`); }, WORKER_TIMEOUT_MS);
+        const timer = setTimeout(() => { 
+            if (workerCallbacks.has(id)) terminateWorker(`Timeout:${type}`); 
+        }, WORKER_TIMEOUT_MS);
+        
         workerCallbacks.set(id, { resolve, reject, timer });
+        
         try {
+            // TRANSFERÊNCIA DE MEMÓRIA: Se payload contiver ArrayBuffers transferíveis,
+            // poderíamos otimizar aqui no futuro (postMessage(msg, [buffers])).
             getWorker().postMessage({ id, type, payload, key });
         } catch (e) {
             clearTimeout(timer);
@@ -107,22 +108,18 @@ async function resolveConflictWithServerState(serverPayload: { lastModified: num
     try {
         const serverState = await runWorkerTask<AppState>('decrypt', serverPayload.state, key);
         
-        // HYDRATION: Ensure logs are loaded into the server state object before merge
-        if (serverState.monthlyLogsSerialized) {
-            // Note: mergeStates typically handles JSON structures. 
-            // We rely on mergeStates being able to merge the serializable properties.
-            // If mergeStates expects monthlyLogs (Map), we might need to hydrate it.
-            // For now, let's assume mergeStates handles the 'dailyData' and 'habits'.
-            // The bitmask logs might need specific merging if we want granular conflict resolution there.
-            // Currently, mergeStates focuses on the object graph.
-        }
-
+        // MERGE NO WORKER: O worker deve ser capaz de lidar com a fusão de estruturas complexas
+        // incluindo a reconciliação dos novos Bitmasks (monthlyLogs) se implementado no dataMerge.ts
         const merged = await runWorkerTask<AppState>('merge', { local: getPersistableState(), incoming: serverState });
         
         if (merged.lastModified <= serverPayload.lastModified) merged.lastModified = serverPayload.lastModified + 1;
         
+        // PERSISTÊNCIA BINÁRIA: Salva o resultado fundido
         await persistStateLocally(merged);
+        
+        // HIDRATAÇÃO: Recarrega para a memória, convertendo Bitmasks se necessário
         await loadState(merged);
+        
         document.dispatchEvent(new CustomEvent('render-app'));
         setSyncStatus('syncSynced');
         document.dispatchEvent(new CustomEvent('habitsChanged'));
@@ -188,11 +185,13 @@ async function _performSync(currentState: AppState) {
     setSyncStatus('syncSaving');
     
     try {
-        // INJECTION: Attach serialized logs to the payload since getPersistableState doesn't include them anymore.
-        const serializedLogs = HabitService.serializeLogsForCloud();
+        // ZERO-GC NO HOT PATH:
+        // Enviamos o estado bruto + monthlyLogs (Map<string, bigint>) diretamente para o Worker.
+        // O algoritmo de clonagem estruturada suporta Maps e BigInts nativamente.
+        // A conversão cara (BigInt -> Hex String) ocorre exclusivamente na thread do Worker.
         const payloadToEncrypt = { 
             ...currentState, 
-            monthlyLogsSerialized: serializedLogs 
+            monthlyLogs: state.monthlyLogs 
         };
 
         const encryptedState = await runWorkerTask<string>('encrypt', payloadToEncrypt, key);
@@ -211,6 +210,11 @@ async function _performSync(currentState: AppState) {
             setSyncStatus('syncSynced');
             state.syncLastError = null;
             syncFailCount = 0;
+            
+            // RAM SAVER: Se não há mais sincronizações pendentes, mata o worker.
+            if (!pendingSyncState) {
+                terminateWorker("Sync Complete");
+            }
         } else if (res.status === 409) {
             const serverData = await res.json();
             await resolveConflictWithServerState(serverData);

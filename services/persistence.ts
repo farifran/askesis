@@ -15,8 +15,10 @@ import { HabitService } from './HabitService';
 
 const DB_NAME = 'AskesisDB', DB_VERSION = 1, STORE_NAME = 'app_state';
 const LEGACY_STORAGE_KEY = 'habitTrackerState_v1';
-const KEY_MAIN = 'askesis_state_main';
-const KEY_LOGS = 'askesis_state_logs';
+
+// FASE 3: SPLIT STORAGE KEYS
+const STATE_JSON_KEY = 'askesis_core_json';
+const STATE_BINARY_KEY = 'askesis_logs_binary';
 
 const DB_OPEN_TIMEOUT_MS = 15000, IDB_SAVE_DEBOUNCE_MS = 500;
 let dbPromise: Promise<IDBDatabase> | null = null, saveTimeout: number | undefined;
@@ -69,8 +71,8 @@ async function saveSplitState(main: AppState, logs: Map<string, ArrayBuffer>): P
         const tx = db.transaction(STORE_NAME, 'readwrite');
         const store = tx.objectStore(STORE_NAME);
         
-        store.put(main, KEY_MAIN);
-        store.put(logs, KEY_LOGS);
+        store.put(main, STATE_JSON_KEY);
+        store.put(logs, STATE_BINARY_KEY);
         
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error);
@@ -101,21 +103,23 @@ function pruneOrphanedDailyData(habits: readonly Habit[], dailyData: Record<stri
 }
 
 async function saveStateInternal() {
-    // 1. Full State (Raw)
-    const fullData = getPersistableState();
+    // 1. Full State (Structured JSON Data Only)
+    // O getPersistableState já remove monthlyLogsSerialized, mantendo apenas metadados leves.
+    const structuredData = getPersistableState();
     
-    // 2. Optimized State (para Local IDB)
-    // Empacota logs como binário puro para o IndexedDB
+    // 2. Binary Logs (Raw Bytes)
+    // Extrai o Map<string, ArrayBuffer> para salvar como BLOB nativo.
     const binaryLogs = HabitService.packBinaryLogs();
     
     try {
-        await saveSplitState(fullData, binaryLogs);
+        await saveSplitState(structuredData, binaryLogs);
     } catch (e) { 
         console.error("IDB Save Failed:", e); 
     }
     
-    // 3. Trigger Sync (O Sync Worker cuida da serialização JSON/Hex)
-    syncHandler?.(fullData);
+    // 3. Trigger Sync
+    // O Sync Worker receberá o structuredData e solicitará o packBinaryLogs novamente se necessário para criptografia.
+    syncHandler?.(structuredData);
 }
 
 export async function flushSaveBuffer(): Promise<void> {
@@ -150,8 +154,8 @@ export async function loadState(cloudState?: AppState): Promise<AppState | null>
                 const tx = db.transaction(STORE_NAME, 'readonly');
                 const store = tx.objectStore(STORE_NAME);
                 
-                const reqMain = store.get(KEY_MAIN);
-                const reqLogs = store.get(KEY_LOGS);
+                const reqMain = store.get(STATE_JSON_KEY);
+                const reqLogs = store.get(STATE_BINARY_KEY);
                 
                 tx.oncomplete = () => {
                     mainState = reqMain.result;
@@ -201,16 +205,18 @@ export async function loadState(cloudState?: AppState): Promise<AppState | null>
         // @fix: The type 'readonly string[]' is 'readonly' and cannot be assigned to the mutable type 'string[]'.
         state.pendingConsolidationHabitIds = [...(migrated.pendingConsolidationHabitIds || [])];
         
-        // --- HIDRATAÇÃO DO BITMASK ---
+        // --- HIDRATAÇÃO DO BITMASK (PRIORIDADE BINÁRIA) ---
         if (binaryLogs instanceof Map) {
-            // [A] Fast Path: Restaura direto do binário (Zero Copy)
+            // [A] Fast Path: Restaura direto do binário (Zero Copy / Zero String Parsing)
             HabitService.unpackBinaryLogs(binaryLogs);
-            console.log(`[Persistence] Bitmasks binários carregados: ${binaryLogs.size} meses.`);
-        } else if (migrated.monthlyLogsSerialized && Array.isArray(migrated.monthlyLogsSerialized)) {
-            // [B] Cloud Sync Path: Importa do JSON (Hex Strings)
-            // Isso acontece quando carregamos dados vindos da nuvem (via loadState(cloudState))
-            console.log("[Persistence] Importando logs serializados da nuvem...");
-            HabitService.deserializeLogsFromCloud(migrated.monthlyLogsSerialized);
+            //console.log(`[Persistence] Bitmasks binários carregados: ${binaryLogs.size} meses.`);
+        } else if ((migrated as any).monthlyLogsSerialized && Array.isArray((migrated as any).monthlyLogsSerialized)) {
+            // [B] Cloud Sync/Legacy Path: Importa do JSON (Hex Strings)
+            // Isso acontece quando carregamos dados vindos da nuvem (via loadState(cloudState)) ou primeira migração.
+            console.log("[Persistence] Migrando logs legados/nuvem para binário...");
+            HabitService.deserializeLogsFromCloud((migrated as any).monthlyLogsSerialized);
+            // Cleanup memory immediate
+            delete (migrated as any).monthlyLogsSerialized;
         } else {
             // Init empty
             state.monthlyLogs = new Map();
@@ -225,8 +231,8 @@ export async function loadState(cloudState?: AppState): Promise<AppState | null>
 
 export const clearLocalPersistence = () => Promise.all([
     performIDB('readwrite', s => {
-        s.delete(KEY_MAIN);
-        s.delete(KEY_LOGS);
+        s.delete(STATE_JSON_KEY);
+        s.delete(STATE_BINARY_KEY);
         s.delete(LEGACY_STORAGE_KEY);
         return {} as any; // Dummy
     }), 

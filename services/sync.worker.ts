@@ -7,12 +7,17 @@
 /**
  * @file services/sync.worker.ts
  * @description Web Worker para Processamento Pesado (CPU-Bound Tasks).
+ * Agora suporta Arquitetura de Bitmasks, Serialização Binária e Cifragem Zero-Copy.
  */
 
 import type { AppState, Habit, HabitDailyInfo, TimeOfDay, HabitSchedule } from '../state';
-import { toUTCIsoDateString, parseUTCIsoDate, decompressString, MS_PER_DAY, compressString } from '../utils';
-import { encrypt, decrypt } from './crypto';
+import { toUTCIsoDateString, parseUTCIsoDate, decompressString, MS_PER_DAY, compressString, compressToBuffer, decompressFromBuffer, arrayBufferToBase64, base64ToArrayBuffer } from '../utils';
+import { encrypt, decrypt, decryptToBuffer } from './crypto';
 import { mergeStates } from './dataMerge';
+
+// --- CONSTANTS (Bitmask Logic copy for Isolation) ---
+const PERIOD_OFFSET: Record<string, number> = { 'Morning': 0, 'Afternoon': 2, 'Evening': 4 };
+const HABIT_STATE = { NULL: 0, DONE: 1, DEFERRED: 2, DONE_PLUS: 3 };
 
 // --- TYPES ---
 
@@ -21,6 +26,7 @@ type AIPromptPayload = {
     habits: Habit[];
     dailyData: AppState['dailyData'];
     archives: AppState['archives'];
+    monthlyLogs?: Map<string, bigint>; // NOVO: Bitmasks
     languageName: string;
     translations: {
         promptTemplate: string;
@@ -73,6 +79,104 @@ const unarchivedCache = new Map<string, any>();
 const _anchorDateCache = new Map<string, Date>();
 const MAX_WORKER_CACHE_SIZE = 5; // Limita RAM do worker
 
+// --- BITMASK HELPERS ---
+
+function _getLogKey(habitId: string, dateISO: string): string {
+    return `${habitId}_${dateISO.substring(0, 7)}`; // ID_YYYY-MM
+}
+
+/**
+ * Lê o status de um hábito diretamente do Bitmask (BigInt).
+ * Retorna HABIT_STATE.NULL (0) se não encontrado.
+ */
+function _getStatusFromBitmask(habitId: string, dateISO: string, time: TimeOfDay, logs?: Map<string, bigint>): number {
+    if (!logs) return HABIT_STATE.NULL;
+    const key = _getLogKey(habitId, dateISO);
+    const log = logs.get(key);
+    
+    if (log !== undefined) {
+        const day = parseInt(dateISO.substring(8, 10), 10);
+        // Aritmética de ponteiro: (Dia - 1) * 6 bits + Offset do Período
+        const bitPos = BigInt(((day - 1) * 6) + PERIOD_OFFSET[time]);
+        // Extrai 2 bits e converte para número
+        return Number((log >> bitPos) & 0b11n);
+    }
+    return HABIT_STATE.NULL;
+}
+
+// --- CLOUD SERIALIZATION HELPERS ---
+
+/**
+ * JSON Replacer Inteligente:
+ * - Converte Map (monthlyLogs) para Array de Hex Strings.
+ * - Converte Uint8Array (Archives Binários) para Base64 com prefixo 'B64:'.
+ * - Mantém o resto intacto.
+ */
+function cloudReplacer(key: string, value: any) {
+    // 1. Map -> Array (monthlyLogs específico com BigInt -> Hex)
+    if (key === 'monthlyLogs' && value instanceof Map) {
+        return Array.from(value.entries()).map(([k, v]) => {
+            // Conversão BigInt -> Hex String
+            return [k, typeof v === 'bigint' ? v.toString(16) : v];
+        });
+    }
+    
+    // 2. Uint8Array -> Base64 (Archives/Binaries)
+    if (value instanceof Uint8Array) {
+        // Segurança: Garante que estamos pegando o buffer correto
+        // Se for um subarray (view), copiamos para garantir apenas os dados relevantes
+        if (value.byteLength !== value.buffer.byteLength) {
+             const copy = new Uint8Array(value);
+             return 'B64:' + arrayBufferToBase64(copy.buffer);
+        }
+        return 'B64:' + arrayBufferToBase64(value.buffer);
+    }
+    
+    // 3. Fallback genérico para BigInt isolados (não esperados, mas seguro ter)
+    if (typeof value === 'bigint') {
+        return value.toString();
+    }
+    
+    return value;
+}
+
+/**
+ * JSON Reviver Inteligente:
+ * - Restaura Base64 (prefixo 'B64:') para Uint8Array.
+ * - Restaura monthlyLogs para Map<string, bigint>.
+ */
+function cloudReviver(key: string, value: any) {
+    // 1. Base64 -> Uint8Array
+    if (typeof value === 'string' && value.startsWith('B64:')) {
+        try {
+            return new Uint8Array(base64ToArrayBuffer(value.substring(4)));
+        } catch (e) {
+            console.warn("Falha ao reviver binário B64", e);
+            return value; // Retorna original se falhar
+        }
+    }
+    
+    // 2. Array -> Map (monthlyLogs)
+    if (key === 'monthlyLogs' && Array.isArray(value)) {
+        const map = new Map<string, bigint>();
+        for (const [k, v] of value) {
+            if (typeof v === 'string') {
+                try {
+                    // Reconstrói BigInt a partir de Hex ("0x" + string)
+                    map.set(k, BigInt("0x" + v));
+                } catch (e) {
+                    // Ignora entradas malformadas
+                }
+            }
+        }
+        return map;
+    }
+    
+    return value;
+}
+
+// --- CORE LOGIC ---
+
 function _getScheduleForDateInWorker(habit: Habit, dateISO: string): HabitSchedule | null {
     const history = habit.scheduleHistory;
     for (let i = 0; i < history.length; i++) {
@@ -88,15 +192,27 @@ function getHabitDisplayInfo(habit: Habit, translations: Record<string, string>,
     return { name: schedule.name || habit.id };
 }
 
+// HYBRID READER: Handles Uint8Array and String (GZIP/JSON)
 const getDailyDataForDate = async (dateStr: string, dailyData: AppState['dailyData'], archives: AppState['archives']): Promise<Record<string, HabitDailyInfo>> => {
     if (dailyData[dateStr]) return dailyData[dateStr];
     const year = dateStr.substring(0, 4);
     if (unarchivedCache.has(year)) return unarchivedCache.get(year)[dateStr] || {};
 
-    if (archives[year]) {
+    const raw = archives[year];
+    if (raw) {
         try {
-            const raw = archives[year];
-            const parsed = raw.startsWith('GZIP:') ? JSON.parse(await decompressString(raw.substring(5))) : JSON.parse(raw);
+            let parsed: any;
+            // 1. Binary Path
+            if (raw instanceof Uint8Array) {
+                const json = await decompressFromBuffer(raw);
+                parsed = JSON.parse(json);
+            } 
+            // 2. Legacy String Path
+            else if (typeof raw === 'string') {
+                parsed = raw.startsWith('GZIP:') ? JSON.parse(await decompressString(raw.substring(5))) : JSON.parse(raw);
+            } else {
+                return {};
+            }
             
             // MEMORY GUARD: Poda do cache se exceder limite.
             if (unarchivedCache.size >= MAX_WORKER_CACHE_SIZE) {
@@ -137,24 +253,52 @@ function _shouldHabitAppearOnDateInWorker(habit: Habit, dateISO: string, prePars
     return false;
 }
 
-async function _isHabitConsistentlyDoneInWorker(habit: Habit, dateISO: string, dailyData: AppState['dailyData'], archives: AppState['archives']): Promise<boolean> {
+async function _isHabitConsistentlyDoneInWorker(habit: Habit, dateISO: string, dailyData: AppState['dailyData'], archives: AppState['archives'], monthlyLogs?: Map<string, bigint>): Promise<boolean> {
     const schedule = (_getScheduleForDateInWorker(habit, dateISO))?.times || [];
     if (schedule.length === 0) return true;
+
+    // 1. Bitmask Check (Fast Path)
+    // Se tivermos logs binários, usamos eles prioritariamente.
+    if (monthlyLogs) {
+        let allDone = true;
+        let hasBitData = false;
+        
+        for (const time of schedule) {
+            const status = _getStatusFromBitmask(habit.id, dateISO, time as TimeOfDay, monthlyLogs);
+            if (status !== HABIT_STATE.NULL) {
+                hasBitData = true;
+                // DONE (1) ou DONE_PLUS (3) são válidos.
+                if (status === HABIT_STATE.NULL) { // Se for NULL (Pendente)
+                    allDone = false;
+                    break;
+                }
+            } else {
+                // Se não tem dado no bitmask, pode ser um dia antigo não migrado.
+                // Precisamos cair no fallback JSON.
+                hasBitData = false;
+                break; 
+            }
+        }
+        if (hasBitData) return allDone;
+    }
+
+    // 2. Legacy JSON Check (Slow Path)
     const dayRecord = await getDailyDataForDate(dateISO, dailyData, archives), dailyInfo = dayRecord[habit.id];
     for (const time of schedule) {
-        const s = dailyInfo?.instances[time]?.status;
+        // TYPE CASTING: Acessando propriedade legada 'status' de forma insegura, pois foi removida da interface.
+        const s = (dailyInfo?.instances[time] as any)?.status;
         if (s !== 'completed' && s !== 'snoozed') return false;
     }
     return true;
 }
 
-async function _calculateHabitStreakInWorker(habit: Habit, endDateISO: string, dailyData: AppState['dailyData'], archives: AppState['archives']): Promise<number> {
+async function _calculateHabitStreakInWorker(habit: Habit, endDateISO: string, dailyData: AppState['dailyData'], archives: AppState['archives'], monthlyLogs?: Map<string, bigint>): Promise<number> {
     let streak = 0, currentTimestamp = parseUTCIsoDate(endDateISO).getTime();
     for (let i = 0; i < 365; i++) {
         const iterDate = new Date(currentTimestamp), currentISO = toUTCIsoDateString(iterDate);
         if (currentISO < habit.createdOn) break;
         if (_shouldHabitAppearOnDateInWorker(habit, currentISO, iterDate)) {
-            if (await _isHabitConsistentlyDoneInWorker(habit, currentISO, dailyData, archives)) streak++;
+            if (await _isHabitConsistentlyDoneInWorker(habit, currentISO, dailyData, archives, monthlyLogs)) streak++;
             else break;
         }
         currentTimestamp -= MS_PER_DAY;
@@ -162,30 +306,52 @@ async function _calculateHabitStreakInWorker(habit: Habit, endDateISO: string, d
     return streak;
 }
 
-async function _calculateSuccessRateInWorker(habit: Habit, todayISO: string, dailyData: AppState['dailyData'], archives: AppState['archives'], days: number): Promise<number> {
+async function _calculateSuccessRateInWorker(habit: Habit, todayISO: string, dailyData: AppState['dailyData'], archives: AppState['archives'], monthlyLogs: Map<string, bigint> | undefined, days: number): Promise<number> {
     let total = 0, done = 0, currentTimestamp = parseUTCIsoDate(todayISO).getTime();
     for (let i = 0; i < days; i++) {
         const iterDate = new Date(currentTimestamp), currentISO = toUTCIsoDateString(iterDate);
         if (currentISO < habit.createdOn) break;
         if (_shouldHabitAppearOnDateInWorker(habit, currentISO, iterDate)) {
             total++;
-            if (await _isHabitConsistentlyDoneInWorker(habit, currentISO, dailyData, archives)) done++;
+            // Note: Reuse consistency check which treats snoozed as "kept streak". 
+            // For strict success rate, usually snoozed counts as 0.5 or 0 depending on logic.
+            // Keeping consistent with previous logic: count as "done" for general consistency metric.
+            if (await _isHabitConsistentlyDoneInWorker(habit, currentISO, dailyData, archives, monthlyLogs)) done++;
         }
         currentTimestamp -= MS_PER_DAY;
     }
     return total > 0 ? Math.round((done / total) * 100) : 0;
 }
 
-async function _getHistoryForPrompt(days: number, habits: Habit[], dailyData: AppState['dailyData'], archives: AppState['archives'], todayISO: string): Promise<string> {
+async function _getHistoryForPrompt(days: number, habits: Habit[], dailyData: AppState['dailyData'], archives: AppState['archives'], monthlyLogs: Map<string, bigint> | undefined, todayISO: string): Promise<string> {
     let history = ''; const date = parseUTCIsoDate(todayISO);
     for (let i = 0; i < days; i++) {
-        const currentISO = toUTCIsoDateString(date), dayRecord = await getDailyDataForDate(currentISO, dailyData, archives);
+        const currentISO = toUTCIsoDateString(date);
+        
+        // Carrega dados JSON apenas se necessário
+        const dayRecord = await getDailyDataForDate(currentISO, dailyData, archives);
+
         const dayHistory = habits.map(h => {
             const sch = (_getScheduleForDateInWorker(h, currentISO))?.times || [];
             if (sch.length === 0) return null;
-            const inst = dayRecord[h.id]?.instances || {};
-            return sch.map(t => inst[t]?.status === 'completed' ? '✅' : (inst[t]?.status === 'snoozed' ? '➡️' : '⚪️')).join('');
+            
+            return sch.map(t => {
+                // 1. Bitmask Check
+                const bitStatus = _getStatusFromBitmask(h.id, currentISO, t as TimeOfDay, monthlyLogs);
+                if (bitStatus !== HABIT_STATE.NULL) {
+                    if (bitStatus === HABIT_STATE.DONE || bitStatus === HABIT_STATE.DONE_PLUS) return '✅';
+                    if (bitStatus === HABIT_STATE.DEFERRED) return '➡️';
+                    return '⚪️';
+                }
+
+                // 2. Legacy Check
+                const inst = dayRecord[h.id]?.instances || {};
+                // TYPE CASTING: Acessando propriedade legada 'status'.
+                const s = (inst[t] as any)?.status;
+                return s === 'completed' ? '✅' : (s === 'snoozed' ? '➡️' : '⚪️');
+            }).join('');
         }).filter(Boolean).join(' | ');
+        
         if (dayHistory) history += `${currentISO}: ${dayHistory}\n`;
         date.setUTCDate(date.getUTCDate() - 1);
     }
@@ -206,7 +372,7 @@ async function _getNotesForPrompt(dailyData: AppState['dailyData'], archives: Ap
 }
 
 async function buildAIPrompt(payload: AIPromptPayload) {
-    const { analysisType: type, habits, dailyData, archives, languageName, translations: t, todayISO } = payload;
+    const { analysisType: type, habits, dailyData, archives, monthlyLogs, languageName, translations: t, todayISO } = payload;
     unarchivedCache.clear(); _anchorDateCache.clear();
 
     const active = habits.filter(h => !h.graduatedOn && !h.scheduleHistory[h.scheduleHistory.length - 1].endDate);
@@ -217,8 +383,8 @@ async function buildAIPrompt(payload: AIPromptPayload) {
         let res = '';
         for (const h of list) {
             const { name } = getHabitDisplayInfo(h, t, todayISO);
-            const streak = await _calculateHabitStreakInWorker(h, todayISO, dailyData, archives);
-            const success = await _calculateSuccessRateInWorker(h, todayISO, dailyData, archives, type === 'quarterly' ? 90 : (type === 'historical' ? 365 : 30));
+            const streak = await _calculateHabitStreakInWorker(h, todayISO, dailyData, archives, monthlyLogs);
+            const success = await _calculateSuccessRateInWorker(h, todayISO, dailyData, archives, monthlyLogs, type === 'quarterly' ? 90 : (type === 'historical' ? 365 : 30));
             
             let historySummary = '';
             if (h.scheduleHistory && h.scheduleHistory.length > 1) {
@@ -265,7 +431,7 @@ async function buildAIPrompt(payload: AIPromptPayload) {
     };
     
     const notes = await _getNotesForPrompt(dailyData, archives, todayISO);
-    const history = await _getHistoryForPrompt(type === 'quarterly' ? 90 : (type === 'historical' ? 180 : 30), active, dailyData, archives, todayISO);
+    const history = await _getHistoryForPrompt(type === 'quarterly' ? 90 : (type === 'historical' ? 180 : 30), active, dailyData, archives, monthlyLogs, todayISO);
 
     const prompt = t.promptTemplate
         .replace('{activeHabitDetails}', await getDetails(active))
@@ -291,21 +457,28 @@ async function buildQuoteAnalysisPrompt(payload: QuoteAnalysisPayload) {
 
 async function pruneHabitFromArchives(payload: { habitId: string, archives: AppState['archives'], startYear: number }) {
     const { habitId, archives, startYear } = payload;
-    const updates: Record<string, string> = {};
+    const updates: Record<string, string | Uint8Array> = {};
     const currentYear = new Date().getUTCFullYear();
 
     for (let y = startYear; y <= currentYear; y++) {
         const yearKey = String(y);
-        if (!archives[yearKey]) continue;
+        const raw = archives[yearKey];
+        if (!raw) continue;
 
         try {
-            const raw = archives[yearKey];
             let data: Record<string, HabitDailyInfo>;
             
-            if (raw.startsWith('GZIP:')) {
-                data = JSON.parse(await decompressString(raw.substring(5)));
+            // Hybrid Read
+            if (raw instanceof Uint8Array) {
+                data = JSON.parse(await decompressFromBuffer(raw));
+            } else if (typeof raw === 'string') {
+                if (raw.startsWith('GZIP:')) {
+                    data = JSON.parse(await decompressString(raw.substring(5)));
+                } else {
+                    data = JSON.parse(raw);
+                }
             } else {
-                data = JSON.parse(raw);
+                continue;
             }
 
             let dirty = false;
@@ -325,19 +498,22 @@ async function pruneHabitFromArchives(payload: { habitId: string, archives: AppS
                 if (Object.keys(data).length === 0) {
                     updates[yearKey] = ""; // Signal deletion
                 } else {
-                    const compressed = await compressString(JSON.stringify(data));
-                    updates[yearKey] = `GZIP:${compressed}`;
+                    // BINARY WRITE: Compress to Uint8Array (No Base64 overhead)
+                    const compressed = await compressToBuffer(JSON.stringify(data));
+                    updates[yearKey] = compressed;
                 }
             }
         } catch (e) {
             console.error(`Prune error for year ${y}`, e);
         }
     }
+    // Clean up cache after heavy op
+    unarchivedCache.clear();
     return updates;
 }
 
-async function processArchival(buckets: Record<string, { additions: Record<string, HabitDailyInfo>, base: string | undefined }>) {
-    const updates: Record<string, string> = {};
+async function processArchival(buckets: Record<string, { additions: Record<string, HabitDailyInfo>, base: string | Uint8Array | undefined }>) {
+    const updates: Record<string, string | Uint8Array> = {};
     
     for (const year in buckets) {
         const { additions, base } = buckets[year];
@@ -345,37 +521,62 @@ async function processArchival(buckets: Record<string, { additions: Record<strin
         
         try {
             if (base) {
-                if (base.startsWith('GZIP:')) {
-                    currentData = JSON.parse(await decompressString(base.substring(5)));
-                } else {
-                    currentData = JSON.parse(base);
+                // Hybrid Read
+                if (base instanceof Uint8Array) {
+                    currentData = JSON.parse(await decompressFromBuffer(base));
+                } else if (typeof base === 'string') {
+                    if (base.startsWith('GZIP:')) {
+                        currentData = JSON.parse(await decompressString(base.substring(5)));
+                    } else {
+                        currentData = JSON.parse(base);
+                    }
                 }
             }
 
             Object.assign(currentData, additions);
             
-            const compressed = await compressString(JSON.stringify(currentData));
-            updates[year] = `GZIP:${compressed}`;
+            // BINARY WRITE: Compress to Uint8Array
+            const compressed = await compressToBuffer(JSON.stringify(currentData));
+            updates[year] = compressed;
         } catch (e) {
             console.error(`Archival error for year ${year}`, e);
         }
     }
+    // Clean up cache after heavy op
+    unarchivedCache.clear();
     return updates;
 }
+
+// --- MAIN LISTENER ---
 
 self.onmessage = async (e: MessageEvent<any>) => {
     const { id, type, payload, key } = e.data;
     try {
         let result;
         if (type === 'encrypt') {
-            const jsonString = JSON.stringify(payload);
-            const compressed = await compressString(jsonString);
-            result = await encrypt(compressed, key);
+            // ZERO-GC OPTIMIZATION: Usamos um replacer customizado para serializar Map e Uint8Array
+            // diretamente para formatos "Cloud-Friendly" durante o stringify, evitando a criação de objetos intermediários.
+            const jsonString = JSON.stringify(payload, cloudReplacer);
+            
+            // ZERO-BASE64 OPTIMIZATION:
+            // 1. Comprime JSON -> ArrayBuffer (GZIP)
+            const compressedBuffer = await compressToBuffer(jsonString);
+            
+            // 2. Cifra ArrayBuffer -> JSON { salt, iv, encrypted }
+            // A função 'encrypt' do módulo crypto.ts agora aceita ArrayBuffer como entrada
+            // e faz a encriptação diretamente sobre os bytes comprimidos, sem converter para Base64 intermediário.
+            result = await encrypt(compressedBuffer, key);
         }
         else if (type === 'decrypt') {
-            const decrypted = await decrypt(payload, key);
-            const decompressed = await decompressString(decrypted);
-            result = JSON.parse(decompressed);
+            // ZERO-BASE64 OPTIMIZATION:
+            // 1. Decifra JSON { salt, iv, encrypted } -> ArrayBuffer (GZIP)
+            const decryptedBuffer = await decryptToBuffer(payload, key);
+            
+            // 2. Descomprime ArrayBuffer -> JSON String
+            const decompressedJSON = await decompressFromBuffer(decryptedBuffer);
+            
+            // 3. Parse com Reviver para restaurar tipos Binários (Map, Uint8Array)
+            result = JSON.parse(decompressedJSON, cloudReviver);
         }
         else if (type === 'build-ai-prompt') result = await buildAIPrompt(payload);
         else if (type === 'build-quote-analysis-prompt') result = await buildQuoteAnalysisPrompt(payload);
@@ -383,6 +584,7 @@ self.onmessage = async (e: MessageEvent<any>) => {
         else if (type === 'prune-habit') result = await pruneHabitFromArchives(payload);
         else if (type === 'archive') result = await processArchival(payload);
         else throw new Error(`Unknown type: ${type}`);
+        
         self.postMessage({ id, status: 'success', result });
     } catch (err: any) {
         self.postMessage({ id, status: 'error', error: err.message });
