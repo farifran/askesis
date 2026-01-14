@@ -151,17 +151,18 @@ export function hexToArrayBuffer(hex: string): ArrayBuffer {
 // --- GZIP COMPRESSION (NATIVE BINARY) ---
 
 /**
- * Comprime uma string ou buffer para um Uint8Array GZIP.
+ * Comprime uma string para um Uint8Array GZIP.
  * Retorna um formato binário puro, ideal para armazenamento (IndexedDB).
  */
-export async function compressToBuffer(data: string | Uint8Array): Promise<Uint8Array> {
+export async function compressToBuffer(data: string): Promise<Uint8Array> {
     if (typeof CompressionStream === 'undefined') {
-        throw new Error("CompressionStream not supported on this device.");
+        throw new Error("CompressionStream not supported.");
     }
     const stream = new Blob([data]).stream();
-    const compressedReadableStream = stream.pipeThrough(new CompressionStream('gzip'));
-    const compressedResponse = new Response(compressedReadableStream);
-    const arrayBuffer = await compressedResponse.arrayBuffer();
+    const compressedStream = stream.pipeThrough(new CompressionStream('gzip'));
+    const response = new Response(compressedStream);
+    const blob = await response.blob();
+    const arrayBuffer = await blob.arrayBuffer();
     return new Uint8Array(arrayBuffer);
 }
 
@@ -176,20 +177,23 @@ export async function compressString(data: string): Promise<string> {
 
 /**
  * Descomprime um Buffer Binário GZIP diretamente para string.
- * Aceita BufferSource (ArrayBuffer ou ArrayBufferView) para flexibilidade.
+ * Aceita Uint8Array ou ArrayBuffer para flexibilidade.
  */
-export async function decompressFromBuffer(buffer: BufferSource): Promise<string> {
+export async function decompressFromBuffer(compressed: Uint8Array | ArrayBuffer): Promise<string> {
     if (typeof DecompressionStream === 'undefined') {
-        throw new Error("DecompressionStream not supported on this device.");
+        throw new Error("DecompressionStream not supported.");
     }
     try {
+        // Garante que é um buffer válido para o Blob (Uint8Array ou ArrayBuffer são aceitos, 
+        // mas normalizamos para Uint8Array para consistência)
+        const buffer = (compressed instanceof Uint8Array) ? compressed : new Uint8Array(compressed);
         const stream = new Blob([buffer]).stream();
         const decompressedStream = stream.pipeThrough(new DecompressionStream('gzip'));
         const response = new Response(decompressedStream);
         return await response.text();
     } catch (e) {
-        console.error("Decompression failed", e);
-        throw new Error("Failed to decompress data.");
+        console.error("Binary Decompression failed", e);
+        throw new Error("Failed to decompress binary data.");
     }
 }
 

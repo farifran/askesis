@@ -106,18 +106,36 @@ async function resolveConflictWithServerState(serverPayload: { lastModified: num
     const key = _getAuthKey();
     if (!key) return;
     try {
-        const serverState = await runWorkerTask<AppState>('decrypt', serverPayload.state, key);
+        // 1. Decrypt (Any type because it might contain Hex Strings)
+        const serverState: any = await runWorkerTask<AppState>('decrypt', serverPayload.state, key);
         
-        // MERGE NO WORKER: O worker deve ser capaz de lidar com a fusão de estruturas complexas
-        // incluindo a reconciliação dos novos Bitmasks (monthlyLogs) se implementado no dataMerge.ts
-        const merged = await runWorkerTask<AppState>('merge', { local: getPersistableState(), incoming: serverState });
+        // 2. HYDRATION FIX: Convert Hex Logs from Server to BigInt Map
+        if (serverState.monthlyLogsSerialized && Array.isArray(serverState.monthlyLogsSerialized)) {
+            const map = new Map<string, bigint>();
+            serverState.monthlyLogsSerialized.forEach(([k, v]: [string, string]) => {
+                const hex = v.startsWith('0x') ? v : '0x' + v;
+                map.set(k, BigInt(hex));
+            });
+            serverState.monthlyLogs = map;
+            delete serverState.monthlyLogsSerialized; // Clean up
+        }
+
+        // 3. DATA LOSS FIX: Re-inject local logs
+        // getPersistableState strips logs; we must add them back for the merge logic.
+        const localFullState = { 
+            ...getPersistableState(), 
+            monthlyLogs: state.monthlyLogs 
+        };
+        
+        // 4. Merge
+        const merged = await runWorkerTask<AppState>('merge', { 
+            local: localFullState, 
+            incoming: serverState 
+        });
         
         if (merged.lastModified <= serverPayload.lastModified) merged.lastModified = serverPayload.lastModified + 1;
         
-        // PERSISTÊNCIA BINÁRIA: Salva o resultado fundido
         await persistStateLocally(merged);
-        
-        // HIDRATAÇÃO: Recarrega para a memória, convertendo Bitmasks se necessário
         await loadState(merged);
         
         document.dispatchEvent(new CustomEvent('render-app'));
