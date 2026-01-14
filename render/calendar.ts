@@ -114,10 +114,11 @@ export function renderFullCalendar() {
         const r = el.firstElementChild as HTMLElement, n = r.firstElementChild as HTMLElement;
         n.textContent = formatInteger(d);
         if (iso) {
-            const { completedPercent: cp, snoozedPercent: sp } = calculateDaySummary(iso, parseUTCIsoDate(iso));
+            const { completedPercent: cp, snoozedPercent: sp, showPlusIndicator: plus } = calculateDaySummary(iso, parseUTCIsoDate(iso));
             r.style.setProperty('--completed-percent', `${cp}%`); r.style.setProperty('--snoozed-percent', `${sp}%`);
             el.dataset.date = iso; el.classList.toggle(CSS_CLASSES.SELECTED, iso === state.selectedDate);
             el.classList.toggle(CSS_CLASSES.TODAY, iso === getTodayUTCIso());
+            n.classList.toggle('has-plus', plus);
         }
         frag.appendChild(el);
     };

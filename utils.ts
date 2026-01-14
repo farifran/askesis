@@ -126,13 +126,35 @@ export function base64ToArrayBuffer(base64: string): ArrayBuffer {
     return bytes.buffer;
 }
 
+// --- HEX HELPERS ---
+export function arrayBufferToHex(buffer: ArrayBuffer): string {
+    const bytes = new Uint8Array(buffer);
+    const len = bytes.length;
+    let hex = '';
+    for (let i = 0; i < len; i++) {
+        hex += HEX_LUT[bytes[i]];
+    }
+    return hex;
+}
+
+export function hexToArrayBuffer(hex: string): ArrayBuffer {
+    if (hex.length % 2 !== 0) throw new Error("Invalid hex string");
+    const len = hex.length / 2;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+        const h = hex.substring(i * 2, i * 2 + 2);
+        bytes[i] = parseInt(h, 16);
+    }
+    return bytes.buffer;
+}
+
 // --- GZIP COMPRESSION (NATIVE BINARY) ---
 
 /**
- * Comprime uma string para um Uint8Array GZIP.
+ * Comprime uma string ou buffer para um Uint8Array GZIP.
  * Retorna um formato binário puro, ideal para armazenamento (IndexedDB).
  */
-export async function compressToBuffer(data: string): Promise<Uint8Array> {
+export async function compressToBuffer(data: string | Uint8Array): Promise<Uint8Array> {
     if (typeof CompressionStream === 'undefined') {
         throw new Error("CompressionStream not supported on this device.");
     }

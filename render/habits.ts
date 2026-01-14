@@ -137,7 +137,16 @@ export function updateHabitCardElement(card: HTMLElement, habit: Habit, time: Ti
         status = CSS_CLASSES.SNOOZED;
     }
 
+    // ARETE LOGIC: Exposição de Estado 'Done+' (Superação) no DOM para estilização CSS.
+    // Evita Layout Thrashing checando o atributo antes de setar.
+    if (bitStatus === HABIT_STATE.DONE_PLUS) {
+        if (card.dataset.arete !== 'true') card.dataset.arete = 'true';
+    } else {
+        if (card.dataset.arete) card.removeAttribute('data-arete');
+    }
+
     // 2. LEITURA DE DADOS RICOS (Legado JSON - Notas/Override)
+    // Usado APENAS para metadados, nunca para status de conclusão.
     const info = (preInfo || getHabitDailyInfoForDate(state.selectedDate))[habit.id]?.instances?.[time];
     
     const streak = calculateHabitStreak(habit, state.selectedDate);

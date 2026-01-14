@@ -609,12 +609,25 @@ export function setGoalOverride(habitId: string, d: string, t: TimeOfDay, v: num
         // Grava o valor numérico (Necessário JSON)
         ensureHabitInstanceData(d, habitId, t).goalOverride = v;
 
-        // Atualiza AUTOMATICAMENTE o Bitmask para Arete se a meta for superada
-        const props = getHabitPropertiesForDate(h, d);
-        if (props?.goal?.total && v > props.goal.total) {
-            HabitService.setStatus(habitId, d, t, HABIT_STATE.DONE_PLUS);
-        } else if (v > 0) {
-            HabitService.setStatus(habitId, d, t, HABIT_STATE.DONE);
+        // STATE PROTECTION [2025-06-03]: 
+        // Alterar o número NÃO deve alterar o status automaticamente se estiver Pendente.
+        // Apenas atualizamos se já estiver Concluído (para gerenciar o estado 'Arete/Plus').
+        
+        const currentStatus = HabitService.getStatus(habitId, d, t, h);
+        
+        if (currentStatus === HABIT_STATE.DONE || currentStatus === HABIT_STATE.DONE_PLUS) {
+             const props = getHabitPropertiesForDate(h, d);
+             // Verifica se a nova meta numérica supera o total definido (Arete)
+             if (props?.goal?.total && v > props.goal.total) {
+                 if (currentStatus !== HABIT_STATE.DONE_PLUS) {
+                     HabitService.setStatus(habitId, d, t, HABIT_STATE.DONE_PLUS);
+                 }
+             } else {
+                 // Se caiu abaixo da meta de superação, volta para DONE normal
+                 if (currentStatus !== HABIT_STATE.DONE) {
+                     HabitService.setStatus(habitId, d, t, HABIT_STATE.DONE);
+                 }
+             }
         }
 
         // Notificações UI

@@ -111,7 +111,7 @@
     box-shadow: 0 0 12px var(--accent-green);
     animation: glow-pulse 2.5s infinite ease-in-out;
 }
-.day-item .day-number.has-plus {
+.day-number.has-plus {
     text-shadow: 0 0 3px var(--text-primary), 0 0 5px var(--text-primary);
 }
 
