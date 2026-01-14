@@ -40,6 +40,54 @@ const createRipple = (e: MouseEvent, container: HTMLElement) => {
     ripple.addEventListener('animationend', () => ripple.remove(), { once: true });
 };
 
+// Helper for Direct Input Logic
+const _handleGoalInput = (wrapper: HTMLElement, hId: string, time: TimeOfDay) => {
+    // Prevent double activation
+    if (wrapper.querySelector('input')) return;
+
+    const habit = state.habits.find(h => h.id === hId);
+    if (!habit) return;
+
+    const currentVal = getCurrentGoalForInstance(habit, state.selectedDate, time);
+    const originalHTML = wrapper.innerHTML;
+
+    // Create Input
+    wrapper.innerHTML = '';
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.value = String(currentVal);
+    input.className = 'goal-input-inline';
+    input.min = '1';
+    input.max = String(MAX_GOAL);
+    
+    // Stop propagation on input click to prevent bubbling
+    input.addEventListener('click', (e) => e.stopPropagation());
+
+    const saveAndClose = () => {
+        let newVal = parseInt(input.value, 10);
+        if (isNaN(newVal) || newVal < 1) newVal = 1;
+        if (newVal > MAX_GOAL) newVal = MAX_GOAL;
+
+        if (newVal !== currentVal) {
+            setGoalOverride(hId, state.selectedDate, time, newVal);
+            triggerHaptic('medium');
+        } else {
+            // Restore visual if no change (re-render handles it usually via updateHabitCardElement logic, but we restore here just in case)
+            wrapper.innerHTML = originalHTML;
+        }
+    };
+
+    input.addEventListener('blur', saveAndClose);
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            input.blur();
+        }
+    });
+
+    wrapper.appendChild(input);
+    input.focus();
+};
+
 const _handleContainerClick = (e: MouseEvent) => {
     const el = (e.target as HTMLElement).closest<HTMLElement>(SELECTOR);
     if (!el) return;
@@ -63,6 +111,13 @@ const _handleContainerClick = (e: MouseEvent) => {
 
     if (el.classList.contains(CSS_CLASSES.SWIPE_NOTE_BTN)) {
         triggerHaptic('light'); openNotesModal(hId, state.selectedDate, t); return;
+    }
+
+    // DIRECT INPUT (Edit Goal Value)
+    if (el.classList.contains(CSS_CLASSES.GOAL_VALUE_WRAPPER)) {
+        e.stopPropagation();
+        _handleGoalInput(el, hId, t);
+        return;
     }
 
     if (el.classList.contains(CSS_CLASSES.GOAL_CONTROL_BTN)) {
@@ -100,8 +155,6 @@ const _handleContainerClick = (e: MouseEvent) => {
         triggerHaptic('light');
 
         // --- AÇÃO IMEDIATA ---
-        // A lógica do debouncer anterior foi removida por ser excessivamente complexa e uma fonte potencial 
-        // de bugs de evento. A mudança de estado agora é imediata, tornando a UI mais responsiva e o código mais robusto.
         toggleHabitStatus(hId, t, state.selectedDate);
     }
 };

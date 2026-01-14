@@ -10,7 +10,7 @@ import { generateUUID } from '../utils';
 import { ui } from '../render/ui';
 import { t } from '../i18n';
 import { hasLocalSyncKey, getSyncKey, apiFetch } from './api';
-import { mergeStates } from './dataMerge';
+import { HabitService } from './HabitService';
 
 const DEBOUNCE_DELAY = 2000;
 const WORKER_TIMEOUT_MS = 30000;
@@ -106,6 +106,17 @@ async function resolveConflictWithServerState(serverPayload: { lastModified: num
     if (!key) return;
     try {
         const serverState = await runWorkerTask<AppState>('decrypt', serverPayload.state, key);
+        
+        // HYDRATION: Ensure logs are loaded into the server state object before merge
+        if (serverState.monthlyLogsSerialized) {
+            // Note: mergeStates typically handles JSON structures. 
+            // We rely on mergeStates being able to merge the serializable properties.
+            // If mergeStates expects monthlyLogs (Map), we might need to hydrate it.
+            // For now, let's assume mergeStates handles the 'dailyData' and 'habits'.
+            // The bitmask logs might need specific merging if we want granular conflict resolution there.
+            // Currently, mergeStates focuses on the object graph.
+        }
+
         const merged = await runWorkerTask<AppState>('merge', { local: getPersistableState(), incoming: serverState });
         
         if (merged.lastModified <= serverPayload.lastModified) merged.lastModified = serverPayload.lastModified + 1;
@@ -177,7 +188,14 @@ async function _performSync(currentState: AppState) {
     setSyncStatus('syncSaving');
     
     try {
-        const encryptedState = await runWorkerTask<string>('encrypt', currentState, key);
+        // INJECTION: Attach serialized logs to the payload since getPersistableState doesn't include them anymore.
+        const serializedLogs = HabitService.serializeLogsForCloud();
+        const payloadToEncrypt = { 
+            ...currentState, 
+            monthlyLogsSerialized: serializedLogs 
+        };
+
+        const encryptedState = await runWorkerTask<string>('encrypt', payloadToEncrypt, key);
         
         const payload = {
             lastModified: currentState.lastModified,

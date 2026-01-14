@@ -177,7 +177,14 @@ const _applyDropJustToday = () => {
         const fIdx = sch.indexOf(ctx.fromTime);
         if (fIdx > -1) sch.splice(fIdx, 1);
         if (!sch.includes(ctx.toTime)) sch.push(ctx.toTime);
-        if (info.instances[ctx.fromTime]) { info.instances[ctx.toTime] = info.instances[ctx.fromTime]; delete info.instances[ctx.fromTime]; }
+        
+        if (info.instances[ctx.fromTime]) { 
+            // CLEANUP: Move apenas dados relevantes, remove 'status' para evitar "Ghost Data"
+            const movedData = { ...info.instances[ctx.fromTime] };
+            delete movedData.status; // Remove status legado
+            info.instances[ctx.toTime] = movedData; 
+            delete info.instances[ctx.fromTime]; 
+        }
         info.dailySchedule = sch;
 
         // 2. Migração de Status Bitmask (ZC-Architecture)
@@ -201,7 +208,12 @@ const _applyDropFromNowOn = () => {
     info.dailySchedule = undefined;
     
     // 1. Migração de Dados Legados (Notes/Override) para o dia atual
-    if (info.instances[ctx.fromTime]) { info.instances[ctx.toTime] = info.instances[ctx.fromTime]; delete info.instances[ctx.fromTime]; }
+    if (info.instances[ctx.fromTime]) { 
+        const movedData = { ...info.instances[ctx.fromTime] };
+        delete movedData.status; // Remove status legado
+        info.instances[ctx.toTime] = movedData; 
+        delete info.instances[ctx.fromTime]; 
+    }
     
     // 2. Migração de Status Bitmask para o dia atual (ZC-Architecture)
     const currentBit = HabitService.getStatus(ctx.habitId, target, ctx.fromTime);
@@ -566,6 +578,7 @@ export async function resetApplicationData() {
 }
 
 export function handleSaveNote() { if (!state.editingNoteFor) return; const { habitId, date, time } = state.editingNoteFor, val = ui.notesTextarea.value.trim(), inst = ensureHabitInstanceData(date, habitId, time); if ((inst.note || '') !== val) { inst.note = val || undefined; state.uiDirtyState.habitListStructure = true; saveState(); document.dispatchEvent(new CustomEvent('render-app')); } closeModal(ui.notesModal); }
+
 export function setGoalOverride(habitId: string, d: string, t: TimeOfDay, v: number) { 
     try { 
         // 1. Escrita Legada (JSON)
@@ -575,25 +588,41 @@ export function setGoalOverride(habitId: string, d: string, t: TimeOfDay, v: num
         // 2. Escrita Bitmask (NOVO - Lógica Arete)
         const h = state.habits.find(x => x.id === habitId);
         if (h) {
-            let newBitStatus: number = HABIT_STATE.DONE; // Padrão
+            // FIX CIRÚRGICO: Desacoplamento de Estado.
+            // A alteração de quantidade NÃO deve forçar o hábito para 'DONE' se ele estiver 'PENDING' ou 'SNOOZED'.
+            // O usuário deve ter a liberdade de ajustar a meta sem perder o controle do "Check".
             
-            // Verifica se superou a meta
-            const props = getHabitPropertiesForDate(h, d);
-            if (props?.goal?.total && v > props.goal.total) {
-                newBitStatus = HABIT_STATE.DONE_PLUS;
+            const currentBit = HabitService.getStatus(habitId, d, t);
+            let nextBit = currentBit;
+
+            // Só atualizamos o Bitmask se o hábito JÁ ESTIVER concluído (DONE ou DONE_PLUS).
+            // Nesse caso, verificamos se a nova quantidade ultrapassa a meta para alternar entre 1 e 3.
+            if (currentBit === HABIT_STATE.DONE || currentBit === HABIT_STATE.DONE_PLUS) {
+                const props = getHabitPropertiesForDate(h, d);
+                if (props?.goal?.total && v > props.goal.total) {
+                    nextBit = HABIT_STATE.DONE_PLUS;
+                } else {
+                    nextBit = HABIT_STATE.DONE;
+                }
             }
             
-            // Grava o bit (1 ou 3)
-            HabitService.setStatus(habitId, d, t, newBitStatus);
+            // Se o estado for NULL (Pendente) ou DEFERRED (Adiado), mantemos o estado inalterado no Bitmask.
+            // Apenas o JSON 'goalOverride' foi atualizado acima.
+            
+            if (nextBit !== currentBit) {
+                HabitService.setStatus(habitId, d, t, nextBit);
+            }
         }
 
         // Notificações UI
         document.dispatchEvent(new CustomEvent('card-goal-changed', { detail: { habitId, time: t, date: d } })); 
+        // Refresh UI para atualizar o número no cartão
         _notifyPartialUIRefresh(d, [habitId]); 
     } catch (e) { 
         console.error(e); 
     } 
 }
+
 export function requestHabitTimeRemoval(habitId: string, time: TimeOfDay) {
     const h = _lockActionHabit(habitId), target = getSafeDate(state.selectedDate); if (!h) return;
     ActionContext.removal = { habitId, time, targetDate: target };

@@ -1,5 +1,4 @@
 
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -47,7 +46,7 @@ export type Frequency =
     | { readonly type: 'specific_days_of_week'; readonly days: readonly number[] };
 
 export interface HabitDayData {
-    status: HabitStatus;
+    status: HabitStatus; // DEPRECATED: Mantido apenas para compatibilidade de tipos, leitura via Bitmask
     goalOverride: number | undefined;
     note: string | undefined;
 }
@@ -161,7 +160,9 @@ export interface AppState {
     hasSeenAIResult?: boolean;
     // NOVO: Cache para a estrutura otimizada
     monthlyLogs?: Map<string, bigint>;
-    monthlyLogsSerialized?: [string, string][];
+    // REMOVIDO: monthlyLogsSerialized não faz mais parte do estado em runtime/persistência local.
+    // É gerado on-demand apenas para Sync.
+    monthlyLogsSerialized?: any; 
 }
 
 // --- CONSTANTS ---
@@ -191,12 +192,6 @@ export const FREQUENCIES = [
     { labelKey: 'freqSpecificDaysOfWeek', value: { type: 'specific_days_of_week', days: [] } }
 ] as const;
 
-const STATUS_TRANSITIONS = Object.freeze({
-    pending: 'completed',
-    completed: 'snoozed',
-    snoozed: 'pending',
-} as const);
-
 const _createMonomorphicDailyInfo = (): HabitDailyInfo => ({
     instances: {},
     dailySchedule: undefined
@@ -207,10 +202,6 @@ const _createMonomorphicInstance = (): HabitDayData => ({
     goalOverride: undefined,
     note: undefined
 });
-
-export function getNextStatus(currentStatus: HabitStatus): HabitStatus {
-    return STATUS_TRANSITIONS[currentStatus];
-}
 
 // --- APPLICATION STATE ---
 export const state: {
@@ -311,13 +302,10 @@ export function invalidateChartCache() {
 }
 
 export function getPersistableState(): AppState {
-    // Conversão Manual: Map<string, bigint> -> Array<[string, string(hex)]>
-    // Isso é necessário pois JSON.stringify não suporta BigInt nativamente.
-    const serializedLogs = Array.from(state.monthlyLogs.entries()).map(([key, val]) => {
-        return [key, val.toString(16)] as [string, string]; // Salva como HEX para economizar espaço
-    });
-
-    // Retorna o objeto misturando o estado legado com o novo serializado
+    // ZERO-COST UPDATE: Não serializamos monthlyLogs aqui.
+    // A serialização (Hex/Base64) custa CPU e não é necessária para o IndexedDB local (que usa ArrayBuffer).
+    // O Cloud Service deve lidar com a serialização quando necessário.
+    
     return {
         version: APP_VERSION,
         lastModified: Date.now(),
@@ -329,8 +317,7 @@ export function getPersistableState(): AppState {
         pending21DayHabitIds: state.pending21DayHabitIds,
         pendingConsolidationHabitIds: state.pendingConsolidationHabitIds,
         quoteState: state.quoteState,
-        // Propriedade injetada dinamicamente para persistência
-        monthlyLogsSerialized: serializedLogs 
+        // REMOVIDO: monthlyLogsSerialized (Use HabitService.serializeLogsForCloud se precisar exportar)
     };
 }
 

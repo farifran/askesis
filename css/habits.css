@@ -512,22 +512,30 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 }
 .goal-value-wrapper:hover { background-color: var(--surface-hover); }
 
+/* DIRECT INPUT STYLE */
 .goal-input-inline {
-    width: calc(var(--space-section) * 2.5); /* Widen for 3 digits comfort */
-    background: transparent; /* UX FIX: Blend with card background */
+    width: 40px; /* Compact width */
+    background: transparent;
     border: 1px solid var(--accent-blue);
     color: var(--text-primary);
-    /* BLINDAGEM IOS: 16px previne zoom automático ao editar meta */
-    font-size: 16px;
+    font-size: 12px;
+    font-weight: 600;
     text-align: center;
-    border-radius: var(--space-xs);
-    padding: 2px;
+    border-radius: var(--border-radius-small);
+    padding: 0;
+    height: 20px;
+    margin: 0;
+    /* Remove native spinners */
     -moz-appearance: textfield;
 }
 .goal-input-inline::-webkit-outer-spin-button,
 .goal-input-inline::-webkit-inner-spin-button {
     -webkit-appearance: none;
     margin: 0;
+}
+.goal-input-inline:focus {
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.3);
 }
 
 .goal-value-wrapper .progress {
@@ -636,4 +644,53 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 
 .completed-wrapper svg {
     stroke: var(--accent-blue);
+}
+
+/* --- VISUAL EFFECT: SCROLL ZOOM (ZERO-COST) --- */
+/* Utiliza a API nativa de Scroll-Driven Animations para criar um efeito de foco
+   no centro da tela sem usar JavaScript (Main Thread Free). */
+@supports (animation-timeline: view()) {
+    .habit-card {
+        animation: scroll-focus linear both;
+        animation-timeline: view(block);
+        /* O efeito acontece enquanto o cartão atravessa a viewport */
+        animation-range: cover 0% cover 100%;
+    }
+
+    /* 
+       INTERACTION GUARD: 
+       Desativa a animação de scroll quando o usuário está interagindo fisicamente 
+       (Swipe ou Drag). Isso evita conflitos de transform e garante que a física 
+       JS (1:1 movement) tenha prioridade total.
+    */
+    .habit-card.is-swiping,
+    .habit-card.dragging,
+    .habit-card.is-open-left,
+    .habit-card.is-open-right {
+        animation: none !important;
+        opacity: 1 !important;
+        /* Mantém a escala natural durante a interação para sensação tátil sólida */
+        transform: scale(1) !important; 
+    }
+
+    /* Keyframes otimizados para opacidade e escala (GPU Friendly) */
+    @keyframes scroll-focus {
+        0% {
+            transform: scale(0.95);
+            opacity: 0.8;
+        }
+        /* Mantém o tamanho total (100%) durante a zona central ("Sweet Spot") */
+        15% {
+            transform: scale(1);
+            opacity: 1;
+        }
+        85% {
+            transform: scale(1);
+            opacity: 1;
+        }
+        100% {
+            transform: scale(0.95);
+            opacity: 0.8;
+        }
+    }
 }

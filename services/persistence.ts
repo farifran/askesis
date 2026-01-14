@@ -101,24 +101,20 @@ function pruneOrphanedDailyData(habits: readonly Habit[], dailyData: Record<stri
 }
 
 async function saveStateInternal() {
-    // 1. Full State (para Sync/Export)
-    const fullData = getPersistableState(); // Contém monthlyLogsSerialized (strings)
+    // 1. Full State (Raw)
+    const fullData = getPersistableState();
     
     // 2. Optimized State (para Local IDB)
-    const localData = { ...fullData };
-    // REMOÇÃO CRÍTICA: Não salvamos o array gigante de strings no JSON local.
-    delete (localData as any).monthlyLogsSerialized; 
-    
-    // Empacota logs como binário puro
+    // Empacota logs como binário puro para o IndexedDB
     const binaryLogs = HabitService.packBinaryLogs();
     
     try {
-        await saveSplitState(localData, binaryLogs);
+        await saveSplitState(fullData, binaryLogs);
     } catch (e) { 
         console.error("IDB Save Failed:", e); 
     }
     
-    // 3. Trigger Sync com dados completos (O Sync Worker cuida da criptografia/compressão)
+    // 3. Trigger Sync (O Sync Worker cuida da serialização JSON/Hex)
     syncHandler?.(fullData);
 }
 
@@ -137,10 +133,8 @@ export async function saveState(): Promise<void> {
 
 export const persistStateLocally = (data: AppState) => {
     // Save immediate split state (e.g. after migration or merge)
-    const dataClone = { ...data };
-    delete (dataClone as any).monthlyLogsSerialized;
     const binaryLogs = HabitService.packBinaryLogs();
-    return saveSplitState(dataClone, binaryLogs);
+    return saveSplitState(data, binaryLogs);
 };
 
 export async function loadState(cloudState?: AppState): Promise<AppState | null> {
@@ -213,19 +207,10 @@ export async function loadState(cloudState?: AppState): Promise<AppState | null>
             HabitService.unpackBinaryLogs(binaryLogs);
             console.log(`[Persistence] Bitmasks binários carregados: ${binaryLogs.size} meses.`);
         } else if (migrated.monthlyLogsSerialized && Array.isArray(migrated.monthlyLogsSerialized)) {
-            // [B] Legacy Path: Converte Hex Strings (Slow Path)
-            console.log("[Persistence] Migrando logs hexadecimais legados...");
-            try {
-                const map = new Map<string, bigint>();
-                migrated.monthlyLogsSerialized.forEach(([key, hexVal]: [string, string]) => {
-                    // Converte HEX de volta para BigInt
-                    map.set(key, BigInt("0x" + hexVal));
-                });
-                state.monthlyLogs = map;
-            } catch (e) {
-                console.error("Erro ao hidratar Bitmasks legados:", e);
-                state.monthlyLogs = new Map();
-            }
+            // [B] Cloud Sync Path: Importa do JSON (Hex Strings)
+            // Isso acontece quando carregamos dados vindos da nuvem (via loadState(cloudState))
+            console.log("[Persistence] Importando logs serializados da nuvem...");
+            HabitService.deserializeLogsFromCloud(migrated.monthlyLogsSerialized);
         } else {
             // Init empty
             state.monthlyLogs = new Map();

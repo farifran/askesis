@@ -15,7 +15,7 @@ export class HabitService {
      */
     static getStatus(habitId: string, dateISO: string, time: TimeOfDay): number {
         const key = this.getLogKey(habitId, dateISO);
-        const log = state.monthlyLogs.get(key);
+        const log = state.monthlyLogs?.get(key);
         
         // 1- Leitura do Bitmask (Prioridade)
         if (log !== undefined) {
@@ -61,6 +61,8 @@ export class HabitService {
      * Escrita no Novo Formato
      */
     static setStatus(habitId: string, dateISO: string, time: TimeOfDay, status: number) {
+        if (!state.monthlyLogs) state.monthlyLogs = new Map();
+        
         const key = this.getLogKey(habitId, dateISO);
         let log = state.monthlyLogs.get(key) || 0n;
         
@@ -114,5 +116,32 @@ export class HabitService {
         });
         
         state.monthlyLogs = targetMap;
+    }
+
+    /**
+     * [CLOUD SERIALIZATION] Exporta logs para JSON (Hex Strings).
+     * Necessário para envio via API REST/JSON.
+     */
+    static serializeLogsForCloud(): [string, string][] {
+        if (!state.monthlyLogs) return [];
+        return Array.from(state.monthlyLogs.entries()).map(([key, val]) => {
+            return [key, val.toString(16)] as [string, string];
+        });
+    }
+
+    /**
+     * [CLOUD DESERIALIZATION] Importa logs do JSON (Hex Strings).
+     */
+    static deserializeLogsFromCloud(serialized: [string, string][]) {
+        if (!Array.isArray(serialized)) return;
+        const map = new Map<string, bigint>();
+        serialized.forEach(([key, hexVal]) => {
+            try {
+                map.set(key, BigInt("0x" + hexVal));
+            } catch (e) {
+                console.warn(`Skipping invalid hex log: ${key}`);
+            }
+        });
+        state.monthlyLogs = map;
     }
 }

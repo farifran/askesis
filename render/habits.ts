@@ -85,18 +85,43 @@ function _renderPendingGoalControls(habit: Habit, time: TimeOfDay, dayData: Habi
     if (!schedule) { if (els.goal.hasChildNodes()) els.goal.replaceChildren(); return; }
 
     if (schedule.goal.type === 'check') { if (els.goal.hasChildNodes()) els.goal.replaceChildren(); return; }
-    if (!els.goal.querySelector(`.${CSS_CLASSES.HABIT_GOAL_CONTROLS}`)) {
+    
+    // 1. Ensure Container Exists
+    let controls = els.goal.querySelector(`.${CSS_CLASSES.HABIT_GOAL_CONTROLS}`);
+    if (!controls) {
         els.goal.replaceChildren(getGoalControlsTemplate().cloneNode(true));
-        els.goalDecBtn = els.goal.querySelector(`[data-action="decrement"]`) as HTMLButtonElement;
-        els.goalIncBtn = els.goal.querySelector(`[data-action="increment"]`) as HTMLButtonElement;
-        els.goalProgress = els.goal.querySelector('.progress') as HTMLElement;
-        els.goalUnit = els.goal.querySelector('.unit') as HTMLElement;
+        controls = els.goal.firstElementChild;
+        // Reset cache references as they are invalid now
+        els.goalDecBtn = els.goalIncBtn = els.goalProgress = els.goalUnit = undefined;
     }
+
+    // 2. Ensure Inner Elements Integrity (Self-Healing DOM)
+    // Se o usuário usou o Direct Input, o conteúdo do wrapper foi substituído por um <input>.
+    // Precisamos restaurar a estrutura <div>.progress</div> se ela não existir.
+    const wrapper = controls!.querySelector(`.${CSS_CLASSES.GOAL_VALUE_WRAPPER}`) as HTMLElement;
+    const progressEl = wrapper.querySelector('.progress');
+    
+    if (!progressEl) {
+        // ROBUSTNESS: Restaura estrutura destruída
+        wrapper.innerHTML = `<div class="progress"></div><div class="unit"></div>`;
+        els.goalProgress = wrapper.querySelector('.progress') as HTMLElement;
+        els.goalUnit = wrapper.querySelector('.unit') as HTMLElement;
+    } else if (!els.goalProgress || !els.goalProgress.isConnected) {
+        // Re-bind se o cache estiver estragado
+        els.goalProgress = progressEl as HTMLElement;
+        els.goalUnit = wrapper.querySelector('.unit') as HTMLElement;
+    }
+
+    // 3. Ensure Buttons
+    if (!els.goalDecBtn || !els.goalDecBtn.isConnected) els.goalDecBtn = controls!.querySelector(`[data-action="decrement"]`) as HTMLButtonElement;
+    if (!els.goalIncBtn || !els.goalIncBtn.isConnected) els.goalIncBtn = controls!.querySelector(`[data-action="increment"]`) as HTMLButtonElement;
+
+    // 4. Update Values
     const cur = dayData?.goalOverride ?? getSmartGoalForHabit(habit, state.selectedDate, time);
-    els.goalDecBtn!.disabled = cur <= 1;
-    setTextContent(els.goalProgress!, formatInteger(cur));
+    if (els.goalDecBtn) els.goalDecBtn.disabled = cur <= 1;
+    if (els.goalProgress) setTextContent(els.goalProgress, formatInteger(cur));
     // @fix: Use goal from the schedule object.
-    setTextContent(els.goalUnit!, t(schedule.goal.unitKey || 'unitCheck', { count: cur }));
+    if (els.goalUnit) setTextContent(els.goalUnit, t(schedule.goal.unitKey || 'unitCheck', { count: cur }));
 }
 
 export function updateHabitCardElement(card: HTMLElement, habit: Habit, time: TimeOfDay, preInfo?: Record<string, HabitDailyInfo>, options?: { animate?: boolean }) {
