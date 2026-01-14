@@ -11,7 +11,7 @@
 
 import { 
     state, Habit, HabitSchedule, TimeOfDay, ensureHabitDailyInfo, 
-    ensureHabitInstanceData, HabitStatus, clearScheduleCache,
+    ensureHabitInstanceData, clearScheduleCache,
     clearActiveHabitsCache, invalidateCachesForDateChange, getPersistableState,
     HabitDayData, STREAK_SEMI_CONSOLIDATED, STREAK_CONSOLIDATED,
     getHabitDailyInfoForDate, AppState, isDateLoading, HabitDailyInfo, LANGUAGES, HABIT_STATE, PERIOD_OFFSET
@@ -499,7 +499,7 @@ export function toggleHabitStatus(habitId: string, time: TimeOfDay, date: string
 /**
  * ZC-ARCHITECTURE: Batch update using Bitmask exclusively.
  */
-export function markAllHabitsForDate(dateISO: string, status: HabitStatus): boolean {
+export function markAllHabitsForDate(dateISO: string, status: 'completed' | 'snoozed'): boolean {
     if (_isBatchOpActive || isDateLoading(dateISO)) return false;
     _isBatchOpActive = true;
     

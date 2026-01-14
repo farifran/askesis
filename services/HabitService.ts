@@ -9,6 +9,14 @@ const BUFFER_SIZE = 24;
 const CHUNK_SIZE = 64n;
 const MASK_64 = 0xFFFFFFFFFFFFFFFFn;
 
+// INTERFACE LOCAL (Legacy Support v7.3)
+// Define a estrutura dos dados antigos para permitir acesso seguro via TypeScript
+// sem poluir o estado global com tipos obsoletos.
+interface LegacyHabitInstance {
+    status?: 'completed' | 'snoozed' | 'pending';
+    goalOverride?: number;
+}
+
 export class HabitService {
 
     private static getLogKey(habitId: string, dateISO: string): string {
@@ -46,8 +54,9 @@ export class HabitService {
             
             if (!legacyInstance) return HABIT_STATE.NULL;
             
-            // TYPE CASTING SAFE: Propriedade 'status' removida da interface, acesso via 'any' para dados legados.
-            const legacyStatus = (legacyInstance as any).status;
+            // TYPE CASTING SAFE: Usa a interface local para acessar 'status' seguramente.
+            // O cast duplo (unknown -> Legacy) é necessário pois HabitDayData não tem 'status'.
+            const legacyStatus = (legacyInstance as unknown as LegacyHabitInstance).status;
 
             if (legacyStatus === 'completed') {
                 // VERIFICAÇÃO DE ARETE (Superação)

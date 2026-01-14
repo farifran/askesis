@@ -38,7 +38,6 @@ export interface HabitPhilosophy {
 }
 
 // --- TYPES & INTERFACES ---
-export type HabitStatus = 'completed' | 'snoozed' | 'pending';
 
 export type Frequency =
     | { readonly type: 'daily' }
