@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -138,7 +137,7 @@ export async function mergeStates(local: AppState, incoming: AppState): Promise<
     // 3. Mesclar Logs Binários (Monthly Logs)
     // Robustez: Garante que estamos lidando com Maps, mesmo se a entrada vier como objeto
     if (local.monthlyLogs) {
-        // Inicializa se não existir
+        // Inicializa se não existir no merged (incoming)
         if (!merged.monthlyLogs) {
             merged.monthlyLogs = new Map();
         } else if (!(merged.monthlyLogs instanceof Map)) {
@@ -153,13 +152,22 @@ export async function mergeStates(local: AppState, incoming: AppState): Promise<
         // Iteração Defensiva: local.monthlyLogs pode ser Map ou Objeto
         const localIterator = (local.monthlyLogs instanceof Map) 
             ? local.monthlyLogs.entries() 
-            : Object.entries(local.monthlyLogs);
+            : Object.entries(local.monthlyLogs as unknown as Record<string, any>);
 
         for (const [key, val] of localIterator) {
-            // Estratégia: Server Wins para conflitos (já está no merged/incoming), 
-            // Local Wins para dados novos (Union).
-            if (!merged.monthlyLogs.has(key)) {
-                merged.monthlyLogs.set(key, val);
+            const localBigInt = typeof val === 'bigint' ? val : BigInt(val as any);
+
+            if (merged.monthlyLogs.has(key)) {
+                // BITWISE MERGE (CRDT-lite): União de Conclusões.
+                // Combina os bits de ambos (OR). Se 'Feito' estiver marcado em qualquer um, permanece 'Feito'.
+                // Isso evita que uma sincronização antiga sobrescreva um progresso recente com 0.
+                const serverVal = merged.monthlyLogs.get(key);
+                const serverBigInt = typeof serverVal === 'bigint' ? serverVal : BigInt(serverVal);
+                
+                merged.monthlyLogs.set(key, localBigInt | serverBigInt);
+            } else {
+                // Se não existe no servidor, preserva o local.
+                merged.monthlyLogs.set(key, localBigInt);
             }
         }
     }
