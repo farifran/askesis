@@ -32,8 +32,13 @@
    Adicionamos margem inferior para alinhar o centro do FAB com o centro óptico do Calendário.
    UPDATE: Ajuste fino solicitado (+2px Up, +1px Right -> Total 30px/4px). */
 #fab-add-habit {
-    margin-bottom: 30px;
+    margin-bottom: 28px;
     margin-left: 4px;
+}
+
+/* ALIGNMENT FIX [2025-06-04]: Raise calendar strip by 10px to better align with FAB */
+.calendar-strip {
+    margin-bottom: 10px;
 }
 
 /* TABLET/DESKTOP ADJUSTMENT [2025-05-15]: Aumenta o espaço entre o botão de adicionar e o calendário. */
