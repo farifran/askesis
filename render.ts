@@ -238,7 +238,6 @@ export function updateUIText() {
 
     setTextContent(ui.confirmModal.querySelector('h2'), t('modalConfirmTitle'));
     setTextContent(ui.confirmModal.querySelector('.modal-close-btn'), t('cancelButton'));
-    setTextContent(ui.confirmModalEditBtn, t('editButton'));
     setTextContent(ui.confirmModalConfirmBtn, t('confirmButton'));
 
     setTextContent(ui.notesModal.querySelector('.modal-close-btn'), t('cancelButton'));

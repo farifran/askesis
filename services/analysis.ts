@@ -61,7 +61,6 @@ export async function checkAndAnalyzeDayContext(dateISO: string) {
                     timestamp: Date.now() 
                 }; 
                 saveState(); 
-                document.dispatchEvent(new CustomEvent('quote-updated'));
             }
         } catch (e) { 
             console.error("Context analysis failed", e); 

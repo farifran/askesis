@@ -1,5 +1,4 @@
 /**
- * @file cloud.ts
- * @description [DEPRECATED] Este arquivo não está mais em uso e é um candidato para exclusão.
- * Sua funcionalidade foi consolidada em services/cloud.ts.
+ * [AUDIT] This file is deprecated and should be deleted from the project.
+ * Its functionality was consolidated into services/cloud.ts.
  */

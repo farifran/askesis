@@ -133,6 +133,16 @@ export interface QuoteDisplayState {
     readonly lockedContext: string;
 }
 
+export interface DaySummary {
+    readonly total: number;
+    readonly completed: number;
+    readonly snoozed: number;
+    readonly pending: number;
+    readonly completedPercent: number;
+    readonly snoozedPercent: number;
+    readonly showPlusIndicator: boolean;
+}
+
 // --- NOVAS ESTRUTURAS (Bitmask) ---
 export const PERIOD_OFFSET = { Morning: 0, Afternoon: 2, Evening: 4 } as const;
 export const HABIT_STATE = { NULL: 0, DONE: 1, DEFERRED: 2, DONE_PLUS: 3 } as const;
@@ -211,7 +221,7 @@ export const state: {
     habitAppearanceCache: Map<string, Map<string, boolean>>;
     scheduleCache: Map<string, Map<string, HabitSchedule | null>>;
     activeHabitsCache: Map<string, Array<{ habit: Habit; schedule: TimeOfDay[] }>>;
-    daySummaryCache: Map<string, any>;
+    daySummaryCache: Map<string, DaySummary>;
     calendarDates: Date[];
     selectedDate: string;
     activeLanguageCode: Language['code'];
