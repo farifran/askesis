@@ -534,19 +534,31 @@ self.onmessage = async (e: MessageEvent<any>) => {
     try {
         let result;
         if (type === 'encrypt') {
-            // WORKFLOW: stringify -> compress -> encrypt -> base64
+            // WORKFLOW: stringify -> compress -> encrypt (Uint8Array)
             const jsonString = JSON.stringify(payload, cloudReplacer);
             const compressedBuffer = await compressToBuffer(jsonString);
-            const encryptedBuffer = await encrypt(compressedBuffer, key);
-            // Codifica o buffer binário final para Base64 para transporte via JSON.
-            result = arrayBufferToBase64(encryptedBuffer.buffer);
+            
+            // O resultado agora é Uint8Array
+            const encryptedBytes = await encrypt(compressedBuffer, key);
+            
+            // FIX: Converte para Base64 (String) dentro do Worker.
+            // Isso evita que o JSON.stringify na thread principal (cloud.ts)
+            // exploda o payload transformando Uint8Array em objeto numérico gigante.
+            result = arrayBufferToBase64(encryptedBytes.buffer);
         }
         else if (type === 'decrypt') {
             // WORKFLOW: base64 -> decrypt -> decompress -> parse
-            // Decodifica o Base64 da nuvem para um buffer binário.
-            const encryptedBuffer = base64ToArrayBuffer(payload);
-            // Descriptografa o buffer binário. O resultado ainda está comprimido.
-            const decryptedBuffer = await decryptToBuffer(new Uint8Array(encryptedBuffer), key);
+            // FIX: Se o payload for string (Base64 da nuvem), converte para Uint8Array.
+            let inputBuffer = payload;
+            if (typeof payload === 'string') {
+                inputBuffer = new Uint8Array(base64ToArrayBuffer(payload));
+            } else {
+                // Robustez para buffers já binários (não esperado do JSON da nuvem, mas seguro ter)
+                inputBuffer = payload;
+            }
+            
+            // Descriptografa o buffer binário.
+            const decryptedBuffer = await decryptToBuffer(inputBuffer, key);
             // Descomprime o buffer para uma string JSON.
             const decompressedJSON = await decompressFromBuffer(decryptedBuffer);
             result = JSON.parse(decompressedJSON, cloudReviver);

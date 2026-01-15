@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -6,7 +5,7 @@
 
 import { AppState, state, getPersistableState } from '../state';
 import { loadState, persistStateLocally } from './persistence';
-import { generateUUID } from '../utils';
+import { generateUUID, arrayBufferToBase64 } from '../utils';
 import { ui } from '../render/ui';
 import { t } from '../i18n';
 import { hasLocalSyncKey, getSyncKey, apiFetch } from './api';
@@ -206,12 +205,13 @@ async function _performSync(currentState: AppState) {
         // ZERO-GC NO HOT PATH:
         // Enviamos o estado bruto + monthlyLogs (Map<string, bigint>) diretamente para o Worker.
         // O algoritmo de clonagem estruturada suporta Maps e BigInts nativamente.
-        // A conversão cara (BigInt -> Hex String) ocorre exclusivamente na thread do Worker.
         const payloadToEncrypt = { 
             ...currentState, 
             monthlyLogs: state.monthlyLogs 
         };
 
+        // WORKER DOES HEAVY LIFTING: Retorna string Base64 diretamente.
+        // Isso evita congelar a thread principal com conversão de buffers grandes.
         const encryptedState = await runWorkerTask<string>('encrypt', payloadToEncrypt, key);
         
         const payload = {
