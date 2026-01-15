@@ -90,12 +90,26 @@
     /* REFACTOR [2025-06-02]: Visual transform to Modal Header style */
     background-color: transparent;
     border-radius: 0;
-    padding: 0;
-    /* VISUAL UPDATE: Reduced padding to tighten space between title and content below */
-    padding-bottom: var(--space-sm);
+    
+    /* HEADER INTEGRATION [2025-06-03]: 
+       Pull up (-60px) to overlap the modal header space (align with back button).
+       Add left padding (42px) to clear the back button (36px width + gap). 
+    */
+    margin-top: -60px;
+    padding: 0 0 var(--space-sm) 42px;
+    
     margin-bottom: 0; 
     border-bottom: 1px solid var(--border-color);
+    
+    /* INTERACTION FIX: Allow clicks to pass through padding area to reach the back button underneath */
+    pointer-events: none;
 }
+
+/* Restore interaction for children (Icon & Input) so they remain clickable */
+.habit-identity-section > * {
+    pointer-events: auto;
+}
+
 .habit-icon-picker-wrapper {
     position: relative;
     flex-shrink: 0;
@@ -369,8 +383,12 @@ input:disabled + .slider {
     line-height: 1.5;
     color: var(--text-tertiary);
     font-style: italic;
-    text-align: center;
-    padding: 0 var(--space-md);
+    
+    /* ALIGNMENT FIX [2025-06-03]: Left aligned to match the rest of the form content */
+    text-align: left;
+    /* Added left padding to match the icon indentation (4px) */
+    padding: var(--space-sm) var(--space-md) 0 var(--space-xs);
+    
     margin-bottom: 0; /* Reduced from var(--space-lg) to rely on flex gap */
     /* Animação suave ao aparecer */
     animation: fadeIn 0.3s ease-out;
