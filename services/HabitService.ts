@@ -1,6 +1,5 @@
 
-import { state, HABIT_STATE, PERIOD_OFFSET, TimeOfDay, getHabitDailyInfoForDate, Habit } from '../state';
-import { getHabitPropertiesForDate } from './selectors';
+import { state, HABIT_STATE, PERIOD_OFFSET, TimeOfDay } from '../state';
 
 // CONSTANTS for Bitmask Storage
 // 31 days * 3 periods * 2 bits = 186 bits.
@@ -9,14 +8,6 @@ const BUFFER_SIZE = 24;
 const CHUNK_SIZE = 64n;
 const MASK_64 = 0xFFFFFFFFFFFFFFFFn;
 
-// INTERFACE LOCAL (Legacy Support v7.3)
-// Define a estrutura dos dados antigos para permitir acesso seguro via TypeScript
-// sem poluir o estado global com tipos obsoletos.
-interface LegacyHabitInstance {
-    status?: 'completed' | 'snoozed' | 'pending';
-    goalOverride?: number;
-}
-
 export class HabitService {
 
     private static getLogKey(habitId: string, dateISO: string): string {
@@ -24,63 +15,27 @@ export class HabitService {
     }
 
     /**
-     * Leitura Híbrida:
-     * 1. Tenta ler do novo sistema (BigInt).
-     * 2. Se for 0, verifica se existe dado no sistema legado (dailyData) para não perder histórico.
+     * Leitura Otimizada (Bitmask Only):
+     * Acessa diretamente o mapa de BigInts para verificar o status.
+     * Complexidade: O(1).
      * 
      * @param habitId ID do hábito
      * @param dateISO Data em formato ISO
      * @param time Período do dia
-     * @param habitObj Otimização: Objeto Habit já carregado para evitar O(N) lookup no fallback.
      */
-    static getStatus(habitId: string, dateISO: string, time: TimeOfDay, habitObj?: Habit): number {
+    static getStatus(habitId: string, dateISO: string, time: TimeOfDay): number {
         const key = this.getLogKey(habitId, dateISO);
         const log = state.monthlyLogs?.get(key);
         
-        // 1- Leitura do Bitmask (Prioridade O(1))
         if (log !== undefined) {
             const day = parseInt(dateISO.substring(8, 10), 10);
             // Endereçamento: (Dia-1)*6 + Offset
             const bitPos = BigInt(((day - 1) * 6) + PERIOD_OFFSET[time]);
-            const val = Number((log >> bitPos) & 0b11n);
-            if (val !== HABIT_STATE.NULL) return val;
+            // Extrai 2 bits e converte para número
+            return Number((log >> bitPos) & 0b11n);
         }
     
-        // 2- Fallback Inteligente (Lê JSON Legado + Calcula Superação)
-        // Isso é necessário apenas durante a fase de transição ou para dados muito antigos arquivados em JSON.
-        try {
-            const dayData = getHabitDailyInfoForDate(dateISO);
-            const legacyInstance = dayData[habitId]?.instances[time];
-            
-            if (!legacyInstance) return HABIT_STATE.NULL;
-            
-            // TYPE CASTING SAFE: Usa a interface local para acessar 'status' seguramente.
-            // O cast duplo (unknown -> Legacy) é necessário pois HabitDayData não tem 'status'.
-            const legacyStatus = (legacyInstance as unknown as LegacyHabitInstance).status;
-
-            if (legacyStatus === 'completed') {
-                // VERIFICAÇÃO DE ARETE (Superação)
-                // Se houver um valor numérico (goalOverride) e ele for maior que a meta definida...
-                if (legacyInstance.goalOverride !== undefined) {
-                     // Otimização: Usa o objeto passado ou busca no array (O(N))
-                     const habit = habitObj || state.habits.find(h => h.id === habitId);
-                     if (habit) {
-                         const props = getHabitPropertiesForDate(habit, dateISO);
-                         // Se a meta for numérica e o realizado for maior que o total
-                         if (props?.goal?.total && legacyInstance.goalOverride > props.goal.total) {
-                             return HABIT_STATE.DONE_PLUS;
-                         }
-                     }
-                }
-                return HABIT_STATE.DONE;
-            }
-            
-            if (legacyStatus === 'snoozed') return HABIT_STATE.DEFERRED;
-            
-            return HABIT_STATE.NULL;
-        } catch (e) {
-            return HABIT_STATE.NULL;
-        }
+        return HABIT_STATE.NULL;
     }
 
     /**
@@ -113,11 +68,15 @@ export class HabitService {
      * CORREÇÃO CRÍTICA: Um BigInt de mês pode ter até 186 bits. 
      * ArrayBuffer(8) (64 bits) causa perda de dados.
      * Alocamos 24 bytes (192 bits) para cobrir o mês inteiro.
+     * 
+     * @param sourceLogs Opcional. Fonte dos logs. Se não fornecido, usa o state global.
      */
-    static packBinaryLogs(): Map<string, ArrayBuffer> {
+    static packBinaryLogs(sourceLogs?: Map<string, bigint>): Map<string, ArrayBuffer> {
         const packed = new Map<string, ArrayBuffer>();
-        if (state.monthlyLogs && state.monthlyLogs instanceof Map) {
-            state.monthlyLogs.forEach((val, key) => {
+        const target = sourceLogs || state.monthlyLogs;
+
+        if (target && target instanceof Map) {
+            target.forEach((val, key) => {
                 const buffer = new ArrayBuffer(BUFFER_SIZE);
                 const view = new DataView(buffer);
                 

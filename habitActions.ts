@@ -1,5 +1,4 @@
 
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -15,20 +14,20 @@ import {
     ensureHabitInstanceData, clearScheduleCache,
     clearActiveHabitsCache, invalidateCachesForDateChange, getPersistableState,
     HabitDayData, STREAK_SEMI_CONSOLIDATED, STREAK_CONSOLIDATED,
-    getHabitDailyInfoForDate, AppState, isDateLoading, HabitDailyInfo, LANGUAGES, HABIT_STATE, PERIOD_OFFSET
+    getHabitDailyInfoForDate, AppState, isDateLoading, HabitDailyInfo, HABIT_STATE
 } from './state';
 import { saveState, loadState, clearLocalPersistence } from './services/persistence';
 import { PREDEFINED_HABITS } from './data/predefinedHabits';
 import { 
     getEffectiveScheduleForHabitOnDate, clearSelectorInternalCaches,
-    calculateHabitStreak, shouldHabitAppearOnDate, getHabitDisplayInfo, getScheduleForDate, getHabitPropertiesForDate
+    calculateHabitStreak, shouldHabitAppearOnDate, getHabitDisplayInfo, getHabitPropertiesForDate
 } from './services/selectors';
 import { 
     generateUUID, getTodayUTCIso, parseUTCIsoDate, triggerHaptic,
     getSafeDate, addDays, toUTCIsoDateString
 } from './utils';
 import { 
-    closeModal, showConfirmationModal, openEditModal, renderAINotificationState,
+    closeModal, showConfirmationModal, renderAINotificationState,
     clearHabitDomCache
 } from './render';
 import { ui } from './render/ui';
@@ -166,25 +165,36 @@ function _checkStreakMilestones(habit: Habit, dateISO: string) {
 }
 
 /**
- * REFACTOR [MAINTAINABILITY]: Helper para mover a instância de um hábito (metadados e status)
- * de um período do dia para outro, eliminando duplicação de código.
+ * REFACTOR [GREENFIELD]: Move instância copiando apenas metadados válidos.
+ * MICRO-OPTIMIZATION [V8]: Usa adição condicional para evitar transições de classe oculta (delete).
  */
 function _moveHabitInstanceForDay(habitId: string, date: string, fromTime: TimeOfDay, toTime: TimeOfDay) {
-    // 1. Move metadados legados (Notas/Overrides) se existirem.
+    // 1. Move Metadados Ricos (JSON)
     try {
         const info = ensureHabitDailyInfo(date, habitId);
-        if (info.instances[fromTime]) {
-            const movedData = { ...info.instances[fromTime] };
-            // Garante que a propriedade de status legada não seja transportada.
-            delete (movedData as any).status;
-            info.instances[toTime] = movedData as HabitDayData;
+        const sourceData = info.instances[fromTime];
+
+        if (sourceData) {
+            // PUREZA DE DADOS: Copia apenas o que é oficial na interface HabitDayData v7.
+            const cleanData: HabitDayData = {};
+            
+            // Só adiciona a chave se o valor existir. O objeto nasce e cresce limpo.
+            if (sourceData.goalOverride !== undefined) cleanData.goalOverride = sourceData.goalOverride;
+            if (sourceData.note !== undefined) cleanData.note = sourceData.note;
+
+            // Só atribui se houver dados reais (evita poluir o JSON com objetos vazios)
+            if (Object.keys(cleanData).length > 0) {
+                info.instances[toTime] = cleanData;
+            }
+            
+            // Limpa a origem para evitar duplicação
             delete info.instances[fromTime];
         }
     } catch (e) {
-        // Ignora erros se os dados estiverem sendo hidratados (o movimento do bitmask é o crítico).
+        // Ignora erros se os dados estiverem sendo hidratados
     }
 
-    // 2. Move o status do Bitmask (Fonte da Verdade).
+    // 2. Move o Status Binário (Fonte da Verdade Soberana).
     const currentBit = HabitService.getStatus(habitId, date, fromTime);
     if (currentBit !== HABIT_STATE.NULL) {
         HabitService.setStatus(habitId, date, toTime, currentBit);
@@ -256,7 +266,7 @@ const _applyHabitDeletion = async () => {
 
     Object.keys(state.dailyData).forEach(d => delete state.dailyData[d][ctx.habitId]);
 
-    // --- CORREÇÃO: Limpar rastro do Bitmask (Novo) ---
+    // --- CORREÇÃO: Limpar rastro do Bitmask (Zero-Lixo) ---
     // Remove todas as entradas de meses vinculadas a este ID
     if (state.monthlyLogs) {
         const keysToRemove: string[] = [];
@@ -422,7 +432,7 @@ export async function performAIAnalysis(type: 'monthly' | 'quarterly' | 'histori
         const trans: Record<string, string> = { promptTemplate: t(type === 'monthly' ? 'aiPromptMonthly' : (type === 'quarterly' ? 'aiPromptQuarterly' : 'aiPromptGeneral')), aiDaysUnit: t('unitDays', { count: 2 }) };
         ['aiPromptGraduatedSection', 'aiPromptNoData', 'aiPromptNone', 'aiSystemInstruction', 'aiPromptHabitDetails', 'aiVirtue', 'aiDiscipline', 'aiSphere', 'stoicVirtueWisdom', 'stoicVirtueCourage', 'stoicVirtueJustice', 'stoicVirtueTemperance', 'stoicDisciplineDesire', 'stoicDisciplineAction', 'stoicDisciplineAssent', 'governanceSphereBiological', 'governanceSphereStructural', 'governanceSphereSocial', 'governanceSphereMental', 'aiPromptNotesSectionHeader', 'aiStreakLabel', 'aiSuccessRateLabelMonthly', 'aiSuccessRateLabelQuarterly', 'aiSuccessRateLabelHistorical', 'aiHistoryChange', 'aiHistoryChangeFrequency', 'aiHistoryChangeGoal', 'aiHistoryChangeTimes'].forEach(k => trans[k] = t(k));
         PREDEFINED_HABITS.forEach(h => trans[h.nameKey] = t(h.nameKey));
-        const { prompt, systemInstruction } = await runWorkerTask<any>('build-ai-prompt', { analysisType: type, habits: state.habits, dailyData: state.dailyData, archives: state.archives, languageName: getAiLanguageName(), translations: trans, todayISO: getTodayUTCIso() });
+        const { prompt, systemInstruction } = await runWorkerTask<any>('build-ai-prompt', { analysisType: type, habits: state.habits, dailyData: state.dailyData, archives: state.archives, monthlyLogs: state.monthlyLogs, languageName: getAiLanguageName(), translations: trans, todayISO: getTodayUTCIso() });
         if (id !== state.aiReqId) return;
         const res = await apiFetch('/api/analyze', { method: 'POST', body: JSON.stringify({ prompt, systemInstruction }) });
         if (id === state.aiReqId) { state.lastAIResult = await res.text(); state.aiState = 'completed'; }
@@ -451,13 +461,17 @@ export function toggleHabitStatus(habitId: string, time: TimeOfDay, date: string
     const h = state.habits.find(x => x.id === habitId);
     if (!h) return;
 
-    // 1. LEITURA (Fonte: Bitmask) - Com otimização de objeto
-    const currentBit = HabitService.getStatus(habitId, date, time, h);
+    // 1. LEITURA (Fonte: Bitmask) - Otimizado para O(1)
+    const currentBit = HabitService.getStatus(habitId, date, time);
     
     // 2. LÓGICA DE ROTAÇÃO (3 Estados: Pendente -> Feito -> Adiado -> Pendente)
     let nextBit: number;
     
     if (currentBit === HABIT_STATE.NULL) {
+        const props = getHabitPropertiesForDate(h, date);
+        // Se tiver meta numérica (type != check e tem total), podemos ir para DONE normal.
+        // Se quiséssemos suportar "Exceder Meta" imediatamente, seria aqui, mas a lógica de 
+        // setGoalOverride lida com o upgrade para PLUS.
         nextBit = HABIT_STATE.DONE;
     } else if (currentBit === HABIT_STATE.DONE || currentBit === HABIT_STATE.DONE_PLUS) {
         nextBit = HABIT_STATE.DEFERRED;
@@ -529,7 +543,7 @@ export function markAllHabitsForDate(dateISO: string, status: 'completed' | 'sno
 
             sch.forEach(t => {
                 // Verificamos se o status já é o pretendido via Bitmask
-                if (HabitService.getStatus(h.id, dateISO, t, h) !== bitStatus) {
+                if (HabitService.getStatus(h.id, dateISO, t) !== bitStatus) {
                     // ESCRITA DIRETA NO BITMASK
                     HabitService.setStatus(h.id, dateISO, t, bitStatus);
                     changed = true;
@@ -622,7 +636,7 @@ export function setGoalOverride(habitId: string, d: string, t: TimeOfDay, v: num
         // Alterar o número NÃO deve alterar o status automaticamente se estiver Pendente.
         // Apenas atualizamos se já estiver Concluído (para gerenciar o estado 'Arete/Plus').
         
-        const currentStatus = HabitService.getStatus(habitId, d, t, h);
+        const currentStatus = HabitService.getStatus(habitId, d, t);
         
         if (currentStatus === HABIT_STATE.DONE || currentStatus === HABIT_STATE.DONE_PLUS) {
              const props = getHabitPropertiesForDate(h, d);
@@ -666,7 +680,29 @@ export function requestHabitTimeRemoval(habitId: string, time: TimeOfDay) {
         }
     );
 }
-export function exportData() { const blob = new Blob([JSON.stringify(getPersistableState(), null, 2)], { type: 'application/json' }), url = URL.createObjectURL(blob), a = document.createElement('a'); a.href = url; a.download = `askesis-backup-${getTodayUTCIso()}.json`; a.click(); URL.revokeObjectURL(url); }
+
+export function exportData() {
+    // FIX [2025-06-05]: DATA LOSS PREVENTION
+    // Manually serialize the Bitmask Map (monthlyLogs) to Array of Hex tuples.
+    // JSON.stringify ignores Maps by default, which would wipe all habit history.
+    const stateToExport = getPersistableState();
+    
+    // CRITICAL: Injeta os logs binários convertidos para Hex (Legível/Portátil)
+    // Isso garante que o backup restaure o histórico corretamente.
+    const logs = HabitService.serializeLogsForCloud(); // Retorna [["ID_DATA", "0x1A..."], ...]
+    if (logs.length > 0) {
+        (stateToExport as any).monthlyLogsSerialized = logs;
+    }
+
+    const blob = new Blob([JSON.stringify(stateToExport, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `askesis-backup-${getTodayUTCIso()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
 export function handleDayTransition() { const today = getTodayUTCIso(); clearActiveHabitsCache(); state.uiDirtyState.calendarVisuals = state.uiDirtyState.habitListStructure = state.uiDirtyState.chartData = true; state.calendarDates = []; if (state.selectedDate !== today) state.selectedDate = today; document.dispatchEvent(new CustomEvent('render-app')); }
 
 function _processAndFormatCelebrations(

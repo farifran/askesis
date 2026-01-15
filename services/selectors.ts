@@ -11,7 +11,8 @@ import { HabitService } from './HabitService';
 
 const _anchorDateCache = new Map<string, Date>();
 const MAX_ANCHOR_CACHE_SIZE = 365;
-const MAX_CACHE_SIZE = 100; // Memory Guard for generic caches
+// PERF TUNING: Must be larger than STREAK_LOOKBACK_DAYS (730) to prevent cache thrashing during a single streak calculation loop.
+const MAX_CACHE_SIZE = 750; 
 
 function _getMemoizedDate(dateISO: string): Date {
     let date = _anchorDateCache.get(dateISO);
@@ -165,7 +166,7 @@ function _isHabitConsistentlyDone(habit: Habit, dateISO: string): boolean {
     // MUDANÇA: Usando HabitService com otimização de objeto
     for (let i = 0; i < schedule.length; i++) {
         const time = schedule[i];
-        const status = HabitService.getStatus(habit.id, dateISO, time, habit);
+        const status = HabitService.getStatus(habit.id, dateISO, time);
         
         // Snoozed (2) não conta como "feito" para uma sequência. Apenas DONE (1) e DONE_PLUS (3) contam.
         if (status !== HABIT_STATE.DONE && status !== HABIT_STATE.DONE_PLUS) {
@@ -254,7 +255,7 @@ export function getSmartGoalForHabit(habit: Habit, dateISO: string, time: TimeOf
         if (iterISO < habit.createdOn) break;
         
         if (shouldHabitAppearOnDate(habit, iterISO, iterDate)) {
-            const status = HabitService.getStatus(habit.id, iterISO, time, habit);
+            const status = HabitService.getStatus(habit.id, iterISO, time);
             const isToday = iterISO === getTodayUTCIso();
             
             if (status === HABIT_STATE.NULL) {
@@ -342,7 +343,7 @@ export function calculateDaySummary(dateISO: string, preParsedDate?: Date) {
             const t = sch[j];
             
             // MUDANÇA: Leitura via HabitService (Bitmask Priority) com objeto
-            const status = HabitService.getStatus(h.id, dateISO, t, h);
+            const status = HabitService.getStatus(h.id, dateISO, t);
             
             total++;
             

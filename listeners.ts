@@ -1,5 +1,4 @@
 
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -29,8 +28,6 @@ import { pushToOneSignal, getTodayUTCIso, resetTodayCache } from './utils';
 import { state, getPersistableState } from './state';
 import { syncStateWithCloud } from './services/cloud';
 import { checkAndAnalyzeDayContext } from './services/analysis';
-// FIX: Import `updateAppBadge` to resolve the `Cannot find name 'updateAppBadge'` error.
-import { updateAppBadge } from './services/badge';
 
 // CONSTANTS
 const NETWORK_DEBOUNCE_MS = 500;
@@ -154,7 +151,6 @@ export function setupEventListeners() {
 
     // 3. App Event Bus (Direct reference)
     document.addEventListener('render-app', renderApp);
-    document.addEventListener('habitsChanged', updateAppBadge);
     
     // EVENT BUS: Bridge between View (render.ts) and Logic (analysis.ts) without circular imports.
     document.addEventListener('request-analysis', (e: Event) => {

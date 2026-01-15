@@ -11,7 +11,7 @@
  */
 
 import type { AppState, Habit, HabitDailyInfo, TimeOfDay, HabitSchedule } from '../state';
-import { toUTCIsoDateString, parseUTCIsoDate, decompressString, MS_PER_DAY, compressString, compressToBuffer, decompressFromBuffer, arrayBufferToBase64, base64ToArrayBuffer } from '../utils';
+import { toUTCIsoDateString, parseUTCIsoDate, decompressString, MS_PER_DAY, compressToBuffer, decompressFromBuffer, arrayBufferToBase64, base64ToArrayBuffer } from '../utils';
 import { encrypt, decrypt, decryptToBuffer } from './crypto';
 import { mergeStates } from './dataMerge';
 
@@ -97,7 +97,9 @@ function _getStatusFromBitmask(habitId: string, dateISO: string, time: TimeOfDay
     if (log !== undefined) {
         const day = parseInt(dateISO.substring(8, 10), 10);
         // Aritmética de ponteiro: (Dia - 1) * 6 bits + Offset do Período
-        const bitPos = BigInt(((day - 1) * 6) + PERIOD_OFFSET[time]);
+        // ROBUSTEZ: Fallback para 0 se o time for inválido para evitar BigInt(NaN) crash.
+        const offset = PERIOD_OFFSET[time] ?? 0;
+        const bitPos = BigInt(((day - 1) * 6) + offset);
         // Extrai 2 bits e converte para número
         return Number((log >> bitPos) & 0b11n);
     }
@@ -253,52 +255,39 @@ function _shouldHabitAppearOnDateInWorker(habit: Habit, dateISO: string, prePars
     return false;
 }
 
-async function _isHabitConsistentlyDoneInWorker(habit: Habit, dateISO: string, dailyData: AppState['dailyData'], archives: AppState['archives'], monthlyLogs?: Map<string, bigint>): Promise<boolean> {
-    const schedule = (_getScheduleForDateInWorker(habit, dateISO))?.times || [];
-    if (schedule.length === 0) return true;
+/**
+ * CLEAN ARCHITECTURE: Verifica consistência usando APENAS Bitmasks.
+ * Assinatura limpa: Removemos dailyData/archives pois não são mais usados para ler status.
+ */
+function _isHabitConsistentlyDoneInWorker(habit: Habit, dateISO: string, schedule: HabitSchedule | null, monthlyLogs?: Map<string, bigint>): boolean {
+    const times = schedule?.times || [];
+    if (times.length === 0) return true;
 
-    // 1. Bitmask Check (Fast Path)
-    // Se tivermos logs binários, usamos eles prioritariamente.
     if (monthlyLogs) {
-        let allDone = true;
-        let hasBitData = false;
-        
-        for (const time of schedule) {
+        for (const time of times) {
             const status = _getStatusFromBitmask(habit.id, dateISO, time as TimeOfDay, monthlyLogs);
-            if (status !== HABIT_STATE.NULL) {
-                hasBitData = true;
-                // DONE (1) ou DONE_PLUS (3) são válidos.
-                if (status === HABIT_STATE.NULL) { // Se for NULL (Pendente)
-                    allDone = false;
-                    break;
-                }
-            } else {
-                // Se não tem dado no bitmask, pode ser um dia antigo não migrado.
-                // Precisamos cair no fallback JSON.
-                hasBitData = false;
-                break; 
+            
+            // Regra estrita: Apenas DONE (1) ou DONE_PLUS (3) contam como feito.
+            // NULL (0) e DEFERRED (2) quebram a consistência para cálculo de streak.
+            if (status !== HABIT_STATE.DONE && status !== HABIT_STATE.DONE_PLUS) {
+                return false;
             }
         }
-        if (hasBitData) return allDone;
+        return true;
     }
 
-    // 2. Legacy JSON Check (Slow Path)
-    const dayRecord = await getDailyDataForDate(dateISO, dailyData, archives), dailyInfo = dayRecord[habit.id];
-    for (const time of schedule) {
-        // TYPE CASTING: Acessando propriedade legada 'status' de forma insegura, pois foi removida da interface.
-        const s = (dailyInfo?.instances[time] as any)?.status;
-        if (s !== 'completed' && s !== 'snoozed') return false;
-    }
-    return true;
+    // Se não houver monthlyLogs (ex: dados corrompidos ou não inicializados), assume falso.
+    return false;
 }
 
-async function _calculateHabitStreakInWorker(habit: Habit, endDateISO: string, dailyData: AppState['dailyData'], archives: AppState['archives'], monthlyLogs?: Map<string, bigint>): Promise<number> {
+async function _calculateHabitStreakInWorker(habit: Habit, endDateISO: string, monthlyLogs?: Map<string, bigint>): Promise<number> {
     let streak = 0, currentTimestamp = parseUTCIsoDate(endDateISO).getTime();
     for (let i = 0; i < 365; i++) {
         const iterDate = new Date(currentTimestamp), currentISO = toUTCIsoDateString(iterDate);
         if (currentISO < habit.createdOn) break;
         if (_shouldHabitAppearOnDateInWorker(habit, currentISO, iterDate)) {
-            if (await _isHabitConsistentlyDoneInWorker(habit, currentISO, dailyData, archives, monthlyLogs)) streak++;
+            const schedule = _getScheduleForDateInWorker(habit, currentISO);
+            if (_isHabitConsistentlyDoneInWorker(habit, currentISO, schedule, monthlyLogs)) streak++;
             else break;
         }
         currentTimestamp -= MS_PER_DAY;
@@ -306,49 +295,37 @@ async function _calculateHabitStreakInWorker(habit: Habit, endDateISO: string, d
     return streak;
 }
 
-async function _calculateSuccessRateInWorker(habit: Habit, todayISO: string, dailyData: AppState['dailyData'], archives: AppState['archives'], monthlyLogs: Map<string, bigint> | undefined, days: number): Promise<number> {
+async function _calculateSuccessRateInWorker(habit: Habit, todayISO: string, monthlyLogs: Map<string, bigint> | undefined, days: number): Promise<number> {
     let total = 0, done = 0, currentTimestamp = parseUTCIsoDate(todayISO).getTime();
     for (let i = 0; i < days; i++) {
         const iterDate = new Date(currentTimestamp), currentISO = toUTCIsoDateString(iterDate);
         if (currentISO < habit.createdOn) break;
         if (_shouldHabitAppearOnDateInWorker(habit, currentISO, iterDate)) {
             total++;
-            // Note: Reuse consistency check which treats snoozed as "kept streak". 
-            // For strict success rate, usually snoozed counts as 0.5 or 0 depending on logic.
-            // Keeping consistent with previous logic: count as "done" for general consistency metric.
-            if (await _isHabitConsistentlyDoneInWorker(habit, currentISO, dailyData, archives, monthlyLogs)) done++;
+            const schedule = _getScheduleForDateInWorker(habit, currentISO);
+            if (_isHabitConsistentlyDoneInWorker(habit, currentISO, schedule, monthlyLogs)) done++;
         }
         currentTimestamp -= MS_PER_DAY;
     }
     return total > 0 ? Math.round((done / total) * 100) : 0;
 }
 
-async function _getHistoryForPrompt(days: number, habits: Habit[], dailyData: AppState['dailyData'], archives: AppState['archives'], monthlyLogs: Map<string, bigint> | undefined, todayISO: string): Promise<string> {
+async function _getHistoryForPrompt(days: number, habits: Habit[], monthlyLogs: Map<string, bigint> | undefined, todayISO: string): Promise<string> {
     let history = ''; const date = parseUTCIsoDate(todayISO);
     for (let i = 0; i < days; i++) {
         const currentISO = toUTCIsoDateString(date);
         
-        // Carrega dados JSON apenas se necessário
-        const dayRecord = await getDailyDataForDate(currentISO, dailyData, archives);
-
         const dayHistory = habits.map(h => {
             const sch = (_getScheduleForDateInWorker(h, currentISO))?.times || [];
             if (sch.length === 0) return null;
             
             return sch.map(t => {
-                // 1. Bitmask Check
+                // CLEAN: Leitura exclusiva do Bitmask
                 const bitStatus = _getStatusFromBitmask(h.id, currentISO, t as TimeOfDay, monthlyLogs);
-                if (bitStatus !== HABIT_STATE.NULL) {
-                    if (bitStatus === HABIT_STATE.DONE || bitStatus === HABIT_STATE.DONE_PLUS) return '✅';
-                    if (bitStatus === HABIT_STATE.DEFERRED) return '➡️';
-                    return '⚪️';
-                }
-
-                // 2. Legacy Check
-                const inst = dayRecord[h.id]?.instances || {};
-                // TYPE CASTING: Acessando propriedade legada 'status'.
-                const s = (inst[t] as any)?.status;
-                return s === 'completed' ? '✅' : (s === 'snoozed' ? '➡️' : '⚪️');
+                
+                if (bitStatus === HABIT_STATE.DONE || bitStatus === HABIT_STATE.DONE_PLUS) return '✅';
+                if (bitStatus === HABIT_STATE.DEFERRED) return '➡️';
+                return '⚪️'; // NULL
             }).join('');
         }).filter(Boolean).join(' | ');
         
@@ -364,6 +341,7 @@ async function _getNotesForPrompt(dailyData: AppState['dailyData'], archives: Ap
         const currentISO = toUTCIsoDateString(date), dayRecord = await getDailyDataForDate(currentISO, dailyData, archives);
         for (const id in dayRecord) {
             const info = dayRecord[id];
+            // Notas ainda residem no JSON, então mantemos a leitura.
             if (info?.instances) Object.values(info.instances).forEach(inst => { if (inst?.note) notes += `${currentISO}: ${inst.note}\n`; });
         }
         date.setUTCDate(date.getUTCDate() - 1);
@@ -383,8 +361,9 @@ async function buildAIPrompt(payload: AIPromptPayload) {
         let res = '';
         for (const h of list) {
             const { name } = getHabitDisplayInfo(h, t, todayISO);
-            const streak = await _calculateHabitStreakInWorker(h, todayISO, dailyData, archives, monthlyLogs);
-            const success = await _calculateSuccessRateInWorker(h, todayISO, dailyData, archives, monthlyLogs, type === 'quarterly' ? 90 : (type === 'historical' ? 365 : 30));
+            // CLEAN: Signature update
+            const streak = await _calculateHabitStreakInWorker(h, todayISO, monthlyLogs);
+            const success = await _calculateSuccessRateInWorker(h, todayISO, monthlyLogs, type === 'quarterly' ? 90 : (type === 'historical' ? 365 : 30));
             
             let historySummary = '';
             if (h.scheduleHistory && h.scheduleHistory.length > 1) {
@@ -430,8 +409,10 @@ async function buildAIPrompt(payload: AIPromptPayload) {
         return res;
     };
     
+    // Notes still require dailyData/archives
     const notes = await _getNotesForPrompt(dailyData, archives, todayISO);
-    const history = await _getHistoryForPrompt(type === 'quarterly' ? 90 : (type === 'historical' ? 180 : 30), active, dailyData, archives, monthlyLogs, todayISO);
+    // History uses bitmasks only now
+    const history = await _getHistoryForPrompt(type === 'quarterly' ? 90 : (type === 'historical' ? 180 : 30), active, monthlyLogs, todayISO);
 
     const prompt = t.promptTemplate
         .replace('{activeHabitDetails}', await getDetails(active))

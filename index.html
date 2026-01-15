@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="pt-BR">
 <!-- 
@@ -125,7 +126,7 @@
 <script type="importmap">
 {
   "imports": {
-    "@google/genai": "https://esm.sh/@google/genai@^1.34.0",
+    "@google/genai": "https://esm.sh/@google/genai@^1.36.0",
     "@vercel/analytics": "https://esm.sh/@vercel/analytics@^1.6.1",
     "@vercel/kv": "https://esm.sh/@vercel/kv@^3.0.0"
   }
@@ -231,6 +232,12 @@
               console.warn("Caught and suppressed OneSignal library error:", msg);
               return true; // Prevents the error from being reported globally
             }
+            
+            // IGNORE RESIZE OBSERVER LOOP ERROR: Benign warning in modern browsers when layout is stressed.
+            if (typeof msg === 'string' && msg.includes('ResizeObserver loop')) {
+                return true;
+            }
+
             window.showFatalError(msg);
             return false; 
           };

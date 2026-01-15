@@ -1,5 +1,3 @@
-
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -24,22 +22,6 @@
 
 import { state, TimeOfDay, LANGUAGES } from './state';
 import { pushToOneSignal } from './utils';
-
-// TYPE POLYFILL: Garante que Intl.ListFormat seja reconhecido mesmo em configurações TS antigas (ES2020 ou inferior).
-declare global {
-    namespace Intl {
-        interface ListFormatOptions {
-            localeMatcher?: "lookup" | "best fit";
-            type?: "conjunction" | "disjunction" | "unit";
-            style?: "long" | "short" | "narrow";
-        }
-
-        class ListFormat {
-            constructor(locales?: string | string[], options?: ListFormatOptions);
-            public format(list: Iterable<string>): string;
-        }
-    }
-}
 
 // INTERFACE ABSTRATA: Permite que o cache aceite tanto a classe nativa quanto o mock de fallback sem erros de tipo.
 interface ListFormatter {
@@ -87,6 +69,12 @@ const DAY_FORMAT_OPTS: Intl.DateTimeFormatOptions = { weekday: 'short', timeZone
 const WEEKDAY_REF_DATES = Array.from({ length: 7 }, (_, i) => new Date(Date.UTC(1970, 0, 4 + i)));
 
 // PERFORMANCE: Lookup Table para TimeOfDay.
+const TIME_ICONS: Record<TimeOfDay, string> = {
+    'Morning': 'filterMorning',
+    'Afternoon': 'filterAfternoon',
+    'Evening': 'filterEvening'
+};
+
 const TIME_OF_DAY_KEYS: Record<TimeOfDay, string> = {
     'Morning': 'filterMorning',
     'Afternoon': 'filterAfternoon',
@@ -226,7 +214,8 @@ function updateHotCache(langCode: string) {
     // 4. List Format (Arrays)
     if (!listFormatCache[langCode]) {
         try {
-            listFormatCache[langCode] = new Intl.ListFormat(langCode, { style: 'long', type: 'conjunction' });
+            // @fix: Cast Intl to any to support ListFormat which might be missing in TS libs
+            listFormatCache[langCode] = new (Intl as any).ListFormat(langCode, { style: 'long', type: 'conjunction' });
         } catch (e) {
             // ROBUSTEZ: Fallback seguro se a API não existir (Browser antigo).
             listFormatCache[langCode] = { 

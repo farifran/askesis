@@ -109,15 +109,20 @@ export function setupReelRotary({
     let isSwiping = false;
     let startTransformX = 0;
     
+    // RESIZE OBSERVER LOOP FIX: Debounce logic via RAF
+    let resizeRaf = 0;
     const resizeObserver = new ResizeObserver(entries => {
-        for (const entry of entries) {
-            const firstChild = entry.target.firstElementChild;
-            if (firstChild) {
-                cachedItemWidth = firstChild.clientWidth;
-                // Re-alinha ao redimensionar
-                updatePosition(currentIndex, false);
+        if (resizeRaf) cancelAnimationFrame(resizeRaf);
+        resizeRaf = requestAnimationFrame(() => {
+            for (const entry of entries) {
+                const firstChild = entry.target.firstElementChild;
+                if (firstChild) {
+                    cachedItemWidth = firstChild.clientWidth;
+                    // Re-alinha ao redimensionar
+                    updatePosition(currentIndex, false);
+                }
             }
-        }
+        });
     });
     
     resizeObserver.observe(reelEl);

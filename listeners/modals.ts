@@ -1,5 +1,4 @@
 
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -22,7 +21,6 @@ import { ui } from '../render/ui';
 import { 
     state, 
     LANGUAGES, 
-    STREAK_SEMI_CONSOLIDATED, 
     STREAK_CONSOLIDATED, 
     DAYS_IN_CALENDAR, 
     invalidateChartCache, 
@@ -60,7 +58,7 @@ import {
     importData,
     consumeAndFormatCelebrations,
 } from '../habitActions';
-import { t, setLanguage, formatList } from '../i18n';
+import { t, setLanguage } from '../i18n';
 import { getHabitDisplayInfo } from '../services/selectors';
 import { setupReelRotary } from '../render/rotary';
 import { simpleMarkdownToHTML, pushToOneSignal, getContrastColor, addDays, parseUTCIsoDate, toUTCIsoDateString, triggerHaptic } from '../utils';

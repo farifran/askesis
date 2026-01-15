@@ -1,5 +1,4 @@
 
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -230,11 +229,13 @@ async function init(loader: HTMLElement | null) {
     isInitializing = false;
 }
 
-registerServiceWorker();
-
 const startApp = () => {
     // 0. AUTO-HEALING CHECK (Prevent Boot Loop)
+    // ROBUSTNESS: SW Registration must happen AFTER healing check to avoid re-registering broken SWs.
     if (!checkIntegrityAndHeal()) return;
+
+    // 1. REGISTER SW (Safe)
+    registerServiceWorker();
 
     // PREVENT DOUBLE BOOT
     if (isInitializing || isInitialized) return;

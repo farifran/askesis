@@ -137,7 +137,9 @@ export async function saveState(): Promise<void> {
 
 export const persistStateLocally = (data: AppState) => {
     // Save immediate split state (e.g. after migration or merge)
-    const binaryLogs = HabitService.packBinaryLogs();
+    // AUDIT FIX: Use logs from the incoming data object if available (e.g. during merge), 
+    // otherwise fallback to global state via service default logic.
+    const binaryLogs = HabitService.packBinaryLogs(data.monthlyLogs);
     return saveSplitState(data, binaryLogs);
 };
 
@@ -191,8 +193,15 @@ export async function loadState(cloudState?: AppState): Promise<AppState | null>
         
         // PERFORMANCE & INTEGRITY: Pruning rodando fora do caminho crítico do boot.
         const runCleanup = () => pruneOrphanedDailyData(migrated.habits, migrated.dailyData || {});
-        if ('requestIdleCallback' in window) requestIdleCallback(runCleanup);
-        else setTimeout(runCleanup, 3000);
+        
+        // AUDIT FIX: Scheduler API priority
+        if ('scheduler' in window && (window as any).scheduler) {
+             (window as any).scheduler.postTask(runCleanup, { priority: 'background' });
+        } else if ('requestIdleCallback' in window) {
+             requestIdleCallback(runCleanup);
+        } else {
+             setTimeout(runCleanup, 3000);
+        }
         
         // @fix: Assign properties individually and create a mutable copy of habits to resolve readonly type mismatch.
         state.habits = [...migrated.habits];
@@ -210,9 +219,12 @@ export async function loadState(cloudState?: AppState): Promise<AppState | null>
             // [A] Fast Path: Restaura direto do binário (Zero Copy / Zero String Parsing)
             HabitService.unpackBinaryLogs(binaryLogs);
             //console.log(`[Persistence] Bitmasks binários carregados: ${binaryLogs.size} meses.`);
+        } else if (migrated.monthlyLogs instanceof Map) {
+            // [B] Cloud Path (New Worker): Já veio hidratado como Map no processo de worker decryption
+            // AUDIT FIX: Ensure we use the map from cloud instead of resetting
+            state.monthlyLogs = migrated.monthlyLogs;
         } else if ((migrated as any).monthlyLogsSerialized && Array.isArray((migrated as any).monthlyLogsSerialized)) {
-            // [B] Cloud Sync/Legacy Path: Importa do JSON (Hex Strings)
-            // Isso acontece quando carregamos dados vindos da nuvem (via loadState(cloudState)) ou primeira migração.
+            // [C] Legacy Cloud Path: Importa do JSON (Hex Strings)
             console.log("[Persistence] Migrando logs legados/nuvem para binário...");
             HabitService.deserializeLogsFromCloud((migrated as any).monthlyLogsSerialized);
             // Cleanup memory immediate

@@ -91,6 +91,7 @@ let isChartDirty = false;
 let chartObserver: IntersectionObserver | null = null;
 let resizeObserver: ResizeObserver | null = null;
 let observersInitialized = false;
+let resizeRaf = 0; // Prevent stacked RAFs
 
 function calculateChartData(): ChartDataPoint[] {
     try {
@@ -294,7 +295,8 @@ function initChartObservers() {
         // This prevents the "ResizeObserver loop completed with undelivered notifications" error
         // by deferring the DOM update to the next frame, breaking the synchronous feedback loop
         // where updating the chart might trigger another resize event immediately.
-        requestAnimationFrame(() => {
+        if (resizeRaf) cancelAnimationFrame(resizeRaf);
+        resizeRaf = requestAnimationFrame(() => {
             if (!isChartVisible) return;
             chartInteractionState.cachedChartRect = null;
             _updateChartDOM(chartInteractionState.lastChartData);

@@ -48,8 +48,8 @@ export type Frequency =
 export interface HabitDayData {
     // STATUS REMOVIDO: O estado de conclusão agora reside exclusivamente em 'monthlyLogs' (Bitmask).
     // Este objeto armazena apenas metadados ricos opcionais.
-    goalOverride: number | undefined;
-    note: string | undefined;
+    goalOverride?: number;
+    note?: string;
 }
 
 export type HabitDailyInstances = Partial<Record<TimeOfDay, HabitDayData>>;

@@ -19,8 +19,8 @@
  * - Historical Determinism: O passado é imutável.
  */
 
-// @fix: Import `getHabitDailyInfoForDate` to make it available in this module.
-import { state, Habit, StoicVirtue, GovernanceSphere, getHabitDailyInfoForDate, HABIT_STATE } from '../state';
+// AUDIT FIX: Removed unused 'getHabitDailyInfoForDate'
+import { state, Habit, StoicVirtue, GovernanceSphere, HABIT_STATE } from '../state';
 import { Quote, StoicTag } from '../data/quotes';
 import { calculateDaySummary, getEffectiveScheduleForHabitOnDate, calculateHabitStreak, getScheduleForDate } from './selectors';
 import { toUTCIsoDateString, parseUTCIsoDate, getTodayUTCIso } from '../utils';
@@ -136,14 +136,19 @@ function _getNeglectedSphere(habits: Habit[], dateISO: string): GovernanceSphere
     // @fix: Get philosophy from the habit's schedule for the given date.
     habits.forEach(h => {
         const habitSchedule = getScheduleForDate(h, dateISO);
-        if (habitSchedule?.times.length > 0 && habitSchedule.philosophy) {
+        
+        if (habitSchedule?.philosophy) {
             const sph = habitSchedule.philosophy.sphere;
             if (!sphereStats[sph]) sphereStats[sph] = { total: 0, done: 0 };
             
-            habitSchedule.times.forEach(time => {
+            // AUDIT FIX: Use effective schedule to account for day overrides/moves.
+            // Previously iterated habitSchedule.times, which missed dynamic changes.
+            const effectiveTimes = getEffectiveScheduleForHabitOnDate(h, dateISO);
+            
+            effectiveTimes.forEach(time => {
                 sphereStats[sph].total++;
                 // FIX: Use HabitService for status check with habit object passed
-                const status = HabitService.getStatus(h.id, dateISO, time, h);
+                const status = HabitService.getStatus(h.id, dateISO, time);
                 if (status === HABIT_STATE.DONE || status === HABIT_STATE.DONE_PLUS) sphereStats[sph].done++;
             });
         }
@@ -323,14 +328,15 @@ function _scoreQuote(quote: Quote, context: ContextVector): number {
     }
 
     // 6. PERFORMANCE REACTION
-    const state = context.performanceState;
-    if (state === 'defeat') {
+    // AUDIT FIX: Renamed shadowed variable 'state' to 'perfState'
+    const perfState = context.performanceState;
+    if (perfState === 'defeat') {
         applyTagRule(true, ['resilience', 'acceptance', 'fate'], WEIGHTS.PERFORMANCE);
-    } else if (state === 'triumph') {
+    } else if (perfState === 'triumph') {
         applyTagRule(true, ['humility', 'temperance', 'death'], WEIGHTS.PERFORMANCE);
-    } else if (state === 'struggle') {
+    } else if (perfState === 'struggle') {
         applyTagRule(true, ['discipline', 'action', 'focus'], WEIGHTS.PERFORMANCE);
-    } else if (state === 'urgency') {
+    } else if (perfState === 'urgency') {
         if (quote.metadata.tags.includes('urgency') || quote.metadata.tags.includes('time') || 
             quote.metadata.tags.includes('action') || quote.metadata.tags.includes('death')) {
             score += WEIGHTS.PERFORMANCE * 1.2;
