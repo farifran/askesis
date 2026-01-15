@@ -23,8 +23,7 @@
 .header-top {
     display: flex;
     align-items: flex-end; /* ALIGNMENT FIX [2025-06-03]: Bottom alignment for Calendar & AI Icon */
-    /* GAP REDUCTION [2025-06-03]: Reduced from var(--space-lg) to 0 to minimize space between FAB, Calendar and Icons */
-    gap: 0;
+    gap: var(--space-lg);
 }
 
 /* ALIGNMENT FIX [2025-06-03]: Lifter para o FAB.
@@ -35,8 +34,6 @@
 #fab-add-habit {
     margin-bottom: 30px;
     margin-left: 4px;
-    /* Added small right margin to separate from calendar since gap is 0 */
-    margin-right: 4px;
 }
 
 /* TABLET/DESKTOP ADJUSTMENT [2025-05-15]: Aumenta o espaço entre o botão de adicionar e o calendário. */
@@ -52,15 +49,12 @@
     align-items: center;
     gap: var(--space-xs);
     flex-shrink: 0;
-    /* Added small left margin to separate from calendar since gap is 0 */
-    margin-left: 4px;
 }
 
 /* MOBILE ADJUSTMENT [2025-05-15]: Reduz o gap visual entre calendário e ícones (de 16px para 8px) sem afetar o lado esquerdo (FAB). */
 @media (max-width: 480px) {
     .header-icon-stack {
-        /* Reset negative margin since container gap is now 0 */
-        margin-left: 4px;
+        margin-left: calc(var(--space-sm) * -1);
     }
 }
 
