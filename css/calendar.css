@@ -17,9 +17,9 @@
     /* UX [2025-01-18]: Rolagem com snap para sensação mais precisa */
     scroll-snap-type: x proximity;
     
-    /* FIX [2025-05-15]: Ajuste fino de posição. Move para esquerda (7px start, 47px end). */
-    padding-inline-start: 7px;
-    padding-inline-end: 47px;
+    /* FIX [2025-06-03]: Margin Reduction. Reduced padding to bring days closer to edges/icons. */
+    padding-inline-start: 0;
+    padding-inline-end: 0;
 }
 .calendar-strip::-webkit-scrollbar { display: none; }
 
@@ -38,12 +38,12 @@
     /* UX [2025-02-05]: Alinhamento 'end' para coincidir com o scrollIntoView('end') e manter o histórico visível */
     scroll-snap-align: end;
 
-    /* --- PERFORMANCE UPDATE v8.0 (Strip Virtualization) --- */
-    /* O navegador deixará de renderizar os pixels dos dias fora da tela horizontal. */
-    content-visibility: auto;
-    
-    /* ESTIMATIVA: Largura (~50px) e Altura (~65px) baseadas no padding + conteúdo */
-    contain-intrinsic-size: 50px 65px;
+    /* REVERTED PERFORMANCE OPTIMIZATION [2025-06-03]: 
+       'content-visibility: auto' (Paint Containment) estava cortando o efeito de brilho (glow) que excede a caixa do dia.
+       Removido para garantir integridade visual ("Surgical Fix").
+    */
+    /* content-visibility: auto; */
+    /* contain-intrinsic-size: 50px 65px; */
 }
 .day-item:hover { background-color: var(--surface-hover); }
 .day-item.selected { 
@@ -117,6 +117,8 @@
     border-radius: var(--border-radius-pill);
     box-shadow: 0 0 12px var(--accent-green);
     animation: glow-pulse 2.5s infinite ease-in-out;
+    animation-delay: var(--glow-delay, 0s); /* SYNC FIX */
+    z-index: 2; /* VISIBILITY FIX */
 }
 .day-number.has-plus {
     text-shadow: 0 0 3px var(--text-primary), 0 0 5px var(--text-primary);
