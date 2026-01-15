@@ -1,4 +1,5 @@
 
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -23,11 +24,13 @@ import { setupCardListeners } from './listeners/cards';
 import { setupDragHandler } from './listeners/drag';
 import { setupSwipeHandler } from './listeners/swipe';
 import { setupCalendarListeners } from './listeners/calendar';
-import { initChartInteractions } from './render/chart';
+import { setupChartListeners } from './listeners/chart';
 import { pushToOneSignal, getTodayUTCIso, resetTodayCache } from './utils';
 import { state, getPersistableState } from './state';
 import { syncStateWithCloud } from './services/cloud';
 import { checkAndAnalyzeDayContext } from './services/analysis';
+// FIX: Import `updateAppBadge` to resolve the `Cannot find name 'updateAppBadge'` error.
+import { updateAppBadge } from './services/badge';
 
 // CONSTANTS
 const NETWORK_DEBOUNCE_MS = 500;
@@ -111,6 +114,27 @@ const _handleVisibilityChange = () => {
     }
 };
 
+/**
+ * EVENT BUS: Targeted UI updates for performance.
+ * Handles reactive updates from data changes.
+ */
+const _handleCardUpdate = (e: Event) => {
+    const { habitId, time } = (e as CustomEvent).detail;
+    const habit = state.habits.find(h => h.id === habitId);
+    
+    let cardElement = getCachedHabitCard(habitId, time);
+
+    // ROBUSTNESS FIX [2025-06-03]: Fallback to DOM query if cache is stale or desynchronized.
+    if (!cardElement) {
+         cardElement = document.querySelector(`.habit-card[data-habit-id="${habitId}"][data-time="${time}"]`) as HTMLElement;
+    }
+
+    if (habit && cardElement) {
+        const shouldAnimate = e.type === 'card-status-changed';
+        updateHabitCardElement(cardElement, habit, time, undefined, { animate: shouldAnimate });
+    }
+};
+
 export function setupEventListeners() {
     // ROBUSTNESS: Singleton Guard.
     if (areListenersAttached) {
@@ -130,6 +154,8 @@ export function setupEventListeners() {
 
     // 3. App Event Bus (Direct reference)
     document.addEventListener('render-app', renderApp);
+    document.addEventListener('habitsChanged', updateAppBadge);
+    
     // EVENT BUS: Bridge between View (render.ts) and Logic (analysis.ts) without circular imports.
     document.addEventListener('request-analysis', (e: Event) => {
         const ce = e as CustomEvent;
@@ -139,26 +165,8 @@ export function setupEventListeners() {
     });
 
     // EVENT BUS: Targeted UI updates for performance
-    const handleCardUpdate = (e: Event) => {
-        const { habitId, time } = (e as CustomEvent).detail;
-        const habit = state.habits.find(h => h.id === habitId);
-        
-        let cardElement = getCachedHabitCard(habitId, time);
-
-        // ROBUSTNESS FIX [2025-06-03]: Fallback to DOM query if cache is stale or desynchronized.
-        // This ensures the visual update happens even if the cache entry was lost or key mismatch occurred.
-        // Critical for "Morning" habits or newly created ones where cache race conditions might exist.
-        if (!cardElement) {
-             cardElement = document.querySelector(`.habit-card[data-habit-id="${habitId}"][data-time="${time}"]`) as HTMLElement;
-        }
-
-        if (habit && cardElement) {
-            const shouldAnimate = e.type === 'card-status-changed';
-            updateHabitCardElement(cardElement, habit, time, undefined, { animate: shouldAnimate });
-        }
-    };
-    document.addEventListener('card-status-changed', handleCardUpdate);
-    document.addEventListener('card-goal-changed', handleCardUpdate);
+    document.addEventListener('card-status-changed', _handleCardUpdate);
+    document.addEventListener('card-goal-changed', _handleCardUpdate);
 
     // 4. ENVIRONMENT & LIFECYCLE LISTENERS
     window.addEventListener('online', _handleNetworkChange);
@@ -175,7 +183,7 @@ export function setupEventListeners() {
             const container = ui.habitContainer;
             setupDragHandler(container);
             setupSwipeHandler(container);
-            initChartInteractions();
+            setupChartListeners();
         } catch (e) {
             console.warn("Interaction setup skipped: DOM not ready/Element missing.");
         }

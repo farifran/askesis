@@ -1,4 +1,3 @@
-
 /* --- COMPONENTES: FORMULÁRIOS --- */
 .form-group { margin-block-end: var(--space-lg); }
 .form-group label {
@@ -62,10 +61,6 @@
     right: 0;
     height: 1px;
     background-color: var(--border-color);
-}
-/* Utilitário para remover a borda quando necessário (ex: cabeçalho de seção de botões) */
-.form-row.form-row--no-border::after {
-    display: none;
 }
 
 .form-row.form-row--vertical {
@@ -177,7 +172,6 @@
     color: var(--text-tertiary);
     margin-top: -9px;
     min-height: 1.2em;
-    transition: color var(--transition-duration);
 }
 
 .form-notice {

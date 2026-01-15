@@ -69,6 +69,7 @@ const listFormatCache: Record<string, ListFormatter> = {};
 // NUMERIC CACHE [2025-04-14]: Cache para formatadores numéricos (Int, Decimal, Evolution).
 // Evita recriar Intl.NumberFormat em loops de renderização de gráficos.
 type NumberFormatBundle = { int: Intl.NumberFormat; dec: Intl.NumberFormat; evo: Intl.NumberFormat };
+type NumberFormatType = keyof NumberFormatBundle;
 const numberFormatCache: Record<string, NumberFormatBundle> = {};
 
 // PERFORMANCE: Cache imutável para nomes de dias da semana por idioma.
@@ -418,37 +419,33 @@ export function formatDate(date: Date | number | null | undefined, options: Intl
 }
 
 /**
- * Formata um número inteiro usando as regras do locale ativo.
- * Ex: 1000 -> "1.000" (PT) ou "1,000" (EN).
+ * REFACTOR [MAINTAINABILITY]: Helper interno para formatação de números.
+ * Centraliza a lógica de verificação de idioma e acesso ao cache, eliminando redundância.
  */
-export function formatInteger(num: number): string {
+function _formatNumber(num: number, type: NumberFormatType): string {
     if (state.activeLanguageCode !== currentLangCode) {
         updateHotCache(state.activeLanguageCode);
     }
-    return currentNumberFormat!.int.format(num);
+    return currentNumberFormat![type].format(num);
 }
+
+/**
+ * Formata um número inteiro usando as regras do locale ativo.
+ * Ex: 1000 -> "1.000" (PT) ou "1,000" (EN).
+ */
+export const formatInteger = (num: number) => _formatNumber(num, 'int');
 
 /**
  * Formata um número decimal (fixo em 2 casas) usando as regras do locale ativo.
  * Ex: 10.5 -> "10,50" (PT) ou "10.50" (EN).
  */
-export function formatDecimal(num: number): string {
-    if (state.activeLanguageCode !== currentLangCode) {
-        updateHotCache(state.activeLanguageCode);
-    }
-    return currentNumberFormat!.dec.format(num);
-}
+export const formatDecimal = (num: number) => _formatNumber(num, 'dec');
 
 /**
  * Formata um número de evolução/porcentagem (fixo em 1 casa) usando as regras do locale ativo.
  * Ex: 12.5 -> "12,5" (PT) ou "12.5" (EN).
  */
-export function formatEvolution(num: number): string {
-    if (state.activeLanguageCode !== currentLangCode) {
-        updateHotCache(state.activeLanguageCode);
-    }
-    return currentNumberFormat!.evo.format(num);
-}
+export const formatEvolution = (num: number) => _formatNumber(num, 'evo');
 
 /**
  * Formata uma lista de strings (ex: "A, B e C") usando as regras do idioma ativo.

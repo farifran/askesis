@@ -1,4 +1,5 @@
 
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -316,7 +317,9 @@ export function setupCalendarListeners() {
 
         if (date) {
             triggerHaptic(action === 'completed' ? 'success' : 'medium');
-            if (markAllHabitsForDate(date, action)) renderApp();
+            // A função `markAllHabitsForDate` já dispara um evento `render-app` se houver alterações.
+            // A chamada explícita `renderApp()` é redundante e causa um ciclo de renderização duplo.
+            markAllHabitsForDate(date, action);
         }
     };
 

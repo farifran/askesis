@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -135,17 +134,6 @@ export function arrayBufferToHex(buffer: ArrayBuffer): string {
         hex += HEX_LUT[bytes[i]];
     }
     return hex;
-}
-
-export function hexToArrayBuffer(hex: string): ArrayBuffer {
-    if (hex.length % 2 !== 0) throw new Error("Invalid hex string");
-    const len = hex.length / 2;
-    const bytes = new Uint8Array(len);
-    for (let i = 0; i < len; i++) {
-        const h = hex.substring(i * 2, i * 2 + 2);
-        bytes[i] = parseInt(h, 16);
-    }
-    return bytes.buffer;
 }
 
 // --- GZIP COMPRESSION (NATIVE BINARY) ---

@@ -1,4 +1,3 @@
-
 /* --- LAYOUT DE HABIT CONTAINER (SMART FLEX SCROLL) --- */
 #habit-container {
     display: flex;
@@ -462,10 +461,10 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 .habit-details .subtitle { 
     font-size: 11px; 
     color: var(--text-secondary);
+    font-weight: 500;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    transition: color 0.3s ease, font-weight 0.3s ease;
 }
 
 .habit-card.completed .habit-details .name {
@@ -553,7 +552,6 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 
 .goal-value-wrapper .progress {
     color: var(--text-primary);
-    transition: color var(--transition-duration-slow);
 }
 
 .goal-value-wrapper.increase .progress {

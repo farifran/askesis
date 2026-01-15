@@ -235,9 +235,7 @@ const _handleDrop = (e: DragEvent) => {
     e.preventDefault();
     if (!DragState.isActive || !DragState.isValidDrop || !DragState.sourceId || !DragState.sourceTime) return;
 
-    const targetTime = DragState.targetZone?.dataset.time as TimeOfDay;
-    if (!targetTime) return;
-
+    const targetTime = DragState.targetZone!.dataset.time as TimeOfDay;
     const isReorder = DragState.sourceTime === targetTime;
     
     // Executa Ação

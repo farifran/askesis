@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -41,7 +40,7 @@ function updateCachedLayoutValues() {
 }
 
 function _finalizeSwipeState(deltaX: number) {
-    const { card, wasOpenLeft, wasOpenRight, actionWidth } = SwipeState;
+    const { card, wasOpenLeft, wasOpenRight } = SwipeState;
     if (!card) return;
 
     if (wasOpenLeft) {
@@ -118,23 +117,39 @@ const _reset = () => {
 
 const _handlePointerMove = (e: PointerEvent) => {
     if (!SwipeState.card) return;
+
+    // Always update current position
     SwipeState.currentX = e.clientX | 0;
+
+    // Detect intent on first move
     if (SwipeState.direction === DIR_NONE) {
-        const dx = Math.abs(SwipeState.currentX - SwipeState.startX), dy = Math.abs((e.clientY | 0) - SwipeState.startY);
+        const dx = Math.abs(SwipeState.currentX - SwipeState.startX);
+        const dy = Math.abs((e.clientY | 0) - SwipeState.startY);
+        
         if (dx > INTENT_THRESHOLD || dy > INTENT_THRESHOLD) {
             if (dx > dy) {
-                SwipeState.direction = DIR_HORIZ; SwipeState.isActive = 1;
+                // Horizontal swipe confirmed
+                SwipeState.direction = DIR_HORIZ;
+                SwipeState.isActive = 1;
                 document.body.classList.add('is-interaction-active');
                 SwipeState.card.classList.add(CSS_CLASSES.IS_SWIPING);
                 if (SwipeState.content) SwipeState.content.draggable = false;
-                try { SwipeState.card.setPointerCapture(e.pointerId); SwipeState.pointerId = e.pointerId; } catch(e){}
+                try { SwipeState.card.setPointerCapture(e.pointerId); SwipeState.pointerId = e.pointerId; } catch(e) {}
             } else {
-                SwipeState.direction = DIR_VERT; _reset(); return;
+                // Vertical scroll, abort swipe
+                SwipeState.direction = DIR_VERT;
+                _reset();
+                return;
             }
         }
     }
-    if (SwipeState.direction === DIR_HORIZ && !SwipeState.rafId) {
-        SwipeState.rafId = requestAnimationFrame(_updateVisuals);
+
+    // Process horizontal swipe
+    if (SwipeState.direction === DIR_HORIZ) {
+        e.preventDefault(); // GESTURE LOCK: Previne scroll vertical do navegador
+        if (!SwipeState.rafId) {
+            SwipeState.rafId = requestAnimationFrame(_updateVisuals);
+        }
     }
 };
 
@@ -164,7 +179,7 @@ export function setupSwipeHandler(container: HTMLElement) {
         SwipeState.wasOpenRight = card.classList.contains(CSS_CLASSES.IS_OPEN_RIGHT) ? 1 : 0;
         SwipeState.hasHaptics = 0;
 
-        window.addEventListener('pointermove', _handlePointerMove, { passive: true });
+        window.addEventListener('pointermove', _handlePointerMove, { passive: false });
         window.addEventListener('pointerup', _handlePointerUp);
         window.addEventListener('pointercancel', _reset);
     });

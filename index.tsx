@@ -1,4 +1,5 @@
 
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -92,8 +93,9 @@ const registerServiceWorker = () => {
 const NETWORK_TIMEOUT = Symbol('NETWORK_TIMEOUT');
 
 async function loadInitialState() {
-    const localState = await loadState(); 
-    
+    // Carrega o estado local inicial. Se houver migrações, elas acontecem aqui na memória.
+    let finalState = await loadState(); 
+
     if (hasLocalSyncKey()) {
         try {
             const CLOUD_BOOT_TIMEOUT_MS = 3000;
@@ -103,48 +105,41 @@ async function loadInitialState() {
             ]);
 
             if (raceResult === NETWORK_TIMEOUT) {
-                console.warn("Startup: Network timed out.");
+                console.warn("Startup: Network timed out, using local state.");
                 setSyncStatus('syncError');
-                if (!localState) return; 
-            } 
-            
-            const cloudState = raceResult === NETWORK_TIMEOUT ? undefined : raceResult;
-            const isCloudEmpty = raceResult === undefined;
+            } else {
+                const cloudState = raceResult; // Can be AppState | undefined
+                const isCloudEmpty = cloudState === undefined;
 
-            if (cloudState && localState) {
-                const localIsNewer = localState.lastModified > cloudState.lastModified;
-                const stateToLoad = await mergeStates(
-                    localIsNewer ? cloudState : localState, 
-                    localIsNewer ? localState : cloudState
-                );
-                
-                if (localIsNewer) syncStateWithCloud(stateToLoad, true);
-                await persistStateLocally(stateToLoad);
-                await loadState(stateToLoad);
-                
-            } else if (cloudState) {
-                await persistStateLocally(cloudState);
-                await loadState(cloudState);
-                
-            } else if (localState) {
-                if (isCloudEmpty) syncStateWithCloud(localState as AppState, true);
-                // FIX: Persist locally to save any migrations (v6 -> v7) that happened in memory inside loadState()
-                await persistStateLocally(localState);
-                await loadState(localState);
+                if (cloudState && finalState) {
+                    const localIsNewer = finalState.lastModified > cloudState.lastModified;
+                    finalState = await mergeStates(
+                        localIsNewer ? cloudState : finalState, 
+                        localIsNewer ? finalState : cloudState
+                    );
+                    if (localIsNewer) {
+                        syncStateWithCloud(finalState, true);
+                    }
+                } else if (cloudState) {
+                    finalState = cloudState;
+                } else if (finalState && isCloudEmpty) {
+                    // Cloud é confirmado como vazio, então enviamos o estado local
+                    syncStateWithCloud(finalState as AppState, true);
+                }
             }
-            
         } catch (e) {
-            console.error("Startup: Cloud sync failed, using local.", e);
+            console.error("Startup: Cloud sync failed, using local state.", e);
             setSyncStatus('syncError');
-            if (localState) {
-                await persistStateLocally(localState); // Ensure migration persistence
-                await loadState(localState);
-            }
+            // Nenhuma ação necessária, `finalState` já contém os dados locais.
         }
-    } else if (localState) {
-        // FIX: Persist locally to save any migrations (v6 -> v7) that happened in memory inside loadState()
-        await persistStateLocally(localState);
-        await loadState(localState);
+    }
+
+    // Se, após todas as tentativas, tivermos um estado final (local, da nuvem ou mesclado)...
+    if (finalState) {
+        // Persiste o estado final no IDB (salvando migrações/mesclas) e
+        // carrega-o no singleton `state` global para o resto do app usar.
+        await persistStateLocally(finalState);
+        await loadState(finalState);
     }
 }
 

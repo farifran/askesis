@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -80,18 +79,16 @@ async function _processKey(key: string) {
     const originalKey = getSyncKey();
     
     try {
+        // 1. Tenta a nova chave
         storeKey(key);
         const cloudState = await fetchStateFromCloud();
 
-        // Rollback safety fallback handled below
-        if (originalKey) storeKey(originalKey); 
-        else clearKey();
-
         if (cloudState) {
+            // 2. Se houver dados na nuvem, peça confirmação
             showConfirmationModal(
                 t('confirmSyncOverwrite'),
-                async () => { // onConfirm
-                    storeKey(key);
+                async () => { // onConfirm: Aplica o estado da nuvem
+                    // A chave `key` já está ativa, então só carregamos os dados
                     await loadState(cloudState);
                     await saveState();
                     renderApp();
@@ -100,14 +97,20 @@ async function _processKey(key: string) {
                 {
                     title: t('syncDataFoundTitle'),
                     confirmText: t('syncConfirmOverwrite'),
-                    cancelText: t('cancelButton')
+                    cancelText: t('cancelButton'),
+                    onCancel: () => { // onCancel: Rollback
+                        if (originalKey) storeKey(originalKey);
+                        else clearKey();
+                        showView(originalKey ? 'active' : 'inactive');
+                    }
                 }
             );
         } else {
-            storeKey(key);
+            // 3. Sem dados na nuvem, a nova chave é aceita e a sincronização é ativada.
             showView('active');
         }
     } catch (error) {
+        // 4. Se houver erro de rede/criptografia, faz rollback para a chave original.
         if (originalKey) storeKey(originalKey);
         else clearKey();
 

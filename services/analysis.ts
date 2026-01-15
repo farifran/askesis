@@ -1,4 +1,5 @@
 
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -9,7 +10,7 @@
  * @description Serviço isolado para análise de contexto diário via IA.
  */
 
-import { state, getHabitDailyInfoForDate, TimeOfDay, LANGUAGES } from '../state';
+import { state, getHabitDailyInfoForDate, TimeOfDay } from '../state';
 import { runWorkerTask } from './cloud';
 import { apiFetch } from './api';
 import { t, getAiLanguageName } from '../i18n';

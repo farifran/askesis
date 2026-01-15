@@ -1,4 +1,5 @@
 
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -57,6 +58,7 @@ import {
     performAIAnalysis,
     exportData,
     importData,
+    consumeAndFormatCelebrations,
 } from '../habitActions';
 import { t, setLanguage, formatList } from '../i18n';
 import { getHabitDisplayInfo } from '../services/selectors';
@@ -71,31 +73,6 @@ const MAX_HABIT_NAME_LENGTH = 50;
 let isAiEvalProcessing = false;
 
 // --- STATIC HELPERS ---
-
-const _processAndFormatCelebrations = (
-    pendingIds: string[], 
-    translationKey: 'aiCelebration21Day' | 'aiCelebration66Day',
-    streakMilestone: number
-): string => {
-    if (pendingIds.length === 0) return '';
-    
-    // PERF: Zero-allocation loop if possible, but map/filter is clean here.
-    const habitNamesList = pendingIds
-        .map(id => state.habits.find(h => h.id === id))
-        .filter(Boolean)
-        .map(h => getHabitDisplayInfo(h!).name);
-    
-    const habitNames = formatList(habitNamesList);
-        
-    pendingIds.forEach(id => {
-        const celebrationId = `${id}-${streakMilestone}`;
-        if (!state.notificationsShown.includes(celebrationId)) {
-            state.notificationsShown.push(celebrationId);
-        }
-    });
-
-    return t(translationKey, { count: pendingIds.length, habitNames });
-};
 
 // HELPER: Centraliza lógica de navegação do Almanaque para evitar duplicação (DRY)
 function _navigateToDateFromAlmanac(dateISO: string) {
@@ -332,15 +309,10 @@ const _handleAiEvalClick = async () => {
 
         let message = '';
         
-        const celebration21DayText = _processAndFormatCelebrations(state.pending21DayHabitIds, 'aiCelebration21Day', STREAK_SEMI_CONSOLIDATED);
-        const celebration66DayText = _processAndFormatCelebrations(state.pendingConsolidationHabitIds, 'aiCelebration66Day', STREAK_CONSOLIDATED);
-        const allCelebrations = [celebration66DayText, celebration21DayText].filter(Boolean).join('\n\n');
+        const allCelebrations = consumeAndFormatCelebrations();
 
         if (allCelebrations) {
             message = simpleMarkdownToHTML(allCelebrations);
-            state.pending21DayHabitIds = [];
-            state.pendingConsolidationHabitIds = [];
-            saveState();
             renderAINotificationState();
         } else if ((state.aiState === 'completed' || state.aiState === 'error') && !state.hasSeenAIResult && state.lastAIResult) {
             message = simpleMarkdownToHTML(state.lastAIResult);

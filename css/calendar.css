@@ -1,4 +1,3 @@
-
 /* --- COMPONENTES: CALENDÁRIO --- */
 .calendar-strip {
     display: flex;
@@ -119,7 +118,6 @@
     border-radius: var(--border-radius-pill);
     box-shadow: 0 0 12px var(--accent-green);
     animation: glow-pulse 2.5s infinite ease-in-out;
-    animation-delay: var(--glow-delay, 0s); /* SYNC FIX */
     z-index: 2; /* VISIBILITY FIX */
 }
 .day-number.has-plus {

@@ -1,4 +1,5 @@
 
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -165,10 +166,6 @@ export interface AppState {
     readonly pending21DayHabitIds: readonly string[];
     readonly pendingConsolidationHabitIds: readonly string[];
     readonly quoteState?: QuoteDisplayState;
-    aiState?: 'idle' | 'loading' | 'completed' | 'error';
-    lastAIResult?: string | null;
-    lastAIError?: string | null;
-    hasSeenAIResult?: boolean;
     // Cache runtime para a estrutura otimizada (Bitmasks)
     monthlyLogs?: Map<string, bigint>;
 }

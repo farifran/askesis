@@ -1,4 +1,5 @@
 
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -31,7 +32,7 @@ import {
     clearHabitDomCache
 } from './render';
 import { ui } from './render/ui';
-import { t, getTimeOfDayName, formatDate, getAiLanguageName } from './i18n'; 
+import { t, getTimeOfDayName, formatDate, getAiLanguageName, formatList } from './i18n'; 
 import { runWorkerTask } from './services/cloud';
 import { apiFetch, clearKey } from './services/api';
 import { HabitService } from './services/HabitService';
@@ -164,6 +165,33 @@ function _checkStreakMilestones(habit: Habit, dateISO: string) {
     }
 }
 
+/**
+ * REFACTOR [MAINTAINABILITY]: Helper para mover a instância de um hábito (metadados e status)
+ * de um período do dia para outro, eliminando duplicação de código.
+ */
+function _moveHabitInstanceForDay(habitId: string, date: string, fromTime: TimeOfDay, toTime: TimeOfDay) {
+    // 1. Move metadados legados (Notas/Overrides) se existirem.
+    try {
+        const info = ensureHabitDailyInfo(date, habitId);
+        if (info.instances[fromTime]) {
+            const movedData = { ...info.instances[fromTime] };
+            // Garante que a propriedade de status legada não seja transportada.
+            delete (movedData as any).status;
+            info.instances[toTime] = movedData as HabitDayData;
+            delete info.instances[fromTime];
+        }
+    } catch (e) {
+        // Ignora erros se os dados estiverem sendo hidratados (o movimento do bitmask é o crítico).
+    }
+
+    // 2. Move o status do Bitmask (Fonte da Verdade).
+    const currentBit = HabitService.getStatus(habitId, date, fromTime);
+    if (currentBit !== HABIT_STATE.NULL) {
+        HabitService.setStatus(habitId, date, toTime, currentBit);
+        HabitService.setStatus(habitId, date, fromTime, HABIT_STATE.NULL);
+    }
+}
+
 // --- CONFIRMATION HANDLERS ---
 
 const _applyDropJustToday = () => {
@@ -172,27 +200,16 @@ const _applyDropJustToday = () => {
     
     const habit = state.habits.find(h => h.id === ctx.habitId);
     if (habit) {
-        // 1. Migração de Dados Legados (Notes/Override)
-        const info = ensureHabitDailyInfo(target, ctx.habitId), sch = [...getEffectiveScheduleForHabitOnDate(habit, target)];
+        // Cria um agendamento específico para hoje (override).
+        const info = ensureHabitDailyInfo(target, ctx.habitId);
+        const sch = [...getEffectiveScheduleForHabitOnDate(habit, target)];
         const fIdx = sch.indexOf(ctx.fromTime);
         if (fIdx > -1) sch.splice(fIdx, 1);
         if (!sch.includes(ctx.toTime)) sch.push(ctx.toTime);
-        
-        if (info.instances[ctx.fromTime]) { 
-            // CLEANUP: Move apenas dados relevantes, remove 'status' para evitar "Ghost Data"
-            const movedData = { ...info.instances[ctx.fromTime] };
-            delete (movedData as any).status; // Remove status legado
-            info.instances[ctx.toTime] = movedData as HabitDayData; 
-            delete info.instances[ctx.fromTime]; 
-        }
         info.dailySchedule = sch;
 
-        // 2. Migração de Status Bitmask (ZC-Architecture)
-        const currentBit = HabitService.getStatus(ctx.habitId, target, ctx.fromTime);
-        if (currentBit !== HABIT_STATE.NULL) {
-            HabitService.setStatus(ctx.habitId, target, ctx.toTime, currentBit);
-            HabitService.setStatus(ctx.habitId, target, ctx.fromTime, HABIT_STATE.NULL);
-        }
+        // Move a instância e seu status para o novo horário.
+        _moveHabitInstanceForDay(ctx.habitId, target, ctx.fromTime, ctx.toTime);
 
         if (ctx.reorderInfo) reorderHabit(ctx.habitId, ctx.reorderInfo.id, ctx.reorderInfo.pos, true);
         _notifyChanges(false);
@@ -204,28 +221,20 @@ const _applyDropFromNowOn = () => {
     const ctx = ActionContext.drop, target = getSafeDate(state.selectedDate);
     if (!ctx || isDateLoading(target)) return ActionContext.reset();
 
-    const info = ensureHabitDailyInfo(target, ctx.habitId), curOverride = info.dailySchedule ? [...info.dailySchedule] : null;
-    info.dailySchedule = undefined;
-    
-    // 1. Migração de Dados Legados (Notes/Override) para o dia atual
-    if (info.instances[ctx.fromTime]) { 
-        const movedData = { ...info.instances[ctx.fromTime] };
-        delete (movedData as any).status; // Remove status legado
-        info.instances[ctx.toTime] = movedData as HabitDayData; 
-        delete info.instances[ctx.fromTime]; 
-    }
-    
-    // 2. Migração de Status Bitmask para o dia atual (ZC-Architecture)
-    const currentBit = HabitService.getStatus(ctx.habitId, target, ctx.fromTime);
-    if (currentBit !== HABIT_STATE.NULL) {
-        HabitService.setStatus(ctx.habitId, target, ctx.toTime, currentBit);
-        HabitService.setStatus(ctx.habitId, target, ctx.fromTime, HABIT_STATE.NULL);
-    }
+    // Verifica se existe um override para o dia de hoje, para ser usado como base para a mudança.
+    const info = ensureHabitDailyInfo(target, ctx.habitId);
+    const curOverride = info.dailySchedule ? [...info.dailySchedule] : null;
+    info.dailySchedule = undefined; // Limpa o override do dia específico.
+
+    // Move a instância de hoje para o novo horário.
+    _moveHabitInstanceForDay(ctx.habitId, target, ctx.fromTime, ctx.toTime);
 
     if (ctx.reorderInfo) reorderHabit(ctx.habitId, ctx.reorderInfo.id, ctx.reorderInfo.pos, true);
 
+    // Solicita a mudança de agendamento para o futuro.
     _requestFutureScheduleChange(ctx.habitId, target, (s) => {
-        const times = curOverride || [...s.times], fIdx = times.indexOf(ctx.fromTime);
+        const times = curOverride || [...s.times]; // Usa o override de hoje como base, se existir.
+        const fIdx = times.indexOf(ctx.fromTime);
         if (fIdx > -1) times.splice(fIdx, 1);
         if (!times.includes(ctx.toTime)) times.push(ctx.toTime);
         return { ...s, times: times as readonly TimeOfDay[] };
@@ -659,3 +668,41 @@ export function requestHabitTimeRemoval(habitId: string, time: TimeOfDay) {
 }
 export function exportData() { const blob = new Blob([JSON.stringify(getPersistableState(), null, 2)], { type: 'application/json' }), url = URL.createObjectURL(blob), a = document.createElement('a'); a.href = url; a.download = `askesis-backup-${getTodayUTCIso()}.json`; a.click(); URL.revokeObjectURL(url); }
 export function handleDayTransition() { const today = getTodayUTCIso(); clearActiveHabitsCache(); state.uiDirtyState.calendarVisuals = state.uiDirtyState.habitListStructure = state.uiDirtyState.chartData = true; state.calendarDates = []; if (state.selectedDate !== today) state.selectedDate = today; document.dispatchEvent(new CustomEvent('render-app')); }
+
+function _processAndFormatCelebrations(
+    pendingIds: string[], 
+    translationKey: 'aiCelebration21Day' | 'aiCelebration66Day',
+    streakMilestone: number
+): string {
+    if (pendingIds.length === 0) return '';
+    
+    const habitNamesList = pendingIds
+        .map(id => state.habits.find(h => h.id === id))
+        .filter(Boolean)
+        .map(h => getHabitDisplayInfo(h!).name);
+    
+    const habitNames = formatList(habitNamesList);
+        
+    pendingIds.forEach(id => {
+        const celebrationId = `${id}-${streakMilestone}`;
+        if (!state.notificationsShown.includes(celebrationId)) {
+            state.notificationsShown.push(celebrationId);
+        }
+    });
+
+    return t(translationKey, { count: pendingIds.length, habitNames });
+};
+
+export function consumeAndFormatCelebrations(): string {
+    const celebration21DayText = _processAndFormatCelebrations(state.pending21DayHabitIds, 'aiCelebration21Day', STREAK_SEMI_CONSOLIDATED);
+    const celebration66DayText = _processAndFormatCelebrations(state.pendingConsolidationHabitIds, 'aiCelebration66Day', STREAK_CONSOLIDATED);
+    const allCelebrations = [celebration66DayText, celebration21DayText].filter(Boolean).join('\n\n');
+
+    if (allCelebrations) {
+        state.pending21DayHabitIds = [];
+        state.pendingConsolidationHabitIds = [];
+        saveState();
+    }
+    
+    return allCelebrations;
+}
