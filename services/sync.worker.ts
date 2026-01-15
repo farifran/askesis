@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -12,7 +11,7 @@
 
 import type { AppState, Habit, HabitDailyInfo, TimeOfDay, HabitSchedule } from '../state';
 import { toUTCIsoDateString, parseUTCIsoDate, decompressString, MS_PER_DAY, compressToBuffer, decompressFromBuffer, arrayBufferToBase64, base64ToArrayBuffer } from '../utils';
-import { encrypt, decrypt, decryptToBuffer } from './crypto';
+import { encrypt, decryptToBuffer } from './crypto';
 import { mergeStates } from './dataMerge';
 
 // --- CONSTANTS (Bitmask Logic copy for Isolation) ---
@@ -535,28 +534,21 @@ self.onmessage = async (e: MessageEvent<any>) => {
     try {
         let result;
         if (type === 'encrypt') {
-            // ZERO-GC OPTIMIZATION: Usamos um replacer customizado para serializar Map e Uint8Array
-            // diretamente para formatos "Cloud-Friendly" durante o stringify, evitando a criação de objetos intermediários.
+            // WORKFLOW: stringify -> compress -> encrypt -> base64
             const jsonString = JSON.stringify(payload, cloudReplacer);
-            
-            // ZERO-BASE64 OPTIMIZATION:
-            // 1. Comprime JSON -> ArrayBuffer (GZIP)
             const compressedBuffer = await compressToBuffer(jsonString);
-            
-            // 2. Cifra ArrayBuffer -> JSON { salt, iv, encrypted }
-            // A função 'encrypt' do módulo crypto.ts agora aceita ArrayBuffer como entrada
-            // e faz a encriptação diretamente sobre os bytes comprimidos, sem converter para Base64 intermediário.
-            result = await encrypt(compressedBuffer, key);
+            const encryptedBuffer = await encrypt(compressedBuffer, key);
+            // Codifica o buffer binário final para Base64 para transporte via JSON.
+            result = arrayBufferToBase64(encryptedBuffer.buffer);
         }
         else if (type === 'decrypt') {
-            // ZERO-BASE64 OPTIMIZATION:
-            // 1. Decifra JSON { salt, iv, encrypted } -> ArrayBuffer (GZIP)
-            const decryptedBuffer = await decryptToBuffer(payload, key);
-            
-            // 2. Descomprime ArrayBuffer -> JSON String
+            // WORKFLOW: base64 -> decrypt -> decompress -> parse
+            // Decodifica o Base64 da nuvem para um buffer binário.
+            const encryptedBuffer = base64ToArrayBuffer(payload);
+            // Descriptografa o buffer binário. O resultado ainda está comprimido.
+            const decryptedBuffer = await decryptToBuffer(new Uint8Array(encryptedBuffer), key);
+            // Descomprime o buffer para uma string JSON.
             const decompressedJSON = await decompressFromBuffer(decryptedBuffer);
-            
-            // 3. Parse com Reviver para restaurar tipos Binários (Map, Uint8Array)
             result = JSON.parse(decompressedJSON, cloudReviver);
         }
         else if (type === 'build-ai-prompt') result = await buildAIPrompt(payload);

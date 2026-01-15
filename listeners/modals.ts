@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -66,9 +65,6 @@ import { setTextContent } from '../render/dom';
 
 // SECURITY: Limite rígido para inputs de texto para prevenir State Bloat e DoS.
 const MAX_HABIT_NAME_LENGTH = 50; 
-
-// CHAOS CONTROL: Semáforo para evitar múltiplas requisições de IA simultâneas
-let isAiEvalProcessing = false;
 
 // --- STATIC HELPERS ---
 
@@ -259,74 +255,69 @@ const _handleCreateCustomHabitClick = () => {
 };
 
 const _handleAiEvalClick = async () => {
-    // CHAOS FIX: Mutex for Async Operation + Visibility Check
-    if (isAiEvalProcessing || ui.aiModal.classList.contains('visible') || ui.aiOptionsModal.classList.contains('visible')) {
+    // UNIFIED STATE CHECK: Confia em state.aiState e na visibilidade do modal.
+    if (state.aiState === 'loading' || ui.aiModal.classList.contains('visible') || ui.aiOptionsModal.classList.contains('visible')) {
         return;
     }
     
     triggerHaptic('light');
-    isAiEvalProcessing = true;
 
-    try {
-        // OFFLINE HANDLING
-        if (!navigator.onLine) {
-            try {
-                const { STOIC_QUOTES } = await import('../data/quotes');
-                const offlineQuotes = STOIC_QUOTES.filter(q => 
-                    q.metadata.tags.includes('control') || 
-                    q.metadata.tags.includes('acceptance') ||
-                    q.metadata.tags.includes('perception')
-                );
-                const sourceArray = offlineQuotes.length > 0 ? offlineQuotes : STOIC_QUOTES;
-                const randomQuote = sourceArray[Math.floor(Math.random() * sourceArray.length)];
-                const lang = state.activeLanguageCode as 'pt'|'en'|'es';
-                const quoteText = randomQuote.original_text[lang];
-                const author = t(randomQuote.author);
+    // OFFLINE HANDLING
+    if (!navigator.onLine) {
+        try {
+            const { STOIC_QUOTES } = await import('../data/quotes');
+            const offlineQuotes = STOIC_QUOTES.filter(q => 
+                q.metadata.tags.includes('control') || 
+                q.metadata.tags.includes('acceptance') ||
+                q.metadata.tags.includes('perception')
+            );
+            const sourceArray = offlineQuotes.length > 0 ? offlineQuotes : STOIC_QUOTES;
+            const randomQuote = sourceArray[Math.floor(Math.random() * sourceArray.length)];
+            const lang = state.activeLanguageCode as 'pt'|'en'|'es';
+            const quoteText = randomQuote.original_text[lang];
+            const author = t(randomQuote.author);
 
-                const message = `
-                    <div class="offline-header">
-                        <h3 class="offline-title">${t('aiOfflineTitle')}</h3>
-                        <p class="offline-desc">${t('aiOfflineMessage')}</p>
+            const message = `
+                <div class="offline-header">
+                    <h3 class="offline-title">${t('aiOfflineTitle')}</h3>
+                    <p class="offline-desc">${t('aiOfflineMessage')}</p>
+                </div>
+                <div class="offline-quote-box">
+                    <blockquote class="offline-quote-text">
+                        "${quoteText}"
+                    </blockquote>
+                    <div class="offline-quote-author">
+                        — ${author}
                     </div>
-                    <div class="offline-quote-box">
-                        <blockquote class="offline-quote-text">
-                            "${quoteText}"
-                        </blockquote>
-                        <div class="offline-quote-author">
-                            — ${author}
-                        </div>
-                    </div>
-                `;
-                ui.aiResponse.innerHTML = message;
-                openModal(ui.aiModal);
-            } catch (e) {
-                console.error("Failed to load offline quote", e);
-            }
-            return;
-        }
-
-        let message = '';
-        
-        const allCelebrations = consumeAndFormatCelebrations();
-
-        if (allCelebrations) {
-            message = simpleMarkdownToHTML(allCelebrations);
-            renderAINotificationState();
-        } else if ((state.aiState === 'completed' || state.aiState === 'error') && !state.hasSeenAIResult && state.lastAIResult) {
-            message = simpleMarkdownToHTML(state.lastAIResult);
-        }
-        
-        if (message) {
+                </div>
+            `;
             ui.aiResponse.innerHTML = message;
-            openModal(ui.aiModal, undefined, () => {
-                state.hasSeenAIResult = true;
-                renderAINotificationState();
-            });
-        } else {
-            openModal(ui.aiOptionsModal);
+            openModal(ui.aiModal);
+        } catch (e) {
+            console.error("Failed to load offline quote", e);
         }
-    } finally {
-        isAiEvalProcessing = false;
+        return;
+    }
+
+    let message = '';
+    
+    const allCelebrations = consumeAndFormatCelebrations();
+
+    if (allCelebrations) {
+        message = simpleMarkdownToHTML(allCelebrations);
+        renderAINotificationState();
+    } else if ((state.aiState === 'completed' || state.aiState === 'error') && !state.hasSeenAIResult && state.lastAIResult) {
+        message = simpleMarkdownToHTML(state.lastAIResult);
+    }
+    
+    if (message) {
+        ui.aiResponse.innerHTML = message;
+        openModal(ui.aiModal, undefined, () => {
+            state.hasSeenAIResult = true;
+            renderAINotificationState();
+        });
+    } else {
+        openModal(ui.aiOptionsModal);
     }
 };
 
