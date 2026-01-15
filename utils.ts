@@ -5,13 +5,10 @@
 
 /**
  * @file utils.ts
- * @description Biblioteca de Utilitários de Infraestrutura e Helpers de Baixo Nível.
+ * @description Biblioteca de Utilitários de Infraestrutura (Clean & Native).
  */
 
 declare global {
-    // CSS Typed OM Polyfill Types
-    // Removed duplicate definitions of CSS and CSSTranslate to avoid conflicts with lib.dom.d.ts
-    
     interface Element {
         attributeStyleMap?: {
             set(property: string, value: any): void;
@@ -19,15 +16,12 @@ declare global {
             clear(): void;
         };
     }
-
     interface Window {
         OneSignal?: any[];
         OneSignalDeferred?: any[];
         scheduler?: {
             postTask<T>(callback: () => T | Promise<T>, options?: { priority?: 'user-blocking' | 'user-visible' | 'background'; signal?: AbortSignal; delay?: number }): Promise<T>;
         };
-        bootWatchdog?: any;
-        showFatalError?: (message: string) => void;
     }
 }
 
@@ -37,77 +31,12 @@ export const MS_PER_DAY = 86400000;
 export const HEX_LUT: string[] = Array.from({ length: 256 }, (_, i) => i.toString(16).padStart(2, '0'));
 const PAD_LUT: string[] = Array.from({ length: 100 }, (_, i) => i < 10 ? '0' + i : String(i));
 
-// --- CRYPTO FALLBACK (SHA-256 Pure JS) ---
-// Permite sincronização em HTTP (IP local) onde crypto.subtle é bloqueado.
-// Baseado em implementação minimalista de SHA-256.
-export async function sha256Fallback(message: string): Promise<string> {
-    const msgBuffer = new TextEncoder().encode(message);
-    const msgLen = msgBuffer.length * 8;
-    const len = msgBuffer.length;
-    
-    // Padding
-    const k = [
-        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
-        0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
-        0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
-        0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd192e819, 0x06ca6351, 0x14292967,
-        0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
-        0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
-        0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
-        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
-    ];
-
-    const h = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];
-
-    // Pre-processing
-    const totalLen = ((len + 8) >>> 6) + 1; // 512-bit blocks
-    const w = new Uint32Array(64);
-    const m = new Uint8Array(totalLen * 64);
-    m.set(msgBuffer);
-    m[len] = 0x80;
-    
-    // Set length in bits at the end
-    const view = new DataView(m.buffer);
-    view.setUint32(m.length - 4, msgLen, false); // Big-endian
-
-    for (let i = 0; i < totalLen; i++) {
-        const offset = i * 64;
-        for (let j = 0; j < 16; j++) w[j] = view.getUint32(offset + j * 4, false);
-        for (let j = 16; j < 64; j++) {
-            const s0 = (w[j-15]>>>7|w[j-15]<<25) ^ (w[j-15]>>>18|w[j-15]<<14) ^ (w[j-15]>>>3);
-            const s1 = (w[j-2]>>>17|w[j-2]<<15) ^ (w[j-2]>>>19|w[j-2]<<13) ^ (w[j-2]>>>10);
-            w[j] = (w[j-16] + s0 + w[j-7] + s1) | 0;
-        }
-
-        let [a, b, c, d, e, f, g, hh] = h;
-
-        for (let j = 0; j < 64; j++) {
-            const S1 = (e>>>6|e<<26) ^ (e>>>11|e<<21) ^ (e>>>25|e<<7);
-            const ch = (e&f) ^ (~e&g);
-            const temp1 = (hh + S1 + ch + k[j] + w[j]) | 0;
-            const S0 = (a>>>2|a<<30) ^ (a>>>13|a<<19) ^ (a>>>22|a<<10);
-            const maj = (a&b) ^ (a&c) ^ (b&c);
-            const temp2 = (S0 + maj) | 0;
-
-            hh = g; g = f; f = e; e = (d + temp1) | 0;
-            d = c; c = b; b = a; a = (temp1 + temp2) | 0;
-        }
-
-        h[0] = (h[0] + a) | 0; h[1] = (h[1] + b) | 0; h[2] = (h[2] + c) | 0; h[3] = (h[3] + d) | 0;
-        h[4] = (h[4] + e) | 0; h[5] = (h[5] + f) | 0; h[6] = (h[6] + g) | 0; h[7] = (h[7] + hh) | 0;
-    }
-
-    let hex = '';
-    for (let i = 0; i < 8; i++) hex += (h[i] >>> 0).toString(16).padStart(8, '0');
-    return hex;
-}
-
-// --- BASE64 HELPERS ---
+// --- BASE64 HELPERS (Safe Chunking) ---
 export function arrayBufferToBase64(buffer: ArrayBuffer): string {
     const bytes = new Uint8Array(buffer);
     const len = bytes.length;
     const chunks: string[] = [];
-    const CHUNK_SIZE = 8192;
+    const CHUNK_SIZE = 8192; // Previne Stack Overflow em buffers grandes
     for (let i = 0; i < len; i += CHUNK_SIZE) {
         const end = (i + CHUNK_SIZE) > len ? len : i + CHUNK_SIZE;
         chunks.push(String.fromCharCode.apply(null, bytes.subarray(i, end) as unknown as number[]));
@@ -136,11 +65,11 @@ export function arrayBufferToHex(buffer: ArrayBuffer): string {
     return hex;
 }
 
-// --- GZIP COMPRESSION (NATIVE BINARY) ---
+// --- GZIP COMPRESSION (NATIVE C++) ---
 
 /**
- * Comprime uma string para um Uint8Array GZIP.
- * Retorna um formato binário puro, ideal para armazenamento (IndexedDB).
+ * Comprime string para Uint8Array (GZIP).
+ * Usa API nativa do browser (CompressionStream).
  */
 export async function compressToBuffer(data: string): Promise<Uint8Array> {
     if (typeof CompressionStream === 'undefined') {
@@ -155,25 +84,13 @@ export async function compressToBuffer(data: string): Promise<Uint8Array> {
 }
 
 /**
- * Comprime uma string para Base64 (Compatibilidade Legada).
- * Reutiliza a lógica binária mas converte para string no final.
- */
-export async function compressString(data: string): Promise<string> {
-    const buffer = await compressToBuffer(data);
-    return arrayBufferToBase64(buffer.buffer);
-}
-
-/**
- * Descomprime um Buffer Binário GZIP diretamente para string.
- * Aceita Uint8Array ou ArrayBuffer para flexibilidade.
+ * Descomprime Buffer GZIP para string.
  */
 export async function decompressFromBuffer(compressed: Uint8Array | ArrayBuffer): Promise<string> {
     if (typeof DecompressionStream === 'undefined') {
         throw new Error("DecompressionStream not supported.");
     }
     try {
-        // Garante que é um buffer válido para o Blob (Uint8Array ou ArrayBuffer são aceitos, 
-        // mas normalizamos para Uint8Array para consistência)
         const buffer = (compressed instanceof Uint8Array) ? compressed : new Uint8Array(compressed);
         const stream = new Blob([buffer]).stream();
         const decompressedStream = stream.pipeThrough(new DecompressionStream('gzip'));
@@ -186,29 +103,27 @@ export async function decompressFromBuffer(compressed: Uint8Array | ArrayBuffer)
 }
 
 /**
- * Descomprime uma string Base64 GZIP (Compatibilidade Legada).
+ * Helper legado para strings Base64 antigas (Mantido para compatibilidade de leitura)
  */
 export async function decompressString(base64Data: string): Promise<string> {
     const buffer = base64ToArrayBuffer(base64Data);
     return await decompressFromBuffer(buffer);
 }
 
-// --- UUID ---
+// --- UUID (Crypto Strong) ---
 export function generateUUID(): string {
     try {
         if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
     } catch (e) {}
 
     const rnds = new Uint8Array(16);
-    let usedCrypto = false;
     try {
         if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
             crypto.getRandomValues(rnds);
-            usedCrypto = true;
+        } else {
+            throw 0; // Fallback math
         }
-    } catch (e) {}
-
-    if (!usedCrypto) {
+    } catch (e) {
         const timestamp = Date.now();
         const perf = (typeof performance !== 'undefined' && performance.now) ? performance.now() * 1000 : 0;
         for (let i = 0; i < 16; i++) {
@@ -230,7 +145,7 @@ export function generateUUID(): string {
            HEX_LUT[rnds[13]] + HEX_LUT[rnds[14]] + HEX_LUT[rnds[15]];
 }
 
-// --- Date Helpers ---
+// --- Date Helpers (UTC Strict) ---
 export function toUTCIsoDateString(date: Date): string {
     if (isNaN(date.getTime())) throw new Error("CRITICAL: toUTCIsoDateString received Invalid Date.");
     const year = date.getUTCFullYear(); 
@@ -282,14 +197,14 @@ export function parseUTCIsoDate(isoString: string): Date {
     if (!isoString || typeof isoString !== 'string') return new Date(NaN);
     const date = new Date(`${isoString}T00:00:00.000Z`);
     if (isNaN(date.getTime())) return date;
+    // Fast path validation
     if (isoString.length === 10) {
         const year = date.getUTCFullYear();
         const month = date.getUTCMonth() + 1;
         const day = date.getUTCDate();
-        const yStr = parseInt(isoString.substring(0, 4));
-        const mStr = parseInt(isoString.substring(5, 7));
-        const dStr = parseInt(isoString.substring(8, 10));
-        if (year !== yStr || month !== mStr || day !== dStr) return new Date(NaN);
+        if (year !== parseInt(isoString.substring(0, 4)) || 
+            month !== parseInt(isoString.substring(5, 7)) || 
+            day !== parseInt(isoString.substring(8, 10))) return new Date(NaN);
     }
     return date;
 }
@@ -306,12 +221,13 @@ export function getSafeDate(date: string | undefined | null): string {
     return date;
 }
 
-// --- Formatting ---
+// --- Formatting Helpers ---
 const ESCAPE_HTML_REGEX = /[&<>"']/g;
 const ESCAPE_REPLACEMENTS: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 const _escapeReplacer = (match: string) => ESCAPE_REPLACEMENTS[match];
 export function escapeHTML(str: string): string { return str ? str.replace(ESCAPE_HTML_REGEX, _escapeReplacer) : ''; }
 
+// Simple Markdown Parser (Zero-Dep)
 const MD_INLINE_COMBINED_REGEX = /(\*\*\*(.*?)\*\*\*)|(\*\*(.*?)\*\*)|(\*(.*?)\*)|(~~(.*?)~~)/g;
 const MD_ORDERED_LIST_REGEX = /^\d+\.\s/;
 const MD_REPLACER = (match: string, g1: string, c1: string, g2: string, c2: string, g3: string, c3: string, g4: string, c4: string) => {
@@ -354,6 +270,7 @@ export function simpleMarkdownToHTML(text: string): string {
     return html.join('');
 }
 
+// --- 3rd Party Wrappers ---
 export function pushToOneSignal(callback: (oneSignal: any) => void) {
     if (typeof window === 'undefined') return;
     if (typeof window.OneSignal === 'undefined') { window.OneSignalDeferred = window.OneSignalDeferred || []; window.OneSignalDeferred.push(callback); }
@@ -365,6 +282,7 @@ export function triggerHaptic(type: keyof typeof HAPTIC_PATTERNS) {
     if (typeof navigator !== 'undefined' && navigator.vibrate) try { navigator.vibrate(HAPTIC_PATTERNS[type]); } catch {}
 }
 
+// --- Color Contrast Cache (Hot Path) ---
 let cachedLightContrastColor: string | null = null;
 let cachedDarkContrastColor: string | null = null;
 function _cacheContrastColors() {

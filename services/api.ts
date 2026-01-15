@@ -1,10 +1,9 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
 
-import { HEX_LUT, sha256Fallback } from '../utils';
+import { HEX_LUT } from '../utils';
 
 const SYNC_KEY_STORAGE_KEY = 'habitTrackerSyncKey';
 const UUID_REGEX = /^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$/;
@@ -38,13 +37,15 @@ async function hashKey(key: string): Promise<string> {
             for (let i = 0; i < hash.length; i++) hex += HEX_LUT[hash[i]];
             return hex;
         } catch (e) {
-            console.warn("Crypto.subtle failed, using fallback.", e);
+            console.warn("Crypto.subtle failed.", e);
+            throw e;
         }
     }
     
-    // FALLBACK: Pure JS SHA-256 for HTTP/LAN debugging or legacy browsers
-    console.warn("Using pure JS SHA-256 fallback for Sync Key Hash.");
-    return await sha256Fallback(key);
+    // REQUIRE SECURE CONTEXT: Fallback removed to reduce dead code.
+    // Sync requires HTTPS/Localhost for AES-GCM anyway.
+    console.error("Sync requires a Secure Context (HTTPS) for cryptographic operations.");
+    throw new Error("Secure Context Required");
 }
 
 export async function getSyncKeyHash(): Promise<string | null> {

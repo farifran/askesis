@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -171,17 +170,7 @@ export async function loadState(cloudState?: AppState): Promise<AppState | null>
         }
     }
 
-    // 2. Fallback to Legacy Key (Migration Path)
-    if (!mainState) {
-        mainState = await performIDB<AppState>('readonly', s => s.get(LEGACY_STORAGE_KEY));
-        // Check localStorage fallback
-        if (!mainState) {
-            const legacy = localStorage.getItem(LEGACY_STORAGE_KEY);
-            if (legacy) {
-                try { mainState = JSON.parse(legacy); } catch {}
-            }
-        }
-    }
+    // REMOVIDO: Fallback legado para LEGACY_STORAGE_KEY (Greenfield assume sem legado)
 
     if (mainState) {
         // @fix: Cannot assign to 'habits' because it is a read-only property.
