@@ -538,11 +538,16 @@ export async function fetchStateFromCloud(): Promise<AppState | null> {
     }
 }
 
-export async function syncStateWithCloud(currentState: AppState) {
+export async function syncStateWithCloud(currentState: AppState, immediate = false) {
     if (!hasLocalSyncKey()) return;
     if (isSyncInProgress) { pendingSyncState = currentState; return; }
     if (syncTimeout) clearTimeout(syncTimeout);
-    syncTimeout = setTimeout(() => _performSync(currentState), DEBOUNCE_DELAY);
+    
+    if (immediate) {
+        _performSync(currentState);
+    } else {
+        syncTimeout = setTimeout(() => _performSync(currentState), DEBOUNCE_DELAY);
+    }
 }
 
 const _getAuthKey = () => {
