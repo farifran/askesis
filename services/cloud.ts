@@ -5,8 +5,9 @@
 
 /**
  * @file services/cloud.ts
- * @description Orquestrador de Sincronização.
- * VERSÃO DIAGNÓSTICO DE REDE: Revela erros ocultos de Fetch/API.
+ * @description Orquestrador de Sincronização na Nuvem (Cloud Sync Orchestrator).
+ * ARQUITETURA: Inline Blob Worker (Zero-Dependency).
+ * Inclui: Crypto, Compression, DataMerge e Logic.
  */
 
 import { AppState, state, getPersistableState } from '../state';
@@ -49,8 +50,10 @@ function _deserializeLogsInternal(arr: any): Map<string, bigint> {
 
 // ==================================================================================
 // 🧠 INLINE WORKER SOURCE CODE
+// Código injetado no Blob. Contém todas as dependências (Utils, Crypto, Merge).
 // ==================================================================================
 const WORKER_CODE = `
+/* --- 1. UTILS & POLYFILLS --- */
 const HEX_LUT = Array.from({ length: 256 }, (_, i) => i.toString(16).padStart(2, '0'));
 
 function arrayBufferToBase64(buffer) {
@@ -86,6 +89,12 @@ async function decompressFromBuffer(compressed) {
     return new Response(decompressedStream).text();
 }
 
+async function decompressString(base64Data) {
+    const buffer = base64ToArrayBuffer(base64Data);
+    return decompressFromBuffer(buffer);
+}
+
+/* --- 2. CRYPTO (AES-GCM) --- */
 const SALT_LEN = 16;
 const IV_LEN = 12;
 const encoder = new TextEncoder();
@@ -125,8 +134,111 @@ async function decryptToBuffer(data, password) {
     return crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext);
 }
 
-// ... Merge logic omitted for brevity ...
+/* --- 3. DATA MERGE LOGIC --- */
+function mergeDayRecord(localDay, mergedDay) {
+    let isDirty = false;
+    for (const habitId in localDay) {
+        if (!mergedDay[habitId]) {
+            mergedDay[habitId] = localDay[habitId];
+            isDirty = true;
+            continue;
+        }
+        const localHabitData = localDay[habitId];
+        const mergedHabitData = mergedDay[habitId];
+        
+        if (localHabitData.dailySchedule !== undefined) {
+             if (JSON.stringify(localHabitData.dailySchedule) !== JSON.stringify(mergedHabitData.dailySchedule)) {
+                mergedHabitData.dailySchedule = localHabitData.dailySchedule;
+                isDirty = true;
+             }
+        }
+        
+        const localInstances = localHabitData.instances || {};
+        const mergedInstances = mergedHabitData.instances || {};
+        
+        for (const time in localInstances) {
+            const localInst = localInstances[time];
+            const mergedInst = mergedInstances[time];
+            if (!localInst) continue;
+            
+            if (!mergedInst) {
+                mergedInstances[time] = localInst;
+                isDirty = true;
+            } else {
+                if (mergedInst.goalOverride === undefined && localInst.goalOverride !== undefined) {
+                    mergedInst.goalOverride = localInst.goalOverride;
+                    isDirty = true;
+                }
+                const lNoteLen = localInst.note ? localInst.note.length : 0;
+                const mNoteLen = mergedInst.note ? mergedInst.note.length : 0;
+                if (lNoteLen > mNoteLen) {
+                    if (mergedInst.note !== localInst.note) {
+                        mergedInst.note = localInst.note;
+                        isDirty = true;
+                    }
+                }
+            }
+        }
+    }
+    return isDirty;
+}
 
+async function hydrateArchive(content) {
+    try {
+        if (content instanceof Uint8Array) return JSON.parse(await decompressFromBuffer(content));
+        if (typeof content === 'string') {
+            if (content.startsWith('GZIP:')) return JSON.parse(await decompressString(content.substring(5)));
+            return JSON.parse(content);
+        }
+        return {};
+    } catch { return {}; }
+}
+
+async function mergeStates(local, incoming) {
+    const merged = structuredClone(incoming);
+    
+    // Habits
+    const incomingIds = new Set(incoming.habits.map(h => h.id));
+    local.habits.forEach(h => { if (!incomingIds.has(h.id)) merged.habits.push(h); });
+
+    // Daily Data
+    for (const date in local.dailyData) {
+        if (!merged.dailyData[date]) merged.dailyData[date] = local.dailyData[date];
+        else mergeDayRecord(local.dailyData[date], merged.dailyData[date]);
+    }
+
+    // Archives
+    if (local.archives) {
+        merged.archives = merged.archives || {};
+        for (const year in local.archives) {
+            if (!merged.archives[year]) {
+                merged.archives[year] = local.archives[year];
+            } else {
+                try {
+                    const localY = await hydrateArchive(local.archives[year]);
+                    const mergedY = await hydrateArchive(merged.archives[year]);
+                    let isDirty = false;
+                    for (const d in localY) {
+                        if (!mergedY[d]) { mergedY[d] = localY[d]; isDirty = true; }
+                        else if (mergeDayRecord(localY[d], mergedY[d])) isDirty = true;
+                    }
+                    if (isDirty) merged.archives[year] = await compressToBuffer(JSON.stringify(mergedY));
+                } catch {}
+            }
+        }
+    }
+    
+    merged.lastModified = Date.now();
+    merged.version = Math.max(local.version || 0, incoming.version || 0);
+    const mergeList = (a, b) => Array.from(new Set([...(a||[]), ...(b||[])]));
+    merged.notificationsShown = mergeList(incoming.notificationsShown, local.notificationsShown);
+    merged.pending21DayHabitIds = mergeList(incoming.pending21DayHabitIds, local.pending21DayHabitIds);
+    merged.pendingConsolidationHabitIds = mergeList(incoming.pendingConsolidationHabitIds, local.pendingConsolidationHabitIds);
+    
+    return merged;
+}
+
+/* --- 4. MAIN WORKER HANDLER --- */
 self.onmessage = async (e) => {
     const { id, type, payload, key } = e.data;
     let result;
@@ -152,6 +264,9 @@ self.onmessage = async (e) => {
                 }
                 return v;
             });
+        }
+        else if (type === 'merge') {
+            result = await mergeStates(payload.local, payload.incoming);
         }
         else { throw new Error('Unknown task: ' + type); }
         
@@ -255,28 +370,23 @@ function clearLocalAuth() {
     setSyncStatus('syncError');
 }
 
-async function resolveConflictWithServerState(serverData: any) {
-    try {
-        const key = getSyncKey();
-        if (!key) return;
-
-        console.warn("[Cloud] Resolvendo conflito...");
-        location.reload(); 
-    } catch (e: any) {
-        console.error("[Cloud] Conflict Resolution Failed:", e);
+// Helper para formatar erros de rede
+function formatNetworkError(e: any): string {
+    const msg = e ? (e.message || e.toString()) : "Unknown";
+    
+    if (msg.includes("TypeError") || msg.includes("Failed to fetch")) {
+        return "Erro de Conexão: Servidor Offline ou Bloqueado";
     }
+    if (msg.includes("404")) return "Erro 404: API não encontrada";
+    if (msg.includes("401")) return "Erro 401: Chave de Sincronização Inválida";
+    if (msg.includes("413")) return "Erro 413: Payload muito grande";
+    
+    return "Erro: " + msg;
 }
 
-// HELPER DE ERRO
-function formatNetworkError(e: any): string {
-    // Tenta extrair mensagem oculta no Error {}
-    const fullMsg = JSON.stringify(e, Object.getOwnPropertyNames(e));
-    
-    if (fullMsg.includes("TypeError")) return "Erro de Rede: Servidor Indisponível (Backend Offline?)";
-    if (fullMsg.includes("Failed to fetch")) return "Falha de Conexão (Verifique /api/sync)";
-    if (fullMsg.includes("404")) return "Erro 404: Endpoint /api/sync não existe";
-    
-    return "Erro Desconhecido: " + (e.message || fullMsg);
+async function resolveConflictWithServerState(serverData: any) {
+    console.warn("[Cloud] Resolvendo conflito (Reload Strategy)...");
+    location.reload(); 
 }
 
 async function _performSync(currentState: AppState) {
@@ -304,9 +414,6 @@ async function _performSync(currentState: AppState) {
             state: encryptedState
         };
 
-        // LOG DE URL PARA DEBUG
-        console.log(`[Cloud] Tentando POST em: ${window.location.origin}/api/sync`);
-
         const res = await apiFetch('/api/sync', { method: 'POST', body: JSON.stringify(payload) }, true);
 
         if (res.ok) {
@@ -314,10 +421,7 @@ async function _performSync(currentState: AppState) {
             state.syncLastError = null;
             syncFailCount = 0;
         } else {
-            console.error(`[Cloud] ERRO HTTP: ${res.status}`);
-            if (res.status === 404) {
-                throw new Error("Erro 404: API não encontrada. Você subiu o Backend?");
-            }
+            if (res.status === 404) throw new Error("404 (API Missing)");
             if (res.status === 409) {
                 const serverData = await res.json();
                 await resolveConflictWithServerState(serverData);
@@ -329,11 +433,10 @@ async function _performSync(currentState: AppState) {
         }
 
     } catch (e: any) {
-        console.error("[Cloud] Sync Failed Detalhado:", e);
+        console.error("[Cloud] Sync Failed:", e);
         
-        const friendlyMsg = formatNetworkError(e);
         syncFailCount++;
-        state.syncLastError = friendlyMsg;
+        state.syncLastError = formatNetworkError(e);
         setSyncStatus('syncError');
         
         if (syncFailCount <= MAX_RETRIES) {
