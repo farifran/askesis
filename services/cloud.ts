@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -8,7 +9,8 @@ import { loadState, persistStateLocally } from './persistence';
 import { generateUUID, arrayBufferToBase64 } from '../utils';
 import { ui } from '../render/ui';
 import { t } from '../i18n';
-import { hasLocalSyncKey, getSyncKey, apiFetch } from './api';
+import { hasLocalSyncKey, getSyncKey, apiFetch, clearKey } from './api';
+import { HabitService } from './HabitService';
 
 const DEBOUNCE_DELAY = 2000;
 const WORKER_TIMEOUT_MS = 30000;
@@ -100,6 +102,12 @@ export function setSyncStatus(statusKey: 'syncSaving' | 'syncSynced' | 'syncErro
     }
 }
 
+function clearLocalAuth() {
+    clearKey();
+    state.syncLastError = "Auth Invalid";
+    setSyncStatus('syncError');
+}
+
 async function resolveConflictWithServerState(serverPayload: { lastModified: number; state: string }) {
     console.log("[Cloud] Resolving conflict...");
     const key = _getAuthKey();
@@ -109,28 +117,48 @@ async function resolveConflictWithServerState(serverPayload: { lastModified: num
         const serverState: any = await runWorkerTask<AppState>('decrypt', serverPayload.state, key);
         
         // 2. HYDRATION FIX: Convert Hex Logs from Server to BigInt Map
+        let serverLogs = new Map<string, bigint>();
         if (serverState.monthlyLogsSerialized && Array.isArray(serverState.monthlyLogsSerialized)) {
-            const map = new Map<string, bigint>();
-            serverState.monthlyLogsSerialized.forEach(([k, v]: [string, string]) => {
-                const hex = v.startsWith('0x') ? v : '0x' + v;
-                map.set(k, BigInt(hex));
+            const logs = serverState.monthlyLogsSerialized;
+            delete serverState.monthlyLogsSerialized; // Clean up payload
+            logs.forEach(([k, v]: [string, string]) => {
+                try {
+                    const hex = v.startsWith('0x') ? v : '0x' + v;
+                    serverLogs.set(k, BigInt(hex));
+                } catch {}
             });
-            serverState.monthlyLogs = map;
-            delete serverState.monthlyLogsSerialized; // Clean up
+        } else if (serverState.monthlyLogs instanceof Map) {
+            // Caso raro onde o worker já retornou um Map (se atualizado para tal)
+            serverLogs = serverState.monthlyLogs;
         }
+        serverState.monthlyLogs = serverLogs;
 
         // 3. DATA LOSS FIX: Re-inject local logs
         // getPersistableState strips logs; we must add them back for the merge logic.
-        const localFullState = { 
-            ...getPersistableState(), 
-            monthlyLogs: state.monthlyLogs 
-        };
+        const localState = getPersistableState();
+        if (!localState.monthlyLogs) localState.monthlyLogs = state.monthlyLogs || new Map();
         
         // 4. Merge
-        const merged = await runWorkerTask<AppState>('merge', { 
-            local: localFullState, 
+        // Como o mergeStates no worker pode usar JSON.stringify (que falha com Map/BigInt),
+        // executamos a fusão de Bitmasks manualmente aqui ou preparamos o payload.
+        // Simplificação: Merge de dados estruturados via worker, merge de logs localmente.
+        
+        const mergedJSON = await runWorkerTask<AppState>('merge', { 
+            local: localState, 
             incoming: serverState 
         });
+        
+        // Merge Binário (Bitwise OR)
+        const mergedLogs = new Map<string, bigint>(localState.monthlyLogs);
+        serverLogs.forEach((val, key) => {
+            const localVal = mergedLogs.get(key) || 0n;
+            mergedLogs.set(key, localVal | val); // União de estados
+        });
+
+        const merged: AppState = {
+            ...mergedJSON,
+            monthlyLogs: mergedLogs
+        };
         
         if (merged.lastModified <= serverPayload.lastModified) merged.lastModified = serverPayload.lastModified + 1;
         
@@ -142,7 +170,7 @@ async function resolveConflictWithServerState(serverPayload: { lastModified: num
         document.dispatchEvent(new CustomEvent('habitsChanged'));
         
         console.log("[Cloud] Conflict resolved via Merge.");
-    } catch (e) {
+    } catch (e: any) {
         console.error("[Cloud] Conflict resolution failed:", e);
         state.syncLastError = "Merge Failed";
         setSyncStatus('syncError');
@@ -165,7 +193,16 @@ export async function fetchStateFromCloud(): Promise<AppState | undefined> {
         if (!data || !data.state) return undefined;
 
         try {
-            return await runWorkerTask<AppState>('decrypt', data.state, key);
+            const decrypted = await runWorkerTask<any>('decrypt', data.state, key);
+            
+            // Reconstroi o Map de Logs se vier serializado
+            if (decrypted.monthlyLogsSerialized) {
+                // Não setamos state.monthlyLogs aqui, pois loadState fará isso.
+                // Mas garantimos que o objeto retornado esteja limpo ou no formato que loadState espera.
+                // loadState (persistence.ts) sabe lidar com monthlyLogsSerialized.
+            }
+            
+            return decrypted;
         } catch (e) {
             console.error("Decrypt failed during fetch:", e);
             state.syncLastError = "Decryption Failed";
@@ -176,11 +213,6 @@ export async function fetchStateFromCloud(): Promise<AppState | undefined> {
         console.warn("[Cloud] Fetch failed:", e);
         return undefined;
     }
-}
-
-function clearLocalAuth() {
-    state.syncLastError = "Auth Invalid";
-    setSyncStatus('syncError');
 }
 
 export async function syncStateWithCloud(currentState: AppState, force = false) {
@@ -202,16 +234,18 @@ async function _performSync(currentState: AppState) {
     setSyncStatus('syncSaving');
     
     try {
-        // ZERO-GC NO HOT PATH:
-        // Enviamos o estado bruto + monthlyLogs (Map<string, bigint>) diretamente para o Worker.
-        // O algoritmo de clonagem estruturada suporta Maps e BigInts nativamente.
-        const payloadToEncrypt = { 
-            ...currentState, 
-            monthlyLogs: state.monthlyLogs 
+        // PREPARAÇÃO DE DADOS (Sanitização BigInt):
+        // Convertemos o Map<BigInt> para Array<HexStrings> antes de enviar para o Worker.
+        // Isso evita que JSON.stringify no Worker falhe com BigInts.
+        const serializedLogs = HabitService.serializeLogsForCloud();
+        
+        const { monthlyLogs, ...stateWithoutLogs } = currentState as any;
+        const payloadToEncrypt = {
+            ...stateWithoutLogs,
+            monthlyLogsSerialized: serializedLogs
         };
 
-        // WORKER DOES HEAVY LIFTING: Retorna string Base64 diretamente.
-        // Isso evita congelar a thread principal com conversão de buffers grandes.
+        // WORKER DOES HEAVY LIFTING (Encrypt):
         const encryptedState = await runWorkerTask<string>('encrypt', payloadToEncrypt, key);
         
         const payload = {
