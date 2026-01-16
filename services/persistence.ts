@@ -71,9 +71,16 @@ async function saveSplitState(main: AppState, logs: any): Promise<void> {
         const tx = db.transaction(STORE_NAME, 'readwrite');
         const store = tx.objectStore(STORE_NAME);
         
-        store.put(main, STATE_JSON_KEY);
-        // Direct Map storage (BigInt support in Structured Clone)
-        if (logs) store.put(logs, STATE_BINARY_KEY);
+        // 1. Salva o JSON (Configurações, Metadados)
+        // Remove monthlyLogs do JSON para não duplicar, caso tenha escapado
+        const { monthlyLogs, ...jsonState } = main as any;
+        store.put(jsonState, STATE_JSON_KEY);
+        
+        // 2. Salva o BINÁRIO (Seus cliques!)
+        // O IndexedDB aceita Map<string, bigint> nativamente
+        if (logs && logs.size > 0) {
+            store.put(logs, STATE_BINARY_KEY);
+        }
         
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error);
@@ -195,6 +202,7 @@ export async function loadState(cloudState?: AppState): Promise<AppState | null>
             // [A] New Native: Já está salvo como Map<string, bigint>
             if (typeof firstVal === 'bigint') {
                  state.monthlyLogs = binaryLogs as Map<string, bigint>;
+                 console.log(`[Persistence] Logs carregados: ${binaryLogs.size} meses.`);
             } 
             // [B] Legacy Binary: ArrayBuffer (migração on-the-fly)
             else if (firstVal instanceof ArrayBuffer) {
@@ -212,6 +220,7 @@ export async function loadState(cloudState?: AppState): Promise<AppState | null>
             delete (migrated as any).monthlyLogsSerialized;
         } else {
             state.monthlyLogs = new Map();
+            console.log("[Persistence] Iniciando banco de logs vazio.");
         }
 
         ['streaksCache', 'scheduleCache', 'activeHabitsCache', 'unarchivedCache', 'habitAppearanceCache', 'daySummaryCache'].forEach(k => (state as any)[k].clear());

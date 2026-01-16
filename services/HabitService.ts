@@ -1,4 +1,9 @@
 
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 import { state, HABIT_STATE, PERIOD_OFFSET, TimeOfDay } from '../state';
 
 // CONSTANTS for Bitmask Storage
@@ -15,13 +20,7 @@ export class HabitService {
     }
 
     /**
-     * Leitura Otimizada (Bitmask Only):
-     * Acessa diretamente o mapa de BigInts para verificar o status.
-     * Complexidade: O(1).
-     * 
-     * @param habitId ID do hábito
-     * @param dateISO Data em formato ISO
-     * @param time Período do dia
+     * Leitura Otimizada (Bitmask Only)
      */
     static getStatus(habitId: string, dateISO: string, time: TimeOfDay): number {
         const key = this.getLogKey(habitId, dateISO);
@@ -29,43 +28,40 @@ export class HabitService {
         
         if (log !== undefined) {
             const day = parseInt(dateISO.substring(8, 10), 10);
-            // Endereçamento: (Dia-1)*6 + Offset
             const bitPos = BigInt(((day - 1) * 6) + PERIOD_OFFSET[time]);
-            // Extrai 2 bits e converte para número
-            return Number((log >> bitPos) & 0b11n);
+            return Number((log >> bitPos) & 3n);
         }
-    
-        return HABIT_STATE.NULL;
+        return 0;
     }
 
     /**
-     * [WRITE OPERATION] - A peça que faltava.
-     * Atualiza o Bitmask com o novo estado e marca o sistema para salvamento.
+     * [CRÍTICO] Escrita Otimizada (Bitmask Only)
+     * Esta é a função que estava faltando para persistir o clique.
      */
     static setStatus(habitId: string, dateISO: string, time: TimeOfDay, newState: number) {
+        // Garante a existência do mapa
         if (!state.monthlyLogs) state.monthlyLogs = new Map();
 
         const key = this.getLogKey(habitId, dateISO);
         const day = parseInt(dateISO.substring(8, 10), 10);
         
-        // 1. Posição dos bits (0-186)
+        // 1. Endereçamento (Onde está o bit?)
         const bitPos = BigInt(((day - 1) * 6) + PERIOD_OFFSET[time]);
         
-        // 2. Máscara de limpeza (11 invertido na posição correta)
-        // Ex: ...1111001111... zera apenas os 2 bits alvo
+        // 2. Máscara de Limpeza (Zera os 2 bits atuais)
+        // ~(11 << pos) cria ...11100111...
         const clearMask = ~(3n << bitPos);
         
-        // 3. Valor atual (ou 0 se não existir)
+        // 3. Recupera valor atual (ou 0)
         let currentLog = state.monthlyLogs.get(key) || 0n;
         
-        // 4. Operação Bitwise: Limpa o buraco E insere o novo valor
-        // (Valor & Limpeza) | (Novo << Posição)
+        // 4. Operação Atômica: (Atual AND Limpeza) OR (Novo << Posição)
         const newLog = (currentLog & clearMask) | (BigInt(newState) << bitPos);
         
-        // 5. Atualiza Mapa e Flags
+        // 5. Salva no Mapa em Memória
         state.monthlyLogs.set(key, newLog);
         
-        // Flag para persistência saber que precisa salvar o Binário
+        // 6. Marca Flag de Sujeira para a Persistência salvar no disco
         state.uiDirtyState.chartData = true; 
     }
 
@@ -136,8 +132,7 @@ export class HabitService {
     }
 
     /**
-     * [CLOUD SERIALIZATION] Exporta logs para JSON (Hex Strings).
-     * Necessário para envio via API REST/JSON.
+     * Serialização para API (JSON Safe)
      */
     static serializeLogsForCloud(): [string, string][] {
         if (!state.monthlyLogs) return [];
@@ -147,15 +142,13 @@ export class HabitService {
     }
 
     /**
-     * [CLOUD DESERIALIZATION] Importa logs do JSON (Hex Strings).
+     * Deserialização da API
      */
     static deserializeLogsFromCloud(serialized: [string, string][]) {
         if (!Array.isArray(serialized)) return;
         const map = new Map<string, bigint>();
         serialized.forEach(([key, hexVal]) => {
             try {
-                // "0x" prefixo opcional, BigInt lida com isso se estiver limpo,
-                // mas garantimos o formato hex explícito
                 const hexClean = hexVal.startsWith("0x") ? hexVal : "0x" + hexVal;
                 map.set(key, BigInt(hexClean));
             } catch (e) {
