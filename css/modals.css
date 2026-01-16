@@ -1,4 +1,3 @@
-
 /* --- MODAIS --- */
 .modal-overlay {
     position: fixed;
@@ -51,9 +50,8 @@
     padding: 0; /* Remove o padding para que o scroll vá até as bordas */
 }
 #manage-modal .modal-scroll-wrapper {
-    /* CORREÇÃO [2025-06-03]: Estandardização da margem inferior para corresponder ao Color Picker (~32px).
-       Reduzido de 100px (excesso) para var(--space-xxl). */
-    padding: var(--space-sm) var(--space-xl) var(--space-xxl);
+    /* Adiciona espaço na parte inferior para que o último item não seja ocultado pelo rodapé */
+    padding: var(--space-sm) var(--space-xl) 100px;
 }
 
 .modal-content--sticky-header > .modal-header {
@@ -432,9 +430,7 @@
     max-height: 300px;
     overflow-y: auto;
     
-    /* CORREÇÃO [2025-06-03]: Estandardização da margem inferior para corresponder ao Color Picker (~32px). 
-       Aumentado de var(--space-xl) para var(--space-xxl). */
-    padding: 4px var(--space-xl) var(--space-xxl); 
+    padding: 4px var(--space-xl) var(--space-xl); 
     
     --current-habit-bg-color: #000000;
     --current-habit-fg-color: #e5e5e5;
