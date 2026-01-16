@@ -1,5 +1,4 @@
 
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -76,7 +75,7 @@ const _handleNetworkChange = () => {
         // SYNC TRIGGER: Se voltamos a ficar online e estável, empurramos dados.
         if (isOnline) {
             console.log("[Network] Online stable. Attempting to flush pending sync.");
-            syncStateWithCloud(getPersistableState());
+            syncStateWithCloud(getPersistableState(), true);
         }
     }, NETWORK_DEBOUNCE_MS);
 };
