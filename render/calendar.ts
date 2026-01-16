@@ -12,7 +12,7 @@ import { state } from '../state';
 import { calculateDaySummary } from '../services/selectors';
 import { ui } from './ui';
 import { getTodayUTCIso, toUTCIsoDateString, parseUTCIsoDate, addDays } from '../utils';
-import { formatInteger, getLocaleDayName, formatDate } from '../i18n'; 
+import { formatInteger, getLocaleDayName } from '../i18n'; 
 import { setTextContent } from './dom';
 import { CSS_CLASSES } from './constants';
 
@@ -23,10 +23,9 @@ let dayItemTemplate: HTMLElement | null = null;
 let fullCalendarDayTemplate: HTMLElement | null = null;
 
 const OPTS_ARIA = { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' } as const;
-const OPTS_HEADER = { month: 'long', year: 'numeric', timeZone: 'UTC' } as const;
 const PAD = Array.from({length: 100}, (_, i) => (i < 10 ? '0' : '') + i);
 
-// --- TEMPLATES ---
+// --- TEMPLATES (Lazy Init) ---
 
 const getDayItemTemplate = () => dayItemTemplate || (dayItemTemplate = (() => {
     const el = document.createElement('div'); el.className = CSS_CLASSES.DAY_ITEM; el.setAttribute('role', 'button');
@@ -44,33 +43,29 @@ const getFullCalendarDayTemplate = () => fullCalendarDayTemplate || (fullCalenda
 
 /**
  * Cria um elemento de dia isolado.
+ * SOURCE OF TRUTH: O dataset.date é a verdade absoluta para os listeners.
  */
 function createDayElement(dateISO: string, isSelected: boolean, isToday: boolean): HTMLElement {
     const el = getDayItemTemplate().cloneNode(true) as HTMLElement;
     const dateObj = parseUTCIsoDate(dateISO);
     
-    // Dataset é a Fonte da Verdade
     el.dataset.date = dateISO; 
     
     const dayNameEl = el.firstElementChild as HTMLElement;
     const ringEl = dayNameEl.nextElementSibling as HTMLElement;
     const numEl = ringEl.firstElementChild as HTMLElement;
 
-    // Conteúdo
     setTextContent(dayNameEl, getLocaleDayName(dateObj));
     setTextContent(numEl, formatInteger(dateObj.getUTCDate()));
     
-    // Classes de Estado
     if (isSelected) el.classList.add(CSS_CLASSES.SELECTED);
     if (isToday) el.classList.add(CSS_CLASSES.TODAY);
 
-    // Indicadores Visuais (Progress Rings)
     const { completedPercent, snoozedPercent, showPlusIndicator } = calculateDaySummary(dateISO, dateObj);
     if (completedPercent > 0) ringEl.style.setProperty('--completed-percent', `${completedPercent}%`);
     if (snoozedPercent > 0) ringEl.style.setProperty('--snoozed-percent', `${snoozedPercent}%`);
     if (showPlusIndicator) numEl.classList.add('has-plus');
 
-    // Acessibilidade
     el.setAttribute('aria-label', dateObj.toLocaleDateString(state.activeLanguageCode, OPTS_ARIA));
     if (isSelected) {
         el.setAttribute('aria-current', 'date');
@@ -91,8 +86,6 @@ export function renderCalendar() {
     if (!ui.calendarStrip) return;
 
     // PERFORMANCE FIX: Dirty Check Restaurado.
-    // Isso garante que cliques simples na fita (que não setam calendarVisuals=true)
-    // NÃO disparem o Hard Reset e o Scroll Automático, preservando a posição do usuário.
     if (!state.uiDirtyState.calendarVisuals && ui.calendarStrip.children.length > 0) return;
 
     const centerDateISO = state.selectedDate || getTodayUTCIso();
@@ -101,7 +94,6 @@ export function renderCalendar() {
     
     const frag = document.createDocumentFragment();
 
-    // Renderiza janela inicial: center - 15 ... center + 15
     for (let i = -INITIAL_BUFFER_DAYS; i <= INITIAL_BUFFER_DAYS; i++) {
         const d = addDays(centerDate, i);
         const iso = toUTCIsoDateString(d);
@@ -119,7 +111,7 @@ export function renderCalendar() {
 }
 
 /**
- * [INFINITE SCROLL] Adiciona um dia ao final.
+ * [INFINITE SCROLL] Adiciona um dia ao final da lista (Futuro).
  * Aceita um container (ui.calendarStrip ou DocumentFragment) para batching.
  */
 export function appendDayToStrip(lastDateISO: string, container: Node = ui.calendarStrip): string {
@@ -134,7 +126,7 @@ export function appendDayToStrip(lastDateISO: string, container: Node = ui.calen
 }
 
 /**
- * [INFINITE SCROLL] Adiciona um dia ao início.
+ * [INFINITE SCROLL] Adiciona um dia ao início da lista (Passado).
  */
 export function prependDayToStrip(firstDateISO: string, container: Node = ui.calendarStrip): string {
     const prevDate = addDays(parseUTCIsoDate(firstDateISO), -1);
@@ -143,8 +135,6 @@ export function prependDayToStrip(firstDateISO: string, container: Node = ui.cal
 
     const el = createDayElement(iso, iso === state.selectedDate, iso === todayISO);
     
-    // Se for Fragment, prepend = append no fragmento (a ordem do loop decide)
-    // Se for Elemento real, insertBefore
     if (container instanceof DocumentFragment) {
         container.prepend(el);
     } else {
@@ -160,8 +150,9 @@ export function renderFullCalendar() {
     if (!ui.fullCalendarGrid || !state.fullCalendar) return;
 
     const { year, month } = state.fullCalendar;
-    const date = new Date(Date.UTC(year, month, 1));
-    ui.fullCalendarMonthYear.textContent = formatDate(date, OPTS_HEADER);
+    // INLINE OPTIMIZATION: Removido OPTS_HEADER global
+    ui.fullCalendarMonthYear.textContent = new Date(Date.UTC(year, month, 1))
+        .toLocaleDateString(state.activeLanguageCode, { month: 'long', year: 'numeric', timeZone: 'UTC' });
 
     const frag = document.createDocumentFragment();
     const first = new Date(Date.UTC(year, month, 1));
@@ -191,7 +182,6 @@ export function renderFullCalendar() {
         num.textContent = formatInteger(i);
         el.dataset.date = iso;
 
-        // Indicadores
         const { completedPercent, snoozedPercent, showPlusIndicator } = calculateDaySummary(iso, parseUTCIsoDate(iso));
         
         if (completedPercent > 0) ring.style.setProperty('--completed-percent', `${completedPercent}%`);
