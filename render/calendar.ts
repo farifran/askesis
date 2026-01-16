@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -16,8 +17,9 @@ import { formatInteger, getLocaleDayName } from '../i18n';
 import { setTextContent } from './dom';
 import { CSS_CLASSES } from './constants';
 
-// --- CONFIGURAÇÃO ---
-const INITIAL_BUFFER_DAYS = 15; // Teleport Buffer: Mantém o DOM leve (aprox 31 itens)
+// --- CONFIGURAÇÃO SWEET SPOT ---
+const INITIAL_BUFFER_DAYS = 15; // Teleport Buffer: Mantém o DOM inicial leve
+const MAX_DOM_NODES = 200;      // Teto rígido de memória para o Scroll Infinito
 
 let dayItemTemplate: HTMLElement | null = null;
 let fullCalendarDayTemplate: HTMLElement | null = null;
@@ -85,7 +87,7 @@ function createDayElement(dateISO: string, isSelected: boolean, isToday: boolean
 export function renderCalendar() {
     if (!ui.calendarStrip) return;
 
-    // PERFORMANCE FIX: Dirty Check Restaurado.
+    // Dirty Check para evitar re-render desnecessário
     if (!state.uiDirtyState.calendarVisuals && ui.calendarStrip.children.length > 0) return;
 
     const centerDateISO = state.selectedDate || getTodayUTCIso();
@@ -101,7 +103,7 @@ export function renderCalendar() {
         frag.appendChild(el);
     }
 
-    ui.calendarStrip.innerHTML = ''; // Limpeza Total
+    ui.calendarStrip.innerHTML = ''; // Limpeza Total (GC Trigger)
     ui.calendarStrip.appendChild(frag);
     
     state.uiDirtyState.calendarVisuals = false;
@@ -112,7 +114,7 @@ export function renderCalendar() {
 
 /**
  * [INFINITE SCROLL] Adiciona um dia ao final da lista (Futuro).
- * Aceita um container (ui.calendarStrip ou DocumentFragment) para batching.
+ * OTIMIZAÇÃO: Remove nós antigos do topo se exceder MAX_DOM_NODES.
  */
 export function appendDayToStrip(lastDateISO: string, container: Node = ui.calendarStrip): string {
     const nextDate = addDays(parseUTCIsoDate(lastDateISO), 1);
@@ -122,11 +124,17 @@ export function appendDayToStrip(lastDateISO: string, container: Node = ui.calen
     const el = createDayElement(iso, iso === state.selectedDate, iso === todayISO);
     container.appendChild(el);
 
+    // [GARBAGE COLLECTION] Mantém o DOM leve
+    if (container === ui.calendarStrip && ui.calendarStrip.children.length > MAX_DOM_NODES) {
+        ui.calendarStrip.firstElementChild?.remove();
+    }
+
     return iso;
 }
 
 /**
  * [INFINITE SCROLL] Adiciona um dia ao início da lista (Passado).
+ * OTIMIZAÇÃO: Remove nós futuros do final se exceder MAX_DOM_NODES.
  */
 export function prependDayToStrip(firstDateISO: string, container: Node = ui.calendarStrip): string {
     const prevDate = addDays(parseUTCIsoDate(firstDateISO), -1);
@@ -141,6 +149,11 @@ export function prependDayToStrip(firstDateISO: string, container: Node = ui.cal
         (container as HTMLElement).insertBefore(el, (container as HTMLElement).firstElementChild);
     }
 
+    // [GARBAGE COLLECTION] Mantém o DOM leve
+    if (container === ui.calendarStrip && ui.calendarStrip.children.length > MAX_DOM_NODES) {
+        ui.calendarStrip.lastElementChild?.remove();
+    }
+
     return iso;
 }
 
@@ -150,7 +163,7 @@ export function renderFullCalendar() {
     if (!ui.fullCalendarGrid || !state.fullCalendar) return;
 
     const { year, month } = state.fullCalendar;
-    // INLINE OPTIMIZATION: Removido OPTS_HEADER global
+    
     ui.fullCalendarMonthYear.textContent = new Date(Date.UTC(year, month, 1))
         .toLocaleDateString(state.activeLanguageCode, { month: 'long', year: 'numeric', timeZone: 'UTC' });
 
@@ -200,8 +213,7 @@ export function renderFullCalendar() {
 
 /**
  * Rola a fita para posicionar o elemento selecionado.
- * CORREÇÃO CIRÚRGICA: Se for "Hoje", alinha à direita (última posição) para mostrar o histórico.
- * Caso contrário (navegação no passado/futuro), centraliza para contexto.
+ * LÓGICA CONTEXTUAL: "Hoje" alinha à direita (histórico), outros centralizam.
  */
 export function scrollToSelectedDate(smooth = true) {
     if (!ui.calendarStrip) return;
@@ -218,12 +230,11 @@ export function scrollToSelectedDate(smooth = true) {
             let targetScroll;
 
             if (isToday) {
-                // ALIGN END (Right): Mantém o dia atual na borda direita (com leve respiro),
-                // priorizando a visualização do histórico (passado).
-                const paddingRight = 10; // Espaço visual na borda direita
+                // ALIGN END (Right): Prioriza o passado imediato
+                const paddingRight = 10;
                 targetScroll = (elLeft + elWidth) - stripWidth + paddingRight;
             } else {
-                // ALIGN CENTER: Para datas passadas/futuras selecionadas, o contexto central é melhor.
+                // ALIGN CENTER: Contexto balanceado
                 targetScroll = elLeft - (stripWidth / 2) + (elWidth / 2);
             }
             

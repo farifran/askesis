@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -18,7 +19,7 @@
  * - **CSS Typed OM:** Renderização direta via `attributeStyleMap` para performance máxima (Zero String Parsing).
  */
 
-import { handleHabitDrop, reorderHabit } from '../habitActions';
+import { handleHabitDrop, reorderHabit } from '../services/habitActions';
 import { TimeOfDay, state } from '../state';
 import { getEffectiveScheduleForHabitOnDate } from '../services/selectors';
 import { triggerHaptic } from '../utils';

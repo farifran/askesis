@@ -6,42 +6,48 @@
 /**
  * @file services/habitActions.ts
  * @description Controlador de Ações de Hábito (Business Logic Controller).
- * Responsável por orquestrar a mudança de estado e persistência.
+ * Localização: src/services/habitActions.ts
  */
 
+// Imports sobem um nível (../) para acessar State e Utils
 import { 
     state, Habit, HabitSchedule, TimeOfDay, ensureHabitDailyInfo, 
     ensureHabitInstanceData, clearScheduleCache,
     clearActiveHabitsCache, invalidateCachesForDateChange, getPersistableState,
     HabitDayData, STREAK_SEMI_CONSOLIDATED, STREAK_CONSOLIDATED,
-    getHabitDailyInfoForDate, AppState, isDateLoading, HabitDailyInfo, HABIT_STATE
-} from './state';
-import { saveState, loadState, clearLocalPersistence } from './services/persistence';
-import { PREDEFINED_HABITS } from './data/predefinedHabits';
-import { 
-    getEffectiveScheduleForHabitOnDate, clearSelectorInternalCaches,
-    calculateHabitStreak, shouldHabitAppearOnDate, getHabitDisplayInfo, getHabitPropertiesForDate
-} from './services/selectors';
+    HABIT_STATE, AppState
+} from '../state';
+
 import { 
     generateUUID, getTodayUTCIso, parseUTCIsoDate, triggerHaptic,
     getSafeDate, addDays, toUTCIsoDateString
-} from './utils';
+} from '../utils';
+
+// Imports sobem um nível (../) para acessar Render e i18n
 import { 
     closeModal, showConfirmationModal, renderAINotificationState,
-    clearHabitDomCache, renderApp
-} from './render';
-import { ui } from './render/ui';
-import { t, getTimeOfDayName, formatDate, getAiLanguageName, formatList } from './i18n'; 
-import { runWorkerTask } from './services/cloud';
-import { apiFetch, clearKey } from './services/api';
-import { HabitService } from './services/HabitService';
+    clearHabitDomCache
+} from '../render';
+import { ui } from '../render/ui';
+import { t, getTimeOfDayName, formatDate, getAiLanguageName, formatList } from '../i18n'; 
 
-// --- CONSTANTS ---
+// Imports no mesmo nível (./) pois agora são vizinhos de pasta
+import { saveState, loadState, clearLocalPersistence } from './persistence';
+import { 
+    getEffectiveScheduleForHabitOnDate, clearSelectorInternalCaches,
+    calculateHabitStreak, shouldHabitAppearOnDate, getHabitDisplayInfo, getHabitPropertiesForDate
+} from './selectors';
+import { runWorkerTask } from './cloud';
+import { apiFetch, clearKey } from './api';
+import { HabitService } from './HabitService';
+
+// Assumindo que a pasta 'data' está na raiz (src/data). Se estiver em services/data, use ./data
+import { PREDEFINED_HABITS } from '../data/predefinedHabits'; 
+
 const ARCHIVE_DAYS_THRESHOLD = 90;
 const BATCH_IDS_POOL: string[] = [];
 const BATCH_HABITS_POOL: Habit[] = [];
 
-// --- CONCURRENCY CONTROL ---
 let _isBatchOpActive = false;
 
 const ActionContext = {
@@ -75,7 +81,6 @@ function _notifyPartialUIRefresh(date: string, habitIds: string[]) {
     invalidateCachesForDateChange(date, habitIds);
     state.uiDirtyState.calendarVisuals = true;
     saveState();
-    // NOTA: state.uiDirtyState.habitListStructure não é definido como true aqui.
     ['render-app', 'habitsChanged'].forEach(ev => document.dispatchEvent(new CustomEvent(ev)));
 }
 
@@ -92,65 +97,44 @@ function _requestFutureScheduleChange(habitId: string, targetDate: string, updat
     if (!habit || !/^\d{4}-\d{2}-\d{2}$/.test(targetDate)) return;
 
     const history = habit.scheduleHistory;
-
-    // Encontra o cronograma ativo na data alvo
     const activeIndex = history.findIndex(s => targetDate >= s.startDate && (!s.endDate || targetDate < s.endDate));
 
     if (activeIndex !== -1) {
-        // A mudança ocorre dentro de um segmento de cronograma existente
         const activeSchedule = history[activeIndex];
         
-        // Se a mudança começar no mesmo dia que o segmento, basta atualizá-lo.
         if (activeSchedule.startDate === targetDate) {
             const updatedSchedule = updateFn({ ...activeSchedule });
-            // BUGFIX: Não sobrescrever o endDate definido pela função de atualização.
-            // A função `updateFn` é agora a única fonte da verdade para o novo estado do cronograma.
             history[activeIndex] = updatedSchedule;
         } else {
-            // Divide o segmento
             const originalEndDate = activeSchedule.endDate;
-            // 1. Termina o segmento antigo
             activeSchedule.endDate = targetDate;
-            // 2. Insere o novo segmento, preservando o endDate original
             const newSchedule = updateFn({ ...activeSchedule, startDate: targetDate, endDate: originalEndDate });
             history.push(newSchedule);
         }
     } else {
-        // A mudança está fora de qualquer segmento atual (antes do primeiro ou depois do último)
-        // Encontra onde inseri-lo cronologicamente
         const insertionIndex = history.findIndex(s => targetDate < s.startDate);
 
         if (insertionIndex === -1) {
-            // Insere no final. O novo cronograma executa indefinidamente.
             const lastSchedule = history[history.length - 1];
-            // Termina o último cronograma anterior se ele estava em aberto
             if (lastSchedule && !lastSchedule.endDate) {
                 lastSchedule.endDate = targetDate;
             }
-            // Cria o novo cronograma baseado no último (ou vazio se for o primeiro)
             history.push(updateFn({ ...(lastSchedule || {} as any), startDate: targetDate, endDate: undefined }));
         } else {
-            // Insere no meio ou no início
             const nextSchedule = history[insertionIndex];
             const prevSchedule = history[insertionIndex - 1];
-
-            // O novo cronograma deve terminar onde o próximo começa
             const newEndDate = nextSchedule.startDate;
-            // Baseia as propriedades do novo cronograma no anterior (se existir), senão no próximo.
             const baseSchedule = prevSchedule || nextSchedule; 
             
             history.push(updateFn({ ...baseSchedule, startDate: targetDate, endDate: newEndDate }));
             
-            // Termina o cronograma anterior se ele estava em aberto
             if (prevSchedule && !prevSchedule.endDate) {
                 prevSchedule.endDate = targetDate;
             }
         }
     }
 
-    // Garante que a história esteja sempre ordenada
     history.sort((a, b) => a.startDate.localeCompare(b.startDate));
-    // Qualquer mudança no cronograma invalida uma graduação
     habit.graduatedOn = undefined;
     _notifyChanges(true);
 }
@@ -164,10 +148,6 @@ function _checkStreakMilestones(habit: Habit, dateISO: string) {
     }
 }
 
-/**
- * REFACTOR [GREENFIELD]: Move instância copiando apenas metadados válidos.
- * MICRO-OPTIMIZATION [V8]: Usa adição condicional para evitar transições de classe oculta (delete).
- */
 function _moveHabitInstanceForDay(habitId: string, date: string, fromTime: TimeOfDay, toTime: TimeOfDay) {
     // 1. Move Metadados Ricos (JSON)
     try {
@@ -175,26 +155,20 @@ function _moveHabitInstanceForDay(habitId: string, date: string, fromTime: TimeO
         const sourceData = info.instances[fromTime];
 
         if (sourceData) {
-            // PUREZA DE DADOS: Copia apenas o que é oficial na interface HabitDayData v7.
             const cleanData: HabitDayData = {};
-            
-            // Só adiciona a chave se o valor existir. O objeto nasce e cresce limpo.
             if (sourceData.goalOverride !== undefined) cleanData.goalOverride = sourceData.goalOverride;
             if (sourceData.note !== undefined) cleanData.note = sourceData.note;
 
-            // Só atribui se houver dados reais (evita poluir o JSON com objetos vazios)
             if (Object.keys(cleanData).length > 0) {
                 info.instances[toTime] = cleanData;
             }
-            
-            // Limpa a origem para evitar duplicação
             delete info.instances[fromTime];
         }
     } catch (e) {
-        // Ignora erros se os dados estiverem sendo hidratados
+        // Ignora erros de hidratação
     }
 
-    // 2. Move o Status Binário (Fonte da Verdade Soberana).
+    // 2. Move o Status Binário (Bitmask)
     const currentBit = HabitService.getStatus(habitId, date, fromTime);
     if (currentBit !== HABIT_STATE.NULL) {
         HabitService.setStatus(habitId, date, toTime, currentBit);
@@ -206,11 +180,10 @@ function _moveHabitInstanceForDay(habitId: string, date: string, fromTime: TimeO
 
 const _applyDropJustToday = () => {
     const ctx = ActionContext.drop, target = getSafeDate(state.selectedDate);
-    if (!ctx || isDateLoading(target)) return ActionContext.reset();
+    if (!ctx || !target) return ActionContext.reset(); // Proteção extra contra data nula
     
     const habit = state.habits.find(h => h.id === ctx.habitId);
     if (habit) {
-        // Cria um agendamento específico para hoje (override).
         const info = ensureHabitDailyInfo(target, ctx.habitId);
         const sch = [...getEffectiveScheduleForHabitOnDate(habit, target)];
         const fIdx = sch.indexOf(ctx.fromTime);
@@ -218,7 +191,6 @@ const _applyDropJustToday = () => {
         if (!sch.includes(ctx.toTime)) sch.push(ctx.toTime);
         info.dailySchedule = sch;
 
-        // Move a instância e seu status para o novo horário.
         _moveHabitInstanceForDay(ctx.habitId, target, ctx.fromTime, ctx.toTime);
 
         if (ctx.reorderInfo) reorderHabit(ctx.habitId, ctx.reorderInfo.id, ctx.reorderInfo.pos, true);
@@ -229,21 +201,18 @@ const _applyDropJustToday = () => {
 
 const _applyDropFromNowOn = () => {
     const ctx = ActionContext.drop, target = getSafeDate(state.selectedDate);
-    if (!ctx || isDateLoading(target)) return ActionContext.reset();
+    if (!ctx || !target) return ActionContext.reset();
 
-    // Verifica se existe um override para o dia de hoje, para ser usado como base para a mudança.
     const info = ensureHabitDailyInfo(target, ctx.habitId);
     const curOverride = info.dailySchedule ? [...info.dailySchedule] : null;
-    info.dailySchedule = undefined; // Limpa o override do dia específico.
+    info.dailySchedule = undefined;
 
-    // Move a instância de hoje para o novo horário.
     _moveHabitInstanceForDay(ctx.habitId, target, ctx.fromTime, ctx.toTime);
 
     if (ctx.reorderInfo) reorderHabit(ctx.habitId, ctx.reorderInfo.id, ctx.reorderInfo.pos, true);
 
-    // Solicita a mudança de agendamento para o futuro.
     _requestFutureScheduleChange(ctx.habitId, target, (s) => {
-        const times = curOverride || [...s.times]; // Usa o override de hoje como base, se existir.
+        const times = curOverride || [...s.times];
         const fIdx = times.indexOf(ctx.fromTime);
         if (fIdx > -1) times.splice(fIdx, 1);
         if (!times.includes(ctx.toTime)) times.push(ctx.toTime);
@@ -266,8 +235,7 @@ const _applyHabitDeletion = async () => {
 
     Object.keys(state.dailyData).forEach(d => delete state.dailyData[d][ctx.habitId]);
 
-    // --- CORREÇÃO: Limpar rastro do Bitmask (Zero-Lixo) ---
-    // Remove todas as entradas de meses vinculadas a este ID
+    // Limpeza de Bitmask
     if (state.monthlyLogs) {
         const keysToRemove: string[] = [];
         state.monthlyLogs.forEach((_, key) => {
@@ -277,7 +245,6 @@ const _applyHabitDeletion = async () => {
         });
         keysToRemove.forEach(k => state.monthlyLogs.delete(k));
     }
-    // -------------------------------------------------
 
     const startYear = parseInt((deletedHabit.scheduleHistory[0]?.startDate || deletedHabit.createdOn).substring(0, 4), 10);
     try {
@@ -321,7 +288,7 @@ export function performArchivalCheck() {
 export function createDefaultHabit() {
     const t = PREDEFINED_HABITS.find(h => h.isDefault);
     if (!t) return;
-    // @fix: Moved icon, color, goal, and philosophy into the scheduleHistory object to match the Habit type.
+    
     state.habits.push({ id: generateUUID(), createdOn: getTodayUTCIso(),
         scheduleHistory: [{ startDate: getTodayUTCIso(), nameKey: t.nameKey, subtitleKey: t.subtitleKey, times: t.times, frequency: t.frequency, scheduleAnchor: getTodayUTCIso(), icon: t.icon, color: t.color, goal: t.goal, philosophy: t.philosophy }]
     });
@@ -344,7 +311,6 @@ export function saveHabitFromModal() {
     const nameToUse = formData.nameKey ? t(formData.nameKey) : formData.name!;
     if (!nameToUse) return;
 
-    // CRÍTICO: Cria cópias profundas dos dados do formulário para evitar mutações de referência.
     const cleanFormData = {
         ...formData,
         times: [...formData.times],
@@ -365,7 +331,6 @@ export function saveHabitFromModal() {
         });
 
         if (existingHabit) {
-            // LÓGICA DE SOBRESCRITA
             _requestFutureScheduleChange(existingHabit.id, targetDate, (s) => ({
                 ...s,
                 icon: cleanFormData.icon,
@@ -379,7 +344,6 @@ export function saveHabitFromModal() {
                 frequency: cleanFormData.frequency,
             }));
         } else {
-            // LÓGICA DE CRIAÇÃO
             state.habits.push({ 
                 id: generateUUID(), 
                 createdOn: targetDate, 
@@ -400,7 +364,6 @@ export function saveHabitFromModal() {
             _notifyChanges(true);
         }
     } else {
-        // LÓGICA DE EDIÇÃO
         const h = state.habits.find(x => x.id === habitId);
         if (!h) return;
         
@@ -455,16 +418,11 @@ export function importData() {
 
 /**
  * Alterna o estado do hábito (Check/Uncheck).
- * Ciclo: Vazio (0) -> Feito (1) -> Vazio (0)
- * (Nota: Se você tiver estados extras como "Adiado", ajuste a lógica aqui)
+ * Ciclo: Vazio (0) -> Feito (1) -> Adiado (2) -> Vazio (0)
  */
 export function toggleHabitStatus(habitId: string, time: TimeOfDay, dateISO: string) {
-    // 1. LEITURA: Pergunta ao Bitmask qual o estado atual
     const currentStatus = HabitService.getStatus(habitId, dateISO, time);
     
-    // 2. LÓGICA: Define o próximo estado
-    // Se estava FEITO ou FEITO+, vira NULL (ou Adiado se o app suportar).
-    // Aqui usamos o ciclo padrão do aplicativo: NULL -> DONE -> DEFERRED -> NULL.
     let nextStatus: number = HABIT_STATE.DONE;
     if (currentStatus === HABIT_STATE.DONE || currentStatus === HABIT_STATE.DONE_PLUS) {
         nextStatus = HABIT_STATE.DEFERRED;
@@ -472,13 +430,9 @@ export function toggleHabitStatus(habitId: string, time: TimeOfDay, dateISO: str
         nextStatus = HABIT_STATE.NULL;
     }
     
-    // 3. ESCRITA: Grava no Bitmask (Map<BigInt>)
     HabitService.setStatus(habitId, dateISO, time, nextStatus);
+    saveState(); 
     
-    // 4. PERSISTÊNCIA & UI
-    saveState(); // Agenda o salvamento do Map no IndexedDB
-    
-    // Side Effects & Haptics
     const h = state.habits.find(x => x.id === habitId);
     if (nextStatus === HABIT_STATE.DONE) {
         if (h) _checkStreakMilestones(h, dateISO);
@@ -493,18 +447,13 @@ export function toggleHabitStatus(habitId: string, time: TimeOfDay, dateISO: str
         detail: { habitId, time, date: dateISO } 
     }));
     
-    // 5. Atualizar UI
     _notifyPartialUIRefresh(dateISO, [habitId]);
 }
 
-/**
- * ZC-ARCHITECTURE: Batch update using Bitmask exclusively.
- */
 export function markAllHabitsForDate(dateISO: string, status: 'completed' | 'snoozed'): boolean {
-    if (_isBatchOpActive || isDateLoading(dateISO)) return false;
+    if (_isBatchOpActive || (state.unarchivedCache.has(`${dateISO.substring(0, 4)}_pending`))) return false;
     _isBatchOpActive = true;
     
-    // We don't need to instantiate dailyData just to set bitmasks!
     const dateObj = parseUTCIsoDate(dateISO);
     let changed = false; 
     BATCH_IDS_POOL.length = 0; 
@@ -516,13 +465,10 @@ export function markAllHabitsForDate(dateISO: string, status: 'completed' | 'sno
             const sch = getEffectiveScheduleForHabitOnDate(h, dateISO); 
             if (!sch.length) return;
             
-            // Map string status to bit status
             let bitStatus: number = (status === 'completed') ? HABIT_STATE.DONE : HABIT_STATE.DEFERRED;
 
             sch.forEach(t => {
-                // Verificamos se o status já é o pretendido via Bitmask
                 if (HabitService.getStatus(h.id, dateISO, t) !== bitStatus) {
-                    // ESCRITA DIRETA NO BITMASK
                     HabitService.setStatus(h.id, dateISO, t, bitStatus);
                     changed = true;
                 }
@@ -574,25 +520,16 @@ export function requestHabitPermanentDeletion(habitId: string) {
 export function graduateHabit(habitId: string) { const h = state.habits.find(x => x.id === habitId); if (h) { h.graduatedOn = getSafeDate(state.selectedDate); _notifyChanges(true); triggerHaptic('success'); } }
 
 export async function resetApplicationData() { 
-    // 1. Limpa memória RAM
     state.habits = []; 
     state.dailyData = {}; 
     state.archives = {}; 
     state.notificationsShown = []; 
     state.pending21DayHabitIds = []; 
     state.pendingConsolidationHabitIds = [];
-    
-    // --- CORREÇÃO: Limpar Bitmask ---
     state.monthlyLogs = new Map();
-    // -------------------------------
 
     try { 
-        // 2. Força salvar o estado VAZIO no disco (sobrescreve dados antigos)
-        // Isso garante que, mesmo se clearLocalPersistence falhar em limpar a chave nova,
-        // o banco terá um Map vazio salvo.
         await saveState();
-
-        // 3. Tenta limpar a persistência completamente
         await clearLocalPersistence(); 
     } finally { 
         clearKey(); 
@@ -607,24 +544,17 @@ export function setGoalOverride(habitId: string, d: string, t: TimeOfDay, v: num
         const h = state.habits.find(x => x.id === habitId);
         if (!h) return;
 
-        // Grava o valor numérico (Necessário JSON)
         ensureHabitInstanceData(d, habitId, t).goalOverride = v;
-
-        // STATE PROTECTION [2025-06-03]: 
-        // Alterar o número NÃO deve alterar o status automaticamente se estiver Pendente.
-        // Apenas atualizamos se já estiver Concluído (para gerenciar o estado 'Arete/Plus').
         
         const currentStatus = HabitService.getStatus(habitId, d, t);
         
         if (currentStatus === HABIT_STATE.DONE || currentStatus === HABIT_STATE.DONE_PLUS) {
              const props = getHabitPropertiesForDate(h, d);
-             // Verifica se a nova meta numérica supera o total definido (Arete)
              if (props?.goal?.total && v > props.goal.total) {
                  if (currentStatus !== HABIT_STATE.DONE_PLUS) {
                      HabitService.setStatus(habitId, d, t, HABIT_STATE.DONE_PLUS);
                  }
              } else {
-                 // Se caiu abaixo da meta de superação, volta para DONE normal
                  if (currentStatus !== HABIT_STATE.DONE) {
                      HabitService.setStatus(habitId, d, t, HABIT_STATE.DONE);
                  }
@@ -632,10 +562,7 @@ export function setGoalOverride(habitId: string, d: string, t: TimeOfDay, v: num
         }
 
         saveState();
-
-        // Notificações UI
         document.dispatchEvent(new CustomEvent('card-goal-changed', { detail: { habitId, time: t, date: d } })); 
-        // Refresh UI para atualizar o número no cartão
         _notifyPartialUIRefresh(d, [habitId]); 
     } catch (e) { 
         console.error(e); 
@@ -662,14 +589,10 @@ export function requestHabitTimeRemoval(habitId: string, time: TimeOfDay) {
 }
 
 export function exportData() {
-    // FIX [2025-06-05]: DATA LOSS PREVENTION
-    // Manually serialize the Bitmask Map (monthlyLogs) to Array of Hex tuples.
-    // JSON.stringify ignores Maps by default, which would wipe all habit history.
     const stateToExport = getPersistableState();
-    
-    // CRITICAL: Injeta os logs binários convertidos para Hex (Legível/Portátil)
-    // Isso garante que o backup restaure o histórico corretamente.
-    const logs = HabitService.serializeLogsForCloud(); // Retorna [["ID_DATA", "0x1A..."], ...]
+    // Serializa manualmente o Map de Bitmasks para Array de Hex, 
+    // pois JSON.stringify ignora Maps e isso perderia o histórico.
+    const logs = HabitService.serializeLogsForCloud(); 
     if (logs.length > 0) {
         (stateToExport as any).monthlyLogsSerialized = logs;
     }

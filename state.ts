@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -45,8 +44,6 @@ export type Frequency =
     | { readonly type: 'specific_days_of_week'; readonly days: readonly number[] };
 
 export interface HabitDayData {
-    // STATUS REMOVIDO: O estado de conclusão agora reside exclusivamente em 'monthlyLogs' (Bitmask).
-    // Este objeto armazena apenas metadados ricos opcionais.
     goalOverride?: number;
     note?: string;
 }
@@ -66,8 +63,7 @@ export interface HabitGoal {
 
 export interface HabitSchedule {
     readonly startDate: string;
-    endDate?: string; // This can be mutated when a new schedule is created.
-    // Versioned properties
+    endDate?: string; 
     readonly icon: string;
     readonly color: string;
     readonly goal: HabitGoal;
@@ -83,9 +79,8 @@ export interface HabitSchedule {
 
 export interface Habit {
     readonly id: string;
-    createdOn: string; // Can be mutated if an edit targets a date before creation
-    graduatedOn?: string; // This can be mutated.
-    // @fix: Made scheduleHistory mutable to allow for adding/modifying schedules.
+    createdOn: string; 
+    graduatedOn?: string; 
     scheduleHistory: HabitSchedule[];
 }
 
@@ -101,7 +96,6 @@ export type PredefinedHabit = {
     readonly philosophy?: HabitPhilosophy;
 };
 
-// NOTE: HabitTemplate remains MUTABLE as it's used to build form data before saving.
 export type HabitTemplate = {
     icon: string;
     color: string;
@@ -143,42 +137,38 @@ export interface DaySummary {
     readonly showPlusIndicator: boolean;
 }
 
-// --- NOVAS ESTRUTURAS (Bitmask) ---
+// --- BITMASK STRUCTURES ---
 export const PERIOD_OFFSET = { Morning: 0, Afternoon: 2, Evening: 4 } as const;
 export const HABIT_STATE = { NULL: 0, DONE: 1, DEFERRED: 2, DONE_PLUS: 3 } as const;
 
 export interface MonthlyHabitLog {
     habitId: string;
-    monthKey: string; // "YYYY-MM"
-    data: bigint;     // 186 bits representando o mês inteiro
+    monthKey: string; 
+    data: bigint;     
 }
 
 export interface AppState {
     readonly version: number;
-    lastModified: number; // This must be mutable
+    lastModified: number; 
     readonly habits: readonly Habit[];
     readonly dailyData: Readonly<Record<string, Readonly<Record<string, HabitDailyInfo>>>>;
-    // UPDATED [2025-06-03]: Suporte a Binário (Uint8Array) e Legado (String)
     readonly archives: Readonly<Record<string, string | Uint8Array>>; 
     readonly dailyDiagnoses: Readonly<Record<string, DailyStoicDiagnosis>>;
     readonly notificationsShown: readonly string[];
     readonly pending21DayHabitIds: readonly string[];
     readonly pendingConsolidationHabitIds: readonly string[];
     readonly quoteState?: QuoteDisplayState;
-    // Cache runtime para a estrutura otimizada (Bitmasks)
     monthlyLogs?: Map<string, bigint>;
 }
 
 // --- CONSTANTS ---
 export const APP_VERSION = 7; 
-export const DAYS_IN_CALENDAR = 61;
 export const STREAK_SEMI_CONSOLIDATED = 21;
 export const STREAK_CONSOLIDATED = 66;
 export const STREAK_LOOKBACK_DAYS = 730;
 
-// MEMORY GUARDS: Previne OOM e lentidão em sessões longas.
-const MAX_UNARCHIVED_CACHE_SIZE = 3; // Mantém no máximo 3 anos arquivados em memória.
-const MAX_SELECTOR_CACHE_SIZE = 365; // Cache de streaks/resumos limitado a 1 ano.
+const MAX_UNARCHIVED_CACHE_SIZE = 3; 
+const MAX_SELECTOR_CACHE_SIZE = 365; 
 
 export const TIMES_OF_DAY = ['Morning', 'Afternoon', 'Evening'] as const;
 export type TimeOfDay = typeof TIMES_OF_DAY[number];
@@ -290,7 +280,6 @@ export const state: {
         habitListStructure: true,
         chartData: true,
     },
-    // FIX: Inicialização explicita para evitar erros de leitura antes do load
     monthlyLogs: new Map<string, bigint>(),
 };
 
@@ -306,8 +295,6 @@ export function invalidateChartCache() {
 }
 
 export function getPersistableState(): AppState {
-    // ZERO-COST UPDATE: Estado limpo para persistência.
-    // 'monthlyLogs' é persistido separadamente em binário e removido deste objeto.
     return {
         version: APP_VERSION,
         lastModified: Date.now(),
@@ -339,9 +326,6 @@ export function clearActiveHabitsCache() {
     state.uiDirtyState.chartData = true;
 }
 
-/**
- * MEMORY GUARD: Evita vazamento de memória em sessões longas.
- */
 function pruneSelectorCaches() {
     if (state.daySummaryCache.size > MAX_SELECTOR_CACHE_SIZE) {
         clearActiveHabitsCache();
@@ -373,10 +357,6 @@ export function isDateLoading(date: string): boolean {
     return state.unarchivedCache.has(`${date.substring(0, 4)}_pending`);
 }
 
-/**
- * Recupera dados diários, gerenciando cache e descompressão de arquivos (String e Binário).
- * SNIFFER LOGIC: Detecta automaticamente o formato do arquivo para manter retrocompatibilidade.
- */
 export function getHabitDailyInfoForDate(date: string): Record<string, HabitDailyInfo> {
     pruneSelectorCaches();
     const hotData = state.dailyData[date];
@@ -392,7 +372,6 @@ export function getHabitDailyInfoForDate(date: string): Record<string, HabitDail
 
     const rawArchive = state.archives[year];
     if (rawArchive) {
-        // [A] Binary Path (New Standard)
         if (rawArchive instanceof Uint8Array) {
             const pendingKey = `${year}_pending`;
             if (!state.unarchivedCache.has(pendingKey)) {
@@ -416,7 +395,6 @@ export function getHabitDailyInfoForDate(date: string): Record<string, HabitDail
             return (EMPTY_DAILY_INFO as Record<string, HabitDailyInfo>);
         }
         
-        // [B] String Paths (Legacy)
         else if (typeof rawArchive === 'string') {
             if (rawArchive.startsWith('GZIP:')) {
                 const pendingKey = `${year}_pending`;
@@ -440,7 +418,6 @@ export function getHabitDailyInfoForDate(date: string): Record<string, HabitDail
                 }
                 return (EMPTY_DAILY_INFO as Record<string, HabitDailyInfo>);
             } else {
-                // [C] Plain JSON (Ancient Legacy)
                 try {
                     const parsedYearData = JSON.parse(rawArchive);
                     _enforceCacheLimit(year);
@@ -483,10 +460,4 @@ export function ensureHabitInstanceData(date: string, habitId: string, time: Tim
         habitInfo.instances[time] = _createMonomorphicInstance();
     }
     return habitInfo.instances[time]!;
-}
-
-// --- DEBUG EXPOSURE ---
-if (typeof window !== 'undefined') {
-    (window as any).askesis_state = state;
-    console.log("🔧 Debug ativado: digite 'askesis_state' no console.");
 }

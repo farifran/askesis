@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -21,7 +22,6 @@ import {
     state, 
     LANGUAGES, 
     STREAK_CONSOLIDATED, 
-    DAYS_IN_CALENDAR, 
     invalidateChartCache, 
     FREQUENCIES,
     Habit,
@@ -56,7 +56,7 @@ import {
     exportData,
     importData,
     consumeAndFormatCelebrations,
-} from '../habitActions';
+} from '../services/habitActions';
 import { t, setLanguage } from '../i18n';
 import { getHabitDisplayInfo } from '../services/selectors';
 import { setupReelRotary } from '../render/rotary';
@@ -71,13 +71,7 @@ const MAX_HABIT_NAME_LENGTH = 50;
 // HELPER: Centraliza lógica de navegação do Almanaque para evitar duplicação (DRY)
 function _navigateToDateFromAlmanac(dateISO: string) {
     state.selectedDate = dateISO;
-    const newDate = parseUTCIsoDate(dateISO);
     
-    // Regenera a faixa de calendário centrada na nova data
-    state.calendarDates = Array.from({ length: DAYS_IN_CALENDAR }, (_, i) => 
-        addDays(newDate, i - 30)
-    );
-
     closeModal(ui.fullCalendarModal);
     
     state.uiDirtyState.calendarVisuals = true;

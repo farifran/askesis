@@ -24,7 +24,7 @@ import { state, AppState } from './state';
 import { loadState, persistStateLocally, registerSyncHandler } from './services/persistence';
 import { renderApp, initI18n, updateUIText } from './render';
 import { setupEventListeners } from './listeners';
-import { createDefaultHabit, handleDayTransition, performArchivalCheck } from './habitActions';
+import { createDefaultHabit, handleDayTransition, performArchivalCheck } from './services/habitActions';
 import { initSync } from './listeners/sync';
 import { fetchStateFromCloud, syncStateWithCloud, setSyncStatus } from './services/cloud';
 import { hasLocalSyncKey, initAuth } from './services/api';

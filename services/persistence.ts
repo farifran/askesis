@@ -2,21 +2,20 @@
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
- */
+*/
 
 /**
  * @file services/persistence.ts
  * @description Camada de Persistência e Gerenciamento de Ciclo de Vida de Dados (Storage Engine).
  */
 
-import { state, AppState, getPersistableState, APP_VERSION } from '../state';
+import { state, AppState, Habit, HabitDailyInfo, APP_VERSION, getPersistableState } from '../state';
 import { migrateState } from './migration';
 import { HabitService } from './HabitService';
 
 const DB_NAME = 'AskesisDB', DB_VERSION = 1, STORE_NAME = 'app_state';
 const LEGACY_STORAGE_KEY = 'habitTrackerState_v1';
 
-// FASE 3: SPLIT STORAGE KEYS
 const STATE_JSON_KEY = 'askesis_core_json';
 const STATE_BINARY_KEY = 'askesis_logs_binary';
 
@@ -53,31 +52,21 @@ async function performIDB<T>(mode: IDBTransactionMode, op: (s: IDBObjectStore) =
             request.onerror = () => reject(request.error);
         });
     } catch (e) {
-        // CHAOS DEFENSE: Reseta a conexão em caso de erro para não travar a sessão.
         dbPromise = null; 
         if (retries > 0) return performIDB(mode, op, retries - 1);
         return undefined;
     }
 }
 
-/**
- * [ZERO-COST PERSISTENCE]
- * Salva o estado separando dados estruturados de dados binários/logs.
- * Usa uma transação para garantir atomicidade.
- */
 async function saveSplitState(main: AppState, logs: any): Promise<void> {
     const db = await getDB();
     return new Promise((resolve, reject) => {
         const tx = db.transaction(STORE_NAME, 'readwrite');
         const store = tx.objectStore(STORE_NAME);
         
-        // 1. Salva o JSON (Configurações, Metadados)
-        // Remove monthlyLogs do JSON para não duplicar, caso tenha escapado
         const { monthlyLogs, ...jsonState } = main as any;
         store.put(jsonState, STATE_JSON_KEY);
         
-        // 2. Salva o BINÁRIO (Seus cliques!)
-        // O IndexedDB aceita Map<string, bigint> nativamente
         if (logs && logs.size > 0) {
             store.put(logs, STATE_BINARY_KEY);
         }
@@ -90,39 +79,26 @@ async function saveSplitState(main: AppState, logs: any): Promise<void> {
 let syncHandler: ((state: AppState) => void) | null = null;
 export const registerSyncHandler = (h: (s: AppState) => void) => syncHandler = h;
 
-/**
- * Poda de dados órfãos: remove registros de hábitos deletados para economizar espaço e RAM.
- */
-function pruneOrphanedDailyData(habits: readonly any[], dailyData: Record<string, any>) {
+function pruneOrphanedDailyData(habits: readonly Habit[], dailyData: Record<string, Record<string, HabitDailyInfo>>) {
     if (habits.length === 0) return; 
     const validIds = new Set(habits.map(h => h.id));
-    let prunedCount = 0;
     for (const date in dailyData) {
         for (const id in dailyData[date]) {
             if (!validIds.has(id)) {
                 delete dailyData[date][id];
-                prunedCount++;
             }
         }
         if (Object.keys(dailyData[date]).length === 0) delete dailyData[date];
     }
-    if (prunedCount > 0) console.log(`[Persistence] ${prunedCount} registros órfãos podados.`);
 }
 
 async function saveStateInternal() {
-    // 1. Full State (Structured JSON Data Only)
-    // O getPersistableState já remove monthlyLogs, mantendo apenas metadados leves.
     const structuredData = getPersistableState();
-    
-    // 2. Binary Logs (Map<string, bigint>)
-    // Salva o Map diretamente. O IndexedDB suporta BigInt nativamente.
     try {
         await saveSplitState(structuredData, state.monthlyLogs);
     } catch (e) { 
         console.error("IDB Save Failed:", e); 
     }
-    
-    // 3. Trigger Sync
     syncHandler?.(structuredData);
 }
 
@@ -144,12 +120,10 @@ export const persistStateLocally = (data: AppState) => {
 };
 
 export async function loadState(cloudState?: AppState): Promise<AppState | null> {
-    // 1. Load Split State (Main + Binary Logs)
     let mainState = cloudState;
-    let binaryLogs: any; // Can be Map<string, bigint> or Map<string, ArrayBuffer> (legacy)
+    let binaryLogs: any;
 
     if (!mainState) {
-        // Parallel fetch of main state and logs
         try {
             const db = await getDB();
             await new Promise<void>((resolve) => {
@@ -164,7 +138,7 @@ export async function loadState(cloudState?: AppState): Promise<AppState | null>
                     binaryLogs = reqLogs.result;
                     resolve();
                 };
-                tx.onerror = () => resolve(); // Fail gracefully
+                tx.onerror = () => resolve();
             });
         } catch (e) {
             console.warn("[Persistence] Failed to read split state from IDB", e);
@@ -178,7 +152,6 @@ export async function loadState(cloudState?: AppState): Promise<AppState | null>
             habits: (migrated.habits || []).filter(h => h && h.id && h.scheduleHistory?.length > 0)
         };
         
-        // PERFORMANCE & INTEGRITY: Pruning rodando fora do caminho crítico do boot.
         const runCleanup = () => pruneOrphanedDailyData(migrated.habits, migrated.dailyData || {});
         
         if ('scheduler' in window && (window as any).scheduler) {
@@ -196,47 +169,32 @@ export async function loadState(cloudState?: AppState): Promise<AppState | null>
         state.pending21DayHabitIds = [...(migrated.pending21DayHabitIds || [])];
         state.pendingConsolidationHabitIds = [...(migrated.pendingConsolidationHabitIds || [])];
         
-        // --- HIDRATAÇÃO DO BITMASK ---
-        // A prioridade absoluta é o que veio do disco (binaryLogs), pois é o dado mais recente e confiável.
+        // Prioridade para dados binários do disco
         if (binaryLogs instanceof Map && binaryLogs.size > 0) {
             const firstVal = binaryLogs.values().next().value;
-            // [A] New Native: Já está salvo como Map<string, bigint>
             if (typeof firstVal === 'bigint') {
                  state.monthlyLogs = binaryLogs as Map<string, bigint>;
-                 console.log(`[Persistence] Logs carregados (Nativo): ${binaryLogs.size} meses.`);
             } 
-            // [B] Legacy Binary: ArrayBuffer (migração on-the-fly)
             else if (firstVal instanceof ArrayBuffer) {
                  HabitService.unpackBinaryLogs(binaryLogs as Map<string, ArrayBuffer>);
-                 console.log(`[Persistence] Logs carregados (Legado): Convertido.`);
             } else {
-                 // Fallback genérico se for outro tipo, mas confiamos no disco
                  state.monthlyLogs = binaryLogs as any;
             }
         } 
-        // Se o disco não tem logs (novo usuário ou primeira carga v2), tentamos os dados da nuvem/migração
         else if (migrated.monthlyLogs instanceof Map && migrated.monthlyLogs.size > 0) {
-            // [C] Cloud Path: Já veio hidratado
             state.monthlyLogs = migrated.monthlyLogs;
-            console.log(`[Persistence] Logs carregados (Cloud/Migrated): ${migrated.monthlyLogs.size} meses.`);
         } else if ((migrated as any).monthlyLogsSerialized && Array.isArray((migrated as any).monthlyLogsSerialized)) {
-            // [D] Legacy JSON Path (Backup restoration)
-            console.log("[Persistence] Migrando logs serializados para binário...");
             HabitService.deserializeLogsFromCloud((migrated as any).monthlyLogsSerialized);
             delete (migrated as any).monthlyLogsSerialized;
         } else {
-            // [E] Fresh Start: Garante que nunca é null/undefined
-            // Só sobrescreve se o state atual estiver vazio ou indefinido para evitar zerar dados em memória.
             if (!state.monthlyLogs) {
                 state.monthlyLogs = new Map();
-                console.log("[Persistence] Iniciando banco de logs vazio.");
             }
         }
 
         ['streaksCache', 'scheduleCache', 'activeHabitsCache', 'unarchivedCache', 'habitAppearanceCache', 'daySummaryCache'].forEach(k => (state as any)[k].clear());
         Object.assign(state.uiDirtyState, { calendarVisuals: true, habitListStructure: true, chartData: true });
         
-        // Dispara renderização final após garantir dados carregados
         document.dispatchEvent(new CustomEvent('render-app'));
         return migrated;
     }
@@ -248,10 +206,9 @@ export const clearLocalPersistence = () => Promise.all([
         s.delete(STATE_JSON_KEY);
         s.delete(STATE_BINARY_KEY);
         s.delete(LEGACY_STORAGE_KEY);
-        return {} as any; // Dummy
+        return {} as any; 
     }), 
     localStorage.removeItem(LEGACY_STORAGE_KEY),
-    // Limpa estado em memória também para refletir
     (state.monthlyLogs = new Map())
 ]);
 

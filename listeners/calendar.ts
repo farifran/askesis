@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -14,7 +15,7 @@ import { renderApp, renderFullCalendar, openModal, closeModal } from '../render'
 import { appendDayToStrip, prependDayToStrip, scrollToSelectedDate } from '../render/calendar';
 import { parseUTCIsoDate, triggerHaptic, getTodayUTCIso } from '../utils';
 import { CSS_CLASSES, DOM_SELECTORS } from '../render/constants';
-import { markAllHabitsForDate } from '../habitActions';
+import { markAllHabitsForDate } from '../services/habitActions';
 
 // --- CONFIGURAÇÃO ADAPTATIVA ---
 const SCROLL_THRESHOLD_PX = 350; // Pixels antes da borda para disparar
