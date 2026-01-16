@@ -72,7 +72,7 @@ async function copyStaticFiles() {
 }
 
 const esbuildOptions = {
-    entryPoints: { 'bundle': 'index.tsx', 'sync-worker': 'services/sync.worker.ts' },
+    entryPoints: { 'bundle': 'index.tsx' },
     bundle: true,
     splitting: true,
     outdir: outdir,

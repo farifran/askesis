@@ -1,4 +1,5 @@
 
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -117,13 +118,13 @@ async function loadInitialState() {
                         localIsNewer ? finalState : cloudState
                     );
                     if (localIsNewer) {
-                        syncStateWithCloud(finalState, true);
+                        syncStateWithCloud(finalState);
                     }
                 } else if (cloudState) {
                     finalState = cloudState;
                 } else if (finalState && isCloudEmpty) {
                     // Cloud é confirmado como vazio, então enviamos o estado local
-                    syncStateWithCloud(finalState as AppState, true);
+                    syncStateWithCloud(finalState as AppState);
                 }
             }
         } catch (e) {
