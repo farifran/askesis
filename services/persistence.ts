@@ -2,14 +2,14 @@
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
-*/
+ */
 
 /**
  * @file services/persistence.ts
  * @description Camada de Persistência e Gerenciamento de Ciclo de Vida de Dados (Storage Engine).
  */
 
-import { state, AppState, Habit, HabitDailyInfo, APP_VERSION, getPersistableState } from '../state';
+import { state, AppState, getPersistableState, APP_VERSION } from '../state';
 import { migrateState } from './migration';
 import { HabitService } from './HabitService';
 
@@ -93,7 +93,7 @@ export const registerSyncHandler = (h: (s: AppState) => void) => syncHandler = h
 /**
  * Poda de dados órfãos: remove registros de hábitos deletados para economizar espaço e RAM.
  */
-function pruneOrphanedDailyData(habits: readonly Habit[], dailyData: Record<string, Record<string, HabitDailyInfo>>) {
+function pruneOrphanedDailyData(habits: readonly any[], dailyData: Record<string, any>) {
     if (habits.length === 0) return; 
     const validIds = new Set(habits.map(h => h.id));
     let prunedCount = 0;
@@ -197,34 +197,47 @@ export async function loadState(cloudState?: AppState): Promise<AppState | null>
         state.pendingConsolidationHabitIds = [...(migrated.pendingConsolidationHabitIds || [])];
         
         // --- HIDRATAÇÃO DO BITMASK ---
-        if (binaryLogs instanceof Map) {
+        // A prioridade absoluta é o que veio do disco (binaryLogs), pois é o dado mais recente e confiável.
+        if (binaryLogs instanceof Map && binaryLogs.size > 0) {
             const firstVal = binaryLogs.values().next().value;
             // [A] New Native: Já está salvo como Map<string, bigint>
             if (typeof firstVal === 'bigint') {
                  state.monthlyLogs = binaryLogs as Map<string, bigint>;
-                 console.log(`[Persistence] Logs carregados: ${binaryLogs.size} meses.`);
+                 console.log(`[Persistence] Logs carregados (Nativo): ${binaryLogs.size} meses.`);
             } 
             // [B] Legacy Binary: ArrayBuffer (migração on-the-fly)
             else if (firstVal instanceof ArrayBuffer) {
                  HabitService.unpackBinaryLogs(binaryLogs as Map<string, ArrayBuffer>);
+                 console.log(`[Persistence] Logs carregados (Legado): Convertido.`);
             } else {
+                 // Fallback genérico se for outro tipo, mas confiamos no disco
                  state.monthlyLogs = binaryLogs as any;
             }
-        } else if (migrated.monthlyLogs instanceof Map) {
+        } 
+        // Se o disco não tem logs (novo usuário ou primeira carga v2), tentamos os dados da nuvem/migração
+        else if (migrated.monthlyLogs instanceof Map && migrated.monthlyLogs.size > 0) {
             // [C] Cloud Path: Já veio hidratado
             state.monthlyLogs = migrated.monthlyLogs;
+            console.log(`[Persistence] Logs carregados (Cloud/Migrated): ${migrated.monthlyLogs.size} meses.`);
         } else if ((migrated as any).monthlyLogsSerialized && Array.isArray((migrated as any).monthlyLogsSerialized)) {
-            // [D] Legacy JSON Path
-            console.log("[Persistence] Migrando logs legados/nuvem para binário...");
+            // [D] Legacy JSON Path (Backup restoration)
+            console.log("[Persistence] Migrando logs serializados para binário...");
             HabitService.deserializeLogsFromCloud((migrated as any).monthlyLogsSerialized);
             delete (migrated as any).monthlyLogsSerialized;
         } else {
-            state.monthlyLogs = new Map();
-            console.log("[Persistence] Iniciando banco de logs vazio.");
+            // [E] Fresh Start: Garante que nunca é null/undefined
+            // Só sobrescreve se o state atual estiver vazio ou indefinido para evitar zerar dados em memória.
+            if (!state.monthlyLogs) {
+                state.monthlyLogs = new Map();
+                console.log("[Persistence] Iniciando banco de logs vazio.");
+            }
         }
 
         ['streaksCache', 'scheduleCache', 'activeHabitsCache', 'unarchivedCache', 'habitAppearanceCache', 'daySummaryCache'].forEach(k => (state as any)[k].clear());
         Object.assign(state.uiDirtyState, { calendarVisuals: true, habitListStructure: true, chartData: true });
+        
+        // Dispara renderização final após garantir dados carregados
+        document.dispatchEvent(new CustomEvent('render-app'));
         return migrated;
     }
     return null;
@@ -237,7 +250,9 @@ export const clearLocalPersistence = () => Promise.all([
         s.delete(LEGACY_STORAGE_KEY);
         return {} as any; // Dummy
     }), 
-    localStorage.removeItem(LEGACY_STORAGE_KEY)
+    localStorage.removeItem(LEGACY_STORAGE_KEY),
+    // Limpa estado em memória também para refletir
+    (state.monthlyLogs = new Map())
 ]);
 
 if (typeof window !== 'undefined') {
