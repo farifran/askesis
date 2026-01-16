@@ -6,11 +6,16 @@
 /**
  * @file services/dataMerge.ts
  * @description Algoritmo de Reconciliação de Estado (Smart Merge / CRDT-lite).
- * Necessário para Importação Manual e Migrações na Thread Principal.
+ * 
+ * [MAIN THREAD CONTEXT]:
+ * Este módulo executa lógica computacional pura (síncrona). 
  */
 
-import { AppState, HabitDailyInfo } from '../state';
-import { compressToBuffer } from '../utils';
+import { AppState, HabitDailyInfo, TimeOfDay } from '../state';
+import { decompressString, decompressFromBuffer, compressToBuffer } from '../utils';
+
+// CONSTANTS
+const GZIP_PREFIX = 'GZIP:';
 
 /**
  * Helper de fusão granular dia-a-dia.
@@ -30,35 +35,43 @@ function mergeDayRecord(localDay: Record<string, HabitDailyInfo>, mergedDay: Rec
         const mergedHabitData = mergedDay[habitId];
 
         if (localHabitData.dailySchedule !== undefined) {
+            // Compara arrays de agendamento para evitar dirty flag falso (JSON stringify é rápido para arrays pequenos)
             const localSchStr = JSON.stringify(localHabitData.dailySchedule);
             const mergedSchStr = JSON.stringify(mergedHabitData.dailySchedule);
+            
             if (localSchStr !== mergedSchStr) {
                 mergedHabitData.dailySchedule = localHabitData.dailySchedule;
                 isDirty = true;
             }
         }
 
-        const localInstances = localHabitData.instances || {};
-        const mergedInstances = mergedHabitData.instances || {};
+        const localInstances = localHabitData.instances;
+        const mergedInstances = mergedHabitData.instances;
 
-        for (const time in localInstances) {
-            const localInst = localInstances[time as any];
-            const mergedInst = mergedInstances[time as any];
+        for (const timeKey in localInstances) {
+            const time = timeKey as TimeOfDay;
+            const localInst = localInstances[time];
+            const mergedInst = mergedInstances[time];
 
             if (!localInst) continue;
 
             if (!mergedInst) {
-                mergedInstances[time as any] = localInst;
+                mergedInstances[time] = localInst;
                 isDirty = true;
             } else {
+                // CONFLITO SEMÂNTICO: Note & Goal Override Merge
+                // Status agora é gerenciado pelo monthlyLogs (Bitmask), então focamos nos metadados.
+                
+                // Goal Override: Local prevalece se merged for undefined (Union)
                 if (mergedInst.goalOverride === undefined && localInst.goalOverride !== undefined) {
                     mergedInst.goalOverride = localInst.goalOverride;
                     isDirty = true;
                 }
-                
-                const lNoteLen = localInst.note ? localInst.note.length : 0;
-                const mNoteLen = mergedInst.note ? mergedInst.note.length : 0;
-                
+
+                // Note Merge: "Maior Texto Vence".
+                const lNoteLen = localInst.note?.length ?? 0;
+                const mNoteLen = mergedInst.note?.length ?? 0;
+
                 if (lNoteLen > mNoteLen) {
                     if (mergedInst.note !== localInst.note) {
                         mergedInst.note = localInst.note;
@@ -71,67 +84,143 @@ function mergeDayRecord(localDay: Record<string, HabitDailyInfo>, mergedDay: Rec
     return isDirty;
 }
 
-async function hydrateArchive(content: string | Uint8Array): Promise<Record<string, Record<string, HabitDailyInfo>>> {
-    // Na Main Thread não temos as funções de descompressão síncronas aqui facilmente sem importar utils pesados,
-    // mas para a finalidade de merge de estado principal, geralmente lidamos com objetos já hidratados ou ignoramos arquivos profundos
-    // se não formos o worker. 
-    // Simplificação: Retorna vazio se for binário na main thread, pois a main thread raramente faz merge profundo de arquivos históricos.
-    // Se necessário, o cloud.ts (Worker) é quem faz isso.
-    return {}; 
+async function hydrateArchive(content: string | Uint8Array): Promise<Record<string, any>> {
+    try {
+        // Hybrid Reader
+        if (content instanceof Uint8Array) {
+            const json = await decompressFromBuffer(content);
+            return JSON.parse(json);
+        }
+        
+        if (typeof content === 'string') {
+            if (content.startsWith(GZIP_PREFIX)) {
+                const json = await decompressString(content.substring(GZIP_PREFIX.length));
+                return JSON.parse(json);
+            }
+            return JSON.parse(content);
+        }
+        
+        return {};
+    } catch (e) {
+        console.error("Merge: Hydration failed", e);
+        return {};
+    }
 }
 
 /**
- * Funde o estado local com um estado recebido (Cloud ou Arquivo).
- * Estratégia: União de Conjuntos + Preservação de Dados Mais Ricos.
+ * SMART MERGE ALGORITHM:
+ * Combina dois estados de forma inteligente preservando o progresso.
  */
 export async function mergeStates(local: AppState, incoming: AppState): Promise<AppState> {
-    // Deep Clone do incoming para usar como base
-    const merged: AppState = structuredClone(incoming);
-    
-    // 1. Habits: União por ID
-    const incomingIds = new Set(incoming.habits.map(h => h.id));
-    local.habits.forEach(h => {
-        if (!incomingIds.has(h.id)) {
-            (merged.habits as any).push(h);
-        }
-    });
+    // @fix: Cast to `any` to allow mutation of the cloned state object.
+    const merged: any = structuredClone(incoming);
 
-    // 2. Daily Data: Merge granular
+    // 1. Fusão de Definições de Hábitos
+    const incomingIds = new Set();
+    for (let i = 0; i < incoming.habits.length; i++) incomingIds.add(incoming.habits[i].id);
+    
+    for (let i = 0; i < local.habits.length; i++) {
+        if (!incomingIds.has(local.habits[i].id)) {
+            merged.habits.push(local.habits[i]);
+        }
+    }
+
+    // 2. Mesclar Daily Data (Hot Storage - Metadados)
     for (const date in local.dailyData) {
         if (!merged.dailyData[date]) {
-            (merged.dailyData as any)[date] = local.dailyData[date];
+            merged.dailyData[date] = local.dailyData[date];
         } else {
             mergeDayRecord(local.dailyData[date], merged.dailyData[date]);
         }
     }
 
-    // 3. Archives (Simplificado para Main Thread)
-    // A thread principal geralmente não precisa fazer merge complexo de arquivos zipados,
-    // apenas garantir que arquivos ausentes sejam copiados.
-    if (local.archives) {
-        (merged as any).archives = merged.archives || {};
-        for (const year in local.archives) {
-            if (!merged.archives[year]) {
-                (merged.archives as any)[year] = local.archives[year];
+    // 3. Mesclar Logs Binários (Monthly Logs)
+    // Robustez: Garante que estamos lidando com Maps, mesmo se a entrada vier como objeto
+    if (local.monthlyLogs) {
+        // Inicializa se não existir no merged (incoming)
+        if (!merged.monthlyLogs) {
+            merged.monthlyLogs = new Map();
+        } else if (!(merged.monthlyLogs instanceof Map)) {
+            // Recovery: Se merged.monthlyLogs veio como objeto (serialização incorreta), converte para Map
+            try {
+                merged.monthlyLogs = new Map(Object.entries(merged.monthlyLogs));
+            } catch {
+                merged.monthlyLogs = new Map();
+            }
+        }
+        
+        // Iteração Defensiva: local.monthlyLogs pode ser Map ou Objeto
+        const localIterator = (local.monthlyLogs instanceof Map) 
+            ? local.monthlyLogs.entries() 
+            : Object.entries(local.monthlyLogs as unknown as Record<string, any>);
+
+        for (const [key, val] of localIterator) {
+            const localBigInt = typeof val === 'bigint' ? val : BigInt(val as any);
+
+            if (merged.monthlyLogs.has(key)) {
+                // BITWISE MERGE (CRDT-lite): União de Conclusões.
+                // Combina os bits de ambos (OR). Se 'Feito' estiver marcado em qualquer um, permanece 'Feito'.
+                // Isso evita que uma sincronização antiga sobrescreva um progresso recente com 0.
+                const serverVal = merged.monthlyLogs.get(key);
+                const serverBigInt = typeof serverVal === 'bigint' ? serverVal : BigInt(serverVal);
+                
+                merged.monthlyLogs.set(key, localBigInt | serverBigInt);
+            } else {
+                // Se não existe no servidor, preserva o local.
+                merged.monthlyLogs.set(key, localBigInt);
             }
         }
     }
-    
-    // 4. Metadados e Preferências
-    merged.lastModified = Date.now();
-    // @ts-ignore
-    merged.version = Math.max(local.version || 0, incoming.version || 0);
-    
-    // Merge de Listas (Sets)
-    const mergeList = (a: readonly any[] | undefined, b: readonly any[] | undefined) => 
-        Array.from(new Set([...(a||[]), ...(b||[])]));
 
-    // @ts-ignore
-    merged.notificationsShown = mergeList(incoming.notificationsShown, local.notificationsShown);
-    // @ts-ignore
-    merged.pending21DayHabitIds = mergeList(incoming.pending21DayHabitIds, local.pending21DayHabitIds);
-    // @ts-ignore
-    merged.pendingConsolidationHabitIds = mergeList(incoming.pendingConsolidationHabitIds, local.pendingConsolidationHabitIds);
+    // 4. Fusão de Arquivos (Cold Storage)
+    if (local.archives) {
+        merged.archives = merged.archives || {};
+        for (const year in local.archives) {
+            if (!merged.archives[year]) {
+                // Se o servidor não tem esse ano, pegamos o local.
+                merged.archives[year] = local.archives[year];
+            } else {
+                try {
+                    // Deep Merge necessário: Hidrata ambos para comparar
+                    const [localYearData, incomingYearData] = await Promise.all([
+                        hydrateArchive(local.archives[year]),
+                        hydrateArchive(merged.archives[year])
+                    ]);
+                    
+                    let isDirty = false;
+                    for (const date in localYearData) {
+                        if (!incomingYearData[date]) {
+                            incomingYearData[date] = localYearData[date];
+                            isDirty = true;
+                        } else {
+                            // Se mergeDayRecord retornar true, significa que houve mudança real nos dados
+                            if (mergeDayRecord(localYearData[date], incomingYearData[date])) {
+                                isDirty = true;
+                            }
+                        }
+                    }
+                    
+                    // BINARY OPTIMIZATION: "Dirty Check"
+                    // Só recomprime e substitui se houve alteração real.
+                    // Caso contrário, mantém o buffer original do 'incoming' (Zero Allocation).
+                    if (isDirty) {
+                        const compressed = await compressToBuffer(JSON.stringify(incomingYearData));
+                        merged.archives[year] = compressed;
+                    }
+                } catch (e) {
+                    console.error(`Deep merge failed for ${year}`, e);
+                }
+            }
+        }
+    }
+
+    // 5. Metadados
+    merged.lastModified = Date.now();
+    merged.version = Math.max(local.version, incoming.version);
+    
+    merged.notificationsShown = Array.from(new Set([...incoming.notificationsShown, ...local.notificationsShown]));
+    merged.pending21DayHabitIds = Array.from(new Set([...incoming.pending21DayHabitIds, ...local.pending21DayHabitIds]));
+    merged.pendingConsolidationHabitIds = Array.from(new Set([...incoming.pendingConsolidationHabitIds, ...local.pendingConsolidationHabitIds]));
 
     return merged;
 }
