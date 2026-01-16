@@ -500,3 +500,40 @@ export async function syncStateWithCloud(currentState: AppState) {
     if (syncTimeout) clearTimeout(syncTimeout);
     syncTimeout = setTimeout(() => _performSync(currentState), DEBOUNCE_DELAY);
 }
+// --- FERRAMENTA DE RESTAURAÇÃO FORÇADA ---
+// Cole isso no final do arquivo cloud.ts
+
+(window as any).forceCloudRestore = async () => {
+    console.log("🚨 INICIANDO RESTAURAÇÃO FORÇADA...");
+    
+    // 1. Baixa
+    const cloudState = await fetchStateFromCloud();
+    
+    if (!cloudState) {
+        console.error("❌ Falha: A nuvem não retornou dados válidos (ou está vazia).");
+        return;
+    }
+
+    console.log("📦 Dados baixados e decriptados. Aplicando ao App...");
+
+    // 2. Aplica ao Estado Global (Força Bruta)
+    // Copia todas as propriedades do cloudState para o state local
+    Object.keys(cloudState).forEach(key => {
+        // @ts-ignore
+        if (key !== 'monthlyLogs') state[key] = cloudState[key];
+    });
+
+    // 3. Aplica os Logs Especiais (Bitmask)
+    if (cloudState.monthlyLogs) {
+        state.monthlyLogs = cloudState.monthlyLogs;
+    }
+
+    // 4. Salva no Disco Local
+    await persistStateLocally();
+
+    // 5. Atualiza a Tela
+    document.dispatchEvent(new CustomEvent('render-app'));
+    
+    console.log("✅ SUCESSO! A tela deve atualizar agora.");
+    alert("Dados restaurados da nuvem com sucesso!");
+};
