@@ -100,16 +100,42 @@ export function getHabitPropertiesForDate(habit: Habit, dateISO: string): HabitS
     return schedule || habit.scheduleHistory[habit.scheduleHistory.length - 1];
 }
 
-export function getHabitDisplayInfo(habit: Habit | PredefinedHabit, dateISO?: string): { name: string, subtitle: string } {
+/**
+ * Retorna as informações visuais para renderizar o cartão do hábito.
+ * FIX: Agora capaz de ler diretamente do Bitmask (HabitService) se 'time' for fornecido.
+ */
+export function getHabitDisplayInfo(habit: Habit | PredefinedHabit, dateISO?: string, time?: TimeOfDay): { name: string, subtitle: string, status?: number, isCompleted?: boolean, note?: string, value?: number } {
     let source: any = habit;
+    const effectiveDate = dateISO || getTodayUTCIso();
+
     if ('scheduleHistory' in habit && habit.scheduleHistory.length > 0) {
-        const effectiveDate = dateISO || getTodayUTCIso();
         source = getHabitPropertiesForDate(habit as Habit, effectiveDate) || habit.scheduleHistory[habit.scheduleHistory.length-1];
     }
-    return {
+    
+    const baseInfo = {
         name: source.nameKey ? t(source.nameKey) : (source.name || ''),
         subtitle: source.subtitleKey ? t(source.subtitleKey) : (source.subtitle || '')
     };
+
+    // SE UM HORÁRIO FOI FORNECIDO: Retorna o status real do Bitmask
+    if (time && 'id' in habit) {
+        const h = habit as Habit;
+        const status = HabitService.getStatus(h.id, effectiveDate, time);
+        
+        // Dados auxiliares (Notas/Override) ainda vivem no JSON
+        const dayInfo = getHabitDailyInfoForDate(effectiveDate);
+        const instanceData = dayInfo[h.id]?.instances[time];
+        
+        return {
+            ...baseInfo,
+            status,
+            isCompleted: status === HABIT_STATE.DONE || status === HABIT_STATE.DONE_PLUS,
+            note: instanceData?.note,
+            value: instanceData?.goalOverride || 0
+        };
+    }
+
+    return baseInfo;
 }
 
 /**

@@ -290,7 +290,8 @@ export const state: {
         habitListStructure: true,
         chartData: true,
     },
-    monthlyLogs: new Map(),
+    // FIX: Inicialização explicita para evitar erros de leitura antes do load
+    monthlyLogs: new Map<string, bigint>(),
 };
 
 // --- CACHE MANAGEMENT ---

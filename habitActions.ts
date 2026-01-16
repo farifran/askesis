@@ -1,12 +1,12 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
-*/
+ */
 
 /**
- * @file habitActions.ts
- * @description Controlador de Lógica de Negócios (Business Logic Controller).
+ * @file services/habitActions.ts
+ * @description Controlador de Ações de Hábito (Business Logic Controller).
+ * Responsável por orquestrar a mudança de estado e persistência.
  */
 
 import { 
@@ -454,14 +454,17 @@ export function importData() {
 }
 
 /**
- * Alterna o estado do hábito (Clique no Checkbox).
- * Ciclo: NULL -> DONE -> DEFERRED (Opcional) -> DONE_PLUS (Opcional) -> NULL
+ * Alterna o estado do hábito (Check/Uncheck).
+ * Ciclo: Vazio (0) -> Feito (1) -> Vazio (0)
+ * (Nota: Se você tiver estados extras como "Adiado", ajuste a lógica aqui)
  */
 export function toggleHabitStatus(habitId: string, time: TimeOfDay, dateISO: string) {
-    // 1. Ler estado atual direto do Bitmask
+    // 1. LEITURA: Pergunta ao Bitmask qual o estado atual
     const currentStatus = HabitService.getStatus(habitId, dateISO, time);
     
-    // 2. Calcular próximo estado (Máquina de Estados Simples)
+    // 2. LÓGICA: Define o próximo estado
+    // Se estava FEITO ou FEITO+, vira NULL (ou Adiado se o app suportar).
+    // Aqui usamos o ciclo padrão do aplicativo: NULL -> DONE -> DEFERRED -> NULL.
     let nextStatus: number = HABIT_STATE.DONE;
     if (currentStatus === HABIT_STATE.DONE || currentStatus === HABIT_STATE.DONE_PLUS) {
         nextStatus = HABIT_STATE.DEFERRED;
@@ -469,11 +472,11 @@ export function toggleHabitStatus(habitId: string, time: TimeOfDay, dateISO: str
         nextStatus = HABIT_STATE.NULL;
     }
     
-    // 3. Escrever no Bitmask
+    // 3. ESCRITA: Grava no Bitmask (Map<BigInt>)
     HabitService.setStatus(habitId, dateISO, time, nextStatus);
     
-    // 4. Salvar (Isso dispara o persistStateLocally do arquivo persistence.ts)
-    saveState();
+    // 4. PERSISTÊNCIA & UI
+    saveState(); // Agenda o salvamento do Map no IndexedDB
     
     // Side Effects & Haptics
     const h = state.habits.find(x => x.id === habitId);
