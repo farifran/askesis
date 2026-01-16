@@ -1,5 +1,4 @@
 
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -483,4 +482,10 @@ export function ensureHabitInstanceData(date: string, habitId: string, time: Tim
         habitInfo.instances[time] = _createMonomorphicInstance();
     }
     return habitInfo.instances[time]!;
+}
+
+// --- DEBUG EXPOSURE ---
+if (typeof window !== 'undefined') {
+    (window as any).askesis_state = state;
+    console.log("🔧 Debug ativado: digite 'askesis_state' no console.");
 }
