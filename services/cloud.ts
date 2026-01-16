@@ -7,7 +7,7 @@
  * @file services/cloud.ts
  * @description Orquestrador de Sincronização na Nuvem (Cloud Sync Orchestrator).
  * ARQUITETURA: Inline Blob Worker (Zero-Dependency Load).
- * VERSÃO: Safe-Mode (Sem comentários internos que possam quebrar a string).
+ * Resolve definitivamente erros de carregamento de arquivo e referências circulares.
  */
 
 import { AppState, state, getPersistableState } from '../state';
@@ -18,7 +18,7 @@ import { t } from '../i18n';
 import { hasLocalSyncKey, getSyncKey, apiFetch, clearKey } from './api';
 
 const DEBOUNCE_DELAY = 2000;
-const WORKER_TIMEOUT_MS = 45000;
+const WORKER_TIMEOUT_MS = 45000; // Aumentado para operações pesadas
 const MAX_RETRIES = 3;
 
 let syncTimeout: any = null;
@@ -28,7 +28,7 @@ let syncFailCount = 0;
 let syncWorker: Worker | null = null;
 const workerCallbacks = new Map<string, { resolve: (val: any) => void, reject: (err: any) => void, timer: any }>();
 
-// --- INTERNAL HELPERS ---
+// --- INTERNAL HELPERS (Bitmask Serialization) ---
 
 function _serializeLogsInternal(map: Map<string, bigint> | undefined): string[][] {
     if (!map || !(map instanceof Map)) return [];
@@ -50,11 +50,13 @@ function _deserializeLogsInternal(arr: any): Map<string, bigint> {
 
 // ==================================================================================
 // 🧠 INLINE WORKER SOURCE CODE
-// ATENÇÃO: Código Javascript Puro injetado no Blob.
-// Comentários removidos para evitar erros de sintaxe em ambientes minificados.
+// O código abaixo é Javascript Puro injetado no Blob. Não depende de imports.
+// Contém: Utils (Slim), Crypto (WebCrypto), DataMerge (Logic) e SyncHandler.
 // ==================================================================================
 const WORKER_CODE = `
+/* --- 1. UTILS (Slim Version) --- */
 const HEX_LUT = Array.from({ length: 256 }, (_, i) => i.toString(16).padStart(2, '0'));
+const PAD_LUT = Array.from({ length: 100 }, (_, i) => i < 10 ? '0' + i : String(i));
 
 function arrayBufferToBase64(buffer) {
     const bytes = new Uint8Array(buffer);
@@ -94,12 +96,13 @@ async function decompressString(base64Data) {
     return decompressFromBuffer(buffer);
 }
 
+// --- 2. CRYPTO (AES-GCM) ---
 const SALT_LEN = 16;
 const IV_LEN = 12;
 const encoder = new TextEncoder();
+const decoder = new TextDecoder();
 
 async function deriveKey(password, salt) {
-    if (!crypto.subtle) throw new Error("Crypto API unavailable. Use HTTPS or localhost.");
     const keyMaterial = await crypto.subtle.importKey(
         'raw', encoder.encode(password), { name: 'PBKDF2' }, false, ['deriveKey']
     );
@@ -123,7 +126,9 @@ async function encrypt(data, password) {
 }
 
 async function decryptToBuffer(data, password) {
+    // Legacy support
     if (typeof data === 'string') {
+        // Assume legacy JSON format, fail if not parseable
         try { return await _legacyDecrypt(JSON.parse(data), password); } catch(e) { throw new Error("Invalid format"); }
     }
     const input = data instanceof Uint8Array ? data : new Uint8Array(data);
@@ -133,6 +138,8 @@ async function decryptToBuffer(data, password) {
     const key = await deriveKey(password, salt);
     return crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext);
 }
+
+// --- 3. DATA MERGE LOGIC ---
 
 function mergeDayRecord(localDay, mergedDay) {
     let isDirty = false;
@@ -196,14 +203,17 @@ async function hydrateArchive(content) {
 async function mergeStates(local, incoming) {
     const merged = structuredClone(incoming);
     
+    // 1. Habits
     const incomingIds = new Set(incoming.habits.map(h => h.id));
     local.habits.forEach(h => { if (!incomingIds.has(h.id)) merged.habits.push(h); });
 
+    // 2. Daily Data
     for (const date in local.dailyData) {
         if (!merged.dailyData[date]) merged.dailyData[date] = local.dailyData[date];
         else mergeDayRecord(local.dailyData[date], merged.dailyData[date]);
     }
 
+    // 3. Archives
     if (local.archives) {
         merged.archives = merged.archives || {};
         for (const year in local.archives) {
@@ -226,6 +236,7 @@ async function mergeStates(local, incoming) {
     
     merged.lastModified = Date.now();
     merged.version = Math.max(local.version || 0, incoming.version || 0);
+    // Merge lists
     const mergeList = (a, b) => Array.from(new Set([...(a||[]), ...(b||[])]));
     merged.notificationsShown = mergeList(incoming.notificationsShown, local.notificationsShown);
     merged.pending21DayHabitIds = mergeList(incoming.pending21DayHabitIds, local.pending21DayHabitIds);
@@ -234,13 +245,17 @@ async function mergeStates(local, incoming) {
     return merged;
 }
 
+// --- 4. MAIN WORKER HANDLER ---
+
 self.onmessage = async (e) => {
     const { id, type, payload, key } = e.data;
     let result;
     try {
         if (type === 'encrypt') {
+            // Serializa, Comprime e Encripta
             const jsonStr = JSON.stringify(payload, (k, v) => {
                 if (v instanceof Uint8Array) {
+                    // Copia buffer para evitar problemas de transferência
                     return 'B64:' + arrayBufferToBase64(new Uint8Array(v));
                 }
                 return v;
@@ -267,15 +282,18 @@ self.onmessage = async (e) => {
         
         self.postMessage({ id, status: 'success', result });
     } catch (err) {
+        console.error('Worker Inner Error:', err);
         self.postMessage({ id, status: 'error', error: err.message || err.toString() });
     }
 };
 `;
-
 // ==================================================================================
+
+// --- WORKER LIFECYCLE MANAGEMENT ---
 
 function terminateWorker(reason: string) {
     if (syncWorker) {
+        console.warn(`[Cloud] Resetting Worker. Reason: ${reason}`);
         syncWorker.terminate();
         syncWorker = null;
     }
@@ -287,10 +305,12 @@ function getWorker(): Worker {
     if (!syncWorker) {
         console.log("[Cloud] Instantiating Inline Worker...");
         try {
+            // Cria um Blob com o código do worker. Funciona offline e sem arquivos externos.
             const blob = new Blob([WORKER_CODE], { type: 'application/javascript' });
             const workerUrl = URL.createObjectURL(blob);
             syncWorker = new Worker(workerUrl);
             
+            // Listener Principal
             syncWorker.onmessage = (e) => {
                 const { id, status, result, error } = e.data;
                 const cb = workerCallbacks.get(id);
@@ -334,6 +354,7 @@ export function runWorkerTask<T>(type: string, payload: any, key?: string): Prom
         }, WORKER_TIMEOUT_MS);
 
         workerCallbacks.set(id, { resolve, reject, timer });
+        // Envia mensagem. O payload já deve estar sanitizado (sem BigInt).
         worker.postMessage({ id, type, payload, key });
     });
 }
@@ -371,8 +392,10 @@ async function resolveConflictWithServerState(serverData: any) {
         const key = _getAuthKey();
         if (!key) return;
 
+        // 1. Decripta (Worker)
         const serverStateRaw = await runWorkerTask<any>('decrypt', serverData.state, key);
         
+        // 2. Separa Logs Binários
         let serverLogs = new Map<string, bigint>();
         if (serverStateRaw.monthlyLogsSerialized) {
              serverLogs = _deserializeLogsInternal(serverStateRaw.monthlyLogsSerialized);
@@ -380,20 +403,24 @@ async function resolveConflictWithServerState(serverData: any) {
         }
         serverStateRaw.monthlyLogs = serverLogs;
 
+        // 3. Prepara Local
         const localState = getPersistableState();
         const { monthlyLogs: localLogsRef, ...localStateSafe } = localState as any;
         
+        // 4. Merge JSON (Worker)
         const mergedJSON = await runWorkerTask<AppState>('merge', { 
             local: localStateSafe, 
             incoming: serverStateRaw 
         });
 
+        // 5. Merge Binário (Main Thread)
         const mergedLogs = new Map<string, bigint>(state.monthlyLogs || new Map());
         serverLogs.forEach((val, key) => {
             const localVal = mergedLogs.get(key) || 0n;
             mergedLogs.set(key, localVal | val);
         });
 
+        // 6. Aplica
         Object.assign(state, mergedJSON);
         state.monthlyLogs = mergedLogs;
         
@@ -416,6 +443,7 @@ async function _performSync(currentState: AppState) {
         isSyncInProgress = true;
         setSyncStatus('syncing');
 
+        // 1. Extração e Sanitização
         const rawState = getPersistableState();
         const { monthlyLogs, ...cleanState } = rawState as any;
         const serializedLogs = _serializeLogsInternal(monthlyLogs || state.monthlyLogs);
@@ -425,17 +453,16 @@ async function _performSync(currentState: AppState) {
             monthlyLogsSerialized: serializedLogs 
         };
 
+        // 2. Criptografia (Worker)
         const encryptedState = await runWorkerTask<string>('encrypt', stateToSend, key);
 
+        // 3. Envio (Rede)
         const payload = {
             updatedAt: new Date().toISOString(),
             deviceId: (currentState as any).deviceId || 'unknown',
             state: encryptedState
         };
 
-        // Adicionei logs para você ver qual URL está sendo chamada
-        // console.log("Enviando para API: /api/sync"); 
-        
         const res = await apiFetch('/api/sync', { method: 'POST', body: JSON.stringify(payload) }, true);
 
         if (res.ok) {
@@ -454,15 +481,8 @@ async function _performSync(currentState: AppState) {
 
     } catch (e: any) {
         console.error("[Cloud] Sync Failed:", e);
-        
-        // Melhora a detecção de erro para o usuário
-        let msg = e.message || "Unknown";
-        if (msg.includes("Failed to fetch")) {
-            msg = "Falha de Conexão (Servidor Offline?)";
-        }
-        
         syncFailCount++;
-        state.syncLastError = msg;
+        state.syncLastError = e.message || "Network Error";
         setSyncStatus('syncError');
         
         if (syncFailCount <= MAX_RETRIES) {
@@ -512,11 +532,7 @@ export async function fetchStateFromCloud(): Promise<AppState | null> {
 
     } catch (e: any) {
         console.error("[Cloud] Fetch Failed:", e);
-        
-        let msg = "Erro na Nuvem";
-        if (e.message.includes("Failed to fetch")) msg = "Offline / Servidor Indisponível";
-        
-        state.syncLastError = msg;
+        state.syncLastError = "Decryption Failed";
         setSyncStatus('syncError');
         return null;
     }
@@ -534,3 +550,6 @@ const _getAuthKey = () => {
     if (!k) { setSyncStatus('syncError'); }
     return k;
 };
+
+// Expose for testing
+(window as any).debugWorker = () => { console.log("Worker:", syncWorker); };
