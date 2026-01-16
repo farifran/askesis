@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -28,7 +27,7 @@ import {
 } from './utils';
 import { 
     closeModal, showConfirmationModal, renderAINotificationState,
-    clearHabitDomCache
+    clearHabitDomCache, renderApp
 } from './render';
 import { ui } from './render/ui';
 import { t, getTimeOfDayName, formatDate, getAiLanguageName, formatList } from './i18n'; 
@@ -454,69 +453,44 @@ export function importData() {
 }
 
 /**
- * ZC-ARCHITECTURE: Toggles status using Bitmask as the ONLY source of truth.
- * Legacy `dailyData` is NOT touched, preventing object creation for simple checks.
+ * Alterna o estado do hábito (Clique no Checkbox).
+ * Ciclo: NULL -> DONE -> DEFERRED (Opcional) -> DONE_PLUS (Opcional) -> NULL
  */
-export function toggleHabitStatus(habitId: string, time: TimeOfDay, date: string) {
+export function toggleHabitStatus(habitId: string, time: TimeOfDay, dateISO: string) {
+    // 1. Ler estado atual direto do Bitmask
+    const currentStatus = HabitService.getStatus(habitId, dateISO, time);
+    
+    // 2. Calcular próximo estado (Máquina de Estados Simples)
+    let nextStatus: number = HABIT_STATE.DONE;
+    if (currentStatus === HABIT_STATE.DONE || currentStatus === HABIT_STATE.DONE_PLUS) {
+        nextStatus = HABIT_STATE.DEFERRED;
+    } else if (currentStatus === HABIT_STATE.DEFERRED) {
+        nextStatus = HABIT_STATE.NULL;
+    }
+    
+    // 3. Escrever no Bitmask
+    HabitService.setStatus(habitId, dateISO, time, nextStatus);
+    
+    // 4. Salvar (Isso dispara o persistStateLocally do arquivo persistence.ts)
+    saveState();
+    
+    // Side Effects & Haptics
     const h = state.habits.find(x => x.id === habitId);
-    if (!h) return;
-
-    // 1. LEITURA (Fonte: Bitmask) - Otimizado para O(1)
-    const currentBit = HabitService.getStatus(habitId, date, time);
-    
-    // 2. LÓGICA DE ROTAÇÃO (3 Estados: Pendente -> Feito -> Adiado -> Pendente)
-    let nextBit: number;
-    
-    if (currentBit === HABIT_STATE.NULL) {
-        const props = getHabitPropertiesForDate(h, date);
-        // Se tiver meta numérica (type != check e tem total), podemos ir para DONE normal.
-        // Se quiséssemos suportar "Exceder Meta" imediatamente, seria aqui, mas a lógica de 
-        // setGoalOverride lida com o upgrade para PLUS.
-        nextBit = HABIT_STATE.DONE;
-    } else if (currentBit === HABIT_STATE.DONE || currentBit === HABIT_STATE.DONE_PLUS) {
-        nextBit = HABIT_STATE.DEFERRED;
-    } else { // DEFERRED
-        nextBit = HABIT_STATE.NULL;
-    }
-
-    // 3. ESCRITA (Destino: Bitmask)
-    HabitService.setStatus(habitId, date, time, nextBit);
-
-    // 4. GARBAGE COLLECTION [ZERO-COST]
-    // Se o novo estado é nulo e não há metadados (notas/override), removemos o objeto do JSON.
-    if (nextBit === HABIT_STATE.NULL) {
-        try {
-            const dayData = getHabitDailyInfoForDate(date);
-            const habitInfo = dayData[habitId];
-            if (habitInfo) {
-                const instance = habitInfo.instances[time];
-                if (instance && instance.note === undefined && instance.goalOverride === undefined) {
-                    delete state.dailyData[date][habitId].instances[time];
-                    if (Object.keys(state.dailyData[date][habitId].instances).length === 0) {
-                        delete state.dailyData[date][habitId];
-                    }
-                }
-            }
-        } catch (e) {
-            // Ignora erros de `getHabitDailyInfoForDate` (ex: data carregando)
-        }
-    }
-
-    // 5. SIDE EFFECTS
-    if (nextBit === HABIT_STATE.DONE) {
-        _checkStreakMilestones(h, date);
+    if (nextStatus === HABIT_STATE.DONE) {
+        if (h) _checkStreakMilestones(h, dateISO);
         triggerHaptic('light');
-    } else if (nextBit === HABIT_STATE.DEFERRED) {
+    } else if (nextStatus === HABIT_STATE.DEFERRED) {
         triggerHaptic('medium');
     } else {
         triggerHaptic('selection');
     }
 
     document.dispatchEvent(new CustomEvent('card-status-changed', { 
-        detail: { habitId, time, date } 
+        detail: { habitId, time, date: dateISO } 
     }));
     
-    _notifyPartialUIRefresh(date, [habitId]);
+    // 5. Atualizar UI
+    _notifyPartialUIRefresh(dateISO, [habitId]);
 }
 
 /**
@@ -652,6 +626,8 @@ export function setGoalOverride(habitId: string, d: string, t: TimeOfDay, v: num
                  }
              }
         }
+
+        saveState();
 
         // Notificações UI
         document.dispatchEvent(new CustomEvent('card-goal-changed', { detail: { habitId, time: t, date: d } })); 

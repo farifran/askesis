@@ -39,26 +39,34 @@ export class HabitService {
     }
 
     /**
-     * Escrita no Novo Formato
-     * Realiza operações bitwise atômicas no BigInt.
+     * [WRITE OPERATION] - A peça que faltava.
+     * Atualiza o Bitmask com o novo estado e marca o sistema para salvamento.
      */
-    static setStatus(habitId: string, dateISO: string, time: TimeOfDay, status: number) {
+    static setStatus(habitId: string, dateISO: string, time: TimeOfDay, newState: number) {
         if (!state.monthlyLogs) state.monthlyLogs = new Map();
-        
+
         const key = this.getLogKey(habitId, dateISO);
-        let log = state.monthlyLogs.get(key) || 0n;
-        
         const day = parseInt(dateISO.substring(8, 10), 10);
-        const bitPos = BigInt(((day - 1) * 6) + PERIOD_OFFSET[time]);
-
-        // Limpa bits antigos (AND com inverso da máscara) e seta novos (OR)
-        log &= ~(0b11n << bitPos);
-        log |= (BigInt(status) << bitPos);
-
-        state.monthlyLogs.set(key, log);
         
-        // Marcar UI como suja para re-render
-        state.uiDirtyState.calendarVisuals = true;
+        // 1. Posição dos bits (0-186)
+        const bitPos = BigInt(((day - 1) * 6) + PERIOD_OFFSET[time]);
+        
+        // 2. Máscara de limpeza (11 invertido na posição correta)
+        // Ex: ...1111001111... zera apenas os 2 bits alvo
+        const clearMask = ~(3n << bitPos);
+        
+        // 3. Valor atual (ou 0 se não existir)
+        let currentLog = state.monthlyLogs.get(key) || 0n;
+        
+        // 4. Operação Bitwise: Limpa o buraco E insere o novo valor
+        // (Valor & Limpeza) | (Novo << Posição)
+        const newLog = (currentLog & clearMask) | (BigInt(newState) << bitPos);
+        
+        // 5. Atualiza Mapa e Flags
+        state.monthlyLogs.set(key, newLog);
+        
+        // Flag para persistência saber que precisa salvar o Binário
+        state.uiDirtyState.chartData = true; 
     }
 
     /**

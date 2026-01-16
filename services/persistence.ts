@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -61,17 +62,18 @@ async function performIDB<T>(mode: IDBTransactionMode, op: (s: IDBObjectStore) =
 
 /**
  * [ZERO-COST PERSISTENCE]
- * Salva o estado separando dados estruturados de dados binários.
+ * Salva o estado separando dados estruturados de dados binários/logs.
  * Usa uma transação para garantir atomicidade.
  */
-async function saveSplitState(main: AppState, logs: Map<string, ArrayBuffer>): Promise<void> {
+async function saveSplitState(main: AppState, logs: any): Promise<void> {
     const db = await getDB();
     return new Promise((resolve, reject) => {
         const tx = db.transaction(STORE_NAME, 'readwrite');
         const store = tx.objectStore(STORE_NAME);
         
         store.put(main, STATE_JSON_KEY);
-        store.put(logs, STATE_BINARY_KEY);
+        // Direct Map storage (BigInt support in Structured Clone)
+        if (logs) store.put(logs, STATE_BINARY_KEY);
         
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error);
@@ -84,7 +86,6 @@ export const registerSyncHandler = (h: (s: AppState) => void) => syncHandler = h
 /**
  * Poda de dados órfãos: remove registros de hábitos deletados para economizar espaço e RAM.
  */
-// @fix: Accept `readonly Habit[]` to be compatible with `AppState.habits`.
 function pruneOrphanedDailyData(habits: readonly Habit[], dailyData: Record<string, Record<string, HabitDailyInfo>>) {
     if (habits.length === 0) return; 
     const validIds = new Set(habits.map(h => h.id));
@@ -103,21 +104,18 @@ function pruneOrphanedDailyData(habits: readonly Habit[], dailyData: Record<stri
 
 async function saveStateInternal() {
     // 1. Full State (Structured JSON Data Only)
-    // O getPersistableState já remove monthlyLogsSerialized, mantendo apenas metadados leves.
+    // O getPersistableState já remove monthlyLogs, mantendo apenas metadados leves.
     const structuredData = getPersistableState();
     
-    // 2. Binary Logs (Raw Bytes)
-    // Extrai o Map<string, ArrayBuffer> para salvar como BLOB nativo.
-    const binaryLogs = HabitService.packBinaryLogs();
-    
+    // 2. Binary Logs (Map<string, bigint>)
+    // Salva o Map diretamente. O IndexedDB suporta BigInt nativamente.
     try {
-        await saveSplitState(structuredData, binaryLogs);
+        await saveSplitState(structuredData, state.monthlyLogs);
     } catch (e) { 
         console.error("IDB Save Failed:", e); 
     }
     
     // 3. Trigger Sync
-    // O Sync Worker receberá o structuredData e solicitará o packBinaryLogs novamente se necessário para criptografia.
     syncHandler?.(structuredData);
 }
 
@@ -135,17 +133,13 @@ export async function saveState(): Promise<void> {
 }
 
 export const persistStateLocally = (data: AppState) => {
-    // Save immediate split state (e.g. after migration or merge)
-    // AUDIT FIX: Use logs from the incoming data object if available (e.g. during merge), 
-    // otherwise fallback to global state via service default logic.
-    const binaryLogs = HabitService.packBinaryLogs(data.monthlyLogs);
-    return saveSplitState(data, binaryLogs);
+    return saveSplitState(data, data.monthlyLogs || state.monthlyLogs);
 };
 
 export async function loadState(cloudState?: AppState): Promise<AppState | null> {
     // 1. Load Split State (Main + Binary Logs)
     let mainState = cloudState;
-    let binaryLogs: Map<string, ArrayBuffer> | undefined;
+    let binaryLogs: any; // Can be Map<string, bigint> or Map<string, ArrayBuffer> (legacy)
 
     if (!mainState) {
         // Parallel fetch of main state and logs
@@ -170,10 +164,7 @@ export async function loadState(cloudState?: AppState): Promise<AppState | null>
         }
     }
 
-    // REMOVIDO: Fallback legado para LEGACY_STORAGE_KEY (Greenfield assume sem legado)
-
     if (mainState) {
-        // @fix: Cannot assign to 'habits' because it is a read-only property.
         let migrated = migrateState(mainState, APP_VERSION);
         migrated = {
             ...migrated,
@@ -183,7 +174,6 @@ export async function loadState(cloudState?: AppState): Promise<AppState | null>
         // PERFORMANCE & INTEGRITY: Pruning rodando fora do caminho crítico do boot.
         const runCleanup = () => pruneOrphanedDailyData(migrated.habits, migrated.dailyData || {});
         
-        // AUDIT FIX: Scheduler API priority
         if ('scheduler' in window && (window as any).scheduler) {
              (window as any).scheduler.postTask(runCleanup, { priority: 'background' });
         } else if ('requestIdleCallback' in window) {
@@ -192,34 +182,35 @@ export async function loadState(cloudState?: AppState): Promise<AppState | null>
              setTimeout(runCleanup, 3000);
         }
         
-        // @fix: Assign properties individually and create a mutable copy of habits to resolve readonly type mismatch.
         state.habits = [...migrated.habits];
         state.dailyData = migrated.dailyData || {};
         state.archives = migrated.archives || {};
-        // @fix: The type 'readonly string[]' is 'readonly' and cannot be assigned to the mutable type 'string[]'.
         state.notificationsShown = [...(migrated.notificationsShown || [])];
-        // @fix: The type 'readonly string[]' is 'readonly' and cannot be assigned to the mutable type 'string[]'.
         state.pending21DayHabitIds = [...(migrated.pending21DayHabitIds || [])];
-        // @fix: The type 'readonly string[]' is 'readonly' and cannot be assigned to the mutable type 'string[]'.
         state.pendingConsolidationHabitIds = [...(migrated.pendingConsolidationHabitIds || [])];
         
-        // --- HIDRATAÇÃO DO BITMASK (PRIORIDADE BINÁRIA) ---
+        // --- HIDRATAÇÃO DO BITMASK ---
         if (binaryLogs instanceof Map) {
-            // [A] Fast Path: Restaura direto do binário (Zero Copy / Zero String Parsing)
-            HabitService.unpackBinaryLogs(binaryLogs);
-            //console.log(`[Persistence] Bitmasks binários carregados: ${binaryLogs.size} meses.`);
+            const firstVal = binaryLogs.values().next().value;
+            // [A] New Native: Já está salvo como Map<string, bigint>
+            if (typeof firstVal === 'bigint') {
+                 state.monthlyLogs = binaryLogs as Map<string, bigint>;
+            } 
+            // [B] Legacy Binary: ArrayBuffer (migração on-the-fly)
+            else if (firstVal instanceof ArrayBuffer) {
+                 HabitService.unpackBinaryLogs(binaryLogs as Map<string, ArrayBuffer>);
+            } else {
+                 state.monthlyLogs = binaryLogs as any;
+            }
         } else if (migrated.monthlyLogs instanceof Map) {
-            // [B] Cloud Path (New Worker): Já veio hidratado como Map no processo de worker decryption
-            // AUDIT FIX: Ensure we use the map from cloud instead of resetting
+            // [C] Cloud Path: Já veio hidratado
             state.monthlyLogs = migrated.monthlyLogs;
         } else if ((migrated as any).monthlyLogsSerialized && Array.isArray((migrated as any).monthlyLogsSerialized)) {
-            // [C] Legacy Cloud Path: Importa do JSON (Hex Strings)
+            // [D] Legacy JSON Path
             console.log("[Persistence] Migrando logs legados/nuvem para binário...");
             HabitService.deserializeLogsFromCloud((migrated as any).monthlyLogsSerialized);
-            // Cleanup memory immediate
             delete (migrated as any).monthlyLogsSerialized;
         } else {
-            // Init empty
             state.monthlyLogs = new Map();
         }
 
