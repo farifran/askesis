@@ -31,9 +31,9 @@ function terminateWorker(reason: string) {
 
 function getWorker(): Worker {
     if (!syncWorker) {
-        // FIX: Caminho relativo ('sync-worker.js') para evitar erros 404/MIME type 
-        // quando o app não está na raiz do domínio.
-        syncWorker = new Worker('sync-worker.js', { type: 'module' });
+        // FIX: Usar construtor URL com import.meta.url garante que o bundler (Vite/ESBuild)
+        // resolva o caminho relativo corretamente, evitando erros 404 em produção.
+        syncWorker = new Worker(new URL('./sync.worker.ts', import.meta.url), { type: 'module' });
         
         syncWorker.onmessage = (e) => {
             const { id, status, result, error } = e.data;
