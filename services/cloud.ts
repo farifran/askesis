@@ -6,7 +6,7 @@
 /**
  * @file services/cloud.ts
  * @description Orquestrador de Sincronização.
- * VERSÃO FINAL: Smart Merge (Fusão Inteligente de Dados e Logs).
+ * ARQUITETURA FINAL: Robust Pull & Merge (União de Estados).
  */
 
 import { AppState, state, getPersistableState } from '../state';
@@ -152,6 +152,18 @@ function mergeDayRecord(localDay, mergedDay) {
             if (!mergedInstances[time]) {
                 mergedInstances[time] = localInstances[time];
                 isDirty = true;
+            } else {
+                // Conflict resolution: Prefer content over empty, or longer note
+                const li = localInstances[time];
+                const mi = mergedInstances[time];
+                if (li.note && (!mi.note || li.note.length > mi.note.length)) {
+                    mi.note = li.note;
+                    isDirty = true;
+                }
+                if (li.goalOverride !== undefined && mi.goalOverride === undefined) {
+                    mi.goalOverride = li.goalOverride;
+                    isDirty = true;
+                }
             }
         }
     }
@@ -167,7 +179,16 @@ async function mergeStates(local, incoming) {
         if (!incomingIds.has(h.id)) merged.habits.push(h); 
     });
 
-    // 2. Merge Settings/Metadata (Newest Wins or Union)
+    // 2. Merge Daily Data (Deep Merge)
+    for (const date in local.dailyData) {
+        if (!merged.dailyData[date]) {
+            merged.dailyData[date] = local.dailyData[date];
+        } else {
+            mergeDayRecord(local.dailyData[date], merged.dailyData[date]);
+        }
+    }
+
+    // 3. Merge Settings/Metadata (Newest Wins or Union)
     merged.lastModified = Date.now();
     merged.version = Math.max(local.version || 0, incoming.version || 0);
     
@@ -175,8 +196,8 @@ async function mergeStates(local, incoming) {
     const mergeList = (a, b) => Array.from(new Set([...(a||[]), ...(b||[])]));
     merged.notificationsShown = mergeList(incoming.notificationsShown, local.notificationsShown);
     merged.pending21DayHabitIds = mergeList(incoming.pending21DayHabitIds, local.pending21DayHabitIds);
+    merged.pendingConsolidationHabitIds = mergeList(incoming.pendingConsolidationHabitIds, local.pendingConsolidationHabitIds);
     
-    // NOTA: Os MonthlyLogs são tratados na Main Thread devido à complexidade do BigInt/Map
     return merged;
 }
 
@@ -321,6 +342,10 @@ function formatNetworkError(e: any): string {
 
 // --- CORE FUNCTIONS (SMART MERGE) ---
 
+/**
+ * Baixa dados da nuvem, mescla com os dados locais atuais e salva tudo.
+ * Esta função é segura para rodar no boot ou ao recuperar conexão.
+ */
 export async function fetchStateFromCloud(): Promise<AppState | null> {
     if (!hasLocalSyncKey()) return null;
     const key = getSyncKey();
@@ -343,7 +368,7 @@ export async function fetchStateFromCloud(): Promise<AppState | null> {
         console.log("[Cloud] Decriptando...");
         const decryptedRaw = await runWorkerTask<any>('decrypt', data.state, key);
         
-        // 1. Trata os LOGS (Bitmask) separadamente
+        // 1. Decodifica Logs da Nuvem (Bitmask)
         let cloudLogs = new Map<string, bigint>();
         if (decryptedRaw.monthlyLogsSerialized) {
             cloudLogs = _deserializeLogsInternal(decryptedRaw.monthlyLogsSerialized);
@@ -352,38 +377,49 @@ export async function fetchStateFromCloud(): Promise<AppState | null> {
              try { Object.entries(decryptedRaw.monthlyLogs).forEach(([k, v]) => cloudLogs.set(k, BigInt(v as any))); } catch {}
         }
 
-        // 2. Prepara estado LOCAL para merge
+        // 2. Obtém Estado Local Atual (Snapshot)
         const localState = getPersistableState();
 
-        // 3. FUSÃO (MERGE) DOS ESTADOS ESTRUTURAIS (Via Worker)
+        // 3. FUSÃO ESTRUTURAL (Via Worker - JSON)
+        // Isso combina hábitos, configurações e notas.
         console.log("[Cloud] Mesclando estruturas...");
         const mergedState = await runWorkerTask<AppState>('merge', { 
             local: localState, 
             incoming: decryptedRaw 
         });
 
-        // 4. FUSÃO (MERGE) DOS LOGS (Bitwise OR na Main Thread)
-        // Isso garante que marcas feitas no local E na nuvem sejam preservadas
+        // 4. FUSÃO DE LOGS (Bitwise OR na Main Thread)
+        // Combina o histórico de checks. Se existe em um ou no outro, mantém.
         console.log("[Cloud] Mesclando logs (Bitmask)...");
         const mergedLogs = new Map<string, bigint>(state.monthlyLogs || new Map());
         
         cloudLogs.forEach((cloudVal, key) => {
             const localVal = mergedLogs.get(key) || 0n;
-            // A MÁGICA: Operador OR (|) combina os bits dos dois mundos
+            // A MÁGICA: Operador OR (|) combina os bits dos dois mundos.
             mergedLogs.set(key, localVal | cloudVal);
         });
 
-        // 5. APLICAÇÃO ATÔMICA
-        Object.assign(state, mergedState);
-        state.monthlyLogs = mergedLogs;
+        // 5. RECONSTRUÇÃO DO ESTADO FINAL
+        const finalState: AppState = {
+            ...mergedState,
+            version: mergedState.version,
+            lastModified: mergedState.lastModified,
+            monthlyLogs: mergedLogs
+        };
 
-        // Persiste e Renderiza
-        await persistStateLocally(state);
+        // 6. PERSISTÊNCIA ATÔMICA
+        // Salva no disco antes de atualizar a memória para garantir durabilidade.
+        await persistStateLocally(finalState);
+        
+        // 7. ATUALIZAÇÃO DA MEMÓRIA
+        Object.assign(state, finalState);
+        
+        // 8. RENDERIZAÇÃO
         document.dispatchEvent(new CustomEvent('render-app'));
 
         setSyncStatus('syncSynced');
         console.log("[Cloud] ✅ Sincronização Inteligente Completa!");
-        return state;
+        return finalState;
 
     } catch (e: any) {
         console.error("[Cloud] Fetch Failed:", e);
@@ -394,9 +430,13 @@ export async function fetchStateFromCloud(): Promise<AppState | null> {
 }
 
 async function resolveConflictWithServerState(serverData: any) {
-    console.warn("[Cloud] Conflito detectado. Iniciando Smart Merge...");
-    // Em vez de reload cego, chama a função de fetch que agora sabe fazer merge
+    console.warn("[Cloud] Conflito de versão detectado. Forçando Pull & Merge...");
+    // A resolução de conflito agora é simples: Puxa o estado do servidor e faz merge.
     await fetchStateFromCloud();
+    // Em seguida, tenta empurrar novamente o estado mesclado.
+    if (state.habits.length > 0) {
+        syncStateWithCloud(getPersistableState());
+    }
 }
 
 async function _performSync(currentState: AppState) {
