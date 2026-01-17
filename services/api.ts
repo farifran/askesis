@@ -19,11 +19,38 @@ const SafeStorage = {
     rem: (k: string) => { try { localStorage.removeItem(k); } catch {} }
 };
 
-export const initAuth = () => localSyncKey = SafeStorage.get(SYNC_KEY_STORAGE_KEY);
-export const storeKey = (k: string) => { localSyncKey = k; keyHashCache = null; SafeStorage.set(SYNC_KEY_STORAGE_KEY, k); };
-export const clearKey = () => { localSyncKey = keyHashCache = null; SafeStorage.rem(SYNC_KEY_STORAGE_KEY); };
-export const hasLocalSyncKey = () => localSyncKey !== null;
-export const getSyncKey = () => localSyncKey;
+// ROBUSTNESS: Ensure key is loaded from storage if memory is empty (Lazy Load)
+// This fixes the issue where checking hasLocalSyncKey() too early on boot would return false.
+const _ensureKeyLoaded = () => {
+    if (localSyncKey === null) {
+        localSyncKey = SafeStorage.get(SYNC_KEY_STORAGE_KEY);
+    }
+};
+
+export const initAuth = () => _ensureKeyLoaded();
+
+export const storeKey = (k: string) => { 
+    localSyncKey = k; 
+    keyHashCache = null; 
+    SafeStorage.set(SYNC_KEY_STORAGE_KEY, k); 
+};
+
+export const clearKey = () => { 
+    localSyncKey = null; 
+    keyHashCache = null; 
+    SafeStorage.rem(SYNC_KEY_STORAGE_KEY); 
+};
+
+export const hasLocalSyncKey = () => {
+    _ensureKeyLoaded();
+    return localSyncKey !== null;
+};
+
+export const getSyncKey = () => {
+    _ensureKeyLoaded();
+    return localSyncKey;
+};
+
 export const isValidKeyFormat = (k: string) => UUID_REGEX.test(k);
 
 async function hashKey(key: string): Promise<string> {
@@ -42,15 +69,14 @@ async function hashKey(key: string): Promise<string> {
         }
     }
     
-    // REQUIRE SECURE CONTEXT: Fallback removed to reduce dead code.
-    // Sync requires HTTPS/Localhost for AES-GCM anyway.
     console.error("Sync requires a Secure Context (HTTPS) for cryptographic operations.");
     throw new Error("Secure Context Required");
 }
 
 export async function getSyncKeyHash(): Promise<string | null> {
-    if (!localSyncKey) return null;
-    return keyHashCache || (keyHashCache = await hashKey(localSyncKey));
+    const key = getSyncKey();
+    if (!key) return null;
+    return keyHashCache || (keyHashCache = await hashKey(key));
 }
 
 interface ExtendedRequestInit extends RequestInit { timeout?: number; retries?: number; backoff?: number; }
@@ -84,7 +110,6 @@ export async function apiFetch(endpoint: string, options: ExtendedRequestInit = 
             const errText = await res.text();
             
             // FAIL FAST: If it's a configuration error (500), do not retry.
-            // This prevents endless loops when DB is not connected.
             if (res.status === 500 && errText.includes('Configuration')) {
                 throw new Error(errText);
             }

@@ -75,8 +75,9 @@ async function saveSplitState(main: AppState, logs: any): Promise<void> {
     });
 }
 
-let syncHandler: ((state: AppState) => void) | null = null;
-export const registerSyncHandler = (h: (s: AppState) => void) => syncHandler = h;
+// Handler signature updated to support 'immediate' flag for flush operations
+let syncHandler: ((state: AppState, immediate?: boolean) => void) | null = null;
+export const registerSyncHandler = (h: (s: AppState, immediate?: boolean) => void) => syncHandler = h;
 
 function pruneOrphanedDailyData(habits: readonly Habit[], dailyData: Record<string, Record<string, HabitDailyInfo>>) {
     if (habits.length === 0) return; 
@@ -91,21 +92,23 @@ function pruneOrphanedDailyData(habits: readonly Habit[], dailyData: Record<stri
     }
 }
 
-async function saveStateInternal() {
+async function saveStateInternal(immediate = false) {
     const structuredData = getPersistableState();
     try {
         await saveSplitState(structuredData, state.monthlyLogs);
     } catch (e) { 
         console.error("IDB Save Failed:", e); 
     }
-    syncHandler?.(structuredData);
+    // Pass the immediate flag to the sync handler (cloud.ts)
+    syncHandler?.(structuredData, immediate);
 }
 
 export async function flushSaveBuffer(): Promise<void> {
     if (saveTimeout !== undefined) {
         clearTimeout(saveTimeout);
         saveTimeout = undefined;
-        await saveStateInternal();
+        // Trigger immediate save and immediate sync
+        await saveStateInternal(true);
     }
 }
 
@@ -161,10 +164,7 @@ export async function loadState(cloudState?: AppState): Promise<AppState | null>
              setTimeout(runCleanup, 3000);
         }
         
-        // HYDRATION: Ensure state consistency
         state.habits = [...migrated.habits];
-        // CRITICAL FIX: Restore lastModified from disk to preserve monotonic clock continuity.
-        // If undefined (fresh install), defaults to Date.now() via state.ts init, which is fine.
         if (migrated.lastModified) {
             state.lastModified = migrated.lastModified;
         }
@@ -175,7 +175,6 @@ export async function loadState(cloudState?: AppState): Promise<AppState | null>
         state.pending21DayHabitIds = [...(migrated.pending21DayHabitIds || [])];
         state.pendingConsolidationHabitIds = [...(migrated.pendingConsolidationHabitIds || [])];
         
-        // Prioridade para dados binários do disco
         if (binaryLogs instanceof Map && binaryLogs.size > 0) {
             const firstVal = binaryLogs.values().next().value;
             if (typeof firstVal === 'bigint') {
@@ -219,6 +218,7 @@ export const clearLocalPersistence = () => Promise.all([
 ]);
 
 if (typeof window !== 'undefined') {
+    // TRIGGER: Flush sync queue on close/hide
     window.addEventListener('beforeunload', () => { flushSaveBuffer(); });
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushSaveBuffer(); });
 }

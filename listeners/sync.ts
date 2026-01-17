@@ -31,6 +31,7 @@ import { renderApp } from "../render";
 import { showConfirmationModal } from "../render/modals";
 import { storeKey, clearKey, hasLocalSyncKey, getSyncKey, isValidKeyFormat, initAuth } from "../services/api";
 import { generateUUID } from "../utils";
+import { state } from "../state";
 
 // --- UI HELPERS ---
 
@@ -220,7 +221,14 @@ export async function initSync() {
 
     if (hasKey) {
         showView('active');
-        setSyncStatus('syncSynced');
+        // Only set status to 'Synced' if we are not currently in an Error state from boot.
+        // This preserves the error message if the initial fetch failed (e.g. 401).
+        if (state.syncState !== 'syncError') {
+            setSyncStatus('syncSynced');
+        } else {
+            // Force UI update to show error if it was set before UI init
+            setSyncStatus('syncError');
+        }
     } else {
         showView('inactive');
         setSyncStatus('syncInitial');
