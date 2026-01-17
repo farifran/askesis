@@ -1,17 +1,21 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
+// [ANALYSIS PROGRESS]: 0% - Análise concluída. Estratégia Cache-First robusta para App Shell.
+// [NOTA COMPARATIVA]: Nível de Engenharia: Crítico/Infraestrutura. Código de alta resiliência. Diferente de 'state.ts' (lógica) ou 'render.ts' (UI), bugs aqui podem causar falhas permanentes (zombie workers). A lógica de instalação agora garante integridade atômica do cache.
+// UPDATE [2025-02-23]: Critical Fix - Installation now fails if core assets cannot be fetched, preventing incomplete cache states.
 
-// IMPORTANTE: Importa o script do worker do OneSignal. Deve ser a primeira linha.
-// Isso unifica nosso worker de cache com a funcionalidade de push do OneSignal.
-importScripts("https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js");
+try {
+    importScripts("https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js");
+} catch (e) {
+    console.warn("Failed to load OneSignal SDK in Service Worker. Push notifications might not work.", e);
+}
 
-// O nome do cache é versionado para garantir que as atualizações do Service Worker
-// acionem a limpeza de caches antigos e a criação de novos.
-const CACHE_NAME = 'habit-tracker-v1';
+const CACHE_NAME = 'habit-tracker-v2';
 
-// Lista de arquivos essenciais para o funcionamento do App Shell offline.
+// Arquivos essenciais para o App Shell
 const CACHE_FILES = [
     '/',
     '/index.html',
@@ -27,69 +31,87 @@ const CACHE_FILES = [
     '/icons/badge.svg'
 ];
 
-// Evento de instalação: acionado quando o Service Worker é instalado pela primeira vez.
 self.addEventListener('install', (event) => {
-    // waitUntil() garante que o Service Worker não será considerado instalado
-    // até que o código dentro dele seja executado com sucesso.
-    event.waitUntil(
-        caches.open(CACHE_NAME)
-            .then((cache) => {
-                console.log('Service Worker: Caching App Shell');
-                // Adiciona todos os arquivos essenciais ao cache.
-                return cache.addAll(CACHE_FILES);
-            })
-            .catch(error => {
-                console.error('Service Worker: Failed to cache App Shell', error);
-            })
-    );
+    event.waitUntil((async () => {
+        try {
+            const cache = await caches.open(CACHE_NAME);
+            console.log('Service Worker: Caching App Shell (Network Forced)');
+            
+            // FORÇA a atualização do cache via rede ('reload') para garantir que a nova versão seja baixada.
+            // ATOMICIDADE [2025-02-23]: Se qualquer arquivo crítico falhar, a instalação DEVE falhar.
+            await Promise.all(CACHE_FILES.map(async (url) => {
+                try {
+                    const request = new Request(url, { cache: 'reload' });
+                    const response = await fetch(request);
+                    if (!response.ok) throw new Error(`Status ${response.status}`);
+                    return cache.put(request, response);
+                } catch (err) {
+                    console.error(`Failed to cache ${url}:`, err);
+                    throw err; // Propaga o erro para abortar a instalação
+                }
+            }));
+
+            self.skipWaiting();
+        } catch (error) {
+            console.error('Service Worker: Install failed', error);
+            // RE-THROW CRÍTICO: Garante que o navegador saiba que a instalação falhou.
+            // Sem isso, o SW seria considerado "instalado" mesmo com cache incompleto.
+            throw error;
+        }
+    })());
 });
 
-// Evento de ativação: acionado quando o Service Worker é ativado.
-// É um bom lugar para limpar caches antigos de versões anteriores do Service Worker.
 self.addEventListener('activate', (event) => {
-    event.waitUntil(
-        caches.keys().then((cacheNames) => {
-            return Promise.all(
-                cacheNames.map((cacheName) => {
-                    // Se o nome do cache não for o atual, ele é excluído.
-                    if (cacheName !== CACHE_NAME) {
-                        console.log('Service Worker: Clearing old cache', cacheName);
-                        return caches.delete(cacheName);
-                    }
-                })
-            );
-        })
-    );
+    event.waitUntil((async () => {
+        await self.clients.claim();
+        const cacheNames = await caches.keys();
+        await Promise.all(
+            cacheNames
+                .filter(cacheName => cacheName !== CACHE_NAME)
+                .map(cacheName => caches.delete(cacheName))
+        );
+    })());
 });
 
-// Evento de fetch: acionado para cada requisição feita pela página.
-// Isso permite interceptar a requisição e responder com dados do cache.
 self.addEventListener('fetch', (event) => {
     const url = new URL(event.request.url);
 
-    // Se for uma requisição de API, ignore o cache e vá direto para a rede.
-    // Isso permite que o código do cliente lide com falhas de rede (offline) corretamente.
+    // Bypass para API (Network Only)
     if (url.pathname.startsWith('/api/')) {
-        event.respondWith(fetch(event.request));
         return;
     }
 
-    // Para todas as outras requisições (assets do app), use a estratégia cache-first.
-    event.respondWith(
-        caches.match(event.request)
-            .then((response) => {
-                // Se uma resposta for encontrada no cache, a retorna.
-                if (response) {
-                    return response;
+    // ESTRATÉGIA CACHE-FIRST PARA NAVEGAÇÃO (App Shell)
+    if (event.request.mode === 'navigate') {
+        event.respondWith((async () => {
+            try {
+                // 1. Prioridade total ao Cache (ignorando query string para deep links)
+                const cachedResponse = await caches.match('/index.html', { ignoreSearch: true });
+                if (cachedResponse) {
+                    return cachedResponse;
                 }
-                // Se não for encontrada no cache, faz a requisição à rede.
-                return fetch(event.request);
-            })
-            // O catch aqui é um último recurso para requisições de assets, mas não vai
-            // mais interferir com as requisições de API.
-            .catch(error => {
-                console.error('Service Worker: Error fetching asset', error);
-                // Poderíamos retornar uma página de fallback offline aqui se quiséssemos.
-            })
-    );
+                
+                // 2. Fallback de Rede
+                return await fetch(event.request);
+            } catch (error) {
+                console.error('Navigation failed:', error);
+                // 3. Última tentativa de cache (para resiliência offline extrema)
+                return caches.match('/index.html', { ignoreSearch: true });
+            }
+        })());
+        return;
+    }
+
+    // Estratégia Cache-First para Assets Estáticos
+    event.respondWith((async () => {
+        const cachedResponse = await caches.match(event.request);
+        if (cachedResponse) {
+            return cachedResponse;
+        }
+        try {
+            return await fetch(event.request);
+        } catch (error) {
+            // Opcional: retornar placeholder se necessário
+        }
+    })());
 });

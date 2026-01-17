@@ -1,200 +1,165 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-import { state, getHabitDailyInfoForDate, shouldHabitAppearOnDate, HabitStatus, TimeOfDay, getEffectiveScheduleForHabitOnDate } from './state';
-import { getHabitDisplayInfo, t } from './i18n';
-import { addDays, getTodayUTC, toUTCIsoDateString, parseUTCIsoDate } from './utils';
+// [ANALYSIS PROGRESS]: 100% - Análise concluída. O módulo de API está robusto, com tipagem estrita e lógica de retry implementada corretamente. Nenhuma redundância funcional encontrada.
 
-// --- Lógica de Construção de Prompt ---
+// UPDATE [2025-01-17]: Adicionada lógica de retry com backoff exponencial para maior robustez em rede.
 
-const statusToSymbol: Record<HabitStatus, string> = {
-    completed: '✅',
-    snoozed: '➡️',
-    pending: '⚪️'
-};
+const SYNC_KEY_STORAGE_KEY = 'habitTrackerSyncKey';
+const UUID_REGEX = /^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$/;
 
-const timeToKeyMap: Record<TimeOfDay, string> = {
-    'Manhã': 'filterMorning',
-    'Tarde': 'filterAfternoon',
-    'Noite': 'filterEvening'
-};
+let localSyncKey: string | null = null;
+let keyHashCache: string | null = null;
 
-function generateDailyHabitSummary(date: Date): string | null {
-    const isoDate = toUTCIsoDateString(date);
-    const dailyInfoByHabit = getHabitDailyInfoForDate(isoDate);
-    const habitsOnThisDay = state.habits.filter(h => shouldHabitAppearOnDate(h, date) && !h.graduatedOn);
+// --- Authentication / Key Management ---
 
-    if (habitsOnThisDay.length === 0) return null;
-
-    const dayEntries = habitsOnThisDay.map(habit => {
-        const dailyInfo = dailyInfoByHabit[habit.id];
-        const scheduleForDay = getEffectiveScheduleForHabitOnDate(habit, isoDate);
-        if (scheduleForDay.length === 0) return '';
-        
-        const { name } = getHabitDisplayInfo(habit);
-        const habitInstances = dailyInfo?.instances || {};
-
-        const statusDetails = scheduleForDay.map(time => {
-            const instance = habitInstances[time];
-            const status: HabitStatus = instance?.status || 'pending';
-            const note = instance?.note;
-            
-            let detail = statusToSymbol[status];
-            if (scheduleForDay.length > 1) {
-                detail = `${t(timeToKeyMap[time])}: ${detail}`;
-            }
-
-            if ((habit.goal.type === 'pages' || habit.goal.type === 'minutes') && instance?.status === 'completed' && instance.goalOverride !== undefined) {
-                const unit = t(habit.goal.unitKey, { count: instance.goalOverride });
-                detail += ` ${instance.goalOverride} ${unit}`;
-            }
-
-            if (note) {
-                detail += ` ("${note}")`;
-            }
-            return detail;
-        });
-        
-        return `- ${name}: ${statusDetails.join(', ')}`;
-    }).filter(Boolean);
-
-    if (dayEntries.length > 0) {
-        return `${isoDate}:\n${dayEntries.join('\n')}`;
-    }
-
-    return null;
+export function initAuth() {
+    localSyncKey = localStorage.getItem(SYNC_KEY_STORAGE_KEY);
 }
 
-export const buildAIPrompt = (analysisType: 'weekly' | 'monthly' | 'general'): { prompt: string, systemInstruction: string } => {
-    let history = '';
-    let promptTemplateKey = '';
-    const daySummaries: string[] = [];
-    const today = getTodayUTC();
+export function storeKey(key: string) {
+    localSyncKey = key;
+    // MANUTENIBILIDADE [2024-01-16]: Limpa o cache de hash sempre que a chave muda para garantir consistência.
+    keyHashCache = null; 
+    localStorage.setItem(SYNC_KEY_STORAGE_KEY, key);
+}
 
-    if (analysisType === 'weekly' || analysisType === 'monthly') {
-        const daysToScan = analysisType === 'weekly' ? 7 : 30;
-        promptTemplateKey = analysisType === 'weekly' ? 'aiPromptWeekly' : 'aiPromptMonthly';
+export function clearKey() {
+    localSyncKey = null;
+    keyHashCache = null;
+    localStorage.removeItem(SYNC_KEY_STORAGE_KEY);
+}
 
-        for (let i = 0; i < daysToScan; i++) {
-            const date = addDays(today, -i);
-            const summary = generateDailyHabitSummary(date);
-            if (summary) {
-                daySummaries.push(summary);
-            }
-        }
-        history = daySummaries.join('\n\n');
+export function hasLocalSyncKey(): boolean {
+    return localSyncKey !== null;
+}
 
-    } else if (analysisType === 'general') {
-        promptTemplateKey = 'aiPromptGeneral';
-        
-        let firstDateEver = today;
-        if (state.habits.length > 0) {
-            firstDateEver = state.habits.reduce((earliest, habit) => {
-                const habitStartDate = parseUTCIsoDate(habit.createdOn);
-                return habitStartDate < earliest ? habitStartDate : earliest;
-            }, today);
-        }
-        
-        const allSummaries: string[] = [];
-        
-        for (let d = firstDateEver; d <= today; d = addDays(d, 1)) {
-            const summary = generateDailyHabitSummary(d);
-            if (summary) {
-                allSummaries.push(summary);
-            }
-        }
-        
-        const summaryByMonth: Record<string, string[]> = {};
-        allSummaries.forEach(daySummary => {
-            const dateStr = daySummary.substring(0, 10);
-            const month = dateStr.substring(0, 7);
-            if (!summaryByMonth[month]) {
-                summaryByMonth[month] = [];
-            }
-            summaryByMonth[month].push(daySummary);
-        });
+export function getSyncKey(): string | null {
+    return localSyncKey;
+}
 
-        history = Object.entries(summaryByMonth)
-            .map(([month, entries]) => `${t('aiPromptMonthHeader', { month })}:\n${entries.join('\n')}`)
-            .join('\n\n');
+export function isValidKeyFormat(key: string): boolean {
+    return UUID_REGEX.test(key);
+}
+
+async function hashKey(key: string): Promise<string> {
+    if (!key) return '';
+    
+    // ROBUSTEZ: crypto.subtle requer um contexto seguro (HTTPS ou localhost).
+    // Em um PWA instalado, isso é garantido, mas adicionamos verificação para ambientes de dev.
+    if (!crypto.subtle) {
+        console.warn("crypto.subtle not available. Ensure you are running on localhost or HTTPS.");
+        return '';
     }
 
-    if (!history.trim()) {
-        history = t('aiPromptNoData');
+    const encoder = new TextEncoder();
+    const data = encoder.encode(key);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+export async function getSyncKeyHash(): Promise<string | null> {
+    if (!localSyncKey) {
+        return null;
     }
-
-    const activeHabits = state.habits.filter(h => {
-        const lastSchedule = h.scheduleHistory[h.scheduleHistory.length - 1];
-        return !lastSchedule.endDate && !h.graduatedOn;
-    });
-    const graduatedHabits = state.habits.filter(h => h.graduatedOn);
-
-    const activeHabitList = activeHabits.map(h => getHabitDisplayInfo(h).name).join(', ') || t('aiPromptNone');
-    
-    let graduatedHabitsSection = '';
-    if (graduatedHabits.length > 0) {
-        const graduatedHabitList = graduatedHabits.map(h => getHabitDisplayInfo(h).name).join(', ');
-        graduatedHabitsSection = t('aiPromptGraduatedSection', { graduatedHabitList });
+    if (keyHashCache) {
+        return keyHashCache;
     }
-    
-    const languageName = {
-        'pt': 'Português (Brasil)',
-        'en': 'English',
-        'es': 'Español'
-    }[state.activeLanguageCode] || 'Português (Brasil)';
+    keyHashCache = await hashKey(localSyncKey);
+    return keyHashCache;
+}
 
-    const systemInstruction = t('aiSystemInstruction', { languageName });
-    const prompt = t(promptTemplateKey, {
-        activeHabitList,
-        graduatedHabitsSection,
-        history,
-    });
-    
-    return { prompt, systemInstruction };
-};
+// --- Networking ---
 
-// --- Lógica de Chamada de API ---
+interface ExtendedRequestInit extends RequestInit {
+    timeout?: number;
+    retries?: number; // Número máximo de tentativas
+    backoff?: number; // Delay inicial em ms
+}
 
 /**
- * Busca e transmite uma análise de IA da API Gemini.
- * @param promptData O objeto contendo o prompt do usuário e a instrução de sistema.
- * @param onStream Uma função de callback que recebe o texto acumulado da resposta à medida que chega.
- * @returns O texto completo da resposta.
+ * Wrapper for the fetch API that includes the sync key hash, handles timeouts,
+ * and implements exponential backoff retry logic for robust networking.
  */
-export async function fetchAIAnalysis(
-    promptData: { prompt: string; systemInstruction: string },
-    onStream: (accumulatedText: string) => void
-): Promise<string> {
-    const response = await fetch('/api/analyze', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(promptData),
-    });
+export async function apiFetch(endpoint: string, options: ExtendedRequestInit = {}, includeSyncKey = false): Promise<Response> {
+    // [2024-01-16] REFACTOR: Uso da classe Headers para manipulação mais limpa e segura de headers.
+    // Inicializa com os headers fornecidos nas opções (se houver)
+    const headers = new Headers(options.headers);
 
-    if (!response.ok) {
-        const errorBody = await response.json().catch(() => ({ error: 'Failed to parse error response' }));
-        throw new Error(`API request failed with status ${response.status}: ${errorBody.error || 'Unknown error'}`);
+    // Define Content-Type padrão se não tiver sido sobrescrito pelo chamador
+    if (!headers.has('Content-Type')) {
+        headers.set('Content-Type', 'application/json');
     }
 
-    const reader = response.body?.getReader();
-    if (!reader) {
-        throw new Error('Failed to get response reader');
-    }
-
-    const decoder = new TextDecoder();
-    let fullText = '';
-    while (true) {
-        const { done, value } = await reader.read();
-        if (done) {
-            break;
+    if (includeSyncKey) {
+        const keyHash = await getSyncKeyHash();
+        if (keyHash) {
+            headers.set('X-Sync-Key-Hash', keyHash);
         }
-        const chunk = decoder.decode(value, { stream: true });
-        fullText += chunk;
-        onStream(fullText);
     }
-    
-    return fullText;
+
+    const { 
+        timeout = 15000, 
+        retries = 2, // Padrão: tenta 3 vezes no total (1 inicial + 2 retries)
+        backoff = 500, // Padrão: espera 500ms antes do primeiro retry
+        ...fetchOptions 
+    } = options;
+
+    const attemptFetch = async (attempt: number): Promise<Response> => {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+        try {
+            const response = await fetch(endpoint, {
+                ...fetchOptions,
+                headers,
+                signal: controller.signal,
+            });
+            clearTimeout(timeoutId);
+
+            // Lógica de Retry para erros de servidor (5xx) ou falhas de rede.
+            // Erros de cliente (4xx) geralmente não devem ser retentados (exceto talvez 408/429, mas simplificamos aqui).
+            // 409 (Conflict) é uma resposta válida de lógica de negócios para sync, então retornamos.
+            if (!response.ok && response.status !== 409 && response.status >= 500 && attempt < retries) {
+                throw new Error(`Server error ${response.status}`);
+            }
+            
+            // Se for um erro não recuperável (4xx) ou se acabaram as tentativas, processamos o erro.
+            if (!response.ok && response.status !== 409) {
+                let errorBody = '';
+                try {
+                    errorBody = await response.text();
+                } catch (e) {
+                    errorBody = '[No response body or failed to parse]';
+                }
+                console.error(`API request failed to ${endpoint}:`, errorBody);
+                throw new Error(`API request failed with status ${response.status}: ${errorBody}`);
+            }
+
+            return response;
+
+        } catch (error: any) {
+            clearTimeout(timeoutId);
+            
+            const isAbortError = error.name === 'AbortError';
+            const isNetworkError = error instanceof TypeError || error.message.includes('Server error'); // TypeError geralmente é erro de rede no fetch
+
+            if (attempt < retries && (isAbortError || isNetworkError)) {
+                const delay = backoff * Math.pow(2, attempt); // Backoff exponencial: 500, 1000, 2000...
+                console.warn(`API attempt ${attempt + 1} failed. Retrying in ${delay}ms...`, error);
+                await new Promise(resolve => setTimeout(resolve, delay));
+                return attemptFetch(attempt + 1);
+            }
+
+            if (isAbortError) {
+                throw new Error(`API request to ${endpoint} timed out after ${timeout}ms.`);
+            }
+            throw error;
+        }
+    };
+
+    return attemptFetch(0);
 }

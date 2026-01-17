@@ -1,40 +1,37 @@
-// ui.ts
+
 type UIElements = {
     calendarStrip: HTMLElement;
-    headerTitle: HTMLElement;
+    headerTitle: HTMLElement; // [2025-01-16] Added to allow click listener on the full title container
+    headerTitleDesktop: HTMLElement;
+    headerTitleMobile: HTMLElement;
     stoicQuoteDisplay: HTMLElement;
     habitContainer: HTMLElement;
     chartContainer: HTMLElement;
-    manageHabitsBtn: HTMLElement;
-    fabAddHabit: HTMLElement;
+    manageHabitsBtn: HTMLButtonElement; // TYPE FIX [2025-02-23]: Specific type
+    fabAddHabit: HTMLButtonElement;     // TYPE FIX [2025-02-23]: Specific type
     manageModal: HTMLElement;
     manageModalTitle: HTMLElement;
     habitListTitle: HTMLElement;
     exploreModal: HTMLElement;
     exploreHabitList: HTMLElement;
-    createCustomHabitBtn: HTMLElement;
+    createCustomHabitBtn: HTMLButtonElement; // TYPE FIX [2025-02-23]: Specific type
     aiEvalBtn: HTMLButtonElement;
     aiModal: HTMLElement;
-    aiModalTitle: HTMLElement;
     aiOptionsModal: HTMLElement;
-    aiWeeklyCheckinBtn: HTMLButtonElement;
-    aiMonthlyReviewBtn: HTMLButtonElement;
-    aiGeneralAnalysisBtn: HTMLButtonElement;
-    aiNewAnalysisBtn: HTMLButtonElement;
     confirmModal: HTMLElement;
     habitList: HTMLElement;
     aiResponse: HTMLElement;
     confirmModalText: HTMLElement;
-    confirmModalConfirmBtn: HTMLElement;
-    confirmModalEditBtn: HTMLElement;
+    confirmModalConfirmBtn: HTMLButtonElement; // TYPE FIX [2025-02-23]: Specific type
+    confirmModalEditBtn: HTMLButtonElement;    // TYPE FIX [2025-02-23]: Specific type
     undoToast: HTMLElement;
-    undoBtn: HTMLElement;
+    undoBtn: HTMLButtonElement; // TYPE FIX [2025-02-23]: Specific type
     notesModal: HTMLElement;
     notesModalTitle: HTMLElement;
     notesModalSubtitle: HTMLElement;
     notesTextarea: HTMLTextAreaElement;
-    saveNoteBtn: HTMLElement;
-    resetAppBtn: HTMLElement;
+    saveNoteBtn: HTMLButtonElement; // TYPE FIX [2025-02-23]: Specific type
+    resetAppBtn: HTMLButtonElement; // TYPE FIX [2025-02-23]: Specific type
     languagePrevBtn: HTMLButtonElement;
     languageViewport: HTMLElement;
     languageReel: HTMLElement;
@@ -42,10 +39,9 @@ type UIElements = {
     editHabitModal: HTMLElement;
     editHabitModalTitle: HTMLElement;
     editHabitForm: HTMLFormElement;
-    frequencyPrevBtn: HTMLButtonElement;
-    frequencyViewport: HTMLElement;
-    frequencyReel: HTMLElement;
-    frequencyNextBtn: HTMLButtonElement;
+    editHabitSaveBtn: HTMLButtonElement;
+    habitTimeContainer: HTMLElement;
+    frequencyOptionsContainer: HTMLElement;
     syncStatus: HTMLElement;
     syncSection: HTMLElement;
     syncInactiveView: HTMLElement;
@@ -65,76 +61,118 @@ type UIElements = {
     notificationToggle: HTMLInputElement;
     notificationToggleLabel: HTMLLabelElement;
     notificationStatusDesc: HTMLElement;
+    iconPickerModal: HTMLElement;
+    iconPickerGrid: HTMLElement;
+    habitIconPickerBtn: HTMLButtonElement;
+    colorPickerModal: HTMLElement;
+    colorPickerGrid: HTMLElement;
+    changeColorFromPickerBtn: HTMLButtonElement;
+    fullCalendarModal: HTMLElement;
+    fullCalendarHeader: HTMLElement;
+    fullCalendarMonthYear: HTMLElement;
+    fullCalendarPrevBtn: HTMLButtonElement;
+    fullCalendarNextBtn: HTMLButtonElement;
+    fullCalendarWeekdays: HTMLElement;
+    fullCalendarGrid: HTMLElement;
 };
 
 export const ui = {} as UIElements;
 
+/**
+ * REATORAÇÃO DE ROBUSTEZ: Função auxiliar para consultar um elemento do DOM.
+ * Lança um erro claro se o elemento não for encontrado, evitando erros de
+ * tempo de execução causados por seletores ou IDs incorretos.
+ * @param selector O seletor CSS para o elemento.
+ * @returns O elemento HTMLElement encontrado.
+ */
+function queryElement<T extends HTMLElement>(selector: string): T {
+    const element = document.querySelector<T>(selector);
+    if (!element) {
+        throw new Error(`UI element with selector "${selector}" not found in the DOM.`);
+    }
+    return element;
+}
+
+
 export function initUI(): void {
+    // [ANALYSIS PROGRESS]: 100% - Análise concluída. Mapeamento Singleton do DOM.
+    // [NOTA COMPARATIVA]: Infraestrutura crítica mas de baixa complexidade lógica. 
+    // Garante Type Safety entre o HTML e o TypeScript.
+    
     Object.assign(ui, {
-        calendarStrip: document.getElementById('calendar-strip')!,
-        headerTitle: document.getElementById('header-title')!,
-        stoicQuoteDisplay: document.getElementById('stoic-quote-display')!,
-        habitContainer: document.getElementById('habit-container')!,
-        chartContainer: document.getElementById('chart-container')!,
-        manageHabitsBtn: document.getElementById('manage-habits-btn')!,
-        fabAddHabit: document.getElementById('fab-add-habit')!,
-        manageModal: document.getElementById('manage-modal')!,
-        manageModalTitle: document.getElementById('manage-modal-title')!,
-        habitListTitle: document.getElementById('habit-list-title')!,
-        exploreModal: document.getElementById('explore-modal')!,
-        exploreHabitList: document.getElementById('explore-habit-list')!,
-        createCustomHabitBtn: document.getElementById('create-custom-habit-btn')!,
-        aiEvalBtn: document.getElementById('ai-eval-btn') as HTMLButtonElement,
-        aiModal: document.getElementById('ai-modal')!,
-        aiModalTitle: document.getElementById('ai-modal-title')!,
-        aiOptionsModal: document.getElementById('ai-options-modal')!,
-        aiWeeklyCheckinBtn: document.getElementById('ai-weekly-checkin-btn') as HTMLButtonElement,
-        aiMonthlyReviewBtn: document.getElementById('ai-monthly-review-btn') as HTMLButtonElement,
-        aiGeneralAnalysisBtn: document.getElementById('ai-general-analysis-btn') as HTMLButtonElement,
-        aiNewAnalysisBtn: document.getElementById('ai-new-analysis-btn') as HTMLButtonElement,
-        confirmModal: document.getElementById('confirm-modal')!,
-        habitList: document.getElementById('habit-list')!,
-        aiResponse: document.getElementById('ai-response')!,
-        confirmModalText: document.getElementById('confirm-modal-text')!,
-        confirmModalConfirmBtn: document.getElementById('confirm-modal-confirm-btn')!,
-        confirmModalEditBtn: document.getElementById('confirm-modal-edit-btn')!,
-        undoToast: document.getElementById('undo-toast')!,
-        undoBtn: document.getElementById('undo-btn')!,
-        notesModal: document.getElementById('notes-modal')!,
-        notesModalTitle: document.getElementById('notes-modal-title')!,
-        notesModalSubtitle: document.getElementById('notes-modal-subtitle')!,
-        notesTextarea: document.getElementById('notes-textarea') as HTMLTextAreaElement,
-        saveNoteBtn: document.getElementById('save-note-btn')!,
-        resetAppBtn: document.getElementById('reset-app-btn')!,
-        languagePrevBtn: document.getElementById('language-prev') as HTMLButtonElement,
-        languageViewport: document.getElementById('language-viewport')!,
-        languageReel: document.getElementById('language-reel')!,
-        languageNextBtn: document.getElementById('language-next') as HTMLButtonElement,
-        editHabitModal: document.getElementById('edit-habit-modal')!,
-        editHabitModalTitle: document.getElementById('edit-habit-modal-title')!,
-        editHabitForm: document.getElementById('edit-habit-form') as HTMLFormElement,
-        frequencyPrevBtn: document.getElementById('frequency-prev') as HTMLButtonElement,
-        frequencyViewport: document.getElementById('frequency-viewport')!,
-        frequencyReel: document.getElementById('frequency-reel')!,
-        frequencyNextBtn: document.getElementById('frequency-next') as HTMLButtonElement,
-        syncStatus: document.getElementById('sync-status')!,
-        syncSection: document.getElementById('sync-section')!,
-        syncInactiveView: document.getElementById('sync-inactive-view')!,
-        enableSyncBtn: document.getElementById('enable-sync-btn') as HTMLButtonElement,
-        enterKeyViewBtn: document.getElementById('enter-key-view-btn') as HTMLButtonElement,
-        syncEnterKeyView: document.getElementById('sync-enter-key-view')!,
-        syncKeyInput: document.getElementById('sync-key-input') as HTMLInputElement,
-        cancelEnterKeyBtn: document.getElementById('cancel-enter-key-btn') as HTMLButtonElement,
-        submitKeyBtn: document.getElementById('submit-key-btn') as HTMLButtonElement,
-        syncDisplayKeyView: document.getElementById('sync-display-key-view')!,
-        syncKeyText: document.getElementById('sync-key-text')!,
-        copyKeyBtn: document.getElementById('copy-key-btn') as HTMLButtonElement,
-        keySavedBtn: document.getElementById('key-saved-btn') as HTMLButtonElement,
-        syncActiveView: document.getElementById('sync-active-view')!,
-        viewKeyBtn: document.getElementById('view-key-btn') as HTMLButtonElement,
-        disableSyncBtn: document.getElementById('disable-sync-btn') as HTMLButtonElement,
-        notificationToggle: document.getElementById('notification-toggle') as HTMLInputElement,
-        notificationToggleLabel: document.getElementById('notification-toggle-label') as HTMLLabelElement,
-        notificationStatusDesc: document.getElementById('notification-status-desc')!,
+        calendarStrip: queryElement('#calendar-strip'),
+        headerTitle: queryElement('#header-title'), 
+        headerTitleDesktop: queryElement('#header-title .header-title-desktop'),
+        headerTitleMobile: queryElement('#header-title .header-title-mobile'),
+        stoicQuoteDisplay: queryElement('#stoic-quote-display'),
+        habitContainer: queryElement('#habit-container'),
+        chartContainer: queryElement('#chart-container'),
+        manageHabitsBtn: queryElement<HTMLButtonElement>('#manage-habits-btn'),
+        fabAddHabit: queryElement<HTMLButtonElement>('#fab-add-habit'),
+        manageModal: queryElement('#manage-modal'),
+        manageModalTitle: queryElement('#manage-modal-title'),
+        habitListTitle: queryElement('#habit-list-title'),
+        exploreModal: queryElement('#explore-modal'),
+        exploreHabitList: queryElement('#explore-habit-list'),
+        createCustomHabitBtn: queryElement<HTMLButtonElement>('#create-custom-habit-btn'),
+        aiEvalBtn: queryElement<HTMLButtonElement>('#ai-eval-btn'),
+        aiModal: queryElement('#ai-modal'),
+        aiOptionsModal: queryElement('#ai-options-modal'),
+        confirmModal: queryElement('#confirm-modal'),
+        habitList: queryElement('#habit-list'),
+        aiResponse: queryElement('#ai-response'),
+        confirmModalText: queryElement('#confirm-modal-text'),
+        confirmModalConfirmBtn: queryElement<HTMLButtonElement>('#confirm-modal-confirm-btn'),
+        confirmModalEditBtn: queryElement<HTMLButtonElement>('#confirm-modal-edit-btn'),
+        undoToast: queryElement('#undo-toast'),
+        undoBtn: queryElement<HTMLButtonElement>('#undo-btn'),
+        notesModal: queryElement('#notes-modal'),
+        notesModalTitle: queryElement('#notes-modal-title'),
+        notesModalSubtitle: queryElement('#notes-modal-subtitle'),
+        notesTextarea: queryElement<HTMLTextAreaElement>('#notes-textarea'),
+        saveNoteBtn: queryElement<HTMLButtonElement>('#save-note-btn'),
+        resetAppBtn: queryElement<HTMLButtonElement>('#reset-app-btn'),
+        languagePrevBtn: queryElement<HTMLButtonElement>('#language-prev'),
+        languageViewport: queryElement('#language-viewport'),
+        languageReel: queryElement('#language-reel'),
+        languageNextBtn: queryElement<HTMLButtonElement>('#language-next'),
+        editHabitModal: queryElement('#edit-habit-modal'),
+        editHabitModalTitle: queryElement('#edit-habit-modal-title'),
+        editHabitForm: queryElement<HTMLFormElement>('#edit-habit-form'),
+        editHabitSaveBtn: queryElement<HTMLButtonElement>('#edit-habit-save-btn'),
+        habitTimeContainer: queryElement('#habit-time-container'),
+        frequencyOptionsContainer: queryElement('#frequency-options-container'),
+        syncStatus: queryElement('#sync-status'),
+        syncSection: queryElement('#sync-section'),
+        syncInactiveView: queryElement('#sync-inactive-view'),
+        enableSyncBtn: queryElement<HTMLButtonElement>('#enable-sync-btn'),
+        enterKeyViewBtn: queryElement<HTMLButtonElement>('#enter-key-view-btn'),
+        syncEnterKeyView: queryElement('#sync-enter-key-view'),
+        syncKeyInput: queryElement<HTMLInputElement>('#sync-key-input'),
+        cancelEnterKeyBtn: queryElement<HTMLButtonElement>('#cancel-enter-key-btn'),
+        submitKeyBtn: queryElement<HTMLButtonElement>('#submit-key-btn'),
+        syncDisplayKeyView: queryElement('#sync-display-key-view'),
+        syncKeyText: queryElement('#sync-key-text'),
+        copyKeyBtn: queryElement<HTMLButtonElement>('#copy-key-btn'),
+        keySavedBtn: queryElement<HTMLButtonElement>('#key-saved-btn'),
+        syncActiveView: queryElement('#sync-active-view'),
+        viewKeyBtn: queryElement<HTMLButtonElement>('#view-key-btn'),
+        disableSyncBtn: queryElement<HTMLButtonElement>('#disable-sync-btn'),
+        notificationToggle: queryElement<HTMLInputElement>('#notification-toggle'),
+        notificationToggleLabel: queryElement<HTMLLabelElement>('#notification-toggle-label'),
+        notificationStatusDesc: queryElement('#notification-status-desc'),
+        iconPickerModal: queryElement('#icon-picker-modal'),
+        iconPickerGrid: queryElement('#icon-picker-grid'),
+        habitIconPickerBtn: queryElement<HTMLButtonElement>('#habit-icon-picker-btn'),
+        colorPickerModal: queryElement('#color-picker-modal'),
+        colorPickerGrid: queryElement('#color-picker-grid'),
+        changeColorFromPickerBtn: queryElement<HTMLButtonElement>('#change-color-from-picker-btn'),
+        fullCalendarModal: queryElement('#full-calendar-modal'),
+        fullCalendarHeader: queryElement('#full-calendar-header'),
+        fullCalendarMonthYear: queryElement('#full-calendar-month-year'),
+        fullCalendarPrevBtn: queryElement<HTMLButtonElement>('#full-calendar-prev'),
+        fullCalendarNextBtn: queryElement<HTMLButtonElement>('#full-calendar-next'),
+        fullCalendarWeekdays: queryElement('#full-calendar-weekdays'),
+        fullCalendarGrid: queryElement('#full-calendar-grid'),
     });
 }

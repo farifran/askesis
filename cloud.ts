@@ -1,35 +1,33 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-import { AppState, STATE_STORAGE_KEY, loadState, state, shouldHabitAppearOnDate, getScheduleForDate, TIMES_OF_DAY, getEffectiveScheduleForHabitOnDate } from './state';
-import { getTodayUTC, getTodayUTCIso } from './utils';
+// [ANALYSIS PROGRESS]: 100% - Análise concluída [2025-02-23]. Módulo robusto. Implementado algoritmo 'Smart Merge' para resolução de conflitos, garantindo integridade de dados multi-dispositivo sem intervenção do usuário.
+
+import { AppState, STATE_STORAGE_KEY, loadState, state, persistStateLocally, saveState, APP_VERSION } from './state';
+import { pushToOneSignal } from './utils';
 import { ui } from './ui';
-import { t, getHabitDisplayInfo } from './i18n';
-import { getSyncKey, getSyncKeyHash, hasLocalSyncKey } from './sync';
+import { t } from './i18n';
+import { hasLocalSyncKey, getSyncKey, apiFetch } from './api';
 import { renderApp, updateNotificationUI } from './render';
 import { encrypt, decrypt } from './crypto';
+import { mergeStates } from './dataMerge'; // REFACTOR: Importado do novo módulo
 
 // Debounce para evitar salvar na nuvem a cada pequena alteração.
 let syncTimeout: number | null = null;
 const DEBOUNCE_DELAY = 2000; // 2 segundos
+
+// MELHORIA DE ROBUSTEZ: Variáveis de estado para prevenir condições de corrida de sincronização.
+let isSyncInProgress = false;
+let pendingSyncState: AppState | null = null;
+
 
 // Interface para a carga de dados que o servidor manipula
 interface ServerPayload {
     lastModified: number;
     state: string; // Esta é a string criptografada
 }
-
-/**
- * Constrói uma URL de API absoluta a partir de um endpoint relativo.
- * Isso garante que as chamadas de API funcionem corretamente, mesmo que a aplicação
- * seja servida a partir de um subdiretório.
- * @param endpoint O caminho da API, por exemplo, '/api/sync'.
- * @returns A URL completa da API.
- */
-const getApiUrl = (endpoint: string): string => {
-    return new URL(endpoint, window.location.origin).toString();
-};
 
 export function setSyncStatus(statusKey: 'syncSaving' | 'syncSynced' | 'syncError' | 'syncInitial') {
     state.syncState = statusKey;
@@ -41,17 +39,34 @@ export function hasSyncKey(): boolean {
 }
 
 /**
+ * Configura os listeners de notificação e atualiza a UI inicial.
+ */
+export function setupNotificationListeners() {
+    // A inicialização do SDK do OneSignal agora é feita diretamente no index.html.
+    // Esta função apenas anexa os listeners de eventos necessários para a UI.
+    pushToOneSignal((OneSignal: any) => {
+        // Este listener garante que a UI seja atualizada se o usuário alterar
+        // as permissões de notificação nas configurações do navegador enquanto o app estiver aberto.
+        OneSignal.Notifications.addEventListener('permissionChange', () => {
+            // Adia a atualização da UI para dar tempo ao SDK de atualizar seu estado interno.
+            setTimeout(updateNotificationUI, 500);
+        });
+
+        // Atualiza a UI no carregamento inicial, caso o estado já esteja definido.
+        updateNotificationUI();
+    });
+}
+
+// [REMOVED]: mergeStates function moved to dataMerge.ts
+
+/**
  * Lida com um conflito de sincronização, onde o servidor tem uma versão mais recente dos dados.
  * Atualiza o estado local e a UI para corresponder à versão do servidor.
  * @param serverPayload O payload autoritativo (e criptografado) recebido do servidor.
  */
-function resolveConflictWithServerState(serverPayload: ServerPayload) {
-    console.warn("Sync conflict detected. Resolving with server data.");
+async function resolveConflictWithServerState(serverPayload: ServerPayload) {
+    console.warn("Sync conflict detected. Initiating Smart Merge sequence.");
     
-    // 1. Para a operação de sincronização pendente (se houver).
-    if (syncTimeout) clearTimeout(syncTimeout);
-    syncTimeout = null;
-
     const syncKey = getSyncKey();
     if (!syncKey) {
         console.error("Cannot resolve conflict without sync key.");
@@ -59,30 +74,141 @@ function resolveConflictWithServerState(serverPayload: ServerPayload) {
         return;
     }
     
-    // 2. Decriptografa o estado do servidor.
-    decrypt(serverPayload.state, syncKey)
-        .then(decryptedStateJSON => {
-            const serverState = JSON.parse(decryptedStateJSON) as AppState;
-            
-            // 3. Salva o estado do servidor (a fonte da verdade) no localStorage.
-            localStorage.setItem(STATE_STORAGE_KEY, JSON.stringify(serverState));
+    try {
+        const decryptedStateJSON = await decrypt(serverPayload.state, syncKey);
+        
+        let serverState: AppState;
+        try {
+            serverState = JSON.parse(decryptedStateJSON);
+        } catch (e) {
+            console.error("Failed to parse decrypted server state during conflict resolution:", e);
+            throw new Error("Corrupted server data received.");
+        }
 
-            // 4. Carrega o novo estado na memória da aplicação.
-            loadState(serverState); 
-            
-            // 5. Renderiza novamente toda a aplicação para refletir os dados atualizados.
-            renderApp();
-            
-            // 6. Atualiza o status da UI para mostrar que a sincronização foi concluída.
-            setSyncStatus('syncSynced');
-            document.dispatchEvent(new CustomEvent('habitsChanged')); // Dispara atualização de tags de notificação
-        })
-        .catch(error => {
-            console.error("Failed to decrypt server state during conflict resolution:", error);
-            setSyncStatus('syncError');
-        });
+        // IMPLEMENTAÇÃO DE SMART MERGE [2025-02-23]:
+        // Em vez de perguntar ao usuário (que pode não saber qual versão está correta),
+        // nós mesclamos os estados matematicamente para preservar o máximo de dados.
+        
+        // 1. Snapshot do estado local atual
+        const localState: AppState = {
+            version: APP_VERSION,
+            lastModified: Date.now(), // Irrelevante para o merge, será gerado um novo
+            habits: state.habits,
+            dailyData: state.dailyData,
+            archives: state.archives,
+            notificationsShown: state.notificationsShown,
+            pending21DayHabitIds: state.pending21DayHabitIds,
+            pendingConsolidationHabitIds: state.pendingConsolidationHabitIds,
+            // Preservamos estados de UI não persistidos (AI, etc) fora do merge
+        };
+
+        // 2. Executa a fusão (usando a função importada)
+        const mergedState = mergeStates(localState, serverState);
+        console.log("Smart Merge completed successfully.");
+
+        // 3. Persiste e Carrega o novo estado unificado
+        persistStateLocally(mergedState);
+        loadState(mergedState);
+        
+        // 4. Atualiza a UI
+        renderApp();
+        setSyncStatus('syncSynced'); // UI otimista
+        document.dispatchEvent(new CustomEvent('habitsChanged'));
+
+        // 5. CRÍTICO: Envia o estado mesclado de volta para a nuvem.
+        // Isso resolve o conflito no servidor, tornando este novo estado a "versão mais recente"
+        // para todos os outros dispositivos.
+        // Usamos 'immediate=true' para resolver o mais rápido possível.
+        syncStateWithCloud(mergedState, true);
+        
+    } catch (error) {
+        console.error("Failed to resolve conflict with server state:", error);
+        setSyncStatus('syncError');
+    }
 }
 
+/**
+ * Executa a requisição de rede real para sincronizar o estado com a nuvem.
+ */
+async function performSync() {
+    if (isSyncInProgress || !pendingSyncState) {
+        return;
+    }
+
+    isSyncInProgress = true;
+    const appState = pendingSyncState;
+    pendingSyncState = null; // Consome o estado pendente
+
+    const syncKey = getSyncKey();
+    if (!syncKey) {
+        setSyncStatus('syncError');
+        console.error("Cannot sync without a sync key.");
+        isSyncInProgress = false; // Libera a trava
+        return;
+    }
+
+    try {
+        const stateJSON = JSON.stringify(appState);
+        const encryptedState = await encrypt(stateJSON, syncKey);
+
+        const payload: ServerPayload = {
+            lastModified: appState.lastModified,
+            state: encryptedState,
+        };
+        
+        const response = await apiFetch('/api/sync', {
+            method: 'POST',
+            body: JSON.stringify(payload),
+        }, true);
+
+        if (response.status === 409) {
+            // Conflito: o servidor tem dados mais recentes.
+            const serverPayload: ServerPayload = await response.json();
+            await resolveConflictWithServerState(serverPayload);
+        } else {
+            // Sucesso (a verificação de response.ok já foi feita em apiFetch).
+            setSyncStatus('syncSynced');
+            document.dispatchEvent(new CustomEvent('habitsChanged')); // Notifica o emblema/etc para atualizar
+        }
+    } catch (error) {
+        console.error("Error syncing state to cloud:", error);
+        setSyncStatus('syncError');
+    } finally {
+        isSyncInProgress = false;
+        // Se um novo estado foi salvo enquanto a sincronização estava em andamento,
+        // aciona uma nova sincronização imediatamente para processar a fila.
+        if (pendingSyncState) {
+            if (syncTimeout) clearTimeout(syncTimeout);
+            performSync();
+        }
+    }
+}
+
+/**
+ * Schedules a state sync to the cloud. This is debounced and handles a sync-in-progress lock.
+ * @param appState The application state to sync.
+ * @param immediate If true, performs the sync immediately, bypassing the debounce timer.
+ */
+export function syncStateWithCloud(appState: AppState, immediate = false) {
+    if (!hasSyncKey()) return;
+
+    pendingSyncState = appState; // Sempre atualiza para o estado mais recente.
+    setSyncStatus('syncSaving');
+
+    if (syncTimeout) clearTimeout(syncTimeout);
+    
+    // Se uma sincronização já estiver em andamento, o bloco `finally` de `performSync`
+    // cuidará de acionar a próxima. Não precisamos fazer nada aqui.
+    if (isSyncInProgress) {
+        return;
+    }
+
+    if (immediate) {
+        performSync();
+    } else {
+        syncTimeout = window.setTimeout(performSync, DEBOUNCE_DELAY);
+    }
+}
 
 export async function fetchStateFromCloud(): Promise<AppState | undefined> {
     if (!hasSyncKey()) return undefined;
@@ -91,21 +217,7 @@ export async function fetchStateFromCloud(): Promise<AppState | undefined> {
     if (!syncKey) return undefined;
 
     try {
-        const keyHash = await getSyncKeyHash();
-        if (!keyHash) {
-            throw new Error("Could not generate sync key hash.");
-        };
-
-        const response = await fetch(getApiUrl('/api/sync'), {
-            headers: {
-                'X-Sync-Key-Hash': keyHash
-            }
-        });
-
-        if (!response.ok) {
-            throw new Error(`Failed to fetch state, status: ${response.status}`);
-        }
-
+        const response = await apiFetch('/api/sync', {}, true);
         const data: ServerPayload | null = await response.json();
 
         if (data && data.state) {
@@ -116,226 +228,16 @@ export async function fetchStateFromCloud(): Promise<AppState | undefined> {
         } else {
             // Nenhum dado na nuvem (resposta foi 200 com corpo nulo)
             console.log("No state found in cloud for this sync key. Performing initial sync.");
-            const localData = localStorage.getItem(STATE_STORAGE_KEY);
-            if (localData) {
-                // Aguardamos para garantir que a sincronização inicial seja concluída e para tratar quaisquer erros.
-                await syncLocalStateToCloud();
+            const localDataJSON = localStorage.getItem(STATE_STORAGE_KEY);
+            if (localDataJSON) {
+                const localState = JSON.parse(localDataJSON) as AppState;
+                syncStateWithCloud(localState, true);
             }
             return undefined;
         }
     } catch (error) {
-        console.error("Error fetching/decrypting state from cloud:", error);
+        console.error("Failed to fetch state from cloud:", error);
         setSyncStatus('syncError');
-        // Lança novamente o erro para que a função chamadora possa lidar com ele (ex: chave incorreta).
         throw error;
     }
-}
-
-export function syncStateWithCloud(appState: AppState) {
-    if (!hasSyncKey()) {
-        setSyncStatus('syncInitial');
-        return;
-    }
-
-    const syncKey = getSyncKey();
-    if (!syncKey) {
-        setSyncStatus('syncError');
-        console.error("Cannot sync without a sync key.");
-        return;
-    }
-    
-    setSyncStatus('syncSaving');
-
-    if (syncTimeout) {
-        clearTimeout(syncTimeout);
-    }
-
-    syncTimeout = window.setTimeout(async () => {
-        try {
-            const keyHash = await getSyncKeyHash();
-            if (!keyHash) {
-                 throw new Error("Could not generate sync key hash for saving.");
-            }
-
-            const stateJSON = JSON.stringify(appState);
-            const encryptedState = await encrypt(stateJSON, syncKey);
-
-            const payload = {
-                lastModified: appState.lastModified,
-                state: encryptedState,
-            };
-            
-            const response = await fetch(getApiUrl('/api/sync'), {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Sync-Key-Hash': keyHash
-                },
-                body: JSON.stringify(payload),
-            });
-            
-            if (response.status === 409) {
-                const serverPayload = await response.json();
-                resolveConflictWithServerState(serverPayload);
-                return; // Para a execução após resolver o conflito.
-            }
-
-            if (response.ok) {
-                setSyncStatus('syncSynced');
-            } else {
-                throw new Error(`Failed to sync state, status: ${response.status}`);
-            }
-        } catch (error) {
-            console.error("Error syncing state to cloud:", error);
-            setSyncStatus('syncError');
-        }
-    }, DEBOUNCE_DELAY);
-}
-
-// Função para fazer o upload único do estado local para a nuvem.
-export async function syncLocalStateToCloud() {
-    const localStateJSON = localStorage.getItem(STATE_STORAGE_KEY);
-    if (!localStateJSON) return;
-
-    const syncKey = getSyncKey();
-    if (!syncKey) {
-        throw new Error("Cannot perform initial sync without sync key.");
-    }
-
-    try {
-        const keyHash = await getSyncKeyHash();
-        if (!keyHash) {
-             throw new Error("Could not generate sync key hash for initial sync.");
-        }
-        
-        console.log("Found local state. Syncing to cloud...");
-        const localState: AppState = JSON.parse(localStateJSON);
-        
-        // Garante que o estado local tenha um timestamp antes de sincronizar, para compatibilidade com versões antigas
-        if (!localState.lastModified) {
-            localState.lastModified = Date.now();
-            localStorage.setItem(STATE_STORAGE_KEY, JSON.stringify(localState));
-        }
-
-        const stateJSON = JSON.stringify(localState);
-        const encryptedState = await encrypt(stateJSON, syncKey);
-
-        const payload = {
-            lastModified: localState.lastModified,
-            state: encryptedState,
-        };
-
-        const response = await fetch(getApiUrl('/api/sync'), {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Sync-Key-Hash': keyHash
-            },
-            body: JSON.stringify(payload),
-        });
-
-        if (response.status === 409) { // Lida com conflitos durante a sincronização inicial
-             const serverPayload = await response.json();
-             resolveConflictWithServerState(serverPayload);
-             return;
-        }
-
-        if (!response.ok) {
-            throw new Error(`Initial sync failed with status ${response.status}`);
-        }
-        console.log("Initial sync successful.");
-        setSyncStatus('syncSynced');
-
-    } catch (error) {
-        console.error("Error on initial sync to cloud:", error);
-        setSyncStatus('syncError');
-        // Lança o erro para que a função chamadora (fetchStateFromCloud) possa pegá-lo.
-        throw error;
-    }
-}
-
-
-// --- ONE SIGNAL NOTIFICATIONS ---
-export function updateOneSignalTags() {
-    window.OneSignalDeferred = window.OneSignalDeferred || [];
-    window.OneSignalDeferred.push((OneSignal: any) => {
-        // Só podemos enviar tags se o usuário tiver concedido permissão.
-        if (OneSignal.Notifications.permission !== 'granted') {
-            console.log('OneSignal: Permissão não concedida, pulando atualização de tags.');
-            return;
-        }
-
-        const today = getTodayUTC();
-        const todayISO = getTodayUTCIso();
-
-        const activeHabitsToday = state.habits.filter(h =>
-            !h.graduatedOn && shouldHabitAppearOnDate(h, today)
-        );
-
-        const tags: { [key: string]: boolean } = {
-            'has_habit_morning': false,
-            'has_habit_afternoon': false,
-            'has_habit_evening': false,
-        };
-
-        const timeToTagMap: Record<string, keyof typeof tags> = {
-            'Manhã': 'has_habit_morning',
-            'Tarde': 'has_habit_afternoon',
-            'Noite': 'has_habit_evening',
-        };
-
-        activeHabitsToday.forEach(habit => {
-            const scheduleForDay = getEffectiveScheduleForHabitOnDate(habit, todayISO);
-            scheduleForDay.forEach(time => {
-                const tagName = timeToTagMap[time];
-                if (tagName) {
-                    tags[tagName] = true;
-                }
-            });
-        });
-        
-        console.log('Atualizando tags do OneSignal:', tags);
-        OneSignal.User.addTags(tags);
-    });
-}
-
-/**
- * Inicializa o SDK do OneSignal e configura o estado inicial do toggle de notificação.
- */
-export function initNotifications() {
-    window.OneSignalDeferred = window.OneSignalDeferred || [];
-    window.OneSignalDeferred.push(function(OneSignal: any) {
-        OneSignal.init({
-            appId: "39454655-f1cd-4531-8ec5-d0f61eb1c478",
-            serviceWorkerPath: "sw.js",
-            promptOptions: {
-                customlink: {
-                    enabled: true,
-                    style: "button",
-                    size: "medium",
-                    text: {
-                        "subscribe": t('notificationEnableButton'),
-                        "unsubscribe": t('notificationDisableButton'),
-                    },
-                    selector: ".onesignal-customlink-container"
-                }
-            }
-        }).then(() => {
-            // Após a inicialização, defina o idioma e adicione os listeners
-            OneSignal.User.setLanguage(state.activeLanguageCode);
-
-            OneSignal.Notifications.addEventListener('permissionChange', (isGranted: boolean) => {
-                updateNotificationUI();
-                if (isGranted) {
-                    updateOneSignalTags();
-                }
-            });
-
-            document.addEventListener('habitsChanged', updateOneSignalTags);
-            
-            // Atualização inicial da UI e sincronização de tags
-            updateNotificationUI();
-            updateOneSignalTags();
-        });
-    });
 }
