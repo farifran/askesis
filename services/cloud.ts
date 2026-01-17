@@ -290,7 +290,6 @@ export async function fetchStateFromCloud(): Promise<AppState | null> {
         }
 
         const data = await res.json();
-        // Proteção contra nulo
         if (!data || !data.state) {
             console.log("[Cloud] Nuvem retornou vazio.");
             return null;
@@ -299,30 +298,49 @@ export async function fetchStateFromCloud(): Promise<AppState | null> {
         console.log("[Cloud] Decriptando...");
         const decryptedRaw = await runWorkerTask<any>('decrypt', data.state, key);
         
+        // --- CORREÇÃO CRÍTICA DO MAPA ---
+        let logsMap = new Map<string, bigint>();
+
+        // 1. Tenta deserializar do formato comprimido (Bitmask)
         if (decryptedRaw.monthlyLogsSerialized) {
-            const logsSerialized = decryptedRaw.monthlyLogsSerialized;
+            logsMap = _deserializeLogsInternal(decryptedRaw.monthlyLogsSerialized);
             delete decryptedRaw.monthlyLogsSerialized;
-            decryptedRaw.monthlyLogs = _deserializeLogsInternal(logsSerialized);
+        } 
+        // 2. Fallback: Se veio como objeto comum, converte para Map
+        else if (decryptedRaw.monthlyLogs && !(decryptedRaw.monthlyLogs instanceof Map)) {
+            try {
+                Object.entries(decryptedRaw.monthlyLogs).forEach(([k, v]) => {
+                    logsMap.set(k, BigInt(v as any));
+                });
+            } catch (e) { console.warn("Erro ao converter logs:", e); }
         }
 
         console.log("[Cloud] Dados prontos. Aplicando ao App...");
         
-        // --- APLICAR MUDANÇAS (AUTO-APPLY) ---
-        // Aqui está o segredo: Injetamos os dados diretamente no State Global
+        // --- APLICAR MUDANÇAS (AUTO-APPLY SEGURO) ---
         const appState = decryptedRaw as AppState;
         
-        // Copia os dados para a memória (State Global)
+        // Remove monthlyLogs do objeto bruto para não sobrescrever com lixo
+        delete (appState as any).monthlyLogs;
+
+        // Copia tudo MENOS os logs
         Object.assign(state, appState);
         
-        // Persiste no Disco Local (IndexedDB/LocalStorage)
-        await persistStateLocally(state);
+        // Aplica os logs tratados como Map
+        state.monthlyLogs = logsMap;
         
-        // Avisa a interface para redesenhar
+        // Reconstruct AppState for persistence and return
+        const fullCloudState: AppState = { ...appState, monthlyLogs: logsMap };
+
+        // Persiste no Disco Local
+        await persistStateLocally(fullCloudState);
+        
+        // Renderiza
         document.dispatchEvent(new CustomEvent('render-app'));
 
         setSyncStatus('syncSynced');
         console.log("[Cloud] ✅ Sincronização Completa!");
-        return appState;
+        return fullCloudState;
 
     } catch (e: any) {
         console.error("[Cloud] Fetch Failed:", e);
