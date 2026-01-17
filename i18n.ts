@@ -1,498 +1,197 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
+import { state, Habit, LANGUAGES, PredefinedHabit } from './state';
+import { ui } from './ui';
+import { renderApp, updateHeaderTitle, initFrequencyFilter, setupManageModal, initLanguageFilter } from './render';
 
-/**
- * @file i18n.ts
- * @description Motor de Internacionalização (i18n) e Formatação de Texto/Data/Números.
- * 
- * [MAIN THREAD CONTEXT]:
- * Executa na thread principal. Otimizado para "Zero-Allocation" nos hot-paths.
- * 
- * ARQUITETURA (Pure Logic Layer):
- * - REFACTOR [2025-03-22]: Desacoplado de `render/` para evitar ciclos.
- * - PERF [2025-04-10]: Lookup Tables (O(1)) para TimeOfDay e Weekdays.
- * - SOPA [2025-04-13]: Hub Central de Localização (Strings, Plurais, Datas, Listas, Números, Collation).
- * 
- * DEPENDÊNCIAS CRÍTICAS:
- * - `state.ts`: Acesso ao idioma ativo.
- * - `locales/*.json`: Arquivos de tradução.
- */
-
-import { state, TimeOfDay } from './state';
-import { pushToOneSignal } from './utils';
-
-// TYPE POLYFILL: Garante que Intl.ListFormat seja reconhecido mesmo em configurações TS antigas (ES2020 ou inferior).
-declare global {
-    namespace Intl {
-        interface ListFormatOptions {
-            localeMatcher?: "lookup" | "best fit";
-            type?: "conjunction" | "disjunction" | "unit";
-            style?: "long" | "short" | "narrow";
-        }
-
-        class ListFormat {
-            constructor(locales?: string | string[], options?: ListFormatOptions);
-            public format(list: Iterable<string>): string;
-        }
-    }
-}
-
-// INTERFACE ABSTRATA: Permite que o cache aceite tanto a classe nativa quanto o mock de fallback sem erros de tipo.
-interface ListFormatter {
-    format(list: Iterable<string>): string;
-}
-
-type PluralableTranslation = { one?: string; other: string; [key: string]: string | undefined };
+type PluralableTranslation = { one: string; other: string };
 type TranslationValue = string | PluralableTranslation;
 type Translations = Record<string, TranslationValue>;
 
-// --- CACHE DE API INTL (Performance Crítica) ---
-// A criação de instâncias Intl é custosa. Mantemos caches para reutilização.
-const pluralRulesCache: Record<string, Intl.PluralRules> = {};
-const collatorCache: Record<string, Intl.Collator> = {};
+// A mapping from the hardcoded Portuguese values in TimeOfDay to the language-independent keys.
+const timeOfDayKeyMap: Record<string, 'Morning' | 'Afternoon' | 'Evening'> = {
+    'Manhã': 'Morning',
+    'Tarde': 'Afternoon',
+    'Noite': 'Evening',
+};
 
-// DUAL-LAYER CACHE STRATEGY [2025-04-13]:
-// 1. WeakMap: Fast-path para objetos de opções reutilizados (Hoisted Constants). Chave = Referência do Objeto.
-// 2. Map (String): Fallback para objetos literais inline. Chave = Serialização das opções.
-const dateTimeWeakCache = new Map<string, WeakMap<object, Intl.DateTimeFormat>>();
-const dateTimeStringCache = new Map<string, Intl.DateTimeFormat>();
-
-// MEMORY GUARD: Limite de cache para evitar leaks em sessões longas.
-const MAX_CACHE_SIZE = 100;
-
-const listFormatCache: Record<string, ListFormatter> = {};
-
-// NUMERIC CACHE [2025-04-14]: Cache para formatadores numéricos (Int, Decimal, Evolution).
-// Evita recriar Intl.NumberFormat em loops de renderização de gráficos.
-type NumberFormatBundle = { int: Intl.NumberFormat; dec: Intl.NumberFormat; evo: Intl.NumberFormat };
-const numberFormatCache: Record<string, NumberFormatBundle> = {};
-
-// PERFORMANCE: Cache imutável para nomes de dias da semana por idioma.
-// Permite acesso O(1) em loops de calendário.
-const weekdayCache: Record<string, string[]> = {};
+export function getTimeOfDayName(time: string): string {
+    const keySuffix = timeOfDayKeyMap[time];
+    if (keySuffix) {
+        return t(`filter${keySuffix}`);
+    }
+    return time; // Fallback
+}
 
 const loadedTranslations: Record<string, Translations> = {};
 
-// CONCURRENCY: Map de Promises em voo para deduplicação de rede.
-const inflightRequests = new Map<string, Promise<boolean>>();
-
-// CONSTANTS: Opções estáticas.
-const DAY_FORMAT_OPTS: Intl.DateTimeFormatOptions = { weekday: 'short', timeZone: 'UTC' };
-// Reference week: Jan 4 1970 was Sunday. Array 0-6 corresponds to Sun-Sat.
-const WEEKDAY_REF_DATES = Array.from({ length: 7 }, (_, i) => new Date(Date.UTC(1970, 0, 4 + i)));
-
-// PERFORMANCE: Lookup Table para TimeOfDay.
-const TIME_OF_DAY_KEYS: Record<TimeOfDay, string> = {
-    'Morning': 'filterMorning',
-    'Afternoon': 'filterAfternoon',
-    'Evening': 'filterEvening'
-};
-
-// PERFORMANCE: Hot-Cache (Ponteiros diretos para uso síncrono rápido).
-let currentDict: Translations | null = null;
-let fallbackDict: Translations | null = null; // Granular Fallback (ex: ES -> PT)
-let currentPluralRules: Intl.PluralRules | null = null;
-let currentCollator: Intl.Collator | null = null;
-let currentListFormat: ListFormatter | null = null;
-let currentNumberFormat: NumberFormatBundle | null = null;
-let currentWeekdayNames: string[] = []; // Cache array access is faster than Intl calls
-let currentLangCode: string | null = null;
-
-// CONCURRENCY: ID da última requisição.
-let latestLangRequestId = 0;
-
-// PERFORMANCE: Pre-compiled Regex.
-const INTERPOLATION_REGEX = /{([^{}]+)}/g;
-
-// NETWORK TIMEOUT: Evita Zombie State.
-const LANG_LOAD_TIMEOUT = 5000;
-
-/**
- * Carrega o arquivo JSON de tradução.
- * Implementa padrão Promise Singleton para evitar Race Conditions de rede.
- * RELIABILITY: Adicionado AbortController para timeout.
- */
-function loadLanguage(langCode: string): Promise<boolean> {
-    // 1. Check Memory Cache (Sync)
+async function loadLanguage(langCode: 'pt' | 'en' | 'es'): Promise<void> {
     if (loadedTranslations[langCode]) {
-        return Promise.resolve(true);
+        return;
     }
-
-    // 2. Check In-Flight Requests (Async Dedup)
-    if (inflightRequests.has(langCode)) {
-        return inflightRequests.get(langCode)!;
-    }
-
-    // 3. Initiate Network Request with Timeout
-    const promise = (async () => {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), LANG_LOAD_TIMEOUT);
-
-        try {
-            const response = await fetch(`./locales/${langCode}.json`, { signal: controller.signal });
-            clearTimeout(timeoutId);
-            
-            if (!response.ok) {
-                throw new Error(`Status: ${response.status}`);
-            }
-            const translations = await response.json();
-            loadedTranslations[langCode] = translations;
-            return true;
-        } catch (error) {
-            clearTimeout(timeoutId);
-            console.error(`Could not load translations for ${langCode}:`, error);
-            
-            // Fallback Recovery: Garante que PT (base) esteja carregado para o fallbackDict
-            // SECURITY: Evita recursão infinita se 'pt' também falhar.
-            if (langCode !== 'pt' && !loadedTranslations['pt']) {
-                try {
-                    // Tentativa única de carregar o fallback
-                    console.warn("Attempting to load fallback 'pt'");
-                    await loadLanguage('pt'); 
-                } catch (fallbackError) {
-                    console.error(`CRITICAL: Could not load fallback language 'pt'.`, fallbackError);
-                }
-            }
-            return false;
-        } finally {
-            inflightRequests.delete(langCode);
+    try {
+        const response = await fetch(`./locales/${langCode}.json`);
+        if (!response.ok) {
+            throw new Error(`Failed to load language file: ${response.statusText}`);
         }
-    })();
-
-    inflightRequests.set(langCode, promise);
-    return promise;
+        const translations = await response.json();
+        loadedTranslations[langCode] = translations;
+    } catch (error) {
+        console.error(`Could not load translations for ${langCode}:`, error);
+        if (langCode !== 'pt') {
+            await loadLanguage('pt');
+        }
+    }
 }
 
-function triggerBackgroundLoad(langCode: string) {
-    loadLanguage(langCode).then(success => {
-        if (success && state.activeLanguageCode === langCode) {
-            updateHotCache(langCode);
-            document.dispatchEvent(new CustomEvent('language-changed'));
-        }
-    });
-}
-
-/**
- * INTERNAL HELPER: Atualiza os caches quentes quando o idioma muda.
- * Centraliza a lógica de sincronização.
- */
-function updateHotCache(langCode: string) {
-    currentLangCode = langCode;
-    
-    // 1. Dictionary & Fallback Strategy
-    if (loadedTranslations[langCode]) {
-        currentDict = loadedTranslations[langCode];
-        if (langCode !== 'pt' && loadedTranslations['pt']) {
-            fallbackDict = loadedTranslations['pt'];
-        } else {
-            fallbackDict = null;
-        }
-    } else {
-        currentDict = loadedTranslations['pt'] || null;
-        fallbackDict = null;
-        triggerBackgroundLoad(langCode);
-    }
-    
-    // 2. Plural Rules (Crash Guard)
-    if (!pluralRulesCache[langCode]) {
-        try {
-            pluralRulesCache[langCode] = new Intl.PluralRules(langCode);
-        } catch (e) {
-            try {
-                pluralRulesCache[langCode] = new Intl.PluralRules('pt');
-            } catch (e2) {
-                // Fallback final para evitar crash: Mock que retorna sempre 'other'
-                pluralRulesCache[langCode] = { select: () => 'other' } as unknown as Intl.PluralRules;
-            }
-        }
-    }
-    currentPluralRules = pluralRulesCache[langCode];
-
-    // 3. Collator (Sorting)
-    if (!collatorCache[langCode]) {
-        try {
-            collatorCache[langCode] = new Intl.Collator(langCode, { sensitivity: 'base', numeric: true });
-        } catch (e) {
-            collatorCache[langCode] = new Intl.Collator('pt'); // Se falhar aqui, o browser está quebrado
-        }
-    }
-    currentCollator = collatorCache[langCode];
-
-    // 4. List Format (Arrays)
-    if (!listFormatCache[langCode]) {
-        try {
-            listFormatCache[langCode] = new Intl.ListFormat(langCode, { style: 'long', type: 'conjunction' });
-        } catch (e) {
-            // ROBUSTEZ: Fallback seguro se a API não existir (Browser antigo).
-            listFormatCache[langCode] = { 
-                format: (list: Iterable<string>) => Array.from(list).join(', ') 
-            }; 
-        }
-    }
-    currentListFormat = listFormatCache[langCode];
-
-    // 5. Number Formats (Integer, Decimal & Evolution)
-    if (!numberFormatCache[langCode]) {
-        try {
-            numberFormatCache[langCode] = {
-                int: new Intl.NumberFormat(langCode, { maximumFractionDigits: 0 }),
-                dec: new Intl.NumberFormat(langCode, { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-                evo: new Intl.NumberFormat(langCode, { minimumFractionDigits: 1, maximumFractionDigits: 1 })
-            };
-        } catch (e) {
-            // Fallback seguro com as mesmas opções de formatação
-            const optsInt = { maximumFractionDigits: 0 };
-            const optsDec = { minimumFractionDigits: 2, maximumFractionDigits: 2 };
-            const optsEvo = { minimumFractionDigits: 1, maximumFractionDigits: 1 };
-            
-            // Se 'pt' também falhar, usa padrão do sistema (undefined locale)
-            try {
-                numberFormatCache[langCode] = { 
-                    int: new Intl.NumberFormat('pt', optsInt), 
-                    dec: new Intl.NumberFormat('pt', optsDec), 
-                    evo: new Intl.NumberFormat('pt', optsEvo) 
-                };
-            } catch (e2) {
-                numberFormatCache[langCode] = { 
-                    int: new Intl.NumberFormat(undefined, optsInt), 
-                    dec: new Intl.NumberFormat(undefined, optsDec), 
-                    evo: new Intl.NumberFormat(undefined, optsEvo) 
-                };
-            }
-        }
-    }
-    currentNumberFormat = numberFormatCache[langCode];
-
-    // 6. Weekday Names (Fast Lookup Cache)
-    if (!weekdayCache[langCode]) {
-        try {
-            const dayFormatter = new Intl.DateTimeFormat(langCode, DAY_FORMAT_OPTS);
-            weekdayCache[langCode] = WEEKDAY_REF_DATES.map(date => 
-                dayFormatter.format(date).toUpperCase()
-            );
-        } catch (e) {
-            weekdayCache[langCode] = weekdayCache['pt'] || []; 
-        }
-    }
-    currentWeekdayNames = weekdayCache[langCode];
-}
-
-/**
- * Traduz uma chave para o idioma ativo.
- * [HOT PATH]: Otimizado para zero alocação desnecessária.
- */
 export function t(key: string, options?: { [key: string]: string | number | undefined }): string {
-    // Sync check
-    if (state.activeLanguageCode !== currentLangCode) {
-        updateHotCache(state.activeLanguageCode);
-    }
-
-    if (!currentDict) return key;
-
-    let translationValue = currentDict[key];
-
-    // RESILIENCE: Dictionary Fallback (Granular)
-    if (translationValue === undefined && fallbackDict) {
-        translationValue = fallbackDict[key];
-    }
-
-    if (translationValue === undefined) {
+    const lang = state.activeLanguageCode || 'pt';
+    const dict = loadedTranslations[lang] || loadedTranslations['pt'];
+    
+    if (!dict) {
         return key;
     }
 
-    let translationString: string;
+    let translation = dict[key] || key;
 
-    if (typeof translationValue === 'string') {
-        translationString = translationValue;
-    } else {
-        // Pluralization
-        if (options?.count !== undefined) {
-            // CRASH GUARD: Ensure rules exist
-            const rules = currentPluralRules || pluralRulesCache['pt'] || new Intl.PluralRules('en'); 
-            const pluralKey = rules.select(options.count as number);
-            
-            const foundString = translationValue[pluralKey] || translationValue.other;
-            if (!foundString) return key;
-            
-            translationString = foundString;
-        } else {
-            return key;
-        }
+    if (typeof translation === 'object' && options?.count !== undefined) {
+        const pluralKey = new Intl.PluralRules(lang).select(options.count as number);
+        translation = (translation as PluralableTranslation)[pluralKey as keyof PluralableTranslation] || (translation as PluralableTranslation).other;
     }
 
-    if (options) {
-        // Fast path
-        if (!translationString.includes('{')) {
-            return translationString;
-        }
-        return translationString.replace(INTERPOLATION_REGEX, (_match, k) => {
-            const value = options[k];
-            return value !== undefined ? String(value) : _match;
-        });
+    if (typeof translation === 'string' && options) {
+        return Object.entries(options).reduce((acc, [optKey, optValue]) => {
+            return acc.replace(new RegExp(`{${optKey}}`, 'g'), String(optValue));
+        }, translation);
     }
 
-    return translationString;
+    return String(translation);
 }
 
-/**
- * Compara duas strings usando as regras do idioma ativo.
- * Otimizado para uso em `array.sort()`.
- */
-export function compareStrings(a: string, b: string): number {
-    if (state.activeLanguageCode !== currentLangCode) {
-        updateHotCache(state.activeLanguageCode);
+export function getHabitDisplayInfo(habit: Habit | PredefinedHabit): { name: string, subtitle: string } {
+    let source: any = habit;
+    // If it's a full Habit object, get the latest schedule for its display info
+    if ('scheduleHistory' in habit && habit.scheduleHistory.length > 0) {
+        source = habit.scheduleHistory[habit.scheduleHistory.length - 1];
     }
-    return currentCollator ? currentCollator.compare(a, b) : a.localeCompare(b);
+
+    if (source.nameKey) {
+        return {
+            name: t(source.nameKey),
+            subtitle: source.subtitleKey ? t(source.subtitleKey) : ''
+        };
+    }
+    return {
+        name: source.name || '',
+        subtitle: source.subtitle || ''
+    };
 }
 
-/**
- * Formata uma data usando as regras do idioma ativo.
- * Implementa estratégia de cache de dupla camada (WeakMap -> StringMap) para Alocação Zero.
- */
-export function formatDate(date: Date | number, options: Intl.DateTimeFormatOptions): string {
-    if (state.activeLanguageCode !== currentLangCode) {
-        updateHotCache(state.activeLanguageCode);
-    }
-
-    // 1. WeakMap Lookup (Fast Path / Zero Allocation)
-    // Funciona perfeitamente quando o chamador usa constantes hoistadas (ex: OPTS_ARIA_DATE).
-    // Evita completamente a serialização de strings.
-    let weakCache = dateTimeWeakCache.get(currentLangCode!);
-    if (!weakCache) {
-        weakCache = new WeakMap();
-        dateTimeWeakCache.set(currentLangCode!, weakCache);
-    }
-    
-    let formatter = weakCache.get(options);
-    if (formatter) return formatter.format(date);
-
-    // 2. String Key Generation (Slow Path / Fallback)
-    // Necessário para objetos literais criados inline (ex: { month: 'short' }).
-    // Ainda assim, cacheia o resultado no StringMap para reutilização futura do mesmo formato estrutural.
-    const keys = Object.keys(options).sort();
-    let optionsKey = '';
-    for (const key of keys) {
-        optionsKey += `${key}:${options[key as keyof Intl.DateTimeFormatOptions]};`;
-    }
-    const stringKey = `${currentLangCode}|${optionsKey}`;
-
-    // 3. String Cache Lookup
-    formatter = dateTimeStringCache.get(stringKey);
-    if (!formatter) {
-        // MEMORY LEAK GUARD: Limpa o cache se crescer demais (ex: widgets dinâmicos infinitos).
-        if (dateTimeStringCache.size > MAX_CACHE_SIZE) {
-            dateTimeStringCache.clear();
-        }
-        formatter = new Intl.DateTimeFormat(currentLangCode!, options);
-        dateTimeStringCache.set(stringKey, formatter);
-    }
-
-    // 4. Populate WeakMap (Optimization for future)
-    // Se este objeto de opção específico for reutilizado (loop), na próxima vez pegaremos no passo 1.
-    weakCache.set(options, formatter);
-    
-    return formatter.format(date);
-}
-
-/**
- * Formata um número inteiro usando as regras do locale ativo.
- * Ex: 1000 -> "1.000" (PT) ou "1,000" (EN).
- */
-export function formatInteger(num: number): string {
-    if (state.activeLanguageCode !== currentLangCode) {
-        updateHotCache(state.activeLanguageCode);
-    }
-    return currentNumberFormat!.int.format(num);
-}
-
-/**
- * Formata um número decimal (fixo em 2 casas) usando as regras do locale ativo.
- * Ex: 10.5 -> "10,50" (PT) ou "10.50" (EN).
- */
-export function formatDecimal(num: number): string {
-    if (state.activeLanguageCode !== currentLangCode) {
-        updateHotCache(state.activeLanguageCode);
-    }
-    return currentNumberFormat!.dec.format(num);
-}
-
-/**
- * Formata um número de evolução/porcentagem (fixo em 1 casa) usando as regras do locale ativo.
- * Ex: 12.5 -> "12,5" (PT) ou "12.5" (EN).
- */
-export function formatEvolution(num: number): string {
-    if (state.activeLanguageCode !== currentLangCode) {
-        updateHotCache(state.activeLanguageCode);
-    }
-    return currentNumberFormat!.evo.format(num);
-}
-
-/**
- * Formata uma lista de strings (ex: "A, B e C") usando as regras do idioma ativo.
- */
-export function formatList(list: string[]): string {
-    if (list.length === 0) return '';
-    if (state.activeLanguageCode !== currentLangCode) {
-        updateHotCache(state.activeLanguageCode);
-    }
-    return currentListFormat ? currentListFormat.format(list) : list.join(', ');
-}
-
-/**
- * Gets localized time of day name using optimized lookup table.
- */
-export function getTimeOfDayName(time: TimeOfDay): string {
-    // PERFORMANCE: Static object lookup instead of string concatenation.
-    return t(TIME_OF_DAY_KEYS[time] || `filter${time}`);
-}
-
-/**
- * Gets localized day name (e.g. "SEG") from cached array.
- * PERFORMANCE: Array access O(1) instead of Date/Intl instantiation.
- */
 export function getLocaleDayName(date: Date): string {
-    if (state.activeLanguageCode !== currentLangCode) {
-        updateHotCache(state.activeLanguageCode);
-    }
-    // getUTCDay() returns 0 for Sunday, matches array index
-    return currentWeekdayNames[date.getUTCDay()] || '';
+    return date.toLocaleDateString(state.activeLanguageCode, { weekday: 'short', timeZone: 'UTC' }).toUpperCase();
+}
+
+function updateUIText() {
+    document.title = t('appName');
+    ui.fabAddHabit.setAttribute('aria-label', t('fabAddHabit_ariaLabel'));
+    ui.manageHabitsBtn.setAttribute('aria-label', t('manageHabits_ariaLabel'));
+    ui.aiEvalBtn.setAttribute('aria-label', t('aiEval_ariaLabel'));
+    
+    ui.exploreModal.querySelector('h2')!.textContent = t('modalExploreTitle');
+    ui.createCustomHabitBtn.textContent = t('modalExploreCreateCustom');
+    ui.exploreModal.querySelector('.modal-close-btn')!.textContent = t('closeButton');
+
+    ui.manageModalTitle.textContent = t('modalManageTitle');
+    ui.habitListTitle.textContent = t('modalManageHabitsSubtitle');
+    document.getElementById('label-language')!.textContent = t('modalManageLanguage');
+    document.getElementById('label-sync')!.textContent = t('syncLabel');
+    document.getElementById('label-notifications')!.textContent = t('modalManageNotifications');
+    ui.notificationStatusDesc.textContent = t('modalManageNotificationsStaticDesc');
+    document.getElementById('label-reset')!.textContent = t('modalManageReset');
+    ui.resetAppBtn.textContent = t('modalManageResetButton');
+    ui.manageModal.querySelector('.modal-close-btn')!.textContent = t('closeButton');
+    
+    document.getElementById('sync-inactive-desc')!.textContent = t('syncInactiveDesc');
+    ui.enableSyncBtn.textContent = t('syncEnable');
+    ui.enterKeyViewBtn.textContent = t('syncEnterKey');
+    document.getElementById('label-enter-key')!.textContent = t('syncLabelEnterKey');
+    ui.cancelEnterKeyBtn.textContent = t('cancelButton');
+    ui.submitKeyBtn.textContent = t('syncSubmitKey');
+    document.getElementById('sync-warning-text')!.innerHTML = t('syncWarning');
+    ui.keySavedBtn.textContent = t('syncKeySaved');
+    document.getElementById('sync-active-desc')!.textContent = t('syncActiveDesc');
+    ui.viewKeyBtn.textContent = t('syncViewKey');
+    ui.disableSyncBtn.textContent = t('syncDisable');
+    
+    ui.aiModal.querySelector('.modal-close-btn')!.textContent = t('closeButton');
+    
+    ui.aiOptionsModal.querySelector('h2')!.textContent = t('modalAIOptionsTitle');
+    ui.aiOptionsModal.querySelector<HTMLSpanElement>('#ai-weekly-checkin-btn .ai-option-title')!.textContent = t('aiOptionWeeklyTitle');
+    ui.aiOptionsModal.querySelector<HTMLSpanElement>('#ai-weekly-checkin-btn .ai-option-desc')!.textContent = t('aiOptionWeeklyDesc');
+    ui.aiOptionsModal.querySelector<HTMLSpanElement>('#ai-monthly-review-btn .ai-option-title')!.textContent = t('aiOptionMonthlyTitle');
+    ui.aiOptionsModal.querySelector<HTMLSpanElement>('#ai-monthly-review-btn .ai-option-desc')!.textContent = t('aiOptionMonthlyDesc');
+    ui.aiOptionsModal.querySelector<HTMLSpanElement>('#ai-general-analysis-btn .ai-option-title')!.textContent = t('aiOptionGeneralTitle');
+    ui.aiOptionsModal.querySelector<HTMLSpanElement>('#ai-general-analysis-btn .ai-option-desc')!.textContent = t('aiOptionGeneralDesc');
+
+    ui.confirmModal.querySelector('h2')!.textContent = t('modalConfirmTitle');
+    ui.confirmModal.querySelector('.modal-close-btn')!.textContent = t('cancelButton');
+    ui.confirmModalEditBtn.textContent = t('editButton');
+    ui.confirmModalConfirmBtn.textContent = t('confirmButton');
+
+    ui.notesModal.querySelector('.modal-close-btn')!.textContent = t('cancelButton');
+    ui.saveNoteBtn.textContent = t('modalNotesSaveButton');
+    ui.notesTextarea.placeholder = t('modalNotesTextareaPlaceholder');
+
+    document.getElementById('label-habit-name')!.textContent = t('modalEditFormNameLabel');
+    document.getElementById('label-habit-time')!.textContent = t('modalEditFormTimeLabel');
+    document.getElementById('label-frequency')!.textContent = t('modalEditFormFrequencyLabel');
+    ui.editHabitForm.querySelector('.modal-close-btn')!.textContent = t('cancelButton');
+    ui.editHabitForm.querySelector('button[type="submit"]')!.textContent = t('modalEditSaveButton');
+    
+    ui.undoToast.firstElementChild!.textContent = t('undoToastText');
+    ui.undoBtn.textContent = t('undoButton');
 }
 
 export async function setLanguage(langCode: 'pt' | 'en' | 'es') {
-    // Redundancy Guard
-    if (state.activeLanguageCode === langCode && loadedTranslations[langCode]) {
-        return;
-    }
-
-    const requestId = ++latestLangRequestId;
-    const success = await loadLanguage(langCode);
+    await loadLanguage(langCode);
+    state.activeLanguageCode = langCode;
+    document.documentElement.lang = langCode;
+    localStorage.setItem('habitTrackerLanguage', langCode);
     
-    if (requestId !== latestLangRequestId) {
-        return;
-    }
-
-    if (success) {
-        state.activeLanguageCode = langCode;
-        updateHotCache(langCode);
-
-        // Side Effects
-        document.documentElement.lang = langCode;
-        localStorage.setItem('habitTrackerLanguage', langCode);
-        
-        pushToOneSignal((OneSignal: any) => {
+    // Adicionado: Atualiza o idioma do usuário no OneSignal quando alterado no app
+    if (window.OneSignal) {
+        window.OneSignal.push((OneSignal: any) => {
             OneSignal.User.setLanguage(langCode);
         });
-
-        // Dirty Checking flags
-        state.uiDirtyState.calendarVisuals = true;
-        state.uiDirtyState.habitListStructure = true;
-        state.uiDirtyState.chartData = true;
-
-        document.dispatchEvent(new CustomEvent('language-changed'));
-    } else {
-        console.warn(`setLanguage aborted: Failed to load ${langCode}`);
     }
+    
+    initFrequencyFilter();
+    initLanguageFilter();
+
+    updateUIText();
+    // Garante que o status de sincronização dinâmico seja re-traduzido a partir do estado.
+    ui.syncStatus.textContent = t(state.syncState);
+    
+    if (ui.manageModal.classList.contains('visible')) {
+        setupManageModal();
+    }
+
+    renderApp();
+    updateHeaderTitle();
+}
+
+export async function initI18n() {
+    const savedLang = localStorage.getItem('habitTrackerLanguage');
+    const browserLang = navigator.language.split('-')[0];
+    let initialLang: 'pt' | 'en' | 'es' = 'pt';
+
+    if (savedLang && ['pt', 'en', 'es'].includes(savedLang)) {
+        initialLang = savedLang as 'pt' | 'en' | 'es';
+    } else if (['pt', 'en', 'es'].includes(browserLang)) {
+        initialLang = browserLang as 'pt' | 'en' | 'es';
+    }
+
+    await setLanguage(initialLang);
 }

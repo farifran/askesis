@@ -1,1230 +1,609 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-
-/**
- * @file habitActions.ts
- * @description Controlador de Lógica de Negócios (Business Logic Controller).
- * 
- * [MAIN THREAD CONTEXT]:
- * Este módulo roda na thread principal e orquestra mutações de estado seguidas de atualizações de UI.
- * O foco é manter a responsividade da UI (60fps), delegando tarefas pesadas.
- * 
- * ARQUITETURA (MVC Controller & V8 Optimization):
- * - **Responsabilidade Única:** Receber intenções do usuário (via listeners), validar regras de negócio,
- *   mutar o estado global (AppState) e disparar a renderização/persistência.
- * - **Monomorphism:** Evita o uso de `delete` em objetos quentes para manter Hidden Classes estáveis.
- * - **Zero-Allocation:** Usa Pools estáticos para arrays temporários em operações de lote.
- * - **Static Transaction State:** Callbacks de modais usam um Singleton de contexto para evitar closures.
- * 
- * DEPENDÊNCIAS CRÍTICAS:
- * - `state.ts`: A estrutura de dados mutável.
- * - `services/persistence.ts`: Garante a durabilidade dos dados.
- */
-
-import { 
-    state, 
-    Habit, 
-    HabitSchedule, 
-    TimeOfDay, 
-    ensureHabitDailyInfo, 
-    ensureHabitInstanceData, 
-    getNextStatus, 
+import { generateUUID, getTodayUTCIso, parseUTCIsoDate, addDays, escapeHTML } from './utils';
+import {
+    state,
+    saveState,
+    Habit,
+    TimeOfDay,
     HabitStatus,
-    clearScheduleCache,
-    clearActiveHabitsCache,
-    invalidateCachesForDateChange,
-    getPersistableState,
-    HabitDayData,
+    getNextStatus,
+    ensureHabitInstanceData,
+    shouldHabitAppearOnDate,
     STREAK_SEMI_CONSOLIDATED,
     STREAK_CONSOLIDATED,
-    getHabitDailyInfoForDate,
-    AppState,
-    isDateLoading,
-    HabitDailyInfo,
-    DailyStoicDiagnosis
-} from './state';
-import { saveState, clearLocalPersistence } from './services/persistence';
-import { PREDEFINED_HABITS } from './data/predefinedHabits';
-// ARCHITECTURE FIX [2025-05-05]: Importação necessária para o ícone da factory de hábito estoico
-import { HABIT_ICONS } from './data/icons';
-import { 
-    getEffectiveScheduleForHabitOnDate, 
-    isHabitNameDuplicate,
-    clearSelectorInternalCaches,
     calculateHabitStreak,
-    shouldHabitAppearOnDate,
-    getHabitDisplayInfo
-} from './services/selectors';
-import { 
-    generateUUID, 
-    getTodayUTCIso, 
-    parseUTCIsoDate,
-    triggerHaptic,
-    getSafeDate,
-    addDays,
-    toUTCIsoDateString
-} from './utils';
-import { 
-    closeModal, 
-    showConfirmationModal, 
-    openEditModal, 
-    renderAINotificationState,
-    clearHabitDomCache,
-    renderStoicQuote
+    TIMES_OF_DAY,
+    Frequency,
+    HabitTemplate,
+    HabitSchedule,
+    getScheduleForDate,
+    PREDEFINED_HABITS,
+    getSmartGoalForHabit,
+    invalidateStreakCache,
+    getEffectiveScheduleForHabitOnDate,
+} from './state';
+// FIX: Import `renderApp` to resolve "Cannot find name" errors.
+import {
+    renderHabits,
+    showUndoToast,
+    showConfirmationModal,
+    closeModal,
+    openEditModal,
+    setupManageModal,
+    showInlineNotice,
+    renderCalendar,
+    updateHabitCardElement,
+    updateCalendarDayElement,
+    renderApp,
 } from './render';
-import { ui } from './render/ui';
-import { t, getTimeOfDayName, formatDate } from './i18n'; 
-import { runWorkerTask } from './services/cloud';
-import { apiFetch, clearKey } from './services/api';
-
-// --- STATIC MEMORY POOLS (Zero-Allocation) ---
-// Used for batch operations to avoid GC pressure.
-const _batchHabitIdsPool: string[] = [];
-const _batchHabitsRefPool: Habit[] = [];
-
-// --- STATIC TRANSACTION CONTEXT (Zero-Closure Pattern) ---
-// Holds state for pending confirmations to avoid allocating closures in hot paths.
-const ActionContext = {
-    drop: null as { habitId: string, fromTime: TimeOfDay, toTime: TimeOfDay, reorderInfo?: { id: string, pos: 'before' | 'after' } } | null,
-    removal: null as { habitId: string, time: TimeOfDay, targetDate: string } | null,
-    ending: null as { habitId: string, targetDate: string } | null,
-    deletion: null as { habitId: string } | null
-};
-
-// --- PRIVATE HELPERS ---
+import { t, getHabitDisplayInfo, getTimeOfDayName } from './i18n';
+import { ui } from './ui';
+import { renderChart } from './chart';
+import { updateAppBadge } from './badge';
 
 /**
- * Finaliza uma transação de mutação de estado.
- * PERFORMANCE: Centraliza a invalidação de cache e o disparo de eventos.
- * @param affectsHistory Se true, invalida caches estruturais profundos.
+ * Atualiza o nome de um hábito em toda a sua história.
+ * Esta é uma operação global, diferente das mudanças de agendamento.
+ * @param habit O hábito a ser atualizado.
+ * @param newName O novo nome para o hábito.
  */
-function _finalizeScheduleUpdate(affectsHistory: boolean = true) {
-    if (affectsHistory) {
-        // PERFORMANCE: Limpeza pesada.
-        clearScheduleCache();
-        clearHabitDomCache();
-        // ROBUSTNESS: Limpa caches internos de seletores.
-        clearSelectorInternalCaches();
-    } else {
-        // PERFORMANCE: Limpeza leve.
-        clearActiveHabitsCache();
-    }
-    
-    state.uiDirtyState.habitListStructure = true;
-    state.uiDirtyState.calendarVisuals = true;
-    
-    // FIRE-AND-FORGET IO
-    saveState();
-    
-    document.dispatchEvent(new CustomEvent('render-app'));
-    document.dispatchEvent(new CustomEvent('habitsChanged'));
-}
-
-/**
- * CRITICAL LOGIC: Temporal State Bifurcation.
- * Gerencia a complexidade de alterar um hábito "de agora em diante".
- */
-function _requestFutureScheduleChange(
-    habitId: string, 
-    targetDate: string, 
-    updateFn: (schedule: HabitSchedule) => HabitSchedule
-) {
-    const habit = state.habits.find(h => h.id === habitId);
-    if (!habit) return;
-
-    // Optimized reverse loop
-    let activeScheduleIndex = -1;
-    const history = habit.scheduleHistory;
-    for (let i = history.length - 1; i >= 0; i--) {
-        const s = history[i];
-        if (targetDate >= s.startDate && (!s.endDate || targetDate < s.endDate)) {
-            activeScheduleIndex = i;
-            break;
-        }
-    }
-
-    if (activeScheduleIndex !== -1) {
-        const currentSchedule = history[activeScheduleIndex];
-
-        if (currentSchedule.startDate === targetDate) {
-            // Update in-place
-            history[activeScheduleIndex] = updateFn({ ...currentSchedule });
-        } else {
-            // Bifurcation
-            currentSchedule.endDate = targetDate;
-
-            const newSchedule = updateFn({ 
-                ...currentSchedule, 
-                startDate: targetDate, 
-                endDate: undefined
-            });
-            
-            history.push(newSchedule);
-            // Sort logic is required after push
-            history.sort((a, b) => (a.startDate > b.startDate ? 1 : -1));
-        }
-    } else {
-        // Reactivation logic
-        const lastSchedule = history[history.length - 1];
-        if (!lastSchedule) {
-            console.error(`Cannot modify habit ${habitId}: No schedule history.`);
-            return;
-        }
-
-        const newSchedule = updateFn({ 
-            ...lastSchedule, 
-            startDate: targetDate, 
-            endDate: undefined 
-        });
-
-        if (lastSchedule.endDate && lastSchedule.endDate > targetDate) {
-            lastSchedule.endDate = targetDate;
-        }
-        
-        habit.graduatedOn = undefined;
-
-        history.push(newSchedule);
-        history.sort((a, b) => (a.startDate > b.startDate ? 1 : -1));
-    }
-    
-    _finalizeScheduleUpdate(true);
-}
-
-/**
- * Helper to centralize status mutations and side effects.
- */
-function _updateHabitInstanceStatus(
-    habit: Habit, 
-    instance: HabitDayData, 
-    newStatus: HabitStatus
-): boolean {
-    if (instance.status === newStatus) return false;
-
-    instance.status = newStatus;
-
-    // Special handling for 'Check' type habits
-    if (habit.goal.type === 'check') {
-        if (newStatus === 'completed') {
-            instance.goalOverride = 1;
-        } else {
-            instance.goalOverride = undefined;
-        }
-    }
-    return true;
-}
-
-/**
- * Checks for milestones.
- * SOPA OPTIMIZATION [2025-04-22]: Accepts Habit object directly.
- * Avoids O(N) lookup in selectors.
- */
-function _checkStreakMilestones(habit: Habit, dateISO: string) {
-    // Pass object reference directly
-    const streak = calculateHabitStreak(habit, dateISO);
-    
-    if (streak === STREAK_SEMI_CONSOLIDATED) {
-        const notificationKey = `${habit.id}-${STREAK_SEMI_CONSOLIDATED}`;
-        if (!state.notificationsShown.includes(notificationKey) && !state.pending21DayHabitIds.includes(habit.id)) {
-            state.pending21DayHabitIds.push(habit.id);
-            renderAINotificationState();
-        }
-    }
-    
-    if (streak === STREAK_CONSOLIDATED) {
-        const notificationKey = `${habit.id}-${STREAK_CONSOLIDATED}`;
-        if (!state.notificationsShown.includes(notificationKey) && !state.pendingConsolidationHabitIds.includes(habit.id)) {
-            state.pendingConsolidationHabitIds.push(habit.id);
-            renderAINotificationState();
-        }
-    }
-}
-
-/**
- * DATA INTEGRITY: Move os dados de execução (Status, Notas) de um horário para outro.
- * Essencial para evitar perda de dados em operações de Drag & Drop.
- */
-function _migrateInstanceData(dailyInfo: HabitDailyInfo, fromTime: TimeOfDay, toTime: TimeOfDay) {
-    const sourceInstance = dailyInfo.instances[fromTime];
-    if (sourceInstance) {
-        // Move data to new slot
-        dailyInfo.instances[toTime] = sourceInstance;
-        // Clean up old slot (V8 Optimization: undefined vs delete)
-        // Note: In sparse objects, delete might be acceptable, but undefined keeps shape stability
-        dailyInfo.instances[fromTime] = undefined; 
-        
-        // Remove undefined entry if we want to keep the object clean for serialization later
-        // But for runtime performance, we leave it or use 'delete' if memory pressure is high.
-        // Here we choose 'delete' because 'instances' map can grow with ghost keys.
-        delete dailyInfo.instances[fromTime];
-    }
-}
-
-// --- STATIC CONFIRMATION HANDLERS (DROP) ---
-
-const _applyDropJustToday = () => {
-    const ctx = ActionContext.drop;
-    if (!ctx) return;
-    const { habitId, fromTime, toTime, reorderInfo } = ctx;
-    
-    const habit = state.habits.find(h => h.id === habitId);
-    if (!habit) return;
-
-    const targetDate = getSafeDate(state.selectedDate);
-    const dailyInfo = ensureHabitDailyInfo(targetDate, habitId);
-    const currentSchedule = [...getEffectiveScheduleForHabitOnDate(habit, targetDate)];
-
-    const fromIndex = currentSchedule.indexOf(fromTime);
-    if (fromIndex > -1) {
-        currentSchedule.splice(fromIndex, 1);
-    }
-    
-    let toIndex = currentSchedule.indexOf(toTime);
-    if (toIndex === -1) {
-        currentSchedule.push(toTime);
-    }
-
-    // DATA FIX [2025-05-04]: Migrate instance data to prevent orphaned status
-    _migrateInstanceData(dailyInfo, fromTime, toTime);
-
-    dailyInfo.dailySchedule = currentSchedule;
-    
-    if (reorderInfo) {
-        const reorderTargetHabit = state.habits.find(h => h.id === reorderInfo.id);
-        if (reorderTargetHabit) {
-            reorderHabit(habitId, reorderInfo.id, reorderInfo.pos, true);
-        }
-    }
-    
-    _finalizeScheduleUpdate(false);
-    ActionContext.drop = null;
-};
-
-const _applyDropFromNowOn = () => {
-    const ctx = ActionContext.drop;
-    if (!ctx) return;
-    const { habitId, fromTime, toTime, reorderInfo } = ctx;
-
-    const targetDate = getSafeDate(state.selectedDate);
-    const dailyInfo = ensureHabitDailyInfo(targetDate, habitId);
-    
-    const currentOverride = dailyInfo.dailySchedule ? [...dailyInfo.dailySchedule] : null;
-
-    if (dailyInfo.dailySchedule) {
-        dailyInfo.dailySchedule = undefined; 
-    }
-
-    // DATA FIX [2025-05-04]: Migrate instance data for TODAY to prevent visual regression
-    _migrateInstanceData(dailyInfo, fromTime, toTime);
-
-    if (reorderInfo) {
-        reorderHabit(habitId, reorderInfo.id, reorderInfo.pos, true);
-    }
-
-    _requestFutureScheduleChange(habitId, targetDate, (scheduleToUpdate) => {
-        scheduleToUpdate.times = [...scheduleToUpdate.times];
-
-        if (currentOverride) {
-            scheduleToUpdate.times = currentOverride;
-        }
-
-        const fromIndex = scheduleToUpdate.times.indexOf(fromTime);
-        if (fromIndex > -1) {
-            scheduleToUpdate.times.splice(fromIndex, 1);
-        }
-        if (!scheduleToUpdate.times.includes(toTime)) {
-            scheduleToUpdate.times.push(toTime);
-        }
-        return scheduleToUpdate;
+function updateHabitDetails(habit: Habit, newName: string) {
+    habit.scheduleHistory.forEach(schedule => {
+        // Se era um hábito predefinido, agora se torna personalizado.
+        schedule.nameKey = undefined;
+        schedule.subtitleKey = undefined;
+        schedule.name = newName;
+        schedule.subtitle = t('customHabitSubtitle');
     });
-    
-    ActionContext.drop = null;
-};
+}
 
-// --- STATIC CONFIRMATION HANDLERS (ACTIONS) ---
 
-const _applyHabitEnding = () => {
-    const ctx = ActionContext.ending;
-    if (!ctx) return;
-    const { habitId, targetDate } = ctx;
+function updateHabitSchedule(
+    originalHabit: Habit,
+    changeDateISO: string,
+    updates: Partial<Pick<HabitSchedule, 'times' | 'frequency'>>
+): void {
+    const lastSchedule = originalHabit.scheduleHistory[originalHabit.scheduleHistory.length - 1];
 
-    _requestFutureScheduleChange(habitId, targetDate, (schedule) => {
-        schedule.endDate = targetDate;
-        return schedule;
-    });
-    
-    ActionContext.ending = null;
-};
-
-const _applyHabitDeletion = async () => {
-    const ctx = ActionContext.deletion;
-    if (!ctx) return;
-    const { habitId } = ctx;
-
-    const habit = state.habits.find(h => h.id === habitId);
-    if (!habit) return;
-
-    state.habits = state.habits.filter(h => h.id !== habitId);
-    
-    // PERF FIX [2025-05-04]: Avoid 'delete' in hot loops if possible, but here it's cleanup.
-    // However, iterating Object.values(state.dailyData) can be heavy if many days are loaded.
-    // Optimization: Only delete from currently loaded days (Hot Storage).
-    const dailyDataValues = Object.values(state.dailyData);
-    for (let i = 0; i < dailyDataValues.length; i++) {
-        const day = dailyDataValues[i];
-        if (day[habitId]) {
-            // Safe to delete here as we are removing the entity entirely
-            delete day[habitId];
-        }
-    }
-
-    const earliestDate = habit.scheduleHistory[0]?.startDate || habit.createdOn;
-    const startYear = parseInt(earliestDate.substring(0, 4), 10);
-
-    try {
-        const updatedArchives = await runWorkerTask<AppState['archives']>('prune-habit', {
-            habitId,
-            archives: state.archives,
-            startYear
-        });
-
-        for (const year in updatedArchives) {
-            const newValue = updatedArchives[year];
-            if (newValue === "") {
-                delete state.archives[year];
-                state.unarchivedCache.delete(year);
-            } else {
-                state.archives[year] = newValue;
-                state.unarchivedCache.delete(year);
-            }
-        }
-    } catch (e) {
-        console.error("Worker pruning failed:", e);
-    }
-    
-    _finalizeScheduleUpdate(true);
-    
-    if (ui.manageModal.classList.contains('visible')) {
-        closeModal(ui.manageModal);
-    }
-    
-    ActionContext.deletion = null;
-};
-
-const _applyTimeRemoval = () => {
-    const ctx = ActionContext.removal;
-    if (!ctx) return;
-    const { habitId, time, targetDate } = ctx;
-
-    if (isDateLoading(targetDate)) {
-        console.warn('Attempted to remove habit time while data is loading.');
-        return;
-    }
-
-    const dailyInfo = ensureHabitDailyInfo(targetDate, habitId);
-    
-    // V8 OPTIMIZATION: undefined assignment
-    if (dailyInfo.dailySchedule) {
-        dailyInfo.dailySchedule = undefined;
-    }
-
-    _requestFutureScheduleChange(habitId, targetDate, (scheduleToUpdate) => {
-        scheduleToUpdate.times = [...scheduleToUpdate.times];
-
-        const index = scheduleToUpdate.times.indexOf(time);
-        if (index > -1) {
-            scheduleToUpdate.times.splice(index, 1);
-        }
-        return scheduleToUpdate;
-    });
-    
-    ActionContext.removal = null;
-};
-
-// ... (export functions)
-
-const ARCHIVE_THRESHOLD_DAYS = 90; 
-
-export function performArchivalCheck() {
-    const runArchive = async () => {
-        const today = parseUTCIsoDate(getTodayUTCIso());
-        const thresholdDate = addDays(today, -ARCHIVE_THRESHOLD_DAYS);
-        const thresholdISO = toUTCIsoDateString(thresholdDate);
-        
-        const yearBuckets: Record<string, { additions: Record<string, Record<string, HabitDailyInfo>>, base?: any }> = {};
-        const keysToRemove: string[] = [];
-
-        // Object.keys is O(N) but N is small (cached days < 90 + margin)
-        const dailyKeys = Object.keys(state.dailyData);
-        for (const dateStr of dailyKeys) {
-            if (dateStr < thresholdISO) {
-                const year = dateStr.substring(0, 4);
-                if (!yearBuckets[year]) {
-                    yearBuckets[year] = { additions: {} };
-                    if (state.unarchivedCache.has(year)) {
-                        yearBuckets[year].base = state.unarchivedCache.get(year);
-                    } else if (state.archives[year]) {
-                        yearBuckets[year].base = state.archives[year];
-                    }
-                }
-                yearBuckets[year].additions[dateStr] = state.dailyData[dateStr];
-                keysToRemove.push(dateStr);
-            }
-        }
-
-        if (keysToRemove.length === 0) return;
-
-        try {
-            console.log(`Offloading archive task for ${keysToRemove.length} days to worker...`);
-            type ArchiveOutput = Record<string, string>;
-            const newArchives = await runWorkerTask<ArchiveOutput>('archive', yearBuckets);
-
-            let totalMoved = 0;
-
-            for (const year in newArchives) {
-                const additionsForYear = yearBuckets[year].additions;
-                let isYearStale = false;
-
-                // Validation
-                for (const dateStr in additionsForYear) {
-                    const originalDataSent = additionsForYear[dateStr];
-                    const currentDataInState = state.dailyData[dateStr];
-                    if (JSON.stringify(originalDataSent) !== JSON.stringify(currentDataInState)) {
-                        isYearStale = true;
-                        console.warn(`[ARCHIVE] Stale data detected for year ${year}. Aborting.`);
-                        break; 
-                    }
-                }
-
-                if (!isYearStale) {
-                    state.archives[year] = newArchives[year];
-                    state.unarchivedCache.delete(year);
-                    
-                    const keysForThisYear = Object.keys(additionsForYear);
-                    // Optimized deletion: 'delete' here is necessary to free memory
-                    for(const k of keysForThisYear) {
-                        delete state.dailyData[k];
-                    }
-                    totalMoved += keysForThisYear.length;
-                }
-            }
-            
-            if (totalMoved > 0) {
-                 console.log(`Archiving complete. Moved ${totalMoved} records.`);
-                 await saveState();
-            }
-
-        } catch (e) {
-            console.error("Archive task failed in worker:", e);
-        }
+    const newSchedule: HabitSchedule = {
+        startDate: changeDateISO,
+        scheduleAnchor: changeDateISO,
+        name: lastSchedule.name,
+        subtitle: lastSchedule.subtitle,
+        nameKey: lastSchedule.nameKey,
+        subtitleKey: lastSchedule.subtitleKey,
+        times: updates.times ?? lastSchedule.times,
+        frequency: updates.frequency ?? lastSchedule.frequency,
     };
+    
+    lastSchedule.endDate = changeDateISO;
+    originalHabit.scheduleHistory.push(newSchedule);
 
-    if ('requestIdleCallback' in window) {
-        requestIdleCallback(() => { runArchive().catch(console.error); }, { timeout: 10000 });
-    } else {
-        setTimeout(() => { runArchive().catch(console.error); }, 5000);
-    }
+    const changeDate = parseUTCIsoDate(changeDateISO);
+    Object.keys(state.dailyData).forEach(dateStr => {
+        const currentDate = parseUTCIsoDate(dateStr);
+        if (currentDate >= changeDate && state.dailyData[dateStr][originalHabit.id]) {
+            const dataToClean = state.dailyData[dateStr][originalHabit.id]!;
+            
+            if (updates.times) {
+                const newTimesSet = new Set(updates.times);
+                for (const time in dataToClean.instances) {
+                    if (!newTimesSet.has(time as TimeOfDay)) {
+                        delete dataToClean.instances[time as TimeOfDay];
+                    }
+                }
+            }
+        }
+    });
 }
 
-export function createDefaultHabit() {
-    const defaultTemplate = PREDEFINED_HABITS.find(h => h.isDefault);
-    if (defaultTemplate) {
-        // MONOMORPHISM: Ensure property order matches 'Habit' interface strictly
-        const newHabit: Habit = {
-            id: generateUUID(),
-            icon: defaultTemplate.icon,
-            color: defaultTemplate.color,
-            goal: defaultTemplate.goal,
-            createdOn: getTodayUTCIso(),
-            graduatedOn: undefined, // Explicit undefined for shape stability
-            scheduleHistory: [{
-                startDate: getTodayUTCIso(),
-                endDate: undefined,
-                name: undefined,
-                subtitle: undefined,
-                nameKey: defaultTemplate.nameKey,
-                subtitleKey: defaultTemplate.subtitleKey,
-                times: defaultTemplate.times,
-                frequency: defaultTemplate.frequency,
-                scheduleAnchor: getTodayUTCIso()
-            }]
-        };
-        state.habits.push(newHabit);
-        _finalizeScheduleUpdate(true);
-    }
-}
-
-// FACTORY: PILOTO DE GOVERNANÇA [2025-05-05]
-// Cria o hábito 'piloto' com DNA filosófico embutido para testes de tutoria.
-export function createBreathGovernanceHabit(): Habit {
-    const id = generateUUID();
-    const today = getTodayUTCIso();
-
-    return {
-        id,
-        icon: HABIT_ICONS.wind, // Uso do novo ícone 'wind' definido em data/icons.ts
-        color: '#4A90E2', // Azul claro etéreo para Pneuma/Sopro
-        goal: {
-            type: 'check',
-            total: 1,
-            unitKey: 'unitCheck'
-        },
-        createdOn: today,
-        graduatedOn: undefined,
+function addHabit(template: HabitTemplate) {
+    const newHabit: Habit = {
+        id: generateUUID(),
+        icon: template.icon,
+        color: template.color,
+        goal: template.goal,
+        createdOn: state.selectedDate,
         scheduleHistory: [{
-            startDate: today,
-            times: ['Morning'],
-            frequency: { type: 'daily' },
-            nameKey: undefined, 
-            name: "Governança do Sopro", // Nome hardcoded para o piloto
-            subtitleKey: undefined,
-            subtitle: "O retorno ao controle da alma",
-            scheduleAnchor: today
+            startDate: state.selectedDate,
+            scheduleAnchor: state.selectedDate,
+            times: template.times,
+            frequency: template.frequency,
+            ...('nameKey' in template ? { nameKey: template.nameKey, subtitleKey: template.subtitleKey } : { name: template.name, subtitle: template.subtitle })
         }],
-        philosophy: {
-            sphere: 'Biological',
-            level: 1,
-            virtue: 'Temperance',
-            discipline: 'Desire',
-            nature: 'Addition',
-            conscienceKey: 'habit.breath.conscience',
-            stoicConcept: 'Prosoche / Pneuma',
-            masterQuoteId: 'quote_breath_master_001'
-        }
     };
-}
-
-export function reorderHabit(movedHabitId: string, targetHabitId: string, position: 'before' | 'after', skipFinalize = false) {
-    const habits = state.habits;
-    const movedIndex = habits.findIndex(h => h.id === movedHabitId);
-    const targetIndex = habits.findIndex(h => h.id === targetHabitId);
-
-    if (movedIndex === -1 || targetIndex === -1) return;
-
-    const [movedHabit] = habits.splice(movedIndex, 1);
-    
-    const newTargetIndex = (movedIndex < targetIndex) ? targetIndex - 1 : targetIndex;
-    const insertIndex = position === 'before' ? newTargetIndex : newTargetIndex + 1;
-    
-    habits.splice(insertIndex, 0, movedHabit);
-
-    if (!skipFinalize) {
-        _finalizeScheduleUpdate(false);
-    }
-}
-
-export function handleHabitDrop(
-    habitId: string, 
-    fromTime: TimeOfDay, 
-    toTime: TimeOfDay,
-    reorderInfo?: { id: string, pos: 'before' | 'after' }
-) {
-    const habit = state.habits.find(h => h.id === habitId);
-    if (!habit) return;
-    
-    const targetDate = getSafeDate(state.selectedDate);
-    
-    // Set transaction context
-    ActionContext.drop = { habitId, fromTime, toTime, reorderInfo };
-
-    const timeNames = { oldTime: getTimeOfDayName(fromTime), newTime: getTimeOfDayName(toTime) };
-    const habitName = getHabitDisplayInfo(habit, targetDate).name;
-
-    showConfirmationModal(
-        t('confirmHabitMove', { habitName, ...timeNames }),
-        _applyDropFromNowOn, // Static handler
-        {
-            title: t('modalMoveHabitTitle'),
-            confirmText: t('buttonFromNowOn'),
-            editText: t('buttonJustToday'),
-            onEdit: _applyDropJustToday // Static handler
-        }
-    );
+    state.habits.push(newHabit);
 }
 
 export function saveHabitFromModal() {
     if (!state.editingHabit) return;
 
-    const { isNew, habitId, formData, targetDate } = state.editingHabit;
+    const { isNew, habitId, originalData, formData } = state.editingHabit;
+    const form = ui.editHabitForm;
+    const nameInput = form.elements.namedItem('habit-name') as HTMLInputElement;
+    const noticeEl = form.querySelector<HTMLElement>('.duplicate-habit-notice')!;
+    const habitName = nameInput.value.trim();
 
-    // SECURITY [2025-05-04]: Prompt Injection Sanitization.
-    // Garante que o nome não contenha caracteres que possam confundir a IA ou injetar HTML.
-    // Remove tags HTML, delimitadores de template e caracteres de controle (0-31).
-    if (formData.name) {
-        formData.name = formData.name.replace(/[<>{}]/g, '').replace(/[\x00-\x1F\x7F]/g, '').trim();
+    if (!habitName) {
+        showInlineNotice(noticeEl, t('noticeNameCannotBeEmpty'));
+        return;
     }
-    
-    const displayName = formData.nameKey ? t(formData.nameKey) : formData.name;
 
-    if (!displayName) {
-        return; 
+    const selectedTimes = Array.from(form.querySelectorAll<HTMLInputElement>('input[name="habit-time"]:checked')).map(cb => cb.value as TimeOfDay);
+    if (selectedTimes.length === 0) {
+        showInlineNotice(noticeEl, t('noticeSelectAtLeastOneTime'));
+        return;
     }
-    if (isHabitNameDuplicate(displayName, habitId)) {
-        console.warn(`Save blocked due to duplicate name: "${displayName}"`);
+
+    formData.times = selectedTimes;
+
+    const isDuplicate = state.habits.some(h => {
+        const displayName = getHabitDisplayInfo(h).name;
+        const lastSchedule = h.scheduleHistory[h.scheduleHistory.length - 1];
+        const isActive = !lastSchedule.endDate && !h.graduatedOn;
+
+        if (isNew) {
+            return isActive && displayName.toLowerCase() === habitName.toLowerCase();
+        } else {
+            return isActive && h.id !== habitId && displayName.toLowerCase() === habitName.toLowerCase();
+        }
+    });
+
+    if (isDuplicate) {
+        showInlineNotice(noticeEl, t('noticeDuplicateHabitWithName'));
         return;
     }
     
     if (isNew) {
-        // MONOMORPHISM: Ensure strict shape matching
-        const newHabit: Habit = {
-            id: generateUUID(),
-            icon: formData.icon,
-            color: formData.color,
-            goal: formData.goal,
-            createdOn: targetDate,
-            graduatedOn: undefined,
-            scheduleHistory: [{
-                startDate: targetDate,
-                endDate: undefined,
+        const reusableHabit = state.habits.find(h => {
+            const lastSchedule = h.scheduleHistory[h.scheduleHistory.length - 1];
+            const isEnded = !!lastSchedule.endDate || !!h.graduatedOn;
+            const displayName = getHabitDisplayInfo(h).name;
+            return isEnded && displayName.toLowerCase() === habitName.toLowerCase();
+        });
+
+        if (reusableHabit) {
+            const newSchedule: HabitSchedule = {
+                startDate: state.selectedDate,
+                scheduleAnchor: state.selectedDate,
                 times: formData.times,
                 frequency: formData.frequency,
-                name: formData.name,
-                nameKey: formData.nameKey,
-                subtitle: undefined,
-                subtitleKey: formData.subtitleKey,
-                scheduleAnchor: targetDate
-            }],
-            // Preserva metadados filosóficos se presentes no template
-            philosophy: formData.philosophy
-        };
-        state.habits.push(newHabit);
-        _finalizeScheduleUpdate(true);
-    } else {
-        const habit = state.habits.find(h => h.id === habitId);
-        if (!habit) return;
+            };
 
-        habit.icon = formData.icon;
-        habit.color = formData.color;
-        habit.goal = formData.goal;
-        
-        // Atualiza a filosofia se presente no form data (edição avançada futura)
-        if (formData.philosophy) {
-            habit.philosophy = formData.philosophy;
-        }
-
-        const dailyInfo = ensureHabitDailyInfo(targetDate, habit.id);
-        // V8 OPTIMIZATION: Avoid 'delete'
-        if (dailyInfo.dailySchedule) {
-            dailyInfo.dailySchedule = undefined;
-        }
-
-        const firstSchedule = habit.scheduleHistory[0];
-
-        if (targetDate < firstSchedule.startDate) {
-            firstSchedule.startDate = targetDate;
-            firstSchedule.name = formData.name;
-            firstSchedule.nameKey = formData.nameKey;
-            firstSchedule.times = formData.times;
-            firstSchedule.frequency = formData.frequency;
-            firstSchedule.scheduleAnchor = targetDate;
+            if ('nameKey' in formData) {
+                newSchedule.nameKey = formData.nameKey;
+                newSchedule.subtitleKey = formData.subtitleKey;
+            } else {
+                newSchedule.name = formData.name;
+                newSchedule.subtitle = formData.subtitle;
+            }
             
-            _finalizeScheduleUpdate(true);
-        } else {
-            _requestFutureScheduleChange(habit.id, targetDate, (schedule) => {
-                schedule.name = formData.name;
-                schedule.nameKey = formData.nameKey;
-                schedule.times = formData.times;
-                schedule.frequency = formData.frequency;
-                return schedule;
-            });
-        }
-    }
+            reusableHabit.scheduleHistory.push(newSchedule);
+            reusableHabit.icon = formData.icon;
+            reusableHabit.color = formData.color;
+            reusableHabit.goal = formData.goal;
+            reusableHabit.graduatedOn = undefined;
 
-    closeModal(ui.editHabitModal);
-    state.editingHabit = null;
+            finishSave();
+        } else {
+            const isPastDate = parseUTCIsoDate(state.selectedDate) < parseUTCIsoDate(getTodayUTCIso());
+            if (isPastDate) {
+                showConfirmationModal(
+                    t('confirmNewHabitPastDate', { habitName, date: state.selectedDate }),
+                    () => {
+                        addHabit(formData);
+                        finishSave();
+                    }
+                );
+            } else {
+                addHabit(formData);
+                finishSave();
+            }
+        }
+    } else if (originalData) {
+        const latestSchedule = originalData.scheduleHistory[originalData.scheduleHistory.length - 1];
+        const nameChanged = getHabitDisplayInfo(originalData).name !== habitName;
+        const timesChanged = JSON.stringify(latestSchedule.times.sort()) !== JSON.stringify(formData.times.sort());
+        const freqChanged = JSON.stringify(latestSchedule.frequency) !== JSON.stringify(formData.frequency);
+        const scheduleChanged = timesChanged || freqChanged;
+
+        if (nameChanged) updateHabitDetails(originalData, habitName);
+        if (scheduleChanged) {
+            const isTodayOrFuture = parseUTCIsoDate(state.selectedDate) >= parseUTCIsoDate(getTodayUTCIso());
+            if (isTodayOrFuture) {
+                updateHabitSchedule(originalData, state.selectedDate, { times: formData.times, frequency: formData.frequency });
+            } else {
+                showConfirmationModal(
+                    t('confirmScheduleChange', { habitName, date: state.selectedDate }),
+                    () => {
+                        updateHabitSchedule(originalData, state.selectedDate, { times: formData.times, frequency: formData.frequency });
+                        finishSave();
+                    },
+                    {
+                        title: t('modalEditTitle'),
+                        confirmText: t('confirmButton'),
+                        cancelText: t('cancelButton')
+                    }
+                );
+                return;
+            }
+        }
+        finishSave();
+    }
 }
 
-// PERFORMANCE: Hoisted Intl Options
-const OPTS_CONFIRM_DATE: Intl.DateTimeFormatOptions = {
-    day: 'numeric',
-    month: 'long',
-    timeZone: 'UTC'
-};
+function finishSave() {
+    closeModal(ui.editHabitModal);
+    state.editingHabit = null;
+    saveState();
+    renderHabits();
+    renderCalendar();
+    renderChart();
+    updateAppBadge();
+    document.dispatchEvent(new CustomEvent('habitsChanged'));
+}
+
+export function createDefaultHabit() {
+    const waterHabitTemplate = PREDEFINED_HABITS.find(h => h.isDefault);
+    if (waterHabitTemplate) {
+        addHabit(waterHabitTemplate);
+    }
+}
+
+export function toggleHabitStatus(habitId: string, time: TimeOfDay) {
+    const dayData = ensureHabitInstanceData(state.selectedDate, habitId, time);
+    dayData.status = getNextStatus(dayData.status);
+
+    invalidateStreakCache(habitId, state.selectedDate);
+
+    const habitCard = document.querySelector<HTMLElement>(`.habit-card[data-habit-id="${habitId}"][data-time="${time}"]`);
+    if (habitCard) {
+        updateHabitCardElement(habitCard);
+    }
+
+    updateCalendarDayElement(state.selectedDate);
+    renderChart();
+    
+    saveState();
+    updateAppBadge();
+
+    const streak = calculateHabitStreak(habitId, state.selectedDate);
+    if (streak === STREAK_SEMI_CONSOLIDATED) {
+        if (!state.notificationsShown.includes(habitId) && !state.pending21DayHabitIds.includes(habitId)) {
+            state.pending21DayHabitIds.push(habitId);
+        }
+    } else if (streak === STREAK_CONSOLIDATED) {
+        if (!state.notificationsShown.includes(habitId) && !state.pendingConsolidationHabitIds.includes(habitId)) {
+            state.pendingConsolidationHabitIds.push(habitId);
+        }
+    }
+}
+
+export function updateGoalOverride(habitId: string, date: string, time: TimeOfDay, newGoal: number) {
+    const dayData = ensureHabitInstanceData(date, habitId, time);
+    dayData.goalOverride = newGoal;
+    
+    saveState();
+}
+
+function endHabit(habit: Habit, dateISO: string) {
+    const lastSchedule = habit.scheduleHistory[habit.scheduleHistory.length - 1];
+    lastSchedule.endDate = dateISO;
+    state.lastEnded = { habitId: habit.id, lastSchedule };
+
+    invalidateStreakCache(habit.id, dateISO);
+    
+    saveState();
+    renderHabits();
+    renderCalendar();
+    renderChart();
+    updateAppBadge();
+    document.dispatchEvent(new CustomEvent('habitsChanged'));
+    showUndoToast();
+}
+
+export function handleUndoDelete() {
+    if (state.lastEnded) {
+        const habit = state.habits.find(h => h.id === state.lastEnded?.habitId);
+        if (habit) {
+            const lastSchedule = habit.scheduleHistory[habit.scheduleHistory.length - 1];
+            if (lastSchedule === state.lastEnded.lastSchedule) {
+                delete lastSchedule.endDate;
+                invalidateStreakCache(habit.id, lastSchedule.startDate);
+            }
+        }
+        
+        saveState();
+        renderHabits();
+        renderCalendar();
+        renderChart();
+        updateAppBadge();
+        document.dispatchEvent(new CustomEvent('habitsChanged'));
+    }
+    
+    if (state.undoTimeout) clearTimeout(state.undoTimeout);
+    ui.undoToast.classList.remove('visible');
+    state.lastEnded = null;
+}
 
 export function requestHabitEndingFromModal(habitId: string) {
     const habit = state.habits.find(h => h.id === habitId);
     if (!habit) return;
 
-    const targetDate = getSafeDate(state.selectedDate);
-    const { name } = getHabitDisplayInfo(habit, targetDate);
-    
-    const dateObj = parseUTCIsoDate(targetDate);
-    const formattedDate = formatDate(dateObj, OPTS_CONFIRM_DATE);
-    
-    ActionContext.ending = { habitId, targetDate };
+    const { name } = getHabitDisplayInfo(habit);
+    const date = parseUTCIsoDate(getTodayUTCIso()).toLocaleDateString(state.activeLanguageCode, { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' });
 
     showConfirmationModal(
-        t('confirmEndHabit', { habitName: name, date: formattedDate }),
-        _applyHabitEnding, // Static handler
-        { confirmButtonStyle: 'danger', confirmText: t('endButton') }
+        t('confirmEndHabit', { habitName: escapeHTML(name), date }),
+        () => {
+            endHabit(habit, getTodayUTCIso());
+            setupManageModal();
+        },
+        { title: t('modalEndHabitTitle'), confirmText: t('buttonEndHabit') }
     );
 }
 
 export function requestHabitPermanentDeletion(habitId: string) {
     const habit = state.habits.find(h => h.id === habitId);
     if (!habit) return;
-    
-    const { name } = getHabitDisplayInfo(habit);
-    
-    ActionContext.deletion = { habitId };
 
+    const { name } = getHabitDisplayInfo(habit);
     showConfirmationModal(
-        t('confirmPermanentDelete', { habitName: name }),
-        _applyHabitDeletion, // Static handler
-        { confirmButtonStyle: 'danger', confirmText: t('deleteButton') }
+        t('confirmPermanentDelete', { habitName: escapeHTML(name) }),
+        () => {
+            state.habits = state.habits.filter(h => h.id !== habitId);
+            Object.keys(state.dailyData).forEach(date => {
+                delete state.dailyData[date][habitId];
+            });
+            saveState();
+            setupManageModal();
+            renderApp();
+            updateAppBadge();
+            document.dispatchEvent(new CustomEvent('habitsChanged'));
+        },
+        { confirmText: t('modalManageResetButton'), title: t('aria_delete_permanent', { habitName: name }) }
     );
 }
 
 export function requestHabitEditingFromModal(habitId: string) {
     const habit = state.habits.find(h => h.id === habitId);
     if (habit) {
-        closeModal(ui.manageModal);
         openEditModal(habit);
     }
+}
+
+
+function moveHabitSchedule(habitId: string, fromTime: TimeOfDay, toTime: TimeOfDay, permanent: boolean) {
+    const habit = state.habits.find(h => h.id === habitId);
+    if (!habit) return;
+
+    const changeDate = state.selectedDate;
+    const changeDateObj = parseUTCIsoDate(changeDate);
+
+    const dataToMove = state.dailyData[changeDate]?.[habitId]?.instances[fromTime];
+    
+    if (permanent) {
+        const lastSchedule = habit.scheduleHistory[habit.scheduleHistory.length - 1];
+        lastSchedule.endDate = changeDate;
+
+        const newTimes = lastSchedule.times.filter(t => t !== fromTime);
+        if (!newTimes.includes(toTime)) newTimes.push(toTime);
+
+        const newSchedule: HabitSchedule = {
+            ...lastSchedule,
+            startDate: changeDate,
+            scheduleAnchor: changeDate,
+            endDate: undefined,
+            times: newTimes,
+        };
+        habit.scheduleHistory.push(newSchedule);
+
+    } else { // Just for today
+        const dailyInfo = state.dailyData[changeDate]?.[habitId] ?? { instances: {} };
+        const activeSchedule = getScheduleForDate(habit, changeDateObj);
+        if (!activeSchedule) return;
+
+        const originalTimes = dailyInfo.dailySchedule || activeSchedule.times;
+        const newTimes = originalTimes.filter(t => t !== fromTime);
+        if (!newTimes.includes(toTime)) newTimes.push(toTime);
+
+        dailyInfo.dailySchedule = newTimes;
+        
+        if (!state.dailyData[changeDate]) state.dailyData[changeDate] = {};
+        state.dailyData[changeDate][habitId] = dailyInfo;
+    }
+    
+    if (dataToMove) {
+        const toInstance = ensureHabitInstanceData(changeDate, habitId, toTime);
+        Object.assign(toInstance, dataToMove);
+        delete state.dailyData[changeDate][habitId].instances[fromTime];
+    }
+
+    saveState();
+    renderHabits();
+    renderCalendar();
+    renderChart();
+    updateAppBadge();
+}
+
+export function handleHabitDrop(habitId: string, fromTime: TimeOfDay, toTime: TimeOfDay) {
+    const habit = state.habits.find(h => h.id === habitId);
+    if (!habit) return;
+
+    const { name } = getHabitDisplayInfo(habit);
+    const fromTimeName = getTimeOfDayName(fromTime);
+    const toTimeName = getTimeOfDayName(toTime);
+
+    showConfirmationModal(
+        t('confirmHabitMove', { habitName: name, oldTime: fromTimeName, newTime: toTimeName }),
+        () => moveHabitSchedule(habitId, fromTime, toTime, true),
+        {
+            title: t('modalMoveHabitTitle'),
+            onEdit: () => moveHabitSchedule(habitId, fromTime, toTime, false),
+            confirmText: t('buttonFromNowOn'),
+            editText: t('buttonJustToday'),
+        }
+    );
+}
+
+export function requestHabitTimeRemoval(habitId: string, timeToRemove: TimeOfDay) {
+    const habit = state.habits.find(h => h.id === habitId);
+    if (!habit) return;
+
+    const { name } = getHabitDisplayInfo(habit);
+    const date = parseUTCIsoDate(state.selectedDate).toLocaleDateString(state.activeLanguageCode, { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' });
+    const timeName = getTimeOfDayName(timeToRemove);
+
+    showConfirmationModal(
+        t('confirmRemoveTime', { habitName: escapeHTML(name), time: timeName, date }),
+        () => { // onConfirm: permanent change
+            const lastSchedule = habit.scheduleHistory[habit.scheduleHistory.length - 1];
+            const newTimes = lastSchedule.times.filter(t => t !== timeToRemove);
+
+            if (newTimes.length === 0) { // If it's the last time, end the habit
+                endHabit(habit, state.selectedDate);
+            } else {
+                updateHabitSchedule(habit, state.selectedDate, { times: newTimes });
+            }
+            saveState();
+            renderHabits();
+            renderCalendar();
+            renderChart();
+        },
+        {
+            title: t('modalRemoveTimeTitle'),
+            confirmText: t('buttonFromNowOn'),
+            editText: t('buttonJustToday'),
+            onEdit: () => { // onEdit: temporary change
+                const dailyInfo = state.dailyData[state.selectedDate]?.[habitId] ?? { instances: {} };
+                const activeSchedule = getScheduleForDate(habit, state.selectedDate);
+                if (!activeSchedule) return;
+
+                const originalTimes = dailyInfo.dailySchedule || activeSchedule.times;
+                const newTimes = originalTimes.filter(t => t !== timeToRemove);
+                
+                dailyInfo.dailySchedule = newTimes;
+
+                if (!state.dailyData[state.selectedDate]) state.dailyData[state.selectedDate] = {};
+                state.dailyData[state.selectedDate][habitId] = dailyInfo;
+
+                delete state.dailyData[state.selectedDate]?.[habitId]?.instances?.[timeToRemove];
+                
+                saveState();
+                renderHabits();
+                renderCalendar();
+                renderChart();
+            }
+        }
+    );
+}
+
+export function reorderHabit(draggedId: string, targetId: string, position: 'before' | 'after') {
+    const habitIndex = state.habits.findIndex(h => h.id === draggedId);
+    const targetIndex = state.habits.findIndex(h => h.id === targetId);
+    if (habitIndex === -1 || targetIndex === -1) return;
+
+    const [draggedHabit] = state.habits.splice(habitIndex, 1);
+    const newTargetIndex = state.habits.findIndex(h => h.id === targetId);
+    const insertIndex = position === 'before' ? newTargetIndex : newTargetIndex + 1;
+    
+    state.habits.splice(insertIndex, 0, draggedHabit);
+    
+    saveState();
+    renderHabits();
+}
+
+export function completeAllHabitsForDate(date: string) {
+    const dateObj = parseUTCIsoDate(date);
+    const activeHabitsOnDate = state.habits.filter(h => shouldHabitAppearOnDate(h, dateObj));
+
+    activeHabitsOnDate.forEach(habit => {
+        const scheduleForDay = getEffectiveScheduleForHabitOnDate(habit, date);
+        scheduleForDay.forEach(time => {
+            const dayData = ensureHabitInstanceData(date, habit.id, time);
+            if(dayData.status === 'pending') dayData.status = 'completed';
+        });
+        invalidateStreakCache(habit.id, date);
+    });
+    
+    saveState();
+    renderHabits();
+    renderCalendar();
+    renderChart();
+    updateAppBadge();
+}
+
+export function snoozeAllHabitsForDate(date: string) {
+    const dateObj = parseUTCIsoDate(date);
+    const activeHabitsOnDate = state.habits.filter(h => shouldHabitAppearOnDate(h, dateObj));
+
+    activeHabitsOnDate.forEach(habit => {
+        const scheduleForDay = getEffectiveScheduleForHabitOnDate(habit, date);
+        scheduleForDay.forEach(time => {
+            const dayData = ensureHabitInstanceData(date, habit.id, time);
+            if(dayData.status === 'pending' || dayData.status === 'completed') dayData.status = 'snoozed';
+        });
+        invalidateStreakCache(habit.id, date);
+    });
+    
+    saveState();
+    renderHabits();
+    renderCalendar();
+    renderChart();
+    updateAppBadge();
+}
+
+export function handleSaveNote() {
+    if (!state.editingNoteFor) return;
+    const { habitId, date, time } = state.editingNoteFor;
+    const noteText = ui.notesTextarea.value.trim();
+    const dayData = ensureHabitInstanceData(date, habitId, time);
+    dayData.note = noteText;
+    
+    const card = document.querySelector<HTMLElement>(`.habit-card[data-habit-id="${habitId}"][data-time="${time}"]`);
+    if(card) {
+        const noteBtn = card.querySelector<HTMLButtonElement>('.swipe-note-btn');
+        if(noteBtn) {
+            noteBtn.classList.toggle('has-note', noteText.length > 0);
+            noteBtn.setAttribute('aria-label', t(noteText.length > 0 ? 'habitNoteEdit_ariaLabel' : 'habitNoteAdd_ariaLabel'));
+        }
+    }
+    
+    closeModal(ui.notesModal);
+    state.editingNoteFor = null;
+    saveState();
+}
+
+export function resetApplicationData() {
+    state.habits = [];
+    state.dailyData = {};
+    state.streaksCache = {};
+    state.notificationsShown = [];
+    state.pending21DayHabitIds = [];
+    state.pendingConsolidationHabitIds = [];
+    saveState();
+    renderApp();
+    updateAppBadge();
+    closeModal(ui.manageModal);
 }
 
 export function graduateHabit(habitId: string) {
     const habit = state.habits.find(h => h.id === habitId);
     if (!habit) return;
 
-    const targetDate = getSafeDate(state.selectedDate);
-    habit.graduatedOn = targetDate;
-    _finalizeScheduleUpdate(true);
-    closeModal(ui.manageModal);
-    
-    triggerHaptic('success');
-}
-
-export async function resetApplicationData() {
-    state.habits = [];
-    state.dailyData = {};
-    state.archives = {};
-    state.notificationsShown = [];
-    state.pending21DayHabitIds = [];
-    state.pendingConsolidationHabitIds = [];
-    
-    await clearLocalPersistence();
-    clearKey();
-    
-    location.reload();
-}
-
-export function handleSaveNote() {
-    if (!state.editingNoteFor) return;
-
-    const { habitId, date, time } = state.editingNoteFor;
-    const noteContent = ui.notesTextarea.value.trim();
-
-    if (isDateLoading(date)) {
-        console.warn('Attempted to save note while data is loading.');
-        return;
-    }
-
-    const instance = ensureHabitInstanceData(date, habitId, time);
-
-    if ((instance.note || '') !== noteContent) {
-        if (noteContent) {
-            instance.note = noteContent;
-        } else {
-            // V8 OPTIMIZATION: Use undefined instead of delete
-            instance.note = undefined;
-        }
-
-        state.uiDirtyState.habitListStructure = true;
-        saveState();
-        document.dispatchEvent(new CustomEvent('render-app'));
-    }
-
-    closeModal(ui.notesModal);
-}
-
-// AI DIAGNOSIS LOGIC [2025-05-06]
-export async function checkAndAnalyzeDayContext(dateISO: string) {
-    // 1. Check if we already have a diagnosis for today
-    if (state.dailyDiagnoses[dateISO]) {
-        // Diagnosis exists, make sure to render the quote with this context
-        renderStoicQuote();
-        return;
-    }
-
-    // 2. Check if we have notes to analyze
-    const dailyData = getHabitDailyInfoForDate(dateISO);
-    let allNotes = '';
-    
-    for (const habitId in dailyData) {
-        const info = dailyData[habitId];
-        for (const time in info.instances) {
-            const note = info.instances[time as TimeOfDay]?.note;
-            if (note) {
-                allNotes += `- ${note}\n`;
-            }
-        }
-    }
-
-    if (!allNotes.trim()) {
-        // No notes, no analysis needed.
-        return;
-    }
-
-    // 3. Perform Analysis (Background Worker)
-    if (!navigator.onLine) return; // Must be online for AI
-
-    try {
-        const translations = {
-            aiPromptQuote: t('aiPromptQuote'),
-            aiSystemInstructionQuote: t('aiSystemInstructionQuote')
-        };
-        
-        // Step 1: Worker builds the prompt (off-main-thread)
-        const { prompt, systemInstruction } = await runWorkerTask<{ prompt: string, systemInstruction: string }>('build-quote-analysis-prompt', {
-            notes: allNotes,
-            themeList: t('aiThemeList'),
-            languageName: t(state.activeLanguageCode === 'pt' ? 'langPortuguese' : (state.activeLanguageCode === 'es' ? 'langSpanish' : 'langEnglish')),
-            translations
-        });
-
-        // Step 2: Call API
-        const response = await apiFetch('/api/analyze', {
-            method: 'POST',
-            body: JSON.stringify({ prompt, systemInstruction }),
-        });
-
-        const jsonText = await response.text();
-        
-        // Step 3: Parse Result (Expect JSON from AI)
-        // Sanitization: Sometimes AI adds ```json blocks
-        const cleanJson = jsonText.replace(/```json/g, '').replace(/```/g, '').trim();
-        const result = JSON.parse(cleanJson);
-        
-        if (result && result.analysis && result.relevant_themes) {
-            // Save to State
-            state.dailyDiagnoses[dateISO] = {
-                level: result.analysis.determined_level,
-                themes: result.relevant_themes,
-                timestamp: Date.now()
-            };
-            
-            // Persist & Update UI
-            saveState();
-            renderStoicQuote();
-        }
-
-    } catch (e) {
-        console.error("Failed to analyze day context", e);
-    }
-}
-
-let lastAIRequestId = 0;
-
-export async function performAIAnalysis(analysisType: 'monthly' | 'quarterly' | 'historical') {
-    if (state.aiState === 'loading') return;
-
-    state.aiState = 'loading';
-    state.hasSeenAIResult = false;
-    
-    const requestId = ++lastAIRequestId;
-    
-    renderAINotificationState();
-    closeModal(ui.aiOptionsModal);
-
-    try {
-        let promptTemplateKey = 'aiPromptGeneral';
-        if (analysisType === 'monthly') {
-            promptTemplateKey = 'aiPromptMonthly';
-        } else if (analysisType === 'quarterly') {
-            promptTemplateKey = 'aiPromptQuarterly';
-        }
-
-        const translations: Record<string, string> = {
-            promptTemplate: t(promptTemplateKey),
-            aiPromptGraduatedSection: t('aiPromptGraduatedSection'),
-            aiPromptNoData: t('aiPromptNoData'),
-            aiPromptNone: t('aiPromptNone'),
-            aiSystemInstruction: t('aiSystemInstruction'),
-        };
-        
-        // Zero-allocation loop
-        for (const h of PREDEFINED_HABITS) {
-            translations[h.nameKey] = t(h.nameKey);
-        }
-
-        const { prompt, systemInstruction } = await runWorkerTask<{ prompt: string, systemInstruction: string }>(
-            'build-ai-prompt',
-            {
-                analysisType,
-                habits: state.habits,
-                dailyData: state.dailyData,
-                archives: state.archives,
-                languageName: t(state.activeLanguageCode === 'pt' ? 'langPortuguese' : (state.activeLanguageCode === 'es' ? 'langSpanish' : 'langEnglish')),
-                translations,
-                todayISO: getTodayUTCIso()
-            }
-        );
-
-        if (requestId !== lastAIRequestId) return;
-
-        const response = await apiFetch('/api/analyze', {
-            method: 'POST',
-            body: JSON.stringify({ prompt, systemInstruction }),
-        });
-
-        const text = await response.text();
-        
-        if (requestId !== lastAIRequestId) return;
-
-        state.lastAIResult = text;
-        state.aiState = 'completed';
-    } catch (error) {
-        if (requestId !== lastAIRequestId) return; 
-        
-        console.error("AI Analysis failed", error);
-        state.lastAIError = String(error);
-        state.aiState = 'error';
-        state.lastAIResult = t('aiErrorGeneric');
-    } finally {
-        if (requestId === lastAIRequestId) {
-            saveState();
-            renderAINotificationState();
-        }
-    }
-}
-
-export function exportData() {
-    const dataStr = JSON.stringify(getPersistableState(), null, 2);
-    const blob = new Blob([dataStr], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `askesis-backup-${getTodayUTCIso()}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-}
-
-export function importData() {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'application/json';
-    input.onchange = async (e) => {
-        const file = (e.target as HTMLInputElement).files?.[0];
-        if (!file) return;
-        
-        const { loadState, saveState } = await import('./services/persistence');
-        
-        try {
-            const text = await file.text();
-            const data = JSON.parse(text);
-            if (data.habits && data.version) {
-                await loadState(data);
-                await saveState(); 
-                document.dispatchEvent(new CustomEvent('render-app'));
-                document.dispatchEvent(new CustomEvent('habitsChanged'));
-                
-                closeModal(ui.manageModal);
-                
-                showConfirmationModal(
-                    t('importSuccess'),
-                    () => {}, 
-                    {
-                        title: t('privacyLabel'), 
-                        confirmText: 'OK',
-                        hideCancel: true
-                    }
-                );
-            } else {
-                showConfirmationModal(
-                    t('importInvalid'),
-                    () => {},
-                    {
-                        title: t('importError'),
-                        confirmText: 'OK',
-                        hideCancel: true,
-                        confirmButtonStyle: 'danger'
-                    }
-                );
-            }
-        } catch (err) {
-            console.error(err);
-            showConfirmationModal(
-                t('importError'),
-                () => {},
-                {
-                    title: 'Error',
-                    confirmText: 'OK',
-                    hideCancel: true,
-                    confirmButtonStyle: 'danger'
-                }
-            );
-        }
-    };
-    input.click();
-}
-
-export function toggleHabitStatus(habitId: string, time: TimeOfDay, date: string) {
-    const habit = state.habits.find(h => h.id === habitId);
-    if (!habit) return;
-
-    if (isDateLoading(date)) {
-        console.warn('Attempted to toggle habit while data is loading.');
-        return;
-    }
-
-    const instance = ensureHabitInstanceData(date, habitId, time);
-    const oldStatus = instance.status;
-    const newStatus = getNextStatus(oldStatus);
-    
-    if (_updateHabitInstanceStatus(habit, instance, newStatus)) {
-        invalidateCachesForDateChange(date, [habitId]);
-        
-        if (newStatus === 'completed') {
-            _checkStreakMilestones(habit, date);
-        }
-        
-        state.uiDirtyState.calendarVisuals = true;
-        state.uiDirtyState.habitListStructure = true;
-        
-        saveState();
-        
-        document.dispatchEvent(new CustomEvent('render-app'));
-        document.dispatchEvent(new CustomEvent('habitsChanged'));
-    }
-}
-
-export function setGoalOverride(habitId: string, date: string, time: TimeOfDay, value: number) {
-    if (isDateLoading(date)) {
-        console.warn('Attempted to set goal while data is loading.');
-        return;
-    }
-
-    const instance = ensureHabitInstanceData(date, habitId, time);
-    instance.goalOverride = value;
-    
-    invalidateCachesForDateChange(date, [habitId]);
-    
-    state.uiDirtyState.calendarVisuals = true;
-    state.uiDirtyState.habitListStructure = true;
-    
-    saveState();
-    
-    document.dispatchEvent(new CustomEvent('render-app'));
-    document.dispatchEvent(new CustomEvent('habitsChanged'));
-}
-
-export function requestHabitTimeRemoval(habitId: string, time: TimeOfDay) {
-    const habit = state.habits.find(h => h.id === habitId);
-    if (!habit) return;
-    
-    const targetDate = getSafeDate(state.selectedDate); 
-    const { name } = getHabitDisplayInfo(habit, targetDate);
-    const timeName = getTimeOfDayName(time);
-    
-    ActionContext.removal = { habitId, time, targetDate };
-
     showConfirmationModal(
-        t('confirmRemoveTimePermanent', { habitName: name, time: timeName }),
-        _applyTimeRemoval, // Static handler
-        {
-            title: t('modalRemoveTimeTitle'), 
-            confirmText: t('deleteButton'),
-            confirmButtonStyle: 'danger' 
-        }
+        t('confirmGraduateHabit', { habitName: getHabitDisplayInfo(habit).name }),
+        () => {
+            habit.graduatedOn = getTodayUTCIso();
+            saveState();
+            setupManageModal();
+            renderApp();
+            updateAppBadge();
+            document.dispatchEvent(new CustomEvent('habitsChanged'));
+        },
+        { title: t('modalStatusGraduated'), confirmText: t('aria_graduate', { habitName: '' }) }
     );
-}
-
-export function markAllHabitsForDate(dateISO: string, status: HabitStatus): boolean {
-    if (isDateLoading(dateISO)) {
-        console.warn('Attempted to batch update habits while data is loading.');
-        return false;
-    }
-
-    const dateObj = parseUTCIsoDate(dateISO);
-    
-    // OPTIMIZATION: Hoist Hot Storage Hydration.
-    if (!state.dailyData[dateISO]) {
-        const archivedDay = getHabitDailyInfoForDate(dateISO);
-        state.dailyData[dateISO] = (Object.keys(archivedDay).length > 0) 
-            ? structuredClone(archivedDay) 
-            : {};
-    }
-    
-    const hotDayData = state.dailyData[dateISO];
-    let changed = false;
-    
-    // PERF: Use static pools for batch updates
-    _batchHabitIdsPool.length = 0;
-    _batchHabitsRefPool.length = 0;
-
-    const habits = state.habits;
-    const len = habits.length;
-
-    for (let i = 0; i < len; i = (i + 1) | 0) {
-        const habit = habits[i];
-        
-        if (!shouldHabitAppearOnDate(habit, dateISO, dateObj)) {
-            continue;
-        }
-
-        const schedule = getEffectiveScheduleForHabitOnDate(habit, dateISO);
-        const schedLen = schedule.length;
-        if (schedLen === 0) continue;
-
-        hotDayData[habit.id] ??= { instances: {}, dailySchedule: undefined };
-        const dailyInfo = hotDayData[habit.id];
-        
-        let habitChanged = false;
-
-        for (let j = 0; j < schedLen; j = (j + 1) | 0) {
-            const time = schedule[j];
-            dailyInfo.instances[time] ??= { status: 'pending', goalOverride: undefined, note: undefined };
-            const instance = dailyInfo.instances[time]!;
-            
-            if (_updateHabitInstanceStatus(habit, instance, status)) {
-                habitChanged = true;
-                changed = true;
-            }
-        }
-
-        if (habitChanged) {
-            _batchHabitIdsPool.push(habit.id);
-            _batchHabitsRefPool.push(habit);
-        }
-    }
-    
-    if (changed) {
-        // PERF: Pass the ID array collected during the loop
-        invalidateCachesForDateChange(dateISO, _batchHabitIdsPool);
-        
-        if (status === 'completed') {
-            // PERF: Iterate references directly to avoid lookup overhead
-            const batchLen = _batchHabitsRefPool.length;
-            for (let k = 0; k < batchLen; k = (k + 1) | 0) {
-                _checkStreakMilestones(_batchHabitsRefPool[k], dateISO);
-            }
-        }
-        
-        state.uiDirtyState.calendarVisuals = true;
-        state.uiDirtyState.habitListStructure = true;
-        saveState();
-        
-        document.dispatchEvent(new CustomEvent('habitsChanged'));
-    }
-    return changed;
-}
-
-export function handleDayTransition() {
-    const newToday = getTodayUTCIso(); 
-    
-    clearActiveHabitsCache();
-    state.uiDirtyState.calendarVisuals = true;
-    state.uiDirtyState.habitListStructure = true;
-    state.uiDirtyState.chartData = true;
-    
-    state.calendarDates = [];
-
-    if (state.selectedDate !== newToday) {
-        state.selectedDate = newToday;
-    }
-
-    document.dispatchEvent(new CustomEvent('render-app'));
 }

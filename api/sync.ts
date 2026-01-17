@@ -1,200 +1,95 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-
-/**
- * @file api/sync.ts
- * @description Endpoint serverless (Edge Function) para sincronização de estado criptografado via Vercel KV.
- * 
- * [SERVERLESS / EDGE FUNCTION CONTEXT]:
- * Otimizado para "Zero-Cost Abstractions".
- * - Headers e Erros estáticos são pré-alocados.
- * - Lógica "Inline" para evitar overhead de chamadas de função desnecessárias.
- * - [2025-05-01] ATOMICIDADE: Implementado Script Lua para garantir integridade em transações concorrentes.
- */
-
 import { kv } from '@vercel/kv';
 
 export const config = {
   runtime: 'edge',
 };
 
-// --- CONSTANTS & CONFIG ---
-const MAX_PAYLOAD_SIZE = 1 * 1024 * 1024; // 1MB Limit
+// --- Tipos e Interfaces ---
+// A estrutura que o cliente envia. O 'state' é uma string criptografada.
+interface ClientPayload {
+    lastModified: number;
+    state: string;
+}
 
-// --- LUA SCRIPTS ---
-// Script para executar a lógica de comparação de timestamp e escrita atomicamente no Redis.
-// Isso previne condições de corrida onde uma leitura antiga sobrescreve uma escrita nova.
-// Retorna um array: [STATUS, DADOS_OPCIONAIS]
-const LUA_ATOMIC_UPDATE = `
-local key = KEYS[1]
-local newPayload = ARGV[1]
-local newTs = tonumber(ARGV[2])
+// A estrutura que realmente armazenamos no Vercel KV.
+interface StoredData {
+    lastModified: number;
+    state: string; // string criptografada
+}
 
-local currentVal = redis.call("GET", key)
-
-if not currentVal then
-    redis.call("SET", key, newPayload)
-    return { "OK" }
-end
-
--- Decodifica apenas o necessário se possível, mas cjson.decode parseia tudo.
--- Usamos pcall (protected call) para evitar crash se o JSON do banco estiver corrompido.
-local status, currentJson = pcall(cjson.decode, currentVal)
-
-if not status then
-    -- Se o JSON no banco estiver corrompido, sobrescrevemos (Auto-healing)
-    redis.call("SET", key, newPayload)
-    return { "OK" }
-end
-
-local currentTs = tonumber(currentJson.lastModified)
-
-if not currentTs then
-    -- Se não houver timestamp válido, assume dado legado/inválido e sobrescreve
-    redis.call("SET", key, newPayload)
-    return { "OK" }
-end
-
-if newTs == currentTs then
-    return { "NOT_MODIFIED" }
-end
-
-if newTs < currentTs then
-    -- Cliente está desatualizado: Retorna o dado do servidor para resolução de conflito
-    return { "CONFLICT", currentVal }
-end
-
--- Last Write Wins (se newTs > currentTs)
-redis.call("SET", key, newPayload)
-return { "OK" }
-`;
-
-// --- STATIC OBJECTS (Zero-Allocation) ---
-const CORS_HEADERS = {
+const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, X-Sync-Key-Hash',
 };
 
-const HEADERS_JSON = {
-  ...CORS_HEADERS,
-  'Content-Type': 'application/json',
+const getSyncKeyHash = (req: Request): string | null => {
+    return req.headers.get('x-sync-key-hash');
 };
 
-// --- STATIC ERRORS (Pre-serialized) ---
-const ERR_METHOD_NOT_ALLOWED = JSON.stringify({ error: 'Method not allowed' });
-const ERR_UNAUTHORIZED = JSON.stringify({ error: 'Unauthorized: Missing sync key hash' });
-const ERR_INVALID_JSON = JSON.stringify({ error: 'Bad Request: Invalid JSON format' });
-const ERR_INVALID_PAYLOAD = JSON.stringify({ error: 'Bad Request: Invalid or missing payload data' });
-const ERR_PAYLOAD_TOO_LARGE = JSON.stringify({ error: 'Payload Too Large', details: `Payload size exceeds the limit of ${MAX_PAYLOAD_SIZE} bytes.` });
-const ERR_LENGTH_REQUIRED = JSON.stringify({ error: 'Length Required', details: 'Content-Length header is missing.' });
-const SUCCESS_JSON = '{"success":true}'; // Static success response
-
-// --- TYPES ---
-interface SyncPayload {
-    lastModified: number;
-    state: string;
-}
-
 export default async function handler(req: Request) {
-    // Fast Path: Preflight
     if (req.method === 'OPTIONS') {
-        return new Response(null, { status: 204, headers: CORS_HEADERS });
+        return new Response(null, { status: 204, headers: corsHeaders });
     }
 
     try {
-        // Authentication Check
-        const keyHash = req.headers.get('x-sync-key-hash');
+        const keyHash = getSyncKeyHash(req);
+
         if (!keyHash) {
-            return new Response(ERR_UNAUTHORIZED, { status: 401, headers: HEADERS_JSON });
+            return new Response(JSON.stringify({ error: 'Unauthorized: Missing sync key hash' }), {
+                status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
         }
         
         const dataKey = `sync_data:${keyHash}`;
 
-        // --- GET HANDLER ---
         if (req.method === 'GET') {
-            const storedData = await kv.get<SyncPayload>(dataKey);
-            // kv.get returns null if not found, which JSON.stringify handles correctly ("null")
+            const storedData = await kv.get<StoredData>(dataKey);
+            // Retorna o objeto StoredData completo ou nulo se não encontrado.
             return new Response(JSON.stringify(storedData || null), {
-                status: 200,
-                headers: HEADERS_JSON,
+                status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
             });
         }
 
-        // --- POST HANDLER ---
         if (req.method === 'POST') {
-            // SECURITY: Pre-check Content-Length to prevent OOM
-            const contentLengthStr = req.headers.get('content-length');
-            if (!contentLengthStr) {
-                return new Response(ERR_LENGTH_REQUIRED, { status: 411, headers: HEADERS_JSON });
-            }
-            
-            const contentLength = parseInt(contentLengthStr, 10);
-            if (isNaN(contentLength) || contentLength > MAX_PAYLOAD_SIZE) {
-                return new Response(ERR_PAYLOAD_TOO_LARGE, { status: 413, headers: HEADERS_JSON });
-            }
+            const clientPayload: ClientPayload = await req.json();
+            const storedData = await kv.get<StoredData>(dataKey);
 
-            let clientPayload: SyncPayload;
-            try {
-                // BLINDAGEM: Lê como Blob primeiro para verificar tamanho real antes do parse JSON.
-                // Protege contra ataques onde content-length é mentiroso.
-                const blob = await req.clone().blob();
-                if (blob.size > MAX_PAYLOAD_SIZE) {
-                    return new Response(ERR_PAYLOAD_TOO_LARGE, { status: 413, headers: HEADERS_JSON });
+            if (storedData) {
+                // Conflito: os dados do cliente são mais antigos que os do servidor.
+                if (clientPayload.lastModified < storedData.lastModified) {
+                    return new Response(JSON.stringify(storedData), {
+                        status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                    });
                 }
-                clientPayload = JSON.parse(await blob.text());
-            } catch (e) {
-                return new Response(ERR_INVALID_JSON, { status: 400, headers: HEADERS_JSON });
+                // A lógica 'isStateSignificant' foi removida, pois o servidor não pode mais inspecionar o estado.
             }
 
-            // Validation
-            if (!clientPayload || typeof clientPayload.lastModified !== 'number' || typeof clientPayload.state !== 'string') {
-                return new Response(ERR_INVALID_PAYLOAD, { status: 400, headers: HEADERS_JSON });
-            }
+            // Sem conflitos, ou é a primeira sincronização. Salva o payload do cliente.
+            const dataToStore: StoredData = {
+                lastModified: clientPayload.lastModified,
+                state: clientPayload.state,
+            };
+            await kv.set(dataKey, dataToStore);
             
-            // Double check actual string length inside JSON
-            if (clientPayload.state.length > MAX_PAYLOAD_SIZE) {
-                return new Response(ERR_PAYLOAD_TOO_LARGE, { status: 413, headers: HEADERS_JSON });
-            }
-
-            // ATOMIC OPERATION (Redis Lua)
-            const payloadStr = JSON.stringify(clientPayload);
-            
-            // kv.eval(script, keys[], args[])
-            const result = await kv.eval(
-                LUA_ATOMIC_UPDATE, 
-                [dataKey], 
-                [payloadStr, clientPayload.lastModified]
-            ) as [string, string?];
-
-            const [status, conflictData] = result;
-
-            if (status === 'OK') {
-                return new Response(SUCCESS_JSON, { status: 200, headers: HEADERS_JSON });
-            }
-            
-            if (status === 'NOT_MODIFIED') {
-                return new Response(null, { status: 304, headers: CORS_HEADERS });
-            }
-
-            if (status === 'CONFLICT' && conflictData) {
-                return new Response(conflictData, { status: 409, headers: HEADERS_JSON });
-            }
-
-            throw new Error(`Unexpected Lua result: ${status}`);
+            return new Response(JSON.stringify({ success: true }), {
+                status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
         }
 
-        return new Response(ERR_METHOD_NOT_ALLOWED, { status: 405, headers: HEADERS_JSON });
+        return new Response(JSON.stringify({ error: 'Method not allowed' }), {
+            status: 405, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
 
-    } catch (error: any) {
-        console.error("Critical error in api/sync:", error);
-        // SANITIZATION: Generic error message to client
-        return new Response(JSON.stringify({ error: 'Internal Server Error' }), {
-            status: 500,
-            headers: HEADERS_JSON,
+    } catch (error) {
+        console.error('Error in /api/sync:', error);
+        const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+        return new Response(JSON.stringify({ error: 'Internal Server Error', details: errorMessage }), {
+            status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
     }
 }
