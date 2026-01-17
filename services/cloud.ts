@@ -6,7 +6,7 @@
 /**
  * @file services/cloud.ts
  * @description Orquestrador de Sincronização.
- * ARQUITETURA FINAL: Robust Pull & Merge (União de Estados).
+ * ARQUITETURA FINAL: Time-Based Authority with Weighted Content Preservation.
  */
 
 import { AppState, state, getPersistableState } from '../state';
@@ -48,7 +48,7 @@ function _deserializeLogsInternal(arr: any): Map<string, bigint> {
 }
 
 // ==================================================================================
-// 🧠 INLINE WORKER SOURCE CODE
+// 🧠 INLINE WORKER SOURCE CODE (WEIGHTED MERGE LOGIC)
 // ==================================================================================
 const WORKER_CODE = `
 const HEX_LUT = Array.from({ length: 256 }, (_, i) => i.toString(16).padStart(2, '0'));
@@ -125,78 +125,98 @@ async function decryptToBuffer(data, password) {
     return crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext);
 }
 
-// --- MERGE LOGIC ---
-function mergeDayRecord(localDay, mergedDay) {
-    let isDirty = false;
-    for (const habitId in localDay) {
-        if (!mergedDay[habitId]) {
-            mergedDay[habitId] = localDay[habitId];
-            isDirty = true;
+// --- WEIGHTED MERGE LOGIC ---
+// Merge 'loser' (older) data INTO 'winner' (newer) data, preserving rich content.
+function mergeDailyRecord(winnerDay, loserDay) {
+    for (const habitId in loserDay) {
+        if (!winnerDay[habitId]) {
+            // Preservation Rule: If habit data exists in loser but not winner, keep it.
+            winnerDay[habitId] = loserDay[habitId];
             continue;
         }
-        const localHabitData = localDay[habitId];
-        const mergedHabitData = mergedDay[habitId];
-        
-        // Merge Schedule
-        if (localHabitData.dailySchedule !== undefined) {
-             if (JSON.stringify(localHabitData.dailySchedule) !== JSON.stringify(mergedHabitData.dailySchedule)) {
-                mergedHabitData.dailySchedule = localHabitData.dailySchedule;
-                isDirty = true;
-             }
-        }
-        // Merge Instances
-        const localInstances = localHabitData.instances || {};
-        const mergedInstances = mergedHabitData.instances || {};
-        
-        for (const time in localInstances) {
-            if (!mergedInstances[time]) {
-                mergedInstances[time] = localInstances[time];
-                isDirty = true;
+
+        const winHabit = winnerDay[habitId];
+        const loseHabit = loserDay[habitId];
+
+        // 1. Instances (Notes & Goals) - High Weight
+        const winInst = winHabit.instances || {};
+        const loseInst = loseHabit.instances || {};
+
+        for (const time in loseInst) {
+            if (!winInst[time]) {
+                // If loser has data and winner is empty, keep loser's data.
+                winInst[time] = loseInst[time];
             } else {
-                // Conflict resolution: Prefer content over empty, or longer note
-                const li = localInstances[time];
-                const mi = mergedInstances[time];
-                if (li.note && (!mi.note || li.note.length > mi.note.length)) {
-                    mi.note = li.note;
-                    isDirty = true;
+                // CONFLICT: Both have data. Apply Weights.
+                const wData = winInst[time];
+                const lData = loseInst[time];
+
+                // Rule A: Note Preservation (Content > Empty)
+                if (!wData.note && lData.note) {
+                    wData.note = lData.note;
+                } else if (wData.note && lData.note) {
+                    // If both have notes, prefer longer (richer) note as tie-breaker
+                    if (lData.note.length > wData.note.length) {
+                        wData.note = lData.note;
+                    }
                 }
-                if (li.goalOverride !== undefined && mi.goalOverride === undefined) {
-                    mi.goalOverride = li.goalOverride;
-                    isDirty = true;
+
+                // Rule B: Goal Override Preservation
+                if (wData.goalOverride === undefined && lData.goalOverride !== undefined) {
+                    wData.goalOverride = lData.goalOverride;
                 }
             }
         }
+        winHabit.instances = winInst; // Reassign to ensure structure
+
+        // 2. Daily Schedule
+        // Prefer newer, but if newer is undefined/null, take older.
+        if (!winHabit.dailySchedule && loseHabit.dailySchedule) {
+            winHabit.dailySchedule = loseHabit.dailySchedule;
+        }
     }
-    return isDirty;
 }
 
 async function mergeStates(local, incoming) {
-    const merged = structuredClone(incoming);
+    // 1. Determine Newest vs Oldest
+    const localTs = local.lastModified || 0;
+    const incomingTs = incoming.lastModified || 0;
     
-    // 1. Merge Habits (Union by ID)
-    const incomingIds = new Set(incoming.habits.map(h => h.id));
-    local.habits.forEach(h => { 
-        if (!incomingIds.has(h.id)) merged.habits.push(h); 
+    // Default: Newest Wins
+    let winner = localTs > incomingTs ? local : incoming;
+    let loser = localTs > incomingTs ? incoming : local;
+    
+    // Deep Clone Winner to avoid mutations
+    const merged = structuredClone(winner);
+
+    // 2. UNION HABITS (Merge Arrays by ID)
+    // Even if one state is older, we don't want to delete habits created on the other device.
+    const mergedHabitIds = new Set(merged.habits.map(h => h.id));
+    loser.habits.forEach(h => {
+        if (!mergedHabitIds.has(h.id)) {
+            merged.habits.push(h);
+        }
     });
 
-    // 2. Merge Daily Data (Deep Merge)
-    for (const date in local.dailyData) {
+    // 3. WEIGHTED MERGE for Daily Data
+    // We iterate over the 'loser' (older data) and try to inject its content 
+    // into the 'winner' if the winner is empty/missing that specific data point.
+    for (const date in loser.dailyData) {
         if (!merged.dailyData[date]) {
-            merged.dailyData[date] = local.dailyData[date];
+            merged.dailyData[date] = loser.dailyData[date];
         } else {
-            mergeDayRecord(local.dailyData[date], merged.dailyData[date]);
+            mergeDailyRecord(merged.dailyData[date], loser.dailyData[date]);
         }
     }
 
-    // 3. Merge Settings/Metadata (Newest Wins or Union)
-    merged.lastModified = Date.now();
-    merged.version = Math.max(local.version || 0, incoming.version || 0);
+    // 4. Merge Metadata Lists (Union)
+    const mergeSet = (a, b) => Array.from(new Set([...(a||[]), ...(b||[])]));
+    merged.notificationsShown = mergeSet(merged.notificationsShown, loser.notificationsShown);
+    merged.pending21DayHabitIds = mergeSet(merged.pending21DayHabitIds, loser.pending21DayHabitIds);
     
-    // Merge Lists (Sets)
-    const mergeList = (a, b) => Array.from(new Set([...(a||[]), ...(b||[])]));
-    merged.notificationsShown = mergeList(incoming.notificationsShown, local.notificationsShown);
-    merged.pending21DayHabitIds = mergeList(incoming.pending21DayHabitIds, local.pending21DayHabitIds);
-    merged.pendingConsolidationHabitIds = mergeList(incoming.pendingConsolidationHabitIds, local.pendingConsolidationHabitIds);
+    // 5. Update Timestamp
+    // The result is a NEW state (merged), so it gets a fresh timestamp.
+    merged.lastModified = Date.now();
     
     return merged;
 }
@@ -343,8 +363,7 @@ function formatNetworkError(e: any): string {
 // --- CORE FUNCTIONS (SMART MERGE) ---
 
 /**
- * Baixa dados da nuvem, mescla com os dados locais atuais e salva tudo.
- * Esta função é segura para rodar no boot ou ao recuperar conexão.
+ * Baixa dados da nuvem, mescla com os dados locais e salva.
  */
 export async function fetchStateFromCloud(): Promise<AppState | null> {
     if (!hasLocalSyncKey()) return null;
@@ -381,21 +400,21 @@ export async function fetchStateFromCloud(): Promise<AppState | null> {
         const localState = getPersistableState();
 
         // 3. FUSÃO ESTRUTURAL (Via Worker - JSON)
-        // Isso combina hábitos, configurações e notas.
-        console.log("[Cloud] Mesclando estruturas...");
+        // Isso combina hábitos, configurações e notas usando a lógica de pesos e timestamp.
+        console.log("[Cloud] Mesclando estruturas (Newest Wins + Weighted Content)...");
         const mergedState = await runWorkerTask<AppState>('merge', { 
             local: localState, 
             incoming: decryptedRaw 
         });
 
         // 4. FUSÃO DE LOGS (Bitwise OR na Main Thread)
-        // Combina o histórico de checks. Se existe em um ou no outro, mantém.
+        // Combina o histórico de checks. Aditivo: se existe em um, existe no final.
         console.log("[Cloud] Mesclando logs (Bitmask)...");
         const mergedLogs = new Map<string, bigint>(state.monthlyLogs || new Map());
         
         cloudLogs.forEach((cloudVal, key) => {
             const localVal = mergedLogs.get(key) || 0n;
-            // A MÁGICA: Operador OR (|) combina os bits dos dois mundos.
+            // Operador OR (|) combina os bits dos dois mundos.
             mergedLogs.set(key, localVal | cloudVal);
         });
 
@@ -403,12 +422,13 @@ export async function fetchStateFromCloud(): Promise<AppState | null> {
         const finalState: AppState = {
             ...mergedState,
             version: mergedState.version,
-            lastModified: mergedState.lastModified,
+            // IMPORTANTE: Atualiza o lastModified para AGORA para garantir que este estado mesclado
+            // seja considerado o mais recente em futuras sincronizações.
+            lastModified: Date.now(), 
             monthlyLogs: mergedLogs
         };
 
         // 6. PERSISTÊNCIA ATÔMICA
-        // Salva no disco antes de atualizar a memória para garantir durabilidade.
         await persistStateLocally(finalState);
         
         // 7. ATUALIZAÇÃO DA MEMÓRIA
@@ -418,7 +438,7 @@ export async function fetchStateFromCloud(): Promise<AppState | null> {
         document.dispatchEvent(new CustomEvent('render-app'));
 
         setSyncStatus('syncSynced');
-        console.log("[Cloud] ✅ Sincronização Inteligente Completa!");
+        console.log("[Cloud] ✅ Sincronização e Fusão Completas!");
         return finalState;
 
     } catch (e: any) {
@@ -431,9 +451,7 @@ export async function fetchStateFromCloud(): Promise<AppState | null> {
 
 async function resolveConflictWithServerState(serverData: any) {
     console.warn("[Cloud] Conflito de versão detectado. Forçando Pull & Merge...");
-    // A resolução de conflito agora é simples: Puxa o estado do servidor e faz merge.
     await fetchStateFromCloud();
-    // Em seguida, tenta empurrar novamente o estado mesclado.
     if (state.habits.length > 0) {
         syncStateWithCloud(getPersistableState());
     }
@@ -461,6 +479,8 @@ async function _performSync(currentState: AppState) {
         const payload = {
             updatedAt: new Date().toISOString(),
             deviceId: (currentState as any).deviceId || 'unknown',
+            // Envia o lastModified do objeto estado, garantindo coerência com a lógica de newest wins
+            lastModified: currentState.lastModified, 
             state: encryptedState
         };
 
