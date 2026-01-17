@@ -199,6 +199,7 @@ const _createMonomorphicInstance = (): HabitDayData => ({
 // --- APPLICATION STATE ---
 export const state: {
     habits: Habit[];
+    lastModified: number;
     dailyData: Record<string, Record<string, HabitDailyInfo>>;
     archives: Record<string, string | Uint8Array>;
     dailyDiagnoses: Record<string, DailyStoicDiagnosis>;
@@ -244,6 +245,7 @@ export const state: {
     monthlyLogs: Map<string, bigint>;
 } = {
     habits: [],
+    lastModified: Date.now(),
     dailyData: {},
     archives: {},
     dailyDiagnoses: {},
@@ -295,9 +297,19 @@ export function invalidateChartCache() {
 }
 
 export function getPersistableState(): AppState {
+    // MONOTONIC CLOCK LOGIC: Ensure lastModified always moves forward.
+    // If the system clock is behind the last known state (due to clock skew or device switch),
+    // we increment manually to guarantee the server accepts the update as newer.
+    const now = Date.now();
+    if (now > state.lastModified) {
+        state.lastModified = now;
+    } else {
+        state.lastModified = state.lastModified + 1;
+    }
+
     return {
         version: APP_VERSION,
-        lastModified: Date.now(),
+        lastModified: state.lastModified,
         habits: state.habits,
         dailyData: state.dailyData,
         archives: state.archives,

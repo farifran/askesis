@@ -418,13 +418,19 @@ export async function fetchStateFromCloud(): Promise<AppState | null> {
             mergedLogs.set(key, localVal | cloudVal);
         });
 
+        // CLOCK SKEW FIX:
+        // Captura o timestamp do servidor para garantir que o nosso novo estado seja "o futuro".
+        const serverTs = data.lastModified || 0;
+        // Se o relógio local estiver atrasado em relação ao servidor, forçamos o relógio para frente.
+        const safeNextTs = Math.max(Date.now(), serverTs + 1);
+
         // 5. RECONSTRUÇÃO DO ESTADO FINAL
         const finalState: AppState = {
             ...mergedState,
             version: mergedState.version,
-            // IMPORTANTE: Atualiza o lastModified para AGORA para garantir que este estado mesclado
+            // IMPORTANTE: Atualiza o lastModified para garantir que este estado mesclado
             // seja considerado o mais recente em futuras sincronizações.
-            lastModified: Date.now(), 
+            lastModified: safeNextTs, 
             monthlyLogs: mergedLogs
         };
 
