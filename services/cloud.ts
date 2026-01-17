@@ -114,9 +114,6 @@ async function encrypt(data, password) {
 }
 
 async function decryptToBuffer(data, password) {
-    if (typeof data === 'string') {
-        try { return await _legacyDecrypt(JSON.parse(data), password); } catch(e) { throw new Error("Invalid format"); }
-    }
     const input = data instanceof Uint8Array ? data : new Uint8Array(data);
     const salt = input.subarray(0, SALT_LEN);
     const iv = input.subarray(SALT_LEN, SALT_LEN + IV_LEN);
@@ -346,9 +343,11 @@ export function setSyncStatus(statusKey: 'syncSaving' | 'syncSynced' | 'syncErro
     }
 }
 
-function clearLocalAuth() {
-    clearKey();
-    state.syncLastError = "Auth Invalid (401)";
+function handleAuthError() {
+    // ROBUSTNESS FIX: Do NOT clear the key automatically.
+    // Allow the user to retry or fix the key manually.
+    // Auto-clearing causes "Sync Loss" on temporary network/server glitches.
+    state.syncLastError = "Erro de Autenticação. Verifique sua chave.";
     setSyncStatus('syncError');
 }
 
@@ -377,7 +376,7 @@ export async function fetchStateFromCloud(): Promise<AppState | null> {
         
         if (!res.ok) {
             if (res.status === 404) { console.warn("[Cloud] Vazia."); return null; }
-            if (res.status === 401) { clearLocalAuth(); return null; }
+            if (res.status === 401) { handleAuthError(); return null; }
             throw new Error(`HTTP ${res.status}`);
         }
 
@@ -502,7 +501,7 @@ async function _performSync(currentState: AppState) {
                 const serverData = await res.json();
                 await resolveConflictWithServerState(serverData);
             } else if (res.status === 401) {
-                clearLocalAuth();
+                handleAuthError();
             } else {
                 throw new Error(`Server Error: ${res.status}`);
             }

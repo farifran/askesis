@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -162,7 +161,14 @@ export async function loadState(cloudState?: AppState): Promise<AppState | null>
              setTimeout(runCleanup, 3000);
         }
         
+        // HYDRATION: Ensure state consistency
         state.habits = [...migrated.habits];
+        // CRITICAL FIX: Restore lastModified from disk to preserve monotonic clock continuity.
+        // If undefined (fresh install), defaults to Date.now() via state.ts init, which is fine.
+        if (migrated.lastModified) {
+            state.lastModified = migrated.lastModified;
+        }
+        
         state.dailyData = migrated.dailyData || {};
         state.archives = migrated.archives || {};
         state.notificationsShown = [...(migrated.notificationsShown || [])];
