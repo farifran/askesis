@@ -1,125 +1,217 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
 
-import { HEX_LUT } from '../utils';
+/**
+ * @file services/api.ts
+ * @description Camada de Rede e Gerenciamento de Identidade (Sync Key).
+ * 
+ * [MAIN THREAD CONTEXT]:
+ * Este módulo gerencia a comunicação com o backend (Edge Functions) e a persistência segura de credenciais.
+ * 
+ * ARQUITETURA (Robustez & Performance):
+ * - **Responsabilidade Única:** Abstrair `fetch` com lógica de retry, timeout e autenticação automática.
+ * - **Security First:** Utiliza `Web Crypto API` (nativa) para hash de chaves, evitando o envio da chave bruta pela rede.
+ * - **Zero-Allocation Hashing:** Otimizações de memória (Hoisting e Lookup Tables) para operações criptográficas frequentes.
+ * - **Network Resilience:** Implementa "Exponential Backoff" para lidar com instabilidades de rede móvel (PWA).
+ * 
+ * DEPENDÊNCIAS CRÍTICAS:
+ * - `crypto.subtle`: Requer Contexto Seguro (HTTPS ou localhost).
+ * - `localStorage`: Persistência síncrona da chave.
+ * 
+ * DECISÕES TÉCNICAS:
+ * 1. **Hex Lookup Table:** Conversão Byte-para-Hex via array pré-alocado é significativamente mais rápida que `toString(16)` em loops.
+ * 2. **Cache de Hash:** O hash da chave é memoizado (`keyHashCache`) para evitar reprocessamento criptográfico a cada request.
+ * 3. **Keepalive:** Requisições críticas usam a flag `keepalive` para sobreviver ao fechamento da aba/app.
+ */
+
+// UPDATE [2025-01-17]: Adicionada lógica de retry com backoff exponencial para maior robustez em rede.
 
 const SYNC_KEY_STORAGE_KEY = 'habitTrackerSyncKey';
 const UUID_REGEX = /^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$/;
-const encoder = new TextEncoder();
-const CRYPTO_TIMEOUT_MS = 2000;
 
 let localSyncKey: string | null = null;
 let keyHashCache: string | null = null;
 
-const SafeStorage = {
-    get: (k: string) => { try { return localStorage.getItem(k); } catch { return null; } },
-    set: (k: string, v: string) => { try { localStorage.setItem(k, v); } catch {} },
-    rem: (k: string) => { try { localStorage.removeItem(k); } catch {} }
-};
+// OPTIMIZATION [2025-03-14]: Hoisted TextEncoder and Pre-calculated Hex Table.
+// PERFORMANCE: Reduz alocação de memória (GC Pressure) durante operações de hash repetitivas.
+// Instanciar TextEncoder é barato, mas em hot paths, cada microssegundo conta.
+const encoder = new TextEncoder();
 
-// ROBUSTNESS: Ensure key is loaded from storage if memory is empty (Lazy Load)
-// This fixes the issue where checking hasLocalSyncKey() too early on boot would return false.
-const _ensureKeyLoaded = () => {
-    if (localSyncKey === null) {
-        localSyncKey = SafeStorage.get(SYNC_KEY_STORAGE_KEY);
-    }
-};
+// PERFORMANCE: Lookup Table pré-calculada (00-FF).
+// Acesso a array O(1) é muito mais rápido que chamadas de método `number.toString(16).padStart(...)`.
+const HEX_TABLE = Array.from({ length: 256 }, (_, i) => i.toString(16).padStart(2, '0'));
 
-export const initAuth = () => _ensureKeyLoaded();
+// --- Authentication / Key Management ---
 
-export const storeKey = (k: string) => { 
-    localSyncKey = k; 
+export function initAuth() {
+    localSyncKey = localStorage.getItem(SYNC_KEY_STORAGE_KEY);
+}
+
+export function storeKey(key: string) {
+    localSyncKey = key;
+    // MANUTENIBILIDADE [2024-01-16]: Limpa o cache de hash sempre que a chave muda para garantir consistência.
     keyHashCache = null; 
-    SafeStorage.set(SYNC_KEY_STORAGE_KEY, k); 
-};
+    localStorage.setItem(SYNC_KEY_STORAGE_KEY, key);
+}
 
-export const clearKey = () => { 
-    localSyncKey = null; 
-    keyHashCache = null; 
-    SafeStorage.rem(SYNC_KEY_STORAGE_KEY); 
-};
+export function clearKey() {
+    localSyncKey = null;
+    keyHashCache = null;
+    localStorage.removeItem(SYNC_KEY_STORAGE_KEY);
+}
 
-export const hasLocalSyncKey = () => {
-    _ensureKeyLoaded();
+export function hasLocalSyncKey(): boolean {
     return localSyncKey !== null;
-};
+}
 
-export const getSyncKey = () => {
-    _ensureKeyLoaded();
+export function getSyncKey(): string | null {
     return localSyncKey;
-};
+}
 
-export const isValidKeyFormat = (k: string) => UUID_REGEX.test(k);
+export function isValidKeyFormat(key: string): boolean {
+    return UUID_REGEX.test(key);
+}
 
 async function hashKey(key: string): Promise<string> {
     if (!key) return '';
     
-    // Check for Secure Context Native Crypto
-    if (crypto && crypto.subtle) {
-        try {
-            const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', encoder.encode(key)));
-            let hex = '';
-            for (let i = 0; i < hash.length; i++) hex += HEX_LUT[hash[i]];
-            return hex;
-        } catch (e) {
-            console.warn("Crypto.subtle failed.", e);
-            throw e;
-        }
+    // ROBUSTEZ: crypto.subtle requer um contexto seguro (HTTPS ou localhost).
+    // Em um PWA instalado, isso é garantido, mas adicionamos verificação para ambientes de dev.
+    if (!crypto.subtle) {
+        console.warn("crypto.subtle not available. Ensure you are running on localhost or HTTPS.");
+        return '';
+    }
+
+    const data = encoder.encode(key);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    
+    // PERFORMANCE OPTIMIZATION: Use Lookup Table instead of map/padStart.
+    // Significantly faster for byte-to-hex conversion.
+    const hashArray = new Uint8Array(hashBuffer);
+    const len = hashArray.length;
+    // PERFORMANCE: Pré-alocação do array de destino.
+    const hexChars = new Array(len);
+    
+    // PERFORMANCE: Loop for clássico é mais rápido que .map() ou .reduce() em V8.
+    for (let i = 0; i < len; i++) {
+        hexChars[i] = HEX_TABLE[hashArray[i]];
     }
     
-    console.error("Sync requires a Secure Context (HTTPS) for cryptographic operations.");
-    throw new Error("Secure Context Required");
+    return hexChars.join('');
 }
 
 export async function getSyncKeyHash(): Promise<string | null> {
-    const key = getSyncKey();
-    if (!key) return null;
-    return keyHashCache || (keyHashCache = await hashKey(key));
+    if (!localSyncKey) {
+        return null;
+    }
+    // PERFORMANCE: Retorna valor memoizado se disponível.
+    if (keyHashCache) {
+        return keyHashCache;
+    }
+    keyHashCache = await hashKey(localSyncKey);
+    return keyHashCache;
 }
 
-interface ExtendedRequestInit extends RequestInit { timeout?: number; retries?: number; backoff?: number; }
+// --- Networking ---
 
+interface ExtendedRequestInit extends RequestInit {
+    timeout?: number;
+    retries?: number; // Número máximo de tentativas
+    backoff?: number; // Delay inicial em ms
+}
+
+/**
+ * Wrapper for the fetch API that includes the sync key hash, handles timeouts,
+ * and implements exponential backoff retry logic for robust networking.
+ * 
+ * [MAIN THREAD CONTEXT]: Operação assíncrona, não bloqueia a UI, mas consome recursos de rede.
+ */
 export async function apiFetch(endpoint: string, options: ExtendedRequestInit = {}, includeSyncKey = false): Promise<Response> {
-    const { timeout = 15000, retries = 2, backoff = 500, ...fetchOpts } = options;
+    // [2024-01-16] REFACTOR: Uso da classe Headers para manipulação mais limpa e segura de headers.
+    // Inicializa com os headers fornecidos nas opções (se houver)
     const headers = new Headers(options.headers);
-    if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
+
+    // Define Content-Type padrão se não tiver sido sobrescrito pelo chamador
+    if (!headers.has('Content-Type')) {
+        headers.set('Content-Type', 'application/json');
+    }
 
     if (includeSyncKey) {
-        const hash = await Promise.race([getSyncKeyHash(), new Promise<null>(r => setTimeout(() => r(null), CRYPTO_TIMEOUT_MS))]);
-        if (hash) {
-            headers.set('X-Sync-Key-Hash', hash);
-        } else if (hasLocalSyncKey()) {
-            console.error("API call aborted: Could not generate Key Hash.");
-            throw new Error("Crypto Failure");
+        const keyHash = await getSyncKeyHash();
+        if (keyHash) {
+            headers.set('X-Sync-Key-Hash', keyHash);
         }
     }
 
-    for (let n = 0; n <= retries; n++) {
-        const ctrl = new AbortController();
-        const tId = setTimeout(() => ctrl.abort(), timeout);
+    const { 
+        timeout = 15000, 
+        retries = 2, // Padrão: tenta 3 vezes no total (1 inicial + 2 retries)
+        backoff = 500, // Padrão: espera 500ms antes do primeiro retry
+        ...fetchOptions 
+    } = options;
+
+    const attemptFetch = async (attempt: number): Promise<Response> => {
+        // ROBUSTEZ: AbortController para timeout real da requisição.
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeout);
+
         try {
-            const res = await fetch(endpoint, { ...fetchOpts, headers, signal: ctrl.signal, keepalive: true });
-            clearTimeout(tId);
+            const response = await fetch(endpoint, {
+                ...fetchOptions,
+                headers,
+                signal: controller.signal,
+                // ROBUSTNESS [2025-03-16]: Keepalive ensures requests survive page unloads/navigation.
+                // Critical for data persistence on close (Sync on Exit).
+                keepalive: true,
+            });
+            clearTimeout(timeoutId);
+
+            // CRITICAL LOGIC: Retry Strategy.
+            // Lógica de Retry para erros de servidor (5xx) ou falhas de rede.
+            // Erros de cliente (4xx) geralmente não devem ser retentados (exceto talvez 408/429, mas simplificamos aqui).
+            // 409 (Conflict) é uma resposta válida de lógica de negócios para sync, então retornamos.
+            if (!response.ok && response.status !== 409 && response.status >= 500 && attempt < retries) {
+                throw new Error(`Server error ${response.status}`);
+            }
             
-            // Success or acceptable semantic errors
-            if (res.ok || res.status === 409) return res;
-            
-            // Get error text for debugging
-            const errText = await res.text();
-            
-            // FAIL FAST: If it's a configuration error (500), do not retry.
-            if (res.status === 500 && errText.includes('Configuration')) {
-                throw new Error(errText);
+            // Se for um erro não recuperável (4xx) ou se acabaram as tentativas, processamos o erro.
+            if (!response.ok && response.status !== 409) {
+                let errorBody = '';
+                try {
+                    errorBody = await response.text();
+                } catch (e) {
+                    errorBody = '[No response body or failed to parse]';
+                }
+                console.error(`API request failed to ${endpoint}:`, errorBody);
+                throw new Error(`API request failed with status ${response.status}: ${errorBody}`);
             }
 
-            if (res.status < 500 || n === retries) throw new Error(errText);
-        } catch (e) {
-            clearTimeout(tId);
-            if (n === retries) throw e;
-            await new Promise(r => setTimeout(r, backoff * Math.pow(2, n)));
+            return response;
+
+        } catch (error: any) {
+            clearTimeout(timeoutId);
+            
+            const isAbortError = error.name === 'AbortError';
+            const isNetworkError = error instanceof TypeError || error.message.includes('Server error'); // TypeError geralmente é erro de rede no fetch
+
+            // CRITICAL LOGIC: Exponential Backoff.
+            // Se falhou e ainda temos tentativas, espera um tempo crescente (500ms, 1000ms, 2000ms...)
+            if (attempt < retries && (isAbortError || isNetworkError)) {
+                const delay = backoff * Math.pow(2, attempt); // Backoff exponencial
+                console.warn(`API attempt ${attempt + 1} failed. Retrying in ${delay}ms...`, error);
+                await new Promise(resolve => setTimeout(resolve, delay));
+                return attemptFetch(attempt + 1);
+            }
+
+            if (isAbortError) {
+                throw new Error(`API request to ${endpoint} timed out after ${timeout}ms.`);
+            }
+            throw error;
         }
-    }
-    throw new Error("Fetch unreachable");
+    };
+
+    return attemptFetch(0);
 }

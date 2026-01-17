@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -31,41 +32,32 @@ import { renderApp } from "../render";
 import { showConfirmationModal } from "../render/modals";
 import { storeKey, clearKey, hasLocalSyncKey, getSyncKey, isValidKeyFormat, initAuth } from "../services/api";
 import { generateUUID } from "../utils";
-import { state } from "../state";
 
 // --- UI HELPERS ---
 
 function showView(view: 'inactive' | 'enterKey' | 'displayKey' | 'active') {
-    // PERF: Direct property access instead of object allocation/loop for zero-overhead switching.
-    ui.syncInactiveView.style.display = 'none';
-    ui.syncEnterKeyView.style.display = 'none';
-    ui.syncDisplayKeyView.style.display = 'none';
-    ui.syncActiveView.style.display = 'none';
+    const viewsMap = {
+        inactive: ui.syncInactiveView,
+        enterKey: ui.syncEnterKeyView,
+        displayKey: ui.syncDisplayKeyView,
+        active: ui.syncActiveView,
+    };
 
-    switch (view) {
-        case 'inactive': 
-            ui.syncInactiveView.style.display = 'flex'; 
-            break;
-        case 'enterKey': 
-            ui.syncEnterKeyView.style.display = 'flex'; 
-            break;
-        case 'displayKey': 
-            ui.syncDisplayKeyView.style.display = 'flex'; 
-            const context = ui.syncDisplayKeyView.dataset.context;
-            ui.keySavedBtn.textContent = (context === 'view') ? t('closeButton') : t('syncKeySaved');
-            break;
-        case 'active': 
-            ui.syncActiveView.style.display = 'flex'; 
-            break;
+    // Fast loop over keys
+    for (const key in viewsMap) {
+        viewsMap[key as keyof typeof viewsMap].style.display = 'none';
+    }
+
+    viewsMap[view].style.display = 'flex';
+
+    if (view === 'displayKey') {
+        const context = ui.syncDisplayKeyView.dataset.context;
+        ui.keySavedBtn.textContent = (context === 'view') ? t('closeButton') : t('syncKeySaved');
     }
 }
 
 function _toggleButtons(buttons: HTMLButtonElement[], disabled: boolean) {
-    // PERF: Simple iteration
-    const len = buttons.length;
-    for (let i = 0; i < len; i++) {
-        buttons[i].disabled = disabled;
-    }
+    buttons.forEach(btn => btn.disabled = disabled);
 }
 
 // --- LOGIC ---
@@ -80,16 +72,18 @@ async function _processKey(key: string) {
     const originalKey = getSyncKey();
     
     try {
-        // 1. Tenta a nova chave
         storeKey(key);
         const cloudState = await fetchStateFromCloud();
 
+        // Rollback safety fallback handled below
+        if (originalKey) storeKey(originalKey); 
+        else clearKey();
+
         if (cloudState) {
-            // 2. Se houver dados na nuvem, peça confirmação
             showConfirmationModal(
                 t('confirmSyncOverwrite'),
-                async () => { // onConfirm: Aplica o estado da nuvem
-                    // A chave `key` já está ativa, então só carregamos os dados
+                async () => { // onConfirm
+                    storeKey(key);
                     await loadState(cloudState);
                     await saveState();
                     renderApp();
@@ -98,20 +92,14 @@ async function _processKey(key: string) {
                 {
                     title: t('syncDataFoundTitle'),
                     confirmText: t('syncConfirmOverwrite'),
-                    cancelText: t('cancelButton'),
-                    onCancel: () => { // onCancel: Rollback
-                        if (originalKey) storeKey(originalKey);
-                        else clearKey();
-                        showView(originalKey ? 'active' : 'inactive');
-                    }
+                    cancelText: t('cancelButton')
                 }
             );
         } else {
-            // 3. Sem dados na nuvem, a nova chave é aceita e a sincronização é ativada.
+            storeKey(key);
             showView('active');
         }
     } catch (error) {
-        // 4. Se houver erro de rede/criptografia, faz rollback para a chave original.
         if (originalKey) storeKey(originalKey);
         else clearKey();
 
@@ -221,14 +209,7 @@ export async function initSync() {
 
     if (hasKey) {
         showView('active');
-        // Only set status to 'Synced' if we are not currently in an Error state from boot.
-        // This preserves the error message if the initial fetch failed (e.g. 401).
-        if (state.syncState !== 'syncError') {
-            setSyncStatus('syncSynced');
-        } else {
-            // Force UI update to show error if it was set before UI init
-            setSyncStatus('syncError');
-        }
+        setSyncStatus('syncSynced');
     } else {
         showView('inactive');
         setSyncStatus('syncInitial');

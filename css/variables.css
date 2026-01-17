@@ -1,3 +1,4 @@
+
 :root {
     /* --- CORES --- */
     /* FIX [2025-03-02]: Alterado para #000000 (True Black) a pedido do usuário para eliminar a percepção de 'fundo azulado' em telas OLED/LCD */
@@ -54,4 +55,5 @@
     --z-index-modal-overlay: 1000;
     --z-index-modal-content: 1001;
     --z-index-stacked-modal: 1010; /* Para modais que aparecem sobre outros modais */
+    --z-index-toast: 2000;
 }

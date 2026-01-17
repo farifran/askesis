@@ -64,12 +64,17 @@ Para começar a construir sua rotina, você tem dois caminhos:
 
 Se o hábito é o fundamento, o **Tempo** é o que dá sentido ao todo. A faixa de calendário no topo não é apenas decorativa; é a sua bússola de progresso.
 
-Os dias são representados por **Anéis de Progresso Cônico**, uma visualização de dados que preenche o anel com as cores azul (feito) e branco (adiado), mostrando a composição exata do seu dia com um único olhar.
+Os dias são representados por **Anéis de Progresso**, que simbolizam a simbiose entre o hábito e o tempo. Eles mostram visualmente a evolução do seu dia:
+*   A parte preenchida indica os hábitos **Feitos**.
+*   O espaço restante mostra o que falta.
+*   O sistema entende nuances: hábitos **Adiados** (por força maior) não quebram visualmente o anel da mesma forma que hábitos esquecidos.
 
 **Micro-ações do Calendário (Power User):**
 A faixa de calendário possui atalhos ocultos para facilitar a gestão em massa:
 *   **1 Clique:** Seleciona a data para visualizar o histórico.
-*   **Pressionar e Segurar (Long Press):** Abre um menu de ações rápidas para **Completar o Dia**, **Adiar o Dia** ou abrir o **Calendário Mensal Completo**, permitindo saltar para qualquer data do ano rapidamente.
+*   **2 Cliques Rápidos no dia:** Marca **TODOS** os hábitos daquele dia como **Feitos** (para dias perfeitos).
+*   **3 Cliques Rápidos no dia:** Marca **TODOS** os hábitos como **Adiados** (ideal para dias de férias ou doença).
+*   **Pressionar e Segurar (Long Press):** Abre o **Calendário Mensal Completo**, permitindo saltar para qualquer data do ano rapidamente.
 
 <h3>3. O Cartão de Hábito: Interação Diária</h3>
 
@@ -83,7 +88,6 @@ O cartão é a representação visual do seu dever no dia. Ele responde a difere
     *   Ao deslizar o cartão para os lados, você revela ferramentas de contexto:
     *   **Criar Nota:** Adicione uma observação estoica sobre a execução daquele hábito no dia.
     *   **Apagar:** Permite remover o hábito. O sistema perguntará inteligentemente se você quer remover **"Apenas Hoje"** (ex: um imprevisto) ou **"Para Sempre"** (encerrar o hábito).
-*   **Foco por Rolagem (Scroll Focus):** Ao rolar a lista, o cartão que está no centro da tela sutilmente aumenta de tamanho e opacidade. Este efeito, criado com a API de *Scroll-Driven Animations* do navegador, guia seu foco de forma natural e sem custo de performance.
 
 <h3>4. Navegação e Sabedoria</h3>
 
@@ -166,39 +170,28 @@ Este projeto rejeita a complexidade desnecessária dos frameworks modernos em fa
 
 <h3>Deep Dive Técnico: A Plataforma Web como Nativa</h3>
 
-O Askesis opera no "Sweet Spot" da performance web, utilizando APIs nativas modernas para superar frameworks tradicionais:
+Este projeto explora o limite do que é possível fazer no navegador sem dependências pesadas, utilizando APIs nativas ("Vanilla JS") para obter performance de classe mundial.
 
-1.  **Arquitetura de Dados "Bitmask-First":** O estado de conclusão dos hábitos não é armazenado em arrays ou objetos JSON, mas sim em mapas de bits (`BigInt`). Isso permite verificar a consistência de anos de histórico com operações matemáticas bitwise `O(1)`, com pegada de memória quase nula.
+1.  **Multithreading (Web Workers):**
+    *   Para garantir que a UI nunca trave (Jank-free), tarefas pesadas como **Criptografia AES-GCM**, **Parsing de JSON** massivo e **Construção de Prompts de IA** são delegadas para uma thread de worker separada (`sync.worker.ts`). A thread principal cuida apenas de desenhar a tela a 60fps.
 
-2.  **Persistência "Split-State":** O armazenamento local (IndexedDB) separa dados "quentes" (notas, configurações) de dados "frios" (logs binários), permitindo uma inicialização instantânea da aplicação sem parsear megabytes de histórico.
+2.  **Persistência Escalável (IndexedDB):**
+    *   Diferente do LocalStorage (que é síncrono e bloqueia a UI), o Askesis implementa um wrapper leve sobre o **IndexedDB**. Isso permite armazenamento assíncrono e virtualmente ilimitado, essencial para anos de histórico.
 
-3.  **Física de UI com APIs "Bleeding-Edge":** As interações de arrastar e deslizar utilizam a API Houdini (`CSS Typed OM`) para comunicação direta com a thread de composição do navegador, garantindo animações que "colam no dedo". A renderização é orquestrada pela `scheduler.postTask` para nunca bloquear a thread principal.
+3.  **Sincronização Inteligente (Smart Merge):**
+    *   Implementação de um algoritmo **CRDT-lite** (Conflict-free Replicated Data Type) para reconciliação de dados. O sistema resolve conflitos entre dispositivos offline e a nuvem usando pesos semânticos (ex: "Concluído" > "Pendente"), garantindo que o progresso do usuário nunca seja perdido.
 
-4.  **Multithreading (Web Workers):** Para garantir que a UI nunca trave (Jank-free), tarefas pesadas como **Criptografia AES-GCM**, **Parsing de JSON** massivo e **Construção de Prompts de IA** são delegadas para uma thread de worker separada (`sync.worker.ts`).
+4.  **Segurança (Client-Side Encryption):**
+    *   Utilizamos **PBKDF2** para derivar chaves e **AES-GCM** para criptografar o payload JSON no cliente antes do envio. O servidor Vercel KV atua apenas como um depósito cego ("Zero Knowledge").
 
-5.  **Criptografia Zero-Copy & Off-Main-Thread:** A criptografia não apenas acontece no cliente, ela é isolada em um **Web Worker** dedicado. Utilizamos técnicas de **Zero-Copy** (transferência de `ArrayBuffer` sem serialização Base64 intermediária na memória) para garantir que cifrar 5 anos de histórico não trave a interface do usuário, mesmo em celulares modestos.
+<h3>Performance & Otimização (60fps Target)</h3>
 
-6.  **Sincronização Inteligente (Smart Merge):** Implementação de um algoritmo **CRDT-lite** (Conflict-free Replicated Data Type) para reconciliação de dados. O sistema resolve conflitos entre dispositivos offline e a nuvem usando pesos semânticos (ex: "Concluído" > "Pendente"), garantindo que o progresso do usuário nunca seja perdido.
+A arquitetura "Zero-Cost Abstractions" foca em eliminar overhead de runtime:
 
----
-
-<h2>🛠️ Instalação e Desenvolvimento</h2>
-
-Como o Askesis é "Vanilla TypeScript" puro, não há build steps complexos de frameworks (como Next.js ou React).
-
-1.  **Clone o repositório:**
-    ```bash
-    git clone https://github.com/seu-usuario/askesis.git
-    ```
-2.  **Instale as dependências (apenas para build e dev server):**
-    ```bash
-    npm install
-    ```
-3.  **Rode o servidor de desenvolvimento:**
-    ```bash
-    npm run dev
-    ```
-    *O projeto utiliza `esbuild` para Hot Module Replacement (HMR) e transpilação TS -> JS.*
+*   **Object Pooling:** Reutilização de objetos e arrays em loops quentes (renderização de calendário e gráficos) para eliminar a pressão sobre o Garbage Collector.
+*   **Geometry Caching:** As dimensões dos elementos (layout) são cacheadas e lidas apenas no redimensionamento da janela, evitando *Layout Thrashing* (Reflows forçados) durante gestos de arrasto e deslize.
+*   **DOM Recycling & Template Cloning:** Em vez de destruir e recriar elementos DOM, o sistema clona templates (`cloneNode`) e atualiza apenas os dados alterados ("Dirty Checking"), mantendo o DOM leve.
+*   **Lazy Loading & Code Splitting:** Módulos pesados (como a lista de citações) e recursos DOM são carregados sob demanda, garantindo um *Time to Interactive* (TTI) quase instantâneo.
 
 ---
 

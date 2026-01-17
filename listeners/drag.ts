@@ -16,24 +16,19 @@
  * - **Relative Positioning:** Calcula posições baseadas em `offsetTop` relativo ao container, robusto contra reflows.
  * - **Dynamic Auto-Scroll:** Zonas de scroll calculadas dinamicamente baseadas no Viewport do container.
  * - **Geometry Caching (Update):** Cache de `getBoundingClientRect` no início do arrasto para evitar Layout Thrashing.
- * - **CSS Typed OM:** Renderização direta via `attributeStyleMap` para performance máxima (Zero String Parsing).
  */
 
-import { handleHabitDrop, reorderHabit } from '../services/habitActions';
+import { handleHabitDrop, reorderHabit } from '../habitActions';
 import { TimeOfDay, state } from '../state';
 import { getEffectiveScheduleForHabitOnDate } from '../services/selectors';
 import { triggerHaptic } from '../utils';
 import { DOM_SELECTORS, CSS_CLASSES } from '../render/constants';
 import { isCurrentlySwiping } from './swipe';
-import { renderApp } from '../render'; // CHAOS FIX: Import renderApp for catch-up
 
 // CONFIGURAÇÃO
 const SCROLL_ZONE_PX = 80; // Zona ativa para scroll
 const MAX_SCROLL_SPEED = 15; // Velocidade máxima (px/frame)
 const DROP_INDICATOR_GAP = 4; // Espaçamento visual
-
-// SNIPER OPTIMIZATION: Feature detection for Typed OM
-const hasTypedOM = typeof window !== 'undefined' && !!(window.CSS && (window as any).CSSTranslate && CSS.px);
 
 // --- STATE MACHINE ---
 const DragState = {
@@ -46,8 +41,7 @@ const DragState = {
     sourceEl: null as HTMLElement | null,
     sourceId: null as string | null,
     sourceTime: null as TimeOfDay | null,
-    // @fix: The type 'readonly ("Morning" | "Afternoon" | "Evening")[]' is 'readonly' and cannot be assigned to the mutable type '("Morning" | "Afternoon" | "Evening")[]'.
-    cachedSchedule: null as readonly TimeOfDay[] | null,
+    cachedSchedule: null as TimeOfDay[] | null,
     
     // Targets
     targetZone: null as HTMLElement | null,
@@ -122,9 +116,13 @@ function _scrollLoop() {
                 }
             } else {
                 // Fallback: Se não há cartão alvo, joga no final ou início dependendo da zona
+                // (Geralmente no final se a zona estiver vazia ou mouse no fim)
+                // Aqui simplificamos para 0 se vazio, ou append.
                 if (DragState.targetZone.children.length === 0) {
                     topPos = DROP_INDICATOR_GAP;
                 } else {
+                    // Mantém onde estava ou define lógica padrão
+                    // Se não temos targetCard mas estamos na zona, pode ser no final.
                     const lastChild = DragState.targetZone.lastElementChild as HTMLElement;
                     if (lastChild && lastChild !== DragState.indicator) {
                          topPos = lastChild.offsetTop + lastChild.offsetHeight + DROP_INDICATOR_GAP;
@@ -132,15 +130,7 @@ function _scrollLoop() {
                 }
             }
             
-            // BLEEDING-EDGE PERF (CSS Typed OM): No "hot path" do loop de arrastar,
-            // evitamos a criação e o parsing de strings de `transform`. Em vez disso,
-            // escrevemos valores numéricos diretamente no motor de composição do navegador
-            // para performance máxima, com fallback para o método tradicional.
-            if (hasTypedOM && DragState.indicator.attributeStyleMap) {
-                DragState.indicator.attributeStyleMap.set('transform', new (window as any).CSSTranslate(CSS.px(0), CSS.px(topPos), CSS.px(0)));
-            } else {
-                DragState.indicator.style.transform = `translate3d(0, ${topPos}px, 0)`;
-            }
+            DragState.indicator.style.transform = `translate3d(0, ${topPos}px, 0)`;
         } else {
             DragState.indicator.classList.remove('visible');
         }
@@ -236,7 +226,9 @@ const _handleDrop = (e: DragEvent) => {
     e.preventDefault();
     if (!DragState.isActive || !DragState.isValidDrop || !DragState.sourceId || !DragState.sourceTime) return;
 
-    const targetTime = DragState.targetZone!.dataset.time as TimeOfDay;
+    const targetTime = DragState.targetZone?.dataset.time as TimeOfDay;
+    if (!targetTime) return;
+
     const isReorder = DragState.sourceTime === targetTime;
     
     // Executa Ação
@@ -271,18 +263,7 @@ const _handleDrop = (e: DragEvent) => {
 const _reset = () => {
     if (DragState.rafId) cancelAnimationFrame(DragState.rafId);
     
-    // 1. Remove Render Locks
     document.body.classList.remove('is-dragging-active');
-    
-    // CHAOS FIX: CATCH-UP RENDER
-    // Se houve alterações de estado (ex: sync background) enquanto o drag estava ativo,
-    // o render loop ignorou. Agora que o lock saiu, precisamos processar o backlog visual.
-    if (state.uiDirtyState.habitListStructure || state.uiDirtyState.calendarVisuals) {
-        // Usa requestAnimationFrame para garantir que a remoção das classes de drag
-        // seja processada pelo browser antes de recalcular o layout complexo.
-        requestAnimationFrame(() => renderApp());
-    }
-
     DragState.sourceEl?.classList.remove(CSS_CLASSES.DRAGGING);
     
     if (DragState.container) {

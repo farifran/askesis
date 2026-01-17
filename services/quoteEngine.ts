@@ -14,39 +14,40 @@
  * 
  * V7.2 UPDATES [2025-05-14] - ROBUST SAGE:
  * - Crash Guard: Validação estrita de datas para evitar seeds NaN.
- * - True Urgency: Implementação real do estado 'urgency' para noites improdutivas.
+ * - True Urgency: Implementação real do estado 'urgency' para noites improdutivas (foco em Tempo/Ação).
  * - Case Insensitive: Normalização de tags da IA.
- * - Historical Determinism: O passado é imutável.
+ * - Historical Determinism: O passado é imutável (seed fixa para datas anteriores a hoje).
  */
 
-// AUDIT FIX: Removed unused 'getHabitDailyInfoForDate'
-import { state, Habit, StoicVirtue, GovernanceSphere, HABIT_STATE } from '../state';
-import { Quote, StoicTag } from '../data/quotes';
-import { calculateDaySummary, getEffectiveScheduleForHabitOnDate, calculateHabitStreak, getScheduleForDate } from './selectors';
+import { state, Habit, StoicVirtue, GovernanceSphere } from '../state';
+import { Quote } from '../data/quotes';
+import { calculateDaySummary, getEffectiveScheduleForHabitOnDate, calculateHabitStreak } from './selectors';
 import { toUTCIsoDateString, parseUTCIsoDate, getTodayUTCIso } from '../utils';
-import { HabitService } from './HabitService';
 
-// --- TUNING CONSTANTS ---
+// --- TUNING CONSTANTS (The Soul of the Algorithm) ---
 const WEIGHTS = {
-    AI_MATCH: 50,
-    SPHERE_MATCH: 40,
-    RECOVERY: 35,
-    PERFORMANCE: 30,
-    MOMENTUM: 25,
-    TIME_OF_DAY: 15,
-    VIRTUE_ALIGN: 10,
+    AI_MATCH: 50,        // Máxima prioridade: O usuário falou sobre isso explicitamente.
+    SPHERE_MATCH: 40,    // Alta prioridade: O "Remédio" específico para a área negligenciada.
+    RECOVERY: 35,        // Encorajamento após falha.
+    PERFORMANCE: 30,     // Reação ao estado geral.
+    MOMENTUM: 25,        // Boost para consistência.
+    TIME_OF_DAY: 15,     // Contexto temporal.
+    VIRTUE_ALIGN: 10,    // Reforço de identidade.
+    
+    // Penalties
     RECENTLY_SHOWN: -100 
 };
 
 // HYSTERESIS CONSTANTS
-const MIN_DISPLAY_DURATION = 20 * 60 * 1000;
+const MIN_DISPLAY_DURATION = 20 * 60 * 1000; // 20 minutes stickiness
 const TRIUMPH_ENTER = 0.80; 
 const TRIUMPH_EXIT = 0.70;  
-const STRUGGLE_ENTER = 0.25;
+const STRUGGLE_ENTER = 0.25; // > 25% snoozed is explicit struggle
 const STRUGGLE_EXIT = 0.15;  
 
+// CONSTANTS FOR HISTORY
 const HISTORY_LOOKBACK = 10;
-const HISTORY_GOOD_THRESHOLD = 0.5;
+const HISTORY_GOOD_THRESHOLD = 0.5; // Consideramos um dia "bom" se > 50% feito
 
 type PerformanceState = 'neutral' | 'struggle' | 'urgency' | 'triumph' | 'defeat';
 
@@ -82,20 +83,28 @@ function _stringHash(str: string): number {
     return hash >>> 0; 
 }
 
+/**
+ * Analisa a consistência dos últimos 10 dias.
+ * @returns Score de 0.0 a 1.0 (1.0 = Perfeito, 0.0 = Desastre)
+ * Retorna 1.0 (Benefício da Dúvida) se não houver histórico.
+ */
 function _analyzeRecentHistory(todayISO: string): number {
     const today = parseUTCIsoDate(todayISO);
     let validDays = 0;
     let successfulDays = 0;
 
+    // Loop reverso começando de ONTEM (i=1) até 10 dias atrás.
     for (let i = 1; i <= HISTORY_LOOKBACK; i++) {
         const pastDate = new Date(today);
         pastDate.setUTCDate(today.getUTCDate() - i);
         const pastISO = toUTCIsoDateString(pastDate);
 
+        // calculateDaySummary já usa caches internos eficientemente
         const summary = calculateDaySummary(pastISO);
 
         if (summary.total > 0) {
             validDays++;
+            // Critério de Sucesso do Dia: > 50% de conclusão
             if ((summary.completed / summary.total) >= HISTORY_GOOD_THRESHOLD) {
                 successfulDays++;
             }
@@ -103,17 +112,17 @@ function _analyzeRecentHistory(todayISO: string): number {
     }
 
     if (validDays === 0) return 1.0;
+
     return successfulDays / validDays;
 }
 
 function _getDominantVirtues(habits: Habit[], dateISO: string): Set<StoicVirtue> {
     const counts: Record<string, number> = {};
     
-    // @fix: Get philosophy from the habit's schedule for the given date.
     habits.forEach(h => {
-        const habitSchedule = getScheduleForDate(h, dateISO);
-        if (habitSchedule?.times.length > 0 && habitSchedule.philosophy) {
-            const v = habitSchedule.philosophy.virtue;
+        const schedule = getEffectiveScheduleForHabitOnDate(h, dateISO);
+        if (schedule.length > 0 && h.philosophy) {
+            const v = h.philosophy.virtue;
             counts[v] = (counts[v] || 0) + 1;
         }
     });
@@ -132,24 +141,18 @@ function _getDominantVirtues(habits: Habit[], dateISO: string): Set<StoicVirtue>
 
 function _getNeglectedSphere(habits: Habit[], dateISO: string): GovernanceSphere | null {
     const sphereStats: Record<string, { total: number, done: number }> = {};
-    
-    // @fix: Get philosophy from the habit's schedule for the given date.
+    const dailyData = state.dailyData[dateISO] || {};
+
     habits.forEach(h => {
-        const habitSchedule = getScheduleForDate(h, dateISO);
-        
-        if (habitSchedule?.philosophy) {
-            const sph = habitSchedule.philosophy.sphere;
+        const schedule = getEffectiveScheduleForHabitOnDate(h, dateISO);
+        if (schedule.length > 0 && h.philosophy) {
+            const sph = h.philosophy.sphere;
             if (!sphereStats[sph]) sphereStats[sph] = { total: 0, done: 0 };
             
-            // AUDIT FIX: Use effective schedule to account for day overrides/moves.
-            // Previously iterated habitSchedule.times, which missed dynamic changes.
-            const effectiveTimes = getEffectiveScheduleForHabitOnDate(h, dateISO);
-            
-            effectiveTimes.forEach(time => {
+            schedule.forEach(time => {
                 sphereStats[sph].total++;
-                // FIX: Use HabitService for status check with habit object passed
-                const status = HabitService.getStatus(h.id, dateISO, time);
-                if (status === HABIT_STATE.DONE || status === HABIT_STATE.DONE_PLUS) sphereStats[sph].done++;
+                const status = dailyData[h.id]?.instances[time]?.status;
+                if (status === 'completed') sphereStats[sph].done++;
             });
         }
     });
@@ -183,6 +186,7 @@ function _checkRecovery(dateISO: string): boolean {
     
     const yesterdaySummary = calculateDaySummary(yesterdayISO);
     
+    // Recovery: Ontem foi um dia ATIVO (com hábitos) e falho.
     if (yesterdaySummary.total > 0 && 
         (yesterdaySummary.completed / yesterdaySummary.total) < 0.4 &&
         todaySummary.completed > 0) {
@@ -203,7 +207,10 @@ function _getMomentumState(habits: Habit[], dateISO: string): 'building' | 'unbr
     return 'none';
 }
 
-function _getPerformanceStateWithHysteresis(dateISO: string, lastContextHash?: string): PerformanceState {
+function _getPerformanceStateWithHysteresis(
+    dateISO: string, 
+    lastContextHash?: string
+): PerformanceState {
     const summary = calculateDaySummary(dateISO);
     const timeOfDay = _getTimeOfDay();
     
@@ -212,14 +219,19 @@ function _getPerformanceStateWithHysteresis(dateISO: string, lastContextHash?: s
     const completionRate = summary.completed / summary.total;
     const snoozeRate = summary.snoozed / summary.total;
     
+    // 1. TRIUMPH (Explicit Success)
     if (completionRate >= TRIUMPH_ENTER) return 'triumph'; 
+
+    // 2. STRUGGLE (Explicit Difficulty)
     if (snoozeRate > STRUGGLE_ENTER) return 'struggle';
     
+    // 3. URGENCY (Evening + Low Progress) - CORREÇÃO v7.2
     const isToday = dateISO === getTodayUTCIso();
     if (isToday && timeOfDay === 'evening' && completionRate < 0.1 && snoozeRate < 0.1) {
         return 'urgency'; 
     }
     
+    // 4. DEFEAT (Trend Analysis)
     if (completionRate < 0.2 && snoozeRate < 0.2) {
         const historyConsistency = _analyzeRecentHistory(dateISO);
         if (historyConsistency < 0.4) {
@@ -228,6 +240,7 @@ function _getPerformanceStateWithHysteresis(dateISO: string, lastContextHash?: s
         return 'neutral';
     }
     
+    // Hysteresis
     let previousState: PerformanceState = 'neutral';
     if (lastContextHash && lastContextHash.includes('-')) {
         const parts = lastContextHash.split('-');
@@ -244,6 +257,7 @@ function _gatherContext(dateISO: string): ContextVector {
     const quoteState = state.quoteState;
     const diagnosis = state.dailyDiagnoses[dateISO];
     
+    // ROBUSTEZ v7.2: Normaliza temas para lowercase para garantir match com tags
     const aiThemes = new Set(
         (diagnosis ? diagnosis.themes : []).map(t => t.toLowerCase())
     );
@@ -287,25 +301,14 @@ function _gatherContext(dateISO: string): ContextVector {
 function _scoreQuote(quote: Quote, context: ContextVector): number {
     let score = 1.0; 
 
-    // Helper DRY para aplicar regra baseada em tags
-    const applyTagRule = (condition: boolean, tagsToCheck: StoicTag[], weight: number) => {
-        if (condition) {
-            for (const tag of tagsToCheck) {
-                if (quote.metadata.tags.includes(tag)) {
-                    score += weight;
-                    return; // Aplica o peso apenas uma vez por regra
-                }
-            }
-        }
-    };
-
-    // 0. ANTI-REPETITION
+    // 0. ANTI-REPETITION (Apenas se for Hoje, para não penalizar a consistência histórica)
     if (context.lastShownId === quote.id) {
         score += WEIGHTS.RECENTLY_SHOWN;
     }
 
     // 1. AI BOOST
     if (context.aiThemes.size > 0) {
+        // As tags do banco já são lowercase. AiThemes agora também é (normalizado em _gatherContext).
         const matches = quote.metadata.tags.filter(tag => context.aiThemes.has(tag));
         score += matches.length * WEIGHTS.AI_MATCH;
     }
@@ -315,12 +318,18 @@ function _scoreQuote(quote: Quote, context: ContextVector): number {
         score += WEIGHTS.SPHERE_MATCH;
     }
 
-    // 3. RECOVERY
-    applyTagRule(context.isRecovery, ['resilience', 'growth', 'hope'], WEIGHTS.RECOVERY);
+    // 3. RECOVERY DETECTED
+    if (context.isRecovery) {
+        if (quote.metadata.tags.includes('resilience') || 
+            quote.metadata.tags.includes('growth') || 
+            quote.metadata.tags.includes('hope')) {
+            score += WEIGHTS.RECOVERY;
+        }
+    }
 
     // 4. TIME OF DAY
-    if (context.timeOfDay === 'morning') applyTagRule(true, ['morning'], WEIGHTS.TIME_OF_DAY);
-    if (context.timeOfDay === 'evening') applyTagRule(true, ['evening', 'reflection', 'rest'], WEIGHTS.TIME_OF_DAY);
+    if (context.timeOfDay === 'morning' && quote.metadata.tags.includes('morning')) score += WEIGHTS.TIME_OF_DAY;
+    if (context.timeOfDay === 'evening' && (quote.metadata.tags.includes('evening') || quote.metadata.tags.includes('reflection') || quote.metadata.tags.includes('rest'))) score += WEIGHTS.TIME_OF_DAY;
 
     // 5. VIRTUE RESONANCE
     if (context.dominantVirtues.has(quote.metadata.virtue)) {
@@ -328,43 +337,62 @@ function _scoreQuote(quote: Quote, context: ContextVector): number {
     }
 
     // 6. PERFORMANCE REACTION
-    // AUDIT FIX: Renamed shadowed variable 'state' to 'perfState'
-    const perfState = context.performanceState;
-    if (perfState === 'defeat') {
-        applyTagRule(true, ['resilience', 'acceptance', 'fate'], WEIGHTS.PERFORMANCE);
-    } else if (perfState === 'triumph') {
-        applyTagRule(true, ['humility', 'temperance', 'death'], WEIGHTS.PERFORMANCE);
-    } else if (perfState === 'struggle') {
-        applyTagRule(true, ['discipline', 'action', 'focus'], WEIGHTS.PERFORMANCE);
-    } else if (perfState === 'urgency') {
-        if (quote.metadata.tags.includes('urgency') || quote.metadata.tags.includes('time') || 
-            quote.metadata.tags.includes('action') || quote.metadata.tags.includes('death')) {
-            score += WEIGHTS.PERFORMANCE * 1.2;
+    if (context.performanceState === 'defeat') {
+        if (quote.metadata.tags.includes('resilience') || 
+            quote.metadata.tags.includes('acceptance') || 
+            quote.metadata.tags.includes('fate')) {
+            score += WEIGHTS.PERFORMANCE;
+        }
+    } else if (context.performanceState === 'triumph') {
+        if (quote.metadata.tags.includes('humility') || 
+            quote.metadata.tags.includes('temperance') || 
+            quote.metadata.tags.includes('death')) {
+            score += WEIGHTS.PERFORMANCE;
+        }
+    } else if (context.performanceState === 'struggle') {
+        if (quote.metadata.tags.includes('discipline') || 
+            quote.metadata.tags.includes('action') || 
+            quote.metadata.tags.includes('focus')) {
+            score += WEIGHTS.PERFORMANCE;
+        }
+    } else if (context.performanceState === 'urgency') {
+        // CORREÇÃO v7.2: Estado de Urgência explícito
+        // Foca em Tempo (memento mori) e Ação imediata
+        if (quote.metadata.tags.includes('urgency') || 
+            quote.metadata.tags.includes('time') || 
+            quote.metadata.tags.includes('action') ||
+            quote.metadata.tags.includes('death')) {
+            score += WEIGHTS.PERFORMANCE * 1.2; // Boost extra para urgência
         }
     }
 
     // 7. MOMENTUM CONTEXT
-    applyTagRule(context.momentumState === 'unbroken', ['consistency', 'habit'], WEIGHTS.MOMENTUM);
+    if (context.momentumState === 'unbroken') {
+        if (quote.metadata.tags.includes('consistency') || 
+            quote.metadata.tags.includes('habit')) {
+            score += WEIGHTS.MOMENTUM;
+        }
+    }
 
     return score;
 }
 
 // --- PUBLIC API ---
 
-// @fix: Accept readonly Quote[] in selectBestQuote to allow usage with frozen arrays from data/quotes.
-export function selectBestQuote(quotes: readonly Quote[], dateISO: string): Quote {
+export function selectBestQuote(quotes: Quote[], dateISO: string): Quote {
     if (!quotes || quotes.length === 0) {
         throw new Error("No quotes provided to engine.");
     }
 
+    // CRASH GUARD v7.2: Previne datas inválidas e fallback para Hoje
     if (!dateISO || isNaN(Date.parse(dateISO))) {
         dateISO = getTodayUTCIso();
     }
 
     const context = _gatherContext(dateISO);
+    
+    // STICKINESS CHECK (Only applies to Today)
     const isToday = dateISO === getTodayUTCIso();
-
-    // STICKINESS CHECK (Today Only)
     if (isToday && state.quoteState && !context.isMajorShift) {
         const elapsed = Date.now() - state.quoteState.displayedAt;
         if (elapsed < MIN_DISPLAY_DURATION) {
@@ -381,6 +409,7 @@ export function selectBestQuote(quotes: readonly Quote[], dateISO: string): Quot
     scoredQuotes.sort((a, b) => b.score - a.score);
 
     const topScore = scoredQuotes[0].score;
+    // Ligeiro aumento no threshold para garantir qualidade (top 70% das melhores)
     const threshold = topScore > 10 ? topScore * 0.7 : 0;
     let candidates = scoredQuotes.filter(item => item.score >= threshold);
     if (candidates.length > 5) candidates = candidates.slice(0, 5); 
@@ -388,21 +417,29 @@ export function selectBestQuote(quotes: readonly Quote[], dateISO: string): Quot
     const virtueStr = Array.from(context.dominantVirtues).sort().join('');
     const sphereStr = context.neglectedSphere || 'none';
     
+    // Assinatura do contexto para seed
     const signature = `${dateISO}-${context.timeOfDay}-${context.performanceState}-${virtueStr}-${sphereStr}`;
     
     const year = parseInt(dateISO.substring(0, 4), 10);
     const day = parseInt(dateISO.substring(8, 10), 10);
     
+    // ROTATION LOGIC v7.1 (Determinismo Histórico):
+    // Se for hoje, rotaciona com a hora.
+    // Se for passado/futuro, fixa em 12h para que a citação seja sempre a mesma ao revisitar o dia.
     const rotationHour = isToday ? new Date().getHours() : 12;
+    
+    // Crash Guard: Ensure valid numbers for Math
     const safeYear = isNaN(year) ? 2024 : year;
     const safeDay = isNaN(day) ? 1 : day;
 
+    // NOISE REDUCTION: Removido Date.now() para garantir determinismo puro baseado no hash
     const seed = Math.abs(_stringHash(signature) + (safeYear * safeDay) + rotationHour); 
     const rnd = (seed % 1000) / 1000;
     
     const selectedIndex = Math.floor(rnd * candidates.length);
     const selectedQuote = candidates[selectedIndex].quote;
 
+    // Atualiza estado global apenas se for o dia de hoje
     if (isToday) {
         state.quoteState = {
             currentId: selectedQuote.id,

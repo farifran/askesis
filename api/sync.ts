@@ -2,130 +2,199 @@
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
- * VERSÃO: Production Grade - Hash-Based Multi-Tenancy
- * Ajustada para aceitar 'Authorization: Bearer' e gerar hash no servidor.
 */
 
-import { createClient } from '@vercel/kv';
+/**
+ * @file api/sync.ts
+ * @description Endpoint serverless (Edge Function) para sincronização de estado criptografado via Vercel KV.
+ * 
+ * [SERVERLESS / EDGE FUNCTION CONTEXT]:
+ * Otimizado para "Zero-Cost Abstractions".
+ * - Headers e Erros estáticos são pré-alocados.
+ * - Lógica "Inline" para evitar overhead de chamadas de função desnecessárias.
+ * - [2025-05-01] ATOMICIDADE: Implementado Script Lua para garantir integridade em transações concorrentes.
+ */
+
+import { kv } from '@vercel/kv';
 
 export const config = {
   runtime: 'edge',
 };
 
-const MAX_PAYLOAD_SIZE = 1024 * 1024; // 1MB
+// --- CONSTANTS & CONFIG ---
+const MAX_PAYLOAD_SIZE = 1 * 1024 * 1024; // 1MB Limit
 
-// Script Lua para garantir atualizações atômicas e resolver conflitos de timestamp
+// --- LUA SCRIPTS ---
+// Script para executar a lógica de comparação de timestamp e escrita atomicamente no Redis.
+// Isso previne condições de corrida onde uma leitura antiga sobrescreve uma escrita nova.
+// Retorna um array: [STATUS, DADOS_OPCIONAIS]
 const LUA_ATOMIC_UPDATE = `
 local key = KEYS[1]
 local newPayload = ARGV[1]
 local newTs = tonumber(ARGV[2])
 
-if not newTs then return { "ERROR", "Invalid Timestamp Argument" } end
-
 local currentVal = redis.call("GET", key)
+
 if not currentVal then
     redis.call("SET", key, newPayload)
     return { "OK" }
 end
 
+-- Decodifica apenas o necessário se possível, mas cjson.decode parseia tudo.
+-- Usamos pcall (protected call) para evitar crash se o JSON do banco estiver corrompido.
 local status, currentJson = pcall(cjson.decode, currentVal)
-if not status or type(currentJson) ~= "table" or type(currentJson.lastModified) ~= "number" then
+
+if not status then
+    -- Se o JSON no banco estiver corrompido, sobrescrevemos (Auto-healing)
     redis.call("SET", key, newPayload)
     return { "OK" }
 end
 
 local currentTs = tonumber(currentJson.lastModified)
-if newTs == currentTs then return { "NOT_MODIFIED" } end
-if newTs < currentTs then return { "CONFLICT", currentVal } end
 
+if not currentTs then
+    -- Se não houver timestamp válido, assume dado legado/inválido e sobrescreve
+    redis.call("SET", key, newPayload)
+    return { "OK" }
+end
+
+if newTs == currentTs then
+    return { "NOT_MODIFIED" }
+end
+
+if newTs < currentTs then
+    -- Cliente está desatualizado: Retorna o dado do servidor para resolução de conflito
+    return { "CONFLICT", currentVal }
+end
+
+-- Last Write Wins (se newTs > currentTs)
 redis.call("SET", key, newPayload)
 return { "OK" }
 `;
 
-const HEADERS_BASE = {
-  'Content-Type': 'application/json',
-  'Access-Control-Allow-Origin': '*', 
+// --- STATIC OBJECTS (Zero-Allocation) ---
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, X-Sync-Key-Hash, Authorization', // Adicionado Authorization
+  'Access-Control-Allow-Headers': 'Content-Type, X-Sync-Key-Hash',
 };
 
-// Helper para gerar SHA-256 no Edge Runtime
-async function sha256(message: string) {
-    const msgBuffer = new TextEncoder().encode(message);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+const HEADERS_JSON = {
+  ...CORS_HEADERS,
+  'Content-Type': 'application/json',
+};
+
+// --- STATIC ERRORS (Pre-serialized) ---
+const ERR_METHOD_NOT_ALLOWED = JSON.stringify({ error: 'Method not allowed' });
+const ERR_UNAUTHORIZED = JSON.stringify({ error: 'Unauthorized: Missing sync key hash' });
+const ERR_INVALID_JSON = JSON.stringify({ error: 'Bad Request: Invalid JSON format' });
+const ERR_INVALID_PAYLOAD = JSON.stringify({ error: 'Bad Request: Invalid or missing payload data' });
+const ERR_PAYLOAD_TOO_LARGE = JSON.stringify({ error: 'Payload Too Large', details: `Payload size exceeds the limit of ${MAX_PAYLOAD_SIZE} bytes.` });
+const ERR_LENGTH_REQUIRED = JSON.stringify({ error: 'Length Required', details: 'Content-Length header is missing.' });
+const SUCCESS_JSON = '{"success":true}'; // Static success response
+
+// --- TYPES ---
+interface SyncPayload {
+    lastModified: number;
+    state: string;
 }
 
 export default async function handler(req: Request) {
-    if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: HEADERS_BASE });
-
-    const dbUrl = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
-    const dbToken = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
-
-    if (!dbUrl || !dbToken) {
-         console.error("Missing Database Config");
-         return new Response(JSON.stringify({ error: 'Server Config Error' }), { status: 500, headers: HEADERS_BASE });
+    // Fast Path: Preflight
+    if (req.method === 'OPTIONS') {
+        return new Response(null, { status: 204, headers: CORS_HEADERS });
     }
 
-    const kv = createClient({ url: dbUrl, token: dbToken });
-
     try {
-        // --- AUTENTICAÇÃO FLEXÍVEL ---
-        // Aceita tanto o cabeçalho estrito (x-sync-key-hash) quanto o padrão (Authorization)
-        let keyHash = req.headers.get('x-sync-key-hash');
-        
+        // Authentication Check
+        const keyHash = req.headers.get('x-sync-key-hash');
         if (!keyHash) {
-            const authHeader = req.headers.get('Authorization');
-            if (authHeader && authHeader.startsWith('Bearer ')) {
-                const rawKey = authHeader.replace('Bearer ', '').trim();
-                if (rawKey.length >= 8) {
-                    // Gera o hash no servidor para manter a consistência do banco
-                    keyHash = await sha256(rawKey);
-                }
-            }
-        }
-
-        if (!keyHash || !/^[a-f0-9]{64}$/i.test(keyHash)) {
-            return new Response(JSON.stringify({ error: 'Unauthorized: Missing or Invalid Key' }), { status: 401, headers: HEADERS_BASE });
+            return new Response(ERR_UNAUTHORIZED, { status: 401, headers: HEADERS_JSON });
         }
         
-        // Cada usuário tem seu espaço baseado no hash da senha
-        const dataKey = `sync_v2:${keyHash}`;
+        const dataKey = `sync_data:${keyHash}`;
 
+        // --- GET HANDLER ---
         if (req.method === 'GET') {
-            const storedData = await kv.get(dataKey);
-            return new Response(JSON.stringify(storedData || null), { status: 200, headers: HEADERS_BASE });
+            const storedData = await kv.get<SyncPayload>(dataKey);
+            // kv.get returns null if not found, which JSON.stringify handles correctly ("null")
+            return new Response(JSON.stringify(storedData || null), {
+                status: 200,
+                headers: HEADERS_JSON,
+            });
         }
 
+        // --- POST HANDLER ---
         if (req.method === 'POST') {
-            const bodyText = await req.text();
+            // SECURITY: Pre-check Content-Length to prevent OOM
+            const contentLengthStr = req.headers.get('content-length');
+            if (!contentLengthStr) {
+                return new Response(ERR_LENGTH_REQUIRED, { status: 411, headers: HEADERS_JSON });
+            }
             
-            if (bodyText.length > MAX_PAYLOAD_SIZE * 1.1) {
-                return new Response(JSON.stringify({ error: 'Payload Too Large' }), { status: 413, headers: HEADERS_BASE });
+            const contentLength = parseInt(contentLengthStr, 10);
+            if (isNaN(contentLength) || contentLength > MAX_PAYLOAD_SIZE) {
+                return new Response(ERR_PAYLOAD_TOO_LARGE, { status: 413, headers: HEADERS_JSON });
             }
 
-            let clientPayload;
-            try { clientPayload = JSON.parse(bodyText); } 
-            catch { return new Response(JSON.stringify({ error: 'Malformed JSON' }), { status: 400, headers: HEADERS_BASE }); }
-
-            if (!clientPayload?.lastModified || typeof clientPayload.lastModified !== 'number') {
-                // Fallback: Se não vier lastModified, usa timestamp atual (menos seguro contra conflito, mas funciona)
-                clientPayload.lastModified = Date.now();
+            let clientPayload: SyncPayload;
+            try {
+                // BLINDAGEM: Lê como Blob primeiro para verificar tamanho real antes do parse JSON.
+                // Protege contra ataques onde content-length é mentiroso.
+                const blob = await req.clone().blob();
+                if (blob.size > MAX_PAYLOAD_SIZE) {
+                    return new Response(ERR_PAYLOAD_TOO_LARGE, { status: 413, headers: HEADERS_JSON });
+                }
+                clientPayload = JSON.parse(await blob.text());
+            } catch (e) {
+                return new Response(ERR_INVALID_JSON, { status: 400, headers: HEADERS_JSON });
             }
 
-            const result = await kv.eval(LUA_ATOMIC_UPDATE, [dataKey], [bodyText, String(clientPayload.lastModified)]) as [string, string?];
+            // Validation
+            if (!clientPayload || typeof clientPayload.lastModified !== 'number' || typeof clientPayload.state !== 'string') {
+                return new Response(ERR_INVALID_PAYLOAD, { status: 400, headers: HEADERS_JSON });
+            }
+            
+            // Double check actual string length inside JSON
+            if (clientPayload.state.length > MAX_PAYLOAD_SIZE) {
+                return new Response(ERR_PAYLOAD_TOO_LARGE, { status: 413, headers: HEADERS_JSON });
+            }
 
-            if (result[0] === 'OK') return new Response('{"success":true}', { status: 200, headers: HEADERS_BASE });
-            if (result[0] === 'NOT_MODIFIED') return new Response(null, { status: 304, headers: HEADERS_BASE });
-            if (result[0] === 'CONFLICT') return new Response(result[1], { status: 409, headers: HEADERS_BASE });
-            return new Response(JSON.stringify({ error: result[1] }), { status: 400, headers: HEADERS_BASE });
+            // ATOMIC OPERATION (Redis Lua)
+            const payloadStr = JSON.stringify(clientPayload);
+            
+            // kv.eval(script, keys[], args[])
+            const result = await kv.eval(
+                LUA_ATOMIC_UPDATE, 
+                [dataKey], 
+                [payloadStr, clientPayload.lastModified]
+            ) as [string, string?];
+
+            const [status, conflictData] = result;
+
+            if (status === 'OK') {
+                return new Response(SUCCESS_JSON, { status: 200, headers: HEADERS_JSON });
+            }
+            
+            if (status === 'NOT_MODIFIED') {
+                return new Response(null, { status: 304, headers: CORS_HEADERS });
+            }
+
+            if (status === 'CONFLICT' && conflictData) {
+                return new Response(conflictData, { status: 409, headers: HEADERS_JSON });
+            }
+
+            throw new Error(`Unexpected Lua result: ${status}`);
         }
 
-        return new Response(null, { status: 405 });
+        return new Response(ERR_METHOD_NOT_ALLOWED, { status: 405, headers: HEADERS_JSON });
 
     } catch (error: any) {
-        console.error("API Sync Error:", error);
-        return new Response(JSON.stringify({ error: 'Internal Server Error' }), { status: 500, headers: HEADERS_BASE });
+        console.error("Critical error in api/sync:", error);
+        // SANITIZATION: Generic error message to client
+        return new Response(JSON.stringify({ error: 'Internal Server Error' }), {
+            status: 500,
+            headers: HEADERS_JSON,
+        });
     }
 }

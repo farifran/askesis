@@ -1,3 +1,4 @@
+
 /* --- LAYOUT DE HABIT CONTAINER (SMART FLEX SCROLL) --- */
 #habit-container {
     display: flex;
@@ -21,7 +22,7 @@
     padding-top: var(--space-lg); /* Space between header and habits, matches chart margin. */
     
     /* UX FIX [2025-04-01]: Reduzido de space-xl para space-sm. 
-       Evita criar um grande espaço vazio no final da lista, já que o gráfico possui sua própria margem superior. */
+       Evita criar um grande espaço vazio no final da rolagem, já que o gráfico possui sua própria margem superior. */
     padding-bottom: var(--space-sm);
     
     /* UX: Smooth scrolling */
@@ -59,12 +60,9 @@
     min-height: auto;
     overflow: visible;
 
-    /* PERFORMANCE [2025-06-03]: Reativado CSS Containment.
-       Virtualização nativa para saltar renderização de grupos fora da tela.
-       FIX JITTER: 'contain-intrinsic-size' configurado para a altura aproximada de 1 cartão + gap (~100px).
-       Isso fornece ao navegador uma estimativa estável, evitando pulos na barra de rolagem. */
-    content-visibility: auto;
-    contain-intrinsic-size: auto 100px;
+    /* ROLLBACK [2025-05-04]: Removido 'content-visibility: auto'.
+       A estimativa de tamanho (contain-intrinsic-size) causava saltos bruscos na barra de rolagem (Scroll Jitter)
+       quando a altura real do grupo diferia da estimada. A reciclagem de DOM no JS já garante performance. */
 }
 
 /* Collapsible state override */
@@ -76,7 +74,7 @@
 .time-marker {
     flex-shrink: 0;
     width: 30px;
-    padding-top: 21px; /* Default alignment for Afternoon & Evening */
+    padding-top: 25px; /* [2025-02-26]: Ajuste fino para alinhar visualmente à base do cartão */
     padding-bottom: 2px;
     color: #ffffff; /* Changed from var(--text-tertiary) */
     display: flex;
@@ -92,12 +90,6 @@
     /* UX FIX [2025-02-25]: Disable pointer events so dragging over the icon hits the drop zone behind it */
     pointer-events: none;
 }
-
-/* UX ADJUSTMENT [2025-06-03]: Specific vertical alignment for Morning icon only */
-.habit-group-wrapper[data-time-wrapper="Morning"] .time-marker {
-    padding-top: 7px;
-}
-
 .time-marker svg {
     /* Reduced size from 24px to 21px (~10%) */
     width: 21px;
@@ -164,12 +156,10 @@ body.is-dragging-active .habit-group {
     right: var(--space-sm);
     opacity: 0;
     pointer-events: none;
-    /* PERFORMANCE: Typed OM controla o transform diretamente, não precisamos de transição JS aqui se a frame rate for alta, 
-       mas mantemos para suavização extra em setups híbridos. */
     transition: top var(--transition-duration-fast) ease-out, opacity var(--transition-duration-fast) ease-out;
     z-index: var(--z-index-indicator);
     /* PERFORMANCE [2025-01-16]: Otimiza animação de drag & drop. */
-    will-change: transform, opacity;
+    will-change: top, opacity;
 }
 .drop-indicator.visible {
     opacity: 1;
@@ -236,15 +226,8 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     position: relative;
     overflow: hidden;
     display: flex;
-    
-    /* --- PERFORMANCE UPDATE v8.0 (Virtualização) --- */
-    /* Substitui 'contain: layout style' pela virtualização total. */
-    content-visibility: auto;
-    
-    /* ESTIMATIVA DE TAMANHO: Altura média de um cartão (~86px). */
-    /* Isso previne o 'scrollbar jumping' quando o cartão é renderizado. */
-    contain-intrinsic-size: auto 86px; 
-    
+    /* PERFORMANCE [2024-12-28]: Isola o layout e estilo para otimizar renderização de listas longas. */
+    contain: layout style;
     /* UX [2025-01-27]: Importante para garantir scroll vertical suave ao tocar no cartão */
     /* LOGIC LOCK: 'pan-y' é essencial para a física do swipe horizontal personalizada. */
     touch-action: pan-y;
@@ -324,8 +307,7 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     /* VISUAL UPDATE [2025-02-26]: Ajuste de padding para 32px (space-xxl) para triplicar a margem visual durante o swipe (de 6px para 18px).
        Math: 32px (pad) + 34px (icon) + 12px (gap) = 78px. 
        Swipe Width: 60px. Buffer: 18px. */
-    /* ADJUST [2025-06-03]: 32px -> 26px (movimento de 6px para esquerda) */
-    padding: var(--space-sm) var(--space-md) var(--space-sm) 26px;
+    padding: var(--space-sm) var(--space-md) var(--space-sm) var(--space-xxl);
     position: relative;
     z-index: var(--z-index-content);
     cursor: pointer;
@@ -461,10 +443,10 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 .habit-details .subtitle { 
     font-size: 11px; 
     color: var(--text-secondary);
-    font-weight: 500;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    transition: color 0.3s ease, font-weight 0.3s ease;
 }
 
 .habit-card.completed .habit-details .name {
@@ -524,20 +506,16 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 }
 .goal-value-wrapper:hover { background-color: var(--surface-hover); }
 
-/* DIRECT INPUT STYLE */
 .goal-input-inline {
-    width: 40px; /* Compact width */
-    background: transparent;
+    width: calc(var(--space-section) * 2.5); /* Widen for 3 digits comfort */
+    background: transparent; /* UX FIX: Blend with card background */
     border: 1px solid var(--accent-blue);
     color: var(--text-primary);
-    font-size: 12px;
-    font-weight: 600;
+    /* BLINDAGEM IOS: 16px previne zoom automático ao editar meta */
+    font-size: 16px;
     text-align: center;
-    border-radius: var(--border-radius-small);
-    padding: 0;
-    height: 20px;
-    margin: 0;
-    /* Remove native spinners */
+    border-radius: var(--space-xs);
+    padding: 2px;
     -moz-appearance: textfield;
 }
 .goal-input-inline::-webkit-outer-spin-button,
@@ -545,13 +523,10 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     -webkit-appearance: none;
     margin: 0;
 }
-.goal-input-inline:focus {
-    outline: none;
-    box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.3);
-}
 
 .goal-value-wrapper .progress {
     color: var(--text-primary);
+    transition: color var(--transition-duration-slow);
 }
 
 .goal-value-wrapper.increase .progress {
@@ -581,10 +556,7 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 
 .habit-card.is-open-left .habit-content-wrapper { transform: translateX(var(--swipe-action-width)); }
 .habit-card.is-open-right .habit-content-wrapper { transform: translateX(calc(-1 * var(--swipe-action-width))); }
-
-/* UX FIX: Oculta APENAS controles de meta e ícone de horário ao deslizar.
-   Mantém o ícone do hábito visível para contexto. */
-.habit-card:is(.is-open-left, .is-open-right) :is(.habit-goal-controls, .time-of-day-icon) {
+.habit-card:is(.is-open-left, .is-open-right) :is(.habit-goal-controls, .time-of-day-icon, .habit-icon) {
     opacity: 0;
     pointer-events: none;
 }
@@ -655,53 +627,4 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 
 .completed-wrapper svg {
     stroke: var(--accent-blue);
-}
-
-/* --- VISUAL EFFECT: SCROLL ZOOM (ZERO-COST) --- */
-/* Utiliza a API nativa de Scroll-Driven Animations para criar um efeito de foco
-   no centro da tela sem usar JavaScript (Main Thread Free). */
-@supports (animation-timeline: view()) {
-    .habit-card {
-        animation: scroll-focus linear both;
-        animation-timeline: view(block);
-        /* O efeito acontece enquanto o cartão atravessa a viewport */
-        animation-range: cover 0% cover 100%;
-    }
-
-    /* 
-       INTERACTION GUARD: 
-       Desativa a animação de scroll quando o usuário está interagindo fisicamente 
-       (Swipe ou Drag). Isso evita conflitos de transform e garante que a física 
-       JS (1:1 movement) tenha prioridade total.
-    */
-    .habit-card.is-swiping,
-    .habit-card.dragging,
-    .habit-card.is-open-left,
-    .habit-card.is-open-right {
-        animation: none !important;
-        opacity: 1 !important;
-        /* Mantém a escala natural durante a interação para sensação tátil sólida */
-        transform: scale(1) !important; 
-    }
-
-    /* Keyframes otimizados para opacidade e escala (GPU Friendly) */
-    @keyframes scroll-focus {
-        0% {
-            transform: scale(0.95);
-            opacity: 0.8;
-        }
-        /* Mantém o tamanho total (100%) durante a zona central ("Sweet Spot") */
-        15% {
-            transform: scale(1);
-            opacity: 1;
-        }
-        85% {
-            transform: scale(1);
-            opacity: 1;
-        }
-        100% {
-            transform: scale(0.95);
-            opacity: 0.8;
-        }
-    }
 }

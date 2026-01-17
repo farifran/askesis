@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -6,25 +7,38 @@
 /**
  * @file data/predefinedHabits.ts
  * @description Catálogo estático de templates de hábitos pré-configurados.
+ * 
+ * [SHARED CONTEXT: MAIN THREAD & WORKER]:
+ * Este arquivo é isomórfico. Ele é importado tanto pela UI (render/modals.ts) para exibir a lista de escolha,
+ * quanto pelo Web Worker (sync.worker.ts) para gerar prompts de IA contextuais baseados em templates.
+ * 
+ * ARQUITETURA DE DADOS:
+ * - Imutabilidade: Estes objetos servem apenas como "Carimbos" (Blueprints) para criar novas instâncias de Habits.
+ * - I18n: Usa chaves de tradução (nameKey, subtitleKey) em vez de texto hardcoded para suportar troca dinâmica de idioma.
+ * 
+ * DEPENDÊNCIAS CRÍTICAS:
+ * - `HABIT_ICONS` (data/icons.ts): Deve conter apenas strings SVG puras, sem dependências de DOM (HTMLElement),
+ *   para garantir que este arquivo possa ser importado dentro do Worker sem causar erro "document is not defined".
  */
 
 import { PredefinedHabit } from '../state';
+// ARCHITECTURE FIX [2025-03-22]: Importa de data/icons.ts para garantir segurança no Worker.
+// Evita importar de render/icons.ts que pode conter lógica de DOM no futuro.
 import { HABIT_ICONS } from './icons';
 
-// PERFORMANCE: Constantes reutilizáveis para reduzir o Heap Footprint e ruído visual.
-const GOAL_CHECK = Object.freeze({ type: 'check', unitKey: 'unitCheck' }) as any;
-const FREQ_DAILY = Object.freeze({ type: 'daily' }) as any;
-
-export const PREDEFINED_HABITS: readonly PredefinedHabit[] = Object.freeze([
+// DO NOT REFACTOR: A estrutura deve corresponder estritamente ao tipo PredefinedHabit
+// para garantir a serialização correta entre threads (postMessage) e compatibilidade com o sistema de tipos.
+// Predefined habits configuration using keys for localization
+export const PREDEFINED_HABITS: PredefinedHabit[] = [
     // --- STOIC FOUNDATIONS ---
     {
         nameKey: 'predefinedHabitSustenanceName',
         subtitleKey: 'predefinedHabitSustenanceSubtitle',
-        icon: HABIT_ICONS.sustenance,
+        icon: HABIT_ICONS.sustenance, // FIX [2025-05-08]: Usar ícone específico de Sustento (comida/água)
         color: '#3498DB',
-        times: ['Morning'],
-        goal: GOAL_CHECK,
-        frequency: FREQ_DAILY,
+        times: ['Morning', 'Afternoon', 'Evening'],
+        goal: { type: 'check', unitKey: 'unitCheck' },
+        frequency: { type: 'daily' },
         isDefault: true,
         philosophy: {
             sphere: 'Biological',
@@ -43,8 +57,8 @@ export const PREDEFINED_HABITS: readonly PredefinedHabit[] = Object.freeze([
         icon: HABIT_ICONS.snowflake,
         color: '#95A5A6',
         times: ['Morning'],
-        goal: GOAL_CHECK,
-        frequency: FREQ_DAILY,
+        goal: { type: 'check', unitKey: 'unitCheck' },
+        frequency: { type: 'daily' },
         philosophy: {
             sphere: 'Biological',
             level: 1,
@@ -62,8 +76,8 @@ export const PREDEFINED_HABITS: readonly PredefinedHabit[] = Object.freeze([
         icon: HABIT_ICONS.dignity,
         color: '#8E44AD',
         times: ['Morning'],
-        goal: GOAL_CHECK,
-        frequency: FREQ_DAILY,
+        goal: { type: 'check', unitKey: 'unitCheck' },
+        frequency: { type: 'daily' },
         philosophy: {
             sphere: 'Biological',
             level: 1,
@@ -79,10 +93,10 @@ export const PREDEFINED_HABITS: readonly PredefinedHabit[] = Object.freeze([
         nameKey: 'predefinedHabitPresenceName',
         subtitleKey: 'predefinedHabitPresenceSubtitle',
         icon: HABIT_ICONS.presence,
-        color: '#5DADE2',
+        color: '#4A90E2',
         times: ['Morning'],
-        goal: GOAL_CHECK,
-        frequency: FREQ_DAILY,
+        goal: { type: 'check', unitKey: 'unitCheck' },
+        frequency: { type: 'daily' },
         philosophy: {
             sphere: 'Biological',
             level: 1,
@@ -98,10 +112,10 @@ export const PREDEFINED_HABITS: readonly PredefinedHabit[] = Object.freeze([
         nameKey: 'predefinedHabitAbstentionName',
         subtitleKey: 'predefinedHabitAbstentionSubtitle',
         icon: HABIT_ICONS.abstention,
-        color: '#BDC3C7',
+        color: '#2C3E50',
         times: ['Morning'],
-        goal: GOAL_CHECK,
-        frequency: FREQ_DAILY,
+        goal: { type: 'check', unitKey: 'unitCheck' },
+        frequency: { type: 'daily' },
         philosophy: {
             sphere: 'Mental',
             level: 1,
@@ -117,10 +131,10 @@ export const PREDEFINED_HABITS: readonly PredefinedHabit[] = Object.freeze([
         nameKey: 'predefinedHabitDiscernmentName',
         subtitleKey: 'predefinedHabitDiscernmentSubtitle',
         icon: HABIT_ICONS.discernment,
-        color: '#f1c40f',
+        color: '#3498DB',
         times: ['Morning'],
-        goal: GOAL_CHECK,
-        frequency: FREQ_DAILY,
+        goal: { type: 'check', unitKey: 'unitCheck' },
+        frequency: { type: 'daily' },
         philosophy: {
             sphere: 'Mental',
             level: 1,
@@ -136,10 +150,10 @@ export const PREDEFINED_HABITS: readonly PredefinedHabit[] = Object.freeze([
         nameKey: 'predefinedHabitAnticipationName',
         subtitleKey: 'predefinedHabitAnticipationSubtitle',
         icon: HABIT_ICONS.anticipation,
-        color: '#922B21',
+        color: '#C0392B',
         times: ['Morning'],
-        goal: GOAL_CHECK,
-        frequency: FREQ_DAILY,
+        goal: { type: 'check', unitKey: 'unitCheck' },
+        frequency: { type: 'daily' },
         philosophy: {
             sphere: 'Mental',
             level: 1,
@@ -152,15 +166,15 @@ export const PREDEFINED_HABITS: readonly PredefinedHabit[] = Object.freeze([
         }
     },
     
-    // --- MOVEMENT & BODY ---
+    // --- MOVEMENT & BODY (Before Exercise) ---
     {
         nameKey: 'predefinedHabitMovementName',
         subtitleKey: 'predefinedHabitMovementSubtitle',
         icon: HABIT_ICONS.movement,
         color: '#E67E22',
         times: ['Afternoon'],
-        goal: GOAL_CHECK,
-        frequency: FREQ_DAILY,
+        goal: { type: 'check', unitKey: 'unitCheck' },
+        frequency: { type: 'daily' },
         philosophy: {
             sphere: 'Structural',
             level: 1,
@@ -176,10 +190,10 @@ export const PREDEFINED_HABITS: readonly PredefinedHabit[] = Object.freeze([
         nameKey: 'predefinedHabitExerciseName',
         subtitleKey: 'predefinedHabitExerciseSubtitle',
         icon: HABIT_ICONS.exercise,
-        color: '#2ECC71',
+        color: '#2ecc71',
         times: ['Afternoon'],
         goal: { type: 'minutes', total: 30, unitKey: 'unitMin' },
-        frequency: FREQ_DAILY,
+        frequency: { type: 'daily' },
         philosophy: {
             sphere: 'Biological',
             level: 1,
@@ -195,17 +209,17 @@ export const PREDEFINED_HABITS: readonly PredefinedHabit[] = Object.freeze([
         nameKey: 'predefinedHabitStretchName',
         subtitleKey: 'predefinedHabitStretchSubtitle',
         icon: HABIT_ICONS.stretch,
-        color: '#FADBD8',
+        color: '#7f8c8d',
         times: ['Morning'],
         goal: { type: 'minutes', total: 5, unitKey: 'unitMin' },
-        frequency: FREQ_DAILY,
+        frequency: { type: 'daily' },
         philosophy: {
             sphere: 'Biological',
             level: 1,
             virtue: 'Temperance',
             discipline: 'Action',
             nature: 'Addition',
-            conscienceKey: "habit.exercise.conscience",
+            conscienceKey: "habit.exercise.conscience", // Reuse exercise/body quote
             stoicConcept: "Tasis",
             masterQuoteId: "cit_socrates_movimento_01"
         }
@@ -214,10 +228,10 @@ export const PREDEFINED_HABITS: readonly PredefinedHabit[] = Object.freeze([
         nameKey: 'predefinedHabitYogaName',
         subtitleKey: 'predefinedHabitYogaSubtitle',
         icon: HABIT_ICONS.yoga,
-        color: '#5DADE2',
+        color: '#9b59b6',
         times: ['Morning'],
         goal: { type: 'minutes', total: 15, unitKey: 'unitMin' },
-        frequency: FREQ_DAILY,
+        frequency: { type: 'daily' },
         philosophy: {
             sphere: 'Biological',
             level: 1,
@@ -230,7 +244,7 @@ export const PREDEFINED_HABITS: readonly PredefinedHabit[] = Object.freeze([
         }
     },
 
-    // --- MIND & STUDY ---
+    // --- MIND & STUDY (After Exercise) ---
     {
         nameKey: 'predefinedHabitReadName',
         subtitleKey: 'predefinedHabitReadSubtitle',
@@ -238,7 +252,7 @@ export const PREDEFINED_HABITS: readonly PredefinedHabit[] = Object.freeze([
         color: '#e74c3c',
         times: ['Evening'],
         goal: { type: 'pages', total: 10, unitKey: 'unitPage' },
-        frequency: FREQ_DAILY,
+        frequency: { type: 'daily' },
         philosophy: {
             sphere: 'Mental',
             level: 2,
@@ -254,10 +268,10 @@ export const PREDEFINED_HABITS: readonly PredefinedHabit[] = Object.freeze([
         nameKey: 'predefinedHabitMeditateName',
         subtitleKey: 'predefinedHabitMeditateSubtitle',
         icon: HABIT_ICONS.meditate,
-        color: '#BB8FCE',
+        color: '#f1c40f',
         times: ['Morning'],
         goal: { type: 'minutes', total: 10, unitKey: 'unitMin' },
-        frequency: FREQ_DAILY,
+        frequency: { type: 'daily' },
         philosophy: {
             sphere: 'Mental',
             level: 1,
@@ -266,7 +280,7 @@ export const PREDEFINED_HABITS: readonly PredefinedHabit[] = Object.freeze([
             nature: 'Addition',
             conscienceKey: "habit.meditate.conscience",
             stoicConcept: "Prosoche",
-            masterQuoteId: "cit_marco_presenca_01"
+            masterQuoteId: "cit_marco_presenca_01" // Reusing presence quote as fits Prosoche well
         }
     },
 
@@ -275,10 +289,10 @@ export const PREDEFINED_HABITS: readonly PredefinedHabit[] = Object.freeze([
         nameKey: 'predefinedHabitZealName',
         subtitleKey: 'predefinedHabitZealSubtitle',
         icon: HABIT_ICONS.zeal,
-        color: '#58D68D',
+        color: '#27AE60',
         times: ['Afternoon'],
-        goal: GOAL_CHECK,
-        frequency: FREQ_DAILY,
+        goal: { type: 'check', unitKey: 'unitCheck' },
+        frequency: { type: 'daily' },
         philosophy: {
             sphere: 'Social',
             level: 1,
@@ -291,15 +305,15 @@ export const PREDEFINED_HABITS: readonly PredefinedHabit[] = Object.freeze([
         }
     },
 
-    // --- REFLECTION & PLANNING ---
+    // --- REFLECTION & PLANNING (After Zeal) ---
     {
         nameKey: 'predefinedHabitJournalName',
         subtitleKey: 'predefinedHabitJournalSubtitle',
         icon: HABIT_ICONS.journal,
-        color: '#A1887F',
+        color: '#9b59b6',
         times: ['Evening'],
-        goal: GOAL_CHECK,
-        frequency: FREQ_DAILY,
+        goal: { type: 'check', unitKey: 'unitCheck' },
+        frequency: { type: 'daily' },
         philosophy: {
             sphere: 'Mental',
             level: 1,
@@ -315,10 +329,10 @@ export const PREDEFINED_HABITS: readonly PredefinedHabit[] = Object.freeze([
         nameKey: 'predefinedHabitPlanDayName',
         subtitleKey: 'predefinedHabitPlanDaySubtitle',
         icon: HABIT_ICONS.planDay,
-        color: '#007AFF',
+        color: '#007aff',
         times: ['Morning'],
-        goal: GOAL_CHECK,
-        frequency: FREQ_DAILY,
+        goal: { type: 'check', unitKey: 'unitCheck' },
+        frequency: { type: 'daily' },
         philosophy: {
             sphere: 'Structural',
             level: 1,
@@ -334,10 +348,10 @@ export const PREDEFINED_HABITS: readonly PredefinedHabit[] = Object.freeze([
         nameKey: 'predefinedHabitGratitudeName',
         subtitleKey: 'predefinedHabitGratitudeSubtitle',
         icon: HABIT_ICONS.gratitude,
-        color: '#E84393',
+        color: '#f39c12',
         times: ['Evening'],
-        goal: GOAL_CHECK,
-        frequency: FREQ_DAILY,
+        goal: { type: 'check', unitKey: 'unitCheck' },
+        frequency: { type: 'daily' },
         philosophy: {
             sphere: 'Mental',
             level: 1,
@@ -355,8 +369,8 @@ export const PREDEFINED_HABITS: readonly PredefinedHabit[] = Object.freeze([
         icon: HABIT_ICONS.sunMoon,
         color: '#F1C40F',
         times: ['Morning'],
-        goal: GOAL_CHECK,
-        frequency: FREQ_DAILY,
+        goal: { type: 'check', unitKey: 'unitCheck' },
+        frequency: { type: 'daily' },
         philosophy: {
             sphere: 'Biological',
             level: 1,
@@ -372,10 +386,10 @@ export const PREDEFINED_HABITS: readonly PredefinedHabit[] = Object.freeze([
         nameKey: 'predefinedHabitReflectDayName',
         subtitleKey: 'predefinedHabitReflectDaySubtitle',
         icon: HABIT_ICONS.reflectDay,
-        color: '#FADBD8',
+        color: '#2980b9',
         times: ['Evening'],
-        goal: GOAL_CHECK,
-        frequency: FREQ_DAILY,
+        goal: { type: 'check', unitKey: 'unitCheck' },
+        frequency: { type: 'daily' },
         philosophy: {
             sphere: 'Mental',
             level: 1,
@@ -384,17 +398,17 @@ export const PREDEFINED_HABITS: readonly PredefinedHabit[] = Object.freeze([
             nature: 'Addition',
             conscienceKey: "habit.reflect.conscience",
             stoicConcept: "Exetasis",
-            masterQuoteId: "quote_ma_001"
+            masterQuoteId: "quote_ma_001" // FIX [2025-05-08]: Corrigido ID para citação existente
         }
     },
     {
         nameKey: 'predefinedHabitStoicismName',
         subtitleKey: 'predefinedHabitStoicismSubtitle',
-        icon: HABIT_ICONS.stoicism,
-        color: '#7F8C8D',
+        icon: HABIT_ICONS.meditate,
+        color: '#34495e',
         times: ['Morning'],
-        goal: GOAL_CHECK,
-        frequency: FREQ_DAILY,
+        goal: { type: 'check', unitKey: 'unitCheck' },
+        frequency: { type: 'daily' },
         philosophy: {
             sphere: 'Mental',
             level: 2,
@@ -412,10 +426,10 @@ export const PREDEFINED_HABITS: readonly PredefinedHabit[] = Object.freeze([
         nameKey: 'predefinedHabitLanguageName',
         subtitleKey: 'predefinedHabitLanguageSubtitle',
         icon: HABIT_ICONS.language,
-        color: '#1ABC9C',
+        color: '#1abc9c',
         times: ['Afternoon'],
         goal: { type: 'minutes', total: 20, unitKey: 'unitMin' },
-        frequency: FREQ_DAILY,
+        frequency: { type: 'daily' },
         philosophy: {
             sphere: 'Mental',
             level: 2,
@@ -431,10 +445,10 @@ export const PREDEFINED_HABITS: readonly PredefinedHabit[] = Object.freeze([
         nameKey: 'predefinedHabitOrganizeName',
         subtitleKey: 'predefinedHabitOrganizeSubtitle',
         icon: HABIT_ICONS.organize,
-        color: '#BDC3C7',
+        color: '#34495e',
         times: ['Evening'],
         goal: { type: 'minutes', total: 15, unitKey: 'unitMin' },
-        frequency: FREQ_DAILY,
+        frequency: { type: 'daily' },
         philosophy: {
             sphere: 'Structural',
             level: 1,
@@ -453,7 +467,7 @@ export const PREDEFINED_HABITS: readonly PredefinedHabit[] = Object.freeze([
         color: '#e84393',
         times: ['Afternoon'],
         goal: { type: 'minutes', total: 30, unitKey: 'unitMin' },
-        frequency: FREQ_DAILY,
+        frequency: { type: 'daily' },
         philosophy: {
             sphere: 'Mental',
             level: 2,
@@ -462,7 +476,7 @@ export const PREDEFINED_HABITS: readonly PredefinedHabit[] = Object.freeze([
             nature: 'Addition',
             conscienceKey: "habit.hobby.conscience",
             stoicConcept: "Techne",
-            masterQuoteId: "cit_marco_ordem_01"
+            masterQuoteId: "cit_marco_ordem_01" // Art principle fits here
         }
     },
     {
@@ -471,8 +485,8 @@ export const PREDEFINED_HABITS: readonly PredefinedHabit[] = Object.freeze([
         icon: HABIT_ICONS.talkFriend,
         color: '#3498db',
         times: ['Afternoon'],
-        goal: GOAL_CHECK,
-        frequency: FREQ_DAILY,
+        goal: { type: 'check', unitKey: 'unitCheck' },
+        frequency: { type: 'daily' },
         philosophy: {
             sphere: 'Social',
             level: 2,
@@ -491,7 +505,7 @@ export const PREDEFINED_HABITS: readonly PredefinedHabit[] = Object.freeze([
         color: '#e67e22',
         times: ['Evening'],
         goal: { type: 'minutes', total: 20, unitKey: 'unitMin' },
-        frequency: FREQ_DAILY,
+        frequency: { type: 'daily' },
         philosophy: {
             sphere: 'Mental',
             level: 2,
@@ -507,14 +521,14 @@ export const PREDEFINED_HABITS: readonly PredefinedHabit[] = Object.freeze([
         nameKey: 'predefinedHabitPlantsName',
         subtitleKey: 'predefinedHabitPlantsSubtitle',
         icon: HABIT_ICONS.plants,
-        color: '#27ae60',
+        color: '#2ecc71',
         times: ['Morning'],
-        goal: GOAL_CHECK,
-        frequency: FREQ_DAILY,
+        goal: { type: 'check', unitKey: 'unitCheck' },
+        frequency: { type: 'daily' },
         philosophy: {
             sphere: 'Biological',
             level: 1,
-            virtue: 'Justice',
+            virtue: 'Justice', // Care for other living things
             discipline: 'Action',
             nature: 'Addition',
             conscienceKey: "habit.plants.conscience",
@@ -529,7 +543,7 @@ export const PREDEFINED_HABITS: readonly PredefinedHabit[] = Object.freeze([
         color: '#34495e',
         times: ['Evening'],
         goal: { type: 'minutes', total: 10, unitKey: 'unitMin' },
-        frequency: FREQ_DAILY,
+        frequency: { type: 'daily' },
         philosophy: {
             sphere: 'Structural',
             level: 2,
@@ -538,17 +552,17 @@ export const PREDEFINED_HABITS: readonly PredefinedHabit[] = Object.freeze([
             nature: 'Addition',
             conscienceKey: "habit.finances.conscience",
             stoicConcept: "Oikonomia",
-            masterQuoteId: "cit_epicteto_abstine_01"
+            masterQuoteId: "cit_epicteto_abstine_01" // Autonomy via self-control
         }
     },
     {
         nameKey: 'predefinedHabitTeaName',
         subtitleKey: 'predefinedHabitTeaSubtitle',
         icon: HABIT_ICONS.tea,
-        color: '#16a085',
+        color: '#1abc9c',
         times: ['Evening'],
-        goal: GOAL_CHECK,
-        frequency: FREQ_DAILY,
+        goal: { type: 'check', unitKey: 'unitCheck' },
+        frequency: { type: 'daily' },
         philosophy: {
             sphere: 'Biological',
             level: 1,
@@ -567,7 +581,7 @@ export const PREDEFINED_HABITS: readonly PredefinedHabit[] = Object.freeze([
         color: '#007aff',
         times: ['Afternoon'],
         goal: { type: 'minutes', total: 25, unitKey: 'unitMin' },
-        frequency: FREQ_DAILY,
+        frequency: { type: 'daily' },
         philosophy: {
             sphere: 'Mental',
             level: 2,
@@ -583,16 +597,16 @@ export const PREDEFINED_HABITS: readonly PredefinedHabit[] = Object.freeze([
         nameKey: 'predefinedHabitEmailsName',
         subtitleKey: 'predefinedHabitEmailsSubtitle',
         icon: HABIT_ICONS.emails,
-        color: '#f39c12',
+        color: '#f1c40f',
         times: ['Morning'],
         goal: { type: 'minutes', total: 5, unitKey: 'unitMin' },
-        frequency: FREQ_DAILY,
+        frequency: { type: 'daily' },
         philosophy: {
             sphere: 'Structural',
             level: 1,
-            virtue: 'Justice',
+            virtue: 'Justice', // Responding is a duty
             discipline: 'Action',
-            nature: 'Subtraction',
+            nature: 'Subtraction', // Cleaning up
             conscienceKey: "habit.emails.conscience",
             stoicConcept: "Katharsis / Taxis",
             masterQuoteId: "cit_seneca_tempo_01"
@@ -602,14 +616,14 @@ export const PREDEFINED_HABITS: readonly PredefinedHabit[] = Object.freeze([
         nameKey: 'predefinedHabitSkincareName',
         subtitleKey: 'predefinedHabitSkincareSubtitle',
         icon: HABIT_ICONS.skincare,
-        color: '#d35400',
+        color: '#e84393',
         times: ['Evening'],
-        goal: GOAL_CHECK,
-        frequency: FREQ_DAILY,
+        goal: { type: 'check', unitKey: 'unitCheck' },
+        frequency: { type: 'daily' },
         philosophy: {
             sphere: 'Biological',
             level: 1,
-            virtue: 'Temperance',
+            virtue: 'Temperance', // Self-care
             discipline: 'Action',
             nature: 'Addition',
             conscienceKey: "habit.skincare.conscience",
@@ -624,7 +638,7 @@ export const PREDEFINED_HABITS: readonly PredefinedHabit[] = Object.freeze([
         color: '#8e44ad',
         times: ['Afternoon'],
         goal: { type: 'minutes', total: 15, unitKey: 'unitMin' },
-        frequency: FREQ_DAILY,
+        frequency: { type: 'daily' },
         philosophy: {
             sphere: 'Mental',
             level: 2,
@@ -643,7 +657,7 @@ export const PREDEFINED_HABITS: readonly PredefinedHabit[] = Object.freeze([
         color: '#f1c40f',
         times: ['Evening'],
         goal: { type: 'minutes', total: 30, unitKey: 'unitMin' },
-        frequency: FREQ_DAILY,
+        frequency: { type: 'daily' },
         philosophy: {
             sphere: 'Social',
             level: 1,
@@ -662,7 +676,7 @@ export const PREDEFINED_HABITS: readonly PredefinedHabit[] = Object.freeze([
         color: '#7f8c8d',
         times: ['Morning'],
         goal: { type: 'minutes', total: 10, unitKey: 'unitMin' },
-        frequency: FREQ_DAILY,
+        frequency: { type: 'daily' },
         philosophy: {
             sphere: 'Social',
             level: 2,
@@ -671,7 +685,7 @@ export const PREDEFINED_HABITS: readonly PredefinedHabit[] = Object.freeze([
             nature: 'Addition',
             conscienceKey: "habit.news.conscience",
             stoicConcept: "Kosmopolites",
-            masterQuoteId: "cit_epicteto_controle_01"
+            masterQuoteId: "cit_epicteto_controle_01" // Focus on interpretation
         }
     },
     {
@@ -680,8 +694,8 @@ export const PREDEFINED_HABITS: readonly PredefinedHabit[] = Object.freeze([
         icon: HABIT_ICONS.cookHealthy,
         color: '#27ae60',
         times: ['Evening'],
-        goal: GOAL_CHECK,
-        frequency: FREQ_DAILY,
+        goal: { type: 'check', unitKey: 'unitCheck' },
+        frequency: { type: 'daily' },
         philosophy: {
             sphere: 'Biological',
             level: 1,
@@ -697,10 +711,10 @@ export const PREDEFINED_HABITS: readonly PredefinedHabit[] = Object.freeze([
         nameKey: 'predefinedHabitLearnSkillName',
         subtitleKey: 'predefinedHabitLearnSkillSubtitle',
         icon: HABIT_ICONS.learnSkill,
-        color: '#e74c3c',
+        color: '#3498db',
         times: ['Afternoon'],
         goal: { type: 'minutes', total: 20, unitKey: 'unitMin' },
-        frequency: FREQ_DAILY,
+        frequency: { type: 'daily' },
         philosophy: {
             sphere: 'Mental',
             level: 2,
@@ -716,14 +730,14 @@ export const PREDEFINED_HABITS: readonly PredefinedHabit[] = Object.freeze([
         nameKey: 'predefinedHabitPhotographyName',
         subtitleKey: 'predefinedHabitPhotographySubtitle',
         icon: HABIT_ICONS.photography,
-        color: '#95a5a6',
+        color: '#34495e',
         times: ['Afternoon'],
-        goal: GOAL_CHECK,
-        frequency: FREQ_DAILY,
+        goal: { type: 'check', unitKey: 'unitCheck' },
+        frequency: { type: 'daily' },
         philosophy: {
             sphere: 'Mental',
             level: 2,
-            virtue: 'Wisdom',
+            virtue: 'Wisdom', // Perception
             discipline: 'Assent',
             nature: 'Addition',
             conscienceKey: "habit.photo.conscience",
@@ -737,8 +751,8 @@ export const PREDEFINED_HABITS: readonly PredefinedHabit[] = Object.freeze([
         icon: HABIT_ICONS.gratitude,
         color: '#e74c3c',
         times: ['Afternoon'],
-        goal: GOAL_CHECK,
-        frequency: FREQ_DAILY,
+        goal: { type: 'check', unitKey: 'unitCheck' },
+        frequency: { type: 'daily' },
         philosophy: {
             sphere: 'Social',
             level: 2,
@@ -750,4 +764,4 @@ export const PREDEFINED_HABITS: readonly PredefinedHabit[] = Object.freeze([
             masterQuoteId: "cit_marco_zelo_01"
         }
     }
-]);
+];

@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -36,11 +35,8 @@ export type StoicTag =
     | 'cosmopolitanism'
     | 'trust' | 'loyalty' | 'heart'
     | 'impermanence' | 'flux' | 'loss'
-    | 'attention' | 'self-control'
-    | 'forgiveness' | 'pleasure' | 'distraction'
-    | 'praise' | 'influence'
-    | 'present' | 'imagination' | 'procrastination' | 'future'
-    | 'amor fati' | 'conversion' | 'stability' | 'equality' | 'social';
+    | 'attention'
+    | 'forgiveness' | 'pleasure' | 'distraction';
 
 export interface Quote {
     id: string;
@@ -67,6 +63,7 @@ export interface Quote {
 }
 
 // --- CATEGORY 1: MIND & PERCEPTION (Wisdom) ---
+// Foco: Ansiedade, Controle, Julgamento, Aprendizado.
 const MIND_QUOTES: Quote[] = [
     {
         id: "quote_ma_001",
@@ -87,9 +84,9 @@ const MIND_QUOTES: Quote[] = [
         },
         adaptations: {
             level_1: {
-                pt: "Vigie seus pensamentos. Eles criam sua paz.",
-                en: "Watch your thoughts. They create your peace.",
-                es: "Vigila tus pensamientos. Crean tu paz."
+                pt: "Lembre-se: uma mente tranquila vem de pensamentos tranquilos. Cuide do que você pensa.",
+                en: "Remember: a peaceful mind comes from peaceful thoughts. Watch what you think.",
+                es: "Recuerda: una mente tranquila proviene de pensamientos tranquilos. Cuida lo que piensas."
             },
             level_2: {
                 pt: "Sua felicidade é um reflexo direto de seus pensamentos. Escolha-os com sabedoria.",
@@ -122,9 +119,9 @@ const MIND_QUOTES: Quote[] = [
         },
         adaptations: {
             level_1: {
-                pt: "Não reaja. Escolha sua resposta.",
-                en: "Don't react. Choose your response.",
-                es: "No reacciones. Elige tu respuesta."
+                pt: "Eventos externos são neutros. É a sua reação que lhes dá poder. Escolha responder com calma e razão.",
+                en: "External events are neutral. It is your reaction that gives them power. Choose to respond with calm and reason.",
+                es: "Los eventos externos son neutrales. Es tu reacción la que les da poder. Elige responder con calma y razón."
             },
             level_2: {
                 pt: "Você não controla os eventos, mas controla sua resposta a eles. Aí reside sua força.",
@@ -134,7 +131,7 @@ const MIND_QUOTES: Quote[] = [
             level_3: {
                 pt: "A reação, não o evento.",
                 en: "The reaction, not the event.",
-                es: "La reacción, not el evento."
+                es: "La reacción, no el evento."
             }
         }
     },
@@ -157,9 +154,9 @@ const MIND_QUOTES: Quote[] = [
         },
         adaptations: {
             level_1: {
-                pt: "Sofremos na imaginação. Foque no real.",
-                en: "We suffer in imagination. Focus on the real.",
-                es: "Sufrimos en la imaginación. Enfócate en lo real."
+                pt: "Muitos dos seus medos nunca se concretizarão. Concentre-se no presente em vez de se preocupar com futuros imaginários.",
+                en: "Many of your fears will never come to pass. Focus on the present rather than worrying about imagined futures.",
+                es: "Muchos de tus miedos nunca se harán realidad. Concéntrate en el presente en lugar de preocuparte por futuros imaginarios."
             },
             level_2: {
                 pt: "Separe o que é real do que é apenas ansiedade. A maior parte do seu sofrimento é autoinfligida.",
@@ -192,9 +189,9 @@ const MIND_QUOTES: Quote[] = [
         },
         adaptations: {
             level_1: {
-                pt: "Foque no que controla. Ignore o resto.",
-                en: "Focus on what you control. Ignore the rest.",
-                es: "Enfócate en lo que controlas. Igora el resto."
+                pt: "Eu não me perturbo com o que está fora do meu controle; foco apenas no meu julgamento.",
+                en: "I am not disturbed by what is out of my control; I focus only on my judgment.",
+                es: "No me perturbo por lo que está fuera de mi control; me enfoco solo en mi juicio."
             },
             level_2: {
                 pt: "A liberdade começa com a distinção entre o que depende de nós e o que não depende. Ignore o resto.",
@@ -227,9 +224,9 @@ const MIND_QUOTES: Quote[] = [
         },
         adaptations: {
             level_1: {
-                pt: "Preveja o mal. Elimine a surpresa.",
-                en: "Foresee the bad. Eliminate surprise.",
-                es: "Prevé el mal. Elimina la sorpresa."
+                pt: "Nada do que acontece me surpreende, pois a minha mente já antecipou o combate.",
+                en: "Nothing that happens surprises me, for my mind has already anticipated the combat.",
+                es: "Nada de lo que sucede me sorprende, pues mi mente ya ha anticipado el combate."
             },
             level_2: {
                 pt: "Visualize os desafios antes que aconteçam. O golpe previsto é menos doloroso.",
@@ -262,9 +259,9 @@ const MIND_QUOTES: Quote[] = [
         },
         adaptations: {
             level_1: {
-                pt: "Leia para mudar, não para decorar.",
-                en: "Read to change, not to memorize.",
-                es: "Lee para cambiar, no para memorizar."
+                pt: "Leio não para acumular fatos, mas para transformar meu caráter através do diálogo com os sábios.",
+                en: "I read not to accumulate facts, but to transform my character through dialogue with the wise.",
+                es: "Leo no para acumular hechos, sino para transformar mi carácter a través del diálogo con los sabios."
             },
             level_2: {
                 pt: "Evite a leitura dispersa. Aprofunde-se nos mestres que nutrem a alma e fortalecem a razão.",
@@ -297,9 +294,9 @@ const MIND_QUOTES: Quote[] = [
         },
         adaptations: {
             level_1: {
-                pt: "Escreva. Organize sua mente.",
-                en: "Write. Organize your mind.",
-                es: "Escribe. Organiza tu mente."
+                pt: "Escrevo para dialogar comigo mesmo, organizar o caos mental e manter a vigilância sobre meus atos.",
+                en: "I write to dialogue with myself, organize mental chaos, and maintain vigilance over my actions.",
+                es: "Escribo para dialogar conmigo mismo, organizar el caos mental y mantener la vigilancia sobre mis actos."
             },
             level_2: {
                 pt: "O diário é a ferramenta do filósofo. Ao registrar seus pensamentos, você os examina e os purifica.",
@@ -309,7 +306,7 @@ const MIND_QUOTES: Quote[] = [
             level_3: {
                 pt: "Hypomnemata: Notas para si.",
                 en: "Hypomnemata: Notes to oneself.",
-                es: "Hypomnemata: Notes para uno mismo."
+                es: "Hypomnemata: Notas para uno mismo."
             }
         }
     },
@@ -332,9 +329,9 @@ const MIND_QUOTES: Quote[] = [
         },
         adaptations: {
             level_1: {
-                pt: "Admita a ignorância. Aprenda.",
-                en: "Admit ignorance. Learn.",
-                es: "Admite la ignorancia. Aprende."
+                pt: "Busco aprender algo novo hoje, reconhecendo minha ignorância como o primeiro passo para a sabedoria.",
+                en: "I seek to learn something new today, recognizing my ignorance as the first step to wisdom.",
+                es: "Busco aprender algo nuevo hoy, reconociendo mi ignorancia como el primer paso hacia la sabiduría."
             },
             level_2: {
                 pt: "A mente que se fecha para aprender, morre. Mantenha a curiosidade viva e a humildade intelectual.",
@@ -367,9 +364,9 @@ const MIND_QUOTES: Quote[] = [
         },
         adaptations: {
             level_1: {
-                pt: "Julgue seu dia. Corrija-se.",
-                en: "Judge your day. Correct yourself.",
-                es: "Juzga tu día. Corrígete."
+                pt: "Antes de dormir, revise seu dia. Onde você acertou? Onde errou? Como pode melhorar amanhã?",
+                en: "Before sleeping, review your day. Where did you succeed? Where did you fail? How can you improve tomorrow?",
+                es: "Antes de dormir, revisa tu día. ¿Dónde acertaste? ¿Dónde fallaste? ¿Cómo puedes mejorar mañana?"
             },
             level_2: {
                 pt: "O tribunal da consciência deve ser visitado todas as noites. Seja seu próprio juiz, mas também seu próprio guia.",
@@ -402,12 +399,12 @@ const MIND_QUOTES: Quote[] = [
         },
         adaptations: {
             level_1: {
-                pt: "Atenção total. O descuido custa caro.",
-                en: "Full attention. Carelessness costs.",
-                es: "Atención total. El descuido cuesta."
+                pt: "Se você se permitir ser descuidado hoje, será mais difícil ser disciplinado amanhã.",
+                en: "If you allow yourself to be careless today, it will be harder to be disciplined tomorrow.",
+                es: "Si te permites ser descuidado hoy, será más difícil ser disciplinado mañana."
             },
             level_2: {
-                pt: "La 'Prosoche' (atenção plena) deve ser constante. Uma exceção abre a porta para o vício.",
+                pt: "A 'Prosoche' (atenção plena) deve ser constante. Uma exceção abre a porta para o vício.",
                 en: "'Prosoche' (mindfulness) must be constant. An exception opens the door to vice.",
                 es: "La 'Prosoche' (atención plena) debe ser constante. Una excepción abre la puerta al vicio."
             },
@@ -437,9 +434,9 @@ const MIND_QUOTES: Quote[] = [
         },
         adaptations: {
             level_1: {
-                pt: "Não sabe? Pergunte. Sem vergonha.",
-                en: "Don't know? Ask. No shame.",
-                es: "¿No sabes? Pregunta. Sin vergüenza."
+                pt: "Não tenha vergonha de não saber. A vontade de aprender é mais valiosa que a aparência de inteligência.",
+                en: "Don't be ashamed of not knowing. The will to learn is more valuable than the appearance of intelligence.",
+                es: "No te avergüences de no saber. La voluntad de aprender es más valiosa que la apariencia de inteligencia."
             },
             level_2: {
                 pt: "Abandone o ego intelectual. Para preencher a mente com a verdade, primeiro esvazie-a da presunção.",
@@ -452,115 +449,11 @@ const MIND_QUOTES: Quote[] = [
                 es: "Parece tonto para ser sabio."
             }
         }
-    },
-    {
-        id: "cit_epicteto_asas_01",
-        author: "epictetus",
-        original_text: {
-            pt: "Cada evento tem duas alças: uma pela qual pode ser carregado, e outra pela qual não pode.",
-            en: "Every event has two handles, one by which it can be carried, and one by which it cannot.",
-            es: "Cada evento tiene dos asas: una por la que se puede llevar, y otra por la que no.",
-        },
-        source: "Enchiridion, 43",
-        metadata: {
-            virtue: "Wisdom",
-            level: 2,
-            discipline: "Assent",
-            sphere: "Mental",
-            tags: ["perspective", "perception", "resilience", "wisdom"],
-            coercion_type: "Reflective"
-        },
-        adaptations: {
-            level_1: {
-                pt: "Segure onde pode carregar.",
-                en: "Hold where you can carry.",
-                es: "Agarra donde puedas llevar."
-            },
-            level_2: {
-                pt: "Não foque na injustiça do irmão, mas no fato de que ele é seu irmão. Segure a alça que sustenta.",
-                en: "Focus not on the brother's injustice, but that he is your brother. Grasp the handle that holds.",
-                es: "No te enfoques en la injusticia del hermano, sino en que es tu hermano. Agarra el asa que sostiene."
-            },
-            level_3: {
-                pt: "Segure pela alça suportável.",
-                en: "Grasp by the bearable handle.",
-                es: "Agarra por el asa soportable."
-            }
-        }
-    },
-    {
-        id: "cit_marco_pepino_01",
-        author: "marcusAurelius",
-        original_text: {
-            pt: "O pepino é amargo? Jogue-o fora. Há espinhos no caminho? Desvie-se. Isso é o suficiente.",
-            en: "The cucumber is bitter? Throw it away. There are brambles in the path? Turn aside. That is enough.",
-            es: "¿El pepino es amargo? Tíralo. ¿Hay zarzas en el camino? Desvíate. Eso es suficiente.",
-        },
-        source: "Meditações, VIII.50",
-        metadata: {
-            virtue: "Wisdom",
-            level: 1,
-            discipline: "Assent",
-            sphere: "Mental",
-            tags: ["simplicity", "acceptance", "perception"],
-            coercion_type: "Dogmatic"
-        },
-        adaptations: {
-            level_1: {
-                pt: "Amargo? Jogue fora. Bloqueio? Desvie.",
-                en: "Bitter? Toss it. Blocked? Swerve.",
-                es: "¿Amargo? Tíralo. ¿Bloqueado? Desvíate."
-            },
-            level_2: {
-                pt: "Não adicione julgamentos desnecessários aos fatos. A amargura está no pepino, não na natureza do universo.",
-                en: "Do not add unnecessary judgments to facts. Bitterness is in the cucumber, not in the nature of the universe.",
-                es: "No añadas juicios innecesarios a los hechos. La amargura está en el pepino, no en la naturaleza del universo."
-            },
-            level_3: {
-                pt: "Amargo? Jogue fora.",
-                en: "Bitter? Throw away.",
-                es: "¿Amargo? Tira."
-            }
-        }
-    },
-    {
-        id: "cit_seneca_animais_01",
-        author: "seneca",
-        original_text: {
-            pt: "Animais selvagens fogem dos perigos que veem, e uma vez que escapam, não se preocupam mais. Nós, porém, somos atormentados tanto pelo passado quanto pelo futuro.",
-            en: "Wild animals run from the dangers they actually see, and once they have escaped them worry no more. We however are tormented alike by what is past and what is to come.",
-            es: "Los animales salvajes huyen de los peligros que ven, y una vez que escapan, no se preocupan más. Nosotros, sin embargo, somos atormentados tanto por el pasado como por el futuro."
-        },
-        source: "Cartas a Lucílio, V",
-        metadata: {
-            virtue: "Wisdom",
-            level: 2,
-            discipline: "Assent",
-            sphere: "Mental",
-            tags: ["anxiety", "fear", "mindset", "present", "imagination"],
-            coercion_type: "Reflective"
-        },
-        adaptations: {
-            level_1: {
-                pt: "Só o agora é real. Viva aqui.",
-                en: "Only now is real. Live here.",
-                es: "Solo el ahora es real. Vive aquí."
-            },
-            level_2: {
-                pt: "A memória e a previsão, bênçãos da razão, tornam-se maldições quando usadas para perpetuar o sofrimento. Volte ao presente.",
-                en: "Memory and foresight, blessings of reason, become curses when used to perpetuate suffering. Return to the present.",
-                es: "La memoria y la previsión, bendiciones de la razón, se convierten en maldiciones quando se usan para perpetuar el sufrimiento. Vuelve al presente."
-            },
-            level_3: {
-                pt: "Só o agora atormenta.",
-                en: "Only the now torments.",
-                es: "Solo el ahora atormenta."
-            }
-        }
     }
 ];
 
 // --- CATEGORY 2: ACTION & DISCIPLINE (The Engine) ---
+// Foco: Preguiça, Consistência, Prática, Tempo.
 const ACTION_QUOTES: Quote[] = [
     {
         id: "cit_seneca_tempo_01",
@@ -581,9 +474,9 @@ const ACTION_QUOTES: Quote[] = [
         },
         adaptations: {
             level_1: {
-                pt: "O tempo voa. Não desperdice.",
-                en: "Time flies. Don't waste it.",
-                es: "El tiempo vuela. No lo pierdas."
+                pt: "Planejo meu dia para não ser escravo do acaso. O tempo é meu recurso mais precioso e irrecuperável.",
+                en: "I plan my day so as not to be a slave to chance. Time is my most precious and irrecoverable resource.",
+                es: "Planeo mi día para no ser esclavo del azar. El tiempo es mi recurso más precioso e irrecuperable."
             },
             level_2: {
                 pt: "Organizar o tempo é organizar a vida. Não deixe que os minutos escorram por descuido.",
@@ -616,9 +509,9 @@ const ACTION_QUOTES: Quote[] = [
         },
         adaptations: {
             level_1: {
-                pt: "Nasceu para agir. Levante-se.",
-                en: "Born to act. Get up.",
-                es: "Naciste para actuar. Levántate."
+                pt: "Está difícil começar? Lembre-se que você foi feito para agir, não para ficar deitado. Levante e faça o que precisa ser feito.",
+                en: "Hard to start? Remember you were made to act, not to lie down. Get up and do what needs to be done.",
+                es: "¿Difícil empezar? Recuerda que fuiste hecho para actuar, no para estar tumbado. Levántate y haz lo que debes."
             },
             level_2: {
                 pt: "A 'Oikeiosis' humana é a atividade racional e social. Ficar na inércia é negar sua própria natureza e função.",
@@ -628,7 +521,7 @@ const ACTION_QUOTES: Quote[] = [
             level_3: {
                 pt: "Levante para sua natureza.",
                 en: "Rise to your nature.",
-                es: "Levántate a tu natureza."
+                es: "Levántate a tu naturaleza."
             }
         }
     },
@@ -651,9 +544,9 @@ const ACTION_QUOTES: Quote[] = [
         },
         adaptations: {
             level_1: {
-                pt: "Não hesite. A vida foge.",
-                en: "Don't hesitate. Life flees.",
-                es: "No dudes. La vida huye."
+                pt: "Pare de pensar e comece a fazer. A procrastinação está roubando o único tempo que você tem: o agora.",
+                en: "Stop thinking and start doing. Procrastination is stealing the only time you have: the now.",
+                es: "Deja de pensar y empieza a hacer. La procrastinación te roba el único tiempo que tienes: el ahora."
             },
             level_2: {
                 pt: "O vício da inércia é curado pela ação imediata. Não projete a virtude no futuro; execute-a no presente.",
@@ -664,41 +557,6 @@ const ACTION_QUOTES: Quote[] = [
                 pt: "Hesitar é perder vida.",
                 en: "To hesitate is to lose life.",
                 es: "Dudar es perder vida."
-            }
-        }
-    },
-    {
-        id: "cit_seneca_procrastinacao_02",
-        author: "seneca",
-        original_text: {
-            pt: "A maior perda de vida é o adiamento: ele nos rouba cada dia que chega e nega o presente prometendo o futuro.",
-            en: "Putting things off is the biggest waste of life: it snatches away each day as it comes, and denies us the present by promising the future.",
-            es: "La mayor pérdida de vida es la postergación: nos roba cada día que llega y niega el presente prometiendo el futuro."
-        },
-        source: "Sobre a Brevidade da Vida, IX",
-        metadata: {
-            virtue: "Wisdom",
-            level: 2,
-            discipline: "Action",
-            sphere: "Structural",
-            tags: ["urgency", "time", "action", "procrastination", "future"],
-            coercion_type: "Directive"
-        },
-        adaptations: {
-            level_1: {
-                pt: "Não espere. Use o hoje.",
-                en: "Don't wait. Use today.",
-                es: "No esperes. Usa el hoy."
-            },
-            level_2: {
-                pt: "A promessa do futuro é a ladra do presente. Execute sua virtude agora, pois a Fortuna controla o amanhã.",
-                en: "The promise of the future is the thief of the present. Execute your virtue now, for Fortune controls tomorrow.",
-                es: "La promesa del futuro es la ladrona del presente. Ejecuta tu virtud ahora, pues la Fortuna controla el mañana."
-            },
-            level_3: {
-                pt: "Adiamento é perda.",
-                en: "Delay is loss.",
-                es: "La demora es pérdida."
             }
         }
     },
@@ -721,9 +579,9 @@ const ACTION_QUOTES: Quote[] = [
         },
         adaptations: {
             level_1: {
-                pt: "Comece pequeno. Seja constante.",
-                en: "Start small. Be constant.",
-                es: "Empieza pequeño. Sé constante."
+                pt: "Não tente ser herói no primeiro dia. Comece com uma tarefa pequena agora mesmo e mantenha a constância.",
+                en: "Don't try to be a hero on day one. Start with a small task right now and keep consistency.",
+                es: "No intentes ser un héroe el primer día. Empieza con una tarea pequeña ahora mismo y mantén la constancia."
             },
             level_2: {
                 pt: "A 'Askesis' começa no trivial. A consistência em atos menores fortalece a Vontade para os maiores desafios.",
@@ -756,9 +614,9 @@ const ACTION_QUOTES: Quote[] = [
         },
         adaptations: {
             level_1: {
-                pt: "Saber não basta. Faça.",
-                en: "Knowing isn't enough. Do.",
-                es: "Saber no basta. Haz."
+                pt: "Saber o que fazer não adianta nada se você não fizer. O conhecimento só tem valor quando aplicado.",
+                en: "Knowing what to do is useless if you don't do it. Knowledge only has value when applied.",
+                es: "Saber qué hacer no sirve de nada si no lo haces. El conocimiento solo tiene valor cuando se aplica."
             },
             level_2: {
                 pt: "Logos sem Ergon é estéril. A sabedoria não é acumulada na mente, mas demonstrada nos hábitos.",
@@ -769,111 +627,6 @@ const ACTION_QUOTES: Quote[] = [
                 pt: "Saber é fazer.",
                 en: "Knowing is doing.",
                 es: "Saber es hacer."
-            }
-        }
-    },
-    {
-        id: "cit_epicteto_ovelhas_01",
-        author: "epictetus",
-        original_text: {
-            pt: "Pois as ovelhas não vomitam a grama para mostrar aos pastores o quanto comeram; mas, digerindo-a internamente, produzem lã e leite.",
-            en: "For sheep don't throw up the grass to show the shepherds how much they have eaten; but, inwardly digesting their food, they outwardly produce wool and milk.",
-            es: "Pues las ovejas no vomitan la hierba para mostrar a los pastores cuánto han comido; sino que, digiriéndola interiormente, producen lana y leche."
-        },
-        source: "Enchiridion, 46",
-        metadata: {
-            virtue: "Wisdom",
-            level: 2,
-            discipline: "Action",
-            sphere: "Social",
-            tags: ["action", "example", "growth", "authenticity", "learning", "influence"],
-            coercion_type: "Reflective"
-        },
-        adaptations: {
-            level_1: {
-                pt: "Não fale. Mostre resultados.",
-                en: "Don't speak. Show results.",
-                es: "No hables. Muestra resultados."
-            },
-            level_2: {
-                pt: "Digira seus princípios e deixe que eles se manifestem em caráter. A filosofia não é para ser exibida, mas encarnada.",
-                en: "Digest your principles and let them manifest in character. Philosophy is not to be displayed, but embodied.",
-                es: "Digiere tus principios y deja que se manifiesten en carácter. La filosofía no es para ser exhibida, sino encarnada."
-            },
-            level_3: {
-                pt: "Não vomite a grama.",
-                en: "Don't vomit the grass.",
-                es: "No vomites la hierba."
-            }
-        }
-    },
-    {
-        id: "cit_marco_essencial_01",
-        author: "marcusAurelius",
-        original_text: {
-            pt: "Se queres ser tranquilo, faça poucas coisas. Fazer menos, mas melhor.",
-            en: "If thou wouldst be tranquil, do a few things. Do less, better.",
-            es: "Si quieres estar tranquilo, haz pocas cosas. Haz menos, pero mejor."
-        },
-        source: "Meditações, IV.24",
-        metadata: {
-            virtue: "Temperance",
-            level: 2,
-            discipline: "Action",
-            sphere: "Structural",
-            tags: ["essentialism", "focus", "peace", "simplicity", "action"],
-            coercion_type: "Directive"
-        },
-        adaptations: {
-            level_1: {
-                pt: "Faça menos. Faça melhor.",
-                en: "Do less. Do better.",
-                es: "Haz menos. Haz mejor."
-            },
-            level_2: {
-                pt: "A maioria das nossas ações é dispensável. Pergunte-se a cada momento: 'Isso é necessário?'.",
-                en: "Most of our actions are dispensable. Ask yourself at every moment: 'Is this necessary?'.",
-                es: "La mayoría de nuestras acciones son prescindibles. Pregúntate en cada momento: '¿Es esto necesario?'."
-            },
-            level_3: {
-                pt: "Faça menos, melhor.",
-                en: "Do less, better.",
-                es: "Haz menos, mejor."
-            }
-        }
-    },
-    {
-        id: "cit_seneca_ousadia_01",
-        author: "seneca",
-        original_text: {
-            pt: "Não é porque as coisas são difíceis que não ousamos; é porque não ousamos que elas são difíceis.",
-            en: "It is not because things are difficult that we do not dare; it is because we do not dare that they are difficult.",
-            es: "No es porque las cosas son difíciles que no te atreves; es porque no nos atrevemos que son difíciles."
-        },
-        source: "Cartas a Lucílio, 104",
-        metadata: {
-            virtue: "Courage",
-            level: 1,
-            discipline: "Action",
-            sphere: "Mental",
-            tags: ["courage", "fear", "action", "confidence", "laziness"],
-            coercion_type: "Inspirational"
-        },
-        adaptations: {
-            level_1: {
-                pt: "É difícil porque não ousa. Tente.",
-                en: "Hard because you don't dare. Try.",
-                es: "Difícil porque no te atreves. Intenta."
-            },
-            level_2: {
-                pt: "A inércia cria monstros imaginários. A ação dissipa o medo e revela a verdadeira dimensão do desafio.",
-                en: "Inertia creates imaginary monsters. Action dispels fear and reveals the true dimension of the challenge.",
-                es: "La inercia crea monstruos imaginarios. La acción disipa el miedo y revela la verdadera dimensión del desafío."
-            },
-            level_3: {
-                pt: "Ouse e vencerá.",
-                en: "Dare and you will win.",
-                es: "Atrévete y vencerás."
             }
         }
     },
@@ -896,9 +649,9 @@ const ACTION_QUOTES: Quote[] = [
         },
         adaptations: {
             level_1: {
-                pt: "Passos curtos. Grandes distâncias.",
-                en: "Small steps. Big changes.",
-                es: "Pequeños pasos. Grandes cambios."
+                pt: "Grandes mudanças são construídas com pequenas ações diárias. Concentre-se no próximo passo, não na montanha inteira.",
+                en: "Great changes are built with small, daily actions. Focus on the next step, not the whole mountain.",
+                es: "Los grandes cambios se construyen con pequeñas acciones diarias. Concéntrate en el siguiente paso, no en toda la montaña."
             },
             level_2: {
                 pt: "A excelência não é um ato, mas um hábito. Cada pequeno passo que você dá hoje constrói seu bem-estar amanhã.",
@@ -931,14 +684,14 @@ const ACTION_QUOTES: Quote[] = [
         },
         adaptations: {
             level_1: {
-                pt: "Busque o desconforto. Liberte-se.",
-                en: "Seek discomfort. Be free.",
-                es: "Busca la incomodidad. Sé libre."
+                pt: "Eu voluntariamente aceito o desconforto para que ele nunca me escravize.",
+                en: "I voluntarily accept discomfort so that it never enslaves me.",
+                es: "Acepto voluntariamente la incomodidad para que nunca me esclavice."
             },
             level_2: {
                 pt: "Ao suportar o frio e a fome, lembro ao meu corpo quem comanda. O rigor físico fortalece a vontade.",
                 en: "By enduring cold and hunger, I remind my body who is in charge. Physical rigour strengthens the will.",
-                es: "Al soportar o frio e o hambre, recuerdo a mi cuerpo quién manda. El rigor físico fortalece la voluntad."
+                es: "Al soportar el frío y el hambre, recuerdo a mi cuerpo quién manda. El rigor físico fortalece la voluntad."
             },
             level_3: {
                 pt: "Suportar e abster-se.",
@@ -966,9 +719,9 @@ const ACTION_QUOTES: Quote[] = [
         },
         adaptations: {
             level_1: {
-                pt: "Corpo forte, mente servida.",
-                en: "Strong body, served mind.",
-                es: "Cuerpo fuerte, mente servida."
+                pt: "Mantenho o corpo forte para que ele obedeça à minha razão e seja útil ao mundo.",
+                en: "I keep my body strong so that it obeys my reason and is useful to the world.",
+                es: "Mantengo el cuerpo fuerte para que obedezca a mi razón y sea útil al mundo."
             },
             level_2: {
                 pt: "Um corpo fraco comanda a mente; um corpo forte obedece. Treine para a funcionalidade, não para a vaidade.",
@@ -1001,9 +754,9 @@ const ACTION_QUOTES: Quote[] = [
         },
         adaptations: {
             level_1: {
-                pt: "Organize fora. Ordene dentro.",
-                en: "Organize outside. Order inside.",
-                es: "Organiza fuera. Ordena dentro."
+                pt: "Organizo meu ambiente para refletir a ordem que desejo em minha mente. O externo influencia o interno.",
+                en: "I organize my environment to reflect the order I desire in my mind. The external influences the internal.",
+                es: "Organizo mi entorno para reflejar el orden que deseo en mi mente. Lo externo influye en lo interno."
             },
             level_2: {
                 pt: "A desordem externa é um ruído para a razão. Elimine o supérfluo e organize o essencial.",
@@ -1036,9 +789,9 @@ const ACTION_QUOTES: Quote[] = [
         },
         adaptations: {
             level_1: {
-                pt: "Postura ereta. Mente firme.",
-                en: "Upright posture. Firm mind.",
-                es: "Postura recta. Mente firme."
+                pt: "Sua postura reflete sua mente. Mantenha-se ereto e sereno, mostrando ao mundo a ordem que existe dentro de você.",
+                en: "Your posture reflects your mind. Stand tall and serene, showing the world the order that exists within you.",
+                es: "Tu postura refleja tu mente. Mantente erguido y sereno, mostrando al mundo el orden que existe dentro de ti."
             },
             level_2: {
                 pt: "Não deixe que seu corpo traia sua filosofia. A dignidade física é uma extensão da dignidade moral.",
@@ -1071,13 +824,13 @@ const ACTION_QUOTES: Quote[] = [
         },
         adaptations: {
             level_1: {
-                pt: "E se fosse o último dia? Aja.",
-                en: "What if it's the last day? Act.",
-                es: "¿Y si fuera el último día? Actúa."
+                pt: "Não desperdice o tempo com o que não importa. Se hoje fosse seu último dia, você faria o que está fazendo?",
+                en: "Don't waste time on what doesn't matter. If today were your last day, would you do what you are doing?",
+                es: "No pierdas el tiempo en lo que no importa. Si hoy fuera tu último día, ¿harías lo que estás haciendo?"
             },
             level_2: {
                 pt: "Memento Mori: A consciência da morte não deve causar medo, mas clareza e ação imediata.",
-                en: "Memento Mori: The awareness of death should not cause fear, but clarity and action immediate.",
+                en: "Memento Mori: The awareness of death should not cause fear, but clarity and immediate action.",
                 es: "Memento Mori: La conciencia de la muerte no debe causar miedo, sino claridad y acción inmediata."
             },
             level_3: {
@@ -1106,9 +859,9 @@ const ACTION_QUOTES: Quote[] = [
         },
         adaptations: {
             level_1: {
-                pt: "Uma coisa de cada vez. Foco.",
-                en: "One thing at a time. Focus.",
-                es: "Una cosa a la vez. Foco."
+                pt: "Concentre-se no que está fazendo agora. Tentar fazer tudo ao mesmo tempo é o mesmo que não fazer nada bem.",
+                en: "Focus on what you are doing now. Trying to do everything at once is the same as doing nothing well.",
+                es: "Concéntrate en lo que estás haciendo ahora. Intentar hacer todo a la vez es lo mismo que no hacer nada bien."
             },
             level_2: {
                 pt: "A dispersão enfraquece a mente. Limite seus objetivos e aprofunde sua atenção em um ponto de cada vez.",
@@ -1125,6 +878,7 @@ const ACTION_QUOTES: Quote[] = [
 ];
 
 // --- CATEGORY 3: RESILIENCE & RECOVERY (The Shield) ---
+// Foco: Dor, Falha, Destino, Sofrimento.
 const RESILIENCE_QUOTES: Quote[] = [
     {
         id: "quote_ma_002",
@@ -1145,9 +899,9 @@ const RESILIENCE_QUOTES: Quote[] = [
         },
         adaptations: {
             level_1: {
-                pt: "O obstáculo é o caminho.",
-                en: "The obstacle is the way.",
-                es: "El obstáculo es el camino."
+                pt: "Veja cada problema não como uma barreira, mas como uma oportunidade para praticar a virtude e crescer.",
+                en: "See every problem not as a barrier, but as an opportunity to practice virtue and grow.",
+                es: "Ve cada problema no como una barrera, sino como una oportunidad para practicar la virtud y crecer."
             },
             level_2: {
                 pt: "Transforme seus obstáculos em degraus. O desafio à sua frente é o seu verdadeiro caminho.",
@@ -1180,9 +934,9 @@ const RESILIENCE_QUOTES: Quote[] = [
         },
         adaptations: {
             level_1: {
-                pt: "Dificuldade é prova. Mostre força.",
-                en: "Difficulty is a test. Show strength.",
-                es: "La dificultad es prueba. Muestra fuerza."
+                pt: "Está difícil? Ótimo. É neste momento que você descobre sua verdadeira força. Não desista.",
+                en: "Is it hard? Good. This is the moment you discover your true strength. Don't give up.",
+                es: "¿Es difícil? Bien. Es en este momento que descubres tu verdadera fuerza. No te rindas."
             },
             level_2: {
                 pt: "A adversidade não é um castigo, é um treinamento. Use este momento de falha para temperar seu caráter.",
@@ -1193,76 +947,6 @@ const RESILIENCE_QUOTES: Quote[] = [
                 pt: "O fogo prova o ouro.",
                 en: "Fire tests gold.",
                 es: "El fuego prueba el oro."
-            }
-        }
-    },
-    {
-        id: "cit_marco_fogo_01",
-        author: "marcusAurelius",
-        original_text: {
-            pt: "Um fogo forte se apropria de tudo que é jogado nele, consome-o e se eleva ainda mais alto por causa disso.",
-            en: "A blazing fire makes flame and brightness out of everything that is thrown into it.",
-            es: "Un fuego fuerte se apropia de todo lo que se arroja en él, lo consume y se eleva aún más alto gracias a ello."
-        },
-        source: "Meditações, IV.1",
-        metadata: {
-            virtue: "Courage",
-            level: 3,
-            discipline: "Action",
-            sphere: "Structural",
-            tags: ["resilience", "amor fati", "strength", "conversion", "acceptance"],
-            coercion_type: "Inspirational"
-        },
-        adaptations: {
-            level_1: {
-                pt: "Seja fogo. Consuma o obstáculo.",
-                en: "Be fire. Consume the obstacle.",
-                es: "Sé fuego. Consume el obstáculo."
-            },
-            level_2: {
-                pt: "Seja como o fogo voraz, não como a vela frágil. Transforme o obstáculo em parte da sua própria chama.",
-                en: "Be like the voracious fire, not like the fragile candle. Transform the obstacle into part of your own flame.",
-                es: "Sé como el fuego voraz, no como la vela frágil. Transforma el obstáculo en parte de tu propia llama."
-            },
-            level_3: {
-                pt: "Tudo é combustível.",
-                en: "Everything is fuel.",
-                es: "Todo es combustible."
-            }
-        }
-    },
-    {
-        id: "cit_marco_promontorio_01",
-        author: "marcusAurelius",
-        original_text: {
-            pt: "Seja como o promontório contra o qual as ondas quebram continuamente, mas ele permanece firme e doma a fúria da água ao seu redor.",
-            en: "Be like the promontory against which the waves continually break, but it stands firm and tames the fury of the water around it.",
-            es: "Sé como el promontorio contra el que las olas rompen continuamente, pero se mantiene firme y doma la furia del agua a su alrededor."
-        },
-        source: "Meditações, IV.49",
-        metadata: {
-            virtue: "Courage",
-            level: 2,
-            discipline: "Action",
-            sphere: "Mental",
-            tags: ["resilience", "stability", "anger", "chaos", "strength", "patience"],
-            coercion_type: "Inspirational"
-        },
-        adaptations: {
-            level_1: {
-                pt: "Seja rocha. Quebre a onda.",
-                en: "Be rock. Break the wave.",
-                es: "Sé roca. Rompe la ola."
-            },
-            level_2: {
-                pt: "A estabilidade interna derrota a turbulência externa. Seja a rocha que quebra a onda, não a madeira que é levada por ela.",
-                en: "Internal stability defeats external turbulence. Be the rock that breaks the wave, not the wood carried by it.",
-                es: "La estabilidad interna derrota la turbulencia externa. Sé la roca que rompe la ola, no la madera llevada por ella."
-            },
-            level_3: {
-                pt: "Seja o promontório.",
-                en: "Be the promontory.",
-                es: "Sé el promontorio."
             }
         }
     },
@@ -1285,9 +969,9 @@ const RESILIENCE_QUOTES: Quote[] = [
         },
         adaptations: {
             level_1: {
-                pt: "Cave dentro. Encontre a fonte.",
-                en: "Dig within. The source is there.",
-                es: "Cava dentro. La fuente está ahí."
+                pt: "Não procure a felicidade fora. Você tem tudo o que precisa dentro de você para ser uma pessoa boa.",
+                en: "Don't look for happiness outside. You have everything you need inside you to be a good person.",
+                es: "No busques la felicidad fuera. Tienes todo lo que necesitas dentro de ti para ser una buena persona."
             },
             level_2: {
                 pt: "O Hegemonikon (faculdade dirigente) é autossuficiente. A virtude não depende de circunstâncias externas.",
@@ -1320,9 +1004,9 @@ const RESILIENCE_QUOTES: Quote[] = [
         },
         adaptations: {
             level_1: {
-                pt: "Aceite seu papel. Atue bem.",
-                en: "Accept your role. Act well.",
-                es: "Acepta tu papel. Actúa bien."
+                pt: "Não reclame da sua vida. Jogue com as cartas que recebeu e faça o melhor jogo possível.",
+                en: "Don't complain about your life. Play the cards you were dealt and play the best game possible.",
+                es: "No te quejes de tu vida. Juega con las cartas que te tocaron y haz el mejor juego posible."
             },
             level_2: {
                 pt: "Amor Fati: Aceite o roteiro do destino. Sua excelência não está no que acontece, mas em como você performa seu papel.",
@@ -1355,9 +1039,9 @@ const RESILIENCE_QUOTES: Quote[] = [
         },
         adaptations: {
             level_1: {
-                pt: "Deseje a cura. Comece agora.",
-                en: "Wish for cure. Start now.",
-                es: "Desea la cura. Empieza ahora."
+                pt: "Reconhecer que você precisa mudar é o primeiro passo para a mudança.",
+                en: "Acknowledging that you need to change is the first step to change.",
+                es: "Reconocer que necesitas cambiar es el primer paso para el cambio."
             },
             level_2: {
                 pt: "A vontade ativa direcionada à virtude já é o início da virtude. Não subestime sua intenção.",
@@ -1390,9 +1074,9 @@ const RESILIENCE_QUOTES: Quote[] = [
         },
         adaptations: {
             level_1: {
-                pt: "Sem teste, sem força. Abrace a luta.",
-                en: "No test, no strength. Embrace the struggle.",
-                es: "Sin prueba, sin fuerza. Abraza la lucha."
+                pt: "Os problemas são testes. Sem eles, você nunca saberia do que é capaz.",
+                en: "Problems are tests. Without them, you would never know what you are capable of.",
+                es: "Los problemas son pruebas. Sin ellos, nunca sabrías de lo que eres capaz."
             },
             level_2: {
                 pt: "Uma vida sem desafios é uma tragédia, pois deixa a virtude adormecida. Abrace a luta.",
@@ -1425,9 +1109,9 @@ const RESILIENCE_QUOTES: Quote[] = [
         },
         adaptations: {
             level_1: {
-                pt: "A dor passa. O bem fica.",
-                en: "Pain passes. Good remains.",
-                es: "El dolor pasa. El bien queda."
+                pt: "O cansaço de hoje é temporário, mas o orgulho de ter feito o certo dura para sempre.",
+                en: "Today's tiredness is temporary, but the pride of having done right lasts forever.",
+                es: "El cansancio de hoy es temporal, pero el orgullo de haber hecho lo correcto dura para siempre."
             },
             level_2: {
                 pt: "Troque o prazer imediato pela satisfação duradoura. O esforço se dissipa, a virtude se acumula.",
@@ -1444,6 +1128,7 @@ const RESILIENCE_QUOTES: Quote[] = [
 ];
 
 // --- CATEGORY 4: EQUILIBRIUM & TEMPERANCE (The Balance) ---
+// Foco: Humildade, Gratidão, Suficiência, Arrogância.
 const EQUILIBRIUM_QUOTES: Quote[] = [
     {
         id: "cit_marco_aceitacao_03",
@@ -1464,9 +1149,9 @@ const EQUILIBRIUM_QUOTES: Quote[] = [
         },
         adaptations: {
             level_1: {
-                pt: "Ganhe sem orgulho. Perca sem choro.",
-                en: "Win without pride. Lose without tears.",
-                es: "Gana sin orgullo. Pierde sin llanto."
+                pt: "Se venceu hoje, não se gabe. Se perdeu algo, não reclame. Mantenha o equilíbrio.",
+                en: "If you won today, don't boast. If you lost something, don't complain. Keep your balance.",
+                es: "Si ganaste hoy, no presumas. Si perdiste algo, no te quejes. Mantén el equilibrio."
             },
             level_2: {
                 pt: "Trate o sucesso como um empréstimo da Fortuna, não como mérito eterno. Esteja pronto para devolvê-lo.",
@@ -1477,41 +1162,6 @@ const EQUILIBRIUM_QUOTES: Quote[] = [
                 pt: "Sem orgulho, sem apego.",
                 en: "No pride, no attachment.",
                 es: "Sin orgullo, sin apego."
-            }
-        }
-    },
-    {
-        id: "cit_marco_incenso_01",
-        author: "marcusAurelius",
-        original_text: {
-            pt: "Muitos grãos de incenso no mesmo altar: um cai antes, outro depois, mas não faz diferença.",
-            en: "Many lumps of incense on the same altar: one falls earlier, another later, but it makes no difference.",
-            es: "Muchos granos de incienso en el mismo altar: uno cae antes, otro después, pero no hay diferencia."
-        },
-        source: "Meditações, IV.15",
-        metadata: {
-            virtue: "Temperance",
-            level: 3,
-            discipline: "Desire",
-            sphere: "Mental",
-            tags: ["humility", "fate", "impermanence", "nature", "equality"],
-            coercion_type: "Reflective"
-        },
-        adaptations: {
-            level_1: {
-                pt: "Cedo ou tarde, o fim é igual.",
-                en: "Sooner or later, the end is the same.",
-                es: "Tarde o temprano, el final es igual."
-            },
-            level_2: {
-                pt: "Tempo e fama são ilusões. Cumpra sua função no tempo que lhe foi dado sem inveja ou arrogância.",
-                en: "Time and fame are illusions. Fulfill your function in the time given to you without envy or arrogance.",
-                es: "El tiempo y la fama son ilusiones. Cumple tu función en el tiempo que se te ha dado sin envidia ni arrogancia."
-            },
-            level_3: {
-                pt: "Antes ou depois, não importa.",
-                en: "Sooner or later, it matters not.",
-                es: "Antes o depois, no importa."
             }
         }
     },
@@ -1534,9 +1184,9 @@ const EQUILIBRIUM_QUOTES: Quote[] = [
         },
         adaptations: {
             level_1: {
-                pt: "Foque no que tem. Agradeça.",
-                en: "Focus on what you have. Be grateful.",
-                es: "Enfócate en lo que tienes. Agradece."
+                pt: "Agradeço o que tenho e aceito o que o destino me traz. A gratidão é o reconhecimento da ordem universal.",
+                en: "I am grateful for what I have and accept what fate brings. Gratitude is the recognition of universal order.",
+                es: "Agradezco lo que tengo y acepto lo que el destino me trae. La gratitud es el reconocimiento del orden universal."
             },
             level_2: {
                 pt: "Não foque na falta, mas na suficiência. A alegria vem de apreciar o presente como uma dádiva.",
@@ -1556,7 +1206,7 @@ const EQUILIBRIUM_QUOTES: Quote[] = [
         original_text: {
             pt: "Nenhum homem é livre se não é dono de si mesmo.",
             en: "No man is free who is not master of himself.",
-            es: "Ningún hombre es libre si no es dueño de sí mesmo.",
+            es: "Ningún hombre es libre si no es dueño de sí mismo.",
         },
         source: "Fragmentos",
         metadata: {
@@ -1569,9 +1219,9 @@ const EQUILIBRIUM_QUOTES: Quote[] = [
         },
         adaptations: {
             level_1: {
-                pt: "Sem domínio, sem liberdade.",
-                en: "No mastery, no freedom.",
-                es: "Sin dominio, sin libertad."
+                pt: "Eu escolho o que não fazer para ser dono do que eu sou.",
+                en: "I choose what not to do to be master of who I am.",
+                es: "Elijo qué no hacer para ser dueño de lo que soy."
             },
             level_2: {
                 pt: "Liberdade não é fazer o que se quer, mas ter poder sobre o que se deseja. Negue o impulso para afirmar a razão.",
@@ -1581,42 +1231,7 @@ const EQUILIBRIUM_QUOTES: Quote[] = [
             level_3: {
                 pt: "Abster-se é liberdade.",
                 en: "To abstain is freedom.",
-                es: "Abstenerse es liberdade."
-            }
-        }
-    },
-    {
-        id: "cit_epicteto_banquete_01",
-        author: "epictetus",
-        original_text: {
-            pt: "Lembre-se que você deve se comportar na vida como em um banquete. Algo é trazido até você? Estenda a mão e pegue uma porção com moderação.",
-            en: "Remember that you must behave in life as at a dinner party. Is anything brought around to you? Put out your hand and take your share with moderation.",
-            es: "Recuerda que debes comportarte en la vida como en un banquete. ¿Te llega algo? Extiende la mano y toma tu parte con moderación."
-        },
-        source: "Enchiridion, 15",
-        metadata: {
-            virtue: "Temperance",
-            level: 2,
-            discipline: "Desire",
-            sphere: "Social",
-            tags: ["temperance", "desire", "patience", "social", "gratitude"],
-            coercion_type: "Directive"
-        },
-        adaptations: {
-            level_1: {
-                pt: "Espere sua vez. Sem ansiedade.",
-                en: "Wait your turn. No anxiety.",
-                es: "Espera tu turno. Sin ansiedad."
-            },
-            level_2: {
-                pt: "Se a travessa passa direto, não a retenha. Se ainda não chegou, não estique seu desejo em direção a ela. Assim deve ser com filhos, esposa e cargos.",
-                en: "If the dish passes you by, do not stop it. If it has not yet come, do not stretch your desire towards it. So it should be with children, wife, and offices.",
-                es: "Si el plato pasa de largo, no lo detengas. Si aún no ha llegado, no estires tu deseo hacia él. Así debe ser con los hijos, la esposa y los cargos."
-            },
-            level_3: {
-                pt: "Comporte-se como num banquete.",
-                en: "Behave as at a banquet.",
-                es: "Compórtate como en un banquete."
+                es: "Abstenerse es libertad."
             }
         }
     },
@@ -1639,9 +1254,9 @@ const EQUILIBRIUM_QUOTES: Quote[] = [
         },
         adaptations: {
             level_1: {
-                pt: "Coma para viver. Só.",
-                en: "Eat to live. Only.",
-                es: "Come para vivir. Solo."
+                pt: "Lembre-se de comer para viver, não viver para comer. Escolha o que nutre, não apenas o que agrada.",
+                en: "Remember to eat to live, not live to eat. Choose what nourishes, not just what pleases.",
+                es: "Recuerda comer para vivir, no vivir para comer. Elige lo que nutre, no solo lo que agrada."
             },
             level_2: {
                 pt: "Seu corpo é uma ferramenta. Abasteça-o com intenção, assim como você alimenta sua mente com ideias virtuosas.",
@@ -1674,14 +1289,14 @@ const EQUILIBRIUM_QUOTES: Quote[] = [
         },
         adaptations: {
             level_1: {
-                pt: "Teste a escassez. Você aguenta.",
-                en: "Test scarcity. You can handle it.",
-                es: "Prueba la escasez. Aguantarás."
+                pt: "Pratique a pobreza e o desconforto voluntariamente. Ao enfrentar o que você teme em pequenas doses, você percebe que é capaz de suportar.",
+                en: "Practice poverty and discomfort voluntarily. By facing what you fear in small doses, you realize you can endure it.",
+                es: "Practica la pobreza y la incomodidad voluntariamente. Al enfrentar lo que temes en pequeñas dosis, te das cuenta de que puedes soportarlo."
             },
             level_2: {
                 pt: "O medo da escassez é pior que a escassez. Treine-se para precisar de pouco e você será livre.",
                 en: "The fear of scarcity is worse than scarcity itself. Train yourself to need little, and you will be free.",
-                es: "El medo a la escasez es peor que la escasez misma. Entrénate para necesitar poco y serás libre."
+                es: "El miedo a la escasez es peor que la escasez misma. Entrénate para necesitar poco y serás libre."
             },
             level_3: {
                 pt: "É isso que eu temia?",
@@ -1709,9 +1324,9 @@ const EQUILIBRIUM_QUOTES: Quote[] = [
         },
         adaptations: {
             level_1: {
-                pt: "Esteja aqui. Respire.",
-                en: "Be here. Breathe.",
-                es: "Esté aquí. Respira."
+                pt: "Se eu domino a minha presença no agora através do fôlego, eu domino a minha primeira reação ao mundo.",
+                en: "If I master my presence in the now through breath, I master my first reaction to the world.",
+                es: "Si domino mi presencia en el ahora a través del aliento, domino mi primera reacción al mundo."
             },
             level_2: {
                 pt: "A respiração é a âncora da alma. Volte a ela e encontre a ordem em meio ao caos.",
@@ -1744,9 +1359,9 @@ const EQUILIBRIUM_QUOTES: Quote[] = [
         },
         adaptations: {
             level_1: {
-                pt: "A raiva destrói você. Não reaja.",
-                en: "Anger hurts more. Don't react.",
-                es: "La ira hiere más. No reacciones."
+                pt: "Ficar com raiva só piora a situação. Respire fundo e não reaja agora.",
+                en: "Getting angry only makes the situation worse. Take a deep breath and don't react now.",
+                es: "Enojarse solo empeora la situación. Respira hondo y no reacciones ahora."
             },
             level_2: {
                 pt: "A ofensa é externa; a raiva é interna. Não adicione seu próprio dano ao dano que o mundo lhe causou.",
@@ -1759,80 +1374,11 @@ const EQUILIBRIUM_QUOTES: Quote[] = [
                 es: "La ira hiere más que la ofensa."
             }
         }
-    },
-    {
-        id: "cit_seneca_raiva_02",
-        author: "seneca",
-        original_text: {
-            pt: "O maior remédio para a raiva é o adiamento.",
-            en: "The greatest remedy for anger is delay.",
-            es: "El mayor remedio para la ira es la demora.",
-        },
-        source: "Sobre a Ira, II.29",
-        metadata: {
-            virtue: "Temperance",
-            level: 1,
-            discipline: "Assent",
-            sphere: "Social",
-            tags: ["anger", "patience", "time", "self-control", "emotion"],
-            coercion_type: "Directive"
-        },
-        adaptations: {
-            level_1: {
-                pt: "Raiva? Espere. O tempo cura.",
-                en: "Anger? Wait. Time heals.",
-                es: "¿Ira? Espera. El tiempo cura."
-            },
-            level_2: {
-                pt: "Não peça perdão à raiva, peça tempo. O julgamento precipitado erra; o tempo revela a verdade.",
-                en: "Do not ask anger for pardon, ask for time. Hasty judgment errs; time reveals truth.",
-                es: "No pidas perdón a la ira, pide tiempo. El juicio precipitado yerra; el tiempo revela la verdad."
-            },
-            level_3: {
-                pt: "Adie a reação.",
-                en: "Delay the reaction.",
-                es: "Retrasa la reacción."
-            }
-        }
-    },
-    {
-        id: "cit_marco_esmeralda_01",
-        author: "marcusAurelius",
-        original_text: {
-            pt: "Uma esmeralda perde sua qualidade se não for elogiada?",
-            en: "Does an emerald lose its quality if it is not praised?",
-            es: "¿Pierde una esmeralda su calidad si no es elogiada?",
-        },
-        source: "Meditações, IV.20",
-        metadata: {
-            virtue: "Temperance",
-            level: 2,
-            discipline: "Desire",
-            sphere: "Mental",
-            tags: ["humility", "character", "integrity", "praise"],
-            coercion_type: "Reflective"
-        },
-        adaptations: {
-            level_1: {
-                pt: "Ignore o aplauso. Conheça seu valor.",
-                en: "Your value is internal. Ignore praise.",
-                es: "Tu valor es interno. Igora elogios."
-            },
-            level_2: {
-                pt: "A beleza é autossuficiente. Busque ser virtuoso, não ser reconhecido como tal.",
-                en: "Beauty is self-sufficient. Seek to be virtuous, not to be recognized as such.",
-                es: "La belleza es autosuficiente. Busca ser virtuoso, no ser reconocido como tal."
-            },
-            level_3: {
-                pt: "Seja, não pareça.",
-                en: "Be, do not seem.",
-                es: "Sé, no parezcas."
-            }
-        }
     }
 ];
 
 // --- CATEGORY 5: SOCIAL & JUSTICE (The Commons) ---
+// Foco: Bem Comum, Amizade, Raiva, Liderança.
 const SOCIAL_QUOTES: Quote[] = [
     {
         id: "cit_marco_zelo_01",
@@ -1853,14 +1399,14 @@ const SOCIAL_QUOTES: Quote[] = [
         },
         adaptations: {
             level_1: {
-                pt: "Ajude o grupo. Ajude a si mesmo.",
-                en: "The good of all is your good.",
-                es: "El bien de todos es tu bien."
+                pt: "Eu ajo para o bem comum, pois o que é bom para a colmeia é bom para a abelha.",
+                en: "I act for the common good, for what is good for the swarm is good for the bee.",
+                es: "Actúo por el bien común, pues lo que es bueno para la colmena es bueno para la abeja."
             },
             level_2: {
                 pt: "Sua natureza é social. Trabalhar pelo outro é trabalhar por si mesmo. Não se isole da humanidade.",
                 en: "Your nature is social. To work for another is to work for yourself. Do not isolate yourself from humanity.",
-                es: "Tu natureza es social. Trabajar por el otro es trabajar por ti mismo. No te aísles de la humanidad."
+                es: "Tu naturaleza es social. Trabajar por el otro es trabajar por ti mismo. No te aísles de la humanidad."
             },
             level_3: {
                 pt: "Bem comum, bem próprio.",
@@ -1888,9 +1434,9 @@ const SOCIAL_QUOTES: Quote[] = [
         },
         adaptations: {
             level_1: {
-                pt: "Cuide dos seus. Traga-os para perto.",
-                en: "Care for yours. Bring them close.",
-                es: "Cuida a los tuyos. Tráelos cerca."
+                pt: "Cultivo minhas relações próximas como um dever sagrado. Tratar bem os meus é o início da justiça universal.",
+                en: "I cultivate my close relationships as a sacred duty. Treating my own well is the beginning of universal justice.",
+                es: "Cultivo mis relaciones cercanas como un deber sagrado. Tratar bien a los míos es el comienzo de la justicia universal."
             },
             level_2: {
                 pt: "Traga os distantes para perto. Veja sua família e amigos não como externos, mas como partes de você.",
@@ -1923,9 +1469,9 @@ const SOCIAL_QUOTES: Quote[] = [
         },
         adaptations: {
             level_1: {
-                pt: "Pare de falar. Seja bom.",
-                en: "Stop talking. Be good.",
-                es: "Deja de hablar. Sé bueno."
+                pt: "Chega de planejar como vai ser sua rotina perfeita. Apenas execute a próxima tarefa correta.",
+                en: "Stop planning your perfect routine. Just execute the next right task.",
+                es: "Basta de planear tu rutina perfecta. Solo ejecuta la siguiente tarea correcta."
             },
             level_2: {
                 pt: "A filosofia não está no discurso, mas na conduta. A virtude só existe quando manifestada em 'Praxis'.",
@@ -1958,9 +1504,9 @@ const SOCIAL_QUOTES: Quote[] = [
         },
         adaptations: {
             level_1: {
-                pt: "Você é do mundo. Aja assim.",
-                en: "You are the world's. Act like it.",
-                es: "Eres del mundo. Actúa así."
+                pt: "Não se isole. Você faz parte de algo maior que sua casa ou cidade.",
+                en: "Do not isolate yourself. You are part of something bigger than your home or city.",
+                es: "No te aísles. Eres parte de algo más grande que tu hogar o ciudad."
             },
             level_2: {
                 pt: "Sua racionalidade o conecta a todos os outros seres racionais. Aja como parte do todo.",
@@ -1993,9 +1539,9 @@ const SOCIAL_QUOTES: Quote[] = [
         },
         adaptations: {
             level_1: {
-                pt: "Escolha bem. Confie totalmente.",
-                en: "Choose well. Trust fully.",
-                es: "Elige bien. Confía totalmente."
+                pt: "Escolha bem seus amigos, mas depois que escolher, confie neles totalmente.",
+                en: "Choose your friends well, but once you choose, trust them completely.",
+                es: "Elige bien a tus amigos, pero una vez que elijas, confía en ellos totalmente."
             },
             level_2: {
                 pt: "A confiança é a alma da amizade. A dúvida constante é veneno para as relações.",
@@ -2028,9 +1574,9 @@ const SOCIAL_QUOTES: Quote[] = [
         },
         adaptations: {
             level_1: {
-                pt: "Ajude ou tolere.",
-                en: "Help or tolerate.",
-                es: "Ayuda o tolera."
+                pt: "Estamos todos conectados. Ajude os outros ou tenha paciência com eles.",
+                en: "We are all connected. Help others or bear with them.",
+                es: "Todos estamos conectados. Ayuda a los demás o ten paciencia con ellos."
             },
             level_2: {
                 pt: "Sua função social é cooperar. A raiva contra o outro é uma falha contra a natureza humana.",
@@ -2063,290 +1609,13 @@ const SOCIAL_QUOTES: Quote[] = [
         },
         adaptations: {
             level_1: {
-                pt: "Não imite o inimigo.",
-                en: "Do not imitate the enemy.",
-                es: "No imites al enemigo."
+                pt: "Não retribua o mal com o mal. Se alguém foi injusto, não se rebaixe ao nível dele.",
+                en: "Do not repay evil with evil. If someone was unjust, do not lower yourself to their level.",
+                es: "No devuelvas mal por mal. Si alguien fue injusto, no te rebajes a su nivel."
             },
             level_2: {
                 pt: "A punição do vício é o próprio vício. Mantenha sua integridade e não deixe a maldade alheia corromper seu caráter.",
                 en: "The punishment of vice is vice itself. Maintain your integrity and do not let others' malice corrupt your character.",
                 es: "El castigo del vicio es el vicio mismo. Mantén tu integridad y no dejes que la maldad ajena corrompa tu carácter."
             },
-            level_3: {
-                pt: "Não se torne o inimigo.",
-                en: "Do not become the enemy.",
-                es: "No te conviertas en el enemigo."
-            }
-        }
-    },
-    {
-        id: "cit_zeno_lingua_01",
-        author: "zeno",
-        original_text: {
-            pt: "Melhor tropeçar com os pés do que com a língua.",
-            en: "Better to trip with the feet than with the tongue.",
-            es: "Mejor tropezar con los pies que con la lengua."
-        },
-        source: "Diógenes Laércio",
-        metadata: {
-            virtue: "Wisdom",
-            level: 1,
-            discipline: "Action",
-            sphere: "Social",
-            tags: ["speech", "silence", "self-control", "wisdom", "patience"],
-            coercion_type: "Directive"
-        },
-        adaptations: {
-            level_1: {
-                pt: "Escute mais. Fale menos.",
-                en: "Listen more. Speak less.",
-                es: "Escucha más. Habla menos."
-            },
-            level_2: {
-                pt: "O silêncio é seguro; a fala é arriscada. Pense antes de falar para não se arrepender depois.",
-                en: "Silence is safe; speech is risky. Think before you speak so you don't regret it later.",
-                es: "El silencio es seguro; el habla es arriesgada. Piensa antes de hablar para no arrepentirte depois."
-            },
-            level_3: {
-                pt: "Domine sua língua.",
-                en: "Master your tongue.",
-                es: "Domina tu lengua."
-            }
-        }
-    },
-    {
-        id: "cit_seneca_multidao_01",
-        author: "seneca",
-        original_text: {
-            pt: "Associe-se com pessoas que possam torná-lo melhor.",
-            en: "Associate with people who are likely to improve you.",
-            es: "Asóciate con personas que puedan mejorarte.",
-        },
-        source: "Cartas a Lucílio, VII",
-        metadata: {
-            virtue: "Justice",
-            level: 1,
-            discipline: "Action",
-            sphere: "Social",
-            tags: ["community", "friendship", "growth", "influence"],
-            coercion_type: "Directive"
-        },
-        adaptations: {
-            level_1: {
-                pt: "Ande com quem te eleva.",
-                en: "Walk with those who lift you.",
-                es: "Anda con quien te eleva."
-            },
-            level_2: {
-                pt: "O contágio social é real. Busque amigos que desafiem sua mente e elevem sua alma, não que alimentem seus vícios.",
-                en: "Social contagion is real. Seek friends who challenge your mind and elevate your soul, not feed your vices.",
-                es: "El contagio social es real. Busca amigos que desafíen tu mente y eleven tu alma, not que alimenten tus vicios."
-            },
-            level_3: {
-                pt: "Companhia eleva ou corrompe.",
-                en: "Company elevates or corrupts.",
-                es: "La compañía eleva o corrompe."
-            }
-        }
-    },
-    {
-        id: "cit_epicteto_insulto_01",
-        author: "epictetus",
-        original_text: {
-            pt: "Lembre-se que não é quem ofende que insulta, mas a sua opinião sobre o que é insultante.",
-            en: "Remember that it is not he who gives abuse or blows who insults; but the view we take of these things as insulting.",
-            es: "Recuerda que no es quien ofende quien insulta, sino tu opinión sobre lo que es insultante."
-        },
-        source: "Enchiridion, 20",
-        metadata: {
-            virtue: "Wisdom",
-            level: 2,
-            discipline: "Assent",
-            sphere: "Social",
-            tags: ["anger", "perception", "judgment", "patience", "forgiveness"],
-            coercion_type: "Reflective"
-        },
-        adaptations: {
-            level_1: {
-                pt: "Só ofende se você aceitar.",
-                en: "Only offended if you accept.",
-                es: "Solo te ofendes si aceptas."
-            },
-            level_2: {
-                pt: "O insulto não está na palavra do outro, mas no seu julgamento. Remova a opinião e a raiva desaparece.",
-                en: "The insult is not in the other's word, but in your judgment. Remove the opinion and the anger disappears.",
-                es: "El insulto no está en la palabra del otro, sino en tu juicio. Elimina la opinión y la ira desaparece."
-            },
-            level_3: {
-                pt: "A opinião cria o insulto.",
-                en: "Opinion creates the insult.",
-                es: "La opinión crea el insulto."
-            }
-        }
-    }
-];
-
-// --- CATEGORY 6: NATURE & FATE (The Whole) ---
-const NATURE_QUOTES: Quote[] = [
-    {
-        id: "cit_zeno_natureza_01",
-        author: "zeno",
-        original_text: {
-            pt: "O objetivo da vida é viver em acordo com a natureza.",
-            en: "The goal of life is living in agreement with nature.",
-            es: "El objetivo de la vida es vivir de acuerdo con la naturaleza.",
-        },
-        source: "Diógenes Laércio",
-        metadata: {
-            virtue: "Justice",
-            level: 1,
-            discipline: "Desire",
-            sphere: "Biological",
-            tags: ["nature", "simplicity", "peace", "harmony", "morning", "acceptance"],
-            coercion_type: "Dogmatic"
-        },
-        adaptations: {
-            level_1: {
-                pt: "Sem pressa. Como a natureza.",
-                en: "No rush. Like nature.",
-                es: "Sin prisa. Como la naturaleza."
-            },
-            level_2: {
-                pt: "Ao observar o crescimento de uma planta, entendo o tempo e a paciência do universo.",
-                en: "By observing the growth of a plant, I understand the time and patience of the universe.",
-                es: "Al observar el crecimiento de una planta, entiendo el tiempo y la paciencia del universo."
-            },
-            level_3: {
-                pt: "Physis: Natureza.",
-                en: "Physis: Nature.",
-                es: "Physis: Naturaleza."
-            }
-        }
-    },
-    {
-        id: "cit_seneca_cadencia_01",
-        author: "seneca",
-        original_text: {
-            pt: "Devemos viver de acordo com a natureza; separar-se dela é o começo da desordem.",
-            en: "We must live according to nature; to separate ourselves from her is the beginning of disorder.",
-            es: "Debemos vivir de acuerdo con la naturaleza; separarse de ella es el comienzo del desorden.",
-        },
-        source: "Cartas a Lucílio, 122",
-        metadata: {
-            virtue: "Wisdom",
-            level: 1,
-            discipline: "Desire",
-            sphere: "Biological",
-            tags: ["nature", "health", "time", "discipline", "body", "morning", "harmony"],
-            coercion_type: "Directive"
-        },
-        adaptations: {
-            level_1: {
-                pt: "Siga o sol. Respeite o ritmo.",
-                en: "Follow the sun. Respect rhythm.",
-                es: "Sigue el sol. Respeta el ritmo."
-            },
-            level_2: {
-                pt: "Não lute contra a noite nem desperdice o dia. A disciplina biológica é a base da tranquilidade mental.",
-                en: "Do not fight the night nor waste the day. Biological discipline is the foundation of mental tranquility.",
-                es: "No luches contra la noche ni desperdicies el día. La disciplina biológica es la base de la tranquilidad mental."
-            },
-            level_3: {
-                pt: "Viva conforme a natureza.",
-                en: "Live according to nature.",
-                es: "Vive conforme a la natureza."
-            }
-        }
-    },
-    {
-        id: "cit_marco_rio_01",
-        author: "marcusAurelius",
-        original_text: {
-            pt: "O tempo é como um rio de eventos passageiros, e forte é a sua correnteza.",
-            en: "Time is a sort of river of passing events, and strong is its current.",
-            es: "El tempo es como un río de acontecimientos pasajeros, y fuerte es su corriente."
-        },
-        source: "Meditações, IV.43",
-        metadata: {
-            virtue: "Wisdom",
-            level: 1,
-            discipline: "Assent",
-            sphere: "Structural",
-            tags: ["nature", "change", "impermanence", "flux", "time", "acceptance"],
-            coercion_type: "Reflective"
-        },
-        adaptations: {
-            level_1: {
-                pt: "Tudo flui. Não se apegue.",
-                en: "Everything flows. Don't cling.",
-                es: "Todo fluye. No te apegues."
-            },
-            level_2: {
-                pt: "Heráclito nos ensina o fluxo. Abrace a impermanência como a natureza da realidade.",
-                en: "Heraclitus teaches us the flux. Embrace impermanence as the nature of reality.",
-                es: "Heráclito nos enseña el flujo. Abraza la impermanencia como la naturaleza de la realidad."
-            },
-            level_3: {
-                pt: "Panta Rhei: Tudo flui.",
-                en: "Panta Rhei: Everything flows.",
-                es: "Panta Rhei: Todo fluye."
-            }
-        }
-    },
-    {
-        id: "cit_marco_perda_01",
-        author: "marcusAurelius",
-        original_text: {
-            pt: "A perda nada mais é que mudança, e mudança é o deleite da Natureza.",
-            en: "Loss is nothing else but change, and change is Nature's delight.",
-            es: "La pérdida no es más que cambio, y el cambio es el deleite de la Naturaleza."
-        },
-        source: "Meditações, IX.42",
-        metadata: {
-            virtue: "Wisdom",
-            level: 3,
-            discipline: "Desire",
-            sphere: "Structural",
-            tags: ["change", "nature", "acceptance", "loss", "fate"],
-            coercion_type: "Reflective"
-        },
-        adaptations: {
-            level_1: {
-                pt: "Perda é mudança. Aceite.",
-                en: "Loss is change. Accept it.",
-                es: "Pérdida es cambio. Acéptalo."
-            },
-            level_2: {
-                pt: "O universo é metamorfose. O que você chama de perda é apenas a realidade se reconfigurando.",
-                en: "The universe is metamorphosis. What you call loss is just reality reconfiguring itself.",
-                es: "El universo es metamorfosis. Lo que llamas pérdida es solo la realidad reconfigurándose."
-            },
-            level_3: {
-                pt: "Perda é mudança.",
-                en: "Loss is change.",
-                es: "La pérdida es cambio."
-            }
-        }
-    }
-];
-
-// --- AGGREGATION & EXPORT ---
-
-export const QUOTES_BY_CATEGORY = Object.freeze({
-    mind: MIND_QUOTES,
-    action: ACTION_QUOTES,
-    resilience: RESILIENCE_QUOTES,
-    equilibrium: EQUILIBRIUM_QUOTES,
-    social: SOCIAL_QUOTES,
-    nature: NATURE_QUOTES
-});
-
-// @fix: Change type to readonly Quote[] to match Object.freeze return type and fix type assignment error.
-export const STOIC_QUOTES: readonly Quote[] = Object.freeze([
-    ...MIND_QUOTES,
-    ...ACTION_QUOTES,
-    ...RESILIENCE_QUOTES,
-    ...EQUILIBRIUM_QUOTES,
-    ...SOCIAL_QUOTES,
-    ...NATURE_QUOTES
-]);
+            

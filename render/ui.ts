@@ -6,25 +6,28 @@
 
 /**
  * @file render/ui.ts
- * @description Registro Central de Referências DOM (UI Registry).
+ * @description Registro Central de Elementos do DOM (UI Registry / DOM Facade).
  * 
  * [MAIN THREAD CONTEXT]:
- * Este módulo atua como um cache inteligente (Lazy-Loaded) para referências de elementos DOM.
+ * Este arquivo atua como a única fonte de verdade para referências a elementos HTML.
  * 
- * ARQUITETURA (Lazy Singleton & O(1) Access):
- * - **Lazy Access:** Elementos só são consultados no DOM (`querySelector`) na primeira vez que são acessados.
- * - **Memoization:** Referências são cacheadas em `uiCache`, tornando acessos subsequentes instantâneos.
- * - **Type Safety:** Interface `UIElements` garante autocompletar e verificação de tipos em todo o projeto.
+ * ARQUITETURA (Lazy DOM Access & Stable Shapes):
+ * - **Responsabilidade Única:** Mapear seletores CSS para propriedades tipadas do TypeScript.
+ * - **Lazy Loading:** Nenhum elemento é consultado (`querySelector`) na inicialização.
+ * - **Zero-Spread Initialization:** Substitui `...createLazyGetter` por definições diretas
+ *   para evitar alocação de objetos temporários e garantir transições de Hidden Class previsíveis no V8.
+ * 
+ * DECISÕES TÉCNICAS:
+ * 1. **Hybrid Query Strategy:** Detecta seletores simples de ID (`#id`) para usar `getElementById` (Fast Path).
+ * 2. **Descriptor Map:** Constrói o mapa de propriedades estaticamente.
  */
 
-export interface UIElements {
+type UIElements = {
     appContainer: HTMLElement;
     calendarStrip: HTMLElement;
     headerTitle: HTMLElement;
     headerTitleDesktop: HTMLElement;
     headerTitleMobile: HTMLElement;
-    navArrowPast: HTMLElement;
-    navArrowFuture: HTMLElement;
     stoicQuoteDisplay: HTMLElement;
     habitContainer: HTMLElement;
     chartContainer: HTMLElement;
@@ -59,7 +62,6 @@ export interface UIElements {
     editHabitModal: HTMLElement;
     editHabitModalTitle: HTMLElement;
     editHabitForm: HTMLFormElement;
-    habitSubtitleDisplay: HTMLElement;
     editHabitSaveBtn: HTMLButtonElement;
     habitTimeContainer: HTMLElement;
     frequencyOptionsContainer: HTMLElement;
@@ -99,6 +101,8 @@ export interface UIElements {
     quickActionDone: HTMLButtonElement;
     quickActionSnooze: HTMLButtonElement;
     quickActionAlmanac: HTMLButtonElement;
+    
+    // Static Text Elements
     labelLanguage: HTMLElement;
     labelSync: HTMLElement;
     labelNotifications: HTMLElement;
@@ -112,11 +116,8 @@ export interface UIElements {
     syncActiveDesc: HTMLElement;
     iconPickerTitle: HTMLElement;
     colorPickerTitle: HTMLElement;
-    syncErrorMsg: HTMLElement;
-    
-    // Dynamic Injected Elements
-    habitConscienceDisplay: HTMLElement;
-    
+
+    // Chart Elements
     chart: {
         title: HTMLElement;
         subtitle: HTMLElement;
@@ -136,7 +137,7 @@ export interface UIElements {
         axisStart: HTMLElement;
         axisEnd: HTMLElement;
     }
-}
+};
 
 // MEMORY: Cache "Flat" para acesso O(1).
 // Usamos 'any' internamente para evitar overhead de tipos complexos no runtime.
@@ -156,13 +157,10 @@ function queryElement(selector: string): Element {
         ? document.getElementById(selector.slice(1))
         : document.querySelector(selector);
 
-    // ROBUSTNESS [2025-06-03]: Silent fail for dynamic elements that might be injected later.
-    // O elemento habit-conscience-display é injetado via JS, então pode não existir no first boot.
-    // Retornamos undefined/null implicitamente se não achar, para ser tratado no render.
-    if (!element && selector !== '#habit-conscience-display' && selector !== '#habit-subtitle-display') {
+    if (!element) {
         throw new Error(`UI element "${selector}" not found.`);
     }
-    return element as Element;
+    return element;
 }
 
 /**
@@ -177,9 +175,7 @@ function defineLazy(target: any, prop: string, selector: string, cache: Record<s
         get: function() {
             // Check cache direct property access (Fastest in V8)
             if (cache[prop] === undefined) {
-                const el = queryElement(selector);
-                if (el) cache[prop] = el;
-                return el;
+                cache[prop] = queryElement(selector);
             }
             return cache[prop];
         },
@@ -198,8 +194,6 @@ defineLazy(ui, 'calendarStrip', '#calendar-strip', uiCache);
 defineLazy(ui, 'headerTitle', '#header-title', uiCache);
 defineLazy(ui, 'headerTitleDesktop', '#header-title .header-title-desktop', uiCache);
 defineLazy(ui, 'headerTitleMobile', '#header-title .header-title-mobile', uiCache);
-defineLazy(ui, 'navArrowPast', '#nav-arrow-past', uiCache);
-defineLazy(ui, 'navArrowFuture', '#nav-arrow-future', uiCache);
 defineLazy(ui, 'stoicQuoteDisplay', '#stoic-quote-display', uiCache);
 defineLazy(ui, 'habitContainer', '#habit-container', uiCache);
 defineLazy(ui, 'chartContainer', '#chart-container', uiCache);
@@ -234,7 +228,6 @@ defineLazy(ui, 'languageNextBtn', '#language-next', uiCache);
 defineLazy(ui, 'editHabitModal', '#edit-habit-modal', uiCache);
 defineLazy(ui, 'editHabitModalTitle', '#edit-habit-modal-title', uiCache);
 defineLazy(ui, 'editHabitForm', '#edit-habit-form', uiCache);
-defineLazy(ui, 'habitSubtitleDisplay', '#habit-subtitle-display', uiCache);
 defineLazy(ui, 'editHabitSaveBtn', '#edit-habit-save-btn', uiCache);
 defineLazy(ui, 'habitTimeContainer', '#habit-time-container', uiCache);
 defineLazy(ui, 'frequencyOptionsContainer', '#frequency-options-container', uiCache);
@@ -287,8 +280,6 @@ defineLazy(ui, 'syncWarningText', '#sync-warning-text', uiCache);
 defineLazy(ui, 'syncActiveDesc', '#sync-active-desc', uiCache);
 defineLazy(ui, 'iconPickerTitle', '#icon-picker-modal-title', uiCache);
 defineLazy(ui, 'colorPickerTitle', '#color-picker-modal-title', uiCache);
-defineLazy(ui, 'habitConscienceDisplay', '#habit-conscience-display', uiCache);
-defineLazy(ui, 'syncErrorMsg', '#sync-error-msg', uiCache);
 
 // --- CHART ELEMENTS SUB-OBJECT ---
 ui.chart = {} as UIElements['chart'];
@@ -305,7 +296,7 @@ defineLazy(ui.chart, 'tooltipDate', '#chart-container .tooltip-date', chartCache
 defineLazy(ui.chart, 'tooltipScoreLabel', '#chart-container .tooltip-score-label', chartCache);
 defineLazy(ui.chart, 'tooltipScoreValue', '#chart-container .tooltip-score-value', chartCache);
 defineLazy(ui.chart, 'tooltipHabits', '#chart-container .tooltip-habits li', chartCache);
-defineLazy(ui, 'indicator', '#chart-container .chart-indicator', chartCache);
+defineLazy(ui.chart, 'indicator', '#chart-container .chart-indicator', chartCache);
 defineLazy(ui.chart, 'evolutionIndicator', '#chart-container .chart-evolution-indicator', chartCache);
 defineLazy(ui.chart, 'axisStart', '#chart-container .chart-axis-labels span:first-child', chartCache);
 defineLazy(ui.chart, 'axisEnd', '#chart-container .chart-axis-labels span:last-child', chartCache);

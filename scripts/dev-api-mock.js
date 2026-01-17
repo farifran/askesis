@@ -2,188 +2,185 @@
 /**
  * @file scripts/dev-api-mock.js
  * @description Mock Serverless API handlers for local development.
+ * Simulates the behavior of Vercel Edge Functions (/api/sync, /api/analyze).
  * 
  * [SECURITY AUDIT]:
  * - Added Payload Size Limit (DoS Protection).
  * - Added Mutex for Atomic File I/O (Race Condition Protection).
- * - Safe UTF-8 Buffering & Async Error Handling.
+ * - Added JSON Corruption Auto-healing.
+ * - [REFACTOR] Pure Async I/O (No fsSync).
  */
 
 const fs = require('fs/promises');
 
 const MOCK_DB_FILE = '.local-kv.json';
 const MAX_PAYLOAD_SIZE = 4 * 1024 * 1024; // 4MB Hard Limit
-const HEADERS_JSON = { 'Content-Type': 'application/json' };
-
-// --- HELPERS ---
-const sendJSON = (res, status, data) => {
-    if (!res.headersSent) {
-        res.writeHead(status, HEADERS_JSON);
-        res.end(JSON.stringify(data));
-    }
-};
-
-const sendError = (res, status, message) => sendJSON(res, status, { error: message });
 
 // --- MUTEX INFRASTRUCTURE ---
+// Garante que apenas uma operação de leitura/escrita no arquivo ocorra por vez.
 let dbMutex = Promise.resolve();
 
+/**
+ * Executa uma operação no DB com garantia de exclusividade (Atomicidade).
+ * @param {Function} operation Função assíncrona que recebe o objeto db e retorna o novo estado (ou null para não salvar).
+ */
 async function withDbAtomic(operation) {
     const previousMutex = dbMutex;
     let releaseLock;
+    
+    // Cria o próximo bloqueio na cadeia
     dbMutex = new Promise(resolve => releaseLock = resolve);
     
-    await previousMutex;
+    await previousMutex; // Espera a operação anterior terminar
     
     try {
         let db = {};
+        
+        // 1. Safe Read (Pure Async)
         try {
             const content = await fs.readFile(MOCK_DB_FILE, 'utf-8');
-            if (content.trim()) db = JSON.parse(content);
+            if (content.trim()) {
+                db = JSON.parse(content);
+            }
         } catch (readError) {
+            // Ignora erro se o arquivo ainda não existe (ENOENT).
+            // Para outros erros (ex: JSON corrompido), loga e reseta o DB (Auto-healing).
             if (readError.code !== 'ENOENT') {
-                console.error("⚠️ [MOCK DB] Erro de Leitura. Resetando DB.", readError.message);
+                console.error("⚠️ [MOCK DB] Erro de Leitura/Corrupção. Resetando DB.", readError.message);
             }
         }
 
+        // 2. Operation
         const result = await operation(db);
 
+        // 3. Safe Write (apenas se a operação retornou o objeto DB modificado)
         if (result && typeof result === 'object') {
             await fs.writeFile(MOCK_DB_FILE, JSON.stringify(result, null, 2));
         }
+        
         return result;
     } catch (err) {
         console.error("⚠️ [MOCK DB] Critical I/O Error:", err);
         throw err;
     } finally {
-        releaseLock();
+        releaseLock(); // Libera para o próximo da fila
     }
 }
 
 async function handleApiSync(req, res) {
-    return new Promise((resolve) => {
-        // Error Handler Wrapper
-        const handleError = (e, context) => {
-            console.error(`API Mock Error (${context}):`, e);
-            sendError(res, 500, e.message);
-            resolve();
-        };
-
-        // Socket Error Handler
-        req.on('error', (err) => {
-            console.error("Socket error on API Mock (Sync):", err);
-            if (!res.headersSent) res.end();
-            resolve();
-        });
-
-        if (req.method === 'GET') {
+    if (req.method === 'GET') {
+        try {
             const keyHash = req.headers['x-sync-key-hash'];
             if (!keyHash) {
-                sendError(res, 401, 'Unauthorized');
-                return resolve();
+                res.writeHead(401, { 'Content-Type': 'application/json' });
+                return res.end(JSON.stringify({ error: 'Unauthorized' }));
             }
 
-            withDbAtomic(async (db) => {
+            // Atomic Read
+            await withDbAtomic(async (db) => {
                 const userData = db[keyHash];
-                sendJSON(res, 200, userData || null);
-                return null; // Read-only
-            }).then(() => resolve()).catch(e => handleError(e, 'GET'));
-
-        } else if (req.method === 'POST') {
-            const chunks = [];
-            let size = 0;
-            let aborted = false;
-
-            req.on('data', chunk => {
-                if (aborted) return;
-                size += chunk.length;
-                if (size > MAX_PAYLOAD_SIZE) {
-                    aborted = true;
-                    sendError(res, 413, 'Payload Too Large');
-                    req.destroy();
-                    resolve();
-                    return;
-                }
-                chunks.push(chunk);
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify(userData || null));
+                return null; // Não salvar nada
             });
 
-            req.on('end', async () => {
-                if (aborted) return;
-
-                try {
-                    const body = Buffer.concat(chunks).toString();
-                    const keyHash = req.headers['x-sync-key-hash'];
-                    
-                    if (!keyHash) {
-                        sendError(res, 401, 'Unauthorized');
-                        return resolve();
-                    }
-
-                    let payload;
-                    try {
-                        payload = JSON.parse(body);
-                    } catch (jsonErr) {
-                        sendError(res, 400, 'Invalid JSON');
-                        return resolve();
-                    }
-                    
-                    await withDbAtomic(async (db) => {
-                        const existingData = db[keyHash];
-                        
-                        // Optimistic Locking
-                        if (existingData && payload.lastModified < existingData.lastModified) {
-                            sendJSON(res, 409, existingData);
-                            return null;
-                        }
-                        if (existingData && payload.lastModified === existingData.lastModified) {
-                            res.writeHead(304).end();
-                            return null;
-                        }
-
-                        db[keyHash] = payload;
-                        sendJSON(res, 200, { success: true });
-                        return db; // Trigger Write
-                    });
-                    resolve();
-
-                } catch (e) {
-                    handleError(e, 'POST');
-                }
-            });
-
-        } else {
-            res.writeHead(405).end();
-            resolve();
+        } catch (e) {
+            console.error('API Mock Error (GET /api/sync):', e);
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: e.message }));
         }
-    });
+    } else if (req.method === 'POST') {
+        let body = '';
+        let size = 0;
+        let aborted = false;
+
+        req.on('data', chunk => {
+            if (aborted) return;
+            
+            size += chunk.length;
+            if (size > MAX_PAYLOAD_SIZE) {
+                aborted = true;
+                res.writeHead(413, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Payload Too Large' }));
+                req.destroy(); // Corta a conexão
+                return;
+            }
+            body += chunk.toString();
+        });
+
+        req.on('end', async () => {
+            if (aborted) return;
+
+            try {
+                const keyHash = req.headers['x-sync-key-hash'];
+                if (!keyHash) {
+                    res.writeHead(401, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify({ error: 'Unauthorized' }));
+                }
+
+                let payload;
+                try {
+                    payload = JSON.parse(body);
+                } catch (jsonErr) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify({ error: 'Invalid JSON' }));
+                }
+                
+                // Atomic Read-Modify-Write
+                await withDbAtomic(async (db) => {
+                    const existingData = db[keyHash];
+                    
+                    // Optimistic Locking Check (Business Logic)
+                    if (existingData && payload.lastModified < existingData.lastModified) {
+                        res.writeHead(409, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify(existingData));
+                        return null; // Conflito: não salvar
+                    }
+                    
+                    if (existingData && payload.lastModified === existingData.lastModified) {
+                        res.writeHead(304); // Not Modified
+                        res.end();
+                        return null; // Idempotente: não salvar
+                    }
+
+                    // Update State
+                    db[keyHash] = payload;
+                    
+                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ success: true }));
+                    
+                    return db; // Retorna DB para disparar o Write
+                });
+
+            } catch (e) {
+                if (!res.headersSent) {
+                    console.error('API Mock Error (POST /api/sync):', e);
+                    res.writeHead(500, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: e.message }));
+                }
+            }
+        });
+    } else {
+        res.writeHead(405);
+        res.end();
+    }
 }
 
 async function handleApiAnalyze(req, res) {
-    return new Promise((resolve) => {
-        req.on('error', (err) => {
-            console.error("Socket error on API Mock (Analyze):", err);
-            if (!res.headersSent) res.end();
-            resolve();
-        });
-
-        if (req.method !== 'POST') {
-            res.writeHead(405).end();
-            return resolve();
-        }
-        
-        // ROBUSTNESS: Drain the stream to prevent client hanging on large payloads
-        req.resume();
-        
-        const mockResponse = "### Análise Local (Modo Desenvolvimento)\n\n**Estoicismo Simulado:**\n\nVocê está indo bem! A consistência é a chave.";
-        
-        setTimeout(() => {
-            if (!res.writableEnded) {
-                res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-                res.end(mockResponse);
-            }
-            resolve();
-        }, 1500);
-    });
+    if (req.method !== 'POST') {
+        res.writeHead(405);
+        res.end();
+        return;
+    }
+    
+    // Mock response for local development (no API Key required)
+    const mockResponse = "### Análise Local (Modo Desenvolvimento)\n\n**Estoicismo Simulado:**\n\nVocê está indo bem! A consistência é a chave. Continue praticando seus hábitos diários. Lembre-se: não é o que acontece com você, mas como você reage a isso.";
+    
+    // Simulate latency
+    setTimeout(() => {
+        res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end(mockResponse);
+    }, 1500);
 }
 
 module.exports = {

@@ -37,14 +37,6 @@ body {
     -webkit-text-size-adjust: 100%;
 }
 
-/* CHAOS FIX: GLOBAL INTERACTION LOCK
-   Desabilita smooth scrolling e eventos de ponteiro não essenciais quando uma interação física
-   (Swipe, Drag, Rotary) está ativa. Isso evita conflitos de thread e garante 60fps. */
-body.is-interaction-active * {
-    scroll-behavior: auto !important;
-    /* Opcional: pointer-events: none para elementos não focados, mas pode ser agressivo demais. */
-}
-
 /* Permitir seleção em campos de texto e conteúdo onde é útil */
 :is(input, textarea),
 #ai-response,
