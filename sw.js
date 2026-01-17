@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -20,15 +19,15 @@ try {
 }
 
 // CONSTANTS (Build-time injected)
-const CACHE_NAME = 'habit-tracker-v13';
+const CACHE_NAME = 'habit-tracker-v14';
 
 // PERF: Static Asset List (Pre-allocated)
+// FIX: Removed 'sync-worker.js' as it is now inlined in cloud.ts to prevent 404s breaking SW install.
 const CACHE_FILES = [
     '/',
     '/index.html',
     '/bundle.js',
     '/bundle.css',
-    '/sync-worker.js',
     '/manifest.json',
     '/locales/pt.json',
     '/locales/en.json',
@@ -98,6 +97,7 @@ self.addEventListener('fetch', (event) => {
     const url = new URL(req.url); 
 
     // 1. Strict API Bypass
+    // APIs must never be cached by the Service Worker logic, they are handled by api.ts
     if (url.pathname.startsWith('/api/')) return;
 
     // 2. Navigation Strategy (App Shell) with Lie-fi Protection & Cache Update

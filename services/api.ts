@@ -30,7 +30,7 @@ export const getSyncKey = (): string | null => {
 
 /**
  * Inicializa a autenticação carregando a chave do storage para a memória.
- * Usado no boot da aplicação.
+ * Usado no boot da aplicação para garantir que a chave esteja disponível imediatamente.
  */
 export const initAuth = () => {
     getSyncKey();
@@ -111,13 +111,17 @@ export async function apiFetch(endpoint: string, options: ExtendedRequestInit = 
         }
     }
 
+    // PWA SYNC FIX: Força 'no-store' para evitar que o Service Worker ou browser
+    // retornem dados de API obsoletos. APIs de sync devem ser sempre live.
+    const finalOpts = { ...fetchOpts, cache: 'no-store' as RequestCache };
+
     // Lógica de Retry Robusta
     for (let n = 0; n <= retries; n++) {
         const ctrl = new AbortController();
         const tId = setTimeout(() => ctrl.abort(), timeout);
         
         try {
-            const res = await fetch(endpoint, { ...fetchOpts, headers, signal: ctrl.signal });
+            const res = await fetch(endpoint, { ...finalOpts, headers, signal: ctrl.signal });
             clearTimeout(tId);
             
             // 409 (Conflict), 401 (Auth) e 404 (Not Found) são respostas válidas de API, não erros de rede
