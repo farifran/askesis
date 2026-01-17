@@ -1,671 +1,259 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
-*/
-// [ANALYSIS PROGRESS]: 100% - Módulo criado. Isola lógica de modais e forms.
+ */
 
-import { state, Habit, HabitTemplate, Frequency, PredefinedHabit, TimeOfDay, calculateHabitStreak, STREAK_CONSOLIDATED, PREDEFINED_HABITS, TIMES_OF_DAY, FREQUENCIES, LANGUAGES, getHabitDailyInfoForDate } from '../state';
-import { ui } from '../ui';
-import { t, getHabitDisplayInfo, getTimeOfDayName } from '../i18n';
-import { icons, getTimeOfDayIcon } from '../icons';
-import { setTextContent, getMainContainer, updateReelRotaryARIA } from './dom';
-import { escapeHTML, getContrastColor, getDateTimeFormat, parseUTCIsoDate, getTodayUTCIso } from '../utils';
-import { getScheduleForDate } from '../state'; // Explicit import to avoid circular dep issues
+/**
+ * @file render/modals.ts
+ * @description Motor de Renderização de Modais e Diálogos (UI Overlay Layer).
+ */
 
-const focusTrapListeners = new Map<HTMLElement, (e: KeyboardEvent) => void>();
-const previouslyFocusedElements = new WeakMap<HTMLElement, HTMLElement>();
+import { state, Habit, HabitTemplate, Frequency, PredefinedHabit, TimeOfDay, STREAK_CONSOLIDATED, TIMES_OF_DAY, FREQUENCIES, LANGUAGES, getHabitDailyInfoForDate } from '../state';
+import { PREDEFINED_HABITS } from '../data/predefinedHabits';
+import { getScheduleForDate, calculateHabitStreak, getHabitDisplayInfo } from '../services/selectors';
+import { ui } from './ui';
+import { t, compareStrings, formatDate, formatInteger, getTimeOfDayName } from '../i18n';
+import { HABIT_ICONS, UI_ICONS, getTimeOfDayIcon } from './icons';
+import { setTextContent, updateReelRotaryARIA } from './dom';
+import { escapeHTML, getContrastColor, parseUTCIsoDate, getTodayUTCIso, getSafeDate, triggerHaptic } from '../utils';
 
-export function openModal(modal: HTMLElement, elementToFocus?: HTMLElement) {
-    previouslyFocusedElements.set(modal, document.activeElement as HTMLElement);
+interface ModalContext { element: HTMLElement; previousFocus: HTMLElement | null; onClose?: () => void; firstFocusable?: HTMLElement; lastFocusable?: HTMLElement; }
+const modalStack: ModalContext[] = [];
+const OPTS_NOTES = { day: 'numeric', month: 'long', timeZone: 'UTC' } as const;
+const COLORS = ['#e74c3c', '#f1c40f', '#3498db', '#2ecc71', '#9b59b6', '#1abc9c', '#34495e', '#e67e22', '#e84393', '#7f8c8d', '#26A69A', '#FFA726', '#5C6BC0', '#EC407A', '#9CCC65'];
 
-    modal.classList.add('visible');
+function _getLeastUsedColor(): string {
+    const counts = new Map(COLORS.map(c => [c, 0]));
+    // @fix: Get color from the last schedule in history, as it's no longer on the Habit object.
+    state.habits.forEach(h => {
+        const lastSchedule = h.scheduleHistory[h.scheduleHistory.length - 1];
+        if (!h.graduatedOn && lastSchedule && counts.has(lastSchedule.color)) {
+            counts.set(lastSchedule.color, counts.get(lastSchedule.color)! + 1);
+        }
+    });
+    let min = Math.min(...counts.values());
+    const candidates = COLORS.filter(c => counts.get(c) === min);
+    return candidates[state.habits.length % candidates.length];
+}
 
-    const mainContainer = getMainContainer();
-    if (mainContainer) {
-        mainContainer.setAttribute('inert', '');
+export function initModalEngine() {
+    document.addEventListener('keydown', e => {
+        const ctx = modalStack[modalStack.length - 1]; if (!ctx) return;
+        if (e.key === 'Escape') {
+            triggerHaptic('light');
+            closeModal(ctx.element);
+        }
+        else if (e.key === 'Tab') {
+            const { firstFocusable: f, lastFocusable: l } = ctx;
+            if (f && l) {
+                if (e.shiftKey && document.activeElement === f) { l.focus(); e.preventDefault(); }
+                else if (!e.shiftKey && document.activeElement === l) { f.focus(); e.preventDefault(); }
+            }
+        }
+    });
+    document.addEventListener('click', e => {
+        const ctx = modalStack[modalStack.length - 1]; if (!ctx) return;
+        if (e.target === ctx.element) {
+            triggerHaptic('light');
+            closeModal(ctx.element);
+        }
+    });
+}
+
+export function openModal(modal: HTMLElement, focusEl?: HTMLElement, onClose?: () => void) {
+    const ctx: ModalContext = { element: modal, previousFocus: document.activeElement as HTMLElement, onClose };
+    
+    const header = modal.querySelector('.modal-header');
+    if (header) {
+        const spacer = header.querySelector('.modal-header-spacer');
+        if (spacer && !spacer.previousElementSibling?.classList.contains('modal-back-btn')) {
+            const backBtn = document.createElement('button');
+            backBtn.className = 'modal-back-btn';
+            backBtn.innerHTML = UI_ICONS.backArrow;
+            backBtn.setAttribute('aria-label', t('aria_go_back'));
+            backBtn.addEventListener('click', () => {
+                triggerHaptic('light');
+                closeModal(modal);
+            });
+            spacer.replaceWith(backBtn);
+        }
     }
-
-    const focusableElements = modal.querySelectorAll<HTMLElement>(
-        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-    );
-    if (focusableElements.length === 0) return;
-
-    const firstFocusable = focusableElements[0];
-    const lastFocusable = focusableElements[focusableElements.length - 1];
-
-    const targetElement = elementToFocus || firstFocusable;
     
-    setTimeout(() => {
-        if (targetElement && targetElement.isConnected) {
-            if (targetElement instanceof HTMLTextAreaElement) {
-                targetElement.focus();
-                targetElement.selectionStart = targetElement.selectionEnd = targetElement.value.length;
-            } else if (targetElement instanceof HTMLInputElement) {
-                targetElement.focus();
-                targetElement.select();
-            } else {
-                targetElement.focus();
-            }
-        }
-    }, 100);
-
-
-    const trapListener = (e: KeyboardEvent) => {
-        if (e.key !== 'Tab') return;
-        
-        if (e.shiftKey) {
-            if (document.activeElement === firstFocusable) {
-                lastFocusable.focus();
-                e.preventDefault();
-            }
-        } else {
-            if (document.activeElement === lastFocusable) {
-                firstFocusable.focus();
-                e.preventDefault();
-            }
-        }
-    };
-    
-    modal.addEventListener('keydown', trapListener);
-    focusTrapListeners.set(modal, trapListener);
+    modal.classList.add('visible');
+    const fobs = modal.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+    if (fobs.length) { ctx.firstFocusable = fobs[0]; ctx.lastFocusable = fobs[fobs.length - 1]; setTimeout(() => (focusEl || fobs[0]).focus(), 100); }
+    modalStack.push(ctx); ui.appContainer.setAttribute('inert', '');
 }
 
 export function closeModal(modal: HTMLElement) {
-    modal.classList.remove('visible');
+    const idx = modalStack.findIndex(c => c.element === modal); if (idx === -1) return;
+    const [ctx] = modalStack.splice(idx, 1); modal.classList.remove('visible');
+    if (modalStack.length === 0) ui.appContainer.removeAttribute('inert');
     
-    const mainContainer = getMainContainer();
-    if (mainContainer) {
-        mainContainer.removeAttribute('inert');
+    const header = modal.querySelector('.modal-header');
+    const backBtn = header?.querySelector('.modal-back-btn');
+    if (header && backBtn) {
+        const spacer = document.createElement('div');
+        spacer.className = 'modal-header-spacer';
+        backBtn.replaceWith(spacer);
     }
 
-    const listener = focusTrapListeners.get(modal);
-    if (listener) {
-        modal.removeEventListener('keydown', listener);
-        focusTrapListeners.delete(modal);
-    }
-
-    const elementToRestoreFocus = previouslyFocusedElements.get(modal);
-    
-    if (elementToRestoreFocus && elementToRestoreFocus.isConnected) {
-        elementToRestoreFocus.focus();
-    } else {
-        ui.habitContainer.focus();
-    }
-    previouslyFocusedElements.delete(modal);
-}
-
-export function initializeModalClosing(modal: HTMLElement, onClose?: () => void) {
-    const handleClose = () => {
-        closeModal(modal);
-        onClose?.();
-    };
-
-    modal.addEventListener('click', e => {
-        if (e.target === modal) handleClose();
-    });
-    modal.querySelectorAll<HTMLElement>('.modal-close-btn').forEach(btn => btn.addEventListener('click', handleClose));
-}
-
-function getHabitStatusForSorting(habit: Habit): 'active' | 'ended' | 'graduated' {
-    if (habit.graduatedOn) {
-        return 'graduated';
-    }
-    const lastSchedule = habit.scheduleHistory[habit.scheduleHistory.length - 1];
-    if (lastSchedule.endDate) {
-        return 'ended';
-    }
-    return 'active';
-}
-
-function _createManageHabitListItem(habitData: { habit: Habit; status: 'active' | 'ended' | 'graduated'; name: string; }): HTMLLIElement {
-    const { habit, status, name } = habitData;
-    
-    // FIX [2025-02-23]: Uso de getTodayUTCIso() para consistência de fuso horário em todo o app.
-    // Anteriormente usava new Date().toISOString() que poderia gerar data errada (amanhã) em fusos negativos.
-    const streak = calculateHabitStreak(habit.id, getTodayUTCIso()); 
-    const isConsolidated = streak >= STREAK_CONSOLIDATED;
-
-    const li = document.createElement('li');
-    li.className = `habit-list-item ${status}`;
-    li.dataset.habitId = habit.id;
-
-    const mainSpan = document.createElement('span');
-    
-    const iconSpan = document.createElement('span');
-    iconSpan.innerHTML = habit.icon;
-    iconSpan.style.color = habit.color;
-    
-    const nameSpan = document.createElement('span');
-    nameSpan.className = 'habit-name';
-    nameSpan.textContent = name;
-
-    mainSpan.append(iconSpan, nameSpan);
-
-    if (status === 'graduated' || status === 'ended') {
-        const statusSpan = document.createElement('span');
-        statusSpan.className = 'habit-name-status';
-        statusSpan.textContent = t(status === 'graduated' ? 'modalStatusGraduated' : 'modalStatusEnded');
-        mainSpan.appendChild(statusSpan);
-    }
-    
-    const actionsDiv = document.createElement('div');
-    actionsDiv.className = 'habit-list-actions';
-
-    const createActionButton = (className: string, habitId: string, ariaLabel: string, icon: string): HTMLButtonElement => {
-        const button = document.createElement('button');
-        button.className = className;
-        button.dataset.habitId = habitId;
-        button.setAttribute('aria-label', ariaLabel);
-        button.type = "button"; 
-        button.innerHTML = icon;
-        return button;
-    };
-
-    switch(status) {
-        case 'ended':
-            actionsDiv.appendChild(createActionButton(
-                'permanent-delete-habit-btn', habit.id, t('aria_delete_permanent', { habitName: name }), icons.deletePermanentAction
-            ));
-            break;
-        case 'active':
-            actionsDiv.appendChild(createActionButton(
-                'edit-habit-btn', habit.id, t('aria_edit', { habitName: name }), icons.editAction
-            ));
-            if (isConsolidated) {
-                actionsDiv.appendChild(createActionButton(
-                    'graduate-habit-btn', habit.id, t('aria_graduate', { habitName: name }), icons.graduateAction
-                ));
-            } else {
-                actionsDiv.appendChild(createActionButton(
-                    'end-habit-btn', habit.id, t('aria_end', { habitName: name }), icons.endAction
-                ));
-            }
-            break;
-    }
-    
-    li.append(mainSpan, actionsDiv);
-    return li;
+    ctx.onClose?.(); ctx.previousFocus?.focus();
 }
 
 export function setupManageModal() {
-    const habitsByName = new Map<string, Habit[]>();
-    
-    state.habits.forEach(habit => {
-        const { name } = getHabitDisplayInfo(habit);
-        if (!habitsByName.has(name)) {
-            habitsByName.set(name, []);
-        }
-        habitsByName.get(name)!.push(habit);
+    if (state.habits.length === 0) { ui.habitList.classList.add('hidden'); ui.noHabitsMessage.classList.remove('hidden'); return; }
+    ui.habitList.classList.remove('hidden'); ui.noHabitsMessage.classList.add('hidden');
+    const items = state.habits.map(h => {
+        const { name, subtitle } = getHabitDisplayInfo(h);
+        const st = h.graduatedOn ? 'graduated' : (h.scheduleHistory[h.scheduleHistory.length-1].endDate ? 'ended' : 'active');
+        return { h, st, name, subtitle };
+    }).sort((a, b) => {
+        const order = { active: 0, graduated: 1, ended: 2 };
+        return (order[a.st] - order[b.st]) || compareStrings(a.name, b.name);
     });
-
-    const habitsForModal = [];
-    const statusOrder = { 'active': 0, 'graduated': 1, 'ended': 2 };
-
-    for (const [name, habitGroup] of habitsByName) {
-        habitGroup.sort((a, b) => {
-            const statusA = getHabitStatusForSorting(a);
-            const statusB = getHabitStatusForSorting(b);
-            
-            if (statusA !== statusB) {
-                return statusOrder[statusA] - statusOrder[statusB];
-            }
-            const lastA = a.scheduleHistory[a.scheduleHistory.length-1].startDate;
-            const lastB = b.scheduleHistory[b.scheduleHistory.length-1].startDate;
-            return lastB.localeCompare(lastA);
-        });
-
-        const representative = habitGroup[0]; 
-        
-        habitsForModal.push({
-            habit: representative,
-            status: getHabitStatusForSorting(representative),
-            name: name
-        });
-    }
-
-    habitsForModal.sort((a, b) => {
-        const statusDifference = statusOrder[a.status] - statusOrder[b.status];
-        if (statusDifference !== 0) {
-            return statusDifference;
-        }
-        return a.name.localeCompare(b.name);
-    });
-
-    const fragment = document.createDocumentFragment();
-    habitsForModal.forEach(habitData => {
-        fragment.appendChild(_createManageHabitListItem(habitData));
-    });
-
-    ui.habitList.innerHTML = '';
-    ui.habitList.appendChild(fragment);
-    
-    // NEW [2025-02-23]: Data & Privacy Section (Added dynamically if not present)
-    let privacySection = ui.manageModal.querySelector<HTMLElement>('#privacy-section');
-    if (!privacySection) {
-        const container = ui.manageModal.querySelector('.modal-settings-section');
-        if (container) {
-            privacySection = document.createElement('div');
-            privacySection.id = 'privacy-section';
-            privacySection.className = 'setting-item setting-item--column';
-            // Added styling for consistent spacing
-            privacySection.style.marginBlockEnd = 'var(--space-sm)';
-            
-            const header = document.createElement('div');
-            header.className = 'setting-item-header';
-            header.innerHTML = `<label>${t('privacyLabel')}</label>`;
-            
-            const actions = document.createElement('div');
-            actions.className = 'sync-actions'; // Reuse styles
-            
-            const exportBtn = document.createElement('button');
-            exportBtn.id = 'export-data-btn';
-            exportBtn.className = 'btn';
-            // Text content set below to ensure updates
-            
-            const importBtn = document.createElement('button');
-            importBtn.id = 'import-data-btn';
-            importBtn.className = 'btn';
-            // Text content set below to ensure updates
-            
-            actions.append(exportBtn, importBtn);
-            privacySection.append(header, actions);
-            
-            // ORDERING LOGIC [2025-02-23]: Ensure "Data & Privacy" comes BEFORE "Reset".
-            const resetSection = container.querySelector('#reset-section');
-            if (resetSection) {
-                container.insertBefore(privacySection, resetSection);
-            } else {
-                container.appendChild(privacySection);
-            }
-        }
-    }
-
-    // UPDATE TEXT (Fix for language switching)
-    if (privacySection) {
-        const label = privacySection.querySelector('label');
-        if (label) setTextContent(label, t('privacyLabel'));
-        
-        const exportBtn = privacySection.querySelector('#export-data-btn');
-        if (exportBtn) setTextContent(exportBtn, t('exportButton'));
-        
-        const importBtn = privacySection.querySelector('#import-data-btn');
-        if (importBtn) setTextContent(importBtn, t('importButton'));
-    }
+    const today = getTodayUTCIso();
+    ui.habitList.innerHTML = items.map(({ h, st, name, subtitle }) => {
+        // @fix: Get icon and color from the last schedule in history.
+        const lastSchedule = h.scheduleHistory[h.scheduleHistory.length - 1];
+        return `<li class="habit-list-item ${st}" data-habit-id="${h.id}"><span class="habit-main-info"><span class="habit-icon-slot" style="color:${lastSchedule.color}">${lastSchedule.icon}</span><div style="display:flex;flex-direction:column;flex-grow:1;"><span class="habit-name">${name}</span>${subtitle ? `<span class="habit-subtitle" style="font-size:11px;color:var(--text-tertiary)">${subtitle}</span>` : ''}</div>${st !== 'active' ? `<span class="habit-name-status">${t(st === 'graduated' ? 'modalStatusGraduated' : 'modalStatusEnded')}</span>` : ''}</span><div class="habit-list-actions">${st === 'active' ? `${calculateHabitStreak(h, today) >= STREAK_CONSOLIDATED ? `<button class="graduate-habit-btn" aria-label="${t('aria_graduate', { name })}">${UI_ICONS.graduateAction}</button>` : `<button class="end-habit-btn" aria-label="${t('aria_end', { name })}">${UI_ICONS.endAction}</button>`}` : `<button class="permanent-delete-habit-btn" aria-label="${t('aria_delete_permanent', { name })}">${UI_ICONS.deletePermanentAction}</button>`}</div></li>`;
+    }).join('');
 }
 
-export function showUndoToast() {
-    if (state.undoTimeout) clearTimeout(state.undoTimeout);
-    ui.undoToast.classList.add('visible');
-    state.undoTimeout = window.setTimeout(() => {
-        ui.undoToast.classList.remove('visible');
-        state.lastEnded = null;
-    }, 5000);
-}
-
-export function showConfirmationModal(
-    text: string, 
-    onConfirm: () => void, 
-    options?: { 
-        title?: string;
-        confirmText?: string;
-        cancelText?: string;
-        editText?: string;
-        onEdit?: () => void;
-        confirmButtonStyle?: 'primary' | 'danger';
-        hideCancel?: boolean;
-    }
-) {
+export function showConfirmationModal(text: string, onConfirm: () => void, opts?: any) {
     ui.confirmModalText.innerHTML = text;
     state.confirmAction = onConfirm;
-    state.confirmEditAction = options?.onEdit || null;
+    state.confirmEditAction = opts?.onEdit || null;
+    setTextContent(ui.confirmModal.querySelector('h2'), opts?.title || t('modalConfirmTitle'));
+    ui.confirmModalConfirmBtn.className = `btn ${opts?.confirmButtonStyle === 'danger' ? 'btn--danger' : 'btn--primary'}`;
+    setTextContent(ui.confirmModalConfirmBtn, opts?.confirmText || t('confirmButton'));
+    ui.confirmModalEditBtn.classList.toggle('hidden', !opts?.onEdit);
+    if (opts?.editText) setTextContent(ui.confirmModalEditBtn, opts.editText);
 
-    setTextContent(ui.confirmModal.querySelector('h2'), options?.title || t('modalConfirmTitle'));
-    const confirmBtn = ui.confirmModalConfirmBtn;
-    setTextContent(confirmBtn, options?.confirmText || t('confirmButton'));
-    
-    confirmBtn.classList.remove('btn--primary', 'btn--danger');
-    confirmBtn.classList.add(options?.confirmButtonStyle === 'danger' ? 'btn--danger' : 'btn--primary');
-    
-    const cancelBtn = ui.confirmModal.querySelector<HTMLElement>('.modal-close-btn');
-    if (cancelBtn) {
-        setTextContent(cancelBtn, options?.cancelText || t('cancelButton'));
-        cancelBtn.style.display = options?.hideCancel ? 'none' : '';
-    }
-    
-    if (options?.editText && options?.onEdit) {
-        ui.confirmModalEditBtn.style.display = 'inline-block';
-        setTextContent(ui.confirmModalEditBtn, options.editText);
-    } else {
-        ui.confirmModalEditBtn.style.display = 'none';
-    }
+    const onCancel = () => {
+        state.confirmAction = null;
+        state.confirmEditAction = null;
+        opts?.onCancel?.(); // Chain the onCancel if it exists for context reset
+    };
 
-    openModal(ui.confirmModal);
+    openModal(ui.confirmModal, undefined, onCancel);
 }
 
 export function openNotesModal(habitId: string, date: string, time: TimeOfDay) {
-    const habit = state.habits.find(h => h.id === habitId);
-    if (!habit) return;
-    
+    const h = state.habits.find(x => x.id === habitId); if (!h) return;
     state.editingNoteFor = { habitId, date, time };
-    
-    const { name } = getHabitDisplayInfo(habit, date);
-    const dateObj = parseUTCIsoDate(date);
-    const formattedDate = getDateTimeFormat(state.activeLanguageCode, { day: 'numeric', month: 'long', timeZone: 'UTC' }).format(dateObj);
-    const timeName = getTimeOfDayName(time);
-
-    setTextContent(ui.notesModalTitle, name);
-    setTextContent(ui.notesModalSubtitle, `${formattedDate} - ${timeName}`);
-    
-    // FIX [2025-02-23]: Use lazy loading accessor to ensure we can read notes from archives.
-    const dayData = getHabitDailyInfoForDate(date)[habitId]?.instances[time];
-    ui.notesTextarea.value = dayData?.note || '';
-    
-    openModal(ui.notesModal, ui.notesTextarea);
+    setTextContent(ui.notesModalTitle, getHabitDisplayInfo(h, date).name);
+    setTextContent(ui.notesModalSubtitle, `${formatDate(parseUTCIsoDate(date), OPTS_NOTES)} - ${getTimeOfDayName(time)}`);
+    ui.notesTextarea.value = getHabitDailyInfoForDate(date)[habitId]?.instances[time]?.note || '';
+    openModal(ui.notesModal, ui.notesTextarea, () => state.editingNoteFor = null);
 }
-
-const PALETTE_COLORS = ['#e74c3c', '#f1c40f', '#3498db', '#2ecc71', '#9b59b6', '#1abc9c', '#34495e', '#e67e22', '#e84393', '#7f8c8d'];
 
 export function renderIconPicker() {
     if (!state.editingHabit) return;
-    const bgColor = state.editingHabit.formData.color;
-    const fgColor = getContrastColor(bgColor);
-
-    ui.iconPickerGrid.style.setProperty('--current-habit-bg-color', bgColor);
-    ui.iconPickerGrid.style.setProperty('--current-habit-fg-color', fgColor);
-
-    if (ui.iconPickerGrid.children.length === 0) {
-        const nonHabitIconKeys = new Set(['morning', 'afternoon', 'evening', 'deletePermanentAction', 'editAction', 'graduateAction', 'endAction', 'swipeDelete', 'swipeNote', 'swipeNoteHasNote', 'colorPicker', 'edit', 'snoozed']);
-        
-        const iconButtons = Object.keys(icons)
-            .filter(key => !nonHabitIconKeys.has(key))
-            .map(key => {
-                const iconSVG = (icons as any)[key];
-                return `
-                    <button type="button" class="icon-picker-item" data-icon-svg="${escapeHTML(iconSVG)}">
-                        ${iconSVG}
-                    </button>
-                `;
-            }).join('');
-
-        ui.iconPickerGrid.innerHTML = iconButtons;
-    }
-
-    const changeColorBtn = ui.iconPickerModal.querySelector<HTMLButtonElement>('#change-color-from-picker-btn');
-    if (changeColorBtn) {
-        changeColorBtn.innerHTML = icons.colorPicker;
-        changeColorBtn.setAttribute('aria-label', t('habitColorPicker_ariaLabel'));
-    }
+    const { color: bg } = state.editingHabit.formData, fg = getContrastColor(bg);
+    ui.iconPickerGrid.style.setProperty('--current-habit-bg-color', bg);
+    ui.iconPickerGrid.style.setProperty('--current-habit-fg-color', fg);
+    ui.iconPickerGrid.innerHTML = Object.values(HABIT_ICONS).map(svg => `<button type="button" class="icon-picker-item" data-icon-svg="${escapeHTML(svg)}">${svg}</button>`).join('');
+    ui.iconPickerModal.querySelector<HTMLElement>('#change-color-from-picker-btn')!.innerHTML = UI_ICONS.colorPicker;
 }
 
 export function renderColorPicker() {
-    if (!state.editingHabit) return;
-    const currentColor = state.editingHabit.formData.color;
-    ui.colorPickerGrid.innerHTML = PALETTE_COLORS.map(color => `
-        <button type="button" class="color-swatch ${currentColor === color ? 'selected' : ''}" style="background-color: ${color}" data-color="${color}" aria-label="${color}"></button>
-    `).join('');
+    const cur = state.editingHabit?.formData.color;
+    ui.colorPickerGrid.innerHTML = COLORS.map(c => `<button type="button" class="color-swatch ${cur === c ? 'selected' : ''}" style="background-color:${c}" data-color="${c}"></button>`).join('');
 }
 
 export function renderFrequencyOptions() {
     if (!state.editingHabit) return;
+    const f = state.editingHabit.formData.frequency, isD = f.type === 'daily', isS = f.type === 'specific_days_of_week', isI = f.type === 'interval';
+    const days = [0,1,2,3,4,5,6]; if (state.activeLanguageCode !== 'pt') days.push(days.shift()!);
+    const sel = isS ? new Set(f.days) : new Set();
+    const am = isI ? f.amount : 2, un = isI ? f.unit : 'days';
 
-    const currentFrequency = state.editingHabit.formData.frequency;
-    const container = ui.frequencyOptionsContainer;
-    const isDaily = currentFrequency.type === 'daily';
-    const isSpecificDays = currentFrequency.type === 'specific_days_of_week';
-    const isInterval = currentFrequency.type === 'interval';
-
-    const rawWeekdays = [
-        { key: 'weekdaySun', day: 0 }, { key: 'weekdayMon', day: 1 }, { key: 'weekdayTue', day: 2 },
-        { key: 'weekdayWed', day: 3 }, { key: 'weekdayThu', day: 4 }, { key: 'weekdayFri', day: 5 },
-        { key: 'weekdaySat', day: 6 }
-    ];
-
-    let weekdays = rawWeekdays;
-    if (state.activeLanguageCode === 'es' || state.activeLanguageCode === 'en') {
-        weekdays = [
-            rawWeekdays[1], rawWeekdays[2], rawWeekdays[3], rawWeekdays[4], rawWeekdays[5], rawWeekdays[6], rawWeekdays[0]
-        ];
-    }
-
-    const selectedDays = isSpecificDays ? new Set(currentFrequency.days) : new Set();
-    const weekdayPickerHTML = `
-        <div class="weekday-picker">
-            ${weekdays.map(({ key, day }) => {
-                const dayName = t(key);
-                return `
-                <label title="${dayName}">
-                    <input type="checkbox" data-day="${day}" ${selectedDays.has(day) ? 'checked' : ''}>
-                    <span class="weekday-button">${dayName.substring(0, 1)}</span>
-                </label>
-            `}).join('')}
-        </div>`;
-
-    const intervalFreqTpl = FREQUENCIES.find(f => f.value.type === 'interval')!;
-    const amount = isInterval ? currentFrequency.amount : (intervalFreqTpl.value.type === 'interval' ? intervalFreqTpl.value.amount : 2);
-    const unit = isInterval ? currentFrequency.unit : (intervalFreqTpl.value.type === 'interval' ? intervalFreqTpl.value.unit : 'days');
-    
-    const unitText = unit === 'days' ? t('unitDays') : t('unitWeeks');
-    const intervalControlsHTML = `
-        <div class="interval-control-group">
-            <button type="button" class="stepper-btn" data-action="interval-decrement" aria-label="${t('habitGoalDecrement_ariaLabel')}">-</button>
-            <span class="interval-amount-display">${amount}</span>
-            <button type="button" class="stepper-btn" data-action="interval-increment" aria-label="${t('habitGoalIncrement_ariaLabel')}">+</button>
-            <button type="button" class="unit-toggle-btn" data-action="interval-unit-toggle">${unitText}</button>
-        </div>
-    `;
-
-    container.innerHTML = `
-        <div class="form-section frequency-options">
-            <div class="form-row">
-                <label>
-                    <input type="radio" name="frequency-type" value="daily" ${isDaily ? 'checked' : ''}>
-                    ${t('freqDaily')}
-                </label>
-            </div>
-            <div class="form-row form-row--vertical">
-                <label>
-                    <input type="radio" name="frequency-type" value="specific_days_of_week" ${isSpecificDays ? 'checked' : ''}>
-                    ${t('freqSpecificDaysOfWeek')}
-                </label>
-                <div class="frequency-details ${isSpecificDays ? 'visible' : ''}">
-                    ${weekdayPickerHTML}
-                </div>
-            </div>
-            <div class="form-row form-row--vertical">
-                <label>
-                    <input type="radio" name="frequency-type" value="interval" ${isInterval ? 'checked' : ''}>
-                    ${t('freqEvery')}
-                </label>
-                <div class="frequency-details ${isInterval ? 'visible' : ''}">
-                    ${intervalControlsHTML}
-                </div>
-            </div>
-        </div>`;
+    ui.frequencyOptionsContainer.innerHTML = `<div class="form-section frequency-options"><div class="form-row"><label><input type="radio" name="frequency-type" value="daily" ${isD ? 'checked' : ''}>${t('freqDaily')}</label></div><div class="form-row form-row--vertical"><label><input type="radio" name="frequency-type" value="specific_days_of_week" ${isS ? 'checked' : ''}>${t('freqSpecificDaysOfWeek')}</label><div class="frequency-details ${isS ? 'visible' : ''}"><div class="weekday-picker">${days.map(d => `<label><input type="checkbox" class="visually-hidden" data-day="${d}" ${sel.has(d) ? 'checked' : ''}><span class="weekday-button">${t(`weekday${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d]}`).charAt(0)}</span></label>`).join('')}</div></div></div><div class="form-row form-row--vertical"><label><input type="radio" name="frequency-type" value="interval" ${isI ? 'checked' : ''}>${t('freqEvery')}</label><div class="frequency-details ${isI ? 'visible' : ''}"><div class="interval-control-group"><button type="button" class="stepper-btn" data-action="interval-decrement">-</button><span class="interval-amount-display">${formatInteger(am)}</span><button type="button" class="stepper-btn" data-action="interval-increment">+</button><button type="button" class="unit-toggle-btn" data-action="interval-unit-toggle">${t(un === 'days' ? 'unitDays' : 'unitWeeks', { count: am })}</button></div></div></div></div>`;
 }
 
-function _createHabitTemplateForForm(habitOrTemplate: Habit | PredefinedHabit | null, selectedDate: string): HabitTemplate {
-    if (!habitOrTemplate) {
-        const commonData = {
-            icon: icons.custom,
-            color: '#000000',
-            times: ['Morning'] as TimeOfDay[],
-            goal: { type: 'check', unitKey: 'unitCheck' } as Habit['goal'],
-            frequency: { type: 'interval', unit: 'days', amount: 2 } as Frequency,
-        };
-        return {
-            ...commonData,
-            name: '',
-            subtitleKey: 'customHabitSubtitle',
-        };
-    }
-
-    if (!('id' in habitOrTemplate)) {
-        const template = habitOrTemplate as PredefinedHabit;
-        return {
-            icon: template.icon,
-            color: template.color,
-            times: template.times,
-            goal: template.goal,
-            frequency: template.frequency,
-            nameKey: template.nameKey,
-            subtitleKey: template.subtitleKey,
-        };
-    }
-
-    const habit = habitOrTemplate as Habit;
-    const schedule = getScheduleForDate(habit, selectedDate) || habit.scheduleHistory[habit.scheduleHistory.length - 1];
-    const { name } = getHabitDisplayInfo(habit, selectedDate);
-
-    const commonData = {
-        subtitleKey: schedule.subtitleKey || 'customHabitSubtitle',
-        icon: habit.icon,
-        color: habit.color,
-        times: [...schedule.times],
-        goal: { ...habit.goal },
-        frequency: { ...schedule.frequency },
-    };
-
-    if (schedule.nameKey) {
-        return { ...commonData, nameKey: schedule.nameKey };
-    } else {
-        return { ...commonData, name: name };
-    }
-}
-
-export function openEditModal(habitOrTemplate: Habit | HabitTemplate | null) {
-    const isNew = !habitOrTemplate || !('id' in habitOrTemplate);
-    const form = ui.editHabitForm;
-    
-    // FIX [2025-02-23]: Reset de estado visual de validação.
-    // Garante que mensagens de erro anteriores (duplicata ou tamanho) sejam limpas ao reabrir o modal.
-    const duplicateNoticeEl = form.querySelector<HTMLElement>('.duplicate-habit-notice')!;
-    const formNoticeEl = form.querySelector<HTMLElement>('.form-notice')!; // Seleciona o novo aviso genérico
-    const nameInput = form.elements.namedItem('habit-name') as HTMLInputElement;
-
-    duplicateNoticeEl.classList.remove('visible');
-    if (formNoticeEl) formNoticeEl.classList.remove('visible');
-    if (nameInput) nameInput.classList.remove('shake');
-    
-    // BUGFIX: Reseta o estado desabilitado do botão de salvar.
-    // Isso previne que o botão permaneça "travado" se o usuário fechou o modal 
-    // enquanto ele estava em estado de erro (ex: nome muito longo) e reabriu.
-    ui.editHabitSaveBtn.disabled = false;
-
-    form.reset();
-    
-    const formData = _createHabitTemplateForForm(habitOrTemplate as Habit | PredefinedHabit | null, state.selectedDate);
-    // nameInput is already selected above
-    nameInput.placeholder = t('modalEditFormNameLabel');
-
-    if (isNew) {
-        setTextContent(ui.editHabitModalTitle, t('modalEditNewTitle'));
-        nameInput.value = (habitOrTemplate && 'nameKey' in habitOrTemplate) ? t(habitOrTemplate.nameKey) : '';
-    } else {
-        // const habit = habitOrTemplate as Habit;
-        const { name } = getHabitDisplayInfo(habitOrTemplate as Habit, state.selectedDate);
-        setTextContent(ui.editHabitModalTitle, name);
-        nameInput.value = name;
-    }
-
-    state.editingHabit = {
-        isNew: isNew,
-        habitId: isNew ? undefined : (habitOrTemplate as Habit).id,
-        originalData: isNew ? undefined : { ...(habitOrTemplate as Habit) },
-        formData: formData,
-        targetDate: state.selectedDate
-    };
-
-    ui.editHabitModal.querySelector<HTMLElement>('.edit-icon-overlay')!.innerHTML = icons.edit;
-    const iconColor = getContrastColor(formData.color);
-    ui.habitIconPickerBtn.innerHTML = formData.icon;
-    ui.habitIconPickerBtn.style.backgroundColor = formData.color;
-    ui.habitIconPickerBtn.style.color = iconColor;
-    
-    ui.habitTimeContainer.innerHTML = `
-        <div class="segmented-control">
-            ${TIMES_OF_DAY.map(time => `
-                <button type="button" class="segmented-control-option ${formData.times.includes(time) ? 'selected' : ''}" data-time="${time}">
-                    ${getTimeOfDayIcon(time)}
-                    ${getTimeOfDayName(time)}
-                </button>
-            `).join('')}
-        </div>
-    `;
-
+export function refreshEditModalUI() {
+    if (!state.editingHabit) return;
     renderFrequencyOptions();
-    openModal(ui.editHabitModal);
+    const fd = state.editingHabit.formData;
+    // FIX: Renamed map variable 't' to 'time' to avoid shadowing the imported 't' function.
+    ui.habitTimeContainer.innerHTML = `<div class="segmented-control">${TIMES_OF_DAY.map(time => `<button type="button" class="segmented-control-option ${fd.times.includes(time) ? 'selected' : ''}" data-time="${time}">${getTimeOfDayIcon(time)}${getTimeOfDayName(time)}</button>`).join('')}</div>`;
+    const nameIn = ui.editHabitForm.elements.namedItem('habit-name') as HTMLInputElement;
+    if (nameIn) { nameIn.placeholder = t('modalEditFormNameLabel'); if (fd.nameKey) nameIn.value = t(fd.nameKey); }
+    
+    let ce = ui.habitConscienceDisplay;
+    if (!ce && ui.editHabitForm) { ce = document.createElement('div'); ce.id = 'habit-conscience-display'; ce.className = 'habit-conscience-text'; ui.editHabitForm.querySelector('.habit-identity-section')?.insertAdjacentElement('afterend', ce); }
+    if (ce) { const p = fd.philosophy; if (p?.conscienceKey) { setTextContent(ce, t(p.conscienceKey)); ce.style.display = 'block'; } else ce.style.display = 'none'; }
+}
+
+export function openEditModal(habit: any, targetDateOverride?: string) {
+    const isN = !habit || !habit.id;
+    const safe = getSafeDate(targetDateOverride || state.selectedDate);
+
+    let fd: HabitTemplate;
+    if (isN) {
+        // Para novos hábitos (a partir de template ou customizado), não há risco de mutação
+        fd = { icon: HABIT_ICONS.custom, color: _getLeastUsedColor(), times: ['Morning'], goal: { type: 'check' }, frequency: { type: 'daily' }, name: '', subtitleKey: 'customHabitSubtitle', ...habit };
+    } else {
+        // Para edição, cria cópias defensivas para isolar o formulário do estado original
+        const scheduleToEdit = getScheduleForDate(habit, safe) || habit.scheduleHistory[0];
+        
+        const originalFrequency = scheduleToEdit.frequency;
+        const newFrequency: Frequency = originalFrequency.type === 'specific_days_of_week' 
+            ? { ...originalFrequency, days: [...originalFrequency.days] } 
+            : { ...originalFrequency };
+
+        fd = {
+            ...(scheduleToEdit as any), // Cast para evitar erro de tipo com name/nameKey
+            times: [...scheduleToEdit.times],
+            frequency: newFrequency,
+            goal: { ...scheduleToEdit.goal }
+        };
+    }
+
+    state.editingHabit = { isNew: isN, habitId: isN ? undefined : habit.id, originalData: isN ? undefined : habit, formData: fd, targetDate: safe };
+    const ni = ui.editHabitForm.elements.namedItem('habit-name') as HTMLInputElement;
+    if (ni) ni.value = isN ? (fd.nameKey ? t(fd.nameKey) : '') : getHabitDisplayInfo(habit, safe).name;
+    const btn = ui.habitIconPickerBtn; btn.innerHTML = fd.icon; btn.style.backgroundColor = fd.color; btn.style.color = getContrastColor(fd.color);
+    
+    const subtitle = isN 
+        ? (fd.subtitleKey ? t(fd.subtitleKey) : '') 
+        : getHabitDisplayInfo(habit, safe).subtitle;
+    if (ui.habitSubtitleDisplay) {
+        setTextContent(ui.habitSubtitleDisplay, subtitle);
+    }
+    
+    const overlay = btn.nextElementSibling as HTMLElement;
+    if (overlay && overlay.classList.contains('edit-icon-overlay')) {
+        overlay.innerHTML = HABIT_ICONS.learnSkill;
+    }
+
+    refreshEditModalUI(); openModal(ui.editHabitModal);
 }
 
 export function renderExploreHabits() {
-    const fragment = document.createDocumentFragment();
-
-    PREDEFINED_HABITS.forEach((habit, index) => {
-        const name = t(habit.nameKey);
-        const subtitle = t(habit.subtitleKey);
-
-        const itemEl = document.createElement('div');
-        itemEl.className = 'explore-habit-item';
-        itemEl.dataset.index = String(index);
-        itemEl.setAttribute('role', 'button');
-        itemEl.setAttribute('tabindex', '0');
-
-        const iconEl = document.createElement('div');
-        iconEl.className = 'explore-habit-icon';
-        iconEl.style.backgroundColor = `${habit.color}30`;
-        iconEl.style.color = habit.color;
-        iconEl.innerHTML = habit.icon;
-
-        const detailsEl = document.createElement('div');
-        detailsEl.className = 'explore-habit-details';
-
-        const nameEl = document.createElement('div');
-        nameEl.className = 'name';
-        nameEl.textContent = name;
-
-        const subtitleEl = document.createElement('div');
-        subtitleEl.className = 'subtitle';
-        subtitleEl.textContent = subtitle;
-
-        detailsEl.appendChild(nameEl);
-        detailsEl.appendChild(subtitleEl);
-
-        itemEl.appendChild(iconEl);
-        itemEl.appendChild(detailsEl);
-
-        fragment.appendChild(itemEl);
-    });
-
-    ui.exploreHabitList.innerHTML = '';
-    ui.exploreHabitList.appendChild(fragment);
-}
-
-function _renderReelRotary(
-    reelEl: HTMLElement,
-    viewportEl: HTMLElement,
-    options: readonly string[] | string[],
-    currentIndex: number,
-    fallbackItemWidth: number,
-    ariaLabelKey: string
-) {
-    if (!reelEl) return;
-    const firstOption = reelEl.querySelector('.reel-option') as HTMLElement | null;
-    const itemWidth = firstOption?.offsetWidth || fallbackItemWidth;
-    const effectiveIndex = Math.max(0, currentIndex);
-    const transformX = -effectiveIndex * itemWidth;
-    reelEl.style.transform = `translateX(${transformX}px)`;
-    updateReelRotaryARIA(viewportEl, effectiveIndex, options, ariaLabelKey);
+    const STAGGER_DELAY_MS = 50;
+    ui.exploreHabitList.innerHTML = PREDEFINED_HABITS.map((h, i) => 
+        `<div 
+            class="explore-habit-item" 
+            data-index="${i}" 
+            role="button" 
+            tabindex="0"
+            style="--delay: ${i * STAGGER_DELAY_MS}ms;"
+        >
+            <div class="explore-habit-icon" style="background-color:${h.color}30;color:${h.color}">${h.icon}</div>
+            <div class="explore-habit-details">
+                <div class="name">${t(h.nameKey)}</div>
+                <div class="subtitle">${t(h.subtitleKey)}</div>
+            </div>
+        </div>`
+    ).join('');
 }
 
 export function renderLanguageFilter() {
-    const currentIndex = LANGUAGES.findIndex(l => l.code === state.activeLanguageCode);
-    const langNames = LANGUAGES.map(lang => t(lang.nameKey));
-    _renderReelRotary(
-        ui.languageReel,
-        ui.languageViewport,
-        langNames,
-        currentIndex,
-        95, 
-        'language_ariaLabel'
-    );
+    const idx = LANGUAGES.findIndex(l => l.code === state.activeLanguageCode), names = LANGUAGES.map(l => t(l.nameKey));
+    if (ui.languageViewport.classList.contains('is-interacting')) return;
+    const w = (ui.languageReel.querySelector('.reel-option') as HTMLElement)?.offsetWidth || 95;
+    ui.languageReel.style.transform = `translateX(${-idx * w}px)`;
+    updateReelRotaryARIA(ui.languageViewport, idx, names, 'language_ariaLabel');
 }

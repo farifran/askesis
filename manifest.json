@@ -1,12 +1,13 @@
+
 {
-  "_comment": "[ANALYSIS PROGRESS]: 100% - Manifesto PWA validado e completo.",
+  "_comment": "[ANALYSIS PROGRESS]: 100% - Manifesto PWA validado e sincronizado com o tema True Black (OLED).",
   "name": "Askesis",
   "short_name": "Askesis",
   "description": "A dynamic habit tracker with data visualization and personalized AI-powered feedback.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#121212",
-  "theme_color": "#121212",
+  "background_color": "#000000",
+  "theme_color": "#000000",
   "icons": [
     {
       "src": "icons/icon-192.svg",

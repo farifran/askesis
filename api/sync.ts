@@ -1,130 +1,131 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
+ * VERSÃO: Production Grade - Hash-Based Multi-Tenancy
+ * Ajustada para aceitar 'Authorization: Bearer' e gerar hash no servidor.
 */
-import { kv } from '@vercel/kv';
+
+import { createClient } from '@vercel/kv';
 
 export const config = {
   runtime: 'edge',
 };
 
-// --- Constantes ---
-// MELHORIA DE ROBUSTEZ: Define um limite de tamanho para o payload (1MB) para prevenir abuso.
-const MAX_PAYLOAD_SIZE = 1 * 1024 * 1024; 
+const MAX_PAYLOAD_SIZE = 1024 * 1024; // 1MB
 
-// --- Tipos e Interfaces ---
-// CONSOLIDAÇÃO DE TIPO: As interfaces ClientPayload e StoredData foram unificadas em SyncPayload para eliminar redundância.
-interface SyncPayload {
-    lastModified: number;
-    state: string; // string criptografada
-}
+// Script Lua para garantir atualizações atômicas e resolver conflitos de timestamp
+const LUA_ATOMIC_UPDATE = `
+local key = KEYS[1]
+local newPayload = ARGV[1]
+local newTs = tonumber(ARGV[2])
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
+if not newTs then return { "ERROR", "Invalid Timestamp Argument" } end
+
+local currentVal = redis.call("GET", key)
+if not currentVal then
+    redis.call("SET", key, newPayload)
+    return { "OK" }
+end
+
+local status, currentJson = pcall(cjson.decode, currentVal)
+if not status or type(currentJson) ~= "table" or type(currentJson.lastModified) ~= "number" then
+    redis.call("SET", key, newPayload)
+    return { "OK" }
+end
+
+local currentTs = tonumber(currentJson.lastModified)
+if newTs == currentTs then return { "NOT_MODIFIED" } end
+if newTs < currentTs then return { "CONFLICT", currentVal } end
+
+redis.call("SET", key, newPayload)
+return { "OK" }
+`;
+
+const HEADERS_BASE = {
+  'Content-Type': 'application/json',
+  'Access-Control-Allow-Origin': '*', 
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, X-Sync-Key-Hash',
+  'Access-Control-Allow-Headers': 'Content-Type, X-Sync-Key-Hash, Authorization', // Adicionado Authorization
 };
 
-const createErrorResponse = (message: string, status: number, details = '') => {
-    return new Response(JSON.stringify({ error: message, details }), {
-        status,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
-};
-
-const getSyncKeyHash = (req: Request): string | null => {
-    return req.headers.get('x-sync-key-hash');
-};
-
-/**
- * REATORAÇÃO DE MODULARIDADE: Lida com requisições GET.
- * @param dataKey A chave para buscar no Vercel KV.
- * @returns Uma resposta com os dados armazenados ou nulo.
- */
-async function handleGetRequest(dataKey: string): Promise<Response> {
-    const storedData = await kv.get<SyncPayload>(dataKey);
-    return new Response(JSON.stringify(storedData || null), {
-        status: 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
-}
-
-/**
- * REATORAÇÃO DE MODULARIDADE: Lida com requisições POST.
- * @param req O objeto da requisição.
- * @param dataKey A chave para buscar/armazenar no Vercel KV.
- * @returns Uma resposta indicando sucesso, conflito ou não modificação.
- */
-async function handlePostRequest(req: Request, dataKey: string): Promise<Response> {
-    let clientPayload: SyncPayload;
-    try {
-        clientPayload = await req.json();
-    } catch (e) {
-        return createErrorResponse('Bad Request: Invalid JSON format', 400);
-    }
-
-    if (!clientPayload || typeof clientPayload.lastModified !== 'number' || typeof clientPayload.state !== 'string') {
-        return createErrorResponse('Bad Request: Invalid or missing payload data', 400);
-    }
-    
-    // MELHORIA DE ROBUSTEZ: Verifica o tamanho do payload para evitar sobrecarga do armazenamento.
-    if (clientPayload.state.length > MAX_PAYLOAD_SIZE) {
-        return createErrorResponse('Payload Too Large', 413, `Payload size exceeds the limit of ${MAX_PAYLOAD_SIZE} bytes.`);
-    }
-
-    const storedData = await kv.get<SyncPayload>(dataKey);
-
-    if (storedData) {
-        if (clientPayload.lastModified === storedData.lastModified) {
-            return new Response(null, {
-                status: 304, // Not Modified
-                headers: corsHeaders,
-            });
-        }
-        
-        if (clientPayload.lastModified < storedData.lastModified) {
-            return new Response(JSON.stringify(storedData), {
-                status: 409, // Conflict
-                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            });
-        }
-    }
-
-    await kv.set(dataKey, clientPayload);
-    
-    return new Response(JSON.stringify({ success: true }), {
-        status: 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+// Helper para gerar SHA-256 no Edge Runtime
+async function sha256(message: string) {
+    const msgBuffer = new TextEncoder().encode(message);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
 export default async function handler(req: Request) {
-    if (req.method === 'OPTIONS') {
-        return new Response(null, { status: 204, headers: corsHeaders });
+    if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: HEADERS_BASE });
+
+    const dbUrl = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
+    const dbToken = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
+
+    if (!dbUrl || !dbToken) {
+         console.error("Missing Database Config");
+         return new Response(JSON.stringify({ error: 'Server Config Error' }), { status: 500, headers: HEADERS_BASE });
     }
 
-    try {
-        const keyHash = getSyncKeyHash(req);
+    const kv = createClient({ url: dbUrl, token: dbToken });
 
+    try {
+        // --- AUTENTICAÇÃO FLEXÍVEL ---
+        // Aceita tanto o cabeçalho estrito (x-sync-key-hash) quanto o padrão (Authorization)
+        let keyHash = req.headers.get('x-sync-key-hash');
+        
         if (!keyHash) {
-            return createErrorResponse('Unauthorized: Missing sync key hash', 401);
+            const authHeader = req.headers.get('Authorization');
+            if (authHeader && authHeader.startsWith('Bearer ')) {
+                const rawKey = authHeader.replace('Bearer ', '').trim();
+                if (rawKey.length >= 8) {
+                    // Gera o hash no servidor para manter a consistência do banco
+                    keyHash = await sha256(rawKey);
+                }
+            }
+        }
+
+        if (!keyHash || !/^[a-f0-9]{64}$/i.test(keyHash)) {
+            return new Response(JSON.stringify({ error: 'Unauthorized: Missing or Invalid Key' }), { status: 401, headers: HEADERS_BASE });
         }
         
-        const dataKey = `sync_data:${keyHash}`;
+        // Cada usuário tem seu espaço baseado no hash da senha
+        const dataKey = `sync_v2:${keyHash}`;
 
         if (req.method === 'GET') {
-            return await handleGetRequest(dataKey);
+            const storedData = await kv.get(dataKey);
+            return new Response(JSON.stringify(storedData || null), { status: 200, headers: HEADERS_BASE });
         }
 
         if (req.method === 'POST') {
-            return await handlePostRequest(req, dataKey);
+            const bodyText = await req.text();
+            
+            if (bodyText.length > MAX_PAYLOAD_SIZE * 1.1) {
+                return new Response(JSON.stringify({ error: 'Payload Too Large' }), { status: 413, headers: HEADERS_BASE });
+            }
+
+            let clientPayload;
+            try { clientPayload = JSON.parse(bodyText); } 
+            catch { return new Response(JSON.stringify({ error: 'Malformed JSON' }), { status: 400, headers: HEADERS_BASE }); }
+
+            if (!clientPayload?.lastModified || typeof clientPayload.lastModified !== 'number') {
+                // Fallback: Se não vier lastModified, usa timestamp atual (menos seguro contra conflito, mas funciona)
+                clientPayload.lastModified = Date.now();
+            }
+
+            const result = await kv.eval(LUA_ATOMIC_UPDATE, [dataKey], [bodyText, String(clientPayload.lastModified)]) as [string, string?];
+
+            if (result[0] === 'OK') return new Response('{"success":true}', { status: 200, headers: HEADERS_BASE });
+            if (result[0] === 'NOT_MODIFIED') return new Response(null, { status: 304, headers: HEADERS_BASE });
+            if (result[0] === 'CONFLICT') return new Response(result[1], { status: 409, headers: HEADERS_BASE });
+            return new Response(JSON.stringify({ error: result[1] }), { status: 400, headers: HEADERS_BASE });
         }
 
-        return createErrorResponse('Method not allowed', 405);
+        return new Response(null, { status: 405 });
 
-    } catch (error) {
-        console.error("Error in sync API handler:", error);
-        const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
-        return createErrorResponse('Internal Server Error', 500, errorMessage);
+    } catch (error: any) {
+        console.error("API Sync Error:", error);
+        return new Response(JSON.stringify({ error: 'Internal Server Error' }), { status: 500, headers: HEADERS_BASE });
     }
 }

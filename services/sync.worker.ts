@@ -1,0 +1,1 @@
+// File obsolete. Logic moved to services/cloud.ts (Inline Worker).

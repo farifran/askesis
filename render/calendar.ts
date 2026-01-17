@@ -2,278 +2,246 @@
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
-*/
-// [ANALYSIS PROGRESS]: 100% - Módulo criado. Isola lógica da faixa de dias e calendário completo.
+ */
 
-import { state, calculateDaySummary, DAYS_IN_CALENDAR } from '../state';
-import { ui } from '../ui';
-import { getTodayUTCIso, toUTCIsoDateString, parseUTCIsoDate, getDateTimeFormat, addDays } from '../utils';
-import { getLocaleDayName } from '../i18n';
+/**
+ * @file render/calendar.ts
+ * @description Motor de Renderização do Calendário (Strip & Almanac) com Suporte a Infinite Scroll e Teleport.
+ */
+
+import { state } from '../state';
+import { calculateDaySummary } from '../services/selectors';
+import { ui } from './ui';
+import { getTodayUTCIso, toUTCIsoDateString, parseUTCIsoDate, addDays } from '../utils';
+import { formatInteger, getLocaleDayName } from '../i18n'; 
 import { setTextContent } from './dom';
-import { openModal, closeModal } from './modals';
-import { CSS_CLASSES, DOM_SELECTORS } from '../domConstants';
+import { CSS_CLASSES } from './constants';
 
-// OTIMIZAÇÃO [2025-01-22]: Cache de elementos do calendário para evitar querySelectorAll repetido.
-let cachedDayElements: HTMLElement[] = [];
+// --- CONFIGURAÇÃO SWEET SPOT ---
+const INITIAL_BUFFER_DAYS = 15; // Teleport Buffer: Mantém o DOM inicial leve
+const MAX_DOM_NODES = 200;      // Teto rígido de memória para o Scroll Infinito
 
-/**
- * OTIMIZAÇÃO (DRY): Aplica o estado visual a um elemento de dia do calendário.
- * Centraliza a lógica de classes, atributos ARIA e variáveis CSS para evitar duplicação.
- */
-export function _applyDayState(dayItem: HTMLElement, date: Date) {
-    const todayISO = getTodayUTCIso();
-    const isoDate = toUTCIsoDateString(date);
-    const { completedPercent, snoozedPercent, showPlus } = calculateDaySummary(isoDate);
-    const isSelected = isoDate === state.selectedDate;
-    const isToday = isoDate === todayISO;
+let dayItemTemplate: HTMLElement | null = null;
+let fullCalendarDayTemplate: HTMLElement | null = null;
 
-    // Gerenciamento de Classes
-    if (dayItem.classList.contains(CSS_CLASSES.SELECTED) !== isSelected) {
-        dayItem.classList.toggle(CSS_CLASSES.SELECTED, isSelected);
-    }
-    if (dayItem.classList.contains(CSS_CLASSES.TODAY) !== isToday) {
-        dayItem.classList.toggle(CSS_CLASSES.TODAY, isToday);
-    }
+const OPTS_ARIA = { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' } as const;
+const PAD = Array.from({length: 100}, (_, i) => (i < 10 ? '0' : '') + i);
 
-    // Acessibilidade e Estado
-    if (dayItem.getAttribute('aria-pressed') !== String(isSelected)) {
-        dayItem.setAttribute('aria-pressed', String(isSelected));
-    }
-    
-    // A11Y [2025-01-17]: Implementação de Roving Tabindex.
-    const newTabIndex = isSelected ? '0' : '-1';
-    if (dayItem.getAttribute('tabindex') !== newTabIndex) {
-        dayItem.setAttribute('tabindex', newTabIndex);
-    }
+// --- TEMPLATES (Lazy Init) ---
 
-    // PERFORMANCE [2025-01-16]: Uso de cache para Intl.DateTimeFormat.
-    const ariaDate = getDateTimeFormat(state.activeLanguageCode, {
-        weekday: 'long',
-        day: 'numeric',
-        month: 'long',
-        timeZone: 'UTC'
-    }).format(date);
-    
-    if (dayItem.getAttribute('aria-label') !== ariaDate) {
-        dayItem.setAttribute('aria-label', ariaDate);
-    }
+const getDayItemTemplate = () => dayItemTemplate || (dayItemTemplate = (() => {
+    const el = document.createElement('div'); el.className = CSS_CLASSES.DAY_ITEM; el.setAttribute('role', 'button');
+    el.innerHTML = `<span class="${CSS_CLASSES.DAY_NAME}"></span><div class="${CSS_CLASSES.DAY_PROGRESS_RING}"><span class="${CSS_CLASSES.DAY_NUMBER}"></span></div>`;
+    return el;
+})());
 
-    // Atualização Visual (Variáveis CSS e Indicadores)
-    const dayProgressRing = dayItem.querySelector<HTMLElement>(`.${CSS_CLASSES.DAY_PROGRESS_RING}`);
-    if (dayProgressRing) {
-        const newCompleted = `${completedPercent}%`;
-        const newSnoozed = `${snoozedPercent}%`;
-        
-        // PERFORMANCE CRÍTICA [2025-01-23]: Uso de dataset para Dirty Checking.
-        if (dayProgressRing.dataset.completedPercent !== newCompleted) {
-            dayProgressRing.style.setProperty('--completed-percent', newCompleted);
-            dayProgressRing.dataset.completedPercent = newCompleted;
-        }
-        if (dayProgressRing.dataset.snoozedPercent !== newSnoozed) {
-            dayProgressRing.style.setProperty('--snoozed-percent', newSnoozed);
-            dayProgressRing.dataset.snoozedPercent = newSnoozed;
-        }
-        
-        const dayNumber = dayProgressRing.querySelector<HTMLElement>(`.${CSS_CLASSES.DAY_NUMBER}`);
-        if (dayNumber) {
-            if (dayNumber.classList.contains('has-plus') !== showPlus) {
-                dayNumber.classList.toggle('has-plus', showPlus);
-            }
-            setTextContent(dayNumber, String(date.getUTCDate()));
-        }
-    }
-    
-    const dayNameEl = dayItem.querySelector(`.${CSS_CLASSES.DAY_NAME}`);
-    setTextContent(dayNameEl, getLocaleDayName(date));
-}
+const getFullCalendarDayTemplate = () => fullCalendarDayTemplate || (fullCalendarDayTemplate = (() => {
+    const el = document.createElement('div'); el.className = 'full-calendar-day'; el.setAttribute('role', 'button');
+    el.innerHTML = `<div class="${CSS_CLASSES.DAY_PROGRESS_RING}"><span class="${CSS_CLASSES.DAY_NUMBER}"></span></div>`;
+    return el;
+})());
 
-function updateCalendarDayElement(dayItem: HTMLElement, date: Date) {
-    _applyDayState(dayItem, date);
-}
+// --- CORE RENDERING (STRIP) ---
 
 /**
- * SURGICAL UPDATE: Atualiza apenas o dia do calendário especificado no DOM.
+ * Cria um elemento de dia isolado.
+ * SOURCE OF TRUTH: O dataset.date é a verdade absoluta para os listeners.
  */
-export function renderCalendarDayPartial(dateISO: string) {
-    // Uses type-safe DOM selector
-    const dayItem = ui.calendarStrip.querySelector<HTMLElement>(`${DOM_SELECTORS.DAY_ITEM}[data-date="${dateISO}"]`);
-    if (dayItem) {
-        const dateObj = parseUTCIsoDate(dateISO);
-        _applyDayState(dayItem, dateObj);
-    }
-}
-
-export function createCalendarDayElement(date: Date): HTMLElement {
-    const dayItem = document.createElement('div');
-    dayItem.className = CSS_CLASSES.DAY_ITEM;
-    dayItem.dataset.date = toUTCIsoDateString(date);
-    dayItem.setAttribute('role', 'button');
-    dayItem.setAttribute('tabindex', '-1');
-
-    const dayName = document.createElement('span');
-    dayName.className = CSS_CLASSES.DAY_NAME;
-
-    const dayProgressRing = document.createElement('div');
-    dayProgressRing.className = CSS_CLASSES.DAY_PROGRESS_RING;
-
-    const dayNumber = document.createElement('span');
-    dayNumber.className = CSS_CLASSES.DAY_NUMBER;
-
-    dayProgressRing.appendChild(dayNumber);
-    dayItem.appendChild(dayName);
-    dayItem.appendChild(dayProgressRing);
-
-    _applyDayState(dayItem, date);
-
-    return dayItem;
-}
-
-/**
- * Helper centralizado para rolar o calendário para o dia "Hoje".
- */
-export function scrollToToday(behavior: ScrollBehavior = 'auto') {
-    requestAnimationFrame(() => {
-        const todayEl = ui.calendarStrip.querySelector<HTMLElement>(`${DOM_SELECTORS.DAY_ITEM}.${CSS_CLASSES.TODAY}`);
-        if (todayEl) {
-            // LOGIC UPDATE [2025-02-05]: Alinhamento 'end' para coincidir com o futuro à direita.
-            todayEl.scrollIntoView({ behavior, block: 'nearest', inline: 'end' });
-        }
-    });
-}
-
-export function renderCalendar() {
-    // PERFORMANCE [2025-01-26]: DIRTY CHECK GUARD.
-    if (!state.uiDirtyState.calendarVisuals) {
-        return;
-    }
-
-    const needsRebuild = cachedDayElements.length === 0 || cachedDayElements.length !== state.calendarDates.length;
+function createDayElement(dateISO: string, isSelected: boolean, isToday: boolean): HTMLElement {
+    const el = getDayItemTemplate().cloneNode(true) as HTMLElement;
+    const dateObj = parseUTCIsoDate(dateISO);
     
-    if (needsRebuild) {
-        ui.calendarStrip.innerHTML = '';
-        cachedDayElements = [];
-        
-        const fragment = document.createDocumentFragment();
-        state.calendarDates.forEach(date => {
-            const el = createCalendarDayElement(date);
-            cachedDayElements.push(el);
-            fragment.appendChild(el);
-        });
-        ui.calendarStrip.appendChild(fragment);
+    el.dataset.date = dateISO; 
+    
+    const dayNameEl = el.firstElementChild as HTMLElement;
+    const ringEl = dayNameEl.nextElementSibling as HTMLElement;
+    const numEl = ringEl.firstElementChild as HTMLElement;
 
-        scrollToToday('auto');
+    setTextContent(dayNameEl, getLocaleDayName(dateObj));
+    setTextContent(numEl, formatInteger(dateObj.getUTCDate()));
+    
+    if (isSelected) el.classList.add(CSS_CLASSES.SELECTED);
+    if (isToday) el.classList.add(CSS_CLASSES.TODAY);
+
+    const { completedPercent, snoozedPercent, showPlusIndicator } = calculateDaySummary(dateISO, dateObj);
+    if (completedPercent > 0) ringEl.style.setProperty('--completed-percent', `${completedPercent}%`);
+    if (snoozedPercent > 0) ringEl.style.setProperty('--snoozed-percent', `${snoozedPercent}%`);
+    if (showPlusIndicator) numEl.classList.add('has-plus');
+
+    el.setAttribute('aria-label', dateObj.toLocaleDateString(state.activeLanguageCode, OPTS_ARIA));
+    if (isSelected) {
+        el.setAttribute('aria-current', 'date');
+        el.setAttribute('tabindex', '0');
     } else {
-        cachedDayElements.forEach((dayEl, index) => {
-            const date = state.calendarDates[index];
-            if (date) {
-                const isoDate = toUTCIsoDateString(date);
-                if(dayEl.dataset.date !== isoDate) {
-                    dayEl.dataset.date = isoDate;
-                }
-                updateCalendarDayElement(dayEl, date);
-            }
-        });
+        el.setAttribute('tabindex', '-1');
     }
 
-    state.uiDirtyState.calendarVisuals = false;
+    return el;
 }
+
+/**
+ * Renderiza a fita (Strip) centrada na data selecionada.
+ * ESTRATÉGIA: Teletransporte (Hard Reset).
+ * Limpa o DOM antigo e cria um novo universo de +/- 15 dias ao redor da data foco.
+ */
+export function renderCalendar() {
+    if (!ui.calendarStrip) return;
+
+    // Dirty Check para evitar re-render desnecessário
+    if (!state.uiDirtyState.calendarVisuals && ui.calendarStrip.children.length > 0) return;
+
+    const centerDateISO = state.selectedDate || getTodayUTCIso();
+    const centerDate = parseUTCIsoDate(centerDateISO);
+    const todayISO = getTodayUTCIso();
+    
+    const frag = document.createDocumentFragment();
+
+    for (let i = -INITIAL_BUFFER_DAYS; i <= INITIAL_BUFFER_DAYS; i++) {
+        const d = addDays(centerDate, i);
+        const iso = toUTCIsoDateString(d);
+        const el = createDayElement(iso, iso === centerDateISO, iso === todayISO);
+        frag.appendChild(el);
+    }
+
+    ui.calendarStrip.innerHTML = ''; // Limpeza Total (GC Trigger)
+    ui.calendarStrip.appendChild(frag);
+    
+    state.uiDirtyState.calendarVisuals = false;
+    
+    // Força o scroll para a posição correta (Teleporte)
+    requestAnimationFrame(() => scrollToSelectedDate(false));
+}
+
+/**
+ * [INFINITE SCROLL] Adiciona um dia ao final da lista (Futuro).
+ * OTIMIZAÇÃO: Remove nós antigos do topo se exceder MAX_DOM_NODES.
+ */
+export function appendDayToStrip(lastDateISO: string, container: Node = ui.calendarStrip): string {
+    const nextDate = addDays(parseUTCIsoDate(lastDateISO), 1);
+    const iso = toUTCIsoDateString(nextDate);
+    const todayISO = getTodayUTCIso();
+    
+    const el = createDayElement(iso, iso === state.selectedDate, iso === todayISO);
+    container.appendChild(el);
+
+    // [GARBAGE COLLECTION] Mantém o DOM leve
+    if (container === ui.calendarStrip && ui.calendarStrip.children.length > MAX_DOM_NODES) {
+        ui.calendarStrip.firstElementChild?.remove();
+    }
+
+    return iso;
+}
+
+/**
+ * [INFINITE SCROLL] Adiciona um dia ao início da lista (Passado).
+ * OTIMIZAÇÃO: Remove nós futuros do final se exceder MAX_DOM_NODES.
+ */
+export function prependDayToStrip(firstDateISO: string, container: Node = ui.calendarStrip): string {
+    const prevDate = addDays(parseUTCIsoDate(firstDateISO), -1);
+    const iso = toUTCIsoDateString(prevDate);
+    const todayISO = getTodayUTCIso();
+
+    const el = createDayElement(iso, iso === state.selectedDate, iso === todayISO);
+    
+    if (container instanceof DocumentFragment) {
+        container.prepend(el);
+    } else {
+        (container as HTMLElement).insertBefore(el, (container as HTMLElement).firstElementChild);
+    }
+
+    // [GARBAGE COLLECTION] Mantém o DOM leve
+    if (container === ui.calendarStrip && ui.calendarStrip.children.length > MAX_DOM_NODES) {
+        ui.calendarStrip.lastElementChild?.remove();
+    }
+
+    return iso;
+}
+
+// --- FULL CALENDAR (ALMANAC) ---
 
 export function renderFullCalendar() {
+    if (!ui.fullCalendarGrid || !state.fullCalendar) return;
+
     const { year, month } = state.fullCalendar;
-    const todayISO = getTodayUTCIso();
+    
+    ui.fullCalendarMonthYear.textContent = new Date(Date.UTC(year, month, 1))
+        .toLocaleDateString(state.activeLanguageCode, { month: 'long', year: 'numeric', timeZone: 'UTC' });
 
-    const monthDate = new Date(Date.UTC(year, month, 1));
-    ui.fullCalendarMonthYear.textContent = getDateTimeFormat(state.activeLanguageCode, {
-        month: 'long',
-        year: 'numeric',
-        timeZone: 'UTC',
-    }).format(monthDate);
-
-    const firstDayOfMonth = new Date(Date.UTC(year, month, 1));
+    const frag = document.createDocumentFragment();
+    const first = new Date(Date.UTC(year, month, 1));
     const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
-    const startDayOfWeek = firstDayOfMonth.getUTCDay();
+    const startDayOfWeek = first.getUTCDay(); // 0 = Domingo
+    const prevMonthDays = new Date(Date.UTC(year, month, 0)).getUTCDate();
 
-    const daysInPrevMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
-
-    const grid = ui.fullCalendarGrid;
-    grid.innerHTML = '';
-    
-    if (ui.fullCalendarWeekdays.childElementCount === 0) {
-        const weekdaysFragment = document.createDocumentFragment();
-        for (let i = 0; i < 7; i++) {
-            const day = new Date(Date.UTC(2024, 0, 7 + i));
-            const weekdayEl = document.createElement('div');
-            weekdayEl.textContent = getLocaleDayName(day).substring(0, 1);
-            weekdaysFragment.appendChild(weekdayEl);
-        }
-        ui.fullCalendarWeekdays.appendChild(weekdaysFragment);
-    }
-    
-    const fragment = document.createDocumentFragment();
-    let totalGridCells = 0;
-
+    // Dias do mês anterior (Cinza)
     for (let i = 0; i < startDayOfWeek; i++) {
-        const day = daysInPrevMonth - startDayOfWeek + 1 + i;
-        const dayEl = document.createElement('div');
-        dayEl.className = 'full-calendar-day other-month';
-        const numberEl = document.createElement('span');
-        numberEl.className = CSS_CLASSES.DAY_NUMBER;
-        numberEl.textContent = String(day);
-        dayEl.appendChild(numberEl);
-        fragment.appendChild(dayEl);
-        totalGridCells++;
+        const d = prevMonthDays - startDayOfWeek + 1 + i;
+        const el = getFullCalendarDayTemplate().cloneNode(true) as HTMLElement;
+        el.classList.add('other-month');
+        (el.firstElementChild!.firstElementChild as HTMLElement).textContent = formatInteger(d);
+        frag.appendChild(el);
     }
 
-    const ariaDateFormatter = getDateTimeFormat(state.activeLanguageCode, {
-        weekday: 'long',
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-        timeZone: 'UTC'
-    });
+    // Dias do mês atual
+    const todayISO = getTodayUTCIso();
+    const prefix = `${year}-${PAD[month + 1]}-`;
 
-    for (let day = 1; day <= daysInMonth; day++) {
-        const currentDate = new Date(Date.UTC(year, month, day));
-        const isoDate = toUTCIsoDateString(currentDate);
-        const { completedPercent, snoozedPercent } = calculateDaySummary(isoDate);
-
-        const dayEl = document.createElement('div');
-        dayEl.className = 'full-calendar-day';
-        dayEl.dataset.date = isoDate;
-        dayEl.setAttribute('role', 'button');
-        const isSelected = isoDate === state.selectedDate;
-        dayEl.classList.toggle(CSS_CLASSES.SELECTED, isSelected);
-        dayEl.classList.toggle(CSS_CLASSES.TODAY, isoDate === todayISO);
-        dayEl.setAttribute('aria-pressed', String(isSelected));
-        dayEl.setAttribute('aria-label', ariaDateFormatter.format(currentDate));
-        dayEl.setAttribute('tabindex', isSelected ? '0' : '-1');
-
-        const ringEl = document.createElement('div');
-        ringEl.className = CSS_CLASSES.DAY_PROGRESS_RING;
-        ringEl.style.setProperty('--completed-percent', `${completedPercent}%`);
-        ringEl.style.setProperty('--snoozed-percent', `${snoozedPercent}%`);
-
-        const numberEl = document.createElement('span');
-        numberEl.className = CSS_CLASSES.DAY_NUMBER;
-        numberEl.textContent = String(day);
+    for (let i = 1; i <= daysInMonth; i++) {
+        const iso = prefix + PAD[i];
+        const el = getFullCalendarDayTemplate().cloneNode(true) as HTMLElement;
+        const ring = el.firstElementChild as HTMLElement;
+        const num = ring.firstElementChild as HTMLElement;
         
-        ringEl.appendChild(numberEl);
-        dayEl.appendChild(ringEl);
-        fragment.appendChild(dayEl);
-        totalGridCells++;
+        num.textContent = formatInteger(i);
+        el.dataset.date = iso;
+
+        const { completedPercent, snoozedPercent, showPlusIndicator } = calculateDaySummary(iso, parseUTCIsoDate(iso));
+        
+        if (completedPercent > 0) ring.style.setProperty('--completed-percent', `${completedPercent}%`);
+        if (snoozedPercent > 0) ring.style.setProperty('--snoozed-percent', `${snoozedPercent}%`);
+        if (showPlusIndicator) num.classList.add('has-plus');
+
+        if (iso === state.selectedDate) el.classList.add(CSS_CLASSES.SELECTED);
+        if (iso === todayISO) el.classList.add(CSS_CLASSES.TODAY);
+
+        frag.appendChild(el);
     }
+
+    ui.fullCalendarGrid.innerHTML = '';
+    ui.fullCalendarGrid.appendChild(frag);
+}
+
+/**
+ * Rola a fita para posicionar o elemento selecionado.
+ * LÓGICA CONTEXTUAL: "Hoje" alinha à direita (histórico), outros centralizam.
+ */
+export function scrollToSelectedDate(smooth = true) {
+    if (!ui.calendarStrip) return;
     
-    const remainingCells = (7 - (totalGridCells % 7)) % 7;
-    for (let i = 1; i <= remainingCells; i++) {
-        const day = i;
-        const dayEl = document.createElement('div');
-        dayEl.className = 'full-calendar-day other-month';
-        const numberEl = document.createElement('span');
-        numberEl.className = CSS_CLASSES.DAY_NUMBER;
-        numberEl.textContent = String(day);
-        dayEl.appendChild(numberEl);
-        fragment.appendChild(dayEl);
-    }
-    
-    grid.appendChild(fragment);
+    requestAnimationFrame(() => {
+        const selectedEl = ui.calendarStrip.querySelector(`.${CSS_CLASSES.SELECTED}`) as HTMLElement;
+        
+        if (selectedEl) {
+            const stripWidth = ui.calendarStrip.clientWidth;
+            const elLeft = selectedEl.offsetLeft;
+            const elWidth = selectedEl.offsetWidth;
+            const isToday = selectedEl.classList.contains(CSS_CLASSES.TODAY);
+            
+            let targetScroll;
+
+            if (isToday) {
+                // ALIGN END (Right): Prioriza o passado imediato
+                const paddingRight = 10;
+                targetScroll = (elLeft + elWidth) - stripWidth + paddingRight;
+            } else {
+                // ALIGN CENTER: Contexto balanceado
+                targetScroll = elLeft - (stripWidth / 2) + (elWidth / 2);
+            }
+            
+            ui.calendarStrip.scrollTo({
+                left: targetScroll,
+                behavior: smooth ? 'smooth' : 'auto'
+            });
+        }
+    });
 }

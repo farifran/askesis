@@ -3,24 +3,32 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-// [ANALYSIS PROGRESS]: 0% - Análise concluída. Estratégia Cache-First robusta para App Shell.
-// [NOTA COMPARATIVA]: Nível de Engenharia: Crítico/Infraestrutura. Código de alta resiliência. Diferente de 'state.ts' (lógica) ou 'render.ts' (UI), bugs aqui podem causar falhas permanentes (zombie workers). A lógica de instalação agora garante integridade atômica do cache.
-// UPDATE [2025-02-23]: Critical Fix - Installation now fails if core assets cannot be fetched, preventing incomplete cache states.
+
+/**
+ * @file sw.js
+ * @description Service Worker: Proxy de Rede e Gerenciador de Cache (Offline Engine).
+ * 
+ * [SERVICE WORKER CONTEXT]:
+ * Execução em Thread de Background. 
+ * Otimizado para latência zero no interceptador de rede (`fetch`).
+ */
 
 try {
     importScripts("https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js");
 } catch (e) {
-    console.warn("Failed to load OneSignal SDK in Service Worker. Push notifications might not work.", e);
+    // Non-blocking failure for optional SDK
 }
 
-const CACHE_NAME = 'habit-tracker-v2';
+// CONSTANTS (Build-time injected)
+const CACHE_NAME = 'habit-tracker-v13';
 
-// Arquivos essenciais para o App Shell
+// PERF: Static Asset List (Pre-allocated)
 const CACHE_FILES = [
     '/',
     '/index.html',
     '/bundle.js',
     '/bundle.css',
+    '/sync-worker.js',
     '/manifest.json',
     '/locales/pt.json',
     '/locales/en.json',
@@ -31,87 +39,125 @@ const CACHE_FILES = [
     '/icons/badge.svg'
 ];
 
-self.addEventListener('install', (event) => {
-    event.waitUntil((async () => {
-        try {
-            const cache = await caches.open(CACHE_NAME);
-            console.log('Service Worker: Caching App Shell (Network Forced)');
-            
-            // FORÇA a atualização do cache via rede ('reload') para garantir que a nova versão seja baixada.
-            // ATOMICIDADE [2025-02-23]: Se qualquer arquivo crítico falhar, a instalação DEVE falhar.
-            await Promise.all(CACHE_FILES.map(async (url) => {
-                try {
-                    const request = new Request(url, { cache: 'reload' });
-                    const response = await fetch(request);
-                    if (!response.ok) throw new Error(`Status ${response.status}`);
-                    return cache.put(request, response);
-                } catch (err) {
-                    console.error(`Failed to cache ${url}:`, err);
-                    throw err; // Propaga o erro para abortar a instalação
-                }
-            }));
+// PERF: Hoisted Option Objects (Zero GC per request)
+const RELOAD_OPTS = { cache: 'reload' };
+const HTML_FALLBACK = '/index.html';
+const MATCH_OPTS = { ignoreSearch: true };
+const NETWORK_TIMEOUT_MS = 3000; // 3 Seconds max wait for Navigation
 
-            self.skipWaiting();
-        } catch (error) {
-            console.error('Service Worker: Install failed', error);
-            // RE-THROW CRÍTICO: Garante que o navegador saiba que a instalação falhou.
-            // Sem isso, o SW seria considerado "instalado" mesmo com cache incompleto.
-            throw error;
-        }
-    })());
+// HELPER: Timeout Promise
+const timeout = (ms) => new Promise((_, reject) => setTimeout(() => reject(new Error('Network Timeout')), ms));
+
+// HELPER: Update App Shell Cache (DRY)
+const updateShellCache = (res) => {
+    if (res && res.ok) {
+        const copy = res.clone();
+        caches.open(CACHE_NAME).then(c => c.put(HTML_FALLBACK, copy));
+    }
+    return res;
+};
+
+// --- INSTALL PHASE ---
+
+self.addEventListener('install', (event) => {
+    // FORCE UPDATE: Assume control immediately
+    self.skipWaiting();
+    
+    event.waitUntil(
+        caches.open(CACHE_NAME).then(cache => {
+            return Promise.all(CACHE_FILES.map(url => 
+                fetch(url, RELOAD_OPTS).then(res => {
+                    if (!res.ok) throw new Error(`[SW] Failed to cache: ${url} (${res.status})`);
+                    return cache.put(url, res);
+                })
+            ));
+        })
+    );
 });
+
+// --- ACTIVATE PHASE ---
 
 self.addEventListener('activate', (event) => {
-    event.waitUntil((async () => {
-        await self.clients.claim();
-        const cacheNames = await caches.keys();
-        await Promise.all(
-            cacheNames
-                .filter(cacheName => cacheName !== CACHE_NAME)
-                .map(cacheName => caches.delete(cacheName))
-        );
-    })());
+    // FORCE UPDATE: Claim clients immediately to serve new files
+    event.waitUntil(
+        Promise.all([
+            self.clients.claim(),
+            self.registration.navigationPreload ? self.registration.navigationPreload.enable() : Promise.resolve(),
+            caches.keys().then(keys => Promise.all(
+                keys.map(k => k !== CACHE_NAME ? caches.delete(k) : Promise.resolve())
+            ))
+        ])
+    );
 });
 
+// --- FETCH PHASE (HOT PATH) ---
+
 self.addEventListener('fetch', (event) => {
-    const url = new URL(event.request.url);
+    const req = event.request;
+    // Otimização: No contexto do SW, a URL é garantida.
+    const url = new URL(req.url); 
 
-    // Bypass para API (Network Only)
-    if (url.pathname.startsWith('/api/')) {
-        return;
-    }
+    // 1. Strict API Bypass
+    if (url.pathname.startsWith('/api/')) return;
 
-    // ESTRATÉGIA CACHE-FIRST PARA NAVEGAÇÃO (App Shell)
-    if (event.request.mode === 'navigate') {
-        event.respondWith((async () => {
-            try {
-                // 1. Prioridade total ao Cache (ignorando query string para deep links)
-                const cachedResponse = await caches.match('/index.html', { ignoreSearch: true });
-                if (cachedResponse) {
-                    return cachedResponse;
+    // 2. Navigation Strategy (App Shell) with Lie-fi Protection & Cache Update
+    if (req.mode === 'navigate') {
+        event.respondWith(
+            (async () => {
+                try {
+                    // A. Navigation Preload (SOTA Optimization)
+                    const preloadResp = await event.preloadResponse;
+                    if (preloadResp) return updateShellCache(preloadResp);
+
+                    // B. Network Race with Timeout
+                    const networkResp = await Promise.race([
+                        fetch(req),
+                        timeout(NETWORK_TIMEOUT_MS)
+                    ]);
+                    return updateShellCache(networkResp);
+                } catch (error) {
+                    // C. Offline Fallback
+                    return caches.match(HTML_FALLBACK, MATCH_OPTS);
                 }
-                
-                // 2. Fallback de Rede
-                return await fetch(event.request);
-            } catch (error) {
-                console.error('Navigation failed:', error);
-                // 3. Última tentativa de cache (para resiliência offline extrema)
-                return caches.match('/index.html', { ignoreSearch: true });
-            }
-        })());
+            })()
+        );
         return;
     }
 
-    // Estratégia Cache-First para Assets Estáticos
-    event.respondWith((async () => {
-        const cachedResponse = await caches.match(event.request);
-        if (cachedResponse) {
-            return cachedResponse;
-        }
-        try {
-            return await fetch(event.request);
-        } catch (error) {
-            // Opcional: retornar placeholder se necessário
-        }
-    })());
+    // 3. Asset Strategy (Stale-while-Revalidate)
+    event.respondWith(
+        caches.match(req).then(cached => {
+            if (cached) return cached;
+
+            return fetch(req).then(networkResponse => {
+                // Validation
+                if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {
+                    return networkResponse;
+                }
+
+                // Captive Portal Protection
+                const contentType = networkResponse.headers.get('content-type');
+                const isAsset = req.destination && ['script', 'style', 'image'].includes(req.destination);
+                
+                if (isAsset && contentType && contentType.includes('text/html')) {
+                    console.warn(`[SW] Captive Portal detected. Blocked caching of HTML for ${req.destination}.`);
+                    return networkResponse;
+                }
+
+                // Dynamic Caching (Fire & Forget)
+                const responseToCache = networkResponse.clone();
+                caches.open(CACHE_NAME).then(cache => {
+                    cache.put(req, responseToCache).catch(() => {}); // Silent fail for quota
+                });
+
+                return networkResponse;
+            }).catch(err => {
+                // NETWORK FAILSAFE: If fetch fails (e.g. offline and not in cache, or zombie SW)
+                // Return a 408 (Timeout) or 404 to allow client code to handle it gracefully
+                // instead of crashing with "TypeError: Load failed".
+                console.warn('[SW] Network fetch failed (Zombie SW Protection):', req.url);
+                return new Response(null, { status: 408, statusText: "Network Failure - Auto Healing Triggered" });
+            });
+        })
+    );
 });
