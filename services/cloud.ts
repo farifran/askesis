@@ -6,7 +6,7 @@
 /**
  * @file services/cloud.ts
  * @description Orquestrador de Sincronização.
- * VERSÃO CORRIGIDA: Auto-Apply (Aplica dados automaticamente ao baixar).
+ * VERSÃO FINAL: Smart Merge (Fusão Inteligente de Dados e Logs).
  */
 
 import { AppState, state, getPersistableState } from '../state';
@@ -125,7 +125,60 @@ async function decryptToBuffer(data, password) {
     return crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext);
 }
 
-// ... Merge logic ...
+// --- MERGE LOGIC ---
+function mergeDayRecord(localDay, mergedDay) {
+    let isDirty = false;
+    for (const habitId in localDay) {
+        if (!mergedDay[habitId]) {
+            mergedDay[habitId] = localDay[habitId];
+            isDirty = true;
+            continue;
+        }
+        const localHabitData = localDay[habitId];
+        const mergedHabitData = mergedDay[habitId];
+        
+        // Merge Schedule
+        if (localHabitData.dailySchedule !== undefined) {
+             if (JSON.stringify(localHabitData.dailySchedule) !== JSON.stringify(mergedHabitData.dailySchedule)) {
+                mergedHabitData.dailySchedule = localHabitData.dailySchedule;
+                isDirty = true;
+             }
+        }
+        // Merge Instances
+        const localInstances = localHabitData.instances || {};
+        const mergedInstances = mergedHabitData.instances || {};
+        
+        for (const time in localInstances) {
+            if (!mergedInstances[time]) {
+                mergedInstances[time] = localInstances[time];
+                isDirty = true;
+            }
+        }
+    }
+    return isDirty;
+}
+
+async function mergeStates(local, incoming) {
+    const merged = structuredClone(incoming);
+    
+    // 1. Merge Habits (Union by ID)
+    const incomingIds = new Set(incoming.habits.map(h => h.id));
+    local.habits.forEach(h => { 
+        if (!incomingIds.has(h.id)) merged.habits.push(h); 
+    });
+
+    // 2. Merge Settings/Metadata (Newest Wins or Union)
+    merged.lastModified = Date.now();
+    merged.version = Math.max(local.version || 0, incoming.version || 0);
+    
+    // Merge Lists (Sets)
+    const mergeList = (a, b) => Array.from(new Set([...(a||[]), ...(b||[])]));
+    merged.notificationsShown = mergeList(incoming.notificationsShown, local.notificationsShown);
+    merged.pending21DayHabitIds = mergeList(incoming.pending21DayHabitIds, local.pending21DayHabitIds);
+    
+    // NOTA: Os MonthlyLogs são tratados na Main Thread devido à complexidade do BigInt/Map
+    return merged;
+}
 
 self.onmessage = async (e) => {
     const { id, type, payload, key } = e.data;
@@ -152,6 +205,9 @@ self.onmessage = async (e) => {
                 }
                 return v;
             });
+        }
+        else if (type === 'merge') {
+            result = await mergeStates(payload.local, payload.incoming);
         }
         else { throw new Error('Unknown task: ' + type); }
         
@@ -255,20 +311,15 @@ function clearLocalAuth() {
     setSyncStatus('syncError');
 }
 
-// Helper para formatar erros de rede
 function formatNetworkError(e: any): string {
     const msg = e ? (e.message || e.toString()) : "Unknown";
-    
-    if (msg.includes("TypeError") || msg.includes("Failed to fetch")) {
-        return "Erro de Conexão: Servidor Offline ou Bloqueado";
-    }
+    if (msg.includes("TypeError") || msg.includes("Failed to fetch")) return "Erro de Conexão";
     if (msg.includes("404")) return "Erro 404: API não encontrada";
-    if (msg.includes("401")) return "Erro 401: Chave de Sincronização Inválida";
-    
+    if (msg.includes("401")) return "Chave Inválida";
     return "Erro: " + msg;
 }
 
-// --- CORE FUNCTIONS ---
+// --- CORE FUNCTIONS (SMART MERGE) ---
 
 export async function fetchStateFromCloud(): Promise<AppState | null> {
     if (!hasLocalSyncKey()) return null;
@@ -277,70 +328,62 @@ export async function fetchStateFromCloud(): Promise<AppState | null> {
 
     try {
         setSyncStatus('syncing');
-        console.log("[Cloud] Baixando dados...");
+        console.log("[Cloud] Buscando atualizações...");
         const res = await apiFetch('/api/sync', { method: 'GET' }, true);
         
         if (!res.ok) {
-            if (res.status === 404) {
-                 console.warn("[Cloud] GET 404: Nuvem vazia.");
-                 return null; 
-            }
+            if (res.status === 404) { console.warn("[Cloud] Vazia."); return null; }
             if (res.status === 401) { clearLocalAuth(); return null; }
             throw new Error(`HTTP ${res.status}`);
         }
 
         const data = await res.json();
-        if (!data || !data.state) {
-            console.log("[Cloud] Nuvem retornou vazio.");
-            return null;
-        }
+        if (!data || !data.state) return null;
 
         console.log("[Cloud] Decriptando...");
         const decryptedRaw = await runWorkerTask<any>('decrypt', data.state, key);
         
-        // --- CORREÇÃO CRÍTICA DO MAPA ---
-        let logsMap = new Map<string, bigint>();
-
-        // 1. Tenta deserializar do formato comprimido (Bitmask)
+        // 1. Trata os LOGS (Bitmask) separadamente
+        let cloudLogs = new Map<string, bigint>();
         if (decryptedRaw.monthlyLogsSerialized) {
-            logsMap = _deserializeLogsInternal(decryptedRaw.monthlyLogsSerialized);
+            cloudLogs = _deserializeLogsInternal(decryptedRaw.monthlyLogsSerialized);
             delete decryptedRaw.monthlyLogsSerialized;
-        } 
-        // 2. Fallback: Se veio como objeto comum, converte para Map
-        else if (decryptedRaw.monthlyLogs && !(decryptedRaw.monthlyLogs instanceof Map)) {
-            try {
-                Object.entries(decryptedRaw.monthlyLogs).forEach(([k, v]) => {
-                    logsMap.set(k, BigInt(v as any));
-                });
-            } catch (e) { console.warn("Erro ao converter logs:", e); }
+        } else if (decryptedRaw.monthlyLogs && !(decryptedRaw.monthlyLogs instanceof Map)) {
+             try { Object.entries(decryptedRaw.monthlyLogs).forEach(([k, v]) => cloudLogs.set(k, BigInt(v as any))); } catch {}
         }
 
-        console.log("[Cloud] Dados prontos. Aplicando ao App...");
-        
-        // --- APLICAR MUDANÇAS (AUTO-APPLY SEGURO) ---
-        const appState = decryptedRaw as AppState;
-        
-        // Remove monthlyLogs do objeto bruto para não sobrescrever com lixo
-        delete (appState as any).monthlyLogs;
+        // 2. Prepara estado LOCAL para merge
+        const localState = getPersistableState();
 
-        // Copia tudo MENOS os logs
-        Object.assign(state, appState);
-        
-        // Aplica os logs tratados como Map
-        state.monthlyLogs = logsMap;
-        
-        // Reconstruct AppState for persistence and return
-        const fullCloudState: AppState = { ...appState, monthlyLogs: logsMap };
+        // 3. FUSÃO (MERGE) DOS ESTADOS ESTRUTURAIS (Via Worker)
+        console.log("[Cloud] Mesclando estruturas...");
+        const mergedState = await runWorkerTask<AppState>('merge', { 
+            local: localState, 
+            incoming: decryptedRaw 
+        });
 
-        // Persiste no Disco Local
-        await persistStateLocally(fullCloudState);
+        // 4. FUSÃO (MERGE) DOS LOGS (Bitwise OR na Main Thread)
+        // Isso garante que marcas feitas no local E na nuvem sejam preservadas
+        console.log("[Cloud] Mesclando logs (Bitmask)...");
+        const mergedLogs = new Map<string, bigint>(state.monthlyLogs || new Map());
         
-        // Renderiza
+        cloudLogs.forEach((cloudVal, key) => {
+            const localVal = mergedLogs.get(key) || 0n;
+            // A MÁGICA: Operador OR (|) combina os bits dos dois mundos
+            mergedLogs.set(key, localVal | cloudVal);
+        });
+
+        // 5. APLICAÇÃO ATÔMICA
+        Object.assign(state, mergedState);
+        state.monthlyLogs = mergedLogs;
+
+        // Persiste e Renderiza
+        await persistStateLocally(state);
         document.dispatchEvent(new CustomEvent('render-app'));
 
         setSyncStatus('syncSynced');
-        console.log("[Cloud] ✅ Sincronização Completa!");
-        return fullCloudState;
+        console.log("[Cloud] ✅ Sincronização Inteligente Completa!");
+        return state;
 
     } catch (e: any) {
         console.error("[Cloud] Fetch Failed:", e);
@@ -351,9 +394,9 @@ export async function fetchStateFromCloud(): Promise<AppState | null> {
 }
 
 async function resolveConflictWithServerState(serverData: any) {
-    console.warn("[Cloud] Conflito detectado. Forçando recarga...");
-    // A recarga vai chamar fetchStateFromCloud, que agora tem Auto-Apply.
-    location.reload(); 
+    console.warn("[Cloud] Conflito detectado. Iniciando Smart Merge...");
+    // Em vez de reload cego, chama a função de fetch que agora sabe fazer merge
+    await fetchStateFromCloud();
 }
 
 async function _performSync(currentState: AppState) {
@@ -401,7 +444,6 @@ async function _performSync(currentState: AppState) {
 
     } catch (e: any) {
         console.error("[Cloud] Sync Failed:", e);
-        
         syncFailCount++;
         state.syncLastError = formatNetworkError(e);
         setSyncStatus('syncError');
@@ -426,8 +468,5 @@ export async function syncStateWithCloud(currentState: AppState) {
     syncTimeout = setTimeout(() => _performSync(currentState), DEBOUNCE_DELAY);
 }
 
-// Inicializa worker em background
 prewarmWorker();
-
-// Expõe para Debug manual se precisar
 (window as any).forceRestore = fetchStateFromCloud;
