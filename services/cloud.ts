@@ -2,7 +2,7 @@
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
- * VERSÃO: V18.7 - Robust Error Handling & Diagnostics
+ * VERSÃO: V18.8 - Anti-Loop Safeguard
  */
 
 import { AppState, state, getPersistableState } from '../state';
@@ -203,7 +203,11 @@ export async function fetchStateFromCloud(): Promise<AppState | null> {
         const mergedState = await mergeStates(localState, remoteState);
 
         Object.assign(state, mergedState);
-        await persistStateLocally(mergedState);
+        
+        // LOOP BREAKER: suppressSync = true
+        // Quando baixamos da nuvem e salvamos localmente, NÃO queremos disparar um novo push (sync)
+        // pois isso criaria um loop (Push -> 409 -> Pull -> Save -> Push...)
+        await persistStateLocally(mergedState, true);
         
         document.dispatchEvent(new CustomEvent('render-app'));
         setSyncStatus('syncSynced');
@@ -248,11 +252,10 @@ async function _performSync() {
             // 1. O servidor rejeitou nosso push porque nosso timestamp é antigo.
             // 2. Baixamos o estado do servidor.
             // 3. O algoritmo 'mergeStates' (CRDT-lite) combina os dados.
-            // 4. O resultado é salvo localmente.
-            // 5. NÃO fazemos push imediato novamente para evitar loop infinito se os relógios estiverem errados.
-            //    Consideramos "Sincronizado" porque agora temos o estado mais recente (fusão).
+            // 4. O resultado é salvo localmente COM a flag suppressSync=true.
+            // 5. O estado final é consistente. O próximo push só ocorrerá na próxima ação do usuário.
             await fetchStateFromCloud(); 
-            // Se o fetch acima não lançar erro, estamos sincronizados (local atualizado com remoto).
+            // Se o fetch acima não lançar erro, estamos sincronizados.
             setSyncStatus('syncSynced');
             state.syncLastError = null;
             

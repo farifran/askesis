@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -92,15 +93,21 @@ function pruneOrphanedDailyData(habits: readonly Habit[], dailyData: Record<stri
     }
 }
 
-async function saveStateInternal(immediate = false) {
+// Internal save with suppression support
+async function saveStateInternal(immediate = false, suppressSync = false) {
     const structuredData = getPersistableState();
     try {
         await saveSplitState(structuredData, state.monthlyLogs);
     } catch (e) { 
         console.error("IDB Save Failed:", e); 
     }
-    // Pass the immediate flag to the sync handler (cloud.ts)
-    syncHandler?.(structuredData, immediate);
+    
+    // LOOP PROTECTION: Only trigger sync if NOT suppressed
+    if (!suppressSync) {
+        syncHandler?.(structuredData, immediate);
+    } else {
+        console.log("[Persistence] Sync suppressed for this save.");
+    }
 }
 
 export async function flushSaveBuffer(): Promise<void> {
@@ -112,13 +119,14 @@ export async function flushSaveBuffer(): Promise<void> {
     }
 }
 
-export async function saveState(): Promise<void> {
+export async function saveState(suppressSync = false): Promise<void> {
     if (saveTimeout) clearTimeout(saveTimeout);
-    saveTimeout = self.setTimeout(saveStateInternal, IDB_SAVE_DEBOUNCE_MS);
+    // Bind the suppressSync flag to the timeout callback
+    saveTimeout = self.setTimeout(() => saveStateInternal(false, suppressSync), IDB_SAVE_DEBOUNCE_MS);
 }
 
-export const persistStateLocally = (data: AppState) => {
-    return saveSplitState(data, data.monthlyLogs || state.monthlyLogs);
+export const persistStateLocally = (data: AppState, suppressSync = false) => {
+    return saveStateInternal(true, suppressSync);
 };
 
 export async function loadState(cloudState?: AppState): Promise<AppState | null> {
