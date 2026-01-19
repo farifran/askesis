@@ -312,6 +312,42 @@ function formatNetworkError(e: any): string {
 
 // --- CORE FUNCTIONS (SMART MERGE) ---
 
+/**
+ * Baixa o estado da nuvem SEM mesclar e SEM salvar.
+ * Usado para autenticação inicial e decisão de overwrite.
+ */
+export async function downloadRemoteState(key: string): Promise<AppState | null> {
+    try {
+        const res = await apiFetch('/api/sync', { method: 'GET' }, true);
+        
+        if (!res.ok) {
+            if (res.status === 404) return null;
+            if (res.status === 401) throw new Error("Chave Inválida");
+            throw new Error(`HTTP ${res.status}`);
+        }
+
+        const data = await res.json();
+        if (!data || !data.state) return null;
+
+        const decryptedRaw = await runWorkerTask<any>('decrypt', data.state, key);
+        
+        // Reconstrói logs
+        let cloudLogs = new Map<string, bigint>();
+        if (decryptedRaw.monthlyLogsSerialized) {
+            cloudLogs = _deserializeLogsInternal(decryptedRaw.monthlyLogsSerialized);
+            delete decryptedRaw.monthlyLogsSerialized;
+        } else if (decryptedRaw.monthlyLogs && !(decryptedRaw.monthlyLogs instanceof Map)) {
+             try { Object.entries(decryptedRaw.monthlyLogs).forEach(([k, v]) => cloudLogs.set(k, BigInt(v as any))); } catch {}
+        }
+
+        return { ...decryptedRaw, monthlyLogs: cloudLogs };
+
+    } catch (e: any) {
+        console.error("[Cloud] Download Failed:", e);
+        throw e;
+    }
+}
+
 export async function fetchStateFromCloud(): Promise<AppState | null> {
     if (!hasLocalSyncKey()) return null;
     const key = getSyncKey();

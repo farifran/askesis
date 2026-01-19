@@ -25,12 +25,13 @@
 
 import { ui } from "../render/ui";
 import { t } from "../i18n";
-import { fetchStateFromCloud, setSyncStatus, prewarmWorker } from "../services/cloud";
-import { loadState, saveState } from "../services/persistence";
+import { downloadRemoteState, syncStateWithCloud, setSyncStatus, prewarmWorker } from "../services/cloud";
+import { loadState, saveState, clearLocalPersistence } from "../services/persistence";
 import { renderApp } from "../render";
 import { showConfirmationModal } from "../render/modals";
 import { storeKey, clearKey, hasLocalSyncKey, getSyncKey, isValidKeyFormat, initAuth } from "../services/api";
 import { generateUUID } from "../utils";
+import { getPersistableState } from "../state";
 
 // --- UI HELPERS ---
 
@@ -81,18 +82,21 @@ async function _processKey(key: string) {
     try {
         // 1. Tenta a nova chave
         storeKey(key);
-        const cloudState = await fetchStateFromCloud();
+        
+        // 2. Verifica dados na nuvem (SEM MESCLAR AINDA)
+        const cloudState = await downloadRemoteState(key);
 
         if (cloudState) {
-            // 2. Se houver dados na nuvem, peça confirmação
+            // 3. Se houver dados na nuvem, peça confirmação para SOBRESCREVER
             showConfirmationModal(
                 t('confirmSyncOverwrite'),
-                async () => { // onConfirm: Aplica o estado da nuvem
-                    // A chave `key` já está ativa, então só carregamos os dados
+                async () => { // onConfirm: Substituição Total (Hard Reset)
+                    await clearLocalPersistence();
                     await loadState(cloudState);
                     await saveState();
                     renderApp();
                     showView('active');
+                    setSyncStatus('syncSynced');
                 },
                 {
                     title: t('syncDataFoundTitle'),
@@ -106,11 +110,13 @@ async function _processKey(key: string) {
                 }
             );
         } else {
-            // 3. Sem dados na nuvem, a nova chave é aceita e a sincronização é ativada.
+            // 4. Sem dados na nuvem, a nova chave é aceita e iniciamos a sincronização
             showView('active');
+            setSyncStatus('syncSynced');
+            syncStateWithCloud(getPersistableState());
         }
     } catch (error) {
-        // 4. Se houver erro de rede/criptografia, faz rollback para a chave original.
+        // 5. Se houver erro de rede/criptografia, faz rollback para a chave original.
         if (originalKey) storeKey(originalKey);
         else clearKey();
 
@@ -134,7 +140,8 @@ const _handleEnableSync = async () => {
         ui.syncKeyText.textContent = newKey;
         ui.syncDisplayKeyView.dataset.context = 'setup';
         showView('displayKey');
-        await fetchStateFromCloud();
+        // Para novas chaves, sabemos que está vazia, então apenas empurramos o estado local
+        syncStateWithCloud(getPersistableState());
     } catch (e) {
         console.error("Failed initial sync on new key generation", e);
         clearKey();
@@ -215,7 +222,7 @@ const _handleDisableSync = () => {
 };
 
 export async function initSync() {
-    initAuth();
+    await initAuth();
     const hasKey = hasLocalSyncKey();
 
     if (hasKey) {
