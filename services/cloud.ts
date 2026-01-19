@@ -2,7 +2,7 @@
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
- * VERSÃO: V18.6 - Robust Error Handling
+ * VERSÃO: V18.7 - Robust Error Handling & Diagnostics
  */
 
 import { AppState, state, getPersistableState } from '../state';
@@ -243,16 +243,29 @@ async function _performSync() {
         }, true);
 
         if (res.status === 409) {
-            console.warn("Conflict (409). Pulling newer version...");
-            // AUTO-MERGE STRATEGY: Pull, Merge, then (implicitly) user can save again later.
+            console.warn("[Cloud] Conflict (409). Server has newer data. Initiating Auto-Merge...");
+            // AUTO-MERGE STRATEGY: 
+            // 1. O servidor rejeitou nosso push porque nosso timestamp é antigo.
+            // 2. Baixamos o estado do servidor.
+            // 3. O algoritmo 'mergeStates' (CRDT-lite) combina os dados.
+            // 4. O resultado é salvo localmente.
+            // 5. NÃO fazemos push imediato novamente para evitar loop infinito se os relógios estiverem errados.
+            //    Consideramos "Sincronizado" porque agora temos o estado mais recente (fusão).
             await fetchStateFromCloud(); 
+            // Se o fetch acima não lançar erro, estamos sincronizados (local atualizado com remoto).
+            setSyncStatus('syncSynced');
+            state.syncLastError = null;
+            
         } else if (res.status === 413) {
-            throw new Error("Dados muito grandes (413).");
+            console.error("[Cloud] Payload Too Large (413).");
+            throw new Error("Dados muito grandes para a nuvem (Limite 1MB). Tente arquivar dados antigos.");
         } else if (res.status === 401) {
-            throw new Error("Não autorizado (401). Verifique a chave.");
+            console.error("[Cloud] Unauthorized (401).");
+            throw new Error("Não autorizado. Verifique sua chave.");
         } else if (!res.ok) {
             throw new Error(`Erro Servidor: ${res.status}`);
         } else {
+            // 200 OK
             setSyncStatus('syncSynced');
             state.syncLastError = null;
         }
@@ -260,7 +273,7 @@ async function _performSync() {
     } catch (e: any) {
         console.error("Sync Push Failed:", e);
         if (e instanceof TypeError && e.message.includes('BigInt')) {
-            state.syncLastError = "Erro de Serialização";
+            state.syncLastError = "Erro de Serialização (BigInt)";
         } else {
             state.syncLastError = e.message || "Erro de Conexão";
         }

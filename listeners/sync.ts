@@ -43,7 +43,7 @@ function _toggleButtons(buttons: HTMLButtonElement[], disabled: boolean) {
 // --- LOGIC ---
 
 async function _processKey(key: string) {
-    console.log("[Sync] Processing key...");
+    console.log("[Sync Debug] Processing key...");
     const buttons = [ui.submitKeyBtn, ui.cancelEnterKeyBtn];
     _toggleButtons(buttons, true);
     
@@ -68,14 +68,16 @@ async function _processKey(key: string) {
             showConfirmationModal(
                 t('confirmSyncOverwrite'),
                 async () => {
+                    // SUCCESS CALLBACK (Overwrite)
                     try {
-                        console.log("[Sync] Hard Reset initiated...");
+                        console.log("[Sync Debug] Hard Reset initiated (Overwrite)...");
                         
-                        // 1. Limpa tudo localmente
+                        // 1. Limpa tudo localmente (IndexedDB + LocalStorage State)
                         await clearLocalPersistence();
                         
-                        // FIX: Re-store the key explicitly after clearing persistence
-                        // to ensure it survives the wipe (even though clearLocalPersistence shouldn't touch it).
+                        // CRITICAL FIX: Re-store the key explicitly immediately after wiping.
+                        // This prevents any race condition where the key is lost during the wipe.
+                        console.log("[Sync Debug] Re-asserting key persistence.");
                         storeKey(key);
                         
                         // 2. Carrega o estado da nuvem diretamente na memória
@@ -84,13 +86,16 @@ async function _processKey(key: string) {
                         // 3. Salva o novo estado localmente
                         await saveState();
                         
-                        // 4. Renderiza
+                        // 4. Renderiza e Atualiza UI
                         renderApp();
                         
-                        _refreshViewState(); // Force UI update
+                        // CRITICAL FIX: Force View Update immediately
+                        _refreshViewState(); 
                         setSyncStatus('syncSynced');
+                        console.log("[Sync Debug] Overwrite complete. UI Refreshed.");
+
                     } catch (e) {
-                        console.error("Overwrite failed", e);
+                        console.error("[Sync Debug] Overwrite failed", e);
                         alert("Erro crítico ao restaurar dados. Tente novamente.");
                         // Restore old key if critical fail
                         if (originalKey) storeKey(originalKey);
@@ -102,7 +107,11 @@ async function _processKey(key: string) {
                     confirmText: t('syncConfirmOverwrite'),
                     cancelText: t('cancelButton'),
                     onCancel: () => {
-                        // User cancelled the overwrite action explicitly
+                        // CANCEL CALLBACK
+                        // Only runs if user explicitly clicks Cancel.
+                        // Race condition protection: Check if we are already synced with the new key?
+                        // For simplicity, we assume if cancel is clicked, we revert.
+                        console.log("[Sync Debug] Overwrite cancelled by user.");
                         if (originalKey) storeKey(originalKey);
                         else clearKey();
                         _refreshViewState();
@@ -111,13 +120,13 @@ async function _processKey(key: string) {
             );
         } else {
             // 404 (Novo Usuário) -> Sucesso imediato
-            console.log("[Sync] New user/Empty cloud. Uploading local state.");
+            console.log("[Sync Debug] New user/Empty cloud. Uploading local state.");
             _refreshViewState();
             setSyncStatus('syncSynced');
             syncStateWithCloud(getPersistableState());
         }
     } catch (error: any) {
-        console.error("[Sync] Error processing key:", error);
+        console.error("[Sync Debug] Error processing key:", error);
         
         // Restore state on error
         if (originalKey) storeKey(originalKey);
@@ -239,8 +248,12 @@ const _handleDisableSync = () => {
 };
 
 function _refreshViewState() {
-    if (hasLocalSyncKey()) {
+    const hasKey = hasLocalSyncKey();
+    console.log(`[Sync Debug] Refreshing View. Has Key: ${hasKey}, State: ${state.syncState}`);
+    
+    if (hasKey) {
         showView('active');
+        // Se o estado estava em erro ou inicial, mas temos a chave, assumimos synced até prova em contrário
         if (state.syncState === 'syncInitial') {
              setSyncStatus('syncSynced');
         }
