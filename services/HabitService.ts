@@ -51,9 +51,6 @@ export class HabitService {
         
         // 5. Flag de Sujeira (Avisa Persistence e Charts que algo mudou)
         state.uiDirtyState.chartData = true;
-
-        // DEBUG: Confirmação visual no console (Remova após confirmar que funciona)
-        // console.log(`[Bitmask] Write Success: ${key} -> ${newLog} (Status: ${newState})`);
     }
 
     /**
@@ -92,11 +89,8 @@ export class HabitService {
     static unpackBinaryLogs(binaryMap: Map<string, ArrayBuffer>) {
         if (!state.monthlyLogs) state.monthlyLogs = new Map();
         binaryMap.forEach((buffer, key) => {
-            // Conversão simples de buffer antigo para BigInt (assumindo 64 bits ou similar)
-            // Implementação simplificada para migração
             try {
                 const view = new DataView(buffer);
-                // Se o buffer for pequeno, tentamos ler. Se não, descartamos (segurança).
                 if (buffer.byteLength >= 8) {
                     state.monthlyLogs!.set(key, view.getBigUint64(0, true)); // Little Endian
                 }
@@ -104,5 +98,40 @@ export class HabitService {
                 console.warn("Falha na migração binária legada", e);
             }
         });
+    }
+
+    /**
+     * INTELLIGENT MERGE (CRDT-Lite para Bitmasks)
+     * Funde dois mapas de logs.
+     * Regra: Se o mapa 'winner' não tiver a chave, ou tiver valor 0 (vazio),
+     * e o mapa 'loser' tiver dados, adotamos o 'loser'.
+     * Isso resolve o problema onde um dispositivo 'novo' (mas vazio) sobrescreve um 'velho' (mas cheio).
+     */
+    static mergeLogs(winnerMap: Map<string, bigint> | undefined, loserMap: Map<string, bigint> | undefined): Map<string, bigint> {
+        const result = new Map<string, bigint>(winnerMap || []);
+        
+        if (!loserMap) return result;
+
+        for (const [key, loserVal] of loserMap.entries()) {
+            const winnerVal = result.get(key);
+
+            // CASO 1: Chave não existe no vencedor -> Adiciona (Importar hábito novo)
+            if (winnerVal === undefined) {
+                result.set(key, loserVal);
+                continue;
+            }
+
+            // CASO 2: Vencedor está vazio (0), mas Perdedor tem dados -> Adota Perdedor
+            // Isso acontece quando o usuário cria o hábito no dispositivo novo,
+            // mas o histórico real está no dispositivo antigo.
+            if (winnerVal === 0n && loserVal !== 0n) {
+                result.set(key, loserVal);
+            }
+            
+            // CASO 3: Ambos têm dados -> Mantém Vencedor (Timestamp Authority)
+            // Assumimos que se o Vencedor tem dados, eles são mais recentes/corretos.
+        }
+        
+        return result;
     }
 }
