@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -66,38 +67,29 @@ const registerServiceWorker = () => {
     }
 };
 
-const NETWORK_TIMEOUT = Symbol('NETWORK_TIMEOUT');
-
 async function loadInitialState() {
-    // 1. Carrega Estado Local (Rápido) para First Paint
+    // 1. CARREGAMENTO IMEDIATO (Local-First)
+    // O usuário vê os dados locais instantaneamente.
     await loadState();
 
-    // 2. Se houver chave, tenta buscar e mesclar da Nuvem
+    // 2. SINCRONIZAÇÃO SILENCIOSA (Background)
+    // Se houver chave, tentamos buscar novidades da nuvem sem bloquear a UI.
     if (hasLocalSyncKey()) {
-        try {
-            console.log("[Boot] Sync Key detectada. Iniciando Pull da nuvem...");
-            const CLOUD_BOOT_TIMEOUT_MS = 3000;
-            
-            // fetchStateFromCloud agora já faz o merge e o save internamente.
-            // Nós apenas esperamos ele terminar ou o timeout estourar.
-            await Promise.race([
-                fetchStateFromCloud(),
-                new Promise<typeof NETWORK_TIMEOUT>(resolve => setTimeout(() => resolve(NETWORK_TIMEOUT), CLOUD_BOOT_TIMEOUT_MS))
-            ]);
-            
-            // O estado global 'state' já foi atualizado pelo fetchStateFromCloud se teve sucesso.
-            
-        } catch (e) {
-            console.error("Startup: Cloud sync failed, continuing with local state.", e);
+        console.log("[Boot] Sync Key detectada. Iniciando Sync Silencioso...");
+        
+        // Não usamos await aqui para não travar o boot visual se a rede estiver lenta.
+        // O fetchStateFromCloud() irá atualizar o state e disparar 'render-app' se houver mudanças.
+        fetchStateFromCloud().catch(e => {
+            console.warn("Silent sync failed (offline?):", e);
             setSyncStatus('syncError');
-        }
+        });
     }
 }
 
 function handleFirstTimeUser() {
     if (state.habits.length === 0) {
+        // Se tem chave mas deu erro, não cria default (pode estar baixando ainda)
         if (hasLocalSyncKey() && state.syncState === 'syncError') {
-            console.warn("Startup: Aborting default habit creation due to Sync Error.");
             return;
         }
         createDefaultHabit();
@@ -146,7 +138,6 @@ async function init(loader: HTMLElement | null) {
         delete (window as any).bootWatchdog;
     }
 
-    // AUTH FIX: Await key restoration (LocalStorage + IndexedDB) BEFORE loading state
     await initAuth();
     
     await Promise.all([initI18n(), updateUIText()]);

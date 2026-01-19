@@ -15,6 +15,7 @@ import { AppState, HabitDailyInfo } from '../state';
 function mergeDayRecord(localDay: Record<string, HabitDailyInfo>, mergedDay: Record<string, HabitDailyInfo>): boolean {
     let isDirty = false;
     for (const habitId in localDay) {
+        // Se o merged (vencedor) não tem dados para este hábito neste dia, adotamos o local (perdedor)
         if (!mergedDay[habitId]) {
             mergedDay[habitId] = localDay[habitId];
             isDirty = true;
@@ -34,12 +35,14 @@ function mergeDayRecord(localDay: Record<string, HabitDailyInfo>, mergedDay: Rec
             if (!localInst) continue;
 
             if (!mergedInst) {
+                // Vencedor não tinha registro para este horário -> Adiciona do perdedor
                 mergedInstances[time as any] = localInst;
                 isDirty = true;
             } else {
                 // WEIGHTED MERGE LOGIC (Main Thread)
                 
                 // 1. Goal Override
+                // Se vencedor não tem override, mas perdedor tem -> mantemos o do perdedor
                 if (mergedInst.goalOverride === undefined && localInst.goalOverride !== undefined) {
                     mergedInst.goalOverride = localInst.goalOverride;
                     isDirty = true;
@@ -49,8 +52,8 @@ function mergeDayRecord(localDay: Record<string, HabitDailyInfo>, mergedDay: Rec
                 const lNoteLen = localInst.note ? localInst.note.length : 0;
                 const mNoteLen = mergedInst.note ? mergedInst.note.length : 0;
                 
-                // If merged has no note but local does -> Local wins
-                // If both have notes but local is longer -> Local wins
+                // Se o vencedor tem nota vazia e o perdedor tem nota -> Perdedor ganha
+                // Se ambos têm, e a do perdedor é maior -> Perdedor ganha (assumindo mais detalhe)
                 if ((!mergedInst.note && localInst.note) || (localInst.note && lNoteLen > mNoteLen)) {
                     mergedInst.note = localInst.note;
                     isDirty = true;
@@ -58,7 +61,7 @@ function mergeDayRecord(localDay: Record<string, HabitDailyInfo>, mergedDay: Rec
             }
         }
         
-        // Preserve Schedules
+        // Preserve Schedules changes if missing in winner
         if (!mergedHabitData.dailySchedule && localHabitData.dailySchedule) {
              mergedHabitData.dailySchedule = localHabitData.dailySchedule;
              isDirty = true;
@@ -67,43 +70,24 @@ function mergeDayRecord(localDay: Record<string, HabitDailyInfo>, mergedDay: Rec
     return isDirty;
 }
 
-function mergeMonthlyLogs(mergedMap: Map<string, bigint> | undefined, loserMap: Map<string, bigint> | undefined) {
-    if (!loserMap || loserMap.size === 0) return;
-    if (!mergedMap) return; // Should be initialized by structuredClone of winner
-
-    for (const [key, val] of loserMap.entries()) {
-        // BITMASK STRATEGY: Union of Keys.
-        // Se o vencedor (timestamp maior) não tem dados para este hábito/mês específico,
-        // aceitamos os dados do perdedor. Isso preserva dados criados offline.
-        // Se ambos têm dados, o vencedor prevalece (Time-based conflict resolution),
-        // pois não temos timestamps granulares por bit para fazer merge bit-a-bit seguro.
-        if (!mergedMap.has(key)) {
-            mergedMap.set(key, val);
-        }
-    }
-}
-
 export async function mergeStates(local: AppState, incoming: AppState): Promise<AppState> {
     // 1. Newest Wins Strategy (Hybrid)
     const localTs = local.lastModified || 0;
     const incomingTs = incoming.lastModified || 0;
     
-    // Define a base como a mais recente para preservar configurações globais
+    // Define quem é a base ("Vencedor") e quem será fundido ("Perdedor")
     let winner = localTs > incomingTs ? local : incoming;
     let loser = localTs > incomingTs ? incoming : local;
     
     // CLONE: Garante que não mutamos o estado original durante o merge
     const merged: AppState = structuredClone(winner);
     
-    // Garante inicialização do Map se falhar no clone ou não existir
-    if (!merged.monthlyLogs || !(merged.monthlyLogs instanceof Map)) {
-        merged.monthlyLogs = new Map(winner.monthlyLogs instanceof Map ? winner.monthlyLogs : []);
-    }
-    
     // 2. Habits: Union by ID (Don't lose offline creations)
     const mergedIds = new Set(merged.habits.map(h => h.id));
     loser.habits.forEach(h => {
         if (!mergedIds.has(h.id)) {
+            // Hábito existia no estado antigo/offline mas não no novo -> Preserva
+            // (Assumindo que não foi deletado explicitamente, mas criado recentemente)
             (merged.habits as any).push(h);
         }
     });
@@ -111,13 +95,15 @@ export async function mergeStates(local: AppState, incoming: AppState): Promise<
     // 3. Daily Data: Weighted Merge (Inject loser data into winner if beneficial)
     for (const date in loser.dailyData) {
         if (!merged.dailyData[date]) {
+            // Data inteira faltando no vencedor -> Copia do perdedor
             (merged.dailyData as any)[date] = loser.dailyData[date];
         } else {
+            // Data existe -> Merge granular
             mergeDayRecord(loser.dailyData[date], merged.dailyData[date]);
         }
     }
 
-    // 4. Archives
+    // 4. Archives (Union Keys)
     if (loser.archives) {
         (merged as any).archives = merged.archives || {};
         for (const year in loser.archives) {
@@ -128,10 +114,21 @@ export async function mergeStates(local: AppState, incoming: AppState): Promise<
     }
     
     // 5. Monthly Logs (Bitmasks)
-    mergeMonthlyLogs(merged.monthlyLogs, loser.monthlyLogs);
-    
+    // Mapas de bits são difíceis de fundir sem lógica de vetor.
+    // Mantemos a estratégia "Vencedor Leva Tudo" por chave de mês, 
+    // mas se o vencedor não tiver o mês, pegamos do perdedor.
+    if (loser.monthlyLogs && loser.monthlyLogs.size > 0) {
+        if (!merged.monthlyLogs) merged.monthlyLogs = new Map();
+        for (const [key, val] of loser.monthlyLogs.entries()) {
+            if (!merged.monthlyLogs.has(key)) {
+                merged.monthlyLogs.set(key, val);
+            }
+        }
+    }
+
     // TIME INTEGRITY FIX: High-Water Mark Algorithm
     // O novo timestamp deve ser estritamente maior ou igual a qualquer timestamp visto anteriormente.
+    // Isso garante que este novo estado fundido seja reconhecido como a "Verdade" na próxima sincronização.
     const now = Date.now();
     merged.lastModified = Math.max(localTs, incomingTs, now);
     
@@ -140,9 +137,11 @@ export async function mergeStates(local: AppState, incoming: AppState): Promise<
         merged.lastModified += 1;
     }
 
+    // Versioning
     // @ts-ignore
     merged.version = Math.max(local.version || 0, incoming.version || 0);
     
+    // Merge Arrays (Union)
     const mergeList = (a: readonly any[] | undefined, b: readonly any[] | undefined) => 
         Array.from(new Set([...(a||[]), ...(b||[])]));
 

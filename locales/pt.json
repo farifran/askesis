@@ -298,7 +298,7 @@
     "syncDisableTitle": "Desativar Sincronização",
     "syncEnable": "Ativar Sincronização",
     "syncEnterKey": "Inserir Chave",
-    "syncError": "Error de sincronização",
+    "syncError": "Erro de sincronização",
     "syncInactiveDesc": "Salve seus dados na nuvem para acessá-los em qualquer dispositivo.",
     "syncInitial": "A sincronização na nuvem está desativada.",
     "syncKeepLocal": "Manter Local",

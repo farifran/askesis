@@ -13,6 +13,7 @@ import { showConfirmationModal } from "../render/modals";
 import { storeKey, clearKey, hasLocalSyncKey, getSyncKey, isValidKeyFormat } from "../services/api";
 import { generateUUID } from "../utils";
 import { getPersistableState, state } from "../state";
+import { mergeStates } from "../services/dataMerge";
 
 // --- UI HELPERS ---
 
@@ -72,76 +73,48 @@ async function _processKey(key: string) {
         const cloudState = await downloadRemoteState(key);
 
         if (cloudState) {
-            console.log("[Sync Debug] Data found. Prompting overwrite.");
-            // Dados encontrados -> Pergunta se sobrescreve
-            showConfirmationModal(
-                t('confirmSyncOverwrite'),
-                async () => {
-                    // SUCCESS CALLBACK (Overwrite)
-                    try {
-                        console.log("[Sync Debug] Hard Reset initiated (Overwrite)...");
-                        
-                        // 1. Limpa tudo localmente (IndexedDB + LocalStorage State)
-                        await clearLocalPersistence();
-                        
-                        // CRITICAL FIX: Re-store the key explicitly immediately after wiping.
-                        console.log("[Sync Debug] Re-asserting key persistence:", key);
-                        storeKey(key);
-                        
-                        // 2. Carrega o estado da nuvem diretamente na memória
-                        console.log("[Sync Debug] Loading cloud state into memory...");
-                        await loadState(cloudState);
-                        
-                        // 3. Salva o novo estado localmente
-                        console.log("[Sync Debug] Persisting new state...");
-                        await saveState(true); // Suppress sync to avoid immediate push-back loop
-                        
-                        // 4. Renderiza e Atualiza UI
-                        console.log("[Sync Debug] Re-rendering app...");
-                        renderApp();
-                        
-                        // CRITICAL FIX: Force View Update immediately to "Active"
-                        state.syncState = 'syncSynced';
-                        if (ui.syncStatus) ui.syncStatus.textContent = t('syncSynced');
-                        
-                        _refreshViewState(); 
-                        
-                        console.log("[Sync Debug] Overwrite complete. UI Refreshed.");
+            console.log("[Sync Debug] Data found. Performing Smart Merge.");
+            // CENÁRIO B: Nuvem tem dados.
+            // Ação: Fundir com dados locais atuais e salvar.
+            
+            const localState = getPersistableState();
+            // Fix Map loss during getPersistableState
+            if (!localState.monthlyLogs && state.monthlyLogs) {
+                localState.monthlyLogs = state.monthlyLogs;
+            }
 
-                    } catch (e) {
-                        console.error("[Sync Debug] Overwrite failed", e);
-                        alert("Erro crítico ao restaurar dados. Tente novamente.");
-                        // Restore old key if critical fail
-                        if (originalKey) storeKey(originalKey);
-                        else clearKey();
-                        _refreshViewState();
-                    }
-                },
-                {
-                    title: t('syncDataFoundTitle'),
-                    confirmText: t('syncConfirmOverwrite'),
-                    cancelText: t('cancelButton'),
-                    onCancel: () => {
-                        // CANCEL CALLBACK
-                        console.log("[Sync Debug] Overwrite cancelled by user. Reverting key.");
-                        if (originalKey) storeKey(originalKey);
-                        else clearKey();
-                        _refreshViewState();
-                    }
-                }
-            );
+            // Realiza a fusão ponderada
+            const mergedState = await mergeStates(localState, cloudState);
+            
+            // Aplica na memória
+            Object.assign(state, mergedState);
+            
+            // Salva no disco (Local)
+            await saveState();
+            
+            // Renderiza UI
+            renderApp();
+            
+            // Feedback visual e transição
+            setSyncStatus('syncSynced');
+            _refreshViewState();
+            
+            // Push para atualizar a nuvem com a versão mesclada (se necessário)
+            syncStateWithCloud(mergedState, true);
+
         } else {
-            // 404 (Novo Usuário) -> Sucesso imediato
+            // CENÁRIO A: Nuvem Vazia (404) -> Novo Usuário ou Chave Nova
             console.log("[Sync Debug] New user/Empty cloud. Uploading local state.");
             _refreshViewState();
             setSyncStatus('syncSynced');
-            // Force immediate push to create the key on server
+            
+            // Force immediate push to create the key on server and populate with local data
             syncStateWithCloud(getPersistableState(), true);
         }
     } catch (error: any) {
         console.error("[Sync Debug] Error processing key:", error);
         
-        // Restore state on error
+        // Restore old state on error
         if (originalKey) storeKey(originalKey);
         else clearKey();
 

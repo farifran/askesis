@@ -2,7 +2,6 @@
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
- * VERSÃO: V18.10 - Auto-Convergence & Final Polish
  */
 
 import { AppState, state, getPersistableState } from '../state';
@@ -180,6 +179,7 @@ export async function downloadRemoteState(key: string): Promise<AppState | null>
 }
 
 export async function fetchStateFromCloud(): Promise<AppState | null> {
+    // SECURITY GUARD: Modo Local Puro
     if (!hasLocalSyncKey()) return null;
     const key = getSyncKey();
     if (!key) return null;
@@ -191,9 +191,10 @@ export async function fetchStateFromCloud(): Promise<AppState | null> {
         
         if (!remoteState) {
             setSyncStatus('syncSynced');
-            return null;
+            return null; // Nuvem vazia, mantém local
         }
 
+        // SMART MERGE
         const localState = getPersistableState();
         // Fix: Ensure Maps exist for merge
         if (!localState.monthlyLogs && state.monthlyLogs) {
@@ -202,13 +203,13 @@ export async function fetchStateFromCloud(): Promise<AppState | null> {
 
         const mergedState = await mergeStates(localState, remoteState);
 
+        // Aplica o estado mesclado
         Object.assign(state, mergedState);
         
-        // LOOP BREAKER: suppressSync = true
-        // Quando baixamos da nuvem e salvamos localmente, NÃO queremos disparar um novo push (sync)
-        // pois isso criaria um loop (Push -> 409 -> Pull -> Save -> Push...)
+        // Persiste localmente (suprime novo sync para evitar loop imediato)
         await persistStateLocally(mergedState, true);
         
+        // Atualiza UI
         document.dispatchEvent(new CustomEvent('render-app'));
         setSyncStatus('syncSynced');
         
@@ -239,6 +240,7 @@ async function _performSync() {
         const encryptedData = await encrypt(jsonString, key);
 
         // CLOCK SKEW FIX: Use rawState.lastModified instead of Date.now().
+        // This ensures the server respects our monotonic clock.
         const payload = {
             lastModified: rawState.lastModified, 
             state: encryptedData
@@ -255,15 +257,9 @@ async function _performSync() {
             // AUTO-MERGE STRATEGY: 
             // 1. Pull server data.
             // 2. Merge with local (Monotonic clock ensures new TS > server TS).
-            // 3. Save local (suppressSync=true to avoid loop).
+            // 3. Save local.
+            // 4. (Next debounce will push the merged result).
             await fetchStateFromCloud(); 
-            
-            // CONVERGENCE STEP:
-            // Agora que temos o estado mesclado e um timestamp superior, devemos enviar 
-            // para o servidor para que ele também fique atualizado.
-            // Agendamos um novo sync normal (debounce) para fechar o ciclo.
-            console.log("[Cloud] 409 Resolved. Scheduling convergence push.");
-            syncStateWithCloud(); 
 
         } else if (res.status === 413) {
             console.error("[Cloud] Payload Too Large (413).");
@@ -293,6 +289,8 @@ async function _performSync() {
 }
 
 export function syncStateWithCloud(currentState?: AppState, immediate = false) {
+    // SECURITY GUARD: Modo Local Puro
+    // Se não tem chave, não faz nada. Nem tenta conectar.
     if (!hasLocalSyncKey()) return;
     
     if (syncTimeout) clearTimeout(syncTimeout);
@@ -305,6 +303,8 @@ export function syncStateWithCloud(currentState?: AppState, immediate = false) {
     }
 }
 
+// Initial Sync Check (Silent)
 if (hasLocalSyncKey()) {
+    // Delay inicial para não competir com a renderização crítica
     setTimeout(fetchStateFromCloud, 1500);
 }
