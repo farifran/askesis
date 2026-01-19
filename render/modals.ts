@@ -85,7 +85,7 @@ export function openModal(modal: HTMLElement, focusEl?: HTMLElement, onClose?: (
     modalStack.push(ctx); ui.appContainer.setAttribute('inert', '');
 }
 
-export function closeModal(modal: HTMLElement) {
+export function closeModal(modal: HTMLElement, suppressCallbacks = false) {
     const idx = modalStack.findIndex(c => c.element === modal); if (idx === -1) return;
     const [ctx] = modalStack.splice(idx, 1); modal.classList.remove('visible');
     if (modalStack.length === 0) ui.appContainer.removeAttribute('inert');
@@ -98,7 +98,8 @@ export function closeModal(modal: HTMLElement) {
         backBtn.replaceWith(spacer);
     }
 
-    ctx.onClose?.(); ctx.previousFocus?.focus();
+    if (!suppressCallbacks) ctx.onClose?.(); 
+    ctx.previousFocus?.focus();
 }
 
 export function setupManageModal() {

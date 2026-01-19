@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -339,7 +338,10 @@ const _handleConfirmClick = () => {
 
     state.confirmAction = null;
     state.confirmEditAction = null;
-    closeModal(ui.confirmModal);
+    
+    // CRITICAL FIX [2025-06-05]: Suppress callbacks (like onCancel) when confirming.
+    // This prevents the sync logic's onCancel handler from reverting the key after a successful overwrite.
+    closeModal(ui.confirmModal, true);
 };
 
 const _handleEditClick = () => {
@@ -356,7 +358,9 @@ const _handleEditClick = () => {
 
     state.confirmAction = null;
     state.confirmEditAction = null;
-    closeModal(ui.confirmModal);
+    
+    // Suppress default cancel callbacks as "Edit" is a form of affirmative action here.
+    closeModal(ui.confirmModal, true);
 };
 
 const _handleFullCalendarPrevClick = () => {
