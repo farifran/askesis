@@ -22,6 +22,9 @@ function showView(view: 'inactive' | 'enterKey' | 'displayKey' | 'active') {
     ui.syncDisplayKeyView.style.display = 'none';
     ui.syncActiveView.style.display = 'none';
 
+    // Clear errors on view switch
+    if (ui.syncErrorMsg) ui.syncErrorMsg.classList.add('hidden');
+
     switch (view) {
         case 'inactive': ui.syncInactiveView.style.display = 'flex'; break;
         case 'enterKey': ui.syncEnterKeyView.style.display = 'flex'; break;
@@ -46,6 +49,9 @@ async function _processKey(key: string) {
     console.log("[Sync Debug] Processing key...");
     const buttons = [ui.submitKeyBtn, ui.cancelEnterKeyBtn];
     _toggleButtons(buttons, true);
+    
+    // Clear previous errors
+    if (ui.syncErrorMsg) ui.syncErrorMsg.classList.add('hidden');
     
     const originalBtnText = ui.submitKeyBtn.textContent;
     ui.submitKeyBtn.textContent = t('syncVerifying');
@@ -79,7 +85,6 @@ async function _processKey(key: string) {
                         await clearLocalPersistence();
                         
                         // CRITICAL FIX: Re-store the key explicitly immediately after wiping.
-                        // This prevents any race condition where the key is considered lost during the wipe.
                         console.log("[Sync Debug] Re-asserting key persistence:", key);
                         storeKey(key);
                         
@@ -96,7 +101,6 @@ async function _processKey(key: string) {
                         renderApp();
                         
                         // CRITICAL FIX: Force View Update immediately to "Active"
-                        // We manually set the state to synced to avoid visual glitching
                         state.syncState = 'syncSynced';
                         if (ui.syncStatus) ui.syncStatus.textContent = t('syncSynced');
                         
@@ -119,7 +123,6 @@ async function _processKey(key: string) {
                     cancelText: t('cancelButton'),
                     onCancel: () => {
                         // CANCEL CALLBACK
-                        // Only runs if user explicitly clicks Cancel.
                         console.log("[Sync Debug] Overwrite cancelled by user. Reverting key.");
                         if (originalKey) storeKey(originalKey);
                         else clearKey();
@@ -161,8 +164,8 @@ async function _processKey(key: string) {
 
 const _handleEnableSync = () => {
     try {
-        // Immediate Feedback
         ui.enableSyncBtn.disabled = true;
+        if (ui.syncErrorMsg) ui.syncErrorMsg.classList.add('hidden');
         
         const newKey = generateUUID();
         storeKey(newKey);
@@ -187,7 +190,6 @@ const _handleEnableSync = () => {
 
 const _handleEnterKeyView = () => {
     showView('enterKey');
-    if (ui.syncErrorMsg) ui.syncErrorMsg.classList.add('hidden');
     setTimeout(() => ui.syncKeyInput.focus(), 100);
 };
 
@@ -264,7 +266,6 @@ function _refreshViewState() {
     
     if (hasKey) {
         showView('active');
-        // Se o estado estava em erro ou inicial, mas temos a chave, assumimos synced até prova em contrário
         if (state.syncState === 'syncInitial') {
              setSyncStatus('syncSynced');
         }

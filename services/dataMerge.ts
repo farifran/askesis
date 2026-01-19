@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -67,10 +68,11 @@ function mergeDayRecord(localDay: Record<string, HabitDailyInfo>, mergedDay: Rec
 }
 
 export async function mergeStates(local: AppState, incoming: AppState): Promise<AppState> {
-    // 1. Newest Wins Strategy
+    // 1. Newest Wins Strategy (Hybrid)
     const localTs = local.lastModified || 0;
     const incomingTs = incoming.lastModified || 0;
     
+    // Define a base como a mais recente para preservar configurações globais
     let winner = localTs > incomingTs ? local : incoming;
     let loser = localTs > incomingTs ? incoming : local;
     
@@ -103,7 +105,17 @@ export async function mergeStates(local: AppState, incoming: AppState): Promise<
         }
     }
     
-    merged.lastModified = Date.now();
+    // TIME INTEGRITY FIX: High-Water Mark Algorithm
+    // O novo timestamp deve ser estritamente maior ou igual a qualquer timestamp visto anteriormente.
+    // Isso previne que um relógio local atrasado (Date.now()) gere um estado que pareça "velho" para o servidor.
+    const now = Date.now();
+    merged.lastModified = Math.max(localTs, incomingTs, now);
+    
+    // Se por acaso os timestamps forem iguais (muito rápido), incrementa +1 para garantir mudança
+    if (merged.lastModified === Math.max(localTs, incomingTs)) {
+        merged.lastModified += 1;
+    }
+
     // @ts-ignore
     merged.version = Math.max(local.version || 0, incoming.version || 0);
     

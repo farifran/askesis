@@ -2,7 +2,7 @@
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
- * VERSÃO: V18.8 - Anti-Loop Safeguard
+ * VERSÃO: V18.10 - Auto-Convergence & Final Polish
  */
 
 import { AppState, state, getPersistableState } from '../state';
@@ -230,14 +230,17 @@ async function _performSync() {
         isSyncInProgress = true;
         setSyncStatus('syncing');
 
+        // IMPORTANT: getPersistableState() updates state.lastModified atomically
+        // based on the monotonic clock logic.
         const rawState = getPersistableState();
         rawState.monthlyLogs = state.monthlyLogs;
 
         const jsonString = JSON.stringify(rawState, _jsonReplacer);
         const encryptedData = await encrypt(jsonString, key);
 
+        // CLOCK SKEW FIX: Use rawState.lastModified instead of Date.now().
         const payload = {
-            lastModified: Date.now(),
+            lastModified: rawState.lastModified, 
             state: encryptedData
         };
 
@@ -248,17 +251,20 @@ async function _performSync() {
 
         if (res.status === 409) {
             console.warn("[Cloud] Conflict (409). Server has newer data. Initiating Auto-Merge...");
-            // AUTO-MERGE STRATEGY: 
-            // 1. O servidor rejeitou nosso push porque nosso timestamp é antigo.
-            // 2. Baixamos o estado do servidor.
-            // 3. O algoritmo 'mergeStates' (CRDT-lite) combina os dados.
-            // 4. O resultado é salvo localmente COM a flag suppressSync=true.
-            // 5. O estado final é consistente. O próximo push só ocorrerá na próxima ação do usuário.
-            await fetchStateFromCloud(); 
-            // Se o fetch acima não lançar erro, estamos sincronizados.
-            setSyncStatus('syncSynced');
-            state.syncLastError = null;
             
+            // AUTO-MERGE STRATEGY: 
+            // 1. Pull server data.
+            // 2. Merge with local (Monotonic clock ensures new TS > server TS).
+            // 3. Save local (suppressSync=true to avoid loop).
+            await fetchStateFromCloud(); 
+            
+            // CONVERGENCE STEP:
+            // Agora que temos o estado mesclado e um timestamp superior, devemos enviar 
+            // para o servidor para que ele também fique atualizado.
+            // Agendamos um novo sync normal (debounce) para fechar o ciclo.
+            console.log("[Cloud] 409 Resolved. Scheduling convergence push.");
+            syncStateWithCloud(); 
+
         } else if (res.status === 413) {
             console.error("[Cloud] Payload Too Large (413).");
             throw new Error("Dados muito grandes para a nuvem (Limite 1MB). Tente arquivar dados antigos.");
