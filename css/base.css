@@ -37,6 +37,25 @@ body {
     -webkit-text-size-adjust: 100%;
 }
 
+/* --- VIEW TRANSITIONS (SWEET SPOT IMPROVEMENT) --- */
+/* Configura transições nativas suaves entre estados (ex: mudar de dia) */
+::view-transition-old(root),
+::view-transition-new(root) {
+    animation-duration: 0.25s; /* Rápido e sutil */
+    animation-timing-function: cubic-bezier(0.25, 1, 0.5, 1); /* Curva "Stoic Ease" */
+}
+
+/* Isola o cabeçalho para que ele não participe da transição de "fade/slide" do conteúdo principal.
+   Isso faz com que apenas os dados mudem, enquanto a estrutura permanece sólida. */
+.app-header {
+    view-transition-name: app-header;
+}
+
+/* O corpo principal (lista de hábitos) anima separadamente */
+main {
+    view-transition-name: main-content;
+}
+
 /* CHAOS FIX: GLOBAL INTERACTION LOCK
    Desabilita smooth scrolling e eventos de ponteiro não essenciais quando uma interação física
    (Swipe, Drag, Rotary) está ativa. Isso evita conflitos de thread e garante 60fps. */
@@ -147,5 +166,12 @@ body.is-interaction-active * {
         animation-iteration-count: 1 !important;
         transition-duration: 0.01ms !important;
         scroll-behavior: auto !important;
+        /* Disable view transitions if user prefers reduced motion */
+        view-transition-name: none !important;
+    }
+    ::view-transition-group(*),
+    ::view-transition-old(*),
+    ::view-transition-new(*) {
+        animation-duration: 0s !important;
     }
 }

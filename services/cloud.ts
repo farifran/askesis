@@ -1,7 +1,8 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
- * VERSÃO: V18.5 - Robust Archive & Sync Logic
+ * VERSÃO: V18.6 - Robust Error Handling
  */
 
 import { AppState, state, getPersistableState } from '../state';
@@ -163,7 +164,7 @@ export async function downloadRemoteState(key: string): Promise<AppState | null>
         const res = await apiFetch('/api/sync', { method: 'GET' }, true);
         
         if (res.status === 404) return null;
-        if (res.status === 401) throw new Error("Chave Inválida");
+        if (res.status === 401) throw new Error("Chave Inválida (401)");
         if (!res.ok) throw new Error(`Erro HTTP ${res.status}`);
 
         const data = await res.json();
@@ -243,9 +244,14 @@ async function _performSync() {
 
         if (res.status === 409) {
             console.warn("Conflict (409). Pulling newer version...");
+            // AUTO-MERGE STRATEGY: Pull, Merge, then (implicitly) user can save again later.
             await fetchStateFromCloud(); 
+        } else if (res.status === 413) {
+            throw new Error("Dados muito grandes (413).");
+        } else if (res.status === 401) {
+            throw new Error("Não autorizado (401). Verifique a chave.");
         } else if (!res.ok) {
-            throw new Error(`Server Error: ${res.status}`);
+            throw new Error(`Erro Servidor: ${res.status}`);
         } else {
             setSyncStatus('syncSynced');
             state.syncLastError = null;
@@ -254,9 +260,9 @@ async function _performSync() {
     } catch (e: any) {
         console.error("Sync Push Failed:", e);
         if (e instanceof TypeError && e.message.includes('BigInt')) {
-            state.syncLastError = "Erro de Serialização (BigInt)";
+            state.syncLastError = "Erro de Serialização";
         } else {
-            state.syncLastError = e.message;
+            state.syncLastError = e.message || "Erro de Conexão";
         }
         setSyncStatus('syncError');
     } finally {

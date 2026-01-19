@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -69,8 +70,13 @@ async function _processKey(key: string) {
                 async () => {
                     try {
                         console.log("[Sync] Hard Reset initiated...");
+                        
                         // 1. Limpa tudo localmente
                         await clearLocalPersistence();
+                        
+                        // FIX: Re-store the key explicitly after clearing persistence
+                        // to ensure it survives the wipe (even though clearLocalPersistence shouldn't touch it).
+                        storeKey(key);
                         
                         // 2. Carrega o estado da nuvem diretamente na memória
                         await loadState(cloudState);
@@ -81,11 +87,14 @@ async function _processKey(key: string) {
                         // 4. Renderiza
                         renderApp();
                         
-                        showView('active');
+                        _refreshViewState(); // Force UI update
                         setSyncStatus('syncSynced');
                     } catch (e) {
                         console.error("Overwrite failed", e);
                         alert("Erro crítico ao restaurar dados. Tente novamente.");
+                        // Restore old key if critical fail
+                        if (originalKey) storeKey(originalKey);
+                        _refreshViewState();
                     }
                 },
                 {
@@ -93,6 +102,7 @@ async function _processKey(key: string) {
                     confirmText: t('syncConfirmOverwrite'),
                     cancelText: t('cancelButton'),
                     onCancel: () => {
+                        // User cancelled the overwrite action explicitly
                         if (originalKey) storeKey(originalKey);
                         else clearKey();
                         _refreshViewState();
@@ -102,22 +112,25 @@ async function _processKey(key: string) {
         } else {
             // 404 (Novo Usuário) -> Sucesso imediato
             console.log("[Sync] New user/Empty cloud. Uploading local state.");
-            showView('active');
+            _refreshViewState();
             setSyncStatus('syncSynced');
             syncStateWithCloud(getPersistableState());
         }
     } catch (error: any) {
         console.error("[Sync] Error processing key:", error);
         
+        // Restore state on error
         if (originalKey) storeKey(originalKey);
         else clearKey();
 
         if (ui.syncErrorMsg) {
             let msg = error.message || "Erro desconhecido";
+            if (msg.includes('401')) msg = "Chave Inválida";
             ui.syncErrorMsg.textContent = msg;
             ui.syncErrorMsg.classList.remove('hidden');
         }
         setSyncStatus('syncError');
+        _refreshViewState();
 
     } finally {
         ui.submitKeyBtn.textContent = originalBtnText;
@@ -228,7 +241,9 @@ const _handleDisableSync = () => {
 function _refreshViewState() {
     if (hasLocalSyncKey()) {
         showView('active');
-        setSyncStatus('syncSynced');
+        if (state.syncState === 'syncInitial') {
+             setSyncStatus('syncSynced');
+        }
     } else {
         showView('inactive');
         setSyncStatus('syncInitial');
