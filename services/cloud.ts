@@ -58,7 +58,6 @@ const TASKS: Record<string, (payload: any) => Promise<any> | any> = {
         };
     },
     'archive': async (payload: any) => {
-        // Payload: Record<year, { additions: DailyData, base: string|Uint8Array|Object }>
         const result: Record<string, Uint8Array> = {};
         const years = Object.keys(payload);
 
@@ -66,17 +65,15 @@ const TASKS: Record<string, (payload: any) => Promise<any> | any> = {
             const { additions, base } = payload[year];
             let baseObj = {};
 
-            // 1. Hydrate Base (Decompress if needed)
             if (base) {
                 if (typeof base === 'object' && !(base instanceof Uint8Array)) {
-                    baseObj = base; // Already hydrated (from cache)
+                    baseObj = base; 
                 } else {
                     try {
                         let jsonStr = '';
                         if (base instanceof Uint8Array) {
                             jsonStr = await decompressFromBuffer(base);
                         } else if (typeof base === 'string') {
-                            // Legacy support
                             jsonStr = base.startsWith('GZIP:') 
                                 ? await decompressString(base.substring(5))
                                 : base;
@@ -89,35 +86,25 @@ const TASKS: Record<string, (payload: any) => Promise<any> | any> = {
                 }
             }
 
-            // 2. Merge Additions
             const merged = { ...baseObj, ...additions };
 
-            // 3. Compress Result (GZIP Buffer)
-            // This ensures state.archives remains lightweight
             try {
                 const compressed = await compressToBuffer(JSON.stringify(merged));
                 result[year] = compressed;
             } catch (e) {
                 console.error(`[Cloud] Compression failed for ${year}`, e);
-                // In worst case, we lose the archive optimization but save data
-                // Note: The app expects Uint8Array or String in archives.
-                // We'll throw to prevent saving corrupted state.
                 throw e;
             }
         }
         return result;
     },
     'prune-habit': (payload: any) => {
-        // Simplificado: Apenas retorna os arquivos como estão,
-        // pois a limpeza real de chaves órfãs é complexa sem descompressão total.
-        // Em V18, aceitamos manter dados órfãos em archives (cold storage) para evitar overhead de CPU.
         return payload.archives;
     }
 };
 
 export function runWorkerTask<T>(type: string, payload: any): Promise<T> {
     return new Promise((resolve, reject) => {
-        // Scheduler API or SetTimeout
         const scheduler = (window as any).scheduler;
         const runner = async () => {
             try {
@@ -184,6 +171,11 @@ export async function fetchStateFromCloud(): Promise<AppState | null> {
     const key = getSyncKey();
     if (!key) return null;
 
+    // OFFLINE GUARD: Evita erro visual se desconectado
+    if (!navigator.onLine) {
+        return null;
+    }
+
     try {
         setSyncStatus('syncing');
         
@@ -196,7 +188,6 @@ export async function fetchStateFromCloud(): Promise<AppState | null> {
 
         // SMART MERGE
         const localState = getPersistableState();
-        // Fix: Ensure Maps exist for merge
         if (!localState.monthlyLogs && state.monthlyLogs) {
             localState.monthlyLogs = state.monthlyLogs;
         }
@@ -227,20 +218,22 @@ async function _performSync() {
     const key = getSyncKey();
     if (!key) return;
 
+    // OFFLINE CHECK
+    if (!navigator.onLine) {
+        // Silently fail or queue? For now, we rely on the online listener to re-trigger.
+        return;
+    }
+
     try {
         isSyncInProgress = true;
         setSyncStatus('syncing');
 
-        // IMPORTANT: getPersistableState() updates state.lastModified atomically
-        // based on the monotonic clock logic.
         const rawState = getPersistableState();
         rawState.monthlyLogs = state.monthlyLogs;
 
         const jsonString = JSON.stringify(rawState, _jsonReplacer);
         const encryptedData = await encrypt(jsonString, key);
 
-        // CLOCK SKEW FIX: Use rawState.lastModified instead of Date.now().
-        // This ensures the server respects our monotonic clock.
         const payload = {
             lastModified: rawState.lastModified, 
             state: encryptedData
@@ -255,11 +248,14 @@ async function _performSync() {
             console.warn("[Cloud] Conflict (409). Server has newer data. Initiating Auto-Merge...");
             
             // AUTO-MERGE STRATEGY: 
-            // 1. Pull server data.
-            // 2. Merge with local (Monotonic clock ensures new TS > server TS).
-            // 3. Save local.
-            // 4. (Next debounce will push the merged result).
+            // 1. Pull server data & Merge.
             await fetchStateFromCloud(); 
+            
+            // 2. CONVERGENCE PUSH:
+            // Agora que temos o estado fundido (com timestamp > server),
+            // empurramos de volta para garantir que o servidor fique atualizado.
+            // Usamos debounce para não spammar se o usuário continuar editando.
+            syncStateWithCloud();
 
         } else if (res.status === 413) {
             console.error("[Cloud] Payload Too Large (413).");
@@ -289,8 +285,6 @@ async function _performSync() {
 }
 
 export function syncStateWithCloud(currentState?: AppState, immediate = false) {
-    // SECURITY GUARD: Modo Local Puro
-    // Se não tem chave, não faz nada. Nem tenta conectar.
     if (!hasLocalSyncKey()) return;
     
     if (syncTimeout) clearTimeout(syncTimeout);
@@ -301,10 +295,4 @@ export function syncStateWithCloud(currentState?: AppState, immediate = false) {
     } else {
         syncTimeout = setTimeout(() => _performSync(), DEBOUNCE_DELAY);
     }
-}
-
-// Initial Sync Check (Silent)
-if (hasLocalSyncKey()) {
-    // Delay inicial para não competir com a renderização crítica
-    setTimeout(fetchStateFromCloud, 1500);
 }
