@@ -60,11 +60,8 @@ async function _processKey(key: string) {
     const originalKey = getSyncKey();
     
     try {
-        // HTTPS Check
-        if (!window.isSecureContext && window.location.hostname !== 'localhost') {
-            throw new Error("HTTPS necessário para criptografia segura.");
-        }
-
+        // HTTPS Check is now handled gracefully inside apiFetch via fallback
+        
         // Armazena temporariamente para o teste
         storeKey(key);
         
@@ -143,11 +140,16 @@ const _handleEnableSync = () => {
         const newKey = generateUUID();
         storeKey(newKey);
         
+        // UX FIX: Atualiza status imediatamente para "Ativo".
+        // Isso previne que a UI mostre "Desativado" se o sync inicial (network) falhar ou demorar.
+        setSyncStatus('syncSynced');
+        
         ui.syncKeyText.textContent = newKey;
         ui.syncDisplayKeyView.dataset.context = 'setup';
         showView('displayKey');
         
-        // Immediate push for new key
+        // Immediate push for new key (Best Effort)
+        // Se estiver offline, o status visual já está 'Synced' (Localmente Habilitado), o que é correto.
         syncStateWithCloud(getPersistableState(), true);
         
         setTimeout(() => ui.enableSyncBtn.disabled = false, 500);
