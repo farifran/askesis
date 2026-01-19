@@ -122,52 +122,33 @@ async function decryptToBuffer(data, password) {
     return crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext);
 }
 
-// --- WEIGHTED MERGE LOGIC ---
-// Merge 'loser' (older) data INTO 'winner' (newer) data, preserving rich content.
 function mergeDailyRecord(winnerDay, loserDay) {
     for (const habitId in loserDay) {
         if (!winnerDay[habitId]) {
-            // Preservation Rule: If habit data exists in loser but not winner, keep it.
             winnerDay[habitId] = loserDay[habitId];
             continue;
         }
-
         const winHabit = winnerDay[habitId];
         const loseHabit = loserDay[habitId];
-
-        // 1. Instances (Notes & Goals) - High Weight
         const winInst = winHabit.instances || {};
         const loseInst = loseHabit.instances || {};
-
         for (const time in loseInst) {
             if (!winInst[time]) {
-                // If loser has data and winner is empty, keep loser's data.
                 winInst[time] = loseInst[time];
             } else {
-                // CONFLICT: Both have data. Apply Weights.
                 const wData = winInst[time];
                 const lData = loseInst[time];
-
-                // Rule A: Note Preservation (Content > Empty)
                 if (!wData.note && lData.note) {
                     wData.note = lData.note;
                 } else if (wData.note && lData.note) {
-                    // If both have notes, prefer longer (richer) note as tie-breaker
-                    if (lData.note.length > wData.note.length) {
-                        wData.note = lData.note;
-                    }
+                    if (lData.note.length > wData.note.length) wData.note = lData.note;
                 }
-
-                // Rule B: Goal Override Preservation
                 if (wData.goalOverride === undefined && lData.goalOverride !== undefined) {
                     wData.goalOverride = lData.goalOverride;
                 }
             }
         }
-        winHabit.instances = winInst; // Reassign to ensure structure
-
-        // 2. Daily Schedule
-        // Prefer newer, but if newer is undefined/null, take older.
+        winHabit.instances = winInst; 
         if (!winHabit.dailySchedule && loseHabit.dailySchedule) {
             winHabit.dailySchedule = loseHabit.dailySchedule;
         }
@@ -175,46 +156,23 @@ function mergeDailyRecord(winnerDay, loserDay) {
 }
 
 async function mergeStates(local, incoming) {
-    // 1. Determine Newest vs Oldest
     const localTs = local.lastModified || 0;
     const incomingTs = incoming.lastModified || 0;
-    
-    // Default: Newest Wins
     let winner = localTs > incomingTs ? local : incoming;
     let loser = localTs > incomingTs ? incoming : local;
-    
-    // Deep Clone Winner to avoid mutations
     const merged = structuredClone(winner);
-
-    // 2. UNION HABITS (Merge Arrays by ID)
-    // Even if one state is older, we don't want to delete habits created on the other device.
     const mergedHabitIds = new Set(merged.habits.map(h => h.id));
     loser.habits.forEach(h => {
-        if (!mergedHabitIds.has(h.id)) {
-            merged.habits.push(h);
-        }
+        if (!mergedHabitIds.has(h.id)) merged.habits.push(h);
     });
-
-    // 3. WEIGHTED MERGE for Daily Data
-    // We iterate over the 'loser' (older data) and try to inject its content 
-    // into the 'winner' if the winner is empty/missing that specific data point.
     for (const date in loser.dailyData) {
-        if (!merged.dailyData[date]) {
-            merged.dailyData[date] = loser.dailyData[date];
-        } else {
-            mergeDailyRecord(merged.dailyData[date], loser.dailyData[date]);
-        }
+        if (!merged.dailyData[date]) merged.dailyData[date] = loser.dailyData[date];
+        else mergeDailyRecord(merged.dailyData[date], loser.dailyData[date]);
     }
-
-    // 4. Merge Metadata Lists (Union)
     const mergeSet = (a, b) => Array.from(new Set([...(a||[]), ...(b||[])]));
     merged.notificationsShown = mergeSet(merged.notificationsShown, loser.notificationsShown);
     merged.pending21DayHabitIds = mergeSet(merged.pending21DayHabitIds, loser.pending21DayHabitIds);
-    
-    // 5. Update Timestamp
-    // The result is a NEW state (merged), so it gets a fresh timestamp.
     merged.lastModified = Date.now();
-    
     return merged;
 }
 
@@ -224,9 +182,7 @@ self.onmessage = async (e) => {
     try {
         if (type === 'encrypt') {
             const jsonStr = JSON.stringify(payload, (k, v) => {
-                if (v instanceof Uint8Array) {
-                    return 'B64:' + arrayBufferToBase64(new Uint8Array(v));
-                }
+                if (v instanceof Uint8Array) return 'B64:' + arrayBufferToBase64(new Uint8Array(v));
                 return v;
             });
             const compressed = await compressToBuffer(jsonStr);
@@ -238,9 +194,7 @@ self.onmessage = async (e) => {
             const decryptedBuffer = await decryptToBuffer(inputBuffer, key);
             const decompressedJSON = await decompressFromBuffer(decryptedBuffer);
             result = JSON.parse(decompressedJSON, (k, v) => {
-                if (typeof v === 'string' && v.startsWith('B64:')) {
-                    return new Uint8Array(base64ToArrayBuffer(v.substring(4)));
-                }
+                if (typeof v === 'string' && v.startsWith('B64:')) return new Uint8Array(base64ToArrayBuffer(v.substring(4)));
                 return v;
             });
         }
@@ -344,9 +298,6 @@ export function setSyncStatus(statusKey: 'syncSaving' | 'syncSynced' | 'syncErro
 }
 
 function handleAuthError() {
-    // ROBUSTNESS FIX: Do NOT clear the key automatically.
-    // Allow the user to retry or fix the key manually.
-    // Auto-clearing causes "Sync Loss" on temporary network/server glitches.
     state.syncLastError = "Erro de Autenticação. Verifique sua chave.";
     setSyncStatus('syncError');
 }
@@ -361,9 +312,6 @@ function formatNetworkError(e: any): string {
 
 // --- CORE FUNCTIONS (SMART MERGE) ---
 
-/**
- * Baixa dados da nuvem, mescla com os dados locais e salva.
- */
 export async function fetchStateFromCloud(): Promise<AppState | null> {
     if (!hasLocalSyncKey()) return null;
     const key = getSyncKey();
@@ -386,7 +334,6 @@ export async function fetchStateFromCloud(): Promise<AppState | null> {
         console.log("[Cloud] Decriptando...");
         const decryptedRaw = await runWorkerTask<any>('decrypt', data.state, key);
         
-        // 1. Decodifica Logs da Nuvem (Bitmask)
         let cloudLogs = new Map<string, bigint>();
         if (decryptedRaw.monthlyLogsSerialized) {
             cloudLogs = _deserializeLogsInternal(decryptedRaw.monthlyLogsSerialized);
@@ -395,59 +342,40 @@ export async function fetchStateFromCloud(): Promise<AppState | null> {
              try { Object.entries(decryptedRaw.monthlyLogs).forEach(([k, v]) => cloudLogs.set(k, BigInt(v as any))); } catch {}
         }
 
-        // 2. Obtém Estado Local Atual (Snapshot)
         const localState = getPersistableState();
 
-        // 3. FUSÃO ESTRUTURAL (Via Worker - JSON)
-        // Isso combina hábitos, configurações e notas usando a lógica de pesos e timestamp.
         console.log("[Cloud] Mesclando estruturas (Newest Wins + Weighted Content)...");
         const mergedState = await runWorkerTask<AppState>('merge', { 
             local: localState, 
             incoming: decryptedRaw 
         });
 
-        // 4. FUSÃO DE LOGS (Bitwise OR na Main Thread)
-        // Combina o histórico de checks. Aditivo: se existe em um, existe no final.
         console.log("[Cloud] Mesclando logs (Bitmask)...");
         const mergedLogs = new Map<string, bigint>(state.monthlyLogs || new Map());
         
         cloudLogs.forEach((cloudVal, key) => {
             const localVal = mergedLogs.get(key) || 0n;
-            // Operador OR (|) combina os bits dos dois mundos.
             mergedLogs.set(key, localVal | cloudVal);
         });
 
-        // CLOCK SKEW FIX:
-        // Captura o timestamp do servidor para garantir que o nosso novo estado seja "o futuro".
         const serverTs = data.lastModified || 0;
-        // Se o relógio local estiver atrasado em relação ao servidor, forçamos o relógio para frente.
         const safeNextTs = Math.max(Date.now(), serverTs + 1);
 
-        // 5. RECONSTRUÇÃO DO ESTADO FINAL
         const finalState: AppState = {
             ...mergedState,
             version: mergedState.version,
-            // IMPORTANTE: Atualiza o lastModified para garantir que este estado mesclado
-            // seja considerado o mais recente em futuras sincronizações.
             lastModified: safeNextTs, 
             monthlyLogs: mergedLogs
         };
 
-        // 6. PERSISTÊNCIA ATÔMICA
         await persistStateLocally(finalState);
-        
-        // 7. ATUALIZAÇÃO DA MEMÓRIA
         Object.assign(state, finalState);
-        
-        // 8. RENDERIZAÇÃO
         document.dispatchEvent(new CustomEvent('render-app'));
 
         setSyncStatus('syncSynced');
         console.log("[Cloud] ✅ Sincronização e Fusão Completas!");
 
         // CONVERGENCE FIX:
-        // Se mesclamos mudanças locais que ainda não estavam na nuvem, precisamos empurrar de volta.
-        // O servidor lidará com a deduplicação se for idêntico.
         setTimeout(() => syncStateWithCloud(finalState), 100);
 
         return finalState;
@@ -487,7 +415,6 @@ async function _performSync(currentState: AppState) {
         const payload = {
             updatedAt: new Date().toISOString(),
             deviceId: (currentState as any).deviceId || 'unknown',
-            // Envia o lastModified do objeto estado, garantindo coerência com a lógica de newest wins
             lastModified: currentState.lastModified, 
             state: encryptedState
         };
@@ -535,13 +462,10 @@ export async function syncStateWithCloud(currentState: AppState, immediate = fal
     // IMMEDIATE FLUSH: Bypass debounce logic for urgent saves (e.g. app closing)
     if (immediate) {
         if (syncTimeout) clearTimeout(syncTimeout);
-        // If a sync is currently in progress, we queue this state as pending.
-        // It will be picked up in the 'finally' block of _performSync.
         if (isSyncInProgress) {
              pendingSyncState = currentState;
              return;
         }
-        // Force execution. Note: _performSync uses 'keepalive: true' fetch, so it survives page unload.
         _performSync(currentState);
         return;
     }

@@ -146,7 +146,9 @@ async function init(loader: HTMLElement | null) {
         delete (window as any).bootWatchdog;
     }
 
-    initAuth();
+    // AUTH FIX: Await key restoration (LocalStorage + IndexedDB) BEFORE loading state
+    await initAuth();
+    
     await Promise.all([initI18n(), updateUIText()]);
 
     await loadInitialState();
