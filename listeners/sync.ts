@@ -3,67 +3,38 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 
-/**
- * @file listeners/sync.ts
- * @description Controlador de Interface para Sincronização e Autenticação (Sync UI Controller).
- * 
- * [MAIN THREAD CONTEXT]:
- * Este módulo gerencia a Máquina de Estados da UI de Sincronização (Views: Inactive, Entry, Active).
- * 
- * ARQUITETURA:
- * - State Machine Pattern: A UI alterna entre estados discretos (`showView`) em vez de manipular
- *   visibilidade de elementos individuais, prevenindo estados inconsistentes.
- * - Transactional Key Swap: Ao inserir uma chave, o sistema entra em um estado "tentativo".
- *   Se houver erro ou cancelamento, a chave anterior é restaurada (Rollback).
- * - Optimistic UI Locking: Botões são desabilitados (`_toggleButtons`) durante operações de rede
- *   para evitar submissões duplas ou condições de corrida.
- * 
- * DEPENDÊNCIAS CRÍTICAS:
- * - `services/cloud.ts`: Orquestração de dados e criptografia.
- * - `services/api.ts`: Gerenciamento seguro de chaves no LocalStorage.
- */
-
 import { ui } from "../render/ui";
 import { t } from "../i18n";
-import { downloadRemoteState, syncStateWithCloud, setSyncStatus, prewarmWorker } from "../services/cloud";
+import { downloadRemoteState, syncStateWithCloud, setSyncStatus } from "../services/cloud";
 import { loadState, saveState, clearLocalPersistence } from "../services/persistence";
 import { renderApp } from "../render";
 import { showConfirmationModal } from "../render/modals";
-import { storeKey, clearKey, hasLocalSyncKey, getSyncKey, isValidKeyFormat, initAuth } from "../services/api";
+import { storeKey, clearKey, hasLocalSyncKey, getSyncKey, isValidKeyFormat } from "../services/api";
 import { generateUUID } from "../utils";
-import { getPersistableState } from "../state";
+import { getPersistableState, state } from "../state";
 
 // --- UI HELPERS ---
 
 function showView(view: 'inactive' | 'enterKey' | 'displayKey' | 'active') {
-    // PERF: Direct property access instead of object allocation/loop for zero-overhead switching.
     ui.syncInactiveView.style.display = 'none';
     ui.syncEnterKeyView.style.display = 'none';
     ui.syncDisplayKeyView.style.display = 'none';
     ui.syncActiveView.style.display = 'none';
 
     switch (view) {
-        case 'inactive': 
-            ui.syncInactiveView.style.display = 'flex'; 
-            break;
-        case 'enterKey': 
-            ui.syncEnterKeyView.style.display = 'flex'; 
-            break;
+        case 'inactive': ui.syncInactiveView.style.display = 'flex'; break;
+        case 'enterKey': ui.syncEnterKeyView.style.display = 'flex'; break;
         case 'displayKey': 
             ui.syncDisplayKeyView.style.display = 'flex'; 
             const context = ui.syncDisplayKeyView.dataset.context;
             ui.keySavedBtn.textContent = (context === 'view') ? t('closeButton') : t('syncKeySaved');
             break;
-        case 'active': 
-            ui.syncActiveView.style.display = 'flex'; 
-            break;
+        case 'active': ui.syncActiveView.style.display = 'flex'; break;
     }
 }
 
 function _toggleButtons(buttons: HTMLButtonElement[], disabled: boolean) {
-    // PERF: Simple iteration
-    const len = buttons.length;
-    for (let i = 0; i < len; i++) {
+    for (let i = 0; i < buttons.length; i++) {
         buttons[i].disabled = disabled;
     }
 }
@@ -71,6 +42,7 @@ function _toggleButtons(buttons: HTMLButtonElement[], disabled: boolean) {
 // --- LOGIC ---
 
 async function _processKey(key: string) {
+    console.log("[Sync] Processing key...");
     const buttons = [ui.submitKeyBtn, ui.cancelEnterKeyBtn];
     _toggleButtons(buttons, true);
     
@@ -80,102 +52,118 @@ async function _processKey(key: string) {
     const originalKey = getSyncKey();
     
     try {
-        // 1. Tenta a nova chave
         storeKey(key);
         
-        // 2. Verifica dados na nuvem (SEM MESCLAR AINDA)
-        // Se falhar (erro de rede/crypto), vai para o catch
+        // Testa a chave baixando dados
+        // Nota: downloadRemoteState agora trata a hidratação dos Maps internamente
         const cloudState = await downloadRemoteState(key);
 
         if (cloudState) {
-            // 3. Se houver dados na nuvem, peça confirmação para SOBRESCREVER
+            // Dados encontrados -> Pergunta se sobrescreve
             showConfirmationModal(
                 t('confirmSyncOverwrite'),
-                async () => { // onConfirm: Substituição Total (Hard Reset)
-                    await clearLocalPersistence();
-                    await loadState(cloudState);
-                    await saveState();
-                    renderApp();
-                    showView('active');
-                    setSyncStatus('syncSynced');
+                async () => {
+                    try {
+                        console.log("[Sync] Hard Reset initiated...");
+                        // 1. Limpa tudo localmente
+                        await clearLocalPersistence();
+                        
+                        // 2. Carrega o estado da nuvem diretamente na memória
+                        // loadState agora lida com a atribuição correta para 'state'
+                        await loadState(cloudState);
+                        
+                        // 3. Salva o novo estado localmente
+                        await saveState();
+                        
+                        // 4. Renderiza
+                        renderApp();
+                        
+                        showView('active');
+                        setSyncStatus('syncSynced');
+                    } catch (e) {
+                        console.error("Overwrite failed", e);
+                        alert("Erro crítico ao restaurar dados. Tente novamente.");
+                    }
                 },
                 {
                     title: t('syncDataFoundTitle'),
                     confirmText: t('syncConfirmOverwrite'),
                     cancelText: t('cancelButton'),
-                    onCancel: () => { // onCancel: Rollback
+                    onCancel: () => {
+                        // Se cancelar, volta ao estado anterior
                         if (originalKey) storeKey(originalKey);
                         else clearKey();
-                        showView(originalKey ? 'active' : 'inactive');
+                        _refreshViewState();
                     }
                 }
             );
         } else {
-            // 4. Sem dados na nuvem, a nova chave é aceita e iniciamos a sincronização
+            // 404 (Novo Usuário) -> Sucesso imediato
+            console.log("[Sync] New user/Empty cloud. Uploading local state.");
             showView('active');
             setSyncStatus('syncSynced');
             syncStateWithCloud(getPersistableState());
         }
-    } catch (error) {
-        // 5. Se houver erro de rede/criptografia, faz rollback para a chave original.
+    } catch (error: any) {
+        console.error("[Sync] Error processing key:", error);
+        
+        // Reverte chave
         if (originalKey) storeKey(originalKey);
         else clearKey();
 
-        console.error("Failed to sync with provided key:", error);
-        
-        // Exibe erro na UI
+        // Feedback Visual
         if (ui.syncErrorMsg) {
-            ui.syncErrorMsg.textContent = (error as any).message || "Erro desconhecido";
+            let msg = error.message || "Erro desconhecido";
+            // Mensagem amigável para erro de HTTPS
+            if (msg.includes("HTTPS") || msg.includes("Secure Context")) {
+                msg = "Erro: Este recurso requer conexão segura (HTTPS).";
+            }
+            ui.syncErrorMsg.textContent = msg;
             ui.syncErrorMsg.classList.remove('hidden');
         }
         setSyncStatus('syncError');
+
     } finally {
         ui.submitKeyBtn.textContent = originalBtnText;
         _toggleButtons(buttons, false);
     }
 }
 
-// --- STATIC HANDLERS ---
+// --- HANDLERS ---
 
-const _handleEnableSync = async () => {
-    const buttons = [ui.enableSyncBtn, ui.enterKeyViewBtn];
-    _toggleButtons(buttons, true);
-
+const _handleEnableSync = () => {
     try {
         const newKey = generateUUID();
         storeKey(newKey);
         ui.syncKeyText.textContent = newKey;
         ui.syncDisplayKeyView.dataset.context = 'setup';
         showView('displayKey');
-        // Para novas chaves, sabemos que está vazia, então apenas empurramos o estado local
         syncStateWithCloud(getPersistableState());
-    } catch (e) {
-        console.error("Failed initial sync on new key generation", e);
-        clearKey();
-        showView('inactive');
-        setSyncStatus('syncError');
-    } finally {
-        _toggleButtons(buttons, false);
+    } catch (e: any) {
+        console.error(e);
+        if (ui.syncErrorMsg) {
+            ui.syncErrorMsg.textContent = e.message || "Erro ao gerar chave";
+            ui.syncErrorMsg.classList.remove('hidden');
+        }
     }
 };
 
 const _handleEnterKeyView = () => {
     showView('enterKey');
-    // Limpa erros anteriores
     if (ui.syncErrorMsg) ui.syncErrorMsg.classList.add('hidden');
-    prewarmWorker(); 
+    setTimeout(() => ui.syncKeyInput.focus(), 100);
 };
 
 const _handleCancelEnterKey = () => {
     ui.syncKeyInput.value = '';
-    showView('inactive');
+    if (ui.syncErrorMsg) ui.syncErrorMsg.classList.add('hidden');
+    _refreshViewState();
 };
 
 const _handleSubmitKey = () => {
     const key = ui.syncKeyInput.value.trim();
     if (!key) return;
 
-    // Limpa erros anteriores ao tentar novamente
     if (ui.syncErrorMsg) ui.syncErrorMsg.classList.add('hidden');
 
     if (!isValidKeyFormat(key)) {
@@ -198,13 +186,13 @@ const _handleKeySaved = () => showView('active');
 const _handleCopyKey = () => {
     const key = ui.syncKeyText.textContent;
     if(key) {
-        navigator.clipboard.writeText(key).then(() => {
-            const originalText = ui.copyKeyBtn.innerHTML;
-            ui.copyKeyBtn.innerHTML = '✓';
-            setTimeout(() => { ui.copyKeyBtn.innerHTML = originalText; }, 1500);
-        }).catch(err => {
-            console.error("Failed to copy key to clipboard:", err);
-        });
+        navigator.clipboard.writeText(key)
+            .then(() => {
+                const originalText = ui.copyKeyBtn.innerHTML;
+                ui.copyKeyBtn.innerHTML = '✓';
+                setTimeout(() => { ui.copyKeyBtn.innerHTML = originalText; }, 1500);
+            })
+            .catch(() => alert("Copie manualmente: " + key));
     }
 };
 
@@ -233,37 +221,27 @@ const _handleDisableSync = () => {
     );
 };
 
-// Async Bootstrapper: Updates view state based on auth, but DOES NOT block listener attachment
-async function _bootstrapSyncState() {
-    try {
-        await initAuth();
-        const hasKey = hasLocalSyncKey();
-
-        if (hasKey) {
-            showView('active');
-            setSyncStatus('syncSynced');
-        } else {
-            showView('inactive');
-            setSyncStatus('syncInitial');
-        }
-    } catch (e) {
-        console.error("Sync bootstrap failed", e);
+function _refreshViewState() {
+    if (hasLocalSyncKey()) {
+        showView('active');
+        setSyncStatus('syncSynced');
+    } else {
         showView('inactive');
+        setSyncStatus('syncInitial');
     }
 }
 
 export function initSync() {
-    // 1. Attach Listeners IMMEDIATELY (Synchronous)
-    // This ensures buttons are alive even if auth check takes time.
-    ui.enableSyncBtn.addEventListener('click', _handleEnableSync);
-    ui.enterKeyViewBtn.addEventListener('click', _handleEnterKeyView);
-    ui.cancelEnterKeyBtn.addEventListener('click', _handleCancelEnterKey);
-    ui.submitKeyBtn.addEventListener('click', _handleSubmitKey);
-    ui.keySavedBtn.addEventListener('click', _handleKeySaved);
-    ui.copyKeyBtn.addEventListener('click', _handleCopyKey);
-    ui.viewKeyBtn.addEventListener('click', _handleViewKey);
-    ui.disableSyncBtn.addEventListener('click', _handleDisableSync);
+    console.log("[Sync] Initializing listeners...");
+    
+    if (ui.enableSyncBtn) ui.enableSyncBtn.addEventListener('click', _handleEnableSync);
+    if (ui.enterKeyViewBtn) ui.enterKeyViewBtn.addEventListener('click', _handleEnterKeyView);
+    if (ui.cancelEnterKeyBtn) ui.cancelEnterKeyBtn.addEventListener('click', _handleCancelEnterKey);
+    if (ui.submitKeyBtn) ui.submitKeyBtn.addEventListener('click', _handleSubmitKey);
+    if (ui.keySavedBtn) ui.keySavedBtn.addEventListener('click', _handleKeySaved);
+    if (ui.copyKeyBtn) ui.copyKeyBtn.addEventListener('click', _handleCopyKey);
+    if (ui.viewKeyBtn) ui.viewKeyBtn.addEventListener('click', _handleViewKey);
+    if (ui.disableSyncBtn) ui.disableSyncBtn.addEventListener('click', _handleDisableSync);
 
-    // 2. Determine Initial View State (Async)
-    _bootstrapSyncState();
+    _refreshViewState();
 }

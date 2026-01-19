@@ -1,14 +1,12 @@
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
- * VERSÃO: Direct Storage Access (Corrige perda de senha ao atualizar)
+ * VERSÃO: Direct Storage + Secure Context Guard
  */
-
-import { HEX_LUT } from '../utils';
 
 const SYNC_KEY_STORAGE_KEY = 'habitTrackerSyncKey';
 
-// --- GERENCIAMENTO DE CHAVES (Direto no Disco) ---
+// --- GERENCIAMENTO DE CHAVES (Síncrono e Direto) ---
 
 export const hasLocalSyncKey = (): boolean => {
     return !!localStorage.getItem(SYNC_KEY_STORAGE_KEY);
@@ -27,14 +25,12 @@ export const clearKey = () => {
     localStorage.removeItem(SYNC_KEY_STORAGE_KEY);
 };
 
-// --- VALIDAÇÃO DE FORMATO ---
+// --- VALIDAÇÃO ---
 export const isValidKeyFormat = (key: string): boolean => {
-    // Validates standard UUID format (8-4-4-4-12 hex digits)
     return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(key);
 };
 
-// --- CRIPTOGRAFIA DO HASH (Para Autenticação no Servidor) ---
-// O Backend exige o cabeçalho 'X-Sync-Key-Hash'
+// --- AUTH HASH ---
 
 let cachedHash: string | null = null;
 let lastKeyForHash: string | null = null;
@@ -43,24 +39,35 @@ async function getSyncKeyHash(): Promise<string | null> {
     const key = getSyncKey();
     if (!key) return null;
 
-    // Se a chave não mudou, retorna o hash cacheado (Performance)
     if (cachedHash && lastKeyForHash === key) return cachedHash;
+
+    // CRITICAL FIX: Verifica se crypto.subtle existe. 
+    // Em HTTP (inseguro), isso é undefined e causa crash.
+    if (!window.crypto || !window.crypto.subtle) {
+        const msg = "Ambiente Inseguro: HTTPS necessário para sincronização.";
+        console.error(msg);
+        throw new Error(msg);
+    }
 
     const encoder = new TextEncoder();
     const data = encoder.encode(key);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
     
-    // Converte ArrayBuffer para Hex String
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-    
-    cachedHash = hashHex;
-    lastKeyForHash = key;
-    
-    return hashHex;
+    try {
+        const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        
+        cachedHash = hashHex;
+        lastKeyForHash = key;
+        
+        return hashHex;
+    } catch (e) {
+        console.error("Crypto Digest Error:", e);
+        throw new Error("Erro de Criptografia no Navegador");
+    }
 }
 
-// --- API FETCH WRAPPER ---
+// --- API CLIENT ---
 
 export async function apiFetch(endpoint: string, options: RequestInit = {}, includeSyncKey = false): Promise<Response> {
     const headers = new Headers(options.headers || {});
@@ -74,21 +81,19 @@ export async function apiFetch(endpoint: string, options: RequestInit = {}, incl
         if (hash) {
             headers.set('X-Sync-Key-Hash', hash);
         } else {
-            console.warn("Tentativa de sync sem chave configurada.");
-            throw new Error("No Sync Key");
+            // Se não conseguimos gerar o hash (ex: erro de HTTPS), paramos aqui.
+            throw new Error("Falha na autenticação (HTTPS necessário?)");
         }
     }
 
-    // Configuração robusta de Fetch
     const config = {
         ...options,
         headers,
-        keepalive: true // Importante para salvar dados ao fechar o app
+        keepalive: true
     };
 
-    const res = await fetch(endpoint, config);
-    return res;
+    return fetch(endpoint, config);
 }
 
-// Função de compatibilidade
-export const initAuth = async () => { /* No-op: LocalStorage is sync */ };
+// Compatibilidade
+export const initAuth = async () => { };

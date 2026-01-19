@@ -18,11 +18,10 @@ try {
     // Non-blocking failure for optional SDK
 }
 
-// CONSTANTS (Build-time injected)
-const CACHE_NAME = 'habit-tracker-v14';
+// CONSTANTS (Version Bump to Force Update)
+const CACHE_NAME = 'habit-tracker-v17-secure-sync';
 
 // PERF: Static Asset List (Pre-allocated)
-// FIX: Removed 'sync-worker.js' as it is now inlined in cloud.ts to prevent 404s breaking SW install.
 const CACHE_FILES = [
     '/',
     '/index.html',
@@ -93,30 +92,25 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
     const req = event.request;
-    // Otimização: No contexto do SW, a URL é garantida.
     const url = new URL(req.url); 
 
     // 1. Strict API Bypass
-    // APIs must never be cached by the Service Worker logic, they are handled by api.ts
     if (url.pathname.startsWith('/api/')) return;
 
-    // 2. Navigation Strategy (App Shell) with Lie-fi Protection & Cache Update
+    // 2. Navigation Strategy (App Shell)
     if (req.mode === 'navigate') {
         event.respondWith(
             (async () => {
                 try {
-                    // A. Navigation Preload (SOTA Optimization)
                     const preloadResp = await event.preloadResponse;
                     if (preloadResp) return updateShellCache(preloadResp);
 
-                    // B. Network Race with Timeout
                     const networkResp = await Promise.race([
                         fetch(req),
                         timeout(NETWORK_TIMEOUT_MS)
                     ]);
                     return updateShellCache(networkResp);
                 } catch (error) {
-                    // C. Offline Fallback
                     return caches.match(HTML_FALLBACK, MATCH_OPTS);
                 }
             })()
@@ -130,7 +124,6 @@ self.addEventListener('fetch', (event) => {
             if (cached) return cached;
 
             return fetch(req).then(networkResponse => {
-                // Validation
                 if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {
                     return networkResponse;
                 }
@@ -140,23 +133,17 @@ self.addEventListener('fetch', (event) => {
                 const isAsset = req.destination && ['script', 'style', 'image'].includes(req.destination);
                 
                 if (isAsset && contentType && contentType.includes('text/html')) {
-                    console.warn(`[SW] Captive Portal detected. Blocked caching of HTML for ${req.destination}.`);
                     return networkResponse;
                 }
 
-                // Dynamic Caching (Fire & Forget)
                 const responseToCache = networkResponse.clone();
                 caches.open(CACHE_NAME).then(cache => {
-                    cache.put(req, responseToCache).catch(() => {}); // Silent fail for quota
+                    cache.put(req, responseToCache).catch(() => {});
                 });
 
                 return networkResponse;
             }).catch(err => {
-                // NETWORK FAILSAFE: If fetch fails (e.g. offline and not in cache, or zombie SW)
-                // Return a 408 (Timeout) or 404 to allow client code to handle it gracefully
-                // instead of crashing with "TypeError: Load failed".
-                console.warn('[SW] Network fetch failed (Zombie SW Protection):', req.url);
-                return new Response(null, { status: 408, statusText: "Network Failure - Auto Healing Triggered" });
+                return new Response(null, { status: 408, statusText: "Network Failure" });
             });
         })
     );

@@ -1,7 +1,7 @@
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
- * VERSÃO: Classic Logic (Estável)
+ * VERSÃO: Robust Type Handling & Direct Crypto
  */
 
 import { AppState, state, getPersistableState } from '../state';
@@ -11,23 +11,45 @@ import { t } from '../i18n';
 import { hasLocalSyncKey, getSyncKey, apiFetch } from './api';
 import { encrypt, decrypt } from './crypto';
 import { mergeStates } from './dataMerge';
-import { generateUUID } from '../utils';
 
 const DEBOUNCE_DELAY = 2000;
 let syncTimeout: any = null;
 let isSyncInProgress = false;
 
-// --- UTILS ---
+// --- TYPE SAFETY UTILS ---
 
-function _serializeLogs(map: Map<string, bigint> | undefined): any {
+/**
+ * Converte o Map de BigInts para um objeto serializável (para encrypt/JSON).
+ */
+function _serializeLogs(map: Map<string, bigint> | undefined): Record<string, string> {
     if (!map) return {};
-    return Object.fromEntries(map);
+    const obj: Record<string, string> = {};
+    for (const [k, v] of map.entries()) {
+        obj[k] = v.toString(); // BigInt -> String
+    }
+    return obj;
 }
 
+/**
+ * Reconstrói o Map de BigInts a partir do objeto JSON recebido.
+ * CRÍTICO: Garante que strings numéricas virem BigInts reais.
+ */
 function _deserializeLogs(obj: any): Map<string, bigint> {
     const map = new Map<string, bigint>();
-    if (obj) {
-        Object.entries(obj).forEach(([k, v]) => map.set(k, BigInt(v as any)));
+    if (obj && typeof obj === 'object') {
+        try {
+            Object.entries(obj).forEach(([k, v]) => {
+                if (v) {
+                    try {
+                        map.set(k, BigInt(v as string | number));
+                    } catch (e) {
+                        console.warn(`[Cloud] Invalid log entry for ${k}:`, v);
+                    }
+                }
+            });
+        } catch (e) {
+            console.error("[Cloud] Log Deserialization Failed", e);
+        }
     }
     return map;
 }
@@ -39,73 +61,50 @@ export function setSyncStatus(statusKey: 'syncSaving' | 'syncSynced' | 'syncErro
     if (ui.syncStatus) ui.syncStatus.textContent = t(displayKey);
     
     if (statusKey === 'syncError' && ui.syncErrorMsg) {
+        ui.syncErrorMsg.textContent = state.syncLastError || t('syncError');
         ui.syncErrorMsg.classList.remove('hidden');
     } else if (ui.syncErrorMsg) {
         ui.syncErrorMsg.classList.add('hidden');
     }
 }
 
-// --- WORKER INFRASTRUCTURE (Legacy Support for AI/Archival) ---
-// Mantemos o Worker apenas para tarefas não-críticas de Sync para evitar quebrar habitActions.ts
-const WORKER_CODE = `
-self.onmessage = async (e) => {
-    const { id, type, payload } = e.data;
-    // Minimal fallback for non-sync tasks if needed
-    self.postMessage({ id, status: 'error', error: 'Worker task not implemented in Lite mode' });
-};
-`;
-
-let syncWorker: Worker | null = null;
-const workerCallbacks = new Map<string, { resolve: (val: any) => void, reject: (err: any) => void }>();
-
-function getWorker(): Worker {
-    if (!syncWorker) {
-        const blob = new Blob([WORKER_CODE], { type: 'application/javascript' });
-        syncWorker = new Worker(URL.createObjectURL(blob));
-        syncWorker.onmessage = (e) => {
-            const { id, status, result, error } = e.data;
-            const cb = workerCallbacks.get(id);
-            if (cb) {
-                workerCallbacks.delete(id);
-                status === 'success' ? cb.resolve(result) : cb.reject(new Error(error));
-            }
-        };
-    }
-    return syncWorker;
-}
-
+// Deprecated Worker Stub
 export function runWorkerTask<T>(type: string, payload: any): Promise<T> {
-    // Fallback: Executa tarefas críticas na main thread se possível, ou rejeita.
-    // Para simplificar esta versão "Classic", focamos no Sync.
-    return Promise.reject(new Error("Advanced Worker tasks disabled in Classic Mode."));
+    return Promise.reject(new Error("Worker tasks deprecated."));
 }
+export function prewarmWorker() {}
 
-export function prewarmWorker() { /* No-op */ }
-
-// --- CORE SYNC FUNCTIONS ---
+// --- CORE FUNCTIONS ---
 
 /**
- * Baixa dados da nuvem para inspeção (sem mesclar).
- * Usado pelo listeners/sync.ts para decidir sobre overwrite.
+ * Baixa, decifra e HIDRATA o estado da nuvem.
+ * Retorna um AppState pronto para uso (com Maps instanciados).
  */
 export async function downloadRemoteState(key: string): Promise<AppState | null> {
     try {
         const res = await apiFetch('/api/sync', { method: 'GET' }, true);
-        if (res.status === 404) return null;
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        
+        if (res.status === 404) return null; // Novo usuário
+        if (res.status === 401) throw new Error("Chave Inválida");
+        if (!res.ok) throw new Error(`Erro HTTP ${res.status}`);
 
         const data = await res.json();
         if (!data || !data.state) return null;
 
+        // 1. Decriptar
         const jsonString = await decrypt(data.state, key);
         const incomingState = JSON.parse(jsonString);
 
+        // 2. Hidratação de Maps (Logs)
+        // Se monthlyLogs vier como objeto simples, converte para Map<string, bigint>
         if (incomingState.monthlyLogs && !(incomingState.monthlyLogs instanceof Map)) {
             incomingState.monthlyLogs = _deserializeLogs(incomingState.monthlyLogs);
         }
+
         return incomingState;
+
     } catch (e) {
-        console.error("Cloud check failed:", e);
+        console.error("Download/Decrypt Failed:", e);
         throw e;
     }
 }
@@ -117,27 +116,31 @@ export async function fetchStateFromCloud(): Promise<AppState | null> {
 
     try {
         setSyncStatus('syncing');
+        
+        // 1. Baixar Remoto
         const remoteState = await downloadRemoteState(key);
         
         if (!remoteState) {
-            console.log("Nuvem vazia (Novo usuário)");
             setSyncStatus('syncSynced');
-            return null;
+            return null; // Nuvem vazia
         }
 
-        // Merge Strategy
-        const currentLocalState = getPersistableState();
-        const mergedState = await mergeStates(currentLocalState, remoteState);
+        // 2. Merge Inteligente
+        const localState = getPersistableState();
+        const mergedState = await mergeStates(localState, remoteState);
 
+        // 3. Persistir e Atualizar UI
         Object.assign(state, mergedState);
         await persistStateLocally(mergedState);
+        
         document.dispatchEvent(new CustomEvent('render-app'));
-
         setSyncStatus('syncSynced');
+        
         return mergedState;
 
-    } catch (e) {
-        console.error("Erro ao baixar da nuvem:", e);
+    } catch (e: any) {
+        console.error("Cloud Pull Failed:", e);
+        state.syncLastError = e.message;
         setSyncStatus('syncError');
         return null;
     }
@@ -152,6 +155,8 @@ async function _performSync() {
         setSyncStatus('syncing');
 
         const rawState = getPersistableState();
+        
+        // Prepara para envio: Converte Map -> Object
         const stateToSend = {
             ...rawState,
             monthlyLogs: _serializeLogs(state.monthlyLogs)
@@ -170,16 +175,18 @@ async function _performSync() {
         }, true);
 
         if (res.status === 409) {
-            console.warn("Conflito detectado. Baixando versão mais recente...");
-            await fetchStateFromCloud();
+            console.warn("Conflict (409). Pulling newer version...");
+            await fetchStateFromCloud(); // Auto-heal: Baixa, mescla, e o próximo sync enviará o merge
         } else if (!res.ok) {
-            throw new Error(`Erro API: ${res.status}`);
+            throw new Error(`Server Error: ${res.status}`);
         } else {
             setSyncStatus('syncSynced');
+            state.syncLastError = null;
         }
 
-    } catch (e) {
-        console.error("Erro no Sync:", e);
+    } catch (e: any) {
+        console.error("Sync Push Failed:", e);
+        state.syncLastError = e.message;
         setSyncStatus('syncError');
     } finally {
         isSyncInProgress = false;
@@ -193,7 +200,8 @@ export function syncStateWithCloud(currentState?: AppState) {
     syncTimeout = setTimeout(() => _performSync(), DEBOUNCE_DELAY);
 }
 
-// Inicializa checando se tem dados
+// Inicialização segura
 if (hasLocalSyncKey()) {
-    fetchStateFromCloud();
+    // Delay pequeno para garantir que a UI já montou
+    setTimeout(fetchStateFromCloud, 1500);
 }
