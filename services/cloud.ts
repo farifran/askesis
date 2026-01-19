@@ -133,7 +133,12 @@ export function setSyncStatus(statusKey: 'syncSaving' | 'syncSynced' | 'syncErro
     state.syncState = statusKey === 'syncing' ? 'syncSaving' : statusKey;
     const displayKey = statusKey === 'syncing' ? 'syncSaving' : statusKey;
     
-    if (ui.syncStatus) ui.syncStatus.textContent = t(displayKey);
+    if (ui.syncStatus) {
+        ui.syncStatus.textContent = t(displayKey);
+        // Visual cue that it's clickable
+        ui.syncStatus.style.cursor = 'pointer';
+        ui.syncStatus.style.textDecoration = 'underline dotted';
+    }
     
     if (statusKey === 'syncError' && ui.syncErrorMsg) {
         ui.syncErrorMsg.textContent = state.syncLastError || t('syncError');
@@ -141,6 +146,45 @@ export function setSyncStatus(statusKey: 'syncSaving' | 'syncSynced' | 'syncErro
     } else if (ui.syncErrorMsg) {
         ui.syncErrorMsg.classList.add('hidden');
     }
+}
+
+// --- DIAGNOSTICS ---
+
+export async function diagnoseConnection(): Promise<string> {
+    const report: string[] = [];
+    report.push(`--- DIAGNÓSTICO DE REDE ---`);
+    report.push(`Data: ${new Date().toISOString()}`);
+    report.push(`Online (Nav): ${navigator.onLine}`);
+    
+    const key = getSyncKey();
+    report.push(`Chave Local: ${key ? (key.substring(0,4) + '...') : 'NENHUMA'}`);
+    
+    if (!key) return report.join('\n');
+
+    try {
+        const start = performance.now();
+        // Tenta um fetch simples
+        const res = await apiFetch('/api/sync', { method: 'GET' }, true);
+        const time = (performance.now() - start).toFixed(0);
+        
+        report.push(`Ping API: ${time}ms`);
+        report.push(`HTTP Status: ${res.status} ${res.statusText}`);
+        
+        const text = await res.text();
+        report.push(`Response Body (Sample): ${text.substring(0, 100)}`);
+        
+        if (!res.ok) {
+            report.push(`❌ ERRO: O servidor rejeitou a conexão.`);
+        } else {
+            report.push(`✅ SUCESSO: Conexão estabelecida.`);
+        }
+    } catch (e: any) {
+        report.push(`❌ ERRO DE REDE:`);
+        report.push(`${e.message}`);
+        if (e.cause) report.push(`Causa: ${e.cause}`);
+    }
+    
+    return report.join('\n');
 }
 
 // --- CLOUD SYNC CORE ---
@@ -159,22 +203,19 @@ export async function downloadRemoteState(key: string): Promise<AppState | null>
         const jsonString = await decrypt(data.state, key);
         return JSON.parse(jsonString, _jsonReviver);
 
-    } catch (e) {
+    } catch (e: any) {
         console.error("Download/Decrypt Failed:", e);
+        state.syncLastError = `Download: ${e.message}`;
         throw e;
     }
 }
 
 export async function fetchStateFromCloud(): Promise<AppState | null> {
-    // SECURITY GUARD: Modo Local Puro
     if (!hasLocalSyncKey()) return null;
     const key = getSyncKey();
     if (!key) return null;
 
-    // OFFLINE GUARD: Evita erro visual se desconectado
-    if (!navigator.onLine) {
-        return null;
-    }
+    if (!navigator.onLine) return null;
 
     try {
         setSyncStatus('syncing');
@@ -183,10 +224,9 @@ export async function fetchStateFromCloud(): Promise<AppState | null> {
         
         if (!remoteState) {
             setSyncStatus('syncSynced');
-            return null; // Nuvem vazia, mantém local
+            return null;
         }
 
-        // SMART MERGE
         const localState = getPersistableState();
         if (!localState.monthlyLogs && state.monthlyLogs) {
             localState.monthlyLogs = state.monthlyLogs;
@@ -194,13 +234,9 @@ export async function fetchStateFromCloud(): Promise<AppState | null> {
 
         const mergedState = await mergeStates(localState, remoteState);
 
-        // Aplica o estado mesclado
         Object.assign(state, mergedState);
-        
-        // Persiste localmente (suprime novo sync para evitar loop imediato)
         await persistStateLocally(mergedState, true);
         
-        // Atualiza UI
         document.dispatchEvent(new CustomEvent('render-app'));
         setSyncStatus('syncSynced');
         
@@ -218,11 +254,7 @@ async function _performSync() {
     const key = getSyncKey();
     if (!key) return;
 
-    // OFFLINE CHECK
-    if (!navigator.onLine) {
-        // Silently fail or queue? For now, we rely on the online listener to re-trigger.
-        return;
-    }
+    if (!navigator.onLine) return;
 
     try {
         isSyncInProgress = true;
@@ -246,38 +278,25 @@ async function _performSync() {
 
         if (res.status === 409) {
             console.warn("[Cloud] Conflict (409). Server has newer data. Initiating Auto-Merge...");
-            
-            // AUTO-MERGE STRATEGY: 
-            // 1. Pull server data & Merge.
             await fetchStateFromCloud(); 
-            
-            // 2. CONVERGENCE PUSH:
-            // Agora que temos o estado fundido (com timestamp > server),
-            // empurramos de volta para garantir que o servidor fique atualizado.
-            // Usamos debounce para não spammar se o usuário continuar editando.
             syncStateWithCloud();
 
         } else if (res.status === 413) {
             console.error("[Cloud] Payload Too Large (413).");
-            throw new Error("Dados muito grandes para a nuvem (Limite 1MB). Tente arquivar dados antigos.");
+            throw new Error("Dados muito grandes (Limite 1MB).");
         } else if (res.status === 401) {
             console.error("[Cloud] Unauthorized (401).");
-            throw new Error("Não autorizado. Verifique sua chave.");
+            throw new Error("Não autorizado (401).");
         } else if (!res.ok) {
             throw new Error(`Erro Servidor: ${res.status}`);
         } else {
-            // 200 OK
             setSyncStatus('syncSynced');
             state.syncLastError = null;
         }
 
     } catch (e: any) {
         console.error("Sync Push Failed:", e);
-        if (e instanceof TypeError && e.message.includes('BigInt')) {
-            state.syncLastError = "Erro de Serialização (BigInt)";
-        } else {
-            state.syncLastError = e.message || "Erro de Conexão";
-        }
+        state.syncLastError = e.message || "Erro de Conexão";
         setSyncStatus('syncError');
     } finally {
         isSyncInProgress = false;

@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  * VERSÃO: Production Grade - Hash-Based Multi-Tenancy
  * Ajustada para aceitar 'Authorization: Bearer' e gerar hash no servidor.
+ * INCLUI: Server-Side Logging para Diagnóstico.
 */
 
 import { createClient } from '@vercel/kv';
@@ -46,10 +47,9 @@ const HEADERS_BASE = {
   'Content-Type': 'application/json',
   'Access-Control-Allow-Origin': '*', 
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, X-Sync-Key-Hash, Authorization', // Adicionado Authorization
+  'Access-Control-Allow-Headers': 'Content-Type, X-Sync-Key-Hash, Authorization',
 };
 
-// Helper para gerar SHA-256 no Edge Runtime
 async function sha256(message: string) {
     const msgBuffer = new TextEncoder().encode(message);
     const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
@@ -64,37 +64,42 @@ export default async function handler(req: Request) {
     const dbToken = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
 
     if (!dbUrl || !dbToken) {
-         console.error("Missing Database Config");
+         console.error("[API] CRITICAL: Missing Database Config");
          return new Response(JSON.stringify({ error: 'Server Config Error' }), { status: 500, headers: HEADERS_BASE });
     }
 
     const kv = createClient({ url: dbUrl, token: dbToken });
 
     try {
+        console.log(`[API] Incoming Request: ${req.method}`);
+
         // --- AUTENTICAÇÃO FLEXÍVEL ---
-        // Aceita tanto o cabeçalho estrito (x-sync-key-hash) quanto o padrão (Authorization)
         let keyHash = req.headers.get('x-sync-key-hash');
+        let authMethod = 'HashHeader';
         
         if (!keyHash) {
             const authHeader = req.headers.get('Authorization');
             if (authHeader && authHeader.startsWith('Bearer ')) {
                 const rawKey = authHeader.replace('Bearer ', '').trim();
                 if (rawKey.length >= 8) {
-                    // Gera o hash no servidor para manter a consistência do banco
                     keyHash = await sha256(rawKey);
+                    authMethod = 'BearerFallback';
                 }
             }
         }
 
         if (!keyHash || !/^[a-f0-9]{64}$/i.test(keyHash)) {
+            console.warn(`[API] Auth Failed. Method: ${authMethod}, HashValid: ${!!keyHash}`);
             return new Response(JSON.stringify({ error: 'Unauthorized: Missing or Invalid Key' }), { status: 401, headers: HEADERS_BASE });
         }
         
-        // Cada usuário tem seu espaço baseado no hash da senha
+        console.log(`[API] Auth Success (${authMethod}). Hash prefix: ${keyHash.substring(0, 8)}...`);
+        
         const dataKey = `sync_v2:${keyHash}`;
 
         if (req.method === 'GET') {
             const storedData = await kv.get(dataKey);
+            console.log(`[API] GET: ${storedData ? 'Data found' : 'No data'}`);
             return new Response(JSON.stringify(storedData || null), { status: 200, headers: HEADERS_BASE });
         }
 
@@ -102,6 +107,7 @@ export default async function handler(req: Request) {
             const bodyText = await req.text();
             
             if (bodyText.length > MAX_PAYLOAD_SIZE * 1.1) {
+                console.warn(`[API] POST: Payload too large (${bodyText.length} bytes)`);
                 return new Response(JSON.stringify({ error: 'Payload Too Large' }), { status: 413, headers: HEADERS_BASE });
             }
 
@@ -110,11 +116,12 @@ export default async function handler(req: Request) {
             catch { return new Response(JSON.stringify({ error: 'Malformed JSON' }), { status: 400, headers: HEADERS_BASE }); }
 
             if (!clientPayload?.lastModified || typeof clientPayload.lastModified !== 'number') {
-                // Fallback: Se não vier lastModified, usa timestamp atual (menos seguro contra conflito, mas funciona)
                 clientPayload.lastModified = Date.now();
             }
 
             const result = await kv.eval(LUA_ATOMIC_UPDATE, [dataKey], [bodyText, String(clientPayload.lastModified)]) as [string, string?];
+            
+            console.log(`[API] POST Result: ${result[0]}`);
 
             if (result[0] === 'OK') return new Response('{"success":true}', { status: 200, headers: HEADERS_BASE });
             if (result[0] === 'NOT_MODIFIED') return new Response(null, { status: 304, headers: HEADERS_BASE });
@@ -125,7 +132,7 @@ export default async function handler(req: Request) {
         return new Response(null, { status: 405 });
 
     } catch (error: any) {
-        console.error("API Sync Error:", error);
-        return new Response(JSON.stringify({ error: 'Internal Server Error' }), { status: 500, headers: HEADERS_BASE });
+        console.error("[API] Unhandled Error:", error);
+        return new Response(JSON.stringify({ error: 'Internal Server Error', details: error.message }), { status: 500, headers: HEADERS_BASE });
     }
 }

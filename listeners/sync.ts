@@ -6,7 +6,7 @@
 
 import { ui } from "../render/ui";
 import { t } from "../i18n";
-import { downloadRemoteState, syncStateWithCloud, setSyncStatus } from "../services/cloud";
+import { downloadRemoteState, syncStateWithCloud, setSyncStatus, diagnoseConnection } from "../services/cloud";
 import { loadState, saveState, clearLocalPersistence } from "../services/persistence";
 import { renderApp } from "../render";
 import { showConfirmationModal } from "../render/modals";
@@ -141,7 +141,6 @@ const _handleEnableSync = () => {
         storeKey(newKey);
         
         // UX FIX: Atualiza status imediatamente para "Ativo".
-        // Isso previne que a UI mostre "Desativado" se o sync inicial (network) falhar ou demorar.
         setSyncStatus('syncSynced');
         
         ui.syncKeyText.textContent = newKey;
@@ -149,7 +148,6 @@ const _handleEnableSync = () => {
         showView('displayKey');
         
         // Immediate push for new key (Best Effort)
-        // Se estiver offline, o status visual já está 'Synced' (Localmente Habilitado), o que é correto.
         syncStateWithCloud(getPersistableState(), true);
         
         setTimeout(() => ui.enableSyncBtn.disabled = false, 500);
@@ -235,6 +233,15 @@ const _handleDisableSync = () => {
     );
 };
 
+// --- DIAGNOSTICS HANDLER ---
+const _handleDiagnostics = async () => {
+    const originalText = ui.syncStatus.textContent;
+    ui.syncStatus.textContent = "Testando...";
+    const report = await diagnoseConnection();
+    ui.syncStatus.textContent = originalText;
+    alert(report);
+};
+
 function _refreshViewState() {
     const hasKey = hasLocalSyncKey();
     console.log(`[Sync Debug] Refreshing View. Has Key: ${hasKey}, State: ${state.syncState}`);
@@ -262,6 +269,9 @@ export function initSync() {
     if (ui.copyKeyBtn) ui.copyKeyBtn.addEventListener('click', _handleCopyKey);
     if (ui.viewKeyBtn) ui.viewKeyBtn.addEventListener('click', _handleViewKey);
     if (ui.disableSyncBtn) ui.disableSyncBtn.addEventListener('click', _handleDisableSync);
+    
+    // NEW: Diagnostics Listener
+    if (ui.syncStatus) ui.syncStatus.addEventListener('click', _handleDiagnostics);
 
     _refreshViewState();
 }
