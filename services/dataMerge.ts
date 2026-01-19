@@ -67,6 +67,22 @@ function mergeDayRecord(localDay: Record<string, HabitDailyInfo>, mergedDay: Rec
     return isDirty;
 }
 
+function mergeMonthlyLogs(mergedMap: Map<string, bigint> | undefined, loserMap: Map<string, bigint> | undefined) {
+    if (!loserMap || loserMap.size === 0) return;
+    if (!mergedMap) return; // Should be initialized by structuredClone of winner
+
+    for (const [key, val] of loserMap.entries()) {
+        // BITMASK STRATEGY: Union of Keys.
+        // Se o vencedor (timestamp maior) não tem dados para este hábito/mês específico,
+        // aceitamos os dados do perdedor. Isso preserva dados criados offline.
+        // Se ambos têm dados, o vencedor prevalece (Time-based conflict resolution),
+        // pois não temos timestamps granulares por bit para fazer merge bit-a-bit seguro.
+        if (!mergedMap.has(key)) {
+            mergedMap.set(key, val);
+        }
+    }
+}
+
 export async function mergeStates(local: AppState, incoming: AppState): Promise<AppState> {
     // 1. Newest Wins Strategy (Hybrid)
     const localTs = local.lastModified || 0;
@@ -76,7 +92,13 @@ export async function mergeStates(local: AppState, incoming: AppState): Promise<
     let winner = localTs > incomingTs ? local : incoming;
     let loser = localTs > incomingTs ? incoming : local;
     
+    // CLONE: Garante que não mutamos o estado original durante o merge
     const merged: AppState = structuredClone(winner);
+    
+    // Garante inicialização do Map se falhar no clone ou não existir
+    if (!merged.monthlyLogs || !(merged.monthlyLogs instanceof Map)) {
+        merged.monthlyLogs = new Map(winner.monthlyLogs instanceof Map ? winner.monthlyLogs : []);
+    }
     
     // 2. Habits: Union by ID (Don't lose offline creations)
     const mergedIds = new Set(merged.habits.map(h => h.id));
@@ -105,13 +127,15 @@ export async function mergeStates(local: AppState, incoming: AppState): Promise<
         }
     }
     
+    // 5. Monthly Logs (Bitmasks)
+    mergeMonthlyLogs(merged.monthlyLogs, loser.monthlyLogs);
+    
     // TIME INTEGRITY FIX: High-Water Mark Algorithm
     // O novo timestamp deve ser estritamente maior ou igual a qualquer timestamp visto anteriormente.
-    // Isso previne que um relógio local atrasado (Date.now()) gere um estado que pareça "velho" para o servidor.
     const now = Date.now();
     merged.lastModified = Math.max(localTs, incomingTs, now);
     
-    // Se por acaso os timestamps forem iguais (muito rápido), incrementa +1 para garantir mudança
+    // Se por acaso os timestamps forem iguais, incrementa +1 para garantir mudança
     if (merged.lastModified === Math.max(localTs, incomingTs)) {
         merged.lastModified += 1;
     }
