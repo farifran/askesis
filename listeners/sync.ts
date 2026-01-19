@@ -58,12 +58,15 @@ async function _processKey(key: string) {
             throw new Error("HTTPS necessário para criptografia segura.");
         }
 
+        // Armazena temporariamente para o teste
         storeKey(key);
         
         // Testa a chave baixando dados
+        console.log("[Sync Debug] Downloading remote state...");
         const cloudState = await downloadRemoteState(key);
 
         if (cloudState) {
+            console.log("[Sync Debug] Data found. Prompting overwrite.");
             // Dados encontrados -> Pergunta se sobrescreve
             showConfirmationModal(
                 t('confirmSyncOverwrite'),
@@ -76,22 +79,29 @@ async function _processKey(key: string) {
                         await clearLocalPersistence();
                         
                         // CRITICAL FIX: Re-store the key explicitly immediately after wiping.
-                        // This prevents any race condition where the key is lost during the wipe.
-                        console.log("[Sync Debug] Re-asserting key persistence.");
+                        // This prevents any race condition where the key is considered lost during the wipe.
+                        console.log("[Sync Debug] Re-asserting key persistence:", key);
                         storeKey(key);
                         
                         // 2. Carrega o estado da nuvem diretamente na memória
+                        console.log("[Sync Debug] Loading cloud state into memory...");
                         await loadState(cloudState);
                         
                         // 3. Salva o novo estado localmente
-                        await saveState();
+                        console.log("[Sync Debug] Persisting new state...");
+                        await saveState(true); // Suppress sync to avoid immediate push-back loop
                         
                         // 4. Renderiza e Atualiza UI
+                        console.log("[Sync Debug] Re-rendering app...");
                         renderApp();
                         
-                        // CRITICAL FIX: Force View Update immediately
+                        // CRITICAL FIX: Force View Update immediately to "Active"
+                        // We manually set the state to synced to avoid visual glitching
+                        state.syncState = 'syncSynced';
+                        if (ui.syncStatus) ui.syncStatus.textContent = t('syncSynced');
+                        
                         _refreshViewState(); 
-                        setSyncStatus('syncSynced');
+                        
                         console.log("[Sync Debug] Overwrite complete. UI Refreshed.");
 
                     } catch (e) {
@@ -99,6 +109,7 @@ async function _processKey(key: string) {
                         alert("Erro crítico ao restaurar dados. Tente novamente.");
                         // Restore old key if critical fail
                         if (originalKey) storeKey(originalKey);
+                        else clearKey();
                         _refreshViewState();
                     }
                 },
@@ -109,9 +120,7 @@ async function _processKey(key: string) {
                     onCancel: () => {
                         // CANCEL CALLBACK
                         // Only runs if user explicitly clicks Cancel.
-                        // Race condition protection: Check if we are already synced with the new key?
-                        // For simplicity, we assume if cancel is clicked, we revert.
-                        console.log("[Sync Debug] Overwrite cancelled by user.");
+                        console.log("[Sync Debug] Overwrite cancelled by user. Reverting key.");
                         if (originalKey) storeKey(originalKey);
                         else clearKey();
                         _refreshViewState();
@@ -123,7 +132,8 @@ async function _processKey(key: string) {
             console.log("[Sync Debug] New user/Empty cloud. Uploading local state.");
             _refreshViewState();
             setSyncStatus('syncSynced');
-            syncStateWithCloud(getPersistableState());
+            // Force immediate push to create the key on server
+            syncStateWithCloud(getPersistableState(), true);
         }
     } catch (error: any) {
         console.error("[Sync Debug] Error processing key:", error);
@@ -161,7 +171,8 @@ const _handleEnableSync = () => {
         ui.syncDisplayKeyView.dataset.context = 'setup';
         showView('displayKey');
         
-        syncStateWithCloud(getPersistableState());
+        // Immediate push for new key
+        syncStateWithCloud(getPersistableState(), true);
         
         setTimeout(() => ui.enableSyncBtn.disabled = false, 500);
     } catch (e: any) {
