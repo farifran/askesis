@@ -1,7 +1,7 @@
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
- * VERSÃO: Robust Type Handling & Direct Crypto
+ * VERSÃO: V18.5 - Robust Archive & Sync Logic
  */
 
 import { AppState, state, getPersistableState } from '../state';
@@ -11,48 +11,136 @@ import { t } from '../i18n';
 import { hasLocalSyncKey, getSyncKey, apiFetch } from './api';
 import { encrypt, decrypt } from './crypto';
 import { mergeStates } from './dataMerge';
+import { compressToBuffer, decompressFromBuffer, decompressString } from '../utils';
 
 const DEBOUNCE_DELAY = 2000;
 let syncTimeout: any = null;
 let isSyncInProgress = false;
 
-// --- TYPE SAFETY UTILS ---
+// --- SERIALIZATION ENGINE ---
 
-/**
- * Converte o Map de BigInts para um objeto serializável (para encrypt/JSON).
- */
-function _serializeLogs(map: Map<string, bigint> | undefined): Record<string, string> {
-    if (!map) return {};
-    const obj: Record<string, string> = {};
-    for (const [k, v] of map.entries()) {
-        obj[k] = v.toString(); // BigInt -> String
+function _jsonReplacer(key: string, value: any): any {
+    if (typeof value === 'bigint') {
+        return { __type: 'bigint', val: value.toString() };
     }
-    return obj;
+    if (value instanceof Map) {
+        return { __type: 'map', val: Array.from(value.entries()) };
+    }
+    return value;
 }
 
-/**
- * Reconstrói o Map de BigInts a partir do objeto JSON recebido.
- * CRÍTICO: Garante que strings numéricas virem BigInts reais.
- */
-function _deserializeLogs(obj: any): Map<string, bigint> {
-    const map = new Map<string, bigint>();
-    if (obj && typeof obj === 'object') {
-        try {
-            Object.entries(obj).forEach(([k, v]) => {
-                if (v) {
-                    try {
-                        map.set(k, BigInt(v as string | number));
-                    } catch (e) {
-                        console.warn(`[Cloud] Invalid log entry for ${k}:`, v);
-                    }
-                }
-            });
-        } catch (e) {
-            console.error("[Cloud] Log Deserialization Failed", e);
+function _jsonReviver(key: string, value: any): any {
+    if (value && typeof value === 'object' && value.__type) {
+        if (value.__type === 'bigint') {
+            return BigInt(value.val);
+        }
+        if (value.__type === 'map') {
+            return new Map(value.val);
         }
     }
-    return map;
+    return value;
 }
+
+// --- VIRTUAL WORKER TASKS (Main Thread Async) ---
+
+const TASKS: Record<string, (payload: any) => Promise<any> | any> = {
+    'build-ai-prompt': (payload: any) => {
+        const { analysisType, languageName, translations } = payload;
+        return {
+            prompt: `[${languageName}] ${analysisType} Analysis.\nContext: ${JSON.stringify(payload.dailyData || {})}`,
+            systemInstruction: translations.aiSystemInstruction || "Act as a Stoic Mentor."
+        };
+    },
+    'build-quote-analysis-prompt': (payload: any) => {
+        return {
+            prompt: payload.translations.aiPromptQuote.replace('{notes}', payload.notes).replace('{theme_list}', payload.themeList),
+            systemInstruction: payload.translations.aiSystemInstructionQuote
+        };
+    },
+    'archive': async (payload: any) => {
+        // Payload: Record<year, { additions: DailyData, base: string|Uint8Array|Object }>
+        const result: Record<string, Uint8Array> = {};
+        const years = Object.keys(payload);
+
+        for (const year of years) {
+            const { additions, base } = payload[year];
+            let baseObj = {};
+
+            // 1. Hydrate Base (Decompress if needed)
+            if (base) {
+                if (typeof base === 'object' && !(base instanceof Uint8Array)) {
+                    baseObj = base; // Already hydrated (from cache)
+                } else {
+                    try {
+                        let jsonStr = '';
+                        if (base instanceof Uint8Array) {
+                            jsonStr = await decompressFromBuffer(base);
+                        } else if (typeof base === 'string') {
+                            // Legacy support
+                            jsonStr = base.startsWith('GZIP:') 
+                                ? await decompressString(base.substring(5))
+                                : base;
+                        }
+                        baseObj = JSON.parse(jsonStr);
+                    } catch (e) {
+                        console.warn(`[Cloud] Archive corruption for ${year}, resetting base.`, e);
+                        baseObj = {};
+                    }
+                }
+            }
+
+            // 2. Merge Additions
+            const merged = { ...baseObj, ...additions };
+
+            // 3. Compress Result (GZIP Buffer)
+            // This ensures state.archives remains lightweight
+            try {
+                const compressed = await compressToBuffer(JSON.stringify(merged));
+                result[year] = compressed;
+            } catch (e) {
+                console.error(`[Cloud] Compression failed for ${year}`, e);
+                // In worst case, we lose the archive optimization but save data
+                // Note: The app expects Uint8Array or String in archives.
+                // We'll throw to prevent saving corrupted state.
+                throw e;
+            }
+        }
+        return result;
+    },
+    'prune-habit': (payload: any) => {
+        // Simplificado: Apenas retorna os arquivos como estão,
+        // pois a limpeza real de chaves órfãs é complexa sem descompressão total.
+        // Em V18, aceitamos manter dados órfãos em archives (cold storage) para evitar overhead de CPU.
+        return payload.archives;
+    }
+};
+
+export function runWorkerTask<T>(type: string, payload: any): Promise<T> {
+    return new Promise((resolve, reject) => {
+        // Scheduler API or SetTimeout
+        const scheduler = (window as any).scheduler;
+        const runner = async () => {
+            try {
+                const handler = TASKS[type];
+                if (!handler) throw new Error(`Unknown task: ${type}`);
+                const result = await handler(payload);
+                resolve(result);
+            } catch (e) {
+                reject(e);
+            }
+        };
+
+        if (scheduler?.postTask) {
+            scheduler.postTask(runner, { priority: 'background' });
+        } else {
+            setTimeout(runner, 0);
+        }
+    });
+}
+
+export function prewarmWorker() {}
+
+// --- SYNC STATUS UI ---
 
 export function setSyncStatus(statusKey: 'syncSaving' | 'syncSynced' | 'syncError' | 'syncInitial' | 'syncing') {
     state.syncState = statusKey === 'syncing' ? 'syncSaving' : statusKey;
@@ -68,40 +156,21 @@ export function setSyncStatus(statusKey: 'syncSaving' | 'syncSynced' | 'syncErro
     }
 }
 
-// Deprecated Worker Stub
-export function runWorkerTask<T>(type: string, payload: any): Promise<T> {
-    return Promise.reject(new Error("Worker tasks deprecated."));
-}
-export function prewarmWorker() {}
+// --- CLOUD SYNC CORE ---
 
-// --- CORE FUNCTIONS ---
-
-/**
- * Baixa, decifra e HIDRATA o estado da nuvem.
- * Retorna um AppState pronto para uso (com Maps instanciados).
- */
 export async function downloadRemoteState(key: string): Promise<AppState | null> {
     try {
         const res = await apiFetch('/api/sync', { method: 'GET' }, true);
         
-        if (res.status === 404) return null; // Novo usuário
+        if (res.status === 404) return null;
         if (res.status === 401) throw new Error("Chave Inválida");
         if (!res.ok) throw new Error(`Erro HTTP ${res.status}`);
 
         const data = await res.json();
         if (!data || !data.state) return null;
 
-        // 1. Decriptar
         const jsonString = await decrypt(data.state, key);
-        const incomingState = JSON.parse(jsonString);
-
-        // 2. Hidratação de Maps (Logs)
-        // Se monthlyLogs vier como objeto simples, converte para Map<string, bigint>
-        if (incomingState.monthlyLogs && !(incomingState.monthlyLogs instanceof Map)) {
-            incomingState.monthlyLogs = _deserializeLogs(incomingState.monthlyLogs);
-        }
-
-        return incomingState;
+        return JSON.parse(jsonString, _jsonReviver);
 
     } catch (e) {
         console.error("Download/Decrypt Failed:", e);
@@ -117,19 +186,21 @@ export async function fetchStateFromCloud(): Promise<AppState | null> {
     try {
         setSyncStatus('syncing');
         
-        // 1. Baixar Remoto
         const remoteState = await downloadRemoteState(key);
         
         if (!remoteState) {
             setSyncStatus('syncSynced');
-            return null; // Nuvem vazia
+            return null;
         }
 
-        // 2. Merge Inteligente
         const localState = getPersistableState();
+        // Fix: Ensure Maps exist for merge
+        if (!localState.monthlyLogs && state.monthlyLogs) {
+            localState.monthlyLogs = state.monthlyLogs;
+        }
+
         const mergedState = await mergeStates(localState, remoteState);
 
-        // 3. Persistir e Atualizar UI
         Object.assign(state, mergedState);
         await persistStateLocally(mergedState);
         
@@ -155,14 +226,10 @@ async function _performSync() {
         setSyncStatus('syncing');
 
         const rawState = getPersistableState();
-        
-        // Prepara para envio: Converte Map -> Object
-        const stateToSend = {
-            ...rawState,
-            monthlyLogs: _serializeLogs(state.monthlyLogs)
-        };
+        rawState.monthlyLogs = state.monthlyLogs;
 
-        const encryptedData = await encrypt(JSON.stringify(stateToSend), key);
+        const jsonString = JSON.stringify(rawState, _jsonReplacer);
+        const encryptedData = await encrypt(jsonString, key);
 
         const payload = {
             lastModified: Date.now(),
@@ -176,7 +243,7 @@ async function _performSync() {
 
         if (res.status === 409) {
             console.warn("Conflict (409). Pulling newer version...");
-            await fetchStateFromCloud(); // Auto-heal: Baixa, mescla, e o próximo sync enviará o merge
+            await fetchStateFromCloud(); 
         } else if (!res.ok) {
             throw new Error(`Server Error: ${res.status}`);
         } else {
@@ -186,22 +253,30 @@ async function _performSync() {
 
     } catch (e: any) {
         console.error("Sync Push Failed:", e);
-        state.syncLastError = e.message;
+        if (e instanceof TypeError && e.message.includes('BigInt')) {
+            state.syncLastError = "Erro de Serialização (BigInt)";
+        } else {
+            state.syncLastError = e.message;
+        }
         setSyncStatus('syncError');
     } finally {
         isSyncInProgress = false;
     }
 }
 
-export function syncStateWithCloud(currentState?: AppState) {
+export function syncStateWithCloud(currentState?: AppState, immediate = false) {
     if (!hasLocalSyncKey()) return;
     
     if (syncTimeout) clearTimeout(syncTimeout);
-    syncTimeout = setTimeout(() => _performSync(), DEBOUNCE_DELAY);
+    
+    if (immediate) {
+        console.log("[Cloud] Immediate sync trigger.");
+        _performSync();
+    } else {
+        syncTimeout = setTimeout(() => _performSync(), DEBOUNCE_DELAY);
+    }
 }
 
-// Inicialização segura
 if (hasLocalSyncKey()) {
-    // Delay pequeno para garantir que a UI já montou
     setTimeout(fetchStateFromCloud, 1500);
 }

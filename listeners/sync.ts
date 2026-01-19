@@ -52,10 +52,14 @@ async function _processKey(key: string) {
     const originalKey = getSyncKey();
     
     try {
+        // HTTPS Check
+        if (!window.isSecureContext && window.location.hostname !== 'localhost') {
+            throw new Error("HTTPS necessário para criptografia segura.");
+        }
+
         storeKey(key);
         
         // Testa a chave baixando dados
-        // Nota: downloadRemoteState agora trata a hidratação dos Maps internamente
         const cloudState = await downloadRemoteState(key);
 
         if (cloudState) {
@@ -69,7 +73,6 @@ async function _processKey(key: string) {
                         await clearLocalPersistence();
                         
                         // 2. Carrega o estado da nuvem diretamente na memória
-                        // loadState agora lida com a atribuição correta para 'state'
                         await loadState(cloudState);
                         
                         // 3. Salva o novo estado localmente
@@ -90,7 +93,6 @@ async function _processKey(key: string) {
                     confirmText: t('syncConfirmOverwrite'),
                     cancelText: t('cancelButton'),
                     onCancel: () => {
-                        // Se cancelar, volta ao estado anterior
                         if (originalKey) storeKey(originalKey);
                         else clearKey();
                         _refreshViewState();
@@ -107,17 +109,11 @@ async function _processKey(key: string) {
     } catch (error: any) {
         console.error("[Sync] Error processing key:", error);
         
-        // Reverte chave
         if (originalKey) storeKey(originalKey);
         else clearKey();
 
-        // Feedback Visual
         if (ui.syncErrorMsg) {
             let msg = error.message || "Erro desconhecido";
-            // Mensagem amigável para erro de HTTPS
-            if (msg.includes("HTTPS") || msg.includes("Secure Context")) {
-                msg = "Erro: Este recurso requer conexão segura (HTTPS).";
-            }
             ui.syncErrorMsg.textContent = msg;
             ui.syncErrorMsg.classList.remove('hidden');
         }
@@ -133,14 +129,22 @@ async function _processKey(key: string) {
 
 const _handleEnableSync = () => {
     try {
+        // Immediate Feedback
+        ui.enableSyncBtn.disabled = true;
+        
         const newKey = generateUUID();
         storeKey(newKey);
+        
         ui.syncKeyText.textContent = newKey;
         ui.syncDisplayKeyView.dataset.context = 'setup';
         showView('displayKey');
+        
         syncStateWithCloud(getPersistableState());
+        
+        setTimeout(() => ui.enableSyncBtn.disabled = false, 500);
     } catch (e: any) {
         console.error(e);
+        ui.enableSyncBtn.disabled = false;
         if (ui.syncErrorMsg) {
             ui.syncErrorMsg.textContent = e.message || "Erro ao gerar chave";
             ui.syncErrorMsg.classList.remove('hidden');
@@ -234,6 +238,7 @@ function _refreshViewState() {
 export function initSync() {
     console.log("[Sync] Initializing listeners...");
     
+    // SAFE BINDING: Ensure elements exist before adding listeners
     if (ui.enableSyncBtn) ui.enableSyncBtn.addEventListener('click', _handleEnableSync);
     if (ui.enterKeyViewBtn) ui.enterKeyViewBtn.addEventListener('click', _handleEnterKeyView);
     if (ui.cancelEnterKeyBtn) ui.cancelEnterKeyBtn.addEventListener('click', _handleCancelEnterKey);

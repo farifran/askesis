@@ -6,10 +6,6 @@
 /**
  * @file sw.js
  * @description Service Worker: Proxy de Rede e Gerenciador de Cache (Offline Engine).
- * 
- * [SERVICE WORKER CONTEXT]:
- * Execução em Thread de Background. 
- * Otimizado para latência zero no interceptador de rede (`fetch`).
  */
 
 try {
@@ -19,7 +15,7 @@ try {
 }
 
 // CONSTANTS (Version Bump to Force Update)
-const CACHE_NAME = 'habit-tracker-v17-secure-sync';
+const CACHE_NAME = 'habit-tracker-v19-sync-final';
 
 // PERF: Static Asset List (Pre-allocated)
 const CACHE_FILES = [
@@ -128,7 +124,6 @@ self.addEventListener('fetch', (event) => {
                     return networkResponse;
                 }
 
-                // Captive Portal Protection
                 const contentType = networkResponse.headers.get('content-type');
                 const isAsset = req.destination && ['script', 'style', 'image'].includes(req.destination);
                 

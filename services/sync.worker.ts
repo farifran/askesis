@@ -1,1 +1,1 @@
-// File obsolete. Logic moved to services/cloud.ts (Inline Worker).
+// DELETED: Logic moved to services/cloud.ts
