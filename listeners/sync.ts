@@ -84,6 +84,7 @@ async function _processKey(key: string) {
         storeKey(key);
         
         // 2. Verifica dados na nuvem (SEM MESCLAR AINDA)
+        // Se falhar (erro de rede/crypto), vai para o catch
         const cloudState = await downloadRemoteState(key);
 
         if (cloudState) {
@@ -121,6 +122,12 @@ async function _processKey(key: string) {
         else clearKey();
 
         console.error("Failed to sync with provided key:", error);
+        
+        // Exibe erro na UI
+        if (ui.syncErrorMsg) {
+            ui.syncErrorMsg.textContent = (error as any).message || "Erro desconhecido";
+            ui.syncErrorMsg.classList.remove('hidden');
+        }
         setSyncStatus('syncError');
     } finally {
         ui.submitKeyBtn.textContent = originalBtnText;
@@ -154,6 +161,8 @@ const _handleEnableSync = async () => {
 
 const _handleEnterKeyView = () => {
     showView('enterKey');
+    // Limpa erros anteriores
+    if (ui.syncErrorMsg) ui.syncErrorMsg.classList.add('hidden');
     prewarmWorker(); 
 };
 
@@ -165,6 +174,9 @@ const _handleCancelEnterKey = () => {
 const _handleSubmitKey = () => {
     const key = ui.syncKeyInput.value.trim();
     if (!key) return;
+
+    // Limpa erros anteriores ao tentar novamente
+    if (ui.syncErrorMsg) ui.syncErrorMsg.classList.add('hidden');
 
     if (!isValidKeyFormat(key)) {
         showConfirmationModal(
@@ -221,19 +233,28 @@ const _handleDisableSync = () => {
     );
 };
 
-export async function initSync() {
-    await initAuth();
-    const hasKey = hasLocalSyncKey();
+// Async Bootstrapper: Updates view state based on auth, but DOES NOT block listener attachment
+async function _bootstrapSyncState() {
+    try {
+        await initAuth();
+        const hasKey = hasLocalSyncKey();
 
-    if (hasKey) {
-        showView('active');
-        setSyncStatus('syncSynced');
-    } else {
+        if (hasKey) {
+            showView('active');
+            setSyncStatus('syncSynced');
+        } else {
+            showView('inactive');
+            setSyncStatus('syncInitial');
+        }
+    } catch (e) {
+        console.error("Sync bootstrap failed", e);
         showView('inactive');
-        setSyncStatus('syncInitial');
     }
-    
-    // Attach static listeners
+}
+
+export function initSync() {
+    // 1. Attach Listeners IMMEDIATELY (Synchronous)
+    // This ensures buttons are alive even if auth check takes time.
     ui.enableSyncBtn.addEventListener('click', _handleEnableSync);
     ui.enterKeyViewBtn.addEventListener('click', _handleEnterKeyView);
     ui.cancelEnterKeyBtn.addEventListener('click', _handleCancelEnterKey);
@@ -242,4 +263,7 @@ export async function initSync() {
     ui.copyKeyBtn.addEventListener('click', _handleCopyKey);
     ui.viewKeyBtn.addEventListener('click', _handleViewKey);
     ui.disableSyncBtn.addEventListener('click', _handleDisableSync);
+
+    // 2. Determine Initial View State (Async)
+    _bootstrapSyncState();
 }
