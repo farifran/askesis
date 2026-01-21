@@ -9,7 +9,7 @@
  * @description Definição do Estado Global e Estruturas de Dados (Single Source of Truth).
  */
 
-import { getTodayUTCIso, decompressString, decompressFromBuffer } from './utils';
+import { addDays, getTodayUTC, getTodayUTCIso, decompressString } from './utils';
 
 // --- ERROR TYPES ---
 export class DataLoadingError extends Error {
@@ -27,26 +27,28 @@ export type GovernanceSphere = 'Biological' | 'Structural' | 'Social' | 'Mental'
 export type HabitNature = 'Addition' | 'Subtraction';
 
 export interface HabitPhilosophy {
-  readonly sphere: GovernanceSphere;
-  readonly level: StoicLevel;
-  readonly virtue: StoicVirtue;
-  readonly discipline: StoicDiscipline;
-  readonly nature: HabitNature;
-  readonly conscienceKey: string;
-  readonly stoicConcept: string;
-  readonly masterQuoteId: string;
+  sphere: GovernanceSphere;
+  level: StoicLevel;
+  virtue: StoicVirtue;
+  discipline: StoicDiscipline;
+  nature: HabitNature;
+  conscienceKey: string;
+  stoicConcept: string;
+  masterQuoteId: string;
 }
 
 // --- TYPES & INTERFACES ---
+export type HabitStatus = 'completed' | 'snoozed' | 'pending';
 
 export type Frequency =
-    | { readonly type: 'daily' }
-    | { readonly type: 'interval'; readonly unit: 'days' | 'weeks'; readonly amount: number }
-    | { readonly type: 'specific_days_of_week'; readonly days: readonly number[] };
+    | { type: 'daily' }
+    | { type: 'interval'; unit: 'days' | 'weeks'; amount: number }
+    | { type: 'specific_days_of_week'; days: number[] };
 
 export interface HabitDayData {
-    goalOverride?: number;
-    note?: string;
+    status: HabitStatus;
+    goalOverride: number | undefined;
+    note: string | undefined;
 }
 
 export type HabitDailyInstances = Partial<Record<TimeOfDay, HabitDayData>>;
@@ -56,52 +58,54 @@ export interface HabitDailyInfo {
     dailySchedule: TimeOfDay[] | undefined;
 }
 
-export interface HabitGoal { 
-    readonly type: 'pages' | 'minutes' | 'check'; 
-    readonly total?: number; 
-    readonly unitKey?: string;
-}
-
 export interface HabitSchedule {
-    readonly startDate: string;
-    endDate?: string; 
-    readonly icon: string;
-    readonly color: string;
-    readonly goal: HabitGoal;
-    readonly philosophy?: HabitPhilosophy;
-    readonly name?: string;
-    readonly subtitle?: string;
-    readonly nameKey?: string;
-    readonly subtitleKey?: string;
-    readonly times: readonly TimeOfDay[];
-    readonly frequency: Frequency;
-    readonly scheduleAnchor: string;
+    startDate: string;
+    endDate?: string;
+    name?: string;
+    subtitle?: string;
+    nameKey?: string;
+    subtitleKey?: string;
+    times: TimeOfDay[];
+    frequency: Frequency;
+    scheduleAnchor: string;
 }
 
 export interface Habit {
-    readonly id: string;
-    createdOn: string; 
-    graduatedOn?: string; 
+    id: string;
+    icon: string;
+    color: string;
+    goal: { 
+        type: 'pages' | 'minutes' | 'check'; 
+        total?: number; 
+        unitKey?: string;
+    };
+    createdOn: string;
+    graduatedOn?: string;
+    philosophy?: HabitPhilosophy;
     scheduleHistory: HabitSchedule[];
 }
 
 export type PredefinedHabit = {
-    readonly nameKey: string;
-    readonly subtitleKey: string;
-    readonly icon: string;
-    readonly color: string;
-    readonly times: readonly TimeOfDay[];
-    readonly goal: HabitGoal;
-    readonly frequency: Frequency;
-    readonly isDefault?: boolean;
-    readonly philosophy?: HabitPhilosophy;
+    nameKey: string;
+    subtitleKey: string;
+    icon: string;
+    color: string;
+    times: TimeOfDay[];
+    goal: {
+        type: 'pages' | 'minutes' | 'check';
+        total?: number;
+        unitKey: string;
+    };
+    frequency: Frequency;
+    isDefault?: boolean;
+    philosophy?: HabitPhilosophy;
 };
 
 export type HabitTemplate = {
     icon: string;
     color: string;
     times: TimeOfDay[];
-    goal: HabitGoal;
+    goal: Habit['goal'];
     frequency: Frequency;
     philosophy?: HabitPhilosophy;
 } & ({
@@ -117,59 +121,44 @@ export type HabitTemplate = {
 });
 
 export interface DailyStoicDiagnosis {
-    readonly level: StoicLevel;
-    readonly themes: readonly string[];
-    readonly timestamp: number;
+    level: StoicLevel;
+    themes: string[];
+    timestamp: number;
 }
 
 export interface QuoteDisplayState {
-    readonly currentId: string;
-    readonly displayedAt: number;
-    readonly lockedContext: string;
-}
-
-export interface DaySummary {
-    readonly total: number;
-    readonly completed: number;
-    readonly snoozed: number;
-    readonly pending: number;
-    readonly completedPercent: number;
-    readonly snoozedPercent: number;
-    readonly showPlusIndicator: boolean;
-}
-
-// --- BITMASK STRUCTURES ---
-export const PERIOD_OFFSET = { Morning: 0, Afternoon: 2, Evening: 4 } as const;
-export const HABIT_STATE = { NULL: 0, DONE: 1, DEFERRED: 2, DONE_PLUS: 3 } as const;
-
-export interface MonthlyHabitLog {
-    habitId: string;
-    monthKey: string; 
-    data: bigint;     
+    currentId: string;
+    displayedAt: number;
+    lockedContext: string;
 }
 
 export interface AppState {
-    readonly version: number;
-    lastModified: number; 
-    readonly habits: readonly Habit[];
-    readonly dailyData: Readonly<Record<string, Readonly<Record<string, HabitDailyInfo>>>>;
-    readonly archives: Readonly<Record<string, string | Uint8Array>>; 
-    readonly dailyDiagnoses: Readonly<Record<string, DailyStoicDiagnosis>>;
-    readonly notificationsShown: readonly string[];
-    readonly pending21DayHabitIds: readonly string[];
-    readonly pendingConsolidationHabitIds: readonly string[];
-    readonly quoteState?: QuoteDisplayState;
-    monthlyLogs?: Map<string, bigint>;
+    version: number;
+    lastModified: number;
+    habits: Habit[];
+    dailyData: Record<string, Record<string, HabitDailyInfo>>;
+    archives: Record<string, string>; 
+    dailyDiagnoses: Record<string, DailyStoicDiagnosis>;
+    notificationsShown: string[];
+    pending21DayHabitIds: string[];
+    pendingConsolidationHabitIds: string[];
+    quoteState?: QuoteDisplayState;
+    aiState?: 'idle' | 'loading' | 'completed' | 'error';
+    lastAIResult?: string | null;
+    lastAIError?: string | null;
+    hasSeenAIResult?: boolean;
 }
 
 // --- CONSTANTS ---
-export const APP_VERSION = 7; 
+export const APP_VERSION = 6; 
+export const DAYS_IN_CALENDAR = 61;
 export const STREAK_SEMI_CONSOLIDATED = 21;
 export const STREAK_CONSOLIDATED = 66;
 export const STREAK_LOOKBACK_DAYS = 730;
 
-const MAX_UNARCHIVED_CACHE_SIZE = 3; 
-const MAX_SELECTOR_CACHE_SIZE = 365; 
+// MEMORY GUARDS: Previne OOM e lentidão em sessões longas.
+const MAX_UNARCHIVED_CACHE_SIZE = 3; // Mantém no máximo 3 anos arquivados em memória.
+const MAX_SELECTOR_CACHE_SIZE = 365; // Cache de streaks/resumos limitado a 1 ano.
 
 export const TIMES_OF_DAY = ['Morning', 'Afternoon', 'Evening'] as const;
 export type TimeOfDay = typeof TIMES_OF_DAY[number];
@@ -187,29 +176,39 @@ export const FREQUENCIES = [
     { labelKey: 'freqSpecificDaysOfWeek', value: { type: 'specific_days_of_week', days: [] } }
 ] as const;
 
+const STATUS_TRANSITIONS = Object.freeze({
+    pending: 'completed',
+    completed: 'snoozed',
+    snoozed: 'pending',
+} as const);
+
 const _createMonomorphicDailyInfo = (): HabitDailyInfo => ({
     instances: {},
     dailySchedule: undefined
 });
 
 const _createMonomorphicInstance = (): HabitDayData => ({
+    status: 'pending',
     goalOverride: undefined,
     note: undefined
 });
 
+export function getNextStatus(currentStatus: HabitStatus): HabitStatus {
+    return STATUS_TRANSITIONS[currentStatus];
+}
+
 // --- APPLICATION STATE ---
 export const state: {
     habits: Habit[];
-    lastModified: number;
     dailyData: Record<string, Record<string, HabitDailyInfo>>;
-    archives: Record<string, string | Uint8Array>;
+    archives: Record<string, string>;
     dailyDiagnoses: Record<string, DailyStoicDiagnosis>;
     unarchivedCache: Map<string, Record<string, Record<string, HabitDailyInfo>>>;
     streaksCache: Map<string, Map<string, number>>;
     habitAppearanceCache: Map<string, Map<string, boolean>>;
     scheduleCache: Map<string, Map<string, HabitSchedule | null>>;
     activeHabitsCache: Map<string, Array<{ habit: Habit; schedule: TimeOfDay[] }>>;
-    daySummaryCache: Map<string, DaySummary>;
+    daySummaryCache: Map<string, any>;
     calendarDates: Date[];
     selectedDate: string;
     activeLanguageCode: Language['code'];
@@ -233,7 +232,6 @@ export const state: {
     lastAIResult: string | null;
     lastAIError: string | null;
     syncState: 'syncSaving' | 'syncSynced' | 'syncError' | 'syncInitial';
-    syncLastError: string | null;
     fullCalendar: {
         year: number;
         month: number;
@@ -243,10 +241,8 @@ export const state: {
         habitListStructure: boolean;
         chartData: boolean;
     };
-    monthlyLogs: Map<string, bigint>;
 } = {
     habits: [],
-    lastModified: Date.now(),
     dailyData: {},
     archives: {},
     dailyDiagnoses: {},
@@ -273,7 +269,6 @@ export const state: {
     lastAIResult: null,
     lastAIError: null,
     syncState: 'syncInitial',
-    syncLastError: null,
     fullCalendar: {
         year: new Date().getFullYear(),
         month: new Date().getMonth(),
@@ -282,8 +277,7 @@ export const state: {
         calendarVisuals: true,
         habitListStructure: true,
         chartData: true,
-    },
-    monthlyLogs: new Map<string, bigint>(),
+    }
 };
 
 // --- CACHE MANAGEMENT ---
@@ -298,19 +292,9 @@ export function invalidateChartCache() {
 }
 
 export function getPersistableState(): AppState {
-    // MONOTONIC CLOCK LOGIC: Ensure lastModified always moves forward.
-    // If the system clock is behind the last known state (due to clock skew or device switch),
-    // we increment manually to guarantee the server accepts the update as newer.
-    const now = Date.now();
-    if (now > state.lastModified) {
-        state.lastModified = now;
-    } else {
-        state.lastModified = state.lastModified + 1;
-    }
-
     return {
         version: APP_VERSION,
-        lastModified: state.lastModified,
+        lastModified: Date.now(),
         habits: state.habits,
         dailyData: state.dailyData,
         archives: state.archives,
@@ -318,17 +302,31 @@ export function getPersistableState(): AppState {
         notificationsShown: state.notificationsShown,
         pending21DayHabitIds: state.pending21DayHabitIds,
         pendingConsolidationHabitIds: state.pendingConsolidationHabitIds,
-        quoteState: state.quoteState,
+        quoteState: state.quoteState
     };
 }
 
-export function clearScheduleCache() {
+/**
+ * CACHE NUKE: Limpa TODOS os caches de renderização e seletores.
+ * Essencial após operações de Sincronização ou Restauração de Backup para
+ * garantir que a UI reflita os novos dados e não um estado fantasma anterior.
+ */
+export function resetAllCaches() {
     state.scheduleCache.clear();
     state.activeHabitsCache.clear();
     state.habitAppearanceCache.clear();
     state.streaksCache.clear();
     state.daySummaryCache.clear();
+    state.unarchivedCache.clear();
+    
+    // Force UI Re-render
+    state.uiDirtyState.calendarVisuals = true;
+    state.uiDirtyState.habitListStructure = true;
     state.uiDirtyState.chartData = true;
+}
+
+export function clearScheduleCache() {
+    resetAllCaches();
 }
 
 export function clearActiveHabitsCache() {
@@ -339,6 +337,9 @@ export function clearActiveHabitsCache() {
     state.uiDirtyState.chartData = true;
 }
 
+/**
+ * MEMORY GUARD: Evita vazamento de memória em sessões longas.
+ */
 function pruneSelectorCaches() {
     if (state.daySummaryCache.size > MAX_SELECTOR_CACHE_SIZE) {
         clearActiveHabitsCache();
@@ -384,12 +385,12 @@ export function getHabitDailyInfoForDate(date: string): Record<string, HabitDail
     }
 
     const rawArchive = state.archives[year];
-    if (rawArchive) {
-        if (rawArchive instanceof Uint8Array) {
+    if (rawArchive && typeof rawArchive === 'string') {
+        if (rawArchive.startsWith('GZIP:')) {
             const pendingKey = `${year}_pending`;
             if (!state.unarchivedCache.has(pendingKey)) {
                 state.unarchivedCache.set(pendingKey, {});
-                decompressFromBuffer(rawArchive).then(json => {
+                decompressString(rawArchive.substring(5)).then(json => {
                     try {
                         const parsedYearData = JSON.parse(json);
                         _enforceCacheLimit(pendingKey);
@@ -406,39 +407,14 @@ export function getHabitDailyInfoForDate(date: string): Record<string, HabitDail
                 });
             }
             return (EMPTY_DAILY_INFO as Record<string, HabitDailyInfo>);
-        }
-        
-        else if (typeof rawArchive === 'string') {
-            if (rawArchive.startsWith('GZIP:')) {
-                const pendingKey = `${year}_pending`;
-                if (!state.unarchivedCache.has(pendingKey)) {
-                    state.unarchivedCache.set(pendingKey, {});
-                    decompressString(rawArchive.substring(5)).then(json => {
-                        try {
-                            const parsedYearData = JSON.parse(json);
-                            _enforceCacheLimit(pendingKey);
-                            state.unarchivedCache.set(year, parsedYearData);
-                            state.unarchivedCache.delete(pendingKey);
-                            document.dispatchEvent(new CustomEvent('render-app'));
-                        } catch {
-                            state.unarchivedCache.set(year, {}); 
-                            state.unarchivedCache.delete(pendingKey);
-                        }
-                    }).catch(() => {
-                        state.unarchivedCache.set(year, {}); 
-                        state.unarchivedCache.delete(pendingKey);
-                    });
-                }
-                return (EMPTY_DAILY_INFO as Record<string, HabitDailyInfo>);
-            } else {
-                try {
-                    const parsedYearData = JSON.parse(rawArchive);
-                    _enforceCacheLimit(year);
-                    state.unarchivedCache.set(year, parsedYearData);
-                    return parsedYearData[date] || (EMPTY_DAILY_INFO as Record<string, HabitDailyInfo>);
-                } catch {
-                    console.error(`Error parsing legacy archive for ${year}`);
-                }
+        } else {
+            try {
+                const parsedYearData = JSON.parse(rawArchive);
+                _enforceCacheLimit(year);
+                state.unarchivedCache.set(year, parsedYearData);
+                return parsedYearData[date] || (EMPTY_DAILY_INFO as Record<string, HabitDailyInfo>);
+            } catch {
+                console.error(`Error parsing legacy archive for ${year}`);
             }
         }
     }

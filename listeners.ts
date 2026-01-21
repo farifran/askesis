@@ -1,5 +1,4 @@
 
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -18,17 +17,16 @@
  */
 
 import { ui } from './render/ui';
-import { renderApp, renderAINotificationState, updateNotificationUI, initModalEngine, getCachedHabitCard, updateHabitCardElement } from './render';
+import { renderApp, renderAINotificationState, updateNotificationUI, initModalEngine } from './render';
 import { setupModalListeners } from './listeners/modals';
 import { setupCardListeners } from './listeners/cards';
 import { setupDragHandler } from './listeners/drag';
 import { setupSwipeHandler } from './listeners/swipe';
 import { setupCalendarListeners } from './listeners/calendar';
-import { setupChartListeners } from './listeners/chart';
+import { initChartInteractions } from './render/chart';
 import { pushToOneSignal, getTodayUTCIso, resetTodayCache } from './utils';
 import { state, getPersistableState } from './state';
 import { syncStateWithCloud } from './services/cloud';
-import { checkAndAnalyzeDayContext } from './services/analysis';
 
 // CONSTANTS
 const NETWORK_DEBOUNCE_MS = 500;
@@ -74,9 +72,10 @@ const _handleNetworkChange = () => {
         }
 
         // SYNC TRIGGER: Se voltamos a ficar online e estável, empurramos dados.
+        // O algoritmo de resolução de conflitos (409) cuidará de puxar atualizações remotas se necessário.
         if (isOnline) {
-            console.log("[Network] Online stable. Attempting to flush pending sync.");
-            syncStateWithCloud(getPersistableState());
+            console.log("[Network] Online stable. Checking for updates/syncing.");
+            syncStateWithCloud(getPersistableState(), true);
         }
     }, NETWORK_DEBOUNCE_MS);
 };
@@ -88,6 +87,13 @@ const _handleVisibilityChange = () => {
     if (document.visibilityState === 'visible') {
         // 1. Refresh Network State (Immediately check)
         _handleNetworkChange();
+
+        // SYNC TRIGGER [2025-06-03]: Força uma verificação de sincronização (Pull/Push) ao acordar.
+        // Se houver dados novos na nuvem (de outro dispositivo), o servidor retornará 409 e o
+        // cliente fará o merge automaticamente.
+        if (navigator.onLine) {
+            syncStateWithCloud(getPersistableState(), true);
+        }
 
         // 2. Temporal Consistency Check
         const cachedToday = getTodayUTCIso(); // Valor atual em cache
@@ -112,27 +118,6 @@ const _handleVisibilityChange = () => {
     }
 };
 
-/**
- * EVENT BUS: Targeted UI updates for performance.
- * Handles reactive updates from data changes.
- */
-const _handleCardUpdate = (e: Event) => {
-    const { habitId, time } = (e as CustomEvent).detail;
-    const habit = state.habits.find(h => h.id === habitId);
-    
-    let cardElement = getCachedHabitCard(habitId, time);
-
-    // ROBUSTNESS FIX [2025-06-03]: Fallback to DOM query if cache is stale or desynchronized.
-    if (!cardElement) {
-         cardElement = document.querySelector(`.habit-card[data-habit-id="${habitId}"][data-time="${time}"]`) as HTMLElement;
-    }
-
-    if (habit && cardElement) {
-        const shouldAnimate = e.type === 'card-status-changed';
-        updateHabitCardElement(cardElement, habit, time, undefined, { animate: shouldAnimate });
-    }
-};
-
 export function setupEventListeners() {
     // ROBUSTNESS: Singleton Guard.
     if (areListenersAttached) {
@@ -152,18 +137,6 @@ export function setupEventListeners() {
 
     // 3. App Event Bus (Direct reference)
     document.addEventListener('render-app', renderApp);
-    
-    // EVENT BUS: Bridge between View (render.ts) and Logic (analysis.ts) without circular imports.
-    document.addEventListener('request-analysis', (e: Event) => {
-        const ce = e as CustomEvent;
-        if (ce.detail?.date) {
-            checkAndAnalyzeDayContext(ce.detail.date);
-        }
-    });
-
-    // EVENT BUS: Targeted UI updates for performance
-    document.addEventListener('card-status-changed', _handleCardUpdate);
-    document.addEventListener('card-goal-changed', _handleCardUpdate);
 
     // 4. ENVIRONMENT & LIFECYCLE LISTENERS
     window.addEventListener('online', _handleNetworkChange);
@@ -180,16 +153,15 @@ export function setupEventListeners() {
             const container = ui.habitContainer;
             setupDragHandler(container);
             setupSwipeHandler(container);
-            setupChartListeners();
+            initChartInteractions();
         } catch (e) {
             console.warn("Interaction setup skipped: DOM not ready/Element missing.");
         }
     };
 
-    // BLEEDING-EDGE PERF (Scheduler API): A inicialização da física de gestos (drag, swipe)
-    // é adiada para depois do primeiro paint. A prioridade 'user-visible' garante que
-    // isso aconteça rapidamente, mas sem competir com a renderização inicial crítica,
-    // resultando em uma percepção de carregamento mais rápido.
+    // UX OPTIMIZATION: Elevado de 'background' para 'user-visible'.
+    // A física de gestos é crítica para a percepção de "App Nativo". 
+    // @fix: Cast to any to check and call scheduler API
     if ('scheduler' in window && (window as any).scheduler) {
         (window as any).scheduler.postTask(setupHeavyInteractions, { priority: 'user-visible' });
     } else {
