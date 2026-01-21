@@ -9,17 +9,10 @@
  * @description Camada de Persistência e Gerenciamento de Ciclo de Vida de Dados (Storage Engine).
  */
 
-import { state, AppState, Habit, HabitDailyInfo, APP_VERSION, getPersistableState } from '../state';
+import { state, AppState, Habit, HabitDailyInfo, APP_VERSION, getPersistableState, resetAllCaches } from '../state';
 import { migrateState } from './migration';
-import { HabitService } from './HabitService';
 
-const DB_NAME = 'AskesisDB', DB_VERSION = 1, STORE_NAME = 'app_state';
-const LEGACY_STORAGE_KEY = 'habitTrackerState_v1';
-
-const STATE_JSON_KEY = 'askesis_core_json';
-const STATE_BINARY_KEY = 'askesis_logs_binary';
-
-const DB_OPEN_TIMEOUT_MS = 15000, IDB_SAVE_DEBOUNCE_MS = 500;
+const DB_NAME = 'AskesisDB', DB_VERSION = 1, STORE_NAME = 'app_state', STATE_STORAGE_KEY = 'habitTrackerState_v1', DB_OPEN_TIMEOUT_MS = 15000, IDB_SAVE_DEBOUNCE_MS = 500;
 let dbPromise: Promise<IDBDatabase> | null = null, saveTimeout: number | undefined;
 
 function getDB(): Promise<IDBDatabase> {
@@ -52,207 +45,105 @@ async function performIDB<T>(mode: IDBTransactionMode, op: (s: IDBObjectStore) =
             request.onerror = () => reject(request.error);
         });
     } catch (e) {
+        // CHAOS DEFENSE: Reseta a conexão em caso de erro para não travar a sessão.
         dbPromise = null; 
         if (retries > 0) return performIDB(mode, op, retries - 1);
         return undefined;
     }
 }
 
-async function saveSplitState(main: AppState, logs: any): Promise<void> {
-    const db = await getDB();
-    return new Promise((resolve, reject) => {
-        const tx = db.transaction(STORE_NAME, 'readwrite');
-        const store = tx.objectStore(STORE_NAME);
-        
-        const { monthlyLogs, ...jsonState } = main as any;
-        store.put(jsonState, STATE_JSON_KEY);
-        
-        if (logs && logs.size > 0) {
-            store.put(logs, STATE_BINARY_KEY);
-        }
-        
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
-    });
-}
+let syncHandler: ((state: AppState) => void) | null = null;
+export const registerSyncHandler = (h: (s: AppState) => void) => syncHandler = h;
 
-// Handler signature updated to support 'immediate' flag for flush operations
-let syncHandler: ((state: AppState, immediate?: boolean) => void) | null = null;
-export const registerSyncHandler = (h: (s: AppState, immediate?: boolean) => void) => syncHandler = h;
-
-function pruneOrphanedDailyData(habits: readonly Habit[], dailyData: Record<string, Record<string, HabitDailyInfo>>) {
+/**
+ * Poda de dados órfãos: remove registros de hábitos deletados para economizar espaço e RAM.
+ */
+function pruneOrphanedDailyData(habits: Habit[], dailyData: Record<string, Record<string, HabitDailyInfo>>) {
     if (habits.length === 0) return; 
     const validIds = new Set(habits.map(h => h.id));
+    let prunedCount = 0;
     for (const date in dailyData) {
         for (const id in dailyData[date]) {
             if (!validIds.has(id)) {
                 delete dailyData[date][id];
+                prunedCount++;
             }
         }
         if (Object.keys(dailyData[date]).length === 0) delete dailyData[date];
     }
-}
-
-// Internal save with suppression support
-async function saveStateInternal(immediate = false, suppressSync = false) {
-    const structuredData = getPersistableState();
-    try {
-        await saveSplitState(structuredData, state.monthlyLogs);
-    } catch (e) { 
-        console.error("IDB Save Failed:", e); 
-    }
-    
-    // LOOP PROTECTION: Only trigger sync if NOT suppressed
-    if (!suppressSync) {
-        syncHandler?.(structuredData, immediate);
-    } else {
-        console.log("[Persistence] Sync suppressed for this save.");
-    }
-}
-
-export function cancelPendingSave() {
-    if (saveTimeout !== undefined) {
-        clearTimeout(saveTimeout);
-        saveTimeout = undefined;
-    }
+    if (prunedCount > 0) console.log(`[Persistence] ${prunedCount} registros órfãos podados.`);
 }
 
 export async function flushSaveBuffer(): Promise<void> {
     if (saveTimeout !== undefined) {
         clearTimeout(saveTimeout);
         saveTimeout = undefined;
-        // Trigger immediate save and immediate sync
-        await saveStateInternal(true);
+        const data = getPersistableState();
+        try {
+            await performIDB('readwrite', s => s.put(data, STATE_STORAGE_KEY));
+            syncHandler?.(data);
+        } catch (e) {
+            console.error("Flush failed:", e);
+        }
     }
 }
 
-export async function saveState(suppressSync = false): Promise<void> {
+export async function saveState(): Promise<void> {
     if (saveTimeout) clearTimeout(saveTimeout);
-    // Bind the suppressSync flag to the timeout callback
-    saveTimeout = self.setTimeout(() => saveStateInternal(false, suppressSync), IDB_SAVE_DEBOUNCE_MS);
+    saveTimeout = self.setTimeout(async () => {
+        saveTimeout = undefined;
+        const data = getPersistableState();
+        try {
+            await performIDB('readwrite', s => s.put(data, STATE_STORAGE_KEY));
+        } catch (e) { 
+            console.error("IDB Save Failed:", e); 
+        }
+        syncHandler?.(data);
+    }, IDB_SAVE_DEBOUNCE_MS);
 }
 
-export const persistStateLocally = (data: AppState, suppressSync = false) => {
-    return saveStateInternal(true, suppressSync);
-};
+export const persistStateLocally = (data: AppState) => performIDB('readwrite', s => s.put(data, STATE_STORAGE_KEY));
 
 export async function loadState(cloudState?: AppState): Promise<AppState | null> {
-    let mainState = cloudState;
-    let binaryLogs: any;
-
-    if (!mainState) {
-        try {
-            const db = await getDB();
-            await new Promise<void>((resolve) => {
-                const tx = db.transaction(STORE_NAME, 'readonly');
-                const store = tx.objectStore(STORE_NAME);
-                
-                const reqMain = store.get(STATE_JSON_KEY);
-                const reqLogs = store.get(STATE_BINARY_KEY);
-                
-                tx.oncomplete = () => {
-                    mainState = reqMain.result;
-                    binaryLogs = reqLogs.result;
-                    resolve();
-                };
-                tx.onerror = () => resolve();
-            });
-        } catch (e) {
-            console.warn("[Persistence] Failed to read split state from IDB", e);
+    let loaded: AppState | null = cloudState || await performIDB<AppState>('readonly', s => s.get(STATE_STORAGE_KEY)) || null;
+    if (!loaded) {
+        const legacy = localStorage.getItem(STATE_STORAGE_KEY);
+        if (legacy) {
+            try {
+                loaded = JSON.parse(legacy);
+                if (loaded) { 
+                    await performIDB('readwrite', s => s.put(loaded!, STATE_STORAGE_KEY)); 
+                    localStorage.removeItem(STATE_STORAGE_KEY); 
+                }
+            } catch (e) { console.error("Legacy Corrupt", e); }
         }
     }
 
-    if (mainState) {
-        let migrated = migrateState(mainState, APP_VERSION);
-        migrated = {
-            ...migrated,
-            habits: (migrated.habits || []).filter(h => h && h.id && h.scheduleHistory?.length > 0)
-        };
+    if (loaded) {
+        const migrated = migrateState(loaded, APP_VERSION);
+        migrated.habits = (migrated.habits || []).filter(h => h && h.id && h.scheduleHistory?.length > 0);
         
+        // PERFORMANCE & INTEGRITY: Pruning rodando fora do caminho crítico do boot.
         const runCleanup = () => pruneOrphanedDailyData(migrated.habits, migrated.dailyData || {});
+        if ('requestIdleCallback' in window) requestIdleCallback(runCleanup);
+        else setTimeout(runCleanup, 3000);
         
-        if ('scheduler' in window && (window as any).scheduler) {
-             (window as any).scheduler.postTask(runCleanup, { priority: 'background' });
-        } else if ('requestIdleCallback' in window) {
-             requestIdleCallback(runCleanup);
-        } else {
-             setTimeout(runCleanup, 3000);
-        }
+        Object.assign(state, { 
+            habits: migrated.habits, dailyData: migrated.dailyData || {}, archives: migrated.archives || {},
+            notificationsShown: migrated.notificationsShown || [], pending21DayHabitIds: migrated.pending21DayHabitIds || [],
+            pendingConsolidationHabitIds: migrated.pendingConsolidationHabitIds || []
+        });
         
-        state.habits = [...migrated.habits];
-        if (migrated.lastModified) {
-            state.lastModified = migrated.lastModified;
-        }
-        
-        state.dailyData = migrated.dailyData || {};
-        state.archives = migrated.archives || {};
-        state.notificationsShown = [...(migrated.notificationsShown || [])];
-        state.pending21DayHabitIds = [...(migrated.pending21DayHabitIds || [])];
-        state.pendingConsolidationHabitIds = [...(migrated.pendingConsolidationHabitIds || [])];
-        
-        if (binaryLogs instanceof Map && binaryLogs.size > 0) {
-            const firstVal = binaryLogs.values().next().value;
-            if (typeof firstVal === 'bigint') {
-                 state.monthlyLogs = binaryLogs as Map<string, bigint>;
-            } 
-            else if (firstVal instanceof ArrayBuffer) {
-                 HabitService.unpackBinaryLogs(binaryLogs as Map<string, ArrayBuffer>);
-            } else {
-                 state.monthlyLogs = binaryLogs as any;
-            }
-        } 
-        else if (migrated.monthlyLogs instanceof Map && migrated.monthlyLogs.size > 0) {
-            state.monthlyLogs = migrated.monthlyLogs;
-        } else if ((migrated as any).monthlyLogsSerialized && Array.isArray((migrated as any).monthlyLogsSerialized)) {
-            HabitService.deserializeLogsFromCloud((migrated as any).monthlyLogsSerialized);
-            delete (migrated as any).monthlyLogsSerialized;
-        } else {
-            if (!state.monthlyLogs) {
-                state.monthlyLogs = new Map();
-            }
-        }
-
-        ['streaksCache', 'scheduleCache', 'activeHabitsCache', 'unarchivedCache', 'habitAppearanceCache', 'daySummaryCache'].forEach(k => (state as any)[k].clear());
-        Object.assign(state.uiDirtyState, { calendarVisuals: true, habitListStructure: true, chartData: true });
-        
-        document.dispatchEvent(new CustomEvent('render-app'));
+        // CRITICAL FIX: Ensure all caches are invalidated to prevent stale data in UI
+        resetAllCaches();
         return migrated;
     }
     return null;
 }
 
-export const clearLocalPersistence = async () => {
-    // SECURITY: Cancela qualquer salvamento pendente (debounce) para evitar que ele reescreva dados
-    // logo após o comando de delete.
-    cancelPendingSave();
-    
-    // TRANSACTIONAL INTEGRITY:
-    // Em vez de usar performIDB (que resolve no onsuccess), criamos uma transação manual
-    // que só resolve no 'oncomplete'. Isso garante que o commit no disco ocorreu
-    // antes de prosseguirmos para o reload da página.
-    try {
-        const db = await getDB();
-        await new Promise<void>((resolve, reject) => {
-            const tx = db.transaction(STORE_NAME, 'readwrite');
-            const store = tx.objectStore(STORE_NAME);
-            
-            store.delete(STATE_JSON_KEY);
-            store.delete(STATE_BINARY_KEY);
-            store.delete(LEGACY_STORAGE_KEY);
-            
-            tx.oncomplete = () => resolve();
-            tx.onerror = () => reject(tx.error);
-        });
-    } catch (e) {
-        console.warn("IDB clear failed or empty", e);
-    }
-
-    localStorage.removeItem(LEGACY_STORAGE_KEY);
-    state.monthlyLogs = new Map();
-};
+export const clearLocalPersistence = () => Promise.all([performIDB('readwrite', s => s.delete(STATE_STORAGE_KEY)), localStorage.removeItem(STATE_STORAGE_KEY)]);
 
 if (typeof window !== 'undefined') {
-    // TRIGGER: Flush sync queue on close/hide
     window.addEventListener('beforeunload', () => { flushSaveBuffer(); });
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushSaveBuffer(); });
 }
