@@ -4,13 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 
-import { AppState, state, getPersistableState } from '../state';
+import { AppState, state, getPersistableState, resetAllCaches } from '../state';
 import { loadState, persistStateLocally } from './persistence';
 import { generateUUID } from '../utils';
 import { ui } from '../render/ui';
 import { t } from '../i18n';
 import { hasLocalSyncKey, getSyncKey, apiFetch } from './api';
-import { renderApp, clearHabitDomCache } from '../render'; // FIX: Importar clearHabitDomCache
+import { renderApp, clearHabitDomCache } from '../render'; 
 
 const DEBOUNCE_DELAY = 2000;
 const WORKER_TIMEOUT_MS = 30000;
@@ -74,22 +74,38 @@ async function resolveConflictWithServerState(serverPayload: { lastModified: num
     if (!key) return;
     try {
         const serverState = await runWorkerTask<AppState>('decrypt', serverPayload.state, key);
+        
+        // MERGE CRÍTICO: Usa a nova lógica de timestamps em dataMerge.ts
         const merged = await runWorkerTask<AppState>('merge', { local: getPersistableState(), incoming: serverState });
+        
+        // Garante timestamp incremental para vencer o servidor na próxima volta
         if (merged.lastModified <= serverPayload.lastModified) merged.lastModified = serverPayload.lastModified + 1;
         
         await persistStateLocally(merged);
-        await loadState(merged); // This clears state caches
         
-        // CRITICAL FIX: Limpa o cache DOM para garantir que hábitos novos apareçam na timeline
+        // CACHE NUKE: Garante que loadState limpe a memória e caches de renderização
+        await loadState(merged);
+        
+        // DOM CLEANUP: Remove elementos órfãos (hábitos deletados)
         clearHabitDomCache();
+        resetAllCaches();
         
-        // Force full re-render
-        document.dispatchEvent(new CustomEvent('render-app'));
-        renderApp();
+        // RE-RENDER AUTOMÁTICO: Força atualização visual imediata
+        state.uiDirtyState.habitListStructure = true;
+        state.uiDirtyState.calendarVisuals = true;
+        state.uiDirtyState.chartData = true;
+        
+        requestAnimationFrame(() => {
+            renderApp();
+            // Dispara evento para atualizar Badges e outros listeners
+            document.dispatchEvent(new CustomEvent('habitsChanged'));
+            document.dispatchEvent(new CustomEvent('render-app'));
+        });
         
         setSyncStatus('syncSynced');
-        document.dispatchEvent(new CustomEvent('habitsChanged'));
-        syncStateWithCloud(merged, true); // Push back merged state
+        
+        // Push imediato do estado resolvido de volta para o servidor
+        syncStateWithCloud(merged, true); 
     } catch (e) { 
         console.error("Conflict resolution failed", e);
         setSyncStatus('syncError'); 
