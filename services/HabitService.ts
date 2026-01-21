@@ -103,35 +103,54 @@ export class HabitService {
     /**
      * INTELLIGENT MERGE (CRDT-Lite para Bitmasks)
      * Funde dois mapas de logs.
-     * Regra: Se o mapa 'winner' não tiver a chave, ou tiver valor 0 (vazio),
-     * e o mapa 'loser' tiver dados, adotamos o 'loser'.
-     * Isso resolve o problema onde um dispositivo 'novo' (mas vazio) sobrescreve um 'velho' (mas cheio).
+     * Regra Padrão: Timestamp Authority (definido no caller) + Soft Merge (não apaga dados se um lado for zero).
      */
     static mergeLogs(winnerMap: Map<string, bigint> | undefined, loserMap: Map<string, bigint> | undefined): Map<string, bigint> {
         const result = new Map<string, bigint>(winnerMap || []);
-        
         if (!loserMap) return result;
 
         for (const [key, loserVal] of loserMap.entries()) {
             const winnerVal = result.get(key);
-
-            // CASO 1: Chave não existe no vencedor -> Adiciona (Importar hábito novo)
-            if (winnerVal === undefined) {
-                result.set(key, loserVal);
-                continue;
-            }
-
-            // CASO 2: Vencedor está vazio (0), mas Perdedor tem dados -> Adota Perdedor
-            // Isso acontece quando o usuário cria o hábito no dispositivo novo,
-            // mas o histórico real está no dispositivo antigo.
-            if (winnerVal === 0n && loserVal !== 0n) {
+            // Se o vencedor não tem dados ou tem dados vazios (0), aceita os dados do perdedor
+            if (winnerVal === undefined || (winnerVal === 0n && loserVal !== 0n)) {
                 result.set(key, loserVal);
             }
-            
-            // CASO 3: Ambos têm dados -> Mantém Vencedor (Timestamp Authority)
-            // Assumimos que se o Vencedor tem dados, eles são mais recentes/corretos.
         }
-        
         return result;
+    }
+
+    /**
+     * FORCE DAY SYNC (Prioridade Absoluta para Data Específica)
+     * Transplanta os bits de um dia específico da 'sourceMap' (Cloud) para 'targetMap' (Local/Merged).
+     * Isso garante que "Hoje" esteja exatamente igual à nuvem, ignorando timestamps locais.
+     */
+    static overwriteDayBits(targetMap: Map<string, bigint>, sourceMap: Map<string, bigint> | undefined, dateISO: string) {
+        if (!sourceMap) return;
+        
+        // Itera sobre todos os hábitos na fonte (Nuvem) que têm registro para este mês
+        const monthSuffix = dateISO.substring(0, 7); // YYYY-MM
+        const day = parseInt(dateISO.substring(8, 10), 10);
+        
+        // Calcula a máscara do dia (todos os 3 períodos: Manhã, Tarde, Noite)
+        // Cada período usa 2 bits. Total 6 bits por dia.
+        // Posição inicial: (dia - 1) * 6
+        const startBit = BigInt((day - 1) * 6);
+        const dayMask = (3n << startBit) | (3n << (startBit + 2n)) | (3n << (startBit + 4n));
+        const clearMask = ~dayMask;
+
+        for (const [key, sourceVal] of sourceMap.entries()) {
+            if (key.endsWith(monthSuffix)) {
+                // Extrai os bits do dia da nuvem
+                const sourceDayBits = sourceVal & dayMask;
+                
+                // Pega o valor atual local (ou 0 se não existir)
+                const currentLocalVal = targetMap.get(key) || 0n;
+                
+                // Limpa os bits do dia no local e injeta os bits da nuvem
+                const newVal = (currentLocalVal & clearMask) | sourceDayBits;
+                
+                targetMap.set(key, newVal);
+            }
+        }
     }
 }

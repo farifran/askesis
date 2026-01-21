@@ -102,6 +102,3 @@ export async function apiFetch(endpoint: string, options: RequestInit = {}, incl
 
     return fetch(endpoint, config);
 }
-
-// Compatibilidade
-export const initAuth = async () => { };

@@ -11,61 +11,69 @@
 
 import { AppState, HabitDailyInfo } from '../state';
 import { HabitService } from './HabitService';
+import { getTodayUTCIso } from '../utils';
 
-function mergeDayRecord(localDay: Record<string, HabitDailyInfo>, mergedDay: Record<string, HabitDailyInfo>): boolean {
-    let isDirty = false;
-    for (const habitId in localDay) {
-        if (!mergedDay[habitId]) {
-            mergedDay[habitId] = localDay[habitId];
-            isDirty = true;
+/**
+ * Mescla registros diários.
+ * @param source O registro "dominante" (normalmente Cloud para hoje, ou Vencedor por Timestamp).
+ * @param target O registro a ser atualizado.
+ * @param preserveNotes Se true, tenta manter notas do target se source estiver vazio.
+ */
+function mergeDayRecord(source: Record<string, HabitDailyInfo>, target: Record<string, HabitDailyInfo>, preserveNotes = true) {
+    for (const habitId in source) {
+        if (!target[habitId]) {
+            target[habitId] = source[habitId];
             continue;
         }
 
-        const localHabitData = localDay[habitId];
-        const mergedHabitData = mergedDay[habitId];
+        const sourceHabitData = source[habitId];
+        const targetHabitData = target[habitId]; // Objeto que será modificado (Merged)
 
-        const localInstances = localHabitData.instances || {};
-        const mergedInstances = mergedHabitData.instances || {};
+        const sourceInstances = sourceHabitData.instances || {};
+        const targetInstances = targetHabitData.instances || {};
 
-        for (const time in localInstances) {
-            const localInst = localInstances[time as any];
-            const mergedInst = mergedInstances[time as any];
+        // Para HOJE (prioridade Cloud), começamos com a estrutura da Cloud.
+        // Se for mesclagem histórica normal, a lógica de 'weights' abaixo resolve.
+        
+        for (const time in sourceInstances) {
+            const srcInst = sourceInstances[time as any];
+            const tgtInst = targetInstances[time as any];
 
-            if (!localInst) continue;
+            if (!srcInst) continue;
 
-            if (!mergedInst) {
-                mergedInstances[time as any] = localInst;
-                isDirty = true;
+            if (!tgtInst) {
+                targetInstances[time as any] = srcInst;
             } else {
-                // WEIGHTED MERGE: Notes & Overrides
-                if (mergedInst.goalOverride === undefined && localInst.goalOverride !== undefined) {
-                    mergedInst.goalOverride = localInst.goalOverride;
-                    isDirty = true;
+                // WEIGHTED MERGE: Notes
+                // Se a fonte (Cloud) não tem nota, mas o alvo (Local) tem, mantemos a Local.
+                // Se ambas têm, e a Local é maior, mantemos a Local (assumindo edição recente não syncada).
+                if (preserveNotes) {
+                    const sNoteLen = srcInst.note ? srcInst.note.length : 0;
+                    const tNoteLen = tgtInst.note ? tgtInst.note.length : 0;
+                    
+                    if ((!srcInst.note && tgtInst.note) || (tgtInst.note && tNoteLen > sNoteLen)) {
+                        srcInst.note = tgtInst.note; // Injeta nota local no objeto fonte
+                    }
                 }
-                
-                const lNoteLen = localInst.note ? localInst.note.length : 0;
-                const mNoteLen = mergedInst.note ? mergedInst.note.length : 0;
-                
-                if ((!mergedInst.note && localInst.note) || (localInst.note && lNoteLen > mNoteLen)) {
-                    mergedInst.note = localInst.note;
-                    isDirty = true;
-                }
+                // O objeto final é baseado no source (Cloud), com a nota enriquecida.
+                targetInstances[time as any] = srcInst;
             }
         }
         
-        if (!mergedHabitData.dailySchedule && localHabitData.dailySchedule) {
-             mergedHabitData.dailySchedule = localHabitData.dailySchedule;
-             isDirty = true;
+        // Se o source (Cloud) tem agendamento específico, ele ganha.
+        if (sourceHabitData.dailySchedule) {
+             targetHabitData.dailySchedule = sourceHabitData.dailySchedule;
         }
     }
-    return isDirty;
 }
 
 export async function mergeStates(local: AppState, incoming: AppState): Promise<AppState> {
     const localTs = local.lastModified || 0;
     const incomingTs = incoming.lastModified || 0;
+    const todayISO = getTodayUTCIso();
     
     // 1. Define Base (Vencedor) por Timestamp
+    // incoming = Nuvem
     let winner = localTs > incomingTs ? local : incoming;
     let loser = localTs > incomingTs ? incoming : local;
     
@@ -75,7 +83,6 @@ export async function mergeStates(local: AppState, incoming: AppState): Promise<
     const mergedIds = new Set(merged.habits.map(h => h.id));
     loser.habits.forEach(h => {
         if (!mergedIds.has(h.id)) {
-            // Hábito novo vindo do estado 'perdedor' (ex: criado no tablet)
             (merged.habits as any).push(h);
         }
     });
@@ -85,8 +92,25 @@ export async function mergeStates(local: AppState, incoming: AppState): Promise<
         if (!merged.dailyData[date]) {
             (merged.dailyData as any)[date] = loser.dailyData[date];
         } else {
-            mergeDayRecord(loser.dailyData[date], merged.dailyData[date]);
+            // Para dias passados, usamos a lógica padrão de merge baseada no Vencedor
+            if (date !== todayISO) {
+                mergeDayRecord(loser.dailyData[date], (merged.dailyData as any)[date]);
+            }
         }
+    }
+
+    // --- PRIORIDADE ABSOLUTA PARA HOJE (Cloud Wins) ---
+    // Independentemente de quem é o 'winner' por timestamp, para HOJE,
+    // queremos que a estrutura da Nuvem (incoming) seja a base, 
+    // mas preservando notas locais se elas forem mais detalhadas.
+    if (incoming.dailyData[todayISO]) {
+        if (!merged.dailyData[todayISO]) {
+            (merged.dailyData as any)[todayISO] = {};
+        }
+        // Aqui invertemos a lógica: 'source' é incoming (Cloud), 'target' é o merged (que pode ter dados locais).
+        // TYPE FIX: Cast explícito para 'any' ou 'Record' mutável para satisfazer o compilador TS,
+        // já que merged.dailyData é tipado como Readonly no AppState.
+        mergeDayRecord(incoming.dailyData[todayISO], (merged.dailyData as any)[todayISO], true);
     }
 
     // 4. Archives Union
@@ -100,8 +124,13 @@ export async function mergeStates(local: AppState, incoming: AppState): Promise<
     }
     
     // 5. Monthly Logs (Bitmasks) - SMART MERGE
-    // Usa o HabitService para fundir inteligentemente os mapas
     merged.monthlyLogs = HabitService.mergeLogs(winner.monthlyLogs, loser.monthlyLogs);
+    
+    // --- FORCE TODAY BITMASK FROM CLOUD ---
+    // Sobrescreve especificamente os bits de hoje com o que está na nuvem.
+    if (incoming.monthlyLogs) {
+        HabitService.overwriteDayBits(merged.monthlyLogs, incoming.monthlyLogs, todayISO);
+    }
 
     // 6. Time Integrity (Monotonic Clock)
     const now = Date.now();
@@ -114,7 +143,6 @@ export async function mergeStates(local: AppState, incoming: AppState): Promise<
     // @ts-ignore
     merged.version = Math.max(local.version || 0, incoming.version || 0);
     
-    // Merge Arrays (Union)
     const mergeList = (a: readonly any[] | undefined, b: readonly any[] | undefined) => 
         Array.from(new Set([...(a||[]), ...(b||[])]));
 

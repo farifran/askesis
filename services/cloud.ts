@@ -125,8 +125,6 @@ export function runWorkerTask<T>(type: string, payload: any): Promise<T> {
     });
 }
 
-export function prewarmWorker() {}
-
 // --- SYNC STATUS UI ---
 
 export function setSyncStatus(statusKey: 'syncSaving' | 'syncSynced' | 'syncError' | 'syncInitial' | 'syncing') {
