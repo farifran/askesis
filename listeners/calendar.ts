@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -42,11 +41,13 @@ const _handleScroll = () => {
     if (CalendarGestureState.isScrolling) return;
     CalendarGestureState.isScrolling = true;
 
-    if (CalendarGestureState.scrollRafId) cancelAnimationFrame(CalendarGestureState.scrollRafId);
-    
     CalendarGestureState.scrollRafId = requestAnimationFrame(() => {
         const strip = ui.calendarStrip;
-        if (!strip) { CalendarGestureState.isScrolling = false; return; }
+        if (!strip) { 
+            CalendarGestureState.isScrolling = false; 
+            CalendarGestureState.scrollRafId = 0;
+            return; 
+        }
 
         const scrollLeft = strip.scrollLeft;
         const scrollWidth = strip.scrollWidth;
@@ -117,6 +118,7 @@ const _handleScroll = () => {
         }
 
         CalendarGestureState.isScrolling = false;
+        CalendarGestureState.scrollRafId = 0;
     });
 };
 
@@ -178,6 +180,7 @@ const _handleStripClick = (e: MouseEvent) => {
             
             // FIX SCROLL JUMP: Removemos scrollToSelectedDate(true) daqui.
             // O usuário clicou, o item já está visível. Não queremos mover a fita.
+            // A renderização do calendário só ocorre se uiDirtyState.calendarVisuals for true (o que não setamos aqui).
             
             // Render App Content (Habits)
             state.uiDirtyState.habitListStructure = true;

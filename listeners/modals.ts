@@ -20,13 +20,10 @@ import { ui } from '../render/ui';
 import { 
     state, 
     LANGUAGES, 
-    STREAK_CONSOLIDATED, 
     invalidateChartCache, 
     FREQUENCIES,
-    Habit,
     TimeOfDay
 } from '../state';
-import { saveState } from '../services/persistence';
 import { PREDEFINED_HABITS } from '../data/predefinedHabits';
 import {
     openModal,
@@ -57,7 +54,6 @@ import {
     consumeAndFormatCelebrations,
 } from '../services/habitActions';
 import { t, setLanguage } from '../i18n';
-import { getHabitDisplayInfo } from '../services/selectors';
 import { setupReelRotary } from '../render/rotary';
 import { simpleMarkdownToHTML, pushToOneSignal, getContrastColor, addDays, parseUTCIsoDate, toUTCIsoDateString, triggerHaptic } from '../utils';
 import { setTextContent } from '../render/dom';
@@ -472,8 +468,11 @@ const _handleColorGridClick = (e: MouseEvent) => {
     if (swatch && state.editingHabit) {
         triggerHaptic('light');
         const color = swatch.dataset.color!;
+        
+        // Update State
         state.editingHabit.formData.color = color;
 
+        // Update UI (Direct & Fast - avoiding full renderIconPicker which rebuilds DOM)
         const iconColor = getContrastColor(color);
         ui.habitIconPickerBtn.style.backgroundColor = color;
         ui.habitIconPickerBtn.style.color = iconColor;
@@ -481,9 +480,16 @@ const _handleColorGridClick = (e: MouseEvent) => {
         ui.colorPickerGrid.querySelector('.selected')?.classList.remove('selected');
         swatch.classList.add('selected');
 
+        // Update Icon Picker Grid Variables directly (No DOM thrashing)
+        ui.iconPickerGrid.style.setProperty('--current-habit-bg-color', color);
+        ui.iconPickerGrid.style.setProperty('--current-habit-fg-color', iconColor);
+
+        // Cleanup View State
         ui.iconPickerModal.classList.remove('is-picking-color');
-        renderIconPicker();
-        closeModal(ui.colorPickerModal);
+        
+        // Close Modal suppressing callbacks (since we handled updates manually)
+        // This prevents double-rendering the icon grid.
+        closeModal(ui.colorPickerModal, true);
     }
 };
 

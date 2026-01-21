@@ -35,6 +35,9 @@ const DROP_INDICATOR_GAP = 4; // Espaçamento visual
 // SNIPER OPTIMIZATION: Feature detection for Typed OM
 const hasTypedOM = typeof window !== 'undefined' && !!(window.CSS && (window as any).CSSTranslate && CSS.px);
 
+// OTIMIZAÇÃO: Seletor estático pré-calculado para evitar alocação de string no hot-loop
+const DRAGGABLE_SELECTOR = `${DOM_SELECTORS.HABIT_CARD}:not(.${CSS_CLASSES.DRAGGING})`;
+
 // --- STATE MACHINE ---
 const DragState = {
     // Session
@@ -46,7 +49,6 @@ const DragState = {
     sourceEl: null as HTMLElement | null,
     sourceId: null as string | null,
     sourceTime: null as TimeOfDay | null,
-    // @fix: The type 'readonly ("Morning" | "Afternoon" | "Evening")[]' is 'readonly' and cannot be assigned to the mutable type '("Morning" | "Afternoon" | "Evening")[]'.
     cachedSchedule: null as readonly TimeOfDay[] | null,
     
     // Targets
@@ -65,6 +67,35 @@ const DragState = {
     scrollSpeed: 0,
     rafId: 0
 };
+
+// --- HELPER GEOMÉTRICO (Magnetic Insertion) ---
+/**
+ * Determina o elemento após o qual o cursor está posicionado verticalmente.
+ * Permite inserir entre cartões mesmo arrastando nos gaps.
+ * OTIMIZAÇÃO: Loop imperativo para evitar alocação de objetos (Zero-GC).
+ */
+function getDragAfterElement(container: HTMLElement, y: number): HTMLElement | null {
+    // PERF: Usa seletor hoistado para evitar concatenação de strings a cada frame
+    const draggableElements = container.querySelectorAll(DRAGGABLE_SELECTOR);
+    
+    let closestEl: HTMLElement | null = null;
+    let closestOffset = Number.NEGATIVE_INFINITY;
+
+    for (const child of draggableElements) {
+        const box = child.getBoundingClientRect();
+        // Distância do cursor até o centro do cartão
+        const offset = y - box.top - box.height / 2;
+        
+        // Estamos procurando o elemento onde o cursor está ACIMA do centro (offset negativo),
+        // mas o mais próximo possível de 0 (o maior valor negativo).
+        if (offset < 0 && offset > closestOffset) {
+            closestOffset = offset;
+            closestEl = child as HTMLElement;
+        }
+    }
+    
+    return closestEl;
+}
 
 // --- SCROLL ENGINE (Animation Loop) ---
 
@@ -125,6 +156,8 @@ function _scrollLoop() {
                 if (DragState.targetZone.children.length === 0) {
                     topPos = DROP_INDICATOR_GAP;
                 } else {
+                    // Se não temos alvo específico, mas tem filhos, assumimos 'after' do último
+                    // (Lógica do getDragAfterElement garante isso, mas é bom ter fallback)
                     const lastChild = DragState.targetZone.lastElementChild as HTMLElement;
                     if (lastChild && lastChild !== DragState.indicator) {
                          topPos = lastChild.offsetTop + lastChild.offsetHeight + DROP_INDICATOR_GAP;
@@ -212,20 +245,28 @@ const _handleDragOver = (e: DragEvent) => {
     DragState.targetZone = dropZone;
     DragState.isValidDrop = isValid;
 
-    // --- 4. Calcular Posição de Inserção (Reorder) ---
-    // Encontrar o cartão mais próximo sob o cursor
-    const card = target.closest<HTMLElement>(DOM_SELECTORS.HABIT_CARD);
-    
-    if (card && card !== DragState.sourceEl && dropZone.contains(card)) {
-        const rect = card.getBoundingClientRect();
-        const midY = rect.top + (rect.height / 2);
+    // --- 4. Calcular Posição de Inserção (Reorder Preciso) ---
+    if (isValid) {
+        const afterElement = getDragAfterElement(dropZone, y);
         
-        DragState.targetCard = card;
-        DragState.insertPos = y < midY ? 'before' : 'after';
+        if (afterElement) {
+            DragState.targetCard = afterElement;
+            DragState.insertPos = 'before';
+        } else {
+            // Se não há elemento "depois", significa que estamos no final ou a zona está vazia
+            // Procuramos o último cartão válido para ser a referência 'after'
+            const lastChild = dropZone.querySelector(`${DOM_SELECTORS.HABIT_CARD}:not(.${CSS_CLASSES.DRAGGING}):last-child`) as HTMLElement;
+            if (lastChild) {
+                DragState.targetCard = lastChild;
+                DragState.insertPos = 'after';
+            } else {
+                // Zona vazia
+                DragState.targetCard = null;
+                DragState.insertPos = null;
+            }
+        }
     } else {
-        // Se não está sobre um cartão, assumimos append no final se estiver na zona
         DragState.targetCard = null;
-        DragState.insertPos = null;
     }
     
     // Atualiza o efeito do cursor
@@ -239,29 +280,29 @@ const _handleDrop = (e: DragEvent) => {
     const targetTime = DragState.targetZone!.dataset.time as TimeOfDay;
     const isReorder = DragState.sourceTime === targetTime;
     
+    // Constrói Info de Reordenação
+    let reorderInfo = undefined;
+    if (DragState.targetCard && DragState.targetCard.dataset.habitId) {
+        reorderInfo = {
+            id: DragState.targetCard.dataset.habitId,
+            pos: DragState.insertPos || 'after'
+        };
+    }
+
     // Executa Ação
     if (isReorder) {
-        if (DragState.targetCard && DragState.targetCard.dataset.habitId) {
+        if (reorderInfo) {
             triggerHaptic('medium');
-            const targetId = DragState.targetCard.dataset.habitId;
-            reorderHabit(DragState.sourceId, targetId, DragState.insertPos || 'after');
+            reorderHabit(DragState.sourceId, reorderInfo.id, reorderInfo.pos as 'before' | 'after');
         }
     } else {
         triggerHaptic('medium');
-        // Drop em outro horário
-        let reorderInfo = undefined;
-        if (DragState.targetCard && DragState.targetCard.dataset.habitId) {
-            reorderInfo = {
-                id: DragState.targetCard.dataset.habitId,
-                pos: DragState.insertPos || 'after'
-            };
-        }
-        
+        // Drop em outro horário (com posição específica se houver)
         handleHabitDrop(
             DragState.sourceId,
             DragState.sourceTime,
             targetTime,
-            reorderInfo as any // Type assertion compatibilidade
+            reorderInfo
         );
     }
     
@@ -348,18 +389,51 @@ const _handleDragStart = (e: DragEvent) => {
     if (content) {
         const ghost = content.cloneNode(true) as HTMLElement;
         ghost.classList.add(CSS_CLASSES.DRAG_IMAGE_GHOST);
-        ghost.style.width = `${content.offsetWidth}px`;
-        ghost.style.height = `${content.offsetHeight}px`;
         
-        // Copia estilos computados críticos
+        const rect = content.getBoundingClientRect();
+        ghost.style.width = `${rect.width}px`;
+        ghost.style.height = `${rect.height}px`;
+        
+        // VISUAL FIX: Copy computed styles critical for appearance.
+        // Since the ghost is detached from .habit-card parent, it loses CSS rules defined by parent selectors.
+        // We inline them here to preserve the exact look (gradients, colors, borders).
         const styles = window.getComputedStyle(content);
         ghost.style.backgroundColor = styles.backgroundColor;
+        ghost.style.backgroundImage = styles.backgroundImage; // Preserves Gradients
+        ghost.style.backgroundSize = styles.backgroundSize;
+        ghost.style.color = styles.color;
+        ghost.style.borderRadius = styles.borderRadius;
+        
+        // FIX [2025-06-05]: Use absolute positioning relative to document body (incorporating scrollY/X)
+        // instead of 'fixed'. 'Fixed' positioning can cause 'setDragImage' to miscalculate offsets 
+        // in some browsers or when page is scrolled, causing the image to appear "from high up".
+        // Also apply a scale transform to simulate "picking up" the card.
+        ghost.style.position = 'absolute';
+        ghost.style.left = `${rect.left + window.scrollX}px`;
+        ghost.style.top = `${rect.top + window.scrollY}px`;
+        ghost.style.zIndex = '10000';
+        ghost.style.margin = '0'; // Prevent margin shifting
+        ghost.style.pointerEvents = 'none';
+        
+        // VISUAL POP: Scale up slightly and add shadow to simulate lifting.
+        // This makes the drag operation feel more tactile ("Como se pegassem o cartão").
+        ghost.style.transform = 'scale(1.05)';
+        ghost.style.boxShadow = '0 15px 30px rgba(0,0,0,0.3)';
+        ghost.style.transformOrigin = 'center center';
         
         document.body.appendChild(ghost);
-        e.dataTransfer!.setDragImage(ghost, e.offsetX, e.offsetY);
+
+        // Correctly calculate drag offset.
+        // NOTE: Since we scale the ghost, the cursor might drift slightly from the exact click point relative to the content,
+        // but for a 1.05 scale it is negligible and acceptable for the visual "pop" effect.
+        // Clamping prevents negative offsets if clicked exactly on edge.
+        const dragX = Math.max(0, e.clientX - rect.left);
+        const dragY = Math.max(0, e.clientY - rect.top);
+
+        e.dataTransfer!.setDragImage(ghost, dragX, dragY);
         
-        // Cleanup ghost imediato (o navegador já tirou o snapshot)
-        requestAnimationFrame(() => ghost.remove());
+        // Cleanup ghost com segurança (setTimeout garante que a snapshot foi tirada)
+        setTimeout(() => ghost.remove(), 0);
     }
 
     // Cria Indicador de Drop

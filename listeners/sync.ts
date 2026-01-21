@@ -60,10 +60,12 @@ async function _processKey(key: string) {
     const originalKey = getSyncKey();
     
     try {
-        // HTTPS Check is now handled gracefully inside apiFetch via fallback
-        
         // Armazena temporariamente para o teste
         storeKey(key);
+        
+        // [INSTANT FEEDBACK]: Atualiza a view imediatamente para 'active'
+        // Isso remove a sensação de lag enquanto o download acontece em background.
+        _refreshViewState(); 
         
         // Testa a chave baixando dados
         console.log("[Sync Debug] Downloading remote state...");
@@ -71,8 +73,6 @@ async function _processKey(key: string) {
 
         if (cloudState) {
             console.log("[Sync Debug] Data found. Performing Smart Merge.");
-            // CENÁRIO B: Nuvem tem dados.
-            // Ação: Fundir com dados locais atuais e salvar.
             
             const localState = getPersistableState();
             // Fix Map loss during getPersistableState
@@ -80,7 +80,7 @@ async function _processKey(key: string) {
                 localState.monthlyLogs = state.monthlyLogs;
             }
 
-            // Realiza a fusão ponderada
+            // Realiza a fusão ponderada (Com prioridade Cloud para Hoje)
             const mergedState = await mergeStates(localState, cloudState);
             
             // Aplica na memória
@@ -94,7 +94,6 @@ async function _processKey(key: string) {
             
             // Feedback visual e transição
             setSyncStatus('syncSynced');
-            _refreshViewState();
             
             // Push para atualizar a nuvem com a versão mesclada (se necessário)
             syncStateWithCloud(mergedState, true);
@@ -102,7 +101,6 @@ async function _processKey(key: string) {
         } else {
             // CENÁRIO A: Nuvem Vazia (404) -> Novo Usuário ou Chave Nova
             console.log("[Sync Debug] New user/Empty cloud. Uploading local state.");
-            _refreshViewState();
             setSyncStatus('syncSynced');
             
             // Force immediate push to create the key on server and populate with local data

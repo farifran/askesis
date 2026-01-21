@@ -13,9 +13,14 @@ import { chartInteractionState, CHART_PADDING, SVG_HEIGHT } from '../render/char
 import { t, formatDate, formatDecimal } from '../i18n';
 import { setTextContent } from '../render/dom';
 
+// --- CONSTANTS ---
+// PERF: Hoisted Intl Options to avoid GC in hot path.
+const OPTS_TOOLTIP_DATE: Intl.DateTimeFormatOptions = { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' };
+
 // --- STATE MACHINE (Isolated for Interaction) ---
 let rafId: number | null = null;
 let inputClientX = 0;
+let cachedDot: HTMLElement | null = null;
 
 function updateTooltipPosition() {
     rafId = null;
@@ -59,10 +64,10 @@ function updateTooltipPosition() {
             indicator.style.transform = `translateX(${pointX}px)`;
         }
 
-        const dot = indicator.querySelector<HTMLElement>('.chart-indicator-dot');
-        if (dot) dot.style.top = `${pointY}px`;
+        // PERF: DOM Query Cache
+        if (!cachedDot) cachedDot = indicator.querySelector<HTMLElement>('.chart-indicator-dot');
+        if (cachedDot) cachedDot.style.top = `${pointY}px`;
         
-        const OPTS_TOOLTIP_DATE: Intl.DateTimeFormatOptions = { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' };
         const formattedDate = formatDate(point.timestamp, OPTS_TOOLTIP_DATE);
         
         setTextContent(tooltipDate, formattedDate);
