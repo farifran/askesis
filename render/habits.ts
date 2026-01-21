@@ -1,6 +1,4 @@
 
-
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -82,7 +80,6 @@ export const clearHabitDomCache = () => habitElementCache.clear();
 export const getCachedHabitCard = (id: string, t: TimeOfDay) => habitElementCache.get(_getCacheKey(id, t));
 
 function _renderPendingGoalControls(habit: Habit, time: TimeOfDay, dayData: HabitDayData | undefined, els: CardElements) {
-    // @fix: Get schedule for the selected date to access goal properties.
     const schedule = getHabitPropertiesForDate(habit, state.selectedDate);
     if (!schedule) { if (els.goal.hasChildNodes()) els.goal.replaceChildren(); return; }
 
@@ -122,7 +119,7 @@ function _renderPendingGoalControls(habit: Habit, time: TimeOfDay, dayData: Habi
     const cur = dayData?.goalOverride ?? getSmartGoalForHabit(habit, state.selectedDate, time);
     if (els.goalDecBtn) els.goalDecBtn.disabled = cur <= 1;
     if (els.goalProgress) setTextContent(els.goalProgress, formatInteger(cur));
-    // @fix: Use goal from the schedule object.
+    
     if (els.goalUnit) setTextContent(els.goalUnit, t(schedule.goal.unitKey || 'unitCheck', { count: cur }));
 }
 
@@ -162,7 +159,6 @@ export function updateHabitCardElement(card: HTMLElement, habit: Habit, time: Ti
         }
     }
 
-    // @fix: Get schedule to access icon and color properties.
     const schedule = getHabitPropertiesForDate(habit, state.selectedDate);
     if (!schedule) return;
 
@@ -259,16 +255,6 @@ export function renderHabits() {
             newChildren.push(ph);
         }
         
-        // Limpeza do cache de elementos que não estão mais no DOM
-        const newChildrenSet = new Set(newChildren);
-        for (let i = 0; i < dom.group.children.length; i++) {
-            const child = dom.group.children[i] as HTMLElement;
-            if (!newChildrenSet.has(child) && child.dataset.habitId) {
-                const key = _getCacheKey(child.dataset.habitId, child.dataset.time as TimeOfDay);
-                habitElementCache.delete(key);
-            }
-        }
-
         dom.group.replaceChildren(...newChildren);
     });
 

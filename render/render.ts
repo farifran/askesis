@@ -32,10 +32,10 @@ import { calculateDaySummary } from './services/selectors';
 
 // Importa os renderizadores especializados
 import { setTextContent, updateReelRotaryARIA } from './render/dom';
-import { renderCalendar, renderFullCalendar } from './render/calendar';
+import { renderCalendar } from './render/calendar';
 import { renderHabits } from './render/habits';
 import { renderChart } from './render/chart';
-import { setupManageModal, refreshEditModalUI, renderLanguageFilter, renderIconPicker, renderFrequencyOptions } from './render/modals';
+import { setupManageModal, refreshEditModalUI, renderLanguageFilter } from './render/modals';
 
 // Re-exporta tudo para manter compatibilidade
 export * from './render/dom';
@@ -47,6 +47,8 @@ export * from './render/chart';
 // --- HELPERS STATE (Monomorphic) ---
 let _lastTitleDate: string | null = null;
 let _lastTitleLang: string | null = null;
+let _areIconsRendered = false;
+
 // QUOTE CACHE [2025-05-08]: Cache inteligente.
 // Armazena: { id: "quote_id", contextKey: "morning|triumph" }
 // Se o contexto mudar (ex: virou noite, ou completou tudo), re-renderiza.
@@ -57,7 +59,9 @@ let _cachedRefToday: string | null = null;
 let _cachedYesterdayISO: string | null = null;
 let _cachedTomorrowISO: string | null = null;
 
-// PERFORMANCE: Hoisted Intl Options (Zero-Allocation).
+// PERFORMANCE: Hoisted Regex & Options (Zero-Allocation).
+const HTML_STRIP_REGEX = /<[^>]*>?/gm;
+
 const OPTS_HEADER_DESKTOP: Intl.DateTimeFormatOptions = {
     month: 'long',
     day: 'numeric',
@@ -158,12 +162,20 @@ function _updateHeaderTitle() {
 }
 
 function _renderHeaderIcons() {
+    if (_areIconsRendered) return;
+
     if (!ui.manageHabitsBtn.hasChildNodes()) {
         ui.manageHabitsBtn.innerHTML = UI_ICONS.settings;
     }
+    
     const defaultIconSpan = ui.aiEvalBtn.querySelector('.default-icon');
     if (defaultIconSpan && !defaultIconSpan.hasChildNodes()) {
         defaultIconSpan.innerHTML = UI_ICONS.ai;
+    }
+
+    // Marca como renderizado se ambos os ícones estiverem presentes
+    if (ui.manageHabitsBtn.hasChildNodes() && defaultIconSpan?.hasChildNodes()) {
+        _areIconsRendered = true;
     }
 }
 
@@ -171,10 +183,8 @@ function _renderHeaderIcons() {
  * Atualiza todos os textos estáticos da UI.
  */
 export function updateUIText() {
-    const appNameHtml = t('appName');
-    const tempEl = document.createElement('div');
-    tempEl.innerHTML = appNameHtml;
-    document.title = tempEl.textContent || 'Askesis';
+    // PERFORMANCE: Use hoisted Regex
+    document.title = t('appName').replace(HTML_STRIP_REGEX, '') || 'Askesis';
 
     // Batch Attribute Updates
     ui.fabAddHabit.setAttribute('aria-label', t('fabAddHabit_ariaLabel'));
@@ -274,10 +284,6 @@ export function updateUIText() {
 
 // --- ORQUESTRAÇÃO GLOBAL ---
 
-/**
- * Executes critical rendering updates.
- * Wraps synchronous DOM updates in a function for use with schedulers or View Transitions.
- */
 function _performCriticalRender() {
     _renderHeaderIcons();
     _updateHeaderTitle();
@@ -290,17 +296,25 @@ function _performCriticalRender() {
  * Implementa um pipeline de renderização priorizado e fluido.
  * - Estágio 1 (Síncrono/Transition): Renderiza o conteúdo crítico. Se a View Transitions API estiver disponível,
  *   faz um "morph" suave entre os estados (ex: mudança de data), eliminando cortes secos.
- * - Estágio 2 (postTask 'user-visible'): Adia gráficos e IA.
- * - Estágio 3 (postTask 'background'): Adia citações.
+ * - Estágio 2 (postTask 'user-visible'): Adia o cálculo e renderização de componentes pesados (gráfico, estado da IA)
+ *   para depois do primeiro paint, sem bloquear a entrada do usuário.
+ * - Estágio 3 (postTask 'background'): Executa tarefas de baixa prioridade (citações) quando a thread principal está ociosa.
  */
 export function renderApp() {
     // 1. SWEET SPOT: View Transitions API
-    // Se disponível, cria uma transição nativa suave. Se não, executa imediatamente.
     const startCriticalRender = () => {
         if ('startViewTransition' in document) {
             // @ts-ignore - TS might not know about startViewTransition yet
-            document.startViewTransition(() => {
+            const transition = document.startViewTransition(() => {
                 _performCriticalRender();
+            });
+            
+            // CONCURRENCY HANDLING: "Fire and Forget"
+            // Se uma nova transição começar antes desta terminar, o navegador abortará esta Promise.
+            // Tratamos o erro silenciosamente para evitar ruído no console. Não bloqueamos novas transições.
+            // @ts-ignore
+            transition.finished.catch(() => {
+                // Aborted by a newer transition. Expected behavior in rapid UI updates.
             });
         } else {
             _performCriticalRender();
@@ -311,26 +325,27 @@ export function renderApp() {
     startCriticalRender();
 
     // Stage 2: Heavy Calculation Deferral (Chart SVG & AI Logic)
-    // @fix: Cast to any to correctly narrow and access scheduler.postTask
-    if ('scheduler' in window && (window as any).scheduler) {
-        (window as any).scheduler.postTask(() => {
+    // PERF: Direct typed access via window.scheduler (augmented in utils.ts)
+    if (window.scheduler) {
+        window.scheduler.postTask(() => {
             renderAINotificationState();
             renderChart();
             // Stage 3: Low Priority (Background)
-            // @fix: Cast to any to avoid TS error on postTask
-            (window as any).scheduler!.postTask(() => {
+            window.scheduler!.postTask(() => {
                 renderStoicQuote();
             }, { priority: 'background' });
         }, { priority: 'user-visible' });
     } else {
-        // Fallback Strategy
+        // Fallback Strategy (Safari/Legacy):
+        // requestAnimationFrame empurra para o próximo frame de renderização visual.
         requestAnimationFrame(() => {
             renderAINotificationState();
             renderChart();
+            // requestIdleCallback para itens de baixa prioridade (Citações)
             if ('requestIdleCallback' in window) {
                 requestIdleCallback(() => renderStoicQuote());
             } else {
-                setTimeout(renderStoicQuote, 50); 
+                setTimeout(renderStoicQuote, 50); // Fallback final
             }
         });
     }

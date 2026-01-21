@@ -24,7 +24,6 @@ const COLORS = ['#e74c3c', '#f1c40f', '#3498db', '#2ecc71', '#9b59b6', '#1abc9c'
 
 function _getLeastUsedColor(): string {
     const counts = new Map(COLORS.map(c => [c, 0]));
-    // @fix: Get color from the last schedule in history, as it's no longer on the Habit object.
     state.habits.forEach(h => {
         const lastSchedule = h.scheduleHistory[h.scheduleHistory.length - 1];
         if (!h.graduatedOn && lastSchedule && counts.has(lastSchedule.color)) {
@@ -115,7 +114,6 @@ export function setupManageModal() {
     });
     const today = getTodayUTCIso();
     ui.habitList.innerHTML = items.map(({ h, st, name, subtitle }) => {
-        // @fix: Get icon and color from the last schedule in history.
         const lastSchedule = h.scheduleHistory[h.scheduleHistory.length - 1];
         return `<li class="habit-list-item ${st}" data-habit-id="${h.id}"><span class="habit-main-info"><span class="habit-icon-slot" style="color:${lastSchedule.color}">${lastSchedule.icon}</span><div style="display:flex;flex-direction:column;flex-grow:1;"><span class="habit-name">${name}</span>${subtitle ? `<span class="habit-subtitle" style="font-size:11px;color:var(--text-tertiary)">${subtitle}</span>` : ''}</div>${st !== 'active' ? `<span class="habit-name-status">${t(st === 'graduated' ? 'modalStatusGraduated' : 'modalStatusEnded')}</span>` : ''}</span><div class="habit-list-actions">${st === 'active' ? `${calculateHabitStreak(h, today) >= STREAK_CONSOLIDATED ? `<button class="graduate-habit-btn" aria-label="${t('aria_graduate', { name })}">${UI_ICONS.graduateAction}</button>` : `<button class="end-habit-btn" aria-label="${t('aria_end', { name })}">${UI_ICONS.endAction}</button>`}` : `<button class="permanent-delete-habit-btn" aria-label="${t('aria_delete_permanent', { name })}">${UI_ICONS.deletePermanentAction}</button>`}</div></li>`;
     }).join('');
@@ -134,7 +132,7 @@ export function showConfirmationModal(text: string, onConfirm: () => void, opts?
     const onCancel = () => {
         state.confirmAction = null;
         state.confirmEditAction = null;
-        opts?.onCancel?.(); // Chain the onCancel if it exists for context reset
+        opts?.onCancel?.(); 
     };
 
     openModal(ui.confirmModal, undefined, onCancel);
@@ -177,7 +175,6 @@ export function refreshEditModalUI() {
     if (!state.editingHabit) return;
     renderFrequencyOptions();
     const fd = state.editingHabit.formData;
-    // FIX: Renamed map variable 't' to 'time' to avoid shadowing the imported 't' function.
     ui.habitTimeContainer.innerHTML = `<div class="segmented-control">${TIMES_OF_DAY.map(time => `<button type="button" class="segmented-control-option ${fd.times.includes(time) ? 'selected' : ''}" data-time="${time}">${getTimeOfDayIcon(time)}${getTimeOfDayName(time)}</button>`).join('')}</div>`;
     const nameIn = ui.editHabitForm.elements.namedItem('habit-name') as HTMLInputElement;
     if (nameIn) { nameIn.placeholder = t('modalEditFormNameLabel'); if (fd.nameKey) nameIn.value = t(fd.nameKey); }
