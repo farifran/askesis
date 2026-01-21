@@ -7,18 +7,6 @@
 /**
  * @file render.ts
  * @description Orquestrador de Renderização (View Orchestrator / Facade).
- * 
- * [MAIN THREAD CONTEXT]:
- * Este módulo atua como o ponto central de despacho para atualizações visuais.
- * 
- * ARQUITETURA (Facade Pattern & SOTA Rendering):
- * - **Responsabilidade Única:** Centraliza la API de renderização pública.
- * - **Prioritized Rendering:** Utiliza a `Scheduler API` (`postTask`) para segmentar a renderização
- *   em tarefas críticas (Lista/Calendário) e secundárias (Gráficos/IA), garantindo TTI instantâneo.
- * - **View Transitions:** Implementa transições de estado nativas para eliminar "hard cuts" visuais.
- * - **Memoization de Datas:** Cálculos de datas relativas (Ontem/Amanhã) são cacheados e executados
- *   com aritmética inteira onde possível.
- * - **Static LUTs:** Uso de Tabelas de Busca para dias do mês, evitando lógica condicional complexa.
  */
 
 import { state, LANGUAGES } from './state';
@@ -26,581 +14,271 @@ import { parseUTCIsoDate, toUTCIsoDateString, addDays, pushToOneSignal, getToday
 import { ui } from './render/ui';
 import { t, setLanguage, formatDate } from './i18n'; 
 import { UI_ICONS } from './render/icons';
-import { STOIC_QUOTES, type Quote } from './data/quotes';
-import { selectBestQuote } from './services/quoteEngine'; // NEW: Import Engine
+import type { Quote } from './data/quotes';
+import { checkAndAnalyzeDayContext } from './habitActions';
+import { selectBestQuote } from './services/quoteEngine';
 import { calculateDaySummary } from './services/selectors';
 
-// Importa os renderizadores especializados
 import { setTextContent, updateReelRotaryARIA } from './render/dom';
-import { renderCalendar } from './render/calendar';
+import { renderCalendar, renderFullCalendar } from './render/calendar';
 import { renderHabits } from './render/habits';
 import { renderChart } from './render/chart';
-import { setupManageModal, refreshEditModalUI, renderLanguageFilter } from './render/modals';
+import { setupManageModal, refreshEditModalUI, renderLanguageFilter, renderIconPicker, renderFrequencyOptions } from './render/modals';
 
-// Re-exporta tudo para manter compatibilidade
 export * from './render/dom';
 export * from './render/calendar';
 export * from './render/habits';
 export * from './render/modals';
 export * from './render/chart';
 
-// --- HELPERS STATE (Monomorphic) ---
+// EXPORT FIX: Garante que clearHabitDomCache esteja disponível para o cloud.ts
+export { clearHabitDomCache } from './render/habits';
+
 let _lastTitleDate: string | null = null;
 let _lastTitleLang: string | null = null;
-let _areIconsRendered = false;
-
-// QUOTE CACHE [2025-05-08]: Cache inteligente.
-// Armazena: { id: "quote_id", contextKey: "morning|triumph" }
-// Se o contexto mudar (ex: virou noite, ou completou tudo), re-renderiza.
 let _cachedQuoteState: { id: string, contextKey: string } | null = null;
 
-// PERF: Date Cache (Avoids GC Pressure)
+let stoicQuotesModule: { STOIC_QUOTES: readonly Quote[] } | null = null;
+let _quotesImportPromise: Promise<typeof import('../data/quotes')> | null = null;
+
 let _cachedRefToday: string | null = null;
-let _cachedYesterdayISO: string | null = null;
-let _cachedTomorrowISO: string | null = null;
+let _renderTaskController: AbortController | null = null;
+let _rafHandle: number | null = null;
 
-// PERFORMANCE: Hoisted Regex & Options (Zero-Allocation).
-const HTML_STRIP_REGEX = /<[^>]*>?/gm;
-
-const OPTS_HEADER_DESKTOP: Intl.DateTimeFormatOptions = {
-    month: 'long',
-    day: 'numeric',
-    timeZone: 'UTC'
-};
-
-const OPTS_HEADER_ARIA: Intl.DateTimeFormatOptions = {
-    weekday: 'long', 
-    month: 'long', 
-    day: 'numeric', 
-    timeZone: 'UTC'
-};
-
-// LOCALIZATION FIX [2025-05-02]: Formato numérico curto adaptável (DD/MM para PT/ES, MM/DD para EN-US)
-const OPTS_HEADER_MOBILE_NUMERIC: Intl.DateTimeFormatOptions = { 
-    day: '2-digit', 
-    month: '2-digit', 
-    timeZone: 'UTC' 
-};
+const OPTS_HEADER_ARIA: Intl.DateTimeFormatOptions = { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'UTC' };
 
 /**
- * Atualiza o cache de datas relativas apenas se o dia mudou.
+ * Atualiza o título do cabeçalho com lógica simplificada.
  */
-function _ensureRelativeDateCache(todayISO: string) {
-    if (_cachedRefToday !== todayISO) {
-        _cachedRefToday = todayISO;
-        const todayDate = parseUTCIsoDate(todayISO);
-        // Alocação ocorre apenas 1x por dia (ou sessão)
-        _cachedYesterdayISO = toUTCIsoDateString(addDays(todayDate, -1));
-        _cachedTomorrowISO = toUTCIsoDateString(addDays(todayDate, 1));
-    }
-}
-
 function _updateHeaderTitle() {
-    // Dirty Check (String Reference Comparison is O(1) in V8)
-    if (_lastTitleDate === state.selectedDate && _lastTitleLang === state.activeLanguageCode) {
-        return;
-    }
+    if (_lastTitleDate === state.selectedDate && _lastTitleLang === state.activeLanguageCode) return;
 
     const todayISO = getTodayUTCIso();
-    _ensureRelativeDateCache(todayISO);
-
     const selected = state.selectedDate;
-    let titleKey: string | null = null;
-
-    // Fast Path: String Comparison
-    if (selected === todayISO) titleKey = 'headerTitleToday';
-    else if (selected === _cachedYesterdayISO) titleKey = 'headerTitleYesterday';
-    else if (selected === _cachedTomorrowISO) titleKey = 'headerTitleTomorrow';
-
-    let desktopTitle: string;
-    let mobileTitle: string;
-    let fullLabel: string;
-    
     const date = parseUTCIsoDate(selected);
+    
+    const displayTitle = (selected === todayISO) 
+        ? t('headerTitleToday') 
+        : `${String(date.getUTCDate()).padStart(2, '0')}/${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+    
+    setTextContent(ui.headerTitleDesktop, displayTitle);
+    setTextContent(ui.headerTitleMobile, displayTitle);
+    
+    const fullLabel = formatDate(date, OPTS_HEADER_ARIA);
+    if (ui.headerTitle.getAttribute('aria-label') !== fullLabel) ui.headerTitle.setAttribute('aria-label', fullLabel);
 
-    // LOCALIZATION FIX [2025-05-02]: Use Intl formatter instead of substring
-    // This ensures 25/05 for PT/ES and 05/25 for EN-US automatically based on active language.
-    const numericDateStr = formatDate(date, OPTS_HEADER_MOBILE_NUMERIC);
-    
-    // Lazy Date Parsing: Só aloca o objeto Date se for necessário formatar
-    if (titleKey) {
-        const localizedTitle = t(titleKey);
-        desktopTitle = localizedTitle;
-        
-        // UX REQUEST [2025-05-02]: Mobile shows numeric date for Yesterday/Tomorrow to save space.
-        // Only "Today" keeps the text label.
-        mobileTitle = (selected === todayISO) ? localizedTitle : numericDateStr;
-        
-        fullLabel = formatDate(date, OPTS_HEADER_ARIA);
-    } else {
-        mobileTitle = numericDateStr;
-        
-        desktopTitle = formatDate(date, OPTS_HEADER_DESKTOP);
-        fullLabel = formatDate(date, OPTS_HEADER_ARIA);
-    }
-    
-    setTextContent(ui.headerTitleDesktop, desktopTitle);
-    setTextContent(ui.headerTitleMobile, mobileTitle);
-    
-    if (ui.headerTitle.getAttribute('aria-label') !== fullLabel) {
-        ui.headerTitle.setAttribute('aria-label', fullLabel);
-    }
-
-    // UPDATED INDICATORS (Real Buttons) [2025-05-16]
-    const isPast = selected < todayISO;
-    const isFuture = selected > todayISO;
-    
-    if (ui.navArrowPast.classList.contains('hidden') === isPast) {
-        ui.navArrowPast.classList.toggle('hidden', !isPast);
-    }
-    if (ui.navArrowFuture.classList.contains('hidden') === isFuture) {
-        ui.navArrowFuture.classList.toggle('hidden', !isFuture);
-    }
+    ui.navArrowPast.classList.toggle('hidden', !(selected < todayISO));
+    ui.navArrowFuture.classList.toggle('hidden', !(selected > todayISO));
 
     _lastTitleDate = selected;
     _lastTitleLang = state.activeLanguageCode;
 }
 
 function _renderHeaderIcons() {
-    if (_areIconsRendered) return;
-
-    if (!ui.manageHabitsBtn.hasChildNodes()) {
-        ui.manageHabitsBtn.innerHTML = UI_ICONS.settings;
-    }
-    
-    const defaultIconSpan = ui.aiEvalBtn.querySelector('.default-icon');
-    if (defaultIconSpan && !defaultIconSpan.hasChildNodes()) {
-        defaultIconSpan.innerHTML = UI_ICONS.ai;
-    }
-
-    // Marca como renderizado se ambos os ícones estiverem presentes
-    if (ui.manageHabitsBtn.hasChildNodes() && defaultIconSpan?.hasChildNodes()) {
-        _areIconsRendered = true;
-    }
+    if (!ui.manageHabitsBtn.hasChildNodes()) ui.manageHabitsBtn.innerHTML = UI_ICONS.settings;
+    const def = ui.aiEvalBtn.querySelector('.default-icon');
+    if (def && !def.hasChildNodes()) def.innerHTML = UI_ICONS.ai;
 }
 
-/**
- * Atualiza todos os textos estáticos da UI.
- */
 export function updateUIText() {
-    // PERFORMANCE: Use hoisted Regex
-    document.title = t('appName').replace(HTML_STRIP_REGEX, '') || 'Askesis';
+    const setT = (el: Element | null, key: string, opts?: any) => setTextContent(el, t(key, opts));
+    
+    const appNameHtml = t('appName');
+    const tempEl = document.createElement('div');
+    tempEl.innerHTML = appNameHtml;
+    document.title = tempEl.textContent || 'Askesis';
 
-    // Batch Attribute Updates
     ui.fabAddHabit.setAttribute('aria-label', t('fabAddHabit_ariaLabel'));
     ui.manageHabitsBtn.setAttribute('aria-label', t('manageHabits_ariaLabel'));
     ui.aiEvalBtn.setAttribute('aria-label', t('aiEval_ariaLabel'));
     
-    // Modal Titles & Buttons
-    setTextContent(ui.exploreModal.querySelector('h2'), t('modalExploreTitle'));
-    setTextContent(ui.createCustomHabitBtn, t('modalExploreCreateCustom'));
-    setTextContent(ui.exploreModal.querySelector('.modal-close-btn'), t('closeButton'));
-
-    setTextContent(ui.manageModalTitle, t('modalManageTitle'));
-    setTextContent(ui.habitListTitle, t('modalManageHabitsSubtitle'));
-    
-    setTextContent(ui.labelLanguage, t('modalManageLanguage'));
+    setT(ui.exploreModal.querySelector('h2'), 'modalExploreTitle');
+    setT(ui.createCustomHabitBtn, 'modalExploreCreateCustom');
+    setT(ui.exploreModal.querySelector('.modal-close-btn'), 'closeButton');
+    setT(ui.manageModalTitle, 'modalManageTitle');
+    setT(ui.habitListTitle, 'modalManageHabitsSubtitle');
+    setT(ui.labelLanguage, 'modalManageLanguage');
     ui.languagePrevBtn.setAttribute('aria-label', t('languagePrev_ariaLabel'));
     ui.languageNextBtn.setAttribute('aria-label', t('languageNext_ariaLabel'));
     
-    setTextContent(ui.labelSync, t('syncLabel'));
-    setTextContent(ui.labelNotifications, t('modalManageNotifications'));
-    setTextContent(ui.labelReset, t('modalManageReset'));
-    setTextContent(ui.resetAppBtn, t('modalManageResetButton'));
-    setTextContent(ui.manageModal.querySelector('.modal-close-btn'), t('cancelButton'));
+    setT(ui.labelSync, 'syncLabel');
+    setT(ui.labelNotifications, 'modalManageNotifications');
+    setT(ui.labelReset, 'modalManageReset');
+    setT(ui.resetAppBtn, 'modalManageResetButton');
+    setT(ui.manageModal.querySelector('.modal-close-btn'), 'closeButton');
+    setT(ui.labelPrivacy, 'privacyLabel');
+    setT(ui.exportDataBtn, 'exportButton');
+    setT(ui.importDataBtn, 'importButton');
+    setT(ui.syncInactiveDesc, 'syncInactiveDesc');
+    setT(ui.enableSyncBtn, 'syncEnable');
+    setT(ui.enterKeyViewBtn, 'syncEnterKey');
+    setT(ui.labelEnterKey, 'syncLabelEnterKey');
+    setT(ui.cancelEnterKeyBtn, 'cancelButton');
+    setT(ui.submitKeyBtn, 'syncSubmitKey');
     
-    setTextContent(ui.labelPrivacy, t('privacyLabel'));
-    setTextContent(ui.exportDataBtn, t('exportButton'));
-    setTextContent(ui.importDataBtn, t('importButton'));
+    if (ui.syncWarningText.innerHTML !== t('syncWarning')) ui.syncWarningText.innerHTML = t('syncWarning');
+    setT(ui.keySavedBtn, ui.syncDisplayKeyView.dataset.context === 'view' ? 'closeButton' : 'syncKeySaved');
+    setT(ui.syncActiveDesc, 'syncActiveDesc');
+    setT(ui.viewKeyBtn, 'syncViewKey');
+    setT(ui.disableSyncBtn, 'syncDisable');
+    setT(ui.aiModal.querySelector('h2'), 'modalAITitle');
+    setT(ui.aiModal.querySelector('.modal-close-btn'), 'closeButton');
+    setT(ui.aiOptionsModal.querySelector('h2'), 'modalAIOptionsTitle');
     
-    setTextContent(ui.syncInactiveDesc, t('syncInactiveDesc'));
-    setTextContent(ui.enableSyncBtn, t('syncEnable'));
-    setTextContent(ui.enterKeyViewBtn, t('syncEnterKey'));
-    setTextContent(ui.labelEnterKey, t('syncLabelEnterKey'));
-    setTextContent(ui.cancelEnterKeyBtn, t('cancelButton'));
-    setTextContent(ui.submitKeyBtn, t('syncSubmitKey'));
-    
-    if (ui.syncWarningText.innerHTML !== t('syncWarning')) {
-        ui.syncWarningText.innerHTML = t('syncWarning');
-    }
-
-    const keyContext = ui.syncDisplayKeyView.dataset.context;
-    setTextContent(ui.keySavedBtn, (keyContext === 'view') ? t('closeButton') : t('syncKeySaved'));
-    
-    setTextContent(ui.syncActiveDesc, t('syncActiveDesc'));
-    setTextContent(ui.viewKeyBtn, t('syncViewKey'));
-    setTextContent(ui.disableSyncBtn, t('syncDisable'));
-    
-    setTextContent(ui.aiModal.querySelector('h2'), t('modalAITitle'));
-    setTextContent(ui.aiModal.querySelector('.modal-close-btn'), t('closeButton'));
-    
-    setTextContent(ui.aiOptionsModal.querySelector('h2'), t('modalAIOptionsTitle'));
-    
-    const updateAiBtn = (type: string, titleKey: string, descKey: string) => {
-        const btn = ui.aiOptionsModal.querySelector<HTMLElement>(`[data-analysis-type="${type}"]`);
-        if (btn) {
-            setTextContent(btn.querySelector('.ai-option-title'), t(titleKey));
-            setTextContent(btn.querySelector('.ai-option-desc'), t(descKey));
-        }
+    const updAi = (type: string, k1: string, k2: string) => {
+        const b = ui.aiOptionsModal.querySelector<HTMLElement>(`[data-analysis-type="${type}"]`);
+        if (b) { setT(b.querySelector('.ai-option-title'), k1); setT(b.querySelector('.ai-option-desc'), k2); }
     };
-    updateAiBtn('monthly', 'aiOptionMonthlyTitle', 'aiOptionMonthlyDesc');
-    updateAiBtn('quarterly', 'aiOptionQuarterlyTitle', 'aiOptionQuarterlyDesc');
-    updateAiBtn('historical', 'aiOptionHistoricalTitle', 'aiOptionHistoricalDesc');
+    updAi('monthly', 'aiOptionMonthlyTitle', 'aiOptionMonthlyDesc');
+    updAi('quarterly', 'aiOptionQuarterlyTitle', 'aiOptionQuarterlyDesc');
+    updAi('historical', 'aiOptionHistoricalTitle', 'aiOptionHistoricalDesc');
 
-    setTextContent(ui.confirmModal.querySelector('h2'), t('modalConfirmTitle'));
-    setTextContent(ui.confirmModal.querySelector('.modal-close-btn'), t('cancelButton'));
-    setTextContent(ui.confirmModalConfirmBtn, t('confirmButton'));
-
-    setTextContent(ui.notesModal.querySelector('.modal-close-btn'), t('cancelButton'));
-    setTextContent(ui.saveNoteBtn, t('modalNotesSaveButton'));
+    setT(ui.confirmModal.querySelector('h2'), 'modalConfirmTitle');
+    setT(ui.confirmModal.querySelector('.modal-close-btn'), 'cancelButton');
+    setT(ui.confirmModalEditBtn, 'editButton');
+    setT(ui.confirmModalConfirmBtn, 'confirmButton');
+    setT(ui.notesModal.querySelector('.modal-close-btn'), 'cancelButton');
+    setT(ui.saveNoteBtn, 'modalNotesSaveButton');
     ui.notesTextarea.placeholder = t('modalNotesTextareaPlaceholder');
+    setT(ui.iconPickerTitle, 'modalIconPickerTitle');
+    setT(ui.iconPickerModal.querySelector('.modal-close-btn'), 'cancelButton');
+    setT(ui.colorPickerTitle, 'modalColorPickerTitle');
+    setT(ui.colorPickerModal.querySelector('.modal-close-btn'), 'cancelButton');
 
-    setTextContent(ui.iconPickerTitle, t('modalIconPickerTitle'));
-    setTextContent(ui.iconPickerModal.querySelector('.modal-close-btn'), t('cancelButton'));
+    const setBtn = (b: HTMLButtonElement, i: string, k: string) => { b.innerHTML = `${i} ${t(k)}`; };
+    setBtn(ui.quickActionDone, UI_ICONS.check, 'quickActionMarkAllDone');
+    setBtn(ui.quickActionSnooze, UI_ICONS.snoozed, 'quickActionMarkAllSnoozed');
+    setBtn(ui.quickActionAlmanac, UI_ICONS.calendar, 'quickActionOpenAlmanac');
+    setT(ui.noHabitsMessage, 'modalManageNoHabits');
 
-    setTextContent(ui.colorPickerTitle, t('modalColorPickerTitle'));
-    setTextContent(ui.colorPickerModal.querySelector('.modal-close-btn'), t('cancelButton'));
-
-    const editModalActions = ui.editHabitModal.querySelector('.modal-actions');
-    if (editModalActions) {
-        setTextContent(editModalActions.querySelector('.modal-close-btn'), t('cancelButton'));
-        setTextContent(editModalActions.querySelector('#edit-habit-save-btn'), t('modalEditSaveButton'));
-    }
-
-    const setBtnHtml = (btn: HTMLButtonElement, icon: string, text: string) => {
-        const html = `${icon} ${text}`;
-        if (btn.innerHTML !== html) btn.innerHTML = html;
-    };
-    setBtnHtml(ui.quickActionDone, UI_ICONS.check, t('quickActionMarkAllDone'));
-    setBtnHtml(ui.quickActionSnooze, UI_ICONS.snoozed, t('quickActionMarkAllSnoozed'));
-    setBtnHtml(ui.quickActionAlmanac, UI_ICONS.calendar, t('quickActionOpenAlmanac'));
-    
-    setTextContent(ui.noHabitsMessage, t('modalManageNoHabits'));
-
-    if (state.editingHabit) {
-        refreshEditModalUI();
-    }
+    if (state.editingHabit) refreshEditModalUI();
 }
 
-// --- ORQUESTRAÇÃO GLOBAL ---
-
-function _performCriticalRender() {
+export function renderApp() {
     _renderHeaderIcons();
     _updateHeaderTitle();
     renderCalendar();
     renderHabits();
-}
 
-/**
- * BLEEDING-EDGE PERF (Scheduler API + View Transitions):
- * Implementa um pipeline de renderização priorizado e fluido.
- * - Estágio 1 (Síncrono/Transition): Renderiza o conteúdo crítico. Se a View Transitions API estiver disponível,
- *   faz um "morph" suave entre os estados (ex: mudança de data), eliminando cortes secos.
- * - Estágio 2 (postTask 'user-visible'): Adia o cálculo e renderização de componentes pesados (gráfico, estado da IA)
- *   para depois do primeiro paint, sem bloquear a entrada do usuário.
- * - Estágio 3 (postTask 'background'): Executa tarefas de baixa prioridade (citações) quando a thread principal está ociosa.
- */
-export function renderApp() {
-    // 1. SWEET SPOT: View Transitions API
-    const startCriticalRender = () => {
-        if ('startViewTransition' in document) {
-            // @ts-ignore - TS might not know about startViewTransition yet
-            const transition = document.startViewTransition(() => {
-                _performCriticalRender();
-            });
-            
-            // CONCURRENCY HANDLING: "Fire and Forget"
-            // Se uma nova transição começar antes desta terminar, o navegador abortará esta Promise.
-            // Tratamos o erro silenciosamente para evitar ruído no console. Não bloqueamos novas transições.
-            // @ts-ignore
-            transition.finished.catch(() => {
-                // Aborted by a newer transition. Expected behavior in rapid UI updates.
-            });
-        } else {
-            _performCriticalRender();
-        }
-    };
+    if ('scheduler' in window && (window as any).scheduler) {
+        _renderTaskController?.abort();
+        _renderTaskController = new AbortController();
+        const signal = _renderTaskController.signal;
 
-    // Executa o estágio 1
-    startCriticalRender();
-
-    // Stage 2: Heavy Calculation Deferral (Chart SVG & AI Logic)
-    // PERF: Direct typed access via window.scheduler (augmented in utils.ts)
-    if (window.scheduler) {
-        window.scheduler.postTask(() => {
+        (window as any).scheduler.postTask(() => {
             renderAINotificationState();
             renderChart();
-            // Stage 3: Low Priority (Background)
-            window.scheduler!.postTask(() => {
-                renderStoicQuote();
-            }, { priority: 'background' });
-        }, { priority: 'user-visible' });
+            (window as any).scheduler!.postTask(() => renderStoicQuote(), { priority: 'background', signal });
+        }, { priority: 'user-visible', signal }).catch(() => {});
     } else {
-        // Fallback Strategy (Safari/Legacy):
-        // requestAnimationFrame empurra para o próximo frame de renderização visual.
-        requestAnimationFrame(() => {
+        if (_rafHandle) cancelAnimationFrame(_rafHandle);
+        _rafHandle = requestAnimationFrame(() => {
+            _rafHandle = null;
             renderAINotificationState();
             renderChart();
-            // requestIdleCallback para itens de baixa prioridade (Citações)
-            if ('requestIdleCallback' in window) {
-                requestIdleCallback(() => renderStoicQuote());
-            } else {
-                setTimeout(renderStoicQuote, 50); // Fallback final
-            }
+            'requestIdleCallback' in window ? requestIdleCallback(() => renderStoicQuote()) : setTimeout(renderStoicQuote, 50);
         });
     }
-
-    if (ui.manageModal.classList.contains('visible')) {
-        setupManageModal();
-    }
+    if (ui.manageModal.classList.contains('visible')) setupManageModal();
 }
 
 export function updateNotificationUI() {
-    const isPendingChange = ui.notificationToggle.disabled && !ui.notificationToggleLabel.classList.contains('disabled');
-    if (isPendingChange) {
+    if (ui.notificationToggle.disabled && !ui.notificationToggleLabel.classList.contains('disabled')) {
         setTextContent(ui.notificationStatusDesc, t('notificationChangePending'));
         return;
     }
-
-    pushToOneSignal((OneSignal: any) => {
-        const isPushEnabled = OneSignal.User.PushSubscription.optedIn;
-        const permission = OneSignal.Notifications.permission;
-        
-        if (ui.notificationToggle.checked !== isPushEnabled) {
-            ui.notificationToggle.checked = isPushEnabled;
-        }
-        
-        const isDenied = permission === 'denied';
-        if (ui.notificationToggle.disabled !== isDenied) {
-            ui.notificationToggle.disabled = isDenied;
-            ui.notificationToggleLabel.classList.toggle('disabled', isDenied);
-        }
-
-        let statusTextKey = 'notificationStatusOptedOut';
-        if (isDenied) statusTextKey = 'notificationStatusDisabled';
-        else if (isPushEnabled) statusTextKey = 'notificationStatusEnabled';
-        
-        setTextContent(ui.notificationStatusDesc, t(statusTextKey));
+    pushToOneSignal((os: any) => {
+        const sub = os.User.PushSubscription.optedIn, perm = os.Notifications.permission, denied = perm === 'denied';
+        ui.notificationToggle.checked = sub;
+        ui.notificationToggle.disabled = denied;
+        ui.notificationToggleLabel.classList.toggle('disabled', denied);
+        setTextContent(ui.notificationStatusDesc, t(denied ? 'notificationStatusDisabled' : (sub ? 'notificationStatusEnabled' : 'notificationStatusOptedOut')));
     });
 }
 
 export function initLanguageFilter() {
-    const langNames = LANGUAGES.map(lang => t(lang.nameKey));
-    const html = langNames.map(name => `<span class="reel-option">${name}</span>`).join('');
-    if (ui.languageReel.innerHTML !== html) {
-        ui.languageReel.innerHTML = html;
-    }
-    
-    const currentIndex = LANGUAGES.findIndex(l => l.code === state.activeLanguageCode);
-    updateReelRotaryARIA(ui.languageViewport, currentIndex, langNames, 'language_ariaLabel');
+    const names = LANGUAGES.map(l => t(l.nameKey));
+    ui.languageReel.innerHTML = names.map(n => `<span class="reel-option">${n}</span>`).join('');
+    updateReelRotaryARIA(ui.languageViewport, LANGUAGES.findIndex(l => l.code === state.activeLanguageCode), names, 'language_ariaLabel');
 }
 
 export function renderAINotificationState() {
-    const isLoading = state.aiState === 'loading';
-    const isOffline = !navigator.onLine;
-    const hasCelebrations = state.pending21DayHabitIds.length > 0 || state.pendingConsolidationHabitIds.length > 0;
-    const hasUnseenResult = (state.aiState === 'completed' || state.aiState === 'error') && !state.hasSeenAIResult;
+    const isL = state.aiState === 'loading', isO = !navigator.onLine;
+    const hasN = state.pending21DayHabitIds.length > 0 || state.pendingConsolidationHabitIds.length > 0 || ((state.aiState === 'completed' || state.aiState === 'error') && !state.hasSeenAIResult);
 
-    const classList = ui.aiEvalBtn.classList;
-    if (classList.contains('loading') !== isLoading) classList.toggle('loading', isLoading);
-    
-    // OFFLINE SUPPORT [2025-05-05]: Botão habilitado mesmo offline para mostrar mensagem.
-    const shouldDisable = isLoading;
-    if (ui.aiEvalBtn.disabled !== shouldDisable) ui.aiEvalBtn.disabled = shouldDisable;
-    
-    // CSS Toggle para estado Offline (ícone visual)
-    if (classList.contains('offline') !== isOffline) classList.toggle('offline', isOffline);
-    
-    const shouldNotify = hasCelebrations || hasUnseenResult;
-    if (classList.contains('has-notification') !== shouldNotify) classList.toggle('has-notification', shouldNotify);
+    ui.aiEvalBtn.classList.toggle('loading', isL);
+    ui.aiEvalBtn.classList.toggle('offline', isO);
+    ui.aiEvalBtn.classList.toggle('has-notification', hasN);
+    ui.aiEvalBtn.disabled = isL;
 }
 
-// Logic to handle auto-collapse on interaction
 let _quoteCollapseListener: ((e: Event) => void) | null = null;
 
 function _setupQuoteAutoCollapse() {
     if (_quoteCollapseListener) return;
-
     _quoteCollapseListener = (e: Event) => {
-        const target = e.target as HTMLElement;
-        // Ignore clicks inside the quote itself (except the specific expand button)
-        if (target.closest('.stoic-quote')) return;
-
-        // Reset expanded state
-        const expandedQuote = ui.stoicQuoteDisplay.querySelector('.quote-expanded');
-        if (expandedQuote) {
-            // Force re-render to collapse
-            _cachedQuoteState = null; // Invalidate cache
-            renderStoicQuote(); 
-        }
+        if ((e.target as HTMLElement).closest('.stoic-quote')) return;
+        if (ui.stoicQuoteDisplay.querySelector('.quote-expanded')) { _cachedQuoteState = null; renderStoicQuote(); }
+        document.removeEventListener('click', _quoteCollapseListener!, { capture: true });
+        ui.habitContainer.removeEventListener('scroll', _quoteCollapseListener!, { passive: true });
+        _quoteCollapseListener = null;
     };
-
-    // Capture phase to detect clicks anywhere
     document.addEventListener('click', _quoteCollapseListener, { capture: true });
-    // Also collapse on scroll of habit container
     ui.habitContainer.addEventListener('scroll', _quoteCollapseListener, { passive: true });
 }
 
-export function renderStoicQuote() {
-    // 1. Trigger background diagnosis (if needed)
-    // FIX: Decoupled Analysis Trigger via Event Bus.
-    if (!state.dailyDiagnoses[state.selectedDate]) {
-        document.dispatchEvent(new CustomEvent('request-analysis', { detail: { date: state.selectedDate } }));
+export async function renderStoicQuote() {
+    checkAndAnalyzeDayContext(state.selectedDate);
+    const hour = new Date().getHours(), tod = hour < 12 ? 'Morning' : (hour < 18 ? 'Afternoon' : 'Evening');
+    const summ = calculateDaySummary(state.selectedDate), sig = `${summ.completed}/${summ.total}`;
+    const ctxKey = `${state.selectedDate}|${state.activeLanguageCode}|${tod}|${sig}`;
+
+    if (_cachedQuoteState?.contextKey === ctxKey) return;
+    if (!stoicQuotesModule) {
+        _quotesImportPromise = _quotesImportPromise || import('../data/quotes');
+        try { stoicQuotesModule = await _quotesImportPromise; } catch { _quotesImportPromise = null; return; }
     }
 
-    // CRITICAL FIX: Robust Context Key Generation
-    const hour = new Date().getHours();
-    const timeOfDay = hour < 12 ? 'Morning' : (hour < 18 ? 'Afternoon' : 'Evening');
+    const sel = selectBestQuote(stoicQuotesModule.STOIC_QUOTES, state.selectedDate);
+    _cachedQuoteState = { id: sel.id, contextKey: ctxKey };
+
+    const diag = state.dailyDiagnoses[state.selectedDate], lvl = diag ? diag.level : 1;
+    const lang = state.activeLanguageCode as 'pt' | 'en' | 'es', lk = `level_${lvl}` as keyof typeof sel.adaptations;
     
-    const summary = calculateDaySummary(state.selectedDate);
-    const performanceSig = `${summary.completed}/${summary.total}`;
-
-    const currentContextKey = `${state.selectedDate}|${state.activeLanguageCode}|${timeOfDay}|${performanceSig}`;
-
-    if (_cachedQuoteState && _cachedQuoteState.contextKey === currentContextKey) {
-        return;
-    }
-
-    // 2. Select Quote using The Stoic Oracle Engine
-    const dateISO = state.selectedDate;
-    let selectedQuote: Quote;
-    
-    try {
-        selectedQuote = selectBestQuote(STOIC_QUOTES, dateISO);
-    } catch (e) {
-        console.warn("Quote engine failed, fallback to random", e);
-        selectedQuote = STOIC_QUOTES[0];
-    }
-
-    _cachedQuoteState = { id: selectedQuote.id, contextKey: currentContextKey };
-
-    // 3. Determine Diagnosis Level for Adaptation
-    const diagnosis = state.dailyDiagnoses[dateISO];
-    const userLevel = diagnosis ? diagnosis.level : 1;
-
-    const lang = state.activeLanguageCode as 'pt' | 'en' | 'es';
-    
-    const levelKey = `level_${userLevel}` as keyof typeof selectedQuote.adaptations;
-    const adaptationText = selectedQuote.adaptations[levelKey][lang];
-    
-    const originalText = selectedQuote.original_text[lang];
-    const authorName = t(selectedQuote.author);
-
-    // 4. Render
     const container = ui.stoicQuoteDisplay;
-    container.classList.remove('visible');
-    container.innerHTML = '';
+    container.classList.remove('visible'); container.innerHTML = '';
     
-    // Default alignment (multi-line)
-    container.style.justifyContent = 'flex-start';
-    container.style.textAlign = 'left';
+    const span = document.createElement('span'); span.className = 'quote-adaptation'; span.textContent = sel.adaptations[lk][lang] + ' ';
+    const exp = document.createElement('button'); exp.className = 'quote-expander'; exp.textContent = '...'; exp.setAttribute('aria-label', t('expandQuote'));
     
-    const adaptationSpan = document.createElement('span');
-    adaptationSpan.className = 'quote-adaptation';
-    adaptationSpan.textContent = adaptationText + ' ';
-    
-    const expander = document.createElement('button');
-    expander.className = 'quote-expander';
-    expander.textContent = '...';
-    expander.setAttribute('aria-label', t('expandQuote'));
-    expander.style.border = 'none';
-    expander.style.background = 'transparent';
-    expander.style.color = 'var(--accent-blue)';
-    expander.style.cursor = 'pointer';
-    expander.style.fontWeight = 'bold';
-    expander.style.padding = '0 4px';
-
-    // Click to Expand
-    expander.onclick = (e) => {
-        e.stopPropagation();
-        container.innerHTML = '';
-
-        container.style.justifyContent = 'flex-start';
-        container.style.textAlign = 'left';
-        
-        const originalSpan = document.createElement('span');
-        originalSpan.className = 'quote-expanded';
-        originalSpan.style.fontStyle = 'italic';
-        originalSpan.textContent = `"${originalText}" — ${authorName}`;
-        container.appendChild(originalSpan);
-        _setupQuoteAutoCollapse();
-
-        container.classList.add('visible');
+    exp.onclick = (e) => {
+        e.stopPropagation(); container.innerHTML = '';
+        const os = document.createElement('span'); os.className = 'quote-expanded'; os.style.fontStyle = 'italic';
+        os.textContent = `"${sel.original_text[lang]}" — ${t(sel.author)}`;
+        container.appendChild(os); _setupQuoteAutoCollapse();
     };
 
-    container.appendChild(adaptationSpan);
-    container.appendChild(expander);
-
-    // Dynamic alignment based on line count using getClientRects() for robustness
+    container.append(span, exp);
     requestAnimationFrame(() => {
-        if (!adaptationSpan.isConnected) return;
-
-        // CRITICAL FIX: Use getClientRects() to detect wrapping lines.
-        // For inline elements, this returns a rect for each line of text.
-        const rects = adaptationSpan.getClientRects();
-        
-        // Robust check: length 1 means single line.
-        // Extra check: Vertical difference between first and last rect to handle edge cases.
-        let isSingleLine = rects.length === 1;
-        
+        if (!span.isConnected) return;
+        const rects = span.getClientRects();
+        let isS = rects.length === 1;
         if (rects.length > 1) {
-            // Check if they are actually on same Y (some browsers split inline rects on formatting changes)
-            // If top of last rect is significantly below top of first rect, it wrapped.
             const firstTop = rects[0].top;
             const lastTop = rects[rects.length - 1].top;
-            if (Math.abs(lastTop - firstTop) < 5) {
-                isSingleLine = true;
-            } else {
-                isSingleLine = false;
-            }
+            if (Math.abs(lastTop - firstTop) < 5) isS = true;
         }
-
-        if (isSingleLine) {
-            container.style.justifyContent = 'flex-end';
-            container.style.textAlign = 'right';
-        } else {
-            container.style.justifyContent = 'flex-start';
-            container.style.textAlign = 'left';
-        }
-        
+        container.style.justifyContent = isS ? 'flex-end' : 'flex-start';
+        container.style.textAlign = isS ? 'right' : 'left';
         container.classList.add('visible');
     });
 }
 
-// Listeners
-document.addEventListener('language-changed', () => {
-    initLanguageFilter();
-    renderLanguageFilter();
-    updateUIText();
-    if (ui.syncStatus) {
-        setTextContent(ui.syncStatus, t(state.syncState));
-    }
-    if (ui.manageModal.classList.contains('visible')) {
-        setupManageModal();
-        updateNotificationUI();
-    }
-    renderApp();
-});
-
-document.addEventListener('habitsChanged', () => {
-    _cachedQuoteState = null;
-    if ('requestIdleCallback' in window) {
-        requestIdleCallback(() => renderStoicQuote());
-    } else {
-        setTimeout(renderStoicQuote, 1000);
-    }
-});
+document.addEventListener('language-changed', () => { initLanguageFilter(); renderLanguageFilter(); updateUIText(); if (ui.syncStatus) setTextContent(ui.syncStatus, t(state.syncState)); renderApp(); });
+document.addEventListener('habitsChanged', () => { _cachedQuoteState = null; 'requestIdleCallback' in window ? requestIdleCallback(() => renderStoicQuote()) : setTimeout(renderStoicQuote, 1000); });
 
 export async function initI18n() {
-    const savedLang = localStorage.getItem('habitTrackerLanguage');
-    const browserLang = navigator.language.split('-')[0];
-    let initialLang: 'pt' | 'en' | 'es' = 'pt';
-
-    if (savedLang && ['pt', 'en', 'es'].includes(savedLang)) {
-        initialLang = savedLang as 'pt' | 'en' | 'es';
-    } else if (['pt', 'en', 'es'].includes(browserLang)) {
-        initialLang = browserLang as 'pt' | 'en' | 'es';
-    }
-
-    await setLanguage(initialLang);
+    const saved = localStorage.getItem('habitTrackerLanguage'), browser = navigator.language.split('-')[0];
+    let lang: 'pt' | 'en' | 'es' = (['pt', 'en', 'es'].includes(saved!) ? saved : (['pt', 'en', 'es'].includes(browser) ? browser : 'pt')) as any;
+    await setLanguage(lang);
 }
