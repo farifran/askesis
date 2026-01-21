@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -28,23 +29,12 @@ declare global {
 export const MS_PER_DAY = 86400000;
 
 // --- STATIC LOOKUP TABLES (HOT MEMORY) ---
-export const HEX_LUT: string[] = Array.from({ length: 256 }, (_, i) => i.toString(16).padStart(2, '0'));
+const HEX_LUT: string[] = Array.from({ length: 256 }, (_, i) => i.toString(16).padStart(2, '0'));
 const PAD_LUT: string[] = Array.from({ length: 100 }, (_, i) => i < 10 ? '0' + i : String(i));
 
 // --- BASE64 HELPERS (Safe Chunking) ---
-export function arrayBufferToBase64(buffer: ArrayBuffer): string {
-    const bytes = new Uint8Array(buffer);
-    const len = bytes.length;
-    const chunks: string[] = [];
-    const CHUNK_SIZE = 8192; // Previne Stack Overflow em buffers grandes
-    for (let i = 0; i < len; i += CHUNK_SIZE) {
-        const end = (i + CHUNK_SIZE) > len ? len : i + CHUNK_SIZE;
-        chunks.push(String.fromCharCode.apply(null, bytes.subarray(i, end) as unknown as number[]));
-    }
-    return btoa(chunks.join(''));
-}
 
-export function base64ToArrayBuffer(base64: string): ArrayBuffer {
+function base64ToArrayBuffer(base64: string): ArrayBuffer {
     const binary_string = atob(base64);
     const len = binary_string.length;
     const bytes = new Uint8Array(len);
@@ -52,17 +42,6 @@ export function base64ToArrayBuffer(base64: string): ArrayBuffer {
         bytes[i] = binary_string.charCodeAt(i);
     }
     return bytes.buffer;
-}
-
-// --- HEX HELPERS ---
-export function arrayBufferToHex(buffer: ArrayBuffer): string {
-    const bytes = new Uint8Array(buffer);
-    const len = bytes.length;
-    let hex = '';
-    for (let i = 0; i < len; i++) {
-        hex += HEX_LUT[bytes[i]];
-    }
-    return hex;
 }
 
 // --- GZIP COMPRESSION (NATIVE C++) ---
@@ -154,7 +133,7 @@ export function toUTCIsoDateString(date: Date): string {
     return year + '-' + PAD_LUT[month] + '-' + PAD_LUT[day];
 }
 
-export function getTodayUTC(): Date {
+function getTodayUTC(): Date {
     const today = new Date();
     return new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
 }

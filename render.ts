@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -15,6 +14,7 @@
  * - **Responsabilidade Única:** Centraliza la API de renderização pública.
  * - **Prioritized Rendering:** Utiliza a `Scheduler API` (`postTask`) para segmentar a renderização
  *   em tarefas críticas (Lista/Calendário) e secundárias (Gráficos/IA), garantindo TTI instantâneo.
+ * - **View Transitions:** Implementa transições de estado nativas para eliminar "hard cuts" visuais.
  * - **Memoization de Datas:** Cálculos de datas relativas (Ontem/Amanhã) são cacheados e executados
  *   com aritmética inteira onde possível.
  * - **Static LUTs:** Uso de Tabelas de Busca para dias do mês, evitando lógica condicional complexa.
@@ -31,10 +31,10 @@ import { calculateDaySummary } from './services/selectors';
 
 // Importa os renderizadores especializados
 import { setTextContent, updateReelRotaryARIA } from './render/dom';
-import { renderCalendar, renderFullCalendar } from './render/calendar';
+import { renderCalendar } from './render/calendar';
 import { renderHabits } from './render/habits';
 import { renderChart } from './render/chart';
-import { setupManageModal, refreshEditModalUI, renderLanguageFilter, renderIconPicker, renderFrequencyOptions } from './render/modals';
+import { setupManageModal, refreshEditModalUI, renderLanguageFilter } from './render/modals';
 
 // Re-exporta tudo para manter compatibilidade
 export * from './render/dom';
@@ -46,6 +46,8 @@ export * from './render/chart';
 // --- HELPERS STATE (Monomorphic) ---
 let _lastTitleDate: string | null = null;
 let _lastTitleLang: string | null = null;
+let _areIconsRendered = false;
+
 // QUOTE CACHE [2025-05-08]: Cache inteligente.
 // Armazena: { id: "quote_id", contextKey: "morning|triumph" }
 // Se o contexto mudar (ex: virou noite, ou completou tudo), re-renderiza.
@@ -56,7 +58,9 @@ let _cachedRefToday: string | null = null;
 let _cachedYesterdayISO: string | null = null;
 let _cachedTomorrowISO: string | null = null;
 
-// PERFORMANCE: Hoisted Intl Options (Zero-Allocation).
+// PERFORMANCE: Hoisted Regex & Options (Zero-Allocation).
+const HTML_STRIP_REGEX = /<[^>]*>?/gm;
+
 const OPTS_HEADER_DESKTOP: Intl.DateTimeFormatOptions = {
     month: 'long',
     day: 'numeric',
@@ -157,12 +161,20 @@ function _updateHeaderTitle() {
 }
 
 function _renderHeaderIcons() {
+    if (_areIconsRendered) return;
+
     if (!ui.manageHabitsBtn.hasChildNodes()) {
         ui.manageHabitsBtn.innerHTML = UI_ICONS.settings;
     }
+    
     const defaultIconSpan = ui.aiEvalBtn.querySelector('.default-icon');
     if (defaultIconSpan && !defaultIconSpan.hasChildNodes()) {
         defaultIconSpan.innerHTML = UI_ICONS.ai;
+    }
+
+    // Marca como renderizado se ambos os ícones estiverem presentes
+    if (ui.manageHabitsBtn.hasChildNodes() && defaultIconSpan?.hasChildNodes()) {
+        _areIconsRendered = true;
     }
 }
 
@@ -170,10 +182,8 @@ function _renderHeaderIcons() {
  * Atualiza todos os textos estáticos da UI.
  */
 export function updateUIText() {
-    const appNameHtml = t('appName');
-    const tempEl = document.createElement('div');
-    tempEl.innerHTML = appNameHtml;
-    document.title = tempEl.textContent || 'Askesis';
+    // PERFORMANCE: Use hoisted Regex
+    document.title = t('appName').replace(HTML_STRIP_REGEX, '') || 'Askesis';
 
     // Batch Attribute Updates
     ui.fabAddHabit.setAttribute('aria-label', t('fabAddHabit_ariaLabel'));
@@ -273,33 +283,41 @@ export function updateUIText() {
 
 // --- ORQUESTRAÇÃO GLOBAL ---
 
+function _performCriticalRender() {
+    _renderHeaderIcons();
+    _updateHeaderTitle();
+    renderCalendar();
+    renderHabits();
+}
+
 /**
- * BLEEDING-EDGE PERF (Scheduler API):
- * Implementa um pipeline de renderização priorizado para garantir uma UI fluida.
- * - Estágio 1 (Síncrono): Renderiza o conteúdo crítico e interativo (cabeçalho, calendário, hábitos).
+ * BLEEDING-EDGE PERF (Scheduler API + View Transitions):
+ * Implementa um pipeline de renderização priorizado e fluido.
+ * - Estágio 1 (Síncrono/Transition): Renderiza o conteúdo crítico. Se a View Transitions API estiver disponível,
+ *   faz um "morph" suave entre os estados (ex: mudança de data), eliminando cortes secos.
  * - Estágio 2 (postTask 'user-visible'): Adia o cálculo e renderização de componentes pesados (gráfico, estado da IA)
  *   para depois do primeiro paint, sem bloquear a entrada do usuário.
  * - Estágio 3 (postTask 'background'): Executa tarefas de baixa prioridade (citações) quando a thread principal está ociosa.
  */
 export function renderApp() {
     // Stage 1: Critical Rendering (Above the fold & Primary Interaction)
-    _renderHeaderIcons();
-    _updateHeaderTitle();
-    renderCalendar();
-    renderHabits();
+    if ('startViewTransition' in document) {
+        // @ts-ignore - Progressive Enhancement for browsers with View Transitions
+        document.startViewTransition(() => {
+            _performCriticalRender();
+        });
+    } else {
+        _performCriticalRender();
+    }
 
     // Stage 2: Heavy Calculation Deferral (Chart SVG & AI Logic)
-    // @fix: Cast to any to correctly narrow and access scheduler.postTask
-    if ('scheduler' in window && (window as any).scheduler) {
-        // Scheduler API (Modern Browsers): Prioridade 'user-visible' garante que
-        // isso rode logo após o paint crítico, mas sem bloquear inputs.
-        (window as any).scheduler.postTask(() => {
+    // PERF: Direct typed access via window.scheduler (augmented in utils.ts)
+    if (window.scheduler) {
+        window.scheduler.postTask(() => {
             renderAINotificationState();
             renderChart();
             // Stage 3: Low Priority (Background)
-            // Agendamos dentro do callback para encadear, ou usamos 'background' priority
-            // @fix: Cast to any to avoid TS error on postTask
-            (window as any).scheduler!.postTask(() => {
+            window.scheduler!.postTask(() => {
                 renderStoicQuote();
             }, { priority: 'background' });
         }, { priority: 'user-visible' });

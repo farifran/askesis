@@ -69,12 +69,6 @@ const DAY_FORMAT_OPTS: Intl.DateTimeFormatOptions = { weekday: 'short', timeZone
 const WEEKDAY_REF_DATES = Array.from({ length: 7 }, (_, i) => new Date(Date.UTC(1970, 0, 4 + i)));
 
 // PERFORMANCE: Lookup Table para TimeOfDay.
-const TIME_ICONS: Record<TimeOfDay, string> = {
-    'Morning': 'filterMorning',
-    'Afternoon': 'filterAfternoon',
-    'Evening': 'filterEvening'
-};
-
 const TIME_OF_DAY_KEYS: Record<TimeOfDay, string> = {
     'Morning': 'filterMorning',
     'Afternoon': 'filterAfternoon',

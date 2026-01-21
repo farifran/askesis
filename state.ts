@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -8,7 +9,7 @@
  * @description Definição do Estado Global e Estruturas de Dados (Single Source of Truth).
  */
 
-import { addDays, getTodayUTC, getTodayUTCIso, decompressString, decompressFromBuffer } from './utils';
+import { getTodayUTCIso, decompressString, decompressFromBuffer } from './utils';
 
 // --- ERROR TYPES ---
 export class DataLoadingError extends Error {

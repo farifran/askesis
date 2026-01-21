@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -20,16 +19,15 @@ import './css/charts.css';
 import './css/forms.css';
 import './css/modals.css';
 
-import { state, AppState } from './state';
-import { loadState, persistStateLocally, registerSyncHandler } from './services/persistence';
+import { state } from './state';
+import { loadState, registerSyncHandler } from './services/persistence';
 import { renderApp, initI18n, updateUIText } from './render';
 import { setupEventListeners } from './listeners';
 import { createDefaultHabit, handleDayTransition, performArchivalCheck } from './services/habitActions';
 import { initSync } from './listeners/sync';
 import { fetchStateFromCloud, syncStateWithCloud, setSyncStatus } from './services/cloud';
-import { hasLocalSyncKey, initAuth } from './services/api';
+import { hasLocalSyncKey } from './services/api';
 import { updateAppBadge } from './services/badge';
-import { mergeStates } from './services/dataMerge';
 import { setupMidnightLoop } from './utils';
 
 // --- AUTO-HEALING & INTEGRITY CHECK ---
@@ -138,7 +136,8 @@ async function init(loader: HTMLElement | null) {
         delete (window as any).bootWatchdog;
     }
 
-    await initAuth();
+    // AUTH LAYER REMOVED: initAuth was a no-op.
+    // Authentication is Key-Based and handled via localStorage in `loadInitialState` / `cloud.ts`.
     
     await Promise.all([initI18n(), updateUIText()]);
 
