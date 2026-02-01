@@ -4,7 +4,8 @@ const fs = require('fs');
 const path = require('path');
 
 const isProd = process.env.NODE_ENV === 'production';
-const OUT_DIR = 'dist';
+// Use absolute path for output directory to avoid CWD ambiguity
+const OUT_DIR = path.resolve(__dirname, 'dist');
 
 async function copyDir(src, dest) {
     if (!fs.existsSync(src)) return;
@@ -25,6 +26,7 @@ async function copyDir(src, dest) {
 
 async function build() {
     console.log(`Building for ${isProd ? 'production' : 'development'}...`);
+    console.log(`Output Directory: ${OUT_DIR}`);
 
     // Ensure output dir exists
     if (fs.existsSync(OUT_DIR)) {
@@ -73,33 +75,44 @@ async function build() {
 
     // 3. Copy Static Assets
     const copyFile = async (src, dest) => {
-        if (fs.existsSync(src)) await fs.promises.copyFile(src, dest);
+        const sourcePath = path.resolve(__dirname, src);
+        if (fs.existsSync(sourcePath)) {
+            await fs.promises.copyFile(sourcePath, dest);
+        } else {
+            console.warn(`Warning: Asset ${src} not found.`);
+        }
     };
 
     // Transform index.html to remove Vite dev script for production
-    let html = await fs.promises.readFile('index.html', 'utf-8');
-    if (isProd) {
-        html = html.replace(/<script type="module" src="\/index\.tsx"><\/script>/g, '');
-        html = html.replace(/<script type="module" src="\/@vite\/client"><\/script>/g, '');
-        // Ensure bundle.js is loaded
-        if (!html.includes('src="bundle.js"')) {
-             html = html.replace('</body>', '<script src="bundle.js" type="module"></script></body>');
+    const indexHtmlPath = path.resolve(__dirname, 'index.html');
+    if (fs.existsSync(indexHtmlPath)) {
+        let html = await fs.promises.readFile(indexHtmlPath, 'utf-8');
+        if (isProd) {
+            html = html.replace(/<script type="module" src="\/index\.tsx"><\/script>/g, '');
+            html = html.replace(/<script type="module" src="\/@vite\/client"><\/script>/g, '');
+            // Ensure bundle.js is loaded
+            if (!html.includes('src="bundle.js"')) {
+                 html = html.replace('</body>', '<script src="bundle.js" type="module"></script></body>');
+            }
         }
+        await fs.promises.writeFile(path.join(OUT_DIR, 'index.html'), html);
+    } else {
+        console.error("Error: index.html not found.");
+        process.exit(1);
     }
-    await fs.promises.writeFile(path.join(OUT_DIR, 'index.html'), html);
 
     await copyFile('manifest.json', path.join(OUT_DIR, 'manifest.json'));
     await copyFile('sw.js', path.join(OUT_DIR, 'sw.js'));
     
     // Copy Dirs
-    await copyDir('locales', path.join(OUT_DIR, 'locales'));
-    await copyDir('icons', path.join(OUT_DIR, 'icons'));
-    await copyDir('assets', path.join(OUT_DIR, 'assets')); // Add assets folder if exists
+    await copyDir(path.resolve(__dirname, 'locales'), path.join(OUT_DIR, 'locales'));
+    await copyDir(path.resolve(__dirname, 'icons'), path.join(OUT_DIR, 'icons'));
+    await copyDir(path.resolve(__dirname, 'assets'), path.join(OUT_DIR, 'assets')); 
 
     console.log('Build complete.');
 }
 
 build().catch((err) => {
-    console.error(err);
+    console.error("Build failed:", err);
     process.exit(1);
 });
