@@ -1,3 +1,4 @@
+
 /* --- MODAIS --- */
 .modal-overlay {
     position: fixed;
@@ -356,6 +357,31 @@
 #ai-response ul { list-style: none; padding-inline-start: 0; margin-block-start: var(--space-sm); }
 #ai-response li { margin-block-end: var(--space-sm); }
 #confirm-modal-text { color: var(--text-secondary); line-height: 1.6; margin-block-end: var(--space-sm); }
+
+/* AI Error Styling */
+.ai-error-message {
+    background-color: rgba(231, 76, 60, 0.1);
+    border: 1px solid var(--color-red);
+    border-radius: var(--border-radius-base);
+    padding: var(--space-md);
+    text-align: center;
+}
+.ai-error-message h3 {
+    color: var(--color-red);
+    margin: 0 0 var(--space-sm) 0;
+    font-size: 16px;
+}
+.debug-info {
+    margin-top: var(--space-md);
+    padding: var(--space-sm);
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: var(--border-radius-small);
+    font-family: monospace;
+    font-size: 11px;
+    color: var(--text-tertiary);
+    word-break: break-all;
+    text-align: left;
+}
 
 /* Modal: Mensagem Offline */
 .offline-header { text-align: center; margin-bottom: var(--space-xl); }
