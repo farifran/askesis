@@ -180,9 +180,22 @@ function _computeScrollSpeed(y: number): number {
 function _renderFrame() {
     if (!DragMachine.isActive) return;
 
-    // 1. Auto Scroll
+    // 1. Auto Scroll with Bounds Check
     if (DragMachine.scrollSpeed !== 0 && DragMachine.container) {
-        DragMachine.container.scrollBy(0, DragMachine.scrollSpeed);
+        const { scrollTop, scrollHeight, clientHeight } = DragMachine.container;
+        const maxScroll = scrollHeight - clientHeight;
+        
+        // BOUNCE PROTECTION: Só rola se houver espaço. 
+        // Evita "pulos" quando tenta forçar scroll além do limite (que em overflow: hidden pode causar problemas de repaint).
+        if (DragMachine.scrollSpeed > 0) {
+            if (scrollTop < maxScroll - 1) { // -1 buffer para precisão de float
+                DragMachine.container.scrollBy(0, DragMachine.scrollSpeed);
+            }
+        } else {
+            if (scrollTop > 1) { // 1 buffer
+                DragMachine.container.scrollBy(0, DragMachine.scrollSpeed);
+            }
+        }
     }
 
     // 2. Zone Highlights
@@ -309,7 +322,13 @@ const _onPointerMove = (e: PointerEvent) => {
             DragMachine.targetCard = afterElement;
             DragMachine.insertPos = 'before';
         } else {
-            const lastChild = dropZone.querySelector(`${DOM_SELECTORS.HABIT_CARD}:not(.${CSS_CLASSES.DRAGGING}):last-child`) as HTMLElement;
+            // FIX [2025-06-08]: Robust Fallback for Last Element
+            // CSS :last-child fails if the last element is the dragging one (which is structurally the last child).
+            // We use JS filtering to get the true last visual element.
+            const allCards = Array.from(dropZone.querySelectorAll(DOM_SELECTORS.HABIT_CARD));
+            const staticCards = allCards.filter(c => !c.classList.contains(CSS_CLASSES.DRAGGING));
+            const lastChild = staticCards.length > 0 ? staticCards[staticCards.length - 1] as HTMLElement : null;
+            
             if (lastChild) {
                 DragMachine.targetCard = lastChild;
                 DragMachine.insertPos = 'after';
