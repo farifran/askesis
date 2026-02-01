@@ -13,7 +13,7 @@
           <img src="https://img.shields.io/badge/PWA-5A0FC8?style=for-the-badge&logo=pwa&logoColor=white" alt="PWA" />
         </div>
         <br>
-        <p style="color: #b3b3b3; margin: 0;"><em>O Rastreador de Hábitos Estoico. Minimalista. Focado em Privacidade. Impulsionado por IA.</em></p>
+        <p style="color: #b3b3b3; margin: 0;"><em>O Rastreador de Hábitos Estoico. Minimalista. Focado em Privacidade. Impulsionado por IA..</em></p>
       </td>
     </tr>
   </table>
