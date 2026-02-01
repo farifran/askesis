@@ -433,12 +433,16 @@ export function startDragSession(card: HTMLElement, content: HTMLElement, startE
     DragMachine.indicator.className = 'drop-indicator';
 
     // 5. Update UI Classes & Start Loop
-    requestAnimationFrame(() => {
-        card.classList.add(CSS_CLASSES.DRAGGING);
-        document.body.classList.add('is-dragging-active');
-        if (DragMachine.container) DragMachine.container.classList.add('is-dragging');
-        _renderFrame();
-    });
+    
+    // SYNCHRONOUS LOCK [2025-06-08]: 
+    // Aplicamos as classes de bloqueio imediatamente (sem requestAnimationFrame).
+    // Isso previne que o navegador processe eventos de rolagem nativos no próximo frame
+    // antes que overflow:hidden entre em vigor. Essencial para listas longas.
+    card.classList.add(CSS_CLASSES.DRAGGING);
+    document.body.classList.add('is-dragging-active');
+    if (DragMachine.container) DragMachine.container.classList.add('is-dragging');
+    
+    requestAnimationFrame(_renderFrame);
 
     // 6. Attach Listeners
     window.addEventListener('pointermove', _onPointerMove, { passive: false });
