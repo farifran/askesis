@@ -20,7 +20,6 @@ import { renderApp } from '../render';
 import { state } from '../state';
 import { startDragSession, isDragging as isDragActive } from './drag'; 
 import {
-    SWIPE_INTENT_THRESHOLD,
     SWIPE_ACTION_THRESHOLD,
     SWIPE_HAPTIC_THRESHOLD,
     SWIPE_BLOCK_CLICK_MS
@@ -29,7 +28,6 @@ import {
 // CONFIGURAÇÃO FÍSICA
 const DIRECTION_LOCKED_THRESHOLD = 5; // Pixels para travar direção (H vs V)
 const ACTION_THRESHOLD = SWIPE_ACTION_THRESHOLD;
-const HAPTIC_THRESHOLD = SWIPE_HAPTIC_THRESHOLD;
 const LONG_PRESS_DELAY = 500; 
 const MAX_SWIPE_MULTIPLIER = 2.5; 
 
@@ -47,8 +45,10 @@ const SwipeMachine = {
     // State Flags
     wasOpenLeft: false,
     wasOpenRight: false,
-    hasHapticsTriggered: false,
     hasHitLimit: false,
+    
+    // Progressive Haptics
+    lastFeedbackStep: 0,
     
     // Long Press
     longPressTimer: 0,
@@ -85,13 +85,36 @@ const _renderFrame = () => {
     const limit = (SwipeMachine.actionWidth * MAX_SWIPE_MULTIPLIER) | 0;
     const absX = Math.abs(tx);
 
+    // PROGRESSIVE HAPTICS (Feedback Tátil Incremental)
+    if (!SwipeMachine.hasHitLimit) {
+        // Calcula progresso de 0 a 10 (onde 10 é o limite)
+        const progress = Math.min(0.99, absX / limit);
+        const currentStep = Math.floor(progress * 10); // 0..9
+
+        if (currentStep !== SwipeMachine.lastFeedbackStep) {
+            // Apenas vibra se estiver aumentando a tensão (movendo para fora)
+            if (currentStep > SwipeMachine.lastFeedbackStep) {
+                // Mapeamento de Intensidade:
+                // Step 1 (~15px): Selection (Feedback de início de ação)
+                // Step 3 (~45px): Selection
+                // Step 5 (~75px): Light
+                // Step 7 (~105px): Light
+                // Step 9 (~135px): Medium
+                if (currentStep === 1 || currentStep === 3) triggerHaptic('selection');
+                else if (currentStep === 5 || currentStep === 7) triggerHaptic('light');
+                else if (currentStep === 9) triggerHaptic('medium');
+            }
+            SwipeMachine.lastFeedbackStep = currentStep;
+        }
+    }
+
     if (absX >= limit) {
         // Hard Clamp
         tx = tx > 0 ? limit : -limit;
 
         // Sensory Feedback (One-shot at limit)
         if (!SwipeMachine.hasHitLimit) {
-            triggerHaptic('medium');
+            triggerHaptic('heavy'); // UPDATE: Mais forte no limite final
             SwipeMachine.hasHitLimit = true;
             SwipeMachine.content.classList.add('limit-reached');
         }
@@ -107,16 +130,6 @@ const _renderFrame = () => {
         SwipeMachine.content.attributeStyleMap.set('transform', new (window as any).CSSTranslate(CSS.px(tx), CSS.px(0)));
     } else {
         SwipeMachine.content.style.transform = `translateX(${tx}px)`;
-    }
-
-    // Haptic Feedback for Action Threshold
-    if (!SwipeMachine.hasHitLimit) {
-        if (!SwipeMachine.hasHapticsTriggered && absX > HAPTIC_THRESHOLD) {
-            triggerHaptic('light'); 
-            SwipeMachine.hasHapticsTriggered = true;
-        } else if (SwipeMachine.hasHapticsTriggered && absX < HAPTIC_THRESHOLD) {
-            SwipeMachine.hasHapticsTriggered = false;
-        }
     }
     
     SwipeMachine.rafId = 0;
@@ -289,7 +302,7 @@ const _onPointerUp = (e: PointerEvent) => {
             }
             window.removeEventListener('click', blockClick, true);
         };
-        if (Math.abs(dx) > SWIPE_ACTION_THRESHOLD) {
+        if (Math.abs(dx) > ACTION_THRESHOLD) {
             window.addEventListener('click', blockClick, true);
             setTimeout(() => window.removeEventListener('click', blockClick, true), SWIPE_BLOCK_CLICK_MS);
         }
@@ -328,8 +341,8 @@ export function setupSwipeHandler(container: HTMLElement) {
         SwipeMachine.startY = e.clientY | 0;
         SwipeMachine.wasOpenLeft = card.classList.contains(CSS_CLASSES.IS_OPEN_LEFT);
         SwipeMachine.wasOpenRight = card.classList.contains(CSS_CLASSES.IS_OPEN_RIGHT);
-        SwipeMachine.hasHapticsTriggered = false;
         SwipeMachine.hasHitLimit = false;
+        SwipeMachine.lastFeedbackStep = 0;
 
         // 4. Start Long Press Timer
         SwipeMachine.longPressTimer = window.setTimeout(_triggerDrag, LONG_PRESS_DELAY);
