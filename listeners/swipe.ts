@@ -27,7 +27,8 @@ import {
 
 // CONFIGURAÇÃO FÍSICA
 const DIRECTION_LOCKED_THRESHOLD = 5; // Pixels para definir intenção direcional
-const LONG_PRESS_DRIFT_TOLERANCE = 15; // Pixels de tolerância para "tremedeira" antes de cancelar o Long Press
+// UPDATE: Aumentado para 24px. Permite que o dedo oscile verticalmente enquanto segura sem cancelar o gesto.
+const LONG_PRESS_DRIFT_TOLERANCE = 24; 
 const ACTION_THRESHOLD = SWIPE_ACTION_THRESHOLD;
 const LONG_PRESS_DELAY = 500; 
 const MAX_SWIPE_MULTIPLIER = 2.5; 
@@ -82,57 +83,47 @@ const _renderFrame = () => {
     if (SwipeMachine.wasOpenLeft) tx += SwipeMachine.actionWidth;
     if (SwipeMachine.wasOpenRight) tx -= SwipeMachine.actionWidth;
 
-    // PHYSICS LIMIT (Elasticidade ou Hard Stop)
-    const limit = (SwipeMachine.actionWidth * MAX_SWIPE_MULTIPLIER) | 0;
     const absX = Math.abs(tx);
+    const actionPoint = SwipeMachine.actionWidth; // Ponto onde os ícones aparecem (Standard Position)
+    const maxPhysicalLimit = (actionPoint * MAX_SWIPE_MULTIPLIER) | 0; // Limite elástico máximo
 
-    // PROGRESSIVE HAPTICS (Feedback Tátil Incremental - Resistance Effect)
-    // Config: Trigger every ~10-12px to simulate mechanical resistance
-    const HAPTIC_GRAIN = 12; 
-
-    if (!SwipeMachine.hasHitLimit) {
-        const currentStep = Math.floor(absX / HAPTIC_GRAIN);
-
-        if (currentStep !== SwipeMachine.lastFeedbackStep) {
-            // Only trigger if we are pulling further out (increasing tension)
-            const isExpanding = currentStep > SwipeMachine.lastFeedbackStep;
-            
-            if (isExpanding) {
-                // Calculate position relative to the Action Threshold (usually 60px)
-                const ratio = absX / SwipeMachine.actionWidth;
-                
-                // Ramp up intensity as we approach the action point
-                if (ratio < 0.5) {
-                    // 0-50% (0-30px): Subtle mechanical clicks
-                    triggerHaptic('selection');
-                } else if (ratio < 1.0) {
-                    // 50%-100% (30-60px): Stronger resistance ticks
-                    triggerHaptic('light');
-                } else {
-                    // > 100% (Elastic Stretching): Pronounced feedback
-                    triggerHaptic('medium');
-                }
-            }
-            
-            SwipeMachine.lastFeedbackStep = currentStep;
-        }
-    }
-
-    if (absX >= limit) {
-        // Hard Clamp
-        tx = tx > 0 ? limit : -limit;
-
-        // Sensory Feedback (One-shot at limit)
+    // HAPTICS & VISUAL LOGIC
+    // O "Limite do Cartão" sensorial é definido como o ponto de ação (actionPoint).
+    
+    if (absX >= actionPoint) {
+        // Chegou na posição padrão de abertura (Ícones visíveis)
         if (!SwipeMachine.hasHitLimit) {
-            triggerHaptic('heavy'); // Hard stop collision
+            triggerHaptic('heavy'); // Feedback forte aqui ("Travou" na posição)
             SwipeMachine.hasHitLimit = true;
             SwipeMachine.content.classList.add('limit-reached');
         }
     } else {
+        // Zona de Resistência (0 -> actionPoint)
         if (SwipeMachine.hasHitLimit) {
             SwipeMachine.hasHitLimit = false;
             SwipeMachine.content.classList.remove('limit-reached');
         }
+
+        // Feedback de resistência (grão fino)
+        const HAPTIC_GRAIN = 8; 
+        const currentStep = Math.floor(absX / HAPTIC_GRAIN);
+
+        if (currentStep !== SwipeMachine.lastFeedbackStep) {
+            // Só vibra se estiver esticando (aumentando a tensão)
+            if (currentStep > SwipeMachine.lastFeedbackStep) {
+                // Intensidade aumenta conforme chega perto do ponto de ação
+                const ratio = absX / actionPoint;
+                if (ratio > 0.6) triggerHaptic('light'); 
+                else triggerHaptic('selection');
+            }
+            SwipeMachine.lastFeedbackStep = currentStep;
+        }
+    }
+
+    // CLAMP FÍSICO (Elasticidade Máxima)
+    // O visual continua esticando além do ponto de ação até este limite
+    if (absX >= maxPhysicalLimit) {
+        tx = tx > 0 ? maxPhysicalLimit : -maxPhysicalLimit;
     }
 
     // Direct DOM Manipulation (High Performance)
