@@ -20,9 +20,8 @@ const CORS_HEADERS = {
 
 // ROBUSTNESS: Support both standard naming conventions
 const API_KEY = process.env.API_KEY || process.env.GEMINI_API_KEY;
-// MODEL UPDATE: Switched to Gemini 2.0 Flash (Experimental) to mitigate rate limits associated with the Gemini 3 Preview series.
-// This model offers higher quotas suitable for frequent analysis requests.
-const MODEL_NAME = 'gemini-2.0-flash-exp';
+// MODEL UPDATE: Switched to Gemini 2.0 Flash (Stable) for better rate limits and stability.
+const MODEL_NAME = 'gemini-2.0-flash';
 
 let aiClient: GoogleGenAI | null = null;
 
@@ -54,7 +53,7 @@ export default async function handler(req: Request) {
 
         // PROTEÇÃO CONTRA ZUMBIFICAÇÃO: Timeout de execução da IA
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 25000);
+        const timeoutId = setTimeout(() => controller.abort(), 30000);
 
         const geminiResponse = await aiClient.models.generateContent({
             model: MODEL_NAME,
@@ -84,6 +83,7 @@ export default async function handler(req: Request) {
         
         if (error.name === 'AbortError') return new Response('AI Gateway Timeout', { status: 504, headers: CORS_HEADERS });
         
+        // Pass 'details' to client for better debugging
         return new Response(JSON.stringify({ error: 'AI processing failed', details: errorMessage }), { status: 500, headers: CORS_HEADERS });
     }
 }
