@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 
 const isProd = process.env.NODE_ENV === 'production';
+const OUT_DIR = 'dist';
 
 async function copyDir(src, dest) {
     if (!fs.existsSync(src)) return;
@@ -25,17 +26,17 @@ async function copyDir(src, dest) {
 async function build() {
     console.log(`Building for ${isProd ? 'production' : 'development'}...`);
 
-    // Ensure public dir exists
-    if (fs.existsSync('public')) {
-        await fs.promises.rm('public', { recursive: true, force: true });
+    // Ensure output dir exists
+    if (fs.existsSync(OUT_DIR)) {
+        await fs.promises.rm(OUT_DIR, { recursive: true, force: true });
     }
-    await fs.promises.mkdir('public', { recursive: true });
+    await fs.promises.mkdir(OUT_DIR, { recursive: true });
 
     // 1. Bundle App (index.tsx -> bundle.js + bundle.css)
     const ctx = await esbuild.context({
         entryPoints: ['index.tsx'],
         bundle: true,
-        outfile: 'public/bundle.js',
+        outfile: path.join(OUT_DIR, 'bundle.js'),
         minify: isProd,
         sourcemap: !isProd,
         format: 'esm',
@@ -64,7 +65,7 @@ async function build() {
     await esbuild.build({
         entryPoints: ['services/sync.worker.ts'],
         bundle: true,
-        outfile: 'public/sync-worker.js',
+        outfile: path.join(OUT_DIR, 'sync-worker.js'),
         minify: isProd,
         format: 'esm',
         target: ['es2020'],
@@ -85,15 +86,15 @@ async function build() {
              html = html.replace('</body>', '<script src="bundle.js" type="module"></script></body>');
         }
     }
-    await fs.promises.writeFile('public/index.html', html);
+    await fs.promises.writeFile(path.join(OUT_DIR, 'index.html'), html);
 
-    await copyFile('manifest.json', 'public/manifest.json');
-    await copyFile('sw.js', 'public/sw.js');
+    await copyFile('manifest.json', path.join(OUT_DIR, 'manifest.json'));
+    await copyFile('sw.js', path.join(OUT_DIR, 'sw.js'));
     
     // Copy Dirs
-    await copyDir('locales', 'public/locales');
-    await copyDir('icons', 'public/icons');
-    await copyDir('assets', 'public/assets'); // Add assets folder if exists
+    await copyDir('locales', path.join(OUT_DIR, 'locales'));
+    await copyDir('icons', path.join(OUT_DIR, 'icons'));
+    await copyDir('assets', path.join(OUT_DIR, 'assets')); // Add assets folder if exists
 
     console.log('Build complete.');
 }
