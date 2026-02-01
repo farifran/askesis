@@ -20,8 +20,9 @@ const CORS_HEADERS = {
 
 // ROBUSTNESS: Support both standard naming conventions
 const API_KEY = process.env.API_KEY || process.env.GEMINI_API_KEY;
-// MODEL UPDATE: Switched to Gemini 2.0 Flash (Stable) for better rate limits and stability.
-const MODEL_NAME = 'gemini-2.0-flash';
+// MODEL UPDATE: Switched to Gemini 2.0 Flash Lite (Preview).
+// This model is optimized for cost/latency and typically has better availability for free tier than the main Flash model.
+const MODEL_NAME = 'gemini-2.0-flash-lite-preview-02-05';
 
 let aiClient: GoogleGenAI | null = null;
 
