@@ -265,6 +265,14 @@ const _onPointerMove = (e: PointerEvent) => {
             }
         }
 
+        // SCROLL LOCK LOGIC [CRITICAL]:
+        // Se ainda estamos esperando o Long Press e o movimento é pequeno (mesmo que seja vertical),
+        // impedimos AGRESSIVAMENTE que o navegador assuma o controle (scroll nativo).
+        // Isso evita o evento 'pointercancel' que mataria o Long Press prematuramente.
+        if (SwipeMachine.longPressTimer !== 0 && movementDistance <= LONG_PRESS_DRIFT_TOLERANCE) {
+             if (e.cancelable) e.preventDefault();
+        }
+
         // 2. Direction Lock Logic
         if (absDx > DIRECTION_LOCKED_THRESHOLD || absDy > DIRECTION_LOCKED_THRESHOLD) {
             if (absDx > absDy) {
@@ -280,16 +288,16 @@ const _onPointerMove = (e: PointerEvent) => {
                 }
             } else {
                 // Vertical -> Scroll Intent?
-                // FIX: Se o timer de Long Press ainda estiver ativo e o movimento for pequeno (dentro da tolerância),
-                // IGNORAMOS o bloqueio de rolagem para dar chance ao Drag de ativar.
+                
                 const isWaitingForLongPress = SwipeMachine.longPressTimer !== 0;
                 
+                // Se estamos no "limbo" (movimento > 5px mas < 24px e vertical), continuamos prevenindo
+                // o scroll (via lógica acima) e aguardamos o timer.
                 if (isWaitingForLongPress && absDy <= LONG_PRESS_DRIFT_TOLERANCE) {
-                    // Do nothing (Wait for timer or more movement)
                     return;
                 }
 
-                // Vertical scroll confirmado ou movimento excessivo
+                // Vertical scroll confirmado ou movimento excessivo (>24px)
                 SwipeMachine.state = 'LOCKED_OUT';
                 _forceReset(); // Let native scroll take over
                 return;
