@@ -26,7 +26,8 @@ import {
 } from '../constants';
 
 // CONFIGURAÇÃO FÍSICA
-const DIRECTION_LOCKED_THRESHOLD = 5; // Pixels para travar direção (H vs V)
+const DIRECTION_LOCKED_THRESHOLD = 5; // Pixels para definir intenção direcional
+const LONG_PRESS_DRIFT_TOLERANCE = 15; // Pixels de tolerância para "tremedeira" antes de cancelar o Long Press
 const ACTION_THRESHOLD = SWIPE_ACTION_THRESHOLD;
 const LONG_PRESS_DELAY = 500; 
 const MAX_SWIPE_MULTIPLIER = 2.5; 
@@ -85,25 +86,34 @@ const _renderFrame = () => {
     const limit = (SwipeMachine.actionWidth * MAX_SWIPE_MULTIPLIER) | 0;
     const absX = Math.abs(tx);
 
-    // PROGRESSIVE HAPTICS (Feedback Tátil Incremental)
+    // PROGRESSIVE HAPTICS (Feedback Tátil Incremental - Resistance Effect)
+    // Config: Trigger every ~10-12px to simulate mechanical resistance
+    const HAPTIC_GRAIN = 12; 
+
     if (!SwipeMachine.hasHitLimit) {
-        // Calcula progresso de 0 a 10 (onde 10 é o limite)
-        const progress = Math.min(0.99, absX / limit);
-        const currentStep = Math.floor(progress * 10); // 0..9
+        const currentStep = Math.floor(absX / HAPTIC_GRAIN);
 
         if (currentStep !== SwipeMachine.lastFeedbackStep) {
-            // Apenas vibra se estiver aumentando a tensão (movendo para fora)
-            if (currentStep > SwipeMachine.lastFeedbackStep) {
-                // Mapeamento de Intensidade:
-                // Step 1 (~15px): Selection (Feedback de início de ação)
-                // Step 3 (~45px): Selection
-                // Step 5 (~75px): Light
-                // Step 7 (~105px): Light
-                // Step 9 (~135px): Medium
-                if (currentStep === 1 || currentStep === 3) triggerHaptic('selection');
-                else if (currentStep === 5 || currentStep === 7) triggerHaptic('light');
-                else if (currentStep === 9) triggerHaptic('medium');
+            // Only trigger if we are pulling further out (increasing tension)
+            const isExpanding = currentStep > SwipeMachine.lastFeedbackStep;
+            
+            if (isExpanding) {
+                // Calculate position relative to the Action Threshold (usually 60px)
+                const ratio = absX / SwipeMachine.actionWidth;
+                
+                // Ramp up intensity as we approach the action point
+                if (ratio < 0.5) {
+                    // 0-50% (0-30px): Subtle mechanical clicks
+                    triggerHaptic('selection');
+                } else if (ratio < 1.0) {
+                    // 50%-100% (30-60px): Stronger resistance ticks
+                    triggerHaptic('light');
+                } else {
+                    // > 100% (Elastic Stretching): Pronounced feedback
+                    triggerHaptic('medium');
+                }
             }
+            
             SwipeMachine.lastFeedbackStep = currentStep;
         }
     }
@@ -114,7 +124,7 @@ const _renderFrame = () => {
 
         // Sensory Feedback (One-shot at limit)
         if (!SwipeMachine.hasHitLimit) {
-            triggerHaptic('heavy'); // UPDATE: Mais forte no limite final
+            triggerHaptic('heavy'); // Hard stop collision
             SwipeMachine.hasHitLimit = true;
             SwipeMachine.content.classList.add('limit-reached');
         }
@@ -253,15 +263,24 @@ const _onPointerMove = (e: PointerEvent) => {
 
     // PHASE: DETECTING
     if (SwipeMachine.state === 'DETECTING') {
-        // Movement detected: Cancel Long Press
-        if (absDx > 5 || absDy > 5) {
-            if (SwipeMachine.longPressTimer) clearTimeout(SwipeMachine.longPressTimer);
+        const movementDistance = Math.max(absDx, absDy);
+
+        // 1. Movement Check for Long Press Cancellation
+        // Só cancela o timer se o movimento for significativo (drift tolerance).
+        if (movementDistance > LONG_PRESS_DRIFT_TOLERANCE) {
+            if (SwipeMachine.longPressTimer) {
+                clearTimeout(SwipeMachine.longPressTimer);
+                SwipeMachine.longPressTimer = 0;
+            }
         }
 
-        // Direction Lock Logic
+        // 2. Direction Lock Logic
         if (absDx > DIRECTION_LOCKED_THRESHOLD || absDy > DIRECTION_LOCKED_THRESHOLD) {
             if (absDx > absDy) {
                 // Horizontal -> Start Swipe
+                // Cancela long press se for swipe horizontal decidido
+                if (SwipeMachine.longPressTimer) clearTimeout(SwipeMachine.longPressTimer);
+                
                 SwipeMachine.state = 'SWIPING';
                 document.body.classList.add('is-interaction-active');
                 if (SwipeMachine.card) {
@@ -269,7 +288,17 @@ const _onPointerMove = (e: PointerEvent) => {
                     try { SwipeMachine.card.setPointerCapture(e.pointerId); SwipeMachine.pointerId = e.pointerId; } catch(e){}
                 }
             } else {
-                // Vertical -> Scroll -> Abort Swipe
+                // Vertical -> Scroll Intent?
+                // FIX: Se o timer de Long Press ainda estiver ativo e o movimento for pequeno (dentro da tolerância),
+                // IGNORAMOS o bloqueio de rolagem para dar chance ao Drag de ativar.
+                const isWaitingForLongPress = SwipeMachine.longPressTimer !== 0;
+                
+                if (isWaitingForLongPress && absDy <= LONG_PRESS_DRIFT_TOLERANCE) {
+                    // Do nothing (Wait for timer or more movement)
+                    return;
+                }
+
+                // Vertical scroll confirmado ou movimento excessivo
                 SwipeMachine.state = 'LOCKED_OUT';
                 _forceReset(); // Let native scroll take over
                 return;
