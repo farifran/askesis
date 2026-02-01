@@ -95,13 +95,12 @@ const _renderFrame = () => {
         if (!SwipeMachine.hasHitLimit) {
             triggerHaptic('heavy'); // Feedback forte aqui ("Travou" na posição)
             SwipeMachine.hasHitLimit = true;
-            SwipeMachine.content.classList.add('limit-reached');
+            // VISUAL FEEDBACK REMOVED: Apenas vibração, sem alteração visual no cartão.
         }
     } else {
         // Zona de Resistência (0 -> actionPoint)
         if (SwipeMachine.hasHitLimit) {
             SwipeMachine.hasHitLimit = false;
-            SwipeMachine.content.classList.remove('limit-reached');
         }
 
         // Feedback de resistência (grão fino)
@@ -159,7 +158,6 @@ const _forceReset = () => {
         }
     }
     if (content) {
-        content.classList.remove('limit-reached');
         if (SwipeMachine.hasTypedOM && content.attributeStyleMap) {
             content.attributeStyleMap.clear();
         } else {
@@ -226,7 +224,6 @@ const _triggerDrag = () => {
     SwipeMachine.card.classList.remove(CSS_CLASSES.IS_SWIPING);
     
     // BUGFIX: Clean visual artifacts from content before Drag takes over
-    SwipeMachine.content.classList.remove('limit-reached');
     if (SwipeMachine.hasTypedOM && SwipeMachine.content.attributeStyleMap) {
         SwipeMachine.content.attributeStyleMap.clear();
     } else {
@@ -293,6 +290,7 @@ const _onPointerMove = (e: PointerEvent) => {
                 
                 // Se estamos no "limbo" (movimento > 5px mas < 24px e vertical), continuamos prevenindo
                 // o scroll (via lógica acima) e aguardamos o timer.
+                // Isso permite que o usuário segure o dedo tremendo levemente sem iniciar scroll nem cancelar o drag.
                 if (isWaitingForLongPress && absDy <= LONG_PRESS_DRIFT_TOLERANCE) {
                     return;
                 }
