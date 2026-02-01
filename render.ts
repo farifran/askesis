@@ -251,10 +251,12 @@ export function initLanguageFilter() {
 export function renderAINotificationState() {
     const hasCelebrations = state.pending21DayHabitIds.length > 0 || state.pendingConsolidationHabitIds.length > 0;
     const hasUnseenResult = (state.aiState === 'completed' || state.aiState === 'error') && !state.hasSeenAIResult;
+    const hasQuotaExceeded = state.aiQuotaExceededToday === true;
     ui.aiEvalBtn.classList.toggle('loading', state.aiState === 'loading');
-    ui.aiEvalBtn.disabled = state.aiState === 'loading';
+    ui.aiEvalBtn.disabled = state.aiState === 'loading' || hasQuotaExceeded;
     ui.aiEvalBtn.classList.toggle('offline', !navigator.onLine);
-    ui.aiEvalBtn.classList.toggle('has-notification', hasCelebrations || hasUnseenResult);
+    ui.aiEvalBtn.classList.toggle('has-notification', hasCelebrations || hasUnseenResult || hasQuotaExceeded);
+    ui.aiEvalBtn.title = hasQuotaExceeded ? t('aiQuotaExceededToday') : '';
 }
 
 let _quoteCollapseListener: ((e: Event) => void) | null = null;

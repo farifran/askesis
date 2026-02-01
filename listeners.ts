@@ -17,7 +17,7 @@ import { setupSwipeHandler } from './listeners/swipe';
 import { setupCalendarListeners } from './listeners/calendar';
 import { setupChartListeners } from './listeners/chart';
 import { pushToOneSignal, getTodayUTCIso, resetTodayCache, createDebounced, logger } from './utils';
-import { state, getPersistableState, invalidateCachesForDateChange } from './state';
+import { state, getPersistableState, invalidateCachesForDateChange, GEMINI_DAILY_LIMIT } from './state';
 import { syncStateWithCloud } from './services/cloud';
 import { checkAndAnalyzeDayContext } from './services/analysis';
 import { NETWORK_DEBOUNCE_MS, PERMISSION_DELAY_MS, INTERACTION_DELAY_MS } from './constants';
@@ -112,7 +112,20 @@ export function setupEventListeners() {
     document.addEventListener('render-app', renderApp);
     document.addEventListener('request-analysis', (e: Event) => {
         const ce = e as CustomEvent;
-        if (ce.detail?.date) checkAndAnalyzeDayContext(ce.detail.date);
+        if (ce.detail?.date) {
+            checkAndAnalyzeDayContext(ce.detail.date);
+            
+            // Verificar quota e alertar se necessário
+            const today = getTodayUTCIso();
+            if (state.geminiUsageToday?.resetAt === today) {
+                const remaining = Math.max(0, GEMINI_DAILY_LIMIT - state.geminiUsageToday.count);
+                if (remaining <= 2 && remaining > 0) {
+                    logger.warn(`[Quota] Apenas ${remaining} análise(s) restante(s) hoje`);
+                } else if (remaining === 0) {
+                    logger.warn(`[Quota] Limite diário de análises IA atingido`);
+                }
+            }
+        }
     });
 
     document.addEventListener('card-status-changed', _handleCardUpdate);

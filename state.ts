@@ -109,6 +109,11 @@ export interface AppState {
     readonly hasOnboarded: boolean; 
     readonly syncLogs: SyncLog[];
     monthlyLogs: Map<string, bigint>; // Bitmask Storage
+    geminiUsageToday?: {
+        count: number;
+        resetAt: string; // ISO date
+        lastAnalyzedNotesHash?: string; // Hash de notas da última análise
+    };
 }
 
 export interface HabitTemplate {
@@ -134,6 +139,7 @@ export const APP_VERSION = 9;
 export const STREAK_SEMI_CONSOLIDATED = 21;
 export const STREAK_CONSOLIDATED = 66;
 export const MAX_HABIT_NAME_LENGTH = 50;
+export const GEMINI_DAILY_LIMIT = 4; // Análises por dia antes de alertar
 
 export const HABIT_STATE = {
     NULL: 0,
@@ -188,11 +194,12 @@ export const state: {
     hasOnboarded: boolean; 
     syncLogs: SyncLog[];
     quoteState?: QuoteDisplayState;
-    aiState: 'idle' | 'loading' | 'completed' | 'error';
+    aiState: 'idle' | 'loading' | 'completed' | 'error' | 'quota-exceeded';
     aiReqId: number;
     hasSeenAIResult: boolean;
     lastAIResult: string | null;
     lastAIError?: string;
+    aiQuotaExceededToday?: boolean;
     syncState: 'syncInitial' | 'syncSaving' | 'syncSynced' | 'syncError';
     initialSyncDone: boolean; // PROTEÇÃO DE BOOT
     fullCalendar: { year: number; month: number; };
@@ -228,11 +235,13 @@ export const state: {
     aiReqId: 0,
     hasSeenAIResult: true,
     lastAIResult: null,
+    aiQuotaExceededToday: false,
     syncState: 'syncInitial',
     initialSyncDone: false, // Inicia como falso até o fetch cloud completar
     fullCalendar: { year: new Date().getUTCFullYear(), month: new Date().getUTCMonth() },
     uiDirtyState: { calendarVisuals: true, habitListStructure: true, chartData: true },
     monthlyLogs: new Map(),
+    geminiUsageToday: undefined,
     confirmAction: null,
     confirmEditAction: null,
     editingNoteFor: null,

@@ -79,6 +79,8 @@ export const API_TIMEOUT_MS = 12000;
 export const API_MAX_RETRIES = 2;
 export const API_RETRY_DELAY_MS = 500;
 
+export const GEMINI_ANALYSIS_DAILY_LIMIT = 4; // Análises por dia antes de alertar
+
 export const QUOTE_WEIGHTS = {
 	AI_MATCH: 50,
 	SPHERE_MATCH: 40,

@@ -295,6 +295,11 @@ export function saveHabitFromModal() {
 }
 
 export async function performAIAnalysis(type: 'monthly' | 'quarterly' | 'historical') {
+    // Verificar quota excedida
+    if (state.aiQuotaExceededToday) {
+        addSyncLog(t('aiQuotaExceededToday'), 'warning');
+        return;
+    }
     if (state.aiState === 'loading') return;
     const id = ++state.aiReqId; state.aiState = 'loading'; state.hasSeenAIResult = false;
     renderAINotificationState(); closeModal(ui.aiOptionsModal);

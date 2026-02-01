@@ -12,6 +12,7 @@
     "aiDaysUnit": "dias",
     "aiDiscipline": "Disciplina",
     "aiErrorGeneric": "Ocorreu um erro na comunicação com a Inteligência Artificial. Por favor, tente novamente mais tarde.",
+    "aiQuotaExceededToday": "Limite diário de 4 análises IA atingido. Tente novamente amanhã.",
     "aiEval_ariaLabel": "Avaliação IA",
     "aiOfflineMessage": "A conexão com a nuvem não está disponível. Lembre-se: a tecnologia é externa, mas a sua razão é interna e está sob seu controle.",
     "aiOfflineTitle": "Sem Conexão",
