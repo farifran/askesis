@@ -32,7 +32,7 @@ import {
 import { ARCHIVE_IDLE_FALLBACK_MS, ARCHIVE_DAYS_THRESHOLD } from '../constants';
 import { 
     closeModal, showConfirmationModal, renderAINotificationState,
-    clearHabitDomCache, updateDayVisuals
+    clearHabitDomCache, updateDayVisuals, openModal
 } from '../render';
 import { ui } from '../render/ui';
 import { t, getTimeOfDayName, formatDate, formatList, getAiLanguageName } from '../i18n'; 
@@ -357,7 +357,16 @@ export async function performAIAnalysis(type: 'monthly' | 'quarterly' | 'histori
         
         const res = await apiFetch('/api/analyze', { method: 'POST', body: JSON.stringify({ prompt, systemInstruction }) });
         
-        if (!res.ok) throw new Error(`AI request failed (${res.status})`);
+        if (!res.ok) {
+            let errorDetail = `Status ${res.status}`;
+            try {
+                const errorJson = await res.json();
+                if (errorJson.error) errorDetail = errorJson.error;
+                // FIX: Include technical details for debugging
+                if (errorJson.details) errorDetail += `: ${errorJson.details}`;
+            } catch (e) { }
+            throw new Error(`AI Request: ${errorDetail}`);
+        }
         
         if (id === state.aiReqId) { 
             state.lastAIResult = await res.text(); 
@@ -368,10 +377,15 @@ export async function performAIAnalysis(type: 'monthly' | 'quarterly' | 'histori
         }
     } catch (e) { 
         if (id === state.aiReqId) { 
-            state.lastAIError = String(e); 
+            const errStr = e instanceof Error ? e.message : String(e);
+            state.lastAIError = errStr; 
             state.aiState = 'error'; 
             state.lastAIResult = t('aiErrorGeneric'); 
             addSyncLog("Erro na análise IA.", 'error'); 
+            
+            // Show detailed error in UI for user feedback
+            ui.aiResponse.innerHTML = `<div class="ai-error-message"><h3>${t('aiLimitTitle') === 'Daily Limit Reached' ? 'Error' : 'Erro'}</h3><p>${t('aiErrorGeneric')}</p><div class="debug-info"><small>${errStr}</small></div></div>`;
+            openModal(ui.aiModal);
         } 
     } finally { 
         if (id === state.aiReqId) { 
