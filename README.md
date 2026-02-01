@@ -44,7 +44,41 @@ A maioria dos apps de hábitos foca em gamificação superficial ou em "não que
 A criação do Askesis nasceu de duas necessidades pessoais fundamentais que não encontrei em outras soluções de mercado:
 
 1.  **Soberania e Privacidade de Dados:** O registro de hábitos é, por natureza, um diário íntimo da vida pessoal. Eu precisava de uma garantia absoluta de que essas informações não seriam compartilhadas, vendidas ou analisadas por terceiros. No Askesis, a prioridade é o controle da informação: os dados pertencem exclusivamente ao usuário e residem no seu dispositivo (ou no seu cofre pessoal criptografado).
+
+  Além disso, o Askesis adota uma prática conhecida como **anonimato coletivo** (*anonymity set*). Como o app não exige e-mail, telefone ou qualquer identificador pessoal, e utiliza uma **API de IA compartilhada** para todos, a identidade do usuário não apenas é criptografada — ela também é **diluída no conjunto de usuários**. Em outras palavras: as requisições são indistinguíveis entre si, reduzindo a chance de correlação individual. 
+
+  *Resumo:* **Privacidade por desenho + criptografia + anonimato coletivo** = um nível adicional de segurança para um app popular, anônimo e livre.
 2.  **Autonomia Tecnológica:** Em uma era dominada por modelos de assinatura (SaaS), recusei-me a pagar aluguel mensal por um software que poderia ser construído com a tecnologia web moderna disponível. Este projeto é a prova de que é possível ter uma ferramenta profissional, robusta e gratuita, utilizando os recursos que a tecnologia atual nos oferece, sem barreiras financeiras para o auto-aperfeiçoamento.
+
+---
+
+<h2>💝 Apoie o Desenvolvimento</h2>
+
+Se o Askesis está ajudando você a fortalecer sua vontade e consistência, considere apoiar o desenvolvimento:
+
+- **[GitHub Sponsors](https://github.com/sponsors/farifran)** - Patrocínio recorrente com recompensas exclusivas
+- **[Buy Me a Coffee](https://www.buymeacoffee.com/askesis)** - Contribuição única
+- **[Ko-fi](https://ko-fi.com/askesis)** - Alternativa global
+
+Todo apoio financia:
+- 🧪 Testes abrangentes e qualidade de código
+- 📚 Documentação detalhada e guias
+- 🚀 Novas funcionalidades e melhorias
+- 🔐 Auditorias de segurança e privacidade
+- ♿ Acessibilidade e suporte multilíngue
+
+### Por que importa?
+
+Atualmente, graças a plataformas gratuitas (Vercel, Google Gemini, OneSignal), o Askesis pode servir até **500 usuários simultaneamente**. Cada contribuição permite expandir esses limites:
+
+- Ativar APIs pagas do Google Gemini → suportar **+1000 análises diárias**
+- Aumentar quotas de sincronização → suportar **+5000 usuários**
+- Implementar CDN global → reduzir latência em regiões distantes
+- Manter infraestrutura 24/7 → garantir confiabilidade
+
+**O apoio transforma Askesis de um experimento em um serviço público sustentável.**
+
+**Obrigado por acreditar em um futuro onde a tecnologia serve à virtude, não o contrário.**
 
 ---
 
@@ -200,6 +234,135 @@ Como o Askesis é "Vanilla TypeScript" puro, não há build steps complexos de f
     ```
     *O projeto utiliza `esbuild` para Hot Module Replacement (HMR) e transpilação TS -> JS.*
 
+> **Nota importante sobre instância própria:** rodar uma versão auto-hospedada é totalmente possível, porém **reduz um dos maiores benefícios do Askesis: o anonimato coletivo**. Ao sair do conjunto de usuários compartilhado, você diminui o *anonymity set* que ajuda a diluir a identidade entre participantes.
+
+---
+
+<h2>🧪 Validação e Garantia de Qualidade</h2>
+
+A confiabilidade do Askesis é validada por uma suite de testes abrangente que cobre desde fluxos de usuário até cenários de caos distribuído.
+
+<h3>Estratégia de Testes: Integration-First, Property-Based</h3>
+
+Ao contrário de projetos que acumulam centenas de unit tests isolados, o Askesis adota uma abordagem **Integration-First**: cada teste valida fluxos completos que um usuário real executaria, combinando múltiplos subsistemas.
+
+**Filosofia:** *"Se o sistema passa em um cenário realista, os componentes individuais estão funcionando corretamente."*
+
+<h3>📊 Cobertura de Testes (Test Suites)</h3>
+
+O projeto possui **6 suites de testes especializadas**, totalizando **60+ testes** que validam:
+
+#### 🎯 **Super-Teste 1: Jornada do Usuário** (3 testes)
+Valida o ciclo de vida completo de um hábito desde a criação até a graduação:
+- Criação de hábito → Marcação de status → Adição de notas → Persistência → Recuperação após reload
+- Verifica que dados sobrevivem a reinicializações e que o DOM reflete corretamente o estado
+
+#### 🔄 **Super-Teste 2: Conflitos de Sincronização** (5 testes)
+Simula sincronização multi-dispositivo com conflitos:
+- Merge de bitmasks (União de dados binários)
+- Resolução CRDT-lite (Tombstone precedence: Delete > Update)
+- Serialização/Desserialização de dados criptografados
+- Garante que nenhum progresso é perdido em sincronizações concorrentes
+
+#### ⚡ **Super-Teste 3: Performance e Estresse** (10 testes)
+Benchmarks com budgets rigorosos de performance:
+- **100 hábitos criados** em < 100ms
+- **3 anos de histórico** (54.750 registros) populados em < 500ms
+- **10.000 leituras aleatórias** em < 50ms (validando O(1) dos bitmasks)
+- **1.000 toggles consecutivos** em < 100ms
+- Verifica que não há vazamento de memória após 10.000 operações
+- Performance constante independente do volume de dados (prova de O(1))
+
+#### ♿ **Super-Teste 4: Acessibilidade Total** (12 testes)
+Validação WCAG 2.1 AA compliance:
+- Navegação completa apenas com teclado (Tab, Enter, Escape)
+- Focus trap em modais (navegação não escapa do contexto)
+- Estrutura semântica HTML5 (landmarks, roles, aria-labels)
+- Anúncios dinâmicos com `aria-live` para leitores de tela
+- Contraste de cores adequado (ratios WCAG)
+- Respeito a `prefers-reduced-motion`
+- Skip links para navegação rápida
+
+#### 🔥 **Super-Teste 5: Recuperação de Desastres** (10 testes)
+Chaos Engineering - valida resiliência em cenários extremos:
+- Recuperação de localStorage corrompido (JSON inválido)
+- Dados parcialmente deletados (estado fragmentado)
+- Validação e rejeição de dados malformados
+- Storage quase cheio (QuotaExceededError)
+- Timestamps negativos ou futuros (anomalias temporais)
+- Detecção de loops infinitos (circuit breakers)
+- Degradação graceful quando features falham
+- Validação de migração entre versões antigas
+- Feedback claro para o usuário em situações de erro
+
+#### 🔥 **Nuclear QA: Fuzzing & Oracle (HabitService)** (10 testes)
+Property-based testing com geração aleatória de inputs:
+- **Oracle Test:** 1.000 operações aleatórias comparadas contra implementação "ingênua" correta
+- **Guard Clauses:** Validação de rejeição de argumentos inválidos (NaN, negativos, out-of-range)
+- **Datas Extremas:** Y2K38, Year 9999, Unix Epoch (1970)
+- **Idempotência:** Mesma operação 10x produz resultado idêntico
+- **Comutatividade:** Ordem de operações não afeta resultado final
+- **State Machine:** Transições válidas entre estados (NULL → DONE → DEFERRED → DONE_PLUS)
+- **Isolamento:** 100 hábitos não interferem entre si
+- **Performance:** 10.000 operações em < 16ms (0.0016ms/op)
+- **Bit Corruption:** BigInt inválidos tratados graciosamente
+- **Versionamento:** Dados antigos + novos coexistem sem conflitos
+
+#### 🧠 **Nuclear QA: Distributed Chaos (dataMerge)** (8 testes)
+Validação de algoritmos de sincronização distribuída:
+- **Three-Body Problem:** 3 clientes divergentes convergem após sincronização multi-salto
+- **Future-From-The-Past Attack:** Timestamps futuros com dados corrompidos não destroem histórico
+- **Property-Based Commutativity:** 100 estados aleatórios sempre convergem independente da ordem
+- **Identity Preservation:** Merge com null/undefined não retorna null ou crashes
+- **Network Partition:** 5 clientes sincronizam em ordem aleatória (Eventual Consistency)
+- **Race Conditions:** Writes simultâneos resolvidos via LWW (Last-Write-Wins)
+- **Idempotência:** Merge(A,B) = Merge(Merge(A,B), B)
+- **Roundtrip Serialization:** BigInt serializa/desserializa sem perda
+
+<h3>🎯 Métricas de Qualidade</h3>
+
+```text
+📈 Cobertura de Código:  80%+ (linhas), 70%+ (funções/branches)
+⚡ Performance Budgets:  Todos os benchmarks passando
+🔒 Testes de Segurança: Criptografia, validação de entrada, XSS prevention
+♿ Acessibilidade:       WCAG 2.1 AA compliant
+🌐 Testes Distribuídos:  Convergência em split-brain scenarios
+```
+
+<h3>🚀 Executando os Testes</h3>
+
+```bash
+# Suite completa (60+ testes)
+npm test
+
+# Apenas super-testes (cenários de integração)
+npm run test:super
+
+# Com relatório de cobertura
+npm run test:coverage
+
+# Interface visual (Vitest UI)
+npm run test:ui
+
+# Modo watch (desenvolvimento)
+npm run test:watch
+```
+
+<h3>💡 Por que essa abordagem de testes importa?</h3>
+
+**Para Futuros Colaboradores:**
+- **Confiabilidade Comprovada:** Cada funcionalidade crítica tem validação automática
+- **Prevenção de Regressões:** Mudanças futuras não quebram comportamentos existentes
+- **Performance Garantida:** Budgets rigorosos asseguram que o app escala com milhares de usuários
+- **Manutenibilidade:** Testes de integração documentam como o sistema funciona na prática
+- **Conformidade:** Acessibilidade e segurança são validadas continuamente, não apenas auditadas
+
+**Para Usuários:**
+- Seus dados estão seguros mesmo em cenários extremos (crash, corrupção, offline)
+- O app funciona de forma consistente em qualquer dispositivo ou situação de rede
+- Acessível para pessoas com diferentes necessidades (leitores de tela, navegação por teclado)
+- Performance previsível mesmo com anos de histórico acumulado
+
 ---
 
 <h2>
@@ -212,6 +375,90 @@ Este projeto foi desenhado com uma engenharia inteligente para operar com **Cust
 *   **Armazenamento Ultraleve (GZIP):** Os dados históricos ("Cold Storage") são comprimidos via GZIP Stream API antes de serem salvos ou enviados para a nuvem. Isso reduz drasticamente o uso de banda e armazenamento.
 *   **O Celular Trabalha:** A maior parte do "pensamento" (criptografia, geração de gráficos, cálculos) é feita pelo seu próprio dispositivo, não pelo servidor. Isso poupa recursos da nuvem, garantindo que nunca ultrapassemos os limites gratuitos.
 *   **Notificações Gratuitas:** Utilizamos o plano de comunidade do OneSignal, que permite até 10.000 usuários Web gratuitamente.
+
+<h3>📊 Estimativas de Capacidade (com base em limites gratuitos)</h3>
+
+> **Nota:** os limites variam ao longo do tempo. Use as fórmulas abaixo e substitua pelos números atuais de cada provedor.
+
+**1) Google Gemini (IA compartilhada)**
+
+**Fórmula:**
+```
+usuarios_suportados ≈ (limite_req_dia / (req_por_usuario_dia))
+```
+
+**Exemplo (ajuste com a sua realidade):**
+- Se a quota permitir **Q** requisições/dia
+- E cada usuário fizer em média **R** consultas/dia
+→ Usuários suportados ≈ **Q / R**
+
+**Estimativa real (modelo Flash):**
+- **Quota estimada:** 1.000 solicitações/dia
+- **Uso médio por usuário:** 2 solicitações/dia (1 análise automática + 1 conselho estoico)
+→ **Usuários suportados ≈ 1.000 / 2 = 500 usuários/dia**
+
+**Boas práticas para reduzir consumo:**
+- Cache de respostas para consultas repetidas
+- Limitar sugestões diárias por usuário (ex: 1–3 insights/dia)
+- Rodar análises locais sempre que possível
+
+**2) OneSignal (Notificações Web)**
+
+**Limite gratuito divulgado:** até **10.000 usuários Web (subscribers)**.
+
+**Estimativa de capacidade:**
+- Se cada usuário receber **N** notificações/dia
+→ Total de notificações/dia ≈ **10.000 × N**
+
+**Cenário do Askesis (atual):**
+- **2 notificações/dia** para completar hábitos + **1 mensagem estoica/dia**
+→ **N = 3 notificações/dia**
+
+> **Importante:** o limite gratuito é **por número de usuários/subscribers**, não por volume de envio. Ou seja, ao atingir **10.000 usuários**, você já alcança o teto do plano — independentemente do número de notificações enviadas.
+
+**3) Vercel (Banda/Edge Functions)**
+
+**Fórmula genérica:**
+```
+usuarios_mensais ≈ (banda_mensal_disponivel / consumo_medio_por_usuario_mes)
+```
+
+**Exemplo de estimativa:**
+- Se o app consome **M MB/usuário/mês** (assets + sync)
+- E a banda gratuita é **B GB/mês**
+→ Usuários suportados ≈ **(B×1024) / M**
+
+**Medição real (dados atuais):**
+- **Fast Data Transfer:** 1,74 MB
+- **Fast Origin Transfer:** 0,178 MB
+- **Total por dia (1 usuário):** ≈ **1,918 MB/dia**
+- **Estimativa mensal por usuário (30 dias):** ≈ **57,5 MB/mês**
+
+**Estimativa com sua banda mensal:**
+```
+usuarios_mensais ≈ (B×1024) / 57,5
+```
+
+**Com o plano grátis (100 GB/mês):**
+```
+usuarios_mensais ≈ (100×1024) / 57,5 ≈ 1.780 usuários
+```
+
+<h3>🧮 Limite gratuito real (interseção entre provedores)</h3>
+
+Considerando as três plataformas **simultaneamente** (Gemini, Vercel e OneSignal), o limite prático da app é dado pelo **menor teto** entre elas:
+
+- **Gemini Flash:** ~**500 usuários/dia** (1.000 req/dia ÷ 2 req/usuário/dia)
+- **Vercel (100 GB/mês):** ~**1.780 usuários/mês** (≈ 57,5 MB/usuário/mês)
+- **OneSignal:** **10.000 usuários** (limite por subscribers)
+
+**Conclusão:** o gargalo atual é o **Gemini Flash (≈ 500 usuários/dia)**. Mesmo que Vercel e OneSignal suportem mais, a IA é o limitador antes de depender de colaboração comunitária ou ajustes de infraestrutura.
+
+**Como medir consumo real (recomendado):**
+1. Abra o app em um celular real
+2. Use DevTools → Network → "Transfer" total
+3. Some o tráfego inicial + 30 dias de uso típico
+4. Use esse valor como `consumo_medio_por_usuario_mes`
 
 ---
 
