@@ -18,15 +18,21 @@ const CORS_HEADERS = {
   'Access-Control-Allow-Headers': 'Content-Type',
 };
 
-const API_KEY = process.env.API_KEY;
+// ROBUSTNESS: Support both standard naming conventions
+const API_KEY = process.env.API_KEY || process.env.GEMINI_API_KEY;
+// MODEL UPDATE: Ensure using the correct model version requested in guidelines
 const MODEL_NAME = 'gemini-3-flash-preview';
+
 let aiClient: GoogleGenAI | null = null;
 
 export default async function handler(req: Request) {
     if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS_HEADERS });
     if (req.method !== 'POST') return new Response(null, { status: 405 });
 
-    if (!API_KEY) return new Response(JSON.stringify({ error: 'Server Configuration' }), { status: 500, headers: CORS_HEADERS });
+    if (!API_KEY) {
+        console.error("Server Config Error: API_KEY or GEMINI_API_KEY not found in environment.");
+        return new Response(JSON.stringify({ error: 'Server Configuration: Missing API Key' }), { status: 500, headers: CORS_HEADERS });
+    }
 
     try {
         // CHAOS DEFENSE: Timeout de leitura do prompt para evitar workers pendentes
@@ -72,7 +78,11 @@ export default async function handler(req: Request) {
         });
 
     } catch (error: any) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        console.error("AI Analysis Failed:", errorMessage);
+        
         if (error.name === 'AbortError') return new Response('AI Gateway Timeout', { status: 504, headers: CORS_HEADERS });
-        return new Response(JSON.stringify({ error: 'AI processing failed' }), { status: 500, headers: CORS_HEADERS });
+        
+        return new Response(JSON.stringify({ error: 'AI processing failed', details: errorMessage }), { status: 500, headers: CORS_HEADERS });
     }
 }
