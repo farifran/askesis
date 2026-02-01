@@ -1,547 +1,591 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+*/
 
-/* --- MODAIS --- */
-.modal-overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,0.7);
-    backdrop-filter: blur(5px);
-    -webkit-backdrop-filter: blur(5px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: var(--z-index-modal-overlay);
-    opacity: 0;
-    visibility: hidden;
-    transition: opacity var(--transition-duration-slow), visibility var(--transition-duration-slow);
-    /* UX: Evita scroll chaining */
-    overscroll-behavior: contain;
-}
-.modal-overlay.visible { opacity: 1; visibility: visible; }
+/**
+ * @file habitActions.ts
+ * @description Controlador de Lógica de Negócios (Business Logic Controller).
+ */
 
-.modal-content {
-    background: var(--surface-color);
-    border: 1px solid var(--border-color);
-    border-radius: var(--space-lg);
-    width: 90%;
-    max-width: 400px;
-    max-height: 80vh;
-    display: flex;
-    flex-direction: column;
-    padding: var(--space-xl);
-    overflow-y: auto;
-    z-index: var(--z-index-modal-content);
-    /* UX: Evita scroll chaining */
-    overscroll-behavior: contain;
-}
-#edit-habit-modal .modal-content {
-    display: flex;
-    flex-direction: column;
-}
+import { 
+    state, Habit, HabitSchedule, TimeOfDay, ensureHabitDailyInfo, 
+    ensureHabitInstanceData, clearScheduleCache,
+    clearActiveHabitsCache, invalidateCachesForDateChange, getPersistableState,
+    HabitDayData, STREAK_SEMI_CONSOLIDATED, STREAK_CONSOLIDATED, MAX_HABIT_NAME_LENGTH,
+    getHabitDailyInfoForDate, AppState, HABIT_STATE, AI_DAILY_LIMIT,
+    pruneHabitAppearanceCache, pruneStreaksCache, HabitDailyInfo
+} from '../state';
+import { saveState, loadState, clearLocalPersistence } from './persistence';
+import { PREDEFINED_HABITS } from '../data/predefinedHabits';
+import { 
+    getEffectiveScheduleForHabitOnDate, clearSelectorInternalCaches,
+    calculateHabitStreak, shouldHabitAppearOnDate, getHabitDisplayInfo,
+    getScheduleForDate,
+    getHabitPropertiesForDate
+} from './selectors';
+import { 
+    generateUUID, getTodayUTCIso, parseUTCIsoDate, triggerHaptic,
+    getSafeDate, addDays, toUTCIsoDateString, logger, sanitizeText
+} from '../utils';
+import { ARCHIVE_IDLE_FALLBACK_MS, ARCHIVE_DAYS_THRESHOLD } from '../constants';
+import { 
+    closeModal, showConfirmationModal, renderAINotificationState,
+    clearHabitDomCache, updateDayVisuals, openModal
+} from '../render';
+import { ui } from '../render/ui';
+import { t, getTimeOfDayName, formatDate, formatList, getAiLanguageName } from '../i18n'; 
+import { runWorkerTask, addSyncLog } from './cloud';
+import { apiFetch, clearKey } from './api';
+import { HabitService } from './HabitService';
 
-/* NEW: Layout for modals with sticky headers/footers */
-.modal-content--sticky-header {
-    padding: 0;
-    overflow: hidden; /* Disable scroll on the main container */
-    position: relative; /* Stacking context for the scrim effect */
-}
+const BATCH_IDS_POOL: string[] = [];
+const BATCH_HABITS_POOL: Habit[] = [];
 
-/* REATORAÇÃO DE LAYOUT: Modal de Configurações Gerais com rodapé flutuante */
-#manage-modal .modal-content {
-    position: relative; /* Contexto de posicionamento para o rodapé flutuante */
-    padding: 0; /* Remove o padding para que o scroll vá até as bordas */
-}
-#manage-modal .modal-scroll-wrapper {
-    /* Adiciona espaço na parte inferior para que o último item não seja ocultado pelo rodapé */
-    padding: var(--space-sm) var(--space-xl) 100px;
-}
+let _isBatchOpActive = false;
 
-.modal-content--sticky-header > .modal-header {
-    padding: var(--space-xl) var(--space-xl) var(--space-lg);
-    position: relative;
-    z-index: 1;
-    background: linear-gradient(to bottom, var(--surface-color) 70%, transparent);
-}
+const ActionContext = {
+    isLocked: false,
+    drop: null as any,
+    removal: null as any,
+    ending: null as any,
+    deletion: null as any,
+    reset() {
+        this.isLocked = false;
+        this.drop = this.removal = this.ending = this.deletion = null;
+    }
+};
 
-.modal-content--sticky-header > .modal-scroll-wrapper {
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    padding: 0 var(--space-xl);
-    flex: 1;
-    min-height: 0; /* Crucial for flex child scrolling */
-}
-
-.modal-header h2 {
-    font-size: 17px;
-    font-weight: 600;
-    text-align: center;
-    flex: 1;
-    margin: 0;
-}
-
-/* HIDE TITLE FOR EDIT HABIT MODAL [2025-06-02]: The input field serves as the title now */
-#edit-habit-modal .modal-header h2 {
-    display: none;
-}
-
-#icon-picker-modal .modal-header h2 {
-    padding: 0;
-}
-
-.modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    flex-shrink: 0;
-    margin-bottom: var(--space-lg);
-}
-
-.modal-back-btn {
-    background: none;
-    border: none;
-    color: var(--text-secondary);
-    cursor: pointer;
-    font-size: 22px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 36px;
-    height: 36px;
-    padding: var(--space-xs);
-    border-radius: var(--border-radius-pill);
-    transition: background-color var(--transition-duration);
-}
-.modal-back-btn:hover {
-    background-color: var(--surface-hover);
-}
-.modal-back-btn svg {
-    width: 20px;
-    height: 20px;
-}
-
-.modal-header-spacer {
-    width: 36px;
-    height: 36px;
-    flex-shrink: 0;
-}
-
-#icon-picker-modal .modal-header .icon-btn {
-    width: 36px;
-    height: 36px;
-    font-size: 22px;
-    color: var(--text-secondary);
-}
-
-#change-color-from-picker-btn::after {
-    content: '';
-    position: absolute;
-    inset: -2px;
-    border-radius: var(--border-radius-pill);
-    background-color: transparent;
-    /* VISUAL UPDATE [2025-02-26]: Reduced glow effect size from 10px to 5px */
-    box-shadow: 0 0 5px var(--accent-blue);
-    opacity: 0;
-    animation: glow-pulse 2.5s infinite ease-in-out;
-    pointer-events: none;
-}
-
-.modal-subtitle {
-    font-size: 15px;
-    font-weight: 500;
-    color: var(--text-primary);
-    margin-block-start: var(--space-md);
-    margin-block-end: var(--space-lg);
-    text-align: center;
-}
-.modal-settings-section {
-    margin-block-end: var(--space-lg); padding-block-end: var(--space-lg);
-    border-block-end: 1px solid var(--border-color);
-    display: flex; flex-direction: column; gap: var(--space-lg);
-}
-
-.modal-actions {
-    display: flex;
-    gap: var(--space-md);
-    margin-block-start: var(--space-lg);
-    padding-top: var(--space-lg);
-    flex-shrink: 0;
-    border-top: 1px solid var(--border-color);
-}
-.modal-content--sticky-header > .modal-actions {
-    margin-block-start: 0;
-    padding: var(--space-lg) var(--space-xl) var(--space-xl);
-}
-.modal-actions .btn {
-    flex-grow: 1;
-    padding: var(--space-md);
-    font-size: 15px;
-    font-weight: 600;
-}
-#edit-habit-modal .modal-actions {
-    margin-block-start: 0;
-}
-/* REATORAÇÃO DE CONSISTÊNCIA: Generaliza o estilo para botões secundários em modais (Cancelar, Editar) para um visual mais limpo e "sem bordas", unificando a aparência em toda a aplicação. */
-.modal-actions .btn:not(.btn--primary):not(.btn--danger) {
-    border-color: var(--surface-color);
-}
-.modal-actions .btn:not(.btn--primary):not(.btn--danger):hover {
-    background-color: var(--surface-hover);
-}
-
-#manage-modal .modal-content {
-    padding-bottom: 0;
-}
-
-/* Modal: Gerenciar Hábitos */
-#habit-list { list-style: none; margin-block-end: var(--space-lg); }
-#habit-list li.habit-list-item {
-    display: flex; justify-content: space-between; align-items: center;
-    padding-block: var(--space-md);
-}
-.habit-main-info {
-    display: flex;
-    align-items: center;
-    gap: var(--space-md);
-    flex-grow: 1;
-    min-width: 0;
-}
-#habit-list li svg { width: 20px; height: 20px; flex-shrink: 0; }
-.habit-list-item.ended { opacity: 0.6; }
-.habit-list-item.graduated { opacity: 0.8; }
-.habit-list-actions { display: flex; gap: var(--space-sm); }
-/* MELHORIA DE MANUTENIBILIDADE [2024-10-29]: Agrupa estilos comuns para botões de ação na lista de hábitos usando :is() para reduzir a repetição de código. */
-.habit-list-actions :is(.end-habit-btn, .permanent-delete-habit-btn, .graduate-habit-btn, .edit-habit-btn) {
-    background: none; border: none; cursor: pointer; font-size: 20px;
-    display: flex; align-items: center; justify-content: center;
-    padding: var(--space-xs); border-radius: var(--border-radius-pill);
-    transition: background-color var(--transition-duration);
-}
-.habit-list-actions :is(.end-habit-btn, .permanent-delete-habit-btn, .graduate-habit-btn, .edit-habit-btn):hover {
-    background-color: var(--surface-hover);
-}
-.end-habit-btn, .edit-habit-btn { color: var(--text-secondary); }
-.permanent-delete-habit-btn { color: var(--color-red); }
-.graduate-habit-btn { color: var(--color-yellow); }
-
-/* CORREÇÃO VISUAL [2024-12-21]: Adiciona estilo para o status de hábito (Encerrado/Graduado) no modal de gerenciamento. Este elemento era renderizado mas não estilizado, tornando-o visualmente inconsistente. */
-.habit-name-status {
-    font-size: 11px;
-    font-style: italic;
-    color: var(--text-tertiary);
-    margin-inline-start: var(--space-md);
-    flex-shrink: 0; /* Previne quebras de linha indesejadas */
-}
-
-.empty-list-message {
-    font-size: 13px;
-    color: var(--text-tertiary);
-    text-align: center;
-    font-style: italic;
-    padding: var(--space-lg) 0;
-    margin-top: var(--space-lg);
-    border-top: 1px solid var(--border-color);
-}
-
-.setting-item { display: flex; justify-content: space-between; align-items: center; }
-.setting-item-header { display: flex; justify-content: space-between; align-items: baseline; width: 100%; margin-block-end: var(--space-sm); }
-.setting-item.setting-item--column { flex-direction: column; align-items: stretch; gap: var(--space-sm); }
-.setting-item label { font-size: 14px; color: var(--text-secondary); }
-/* STYLE UPDATE: Aligned to match sync status style for consistency */
-.setting-item-desc {
-    font-size: 11px;
-    color: var(--text-tertiary);
-    font-style: italic;
-    line-height: 1.5;
-    text-align: right;
-    width: 100%;
-    margin-top: var(--space-xs);
-}
-
-/* Modal: Sincronização */
-#sync-section {
-    background: var(--bg-color); border: 1px solid var(--border-color);
-    border-radius: var(--border-radius-base); padding: var(--space-lg);
-}
-.sync-view { display: flex; flex-direction: column; gap: var(--space-md); }
-.sync-view p { font-size: 13px; line-height: 1.5; color: var(--text-secondary); text-align: center; }
-.sync-actions { display: flex; gap: var(--space-md); justify-content: center; }
-.sync-actions .btn { flex-grow: 1; }
-.sync-key-display {
-    background-color: var(--bg-color); border: 1px solid var(--border-color);
-    border-radius: var(--border-radius-small); padding: var(--space-sm) var(--space-md);
-    display: flex; align-items: center; justify-content: space-between; gap: var(--space-md);
-}
-#sync-key-text {
-    font-family: monospace; font-size: 14px; color: var(--text-primary);
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-#copy-key-btn { width: 32px; height: 32px; }
-.sync-warning { color: var(--color-yellow) !important; font-weight: 500; }
-#sync-status {
-    font-size: 11px; color: var(--text-tertiary); font-style: italic;
-    transition: opacity var(--transition-duration-slow); text-align: right;
-}
-
-/* --- Modal: Explorar Hábitos (Layout Mobile-First) --- */
-#explore-modal .modal-content {
-    width: 96vw;
-    max-width: 96vw;
-}
-#explore-habit-list {
-    display: grid;
-    grid-template-columns: 1fr; /* Mobile: 1 coluna */
-    gap: var(--space-md); /* Espaçamento entre itens */
-    overflow-y: auto;
-    margin-block-end: var(--space-lg);
-    overscroll-behavior: contain;
-    content-visibility: auto;
-    contain-intrinsic-size: 100px 500px;
-}
-.explore-habit-item {
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    text-align: left;
-    gap: var(--space-lg);
-    padding: var(--space-md);
-    background-color: var(--bg-color);
-    border-radius: var(--border-radius-large);
-    cursor: pointer;
-    transition: background-color var(--transition-duration);
-}
-.explore-habit-item:hover { background-color: var(--surface-hover); }
-
-.explore-habit-icon {
-    width: 44px;
-    height: 44px;
-    font-size: 24px;
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background-color: var(--surface-color);
-    border-radius: var(--border-radius-base);
-}
-.explore-habit-icon svg { width: 60%; height: 60%; }
-.explore-habit-details .name {
-    font-size: 15px; /* Tamanho maior para melhor leitura em 1 coluna */
-    font-weight: 600;
-    line-height: 1.2;
-}
-.explore-habit-details .subtitle {
-    display: block;
-    font-size: 12px;
-    color: var(--text-secondary);
-    margin-top: 2px;
-    line-height: 1.3;
-}
-#create-custom-habit-btn { width: 100%; padding: var(--space-md); margin-top: var(--space-lg); }
-
-/* Layout Responsivo para Tablet e Telas Maiores no Modal Explorar */
-@media (min-width: 768px) {
-    #explore-modal .modal-content {
-        max-width: 700px; /* Aumenta a largura máxima do modal */
+function _notifyChanges(fullRebuild = false, immediate = false) {
+    if (fullRebuild) {
+        clearScheduleCache();
+        clearHabitDomCache();
+        clearSelectorInternalCaches();
+    }
+    clearActiveHabitsCache();
+    state.uiDirtyState.habitListStructure = state.uiDirtyState.calendarVisuals = true;
+    
+    // BOOT LOCK PROTECTION: Durante o boot, usamos timestamp incremental simples.
+    // Após o sync, usamos o relógio real para garantir LWW.
+    if (!state.initialSyncDone) {
+        state.lastModified = state.lastModified + 1;
+    } else {
+        state.lastModified = Math.max(Date.now(), (state.lastModified || 0) + 1);
     }
 
-    #explore-habit-list {
-        grid-template-columns: repeat(2, 1fr); /* Volta para 2 colunas */
-        gap: var(--space-lg); /* Aumenta o espaçamento */
+    document.body.classList.remove('is-interaction-active', 'is-dragging-active');
+    saveState(immediate);
+    requestAnimationFrame(() => {
+        ['render-app', 'habitsChanged'].forEach(ev => document.dispatchEvent(new CustomEvent(ev)));
+    });
+}
+
+function _notifyPartialUIRefresh(date: string, habitIds: string[]) {
+    // [OPTIMIZATION 2025-06-07] Surgical Update:
+    // Em vez de marcar o calendário inteiro como sujo (uiDirtyState.calendarVisuals = true),
+    // invalidamos os caches de dados e chamamos updateDayVisuals() diretamente para o dia afetado.
+    // Isso evita o reflow global da fita do calendário.
+    invalidateCachesForDateChange(date, habitIds);
+    
+    // state.uiDirtyState.calendarVisuals = true; // REMOVED: Managed surgically now
+    
+    if (!state.initialSyncDone) {
+        state.lastModified = state.lastModified + 1;
+    } else {
+        state.lastModified = Math.max(Date.now(), (state.lastModified || 0) + 1);
+    }
+
+    saveState();
+    
+    // Trigger visual updates in the next frame
+    requestAnimationFrame(() => {
+        updateDayVisuals(date);
+        // Os eventos abaixo ainda são necessários para charts, badges, etc.
+        ['render-app', 'habitsChanged'].forEach(ev => document.dispatchEvent(new CustomEvent(ev)));
+    });
+}
+
+function _lockActionHabit(habitId: string): Habit | null {
+    if (ActionContext.isLocked) return null;
+    ActionContext.isLocked = true;
+    const h = state.habits.find(x => x.id === habitId);
+    if (!h) ActionContext.reset();
+    return h;
+}
+
+function _requestFutureScheduleChange(habitId: string, targetDate: string, updateFn: (s: HabitSchedule) => HabitSchedule, immediate = false) {
+    const habit = state.habits.find(h => h.id === habitId);
+    if (!habit || !/^\d{4}-\d{2}-\d{2}$/.test(targetDate)) return;
+
+    const history = habit.scheduleHistory;
+    const idx = history.findIndex(s => targetDate >= s.startDate && (!s.endDate || targetDate < s.endDate));
+
+    if (idx !== -1) {
+        const cur = history[idx];
+        if (cur.startDate === targetDate) history[idx] = updateFn({ ...cur });
+        else { cur.endDate = targetDate; history.push(updateFn({ ...cur, startDate: targetDate, endDate: undefined })); }
+    } else {
+        const last = history[history.length - 1];
+        if (last) { if (last.endDate && last.endDate > targetDate) last.endDate = targetDate; history.push(updateFn({ ...last, startDate: targetDate, endDate: undefined })); }
+    }
+    history.sort((a, b) => a.startDate.localeCompare(b.startDate));
+    habit.graduatedOn = undefined;
+    _notifyChanges(true, immediate);
+}
+
+function _checkStreakMilestones(habit: Habit, dateISO: string) {
+    const streak = calculateHabitStreak(habit, dateISO);
+    const m = streak === STREAK_SEMI_CONSOLIDATED ? state.pending21DayHabitIds : (streak === STREAK_CONSOLIDATED ? state.pendingConsolidationHabitIds : null);
+    if (m && !state.notificationsShown.includes(`${habit.id}-${streak}`) && !m.includes(habit.id)) {
+        m.push(habit.id);
+        renderAINotificationState();
     }
 }
 
+const _applyDropJustToday = () => {
+    const ctx = ActionContext.drop, target = getSafeDate(state.selectedDate);
+    if (!ctx) return ActionContext.reset();
+    const habit = state.habits.find(h => h.id === ctx.habitId);
+    if (habit) {
+        const info = ensureHabitDailyInfo(target, ctx.habitId), sch = [...getEffectiveScheduleForHabitOnDate(habit, target)];
+        const fIdx = sch.indexOf(ctx.fromTime);
+        if (fIdx > -1) sch.splice(fIdx, 1);
+        if (!sch.includes(ctx.toTime)) sch.push(ctx.toTime);
+        const currentBit = HabitService.getStatus(ctx.habitId, target, ctx.fromTime);
+        if (currentBit !== HABIT_STATE.NULL) { HabitService.setStatus(ctx.habitId, target, ctx.toTime, currentBit); HabitService.setStatus(ctx.habitId, target, ctx.fromTime, HABIT_STATE.NULL); }
+        if (info.instances[ctx.fromTime]) { info.instances[ctx.toTime] = info.instances[ctx.fromTime]; delete info.instances[ctx.fromTime]; }
+        info.dailySchedule = sch;
+        if (ctx.reorderInfo) reorderHabit(ctx.habitId, ctx.reorderInfo.id, ctx.reorderInfo.pos, true);
+        _notifyChanges(false);
+    }
+    ActionContext.reset();
+};
 
-/* Modal: Resposta da IA e Confirmação */
-#ai-response { margin-block-end: var(--space-lg); max-height: 300px; overflow-y: auto; color: var(--text-secondary); line-height: 1.6; overscroll-behavior: contain; }
-#ai-response strong { color: var(--text-primary); font-weight: 600; }
-#ai-response p { margin-block-end: var(--space-sm); }
-#ai-response p:last-child { margin-block-end: 0; }
-#ai-response ul { list-style: none; padding-inline-start: 0; margin-block-start: var(--space-sm); }
-#ai-response li { margin-block-end: var(--space-sm); }
-#confirm-modal-text { color: var(--text-secondary); line-height: 1.6; margin-block-end: var(--space-sm); }
+const _applyDropFromNowOn = () => {
+    const ctx = ActionContext.drop, target = getSafeDate(state.selectedDate);
+    if (!ctx) return ActionContext.reset();
+    const info = ensureHabitDailyInfo(target, ctx.habitId);
+    info.dailySchedule = undefined;
+    const currentBit = HabitService.getStatus(ctx.habitId, target, ctx.fromTime);
+    if (currentBit !== HABIT_STATE.NULL) { HabitService.setStatus(ctx.habitId, target, ctx.toTime, currentBit); HabitService.setStatus(ctx.habitId, target, ctx.fromTime, HABIT_STATE.NULL); }
+    if (info.instances[ctx.fromTime]) { info.instances[ctx.toTime] = info.instances[ctx.fromTime]; delete info.instances[ctx.fromTime]; }
+    if (ctx.reorderInfo) reorderHabit(ctx.habitId, ctx.reorderInfo.id, ctx.reorderInfo.pos, true);
+    _requestFutureScheduleChange(ctx.habitId, target, (s) => {
+        const times = [...s.times], fIdx = times.indexOf(ctx.fromTime);
+        if (fIdx > -1) times.splice(fIdx, 1);
+        if (!times.includes(ctx.toTime)) times.push(ctx.toTime);
+        return { ...s, times: times as readonly TimeOfDay[] };
+    });
+    ActionContext.reset();
+};
 
-/* AI Error Styling */
-.ai-error-message {
-    background-color: rgba(231, 76, 60, 0.1);
-    border: 1px solid var(--color-red);
-    border-radius: var(--border-radius-base);
-    padding: var(--space-md);
-    text-align: center;
-}
-.ai-error-message h3 {
-    color: var(--color-red);
-    margin: 0 0 var(--space-sm) 0;
-    font-size: 16px;
-}
-.debug-info {
-    margin-top: var(--space-md);
-    padding: var(--space-sm);
-    background: rgba(0, 0, 0, 0.3);
-    border-radius: var(--border-radius-small);
-    font-family: monospace;
-    font-size: 11px;
-    color: var(--text-tertiary);
-    word-break: break-all;
-    text-align: left;
-}
+const _applyHabitDeletion = async () => {
+    const ctx = ActionContext.deletion;
+    if (!ctx) return;
+    const habit = state.habits.find(h => h.id === ctx.habitId);
+    if (!habit) return ActionContext.reset();
 
-/* Modal: Mensagem Offline */
-.offline-header { text-align: center; margin-bottom: var(--space-xl); }
-.offline-title { margin-bottom: var(--space-md); color: var(--text-primary); font-size: 18px; font-weight: 600; }
-.offline-desc { font-size: 14px; color: var(--text-secondary); line-height: 1.5; }
-.offline-quote-box {
-    border-top: 1px solid var(--border-color);
-    padding-top: var(--space-xl);
-    margin-top: var(--space-md);
-}
-.offline-quote-text {
-    border-left: 3px solid var(--accent-blue);
-    padding-left: var(--space-lg);
-    margin: 0;
-    font-style: italic;
-    color: var(--text-primary);
-    font-size: 15px;
-    line-height: 1.5;
-}
-.offline-quote-author {
-    text-align: right;
-    margin-top: var(--space-md);
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--text-secondary);
-}
-
-/* Modal: Opções da IA */
-#ai-options-modal .modal-content { gap: var(--space-section); }
-.ai-options-list { display: flex; flex-direction: column; gap: var(--space-md); }
-.ai-option-btn {
-    display: flex; flex-direction: column; align-items: flex-start;
-    padding: var(--space-lg); border: 1px solid var(--border-color);
-    background-color: var(--surface-color); border-radius: var(--border-radius-large);
-    text-align: left; cursor: pointer;
-    transition: background-color var(--transition-duration), border-color var(--transition-duration);
-    width: 100%;
-}
-.ai-option-btn:hover { background-color: var(--surface-hover); border-color: var(--text-tertiary); }
-.ai-option-title { font-size: 16px; font-weight: 600; color: var(--text-primary); margin-block-end: var(--space-xs); }
-.ai-option-desc { font-size: 13px; color: var(--text-secondary); line-height: 1.4; }
-
-/* Modal: Notas */
-#notes-modal .modal-content { gap: var(--space-lg); }
-#notes-modal h2, #notes-modal p { margin: 0; text-align: center; }
-#notes-modal-subtitle { color: var(--text-secondary); }
-#notes-textarea {
-    background: var(--bg-color); border: 1px solid var(--border-color);
-    border-radius: var(--border-radius-base); padding: var(--space-md); color: var(--text-primary);
-    /* BLINDAGEM IOS: 16px previne zoom */
-    font-size: 16px; 
-    resize: vertical; width: 100%; min-height: 100px;
-}
-
-/* Modal: Seletor de Ícones */
-#icon-picker-modal .modal-content {
-    max-width: 480px;
-    padding: 0;
-}
-
-#icon-picker-modal .modal-header {
-    padding: var(--space-xl) var(--space-xl) var(--space-xl);
-    position: relative;
-    z-index: 2; 
-    background-color: var(--surface-color);
-}
-
-#icon-picker-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(60px, 1fr));
-    gap: var(--space-md);
-    max-height: 300px;
-    overflow-y: auto;
+    // 1. Marcação Lógica para Sync (Tombstone do Objeto Hábito)
+    // Para Hard Delete, definimos a data de deleção para o início da existência do hábito (ou antes),
+    // garantindo que ele não apareça em nenhum filtro de data (shouldHabitAppearOnDate).
+    habit.deletedOn = habit.createdOn;
     
-    padding: 4px var(--space-xl) var(--space-xl); 
+    // 2. Limpeza Profunda de Logs (Bitmasks)
+    HabitService.pruneLogsForHabit(habit.id);
+
+    // 3. Limpeza Profunda de Dados Diários (Notas/Overrides em Memória)
+    Object.keys(state.dailyData).forEach(date => {
+        if (state.dailyData[date][habit.id]) {
+            delete state.dailyData[date][habit.id];
+            if (Object.keys(state.dailyData[date]).length === 0) {
+                delete state.dailyData[date];
+            }
+        }
+    });
+
+    // Cleanup de Cache de Aparição e Streaks
+    if (state.streaksCache.has(habit.id)) {
+        state.streaksCache.delete(habit.id);
+    }
+    if (state.habitAppearanceCache.has(habit.id)) {
+        state.habitAppearanceCache.delete(habit.id);
+    }
+
+    // 4. Limpeza Profunda de Arquivos Mortos (Background Worker)
+    runWorkerTask<Record<string, any>>('prune-habit', { 
+        habitId: habit.id, 
+        archives: state.archives 
+    }).then(updatedArchives => {
+        Object.keys(updatedArchives).forEach(year => {
+            if (updatedArchives[year] === "") delete state.archives[year];
+            else state.archives[year] = updatedArchives[year];
+        });
+        state.unarchivedCache.clear();
+        saveState();
+    }).catch(e => logger.error("Archive pruning failed", e));
+
+    _notifyChanges(true, true);
+    ActionContext.reset();
+};
+
+export function performArchivalCheck() {
+    const run = async () => {
+        const threshold = toUTCIsoDateString(addDays(parseUTCIsoDate(getTodayUTCIso()), -ARCHIVE_DAYS_THRESHOLD)), buckets: Record<string, any> = {}, toRem: string[] = [];
+        Object.keys(state.dailyData).forEach(d => {
+            if (d < threshold) {
+                const y = d.substring(0, 4);
+                buckets[y] ??= { additions: {}, base: state.unarchivedCache.get(y) || state.archives[y] };
+                buckets[y].additions[d] = state.dailyData[d];
+                toRem.push(d);
+            }
+        });
+        if (toRem.length === 0) return;
+        try {
+            const up = await runWorkerTask<Record<string, string>>('archive', buckets);
+            Object.keys(up).forEach(y => { state.archives[y] = up[y]; state.unarchivedCache.delete(y); Object.keys(buckets[y].additions).forEach(k => delete state.dailyData[k]); });
+            await saveState();
+        } catch (e) { logger.error('Archive worker failed', e); }
+    };
+    if ('requestIdleCallback' in window) requestIdleCallback(() => run()); else setTimeout(run, ARCHIVE_IDLE_FALLBACK_MS);
+}
+
+export function reorderHabit(movedHabitId: string, targetHabitId: string, pos: 'before' | 'after', skip = false) {
+    const h = state.habits, mIdx = h.findIndex(x => x.id === movedHabitId), tIdx = h.findIndex(x => x.id === targetHabitId);
+    if (mIdx === -1 || tIdx === -1) return;
+    const [item] = h.splice(mIdx, 1);
+    h.splice(pos === 'before' ? (mIdx < tIdx ? tIdx - 1 : tIdx) : (mIdx < tIdx ? tIdx : tIdx + 1), 0, item);
+    if (!skip) _notifyChanges(false);
+}
+
+export function saveHabitFromModal() {
+    if (!state.editingHabit) return;
+    const { isNew, habitId, formData, targetDate } = state.editingHabit;
+    if (formData.name) {
+        formData.name = sanitizeText(formData.name, MAX_HABIT_NAME_LENGTH);
+    }
+    const nameToUse = formData.nameKey ? t(formData.nameKey) : formData.name!;
+    if (!nameToUse) return;
+    const cleanFormData = {
+        ...formData,
+        times: [...formData.times],
+        goal: { ...formData.goal },
+        frequency: formData.frequency.type === 'specific_days_of_week' ? { ...formData.frequency, days: [...formData.frequency.days] } : { ...formData.frequency }
+    };
+    closeModal(ui.editHabitModal);
+    if (isNew) {
+        const existingHabit = state.habits.find(h => {
+            const lastSchedule = h.scheduleHistory[h.scheduleHistory.length - 1];
+            if (h.graduatedOn || h.deletedOn || (lastSchedule.endDate && targetDate >= lastSchedule.endDate)) return false;
+            return getHabitDisplayInfo(h, targetDate).name.trim().toLowerCase() === nameToUse.trim().toLowerCase();
+        });
+        if (existingHabit) {
+            _requestFutureScheduleChange(existingHabit.id, targetDate, (s) => ({ ...s, icon: cleanFormData.icon, color: cleanFormData.color, goal: cleanFormData.goal, philosophy: cleanFormData.philosophy ?? s.philosophy, name: cleanFormData.name, nameKey: cleanFormData.nameKey, subtitleKey: cleanFormData.subtitleKey, times: cleanFormData.times as readonly TimeOfDay[], frequency: cleanFormData.frequency, }), false);
+        } else {
+            state.habits.push({ id: generateUUID(), createdOn: targetDate, scheduleHistory: [{ startDate: targetDate, times: cleanFormData.times as readonly TimeOfDay[], frequency: cleanFormData.frequency, name: cleanFormData.name, nameKey: cleanFormData.nameKey, subtitleKey: cleanFormData.subtitleKey, scheduleAnchor: targetDate, icon: cleanFormData.icon, color: cleanFormData.color, goal: cleanFormData.goal, philosophy: cleanFormData.philosophy }] });
+            _notifyChanges(true);
+        }
+    } else {
+        const h = state.habits.find(x => x.id === habitId);
+        if (!h) return;
+        ensureHabitDailyInfo(targetDate, h.id).dailySchedule = undefined;
+        if (targetDate < h.createdOn) h.createdOn = targetDate;
+        _requestFutureScheduleChange(h.id, targetDate, (s) => ({ ...s, icon: cleanFormData.icon, color: cleanFormData.color, goal: cleanFormData.goal, philosophy: cleanFormData.philosophy ?? s.philosophy, name: cleanFormData.name, nameKey: cleanFormData.nameKey, subtitleKey: cleanFormData.subtitleKey, times: cleanFormData.times as readonly TimeOfDay[], frequency: cleanFormData.frequency }), false);
+    }
+}
+
+// SIMPLES HASHING FUNCTION (Fowler-Noll-Vo)
+function fnv1aHash(str: string): string {
+    let hash = 0x811c9dc5;
+    for (let i = 0; i < str.length; i++) {
+        hash ^= str.charCodeAt(i);
+        hash = (hash * 0x01000193) >>> 0;
+    }
+    return hash.toString(16);
+}
+
+export async function performAIAnalysis(type: 'monthly' | 'quarterly' | 'historical') {
+    if (state.aiState === 'loading') return;
     
-    --current-habit-bg-color: #000000;
-    --current-habit-fg-color: #e5e5e5;
-    /* UX: Evita scroll chaining */
-    overscroll-behavior: contain;
-    /* PERFORMANCE [2025-01-17]: Otimização de renderização para grids de ícones. */
-    content-visibility: auto;
-    contain-intrinsic-size: 100px 300px;
-}
-.icon-picker-item {
-    width: 100%;
-    aspect-ratio: 1/1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: var(--border-radius-base);
-    cursor: pointer;
-    border: 2px solid transparent;
-    background-color: var(--current-habit-bg-color);
-    color: var(--current-habit-fg-color);
-    transition: transform var(--transition-duration-fast), filter var(--transition-duration);
-}
-.icon-picker-item:hover {
-    filter: brightness(1.2);
-    transform: scale(1.05);
-}
-.icon-picker-item svg {
-    width: 60%;
-    height: 60%;
-    pointer-events: none;
-}
-#icon-picker-modal.is-picking-color .icon-picker-item {
-    background-color: #000000;
-    color: var(--text-primary);
-    border-color: var(--border-color);
-}
-#icon-picker-modal.is-picking-color .icon-picker-item:hover {
-    background-color: var(--surface-hover);
-    border-color: var(--accent-blue);
-    filter: brightness(1);
+    // --- 1. QUOTA CHECK & RESET ---
+    const todayISO = getTodayUTCIso();
+    if (state.aiQuotaDate !== todayISO) {
+        state.aiDailyCount = 0;
+        state.aiQuotaDate = todayISO;
+    }
+
+    if (state.aiDailyCount >= AI_DAILY_LIMIT) {
+        showConfirmationModal(t('aiLimitReached', { count: AI_DAILY_LIMIT }), () => {}, { 
+            title: t('aiLimitTitle'), 
+            confirmText: t('closeButton'),
+            hideCancel: true 
+        });
+        return;
+    }
+
+    const id = ++state.aiReqId; 
+    state.aiState = 'loading'; 
+    state.hasSeenAIResult = false;
+    renderAINotificationState(); 
+    closeModal(ui.aiOptionsModal);
+    addSyncLog(`Iniciando análise IA (${type})...`, 'info');
+
+    try {
+        const trans: Record<string, string> = { promptTemplate: t(type === 'monthly' ? 'aiPromptMonthly' : (type === 'quarterly' ? 'aiPromptQuarterly' : 'aiPromptGeneral')), aiDaysUnit: t('unitDays', { count: 2 }) };
+        ['aiPromptGraduatedSection', 'aiPromptNoData', 'aiPromptNone', 'aiSystemInstruction', 'aiPromptHabitDetails', 'aiVirtue', 'aiDiscipline', 'aiSphere', 'stoicVirtueWisdom', 'stoicVirtueCourage', 'stoicVirtueJustice', 'stoicVirtueTemperance', 'stoicDisciplineDesire', 'stoicDisciplineAction', 'stoicDisciplineAssent', 'governanceSphereBiological', 'governanceSphereStructural', 'governanceSphereSocial', 'governanceSphereMental', 'aiPromptNotesSectionHeader', 'aiStreakLabel', 'aiSuccessRateLabelMonthly', 'aiSuccessRateLabelQuarterly', 'aiSuccessRateLabelHistorical', 'aiHistoryChange', 'aiHistoryChangeFrequency', 'aiHistoryChangeGoal', 'aiHistoryChangeTimes'].forEach(k => trans[k] = t(k));
+        PREDEFINED_HABITS.forEach(h => trans[h.nameKey] = t(h.nameKey));
+        const logsSerialized = HabitService.serializeLogsForCloud();
+        
+        // TOKEN OPTIMIZATION: Filter dailyData based on analysis type to fit context window
+        let lookbackDays = 30;
+        if (type === 'quarterly') lookbackDays = 90;
+        if (type === 'historical') lookbackDays = 365;
+        
+        const todayDate = parseUTCIsoDate(todayISO);
+        const cutoffDate = addDays(todayDate, -lookbackDays);
+        const cutoffISO = toUTCIsoDateString(cutoffDate);
+        
+        const filteredDailyData: Record<string, Record<string, HabitDailyInfo>> = {};
+        Object.keys(state.dailyData).forEach(key => {
+            if (key >= cutoffISO) filteredDailyData[key] = state.dailyData[key];
+        });
+
+        // --- 2. GENERATE CONTENT & HASH ---
+        const workerPayload = { analysisType: type, habits: state.habits, dailyData: filteredDailyData, archives: state.archives, monthlyLogsSerialized: logsSerialized, languageName: getAiLanguageName(), translations: trans, todayISO };
+        const { prompt, systemInstruction } = await runWorkerTask<any>('build-ai-prompt', workerPayload);
+        
+        // Compute Content-Hash (Cheap and Fast)
+        const currentContentHash = fnv1aHash(prompt + systemInstruction + type);
+        
+        // --- 3. DEDUPLICATION CHECK ---
+        if (currentContentHash === state.lastAIContextHash && state.lastAIResult) {
+            addSyncLog("Dados não mudaram. Usando análise em cache.", 'success');
+            state.aiState = 'completed';
+            // Do NOT increment quota
+            saveState();
+            renderAINotificationState();
+            return; // EXIT EARLY
+        }
+
+        if (id !== state.aiReqId) return;
+        
+        const res = await apiFetch('/api/analyze', { method: 'POST', body: JSON.stringify({ prompt, systemInstruction }) });
+        
+        if (!res.ok) {
+            let errorDetail = `Status ${res.status}`;
+            try {
+                const errorJson = await res.json();
+                if (errorJson.error) errorDetail = errorJson.error;
+                // FIX: Include technical details for debugging
+                if (errorJson.details) errorDetail += `: ${errorJson.details}`;
+            } catch (e) { }
+            throw new Error(`AI Request: ${errorDetail}`);
+        }
+        
+        if (id === state.aiReqId) { 
+            state.lastAIResult = await res.text(); 
+            state.aiState = 'completed'; 
+            state.lastAIContextHash = currentContentHash;
+            state.aiDailyCount++; // Increment Quota only on success
+            addSyncLog("Análise IA concluída.", 'success'); 
+        }
+    } catch (e) { 
+        if (id === state.aiReqId) { 
+            const errStr = e instanceof Error ? e.message : String(e);
+            state.lastAIError = errStr; 
+            state.aiState = 'error'; 
+            state.lastAIResult = t('aiErrorGeneric'); 
+            addSyncLog("Erro na análise IA.", 'error'); 
+            
+            // Handle 429 Quota Exceeded gracefully
+            if (errStr.includes('429') || errStr.includes('Quota') || errStr.includes('RESOURCE_EXHAUSTED')) {
+                ui.aiResponse.innerHTML = `<div class="ai-error-message"><h3>${t('aiLimitTitle')}</h3><p>${t('aiLimitReached', { count: '' })}</p><div class="debug-info"><small>Google Quota Exceeded</small></div></div>`;
+            } else {
+                // Show detailed error in UI for user feedback
+                ui.aiResponse.innerHTML = `<div class="ai-error-message"><h3>${t('aiLimitTitle') === 'Daily Limit Reached' ? 'Error' : 'Erro'}</h3><p>${t('aiErrorGeneric')}</p><div class="debug-info"><small>${errStr}</small></div></div>`;
+            }
+            openModal(ui.aiModal);
+        } 
+    } finally { 
+        if (id === state.aiReqId) { 
+            saveState(); 
+            renderAINotificationState(); 
+        } 
+    }
 }
 
-
-/* Modal: Seletor de Cores */
-#color-picker-modal .modal-content {
-    max-width: 480px;
-    gap: var(--space-lg);
-}
-#color-picker-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(60px, 1fr));
-    gap: var(--space-md);
-    max-height: 300px;
-    overflow-y: auto;
-    padding: var(--space-sm);
-    /* UX: Evita scroll chaining */
-    overscroll-behavior: contain;
-}
-.color-swatch {
-    width: 100%;
-    aspect-ratio: 1/1;
-    border-radius: var(--border-radius-pill);
-    cursor: pointer;
-    border: 4px solid transparent;
-    transition: all var(--transition-duration-fast);
-    padding: 0;
-    box-shadow: 0 0 0 1px var(--border-color) inset;
-}
-.color-swatch:hover {
-    transform: scale(1.1);
-}
-.color-swatch.selected {
-    border-color: var(--text-primary);
-    box-shadow: 0 0 0 1px var(--border-color) inset, 0 0 8px var(--accent-blue);
+export function importData() {
+    const input = document.createElement('input'); input.type = 'file'; input.accept = 'application/json';
+    input.onchange = async (e) => {
+        const file = (e.target as HTMLInputElement).files?.[0]; if (!file) return;
+        try {
+            const data = JSON.parse(await file.text());
+            if (data.habits && data.version) { await loadState(data); await saveState(); ['render-app', 'habitsChanged'].forEach(ev => document.dispatchEvent(new CustomEvent(ev))); closeModal(ui.manageModal); showConfirmationModal(t('importSuccess'), () => {}, { title: t('privacyLabel'), confirmText: 'OK', hideCancel: true }); } else throw 0;
+        } catch { showConfirmationModal(t('importError'), () => {}, { title: t('importError'), confirmText: 'OK', hideCancel: true, confirmButtonStyle: 'danger' }); }
+    };
+    input.click();
 }
 
+export function toggleHabitStatus(habitId: string, time: TimeOfDay, dateISO: string) {
+    // BOOT LOCK: Previne escrita até que o sync inicial (se houver) termine
+    if (!state.initialSyncDone) return;
 
-/* Modal: Edição/Criação de Hábito */
-#edit-habit-modal .modal-content {
-    max-width: 540px;
-    display: flex;
-    flex-direction: column;
+    const currentStatus = HabitService.getStatus(habitId, dateISO, time);
+    let nextStatus: number = HABIT_STATE.DONE;
+    if (currentStatus === HABIT_STATE.DONE || currentStatus === HABIT_STATE.DONE_PLUS) nextStatus = HABIT_STATE.DEFERRED;
+    else if (currentStatus === HABIT_STATE.DEFERRED) nextStatus = HABIT_STATE.NULL;
+    HabitService.setStatus(habitId, dateISO, time, nextStatus);
+    saveState(); 
+    const h = state.habits.find(x => x.id === habitId);
+    if (nextStatus === HABIT_STATE.DONE) { if (h) _checkStreakMilestones(h, dateISO); triggerHaptic('light'); }
+    else if (nextStatus === HABIT_STATE.DEFERRED) triggerHaptic('medium');
+    else triggerHaptic('selection');
+    document.dispatchEvent(new CustomEvent('card-status-changed', { detail: { habitId, time, date: dateISO } }));
+    _notifyPartialUIRefresh(dateISO, [habitId]);
 }
 
-/* CORREÇÃO: Garante que o modal de confirmação apareça sobre outros modais */
-#confirm-modal, #icon-picker-modal, #color-picker-modal, #full-calendar-modal, #calendar-quick-actions {
-    z-index: var(--z-index-stacked-modal);
+export function markAllHabitsForDate(dateISO: string, status: 'completed' | 'snoozed'): boolean {
+    if (_isBatchOpActive) return false;
+    // BOOT LOCK
+    if (!state.initialSyncDone) return false;
+
+    _isBatchOpActive = true;
+    const dateObj = parseUTCIsoDate(dateISO);
+    let changed = false; BATCH_IDS_POOL.length = BATCH_HABITS_POOL.length = 0;
+    try {
+        state.habits.forEach(h => {
+            if (!shouldHabitAppearOnDate(h, dateISO, dateObj)) return;
+            const sch = getEffectiveScheduleForHabitOnDate(h, dateISO); 
+            if (!sch.length) return;
+            let bitStatus: number = (status === 'completed') ? HABIT_STATE.DONE : HABIT_STATE.DEFERRED;
+            sch.forEach(t => { if (HabitService.getStatus(h.id, dateISO, t) !== bitStatus) { HabitService.setStatus(h.id, dateISO, t, bitStatus); changed = true; } });
+            if (changed) { BATCH_IDS_POOL.push(h.id); BATCH_HABITS_POOL.push(h); }
+        });
+        if (changed) { 
+            invalidateCachesForDateChange(dateISO, BATCH_IDS_POOL); 
+            if (status === 'completed') BATCH_HABITS_POOL.forEach(h => _checkStreakMilestones(h, dateISO)); 
+            
+            // BATCH OPTIMIZATION: Para mudanças em massa (Completar Dia), ainda usamos o refresh completo 
+            // ou podemos chamar updateDayVisuals se quisermos (já que todos os IDs afetados são do mesmo dia).
+            // Como afeta potencialmente todo o gráfico e visual do dia, usar _notifyChanges com updateDayVisuals é seguro.
+            requestAnimationFrame(() => updateDayVisuals(dateISO));
+            _notifyChanges(false); 
+        }
+    } finally { _isBatchOpActive = false; }
+    return changed;
+}
+
+export function handleHabitDrop(habitId: string, fromTime: TimeOfDay, toTime: TimeOfDay, reorderInfo?: any) {
+    // BOOT LOCK
+    if (!state.initialSyncDone) return;
+
+    const h = _lockActionHabit(habitId); if (!h) return;
+    ActionContext.drop = { habitId, fromTime, toTime, reorderInfo };
+    
+    // VISUAL FIX [2025-06-08]: Callback onCancel para restaurar a visibilidade do cartão.
+    // Se o usuário cancela a mudança de horário (Move), o cartão deve reaparecer na lista.
+    // Como o drag o deixou com 'opacity: 0', precisamos forçar uma re-renderização ou limpeza da classe.
+    const onCancel = () => {
+        ActionContext.reset();
+        // FORCE RENDER: Marca a estrutura como suja e dispara render para limpar classe .dragging
+        state.uiDirtyState.habitListStructure = true;
+        document.dispatchEvent(new CustomEvent('render-app'));
+    };
+
+    showConfirmationModal(
+        t('confirmHabitMove', { habitName: getHabitDisplayInfo(h, state.selectedDate).name, oldTime: getTimeOfDayName(fromTime), newTime: getTimeOfDayName(toTime) }), 
+        _applyDropFromNowOn, 
+        { 
+            title: t('modalMoveHabitTitle'), 
+            confirmText: t('buttonFromNowOn'), 
+            editText: t('buttonJustToday'), 
+            onEdit: _applyDropJustToday, 
+            onCancel 
+        }
+    );
+}
+
+export function requestHabitEndingFromModal(habitId: string) {
+    if (!state.initialSyncDone) return;
+    const h = _lockActionHabit(habitId), target = getSafeDate(state.selectedDate); if (!h) return;
+    ActionContext.ending = { habitId, targetDate: target };
+    showConfirmationModal(t('confirmEndHabit', { habitName: getHabitDisplayInfo(h, target).name, date: formatDate(parseUTCIsoDate(target), { day: 'numeric', month: 'long', timeZone: 'UTC' }) }), 
+        () => { _requestFutureScheduleChange(habitId, target, s => ({ ...s, endDate: target }), true); ActionContext.reset(); }, { confirmButtonStyle: 'danger', confirmText: t('endButton'), onCancel: () => ActionContext.reset() });
+}
+
+export function requestHabitPermanentDeletion(habitId: string) {
+    if (!state.initialSyncDone) return;
+    if (_lockActionHabit(habitId)) {
+        ActionContext.deletion = { habitId };
+        showConfirmationModal(t('confirmPermanentDelete', { habitName: getHabitDisplayInfo(state.habits.find(x => x.id === habitId)!).name }), _applyHabitDeletion, { confirmButtonStyle: 'danger', confirmText: t('deleteButton'), onCancel: () => ActionContext.reset() });
+    }
+}
+export function graduateHabit(habitId: string) { if (!state.initialSyncDone) return; const h = state.habits.find(x => x.id === habitId); if (h) { h.graduatedOn = getSafeDate(state.selectedDate); _notifyChanges(true, true); triggerHaptic('success'); } }
+export async function resetApplicationData() { 
+    state.habits = []; state.dailyData = {}; state.archives = {}; state.notificationsShown = []; state.pending21DayHabitIds = []; state.pendingConsolidationHabitIds = []; state.monthlyLogs = new Map();
+    state.aiDailyCount = 0; state.lastAIContextHash = null;
+    document.dispatchEvent(new CustomEvent('render-app'));
+    try { await clearLocalPersistence(); } catch (e) { logger.error('Clear persistence failed', e); } finally { clearKey(); window.location.reload(); } 
+}
+export function handleSaveNote() { if (!state.editingNoteFor) return; const { habitId, date, time } = state.editingNoteFor, val = sanitizeText(ui.notesTextarea.value), inst = ensureHabitInstanceData(date, habitId, time); if ((inst.note || '') !== val) { inst.note = val || undefined; state.uiDirtyState.habitListStructure = true; saveState(); document.dispatchEvent(new CustomEvent('render-app')); } closeModal(ui.notesModal); }
+export function setGoalOverride(habitId: string, d: string, t: TimeOfDay, v: number) { 
+    // BOOT LOCK
+    if (!state.initialSyncDone) return;
+
+    try {
+        const h = state.habits.find(x => x.id === habitId); if (!h) return;
+        ensureHabitInstanceData(d, habitId, t).goalOverride = v;
+        const currentStatus = HabitService.getStatus(habitId, d, t);
+        if (currentStatus === HABIT_STATE.DONE || currentStatus === HABIT_STATE.DONE_PLUS) {
+             const props = getHabitPropertiesForDate(h, d);
+             if (props?.goal?.total && v > props.goal.total) { if (currentStatus !== HABIT_STATE.DONE_PLUS) HabitService.setStatus(habitId, d, t, HABIT_STATE.DONE_PLUS); }
+             else { if (currentStatus !== HABIT_STATE.DONE) HabitService.setStatus(habitId, d, t, HABIT_STATE.DONE); }
+        }
+        saveState(); document.dispatchEvent(new CustomEvent('card-goal-changed', { detail: { habitId, time: t, date: d } })); _notifyPartialUIRefresh(d, [habitId]); 
+    } catch (e) { logger.error('setGoalOverride failed', e); } 
+}
+export function requestHabitTimeRemoval(habitId: string, time: TimeOfDay) {
+    if (!state.initialSyncDone) return;
+    const h = _lockActionHabit(habitId), target = getSafeDate(state.selectedDate); if (!h) return;
+    ActionContext.removal = { habitId, time, targetDate: target };
+    showConfirmationModal(t('confirmRemoveTimePermanent', { habitName: getHabitDisplayInfo(h, target).name, time: getTimeOfDayName(time) }), () => { ensureHabitDailyInfo(target, habitId).dailySchedule = undefined; _requestFutureScheduleChange(habitId, target, s => ({ ...s, times: s.times.filter(x => x !== time) as readonly TimeOfDay[] }), true); ActionContext.reset(); }, { title: t('modalRemoveTimeTitle'), confirmText: t('deleteButton'), confirmButtonStyle: 'danger', onCancel: () => ActionContext.reset() });
+}
+export function exportData() {
+    const stateToExport = getPersistableState();
+    const logs = HabitService.serializeLogsForCloud(); 
+    if (logs.length > 0) (stateToExport as any).monthlyLogsSerialized = logs;
+    const blob = new Blob([JSON.stringify(stateToExport, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = `askesis-backup-${getTodayUTCIso()}.json`; a.click(); URL.revokeObjectURL(url);
+}
+export function handleDayTransition() { 
+    const today = getTodayUTCIso(); 
+    clearActiveHabitsCache(); 
+    
+    // Limpeza de caches antigos para prevenir Memory Leaks
+    pruneHabitAppearanceCache();
+    pruneStreaksCache();
+
+    state.uiDirtyState.calendarVisuals = state.uiDirtyState.habitListStructure = state.uiDirtyState.chartData = true; 
+    state.calendarDates = []; 
+    if (state.selectedDate !== today) state.selectedDate = today; 
+    document.dispatchEvent(new CustomEvent('render-app')); 
+}
+
+function _processAndFormatCelebrations(pendingIds: string[], translationKey: 'aiCelebration21Day' | 'aiCelebration66Day', streakMilestone: number): string {
+    if (pendingIds.length === 0) return '';
+    const habitNamesList = pendingIds.map(id => state.habits.find(h => h.id === id)).filter(Boolean).map(h => getHabitDisplayInfo(h!).name);
+    const habitNames = formatList(habitNamesList);
+    pendingIds.forEach(id => { 
+        const celebrationId = `${id}-${streakMilestone}`; 
+        if (!state.notificationsShown.includes(celebrationId)) state.notificationsShown.push(celebrationId);
+    });
+    return t(translationKey, { count: pendingIds.length, habitNames });
+}
+
+export function consumeAndFormatCelebrations(): string {
+    const celebration21DayText = _processAndFormatCelebrations(state.pending21DayHabitIds, 'aiCelebration21Day', STREAK_SEMI_CONSOLIDATED);
+    const celebration66DayText = _processAndFormatCelebrations(state.pendingConsolidationHabitIds, 'aiCelebration66Day', STREAK_CONSOLIDATED);
+    const allCelebrations = [celebration66DayText, celebration21DayText].filter(Boolean).join('\n\n');
+    if (allCelebrations) { state.pending21DayHabitIds = []; state.pendingConsolidationHabitIds = []; saveState(); }
+    return allCelebrations;
 }
