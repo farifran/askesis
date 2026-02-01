@@ -6,12 +6,12 @@
 
 /**
  * @file listeners/swipe.ts
- * @description Motor de Gestos Isolado (Swipe & Manual Scroll).
+ * @description Motor de Gestos Isolado (Swipe Only).
  * 
  * [ISOLATION PRINCIPLE]:
- * Este módulo gerencia exclusivamente o ciclo de vida do gesto horizontal E vertical (Manual Scroll).
- * Como `touch-action: none` é usado nos cartões para prevenir o cancelamento do Long Press,
- * este módulo deve reimplementar a rolagem vertical (1:1) quando o usuário não está segurando.
+ * Este módulo gerencia exclusivamente o ciclo de vida do gesto horizontal.
+ * A rolagem vertical agora é nativa (via touch-action: pan-y no CSS), 
+ * então este módulo apenas detecta swipes e cancela se o navegador assumir o scroll.
  */
 
 import { triggerHaptic } from '../utils';
@@ -32,15 +32,13 @@ const LONG_PRESS_DELAY = 500;
 
 // STATE MACHINE (Módulo Local)
 const SwipeMachine = {
-    state: 'IDLE' as 'IDLE' | 'DETECTING' | 'SWIPING' | 'SCROLLING' | 'LOCKED_OUT',
+    state: 'IDLE' as 'IDLE' | 'DETECTING' | 'SWIPING' | 'LOCKED_OUT',
     card: null as HTMLElement | null,
     content: null as HTMLElement | null,
-    scrollContainer: null as HTMLElement | null,
     startX: 0,
     startY: 0,
     currentX: 0,
     currentY: 0,
-    lastY: 0, // Para delta scroll
     pointerId: -1,
     rafId: 0,
     
@@ -145,15 +143,6 @@ const _renderFrame = () => {
         }
     }
     
-    // RENDER: MANUAL SCROLL (VERTICAL)
-    else if (SwipeMachine.state === 'SCROLLING' && SwipeMachine.scrollContainer) {
-        const dy = SwipeMachine.currentY - SwipeMachine.lastY;
-        if (dy !== 0) {
-            SwipeMachine.scrollContainer.scrollTop -= dy;
-            SwipeMachine.lastY = SwipeMachine.currentY;
-        }
-    }
-    
     SwipeMachine.rafId = 0;
 };
 
@@ -195,7 +184,6 @@ const _forceReset = () => {
     SwipeMachine.state = 'IDLE';
     SwipeMachine.card = null;
     SwipeMachine.content = null;
-    SwipeMachine.scrollContainer = null;
     SwipeMachine.initialEvent = null;
     SwipeMachine.pointerId = -1;
     SwipeMachine.rafId = 0;
@@ -274,7 +262,8 @@ const _onPointerMove = (e: PointerEvent) => {
         // --- ZONA DE PROTEÇÃO DE LONG PRESS ---
         if (SwipeMachine.longPressTimer !== 0) {
             // Se estamos na tolerância, ignoramos tudo e continuamos esperando o timer.
-            // O evento nativo de scroll está bloqueado via CSS (touch-action: none).
+            // O evento nativo de scroll será acionado pelo navegador se for vertical (pan-y).
+            // Se o navegador decidir scrollar, ele enviará pointercancel e _forceReset limpará tudo.
             if (movementDistance <= LONG_PRESS_DRIFT_TOLERANCE) {
                 return;
             } else {
@@ -298,20 +287,15 @@ const _onPointerMove = (e: PointerEvent) => {
                     try { SwipeMachine.card.setPointerCapture(e.pointerId); SwipeMachine.pointerId = e.pointerId; } catch(e){}
                 }
             } else {
-                // Vertical -> Manual Scroll (Fallback for touch-action: none)
-                SwipeMachine.state = 'SCROLLING';
-                SwipeMachine.lastY = y; // Reset delta baseline
-                
-                // Release capture so we don't trap pointer forever if logic fails,
-                // but since we do manual scroll, we actually WANT to keep receiving events.
-                // We do NOT release capture here. We consume events to scroll manually.
+                // Vertical -> Browser handles it (pan-y).
+                // We do nothing here. Browser will eventually fire pointercancel if it takes over.
+                // Or if we need to release for some reason, we could, but letting pointercancel handle it is standard.
             }
         }
     }
 
-    // PHASE: SWIPING or SCROLLING
-    if (SwipeMachine.state === 'SWIPING' || SwipeMachine.state === 'SCROLLING') {
-        // e.preventDefault() is implicitly handled by touch-action: none in CSS
+    // PHASE: SWIPING
+    if (SwipeMachine.state === 'SWIPING') {
         if (!SwipeMachine.rafId) {
             SwipeMachine.rafId = requestAnimationFrame(_renderFrame);
         }
@@ -347,9 +331,6 @@ const _onPointerUp = (e: PointerEvent) => {
 export function setupSwipeHandler(container: HTMLElement) {
     updateLayoutMetrics();
     
-    // O container principal é usado para o Scroll Manual
-    SwipeMachine.scrollContainer = container;
-    
     container.addEventListener('pointerdown', (e) => {
         _forceReset();
 
@@ -360,12 +341,11 @@ export function setupSwipeHandler(container: HTMLElement) {
 
         // CRITICAL: Set Capture immediately to ensure we get all events, 
         // effectively disabling any residual native behavior if CSS failed (defense in depth).
-        try {
-            cw.setPointerCapture(e.pointerId);
-        } catch(err) {
-            // Ignore if capture fails (rare)
-        }
-
+        // BUT for native scroll to work with 'pan-y', we cannot capture immediately?
+        // Actually, if we capture, we block native scroll.
+        // So we wait to capture until we are sure it is a SWIPE.
+        // NOTE: Without capture, 'pointermove' still fires.
+        
         const openCards = container.querySelectorAll(`.${CSS_CLASSES.IS_OPEN_LEFT}, .${CSS_CLASSES.IS_OPEN_RIGHT}`);
         openCards.forEach(c => {
             if (c !== card) c.classList.remove(CSS_CLASSES.IS_OPEN_LEFT, CSS_CLASSES.IS_OPEN_RIGHT);
@@ -374,7 +354,6 @@ export function setupSwipeHandler(container: HTMLElement) {
         SwipeMachine.state = 'DETECTING';
         SwipeMachine.card = card;
         SwipeMachine.content = cw;
-        SwipeMachine.scrollContainer = container; // Re-bind for safety
         SwipeMachine.initialEvent = e;
         SwipeMachine.startX = SwipeMachine.currentX = e.clientX | 0;
         SwipeMachine.startY = SwipeMachine.currentY = e.clientY | 0;
