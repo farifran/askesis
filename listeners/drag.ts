@@ -439,10 +439,6 @@ export function startDragSession(card: HTMLElement, content: HTMLElement, startE
     // Isso previne que o navegador processe eventos de rolagem nativos no próximo frame
     // antes que overflow:hidden entre em vigor. Essencial para listas longas.
     card.classList.add(CSS_CLASSES.DRAGGING);
-    // FORCE LAYOUT REFLOW: Garante que 'touch-action: none' (do CSS) seja aplicado 
-    // imediatamente pelo navegador antes do próximo evento de toque, prevenindo scroll nativo.
-    void card.offsetWidth; 
-
     document.body.classList.add('is-dragging-active');
     if (DragMachine.container) DragMachine.container.classList.add('is-dragging');
     
