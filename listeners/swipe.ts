@@ -21,7 +21,6 @@ import { state } from '../state';
 import { startDragSession, isDragging as isDragActive } from './drag'; 
 import {
     SWIPE_ACTION_THRESHOLD,
-    SWIPE_HAPTIC_THRESHOLD,
     SWIPE_BLOCK_CLICK_MS
 } from '../constants';
 
@@ -31,7 +30,6 @@ const DIRECTION_LOCKED_THRESHOLD = 5; // Pixels para definir intenção direcion
 const LONG_PRESS_DRIFT_TOLERANCE = 24; 
 const ACTION_THRESHOLD = SWIPE_ACTION_THRESHOLD;
 const LONG_PRESS_DELAY = 500; 
-const MAX_SWIPE_MULTIPLIER = 2.5; 
 
 // STATE MACHINE (Módulo Local)
 const SwipeMachine = {
@@ -47,10 +45,10 @@ const SwipeMachine = {
     // State Flags
     wasOpenLeft: false,
     wasOpenRight: false,
-    hasHitLimit: false,
     
     // Progressive Haptics
     lastFeedbackStep: 0,
+    limitVibrationTimer: 0, // Timer para vibração contínua no limite
     
     // Long Press
     longPressTimer: 0,
@@ -69,6 +67,15 @@ function updateLayoutMetrics() {
     SwipeMachine.hasTypedOM = typeof window !== 'undefined' && !!(window.CSS && (window as any).CSSTranslate && CSS.px);
 }
 
+const _stopLimitVibration = () => {
+    if (SwipeMachine.limitVibrationTimer) {
+        clearInterval(SwipeMachine.limitVibrationTimer);
+        SwipeMachine.limitVibrationTimer = 0;
+        // Para a vibração do navegador imediatamente se possível
+        if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(0);
+    }
+};
+
 // --- VISUAL ENGINE ---
 
 const _renderFrame = () => {
@@ -85,25 +92,31 @@ const _renderFrame = () => {
 
     const absX = Math.abs(tx);
     const actionPoint = SwipeMachine.actionWidth; // Ponto onde os ícones aparecem (Standard Position)
-    const maxPhysicalLimit = (actionPoint * MAX_SWIPE_MULTIPLIER) | 0; // Limite elástico máximo
 
     // HAPTICS & VISUAL LOGIC
-    // O "Limite do Cartão" sensorial é definido como o ponto de ação (actionPoint).
     
     if (absX >= actionPoint) {
-        // Chegou na posição padrão de abertura (Ícones visíveis)
-        if (!SwipeMachine.hasHitLimit) {
-            triggerHaptic('heavy'); // Feedback forte aqui ("Travou" na posição)
-            SwipeMachine.hasHitLimit = true;
-            // VISUAL FEEDBACK REMOVED: Apenas vibração, sem alteração visual no cartão.
+        // LIMIT REACHED: Bloqueio visual e tátil
+        
+        // 1. Visual Clamp: Não permite passar do ponto de ação
+        tx = tx > 0 ? actionPoint : -actionPoint;
+
+        // 2. Continuous Vibration Loop (Tensão)
+        if (!SwipeMachine.limitVibrationTimer) {
+            triggerHaptic('heavy'); // Impacto inicial
+            SwipeMachine.limitVibrationTimer = window.setInterval(() => {
+                // Vibração pulsante rápida para simular tensão contínua
+                triggerHaptic('medium'); 
+            }, 80); 
         }
+        
     } else {
         // Zona de Resistência (0 -> actionPoint)
-        if (SwipeMachine.hasHitLimit) {
-            SwipeMachine.hasHitLimit = false;
-        }
+        
+        // Se saiu do limite, para a vibração contínua
+        _stopLimitVibration();
 
-        // Feedback de resistência (grão fino)
+        // Feedback de aproximação (grão fino)
         const HAPTIC_GRAIN = 8; 
         const currentStep = Math.floor(absX / HAPTIC_GRAIN);
 
@@ -117,12 +130,6 @@ const _renderFrame = () => {
             }
             SwipeMachine.lastFeedbackStep = currentStep;
         }
-    }
-
-    // CLAMP FÍSICO (Elasticidade Máxima)
-    // O visual continua esticando além do ponto de ação até este limite
-    if (absX >= maxPhysicalLimit) {
-        tx = tx > 0 ? maxPhysicalLimit : -maxPhysicalLimit;
     }
 
     // Direct DOM Manipulation (High Performance)
@@ -148,6 +155,7 @@ const _forceReset = () => {
     // 1. Stop Loops & Timers
     if (SwipeMachine.rafId) cancelAnimationFrame(SwipeMachine.rafId);
     if (SwipeMachine.longPressTimer) clearTimeout(SwipeMachine.longPressTimer);
+    _stopLimitVibration();
     
     // 2. Clean DOM State
     const { card, content, pointerId } = SwipeMachine;
@@ -210,6 +218,7 @@ const _finalizeAction = (finalDeltaX: number) => {
 
 const _triggerDrag = () => {
     SwipeMachine.longPressTimer = 0;
+    _stopLimitVibration();
     
     // Guard: State must be valid
     if (SwipeMachine.state !== 'DETECTING' || !SwipeMachine.card || !SwipeMachine.content || !SwipeMachine.initialEvent) return;
@@ -253,28 +262,32 @@ const _onPointerMove = (e: PointerEvent) => {
     if (SwipeMachine.state === 'DETECTING') {
         const movementDistance = Math.max(absDx, absDy);
 
-        // 1. Movement Check for Long Press Cancellation
-        // Só cancela o timer se o movimento for significativo (drift tolerance).
-        if (movementDistance > LONG_PRESS_DRIFT_TOLERANCE) {
-            if (SwipeMachine.longPressTimer) {
+        // --- ZONA DE PROTEÇÃO DE LONG PRESS ---
+        // Se estamos aguardando o timer (segurando o cartão), aplicamos uma lógica estrita:
+        // Qualquer movimento dentro da tolerância é BLOQUEADO nativamente para impedir
+        // que o navegador inicie o scroll. Isso cria a "cola" necessária para o timer terminar.
+        if (SwipeMachine.longPressTimer !== 0) {
+            if (movementDistance <= LONG_PRESS_DRIFT_TOLERANCE) {
+                // DENTRO DA TOLERÂNCIA:
+                // 1. Bloqueia scroll nativo (Chrome/Safari)
+                if (e.cancelable) e.preventDefault();
+                
+                // 2. Retorno antecipado: Ignora lógica de direção. 
+                //    Ficamos em 'DETECTING' esperando o timer ou mais movimento.
+                return;
+            } else {
+                // QUEBROU A TOLERÂNCIA:
+                // Movimento excessivo (scroll rápido ou swipe decidido). Cancela o Long Press.
                 clearTimeout(SwipeMachine.longPressTimer);
                 SwipeMachine.longPressTimer = 0;
+                // Código continua para decidir se é Swipe ou Scroll abaixo...
             }
         }
 
-        // SCROLL LOCK LOGIC [CRITICAL]:
-        // Se ainda estamos esperando o Long Press e o movimento é pequeno (mesmo que seja vertical),
-        // impedimos AGRESSIVAMENTE que o navegador assuma o controle (scroll nativo).
-        // Isso evita o evento 'pointercancel' que mataria o Long Press prematuramente.
-        if (SwipeMachine.longPressTimer !== 0 && movementDistance <= LONG_PRESS_DRIFT_TOLERANCE) {
-             if (e.cancelable) e.preventDefault();
-        }
-
-        // 2. Direction Lock Logic
+        // 2. Direction Lock Logic (Só alcançado se timer expirou ou cancelado)
         if (absDx > DIRECTION_LOCKED_THRESHOLD || absDy > DIRECTION_LOCKED_THRESHOLD) {
             if (absDx > absDy) {
                 // Horizontal -> Start Swipe
-                // Cancela long press se for swipe horizontal decidido
                 if (SwipeMachine.longPressTimer) clearTimeout(SwipeMachine.longPressTimer);
                 
                 SwipeMachine.state = 'SWIPING';
@@ -284,18 +297,7 @@ const _onPointerMove = (e: PointerEvent) => {
                     try { SwipeMachine.card.setPointerCapture(e.pointerId); SwipeMachine.pointerId = e.pointerId; } catch(e){}
                 }
             } else {
-                // Vertical -> Scroll Intent?
-                
-                const isWaitingForLongPress = SwipeMachine.longPressTimer !== 0;
-                
-                // Se estamos no "limbo" (movimento > 5px mas < 24px e vertical), continuamos prevenindo
-                // o scroll (via lógica acima) e aguardamos o timer.
-                // Isso permite que o usuário segure o dedo tremendo levemente sem iniciar scroll nem cancelar o drag.
-                if (isWaitingForLongPress && absDy <= LONG_PRESS_DRIFT_TOLERANCE) {
-                    return;
-                }
-
-                // Vertical scroll confirmado ou movimento excessivo (>24px)
+                // Vertical -> Scroll Intent
                 SwipeMachine.state = 'LOCKED_OUT';
                 _forceReset(); // Let native scroll take over
                 return;
@@ -314,6 +316,7 @@ const _onPointerMove = (e: PointerEvent) => {
 
 const _onPointerUp = (e: PointerEvent) => {
     if (SwipeMachine.longPressTimer) clearTimeout(SwipeMachine.longPressTimer);
+    _stopLimitVibration();
 
     if (SwipeMachine.state === 'SWIPING') {
         const dx = SwipeMachine.currentX - SwipeMachine.startX;
@@ -367,8 +370,9 @@ export function setupSwipeHandler(container: HTMLElement) {
         SwipeMachine.startY = e.clientY | 0;
         SwipeMachine.wasOpenLeft = card.classList.contains(CSS_CLASSES.IS_OPEN_LEFT);
         SwipeMachine.wasOpenRight = card.classList.contains(CSS_CLASSES.IS_OPEN_RIGHT);
-        SwipeMachine.hasHitLimit = false;
+        
         SwipeMachine.lastFeedbackStep = 0;
+        SwipeMachine.limitVibrationTimer = 0;
 
         // 4. Start Long Press Timer
         SwipeMachine.longPressTimer = window.setTimeout(_triggerDrag, LONG_PRESS_DELAY);
