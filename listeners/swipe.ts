@@ -26,7 +26,6 @@ import {
 
 // CONFIGURAÇÃO FÍSICA
 const DIRECTION_LOCKED_THRESHOLD = 5; // Pixels para definir intenção direcional
-// UPDATE: Aumentado para 24px. Permite que o dedo oscile verticalmente enquanto segura sem cancelar o gesto.
 const LONG_PRESS_DRIFT_TOLERANCE = 24; 
 const ACTION_THRESHOLD = SWIPE_ACTION_THRESHOLD;
 const LONG_PRESS_DELAY = 500; 
@@ -97,12 +96,26 @@ const _renderFrame = () => {
 
         const absX = Math.abs(tx);
         const actionPoint = SwipeMachine.actionWidth; 
+        
+        let visualX = tx;
 
         // HAPTICS & VISUAL LOGIC
         if (absX >= actionPoint) {
-            // LIMIT REACHED: Bloqueio visual e tátil
-            tx = tx > 0 ? actionPoint : -actionPoint;
+            // LIMIT REACHED: Aplica resistência elástica (Rubber Banding)
+            // Em vez de travar (clamp), permitimos passar um pouco com resistência.
+            
+            const excess = absX - actionPoint;
+            const resistanceFactor = 0.25; // 1px de movimento visual a cada 4px de movimento real
+            const maxVisualOvershoot = 20; // Máximo que pode esticar visualmente
+            
+            // Fórmula de amortecimento linear com teto
+            const visualOvershoot = Math.min(excess * resistanceFactor, maxVisualOvershoot);
+            
+            // Recalcula a posição visual aplicando o sinal original
+            const sign = tx > 0 ? 1 : -1;
+            visualX = (actionPoint + visualOvershoot) * sign;
 
+            // Vibração Contínua (Tensão Máxima)
             if (!SwipeMachine.limitVibrationTimer) {
                 triggerHaptic('heavy');
                 SwipeMachine.limitVibrationTimer = window.setInterval(() => {
@@ -110,6 +123,7 @@ const _renderFrame = () => {
                 }, 80); 
             }
         } else {
+            // Zona Normal (Abaixo do limite)
             _stopLimitVibration();
             const HAPTIC_GRAIN = 8; 
             const currentStep = Math.floor(absX / HAPTIC_GRAIN);
@@ -123,10 +137,11 @@ const _renderFrame = () => {
             }
         }
 
+        // Aplica a transformação visual (pode incluir o overshoot elástico)
         if (SwipeMachine.hasTypedOM && SwipeMachine.content.attributeStyleMap) {
-            SwipeMachine.content.attributeStyleMap.set('transform', new (window as any).CSSTranslate(CSS.px(tx), CSS.px(0)));
+            SwipeMachine.content.attributeStyleMap.set('transform', new (window as any).CSSTranslate(CSS.px(visualX), CSS.px(0)));
         } else {
-            SwipeMachine.content.style.transform = `translateX(${tx}px)`;
+            SwipeMachine.content.style.transform = `translateX(${visualX}px)`;
         }
     }
     
