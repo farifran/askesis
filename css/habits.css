@@ -15,7 +15,7 @@
     /* SCROLL INTERNO: Ativa apenas quando o conteúdo excede o espaço disponível */
     overflow-y: auto; 
     overflow-x: hidden;
-    min-height: 0; /* Important for flex child scroll */
+    min-height: 0; /* Important for flex child scrolling */
     
     /* UX: Padding para o conteúdo não colar nas bordas */
     padding-inline: var(--space-lg);
@@ -255,9 +255,9 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     /* Isso previne o 'scrollbar jumping' quando o cartão é renderizado. */
     contain-intrinsic-size: auto 86px; 
     
-    /* UX [2025-01-27]: Importante para garantir scroll vertical suave ao tocar no cartão */
-    /* LOGIC LOCK: 'pan-y' é essencial para a física do swipe horizontal personalizada. */
-    touch-action: pan-y;
+    /* JS-DRIVEN SCROLL: Desativa scroll nativo vertical no elemento para que o JS (swipe.ts)
+       possa capturar o gesto sem cancelamento pelo navegador. O scroll vertical será emulado. */
+    touch-action: none;
 }
 .habit-group .habit-card:last-child { margin-block-end: 0; }
 
@@ -342,7 +342,8 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     transition: transform var(--transition-duration-slow) cubic-bezier(0.23, 1, 0.32, 1), background var(--transition-duration), padding-right var(--transition-duration);
     border-radius: 9px;
     flex-grow: 1;
-    touch-action: pan-y;
+    /* JS-DRIVEN SCROLL: Mesmo motivo do .habit-card */
+    touch-action: none;
     /* MEMORY OPTIMIZATION [2025-01-29]: Removed global will-change: transform. Apply it contextually during interactions (swipe/drag) via classes to save VRAM. */
 }
 
