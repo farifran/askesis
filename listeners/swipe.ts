@@ -25,9 +25,6 @@ import {
 } from '../constants';
 
 // CONFIGURAÇÃO FÍSICA
-// TUNING [2025-06-25]: 
-// - DIRECTION_LOCKED_THRESHOLD: Aumentado (8->10) para evitar swipes acidentais ao tentar scrollar levemente torto.
-// - LONG_PRESS_DELAY: Reduzido (500->350) para tornar o Drag mais responsivo e menos cansativo.
 const DIRECTION_LOCKED_THRESHOLD = 10;
 const ACTION_THRESHOLD = SWIPE_ACTION_THRESHOLD;
 const LONG_PRESS_DELAY = 350; 
@@ -278,30 +275,38 @@ const _onPointerMove = (e: PointerEvent) => {
         // --- ZONA DE PROTEÇÃO DE LONG PRESS ---
         if (SwipeMachine.longPressTimer !== 0) {
             // SCROLL LOCK TUNE [2025-06-25]:
-            // Aumentado de 24px para 30px (tolerance boost).
-            // Isso permite que dedos trêmulos mantenham o "Hold" sem cancelar.
-            // Se passar disso, assumimos que é scroll e liberamos.
-            const SCROLL_INTENT_THRESHOLD = 30;
+            // 1. Reduzido para 10px (Small Deadzone).
+            // 2. ACTIVE SUPPRESSION: Se o movimento vertical for pequeno (< 10px),
+            // chamamos preventDefault() para impedir que o navegador inicie o scroll e cancele o evento.
+            // Isso resolve o problema de "dedo trêmulo" cancelando o hold.
+            const SCROLL_INTENT_THRESHOLD = 10;
             
             if (absDy > SCROLL_INTENT_THRESHOLD) {
-                // Abort Long Press -> Revert to Browser Scroll
+                // Abort Long Press -> Allow Native Browser Scroll
                 clearTimeout(SwipeMachine.longPressTimer);
                 SwipeMachine.longPressTimer = 0;
                 
                 if (SwipeMachine.card) {
                     SwipeMachine.card.classList.remove('is-pressing');
                     try {
-                        // CRITICAL: Libera a captura para que o navegador processe o restante do gesto (rolagem)
-                        // ou pare de enviar eventos para cá.
+                        // CRITICAL: Libera a captura para que o navegador assuma o scroll IMEDIATAMENTE.
+                        // Não chamamos preventDefault aqui.
                         SwipeMachine.card.releasePointerCapture(e.pointerId);
                     } catch (err) {}
                 }
                 
                 _forceReset();
                 return;
+            } else {
+                // MICRO-MOVEMENT (Tremor):
+                // Impedimos o navegador de interpretar isso como início de scroll.
+                // Isso mantém o evento vivo para que o timer de Long Press possa disparar.
+                if (e.cancelable) {
+                    e.preventDefault();
+                }
             }
             
-            // Se mover horizontalmente, inicia Swipe
+            // Se mover horizontalmente significativamente, inicia Swipe
             if (absDx > DIRECTION_LOCKED_THRESHOLD) {
                 // Horizontal -> Start Swipe
                 if (SwipeMachine.longPressTimer) clearTimeout(SwipeMachine.longPressTimer);
