@@ -25,8 +25,7 @@ import {
 } from '../constants';
 
 // CONFIGURAÇÃO FÍSICA
-const DIRECTION_LOCKED_THRESHOLD = 5; // Pixels para definir intenção direcional
-const LONG_PRESS_DRIFT_TOLERANCE = 24; 
+const DIRECTION_LOCKED_THRESHOLD = 8; // Aumentado levemente para evitar disparos acidentais
 const ACTION_THRESHOLD = SWIPE_ACTION_THRESHOLD;
 const LONG_PRESS_DELAY = 500; 
 
@@ -275,11 +274,12 @@ const _onPointerMove = (e: PointerEvent) => {
     if (SwipeMachine.state === 'DETECTING') {
         // --- ZONA DE PROTEÇÃO DE LONG PRESS ---
         if (SwipeMachine.longPressTimer !== 0) {
-            // SCROLL LOCK BREAK [2025-06-09]:
-            // Se o usuário mover verticalmente mais que um limiar curto (ex: 15px),
-            // entendemos como INTENÇÃO DE SCROLL explícita.
-            
-            const SCROLL_INTENT_THRESHOLD = 15;
+            // SCROLL LOCK TUNE [2025-06-25]:
+            // Aumentado de 15px para 24px (space-xl).
+            // Isso permite um leve deslize vertical natural do dedo enquanto segura,
+            // sem cancelar a intenção de segurar (Drag).
+            // Se passar disso, assumimos que é scroll e liberamos.
+            const SCROLL_INTENT_THRESHOLD = 24;
             
             if (absDy > SCROLL_INTENT_THRESHOLD) {
                 // Abort Long Press -> Revert to Browser Scroll
