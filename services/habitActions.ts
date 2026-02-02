@@ -397,7 +397,7 @@ export async function performAIAnalysis(type: 'monthly' | 'quarterly' | 'histori
             state.lastAIResult = t('aiErrorGeneric'); 
             addSyncLog("Erro na análise IA.", 'error'); 
             
-            // Handle 429 Quota Exceeded gracefully with Friendly Message
+            // Handle 429/Quota/Overload gracefully
             if (errStr.includes('429') || errStr.includes('Quota') || errStr.includes('RESOURCE_EXHAUSTED')) {
                 ui.aiResponse.innerHTML = `<div class="ai-error-message"><h3>${t('aiServerBusyTitle')}</h3><p>${t('aiServerBusy')}</p></div>`;
             } else {
