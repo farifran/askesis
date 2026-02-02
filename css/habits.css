@@ -616,7 +616,7 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     z-index: var(--z-index-base);
     display: flex;
     align-items: center;
-    width: 200px; /* Largura grande para permitir um over-swipe */
+    width: 200px; /* REVERTED [2025-06-25]: 200px fixed width for controlled swipe */
     
     /* A11Y [2025-01-18]: Esconde do foco e leitura quando não ativos */
     visibility: hidden;
