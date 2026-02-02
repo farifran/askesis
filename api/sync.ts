@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -156,11 +157,8 @@ export default async function handler(req: Request) {
                 if (fallback.type === 'ok') {
                     return new Response('{"success":true,"fallback":true}', { status: 200, headers: HEADERS_BASE });
                 }
-                const rawList = fallback.data as string[];
-                const conflictShards: Record<string, string> = {};
-                for (let i = 0; i < rawList.length; i += 2) {
-                    conflictShards[rawList[i]] = rawList[i+1];
-                }
+                // FIX: kv.hgetall returns an Object, not Array.
+                const conflictShards = (fallback.data || {}) as Record<string, string>;
                 return new Response(JSON.stringify(conflictShards), { status: 409, headers: HEADERS_BASE });
             }
             
@@ -171,15 +169,13 @@ export default async function handler(req: Request) {
                 if (fallback.type === 'ok') {
                     return new Response('{"success":true,"fallback":true}', { status: 200, headers: HEADERS_BASE });
                 }
-                const rawList = fallback.data as string[];
-                const conflictShards: Record<string, string> = {};
-                for (let i = 0; i < rawList.length; i += 2) {
-                    conflictShards[rawList[i]] = rawList[i+1];
-                }
+                // FIX: kv.hgetall returns an Object, not Array.
+                const conflictShards = (fallback.data || {}) as Record<string, string>;
                 return new Response(JSON.stringify(conflictShards), { status: 409, headers: HEADERS_BASE });
             }
             
             if (result[0] === 'CONFLICT') {
+                // Lua returns a flat array [key, val, key, val...] for HGETALL
                 const rawList = result[1] as string[];
                 const conflictShards: Record<string, string> = {};
                 for (let i = 0; i < rawList.length; i += 2) {
