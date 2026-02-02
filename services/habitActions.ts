@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -396,9 +397,9 @@ export async function performAIAnalysis(type: 'monthly' | 'quarterly' | 'histori
             state.lastAIResult = t('aiErrorGeneric'); 
             addSyncLog("Erro na análise IA.", 'error'); 
             
-            // Handle 429 Quota Exceeded gracefully
+            // Handle 429 Quota Exceeded gracefully with Friendly Message
             if (errStr.includes('429') || errStr.includes('Quota') || errStr.includes('RESOURCE_EXHAUSTED')) {
-                ui.aiResponse.innerHTML = `<div class="ai-error-message"><h3>${t('aiLimitTitle')}</h3><p>${t('aiLimitReached', { count: '' })}</p><div class="debug-info"><small>Google Quota Exceeded</small></div></div>`;
+                ui.aiResponse.innerHTML = `<div class="ai-error-message"><h3>${t('aiServerBusyTitle')}</h3><p>${t('aiServerBusy')}</p></div>`;
             } else {
                 // Show detailed error in UI for user feedback
                 ui.aiResponse.innerHTML = `<div class="ai-error-message"><h3>${t('aiLimitTitle') === 'Daily Limit Reached' ? 'Error' : 'Erro'}</h3><p>${t('aiErrorGeneric')}</p><div class="debug-info"><small>${errStr}</small></div></div>`;
