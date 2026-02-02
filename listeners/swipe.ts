@@ -25,9 +25,12 @@ import {
 } from '../constants';
 
 // CONFIGURAÇÃO FÍSICA
-const DIRECTION_LOCKED_THRESHOLD = 8; // Aumentado levemente para evitar disparos acidentais
+// TUNING [2025-06-25]: 
+// - DIRECTION_LOCKED_THRESHOLD: Aumentado (8->10) para evitar swipes acidentais ao tentar scrollar levemente torto.
+// - LONG_PRESS_DELAY: Reduzido (500->350) para tornar o Drag mais responsivo e menos cansativo.
+const DIRECTION_LOCKED_THRESHOLD = 10;
 const ACTION_THRESHOLD = SWIPE_ACTION_THRESHOLD;
-const LONG_PRESS_DELAY = 500; 
+const LONG_PRESS_DELAY = 350; 
 
 // STATE MACHINE (Módulo Local)
 const SwipeMachine = {
@@ -275,11 +278,10 @@ const _onPointerMove = (e: PointerEvent) => {
         // --- ZONA DE PROTEÇÃO DE LONG PRESS ---
         if (SwipeMachine.longPressTimer !== 0) {
             // SCROLL LOCK TUNE [2025-06-25]:
-            // Aumentado de 15px para 24px (space-xl).
-            // Isso permite um leve deslize vertical natural do dedo enquanto segura,
-            // sem cancelar a intenção de segurar (Drag).
+            // Aumentado de 24px para 30px (tolerance boost).
+            // Isso permite que dedos trêmulos mantenham o "Hold" sem cancelar.
             // Se passar disso, assumimos que é scroll e liberamos.
-            const SCROLL_INTENT_THRESHOLD = 24;
+            const SCROLL_INTENT_THRESHOLD = 30;
             
             if (absDy > SCROLL_INTENT_THRESHOLD) {
                 // Abort Long Press -> Revert to Browser Scroll
