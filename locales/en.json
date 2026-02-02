@@ -48,6 +48,8 @@
     "aiHistoryChangeFrequency": "- Frequency changed on {date}.",
     "aiHistoryChangeGoal": "- Goal changed on {date}.",
     "aiHistoryChangeTimes": "- Times changed on {date}.",
+    "aiServerBusy": "The AI server is experiencing high demand. Please try again in a few moments.",
+    "aiServerBusyTitle": "AI Busy",
     "appName": "<strong>A</strong>skes<strong>I</strong>s",
     "appSubtitle": "Act until you become; you are the sum of your habits.",
     "aria_delete_permanent": "Permanently delete {habitName}",
