@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -102,12 +103,17 @@ export function closeModal(modal: HTMLElement, suppressCallbacks = false) {
 }
 
 export function setupManageModal() {
+    const lastRenderKey = ui.manageModal.dataset.manageListLastModified;
+    if (!state.uiDirtyState.habitListStructure && ui.habitList.children.length > 0 && lastRenderKey === String(state.lastModified)) return;
     // FILTER: Hide logically deleted habits
     const activeHabits = state.habits.filter(h => !h.deletedOn);
 
     if (activeHabits.length === 0) { 
         ui.habitList.classList.add('hidden'); 
         ui.noHabitsMessage.classList.remove('hidden'); 
+        ui.habitList.innerHTML = '';
+        state.uiDirtyState.habitListStructure = false;
+        ui.manageModal.dataset.manageListLastModified = String(state.lastModified);
         return; 
     }
     
@@ -133,8 +139,10 @@ export function setupManageModal() {
         const ariaGraduate = escapeHTML(t('aria_graduate', { name }));
         const ariaEnd = escapeHTML(t('aria_end', { name }));
         const ariaDelete = escapeHTML(t('aria_delete_permanent', { name }));
-        return `<li class="habit-list-item ${st}" data-habit-id="${h.id}"><span class="habit-main-info"><span class="habit-icon-slot" style="color:${lastSchedule.color}">${lastSchedule.icon}</span><div style="display:flex;flex-direction:column;flex-grow:1;"><span class="habit-name">${safeName}</span>${subtitle ? `<span class="habit-subtitle" style="font-size:11px;color:var(--text-tertiary)">${safeSubtitle}</span>` : ''}</div>${st !== 'active' ? `<span class="habit-name-status">${t(st === 'graduated' ? 'modalStatusGraduated' : 'modalStatusEnded')}</span>` : ''}</span><div class="habit-list-actions">${st === 'active' ? `${calculateHabitStreak(h, today) >= STREAK_CONSOLIDATED ? `<button class="graduate-habit-btn" aria-label="${ariaGraduate}">${UI_ICONS.graduateAction}</button>` : `<button class="end-habit-btn" aria-label="${ariaEnd}">${UI_ICONS.endAction}</button>`}` : `<button class="permanent-delete-habit-btn" aria-label="${ariaDelete}">${UI_ICONS.deletePermanentAction}</button>`}</div></li>`;
+        return `<li class="habit-list-item ${st}" data-habit-id="${h.id}"><span class="habit-main-info"><span class="habit-icon-slot" style="color:${escapeHTML(lastSchedule.color)}">${lastSchedule.icon && lastSchedule.icon.trim().startsWith('<svg') ? lastSchedule.icon : escapeHTML(lastSchedule.icon || '')}</span><div style="display:flex;flex-direction:column;flex-grow:1;"><span class="habit-name">${safeName}</span>${subtitle ? `<span class="habit-subtitle" style="font-size:11px;color:var(--text-tertiary)">${safeSubtitle}</span>` : ''}</div>${st !== 'active' ? `<span class="habit-name-status">${t(st === 'graduated' ? 'modalStatusGraduated' : 'modalStatusEnded')}</span>` : ''}</span><div class="habit-list-actions">${st === 'active' ? `${calculateHabitStreak(h, today) >= STREAK_CONSOLIDATED ? `<button class="graduate-habit-btn" aria-label="${ariaGraduate}">${UI_ICONS.graduateAction}</button>` : `<button class="end-habit-btn" aria-label="${ariaEnd}">${UI_ICONS.endAction}</button>`}` : `<button class="permanent-delete-habit-btn" aria-label="${ariaDelete}">${UI_ICONS.deletePermanentAction}</button>`}</div></li>`;
     }).join('');
+    state.uiDirtyState.habitListStructure = false;
+    ui.manageModal.dataset.manageListLastModified = String(state.lastModified);
 }
 
 export function showConfirmationModal(text: string, onConfirm: () => void, opts?: any) {
@@ -206,7 +214,7 @@ export function refreshEditModalUI() {
     if (ce) { const p = fd.philosophy; if (p?.conscienceKey) { setTextContent(ce, t(p.conscienceKey)); ce.style.display = 'block'; } else ce.style.display = 'none'; }
 }
 
-export function openEditModal(habit: any, targetDateOverride?: string) {
+export function openEditModal(habit: any, targetDateOverride?: string, onClose?: () => void) {
     const isN = !habit || !habit.id;
     const safe = getSafeDate(targetDateOverride || state.selectedDate);
 
@@ -256,7 +264,7 @@ export function openEditModal(habit: any, targetDateOverride?: string) {
         overlay.innerHTML = HABIT_ICONS.learnSkill;
     }
 
-    refreshEditModalUI(); openModal(ui.editHabitModal);
+    refreshEditModalUI(); openModal(ui.editHabitModal, undefined, onClose);
 }
 
 export function renderExploreHabits() {

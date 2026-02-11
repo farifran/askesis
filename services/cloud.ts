@@ -25,17 +25,11 @@ import {
     CLOUD_WORKER_TIMEOUT_MS
 } from '../constants';
 
-// PERFORMANCE: Debounce para evitar salvar na nuvem a cada pequena alteração
-const DEBOUNCE_DELAY = CLOUD_SYNC_DEBOUNCE_MS; 
 const HASH_STORAGE_KEY = 'askesis_sync_hashes';
-const SYNC_LOG_MAX_ENTRIES = CLOUD_SYNC_LOG_MAX_ENTRIES;
-const SYNC_LOG_MAX_AGE_MS = CLOUD_SYNC_LOG_MAX_AGE_MS;
-const HASH_CACHE_MAX_ENTRIES = CLOUD_HASH_CACHE_MAX_ENTRIES;
-const WORKER_TIMEOUT_MS = CLOUD_WORKER_TIMEOUT_MS;
 
 let isSyncInProgress = false;
 let pendingSyncState: AppState | null = null;
-const debouncedSync = createDebounced(() => { if (!isSyncInProgress) performSync(); }, DEBOUNCE_DELAY);
+const debouncedSync = createDebounced(() => { if (!isSyncInProgress) performSync(); }, CLOUD_SYNC_DEBOUNCE_MS);
 
 // --- WORKER INFRASTRUCTURE ---
 let syncWorker: Worker | null = null;
@@ -73,7 +67,7 @@ export function runWorkerTask<T>(type: 'encrypt' | 'decrypt' | 'build-ai-prompt'
         const timeoutId = window.setTimeout(() => {
             workerCallbacks.delete(id);
             reject(new Error('Worker timeout'));
-        }, WORKER_TIMEOUT_MS);
+        }, CLOUD_WORKER_TIMEOUT_MS);
         workerCallbacks.set(id, { 
             resolve: (val) => { clearTimeout(timeoutId); resolve(val); }, 
             reject: (err) => { clearTimeout(timeoutId); reject(err); } 
@@ -143,8 +137,8 @@ function persistHashCache() {
 }
 
 function pruneHashCache() {
-    if (lastSyncedHashes.size <= HASH_CACHE_MAX_ENTRIES) return;
-    while (lastSyncedHashes.size > HASH_CACHE_MAX_ENTRIES) {
+    if (lastSyncedHashes.size <= CLOUD_HASH_CACHE_MAX_ENTRIES) return;
+    while (lastSyncedHashes.size > CLOUD_HASH_CACHE_MAX_ENTRIES) {
         const firstKey = lastSyncedHashes.keys().next().value;
         if (firstKey === undefined) break;
         lastSyncedHashes.delete(firstKey);
@@ -193,9 +187,9 @@ export function addSyncLog(msg: string, type: 'success' | 'error' | 'info' = 'in
 
 function pruneSyncLogs() {
     if (!state.syncLogs || state.syncLogs.length === 0) return;
-    const cutoff = Date.now() - SYNC_LOG_MAX_AGE_MS;
+    const cutoff = Date.now() - CLOUD_SYNC_LOG_MAX_AGE_MS;
     while (state.syncLogs.length > 0 && state.syncLogs[0].time < cutoff) state.syncLogs.shift();
-    while (state.syncLogs.length > SYNC_LOG_MAX_ENTRIES) state.syncLogs.shift();
+    while (state.syncLogs.length > CLOUD_SYNC_LOG_MAX_ENTRIES) state.syncLogs.shift();
 }
 
 export function setSyncStatus(statusKey: 'syncSaving' | 'syncSynced' | 'syncError' | 'syncInitial') {
@@ -203,15 +197,6 @@ export function setSyncStatus(statusKey: 'syncSaving' | 'syncSynced' | 'syncErro
     if (ui.syncStatus) {
         ui.syncStatus.textContent = t(statusKey);
     }
-}
-
-export function setupNotificationListeners() {
-    pushToOneSignal((OneSignal: OneSignalLike) => {
-        OneSignal.Notifications.addEventListener('permissionChange', () => {
-            setTimeout(updateNotificationUI, 500);
-        });
-        updateNotificationUI();
-    });
 }
 
 async function resolveConflictWithServerState(serverShards: Record<string, string>) {
@@ -283,12 +268,14 @@ async function performSync() {
     if (!syncKey) { setSyncStatus('syncError'); isSyncInProgress = false; return; }
 
     try {
+        const perfStart = performance.now();
         const rawShards = splitIntoShards(appState);
         const encryptedShards: Record<string, string> = {};
         
         const pendingHashUpdates = new Map<string, string>();
         let changeCount = 0;
 
+        const encryptStart = performance.now();
         for (const shardName in rawShards) {
             const currentHash = murmurHash3(JSON.stringify(rawShards[shardName]));
             const lastHash = lastSyncedHashes.get(shardName);
@@ -300,8 +287,10 @@ async function performSync() {
                 changeCount++;
             }
         }
+        const encryptEnd = performance.now();
 
         if (changeCount === 0) {
+            logger.info(`[Sync Perf] encrypt=${(encryptEnd - encryptStart).toFixed(1)}ms total=${(performance.now() - perfStart).toFixed(1)}ms (no changes)`);
             setSyncStatus('syncSynced');
             isSyncInProgress = false;
             return;
@@ -310,11 +299,17 @@ async function performSync() {
         addSyncLog(`Sincronizando ${changeCount} pacotes...`, "info");
         const safeTs = appState.lastModified || Date.now();
         
+        const payloadStart = performance.now();
         const payload = { lastModified: safeTs, shards: encryptedShards };
+        const payloadBody = JSON.stringify(payload);
+        const payloadEnd = performance.now();
+
+        const postStart = performance.now();
         const response = await apiFetch('/api/sync', { 
             method: 'POST', 
-            body: JSON.stringify(payload) 
+            body: payloadBody 
         }, true);
+        const postEnd = performance.now();
 
         if (response.status === 409) {
             clearSyncHashCache();
@@ -325,7 +320,7 @@ async function performSync() {
                 if (payload?.fallback) {
                     addSyncLog("Fallback sem Lua aplicado.", "info");
                 }
-            } catch {}
+            } catch (e) { logger.warn('[Sync] Failed to parse POST response body', e); }
             addSyncLog("Nuvem atualizada.", "success");
             setSyncStatus('syncSynced');
             pendingHashUpdates.forEach((hash, shard) => lastSyncedHashes.set(shard, hash));
@@ -338,9 +333,13 @@ async function performSync() {
             const raw = errorData.raw ? ` raw=${JSON.stringify(errorData.raw)}` : '';
             throw new Error((errorData.error || `Erro ${response.status}`) + code + detail + raw);
         }
+        logger.info(`[Sync Perf] encrypt=${(encryptEnd - encryptStart).toFixed(1)}ms payload=${(payloadEnd - payloadStart).toFixed(1)}ms post=${(postEnd - postStart).toFixed(1)}ms total=${(performance.now() - perfStart).toFixed(1)}ms`);
     } catch (error: any) {
         addSyncLog(`Falha no envio: ${error.message}`, "error");
         setSyncStatus('syncError');
+        if ('serviceWorker' in navigator && 'SyncManager' in window) {
+            navigator.serviceWorker.ready.then(reg => (reg as any).sync?.register('sync-cloud-pending')).catch(() => {});
+        }
     } finally {
         isSyncInProgress = false;
         if (pendingSyncState) setTimeout(performSync, 500);
@@ -349,7 +348,7 @@ async function performSync() {
 
 export function syncStateWithCloud(appState: AppState, immediate = false) {
     if (!hasLocalSyncKey()) return;
-    pendingSyncState = appState; 
+    pendingSyncState = structuredClone(appState); 
     setSyncStatus('syncSaving');
     if (isSyncInProgress) return;
     if (immediate) {
@@ -358,6 +357,11 @@ export function syncStateWithCloud(appState: AppState, immediate = false) {
     } else {
         debouncedSync();
     }
+}
+
+export async function pullRemoteChanges(): Promise<void> {
+    if (isSyncInProgress) return;
+    await fetchStateFromCloud();
 }
 
 async function reconstructStateFromShards(shards: Record<string, string>): Promise<AppState | undefined> {
@@ -377,17 +381,23 @@ async function reconstructStateFromShards(shards: Record<string, string>): Promi
         
         persistHashCache();
 
+        const core = decryptedShards['core'];
+        if (core && (!Array.isArray(core.habits) || !core.habits.every((h: any) => h && typeof h.id === 'string' && Array.isArray(h.scheduleHistory)))) {
+            logger.error('[Sync] Decrypted core data has invalid structure. Aborting reconstruction.');
+            return undefined;
+        }
+
         const result: any = {
-            version: decryptedShards['core']?.version || 0,
+            version: core?.version || 0,
             lastModified: parseInt(shards.lastModified || '0', 10),
-            habits: decryptedShards['core']?.habits || [],
-            dailyData: decryptedShards['core']?.dailyData || {},
-            dailyDiagnoses: decryptedShards['core']?.dailyDiagnoses || {},
+            habits: core?.habits || [],
+            dailyData: core?.dailyData || {},
+            dailyDiagnoses: core?.dailyDiagnoses || {},
             archives: {},
             monthlyLogs: new Map(),
-            notificationsShown: decryptedShards['core']?.notificationsShown || [],
-            hasOnboarded: decryptedShards['core']?.hasOnboarded ?? true,
-            quoteState: decryptedShards['core']?.quoteState
+            notificationsShown: core?.notificationsShown || [],
+            hasOnboarded: core?.hasOnboarded ?? true,
+            quoteState: core?.quoteState
         };
         for (const key in decryptedShards) {
             if (key.startsWith('archive:')) { result.archives[key.replace('archive:', '')] = decryptedShards[key]; }

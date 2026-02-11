@@ -16,7 +16,7 @@
     max-height: none;
     overflow: visible; /* CRÍTICO: Permite que o tooltip saia da caixa */
     
-    /* UI FIX: Margem superior para separar dos cartões. */
+    /* UI FIX: Margem superior ajustada para space-lg (16px) para equilíbrio visual. */
     margin-top: var(--space-lg);
     margin-inline: var(--space-lg); 
     
@@ -26,9 +26,6 @@
     /* Estilos visuais normais */
     z-index: var(--z-index-footer);
     box-shadow: none;
-    
-    /* [2025-02-23] Add border matching habit cards */
-    border: 1px solid rgba(255, 255, 255, 0.3);
 }
 
 /* 
@@ -52,7 +49,9 @@
     z-index: 20;
     pointer-events: none; /* Permite clicar no gráfico atrás do texto */
     padding-bottom: 0;
-    text-shadow: 0 1px 2px var(--bg-color); 
+    text-shadow: 0 1px 2px var(--bg-color);
+    /* LAYOUT TWEAK [2025-06-15]: Margem negativa para aproximar o texto do topo (reduzindo o padding visual do container) */
+    margin-top: -6px;
 }
 
 .chart-title {

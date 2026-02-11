@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -41,6 +42,7 @@ import {
     renderColorPicker,
     renderFullCalendar,
     renderApp,
+    viewTransitionRender,
 } from '../render';
 import {
     saveHabitFromModal,
@@ -56,12 +58,13 @@ import {
 } from '../services/habitActions';
 import { t, setLanguage } from '../i18n';
 import { setupReelRotary } from '../render/rotary';
-import { simpleMarkdownToHTML, pushToOneSignal, getContrastColor, addDays, parseUTCIsoDate, toUTCIsoDateString, triggerHaptic, logger, escapeHTML, sanitizeText } from '../utils';
+import { simpleMarkdownToHTML, pushToOneSignal, getContrastColor, addDays, parseUTCIsoDate, toUTCIsoDateString, triggerHaptic, logger, escapeHTML, sanitizeText, getTodayUTCIso } from '../utils';
 import { setTextContent } from '../render/dom';
 
 // --- STATIC HELPERS ---
 
 function _navigateToDateFromAlmanac(dateISO: string) {
+    const flipDir = dateISO < state.selectedDate ? 'forward' : 'back';
     state.selectedDate = dateISO;
     
     closeModal(ui.fullCalendarModal);
@@ -70,7 +73,7 @@ function _navigateToDateFromAlmanac(dateISO: string) {
     state.uiDirtyState.habitListStructure = true;
     invalidateChartCache();
     
-    renderApp();
+    viewTransitionRender(flipDir);
 
     requestAnimationFrame(() => {
         const selectedEl = ui.calendarStrip.querySelector('.day-item.selected');
@@ -161,7 +164,7 @@ const _handleHabitListClick = (e: MouseEvent) => {
     triggerHaptic('light');
 
     if (button.classList.contains('end-habit-btn')) {
-        requestHabitEndingFromModal(habitId);
+        requestHabitEndingFromModal(habitId, getTodayUTCIso());
     } else if (button.classList.contains('permanent-delete-habit-btn')) {
         requestHabitPermanentDeletion(habitId);
     } else if (button.classList.contains('graduate-habit-btn')) {
@@ -216,7 +219,8 @@ const _handleExploreHabitListClick = (e: MouseEvent) => {
         closeModal(ui.exploreModal);
         // LÓGICA RADICAL: Sempre abre o modal de edição para criar um NOVO hábito a partir do modelo,
         // mesmo que um com nome parecido já exista. Elimina a ambiguidade.
-        openEditModal(habitTemplate);
+        // CALLBACK: Se cancelar (back/close), reabre o modal de Explorar.
+        openEditModal(habitTemplate, undefined, () => openModal(ui.exploreModal));
     }
 };
 
@@ -233,7 +237,8 @@ const _handleExploreHabitListKeydown = (e: KeyboardEvent) => {
 const _handleCreateCustomHabitClick = () => {
     triggerHaptic('light');
     closeModal(ui.exploreModal);
-    openEditModal(null);
+    // CALLBACK: Se cancelar (back/close), reabre o modal de Explorar.
+    openEditModal(null, undefined, () => openModal(ui.exploreModal));
 };
 
 const _handleAiEvalClick = async () => {
@@ -323,7 +328,8 @@ const _handleConfirmClick = () => {
     state.confirmAction = null;
     state.confirmEditAction = null;
     
-    closeModal(ui.confirmModal, true);
+    // Sem suppressCallbacks: onCancel roda como safety-net para ActionContext.reset()
+    closeModal(ui.confirmModal);
 };
 
 const _handleEditClick = () => {
@@ -339,30 +345,33 @@ const _handleEditClick = () => {
     state.confirmAction = null;
     state.confirmEditAction = null;
     
-    closeModal(ui.confirmModal, true);
+    closeModal(ui.confirmModal);
 };
 
 const _handleFullCalendarPrevClick = () => {
-    state.fullCalendar.month--;
-    if (state.fullCalendar.month < 0) {
-        state.fullCalendar.month = 11;
-        state.fullCalendar.year--;
-    }
+    if (!state.fullCalendar) return;
+    let { month, year } = state.fullCalendar;
+    month--;
+    if (month < 0) { month = 11; year--; }
+    state.fullCalendar = { month, year };
     renderFullCalendar();
+    triggerHaptic('light');
 };
 
 const _handleFullCalendarNextClick = () => {
-    state.fullCalendar.month++;
-    if (state.fullCalendar.month > 11) {
-        state.fullCalendar.month = 0;
-        state.fullCalendar.year++;
-    }
+    if (!state.fullCalendar) return;
+    let { month, year } = state.fullCalendar;
+    month++;
+    if (month > 11) { month = 0; year++; }
+    state.fullCalendar = { month, year };
     renderFullCalendar();
+    triggerHaptic('light');
 };
 
 const _handleFullCalendarGridClick = (e: MouseEvent) => {
     const dayEl = (e.target as HTMLElement).closest<HTMLElement>('.full-calendar-day');
-    if (dayEl && dayEl.dataset.date) {
+    if (dayEl && dayEl.dataset.date && !dayEl.classList.contains('other-month')) {
+        triggerHaptic('selection');
         _navigateToDateFromAlmanac(dayEl.dataset.date);
     }
 };

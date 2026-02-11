@@ -75,6 +75,7 @@ export interface Habit {
     createdOn: string; 
     graduatedOn?: string; 
     deletedOn?: string; // LOGICAL DELETION (Tombstone)
+    deletedName?: string;
     scheduleHistory: HabitSchedule[];
 }
 
@@ -285,7 +286,7 @@ class CacheManager {
     }
 }
 
-export const cacheManager = new CacheManager();
+const cacheManager = new CacheManager();
 
 /**
  * Extrai o estado atual para um formato serializável (JSON-safe para sync).
@@ -346,7 +347,7 @@ export function clearScheduleCache() {
     cacheManager.clearSchedule();
 }
 
-export function invalidateCachesForDateChange(dateISO: string, habitIds: string[]) {
+export function invalidateCachesForDateChange(dateISO: string) {
     cacheManager.invalidateForDate(dateISO);
 }
 

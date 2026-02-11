@@ -51,15 +51,9 @@ function hydrateLogs(appState: AppState) {
             const [key, val] = item as [string, any];
             
             try {
-                if (val && typeof val === 'object' && val.__type === 'bigint') {
-                    const hydrated = safeBigIntFromUnknown(val.val);
-                    if (hydrated !== null) map.set(key, hydrated);
-                    else logger.warn(`[Merge] Invalid bigint value for ${key}`);
-                } else {
-                    const hydrated = safeBigIntFromUnknown(val);
-                    if (hydrated !== null) map.set(key, hydrated);
-                    else logger.warn(`[Merge] Invalid bigint value for ${key}`);
-                }
+                const hydrated = safeBigIntFromUnknown(val);
+                if (hydrated !== null) map.set(key, hydrated);
+                else logger.warn(`[Merge] Invalid bigint value for ${key}`);
             } catch(e) {
                 logger.warn(`[Merge] Failed to hydrate bitmask for ${key}`, e);
             }
@@ -158,6 +152,14 @@ export async function mergeStates(local: AppState, incoming: AppState): Promise<
                 if (!winnerHabit.deletedOn || loserHabit.deletedOn > winnerHabit.deletedOn) {
                     winnerHabit.deletedOn = loserHabit.deletedOn;
                 }
+            }
+
+            if (winnerHabit.deletedOn) {
+                if (!winnerHabit.deletedName && loserHabit.deletedName) {
+                    winnerHabit.deletedName = loserHabit.deletedName;
+                }
+            } else if (winnerHabit.deletedName) {
+                winnerHabit.deletedName = undefined;
             }
 
             // Graduação: data mais antiga vence (primeira vez que o usuário conquistou)

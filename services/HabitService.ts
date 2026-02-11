@@ -39,13 +39,6 @@ export class HabitService {
     }
 
     /**
-     * Valida se um valor BigInt é um log de bitmask válido para um mês.
-     */
-    static isValidLog(val: any): val is bigint {
-        return typeof val === 'bigint';
-    }
-
-    /**
      * Leitura Otimizada com lógica de Lápide (Tombstone).
      * Se o bit de lápide (bit 2 do bloco de 3) for 1, o status é forçado para NULL (0).
      */
@@ -181,23 +174,6 @@ export class HabitService {
     }
 
     /**
-     * Deserialização.
-     */
-    static deserializeLogsFromCloud(serialized: [string, string][]) {
-        if (!Array.isArray(serialized)) return;
-        serialized.forEach(([key, hexVal]) => {
-            try {
-                const hexClean = hexVal.startsWith("0x") ? hexVal : "0x" + hexVal;
-                state.monthlyLogs.set(key, BigInt(hexClean));
-                    } catch (e) {
-                        logger.warn(`[HabitService] Skipping invalid hex log: ${key}`);
-            }
-        });
-        // Como estamos injetando dados externos, invalidamos o cache para garantir consistência.
-        this.resetCache();
-    }
-    
-    /**
      * INTELLIGENT MERGE (CRDT-Lite para Bitmasks).
      */
     static mergeLogs(winnerMap: Map<string, bigint> | undefined, loserMap: Map<string, bigint> | undefined): Map<string, bigint> {
@@ -223,9 +199,12 @@ export class HabitService {
                 if (winnerTomb || loserTomb) {
                     finalBlock = 4n; 
                 } else if (winnerBlock !== 0n && loserBlock !== 0n) {
-                    finalBlock = winnerBlock | loserBlock;
+                    // CRDT: Winner-takes-precedence when both have data.
+                    // OR would create invalid states (e.g., DONE|DEFERRED = DONE_PLUS).
+                    finalBlock = winnerBlock;
                 } else {
-                    finalBlock = winnerBlock | loserBlock;
+                    // One is 0n, the other has data — pick the non-zero one.
+                    finalBlock = winnerBlock || loserBlock;
                 }
 
                 mergedVal |= (finalBlock << shift);

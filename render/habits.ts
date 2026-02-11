@@ -12,7 +12,7 @@
 import { state, Habit, HabitDayData, STREAK_CONSOLIDATED, STREAK_SEMI_CONSOLIDATED, TimeOfDay, getHabitDailyInfoForDate, TIMES_OF_DAY, HabitDailyInfo, HABIT_STATE } from '../state';
 import { calculateHabitStreak, getActiveHabitsForDate, getSmartGoalForHabit, getHabitDisplayInfo, getHabitPropertiesForDate } from '../services/selectors';
 import { ui } from './ui';
-import { t, getTimeOfDayName, formatInteger } from '../i18n';
+import { t, formatInteger } from '../i18n';
 import { UI_ICONS, getTimeOfDayIcon } from './icons';
 import { setTextContent } from './dom';
 import { CSS_CLASSES, DOM_SELECTORS } from './constants';
@@ -163,8 +163,14 @@ export function updateHabitCardElement(card: HTMLElement, habit: Habit, time: Ti
     const schedule = getHabitPropertiesForDate(habit, state.selectedDate);
     if (!schedule) return;
 
-    if (els.cachedIconHtml !== schedule.icon) { els.icon.innerHTML = els.cachedIconHtml = schedule.icon; }
-    els.icon.style.color = schedule.color; els.icon.style.backgroundColor = `${schedule.color}30`;
+    // SECURITY FIX: Only allow SVG icons via innerHTML; escape anything else
+    if (els.cachedIconHtml !== schedule.icon) {
+        const safeIcon = schedule.icon && schedule.icon.trim().startsWith('<svg') ? schedule.icon : (schedule.icon || '');
+        els.icon.innerHTML = els.cachedIconHtml = safeIcon;
+    }
+    els.icon.style.color = schedule.color;
+    // RESTORED [2025-06-15]: Match Explore Modal style (Color + Opacity 30 for background)
+    els.icon.style.backgroundColor = schedule.color + '30';
     
     const isCons = streak >= STREAK_CONSOLIDATED, isSemi = streak >= STREAK_SEMI_CONSOLIDATED && !isCons;
     card.classList.toggle('consolidated', isCons); card.classList.toggle('semi-consolidated', isSemi);
@@ -184,7 +190,7 @@ export function updateHabitCardElement(card: HTMLElement, habit: Habit, time: Ti
     else _renderPendingGoalControls(habit, time, info, els);
 }
 
-export function createHabitCardElement(habit: Habit, time: TimeOfDay, preInfo?: Record<string, HabitDailyInfo>): HTMLElement {
+function createHabitCardElement(habit: Habit, time: TimeOfDay, preInfo?: Record<string, HabitDailyInfo>): HTMLElement {
     const card = getHabitCardTemplate().cloneNode(true) as HTMLElement;
     card.dataset.habitId = habit.id; card.dataset.time = time;
     const key = _getCacheKey(habit.id, time);

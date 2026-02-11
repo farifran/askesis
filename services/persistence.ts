@@ -68,6 +68,9 @@ async function saveSplitState(main: AppState): Promise<void> {
                 serializedLogs[k] = v.toString(16);
             });
             store.put(serializedLogs, STATE_BINARY_KEY);
+        } else {
+            // FIX: Remove stale binary key when logs are empty (e.g., all habits deleted)
+            store.delete(STATE_BINARY_KEY);
         }
         
         tx.oncomplete = () => resolve();
@@ -79,7 +82,11 @@ let syncHandler: ((state: AppState, immediate?: boolean) => void) | null = null;
 export const registerSyncHandler = (h: (s: AppState, immediate?: boolean) => void) => syncHandler = h;
 
 function pruneOrphanedDailyData(habits: readonly Habit[], dailyData: Record<string, Record<string, HabitDailyInfo>>) {
-    if (habits.length === 0) return; 
+    if (habits.length === 0) {
+        // Mitigation: only clear after loadState fully assigns habits.
+        Object.keys(dailyData).forEach(date => delete dailyData[date]);
+        return;
+    }
     const validIds = new Set(habits.map(h => h.id));
     for (const date in dailyData) {
         for (const id in dailyData[date]) {
@@ -95,8 +102,7 @@ async function saveStateInternal(immediate = false, suppressSync = false) {
     if (activeSavePromise) await activeSavePromise;
 
     activeSavePromise = (async () => {
-        // Incrementa o timestamp para indicar mudança LOCAL
-        state.lastModified = Math.max(Date.now(), state.lastModified + 1);
+        // O timestamp já foi incrementado pelo chamador (_notifyChanges ou _notifyPartialUIRefresh)
         const structuredData = getPersistableState();
         try {
             await saveSplitState(structuredData);
@@ -116,7 +122,7 @@ async function saveStateInternal(immediate = false, suppressSync = false) {
     }
 }
 
-export function cancelPendingSave() {
+function cancelPendingSave() {
     if (saveTimeout !== undefined) {
         clearTimeout(saveTimeout);
         saveTimeout = undefined;
@@ -124,17 +130,6 @@ export function cancelPendingSave() {
     if (pendingSaveResolve) {
         pendingSaveResolve();
         pendingSaveResolve = null;
-    }
-}
-
-export async function flushSaveBuffer(): Promise<void> {
-    if (saveTimeout !== undefined) {
-        clearTimeout(saveTimeout);
-        saveTimeout = undefined;
-        const resolve = pendingSaveResolve;
-        pendingSaveResolve = null;
-        await saveStateInternal(true);
-        resolve?.();
     }
 }
 

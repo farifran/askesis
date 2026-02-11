@@ -57,6 +57,7 @@
     touch-action: none !important;
     overflow-y: hidden !important;
     user-select: none !important;
+    overscroll-behavior: none !important; /* Force no bounce */
 }
 
 /* HIDE SCROLLBAR (Chrome, Safari, Edge) */
@@ -269,17 +270,34 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
        Isso permite que o navegador gerencie a física de rolagem por padrão.
        A lógica JS (pointer capture + container lock) irá interceptar a rolagem condicionalmente. */
     touch-action: pan-y;
+
+    /* SYSTEM UI FIX: Desabilita callouts nativos (magnifier/context menu) para garantir long-press limpo */
+    -webkit-touch-callout: none;
     
-    transition: transform 0.1s cubic-bezier(0.25, 1, 0.5, 1);
+    /* UX FIX [2025-06-16]: Previne seleção de texto em Android durante o hold */
+    user-select: none;
+    -webkit-user-select: none;
+    
+    /* TRANSITION FIX: Garante transições suaves para escala */
+    transition: transform 0.2s cubic-bezier(0.2, 0, 0.2, 1);
 }
 
-/* REFACTOR [2025-06-09]: A classe .is-pressing agora serve apenas para feedback visual (escala).
-   REMOVIDO: 'touch-action: pan-x'. Isso travava o início do scroll se o dedo tocasse no cartão.
-   Agora confiamos apenas na Pointer Capture do JS para segurar o evento. */
+/* REFACTOR [2025-06-09]: A classe .is-pressing agora serve apenas para feedback visual.
+   UPDATE: Removido scale para evitar encolhimento indesejado. */
 .habit-card.is-pressing {
-    transform: scale(0.96);
-    /* Desativa transição durante o press para resposta imediata */
-    transition: transform 0.05s ease-out;
+    /* transform: scale(0.98); REMOVIDO */
+    background-color: var(--surface-hover);
+}
+
+/* 
+   VISUAL FUSE (BREATHING):
+   Indicador de Long Press.
+   UPDATE: Substituído scale por opacidade para não alterar tamanho.
+*/
+.habit-card.is-charging {
+    /* transform: scale(0.96); REMOVIDO */
+    opacity: 0.8;
+    transition: opacity 0.5s ease-out;
 }
 
 .habit-group .habit-card:last-child { margin-block-end: 0; }
@@ -368,6 +386,10 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     /* UPDATE [2025-06-09]: pan-y para rolagem nativa */
     touch-action: pan-y;
     /* MEMORY OPTIMIZATION [2025-01-29]: Removed global will-change: transform. Apply it contextually during interactions (swipe/drag) via classes to save VRAM. */
+    
+    /* UX FIX [2025-06-16]: Previne seleção de texto em Android durante o hold */
+    user-select: none;
+    -webkit-user-select: none;
 }
 
 /* FEEDBACK VISUAL: Limite físico atingido */
@@ -415,6 +437,7 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     opacity: 0 !important;
     /* INTERACTION LOCK: Previne rolagem da página enquanto arrasta e evita pointercancel */
     touch-action: none;
+    pointer-events: none !important; /* Allow hit-test through to drop zone */
 }
 .habit-card.is-swiping .habit-content-wrapper {
     transition: none; /* Desativa transição durante o deslize manual */
@@ -472,8 +495,13 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     justify-content: center;
     border-radius: var(--border-radius-small);
     transition: opacity var(--transition-duration-slow);
+    
+    /* Impede seleção de texto ou imagem dentro do ícone */
+    user-select: none;
+    -webkit-user-select: none;
 }
-.habit-icon svg { width: 60%; height: 60%; }
+
+.habit-icon svg { width: 60%; height: 60%; pointer-events: none; }
 
 /* UX [2025-01-18]: Classe de animação para o ícone ao completar o hábito */
 .habit-icon.animate-pop {
@@ -610,13 +638,16 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 }
 
 /* --- COMPONENTES: AÇÕES DE DESLIZE --- */
+/* FIX [2026-02-06]: Cada faixa cobre 50% da largura do cartão, alinhadas ao centro.
+   Isso garante que ao deslizar para um lado, apenas a cor desse lado seja visível,
+   sem vazar a cor da faixa oposta nos cantos ou bordas. */
 .habit-actions-left, .habit-actions-right {
     position: absolute;
     inset-block: 0;
     z-index: var(--z-index-base);
     display: flex;
     align-items: center;
-    width: 200px; /* REVERTED [2025-06-25]: 200px fixed width for controlled swipe */
+    width: 50%;
     
     /* A11Y [2025-01-18]: Esconde do foco e leitura quando não ativos */
     visibility: hidden;
@@ -724,7 +755,8 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     .habit-card.is-swiping,
     .habit-card.is-open-left,
     .habit-card.is-open-right,
-    .habit-card.is-pressing { /* DISABLE ZOOM ON PRESS */
+    .habit-card.is-pressing,
+    .habit-card.is-charging { /* DISABLE ZOOM ON PRESS/CHARGE */
         animation: none !important;
         opacity: 1 !important;
         /* Mantém a escala natural durante a interação para sensação tátil sólida */
@@ -732,9 +764,10 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     }
     
     /* RE-SCALE ON PRESS (Manual Override) */
-    .habit-card.is-pressing {
-        transform: scale(0.96) !important;
-    }
+    /* REMOVIDO: .habit-card.is-pressing { transform: scale(0.98) !important; } */
+    
+    /* RE-SCALE ON CHARGING (Manual Override - The Breathing) */
+    /* REMOVIDO: .habit-card.is-charging { transform: scale(0.96) !important; } */
 
     /* DRAG SPECIAL CASE: O cartão deve ficar invisível (apenas fantasma visível) */
     .habit-card.dragging {
