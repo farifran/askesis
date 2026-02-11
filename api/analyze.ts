@@ -22,8 +22,8 @@ const CORS_HEADERS = {
 
 // ROBUSTNESS: Support both standard naming conventions
 const API_KEY = process.env.API_KEY || process.env.GEMINI_API_KEY;
-// MODEL UPDATE: Ensure using the correct model version requested in guidelines
-const MODEL_NAME = 'gemini-1.5-flash-latest';
+// MODEL UPDATE: Use supported Gemini 3 model.
+const MODEL_NAME = 'gemini-3-flash-preview';
 
 let aiClient: GoogleGenAI | null = null;
 const responseCache = new Map<string, { value: string; ts: number }>();

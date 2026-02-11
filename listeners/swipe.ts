@@ -6,12 +6,12 @@
 
 /**
  * @file listeners/swipe.ts
- * @description Motor de Gestos Híbrido (Long Press + Swipe).
+ * @description Motor de Gestos Isolado (Swipe Only).
  * 
- * [ESTRATÉGIA DE INTERAÇÃO]:
- * Tocar no corpo inicia um Long Press (500ms) para arrastar.
- *    - Usa 'Active Touch Guard' para diferenciar Scroll vs Hold.
- *    - Feedback visual (.is-charging) informa o usuário.
+ * [ISOLATION PRINCIPLE]:
+ * Este módulo gerencia exclusivamente o ciclo de vida do gesto horizontal.
+ * A rolagem vertical agora é nativa (via touch-action: pan-y no CSS), 
+ * então este módulo apenas detecta swipes e cancela se o navegador assumir o scroll.
  */
 
 import { triggerHaptic } from '../utils';
@@ -25,10 +25,9 @@ import {
 } from '../constants';
 
 // CONFIGURAÇÃO FÍSICA
-const DIRECTION_LOCKED_THRESHOLD = 5; 
+const DIRECTION_LOCKED_THRESHOLD = 10;
 const ACTION_THRESHOLD = SWIPE_ACTION_THRESHOLD;
-const LONG_PRESS_DELAY = 500;
-const HOLD_TOLERANCE_PX = 10; // Tolerância de tremor para Long Press
+const LONG_PRESS_DELAY = 350; 
 
 // STATE MACHINE (Módulo Local)
 const SwipeMachine = {
@@ -47,13 +46,12 @@ const SwipeMachine = {
     wasOpenLeft: false,
     wasOpenRight: false,
     
-    // Timers
-    longPressTimer: 0,
-    
     // Progressive Haptics
     lastFeedbackStep: 0,
-    limitVibrationTimer: 0, 
+    limitVibrationTimer: 0, // Timer para vibração contínua no limite
     
+    // Long Press
+    longPressTimer: 0,
     initialEvent: null as PointerEvent | null,
     
     // Cached Layout
@@ -73,49 +71,15 @@ const _stopLimitVibration = () => {
     if (SwipeMachine.limitVibrationTimer) {
         clearInterval(SwipeMachine.limitVibrationTimer);
         SwipeMachine.limitVibrationTimer = 0;
+        // Para a vibração do navegador imediatamente se possível
         if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(0);
-    }
-};
-
-// --- TOUCH GUARD (Para Long Press no Corpo) ---
-// Impede o scroll nativo se o usuário estiver tentando segurar o cartão imóvel
-const _activeTouchGuard = (e: TouchEvent) => {
-    if (SwipeMachine.state !== 'DETECTING') return;
-
-    const touch = e.touches[0];
-    if (!touch) return;
-
-    const dx = touch.clientX - SwipeMachine.startX;
-    const dy = touch.clientY - SwipeMachine.startY;
-    const dist = Math.sqrt(dx*dx + dy*dy);
-
-    // Se estiver dentro da tolerância de "Segurar", bloqueia o scroll
-    if (dist < HOLD_TOLERANCE_PX) {
-        if (e.cancelable) e.preventDefault();
-    } else {
-        // Se moveu muito, cancela o Long Press
-        if (Math.abs(dy) > Math.abs(dx)) {
-            // É scroll vertical -> Cancela Long Press
-            _cancelLongPress();
-        }
-    }
-};
-
-const _cancelLongPress = () => {
-    if (SwipeMachine.longPressTimer) {
-        clearTimeout(SwipeMachine.longPressTimer);
-        SwipeMachine.longPressTimer = 0;
-    }
-    if (SwipeMachine.card) {
-        SwipeMachine.card.classList.remove('is-charging');
-        SwipeMachine.card.classList.remove('is-pressing');
     }
 };
 
 // --- VISUAL ENGINE ---
 
 const _renderFrame = () => {
-    if (!SwipeMachine.content) {
+    if (!SwipeMachine.content || !SwipeMachine.card) {
         SwipeMachine.rafId = 0;
         return;
     }
@@ -124,22 +88,33 @@ const _renderFrame = () => {
     if (SwipeMachine.state === 'SWIPING') {
         let tx = (SwipeMachine.currentX - SwipeMachine.startX) | 0;
         
+        // Ajusta offset se já estava aberto
         if (SwipeMachine.wasOpenLeft) tx += SwipeMachine.actionWidth;
         if (SwipeMachine.wasOpenRight) tx -= SwipeMachine.actionWidth;
 
         const absX = Math.abs(tx);
+        // REVERTED PHYSICS [2025-06-25]: Restore tight limit at actionWidth (60px)
         const actionPoint = SwipeMachine.actionWidth; 
         
         let visualX = tx;
 
+        // HAPTICS & VISUAL LOGIC
         if (absX >= actionPoint) {
+            // LIMIT REACHED: Aplica resistência elástica (Rubber Banding)
+            // Em vez de travar (clamp), permitimos passar um pouco com resistência.
+            
             const excess = absX - actionPoint;
-            const resistanceFactor = 0.25; 
-            const maxVisualOvershoot = 20; 
+            const resistanceFactor = 0.25; // 1px de movimento visual a cada 4px de movimento real
+            const maxVisualOvershoot = 20; // Máximo que pode esticar visualmente (sensação de parede elástica)
+            
+            // Fórmula de amortecimento linear com teto
             const visualOvershoot = Math.min(excess * resistanceFactor, maxVisualOvershoot);
+            
+            // Recalcula a posição visual aplicando o sinal original
             const sign = tx > 0 ? 1 : -1;
             visualX = (actionPoint + visualOvershoot) * sign;
 
+            // Vibração Contínua (Tensão Máxima)
             if (!SwipeMachine.limitVibrationTimer) {
                 triggerHaptic('heavy');
                 SwipeMachine.limitVibrationTimer = window.setInterval(() => {
@@ -147,6 +122,7 @@ const _renderFrame = () => {
                 }, 80); 
             }
         } else {
+            // Zona Normal (Abaixo do limite)
             _stopLimitVibration();
             const HAPTIC_GRAIN = 8; 
             const currentStep = Math.floor(absX / HAPTIC_GRAIN);
@@ -160,6 +136,7 @@ const _renderFrame = () => {
             }
         }
 
+        // Aplica a transformação visual
         if (SwipeMachine.hasTypedOM && SwipeMachine.content.attributeStyleMap) {
             SwipeMachine.content.attributeStyleMap.set('transform', new (window as any).CSSTranslate(CSS.px(visualX), CSS.px(0)));
         } else {
@@ -177,14 +154,15 @@ const _cleanListeners = () => {
     window.removeEventListener('pointerup', _onPointerUp);
     window.removeEventListener('pointercancel', _forceReset);
     window.removeEventListener('blur', _forceReset);
-    window.removeEventListener('touchmove', _activeTouchGuard);
 };
 
 const _forceReset = () => {
+    // 1. Stop Loops & Timers
     if (SwipeMachine.rafId) cancelAnimationFrame(SwipeMachine.rafId);
-    _cancelLongPress();
+    if (SwipeMachine.longPressTimer) clearTimeout(SwipeMachine.longPressTimer);
     _stopLimitVibration();
     
+    // 2. Clean DOM State
     if (SwipeMachine.container) {
         SwipeMachine.container.classList.remove('is-locking-scroll');
     }
@@ -192,13 +170,11 @@ const _forceReset = () => {
     const { card, content, pointerId } = SwipeMachine;
     if (card) {
         card.classList.remove(CSS_CLASSES.IS_SWIPING);
-        card.classList.remove('is-pressing'); 
-        card.classList.remove('is-charging');
+        // Remove Press State (Visual feedback)
+        card.classList.remove('is-pressing');
         
         if (pointerId !== -1) {
-            try { 
-                if (card.hasPointerCapture(pointerId)) card.releasePointerCapture(pointerId); 
-            } catch(e){}
+            try { card.releasePointerCapture(pointerId); } catch(e){}
         }
     }
     if (content) {
@@ -209,8 +185,10 @@ const _forceReset = () => {
         }
     }
     
+    // 3. Global Cleanup
     document.body.classList.remove('is-interaction-active');
     
+    // 4. Reset Memory State
     SwipeMachine.state = 'IDLE';
     SwipeMachine.card = null;
     SwipeMachine.content = null;
@@ -218,6 +196,7 @@ const _forceReset = () => {
     SwipeMachine.pointerId = -1;
     SwipeMachine.rafId = 0;
     
+    // 5. Render Recovery
     if (state.uiDirtyState.habitListStructure && !isDragActive()) {
         requestAnimationFrame(() => renderApp());
     }
@@ -246,58 +225,23 @@ const _finalizeAction = (finalDeltaX: number) => {
 
 // --- GESTURE HANDLERS ---
 
-// BRIDGE TOUCHMOVE BLOCKER [2026-02-06]:
-// No Android Chromium, o navegador decide o gesto (scroll vs manipulação JS) no 'touchstart'.
-// Como touch-action: pan-y estava ativo no touchstart (500ms atrás no long press),
-// o navegador reserva o direito de rolar verticalmente e dispara 'pointercancel'.
-// A ÚNICA forma de cancelar isso mid-gesture é via preventDefault() em touchmove.
-// Este listener "ponte" fica ativo durante a transição swipe→drag para garantir
-// que nenhum touchmove escape sem preventDefault() durante o setup.
-const _bridgeTouchBlock = (e: TouchEvent) => {
-    if (e.cancelable) e.preventDefault();
-};
-
 const _triggerDrag = () => {
     SwipeMachine.longPressTimer = 0;
     _stopLimitVibration();
     
-    if (!SwipeMachine.card || !SwipeMachine.content || !SwipeMachine.initialEvent) return;
-
-    // ANDROID FIX [2026-02-06]: Registrar bloqueador de touchmove ANTES de qualquer coisa.
-    // Isso garante que, mesmo durante o setup do drag, o navegador não consiga iniciar
-    // um scroll nativo vertical que dispararia 'pointercancel'.
-    window.addEventListener('touchmove', _bridgeTouchBlock, { passive: false });
-    
-    // ANDROID FIX [2026-02-06]: Aplicar lock de scroll no container imediatamente.
-    // Mesmo que touch-action via CSS não tenha efeito retroativo no Android,
-    // overflow:hidden impede o container de scrollar e ajuda a evitar pointercancel.
-    if (SwipeMachine.container) {
-        SwipeMachine.container.classList.add('is-locking-scroll');
-    }
-
-    try {
-        SwipeMachine.card.setPointerCapture(SwipeMachine.pointerId);
-    } catch (e) {
-        window.removeEventListener('touchmove', _bridgeTouchBlock);
-        if (SwipeMachine.container) SwipeMachine.container.classList.remove('is-locking-scroll');
-        _forceReset();
-        return;
-    }
+    if (SwipeMachine.state !== 'DETECTING' || !SwipeMachine.card || !SwipeMachine.content || !SwipeMachine.initialEvent) return;
 
     triggerHaptic('medium');
-    
-    // Limpa feedback visual
-    SwipeMachine.card.classList.remove('is-charging');
-    
-    // Inicia a sessão de Drag
     startDragSession(SwipeMachine.card, SwipeMachine.content, SwipeMachine.initialEvent);
     
-    // Remove o bloqueador ponte - o drag.ts agora tem seu próprio listener ativo
-    window.removeEventListener('touchmove', _bridgeTouchBlock);
-    
+    // Cleanup de listeners de Swipe, pois Drag assume controle
     _cleanListeners();
     SwipeMachine.state = 'IDLE';
-    SwipeMachine.card.classList.remove('is-pressing'); 
+    
+    // Clean swipe states
+    if (SwipeMachine.container) SwipeMachine.container.classList.remove('is-locking-scroll');
+    SwipeMachine.card.classList.remove(CSS_CLASSES.IS_SWIPING);
+    SwipeMachine.card.classList.remove('is-pressing');
     
     if (SwipeMachine.hasTypedOM && SwipeMachine.content.attributeStyleMap) {
         SwipeMachine.content.attributeStyleMap.clear();
@@ -317,37 +261,49 @@ const _onPointerMove = (e: PointerEvent) => {
     const x = e.clientX | 0;
     const y = e.clientY | 0;
     const dx = x - SwipeMachine.startX;
-    const dy = y - SwipeMachine.startY;
+    // const dy = y - SwipeMachine.startY;
     const absDx = Math.abs(dx);
-    const absDy = Math.abs(dy);
+    // const absDy = Math.abs(dy);
 
     SwipeMachine.currentX = x;
     SwipeMachine.currentY = y;
 
     // PHASE: DETECTING
     if (SwipeMachine.state === 'DETECTING') {
-        
-        // Se houver movimento significativo...
-        if (absDx > DIRECTION_LOCKED_THRESHOLD || absDy > DIRECTION_LOCKED_THRESHOLD) {
+        // --- ZONA DE PROTEÇÃO DE LONG PRESS ---
+        if (SwipeMachine.longPressTimer !== 0) {
             
-            // ...e for claramente horizontal -> SWIPE
-            if (absDx > absDy) {
-                _cancelLongPress();
-                try {
-                    if (SwipeMachine.card) SwipeMachine.card.setPointerCapture(e.pointerId);
-                } catch(err) {}
-
+            // RELAXED DRAG DETECTION [2025-06-25]:
+            // Removemos a verificação manual de `absDy > THRESHOLD`.
+            // Motivo: Usuários com mãos instáveis moviam o dedo levemente (5-10px) verticalmente enquanto seguravam,
+            // e o código anterior cancelava o Hold instantaneamente.
+            // AGORA: Confiamos no navegador. Se o movimento for um scroll real, o navegador dispara 'pointercancel'.
+            // Enquanto não disparar, mantemos o timer vivo.
+            
+            // Tentamos suprimir o início do scroll do navegador para micro-movimentos
+            if (e.cancelable) {
+                e.preventDefault();
+            }
+            
+            // Se mover horizontalmente significativamente, inicia Swipe
+            if (absDx > DIRECTION_LOCKED_THRESHOLD) {
+                // Horizontal -> Start Swipe
+                if (SwipeMachine.longPressTimer) clearTimeout(SwipeMachine.longPressTimer);
+                
                 SwipeMachine.state = 'SWIPING';
                 document.body.classList.add('is-interaction-active');
                 if (SwipeMachine.card) {
+                    SwipeMachine.card.classList.remove('is-pressing'); // Remove press state
                     SwipeMachine.card.classList.add(CSS_CLASSES.IS_SWIPING);
+                    // Maintain Capture
                 }
-            } 
-            // ...e for vertical -> SCROLL NATIVO (Cancela nossa lógica)
-            else {
-                _cancelLongPress();
-                SwipeMachine.state = 'LOCKED_OUT';
+                return;
             }
+            
+            // Se for movimento vertical ou estático:
+            // Não fazemos NADA. Deixamos o timer correr.
+            // Se for um scroll real, o evento 'pointercancel' será disparado pelo browser e chamará _forceReset.
+            return;
         }
     }
 
@@ -360,7 +316,7 @@ const _onPointerMove = (e: PointerEvent) => {
 };
 
 const _onPointerUp = (e: PointerEvent) => {
-    _cancelLongPress();
+    if (SwipeMachine.longPressTimer) clearTimeout(SwipeMachine.longPressTimer);
     _stopLimitVibration();
 
     if (SwipeMachine.state === 'SWIPING') {
@@ -389,22 +345,37 @@ export function setupSwipeHandler(container: HTMLElement) {
     updateLayoutMetrics();
     SwipeMachine.container = container;
     
-    container.addEventListener('contextmenu', (e) => {
-        if (e.cancelable) {
-            e.preventDefault();
-        }
-    });
-    
     container.addEventListener('pointerdown', (e) => {
+        // Ignora cliques com botão direito ou se já estiver arrastando
         if (e.button !== 0 || isDragActive()) return;
         
+        // Garante reset de estado anterior
         _forceReset();
 
-        const target = e.target as HTMLElement;
-        const cw = target.closest<HTMLElement>(DOM_SELECTORS.HABIT_CONTENT_WRAPPER);
+        const cw = (e.target as HTMLElement).closest<HTMLElement>(DOM_SELECTORS.HABIT_CONTENT_WRAPPER);
         const card = cw?.closest<HTMLElement>(DOM_SELECTORS.HABIT_CARD);
         if (!card || !cw) return;
 
+        // SCROLL LOCK INIT [2025-06-09] (HYBRID):
+        // 1. NÃO aplica overflow:hidden no container imediatamente. Isso matava a rolagem normal.
+        // 2. Aplica classe visual ao cartão.
+        card.classList.add('is-pressing');
+        
+        // 3. Captura o ponteiro. Isso impede que o navegador inicie rolagem nativa Imediatamente,
+        // dando chance ao JS de detectar "Hold" ou "Swipe".
+        // Se o usuário mover verticalmente depois, liberamos a captura no `pointermove`.
+        try {
+            card.setPointerCapture(e.pointerId);
+        } catch (err) {
+            // Falha silenciosa se captura não for permitida
+        }
+
+        const openCards = container.querySelectorAll(`.${CSS_CLASSES.IS_OPEN_LEFT}, .${CSS_CLASSES.IS_OPEN_RIGHT}`);
+        openCards.forEach(c => {
+            if (c !== card) c.classList.remove(CSS_CLASSES.IS_OPEN_LEFT, CSS_CLASSES.IS_OPEN_RIGHT);
+        });
+
+        SwipeMachine.state = 'DETECTING';
         SwipeMachine.card = card;
         SwipeMachine.content = cw;
         SwipeMachine.initialEvent = e;
@@ -413,30 +384,15 @@ export function setupSwipeHandler(container: HTMLElement) {
         SwipeMachine.pointerId = e.pointerId; 
         SwipeMachine.wasOpenLeft = card.classList.contains(CSS_CLASSES.IS_OPEN_LEFT);
         SwipeMachine.wasOpenRight = card.classList.contains(CSS_CLASSES.IS_OPEN_RIGHT);
+        
         SwipeMachine.lastFeedbackStep = 0;
         SwipeMachine.limitVibrationTimer = 0;
 
-        const openCards = container.querySelectorAll(`.${CSS_CLASSES.IS_OPEN_LEFT}, .${CSS_CLASSES.IS_OPEN_RIGHT}`);
-        openCards.forEach(c => {
-            if (c !== card) c.classList.remove(CSS_CLASSES.IS_OPEN_LEFT, CSS_CLASSES.IS_OPEN_RIGHT);
-        });
-
-        // Detecção de Swipe, Scroll ou Long Press
-        SwipeMachine.state = 'DETECTING';
-        
-        // Inicia Timer de Long Press
         SwipeMachine.longPressTimer = window.setTimeout(_triggerDrag, LONG_PRESS_DELAY);
-        
-        // Visual Feedback
-        card.classList.add('is-pressing');
-        card.classList.add('is-charging');
-        
+
         window.addEventListener('pointermove', _onPointerMove, { passive: false });
         window.addEventListener('pointerup', _onPointerUp);
         window.addEventListener('pointercancel', _forceReset);
         window.addEventListener('blur', _forceReset);
-        
-        // Touch Guard para garantir Long Press sem scroll
-        window.addEventListener('touchmove', _activeTouchGuard, { passive: false });
     });
 }

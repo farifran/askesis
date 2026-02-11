@@ -638,16 +638,14 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 }
 
 /* --- COMPONENTES: AÇÕES DE DESLIZE --- */
-/* FIX [2026-02-06]: Cada faixa cobre 50% da largura do cartão, alinhadas ao centro.
-   Isso garante que ao deslizar para um lado, apenas a cor desse lado seja visível,
-   sem vazar a cor da faixa oposta nos cantos ou bordas. */
+/* REVERTED [2025-06-25]: 200px fixed width for controlled swipe physics */
 .habit-actions-left, .habit-actions-right {
     position: absolute;
     inset-block: 0;
     z-index: var(--z-index-base);
     display: flex;
     align-items: center;
-    width: 50%;
+    width: 200px;
     
     /* A11Y [2025-01-18]: Esconde do foco e leitura quando não ativos */
     visibility: hidden;
