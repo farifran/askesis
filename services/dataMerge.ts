@@ -11,7 +11,6 @@
 import { AppState, HabitDailyInfo, Habit, HabitSchedule } from '../state';
 import { logger } from '../utils';
 import { HabitService } from './HabitService';
-import { deduplicateTimeOfDay } from './habitActions';
 
 function isValidBigIntString(value: string): boolean {
     if (!value) return false;
@@ -68,7 +67,7 @@ function hydrateLogs(appState: AppState) {
  * O vencedor (determinado pelo lastModified global) tem prioridade sobre as definições de agendamento.
  * Isso garante que se um usuário alterou um endDate ou meta, a versão mais recente prevaleça.
  */
-export function mergeHabitHistories(winnerHistory: HabitSchedule[], loserHistory: HabitSchedule[]): HabitSchedule[] {
+function mergeHabitHistories(winnerHistory: HabitSchedule[], loserHistory: HabitSchedule[]): HabitSchedule[] {
     const historyMap = new Map<string, HabitSchedule>();
     
     // 1. Carrega o histórico do perdedor como base
@@ -84,16 +83,6 @@ export function mergeHabitHistories(winnerHistory: HabitSchedule[], loserHistory
 /**
  * Mescla registros diários (Notas e Overrides).
  */
-/**
- * Normaliza o nome de um hábito para comparação case-insensitive.
- * Extrai o nome do último entry do scheduleHistory ou usa deletedName se deletado.
- */
-function normalizeHabitName(habit: Habit): string {
-    if (!habit) return '';
-    const lastName = habit.scheduleHistory[habit.scheduleHistory.length - 1]?.name || habit.deletedName || '';
-    return (lastName || '').trim().toLowerCase();
-}
-
 function mergeDayRecord(source: Record<string, HabitDailyInfo>, target: Record<string, HabitDailyInfo>) {
     for (const habitId in source) {
         if (!target[habitId]) {
@@ -182,108 +171,7 @@ export async function mergeStates(local: AppState, incoming: AppState): Promise<
         }
     });
 
-    // --- SECOND PASS: Consolidate by Normalized Name ---
-    // Evita duplicatas quando hábitos com mesmo nome mas IDs diferentes são sincronizados.
-    // Exemplo: usuário criou "Exercício" localmente (id1) e também na nuvem (id2).
-    // Estratégia: o hábito ativo (não-deletado) com nome normalizado único absorve os outros.
-    const nameToHabitMap = new Map<string, Habit>();
-    const habitIdMap = new Map<string, string>(); // Mapeia old ID -> new ID (para remapear dailyData)
-    
-    for (const habit of mergedHabitsMap.values()) {
-        const normalizedName = normalizeHabitName(habit);
-        const isDeleted = !!habit.deletedOn;
-        
-        // Só consolida hábitos não-deletados ou com nome substantivo
-        if (!normalizedName) {
-            nameToHabitMap.set(habit.id, habit);
-            habitIdMap.set(habit.id, habit.id);
-            continue;
-        }
-        
-        const existing = nameToHabitMap.get(normalizedName);
-        if (!existing) {
-            nameToHabitMap.set(normalizedName, habit);
-            habitIdMap.set(habit.id, habit.id);
-        } else {
-            // COLLISION: Merge os dois hábitos
-            const existingWasDeleted = !!existing.deletedOn;
-            const currentIsDeleted = !!habit.deletedOn;
-            
-            // Prioridade: hábito ativo (não-deletado) é o "receptor"
-            let receiver: Habit;
-            let donor: Habit;
-            
-            if (existingWasDeleted && !currentIsDeleted) {
-                // O novo hábito está ativo, o antigo deletado -> novo vira o receiver
-                receiver = habit;
-                donor = existing;
-                nameToHabitMap.set(normalizedName, habit);
-            } else if (!existingWasDeleted && currentIsDeleted) {
-                // O antigo está ativo, o novo deletado -> mantém o antigo
-                receiver = existing;
-                donor = habit;
-            } else {
-                // Ambos ativos ou ambos deletados -> mais recente vence (by createdOn)
-                const existingTime = existing.createdOn;
-                const currentTime = habit.createdOn;
-                if (currentTime > existingTime) {
-                    receiver = habit;
-                    donor = existing;
-                    nameToHabitMap.set(normalizedName, habit);
-                } else {
-                    receiver = existing;
-                    donor = habit;
-                }
-            }
-            
-            // Merge schedule histories
-            receiver.scheduleHistory = mergeHabitHistories(
-                receiver.scheduleHistory,
-                donor.scheduleHistory
-            );
-            
-            // Se receiver foi restaurado mas donor estava ativo, atualiza deletedOn
-            if (receiver.deletedOn && !donor.deletedOn) {
-                receiver.deletedOn = undefined;
-                receiver.deletedName = undefined;
-            }
-            
-            // Graduation: mais antiga vence
-            if (donor.graduatedOn) {
-                if (!receiver.graduatedOn || donor.graduatedOn < receiver.graduatedOn) {
-                    receiver.graduatedOn = donor.graduatedOn;
-                }
-            }
-            
-            // Map donor ID to receiver ID (para redirecionar dailyData)
-            habitIdMap.set(habit.id, receiver.id);
-            habitIdMap.set(existing.id, receiver.id);
-        }
-    }
-    
-    // Reconstrói a lista de hábitos usando nomes como chave (deduplicado)
-    (merged as any).habits = Array.from(nameToHabitMap.values());
-    
-    // --- THIRD PASS: Remap dailyData references ---
-    // Se um hábito foi absorvido (donor -> receiver), suas daily records precisam ser remapeadas
-    for (const date in merged.dailyData) {
-        const dailyRecord = merged.dailyData[date];
-        const remappedRecord: Record<string, HabitDailyInfo> = {};
-        
-        for (const habitId in dailyRecord) {
-            const newHabitId = habitIdMap.get(habitId) || habitId;
-            if (!remappedRecord[newHabitId]) {
-                remappedRecord[newHabitId] = dailyRecord[habitId];
-            } else {
-                // Se já existe entrada para o novo ID, merge as daily infos
-                mergeDayRecord(
-                    { [habitId]: dailyRecord[habitId] },
-                    { [newHabitId]: remappedRecord[newHabitId] }
-                );
-            }
-        }
-        (merged.dailyData as any)[date] = remappedRecord;
-    }
+    (merged as any).habits = Array.from(mergedHabitsMap.values());
 
     for (const date in loser.dailyData) {
         if (!merged.dailyData[date]) (merged.dailyData as any)[date] = loser.dailyData[date];
@@ -292,20 +180,6 @@ export async function mergeStates(local: AppState, incoming: AppState): Promise<
 
     // BITMASK MERGE: LWW granular por bloco de 3 bits
     merged.monthlyLogs = HabitService.mergeLogs(winner.monthlyLogs, loser.monthlyLogs);
-    
-    // --- SANITIZATION: Ensure no duplicate times in scheduleHistory ---
-    // Garante que o merge não introduziu duplicatas de TimeOfDay
-    for (const habit of merged.habits) {
-        for (const schedule of habit.scheduleHistory) {
-            if (schedule.times && schedule.times.length > 0) {
-                const deduped = deduplicateTimeOfDay(schedule.times);
-                if (deduped.length !== schedule.times.length) {
-                    logger.warn(`[Merge] Deduplicated times for habit ${habit.id}: ${schedule.times.length} -> ${deduped.length}`);
-                    (schedule as any).times = deduped;
-                }
-            }
-        }
-    }
     
     // O timestamp final deve ser incrementado para garantir propagação
     merged.lastModified = Math.max(localTs, incomingTs, Date.now()) + 1;
