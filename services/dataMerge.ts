@@ -15,6 +15,7 @@
 import { AppState, HabitDailyInfo, Habit, HabitSchedule } from '../state';
 import { logger } from '../utils';
 import { HabitService } from './HabitService';
+import { deduplicateTimeOfDay } from './habitActions';
 
 function isValidBigIntString(value: string): boolean {
     if (!value) return false;
@@ -199,6 +200,19 @@ export async function mergeStates(local: AppState, incoming: AppState): Promise<
     });
 
     (merged as any).habits = Array.from(mergedHabitsMap.values());
+
+    // Sanitize merged times to ensure no duplicate TimeOfDay entries.
+    for (const habit of merged.habits) {
+        for (let i = 0; i < habit.scheduleHistory.length; i++) {
+            const schedule = habit.scheduleHistory[i];
+            const originalLength = schedule.times.length;
+            const deduped = deduplicateTimeOfDay(schedule.times);
+            if (deduped.length < originalLength) {
+                logger.warn(`[Merge] Habit "${schedule.name}": removed ${originalLength - deduped.length} duplicate times`);
+                (habit.scheduleHistory[i] as any).times = deduped;
+            }
+        }
+    }
 
     // MERGE DAILY DATA COM REMAP
     for (const date in loser.dailyData) {

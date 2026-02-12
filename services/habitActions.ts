@@ -90,6 +90,19 @@ function _notifyChanges(fullRebuild = false, immediate = false) {
     });
 }
 
+export function deduplicateTimeOfDay(times: readonly TimeOfDay[]): readonly TimeOfDay[] {
+    if (!times || times.length === 0) return times;
+    const seen = new Set<TimeOfDay>();
+    const result: TimeOfDay[] = [];
+    for (const time of times) {
+        if (!seen.has(time)) {
+            seen.add(time);
+            result.push(time);
+        }
+    }
+    return result;
+}
+
 function _notifyPartialUIRefresh(date: string) {
     // [OPTIMIZATION 2025-06-07] Surgical Update:
     // Em vez de marcar o calendário inteiro como sujo (uiDirtyState.calendarVisuals = true),
@@ -292,7 +305,7 @@ export function saveHabitFromModal() {
     if (!nameToUse) return;
     const cleanFormData = {
         ...formData,
-        times: [...formData.times],
+        times: deduplicateTimeOfDay(formData.times),
         goal: { ...formData.goal },
         frequency: formData.frequency.type === 'specific_days_of_week' ? { ...formData.frequency, days: [...formData.frequency.days] } : { ...formData.frequency }
     };

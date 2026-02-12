@@ -11,6 +11,7 @@
 
 import { logger, getTodayUTCIso } from '../utils';
 import { AppState } from '../state';
+import { deduplicateTimeOfDay } from './habitActions';
 
 /**
  * Migra os bitmasks mensais de 6 bits/dia (v8) para 9 bits/dia (v9).
@@ -122,6 +123,21 @@ export function migrateState(loadedState: any, targetVersion: number): AppState 
             msg: log.msg,
             type: log.type
         }));
+    }
+
+    // Sanitize scheduleHistory times to avoid duplicate TimeOfDay entries.
+    if (state.habits && state.habits.length > 0) {
+        for (const habit of state.habits) {
+            for (let i = 0; i < habit.scheduleHistory.length; i++) {
+                const schedule = habit.scheduleHistory[i];
+                const originalLength = schedule.times.length;
+                const deduped = deduplicateTimeOfDay(schedule.times);
+                if (deduped.length < originalLength) {
+                    logger.warn(`[Migration] Habit "${schedule.name}": removed ${originalLength - deduped.length} duplicate times`);
+                    (habit.scheduleHistory[i] as any).times = deduped;
+                }
+            }
+        }
     }
 
     // Force target version
