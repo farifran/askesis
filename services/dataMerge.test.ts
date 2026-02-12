@@ -458,3 +458,222 @@ describe('🔥 NUCLEAR QA: Distributed Chaos (Split-Brain Scenarios)', () => {
         logger.info('✅ Roundtrip Serialization: Sem perda de dados');
     });
 });
+
+// ================================================================================
+// 🎯 DEDUPLICATION BY NAME (Prevent Duplicate Habits on Sync)
+// ================================================================================
+describe('🔗 Deduplication by Name (Habit Name Collision Prevention)', () => {
+    it('deve consolidar hábitos com mesmo nome normalizado (diferentes IDs)', async () => {
+        const local = createMockState(1000);
+        const incoming = createMockState(2000);
+
+        // Local tem "Exercício" com ID 1
+        local.habits.push({
+            id: 'habit-1',
+            createdOn: '2024-01-01',
+            scheduleHistory: [
+                {
+                    startDate: '2024-01-01',
+                    name: 'Exercício',
+                    times: ['Morning'] as any,
+                    frequency: { type: 'daily' as const },
+                    scheduleAnchor: '2024-01-01',
+                    icon: '🏃',
+                    color: '#FF0000',
+                    goal: { type: 'check' as const }
+                }
+            ]
+        } as any);
+
+        // Incoming tem "EXERCÍCIO" com ID 2 (different ID, same name after normalization)
+        incoming.habits.push({
+            id: 'habit-2',
+            createdOn: '2024-01-02',
+            scheduleHistory: [
+                {
+                    startDate: '2024-01-02',
+                    name: 'EXERCÍCIO',
+                    times: ['Afternoon'] as any,
+                    frequency: { type: 'daily' as const },
+                    scheduleAnchor: '2024-01-02',
+                    icon: '💪',
+                    color: '#0000FF',
+                    goal: { type: 'check' as const }
+                }
+            ]
+        } as any);
+
+        const merged = await mergeStates(local, incoming);
+
+        // Após merge, deve haver apenas 1 hábito (consolidado)
+        expect(merged.habits.length).toBe(1);
+        const habit = merged.habits[0];
+        
+        // O ID deve ser um dos dois originais
+        expect(['habit-1', 'habit-2']).toContain(habit.id);
+        
+        // Schedule history deve ter ambas as entradas
+        expect(habit.scheduleHistory.length).toBeGreaterThanOrEqual(1);
+        
+        logger.info(`✅ Dedup by Name: ${merged.habits.length} hábito consolidado`);
+    });
+
+    it('deve preferir hábito ativo sobre deletado com mesmo nome', async () => {
+        const local = createMockState(1000);
+        const incoming = createMockState(2000);
+
+        // Local tem "Meditação" DELETADO
+        local.habits.push({
+            id: 'habit-1',
+            createdOn: '2024-01-01',
+            deletedOn: '2024-01-05',
+            deletedName: 'Meditação',
+            scheduleHistory: []
+        } as any);
+
+        // Incoming tem "Meditação" ATIVO
+        incoming.habits.push({
+            id: 'habit-2',
+            createdOn: '2024-01-02',
+            scheduleHistory: [
+                {
+                    startDate: '2024-01-02',
+                    name: 'Meditação',
+                    times: ['Morning'] as any,
+                    frequency: { type: 'daily' as const },
+                    scheduleAnchor: '2024-01-02',
+                    icon: '🧘',
+                    color: '#00FF00',
+                    goal: { type: 'check' as const }
+                }
+            ]
+        } as any);
+
+        const merged = await mergeStates(local, incoming);
+
+        // Deve haver 1 hábito consolidado
+        expect(merged.habits.length).toBe(1);
+        
+        const habit = merged.habits[0];
+        
+        // Deve estar ATIVO (deletedOn não definido)
+        expect(habit.deletedOn).toBeUndefined();
+        
+        // ID deve ser do hábito ativo
+        expect(habit.id).toBe('habit-2');
+        
+        logger.info('✅ Dedup by Name: Hábito ativo preservado como receptor');
+    });
+
+    it('deve remapear dailyData quando hábitos são consolidados', async () => {
+        const local = createMockState(1000);
+        const incoming = createMockState(2000);
+
+        // Local tem "Leitura" (ID 1) com dados no dia 01
+        local.habits.push({
+            id: 'habit-1',
+            createdOn: '2024-01-01',
+            scheduleHistory: [
+                {
+                    startDate: '2024-01-01',
+                    name: 'Leitura',
+                    times: ['Evening'] as any,
+                    frequency: { type: 'daily' as const },
+                    scheduleAnchor: '2024-01-01',
+                    icon: '📖',
+                    color: '#FF00FF',
+                    goal: { type: 'check' as const }
+                }
+            ]
+        } as any);
+
+        local.dailyData['2024-01-01'] = {
+            'habit-1': { instances: { Evening: { note: 'Read 30 pages' } } }
+        } as any;
+
+        // Incoming tem "LEITURA" (ID 2) com dados no dia 02
+        incoming.habits.push({
+            id: 'habit-2',
+            createdOn: '2024-01-02',
+            scheduleHistory: [
+                {
+                    startDate: '2024-01-02',
+                    name: 'LEITURA',
+                    times: ['Evening'] as any,
+                    frequency: { type: 'daily' as const },
+                    scheduleAnchor: '2024-01-02',
+                    icon: '📚',
+                    color: '#00FFFF',
+                    goal: { type: 'check' as const }
+                }
+            ]
+        } as any);
+
+        incoming.dailyData['2024-01-02'] = {
+            'habit-2': { instances: { Evening: { note: 'Read 40 pages' } } }
+        } as any;
+
+        const merged = await mergeStates(local, incoming);
+
+        // Deve haver apenas 1 hábito
+        expect(merged.habits.length).toBe(1);
+        const finalHabitId = merged.habits[0].id;
+
+        // Daily data deve estar remapeada para o novo ID
+        expect(merged.dailyData['2024-01-02']).toBeDefined();
+        expect(merged.dailyData['2024-01-02'][finalHabitId]).toBeDefined();
+        expect(merged.dailyData['2024-01-02'][finalHabitId].instances.Evening?.note).toBeTruthy();
+
+        logger.info(`✅ Dedup by Name: DailyData remapeada para ID consolidado (${finalHabitId})`);
+    });
+
+    it('deve NOT consolidar hábitos com nomes diferentes', async () => {
+        const local = createMockState(1000);
+        const incoming = createMockState(2000);
+
+        local.habits.push({
+            id: 'habit-1',
+            createdOn: '2024-01-01',
+            scheduleHistory: [
+                {
+                    startDate: '2024-01-01',
+                    name: 'Correr',
+                    times: ['Morning'] as any,
+                    frequency: { type: 'daily' as const },
+                    scheduleAnchor: '2024-01-01',
+                    icon: '🏃',
+                    color: '#FF0000',
+                    goal: { type: 'check' as const }
+                }
+            ]
+        } as any);
+
+        incoming.habits.push({
+            id: 'habit-2',
+            createdOn: '2024-01-02',
+            scheduleHistory: [
+                {
+                    startDate: '2024-01-02',
+                    name: 'Nadar',
+                    times: ['Morning'] as any,
+                    frequency: { type: 'daily' as const },
+                    scheduleAnchor: '2024-01-02',
+                    icon: '🏊',
+                    color: '#0000FF',
+                    goal: { type: 'check' as const }
+                }
+            ]
+        } as any);
+
+        const merged = await mergeStates(local, incoming);
+
+        // Deve haver 2 hábitos (não consolidados)
+        expect(merged.habits.length).toBe(2);
+        
+        const names = merged.habits.map(h => h.scheduleHistory[h.scheduleHistory.length - 1].name);
+        expect(names).toContain('Correr');
+        expect(names).toContain('Nadar');
+
+        logger.info('✅ Dedup by Name: Hábitos com nomes diferentes mantidos separados');
+    });
+});

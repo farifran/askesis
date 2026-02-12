@@ -167,6 +167,82 @@ flowchart LR
 Entrada -> Validacao -> Criptografia (AES-GCM) -> IndexedDB -> Sync -> Merge -> UI
 ```
 
+### Regras de Unicidade de Hábitos
+
+O sistema implementa **três camadas de proteção contra duplicidade de hábitos**:
+
+#### 1. **Por ID (Merge de Sync)**
+- Quando dois estados são sincronizados, hábitos com o **mesmo `id`** são consolidados em um único registro.
+- O histórico (`scheduleHistory`) é mesclado usando **Last-Write-Wins (LWW)** por entrada.
+- Implementado em `services/dataMerge.ts` com lógica de `mergeStates()`.
+
+#### 2. **Por Nome Normalizado (Deduplicação Automática)**
+- Durante o sync, hábitos com o **mesmo nome normalizado** (case-insensitive, trim) são detectados e consolidados.
+- **Prioridade de recetor:**
+  1. Hábito ativo (não-deletado, não-graduado)
+  2. Hábito deletado mais recentemente (mais próximo de agora)
+  3. Hábito mais antigo
+- **Remapeamento de dados:** Logs diários (`dailyData`) são automaticamente remapeados para o novo ID consolidado.
+- **Exemplo:** Si locales tem "Exercício" (id: `habit-1`) e cloud tem "EXERCÍCIO" (id: `habit-2`), após sync haverá apenas uma entrada com histórico mesclado.
+
+#### 3. **Na Edição (Validação de Nome Único)**
+- Ao editar um hábito, o sistema valida se o novo nome já existe em outro hábito ativo.
+- Se houver colisão:
+  - O usuário vê uma confirmação modal: *"Um hábito com o nome '{name}' já existe. Deseja mesclar?"*
+  - Se confirmar: o hábito atual é marcado como deletado e seus dados históricos são mesclados no existente.
+  - Se cancelar: a edição é abortada.
+- Implementado em `services/habitActions.ts` na função `saveHabitFromModal()`.
+
+#### 4. **Na Criação (Ressurreição)**
+- Ao criar um novo hábito, o sistema procura por um existente com o **mesmo nome normalizado**.
+- Se encontrar, **reaproveita** aquele registro (resurrection) em vez de criar um novo.
+- Prioridade:
+  1. Hábito ativo que cobre a data alvo
+  2. Hábito deletado (mais recente)
+  3. Outro com mesmo nome
+- Isso evita criar 2+ registros diferentes para o "mesmo hábito logicamente".
+
+#### Fluxo Visual
+
+```mermaid
+graph TD
+    A["Usuario tenta criar Habito 'Exercicio'"] 
+    B{Procura por exte com<br/>mesmo nome normalizado?}
+    C["Encontrou hábito ativo"]
+    D["Encontrou hábito deletado"]
+    E["Nenhum encontrado"]
+    
+    B -->|Sim| C
+    B -->|Sim, mas deletado| D
+    B -->|Não| E
+    
+    C --> C1["Restaura e atualiza<br/>se necessário"]
+    D --> D1["Ressuscita e inicia<br/>novo scheduleHistory"]
+    E --> E1["Cria novo registro<br/>com UUID único"]
+    
+    C1 --> F["1 registro ativo"]
+    D1 --> F
+    E1 --> F
+    
+    style F fill:#90EE90
+```
+
+#### Testes de Cobertura
+
+- **`services/dataMerge.test.ts`**: 4 testes específicos para dedup por nome no sync.
+- **`services/habitActions.test.ts`**: Testes de "resurrection" e validação de nome único.
+- **`services/stateUIConsistency.test.ts`**: Testes de comportamento com mesmo nome em cenários reais.
+
+#### Casos Limites Tratados
+
+| Cenário | Comportamento |
+|---|---|
+| Dois hábitos deletados com mesmo nome | O mais recentemente deletado é restaurado como receptor |
+| Hábito ativo com mesmo nome em diferentes horários | NÃO são consolidados (periodos diferentes = hábitos diferentes) |
+| Nome vazio ou whitespace | Ignorado pela normalização; não gera duplicidade |
+| Renomear hábito para nome que já existe | Modal de confirmação + merge automático |
+| Sincronizar 3+ dispositivos com variações de nome ("Exercicio"/"EXERCÍCIO"/"exercício") | Todos consolidam em 1 registro na nuvem |
+
 ### Plataformas e recursos
 
 | Plataforma | Instalavel | Offline | Sync | Notificacoes |

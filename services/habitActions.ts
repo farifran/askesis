@@ -18,6 +18,7 @@ import {
     pruneHabitAppearanceCache, pruneStreaksCache, HabitDailyInfo
 } from '../state';
 import { saveState, loadState, clearLocalPersistence } from './persistence';
+import { mergeHabitHistories } from './dataMerge';
 import { PREDEFINED_HABITS } from '../data/predefinedHabits';
 import { 
     getEffectiveScheduleForHabitOnDate, clearSelectorInternalCaches,
@@ -328,21 +329,35 @@ export function saveHabitFromModal() {
     }
     
     if (isNew) {
-        // RESURRECTION LOGIC:
-        // Reuse an existing habit with the same name to avoid duplicates.
+        // --- RESURRECTION LOGIC: (Prevent Duplicate Habit Names) ---
+        // When creating a new habit, check if one with the same NAME already exists.
+        // If found, reuse its record (resurrection) instead of creating a duplicate.
+        // Priority: Active > Recently-Deleted > Older-Deleted > Others
+        
+        const normalizedNameToUse = nameToUse.trim().toLowerCase();
         const candidates = state.habits.filter(h => {
-               const info = getHabitDisplayInfo(h, targetDate);
-               const lastName = h.scheduleHistory[h.scheduleHistory.length - 1]?.name || h.deletedName || info.name;
-             return (lastName || '').trim().toLowerCase() === nameToUse.trim().toLowerCase();
+            const info = getHabitDisplayInfo(h, targetDate);
+            const lastName = h.scheduleHistory[h.scheduleHistory.length - 1]?.name || h.deletedName || info.name;
+            return (lastName || '').trim().toLowerCase() === normalizedNameToUse;
         });
 
         // Pick priority:
-        // 1. Active (not deleted, not graduated, covers targetDate or has no endDate)
+        // 1. Active (not deleted, not graduated, and covers targetDate)
         let existingHabit = candidates.find(h =>
             !h.deletedOn && !h.graduatedOn && 
-            (!h.scheduleHistory[h.scheduleHistory.length-1].endDate || h.scheduleHistory[h.scheduleHistory.length-1].endDate! > targetDate)
+            (!h.scheduleHistory[h.scheduleHistory.length-1]?.endDate || h.scheduleHistory[h.scheduleHistory.length-1].endDate! > targetDate)
         );
         
+        // 2. If no active habit, prefer recently-deleted habits (higher deletedOn date = more recent)
+        if (!existingHabit) {
+            const deletedCandidates = candidates.filter(h => h.deletedOn);
+            if (deletedCandidates.length > 0) {
+                deletedCandidates.sort((a, b) => (b.deletedOn || '').localeCompare(a.deletedOn || ''));
+                existingHabit = deletedCandidates[0];
+            }
+        }
+        
+        // 3. Fallback: use most recent by createdOn
         if (!existingHabit && candidates.length > 0) {
             const sorted = [...candidates].sort((a, b) => {
                 const aLast = a.scheduleHistory[a.scheduleHistory.length - 1];
@@ -355,14 +370,17 @@ export function saveHabitFromModal() {
         }
 
         if (existingHabit) {
-            // Restore Logical state
+            // Restore the habit if it was deleted, graduated or ended
             const wasDeleted = !!existingHabit.deletedOn;
+            const wasGraduated = !!existingHabit.graduatedOn;
+            
             if (existingHabit.deletedOn) existingHabit.deletedOn = undefined;
             if (existingHabit.graduatedOn) existingHabit.graduatedOn = undefined;
             if (existingHabit.deletedName) existingHabit.deletedName = undefined;
             if (targetDate < existingHabit.createdOn) existingHabit.createdOn = targetDate;
 
-            if (wasDeleted) {
+            // If it was deleted or graduated, clear its schedule history and restart fresh
+            if (wasDeleted || wasGraduated) {
                 existingHabit.scheduleHistory = [];
             }
 
@@ -417,6 +435,56 @@ export function saveHabitFromModal() {
     } else {
         const h = state.habits.find(x => x.id === habitId);
         if (!h) return;
+        
+        // VALIDATION: Check for name collision with other active habits
+        const newNameNormalized = (cleanFormData.name || '').trim().toLowerCase();
+        const oldNameNormalized = (h.scheduleHistory[h.scheduleHistory.length - 1]?.name || '').trim().toLowerCase();
+        
+        // Se o nome foi alterado, verificar duplicidade com outro hábito
+        if (newNameNormalized && newNameNormalized !== oldNameNormalized) {
+            const collision = state.habits.find(other => {
+                if (other.id === h.id || other.deletedOn) return false;
+                const otherNameNormalized = (other.scheduleHistory[other.scheduleHistory.length - 1]?.name || '').trim().toLowerCase();
+                return otherNameNormalized === newNameNormalized;
+            });
+            
+            if (collision) {
+                // COLLISION DETECTED: Show confirmation to merge or cancel
+                showConfirmationModal(
+                    t('habitNameCollisionWarning', { name: cleanFormData.name }),
+                    () => {
+                        // Merge: transferir o histórico deste hábito para o existente e deletar este
+                        const otherHabit = state.habits.find(other => {
+                            if (other.id === h.id || other.deletedOn) return false;
+                            const otherNameNormalized = (other.scheduleHistory[other.scheduleHistory.length - 1]?.name || '').trim().toLowerCase();
+                            return otherNameNormalized === newNameNormalized;
+                        });
+                        
+                        if (otherHabit) {
+                            // Merge this habit into the existing one
+                            otherHabit.scheduleHistory = mergeHabitHistories(
+                                otherHabit.scheduleHistory,
+                                h.scheduleHistory
+                            );
+                            // Mark this habit for deletion
+                            h.deletedName = (h.scheduleHistory[h.scheduleHistory.length - 1]?.name || '');
+                            h.deletedOn = h.createdOn;
+                            h.scheduleHistory = [];
+                            HabitService.pruneLogsForHabit(h.id);
+                            _notifyChanges(true, true);
+                        }
+                    },
+                    {
+                        title: t('habitNameCollisionTitle'),
+                        confirmText: t('mergeBtnText'),
+                        onCancel: () => closeModal(ui.editHabitModal, true),
+                        confirmButtonStyle: 'danger'
+                    }
+                );
+                return;
+            }
+        }
+        
         ensureHabitDailyInfo(targetDate, h.id).dailySchedule = undefined;
         if (targetDate < h.createdOn) h.createdOn = targetDate;
         _requestFutureScheduleChange(h.id, targetDate, (s) => ({ ...s, icon: cleanFormData.icon, color: cleanFormData.color, goal: cleanFormData.goal, philosophy: cleanFormData.philosophy ?? s.philosophy, name: cleanFormData.name, nameKey: cleanFormData.nameKey, subtitleKey: cleanFormData.subtitleKey, times: cleanFormData.times as readonly TimeOfDay[], frequency: cleanFormData.frequency }), false);
