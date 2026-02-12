@@ -103,7 +103,7 @@ function mergeDayRecord(source: Record<string, HabitDailyInfo>, target: Record<s
             const tgtInst = targetInstances[time as keyof typeof targetInstances];
             if (!srcInst) continue;
             if (!tgtInst) {
-                targetInstances[time as any] = srcInst;
+                targetInstances[time as keyof typeof targetInstances] = srcInst;
             } else {
                 if ((srcInst.note?.length || 0) > (tgtInst.note?.length || 0)) {
                     tgtInst.note = srcInst.note;
