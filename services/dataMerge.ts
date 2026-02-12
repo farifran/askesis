@@ -99,8 +99,8 @@ function mergeDayRecord(source: Record<string, HabitDailyInfo>, target: Record<s
         const targetInstances = target[habitId].instances || {};
 
         for (const time in sourceInstances) {
-            const srcInst = sourceInstances[time as any];
-            const tgtInst = targetInstances[time as any];
+            const srcInst = sourceInstances[time as keyof typeof sourceInstances];
+            const tgtInst = targetInstances[time as keyof typeof targetInstances];
             if (!srcInst) continue;
             if (!tgtInst) {
                 targetInstances[time as any] = srcInst;
