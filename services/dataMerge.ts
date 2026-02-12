@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -70,20 +69,33 @@ function mergeHabitHistories(winnerHistory: HabitSchedule[], loserHistory: Habit
     return Array.from(historyMap.values()).sort((a, b) => a.startDate.localeCompare(b.startDate));
 }
 
+type HabitInstanceMap = NonNullable<HabitDailyInfo['instances']>;
+type HabitInstanceKey = keyof HabitInstanceMap;
+
+function isHabitInstanceKey(value: string): value is HabitInstanceKey {
+    return value === 'Morning' || value === 'Afternoon' || value === 'Evening';
+}
+
 function mergeDayRecord(source: Record<string, HabitDailyInfo>, target: Record<string, HabitDailyInfo>) {
     for (const habitId in source) {
         if (!target[habitId]) {
             target[habitId] = source[habitId];
             continue;
         }
-        const sourceInstances = source[habitId].instances || {};
-        const targetInstances = target[habitId].instances || {};
-        for (const time in sourceInstances) {
-            const srcInst = sourceInstances[time as any];
-            const tgtInst = targetInstances[time as any];
+
+        const sourceInstances: HabitInstanceMap = source[habitId].instances ?? {};
+        const targetInstances: HabitInstanceMap = target[habitId].instances ?? {};
+
+        for (const time of Object.keys(sourceInstances)) {
+            if (!isHabitInstanceKey(time)) continue;
+
+            const srcInst = sourceInstances[time];
+            const tgtInst = targetInstances[time];
+
             if (!srcInst) continue;
+
             if (!tgtInst) {
-                targetInstances[time as any] = srcInst;
+                targetInstances[time] = srcInst;
             } else {
                 if ((srcInst.note?.length || 0) > (tgtInst.note?.length || 0)) {
                     tgtInst.note = srcInst.note;
@@ -93,7 +105,12 @@ function mergeDayRecord(source: Record<string, HabitDailyInfo>, target: Record<s
                 }
             }
         }
-        if (source[habitId].dailySchedule) target[habitId].dailySchedule = source[habitId].dailySchedule;
+
+        target[habitId].instances = targetInstances;
+
+        if (source[habitId].dailySchedule) {
+            target[habitId].dailySchedule = source[habitId].dailySchedule;
+        }
     }
 }
 
