@@ -243,6 +243,26 @@ graph TD
 | Renomear hábito para nome que já existe | Modal de confirmação + merge automático |
 | Sincronizar 3+ dispositivos com variações de nome ("Exercicio"/"EXERCÍCIO"/"exercício") | Todos consolidam em 1 registro na nuvem |
 
+#### 5. **Por TimeOfDay (Unicidade de Horário)**
+- O sistema garante que **nenhum hábito aparece 2x ou mais no mesmo horário (Morning/Afternoon/Evening)** em um mesmo dia.
+- Deduplicação implementada em **3 camadas defensivas**:
+  1. **Na Submissão do Formulário:** `habitActions.ts#saveHabitFromModal()` deduplica `formData.times` antes de salvar.
+  2. **Na Migração/Carregamento:** `migration.ts` limpa qualquer dado corrompido durante hidratação de IndexedDB.
+  3. **No Merge de Sync:** `dataMerge.ts` deduplica `scheduleHistory[].times` após consolidação de dois estados.
+- **Função Utilitária:** `deduplicateTimeOfDay()` exportada em habitActions.ts, reutilizada nos 3 pontos.
+- **Implementação:** Set-based deduplication com `O(n)` complexidade, preserva ordem de ingestão.
+- **Exemplos:**
+  - Usuário seleciona ["Morning", "Afternoon", "Morning"] no modal → Salvo como ["Morning", "Afternoon"]
+  - Dados corrompidos em storage com times duplicados → Limpos na proxima abertura do app
+  - Merge de 2 dispositivos com diferentes ordens → Resultado deduplicated mantém todos os tempos únicos
+
+| Cenário | Comportamento |
+|---|---|
+| Usuário seleciona mesmo TimeOfDay 2x na UI | Sistema deduplicará automaticamente na submissão |
+| Dados corrompidos em IndexedDB com duplicatas de times | Migração sanitiza ao carregar o estado |
+| Sync merge combina times de duas versões | DataMerge deduplica após LWW (Last-Write-Wins) |
+| Drag-drop tenta mover hábito para TimeOfDay já ocupado | Operação rejeitada (validação em listeners/drag.ts) |
+
 ### Plataformas e recursos
 
 | Plataforma | Instalavel | Offline | Sync | Notificacoes |

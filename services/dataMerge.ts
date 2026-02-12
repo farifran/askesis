@@ -11,6 +11,7 @@
 import { AppState, HabitDailyInfo, Habit, HabitSchedule } from '../state';
 import { logger } from '../utils';
 import { HabitService } from './HabitService';
+import { deduplicateTimeOfDay } from './habitActions';
 
 function isValidBigIntString(value: string): boolean {
     if (!value) return false;
@@ -291,6 +292,20 @@ export async function mergeStates(local: AppState, incoming: AppState): Promise<
 
     // BITMASK MERGE: LWW granular por bloco de 3 bits
     merged.monthlyLogs = HabitService.mergeLogs(winner.monthlyLogs, loser.monthlyLogs);
+    
+    // --- SANITIZATION: Ensure no duplicate times in scheduleHistory ---
+    // Garante que o merge não introduziu duplicatas de TimeOfDay
+    for (const habit of merged.habits) {
+        for (const schedule of habit.scheduleHistory) {
+            if (schedule.times && schedule.times.length > 0) {
+                const deduped = deduplicateTimeOfDay(schedule.times);
+                if (deduped.length !== schedule.times.length) {
+                    logger.warn(`[Merge] Deduplicated times for habit ${habit.id}: ${schedule.times.length} -> ${deduped.length}`);
+                    (schedule as any).times = deduped;
+                }
+            }
+        }
+    }
     
     // O timestamp final deve ser incrementado para garantir propagação
     merged.lastModified = Math.max(localTs, incomingTs, Date.now()) + 1;

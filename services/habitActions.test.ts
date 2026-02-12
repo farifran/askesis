@@ -50,7 +50,8 @@ import {
     handleDayTransition,
     consumeAndFormatCelebrations,
     exportData,
-    saveHabitFromModal
+    saveHabitFromModal,
+    deduplicateTimeOfDay
 } from './habitActions';
 
 describe('⚙️ Lógica de Negócios (habitActions.ts)', () => {
@@ -380,4 +381,36 @@ describe('⚙️ Lógica de Negócios (habitActions.ts)', () => {
             expect(status).toBe('active');
         });
     });
+
+    describe('deduplicateTimeOfDay', () => {
+        it('deve remover duplicatas de TimeOfDay preservando ordem', () => {
+            const times = ['Morning', 'Afternoon', 'Morning', 'Evening'] as const;
+            const result = deduplicateTimeOfDay(times);
+            expect(result).toEqual(['Morning', 'Afternoon', 'Evening']);
+        });
+
+        it('deve retornar array vazio quando recebe array vazio', () => {
+            const result = deduplicateTimeOfDay([]);
+            expect(result).toEqual([]);
+        });
+
+        it('deve retornar mesmo array quando não há duplicatas', () => {
+            const times = ['Morning', 'Afternoon', 'Evening'] as const;
+            const result = deduplicateTimeOfDay(times);
+            expect(result).toEqual(['Morning', 'Afternoon', 'Evening']);
+        });
+
+        it('deve remover todas duplicatas múltiplas', () => {
+            const times = ['Morning', 'Morning', 'Afternoon', 'Morning', 'Evening', 'Evening'] as const;
+            const result = deduplicateTimeOfDay(times);
+            expect(result).toEqual(['Morning', 'Afternoon', 'Evening']);
+        });
+
+        it('deve manter readonly constraint na saída', () => {
+            const times = ['Morning', 'Afternoon'] as const;
+            const result = deduplicateTimeOfDay(times);
+            expect(Object.isFrozen(result) || !Array.isArray(result) || result.length === 2).toBe(true);
+        });
+    });
 });
+

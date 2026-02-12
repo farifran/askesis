@@ -676,4 +676,174 @@ describe('🔗 Deduplication by Name (Habit Name Collision Prevention)', () => {
 
         logger.info('✅ Dedup by Name: Hábitos com nomes diferentes mantidos separados');
     });
+
+    describe('⏰ Dedup de TimeOfDay (Timeslot Uniqueness)', () => {
+        it('deve remover duplicatas de times no mesmo schedule entry', async () => {
+            const local = createMockState(1000);
+            const incoming = createMockState(2000);
+
+            // Local: hábito com times duplicados (corrupção de dados)
+            local.habits.push({
+                id: 'habit-1',
+                createdOn: '2024-01-01',
+                scheduleHistory: [
+                    {
+                        startDate: '2024-01-01',
+                        name: 'Exercício',
+                        times: ['Morning', 'Afternoon', 'Morning', 'Evening'] as any, // DUPLICATA!
+                        frequency: { type: 'daily' as const },
+                        scheduleAnchor: '2024-01-01',
+                        icon: '🏃',
+                        color: '#FF0000',
+                        goal: { type: 'check' as const }
+                    }
+                ]
+            } as any);
+
+            // Incoming: mesmo hábito com times corretos
+            incoming.habits.push({
+                id: 'habit-1',
+                createdOn: '2024-01-01',
+                scheduleHistory: [
+                    {
+                        startDate: '2024-01-01',
+                        name: 'Exercício',
+                        times: ['Morning', 'Afternoon', 'Evening'] as any,
+                        frequency: { type: 'daily' as const },
+                        scheduleAnchor: '2024-01-01',
+                        icon: '🏃',
+                        color: '#FF0000',
+                        goal: { type: 'check' as const }
+                    }
+                ]
+            } as any);
+
+            const merged = await mergeStates(local, incoming);
+
+            // Deve resultar em um hábito com times deduplicated
+            expect(merged.habits.length).toBe(1);
+            const times = merged.habits[0].scheduleHistory[0].times;
+            expect(times).toEqual(['Morning', 'Afternoon', 'Evening']);
+            expect(times.length).toBe(3);
+
+            logger.info('✅ Dedup TimeOfDay: Duplicatas removidas após merge');
+        });
+
+        it('deve manter times únicos quando ambos os lados têm order diferente', async () => {
+            const local = createMockState(1000);
+            const incoming = createMockState(2000);
+
+            // Local: ['Morning', 'Evening']
+            local.habits.push({
+                id: 'habit-1',
+                createdOn: '2024-01-01',
+                scheduleHistory: [
+                    {
+                        startDate: '2024-01-01',
+                        name: 'Meditação',
+                        times: ['Morning', 'Evening'] as any,
+                        frequency: { type: 'daily' as const },
+                        scheduleAnchor: '2024-01-01',
+                        icon: '🧘',
+                        color: '#FF00FF',
+                        goal: { type: 'check' as const }
+                    }
+                ]
+            } as any);
+
+            // Incoming (mais recente): ['Evening', 'Morning', 'Afternoon']
+            incoming.habits.push({
+                id: 'habit-1',
+                createdOn: '2024-01-01',
+                scheduleHistory: [
+                    {
+                        startDate: '2024-01-01',
+                        name: 'Meditação',
+                        times: ['Evening', 'Morning', 'Afternoon'] as any,
+                        frequency: { type: 'daily' as const },
+                        scheduleAnchor: '2024-01-01',
+                        icon: '🧘',
+                        color: '#FF00FF',
+                        goal: { type: 'check' as const }
+                    }
+                ]
+            } as any);
+
+            const merged = await mergeStates(local, incoming);
+
+            // Incoming vence (mais recente), mas ainda deve estar deduplicated
+            expect(merged.habits.length).toBe(1);
+            const times = merged.habits[0].scheduleHistory[0].times;
+            
+            // Deve conter todos os 3 times única vez
+            expect(times.sort()).toEqual(['Afternoon', 'Evening', 'Morning'].sort());
+            expect(new Set(times).size).toBe(3); // Sem duplicatas
+
+            logger.info('✅ Dedup TimeOfDay: Merge com order diferente preserva unicidade');
+        });
+
+        it('deve limpar duplicatas introduzidas por consolidação de versões', async () => {
+            const local = createMockState(1000);
+            const incoming = createMockState(2000);
+
+            // Local: versão antiga do hábito com 2 times
+            local.habits.push({
+                id: 'habit-1',
+                createdOn: '2024-01-01',
+                scheduleHistory: [
+                    {
+                        startDate: '2024-01-01',
+                        name: 'Yoga',
+                        times: ['Morning'] as any,
+                        frequency: { type: 'daily' as const },
+                        scheduleAnchor: '2024-01-01',
+                        icon: '🧘',
+                        color: '#00FF00',
+                        goal: { type: 'check' as const }
+                    }
+                ]
+            } as any);
+
+            // Incoming: versão mais recente (com atualização), mas times potencialmente duplicados de bug anterior
+            incoming.habits.push({
+                id: 'habit-1',
+                createdOn: '2024-01-01',
+                scheduleHistory: [
+                    {
+                        startDate: '2024-01-01',
+                        name: 'Yoga',
+                        times: ['Morning', 'Evening'] as any,
+                        frequency: { type: 'daily' as const },
+                        scheduleAnchor: '2024-01-01',
+                        icon: '🧘',
+                        color: '#00FF00',
+                        goal: { type: 'check' as const }
+                    },
+                    {
+                        startDate: '2024-01-15',
+                        name: 'Yoga (Updated)',
+                        times: ['Evening', 'Evening', 'Morning'] as any, // DUPLICATA do Evening!
+                        frequency: { type: 'daily' as const },
+                        scheduleAnchor: '2024-01-15',
+                        icon: '🧘',
+                        color: '#00FF00',
+                        goal: { type: 'check' as const }
+                    }
+                ]
+            } as any);
+
+            const merged = await mergeStates(local, incoming);
+
+            // Deve ter 2 histórico entries
+            expect(merged.habits.length).toBe(1);
+            expect(merged.habits[0].scheduleHistory.length).toBe(2);
+
+            // Segundo entry (mais recente) deve estar deduplicated
+            const recentEntry = merged.habits[0].scheduleHistory[1];
+            expect(recentEntry.times).toEqual(['Evening', 'Morning']);
+            expect(new Set(recentEntry.times).size).toBe(2); // Sem duplicatas
+
+            logger.info('✅ Dedup TimeOfDay: Consolidação remove duplicatas em múltiplas versões');
+        });
+    });
 });

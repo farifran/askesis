@@ -40,6 +40,25 @@ import { runWorkerTask, addSyncLog } from './cloud';
 import { apiFetch, clearKey } from './api';
 import { HabitService } from './HabitService';
 
+/**
+ * Deduplica um array de TimeOfDay, mantendo ordem de primeira ocorrência.
+ * Previne que o mesmo período apareça 2x no scheduleHistory[].times
+ * @param times Array potencialmente com duplicatas
+ * @returns Array com duplicatas removidas
+ */
+export function deduplicateTimeOfDay(times: readonly TimeOfDay[]): readonly TimeOfDay[] {
+    if (!times || times.length === 0) return times;
+    const seen = new Set<string>();
+    const result: TimeOfDay[] = [];
+    for (const time of times) {
+        if (!seen.has(time)) {
+            seen.add(time);
+            result.push(time);
+        }
+    }
+    return result;
+}
+
 const BATCH_IDS_POOL: string[] = [];
 const BATCH_HABITS_POOL: Habit[] = [];
 
@@ -293,7 +312,7 @@ export function saveHabitFromModal() {
     if (!nameToUse) return;
     const cleanFormData = {
         ...formData,
-        times: [...formData.times],
+        times: deduplicateTimeOfDay(formData.times) as readonly TimeOfDay[],
         goal: { ...formData.goal },
         frequency: formData.frequency.type === 'specific_days_of_week' ? { ...formData.frequency, days: [...formData.frequency.days] } : { ...formData.frequency }
     };

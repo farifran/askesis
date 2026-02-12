@@ -10,7 +10,8 @@
  */
 
 import { logger, getTodayUTCIso } from '../utils';
-import { AppState } from '../state';
+import { AppState, TimeOfDay } from '../state';
+import { deduplicateTimeOfDay } from './habitActions';
 
 /**
  * Migra os bitmasks mensais de 6 bits/dia (v8) para 9 bits/dia (v9).
@@ -122,6 +123,25 @@ export function migrateState(loadedState: any, targetVersion: number): AppState 
             msg: log.msg,
             type: log.type
         }));
+    }
+
+    // --- SANITIZATION: Deduplicate times in scheduleHistory ---
+    // Garante que nenhum hábito tenha o mesmo TimeOfDay 2x no mesmo schedule entry
+    if (state.habits && Array.isArray(state.habits)) {
+        for (const habit of state.habits) {
+            if (habit.scheduleHistory && Array.isArray(habit.scheduleHistory)) {
+                for (let i = 0; i < habit.scheduleHistory.length; i++) {
+                    const schedule = habit.scheduleHistory[i];
+                    if (schedule.times && Array.isArray(schedule.times)) {
+                        const deduped = deduplicateTimeOfDay(schedule.times as readonly TimeOfDay[]);
+                        if (deduped.length !== schedule.times.length) {
+                            logger.warn(`[Migration] Deduplicated times for habit ${habit.id}, schedule ${schedule.startDate}: ${schedule.times.length} -> ${deduped.length}`);
+                            (schedule as any).times = deduped;
+                        }
+                    }
+                }
+            }
+        }
     }
 
     // Force target version
