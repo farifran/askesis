@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -6,6 +7,10 @@
 /**
  * @file services/dataMerge.ts
  * @description Algoritmo de Reconciliação de Estado (Smart Merge / CRDT-lite).
+ * 
+ * UPDATE [2025-06-25]: Adicionada Deduplicação Inteligente por Nome.
+ * Se IDs forem diferentes mas nomes iguais, funde os dados e remapeia os IDs
+ * para evitar duplicação visual.
  */
 
 import { AppState, HabitDailyInfo, Habit, HabitSchedule } from '../state';
@@ -137,13 +142,50 @@ export async function mergeStates(local: AppState, incoming: AppState): Promise<
     const merged: AppState = structuredClone(winner);
     const mergedHabitsMap = new Map<string, Habit>();
     
-    merged.habits.forEach(h => mergedHabitsMap.set(h.id, h));
+    // MAPA DE NOMES PARA DEDUPLICAÇÃO
+    // Normaliza nomes (trim + lowercase) para encontrar duplicatas semânticas
+    const winnerNameMap = new Map<string, string>(); // NomeNormalizado -> ID
+    const idRemap = new Map<string, string>(); // OldID -> NewID
+
+    // Popula mapa inicial com hábitos do vencedor
+    merged.habits.forEach(h => {
+        mergedHabitsMap.set(h.id, h);
+        const lastSchedule = h.scheduleHistory[h.scheduleHistory.length - 1];
+        if (lastSchedule && lastSchedule.name) {
+            const normalizedName = lastSchedule.name.trim().toLowerCase();
+            if (normalizedName) {
+                winnerNameMap.set(normalizedName, h.id);
+            }
+        }
+    });
     
     loser.habits.forEach(loserHabit => {
-        const winnerHabit = mergedHabitsMap.get(loserHabit.id);
+        let winnerHabit = mergedHabitsMap.get(loserHabit.id);
+        
+        // --- SMART DEDUPLICATION ---
+        // Se não achou pelo ID, tenta achar pelo NOME
         if (!winnerHabit) {
+            const lastSchedule = loserHabit.scheduleHistory[loserHabit.scheduleHistory.length - 1];
+            if (lastSchedule && lastSchedule.name) {
+                const normalizedName = lastSchedule.name.trim().toLowerCase();
+                const matchedId = winnerNameMap.get(normalizedName);
+                if (matchedId) {
+                    winnerHabit = mergedHabitsMap.get(matchedId);
+                    if (winnerHabit) {
+                        // Encontrou duplicata! Mapeia o ID antigo para o novo (vencedor)
+                        idRemap.set(loserHabit.id, winnerHabit.id);
+                        logger.info(`[Merge] Deduplicated habit "${lastSchedule.name}" (${loserHabit.id} -> ${winnerHabit.id})`);
+                    }
+                }
+            }
+        }
+
+        if (!winnerHabit) {
+            // Se não achou nem por ID nem por Nome, adiciona como novo
             mergedHabitsMap.set(loserHabit.id, loserHabit);
         } else {
+            // Se achou (por ID ou Nome), faz o merge
+            
             // Mescla histórico com prioridade para o vencedor
             winnerHabit.scheduleHistory = mergeHabitHistories(winnerHabit.scheduleHistory, loserHabit.scheduleHistory);
             
@@ -173,13 +215,56 @@ export async function mergeStates(local: AppState, incoming: AppState): Promise<
 
     (merged as any).habits = Array.from(mergedHabitsMap.values());
 
+    // MERGE DAILY DATA COM REMAP
     for (const date in loser.dailyData) {
-        if (!merged.dailyData[date]) (merged.dailyData as any)[date] = loser.dailyData[date];
-        else mergeDayRecord(loser.dailyData[date], (merged.dailyData as any)[date]);
+        // Precisamos criar um objeto temporário onde as chaves (habitIDs) já estão remapeadas
+        const remappedDailyData: Record<string, HabitDailyInfo> = {};
+        const sourceDayData = loser.dailyData[date];
+        
+        for (const habitId in sourceDayData) {
+            const targetId = idRemap.get(habitId) || habitId;
+            remappedDailyData[targetId] = sourceDayData[habitId];
+        }
+
+        if (!merged.dailyData[date]) {
+            (merged.dailyData as any)[date] = remappedDailyData;
+        } else {
+            mergeDayRecord(remappedDailyData, (merged.dailyData as any)[date]);
+        }
     }
 
-    // BITMASK MERGE: LWW granular por bloco de 3 bits
-    merged.monthlyLogs = HabitService.mergeLogs(winner.monthlyLogs, loser.monthlyLogs);
+    // MERGE BITMASKS (LOGS) COM REMAP
+    // 1. Remapeia os logs do perdedor para os IDs do vencedor, se necessário
+    const remappedLoserLogs = new Map<string, bigint>();
+    if (loser.monthlyLogs) {
+        for (const [key, value] of loser.monthlyLogs.entries()) {
+            // Chave formato: ID_YYYY-MM
+            // Vamos separar ID do sufixo
+            const parts = key.split('_');
+            // O ID é tudo antes do último underscore (para suportar IDs com underscore, embora UUID não tenha)
+            // Mas o formato padrão é UUID_YYYY-MM, UUID não tem underscore.
+            // Safe split:
+            const suffix = parts.pop(); // YYYY-MM
+            const habitId = parts.join('_');
+            
+            const targetId = idRemap.get(habitId) || habitId;
+            const newKey = `${targetId}_${suffix}`;
+            
+            // Se houver colisão de remapeamento (vários perdedores -> um vencedor), 
+            // precisamos fazer merge bit a bit aqui mesmo antes do merge final.
+            const existingVal = remappedLoserLogs.get(newKey);
+            if (existingVal !== undefined) {
+                // Fusão simples OR para bitmask durante remapeamento
+                // (Para CRDT completo, usamos a função HabitService.mergeLogs depois)
+                remappedLoserLogs.set(newKey, existingVal | value);
+            } else {
+                remappedLoserLogs.set(newKey, value);
+            }
+        }
+    }
+
+    // 2. Faz o merge final com os logs do vencedor
+    merged.monthlyLogs = HabitService.mergeLogs(winner.monthlyLogs, remappedLoserLogs);
     
     // O timestamp final deve ser incrementado para garantir propagação
     merged.lastModified = Math.max(localTs, incomingTs, Date.now()) + 1;
