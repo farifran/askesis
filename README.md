@@ -1,197 +1,591 @@
-<div align="center" style="background-color: #121212; color: #e5e5e5; padding: 20px; border-radius: 12px;">
-  <table border="0" cellspacing="0" cellpadding="0" style="border-collapse: collapse; border: none; background-color: #121212; color: #e5e5e5;">
+<div align="center" style="margin: 0 0 10px 0;">
+  <div style="display: flex; align-items: center; gap: 10px; justify-content: flex-start; margin-left: 20px;">
+    <a href="#pt-br">
+      <img src="assets/flags/pt-br.svg" width="30" height="18" alt="PT-BR">
+    </a>
+    <a href="#en">
+      <img src="assets/flags/en.svg" width="30" height="18" alt="EN">
+    </a>
+    <a href="#es">
+      <img src="assets/flags/es.svg" width="30" height="18" alt="ES">
+    </a>
+  </div>
+</div>
+
+<p align="center">
+  <img src="assets/header.svg" alt="Askesis" width="100%">
+</p>
+<div align="center" style="width: 100%; margin-top: 2px;">
+  <img src="https://img.shields.io/badge/Offline--First-000000?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Offline-first" />
+  <img src="https://img.shields.io/badge/PWA-27ae60?style=for-the-badge&logo=pwa&logoColor=white" alt="PWA" />
+  <img src="https://img.shields.io/badge/Google_Gemini-ffffff?style=for-the-badge&logo=google-gemini&logoColor=000000" alt="Gemini AI" />
+  <img src="https://img.shields.io/badge/TypeScript-ffffff?style=for-the-badge&logo=typescript&logoColor=000000" alt="TypeScript" />
+  <img src="https://img.shields.io/badge/WCAG%202.1%20AA-ffffff?style=for-the-badge&logo=accessibilityinsights&logoColor=000000" alt="WCAG 2.1 AA" />
+  <img src="https://img.shields.io/badge/AES--GCM-ffffff?style=for-the-badge&logo=securityscorecard&logoColor=000000" alt="AES-GCM" />
+  <img src="https://img.shields.io/badge/ISC%20License-27ae60?style=for-the-badge&logo=opensourceinitiative&logoColor=000000" alt="ISC License" />
+  <img src="https://img.shields.io/badge/i18n-000000?style=for-the-badge&logo=googletranslate&logoColor=white" alt="i18n" />
+</div>
+
+<div align="center">
+  <table border="0" cellspacing="10" cellpadding="0" style="border-collapse: separate; border-spacing: 10px;">
     <tr>
-      <td width="160" align="center" valign="middle" style="border: none;">
-        <img src="icons/icon-512.svg" width="120" alt="Askesis Logo" style="border-radius: 24px;">
+      <td align="center" style="padding: 10px 14px; border-radius: 10px; background: #1b1b1b; border: 1px solid #2a2a2a; color: #e5e5e5;">
+        🧪 <strong>350 testes</strong><br><span style="color: #9aa0a6;">350 tests</span>
       </td>
-      <td align="left" valign="middle" style="border: none; color: #e5e5e5; padding-left: 20px;">
-        <h1 style="color: #e5e5e5; margin-bottom: 4px; margin-top: 0;">Askesis</h1>
-        <div>
-          <a href="https://askesis-psi.vercel.app/"><img src="https://img.shields.io/badge/Acessar_App-27ae60?style=for-the-badge&logo=vercel&logoColor=white" alt="Acessar Aplicação"></a>
-          <img src="https://img.shields.io/badge/Google_Gemini-174EA6?style=for-the-badge&logo=google-gemini&logoColor=white" alt="Gemini AI" />
-          <img src="https://img.shields.io/badge/TypeScript-000000?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript" />
-          <img src="https://img.shields.io/badge/PWA-5A0FC8?style=for-the-badge&logo=pwa&logoColor=white" alt="PWA" />
-        </div>
-        <br>
-        <p style="color: #b3b3b3; margin: 0;"><em>O Rastreador de Hábitos Estoico. Minimalista. Focado em Privacidade. Impulsionado por IA.</em></p>
+      <td align="center" style="padding: 10px 14px; border-radius: 10px; background: #1b1b1b; border: 1px solid #2a2a2a; color: #e5e5e5;">
+        📈 <strong>90% cobertura</strong><br><span style="color: #9aa0a6;">90% coverage</span>
+      </td>
+      <td align="center" style="padding: 10px 14px; border-radius: 10px; background: #1b1b1b; border: 1px solid #2a2a2a; color: #e5e5e5;">
+        🧾 <strong>ISC</strong><br><span style="color: #9aa0a6;">License</span>
+      </td>
+      <td align="center" style="padding: 10px 14px; border-radius: 10px; background: #1b1b1b; border: 1px solid #2a2a2a; color: #e5e5e5;">
+        🛰️ <strong>Offline-first</strong><br><span style="color: #9aa0a6;">100% offline</span>
+      </td>
+      <td align="center" style="padding: 10px 14px; border-radius: 10px; background: #1b1b1b; border: 1px solid #2a2a2a; color: #e5e5e5;">
+        🔐 <strong>Dados locais</strong><br><span style="color: #9aa0a6;">Local + encrypted</span>
       </td>
     </tr>
   </table>
 </div>
 
-<br>
-
 <p align="center">
   <img src="assets/app-preview.jpg" alt="Interface do Askesis" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
 </p>
 
-<br>
-
 ---
 
-<h2>A Filosofia: O que é Askesis?</h2>
+## PT-BR
 
-**Askesis** (do grego *ἄσκησις*) é a raiz da palavra "ascetismo", mas seu significado original é muito mais prático: significa **"treinamento"** ou **"exercício"**.
+## Fluxo da Aplicação
 
-Na filosofia estoica, *askesis* não se trata de sofrimento ou privação sem sentido, mas do **treinamento rigoroso e atlético da mente e do caráter**. Assim como um atleta treina o corpo para a competição, o estoico treina a mente para lidar com as adversidades da vida com virtude e tranquilidade.
+O gráfico abaixo representa o fluxo lógico implementado na interface:
 
-A maioria dos apps de hábitos foca em gamificação superficial ou em "não quebrar a corrente". O Askesis foca na **virtude da consistência**. Ele usa Inteligência Artificial para atuar como um "Sábio Estoico", analisando seus dados não para julgar, mas para oferecer conselhos sobre como fortalecer sua vontade.
+```mermaid
+graph TD
+    subgraph Daily Cycle
+        Start((Início)) --> S1[Preparação Estoica]
+        S1 --> S2{Registro de Status}
+        
+        S2 -- "Pendente / Adiado" --> S2
+        S2 -- "Feito" --> S3[Indicar Quantidade]
+        
+        S3 --> S4[Diário de Gratidão]
+        S4 -.-> S5[Ver Progresso]
+        S5 --> End((Fim do Ciclo))
+    end
 
----
-
-<h2>A Motivação: Por que construir?</h2>
-
-A criação do Askesis nasceu de duas necessidades pessoais fundamentais que não encontrei em outras soluções de mercado:
-
-1.  **Soberania e Privacidade de Dados:** O registro de hábitos é, por natureza, um diário íntimo da vida pessoal. Eu precisava de uma garantia absoluta de que essas informações não seriam compartilhadas, vendidas ou analisadas por terceiros. No Askesis, a prioridade é o controle da informação: os dados pertencem exclusivamente ao usuário e residem no seu dispositivo (ou no seu cofre pessoal criptografado).
-2.  **Autonomia Tecnológica:** Em uma era dominada por modelos de assinatura (SaaS), recusei-me a pagar aluguel mensal por um software que poderia ser construído com a tecnologia web moderna disponível. Este projeto é a prova de que é possível ter uma ferramenta profissional, robusta e gratuita, utilizando os recursos que a tecnologia atual nos oferece, sem barreiras financeiras para o auto-aperfeiçoamento.
-
----
-
-<h2>Guia Completo: Como Usar o Askesis</h2>
-
-O Askesis foi desenhado em camadas: intuitivo na superfície, mas repleto de ferramentas poderosas para quem busca profundidade.
-
-<h3>1. O Fundamento: Adicionando Hábitos</h3>
-
-O hábito é a unidade fundamental da aplicação. O sistema permite rastrear não apenas a conclusão ("check"), mas também a quantidade e intensidade (páginas lidas, minutos meditados).
-
-Para começar a construir sua rotina, você tem dois caminhos:
-*   **Botão Verde Brilhante (+):** O ponto de partida principal no canto inferior.
-*   **O "Placeholder" (Espaço dos Cartões):** Se um período do dia (Manhã, Tarde, Noite) estiver vazio, você verá uma área convidativa ("Adicione um hábito") que permite a criação rápida direto no contexto temporal.
-
-<h3>2. O Tempo e os Anéis (O Calendário)</h3>
-
-Se o hábito é o fundamento, o **Tempo** é o que dá sentido ao todo. A faixa de calendário no topo não é apenas decorativa; é a sua bússola de progresso.
-
-Os dias são representados por **Anéis de Progresso**, que simbolizam a simbiose entre o hábito e o tempo. Eles mostram visualmente a evolução do seu dia:
-*   A parte preenchida indica os hábitos **Feitos**.
-*   O espaço restante mostra o que falta.
-*   O sistema entende nuances: hábitos **Adiados** (por força maior) não quebram visualmente o anel da mesma forma que hábitos esquecidos.
-
-**Micro-ações do Calendário (Power User):**
-A faixa de calendário possui atalhos ocultos para facilitar a gestão em massa:
-*   **1 Clique:** Seleciona a data para visualizar o histórico.
-*   **2 Cliques Rápidos no dia:** Marca **TODOS** os hábitos daquele dia como **Feitos** (para dias perfeitos).
-*   **3 Cliques Rápidos no dia:** Marca **TODOS** os hábitos como **Adiados** (ideal para dias de férias ou doença).
-*   **Pressionar e Segurar (Long Press):** Abre o **Calendário Mensal Completo**, permitindo saltar para qualquer data do ano rapidamente.
-
-<h3>3. O Cartão de Hábito: Interação Diária</h3>
-
-O cartão é a representação visual do seu dever no dia. Ele responde a diferentes tipos de interação:
-
-*   **Cliques (Status):**
-    *   **1 Clique:** Marca como ✅ **Feito**.
-    *   **2 Cliques:** Marca como ➡️ **Adiado** (passa para o próximo estado).
-    *   **3 Cliques:** Retorna para ⚪️ **Pendente**.
-*   **Deslizar (Swipe - Opções Adicionais):**
-    *   Ao deslizar o cartão para os lados, você revela ferramentas de contexto:
-    *   **Criar Nota:** Adicione uma observação estoica sobre a execução daquele hábito no dia.
-    *   **Apagar:** Permite remover o hábito. O sistema perguntará inteligentemente se você quer remover **"Apenas Hoje"** (ex: um imprevisto) ou **"Para Sempre"** (encerrar o hábito).
-
-<h3>4. Navegação e Sabedoria</h3>
-
-*   **"Hoje":** Ao navegar pelo passado ou futuro, o título "Hoje" (ou a data) no topo funciona como um botão de retorno imediato ao presente.
-*   **Frases Estoicas:** No topo da tela, você encontrará reflexões de Marco Aurélio e outros estoicos. Clique na frase para copiá-la para sua área de transferência.
-
-<h3>5. A Engrenagem: Configurações e Resgate</h3>
-
-O ícone de engrenagem no canto superior guarda as ferramentas de gestão do seu sistema pessoal:
-
-*   **Resgate de Perfil (Sincronização):** Aqui você encontra sua **Chave de Sincronização**. Guarde-a com segurança. Ela é a única forma de acessar seus dados em outros dispositivos ou recuperar seu progresso caso troque de celular.
-*   **Gerenciar Hábitos:** Uma visão de lista para editar, pausar ou graduar seus hábitos.
-*   **Idioma e Notificações:** Ajuste a aplicação para português, inglês ou espanhol e configure seus lembretes.
-
----
-
-<h2>
-  <img src="https://www.gstatic.com/lamda/images/gemini_sparkle_v002_d4735304ff6292a690345.svg" height="30" style="vertical-align: bottom; margin-right: 8px;" alt="Google AI Studio Icon" />
-  O Poder do Google AI Studio: Desenvolvimento Assistido
-</h2>
-
-Este projeto representa uma mudança de paradigma no desenvolvimento de software. O **Askesis** não foi apenas codificado; foi orquestrado.
-
-Através do **Google AI Studio**, a barreira técnica foi dissolvida. O papel humano evoluiu de "programador braçal" para **Arquiteto de Software, Gerente de Produto e Lead Tester**.
-
-Isso permitiu que uma única pessoa construísse uma aplicação com a complexidade e polimento de um *squad* inteiro:
-
-*   **O Humano como Beta Tester e Pesquisador:** Além de definir a visão, o papel humano foi fundamental como um **validar ágil**. Houve um ciclo contínuo de testes onde o humano confrontava sua visão com o resultado produzido pela IA, iterando prompts para aperfeiçoar o código até sua melhor versão.
-*   **A IA como Engenheiro Sênior:** Os modelos Gemini atuaram na implementação técnica pesada, escrevendo linhas complexas de código, sugerindo otimizações de performance e resolvendo bugs lógicos.
-
----
-
-<h2>Experiência Universal: PWA e Acessibilidade</h2>
-
-O Askesis foi construído com a premissa de que a tecnologia deve se adaptar ao usuário, não o contrário.
-
-<h3>📱 Multiplataforma por Natureza (PWA)</h3>
-O Askesis é um **Progressive Web App (PWA)** de última geração. Isso significa que ele combina a ubiquidade da web com a performance de aplicativos nativos.
-
-*   **Instalável:** Adicione à tela inicial do iOS, Android, Windows ou Mac. Ele se comporta como um app nativo, removendo a barra do navegador e integrando-se ao sistema operacional.
-*   **Offline-First:** Graças a uma estratégia avançada de *Service Workers*, o aplicativo carrega instantaneamente e é **totalmente funcional sem internet**. Você pode marcar hábitos, ver gráficos e editar notas no meio de um voo ou no metrô.
-*   **Sensação Nativa:** Implementação de feedback tátil (Haptics) em micro-interações, gestos de deslize (swipe) fluídos e animações de 60fps garantem uma experiência tátil e responsiva.
-
-<h3>♿ Acessibilidade e Design Inclusivo (A11y)</h3>
-A disciplina estoica é para todos. O código do Askesis segue rigorosos padrões de acessibilidade (WCAG) para garantir que pessoas com diferentes necessidades possam usar a ferramenta plenamente.
-
-*   **Semântica Robusta:** Uso correto de elementos HTML semânticos e atributos ARIA (`aria-label`, `role`, `aria-live`) para garantir que **Leitores de Tela** interpretem a interface corretamente.
-*   **Navegação por Teclado:** Todo o aplicativo é navegável sem mouse. Modais possuem "Focus Traps" para evitar que o foco se perca, e atalhos (como `Enter` e `Espaço`) funcionam em todos os elementos interativos.
-*   **Respeito ao Usuário:** O aplicativo detecta e respeita a preferência do sistema por **Movimento Reduzido** (`prefers-reduced-motion`), desativando animações complexas para evitar desconforto vestibular.
-*   **Legibilidade:** Contraste de cores calculado dinamicamente para garantir legibilidade em qualquer tema escolhido pelo usuário.
-
----
-
-<h2>Arquitetura e Engenharia</h2>
-
-Este projeto rejeita a complexidade desnecessária dos frameworks modernos em favor de **Performance Nativa** e **JavaScript Moderno (ESNext)**.
-
-<h3>Estrutura do Projeto</h3>
-
-```text
-.
-├── api/                 # Vercel Edge Functions (Backend Serverless)
-├── locales/             # Arquivos de Tradução (i18n)
-├── render/              # Motor de Renderização (DOM Recycling & Templates)
-├── listeners/           # Controladores de Eventos e Gestos (Física)
-├── services/            # Camada de Dados, Criptografia e IO
-│   ├── api.ts           # Cliente HTTP com Retry/Backoff
-│   ├── cloud.ts         # Orquestrador de Sync e Worker Bridge
-│   ├── crypto.ts        # Criptografia AES-GCM Isomórfica
-│   ├── dataMerge.ts     # Algoritmo de Resolução de Conflitos (CRDT-lite)
-│   ├── migration.ts     # Reconstrução de Histórico (Graph-based)
-│   ├── persistence.ts   # Wrapper IndexedDB Assíncrono
-│   ├── selectors.ts     # Camada de Leitura Otimizada (Memoized)
-│   └── sync.worker.ts   # Web Worker para CPU-bound tasks
-├── state.ts             # Gerenciamento de Estado Mutável (Single Source of Truth)
-├── habitActions.ts      # Lógica de Negócios e Time-Travel
-├── index.html           # App Shell (Critical Render Path)
-└── sw.js                # Service Worker (Atomic Caching)
+    style S1 fill:#f0fdf4,stroke:#16a34a,stroke-width:2px
+    style S2 fill:#fff,stroke:#16a34a,stroke-width:2px
+    style S3 fill:#fff,stroke:#16a34a,stroke-width:2px
+    style S4 fill:#fff,stroke:#16a34a,stroke-width:2px,stroke-dasharray: 5 5
+    style S5 fill:#fff,stroke:#16a34a,stroke-width:2px
+    
+    classDef default font-family:Inter,sans-serif;
 ```
 
-<h3>Deep Dive Técnico: A Plataforma Web como Nativa</h3>
 
-Este projeto explora o limite do que é possível fazer no navegador sem dependências pesadas, utilizando APIs nativas ("Vanilla JS") para obter performance de classe mundial.
+### Resumo
 
-1.  **Multithreading (Web Workers):**
-    *   Para garantir que a UI nunca trave (Jank-free), tarefas pesadas como **Criptografia AES-GCM**, **Parsing de JSON** massivo e **Construção de Prompts de IA** são delegadas para uma thread de worker separada (`sync.worker.ts`). A thread principal cuida apenas de desenhar a tela a 60fps.
+- Rastreador de habitos estoico, focado em privacidade, com IA para reflexoes e ajustes de rotina.
+- PWA offline-first com dados locais criptografados e experiencia consistente em mobile e desktop.
 
-2.  **Persistência Escalável (IndexedDB):**
-    *   Diferente do LocalStorage (que é síncrono e bloqueia a UI), o Askesis implementa um wrapper leve sobre o **IndexedDB**. Isso permite armazenamento assíncrono e virtualmente ilimitado, essencial para anos de histórico.
+### Dashboard tecnologico
 
-3.  **Sincronização Inteligente (Smart Merge):**
-    *   Implementação de um algoritmo **CRDT-lite** (Conflict-free Replicated Data Type) para reconciliação de dados. O sistema resolve conflitos entre dispositivos offline e a nuvem usando pesos semânticos (ex: "Concluído" > "Pendente"), garantindo que o progresso do usuário nunca seja perdido.
+<div align="center">
+  <table border="0" cellspacing="10" cellpadding="0" style="border-collapse: separate; border-spacing: 10px;">
+    <tr>
+      <td align="center" style="padding: 10px 14px; border-radius: 10px; background: #111; border: 1px solid #2a2a2a; color: #e5e5e5;">
+        Performance
+        <div style="margin-top: 6px; width: 140px; background: #2a2a2a; border-radius: 6px;">
+          <div style="width: 95%; background: #27ae60; height: 8px; border-radius: 6px;"></div>
+        </div>
+        <div style="color: #9aa0a6;">< 50ms load</div>
+      </td>
+      <td align="center" style="padding: 10px 14px; border-radius: 10px; background: #111; border: 1px solid #2a2a2a; color: #e5e5e5;">
+        Privacidade
+        <div style="margin-top: 6px; width: 140px; background: #2a2a2a; border-radius: 6px;">
+          <div style="width: 100%; background: #27ae60; height: 8px; border-radius: 6px;"></div>
+        </div>
+        <div style="color: #9aa0a6;">AES-GCM + local</div>
+      </td>
+      <td align="center" style="padding: 10px 14px; border-radius: 10px; background: #111; border: 1px solid #2a2a2a; color: #e5e5e5;">
+        Acessibilidade
+        <div style="margin-top: 6px; width: 140px; background: #2a2a2a; border-radius: 6px;">
+          <div style="width: 90%; background: #27ae60; height: 8px; border-radius: 6px;"></div>
+        </div>
+        <div style="color: #9aa0a6;">WCAG 2.1 AA</div>
+      </td>
+      <td align="center" style="padding: 10px 14px; border-radius: 10px; background: #111; border: 1px solid #2a2a2a; color: #e5e5e5;">
+        Offline
+        <div style="margin-top: 6px; width: 140px; background: #2a2a2a; border-radius: 6px;">
+          <div style="width: 100%; background: #27ae60; height: 8px; border-radius: 6px;"></div>
+        </div>
+        <div style="color: #9aa0a6;">100% offline</div>
+      </td>
+    </tr>
+  </table>
+</div>
 
-4.  **Segurança (Client-Side Encryption):**
-    *   Utilizamos **PBKDF2** para derivar chaves e **AES-GCM** para criptografar o payload JSON no cliente antes do envio. O servidor Vercel KV atua apenas como um depósito cego ("Zero Knowledge").
+### Arquitetura em um olhar
 
-<h3>Performance & Otimização (60fps Target)</h3>
+```mermaid
+flowchart LR
+  UI[UI] --> State[State Engine]
+  State --> Worker[Web Worker]
+  Worker --> Crypto[AES-GCM]
+  State --> Storage[IndexedDB]
+  State --> Sync[Cloud Sync]
+  Sync --> Storage
+```
 
-A arquitetura "Zero-Cost Abstractions" foca em eliminar overhead de runtime:
+<details>
+  <summary>Mapa rapido de fluxos</summary>
 
-*   **Object Pooling:** Reutilização de objetos e arrays em loops quentes (renderização de calendário e gráficos) para eliminar a pressão sobre o Garbage Collector.
-*   **Geometry Caching:** As dimensões dos elementos (layout) são cacheadas e lidas apenas no redimensionamento da janela, evitando *Layout Thrashing* (Reflows forçados) durante gestos de arrasto e deslize.
-*   **DOM Recycling & Template Cloning:** Em vez de destruir e recriar elementos DOM, o sistema clona templates (`cloneNode`) e atualiza apenas os dados alterados ("Dirty Checking"), mantendo o DOM leve.
-*   **Lazy Loading & Code Splitting:** Módulos pesados (como a lista de citações) e recursos DOM são carregados sob demanda, garantindo um *Time to Interactive* (TTI) quase instantâneo.
+| Fluxo | Entrada | Saida |
+|---|---|---|
+| Status diario | Tap no card | Bitmask + render imediato |
+| Privacidade | Dados locais | AES-GCM em worker |
+| Offline-first | Service Worker | Cache atomico |
+| Sincronizacao | Chave de sync | Merge resiliente |
+</details>
+
+### Radar tecnico (ASCII)
+
+```text
+      Privacidade 10
+        /\
+ A11y 9  /-----/  \-----\  Offline 10
+       /           \
+    UX 8 \           /  Performance 9
+      \--- 10 ---/
+       Resiliencia
+```
+
+### Ciclo de dados
+
+```text
+Entrada -> Validacao -> Criptografia (AES-GCM) -> IndexedDB -> Sync -> Merge -> UI
+```
+
+### Plataformas e recursos
+
+| Plataforma | Instalavel | Offline | Sync | Notificacoes |
+|---|---|---|---|---|
+| Web | Sim | Sim | Sim | Sim |
+| iOS (PWA) | Sim | Sim | Sim | Limitado |
+| Android (PWA) | Sim | Sim | Sim | Sim |
+| Desktop (PWA) | Sim | Sim | Sim | Sim |
+
+### Inicio rapido
+
+1. **Instalar:** [Abra o app](https://askesis-psi.vercel.app/) e selecione "Instalar".
+2. **Criar habito:** Botao `+` → nome → periodo do dia → salvar.
+3. **Marcar:** 1 toque = feito, 2 toques = adiado.
+4. **Progresso:** Calendario com aneis resume o dia.
+
+### Diferenciais
+
+- Privacidade total, sem login ou rastreio.
+- IA estoica para reflexao, nao para vicio.
+- Fluxo rapido: foco em consistencia, nao em streaks.
+- Acessibilidade WCAG 2.1 AA e suporte completo a teclado.
+
+### Privacidade e Offline
+
+- Criptografia no cliente com AES-GCM e Web Workers.
+- Dados permanecem no dispositivo e sincronizam sob demanda.
+- Funciona 100% offline, inclusive historico e graficos.
+
+### Paradigma de Construcao: A Orquestracao Humano-IA
+
+Esta tabela destaca onde a IA forneceu a base e onde a minha visao estrategica e formacao em Psicologia transformaram o codigo em um produto de nivel superior.
+
+| Recurso | Tradicional / IA "Pura" | Minha Intervencao (Arquiteto) | Resultado: Askesis |
+|---|---|---|---|
+| Privacidade | Login social e dados em nuvem comercial. | Decisao Etica: Implementei Anonimato Coletivo e criptografia AES-GCM no cliente via Web Workers para garantir soberania absoluta. | Seguranca de nivel bancario sem coletar um unico dado pessoal. |
+| Performance | Uso de frameworks pesados (React/Next) que geram latencia. | Refinamento: Rejeitei abstracoes em favor de Vanilla TS e APIs Nativas para maxima eficiencia de hardware. | Carregamento instantaneo (< 50ms) e interface de 60fps constante. |
+| UX e Psicologia | Gamificacao superficial baseada em dopamina (badges/cores vibrantes). | Grounding Teorico: Apliquei principios de Neuropsicologia para focar na "virtude da consistencia", evitando o vicio digital. | Interface minimalista que promove a autorreflexao e o treinamento mental real. |
+| Acessibilidade | Frequentemente ignorada ou tratada como secundaria em codigos gerados por IA. | Inclusao Digital: Garanti conformidade WCAG 2.1 AA, implementando semantica ARIA robusta e navegacao total por teclado. | Aplicacao universalmente utilizavel, respeitando usuarios com diferentes necessidades. |
+| Confiabilidade | Testes unitarios isolados ou ausencia de validacao em cenarios de erro criticos. | Chaos Engineering: Desenvolvi uma suite de "Super-Testes" para validar a resiliencia do sistema em condicoes extremas de hardware. | Software robusto que recupera dados automaticamente mesmo apos falhas criticas de sistema. |
+| Sustentabilidade | Custos de infraestrutura altos repassados via assinaturas ou anuncios. | Visao de Produto: Desenvolvi uma arquitetura de Custo Zero, movendo o processamento pesado para o hardware do usuario. | Operacao global sustentavel com custo de manutencao de $0. |
+
+> [ 🧠 ] Psicologia Cognitiva + [ 🤖 ] IA Generativa + [ 💻 ] Engenharia de Baixo Nivel
+> Este projeto nao e apenas uma ferramenta; e um estudo de caso sobre como a tecnologia moderna pode ser domesticada por principios humanos para servir a virtude, e nao o lucro.
+
+### Tecnologia
+
+- TypeScript puro, sem frameworks.
+- PWA com Service Worker e cache atomico.
+- Criptografia AES-GCM e sync resiliente.
+- Renderizacao eficiente e UI responsiva.
+
+### Estrutura do projeto
+
+- Backend serverless: [api/](api/)
+- Renderizacao: [render/](render/)
+- Gestos e eventos: [listeners/](listeners/)
+- Dados e criptografia: [services/](services/)
+
+### Testes e qualidade
+
+- Cobertura de cenarios de usuario, seguranca, acessibilidade e resiliencia.
+- Detalhes em [tests/README.md](tests/README.md).
+
+### Desenvolvimento
+
+```bash
+npm install
+npm run dev
+```
+
+> Rodar uma instancia propria e possivel, mas reduz o anonimato coletivo.
+
+### Licenca
+
+- ISC
+
+---
+
+## EN
+
+### Summary
+
+- Stoic habit tracker focused on privacy, with AI for reflection and routine tuning.
+- Offline-first PWA with encrypted local data and consistent UX across devices.
+
+### Tech dashboard
+
+<div align="center">
+  <table border="0" cellspacing="10" cellpadding="0" style="border-collapse: separate; border-spacing: 10px;">
+    <tr>
+      <td align="center" style="padding: 10px 14px; border-radius: 10px; background: #111; border: 1px solid #2a2a2a; color: #e5e5e5;">
+        Performance
+        <div style="margin-top: 6px; width: 140px; background: #2a2a2a; border-radius: 6px;">
+          <div style="width: 95%; background: #27ae60; height: 8px; border-radius: 6px;"></div>
+        </div>
+        <div style="color: #9aa0a6;">< 50ms load</div>
+      </td>
+      <td align="center" style="padding: 10px 14px; border-radius: 10px; background: #111; border: 1px solid #2a2a2a; color: #e5e5e5;">
+        Privacy
+        <div style="margin-top: 6px; width: 140px; background: #2a2a2a; border-radius: 6px;">
+          <div style="width: 100%; background: #27ae60; height: 8px; border-radius: 6px;"></div>
+        </div>
+        <div style="color: #9aa0a6;">AES-GCM + local</div>
+      </td>
+      <td align="center" style="padding: 10px 14px; border-radius: 10px; background: #111; border: 1px solid #2a2a2a; color: #e5e5e5;">
+        Accessibility
+        <div style="margin-top: 6px; width: 140px; background: #2a2a2a; border-radius: 6px;">
+          <div style="width: 90%; background: #27ae60; height: 8px; border-radius: 6px;"></div>
+        </div>
+        <div style="color: #9aa0a6;">WCAG 2.1 AA</div>
+      </td>
+      <td align="center" style="padding: 10px 14px; border-radius: 10px; background: #111; border: 1px solid #2a2a2a; color: #e5e5e5;">
+        Offline
+        <div style="margin-top: 6px; width: 140px; background: #2a2a2a; border-radius: 6px;">
+          <div style="width: 100%; background: #27ae60; height: 8px; border-radius: 6px;"></div>
+        </div>
+        <div style="color: #9aa0a6;">100% offline</div>
+      </td>
+    </tr>
+  </table>
+</div>
+
+### Architecture at a glance
+
+```mermaid
+flowchart LR
+  UI[UI] --> State[State Engine]
+  State --> Worker[Web Worker]
+  Worker --> Crypto[AES-GCM]
+  State --> Storage[IndexedDB]
+  State --> Sync[Cloud Sync]
+  Sync --> Storage
+```
+
+<details>
+  <summary>Quick flow map</summary>
+
+| Flow | Input | Output |
+|---|---|---|
+| Daily status | Tap on card | Bitmask + instant render |
+| Privacy | Local data | AES-GCM in worker |
+| Offline-first | Service Worker | Atomic cache |
+| Sync | Sync key | Resilient merge |
+</details>
+
+### Tech radar (ASCII)
+
+```text
+      Privacy 10
+        /\
+ A11y 9  /-----/  \-----\  Offline 10
+       /           \
+    UX 8 \           /  Performance 9
+      \--- 10 ---/
+       Resilience
+```
+
+### Data lifecycle
+
+```text
+Input -> Validation -> Encryption (AES-GCM) -> IndexedDB -> Sync -> Merge -> UI
+```
+
+### Platforms and features
+
+| Platform | Installable | Offline | Sync | Notifications |
+|---|---|---|---|---|
+| Web | Yes | Yes | Yes | Yes |
+| iOS (PWA) | Yes | Yes | Yes | Limited |
+| Android (PWA) | Yes | Yes | Yes | Yes |
+| Desktop (PWA) | Yes | Yes | Yes | Yes |
+
+### Quick Start
+
+1. **Install:** [Open the app](https://askesis-psi.vercel.app/) and choose "Install".
+2. **Create habit:** `+` button → name → day period → save.
+3. **Mark:** tap once = done, twice = deferred.
+4. **Progress:** calendar rings summarize the day.
+
+### Highlights
+
+- Total privacy, no login or tracking.
+- Stoic AI for reflection, not addiction.
+- Fast flow: consistency over streaks.
+- WCAG 2.1 AA accessibility and full keyboard support.
+
+### Privacy and Offline
+
+- Client-side AES-GCM with Web Workers.
+- Data stays local and syncs on demand.
+- 100% offline, including history and charts.
+
+### Build Paradigm: Human-AI Orchestration
+
+This table shows where AI provided a base and where strategic vision and Psychology training elevated the product.
+
+| Capability | Traditional / "Pure" AI | My Intervention (Architect) | Result: Askesis |
+|---|---|---|---|
+| Privacy | Social login and commercial cloud storage. | Ethical decision: collective anonymity and client-side AES-GCM via Web Workers to ensure sovereignty. | Bank-grade security without collecting personal data. |
+| Performance | Heavy frameworks (React/Next) that add latency. | Refinement: replaced abstractions with Vanilla TS and native APIs. | Instant load (< 50ms) and stable 60fps UI. |
+| UX and Psychology | Dopamine-driven gamification (badges, loud colors). | Theoretical grounding: Neuropsychology principles focused on the "virtue of consistency." | Minimalist interface that promotes real self-reflection. |
+| Accessibility | Often ignored in AI-generated code. | Digital inclusion: WCAG 2.1 AA, robust ARIA, full keyboard nav. | Universally usable app for diverse needs. |
+| Reliability | Isolated unit tests or missing critical error validation. | Chaos engineering: "Super-Tests" to validate extreme conditions. | Resilient software that recovers from critical failures. |
+| Sustainability | High infra costs passed via subscriptions or ads. | Product vision: zero-cost architecture pushing heavy work to user hardware. | Sustainable global operation with $0 maintenance cost. |
+
+> [ 🧠 ] Cognitive Psychology + [ 🤖 ] Generative AI + [ 💻 ] Low-Level Engineering
+> This project is a case study in how modern tech can be guided by human principles to serve virtue, not profit.
+
+### Tech
+
+- Vanilla TypeScript, no heavy frameworks.
+- PWA with Service Worker and atomic caching.
+- AES-GCM encryption and resilient sync.
+- Efficient rendering and 60fps UX.
+
+### Project Structure
+
+- Serverless backend: [api/](api/)
+- Rendering: [render/](render/)
+- Gestures and events: [listeners/](listeners/)
+- Data and crypto: [services/](services/)
+
+### Tests and Quality
+
+- Coverage across user flows, security, accessibility, and resilience.
+- Details in [tests/README.md](tests/README.md).
+
+### Development
+
+```bash
+npm install
+npm run dev
+```
+
+> Self-hosting is possible, but it reduces the anonymity set.
+
+### License
+
+- ISC
+
+---
+
+## ES
+
+### Resumen
+
+- Rastreador de habitos estoico, enfocado en privacidad, con IA para reflexion y ajuste de rutina.
+- PWA offline-first con datos locales cifrados y experiencia consistente en mobile y desktop.
+
+### Panel tecnologico
+
+<div align="center">
+  <table border="0" cellspacing="10" cellpadding="0" style="border-collapse: separate; border-spacing: 10px;">
+    <tr>
+      <td align="center" style="padding: 10px 14px; border-radius: 10px; background: #111; border: 1px solid #2a2a2a; color: #e5e5e5;">
+        Performance
+        <div style="margin-top: 6px; width: 140px; background: #2a2a2a; border-radius: 6px;">
+          <div style="width: 95%; background: #27ae60; height: 8px; border-radius: 6px;"></div>
+        </div>
+        <div style="color: #9aa0a6;">< 50ms load</div>
+      </td>
+      <td align="center" style="padding: 10px 14px; border-radius: 10px; background: #111; border: 1px solid #2a2a2a; color: #e5e5e5;">
+        Privacidad
+        <div style="margin-top: 6px; width: 140px; background: #2a2a2a; border-radius: 6px;">
+          <div style="width: 100%; background: #27ae60; height: 8px; border-radius: 6px;"></div>
+        </div>
+        <div style="color: #9aa0a6;">AES-GCM + local</div>
+      </td>
+      <td align="center" style="padding: 10px 14px; border-radius: 10px; background: #111; border: 1px solid #2a2a2a; color: #e5e5e5;">
+        Accesibilidad
+        <div style="margin-top: 6px; width: 140px; background: #2a2a2a; border-radius: 6px;">
+          <div style="width: 90%; background: #27ae60; height: 8px; border-radius: 6px;"></div>
+        </div>
+        <div style="color: #9aa0a6;">WCAG 2.1 AA</div>
+      </td>
+      <td align="center" style="padding: 10px 14px; border-radius: 10px; background: #111; border: 1px solid #2a2a2a; color: #e5e5e5;">
+        Offline
+        <div style="margin-top: 6px; width: 140px; background: #2a2a2a; border-radius: 6px;">
+          <div style="width: 100%; background: #27ae60; height: 8px; border-radius: 6px;"></div>
+        </div>
+        <div style="color: #9aa0a6;">100% offline</div>
+      </td>
+    </tr>
+  </table>
+</div>
+
+### Arquitectura de un vistazo
+
+```mermaid
+flowchart LR
+  UI[UI] --> State[State Engine]
+  State --> Worker[Web Worker]
+  Worker --> Crypto[AES-GCM]
+  State --> Storage[IndexedDB]
+  State --> Sync[Cloud Sync]
+  Sync --> Storage
+```
+
+<details>
+  <summary>Mapa rapido de flujos</summary>
+
+| Flujo | Entrada | Salida |
+|---|---|---|
+| Estado diario | Tap en tarjeta | Bitmask + render inmediato |
+| Privacidad | Datos locales | AES-GCM en worker |
+| Offline-first | Service Worker | Cache atomico |
+| Sincronizacion | Clave de sync | Merge resiliente |
+</details>
+
+### Radar tecnologico (ASCII)
+
+```text
+      Privacidad 10
+        /\
+ A11y 9  /-----/  \-----\  Offline 10
+       /           \
+    UX 8 \           /  Performance 9
+      \--- 10 ---/
+       Resiliencia
+```
+
+### Ciclo de datos
+
+```text
+Entrada -> Validacion -> Cifrado (AES-GCM) -> IndexedDB -> Sync -> Merge -> UI
+```
+
+### Plataformas y funciones
+
+| Plataforma | Instalable | Offline | Sync | Notificaciones |
+|---|---|---|---|---|
+| Web | Si | Si | Si | Si |
+| iOS (PWA) | Si | Si | Si | Limitado |
+| Android (PWA) | Si | Si | Si | Si |
+| Desktop (PWA) | Si | Si | Si | Si |
+
+### Inicio rapido
+
+1. **Instalar:** [Abre la app](https://askesis-psi.vercel.app/) y selecciona "Instalar".
+2. **Crear habito:** boton `+` → nombre → periodo del dia → guardar.
+3. **Marcar:** 1 toque = hecho, 2 toques = aplazado.
+4. **Progreso:** el calendario con anillos resume el dia.
+
+### Diferenciales
+
+- Privacidad total, sin login ni rastreo.
+- IA estoica para reflexion, no para adiccion.
+- Flujo rapido: consistencia sobre streaks.
+- Accesibilidad WCAG 2.1 AA y soporte completo de teclado.
+
+### Privacidad y Offline
+
+- Cifrado en el cliente con AES-GCM y Web Workers.
+- Los datos permanecen locales y sincronizan bajo demanda.
+- 100% offline, incluyendo historial y graficos.
+
+### Paradigma de Construccion: Orquestacion Humano-IA
+
+Esta tabla muestra donde la IA dio la base y donde la vision estrategica y formacion en Psicologia elevaron el producto.
+
+| Recurso | Tradicional / IA "Pura" | Mi Intervencion (Arquitecto) | Resultado: Askesis |
+|---|---|---|---|
+| Privacidad | Login social y datos en nube comercial. | Decision etica: anonimato colectivo y AES-GCM en el cliente via Web Workers para garantizar soberania. | Seguridad de nivel bancario sin recolectar datos personales. |
+| Performance | Frameworks pesados (React/Next) con latencia. | Refinamiento: Vanilla TS y APIs nativas. | Carga instantanea (< 50ms) y UI estable a 60fps. |
+| UX y Psicologia | Gamificacion basada en dopamina (badges/colores fuertes). | Grounding teorico: principios de Neuropsicologia y "virtud de la consistencia". | Interfaz minimalista para autorreflexion real. |
+| Accesibilidad | A menudo ignorada en codigo generado por IA. | Inclusion digital: WCAG 2.1 AA, ARIA robusto y navegacion por teclado. | App usable por personas con distintas necesidades. |
+| Confiabilidad | Tests unitarios aislados o sin validacion de errores criticos. | Chaos engineering: "Super-Tests" para condiciones extremas. | Software resiliente con recuperacion ante fallos criticos. |
+| Sostenibilidad | Costos altos trasladados a suscripciones o anuncios. | Vision de producto: arquitectura de costo cero en hardware del usuario. | Operacion global sostenible con $0 de mantenimiento. |
+
+> [ 🧠 ] Psicologia Cognitiva + [ 🤖 ] IA Generativa + [ 💻 ] Ingenieria de Bajo Nivel
+> Este proyecto es un estudio de caso sobre como la tecnologia moderna puede guiarse por principios humanos para servir a la virtud y no al lucro.
+
+### Tecnologia
+
+- TypeScript puro, sin frameworks pesados.
+- PWA con Service Worker y cache atomico.
+- Cifrado AES-GCM y sync resiliente.
+- Render eficiente y UX a 60fps.
+
+### Estructura del proyecto
+
+- Backend serverless: [api/](api/)
+- Renderizado: [render/](render/)
+- Gestos y eventos: [listeners/](listeners/)
+- Datos y criptografia: [services/](services/)
+
+### Tests y calidad
+
+- Cobertura de flujos, seguridad, accesibilidad y resiliencia.
+- Detalles en [tests/README.md](tests/README.md).
+
+### Desarrollo
+
+```bash
+npm install
+npm run dev
+```
+
+> Self-hosting es posible, pero reduce el conjunto de anonimato.
+
+### Licencia
+
+- ISC
+
+<h3>💡 Por que essa abordagem de testes importa?</h3>
+
+**Para Futuros Colaboradores:**
+- **Confiabilidade Comprovada:** Cada funcionalidade crítica tem validação automática
+- **Prevenção de Regressões:** Mudanças futuras não quebram comportamentos existentes
+- **Performance Garantida:** Budgets rigorosos asseguram que o app escala com milhares de usuários
+- **Manutenibilidade:** Testes de integração documentam como o sistema funciona na prática
+- **Conformidade:** Acessibilidade e segurança são validadas continuamente, não apenas auditadas
+
+**Para Usuários:**
+- Seus dados estão seguros mesmo em cenários extremos (crash, corrupção, offline)
+- O app funciona de forma consistente em qualquer dispositivo ou situação de rede
+- Acessível para pessoas com diferentes necessidades (leitores de tela, navegação por teclado)
+- Performance previsível mesmo com anos de histórico acumulado
 
 ---
 
@@ -205,6 +599,90 @@ Este projeto foi desenhado com uma engenharia inteligente para operar com **Cust
 *   **Armazenamento Ultraleve (GZIP):** Os dados históricos ("Cold Storage") são comprimidos via GZIP Stream API antes de serem salvos ou enviados para a nuvem. Isso reduz drasticamente o uso de banda e armazenamento.
 *   **O Celular Trabalha:** A maior parte do "pensamento" (criptografia, geração de gráficos, cálculos) é feita pelo seu próprio dispositivo, não pelo servidor. Isso poupa recursos da nuvem, garantindo que nunca ultrapassemos os limites gratuitos.
 *   **Notificações Gratuitas:** Utilizamos o plano de comunidade do OneSignal, que permite até 10.000 usuários Web gratuitamente.
+
+<h3>📊 Estimativas de Capacidade (com base em limites gratuitos)</h3>
+
+> **Nota:** os limites variam ao longo do tempo. Use as fórmulas abaixo e substitua pelos números atuais de cada provedor.
+
+**1) Google Gemini (IA compartilhada)**
+
+**Fórmula:**
+```
+usuarios_suportados ≈ (limite_req_dia / (req_por_usuario_dia))
+```
+
+**Exemplo (ajuste com a sua realidade):**
+- Se a quota permitir **Q** requisições/dia
+- E cada usuário fizer em média **R** consultas/dia
+→ Usuários suportados ≈ **Q / R**
+
+**Estimativa real (modelo Flash):**
+- **Quota estimada:** 1.000 solicitações/dia
+- **Uso médio por usuário:** 2 solicitações/dia (1 análise automática + 1 conselho estoico)
+→ **Usuários suportados ≈ 1.000 / 2 = 500 usuários/dia**
+
+**Boas práticas para reduzir consumo:**
+- Cache de respostas para consultas repetidas
+- Limitar sugestões diárias por usuário (ex: 1–3 insights/dia)
+- Rodar análises locais sempre que possível
+
+**2) OneSignal (Notificações Web)**
+
+**Limite gratuito divulgado:** até **10.000 usuários Web (subscribers)**.
+
+**Estimativa de capacidade:**
+- Se cada usuário receber **N** notificações/dia
+→ Total de notificações/dia ≈ **10.000 × N**
+
+**Cenário do Askesis (atual):**
+- **2 notificações/dia** para completar hábitos + **1 mensagem estoica/dia**
+→ **N = 3 notificações/dia**
+
+> **Importante:** o limite gratuito é **por número de usuários/subscribers**, não por volume de envio. Ou seja, ao atingir **10.000 usuários**, você já alcança o teto do plano — independentemente do número de notificações enviadas.
+
+**3) Vercel (Banda/Edge Functions)**
+
+**Fórmula genérica:**
+```
+usuarios_mensais ≈ (banda_mensal_disponivel / consumo_medio_por_usuario_mes)
+```
+
+**Exemplo de estimativa:**
+- Se o app consome **M MB/usuário/mês** (assets + sync)
+- E a banda gratuita é **B GB/mês**
+→ Usuários suportados ≈ **(B×1024) / M**
+
+**Medição real (dados atuais):**
+- **Fast Data Transfer:** 1,74 MB
+- **Fast Origin Transfer:** 0,178 MB
+- **Total por dia (1 usuário):** ≈ **1,918 MB/dia**
+- **Estimativa mensal por usuário (30 dias):** ≈ **57,5 MB/mês**
+
+**Estimativa com sua banda mensal:**
+```
+usuarios_mensais ≈ (B×1024) / 57,5
+```
+
+**Com o plano grátis (100 GB/mês):**
+```
+usuarios_mensais ≈ (100×1024) / 57,5 ≈ 1.780 usuários
+```
+
+<h3>🧮 Limite gratuito real (interseção entre provedores)</h3>
+
+Considerando as três plataformas **simultaneamente** (Gemini, Vercel e OneSignal), o limite prático da app é dado pelo **menor teto** entre elas:
+
+- **Gemini Flash:** ~**500 usuários/dia** (1.000 req/dia ÷ 2 req/usuário/dia)
+- **Vercel (100 GB/mês):** ~**1.780 usuários/mês** (≈ 57,5 MB/usuário/mês)
+- **OneSignal:** **10.000 usuários** (limite por subscribers)
+
+**Conclusão:** o gargalo atual é o **Gemini Flash (≈ 500 usuários/dia)**. Mesmo que Vercel e OneSignal suportem mais, a IA é o limitador antes de depender de colaboração comunitária ou ajustes de infraestrutura.
+
+**Como medir consumo real (recomendado):**
+1. Abra o app em um celular real
+2. Use DevTools → Network → "Transfer" total
+3. Some o tráfego inicial + 30 dias de uso típico
+4. Use esse valor como `consumo_medio_por_usuario_mes`
 
 ---
 

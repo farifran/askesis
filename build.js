@@ -1,418 +1,120 @@
 
-// build.js
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
-*/
-
-/**
- * @file build.js
- * @description Script de orquestração de build e servidor de desenvolvimento (DevServer).
- * 
- * [BUILD ENVIRONMENT / NODE.JS CONTEXT]:
- * Este código roda no ambiente Node.js (Local ou CI/CD), NÃO no navegador.
- * 
- * RESPONSABILIDADE:
- * 1. Compilação TypeScript -> JavaScript (ESM) usando esbuild.
- * 2. Gestão de Assets Estáticos (HTML, CSS, JSON, SVG).
- * 3. Versionamento Automático do Service Worker (Cache Busting).
- * 4. Servidor de Desenvolvimento com suporte a SPA, Live Reload, Streams e API Mock.
- * 
- * ARQUITETURA CRÍTICA:
- * - Zero-Dependency Live Reload: Usa Server-Sent Events (SSE) nativos para refresh automático.
- * - Streaming I/O: Serve arquivos via pipe() para consumo constante de memória O(1).
- * - Multi-Entry Bundling: Separa 'bundle' (UI Main Thread) e 'sync-worker' (Worker Thread).
- */
-
 const esbuild = require('esbuild');
-const fs = require('fs/promises'); // API Async para operações de arquivo atômicas
-const fsSync = require('fs'); // API Sync/Stream para Watchers e Servidor
-const path = require('path'); 
-const http = require('http');
-const { handleApiSync, handleApiAnalyze } = require('./scripts/dev-api-mock.js');
+const fs = require('fs');
+const path = require('path');
 
-const isProduction = process.env.NODE_ENV === 'production';
-const outdir = 'public';
+const isProd = process.env.NODE_ENV === 'production';
+// Use absolute path for output directory to avoid CWD ambiguity
+const OUT_DIR = path.resolve(__dirname, 'dist');
 
-// --- LIVE RELOAD SYSTEM (SSE) ---
-// Mantém referência a todos os clientes (abas abertas) para notificar mudanças.
-const reloadClients = new Set();
+async function copyDir(src, dest) {
+    if (!fs.existsSync(src)) return;
+    await fs.promises.mkdir(dest, { recursive: true });
+    const entries = await fs.promises.readdir(src, { withFileTypes: true });
 
-function notifyLiveReload() {
-    if (reloadClients.size === 0) return;
-    console.log('🔄 Enviando sinal de Live Reload...');
-    // ROBUSTNESS: Proteção contra EPIPE/Stream Destroyed se a aba fechar durante o build
-    reloadClients.forEach(res => {
-        try {
-            res.write('data: reload\n\n');
-        } catch (e) {
-            // Cliente morto, remove silenciosamente
-            reloadClients.delete(res);
-        }
-    });
-}
+    for (let entry of entries) {
+        const srcPath = path.join(src, entry.name);
+        const destPath = path.join(dest, entry.name);
 
-// --- SHARED BUILD LOGIC ---
-
-async function copyStaticFiles() {
-    console.log('Copiando arquivos estáticos...');
-    await fs.copyFile('index.html', path.join(outdir, 'index.html'));
-    await fs.copyFile('manifest.json', path.join(outdir, 'manifest.json'));
-    
-    // Versionamento Dinâmico do Service Worker
-    try {
-        const swContent = await fs.readFile('sw.js', 'utf-8');
-        const versionRegex = /const\s+CACHE_NAME\s*=\s*['"][^'"]+['"];/;
-        
-        if (versionRegex.test(swContent)) {
-            const versionedSw = swContent.replace(
-                versionRegex, 
-                `const CACHE_NAME = 'habit-tracker-v${Date.now()}';`
-            );
-            await fs.writeFile(path.join(outdir, 'sw.js'), versionedSw);
+        if (entry.isDirectory()) {
+            await copyDir(srcPath, destPath);
         } else {
-            console.warn('⚠️ AVISO: Padrão CACHE_NAME não encontrado em sw.js. O versionamento automático falhou.');
-            await fs.copyFile('sw.js', path.join(outdir, 'sw.js'));
+            await fs.promises.copyFile(srcPath, destPath);
         }
-    } catch (e) {
-        console.error('Erro ao processar sw.js:', e);
-        await fs.copyFile('sw.js', path.join(outdir, 'sw.js'));
     }
-
-    try {
-        await fs.cp('icons', path.join(outdir, 'icons'), { recursive: true });
-        await fs.cp('locales', path.join(outdir, 'locales'), { recursive: true });
-    } catch (err) {
-        console.warn('Aviso ao copiar diretórios de assets:', err.message);
-    }
-    
-    console.log('Arquivos estáticos copiados.');
 }
 
-const esbuildOptions = {
-    entryPoints: {
-        'bundle': 'index.tsx',
-        'sync-worker': 'services/sync.worker.ts'
-    },
-    bundle: true,
-    splitting: true, // PERF: Enables Code Splitting for dynamic imports (Lazy Loading)
-    outdir: outdir,
-    entryNames: '[name]',
-    format: 'esm',
-    target: 'es2020', // Alinhado com tsconfig para compatibilidade
-    platform: 'browser',
-    minify: isProduction,
-    // BUILD OPTIMIZATION: Explicit Tree Shaking and Comment Stripping
-    treeShaking: true,
-    legalComments: 'none',
-    sourcemap: !isProduction,
-    define: { 
-        'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'development') 
+async function build() {
+    console.log(`Building for ${isProd ? 'production' : 'development'}...`);
+    console.log(`Output Directory: ${OUT_DIR}`);
+
+    // Ensure output dir exists
+    if (fs.existsSync(OUT_DIR)) {
+        await fs.promises.rm(OUT_DIR, { recursive: true, force: true });
     }
-};
+    await fs.promises.mkdir(OUT_DIR, { recursive: true });
 
-// --- PRODUCTION BUILD LOGIC ---
-
-async function buildProduction() {
-    console.log('Compilando aplicação para produção...');
-    await esbuild.build(esbuildOptions);
-    console.log(`\nBuild de produção concluído!`);
-}
-
-// --- DEVELOPMENT SERVER LOGIC ---
-
-function watchStaticFiles() {
-    const pathsToWatch = ['index.html', 'manifest.json', 'sw.js', 'icons', 'locales'];
-    console.log('Observando arquivos estáticos para mudanças...');
-
-    let changedFiles = new Set();
-    let debounceTimeout;
-    
-    // MUTEX: Evita condições de corrida (Race Conditions) em I/O de arquivos.
-    // Impede que múltiplos processos de cópia rodem simultaneamente e corrompam arquivos ou travem no Windows (EBUSY).
-    let isProcessing = false;
-    let pendingRun = false;
-
-    const processChanges = async () => {
-        if (isProcessing) {
-            pendingRun = true;
-            return;
-        }
-        
-        isProcessing = true;
-        
-        try {
-            if (changedFiles.size === 0) return;
-            
-            const filesToProcess = [...changedFiles];
-            changedFiles.clear();
-
-            console.log(`Sincronizando ${filesToProcess.length} arquivo(s) estático(s)...`);
-
-            for (const file of filesToProcess) {
-                const destPath = path.join(outdir, path.relative('.', file));
-                
-                try {
-                    // Handle deletion
-                    if (!fsSync.existsSync(file)) {
-                        if (fsSync.existsSync(destPath)) {
-                            await fs.rm(destPath, { recursive: true, force: true });
-                            console.log(` - Deletado: ${destPath}`);
-                        }
-                        continue;
-                    }
-                    
-                    // Handle copy/update
-                    const stats = await fs.stat(file);
-                    if (stats.isDirectory()) {
-                        await fs.mkdir(destPath, { recursive: true });
-                    } else {
-                        await fs.mkdir(path.dirname(destPath), { recursive: true });
-
-                        // Isolate sw.js versioning logic
-                        if (path.basename(file) === 'sw.js') {
-                            const swContent = await fs.readFile(file, 'utf-8');
-                            const versionRegex = /const\s+CACHE_NAME\s*=\s*['"][^'"]+['"];/;
-                            const versionedSw = swContent.replace(
-                                versionRegex, 
-                                `const CACHE_NAME = 'habit-tracker-v${Date.now()}';`
-                            );
-                            await fs.writeFile(destPath, versionedSw);
-                        } else {
-                            await fs.copyFile(file, destPath);
-                        }
-                    }
-                    console.log(` - Atualizado: ${file}`);
-                } catch (err) {
-                     console.error(` - Falha ao processar ${file}:`, err);
-                }
-            }
-            // Dispara o reload APÓS copiar os arquivos
-            notifyLiveReload();
-        } finally {
-            isProcessing = false;
-            // Se houve pedidos de mudança enquanto rodávamos, executa novamente (Tail Call)
-            if (pendingRun) {
-                pendingRun = false;
-                // Re-schedule com um pequeno delay para agrupar
-                setTimeout(processChanges, 100);
-            }
-        }
-    };
-
-    pathsToWatch.forEach(p => {
-        if (!fsSync.existsSync(p)) return;
-
-        // OPTIMIZATION: Determina se é diretório UMA VEZ na inicialização.
-        // Evita chamadas fs.statSync dentro do callback que falhariam se o arquivo fosse deletado.
-        const isDir = fsSync.statSync(p).isDirectory();
-
-        fsSync.watch(p, { recursive: ['icons', 'locales'].includes(p) }, (eventType, filename) => {
-            let sourcePath = p;
-            
-            // Se for diretório e temos um filename, o caminho mudou é sub-arquivo
-            if (isDir && filename) {
-                sourcePath = path.join(p, filename);
-            }
-            // Se não for diretório (ex: index.html), o sourcePath é o próprio p.
-            
-            changedFiles.add(sourcePath);
-
-            if (debounceTimeout) clearTimeout(debounceTimeout);
-            debounceTimeout = setTimeout(processChanges, 100);
-        });
-    });
-}
-
-const watchLoggerPlugin = {
-    name: 'watch-logger',
-    setup(build) {
-        let startTime;
-        build.onStart(() => {
-            startTime = Date.now();
-            console.log('Iniciando reconstrução do código-fonte...');
-        });
-        build.onEnd(result => {
-            const duration = Date.now() - startTime;
-            if (result.errors.length > 0) {
-                console.error(`Reconstrução falhou após ${duration}ms.`);
-            } else {
-                console.log(`✅ Reconstrução do código-fonte concluída em ${duration}ms.`);
-                // Dispara reload APÓS o esbuild terminar com sucesso
-                notifyLiveReload();
-            }
-        });
-    },
-};
-
-const mimeTypes = {
-    '.html': 'text/html',
-    '.js': 'text/javascript',
-    '.css': 'text/css',
-    '.json': 'application/json',
-    '.svg': 'image/svg+xml',
-    '.png': 'image/png',
-    '.jpg': 'image/jpeg',
-    '.ico': 'image/x-icon',
-    '.map': 'application/json', // Source maps
-    '.woff2': 'font/woff2',
-};
-
-// Client-side script para Live Reload.
-// Injetado automaticamente no index.html servido.
-const LIVE_RELOAD_SCRIPT = `
-<script>
-  (function() {
-    console.log('🔌 Live Reload conectado');
-    const source = new EventSource('/_reload');
-    source.onmessage = () => {
-        console.log('🔄 Recarregando...');
-        location.reload();
-    };
-    source.onerror = () => {
-        // Se o servidor cair, tenta reconectar silenciosamente
-        console.log('🔌 Live Reload desconectado. Tentando reconectar...');
-    };
-  })();
-</script>
-</body>`;
-
-async function startDevServer() {
-    esbuildOptions.plugins = [watchLoggerPlugin];
-    const ctx = await esbuild.context(esbuildOptions);
-    await ctx.watch();
-
-    const devServer = http.createServer(async (req, res) => {
-        // RELIABILITY: Top-level Error Boundary.
-        // Impede que um erro não tratado em qualquer rota derrube o processo do servidor.
-        try {
-            // PERFORMANCE: Headers para prevenir cache agressivo do navegador em ambiente DEV.
-            res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-            res.setHeader('Pragma', 'no-cache');
-            res.setHeader('Expires', '0');
-            res.setHeader('Access-Control-Allow-Origin', '*'); 
-
-            // 1. Live Reload Endpoint (SSE)
-            if (req.url === '/_reload') {
-                res.writeHead(200, {
-                    'Content-Type': 'text/event-stream',
-                    'Cache-Control': 'no-cache',
-                    'Connection': 'keep-alive',
-                });
-                reloadClients.add(res);
-                // Cleanup on client disconnect
-                req.on('close', () => reloadClients.delete(res));
-                return;
-            }
-
-            // 2. API Mocking
-            if (req.url.startsWith('/api/sync')) {
-                return await handleApiSync(req, res); // Ensure await to catch errors
-            }
-            if (req.url.startsWith('/api/analyze')) {
-                return await handleApiAnalyze(req, res); // Ensure await to catch errors
-            }
-
-            // 3. Static File Serving
-            let url = req.url.split('?')[0]; 
-            if (url === '/') url = '/index.html';
-            
-            let filePath = path.join(outdir, url);
-            let extname = String(path.extname(filePath)).toLowerCase();
-            
-            const contentType = mimeTypes[extname] || 'application/octet-stream';
-
-            try {
-                // Verifica existência
-                await fs.access(filePath);
-
-                // SPECIAL HANDLING: Index.html Injection
-                // Lemos o HTML para memória para injetar o script de reload antes de enviar
-                if (url === '/index.html') {
-                    res.writeHead(200, { 'Content-Type': 'text/html' });
-                    let html = await fs.readFile(filePath, 'utf-8');
-                    // Injeta antes do fechamento do body
-                    html = html.replace('</body>', LIVE_RELOAD_SCRIPT);
-                    res.end(html);
-                    return;
-                }
-
-                // OPTIMIZATION: Streaming para outros arquivos (JS, CSS, Imagens)
-                // Mantém consumo de RAM baixo (O(1)) mesmo servindo bundles grandes.
-                res.writeHead(200, { 'Content-Type': contentType });
-                const stream = fsSync.createReadStream(filePath);
-                stream.pipe(res);
-
-            } catch (error) {
-                if (error.code === 'ENOENT') {
-                    // SPA Fallback -> index.html (com injeção)
-                    // Se a rota não existe como arquivo, serve o index.html para o router do cliente
-                    try {
-                        const fallbackPath = path.join(outdir, 'index.html');
-                        await fs.access(fallbackPath);
-                        res.writeHead(200, { 'Content-Type': 'text/html' });
-                        let html = await fs.readFile(fallbackPath, 'utf-8');
-                        html = html.replace('</body>', LIVE_RELOAD_SCRIPT);
-                        res.end(html);
-                    } catch (fallbackError) {
-                        res.writeHead(404);
-                        res.end(`Not Found: ${url}`);
-                    }
-                } else {
-                    res.writeHead(500);
-                    res.end(`Server Error: ${error.code}`);
-                }
-            }
-        } catch (serverError) {
-            console.error("🔥 CRITICAL SERVER ERROR:", serverError);
-            if (!res.headersSent) {
-                res.writeHead(500);
-                res.end("Internal Server Error (Check Terminal)");
-            }
-        }
+    // 1. Bundle App (index.tsx -> bundle.js + bundle.css)
+    const ctx = await esbuild.context({
+        entryPoints: ['index.tsx'],
+        bundle: true,
+        outfile: path.join(OUT_DIR, 'bundle.js'),
+        minify: isProd,
+        sourcemap: !isProd,
+        format: 'esm',
+        target: ['es2020'],
+        define: {
+            'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'development'),
+            'process.env.API_KEY': JSON.stringify(process.env.API_KEY || process.env.GEMINI_API_KEY || ''),
+        },
+        loader: {
+            '.svg': 'text',
+            '.png': 'file',
+            '.jpg': 'file',
+            '.gif': 'file',
+        },
+        logLevel: 'info',
     });
 
-    const DEV_PORT = 8000;
-    devServer.listen(DEV_PORT, () => {
-        console.log(`\n🚀 Servidor Dev iniciado em http://localhost:${DEV_PORT}`);
-        console.log(`✨ API Mock ativa em /api/*`);
-        console.log(`🔌 Live Reload ativo`);
-        watchStaticFiles();
-    });
-
-    const handleExit = async () => {
-        console.log('\nEncerrando...');
-        // Fecha conexões SSE graciosamente para evitar erros no browser
-        reloadClients.forEach(res => res.end());
-        devServer.close();
+    if (isProd) {
+        await ctx.rebuild();
         await ctx.dispose();
-        process.exit(0);
-    };
-    process.on('SIGINT', handleExit);
-    process.on('SIGTERM', handleExit);
-}
+    } else {
+        await ctx.watch();
+    }
 
-// --- MAIN ORCHESTRATOR ---
+    // 2. Bundle Worker (services/sync.worker.ts -> sync-worker.js)
+    await esbuild.build({
+        entryPoints: ['services/sync.worker.ts'],
+        bundle: true,
+        outfile: path.join(OUT_DIR, 'sync-worker.js'),
+        minify: isProd,
+        format: 'esm',
+        target: ['es2020'],
+    });
 
-async function runBuild() {
-    try {
-        console.log(`Iniciando build de ${isProduction ? 'produção' : 'desenvolvimento'}...`);
-        console.log(`Limpando diretório de saída: ${outdir}...`);
-        await fs.rm(outdir, { recursive: true, force: true });
-        await fs.mkdir(outdir, { recursive: true });
-        
-        await copyStaticFiles();
-        
-        if (isProduction) {
-            await buildProduction();
+    // 3. Copy Static Assets
+    const copyFile = async (src, dest) => {
+        const sourcePath = path.resolve(__dirname, src);
+        if (fs.existsSync(sourcePath)) {
+            await fs.promises.copyFile(sourcePath, dest);
         } else {
-            await startDevServer();
+            console.warn(`Warning: Asset ${src} not found.`);
         }
+    };
 
-    } catch (e) {
-        console.error('O build falhou:', e);
+    // Transform index.html to remove Vite dev script for production
+    const indexHtmlPath = path.resolve(__dirname, 'index.html');
+    if (fs.existsSync(indexHtmlPath)) {
+        let html = await fs.promises.readFile(indexHtmlPath, 'utf-8');
+        if (isProd) {
+            html = html.replace(/<script type="module" src="\/index\.tsx"><\/script>/g, '');
+            html = html.replace(/<script type="module" src="\/@vite\/client"><\/script>/g, '');
+            html = html.replace(/<link rel="stylesheet" href="\/index\.css">\s*/g, '');
+            html = html.replace(/<script type="importmap">[\s\S]*?<\/script>\s*/g, '');
+            // Ensure bundle.js is loaded
+            if (!html.includes('src="bundle.js"')) {
+                 html = html.replace('</body>', '<script src="bundle.js" type="module"></script></body>');
+            }
+        }
+        await fs.promises.writeFile(path.join(OUT_DIR, 'index.html'), html);
+    } else {
+        console.error("Error: index.html not found.");
         process.exit(1);
     }
+
+    await copyFile('manifest.json', path.join(OUT_DIR, 'manifest.json'));
+    await copyFile('sw.js', path.join(OUT_DIR, 'sw.js'));
+    
+    // Copy Dirs
+    await copyDir(path.resolve(__dirname, 'locales'), path.join(OUT_DIR, 'locales'));
+    await copyDir(path.resolve(__dirname, 'icons'), path.join(OUT_DIR, 'icons'));
+    await copyDir(path.resolve(__dirname, 'assets'), path.join(OUT_DIR, 'assets')); 
+
+    console.log('Build complete.');
 }
 
-runBuild();
+build().catch((err) => {
+    console.error("Build failed:", err);
+    process.exit(1);
+});

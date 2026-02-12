@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -7,333 +6,281 @@
 /**
  * @file services/persistence.ts
  * @description Camada de Persistência e Gerenciamento de Ciclo de Vida de Dados (Storage Engine).
- * 
- * [MAIN THREAD CONTEXT]:
- * Implementação baseada em IndexedDB (Assíncrono).
- * Substitui o localStorage bloqueante para permitir armazenamento virtualmente ilimitado e sem travamentos de UI.
- * 
- * ARQUITETURA (Pure I/O Layer):
- * - **Responsabilidade Única:** Leitura e Escrita no IndexedDB.
- * - **Zero Dependencies:** Não depende mais de `cloud.ts` ou Workers, quebrando ciclos de dependência.
- * 
- * DEPENDÊNCIAS CRÍTICAS:
- * - `state.ts`: Estrutura de dados.
  */
 
-import { 
-    state, 
-    AppState, 
-    Habit, 
-    HabitDailyInfo, 
-    APP_VERSION,
-    getPersistableState 
-} from '../state';
+import { state, AppState, Habit, HabitDailyInfo, APP_VERSION, getPersistableState, clearAllCaches } from '../state';
 import { migrateState } from './migration';
+import { HabitService } from './HabitService';
+import { clearHabitDomCache } from '../render';
+import { logger } from '../utils';
 
-// CONFIGURAÇÃO DO INDEXEDDB
-const DB_NAME = 'AskesisDB';
-const DB_VERSION = 1;
-const STORE_NAME = 'app_state';
+const DB_NAME = 'AskesisDB', DB_VERSION = 1, STORE_NAME = 'app_state';
+const STATE_JSON_KEY = 'askesis_core_json';
+const STATE_BINARY_KEY = 'askesis_logs_binary';
 
-// CONSTANTS
-const STATE_STORAGE_KEY = 'habitTrackerState_v1';
-// FIX [2025-04-03]: Increased timeout from 3000ms to 15000ms to accommodate slower devices during high load.
-const DB_OPEN_TIMEOUT_MS = 15000;
-
-// --- IDB UTILS (Zero-Dependency Wrapper) ---
-
+const DB_OPEN_TIMEOUT_MS = 15000, IDB_SAVE_DEBOUNCE_MS = 800;
 let dbPromise: Promise<IDBDatabase> | null = null;
+let saveTimeout: number | undefined;
+let activeSavePromise: Promise<void> | null = null;
+let pendingSaveResolve: (() => void) | null = null;
 
 function getDB(): Promise<IDBDatabase> {
     if (!dbPromise) {
         dbPromise = new Promise((resolve, reject) => {
-            let isSettled = false;
-
-            // Safety Timeout
-            const timeoutId = setTimeout(() => {
-                if (isSettled) return;
-                isSettled = true;
-                console.warn("IndexedDB connection timed out. Clearing cache to allow retry.");
-                dbPromise = null; // CRITICAL FIX: Permite retry na próxima chamada
-                reject(new Error("IndexedDB connection timed out"));
-            }, DB_OPEN_TIMEOUT_MS);
-
+            const timeoutId = setTimeout(() => { dbPromise = null; reject(new Error("Timeout IDB")); }, DB_OPEN_TIMEOUT_MS);
             const request = indexedDB.open(DB_NAME, DB_VERSION);
-
-            request.onupgradeneeded = (event) => {
-                const db = (event.target as IDBOpenDBRequest).result;
-                if (!db.objectStoreNames.contains(STORE_NAME)) {
-                    db.createObjectStore(STORE_NAME);
-                }
+            request.onupgradeneeded = (e) => {
+                const db = (e.target as IDBOpenDBRequest).result;
+                if (!db.objectStoreNames.contains(STORE_NAME)) db.createObjectStore(STORE_NAME);
             };
-
-            request.onsuccess = (event) => {
+            request.onsuccess = (e) => {
                 clearTimeout(timeoutId);
-                const db = (event.target as IDBOpenDBRequest).result;
-
-                if (isSettled) {
-                    // Race Condition: Connection opened AFTER timeout. 
-                    // Close it immediately to prevent leaks since the caller has already received an error.
-                    console.warn("IndexedDB opened after timeout. Closing orphan connection.");
-                    db.close();
-                    return;
-                }
-                isSettled = true;
-
-                // ROBUSTNESS [2025-03-27]: Tratamento de perda de conexão.
-                // Se o navegador fechar a conexão (pressão de memória) ou houver upgrade de versão,
-                // devemos limpar a promessa cacheada para forçar uma reconexão na próxima chamada.
-                
-                db.onclose = () => {
-                    console.warn('IndexedDB connection closed unexpectedly. Resetting connection cache.');
-                    dbPromise = null;
-                };
-
-                db.onversionchange = () => {
-                    console.warn('IndexedDB version change detected. Closing connection to allow upgrade.');
-                    db.close();
-                    dbPromise = null;
-                };
-
+                const db = (e.target as IDBOpenDBRequest).result;
+                db.onclose = db.onversionchange = () => dbPromise = null;
                 resolve(db);
             };
-
-            request.onerror = (event) => {
-                clearTimeout(timeoutId);
-                if (isSettled) return;
-                isSettled = true;
-                
-                console.error("IDB Open Error", event);
-                // CRITICAL FIX: Se a abertura falhar, não podemos cachear a promessa rejeitada para sempre.
-                // Devemos limpar dbPromise para que a próxima chamada a getDB() tente abrir novamente.
-                dbPromise = null; 
-                reject((event.target as IDBOpenDBRequest).error);
-            };
-
-            request.onblocked = () => {
-                console.warn("IndexedDB open request is blocked. Please close other tabs with this app open.");
-            };
+            request.onerror = () => { clearTimeout(timeoutId); dbPromise = null; reject(request.error); };
         });
     }
     return dbPromise;
 }
 
-// Helper para verificar erros de conexão e invalidar cache durante operações
-function handleIDBError(e: any) {
-    console.error("IndexedDB Operation Failed:", e);
-    // Se o erro indicar que o banco foi fechado ou estado inválido, limpa a promessa para forçar reconexão.
-    if (e && (e.name === 'InvalidStateError' || (e.message && e.message.includes('closed')))) {
-        console.warn("Detected closed DB connection in operation. Resetting cache.");
-        dbPromise = null;
-    }
-}
-
-// Retry Helper Logic: Tenta operações IDB até 3 vezes (2 retries)
-async function idbGet<T>(key: string, retries = 2): Promise<T | undefined> {
-    try {
-        const db = await getDB();
-        return new Promise((resolve, reject) => {
-            const transaction = db.transaction(STORE_NAME, 'readonly');
-            const store = transaction.objectStore(STORE_NAME);
-            const request = store.get(key);
-            
-            request.onsuccess = () => resolve(request.result);
-            request.onerror = () => reject(request.error);
-        });
-    } catch (e) {
-        if (retries > 0) {
-            console.warn(`IndexedDB Get failed, retrying... (${retries} attempts left). Error:`, e);
-            // Force reset dbPromise if it was a connection/state error to ensure fresh connection on retry
-            if (e instanceof Error && (e.message.includes('timed out') || e.name === 'InvalidStateError')) {
-                dbPromise = null;
-            }
-            return idbGet(key, retries - 1);
+/**
+ * Grava um estado específico no IndexedDB.
+ * Otimizado para separar JSON leve de binários pesados (Hex-Strings).
+ */
+async function saveSplitState(main: AppState): Promise<void> {
+    const db = await getDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        const store = tx.objectStore(STORE_NAME);
+        
+        const logs = main.monthlyLogs;
+        const jsonState = { ...main };
+        // Remove logs do objeto principal para não duplicar no armazenamento
+        delete (jsonState as any).monthlyLogs;
+        
+        store.put(jsonState, STATE_JSON_KEY);
+        
+        if (logs && logs.size > 0) {
+            const serializedLogs: Record<string, string> = {};
+            logs.forEach((v, k) => {
+                serializedLogs[k] = v.toString(16);
+            });
+            store.put(serializedLogs, STATE_BINARY_KEY);
+        } else {
+            // FIX: Remove stale binary key when logs are empty (e.g., all habits deleted)
+            store.delete(STATE_BINARY_KEY);
         }
-        handleIDBError(e);
-        return undefined; // Fail safe
-    }
-}
-
-async function idbSet(key: string, value: any, retries = 2): Promise<void> {
-    try {
-        const db = await getDB();
-        return new Promise((resolve, reject) => {
-            const transaction = db.transaction(STORE_NAME, 'readwrite');
-            const store = transaction.objectStore(STORE_NAME);
-            const request = store.put(value, key);
-            
-            request.onsuccess = () => resolve();
-            request.onerror = () => reject(request.error);
-        });
-    } catch (e) {
-        if (retries > 0) {
-            console.warn(`IndexedDB Set failed, retrying... (${retries} attempts left). Error:`, e);
-            if (e instanceof Error && (e.message.includes('timed out') || e.name === 'InvalidStateError')) {
-                dbPromise = null;
-            }
-            return idbSet(key, value, retries - 1);
-        }
-        handleIDBError(e);
-        // Não relançamos o erro para evitar crash da UI, mas o log acima alertará.
-    }
-}
-
-async function idbDelete(key: string, retries = 2): Promise<void> {
-    try {
-        const db = await getDB();
-        return new Promise((resolve, reject) => {
-            const transaction = db.transaction(STORE_NAME, 'readwrite');
-            const store = transaction.objectStore(STORE_NAME);
-            const request = store.delete(key);
-            
-            request.onsuccess = () => resolve();
-            request.onerror = () => reject(request.error);
-        });
-    } catch (e) {
-        if (retries > 0) {
-            console.warn(`IndexedDB Delete failed, retrying... (${retries} attempts left).`);
-            if (e instanceof Error && (e.message.includes('timed out') || e.name === 'InvalidStateError')) {
-                dbPromise = null;
-            }
-            return idbDelete(key, retries - 1);
-        }
-        handleIDBError(e);
-    }
-}
-
-let syncHandler: ((state: AppState) => void) | null = null;
-
-export function registerSyncHandler(handler: (state: AppState) => void) {
-    syncHandler = handler;
-}
-
-function pruneOrphanedDailyData(habits: Habit[], dailyData: Record<string, Record<string, HabitDailyInfo>>) {
-    const validHabitIds = new Set(habits.map(h => h.id));
-    let cleanedCount = 0;
-
-    Object.keys(dailyData).forEach(date => {
-        const dayRecord = dailyData[date];
-        if (!dayRecord) return;
-
-        const habitIds = Object.keys(dayRecord);
-        let dayModified = false;
-
-        habitIds.forEach(id => {
-            if (!validHabitIds.has(id)) {
-                delete dayRecord[id];
-                dayModified = true;
-                cleanedCount++;
-            }
-        });
-
-        if (dayModified && Object.keys(dayRecord).length === 0) {
-            delete dailyData[date];
-        }
+        
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
     });
-
-    if (cleanedCount > 0) {
-        console.log(`Pruned ${cleanedCount} orphaned habit records from daily data.`);
-    }
 }
 
-// --- PERSISTENCE OPERATIONS ---
+let syncHandler: ((state: AppState, immediate?: boolean) => void) | null = null;
+export const registerSyncHandler = (h: (s: AppState, immediate?: boolean) => void) => syncHandler = h;
 
-export async function saveState(): Promise<void> {
-    const stateToSave = getPersistableState();
-    
-    try {
-        await idbSet(STATE_STORAGE_KEY, stateToSave);
-        if (syncHandler) {
-            syncHandler(stateToSave);
+function pruneOrphanedDailyData(habits: readonly Habit[], dailyData: Record<string, Record<string, HabitDailyInfo>>) {
+    if (habits.length === 0) {
+        // Mitigation: only clear after loadState fully assigns habits.
+        Object.keys(dailyData).forEach(date => delete dailyData[date]);
+        return;
+    }
+    const validIds = new Set(habits.map(h => h.id));
+    for (const date in dailyData) {
+        for (const id in dailyData[date]) {
+            if (!validIds.has(id)) {
+                delete dailyData[date][id];
+            }
         }
-    } catch (e) {
-        console.error("Critical: Failed to save state to IDB", e);
+        if (Object.keys(dailyData[date]).length === 0) delete dailyData[date];
     }
 }
 
-export async function persistStateLocally(appState: AppState): Promise<void> {
+async function saveStateInternal(immediate = false, suppressSync = false) {
+    if (activeSavePromise) await activeSavePromise;
+
+    activeSavePromise = (async () => {
+        // O timestamp já foi incrementado pelo chamador (_notifyChanges ou _notifyPartialUIRefresh)
+        const structuredData = getPersistableState();
+        try {
+            await saveSplitState(structuredData);
+        } catch (e) { 
+            logger.error("IDB Save Failed:", e); 
+        }
+        
+        if (!suppressSync) {
+            syncHandler?.(structuredData, immediate);
+        }
+    })();
+
     try {
-        await idbSet(STATE_STORAGE_KEY, appState);
-    } catch (e) {
-        console.error("Failed to persist state locally", e);
+        await activeSavePromise;
+    } finally {
+        activeSavePromise = null;
     }
 }
+
+function cancelPendingSave() {
+    if (saveTimeout !== undefined) {
+        clearTimeout(saveTimeout);
+        saveTimeout = undefined;
+    }
+    if (pendingSaveResolve) {
+        pendingSaveResolve();
+        pendingSaveResolve = null;
+    }
+}
+
+export async function saveState(immediate = false, suppressSync = false): Promise<void> {
+    if (saveTimeout !== undefined) {
+        clearTimeout(saveTimeout);
+        saveTimeout = undefined;
+    }
+
+    if (immediate) {
+        const resolve = pendingSaveResolve;
+        pendingSaveResolve = null;
+        await saveStateInternal(true, suppressSync);
+        resolve?.();
+    } else {
+        return new Promise((resolve) => {
+            const oldResolve = pendingSaveResolve;
+            pendingSaveResolve = () => {
+                oldResolve?.();
+                resolve();
+            };
+
+            saveTimeout = self.setTimeout(async () => {
+                saveTimeout = undefined;
+                const currentResolve = pendingSaveResolve;
+                pendingSaveResolve = null;
+                await saveStateInternal(false, suppressSync);
+                currentResolve?.();
+            }, IDB_SAVE_DEBOUNCE_MS);
+        });
+    }
+}
+
+/**
+ * Gravação Imediata (Data Landing).
+ * Usado para dados vindo da nuvem: grava no disco exatamente o que recebeu, 
+ * sem alterar o timestamp lastModified original da nuvem.
+ */
+export const persistStateLocally = async (data: AppState) => {
+    if (activeSavePromise) await activeSavePromise;
+    try {
+        await saveSplitState(data);
+    } catch (e) {
+        logger.error("[Persistence] Immediate Cloud Persistence Failed:", e);
+    }
+};
 
 export async function loadState(cloudState?: AppState): Promise<AppState | null> {
-    let loadedState: AppState | null = cloudState || null;
+    let mainState = cloudState;
+    let binaryLogsData: any;
 
-    if (!loadedState) {
+    // 1. Load from IDB if no Cloud State provided
+    if (!mainState) {
         try {
-            loadedState = await idbGet<AppState>(STATE_STORAGE_KEY) || null;
-
-            if (!loadedState) {
-                const localStr = localStorage.getItem(STATE_STORAGE_KEY);
-                if (localStr) {
-                    console.log("Migrating data from LocalStorage to IndexedDB...");
-                    try {
-                        loadedState = JSON.parse(localStr);
-                        if (loadedState) {
-                            await idbSet(STATE_STORAGE_KEY, loadedState);
-                            localStorage.removeItem(STATE_STORAGE_KEY);
-                            console.log("Migration successful. LocalStorage cleared.");
-                        }
-                    } catch (e) {
-                        console.error("Failed to parse legacy local state", e);
-                    }
-                }
-            }
+            const db = await getDB();
+            await new Promise<void>((resolve) => {
+                const tx = db.transaction(STORE_NAME, 'readonly');
+                const store = tx.objectStore(STORE_NAME);
+                
+                const reqMain = store.get(STATE_JSON_KEY);
+                const reqLogs = store.get(STATE_BINARY_KEY);
+                
+                tx.oncomplete = () => {
+                    mainState = reqMain.result;
+                    binaryLogsData = reqLogs.result;
+                    resolve();
+                };
+                tx.onerror = () => resolve();
+            });
         } catch (e) {
-            console.error("Failed to load state from DB", e);
+            logger.warn("[Persistence] Failed to read state from IDB", e);
         }
     }
 
-    if (loadedState) {
-        const migrated = migrateState(loadedState, APP_VERSION);
+    if (mainState) {
+        // 2. CRITICAL FIX: Pre-Migration Hydration
+        // Se temos logs binários do IDB, precisamos injetá-los no objeto ANTES da migração.
+        // Se a migração rodar num objeto sem logs, ela pode assumir que é um estado novo 
+        // e ignorar a atualização necessária dos bitmasks (ex: v8 -> v9), corrompendo os dados.
+        if (binaryLogsData && !mainState.monthlyLogs) {
+            (mainState as any).monthlyLogs = binaryLogsData;
+        }
+
+        // 3. Migrate State (Handles Schema Upgrades & Bitmask Expansion)
+        let migrated = migrateState(mainState, APP_VERSION);
         
-        const uniqueHabitsMap = new Map<string, Habit>();
-        migrated.habits.forEach(h => {
-            if (h.id && !uniqueHabitsMap.has(h.id)) {
-                uniqueHabitsMap.set(h.id, h);
+        // 4. Hydrate Result into Global State
+        state.monthlyLogs = migrated.monthlyLogs;
+        // CRITICAL: Reset Lazy Sharding cache whenever state is replaced from storage/cloud.
+        HabitService.resetCache();
+        
+        // Fallback robusto: se a migração falhou em hidratar o Map, tenta recuperar dos dados brutos
+        if ((!state.monthlyLogs || state.monthlyLogs.size === 0) && binaryLogsData) {
+             if (typeof binaryLogsData === 'object' && !Array.isArray(binaryLogsData)) {
+                state.monthlyLogs = new Map();
+                Object.entries(binaryLogsData as Record<string, string>).forEach(([k, v]) => {
+                    state.monthlyLogs.set(k, BigInt("0x" + v));
+                });
             }
-        });
-        const sanitizedHabits = Array.from(uniqueHabitsMap.values());
+        }
 
-        const validHabits = sanitizedHabits.filter(h => {
-            if (!h.scheduleHistory || h.scheduleHistory.length === 0) {
-                console.warn(`Removing corrupted habit found in state: ${h.id}`);
-                return false;
-            }
-            h.scheduleHistory.sort((a, b) => (a.startDate > b.startDate ? 1 : -1));
-            return true;
-        });
-
-        state.habits = validHabits;
+        state.habits = [...(migrated.habits || [])];
+        state.lastModified = migrated.lastModified || Date.now();
         state.dailyData = migrated.dailyData || {};
-        state.archives = migrated.archives || {}; 
-        
-        pruneOrphanedDailyData(state.habits, state.dailyData);
+        state.archives = migrated.archives || {};
+        state.dailyDiagnoses = migrated.dailyDiagnoses || {};
+        state.notificationsShown = [...(migrated.notificationsShown || [])];
+        state.pending21DayHabitIds = [...(migrated.pending21DayHabitIds || [])];
+        state.pendingConsolidationHabitIds = [...(migrated.pendingConsolidationHabitIds || [])];
+        state.hasOnboarded = migrated.hasOnboarded ?? true;
+        state.syncLogs = (migrated.syncLogs || []).map((log: any) => ({
+            time: log.time,
+            msg: log.msg,
+            type: log.type
+        }));
 
-        state.notificationsShown = migrated.notificationsShown || [];
-        state.pending21DayHabitIds = migrated.pending21DayHabitIds || [];
-        state.pendingConsolidationHabitIds = migrated.pendingConsolidationHabitIds || [];
+        if (state.syncLogs.length > 50) {
+            state.syncLogs = state.syncLogs.slice(-50);
+        }
+
+        // Clear Caches
+        clearAllCaches();
         
-        state.streaksCache.clear();
-        state.scheduleCache.clear();
-        state.activeHabitsCache.clear();
-        state.unarchivedCache.clear();
-        state.habitAppearanceCache.clear();
-        state.daySummaryCache.clear();
+        clearHabitDomCache();
+        Object.assign(state.uiDirtyState, { calendarVisuals: true, habitListStructure: true, chartData: true });
         
-        state.uiDirtyState.calendarVisuals = true;
-        state.uiDirtyState.habitListStructure = true;
-        state.uiDirtyState.chartData = true;
-        
+        const runCleanup = () => pruneOrphanedDailyData(state.habits, state.dailyData);
+        if ('scheduler' in window && (window as any).scheduler) {
+             (window as any).scheduler.postTask(runCleanup, { priority: 'background' });
+        } else if ('requestIdleCallback' in window) {
+            requestIdleCallback(() => runCleanup());
+        } else {
+            setTimeout(runCleanup, 50);
+        }
+
+        document.dispatchEvent(new CustomEvent('render-app'));
         return migrated;
     }
     return null;
 }
 
-export async function clearLocalPersistence(): Promise<void> {
-    await idbDelete(STATE_STORAGE_KEY);
-    localStorage.removeItem(STATE_STORAGE_KEY);
-}
+export const clearLocalPersistence = async () => {
+    cancelPendingSave();
+    try {
+        const db = await getDB();
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        tx.objectStore(STORE_NAME).clear();
+        await new Promise(r => tx.oncomplete = r);
+    } catch (e) {
+        logger.warn("IDB clear failed", e);
+    }
+    // Use HabitService to clear logs and cache consistently
+    HabitService.clearAllLogs();
+};

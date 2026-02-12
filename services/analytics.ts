@@ -16,11 +16,12 @@
  */
 
 import { inject } from '@vercel/analytics';
+import { logger } from '../utils';
 
 export function initAnalytics() {
     try {
         inject();
     } catch (e) {
-        console.warn('Analytics injection failed:', e);
+        logger.warn('Analytics injection failed:', e);
     }
 }

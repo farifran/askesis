@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -21,24 +20,9 @@
  * - `locales/*.json`: Arquivos de tradução.
  */
 
-import { state, TimeOfDay } from './state';
-import { pushToOneSignal } from './utils';
-
-// TYPE POLYFILL: Garante que Intl.ListFormat seja reconhecido mesmo em configurações TS antigas (ES2020 ou inferior).
-declare global {
-    namespace Intl {
-        interface ListFormatOptions {
-            localeMatcher?: "lookup" | "best fit";
-            type?: "conjunction" | "disjunction" | "unit";
-            style?: "long" | "short" | "narrow";
-        }
-
-        class ListFormat {
-            constructor(locales?: string | string[], options?: ListFormatOptions);
-            public format(list: Iterable<string>): string;
-        }
-    }
-}
+import { state, TimeOfDay, LANGUAGES } from './state';
+import { pushToOneSignal, logger } from './utils';
+import { LANG_LOAD_TIMEOUT_MS } from './constants';
 
 // INTERFACE ABSTRATA: Permite que o cache aceite tanto a classe nativa quanto o mock de fallback sem erros de tipo.
 interface ListFormatter {
@@ -68,6 +52,7 @@ const listFormatCache: Record<string, ListFormatter> = {};
 // NUMERIC CACHE [2025-04-14]: Cache para formatadores numéricos (Int, Decimal, Evolution).
 // Evita recriar Intl.NumberFormat em loops de renderização de gráficos.
 type NumberFormatBundle = { int: Intl.NumberFormat; dec: Intl.NumberFormat; evo: Intl.NumberFormat };
+type NumberFormatType = keyof NumberFormatBundle;
 const numberFormatCache: Record<string, NumberFormatBundle> = {};
 
 // PERFORMANCE: Cache imutável para nomes de dias da semana por idioma.
@@ -108,7 +93,6 @@ let latestLangRequestId = 0;
 const INTERPOLATION_REGEX = /{([^{}]+)}/g;
 
 // NETWORK TIMEOUT: Evita Zombie State.
-const LANG_LOAD_TIMEOUT = 5000;
 
 /**
  * Carrega o arquivo JSON de tradução.
@@ -129,7 +113,7 @@ function loadLanguage(langCode: string): Promise<boolean> {
     // 3. Initiate Network Request with Timeout
     const promise = (async () => {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), LANG_LOAD_TIMEOUT);
+        const timeoutId = setTimeout(() => controller.abort(), LANG_LOAD_TIMEOUT_MS);
 
         try {
             const response = await fetch(`./locales/${langCode}.json`, { signal: controller.signal });
@@ -143,17 +127,17 @@ function loadLanguage(langCode: string): Promise<boolean> {
             return true;
         } catch (error) {
             clearTimeout(timeoutId);
-            console.error(`Could not load translations for ${langCode}:`, error);
+            logger.error(`Could not load translations for ${langCode}:`, error);
             
             // Fallback Recovery: Garante que PT (base) esteja carregado para o fallbackDict
             // SECURITY: Evita recursão infinita se 'pt' também falhar.
             if (langCode !== 'pt' && !loadedTranslations['pt']) {
                 try {
                     // Tentativa única de carregar o fallback
-                    console.warn("Attempting to load fallback 'pt'");
+                    logger.warn("Attempting to load fallback 'pt'");
                     await loadLanguage('pt'); 
                 } catch (fallbackError) {
-                    console.error(`CRITICAL: Could not load fallback language 'pt'.`, fallbackError);
+                    logger.error(`CRITICAL: Could not load fallback language 'pt'.`, fallbackError);
                 }
             }
             return false;
@@ -224,7 +208,8 @@ function updateHotCache(langCode: string) {
     // 4. List Format (Arrays)
     if (!listFormatCache[langCode]) {
         try {
-            listFormatCache[langCode] = new Intl.ListFormat(langCode, { style: 'long', type: 'conjunction' });
+            // @fix: Cast Intl to any to support ListFormat which might be missing in TS libs
+            listFormatCache[langCode] = new (Intl as any).ListFormat(langCode, { style: 'long', type: 'conjunction' });
         } catch (e) {
             // ROBUSTEZ: Fallback seguro se a API não existir (Browser antigo).
             listFormatCache[langCode] = { 
@@ -352,7 +337,26 @@ export function compareStrings(a: string, b: string): number {
  * Formata uma data usando as regras do idioma ativo.
  * Implementa estratégia de cache de dupla camada (WeakMap -> StringMap) para Alocação Zero.
  */
-export function formatDate(date: Date | number, options: Intl.DateTimeFormatOptions): string {
+export function formatDate(date: Date | number | null | undefined, options: Intl.DateTimeFormatOptions): string {
+    if (date === null || date === undefined) return '---';
+
+    // CRITICAL GUARD: Check for invalid date before passing to Intl.
+    // Intl.DateTimeFormat throws RangeError on invalid dates, which can crash the render loop.
+    // CHAOS FIX: Ensure dateObj is actually a Date instance to prevent runtime crash if 'date' is a string/object (Data Rot).
+    let dateObj: Date;
+    if (typeof date === 'number') {
+        dateObj = new Date(date);
+    } else if (date instanceof Date) {
+        dateObj = date;
+    } else {
+        // Fallback for corrupted data types (e.g. string from JSON without parsing)
+        dateObj = new Date(date as any);
+    }
+
+    if (isNaN(dateObj.getTime())) {
+        return '---';
+    }
+
     if (state.activeLanguageCode !== currentLangCode) {
         updateHotCache(state.activeLanguageCode);
     }
@@ -367,7 +371,7 @@ export function formatDate(date: Date | number, options: Intl.DateTimeFormatOpti
     }
     
     let formatter = weakCache.get(options);
-    if (formatter) return formatter.format(date);
+    if (formatter) return formatter.format(dateObj);
 
     // 2. String Key Generation (Slow Path / Fallback)
     // Necessário para objetos literais criados inline (ex: { month: 'short' }).
@@ -394,41 +398,37 @@ export function formatDate(date: Date | number, options: Intl.DateTimeFormatOpti
     // Se este objeto de opção específico for reutilizado (loop), na próxima vez pegaremos no passo 1.
     weakCache.set(options, formatter);
     
-    return formatter.format(date);
+    return formatter.format(dateObj);
+}
+
+/**
+ * REFACTOR [MAINTAINABILITY]: Helper interno para formatação de números.
+ * Centraliza a lógica de verificação de idioma e acesso ao cache, eliminando redundância.
+ */
+function _formatNumber(num: number, type: NumberFormatType): string {
+    if (state.activeLanguageCode !== currentLangCode) {
+        updateHotCache(state.activeLanguageCode);
+    }
+    return currentNumberFormat![type].format(num);
 }
 
 /**
  * Formata um número inteiro usando as regras do locale ativo.
  * Ex: 1000 -> "1.000" (PT) ou "1,000" (EN).
  */
-export function formatInteger(num: number): string {
-    if (state.activeLanguageCode !== currentLangCode) {
-        updateHotCache(state.activeLanguageCode);
-    }
-    return currentNumberFormat!.int.format(num);
-}
+export const formatInteger = (num: number) => _formatNumber(num, 'int');
 
 /**
  * Formata um número decimal (fixo em 2 casas) usando as regras do locale ativo.
  * Ex: 10.5 -> "10,50" (PT) ou "10.50" (EN).
  */
-export function formatDecimal(num: number): string {
-    if (state.activeLanguageCode !== currentLangCode) {
-        updateHotCache(state.activeLanguageCode);
-    }
-    return currentNumberFormat!.dec.format(num);
-}
+export const formatDecimal = (num: number) => _formatNumber(num, 'dec');
 
 /**
  * Formata um número de evolução/porcentagem (fixo em 1 casa) usando as regras do locale ativo.
  * Ex: 12.5 -> "12,5" (PT) ou "12.5" (EN).
  */
-export function formatEvolution(num: number): string {
-    if (state.activeLanguageCode !== currentLangCode) {
-        updateHotCache(state.activeLanguageCode);
-    }
-    return currentNumberFormat!.evo.format(num);
-}
+export const formatEvolution = (num: number) => _formatNumber(num, 'evo');
 
 /**
  * Formata uma lista de strings (ex: "A, B e C") usando as regras do idioma ativo.
@@ -461,6 +461,16 @@ export function getLocaleDayName(date: Date): string {
     return currentWeekdayNames[date.getUTCDay()] || '';
 }
 
+/**
+ * Obtém o nome localizado do idioma ativo para ser usado nos prompts da IA.
+ */
+export function getAiLanguageName(): string {
+    if (state.activeLanguageCode !== currentLangCode) {
+        updateHotCache(state.activeLanguageCode);
+    }
+    return t(LANGUAGES.find(l => l.code === state.activeLanguageCode)?.nameKey || 'langEnglish');
+}
+
 export async function setLanguage(langCode: 'pt' | 'en' | 'es') {
     // Redundancy Guard
     if (state.activeLanguageCode === langCode && loadedTranslations[langCode]) {
@@ -482,7 +492,7 @@ export async function setLanguage(langCode: 'pt' | 'en' | 'es') {
         document.documentElement.lang = langCode;
         localStorage.setItem('habitTrackerLanguage', langCode);
         
-        pushToOneSignal((OneSignal: any) => {
+        pushToOneSignal((OneSignal: OneSignalLike) => {
             OneSignal.User.setLanguage(langCode);
         });
 
@@ -493,6 +503,6 @@ export async function setLanguage(langCode: 'pt' | 'en' | 'es') {
 
         document.dispatchEvent(new CustomEvent('language-changed'));
     } else {
-        console.warn(`setLanguage aborted: Failed to load ${langCode}`);
+        logger.warn(`setLanguage aborted: Failed to load ${langCode}`);
     }
 }

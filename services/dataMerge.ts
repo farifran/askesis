@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -7,209 +6,183 @@
 /**
  * @file services/dataMerge.ts
  * @description Algoritmo de Reconciliação de Estado (Smart Merge / CRDT-lite).
- * 
- * [MAIN THREAD CONTEXT]:
- * Este módulo executa lógica computacional pura (síncrona). 
- * Embora não acesse o DOM, operações de merge em estados grandes (especialmente Archives) 
- * podem bloquear a thread.
- * 
- * ARQUITETURA (Conflict-free Replicated Data Type - Lite):
- * - **Responsabilidade Única:** Unificar duas árvores de estado (`local` e `incoming/remote`) em uma 
- *   única "Fonte da Verdade", garantindo consistência eventual sem perda de dados significativa.
- * - **Estratégia Semântica:** Diferente de um merge simples por timestamp ("Last Write Wins"), 
- *   este algoritmo usa pesos semânticos. Um hábito "Concluído" localmente sempre sobrescreve 
- *   um "Pendente" na nuvem, independentemente do timestamp, preservando o progresso do usuário.
- * 
- * DEPENDÊNCIAS CRÍTICAS:
- * - Estrutura do `AppState` em `state.ts`.
- * 
- * DECISÕES TÉCNICAS:
- * 1. **Structured Clone:** Uso de API nativa moderna para clonagem profunda performática.
- * 2. **Sets para Deduplicação:** Complexidade O(1) para verificar existência de IDs.
- * 3. **Status Weighting:** Lógica de negócios codificada para resolução de conflitos em nível de campo.
  */
 
-import { AppState, HabitDailyInfo, HabitStatus, TimeOfDay } from '../state';
+import { AppState, HabitDailyInfo, Habit, HabitSchedule } from '../state';
+import { logger } from '../utils';
+import { HabitService } from './HabitService';
 
-// PERFORMANCE: Lookup Table para pesos de status (Smi Values).
-// Acesso O(1) é mais rápido que switch/if-else repetido.
-// Pending = 1, Snoozed = 2, Completed = 3. Undefined = 1.
-const STATUS_WEIGHTS: Record<string, number> = {
-    'completed': 3,
-    'snoozed': 2,
-    'pending': 1
-};
+function isValidBigIntString(value: string): boolean {
+    if (!value) return false;
+    const normalized = value.startsWith('0x') ? value.slice(2) : value;
+    if (!/^[0-9a-f]+$/i.test(normalized)) return false;
+    if (normalized.length > 64) return false;
+    return true;
+}
 
-const DEFAULT_WEIGHT = 1;
+function safeBigIntFromUnknown(value: any): bigint | null {
+    if (typeof value === 'bigint') return value;
+    if (typeof value === 'number') {
+        if (!Number.isFinite(value) || !Number.isInteger(value)) return null;
+        return BigInt(value);
+    }
+    if (typeof value === 'string') {
+        if (!isValidBigIntString(value)) return null;
+        const hexClean = value.startsWith('0x') ? value : '0x' + value;
+        return BigInt(hexClean);
+    }
+    if (value && typeof value === 'object' && 'val' in value) {
+        return safeBigIntFromUnknown((value as any).val);
+    }
+    return null;
+}
 
 /**
- * SMART MERGE ALGORITHM:
- * Combina dois estados (Local e Remoto/Backup) de forma inteligente, preservando o máximo de dados possível.
- * - Hábitos: União baseada em ID.
- * - Dados Diários: Fusão granular baseada em peso de status (Completed > Snoozed > Pending).
- * - Archives: Fusão de dados históricos (Cold Storage).
- * - Arrays: União de conjuntos.
+ * Hidrata monthlyLogs garantindo que BigInts e Maps sejam reconstruídos corretamente.
  */
-export function mergeStates(local: AppState, incoming: AppState): AppState {
-    // PERFORMANCE / MODERNIZATION [2025-03-08]: Use structuredClone for better performance and modern standard compliance.
-    // Deep Clone é necessário para garantir imutabilidade dos inputs. 'structuredClone' é mais rápido que JSON.parse/stringify.
-    // [OPTIMIZATION]: We mutate 'merged' in-place.
-    const merged: AppState = structuredClone(incoming);
-
-    // 2. Fusão de Definições de Hábitos (Estratégia de União)
-    // Se o usuário criou um hábito novo localmente que não está no incoming, adicionamos ao merge.
-    // PERFORMANCE: Set lookup O(1) dentro do loop O(N).
-    const incomingHabitIds = new Set(incoming.habits.map(h => h.id));
-    const localHabits = local.habits;
-    const localHabitsLen = localHabits.length;
-
-    // Raw Loop
-    for (let i = 0; i < localHabitsLen; i = (i + 1) | 0) {
-        const localHabit = localHabits[i];
-        if (!incomingHabitIds.has(localHabit.id)) {
-            merged.habits.push(localHabit);
-        }
+function hydrateLogs(appState: AppState) {
+    if (appState.monthlyLogs && !(appState.monthlyLogs instanceof Map)) {
+        const entries = Array.isArray(appState.monthlyLogs) 
+            ? appState.monthlyLogs 
+            : Object.entries(appState.monthlyLogs);
+            
+        const map = new Map<string, bigint>();
+        entries.forEach((item: any) => {
+            const [key, val] = item as [string, any];
+            
+            try {
+                const hydrated = safeBigIntFromUnknown(val);
+                if (hydrated !== null) map.set(key, hydrated);
+                else logger.warn(`[Merge] Invalid bigint value for ${key}`);
+            } catch(e) {
+                logger.warn(`[Merge] Failed to hydrate bitmask for ${key}`, e);
+            }
+        });
+        (appState as any).monthlyLogs = map;
     }
+}
 
-    /**
-     * Helper de fusão granular dia-a-dia.
-     * Itera sobre os dados locais e aplica lógica de "Winner Takes All" baseada em peso.
-     * INLINED OPTIMIZATION: Função movida para escopo local para evitar closures custosas se fosse externa.
-     */
-    const mergeDayRecord = (localDay: Record<string, HabitDailyInfo>, mergedDay: Record<string, HabitDailyInfo>) => {
-        // PERFORMANCE: Loop 'for...in' é otimizado em V8 para objetos de dicionário.
-        for (const habitId in localDay) {
-            // Se o hábito não tem dados neste dia no incoming, copiamos do local (União).
-            if (!mergedDay[habitId]) {
-                mergedDay[habitId] = localDay[habitId];
-                continue;
-            }
-
-            // CONFLITO GRANULAR: O mesmo hábito, no mesmo dia, existe em ambos.
-            const localHabitData = localDay[habitId];
-            const mergedHabitData = mergedDay[habitId];
-
-            // A. Mesclar Override de Agendamento (Daily Schedule)
-            // Se localmente houve uma alteração de agendamento, preservamos.
-            if (localHabitData.dailySchedule !== undefined) {
-                mergedHabitData.dailySchedule = localHabitData.dailySchedule;
-            }
-
-            // B. Mesclar Instâncias (Períodos do dia)
-            const localInstances = localHabitData.instances;
-            const mergedInstances = mergedHabitData.instances;
-
-            for (const timeKey in localInstances) {
-                const time = timeKey as TimeOfDay;
-                const localInst = localInstances[time];
-                const mergedInst = mergedInstances[time];
-
-                if (!localInst) continue;
-
-                if (!mergedInst) {
-                    // Existe local mas não no incoming -> Adiciona
-                    mergedInstances[time] = localInst;
-                } else {
-                    // CONFLITO SEMÂNTICO [2025-03-21]: Decoupled Merge Strategy.
-                    // Em vez de substituir o objeto inteiro baseado no peso do status, 
-                    // mesclamos propriedade por propriedade para preservar dados ricos (Notas).
-
-                    // 1. Status Merge (Baseado em Peso)
-                    // Lookup O(1) via Tabela
-                    const localWeight = STATUS_WEIGHTS[localInst.status] || DEFAULT_WEIGHT;
-                    const mergedWeight = STATUS_WEIGHTS[mergedInst.status] || DEFAULT_WEIGHT;
-
-                    if (localWeight > mergedWeight) {
-                        // Local ganha o status.
-                        mergedInst.status = localInst.status;
-                        
-                        // Se o local ganhou o status, preferimos o goalOverride dele (se existir).
-                        if (localInst.goalOverride !== undefined) {
-                            mergedInst.goalOverride = localInst.goalOverride;
-                        }
-                    } else {
-                        // Incoming ganha o status (ou empate).
-                        // Se o Incoming não tem goalOverride mas o Local tem, preservamos o Local (preenchimento de lacunas).
-                        if (mergedInst.goalOverride === undefined && localInst.goalOverride !== undefined) {
-                            mergedInst.goalOverride = localInst.goalOverride;
-                        }
-                    }
-
-                    // 2. Note Merge (Independente do Status)
-                    // Estratégia: "Maior Texto Vence".
-                    const localNoteLen = localInst.note ? localInst.note.length : 0;
-                    const mergedNoteLen = mergedInst.note ? mergedInst.note.length : 0;
-
-                    if (localNoteLen > mergedNoteLen) {
-                        mergedInst.note = localInst.note;
-                    }
-                }
-            }
-        }
-    };
-
-    // Mesclar Daily Data (Hot Storage)
-    for (const date in local.dailyData) {
-        if (!merged.dailyData[date]) {
-            merged.dailyData[date] = local.dailyData[date];
-        } else {
-            mergeDayRecord(local.dailyData[date], merged.dailyData[date]);
-        }
-    }
-
-    // 4. Fusão de Arquivos (Cold Storage)
-    if (local.archives) {
-        merged.archives = merged.archives || {};
-        for (const year in local.archives) {
-            if (!merged.archives[year]) {
-                // Se só existe no local, copia direto (rápido)
-                merged.archives[year] = local.archives[year];
-            } else {
-                const localContent = local.archives[year];
-                const incomingContent = merged.archives[year];
-
-                // GZIP CHECK [2025-04-06]: "Incoming Wins" for compressed archives to avoid Sync decompress.
-                if (localContent.startsWith('GZIP:') || incomingContent.startsWith('GZIP:')) {
-                    continue; 
-                }
-
-                // Legacy JSON: Se ambos forem texto plano, tentamos mesclar.
-                try {
-                    const localYearData = JSON.parse(localContent);
-                    const incomingYearData = JSON.parse(incomingContent);
-                    
-                    // Mescla dia a dia dentro do ano arquivado
-                    for (const date in localYearData) {
-                        if (!incomingYearData[date]) {
-                            incomingYearData[date] = localYearData[date];
-                        } else {
-                            mergeDayRecord(localYearData[date], incomingYearData[date]);
-                        }
-                    }
-                    
-                    // Recompacta (neste caso, mantém JSON pois era legado)
-                    merged.archives[year] = JSON.stringify(incomingYearData);
-                } catch (e) {
-                    console.error(`Failed to merge archives for year ${year}`, e);
-                }
-            }
-        }
-    }
-
-    // 5. Fusão de Metadados e Arrays Auxiliares
-    merged.lastModified = Date.now(); // O merge cria um novo momento no tempo
-    merged.version = local.version > incoming.version ? local.version : incoming.version;
+/**
+ * Mescla o histórico de agendamentos de um hábito usando Last-Write-Wins (LWW) por entrada.
+ * O vencedor (determinado pelo lastModified global) tem prioridade sobre as definições de agendamento.
+ * Isso garante que se um usuário alterou um endDate ou meta, a versão mais recente prevaleça.
+ */
+function mergeHabitHistories(winnerHistory: HabitSchedule[], loserHistory: HabitSchedule[]): HabitSchedule[] {
+    const historyMap = new Map<string, HabitSchedule>();
     
-    // PERFORMANCE: União de Sets para deduplicação rápida.
-    // Usamos Spread Syntax que é otimizado em V8 modernos para iteráveis.
-    const allNotifications = new Set([...incoming.notificationsShown, ...local.notificationsShown]);
-    merged.notificationsShown = Array.from(allNotifications);
+    // 1. Carrega o histórico do perdedor como base
+    loserHistory.forEach(s => historyMap.set(s.startDate, { ...s }));
+    
+    // 2. O vencedor sobrescreve entradas com a mesma data de início (LWW absoluto)
+    // Se o vencedor definiu um endDate, isso será preservado.
+    winnerHistory.forEach(s => historyMap.set(s.startDate, { ...s }));
+    
+    return Array.from(historyMap.values()).sort((a, b) => a.startDate.localeCompare(b.startDate));
+}
 
-    const all21Days = new Set([...incoming.pending21DayHabitIds, ...local.pending21DayHabitIds]);
-    merged.pending21DayHabitIds = Array.from(all21Days);
+/**
+ * Mescla registros diários (Notas e Overrides).
+ */
+function mergeDayRecord(source: Record<string, HabitDailyInfo>, target: Record<string, HabitDailyInfo>) {
+    for (const habitId in source) {
+        if (!target[habitId]) {
+            target[habitId] = source[habitId];
+            continue;
+        }
 
-    const all66Days = new Set([...incoming.pendingConsolidationHabitIds, ...local.pendingConsolidationHabitIds]);
-    merged.pendingConsolidationHabitIds = Array.from(all66Days);
+        const sourceInstances = source[habitId].instances || {};
+        const targetInstances = target[habitId].instances || {};
+
+        for (const time in sourceInstances) {
+            const srcInst = sourceInstances[time as any];
+            const tgtInst = targetInstances[time as any];
+            if (!srcInst) continue;
+            if (!tgtInst) {
+                targetInstances[time as any] = srcInst;
+            } else {
+                if ((srcInst.note?.length || 0) > (tgtInst.note?.length || 0)) {
+                    tgtInst.note = srcInst.note;
+                }
+                if (srcInst.goalOverride !== undefined) {
+                    tgtInst.goalOverride = srcInst.goalOverride;
+                }
+            }
+        }
+        if (source[habitId].dailySchedule) target[habitId].dailySchedule = source[habitId].dailySchedule;
+    }
+}
+
+export async function mergeStates(local: AppState, incoming: AppState): Promise<AppState> {
+    [local, incoming].forEach(hydrateLogs);
+
+    const localTs = local.lastModified || 0;
+    const incomingTs = incoming.lastModified || 0;
+    
+    // LÓGICA DE VENCEDOR: Maior timestamp vence (LWW).
+    // Proteção: Se um lado está vazio e o outro não, o populado vence para evitar wipe acidental.
+    let winner: AppState;
+    let loser: AppState;
+
+    if (local.habits.length === 0 && incoming.habits.length > 0) {
+        winner = incoming;
+        loser = local;
+    } else if (incoming.habits.length === 0 && local.habits.length > 0) {
+        winner = local;
+        loser = incoming;
+    } else {
+        winner = localTs >= incomingTs ? local : incoming;
+        loser = localTs >= incomingTs ? incoming : local;
+    }
+    
+    const merged: AppState = structuredClone(winner);
+    const mergedHabitsMap = new Map<string, Habit>();
+    
+    merged.habits.forEach(h => mergedHabitsMap.set(h.id, h));
+    
+    loser.habits.forEach(loserHabit => {
+        const winnerHabit = mergedHabitsMap.get(loserHabit.id);
+        if (!winnerHabit) {
+            mergedHabitsMap.set(loserHabit.id, loserHabit);
+        } else {
+            // Mescla histórico com prioridade para o vencedor
+            winnerHabit.scheduleHistory = mergeHabitHistories(winnerHabit.scheduleHistory, loserHabit.scheduleHistory);
+            
+            // Tombstone de deleção: data mais tardia vence (ação mais recente)
+            if (loserHabit.deletedOn) {
+                if (!winnerHabit.deletedOn || loserHabit.deletedOn > winnerHabit.deletedOn) {
+                    winnerHabit.deletedOn = loserHabit.deletedOn;
+                }
+            }
+
+            if (winnerHabit.deletedOn) {
+                if (!winnerHabit.deletedName && loserHabit.deletedName) {
+                    winnerHabit.deletedName = loserHabit.deletedName;
+                }
+            } else if (winnerHabit.deletedName) {
+                winnerHabit.deletedName = undefined;
+            }
+
+            // Graduação: data mais antiga vence (primeira vez que o usuário conquistou)
+            if (loserHabit.graduatedOn) {
+                if (!winnerHabit.graduatedOn || loserHabit.graduatedOn < winnerHabit.graduatedOn) {
+                    winnerHabit.graduatedOn = loserHabit.graduatedOn;
+                }
+            }
+        }
+    });
+
+    (merged as any).habits = Array.from(mergedHabitsMap.values());
+
+    for (const date in loser.dailyData) {
+        if (!merged.dailyData[date]) (merged.dailyData as any)[date] = loser.dailyData[date];
+        else mergeDayRecord(loser.dailyData[date], (merged.dailyData as any)[date]);
+    }
+
+    // BITMASK MERGE: LWW granular por bloco de 3 bits
+    merged.monthlyLogs = HabitService.mergeLogs(winner.monthlyLogs, loser.monthlyLogs);
+    
+    // O timestamp final deve ser incrementado para garantir propagação
+    merged.lastModified = Math.max(localTs, incomingTs, Date.now()) + 1;
 
     return merged;
 }

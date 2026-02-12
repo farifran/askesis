@@ -6,322 +6,437 @@
 
 /**
  * @file listeners/swipe.ts
- * @description Motor de Gestos para Interações de Deslize Horizontal (Swipe-to-Reveal).
+ * @description Motor de Gestos Híbrido (Long Press + Swipe).
  * 
- * [MAIN THREAD CONTEXT]:
- * Este módulo processa eventos de entrada brutos (Pointer Events) em alta frequência (~120Hz).
- * 
- * ARQUITETURA (Static State Machine & Integer Physics):
- * - **Static Memory Layout:** Todo o estado mutável reside em um único objeto estático (`SwipeState`) 
- *   para garantir localidade de cache e evitar alocação de closures.
- * - **Integer Arithmetic:** Coordenadas e Deltas são forçados para Int32 (`| 0`) para otimização V8 Smi.
- * - **SNIPER OPTIMIZATION (Typed OM):** Atualização de layout via `attributeStyleMap` para zero-parsing overhead.
- * 
- * DECISÕES TÉCNICAS:
- * 1. **Direction Locking:** Bloqueia o eixo oposto após exceder o `INTENT_THRESHOLD`.
- * 2. **Pointer Capture:** Garante rastreamento contínuo mesmo saindo do elemento.
+ * [ESTRATÉGIA DE INTERAÇÃO]:
+ * Tocar no corpo inicia um Long Press (500ms) para arrastar.
+ *    - Usa 'Active Touch Guard' para diferenciar Scroll vs Hold.
+ *    - Feedback visual (.is-charging) informa o usuário.
  */
 
 import { triggerHaptic } from '../utils';
 import { DOM_SELECTORS, CSS_CLASSES } from '../render/constants';
+import { renderApp } from '../render';
+import { state } from '../state';
+import { startDragSession, isDragging as isDragActive } from './drag'; 
+import {
+    SWIPE_ACTION_THRESHOLD,
+    SWIPE_BLOCK_CLICK_MS
+} from '../constants';
 
-// --- CONSTANTS (Int32) ---
-const DIR_NONE = 0;
-const DIR_HORIZ = 1;
-const DIR_VERT = 2;
+// CONFIGURAÇÃO FÍSICA
+const DIRECTION_LOCKED_THRESHOLD = 5; 
+const ACTION_THRESHOLD = SWIPE_ACTION_THRESHOLD;
+const LONG_PRESS_DELAY = 500;
+const HOLD_TOLERANCE_PX = 10; // Tolerância de tremor para Long Press
 
-const INTENT_THRESHOLD = 5; // Pixels to lock direction
-const ACTION_THRESHOLD = 10; // Pixels to trigger open/close
-const HAPTIC_THRESHOLD = 15; // Pixels to trigger haptic feedback
-
-// --- STATIC STATE (Monomorphic Singleton) ---
-// Hot memory block. Accessed continuously during gestures.
-const SwipeState = {
-    isActive: 0,        // 0 (false) | 1 (true)
+// STATE MACHINE (Módulo Local)
+const SwipeMachine = {
+    state: 'IDLE' as 'IDLE' | 'DETECTING' | 'SWIPING' | 'LOCKED_OUT',
+    container: null as HTMLElement | null,
+    card: null as HTMLElement | null,
+    content: null as HTMLElement | null,
     startX: 0,
     startY: 0,
     currentX: 0,
-    direction: DIR_NONE,
-    wasOpenLeft: 0,     // 0 (false) | 1 (true)
-    wasOpenRight: 0,    // 0 (false) | 1 (true)
-    actionWidth: 60,    // Cached CSS value
+    currentY: 0,
     pointerId: -1,
     rafId: 0,
-    hasHaptics: 0,      // 0 (false) | 1 (true)
-    // DOM References (Weakly held logically, managed explicitly)
-    card: null as HTMLElement | null,
-    content: null as HTMLElement | null,
-    // SNIPER OPTIMIZATION: Typed OM Detection Cache
+    
+    // State Flags
+    wasOpenLeft: false,
+    wasOpenRight: false,
+    
+    // Timers
+    longPressTimer: 0,
+    
+    // Progressive Haptics
+    lastFeedbackStep: 0,
+    limitVibrationTimer: 0, 
+    
+    initialEvent: null as PointerEvent | null,
+    
+    // Cached Layout
+    actionWidth: 60,
     hasTypedOM: false
 };
 
-// --- LOGIC ---
+// --- CORE UTILS ---
 
-export const isCurrentlySwiping = (): boolean => SwipeState.isActive === 1;
-
-/**
- * Reads CSS variable once.
- * Called on resize via debounce.
- */
-function updateCachedLayoutValues() {
-    const rootStyles = getComputedStyle(document.documentElement);
-    const rawValue = rootStyles.getPropertyValue('--swipe-action-width').trim();
-    const parsed = parseInt(rawValue, 10);
-    // Bitwise OR with 0 forces int, though parseInt does it too. Fallback to 60.
-    SwipeState.actionWidth = (isNaN(parsed) || parsed === 0) ? 60 : parsed;
-    
-    // Feature detection for Typed OM
-    SwipeState.hasTypedOM = !!(window.CSS && window.CSSTranslate && CSS.px);
+function updateLayoutMetrics() {
+    const root = getComputedStyle(document.documentElement);
+    SwipeMachine.actionWidth = parseInt(root.getPropertyValue('--swipe-action-width')) || 60;
+    SwipeMachine.hasTypedOM = typeof window !== 'undefined' && !!(window.CSS && (window as any).CSSTranslate && CSS.px);
 }
 
-/**
- * Decide state snap at the end of the gesture.
- */
-function _finalizeSwipeState(deltaX: number) {
-    const card = SwipeState.card;
-    if (!card) return;
+const _stopLimitVibration = () => {
+    if (SwipeMachine.limitVibrationTimer) {
+        clearInterval(SwipeMachine.limitVibrationTimer);
+        SwipeMachine.limitVibrationTimer = 0;
+        if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(0);
+    }
+};
 
-    // Logic simplification using Int32 booleans
-    if (SwipeState.wasOpenLeft) {
-        if (deltaX < -ACTION_THRESHOLD) {
-            card.classList.remove(CSS_CLASSES.IS_OPEN_LEFT);
-        }
-    } else if (SwipeState.wasOpenRight) {
-        if (deltaX > ACTION_THRESHOLD) {
-            card.classList.remove(CSS_CLASSES.IS_OPEN_RIGHT);
-        }
-    } else { 
-        if (deltaX > ACTION_THRESHOLD) {
-            card.classList.add(CSS_CLASSES.IS_OPEN_LEFT);
-        } else if (deltaX < -ACTION_THRESHOLD) {
-            card.classList.add(CSS_CLASSES.IS_OPEN_RIGHT);
+// --- TOUCH GUARD (Para Long Press no Corpo) ---
+// Impede o scroll nativo se o usuário estiver tentando segurar o cartão imóvel
+const _activeTouchGuard = (e: TouchEvent) => {
+    if (SwipeMachine.state !== 'DETECTING') return;
+
+    const touch = e.touches[0];
+    if (!touch) return;
+
+    const dx = touch.clientX - SwipeMachine.startX;
+    const dy = touch.clientY - SwipeMachine.startY;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+
+    // Se estiver dentro da tolerância de "Segurar", bloqueia o scroll
+    if (dist < HOLD_TOLERANCE_PX) {
+        if (e.cancelable) e.preventDefault();
+    } else {
+        // Se moveu muito, cancela o Long Press
+        if (Math.abs(dy) > Math.abs(dx)) {
+            // É scroll vertical -> Cancela Long Press
+            _cancelLongPress();
         }
     }
-}
+};
 
-/**
- * Suppress click event if swipe occurred.
- */
-function _blockSubsequentClick(deltaX: number) {
-    // Fast absolute value via conditional
-    const absDelta = deltaX < 0 ? -deltaX : deltaX;
-    
-    if (absDelta <= ACTION_THRESHOLD) return;
+const _cancelLongPress = () => {
+    if (SwipeMachine.longPressTimer) {
+        clearTimeout(SwipeMachine.longPressTimer);
+        SwipeMachine.longPressTimer = 0;
+    }
+    if (SwipeMachine.card) {
+        SwipeMachine.card.classList.remove('is-charging');
+        SwipeMachine.card.classList.remove('is-pressing');
+    }
+};
 
-    const blockClick = (e: MouseEvent) => {
-        const target = e.target as HTMLElement;
-        // Exception: Allow action buttons
-        if (target.closest(DOM_SELECTORS.SWIPE_DELETE_BTN) || target.closest(DOM_SELECTORS.SWIPE_NOTE_BTN)) {
-            window.removeEventListener('click', blockClick, true);
-            return;
-        }
+// --- VISUAL ENGINE ---
 
-        e.stopPropagation();
-        e.preventDefault();
-        window.removeEventListener('click', blockClick, true);
-    };
-    
-    // Capture phase to intercept before bubbles reach the card
-    window.addEventListener('click', blockClick, true);
-
-    // SAFETY VALVE [2025-05-02]: Timeout para limpar o bloqueador.
-    setTimeout(() => {
-        window.removeEventListener('click', blockClick, true);
-    }, 100);
-}
-
-// --- HOT PATH: RENDER LOOP ---
-
-const _updateVisualsStatic = () => {
-    // Check active state without property lookup overhead if possible, 
-    // but object property access is very fast in V8.
-    if (!SwipeState.card || !SwipeState.content || SwipeState.direction !== DIR_HORIZ) {
-        SwipeState.rafId = 0;
+const _renderFrame = () => {
+    if (!SwipeMachine.content) {
+        SwipeMachine.rafId = 0;
         return;
     }
 
-    const deltaX = (SwipeState.currentX - SwipeState.startX) | 0;
-    let translateX = deltaX;
-    
-    if (SwipeState.wasOpenLeft) translateX = (translateX + SwipeState.actionWidth) | 0;
-    if (SwipeState.wasOpenRight) translateX = (translateX - SwipeState.actionWidth) | 0;
-
-    // SNIPER OPTIMIZATION: Direct DOM Write via Typed OM (Fast Path) or String (Fallback)
-    if (SwipeState.hasTypedOM && SwipeState.content.attributeStyleMap) {
-        SwipeState.content.attributeStyleMap.set('transform', new CSSTranslate(CSS.px(translateX), CSS.px(0)));
-    } else {
-        SwipeState.content.style.transform = `translateX(${translateX}px)`;
-    }
-
-    // Haptics Logic
-    const absDelta = deltaX < 0 ? -deltaX : deltaX;
-    
-    if (SwipeState.hasHaptics === 0 && absDelta > HAPTIC_THRESHOLD) {
-        triggerHaptic('light');
-        SwipeState.hasHaptics = 1;
-    } else if (SwipeState.hasHaptics === 1 && absDelta < HAPTIC_THRESHOLD) {
-        SwipeState.hasHaptics = 0;
-    }
-    
-    SwipeState.rafId = 0;
-};
-
-// --- HOT PATH: INPUT HANDLERS ---
-
-const _cleanupAndReset = () => {
-    if (SwipeState.rafId) {
-        cancelAnimationFrame(SwipeState.rafId);
-        SwipeState.rafId = 0;
-    }
-
-    const card = SwipeState.card;
-    if (card) {
-        // Pointer Release
-        if (SwipeState.pointerId !== -1) {
-            try {
-                card.releasePointerCapture(SwipeState.pointerId);
-            } catch (e) { /* Ignore */ }
-        }
-
-        card.classList.remove(CSS_CLASSES.IS_SWIPING);
+    // RENDER: SWIPE HORIZONTAL
+    if (SwipeMachine.state === 'SWIPING') {
+        let tx = (SwipeMachine.currentX - SwipeMachine.startX) | 0;
         
-        const content = SwipeState.content;
-        if (content) {
-            if (SwipeState.hasTypedOM && content.attributeStyleMap) {
-                content.attributeStyleMap.clear(); // Clears inline transform
-            } else {
-                content.style.transform = '';
+        if (SwipeMachine.wasOpenLeft) tx += SwipeMachine.actionWidth;
+        if (SwipeMachine.wasOpenRight) tx -= SwipeMachine.actionWidth;
+
+        const absX = Math.abs(tx);
+        const actionPoint = SwipeMachine.actionWidth; 
+        
+        let visualX = tx;
+
+        if (absX >= actionPoint) {
+            const excess = absX - actionPoint;
+            const resistanceFactor = 0.25; 
+            const maxVisualOvershoot = 20; 
+            const visualOvershoot = Math.min(excess * resistanceFactor, maxVisualOvershoot);
+            const sign = tx > 0 ? 1 : -1;
+            visualX = (actionPoint + visualOvershoot) * sign;
+
+            if (!SwipeMachine.limitVibrationTimer) {
+                triggerHaptic('heavy');
+                SwipeMachine.limitVibrationTimer = window.setInterval(() => {
+                    triggerHaptic('medium'); 
+                }, 80); 
             }
-            content.draggable = true;
+        } else {
+            _stopLimitVibration();
+            const HAPTIC_GRAIN = 8; 
+            const currentStep = Math.floor(absX / HAPTIC_GRAIN);
+            if (currentStep !== SwipeMachine.lastFeedbackStep) {
+                if (currentStep > SwipeMachine.lastFeedbackStep) {
+                    const ratio = absX / actionPoint;
+                    if (ratio > 0.6) triggerHaptic('light'); 
+                    else triggerHaptic('selection');
+                }
+                SwipeMachine.lastFeedbackStep = currentStep;
+            }
+        }
+
+        if (SwipeMachine.hasTypedOM && SwipeMachine.content.attributeStyleMap) {
+            SwipeMachine.content.attributeStyleMap.set('transform', new (window as any).CSSTranslate(CSS.px(visualX), CSS.px(0)));
+        } else {
+            SwipeMachine.content.style.transform = `translateX(${visualX}px)`;
         }
     }
     
-    // Detach global listeners
-    // PERFORMANCE: 'passive: true' removed here as it is only needed on addEventListener
-    window.removeEventListener('pointermove', _handlePointerMove);
-    window.removeEventListener('pointerup', _handlePointerUp);
-    window.removeEventListener('pointercancel', _cleanupAndReset);
-    window.removeEventListener('contextmenu', _cleanupAndReset);
-    
-    // Reset State
-    SwipeState.card = null;
-    SwipeState.content = null;
-    SwipeState.isActive = 0;
-    SwipeState.direction = DIR_NONE;
-    SwipeState.pointerId = -1;
-    SwipeState.hasHaptics = 0;
+    SwipeMachine.rafId = 0;
 };
 
-const _handlePointerMove = (e: PointerEvent) => {
-    if (!SwipeState.card) return;
+// --- LIFECYCLE MANAGEMENT ---
 
-    // Update Input State (Integer)
-    SwipeState.currentX = e.clientX | 0;
+const _cleanListeners = () => {
+    window.removeEventListener('pointermove', _onPointerMove);
+    window.removeEventListener('pointerup', _onPointerUp);
+    window.removeEventListener('pointercancel', _forceReset);
+    window.removeEventListener('blur', _forceReset);
+    window.removeEventListener('touchmove', _activeTouchGuard);
+};
 
-    // PHASE 1: Intent Detection
-    if (SwipeState.direction === DIR_NONE) {
-        const deltaX = Math.abs((e.clientX | 0) - SwipeState.startX);
-        const deltaY = Math.abs((e.clientY | 0) - SwipeState.startY);
+const _forceReset = () => {
+    if (SwipeMachine.rafId) cancelAnimationFrame(SwipeMachine.rafId);
+    _cancelLongPress();
+    _stopLimitVibration();
+    
+    if (SwipeMachine.container) {
+        SwipeMachine.container.classList.remove('is-locking-scroll');
+    }
 
-        if (deltaX > INTENT_THRESHOLD || deltaY > INTENT_THRESHOLD) {
-            if (deltaX > deltaY) {
-                // Horizontal Lock
-                SwipeState.direction = DIR_HORIZ;
-                SwipeState.isActive = 1;
-                
-                SwipeState.card.classList.add(CSS_CLASSES.IS_SWIPING);
-                if (SwipeState.content) SwipeState.content.draggable = false;
-                
+    const { card, content, pointerId } = SwipeMachine;
+    if (card) {
+        card.classList.remove(CSS_CLASSES.IS_SWIPING);
+        card.classList.remove('is-pressing'); 
+        card.classList.remove('is-charging');
+        
+        if (pointerId !== -1) {
+            try { 
+                if (card.hasPointerCapture(pointerId)) card.releasePointerCapture(pointerId); 
+            } catch(e){}
+        }
+    }
+    if (content) {
+        if (SwipeMachine.hasTypedOM && content.attributeStyleMap) {
+            content.attributeStyleMap.clear();
+        } else {
+            content.style.transform = '';
+        }
+    }
+    
+    document.body.classList.remove('is-interaction-active');
+    
+    SwipeMachine.state = 'IDLE';
+    SwipeMachine.card = null;
+    SwipeMachine.content = null;
+    SwipeMachine.initialEvent = null;
+    SwipeMachine.pointerId = -1;
+    SwipeMachine.rafId = 0;
+    
+    if (state.uiDirtyState.habitListStructure && !isDragActive()) {
+        requestAnimationFrame(() => renderApp());
+    }
+    
+    _cleanListeners();
+};
+
+const _finalizeAction = (finalDeltaX: number) => {
+    if (!SwipeMachine.card) return;
+    
+    const { card, wasOpenLeft, wasOpenRight } = SwipeMachine;
+    const threshold = ACTION_THRESHOLD;
+
+    if (wasOpenLeft) {
+        if (finalDeltaX < -threshold) card.classList.remove(CSS_CLASSES.IS_OPEN_LEFT);
+    } else if (wasOpenRight) {
+        if (finalDeltaX > threshold) card.classList.remove(CSS_CLASSES.IS_OPEN_RIGHT);
+    } else {
+        if (finalDeltaX > threshold) {
+            card.classList.add(CSS_CLASSES.IS_OPEN_LEFT);
+        } else if (finalDeltaX < -threshold) {
+            card.classList.add(CSS_CLASSES.IS_OPEN_RIGHT);
+        }
+    }
+};
+
+// --- GESTURE HANDLERS ---
+
+// BRIDGE TOUCHMOVE BLOCKER [2026-02-06]:
+// No Android Chromium, o navegador decide o gesto (scroll vs manipulação JS) no 'touchstart'.
+// Como touch-action: pan-y estava ativo no touchstart (500ms atrás no long press),
+// o navegador reserva o direito de rolar verticalmente e dispara 'pointercancel'.
+// A ÚNICA forma de cancelar isso mid-gesture é via preventDefault() em touchmove.
+// Este listener "ponte" fica ativo durante a transição swipe→drag para garantir
+// que nenhum touchmove escape sem preventDefault() durante o setup.
+const _bridgeTouchBlock = (e: TouchEvent) => {
+    if (e.cancelable) e.preventDefault();
+};
+
+const _triggerDrag = () => {
+    SwipeMachine.longPressTimer = 0;
+    _stopLimitVibration();
+    
+    if (!SwipeMachine.card || !SwipeMachine.content || !SwipeMachine.initialEvent) return;
+
+    // ANDROID FIX [2026-02-06]: Registrar bloqueador de touchmove ANTES de qualquer coisa.
+    // Isso garante que, mesmo durante o setup do drag, o navegador não consiga iniciar
+    // um scroll nativo vertical que dispararia 'pointercancel'.
+    window.addEventListener('touchmove', _bridgeTouchBlock, { passive: false });
+    
+    // ANDROID FIX [2026-02-06]: Aplicar lock de scroll no container imediatamente.
+    // Mesmo que touch-action via CSS não tenha efeito retroativo no Android,
+    // overflow:hidden impede o container de scrollar e ajuda a evitar pointercancel.
+    if (SwipeMachine.container) {
+        SwipeMachine.container.classList.add('is-locking-scroll');
+    }
+
+    try {
+        SwipeMachine.card.setPointerCapture(SwipeMachine.pointerId);
+    } catch (e) {
+        window.removeEventListener('touchmove', _bridgeTouchBlock);
+        if (SwipeMachine.container) SwipeMachine.container.classList.remove('is-locking-scroll');
+        _forceReset();
+        return;
+    }
+
+    triggerHaptic('medium');
+    
+    // Limpa feedback visual
+    SwipeMachine.card.classList.remove('is-charging');
+    
+    // Inicia a sessão de Drag
+    startDragSession(SwipeMachine.card, SwipeMachine.content, SwipeMachine.initialEvent);
+    
+    // Remove o bloqueador ponte - o drag.ts agora tem seu próprio listener ativo
+    window.removeEventListener('touchmove', _bridgeTouchBlock);
+    
+    _cleanListeners();
+    SwipeMachine.state = 'IDLE';
+    SwipeMachine.card.classList.remove('is-pressing'); 
+    
+    if (SwipeMachine.hasTypedOM && SwipeMachine.content.attributeStyleMap) {
+        SwipeMachine.content.attributeStyleMap.clear();
+    } else {
+        SwipeMachine.content.style.transform = '';
+    }
+};
+
+const _onPointerMove = (e: PointerEvent) => {
+    if (SwipeMachine.state === 'IDLE' || SwipeMachine.state === 'LOCKED_OUT') return;
+    
+    if (isDragActive()) {
+        _forceReset();
+        return;
+    }
+
+    const x = e.clientX | 0;
+    const y = e.clientY | 0;
+    const dx = x - SwipeMachine.startX;
+    const dy = y - SwipeMachine.startY;
+    const absDx = Math.abs(dx);
+    const absDy = Math.abs(dy);
+
+    SwipeMachine.currentX = x;
+    SwipeMachine.currentY = y;
+
+    // PHASE: DETECTING
+    if (SwipeMachine.state === 'DETECTING') {
+        
+        // Se houver movimento significativo...
+        if (absDx > DIRECTION_LOCKED_THRESHOLD || absDy > DIRECTION_LOCKED_THRESHOLD) {
+            
+            // ...e for claramente horizontal -> SWIPE
+            if (absDx > absDy) {
+                _cancelLongPress();
                 try {
-                    SwipeState.card.setPointerCapture(e.pointerId);
-                    SwipeState.pointerId = e.pointerId;
-                } catch (err) { /* Ignore */ }
+                    if (SwipeMachine.card) SwipeMachine.card.setPointerCapture(e.pointerId);
+                } catch(err) {}
 
-            } else {
-                // Vertical Lock (Scroll) - Abort Custom Swipe
-                // O navegador cuidará do scroll nativo pois o listener é passive: true
-                SwipeState.direction = DIR_VERT;
-                _cleanupAndReset();
-                return;
+                SwipeMachine.state = 'SWIPING';
+                document.body.classList.add('is-interaction-active');
+                if (SwipeMachine.card) {
+                    SwipeMachine.card.classList.add(CSS_CLASSES.IS_SWIPING);
+                }
+            } 
+            // ...e for vertical -> SCROLL NATIVO (Cancela nossa lógica)
+            else {
+                _cancelLongPress();
+                SwipeMachine.state = 'LOCKED_OUT';
             }
         }
     }
 
-    // PHASE 2: Animation Request
-    if (SwipeState.direction === DIR_HORIZ) {
-        if (SwipeState.rafId === 0) {
-            SwipeState.rafId = requestAnimationFrame(_updateVisualsStatic);
+    // PHASE: SWIPING
+    if (SwipeMachine.state === 'SWIPING') {
+        if (!SwipeMachine.rafId) {
+            SwipeMachine.rafId = requestAnimationFrame(_renderFrame);
         }
     }
 };
 
-const _handlePointerUp = () => {
-    if (!SwipeState.card) return;
+const _onPointerUp = (e: PointerEvent) => {
+    _cancelLongPress();
+    _stopLimitVibration();
 
-    if (SwipeState.direction === DIR_HORIZ) {
-        const deltaX = (SwipeState.currentX - SwipeState.startX) | 0;
-        _finalizeSwipeState(deltaX);
-        _blockSubsequentClick(deltaX);
+    if (SwipeMachine.state === 'SWIPING') {
+        const dx = SwipeMachine.currentX - SwipeMachine.startX;
+        _finalizeAction(dx);
+        
+        const blockClick = (ev: MouseEvent) => {
+            const t = ev.target as HTMLElement;
+            if (!t.closest(DOM_SELECTORS.SWIPE_DELETE_BTN) && !t.closest(DOM_SELECTORS.SWIPE_NOTE_BTN)) {
+                ev.stopPropagation(); ev.preventDefault();
+            }
+            window.removeEventListener('click', blockClick, true);
+        };
+        if (Math.abs(dx) > ACTION_THRESHOLD) {
+            window.addEventListener('click', blockClick, true);
+            setTimeout(() => window.removeEventListener('click', blockClick, true), SWIPE_BLOCK_CLICK_MS);
+        }
     }
-    
-    _cleanupAndReset();
+
+    _forceReset();
 };
 
-export function setupSwipeHandler(habitContainer: HTMLElement) {
-    // Initial Layout Check
-    updateCachedLayoutValues();
-    
-    // Debounced Resize Listener
-    let resizeTimer: number;
-    window.addEventListener('resize', () => {
-        clearTimeout(resizeTimer);
-        resizeTimer = window.setTimeout(updateCachedLayoutValues, 150);
-    });
+// --- INITIALIZER ---
 
-    // Conflict with Native Drag
-    habitContainer.addEventListener('dragstart', () => {
-        if (SwipeState.card) {
-            _cleanupAndReset();
+export function setupSwipeHandler(container: HTMLElement) {
+    updateLayoutMetrics();
+    SwipeMachine.container = container;
+    
+    container.addEventListener('contextmenu', (e) => {
+        if (e.cancelable) {
+            e.preventDefault();
         }
     });
-
-    // Entry Point
-    habitContainer.addEventListener('pointerdown', (e) => {
-        // Ignore secondary buttons or if already active
-        if (SwipeState.card || e.button !== 0) return;
+    
+    container.addEventListener('pointerdown', (e) => {
+        if (e.button !== 0 || isDragActive()) return;
+        
+        _forceReset();
 
         const target = e.target as HTMLElement;
-        
-        // Single-pass delegation check
-        const contentWrapper = target.closest<HTMLElement>(DOM_SELECTORS.HABIT_CONTENT_WRAPPER);
-        if (!contentWrapper) return;
-        
-        const card = contentWrapper.closest<HTMLElement>(DOM_SELECTORS.HABIT_CARD);
-        if (!card) return;
+        const cw = target.closest<HTMLElement>(DOM_SELECTORS.HABIT_CONTENT_WRAPPER);
+        const card = cw?.closest<HTMLElement>(DOM_SELECTORS.HABIT_CARD);
+        if (!card || !cw) return;
 
-        // Auto-close others
-        const currentlyOpen = habitContainer.querySelector(`.${CSS_CLASSES.IS_OPEN_LEFT}, .${CSS_CLASSES.IS_OPEN_RIGHT}`);
-        if (currentlyOpen && currentlyOpen !== card) {
-            currentlyOpen.classList.remove(CSS_CLASSES.IS_OPEN_LEFT, CSS_CLASSES.IS_OPEN_RIGHT);
-        }
+        SwipeMachine.card = card;
+        SwipeMachine.content = cw;
+        SwipeMachine.initialEvent = e;
+        SwipeMachine.startX = SwipeMachine.currentX = e.clientX | 0;
+        SwipeMachine.startY = SwipeMachine.currentY = e.clientY | 0;
+        SwipeMachine.pointerId = e.pointerId; 
+        SwipeMachine.wasOpenLeft = card.classList.contains(CSS_CLASSES.IS_OPEN_LEFT);
+        SwipeMachine.wasOpenRight = card.classList.contains(CSS_CLASSES.IS_OPEN_RIGHT);
+        SwipeMachine.lastFeedbackStep = 0;
+        SwipeMachine.limitVibrationTimer = 0;
 
-        // Initialize State
-        SwipeState.card = card;
-        SwipeState.content = contentWrapper;
-        SwipeState.startX = e.clientX | 0;
-        SwipeState.startY = e.clientY | 0;
-        SwipeState.currentX = SwipeState.startX;
+        const openCards = container.querySelectorAll(`.${CSS_CLASSES.IS_OPEN_LEFT}, .${CSS_CLASSES.IS_OPEN_RIGHT}`);
+        openCards.forEach(c => {
+            if (c !== card) c.classList.remove(CSS_CLASSES.IS_OPEN_LEFT, CSS_CLASSES.IS_OPEN_RIGHT);
+        });
+
+        // Detecção de Swipe, Scroll ou Long Press
+        SwipeMachine.state = 'DETECTING';
         
-        SwipeState.wasOpenLeft = card.classList.contains(CSS_CLASSES.IS_OPEN_LEFT) ? 1 : 0;
-        SwipeState.wasOpenRight = card.classList.contains(CSS_CLASSES.IS_OPEN_RIGHT) ? 1 : 0;
-        SwipeState.hasHaptics = 0;
+        // Inicia Timer de Long Press
+        SwipeMachine.longPressTimer = window.setTimeout(_triggerDrag, LONG_PRESS_DELAY);
         
-        // Attach global listeners
-        // PERFORMANCE: passive: true para permitir scroll da página sem bloqueio
-        // O controle horizontal vs vertical é feito via touch-action: pan-y no CSS + lógica de Intent.
-        window.addEventListener('pointermove', _handlePointerMove, { passive: true }); 
-        window.addEventListener('pointerup', _handlePointerUp);
-        window.addEventListener('pointercancel', _cleanupAndReset);
-        window.addEventListener('contextmenu', _cleanupAndReset);
+        // Visual Feedback
+        card.classList.add('is-pressing');
+        card.classList.add('is-charging');
+        
+        window.addEventListener('pointermove', _onPointerMove, { passive: false });
+        window.addEventListener('pointerup', _onPointerUp);
+        window.addEventListener('pointercancel', _forceReset);
+        window.addEventListener('blur', _forceReset);
+        
+        // Touch Guard para garantir Long Press sem scroll
+        window.addEventListener('touchmove', _activeTouchGuard, { passive: false });
     });
 }

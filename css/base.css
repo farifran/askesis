@@ -37,6 +37,84 @@ body {
     -webkit-text-size-adjust: 100%;
 }
 
+/* --- BOOT LOCK --- */
+/* Bloqueia interações enquanto o sync inicial está pendente para evitar 'false future' */
+body.is-booting {
+    pointer-events: none !important;
+    opacity: 0.8;
+    cursor: wait;
+}
+
+/* --- VIEW TRANSITIONS (SWEET SPOT IMPROVEMENT) --- */
+/* Configura transições nativas suaves entre estados (ex: mudar de dia) */
+::view-transition-old(root),
+::view-transition-new(root) {
+    animation-duration: 0.25s; /* Rápido e sutil */
+    animation-timing-function: cubic-bezier(0.25, 1, 0.5, 1); /* Curva "Stoic Ease" */
+}
+
+/* Isola o cabeçalho para que ele não participe da transição de "fade/slide" do conteúdo principal.
+   Isso faz com que apenas os dados mudem, enquanto a estrutura permanece sólida. */
+.app-header {
+    view-transition-name: app-header;
+}
+
+/* O corpo principal (lista de hábitos) anima com efeito page-flip */
+main {
+    view-transition-name: main-content;
+}
+
+/* --- PAGE FLIP: Forward (indo para o passado / página anterior) --- */
+[data-flip-dir="forward"]::view-transition-old(main-content) {
+    animation: pageFlipOutForward 0.35s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+[data-flip-dir="forward"]::view-transition-new(main-content) {
+    animation: pageFlipInForward 0.35s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+/* --- PAGE FLIP: Back (voltando para o futuro / página seguinte) --- */
+[data-flip-dir="back"]::view-transition-old(main-content) {
+    animation: pageFlipOutBack 0.35s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+[data-flip-dir="back"]::view-transition-new(main-content) {
+    animation: pageFlipInBack 0.35s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+/* Keyframes: virar página para frente (sai pela esquerda, entra pela direita) */
+@keyframes pageFlipOutForward {
+    from { transform: perspective(1200px) rotateY(0deg); opacity: 1; }
+    to   { transform: perspective(1200px) rotateY(-15deg) translateX(-8%); opacity: 0; }
+}
+@keyframes pageFlipInForward {
+    from { transform: perspective(1200px) rotateY(10deg) translateX(6%); opacity: 0; }
+    to   { transform: perspective(1200px) rotateY(0deg); opacity: 1; }
+}
+
+/* Keyframes: virar página para trás (sai pela direita, entra pela esquerda) */
+@keyframes pageFlipOutBack {
+    from { transform: perspective(1200px) rotateY(0deg); opacity: 1; }
+    to   { transform: perspective(1200px) rotateY(15deg) translateX(8%); opacity: 0; }
+}
+@keyframes pageFlipInBack {
+    from { transform: perspective(1200px) rotateY(-10deg) translateX(-6%); opacity: 0; }
+    to   { transform: perspective(1200px) rotateY(0deg); opacity: 1; }
+}
+
+/* CHAOS FIX: GLOBAL INTERACTION LOCK
+   Desabilita smooth scrolling e eventos de ponteiro não essenciais quando uma interação física
+   (Swipe, Drag, Rotary) está ativa. Isso evita conflitos de thread e garante 60fps. */
+body.is-interaction-active *,
+body.is-swipe-pending * {
+    scroll-behavior: auto !important;
+    /* Opcional: pointer-events: none para elementos não focados, mas pode ser agressivo demais. */
+}
+
+/* GESTURE ISOLATION: Previne que clicks acidentais durante detecção de swipe ativem botões.
+   Não afeta o próprio cartão sendo manipulado. */
+body.is-swipe-pending .habit-card:not(.is-swiping) .goal-control-btn {
+    pointer-events: none;
+}
+
 /* Permitir seleção em campos de texto e conteúdo onde é útil */
 :is(input, textarea),
 #ai-response,
@@ -139,5 +217,12 @@ body {
         animation-iteration-count: 1 !important;
         transition-duration: 0.01ms !important;
         scroll-behavior: auto !important;
+        /* Disable view transitions if user prefers reduced motion */
+        view-transition-name: none !important;
+    }
+    ::view-transition-group(*),
+    ::view-transition-old(*),
+    ::view-transition-new(*) {
+        animation-duration: 0s !important;
     }
 }

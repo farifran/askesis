@@ -21,15 +21,11 @@ import { ui } from '../render/ui';
 import { 
     state, 
     LANGUAGES, 
-    STREAK_SEMI_CONSOLIDATED, 
-    STREAK_CONSOLIDATED, 
-    DAYS_IN_CALENDAR, 
     invalidateChartCache, 
     FREQUENCIES,
-    Habit,
-    TimeOfDay
+    TimeOfDay,
+    MAX_HABIT_NAME_LENGTH
 } from '../state';
-import { saveState } from '../services/persistence';
 import { PREDEFINED_HABITS } from '../data/predefinedHabits';
 import {
     openModal,
@@ -46,55 +42,44 @@ import {
     renderColorPicker,
     renderFullCalendar,
     renderApp,
+    viewTransitionRender,
 } from '../render';
 import {
     saveHabitFromModal,
     requestHabitEndingFromModal,
     requestHabitPermanentDeletion,
-    requestHabitEditingFromModal,
     resetApplicationData,
     handleSaveNote,
     graduateHabit,
     performAIAnalysis,
     exportData,
     importData,
-} from '../habitActions';
-import { t, setLanguage, formatList, compareStrings } from '../i18n';
-import { getHabitDisplayInfo } from '../services/selectors';
+    consumeAndFormatCelebrations,
+} from '../services/habitActions';
+import { t, setLanguage } from '../i18n';
 import { setupReelRotary } from '../render/rotary';
-import { simpleMarkdownToHTML, pushToOneSignal, getContrastColor, addDays, parseUTCIsoDate, toUTCIsoDateString } from '../utils';
+import { simpleMarkdownToHTML, pushToOneSignal, getContrastColor, addDays, parseUTCIsoDate, toUTCIsoDateString, triggerHaptic, logger, escapeHTML, sanitizeText, getTodayUTCIso } from '../utils';
 import { setTextContent } from '../render/dom';
-import { isHabitNameDuplicate } from '../services/selectors';
-
-// SECURITY: Limite rígido para inputs de texto para prevenir State Bloat e DoS.
-const MAX_HABIT_NAME_LENGTH = 50; 
 
 // --- STATIC HELPERS ---
 
-const _processAndFormatCelebrations = (
-    pendingIds: string[], 
-    translationKey: 'aiCelebration21Day' | 'aiCelebration66Day',
-    streakMilestone: number
-): string => {
-    if (pendingIds.length === 0) return '';
+function _navigateToDateFromAlmanac(dateISO: string) {
+    const flipDir = dateISO < state.selectedDate ? 'forward' : 'back';
+    state.selectedDate = dateISO;
     
-    // PERF: Zero-allocation loop if possible, but map/filter is clean here.
-    const habitNamesList = pendingIds
-        .map(id => state.habits.find(h => h.id === id))
-        .filter(Boolean)
-        .map(h => getHabitDisplayInfo(h!).name);
+    closeModal(ui.fullCalendarModal);
     
-    const habitNames = formatList(habitNamesList);
-        
-    pendingIds.forEach(id => {
-        const celebrationId = `${id}-${streakMilestone}`;
-        if (!state.notificationsShown.includes(celebrationId)) {
-            state.notificationsShown.push(celebrationId);
-        }
-    });
+    state.uiDirtyState.calendarVisuals = true;
+    state.uiDirtyState.habitListStructure = true;
+    invalidateChartCache();
+    
+    viewTransitionRender(flipDir);
 
-    return t(translationKey, { count: pendingIds.length, habitNames });
-};
+    requestAnimationFrame(() => {
+        const selectedEl = ui.calendarStrip.querySelector('.day-item.selected');
+        selectedEl?.scrollIntoView({ behavior: 'auto', block: 'nearest', inline: 'center' });
+    });
+}
 
 // --- VALIDATION LOGIC (Decoupled) ---
 
@@ -109,26 +94,24 @@ function _validateAndFeedback(newName: string): boolean {
     
     const trimmedName = newName.trim();
     let errorKey: string | null = null;
+    const isBlockingError = trimmedName.length === 0;
 
-    if (trimmedName.length === 0) {
+    if (isBlockingError) {
         errorKey = 'noticeNameCannotBeEmpty';
-    } else if (trimmedName.length > 16) {
-        errorKey = 'noticeNameTooLong';
-    } else if (isHabitNameDuplicate(trimmedName, state.editingHabit?.habitId)) {
-        errorKey = 'noticeDuplicateHabitWithName';
+    } else if (trimmedName.length > MAX_HABIT_NAME_LENGTH) {
+        errorKey = 'noticeNameTooLong'; // Apenas um aviso não-bloqueante
     }
 
-    const isValid = errorKey === null;
+    const isValid = !isBlockingError;
 
     // UI Updates (DOM Writes)
-    if (isValid) {
+    if (!errorKey) {
         if (formNoticeEl.classList.contains('visible')) {
             formNoticeEl.classList.remove('visible');
             habitNameInput.classList.remove('shake');
         }
     } else {
-        const errorText = t(errorKey!);
-        // Dirty check text content
+        const errorText = t(errorKey);
         if (formNoticeEl.textContent !== errorText) {
             formNoticeEl.textContent = errorText;
         }
@@ -136,28 +119,34 @@ function _validateAndFeedback(newName: string): boolean {
         if (!formNoticeEl.classList.contains('visible')) {
             formNoticeEl.classList.add('visible');
             
-            // Trigger animation frame only when showing error
-            requestAnimationFrame(() => {
-                habitNameInput.classList.add('shake');
-                habitNameInput.addEventListener('animationend', () => {
-                    habitNameInput.classList.remove('shake');
-                }, { once: true });
-            });
+            if (isBlockingError) {
+                requestAnimationFrame(() => {
+                    habitNameInput.classList.add('shake');
+                    habitNameInput.addEventListener('animationend', () => habitNameInput.classList.remove('shake'), { once: true });
+                });
+            }
         }
     }
-
+    
+    ui.editHabitSaveBtn.disabled = isBlockingError;
     return isValid;
 }
 
 // --- STATIC EVENT HANDLERS ---
 
 const _handleManageHabitsClick = () => {
+    if (ui.manageModal.classList.contains('visible')) return;
+    
+    triggerHaptic('light');
     setupManageModal();
     updateNotificationUI();
     openModal(ui.manageModal);
 };
 
 const _handleFabClick = () => {
+    if (ui.exploreModal.classList.contains('visible')) return;
+
+    triggerHaptic('light');
     renderExploreHabits();
     openModal(ui.exploreModal);
 };
@@ -170,12 +159,14 @@ const _handleHabitListClick = (e: MouseEvent) => {
     const habitId = button.closest<HTMLLIElement>('li.habit-list-item')?.dataset.habitId;
     if (!habitId) return;
 
+    if (ui.confirmModal.classList.contains('visible')) return;
+
+    triggerHaptic('light');
+
     if (button.classList.contains('end-habit-btn')) {
-        requestHabitEndingFromModal(habitId);
+        requestHabitEndingFromModal(habitId, getTodayUTCIso());
     } else if (button.classList.contains('permanent-delete-habit-btn')) {
         requestHabitPermanentDeletion(habitId);
-    } else if (button.classList.contains('edit-habit-btn')) {
-        requestHabitEditingFromModal(habitId);
     } else if (button.classList.contains('graduate-habit-btn')) {
         graduateHabit(habitId);
     }
@@ -191,6 +182,9 @@ const _handleManageModalClick = (e: MouseEvent) => {
 };
 
 const _handleResetAppClick = () => {
+    if (ui.confirmModal.classList.contains('visible')) return;
+
+    triggerHaptic('light');
     showConfirmationModal(
         t('confirmResetApp'),
         resetApplicationData,
@@ -203,7 +197,7 @@ const _handleResetAppClick = () => {
 };
 
 const _handleNotificationToggleChange = () => {
-    pushToOneSignal(async (OneSignal: any) => {
+    pushToOneSignal(async (OneSignal: OneSignalLike) => {
         const wantsEnabled = ui.notificationToggle.checked;
         if (wantsEnabled) {
             await OneSignal.Notifications.requestPermission();
@@ -218,20 +212,15 @@ const _handleNotificationToggleChange = () => {
 const _handleExploreHabitListClick = (e: MouseEvent) => {
     const item = (e.target as HTMLElement).closest<HTMLElement>('.explore-habit-item');
     if (!item) return;
+    triggerHaptic('light');
     const index = parseInt(item.dataset.index!, 10);
     const habitTemplate = PREDEFINED_HABITS[index];
     if (habitTemplate) {
-        const anyExistingHabit = state.habits.find(h =>
-            h.scheduleHistory.some(s => s.nameKey === habitTemplate.nameKey)
-        );
-
         closeModal(ui.exploreModal);
-
-        if (anyExistingHabit) {
-            openEditModal(anyExistingHabit);
-        } else {
-            openEditModal(habitTemplate);
-        }
+        // LÓGICA RADICAL: Sempre abre o modal de edição para criar um NOVO hábito a partir do modelo,
+        // mesmo que um com nome parecido já exista. Elimina a ambiguidade.
+        // CALLBACK: Se cancelar (back/close), reabre o modal de Explorar.
+        openEditModal(habitTemplate, undefined, () => openModal(ui.exploreModal));
     }
 };
 
@@ -246,39 +235,38 @@ const _handleExploreHabitListKeydown = (e: KeyboardEvent) => {
 };
 
 const _handleCreateCustomHabitClick = () => {
+    triggerHaptic('light');
     closeModal(ui.exploreModal);
-    openEditModal(null);
+    // CALLBACK: Se cancelar (back/close), reabre o modal de Explorar.
+    openEditModal(null, undefined, () => openModal(ui.exploreModal));
 };
 
 const _handleAiEvalClick = async () => {
-    // OFFLINE HANDLING
+    // UNIFIED STATE CHECK: Confia em state.aiState e na visibilidade do modal.
+    if (state.aiState === 'loading' || ui.aiModal.classList.contains('visible') || ui.aiOptionsModal.classList.contains('visible')) {
+        return;
+    }
+    
+    triggerHaptic('light');
+
     if (!navigator.onLine) {
         try {
-            // Lazy load quotes to keep main bundle small
             const { STOIC_QUOTES } = await import('../data/quotes');
-            
-            // Filter relevant quotes for tech issues/lack of control
             const offlineQuotes = STOIC_QUOTES.filter(q => 
-                q.tags.includes('control') || 
-                q.tags.includes('acceptance') ||
-                q.tags.includes('perception')
+                q.metadata.tags.includes('control') || 
+                q.metadata.tags.includes('acceptance') ||
+                q.metadata.tags.includes('perception')
             );
-            
-            // Fallback if filter is empty (unlikely given the dataset)
             const sourceArray = offlineQuotes.length > 0 ? offlineQuotes : STOIC_QUOTES;
-            
-            // Deterministic random (simple)
             const randomQuote = sourceArray[Math.floor(Math.random() * sourceArray.length)];
-            
             const lang = state.activeLanguageCode as 'pt'|'en'|'es';
-            const quoteText = randomQuote[lang];
-            const author = t(randomQuote.author);
+            const quoteText = escapeHTML(randomQuote.original_text[lang]);
+            const author = escapeHTML(t(randomQuote.author));
 
-            // HTML Structure: Using classes defined in css/modals.css
             const message = `
                 <div class="offline-header">
-                    <h3 class="offline-title">${t('aiOfflineTitle')}</h3>
-                    <p class="offline-desc">${t('aiOfflineMessage')}</p>
+                    <h3 class="offline-title">${escapeHTML(t('aiOfflineTitle'))}</h3>
+                    <p class="offline-desc">${escapeHTML(t('aiOfflineMessage'))}</p>
                 </div>
                 <div class="offline-quote-box">
                     <blockquote class="offline-quote-text">
@@ -289,32 +277,27 @@ const _handleAiEvalClick = async () => {
                     </div>
                 </div>
             `;
-
             ui.aiResponse.innerHTML = message;
             openModal(ui.aiModal);
         } catch (e) {
-            console.error("Failed to load offline quote", e);
+            logger.error("Failed to load offline quote", e);
         }
         return;
     }
 
-    const celebration21DayText = _processAndFormatCelebrations(state.pending21DayHabitIds, 'aiCelebration21Day', STREAK_SEMI_CONSOLIDATED);
-    const celebration66DayText = _processAndFormatCelebrations(state.pendingConsolidationHabitIds, 'aiCelebration66Day', STREAK_CONSOLIDATED);
+    let message = '';
     
-    const allCelebrations = [celebration66DayText, celebration21DayText].filter(Boolean).join('\n\n');
+    const allCelebrations = consumeAndFormatCelebrations();
 
     if (allCelebrations) {
-        ui.aiResponse.innerHTML = simpleMarkdownToHTML(allCelebrations);
-        openModal(ui.aiModal, undefined, () => {
-            state.hasSeenAIResult = true;
-            renderAINotificationState();
-        });
-        state.pending21DayHabitIds = [];
-        state.pendingConsolidationHabitIds = [];
-        saveState();
+        message = simpleMarkdownToHTML(allCelebrations);
         renderAINotificationState();
     } else if ((state.aiState === 'completed' || state.aiState === 'error') && !state.hasSeenAIResult && state.lastAIResult) {
-        ui.aiResponse.innerHTML = simpleMarkdownToHTML(state.lastAIResult);
+        message = simpleMarkdownToHTML(state.lastAIResult);
+    }
+    
+    if (message) {
+        ui.aiResponse.innerHTML = message;
         openModal(ui.aiModal, undefined, () => {
             state.hasSeenAIResult = true;
             renderAINotificationState();
@@ -327,66 +310,69 @@ const _handleAiEvalClick = async () => {
 const _handleAiOptionsClick = (e: MouseEvent) => {
     const button = (e.target as HTMLElement).closest<HTMLButtonElement>('.ai-option-btn');
     if (!button) return;
+    triggerHaptic('light');
     const analysisType = button.dataset.analysisType as 'monthly' | 'quarterly' | 'historical';
     performAIAnalysis(analysisType);
 };
 
 const _handleConfirmClick = () => {
+    triggerHaptic('light');
     const action = state.confirmAction;
+    
+    try {
+        action?.();
+    } catch (e) {
+        logger.error("Action execution failed", e);
+    }
+
     state.confirmAction = null;
     state.confirmEditAction = null;
+    
+    // Sem suppressCallbacks: onCancel roda como safety-net para ActionContext.reset()
     closeModal(ui.confirmModal);
-    action?.();
 };
 
 const _handleEditClick = () => {
+    triggerHaptic('light');
     const editAction = state.confirmEditAction;
+    
+    try {
+        editAction?.();
+    } catch (e) {
+        logger.error("Edit Action execution failed", e);
+    }
+
     state.confirmAction = null;
     state.confirmEditAction = null;
+    
     closeModal(ui.confirmModal);
-    editAction?.();
 };
 
 const _handleFullCalendarPrevClick = () => {
-    state.fullCalendar.month--;
-    if (state.fullCalendar.month < 0) {
-        state.fullCalendar.month = 11;
-        state.fullCalendar.year--;
-    }
+    if (!state.fullCalendar) return;
+    let { month, year } = state.fullCalendar;
+    month--;
+    if (month < 0) { month = 11; year--; }
+    state.fullCalendar = { month, year };
     renderFullCalendar();
+    triggerHaptic('light');
 };
 
 const _handleFullCalendarNextClick = () => {
-    state.fullCalendar.month++;
-    if (state.fullCalendar.month > 11) {
-        state.fullCalendar.month = 0;
-        state.fullCalendar.year++;
-    }
+    if (!state.fullCalendar) return;
+    let { month, year } = state.fullCalendar;
+    month++;
+    if (month > 11) { month = 0; year++; }
+    state.fullCalendar = { month, year };
     renderFullCalendar();
+    triggerHaptic('light');
 };
 
 const _handleFullCalendarGridClick = (e: MouseEvent) => {
     const dayEl = (e.target as HTMLElement).closest<HTMLElement>('.full-calendar-day');
-    if (dayEl && dayEl.dataset.date) {
-        state.selectedDate = dayEl.dataset.date;
-        
-        const newDate = parseUTCIsoDate(state.selectedDate);
-        state.calendarDates = Array.from({ length: DAYS_IN_CALENDAR }, (_, i) => 
-            addDays(newDate, i - 30)
-        );
-
-        closeModal(ui.fullCalendarModal);
-        
-        state.uiDirtyState.calendarVisuals = true;
-        state.uiDirtyState.habitListStructure = true;
-        invalidateChartCache();
-        
-        renderApp();
-
-        requestAnimationFrame(() => {
-            const selectedEl = ui.calendarStrip.querySelector('.day-item.selected');
-            selectedEl?.scrollIntoView({ behavior: 'auto', block: 'nearest', inline: 'center' });
-        });
+    if (dayEl && dayEl.dataset.date && !dayEl.classList.contains('other-month')) {
+        triggerHaptic('selection');
+        _navigateToDateFromAlmanac(dayEl.dataset.date);
     }
 };
 
@@ -397,22 +383,7 @@ const _handleFullCalendarGridKeydown = (e: KeyboardEvent) => {
     e.preventDefault();
 
     if (e.key === 'Enter' || e.key === ' ') {
-        closeModal(ui.fullCalendarModal);
-        const newDate = parseUTCIsoDate(state.selectedDate);
-        state.calendarDates = Array.from({ length: DAYS_IN_CALENDAR }, (_, i) => 
-            addDays(newDate, i - 30)
-        );
-
-        state.uiDirtyState.calendarVisuals = true;
-        state.uiDirtyState.habitListStructure = true;
-        invalidateChartCache();
-        
-        renderApp();
-        
-        requestAnimationFrame(() => {
-            const selectedEl = ui.calendarStrip.querySelector('.day-item.selected');
-            selectedEl?.scrollIntoView({ behavior: 'auto', block: 'nearest', inline: 'center' });
-        });
+        _navigateToDateFromAlmanac(state.selectedDate);
         return;
     }
 
@@ -446,20 +417,21 @@ const _handleHabitNameInput = () => {
     if (!state.editingHabit) return;
     
     const habitNameInput = ui.editHabitForm.elements.namedItem('habit-name') as HTMLInputElement;
-    let newName = habitNameInput.value;
+    const rawName = habitNameInput.value;
+    const newName = sanitizeText(rawName, MAX_HABIT_NAME_LENGTH);
+    if (newName !== rawName) habitNameInput.value = newName;
 
-    // BLINDAGEM CONTRA DOS: Truncar input excessivo
-    if (newName.length > MAX_HABIT_NAME_LENGTH) {
-        newName = newName.substring(0, MAX_HABIT_NAME_LENGTH);
-        habitNameInput.value = newName; // Reflete na UI
+    if (state.editingHabit.formData.nameKey) {
+        delete state.editingHabit.formData.nameKey;
+        state.editingHabit.formData.subtitleKey = 'customHabitSubtitle';
+        if (ui.habitSubtitleDisplay) {
+            setTextContent(ui.habitSubtitleDisplay, t('customHabitSubtitle'));
+        }
     }
 
     state.editingHabit.formData.name = newName;
-    delete state.editingHabit.formData.nameKey; 
-
-    // Validation Logic decoupled
-    const isValid = _validateAndFeedback(newName);
-    ui.editHabitSaveBtn.disabled = !isValid;
+    
+    _validateAndFeedback(newName);
 };
 
 const _handleIconPickerClick = () => {
@@ -471,6 +443,7 @@ const _handleIconGridClick = (e: MouseEvent) => {
     const target = e.target as HTMLElement;
     const item = target.closest<HTMLButtonElement>('.icon-picker-item');
     if (item && state.editingHabit) {
+        triggerHaptic('light');
         const iconSVG = item.dataset.iconSvg!;
         state.editingHabit.formData.icon = iconSVG;
         ui.habitIconPickerBtn.innerHTML = iconSVG;
@@ -482,7 +455,9 @@ const _handleColorGridClick = (e: MouseEvent) => {
     const target = e.target as HTMLElement;
     const swatch = target.closest<HTMLButtonElement>('.color-swatch');
     if (swatch && state.editingHabit) {
+        triggerHaptic('light');
         const color = swatch.dataset.color!;
+        
         state.editingHabit.formData.color = color;
 
         const iconColor = getContrastColor(color);
@@ -492,9 +467,12 @@ const _handleColorGridClick = (e: MouseEvent) => {
         ui.colorPickerGrid.querySelector('.selected')?.classList.remove('selected');
         swatch.classList.add('selected');
 
+        ui.iconPickerGrid.style.setProperty('--current-habit-bg-color', color);
+        ui.iconPickerGrid.style.setProperty('--current-habit-fg-color', iconColor);
+
         ui.iconPickerModal.classList.remove('is-picking-color');
-        renderIconPicker();
-        closeModal(ui.colorPickerModal);
+        
+        closeModal(ui.colorPickerModal, true);
     }
 };
 
@@ -512,14 +490,13 @@ const _handleTimeContainerClick = (e: MouseEvent) => {
     const button = (e.target as HTMLElement).closest<HTMLButtonElement>('.segmented-control-option');
     if (!button) return;
 
+    triggerHaptic('light');
     const time = button.dataset.time as TimeOfDay; 
     const currentlySelected = state.editingHabit.formData.times.includes(time);
 
     if (currentlySelected) {
-        if (state.editingHabit.formData.times.length > 1) {
-            state.editingHabit.formData.times = state.editingHabit.formData.times.filter(t => t !== time);
-            button.classList.remove('selected');
-        }
+        state.editingHabit.formData.times = state.editingHabit.formData.times.filter(t => t !== time);
+        button.classList.remove('selected');
     } else {
         state.editingHabit.formData.times.push(time);
         button.classList.add('selected');
@@ -614,7 +591,7 @@ export function setupModalListeners() {
     // Dialogs
     ui.confirmModalConfirmBtn.addEventListener('click', _handleConfirmClick);
     ui.confirmModalEditBtn.addEventListener('click', _handleEditClick);
-    ui.saveNoteBtn.addEventListener('click', handleSaveNote);
+    ui.saveNoteBtn.addEventListener('click', () => { triggerHaptic('light'); handleSaveNote(); });
 
     // Full Calendar
     ui.fullCalendarPrevBtn.addEventListener('click', _handleFullCalendarPrevClick);
@@ -623,7 +600,7 @@ export function setupModalListeners() {
     ui.fullCalendarGrid.addEventListener('keydown', _handleFullCalendarGridKeydown);
 
     // Habit Editing Form
-    ui.editHabitSaveBtn.addEventListener('click', saveHabitFromModal);
+    ui.editHabitSaveBtn.addEventListener('click', () => { triggerHaptic('light'); saveHabitFromModal(); });
     
     // Performance Optimized Input Handler
     const habitNameInput = ui.editHabitForm.elements.namedItem('habit-name') as HTMLInputElement;

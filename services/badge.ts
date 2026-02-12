@@ -23,7 +23,7 @@
  */
 
 import { calculateDaySummary } from './selectors';
-import { getTodayUTCIso } from '../utils';
+import { getTodayUTCIso, logger } from '../utils';
 
 // [2025-01-15] TYPE SAFETY: Definição de interface local para a Badging API.
 // Evita o uso repetido de 'as any' e fornece autocompletar/verificação se o TS for atualizado.
@@ -57,7 +57,7 @@ export async function updateAppBadge(): Promise<void> {
         } catch (error) {
             // ROBUSTEZ: Falha silenciosa ou log discreto é aceitável para funcionalidades de UI progressivas.
             // Não queremos alertar o usuário se o OS rejeitar o badge (ex: permissões).
-            console.error('Failed to set app badge:', error);
+            logger.error('Failed to set app badge:', error);
         }
     }
 }

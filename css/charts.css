@@ -16,7 +16,7 @@
     max-height: none;
     overflow: visible; /* CRÍTICO: Permite que o tooltip saia da caixa */
     
-    /* UI FIX: Margem superior para separar dos cartões. */
+    /* UI FIX: Margem superior ajustada para space-lg (16px) para equilíbrio visual. */
     margin-top: var(--space-lg);
     margin-inline: var(--space-lg); 
     
@@ -26,9 +26,6 @@
     /* Estilos visuais normais */
     z-index: var(--z-index-footer);
     box-shadow: none;
-    
-    /* [2025-02-23] Add border matching habit cards */
-    border: 1px solid rgba(255, 255, 255, 0.3);
 }
 
 /* 
@@ -48,10 +45,13 @@
     align-items: flex-start;
     margin-bottom: 0;
     position: relative;
-    z-index: 10;
+    /* LAYER MID: Acima da linha do gráfico (10), abaixo do tooltip (60) */
+    z-index: 20;
     pointer-events: none; /* Permite clicar no gráfico atrás do texto */
     padding-bottom: 0;
-    text-shadow: 0 1px 2px var(--bg-color); 
+    text-shadow: 0 1px 2px var(--bg-color);
+    /* LAYOUT TWEAK [2025-06-15]: Margem negativa para aproximar o texto do topo (reduzindo o padding visual do container) */
+    margin-top: -6px;
 }
 
 .chart-title {
@@ -90,8 +90,8 @@
     display: block;
     margin-top: -75px; 
     position: relative;
-    /* Garante que o gráfico fique sobre o header */
-    z-index: 15;
+    /* Z-Index removido (auto) para permitir o entrelaçamento de camadas (SVG < Header < Tooltip) */
+    z-index: auto;
 }
 .chart-container.is-empty .chart-empty-state {
     display: flex;
@@ -107,6 +107,9 @@
     height: 100%;
     /* Permite que o stroke ultrapasse levemente a área de visualização */
     overflow: visible;
+    /* LAYER BOTTOM: Linha abaixo do texto */
+    position: relative;
+    z-index: 10;
 }
 .chart-area { fill: url(#chart-gradient); }
 .chart-line { 
@@ -147,6 +150,8 @@
 .chart-indicator {
     position: absolute; top: 0; height: 100%; width: 1px;
     background-color: var(--accent-blue); pointer-events: none; opacity: 0;
+    /* LAYER OVER TEXT: O indicador de toque deve passar por cima do texto */
+    z-index: 25;
 }
 .chart-indicator-dot {
     position: absolute; width: 9px; height: 9px;

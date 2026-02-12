@@ -15,14 +15,14 @@
     /* SCROLL INTERNO: Ativa apenas quando o conteúdo excede o espaço disponível */
     overflow-y: auto; 
     overflow-x: hidden;
-    min-height: 0; /* Important for flex child scroll */
+    min-height: 0; /* Important for flex child scrolling */
     
     /* UX: Padding para o conteúdo não colar nas bordas */
     padding-inline: var(--space-lg);
     padding-top: var(--space-lg); /* Space between header and habits, matches chart margin. */
     
     /* UX FIX [2025-04-01]: Reduzido de space-xl para space-sm. 
-       Evita criar um grande espaço vazio no final da rolagem, já que o gráfico possui sua própria margem superior. */
+       Evita criar um grande espaço vazio no final da lista, já que o gráfico possui sua própria margem superior. */
     padding-bottom: var(--space-sm);
     
     /* UX: Smooth scrolling */
@@ -35,9 +35,29 @@
     scrollbar-width: none;
 }
 
+/* 
+   SCROLL LOCKING FIX [2025-06-09]:
+   Estado temporário aplicado durante o DRAG ativo.
+   Removido do Long Press inicial para permitir rolagem fluida.
+*/
+#habit-container.is-locking-scroll {
+    overflow-y: hidden !important;
+    touch-action: none !important;
+}
+
 /* PERFORMANCE FIX [2025-03-04]: Desativa scroll suave durante arrasto para evitar conflito com a física JS */
+/* SCROLL LOCK FIX [2025-06-08]: 
+   1. 'touch-action: none': Instrui o navegador a não iniciar gestos nativos (pan/zoom).
+   2. 'overflow-y: hidden': CRÍTICO. Remove a capacidade do contêiner de rolar nativamente.
+      Isso impede que o navegador dispare 'pointercancel' quando o dedo atinge a borda ou move rápido.
+      O JavaScript (_renderFrame em drag.ts) assume o controle total da rolagem via scrollTop.
+*/
 #habit-container.is-dragging {
     scroll-behavior: auto !important;
+    touch-action: none !important;
+    overflow-y: hidden !important;
+    user-select: none !important;
+    overscroll-behavior: none !important; /* Force no bounce */
 }
 
 /* HIDE SCROLLBAR (Chrome, Safari, Edge) */
@@ -60,9 +80,12 @@
     min-height: auto;
     overflow: visible;
 
-    /* ROLLBACK [2025-05-04]: Removido 'content-visibility: auto'.
-       A estimativa de tamanho (contain-intrinsic-size) causava saltos bruscos na barra de rolagem (Scroll Jitter)
-       quando a altura real do grupo diferia da estimada. A reciclagem de DOM no JS já garante performance. */
+    /* PERFORMANCE [2025-06-03]: Reativado CSS Containment.
+       Virtualização nativa para saltar renderização de grupos fora da tela.
+       FIX JITTER: 'contain-intrinsic-size' configurado para a altura aproximada de 1 cartão + gap (~100px).
+       Isso fornece ao navegador uma estimativa estável, evitando pulos na barra de rolagem. */
+    content-visibility: auto;
+    contain-intrinsic-size: auto 100px;
 }
 
 /* Collapsible state override */
@@ -74,7 +97,7 @@
 .time-marker {
     flex-shrink: 0;
     width: 30px;
-    padding-top: 25px; /* [2025-02-26]: Ajuste fino para alinhar visualmente à base do cartão */
+    padding-top: 21px; /* Default alignment for Afternoon & Evening */
     padding-bottom: 2px;
     color: #ffffff; /* Changed from var(--text-tertiary) */
     display: flex;
@@ -90,6 +113,12 @@
     /* UX FIX [2025-02-25]: Disable pointer events so dragging over the icon hits the drop zone behind it */
     pointer-events: none;
 }
+
+/* UX ADJUSTMENT [2025-06-03]: Specific vertical alignment for Morning icon only */
+.habit-group-wrapper[data-time-wrapper="Morning"] .time-marker {
+    padding-top: 7px;
+}
+
 .time-marker svg {
     /* Reduced size from 24px to 21px (~10%) */
     width: 21px;
@@ -156,10 +185,12 @@ body.is-dragging-active .habit-group {
     right: var(--space-sm);
     opacity: 0;
     pointer-events: none;
+    /* PERFORMANCE: Typed OM controla o transform diretamente, não precisamos de transição JS aqui se a frame rate for alta, 
+       mas mantemos para suavização extra em setups híbridos. */
     transition: top var(--transition-duration-fast) ease-out, opacity var(--transition-duration-fast) ease-out;
     z-index: var(--z-index-indicator);
     /* PERFORMANCE [2025-01-16]: Otimiza animação de drag & drop. */
-    will-change: top, opacity;
+    will-change: transform, opacity;
 }
 .drop-indicator.visible {
     opacity: 1;
@@ -226,12 +257,49 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     position: relative;
     overflow: hidden;
     display: flex;
-    /* PERFORMANCE [2024-12-28]: Isola o layout e estilo para otimizar renderização de listas longas. */
-    contain: layout style;
-    /* UX [2025-01-27]: Importante para garantir scroll vertical suave ao tocar no cartão */
-    /* LOGIC LOCK: 'pan-y' é essencial para a física do swipe horizontal personalizada. */
+    
+    /* --- PERFORMANCE UPDATE v8.0 (Virtualização) --- */
+    /* Substitui 'contain: layout style' pela virtualização total. */
+    content-visibility: auto;
+    
+    /* ESTIMATIVA DE TAMANHO: Altura média de um cartão (~86px). */
+    /* Isso previne o 'scrollbar jumping' quando o cartão é renderizado. */
+    contain-intrinsic-size: auto 86px; 
+    
+    /* UPDATE [2025-06-09]: pan-y para rolagem nativa vertical.
+       Isso permite que o navegador gerencie a física de rolagem por padrão.
+       A lógica JS (pointer capture + container lock) irá interceptar a rolagem condicionalmente. */
     touch-action: pan-y;
+
+    /* SYSTEM UI FIX: Desabilita callouts nativos (magnifier/context menu) para garantir long-press limpo */
+    -webkit-touch-callout: none;
+    
+    /* UX FIX [2025-06-16]: Previne seleção de texto em Android durante o hold */
+    user-select: none;
+    -webkit-user-select: none;
+    
+    /* TRANSITION FIX: Garante transições suaves para escala */
+    transition: transform 0.2s cubic-bezier(0.2, 0, 0.2, 1);
 }
+
+/* REFACTOR [2025-06-09]: A classe .is-pressing agora serve apenas para feedback visual.
+   UPDATE: Removido scale para evitar encolhimento indesejado. */
+.habit-card.is-pressing {
+    /* transform: scale(0.98); REMOVIDO */
+    background-color: var(--surface-hover);
+}
+
+/* 
+   VISUAL FUSE (BREATHING):
+   Indicador de Long Press.
+   UPDATE: Substituído scale por opacidade para não alterar tamanho.
+*/
+.habit-card.is-charging {
+    /* transform: scale(0.96); REMOVIDO */
+    opacity: 0.8;
+    transition: opacity 0.5s ease-out;
+}
+
 .habit-group .habit-card:last-child { margin-block-end: 0; }
 
 .habit-card::before { /* Indicador de status (barra vertical) */
@@ -307,15 +375,30 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     /* VISUAL UPDATE [2025-02-26]: Ajuste de padding para 32px (space-xxl) para triplicar a margem visual durante o swipe (de 6px para 18px).
        Math: 32px (pad) + 34px (icon) + 12px (gap) = 78px. 
        Swipe Width: 60px. Buffer: 18px. */
-    padding: var(--space-sm) var(--space-md) var(--space-sm) var(--space-xxl);
+    /* ADJUST [2025-06-03]: 32px -> 26px (movimento de 6px para esquerda) */
+    padding: var(--space-sm) var(--space-md) var(--space-sm) 26px;
     position: relative;
     z-index: var(--z-index-content);
     cursor: pointer;
     transition: transform var(--transition-duration-slow) cubic-bezier(0.23, 1, 0.32, 1), background var(--transition-duration), padding-right var(--transition-duration);
     border-radius: 9px;
     flex-grow: 1;
+    /* UPDATE [2025-06-09]: pan-y para rolagem nativa */
     touch-action: pan-y;
     /* MEMORY OPTIMIZATION [2025-01-29]: Removed global will-change: transform. Apply it contextually during interactions (swipe/drag) via classes to save VRAM. */
+    
+    /* UX FIX [2025-06-16]: Previne seleção de texto em Android durante o hold */
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+/* FEEDBACK VISUAL: Limite físico atingido */
+.habit-content-wrapper.limit-reached {
+    /* Efeito de resistência: Escala sutil e opacidade */
+    transform: scale(0.98) !important; /* Força sobreposição ao translate do JS se necessário */
+    opacity: 0.8;
+    filter: grayscale(0.5); /* Feedback visual de "erro/limite" */
+    transition: transform 0.1s ease-out, opacity 0.1s ease-out, filter 0.1s;
 }
 
 /* A11Y FIX [2025-05-04]: Garante anel de foco visível mesmo com overflow:hidden no pai. 
@@ -350,7 +433,12 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     padding-right: var(--space-xl);
 }
 
-.habit-card.dragging { opacity: 0.4; }
+.habit-card.dragging { 
+    opacity: 0 !important;
+    /* INTERACTION LOCK: Previne rolagem da página enquanto arrasta e evita pointercancel */
+    touch-action: none;
+    pointer-events: none !important; /* Allow hit-test through to drop zone */
+}
 .habit-card.is-swiping .habit-content-wrapper {
     transition: none; /* Desativa transição durante o deslize manual */
     user-select: none;
@@ -407,8 +495,13 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     justify-content: center;
     border-radius: var(--border-radius-small);
     transition: opacity var(--transition-duration-slow);
+    
+    /* Impede seleção de texto ou imagem dentro do ícone */
+    user-select: none;
+    -webkit-user-select: none;
 }
-.habit-icon svg { width: 60%; height: 60%; }
+
+.habit-icon svg { width: 60%; height: 60%; pointer-events: none; }
 
 /* UX [2025-01-18]: Classe de animação para o ícone ao completar o hábito */
 .habit-icon.animate-pop {
@@ -419,6 +512,7 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     text-align: left;
     flex-grow: 1; /* Faz com que o título ocupe o espaço disponível, empurrando a meta para a direita */
     min-width: 0; /* Permite truncagem de texto se necessário */
+    overflow: hidden; /* FIX [2025-05-06]: Strict containment for child text to prevent layout blowout */
 }
 .habit-details .name {
     /* Reduced from 18px to ~16px (10% reduction) */
@@ -434,14 +528,18 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     overflow: hidden;
     white-space: normal;
     line-height: 1.2;
+    
+    /* FIX [2025-05-06]: Quebra palavras longas (URLs, tokens) para não forçar largura excessiva */
+    word-break: break-word; 
+    overflow-wrap: anywhere;
 }
 .habit-details .subtitle { 
     font-size: 11px; 
     color: var(--text-secondary);
+    font-weight: 500;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    transition: color 0.3s ease, font-weight 0.3s ease;
 }
 
 .habit-card.completed .habit-details .name {
@@ -501,16 +599,20 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 }
 .goal-value-wrapper:hover { background-color: var(--surface-hover); }
 
+/* DIRECT INPUT STYLE */
 .goal-input-inline {
-    width: calc(var(--space-section) * 2.5); /* Widen for 3 digits comfort */
-    background: transparent; /* UX FIX: Blend with card background */
+    width: 40px; /* Compact width */
+    background: transparent;
     border: 1px solid var(--accent-blue);
     color: var(--text-primary);
-    /* BLINDAGEM IOS: 16px previne zoom automático ao editar meta */
-    font-size: 16px;
+    font-size: 12px;
+    font-weight: 600;
     text-align: center;
-    border-radius: var(--space-xs);
-    padding: 2px;
+    border-radius: var(--border-radius-small);
+    padding: 0;
+    height: 20px;
+    margin: 0;
+    /* Remove native spinners */
     -moz-appearance: textfield;
 }
 .goal-input-inline::-webkit-outer-spin-button,
@@ -518,10 +620,13 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     -webkit-appearance: none;
     margin: 0;
 }
+.goal-input-inline:focus {
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.3);
+}
 
 .goal-value-wrapper .progress {
     color: var(--text-primary);
-    transition: color var(--transition-duration-slow);
 }
 
 .goal-value-wrapper.increase .progress {
@@ -533,13 +638,16 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 }
 
 /* --- COMPONENTES: AÇÕES DE DESLIZE --- */
+/* FIX [2026-02-06]: Cada faixa cobre 50% da largura do cartão, alinhadas ao centro.
+   Isso garante que ao deslizar para um lado, apenas a cor desse lado seja visível,
+   sem vazar a cor da faixa oposta nos cantos ou bordas. */
 .habit-actions-left, .habit-actions-right {
     position: absolute;
     inset-block: 0;
     z-index: var(--z-index-base);
     display: flex;
     align-items: center;
-    width: 200px; /* Largura grande para permitir um over-swipe */
+    width: 50%;
     
     /* A11Y [2025-01-18]: Esconde do foco e leitura quando não ativos */
     visibility: hidden;
@@ -551,7 +659,10 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 
 .habit-card.is-open-left .habit-content-wrapper { transform: translateX(var(--swipe-action-width)); }
 .habit-card.is-open-right .habit-content-wrapper { transform: translateX(calc(-1 * var(--swipe-action-width))); }
-.habit-card:is(.is-open-left, .is-open-right) :is(.habit-goal-controls, .time-of-day-icon, .habit-icon) {
+
+/* UX FIX: Oculta APENAS controles de meta e ícone de horário ao deslizar.
+   Mantém o ícone do hábito visível para contexto. */
+.habit-card:is(.is-open-left, .is-open-right) :is(.habit-goal-controls, .time-of-day-icon) {
     opacity: 0;
     pointer-events: none;
 }
@@ -622,4 +733,67 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 
 .completed-wrapper svg {
     stroke: var(--accent-blue);
+}
+
+/* --- VISUAL EFFECT: SCROLL ZOOM (ZERO-COST) --- */
+/* Utiliza a API nativa de Scroll-Driven Animations para criar um efeito de foco
+   no centro da tela sem usar JavaScript (Main Thread Free). */
+@supports (animation-timeline: view()) {
+    .habit-card {
+        animation: scroll-focus linear both;
+        animation-timeline: view(block);
+        /* O efeito acontece enquanto o cartão atravessa a viewport */
+        animation-range: cover 0% cover 100%;
+    }
+
+    /* 
+       INTERACTION GUARD: 
+       Desativa a animação de scroll quando o usuário está interagindo fisicamente 
+       (Swipe ou Drag). Isso evita conflitos de transform e garante que a física 
+       JS (1:1 movement) tenha prioridade total.
+    */
+    .habit-card.is-swiping,
+    .habit-card.is-open-left,
+    .habit-card.is-open-right,
+    .habit-card.is-pressing,
+    .habit-card.is-charging { /* DISABLE ZOOM ON PRESS/CHARGE */
+        animation: none !important;
+        opacity: 1 !important;
+        /* Mantém a escala natural durante a interação para sensação tátil sólida */
+        transform: scale(1) !important; 
+    }
+    
+    /* RE-SCALE ON PRESS (Manual Override) */
+    /* REMOVIDO: .habit-card.is-pressing { transform: scale(0.98) !important; } */
+    
+    /* RE-SCALE ON CHARGING (Manual Override - The Breathing) */
+    /* REMOVIDO: .habit-card.is-charging { transform: scale(0.96) !important; } */
+
+    /* DRAG SPECIAL CASE: O cartão deve ficar invisível (apenas fantasma visível) */
+    .habit-card.dragging {
+        animation: none !important;
+        opacity: 0 !important;
+        transform: scale(1) !important;
+    }
+
+    /* Keyframes otimizados para opacidade e escala (GPU Friendly) */
+    @keyframes scroll-focus {
+        0% {
+            transform: scale(0.95);
+            opacity: 0.8;
+        }
+        /* Mantém o tamanho total (100%) durante a zona central ("Sweet Spot") */
+        15% {
+            transform: scale(1);
+            opacity: 1;
+        }
+        85% {
+            transform: scale(1);
+            opacity: 1;
+        }
+        100% {
+            transform: scale(0.95);
+            opacity: 0.8;
+        }
+    }
 }

@@ -1,129 +1,50 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
-*/
-
-/**
- * @file services/crypto.ts
- * @description Primitivas de Criptografia Isomórficas (Web Crypto API Wrapper).
- * 
- * [ISOMORPHIC CONTEXT]:
- * Este módulo é seguro para execução tanto na Main Thread quanto em Web Workers.
- * Atualmente, é utilizado intensivamente pelo `sync.worker.ts` para offloading de CPU.
- * 
- * ARQUITETURA (Security & Performance):
- * - **Responsabilidade Única:** Prover criptografia autenticada (AES-GCM) derivada de senha (PBKDF2).
- * - **Zero Dependencies:** Utiliza exclusivamente a `crypto.subtle` nativa do navegador.
- * 
- * DEPENDÊNCIAS CRÍTICAS:
- * - `crypto.subtle`: Requer contexto seguro (HTTPS/localhost).
- * - `utils.ts`: Utilitários de codificação Base64.
- * 
- * DECISÕES TÉCNICAS:
- * 1. **PBKDF2 com 100k iterações:** Balanceamento entre segurança contra força bruta e performance em dispositivos móveis.
- * 2. **AES-GCM:** Escolhido por prover confidencialidade e integridade (autenticação) simultaneamente.
+ * VERSÃO: Standard AES-GCM
  */
 
-import { arrayBufferToBase64, base64ToArrayBuffer } from '../utils';
-
-// --- CONSTANTES ---
-// CRITICAL LOGIC: Alterar estes parâmetros tornará dados antigos ilegíveis.
-// DO NOT REFACTOR: 100.000 iterações é o padrão OWASP recomendado para performance/segurança web.
-const ITERATIONS = 100000; 
-const encoder = new TextEncoder();
-const decoder = new TextDecoder();
-
-// --- FUNÇÕES CORE DE CRIPTOGRAFIA ---
+const SALT_LEN = 16;
+const IV_LEN = 12;
 
 async function deriveKey(password: string, salt: Uint8Array): Promise<CryptoKey> {
-    // Importa a senha como uma chave "raw" para ser usada no PBKDF2.
-    const keyMaterial = await crypto.subtle.importKey(
-        'raw',
-        encoder.encode(password),
-        { name: 'PBKDF2' },
-        false, // A chave não é exportável.
-        ['deriveKey']
-    );
-
-    // Deriva a chave de criptografia AES-GCM a partir da senha e do salt.
-    // CRITICAL LOGIC: A combinação Salt + Senha + Iterações deve ser exata para regenerar a chave.
-    return crypto.subtle.deriveKey(
-        {
-            name: 'PBKDF2',
-            salt: salt,
-            iterations: ITERATIONS,
-            hash: 'SHA-256',
-        },
-        keyMaterial,
-        { name: 'AES-GCM', length: 256 },
-        true, // A chave derivada é exportável (necessário para alguns fluxos).
-        ['encrypt', 'decrypt']
-    );
+    const enc = new TextEncoder();
+    return crypto.subtle.importKey("raw", enc.encode(password), { name: "PBKDF2" }, false, ["deriveKey"])
+        .then(keyMaterial => crypto.subtle.deriveKey(
+            { name: "PBKDF2", salt, iterations: 100000, hash: "SHA-256" },
+            keyMaterial, { name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]
+        ));
 }
 
-/**
- * Criptografa uma string usando AES-GCM com uma chave derivada de uma senha.
- * @param data A string de dados a ser criptografada.
- * @param password A senha usada para derivar a chave.
- * @returns Uma string JSON contendo o salt, IV e os dados criptografados em Base64.
- */
-export async function encrypt(data: string, password: string): Promise<string> {
-    // SECURITY: Gera Salt e IV aleatórios a cada criptografia.
-    // Isso garante que cifrar o mesmo dado duas vezes resulte em saídas diferentes.
-    const salt = crypto.getRandomValues(new Uint8Array(16));
+export async function encrypt(text: string, password: string): Promise<string> {
+    const salt = crypto.getRandomValues(new Uint8Array(SALT_LEN));
+    const iv = crypto.getRandomValues(new Uint8Array(IV_LEN));
     const key = await deriveKey(password, salt);
+    const enc = new TextEncoder();
     
-    const iv = crypto.getRandomValues(new Uint8Array(12)); // IV de 12 bytes é recomendado para AES-GCM (96 bits).
-    const encrypted = await crypto.subtle.encrypt(
-        {
-            name: 'AES-GCM',
-            iv: iv,
-        },
-        key,
-        encoder.encode(data)
-    );
-
-    // Combina o salt, IV e os dados criptografados em um único objeto para armazenamento.
-    const combined = {
-        salt: arrayBufferToBase64(salt),
-        iv: arrayBufferToBase64(iv),
-        encrypted: arrayBufferToBase64(encrypted),
-    };
+    const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, enc.encode(text));
     
-    return JSON.stringify(combined);
+    // Concatena: SALT + IV + DADOS
+    const combined = new Uint8Array(salt.length + iv.length + encrypted.byteLength);
+    combined.set(salt);
+    combined.set(iv, salt.length);
+    combined.set(new Uint8Array(encrypted), salt.length + iv.length);
+    
+    // Converte para Base64 para transporte seguro
+    return btoa(String.fromCharCode(...combined));
 }
 
-/**
- * Descriptografa uma string JSON que foi criptografada com a função `encrypt`.
- * @param encryptedDataJSON A string JSON contendo salt, IV e dados criptografados.
- * @param password A senha usada para derivar a chave.
- * @returns A string de dados original.
- * @throws Lança um erro se a descriptografia falhar (chave incorreta ou dados corrompidos).
- */
-export async function decrypt(encryptedDataJSON: string, password: string): Promise<string> {
-    try {
-        const { salt: saltBase64, iv: ivBase64, encrypted: encryptedBase64 } = JSON.parse(encryptedDataJSON);
-
-        const salt = base64ToArrayBuffer(saltBase64);
-        // CRITICAL LOGIC: Recria a mesma chave usando o Salt armazenado.
-        const key = await deriveKey(password, new Uint8Array(salt));
-
-        const iv = base64ToArrayBuffer(ivBase64);
-        const encrypted = base64ToArrayBuffer(encryptedBase64);
+export async function decrypt(encryptedBase64: string, password: string): Promise<string> {
+    const str = atob(encryptedBase64);
+    const bytes = new Uint8Array(str.length);
+    for (let i = 0; i < str.length; i++) bytes[i] = str.charCodeAt(i);
     
-        const decrypted = await crypto.subtle.decrypt(
-            {
-                name: 'AES-GCM',
-                iv: iv,
-            },
-            key,
-            encrypted
-        );
-        return decoder.decode(decrypted);
-    } catch (e) {
-        console.error("Decryption or Parsing failed:", e);
-        // Lança um erro mais informativo para o chamador (geralmente capturado pelo Worker e enviado à UI).
-        throw new Error("Decryption failed. The sync key may be incorrect or the data corrupted.");
-    }
+    const salt = bytes.slice(0, SALT_LEN);
+    const iv = bytes.slice(SALT_LEN, SALT_LEN + IV_LEN);
+    const data = bytes.slice(SALT_LEN + IV_LEN);
+    
+    const key = await deriveKey(password, salt);
+    const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, data);
+    
+    return new TextDecoder().decode(decrypted);
 }

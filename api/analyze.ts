@@ -4,144 +4,153 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 
-/**
- * @file api/analyze.ts
- * @description Proxy seguro e otimizado para a Google GenAI API.
- * 
- * [SERVERLESS / EDGE FUNCTION CONTEXT]:
- * Este código roda na Vercel Edge Network (V8 Isolate).
- * - Otimizado para "Warm Starts": Lazy Singleton AI Client.
- * - Zero-Allocation: Respostas e Headers estáticos.
- * - Static JSON Hoisting: Strings de erro pré-computadas.
- */
-
 import { GoogleGenAI } from '@google/genai';
 
 export const config = {
   runtime: 'edge',
 };
 
-// --- CONSTANTS ---
-const MAX_PROMPT_SIZE = 100 * 1024; // 100KB Limit for Text Prompts
+const MAX_PROMPT_SIZE = 150 * 1024; // 150KB
+const CACHE_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
+const CACHE_MAX_ENTRIES = 500;
 
-// --- TYPES ---
-interface AnalyzeRequestBody {
-    prompt: string;
-    systemInstruction: string;
-}
-
-// --- STATIC CONFIGURATION (Global Scope / Cold Start) ---
-
-// 1. Static Headers (Frozen for V8 optimization)
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
 };
 
-const HEADERS_JSON = {
-  ...CORS_HEADERS,
-  'Content-Type': 'application/json',
-};
-
-const HEADERS_TEXT = {
-  ...CORS_HEADERS,
-  'Content-Type': 'text/plain; charset=utf-8',
-};
-
-// 2. Pre-serialized Error Bodies (Zero CPU overhead on request)
-const ERR_METHOD_NOT_ALLOWED = JSON.stringify({ error: 'Method Not Allowed' });
-const ERR_NO_API_KEY = JSON.stringify({ error: 'Internal Server Error', details: 'Server configuration error.' });
-const ERR_INVALID_JSON = JSON.stringify({ error: 'Bad Request: Invalid JSON format' });
-const ERR_MISSING_FIELDS = JSON.stringify({ error: 'Bad Request: Missing prompt or systemInstruction' });
-const ERR_PAYLOAD_TOO_LARGE = JSON.stringify({ error: 'Payload Too Large', details: 'Request exceeds limit.' });
-const ERR_INTERNAL = JSON.stringify({ error: 'Internal Server Error', details: 'An unexpected error occurred.' });
-
-// 3. Environment & Constants
-const API_KEY = process.env.API_KEY;
-// MODEL SAFETY: Use 'gemini-3-flash-preview' as requested, but be aware of deprecation.
+// ROBUSTNESS: Support both standard naming conventions
+const API_KEY = process.env.API_KEY || process.env.GEMINI_API_KEY;
+// MODEL UPDATE: Use supported Gemini 3 model.
 const MODEL_NAME = 'gemini-3-flash-preview';
 
-// 4. Lazy Singleton Client (Global Scope)
 let aiClient: GoogleGenAI | null = null;
+const responseCache = new Map<string, { value: string; ts: number }>();
 
-// --- HANDLER ---
+async function computeCacheKey(prompt: string, systemInstruction: string): Promise<string> {
+    const data = new TextEncoder().encode(`${MODEL_NAME}|${prompt}|${systemInstruction}`);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function getCachedResponse(key: string): string | null {
+    const entry = responseCache.get(key);
+    if (!entry) return null;
+    if (Date.now() - entry.ts > CACHE_TTL_MS) {
+        responseCache.delete(key);
+        return null;
+    }
+    return entry.value;
+}
+
+function setCachedResponse(key: string, value: string) {
+    responseCache.set(key, { value, ts: Date.now() });
+    if (responseCache.size <= CACHE_MAX_ENTRIES) return;
+    // Evict oldest entries when cache grows beyond limit.
+    const entries = Array.from(responseCache.entries());
+    entries.sort((a, b) => a[1].ts - b[1].ts);
+    const excess = responseCache.size - CACHE_MAX_ENTRIES;
+    for (let i = 0; i < excess; i++) {
+        responseCache.delete(entries[i][0]);
+    }
+}
 
 export default async function handler(req: Request) {
-    // Fast Path: Preflight (OPTIONS)
-    if (req.method === 'OPTIONS') {
-        return new Response(null, { status: 204, headers: CORS_HEADERS });
-    }
-
-    if (req.method !== 'POST') {
-        return new Response(ERR_METHOD_NOT_ALLOWED, { status: 405, headers: HEADERS_JSON });
-    }
+    if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS_HEADERS });
+    if (req.method !== 'POST') return new Response(null, { status: 405 });
 
     if (!API_KEY) {
-        console.error("[api/analyze] API_KEY environment variable not set.");
-        return new Response(ERR_NO_API_KEY, { status: 500, headers: HEADERS_JSON });
-    }
-
-    // SECURITY: Robust Payload Size Check (Clone & Blob)
-    // Trusts header first for speed, but validates actual size to prevent OOM DOS.
-    const contentLengthStr = req.headers.get('content-length');
-    if (contentLengthStr) {
-        const length = parseInt(contentLengthStr, 10);
-        if (!isNaN(length) && length > MAX_PROMPT_SIZE) {
-            return new Response(ERR_PAYLOAD_TOO_LARGE, { status: 413, headers: HEADERS_JSON });
-        }
-    }
-
-    // Parse Body Safe
-    let body: any;
-    try {
-        // BLINDAGEM: Clonamos a requisição para ler como Blob e verificar tamanho real antes do JSON parse.
-        // Isso evita que um ataque de compressão ou spoofing de header estoure a memória no JSON.parse.
-        const blob = await req.clone().blob();
-        if (blob.size > MAX_PROMPT_SIZE) {
-             return new Response(ERR_PAYLOAD_TOO_LARGE, { status: 413, headers: HEADERS_JSON });
-        }
-        body = JSON.parse(await blob.text());
-    } catch (e) {
-        return new Response(ERR_INVALID_JSON, { status: 400, headers: HEADERS_JSON });
-    }
-
-    if (!body || typeof body !== 'object' || Array.isArray(body)) {
-        return new Response(ERR_INVALID_JSON, { status: 400, headers: HEADERS_JSON });
-    }
-
-    const { prompt, systemInstruction } = body as Partial<AnalyzeRequestBody>;
-
-    if (!prompt || !systemInstruction) {
-        return new Response(ERR_MISSING_FIELDS, { status: 400, headers: HEADERS_JSON });
-    }
-
-    if (!aiClient) {
-        aiClient = new GoogleGenAI({ apiKey: API_KEY });
+        console.error("Server Config Error: API_KEY or GEMINI_API_KEY not found in environment.");
+        return new Response(JSON.stringify({ error: 'Server Configuration: Missing API Key' }), { status: 500, headers: CORS_HEADERS });
     }
 
     try {
+        // CHAOS DEFENSE: Timeout de leitura do prompt para evitar workers pendentes
+        const bodyText = await Promise.race([
+            req.text(),
+            new Promise<string>((_, r) => setTimeout(() => r('TIMEOUT'), 8000))
+        ]);
+
+        if (bodyText === 'TIMEOUT') return new Response(null, { status: 408 });
+        if (bodyText.length > MAX_PROMPT_SIZE) return new Response(null, { status: 413 });
+
+        const body = JSON.parse(bodyText);
+        const { prompt, systemInstruction } = body;
+
+        if (!prompt || !systemInstruction) return new Response(null, { status: 400 });
+
+        const cacheKey = await computeCacheKey(prompt, systemInstruction);
+        const cached = getCachedResponse(cacheKey);
+        if (cached) {
+            return new Response(cached, {
+                headers: {
+                    ...CORS_HEADERS,
+                    'Content-Type': 'text/plain; charset=utf-8',
+                    'Cache-Control': 'no-store',
+                    'X-Cache': 'HIT'
+                }
+            });
+        }
+
+        if (!aiClient) aiClient = new GoogleGenAI({ apiKey: API_KEY });
+
+        // PROTEÇÃO CONTRA ZUMBIFICAÇÃO: Timeout de execução da IA
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000);
+
         const geminiResponse = await aiClient.models.generateContent({
             model: MODEL_NAME,
             contents: prompt,
-            config: { systemInstruction },
+            config: { 
+                systemInstruction,
+                temperature: 0.7,
+            },
         });
+
+        clearTimeout(timeoutId);
         
-        if (!geminiResponse.text) {
-            const candidate = geminiResponse.candidates?.[0];
-            const finishReason = candidate?.finishReason;
-            // Sanitized error for Safety blocking
-            if (finishReason === 'SAFETY') {
-                 return new Response(JSON.stringify({ error: 'Bad Request', details: 'Blocked by safety settings.' }), { status: 400, headers: HEADERS_JSON });
-            }
-            return new Response(JSON.stringify({ error: 'Internal Server Error', details: 'Generation failed.' }), { status: 500, headers: HEADERS_JSON });
+        const responseText = geminiResponse.text;
+        if (!responseText) throw new Error('Empty AI response');
+
+        setCachedResponse(cacheKey, responseText);
+
+        return new Response(responseText, { 
+            headers: { 
+                ...CORS_HEADERS, 
+                'Content-Type': 'text/plain; charset=utf-8',
+                'Cache-Control': 'no-store',
+                'X-Cache': 'MISS'
+            } 
+        });
+
+    } catch (error: any) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        console.error("AI Analysis Failed:", errorMessage);
+
+        if (error.name === 'AbortError') return new Response('AI Gateway Timeout', { status: 504, headers: CORS_HEADERS });
+
+        const status = Number((error as any)?.status || (error as any)?.code || 0);
+        const normalizedMessage = errorMessage.toLowerCase();
+        const isRateLimit = status === 429
+            || normalizedMessage.includes('429')
+            || normalizedMessage.includes('resource_exhausted')
+            || normalizedMessage.includes('quota')
+            || normalizedMessage.includes('rate limit');
+
+        if (isRateLimit) {
+            return new Response(JSON.stringify({ error: 'AI quota reached', details: 'RESOURCE_EXHAUSTED' }), {
+                status: 429,
+                headers: {
+                    ...CORS_HEADERS,
+                    'Retry-After': '300'
+                }
+            });
         }
 
-        return new Response(geminiResponse.text, { headers: HEADERS_TEXT });
-
-    } catch (error: unknown) {
-        console.error('Critical error in /api/analyze handler:', error);
-        // SECURITY: Do not leak error.message to client in production.
-        return new Response(ERR_INTERNAL, { status: 500, headers: HEADERS_JSON });
+        // SECURITY FIX: Truncate and sanitize error details to prevent information leakage
+        const safeDetails = errorMessage.substring(0, 200).replace(/[<>"'&]/g, '');
+        return new Response(JSON.stringify({ error: 'AI processing failed', details: safeDetails }), { status: 500, headers: CORS_HEADERS });
     }
 }

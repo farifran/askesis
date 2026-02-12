@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="pt-BR">
 <!-- 
@@ -109,23 +108,35 @@
     <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" async></script>
     <script>
       window.OneSignalDeferred = window.OneSignalDeferred || [];
-      OneSignalDeferred.push(async function(OneSignal) {
-        await OneSignal.init({
-          appId: "39454655-f1cd-4531-8ec5-d0f61eb1c478",
-          allowLocalhostAsSecureOrigin: true,
-        });
+      window.OneSignalDeferred.push(async function(OneSignal) {
+        // [ROBUSTNESS FIX]: OneSignal throws a domain-mismatch error if initialized on a URL 
+        // that doesn't match the dashboard configuration. We wrap this in a try/catch to 
+        // prevent it from triggering the app's Fatal Error UI during staging/local previews.
+        try {
+          await OneSignal.init({
+            appId: "39454655-f1cd-4531-8ec5-d0f61eb1c478",
+            allowLocalhostAsSecureOrigin: true,
+          });
+        } catch (e) {
+          console.warn("OneSignal initialization skipped: likely domain mismatch or blocked by browser.", e);
+        }
       });
     </script>
-    <!-- REMOVIDO: ImportMap inseguro para PWA Offline. As dependências devem ser bundled pelo esbuild. -->
 <script type="importmap">
 {
   "imports": {
-    "@google/genai": "https://esm.sh/@google/genai@^1.34.0",
+    "path": "https://esm.sh/path@^0.12.7",
+    "vite": "https://esm.sh/vite@^6.3.0",
+    "vitest/": "https://esm.sh/vitest@^4.0.18/",
+    "vitest": "https://esm.sh/vitest@^4.0.18",
+    "@google/genai": "https://esm.sh/@google/genai@^1.39.0",
     "@vercel/analytics": "https://esm.sh/@vercel/analytics@^1.6.1",
-    "@vercel/kv": "https://esm.sh/@vercel/kv@^3.0.0"
+    "@upstash/redis": "https://esm.sh/@upstash/redis@^1.36.2",
+    "url": "https://esm.sh/url@^0.11.4"
   }
 }
 </script>
+<link rel="stylesheet" href="/index.css">
 </head>
 <body>
     <!-- PERFORMANCE: SVG Sprite System.
@@ -218,7 +229,20 @@
             }
           };
 
-          window.onerror = function(msg) {
+          window.onerror = function(message, source, lineno, colno, error) {
+            // [ROBUSTNESS FIX]: Suppress domain-mismatch errors from OneSignal.
+            // These errors are expected on non-production domains and should not trigger the Fatal Error UI.
+            var msg = message || (error && error.message) || "";
+            if (typeof msg === 'string' && (msg.indexOf('OneSignal') !== -1 || msg.indexOf('onesignal') !== -1)) {
+              console.warn("Caught and suppressed OneSignal library error:", msg);
+              return true; // Prevents the error from being reported globally
+            }
+            
+            // IGNORE RESIZE OBSERVER LOOP ERROR: Benign warning in modern browsers when layout is stressed.
+            if (typeof msg === 'string' && msg.includes('ResizeObserver loop')) {
+                return true;
+            }
+
             window.showFatalError(msg);
             return false; 
           };
@@ -226,6 +250,13 @@
           window.onunhandledrejection = function(event) {
             var reason = event.reason;
             var msg = 'Erro Assíncrono: ' + (reason ? (reason.message || reason) : 'Desconhecido');
+            
+            // Suppress OneSignal-related promise rejections
+            if (typeof msg === 'string' && (msg.indexOf('OneSignal') !== -1 || msg.indexOf('onesignal') !== -1)) {
+               console.warn("Caught and suppressed OneSignal unhandled rejection:", msg);
+               return;
+            }
+            
             window.showFatalError(msg);
           };
 
@@ -257,10 +288,22 @@
             </div>
             <div class="header-bottom">
                 <div id="stoic-quote-display" class="stoic-quote"></div>
-                <h2 id="header-title">
-                    <span class="header-title-desktop">Hoje</span>
-                    <span class="header-title-mobile">Hoje</span>
-                </h2>
+                <div class="header-date-wrapper">
+                    <!-- UX CHANGE: Seta de "Voltar" (Futuro -> Presente) à esquerda do título -->
+                    <button id="nav-arrow-future" class="nav-arrow future hidden" aria-label="Dia Anterior">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                    </button>
+                    
+                    <h2 id="header-title">
+                        <span class="header-title-desktop">Hoje</span>
+                        <span class="header-title-mobile">Hoje</span>
+                    </h2>
+                    
+                    <!-- UX CHANGE: Seta de "Avançar" (Passado -> Presente) à direita do título -->
+                    <button id="nav-arrow-past" class="nav-arrow past hidden" aria-label="Dia Seguinte">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                    </button>
+                </div>
             </div>
         </header>
 
@@ -325,122 +368,140 @@
     </div>
 
     <!-- Modals -->
-    <div id="explore-modal" class="modal-overlay">
+    <div id="explore-modal" class="modal-overlay" role="dialog" aria-modal="true">
         <div class="modal-content">
-            <h2>Explorar Hábitos</h2>
+            <div class="modal-header">
+                <div class="modal-header-spacer"></div>
+                <h2>Explorar Hábitos</h2>
+                <div class="modal-header-spacer"></div>
+            </div>
             <div id="explore-habit-list"></div>
             <button id="create-custom-habit-btn" class="btn btn--primary">Criar hábito personalizado</button>
-            <button class="btn modal-close-btn">Fechar</button>
         </div>
     </div>
     
-    <div id="manage-modal" class="modal-overlay">
-        <div class="modal-content">
-            <h2 id="manage-modal-title">Configurações Gerais</h2>
-            <div class="modal-settings-section">
-                <div class="setting-item">
-                    <label id="label-language">Idioma</label>
-                    <div id="language-rotary" class="reel-rotary">
-                        <button id="language-prev" class="reel-btn">
-                            <svg width="16" height="16"><use href="#icon-chevron-left"></use></svg>
-                        </button>
-                        <div id="language-viewport" class="reel-viewport">
-                            <div id="language-reel" class="reel-reel"></div>
-                        </div>
-                        <button id="language-next" class="reel-btn">
-                            <svg width="16" height="16"><use href="#icon-chevron-right"></use></svg>
-                        </button>
-                    </div>
-                </div>
-                <div class="setting-item setting-item--column">
-                    <div class="setting-item">
-                        <label for="notification-toggle" id="label-notifications">Notificações</label>
-                        <label class="toggle-switch" for="notification-toggle" id="notification-toggle-label">
-                            <input type="checkbox" id="notification-toggle">
-                            <span class="slider"></span>
-                        </label>
-                    </div>
-                    <p id="notification-status-desc" class="setting-item-desc"></p>
-                </div>
-                 <div class="setting-item setting-item--column">
-                    <div class="setting-item-header">
-                         <label id="label-sync">Sincronização na Nuvem</label>
-                         <span id="sync-status"></span>
-                    </div>
-                    <div id="sync-section">
-                        <!-- Estado: Sincronização Inativa -->
-                        <div class="sync-view" id="sync-inactive-view">
-                            <p id="sync-inactive-desc"></p>
-                            <div class="sync-actions">
-                                <button id="enable-sync-btn" class="btn btn--primary"></button>
-                                <button id="enter-key-view-btn" class="btn"></button>
-                            </div>
-                        </div>
-                        <!-- Estado: Entrada de Chave -->
-                        <div class="sync-view" id="sync-enter-key-view" style="display: none;">
-                             <div class="form-group">
-                                <label for="sync-key-input" id="label-enter-key"></label>
-                                <!-- UX IMPROVEMENT [2025-01-18]: Desativa correções automáticas para chaves complexas (UUID) -->
-                                <input type="text" id="sync-key-input" class="form-control" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
-                            </div>
-                            <div class="sync-actions">
-                                <button id="cancel-enter-key-btn" class="btn"></button>
-                                <button id="submit-key-btn" class="btn btn--primary"></button>
-                            </div>
-                        </div>
-                         <!-- Estado: Exibição da Chave Gerada -->
-                        <div class="sync-view" id="sync-display-key-view" style="display: none;">
-                            <p class="sync-warning" id="sync-warning-text"></p>
-                            <div class="sync-key-display">
-                                <span id="sync-key-text"></span>
-                                <button id="copy-key-btn" class="icon-btn" aria-label="Copiar Chave"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg></button>
-                            </div>
-                            <button id="key-saved-btn" class="btn btn--primary"></button>
-                        </div>
-                        <!-- Estado: Sincronização Ativa -->
-                        <div class="sync-view" id="sync-active-view" style="display: none;">
-                            <p id="sync-active-desc"></p>
-                            <div class="sync-actions">
-                                <button id="view-key-btn" class="btn"></button>
-                                <button id="disable-sync-btn" class="btn btn--danger"></button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                
-                <div id="privacy-section" class="setting-item setting-item--column" style="margin-block-end: var(--space-sm);">
-                    <div class="setting-item-header">
-                        <label id="label-privacy">Dados & Privacidade</label>
-                    </div>
-                    <div class="sync-actions">
-                        <button id="export-data-btn" class="btn">Exportar Backup</button>
-                        <button id="import-data-btn" class="btn">Restaurar Backup</button>
-                    </div>
-                </div>
-
-                <div id="reset-section" class="setting-item">
-                    <label id="label-reset">Reinicialização</label>
-                    <button id="reset-app-btn" class="btn btn--danger">Apagar dados</button>
-                </div>
+    <div id="manage-modal" class="modal-overlay" role="dialog" aria-modal="true">
+        <div class="modal-content modal-content--sticky-header">
+            <div class="modal-header">
+                <div class="modal-header-spacer"></div>
+                <h2 id="manage-modal-title">Configurações Gerais</h2>
+                <div class="modal-header-spacer"></div>
             </div>
-            <h3 id="habit-list-title" class="modal-subtitle">Gerenciar Hábitos</h3>
-            <ul id="habit-list"></ul>
-            <p id="no-habits-message" class="empty-list-message hidden"></p>
-            <button class="btn modal-close-btn">Fechar</button>
+            <div class="modal-scroll-wrapper">
+                <div class="modal-settings-section">
+                    <div class="setting-item">
+                        <label id="label-language">Idioma</label>
+                        <div id="language-rotary" class="reel-rotary">
+                            <button id="language-prev" class="reel-btn">
+                                <svg width="16" height="16"><use href="#icon-chevron-left"></use></svg>
+                            </button>
+                            <div id="language-viewport" class="reel-viewport">
+                                <div id="language-reel" class="reel-reel"></div>
+                            </div>
+                            <button id="language-next" class="reel-btn">
+                                <svg width="16" height="16"><use href="#icon-chevron-right"></use></svg>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="setting-item setting-item--column">
+                        <div class="setting-item">
+                            <label for="notification-toggle" id="label-notifications">Notificações</label>
+                            <label class="toggle-switch" for="notification-toggle" id="notification-toggle-label">
+                                <input type="checkbox" id="notification-toggle">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        <p id="notification-status-desc" class="setting-item-desc"></p>
+                    </div>
+                     <div class="setting-item setting-item--column">
+                        <div class="setting-item-header">
+                             <label id="label-sync">Sincronização na Nuvem</label>
+                             <span id="sync-status"></span>
+                        </div>
+                        <!-- UI UPDATE: Placeholder for detailed error message -->
+                        <p id="sync-error-msg" class="form-notice hidden" style="margin-top:0; margin-bottom:10px;"></p>
+                        
+                        <div id="sync-section">
+                            <!-- Estado: Sincronização Inativa -->
+                            <div class="sync-view" id="sync-inactive-view">
+                                <p id="sync-inactive-desc"></p>
+                                <div class="sync-actions">
+                                    <button id="enable-sync-btn" class="btn btn--primary"></button>
+                                    <button id="enter-key-view-btn" class="btn"></button>
+                                </div>
+                            </div>
+                            <!-- Estado: Entrada de Chave -->
+                            <div class="sync-view" id="sync-enter-key-view" style="display: none;">
+                                 <div class="form-group">
+                                    <label for="sync-key-input" id="label-enter-key"></label>
+                                    <!-- UX IMPROVEMENT [2025-01-18]: Desativa correções automáticas para chaves complexas (UUID) -->
+                                    <input type="text" id="sync-key-input" class="form-control" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+                                </div>
+                                <div class="sync-actions">
+                                    <button id="cancel-enter-key-btn" class="btn"></button>
+                                    <button id="submit-key-btn" class="btn btn--primary"></button>
+                                </div>
+                            </div>
+                             <!-- Estado: Exibição da Chave Gerada -->
+                            <div class="sync-view" id="sync-display-key-view" style="display: none;">
+                                <p class="sync-warning" id="sync-warning-text"></p>
+                                <div class="sync-key-display">
+                                    <span id="sync-key-text"></span>
+                                    <button id="copy-key-btn" class="icon-btn" aria-label="Copiar Chave"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg></button>
+                                </div>
+                                <button id="key-saved-btn" class="btn btn--primary"></button>
+                            </div>
+                            <!-- Estado: Sincronização Ativa -->
+                            <div class="sync-view" id="sync-active-view" style="display: none;">
+                                <p id="sync-active-desc"></p>
+                                <div class="sync-actions">
+                                    <button id="view-key-btn" class="btn"></button>
+                                    <button id="disable-sync-btn" class="btn btn--danger"></button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div id="privacy-section" class="setting-item setting-item--column" style="margin-block-end: var(--space-sm);">
+                        <div class="setting-item-header">
+                            <label id="label-privacy">Dados & Privacidade</label>
+                        </div>
+                        <div class="sync-actions">
+                            <button id="export-data-btn" class="btn">Exportar Backup</button>
+                            <button id="import-data-btn" class="btn">Restaurar Backup</button>
+                        </div>
+                    </div>
+    
+                    <div id="reset-section" class="setting-item">
+                        <label id="label-reset">Reinicialização</label>
+                        <button id="reset-app-btn" class="btn btn--danger">Apagar dados</button>
+                    </div>
+                </div>
+                <h3 id="habit-list-title" class="modal-subtitle">Gerenciar Hábitos</h3>
+                <ul id="habit-list"></ul>
+                <p id="no-habits-message" class="empty-list-message hidden"></p>
+            </div>
         </div>
     </div>
 
-    <div id="ai-modal" class="modal-overlay">
+    <div id="ai-modal" class="modal-overlay" role="dialog" aria-modal="true">
         <div class="modal-content">
-            <h2>Avaliação da IA</h2>
+            <div class="modal-header">
+                <div class="modal-header-spacer"></div>
+                <h2>Avaliação da IA</h2>
+                <div class="modal-header-spacer"></div>
+            </div>
             <div id="ai-response"></div>
-            <button class="btn modal-close-btn">Fechar</button>
         </div>
     </div>
 
-    <div id="ai-options-modal" class="modal-overlay">
+    <div id="ai-options-modal" class="modal-overlay" role="dialog" aria-modal="true">
         <div class="modal-content">
-            <h2>Análise da IA</h2>
+            <div class="modal-header">
+                <div class="modal-header-spacer"></div>
+                <h2>Análise da IA</h2>
+                <div class="modal-header-spacer"></div>
+            </div>
             <div class="ai-options-list">
                 <!-- UPDATE [2025-02-23]: Textos ajustados para 'Análise Atual' e descrições contextuais -->
                 <button class="ai-option-btn" data-analysis-type="monthly">
@@ -456,37 +517,44 @@
                     <span class="ai-option-desc">Uma visão completa de toda a sua jornada.</span>
                 </button>
             </div>
-            <button class="btn modal-close-btn">Fechar</button>
         </div>
     </div>
 
-    <div id="confirm-modal" class="modal-overlay">
+    <div id="confirm-modal" class="modal-overlay" role="dialog" aria-modal="true">
         <div class="modal-content">
-            <h2>Confirmar Ação</h2>
-            <p id="confirm-modal-text"></p>
+            <div class="modal-header">
+                <div class="modal-header-spacer"></div>
+                <h2>Confirmar Ação</h2>
+                <div class="modal-header-spacer"></div>
+            </div>
+            <p id="confirm-modal-text" aria-live="assertive"></p>
             <div class="modal-actions">
-                <button class="btn modal-close-btn">Cancelar</button>
                 <button id="confirm-modal-edit-btn" class="btn hidden">Editar</button>
                 <button id="confirm-modal-confirm-btn" class="btn btn--primary">Confirmar</button>
             </div>
         </div>
     </div>
 
-    <div id="notes-modal" class="modal-overlay">
+    <div id="notes-modal" class="modal-overlay" role="dialog" aria-modal="true">
         <div class="modal-content">
-            <h2>Nota</h2>
+            <div class="modal-header">
+                <div class="modal-header-spacer"></div>
+                <h2 id="notes-modal-title">Nota</h2>
+                <div class="modal-header-spacer"></div>
+            </div>
             <p id="notes-modal-subtitle"></p>
             <textarea id="notes-textarea" placeholder="Digite sua nota aqui..."></textarea>
-            <button id="save-note-btn" class="btn btn--primary">Salvar Nota</button>
-            <button class="btn modal-close-btn">Cancelar</button>
+            <div class="modal-actions">
+                <button id="save-note-btn" class="btn btn--primary">Salvar Nota</button>
+            </div>
         </div>
     </div>
 
     <!-- Modal: Ícone Picker -->
-    <div id="icon-picker-modal" class="modal-overlay">
+    <div id="icon-picker-modal" class="modal-overlay" role="dialog" aria-modal="true">
         <div class="modal-content">
             <div class="modal-header">
-                <button class="icon-btn modal-close-btn"><svg width="24" height="24"><use href="#icon-chevron-left"></use></svg></button>
+                <div class="modal-header-spacer"></div>
                 <h2 id="icon-picker-modal-title">Selecionar Ícone</h2>
                 <button id="change-color-from-picker-btn" class="icon-btn"></button>
             </div>
@@ -495,21 +563,25 @@
     </div>
 
     <!-- Modal: Color Picker -->
-    <div id="color-picker-modal" class="modal-overlay">
+    <div id="color-picker-modal" class="modal-overlay" role="dialog" aria-modal="true">
         <div class="modal-content">
             <div class="modal-header">
-                <button class="icon-btn modal-close-btn"><svg width="24" height="24"><use href="#icon-chevron-left"></use></svg></button>
+                <div class="modal-header-spacer"></div>
                 <h2 id="color-picker-modal-title">Selecionar Cor</h2>
-                <div style="width: 36px;"></div>
+                <div class="modal-header-spacer"></div>
             </div>
             <div id="color-picker-grid"></div>
         </div>
     </div>
 
     <!-- Modal: Edit Habit (Apple Style Form) -->
-    <div id="edit-habit-modal" class="modal-overlay">
+    <div id="edit-habit-modal" class="modal-overlay" role="dialog" aria-modal="true">
         <div class="modal-content">
-            <h2 id="edit-habit-modal-title">Editar Hábito</h2>
+            <div class="modal-header">
+                <div class="modal-header-spacer"></div>
+                <h2 id="edit-habit-modal-title">Editar Hábito</h2>
+                <div class="modal-header-spacer"></div>
+            </div>
             <form id="edit-habit-form">
                 <div class="habit-identity-section">
                     <div class="habit-icon-picker-wrapper">
@@ -518,12 +590,13 @@
                     </div>
                     <div class="habit-name-input-wrapper">
                         <input type="text" id="habit-name" name="habit-name" class="form-control" placeholder="Nome" autocomplete="off" style="background:transparent;border:none;font-size:20px;padding:0;">
+                        <div id="habit-subtitle-display" class="habit-subtitle-display"></div>
                         <div class="form-notice"></div>
                     </div>
                 </div>
 
                 <div class="form-section">
-                    <div class="form-row">
+                    <div class="form-row form-row--no-border">
                         <label>Horário</label>
                     </div>
                     <div id="habit-time-container" style="padding: 0 var(--space-lg) var(--space-lg);"></div>
@@ -532,32 +605,30 @@
                 <div id="frequency-options-container"></div>
             </form>
             <div class="modal-actions">
-                <button class="btn modal-close-btn">Cancelar</button>
                 <button id="edit-habit-save-btn" class="btn btn--primary">Salvar</button>
             </div>
         </div>
     </div>
 
     <!-- Modal: Full Calendar -->
-    <div id="full-calendar-modal" class="modal-overlay">
+    <div id="full-calendar-modal" class="modal-overlay" role="dialog" aria-modal="true">
         <div class="modal-content">
-            <div id="full-calendar-header">
-                <button id="full-calendar-prev" class="icon-btn">
+            <div id="full-calendar-header" class="modal-header">
+                <button id="full-calendar-prev" class="icon-btn" aria-label="Mês anterior">
                     <svg width="24" height="24"><use href="#icon-chevron-left"></use></svg>
                 </button>
                 <h2 id="full-calendar-month-year"></h2>
-                <button id="full-calendar-next" class="icon-btn">
+                <button id="full-calendar-next" class="icon-btn" aria-label="Próximo mês">
                     <svg width="24" height="24"><use href="#icon-chevron-right"></use></svg>
                 </button>
             </div>
             <div id="full-calendar-weekdays"></div>
             <div id="full-calendar-grid"></div>
-            <button class="btn modal-close-btn" style="width:100%">Fechar</button>
         </div>
     </div>
 
     <!-- Quick Actions Popover -->
-    <div id="calendar-quick-actions" class="modal-overlay">
+    <div id="calendar-quick-actions" class="modal-overlay" role="dialog" aria-modal="true">
         <div class="quick-actions-content">
             <button id="quick-action-done" class="quick-action-btn"></button>
             <div class="quick-action-divider"></div>
@@ -568,5 +639,6 @@
     </div>
 
     <script src="bundle.js" type="module"></script>
+<script type="module" src="/index.tsx"></script>
 </body>
 </html>
