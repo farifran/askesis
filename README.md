@@ -738,6 +738,37 @@ usuarios_suportados ≈ (limite_req_dia / (req_por_usuario_dia))
 
 **3) Vercel (Banda/Edge Functions)**
 
+**Configuração recomendada de ambiente (Vercel):**
+
+**Production**
+```bash
+CORS_ALLOWED_ORIGINS=https://askesis.vercel.app
+CORS_STRICT=1
+SYNC_RATE_LIMIT_WINDOW_MS=60000
+SYNC_RATE_LIMIT_MAX_REQUESTS=120
+ANALYZE_RATE_LIMIT_WINDOW_MS=60000
+ANALYZE_RATE_LIMIT_MAX_REQUESTS=20
+```
+
+**Preview**
+```bash
+CORS_ALLOWED_ORIGINS=https://askesis.vercel.app
+CORS_STRICT=1
+SYNC_RATE_LIMIT_WINDOW_MS=60000
+SYNC_RATE_LIMIT_MAX_REQUESTS=200
+ANALYZE_RATE_LIMIT_WINDOW_MS=60000
+ANALYZE_RATE_LIMIT_MAX_REQUESTS=40
+```
+
+**Development**
+```bash
+CORS_ALLOWED_ORIGINS=http://localhost:5173
+CORS_STRICT=0
+DISABLE_RATE_LIMIT=1
+```
+
+Observação: com `CORS_STRICT=1`, o backend também permite a origem do próprio deploy atual (produção ou preview) via host encaminhado da Vercel, mantendo bloqueio para origens externas.
+
 **Fórmula genérica:**
 ```
 usuarios_mensais ≈ (banda_mensal_disponivel / consumo_medio_por_usuario_mes)

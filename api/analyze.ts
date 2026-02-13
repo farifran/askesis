@@ -18,11 +18,57 @@ const ALLOWED_ORIGINS = (process.env.CORS_ALLOWED_ORIGINS || '')
     .split(',')
     .map(origin => origin.trim())
     .filter(Boolean);
+const CORS_STRICT = process.env.CORS_STRICT === '1';
+
+function isSameDeploymentOrigin(req: Request, origin: string): boolean {
+    if (!origin) return false;
+    try {
+        const originUrl = new URL(origin);
+        const requestHost = req.headers.get('x-forwarded-host') || req.headers.get('host') || '';
+        return !!requestHost && originUrl.host === requestHost;
+    } catch {
+        return false;
+    }
+}
+
+function matchesOriginRule(origin: string, rule: string): boolean {
+    if (!origin || !rule) return false;
+    if (rule === '*') return true;
+    if (rule === origin) return true;
+
+    const wildcardMatch = rule.match(/^(https?):\/\/\*\.(.+)$/i);
+    if (!wildcardMatch) return false;
+
+    try {
+        const originUrl = new URL(origin);
+        const expectedProtocol = wildcardMatch[1].toLowerCase();
+        const expectedHostSuffix = wildcardMatch[2].toLowerCase();
+        const host = originUrl.hostname.toLowerCase();
+        return originUrl.protocol.replace(':', '').toLowerCase() === expectedProtocol
+            && host.endsWith(`.${expectedHostSuffix}`);
+    } catch {
+        return false;
+    }
+}
+
+function isOriginAllowed(req: Request, origin: string): boolean {
+    if (!origin) return false;
+    if (isSameDeploymentOrigin(req, origin)) return true;
+    return ALLOWED_ORIGINS.some(rule => matchesOriginRule(origin, rule));
+}
+
+function parsePositiveInt(value: string | undefined, fallback: number): number {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
+}
 
 function getCorsOrigin(req: Request): string {
-    if (ALLOWED_ORIGINS.length === 0) return '*';
     const origin = req.headers.get('origin') || '';
-    return ALLOWED_ORIGINS.includes(origin) ? origin : 'null';
+    if (ALLOWED_ORIGINS.length === 0) {
+        if (isSameDeploymentOrigin(req, origin)) return origin;
+        return '*';
+    }
+    return isOriginAllowed(req, origin) ? origin : 'null';
 }
 
 function getCorsHeaders(req: Request): Record<string, string> {
@@ -71,8 +117,8 @@ function setCachedResponse(key: string, value: string) {
     }
 }
 
-const ANALYZE_RATE_LIMIT_WINDOW_MS = 60_000;
-const ANALYZE_RATE_LIMIT_MAX_REQUESTS = 20;
+const ANALYZE_RATE_LIMIT_WINDOW_MS = parsePositiveInt(process.env.ANALYZE_RATE_LIMIT_WINDOW_MS, 60_000);
+const ANALYZE_RATE_LIMIT_MAX_REQUESTS = parsePositiveInt(process.env.ANALYZE_RATE_LIMIT_MAX_REQUESTS, 20);
 const analyzeRateLimitStore = new Map<string, { count: number; resetAt: number }>();
 const ANALYZE_RATE_LIMIT_DISABLED = process.env.NODE_ENV === 'test' || process.env.DISABLE_RATE_LIMIT === '1';
 
@@ -100,7 +146,15 @@ function checkRateLimitAnalyze(key: string): { limited: boolean; retryAfterSec: 
 }
 
 export default async function handler(req: Request) {
+    const reqOrigin = req.headers.get('origin') || '';
     const CORS_HEADERS = getCorsHeaders(req);
+    if (CORS_STRICT && ALLOWED_ORIGINS.length > 0 && reqOrigin && !isOriginAllowed(req, reqOrigin)) {
+        return new Response(JSON.stringify({ error: 'Origin not allowed', code: 'CORS_DENIED' }), {
+            status: 403,
+            headers: CORS_HEADERS
+        });
+    }
+
     if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS_HEADERS });
     if (req.method !== 'POST') return new Response(null, { status: 405 });
 

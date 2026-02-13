@@ -27,6 +27,7 @@ import {
     MAX_HABIT_NAME_LENGTH
 } from '../state';
 import { PREDEFINED_HABITS } from '../data/predefinedHabits';
+import { sanitizeHabitIcon } from '../data/icons';
 import {
     openModal,
     closeModal,
@@ -445,8 +446,9 @@ const _handleIconGridClick = (e: MouseEvent) => {
     if (item && state.editingHabit) {
         triggerHaptic('light');
         const iconSVG = item.dataset.iconSvg!;
-        state.editingHabit.formData.icon = iconSVG;
-        ui.habitIconPickerBtn.innerHTML = iconSVG;
+        const safeIcon = sanitizeHabitIcon(iconSVG, '❓');
+        state.editingHabit.formData.icon = safeIcon;
+        ui.habitIconPickerBtn.innerHTML = safeIcon;
         closeModal(ui.iconPickerModal);
     }
 };
