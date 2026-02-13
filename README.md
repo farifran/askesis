@@ -88,16 +88,52 @@ graph TD
   </table>
 </div>
 
-### Arquitetura em um olhar
+### Contexto do Sistema (C4 - Nível 1)
 
 ```mermaid
 flowchart LR
-  UI[UI] --> State[State Engine]
-  State --> Worker[Web Worker]
-  Worker --> Crypto[AES-GCM]
-  State --> Storage[IndexedDB]
-  State --> Sync[Cloud Sync]
-  Sync --> Storage
+  U[Usuário]
+  A[Askesis PWA]
+  G[Google Gemini API]
+  V[Vercel Serverless API]
+  O[OneSignal]
+
+  U -->|Usa diariamente| A
+  A -->|Análise e reflexão| V
+  A -->|Sync de estado| V
+  V -->|Proxy de IA| G
+  A -->|Registro de push| O
+  O -->|Notificações| U
+```
+
+### Contêineres (C4 - Nível 2)
+
+```mermaid
+flowchart LR
+  subgraph Client[Cliente (Browser/PWA)]
+    UI[UI + Render]
+    SW[Service Worker]
+    IDB[(IndexedDB)]
+    SYNC[sync.worker.ts]
+    CRYPTO[Crypto AES-GCM]
+    CLOUD[cloud.ts]
+  end
+
+  subgraph Cloud[Nuvem]
+    API[Vercel API /api/sync /api/analyze]
+    AI[Gemini]
+    PUSH[OneSignal]
+  end
+
+  UI --> IDB
+  UI --> CRYPTO
+  CRYPTO --> IDB
+  UI --> SW
+  UI --> CLOUD
+  CLOUD --> SYNC
+  SYNC --> API
+  API --> AI
+  UI --> PUSH
 ```
 
 ### Componentes Internos (C4 - Nível 3)
@@ -109,30 +145,47 @@ flowchart TB
     RENDER[render/*]
     LISTEN[listeners/*]
     STATE[state.ts]
-    SERVICES[services/*]
+    SW[sw.js]
   end
 
   IDX --> RENDER
   IDX --> LISTEN
+  IDX --> SW
   LISTEN --> STATE
   RENDER --> STATE
-  SERVICES --> STATE
 
   subgraph Services[Principais serviços]
     PERSIST[persistence.ts]
-    MERGE[dataMerge.ts]
+    MIGRATION[migration.ts]
     CLOUD[cloud.ts]
+    API_CLIENT[api.ts]
+    MERGE[dataMerge.ts]
     CRYP[crypto.ts]
+    SELECTORS[selectors.ts]
+    HABIT_SERVICE[HabitService.ts]
     ANALYSIS[analysis.ts]
+    QUOTE_ENGINE[quoteEngine.ts]
     ACTIONS[habitActions.ts]
+    WORKER[sync.worker.ts]
   end
 
-  SERVICES --> PERSIST
-  SERVICES --> MERGE
-  SERVICES --> CLOUD
-  SERVICES --> CRYP
-  SERVICES --> ANALYSIS
-  SERVICES --> ACTIONS
+  LISTEN --> ACTIONS
+  LISTEN --> ANALYSIS
+  LISTEN --> CLOUD
+  ACTIONS --> PERSIST
+  ACTIONS --> SELECTORS
+  ACTIONS --> HABIT_SERVICE
+  ACTIONS --> STATE
+  RENDER --> SELECTORS
+  ANALYSIS --> WORKER
+  CLOUD --> WORKER
+  CLOUD --> API_CLIENT
+  CLOUD --> MERGE
+  CLOUD --> PERSIST
+  PERSIST --> MIGRATION
+  PERSIST --> STATE
+  CRYP --> STATE
+  QUOTE_ENGINE --> STATE
 ```
 
 ### Fluxo de Dados (Local-first + Sync)
@@ -141,20 +194,104 @@ flowchart TB
 sequenceDiagram
   participant User as Usuário
   participant UI as UI
-  participant Crypto as Crypto AES-GCM
+  participant State as State
+  participant Actions as habitActions
+  participant Persist as persistence
   participant DB as IndexedDB
-  participant Sync as Sync Worker
-  participant API as Vercel API
+  participant Cloud as cloud.ts
+  participant Worker as sync.worker
+  participant API as API /api/sync
+  participant Merge as dataMerge
 
   User->>UI: Marca hábito / adiciona nota
-  UI->>Crypto: Serializa e criptografa
-  Crypto->>DB: Persiste estado local
-  UI->>Sync: Agenda sincronização
-  Sync->>API: Envia diff/estado
-  API-->>Sync: Estado remoto
-  Sync->>UI: Merge resiliente (LWW + dedup)
-  UI->>DB: Persistência final consolidada
+  UI->>Actions: Atualiza hábito/nota
+  Actions->>State: Mutação de estado + dirty flags
+  Actions->>Persist: saveState() (debounced)
+  Persist->>DB: saveSplitState(core + logs)
+  Persist-->>Cloud: syncHandler(snapshot)
+  Cloud->>Cloud: splitIntoShards + hash diff
+
+  loop Para cada shard alterado
+    Cloud->>Worker: encrypt(shard, syncKey)
+    Worker-->>Cloud: shard criptografado
+  end
+
+  Cloud->>API: POST /api/sync (lastModified + shards)
+  alt Sync sem conflito (200)
+    API-->>Cloud: OK
+    Cloud->>State: syncSynced + atualiza hash cache
+  else Conflito de versão (409)
+    API-->>Cloud: shards remotos
+    Cloud->>Worker: decrypt(shards remotos)
+    Worker-->>Cloud: estado remoto
+    Cloud->>Merge: mergeStates(local, remoto)
+    Merge-->>Cloud: estado consolidado (LWW + dedup)
+    Cloud->>Persist: persistStateLocally(merged)
+    Cloud->>Persist: loadState(merged)
+    Persist-->>UI: render-app
+  end
 ```
+
+### Fluxo de Conflito de Sync
+
+```mermaid
+sequenceDiagram
+  participant D1 as Dispositivo A
+  participant D2 as Dispositivo B
+  participant API as /api/sync
+  participant C as cloud.ts (cliente)
+  participant W as sync.worker
+  participant M as dataMerge
+
+  D1->>API: POST shards (lastModified=novo)
+  API-->>D1: 200 OK
+
+  D2->>API: POST shards (lastModified=antigo)
+  API-->>D2: 409 CONFLICT + shards remotos
+
+  D2->>C: resolveConflictWithServerState()
+  C->>W: decrypt(shards remotos)
+  W-->>C: estado remoto
+  C->>M: mergeStates(local, remoto)
+  M-->>C: estado consolidado
+  C->>C: persistStateLocally + loadState
+  C->>API: POST merged (retry)
+  API-->>D2: 200 OK
+
+  Note over M: Regras efetivas de merge\n1) Match por ID\n2) Dedup por nome normalizado\n3) LWW por schedule/history\n4) Normalização de mode/times/frequency
+```
+
+### Máquina de Estados do Hábito
+
+```mermaid
+stateDiagram-v2
+  [*] --> Ativo
+
+  state Ativo {
+    [*] --> Pendente
+    Pendente --> Concluido: Marcar feito
+    Pendente --> Adiado: Marcar adiado
+    Adiado --> Concluido: Completar depois
+    Concluido --> Pendente: Ajuste de status
+  }
+
+  Ativo --> Encerrado: Encerrar (endDate)
+  Ativo --> Graduado: Graduação
+  Ativo --> Deletado: Remoção permanente (tombstone)
+  Encerrado --> Ativo: Reativar/alterar schedule
+  Deletado --> Ativo: Ressurreição por nome
+  Graduado --> Deletado: Remoção
+```
+
+### Mapa rápido de módulos (pasta → responsabilidade)
+
+- render/: composição visual, diffs de DOM, modais, calendário e gráficos.
+- listeners/: eventos de UI (cards, modal, swipe/drag, calendário, sync).
+- services/: domínio e infraestrutura (habitActions, selectors, persistence, cloud, dataMerge, analysis, quoteEngine, HabitService).
+- api/: endpoints serverless edge (/api/sync, /api/analyze) com rate-limit, CORS e hardening.
+- state.ts: modelo canônico de estado, tipos e caches.
+- services/sync.worker.ts: criptografia AES-GCM e construção de prompts IA fora da main thread.
+- tests/ e services/*.test.ts: cenários de jornada, segurança, resiliência, merge e regressão.
 
 <details>
   <summary>Mapa rapido de fluxos</summary>
