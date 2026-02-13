@@ -17,11 +17,198 @@ import { t, compareStrings, formatDate, formatInteger, getTimeOfDayName } from '
 import { HABIT_ICONS, UI_ICONS, getTimeOfDayIcon, sanitizeHabitIcon } from './icons';
 import { setTextContent, updateReelRotaryARIA } from './dom';
 import { MODAL_COLORS, EXPLORE_STAGGER_DELAY_MS } from './constants';
-import { escapeHTML, getContrastColor, parseUTCIsoDate, getTodayUTCIso, getSafeDate, triggerHaptic } from '../utils';
+import { getContrastColor, parseUTCIsoDate, getTodayUTCIso, getSafeDate, triggerHaptic } from '../utils';
 
 interface ModalContext { element: HTMLElement; previousFocus: HTMLElement | null; onClose?: () => void; firstFocusable?: HTMLElement; lastFocusable?: HTMLElement; }
 const modalStack: ModalContext[] = [];
 const OPTS_NOTES = { day: 'numeric', month: 'long', timeZone: 'UTC' } as const;
+interface ConfirmationModalOptions {
+    onEdit?: () => void;
+    title?: string;
+    confirmButtonStyle?: 'danger' | 'primary';
+    confirmText?: string;
+    editText?: string;
+    onCancel?: () => void;
+    allowHtml?: boolean;
+}
+type ManageHabitStatus = 'active' | 'graduated' | 'ended';
+type ManageHabitItem = { h: Habit; st: ManageHabitStatus; name: string; subtitle: string };
+
+function buildManageActionButton(className: string, ariaLabel: string, iconHtml: string): HTMLButtonElement {
+    const btn = document.createElement('button');
+    btn.className = className;
+    btn.setAttribute('aria-label', ariaLabel);
+    btn.innerHTML = iconHtml;
+    return btn;
+}
+
+function buildManageHabitListItem(item: ManageHabitItem, today: string): HTMLLIElement {
+    const { h, st, name, subtitle } = item;
+    const lastSchedule = h.scheduleHistory[h.scheduleHistory.length - 1];
+    const safeIcon = sanitizeHabitIcon(lastSchedule.icon, '❓');
+
+    const li = document.createElement('li');
+    li.className = `habit-list-item ${st}`;
+    li.dataset.habitId = h.id;
+
+    const mainInfo = document.createElement('span');
+    mainInfo.className = 'habit-main-info';
+
+    const iconSlot = document.createElement('span');
+    iconSlot.className = 'habit-icon-slot';
+    iconSlot.style.color = lastSchedule.color;
+    iconSlot.innerHTML = safeIcon;
+
+    const detailsWrap = document.createElement('div');
+    detailsWrap.style.display = 'flex';
+    detailsWrap.style.flexDirection = 'column';
+    detailsWrap.style.flexGrow = '1';
+
+    const nameEl = document.createElement('span');
+    nameEl.className = 'habit-name';
+    nameEl.textContent = name;
+    detailsWrap.appendChild(nameEl);
+
+    if (subtitle) {
+        const subtitleEl = document.createElement('span');
+        subtitleEl.className = 'habit-subtitle';
+        subtitleEl.style.fontSize = '11px';
+        subtitleEl.style.color = 'var(--text-tertiary)';
+        subtitleEl.textContent = subtitle;
+        detailsWrap.appendChild(subtitleEl);
+    }
+
+    if (st !== 'active') {
+        const statusEl = document.createElement('span');
+        statusEl.className = 'habit-name-status';
+        statusEl.textContent = t(st === 'graduated' ? 'modalStatusGraduated' : 'modalStatusEnded');
+        mainInfo.appendChild(statusEl);
+    }
+
+    const actions = document.createElement('div');
+    actions.className = 'habit-list-actions';
+
+    if (st === 'active') {
+        const isConsolidated = calculateHabitStreak(h, today) >= STREAK_CONSOLIDATED;
+        if (isConsolidated) {
+            actions.appendChild(buildManageActionButton(
+                'graduate-habit-btn',
+                t('aria_graduate', { name }),
+                UI_ICONS.graduateAction
+            ));
+        } else {
+            actions.appendChild(buildManageActionButton(
+                'end-habit-btn',
+                t('aria_end', { name }),
+                UI_ICONS.endAction
+            ));
+        }
+    } else {
+        actions.appendChild(buildManageActionButton(
+            'permanent-delete-habit-btn',
+            t('aria_delete_permanent', { name }),
+            UI_ICONS.deletePermanentAction
+        ));
+    }
+
+    mainInfo.append(iconSlot, detailsWrap);
+    li.append(mainInfo, actions);
+    return li;
+}
+
+function computeManageHabitItems(activeHabits: Habit[]): ManageHabitItem[] {
+    const order: Record<ManageHabitStatus, number> = { active: 0, graduated: 1, ended: 2 };
+    return activeHabits
+        .map(h => {
+            const { name, subtitle } = getHabitDisplayInfo(h);
+            const st: ManageHabitStatus = h.graduatedOn
+                ? 'graduated'
+                : (h.scheduleHistory[h.scheduleHistory.length - 1].endDate ? 'ended' : 'active');
+            return { h, st, name, subtitle };
+        })
+        .sort((a, b) => (order[a.st] - order[b.st]) || compareStrings(a.name, b.name));
+}
+
+function buildIconPickerItem(svg: string): HTMLButtonElement {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'icon-picker-item';
+    btn.dataset.iconSvg = svg;
+    btn.innerHTML = svg;
+    return btn;
+}
+
+function buildColorSwatch(color: string, selected: boolean): HTMLButtonElement {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = `color-swatch${selected ? ' selected' : ''}`;
+    btn.style.backgroundColor = color;
+    btn.dataset.color = color;
+    return btn;
+}
+
+function buildFrequencyTypeLabel(type: Frequency['type'], checked: boolean, label: string): HTMLLabelElement {
+    const wrap = document.createElement('label');
+    const input = document.createElement('input');
+    input.type = 'radio';
+    input.name = 'frequency-type';
+    input.value = type;
+    input.checked = checked;
+    wrap.append(input, label);
+    return wrap;
+}
+
+function buildExploreHabitItem(h: PredefinedHabit, index: number): HTMLElement {
+    const item = document.createElement('div');
+    item.className = 'explore-habit-item';
+    item.dataset.index = String(index);
+    item.setAttribute('role', 'button');
+    item.tabIndex = 0;
+    item.style.setProperty('--delay', `${index * EXPLORE_STAGGER_DELAY_MS}ms`);
+
+    const icon = document.createElement('div');
+    icon.className = 'explore-habit-icon';
+    icon.style.backgroundColor = `${h.color}30`;
+    icon.style.color = h.color;
+    icon.innerHTML = sanitizeHabitIcon(h.icon, '❓');
+
+    const details = document.createElement('div');
+    details.className = 'explore-habit-details';
+
+    const name = document.createElement('div');
+    name.className = 'name';
+    name.textContent = t(h.nameKey);
+
+    const subtitle = document.createElement('div');
+    subtitle.className = 'subtitle';
+    subtitle.textContent = t(h.subtitleKey);
+
+    details.append(name, subtitle);
+    item.append(icon, details);
+    return item;
+}
+
+function buildTimeSegmentedButton(time: TimeOfDay, isSelected: boolean): HTMLButtonElement {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = `segmented-control-option${isSelected ? ' selected' : ''}`;
+    btn.dataset.time = time;
+    const icon = document.createElement('span');
+    icon.className = 'segmented-control-option-icon';
+    icon.innerHTML = getTimeOfDayIcon(time);
+    const label = document.createElement('span');
+    label.className = 'segmented-control-option-label';
+    label.textContent = getTimeOfDayName(time);
+    btn.append(icon, label);
+    return btn;
+}
+
+function buildTimeSegmentedControl(selectedTimes: readonly TimeOfDay[]): HTMLElement {
+    const wrap = document.createElement('div');
+    wrap.className = 'segmented-control';
+    wrap.replaceChildren(...TIMES_OF_DAY.map(time => buildTimeSegmentedButton(time, selectedTimes.includes(time))));
+    return wrap;
+}
 
 function _getLeastUsedColor(): string {
     const counts = new Map<string, number>(MODAL_COLORS.map(c => [c, 0]));
@@ -70,6 +257,7 @@ export function openModal(modal: HTMLElement, focusEl?: HTMLElement, onClose?: (
             const backBtn = document.createElement('button');
             backBtn.className = 'modal-back-btn';
             backBtn.innerHTML = UI_ICONS.backArrow;
+            backBtn.type = 'button';
             backBtn.setAttribute('aria-label', t('aria_go_back'));
             backBtn.addEventListener('click', () => {
                 triggerHaptic('light');
@@ -111,7 +299,7 @@ export function setupManageModal() {
     if (activeHabits.length === 0) { 
         ui.habitList.classList.add('hidden'); 
         ui.noHabitsMessage.classList.remove('hidden'); 
-        ui.habitList.innerHTML = '';
+        ui.habitList.replaceChildren();
         state.uiDirtyState.habitListStructure = false;
         ui.manageModal.dataset.manageListLastModified = String(state.lastModified);
         return; 
@@ -120,34 +308,17 @@ export function setupManageModal() {
     ui.habitList.classList.remove('hidden'); 
     ui.noHabitsMessage.classList.add('hidden');
     
-    const items = activeHabits.map(h => {
-        const { name, subtitle } = getHabitDisplayInfo(h);
-        const st = h.graduatedOn ? 'graduated' : (h.scheduleHistory[h.scheduleHistory.length-1].endDate ? 'ended' : 'active');
-        return { h, st, name, subtitle };
-    }).sort((a, b) => {
-        const order = { active: 0, graduated: 1, ended: 2 };
-        // @ts-ignore
-        return (order[a.st] - order[b.st]) || compareStrings(a.name, b.name);
-    });
-    
+    const items = computeManageHabitItems(activeHabits);
     const today = getTodayUTCIso();
-    
-    ui.habitList.innerHTML = items.map(({ h, st, name, subtitle }) => {
-        const lastSchedule = h.scheduleHistory[h.scheduleHistory.length - 1];
-        const safeIcon = sanitizeHabitIcon(lastSchedule.icon, '❓');
-        const safeName = escapeHTML(name);
-        const safeSubtitle = subtitle ? escapeHTML(subtitle) : '';
-        const ariaGraduate = escapeHTML(t('aria_graduate', { name }));
-        const ariaEnd = escapeHTML(t('aria_end', { name }));
-        const ariaDelete = escapeHTML(t('aria_delete_permanent', { name }));
-        return `<li class="habit-list-item ${st}" data-habit-id="${h.id}"><span class="habit-main-info"><span class="habit-icon-slot" style="color:${escapeHTML(lastSchedule.color)}">${safeIcon}</span><div style="display:flex;flex-direction:column;flex-grow:1;"><span class="habit-name">${safeName}</span>${subtitle ? `<span class="habit-subtitle" style="font-size:11px;color:var(--text-tertiary)">${safeSubtitle}</span>` : ''}</div>${st !== 'active' ? `<span class="habit-name-status">${t(st === 'graduated' ? 'modalStatusGraduated' : 'modalStatusEnded')}</span>` : ''}</span><div class="habit-list-actions">${st === 'active' ? `${calculateHabitStreak(h, today) >= STREAK_CONSOLIDATED ? `<button class="graduate-habit-btn" aria-label="${ariaGraduate}">${UI_ICONS.graduateAction}</button>` : `<button class="end-habit-btn" aria-label="${ariaEnd}">${UI_ICONS.endAction}</button>`}` : `<button class="permanent-delete-habit-btn" aria-label="${ariaDelete}">${UI_ICONS.deletePermanentAction}</button>`}</div></li>`;
-    }).join('');
+
+    ui.habitList.replaceChildren(...items.map(item => buildManageHabitListItem(item, today)));
     state.uiDirtyState.habitListStructure = false;
     ui.manageModal.dataset.manageListLastModified = String(state.lastModified);
 }
 
-export function showConfirmationModal(text: string, onConfirm: () => void, opts?: any) {
-    ui.confirmModalText.innerHTML = text;
+export function showConfirmationModal(text: string, onConfirm: () => void, opts?: ConfirmationModalOptions) {
+    if (opts?.allowHtml) ui.confirmModalText.innerHTML = text;
+    else setTextContent(ui.confirmModalText, text);
     state.confirmAction = onConfirm;
     state.confirmEditAction = opts?.onEdit || null;
     setTextContent(ui.confirmModal.querySelector('h2'), opts?.title || t('modalConfirmTitle'));
@@ -179,13 +350,13 @@ export function renderIconPicker() {
     const { color: bg } = state.editingHabit.formData, fg = getContrastColor(bg);
     ui.iconPickerGrid.style.setProperty('--current-habit-bg-color', bg);
     ui.iconPickerGrid.style.setProperty('--current-habit-fg-color', fg);
-    ui.iconPickerGrid.innerHTML = Object.values(HABIT_ICONS).map(svg => `<button type="button" class="icon-picker-item" data-icon-svg="${escapeHTML(svg)}">${svg}</button>`).join('');
+    ui.iconPickerGrid.replaceChildren(...Object.values(HABIT_ICONS).map(svg => buildIconPickerItem(svg)));
     ui.iconPickerModal.querySelector<HTMLElement>('#change-color-from-picker-btn')!.innerHTML = UI_ICONS.colorPicker;
 }
 
 export function renderColorPicker() {
     const cur = state.editingHabit?.formData.color;
-    ui.colorPickerGrid.innerHTML = MODAL_COLORS.map(c => `<button type="button" class="color-swatch ${cur === c ? 'selected' : ''}" style="background-color:${c}" data-color="${c}"></button>`).join('');
+    ui.colorPickerGrid.replaceChildren(...MODAL_COLORS.map(c => buildColorSwatch(c, cur === c)));
 }
 
 export function renderFrequencyOptions() {
@@ -195,14 +366,81 @@ export function renderFrequencyOptions() {
     const sel = isS ? new Set(f.days) : new Set();
     const am = isI ? f.amount : 2, un = isI ? f.unit : 'days';
 
-    ui.frequencyOptionsContainer.innerHTML = `<div class="form-section frequency-options"><div class="form-row"><label><input type="radio" name="frequency-type" value="daily" ${isD ? 'checked' : ''}>${t('freqDaily')}</label></div><div class="form-row form-row--vertical"><label><input type="radio" name="frequency-type" value="specific_days_of_week" ${isS ? 'checked' : ''}>${t('freqSpecificDaysOfWeek')}</label><div class="frequency-details ${isS ? 'visible' : ''}"><div class="weekday-picker">${days.map(d => `<label><input type="checkbox" class="visually-hidden" data-day="${d}" ${sel.has(d) ? 'checked' : ''}><span class="weekday-button">${t(`weekday${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d]}`).charAt(0)}</span></label>`).join('')}</div></div></div><div class="form-row form-row--vertical"><label><input type="radio" name="frequency-type" value="interval" ${isI ? 'checked' : ''}>${t('freqEvery')}</label><div class="frequency-details ${isI ? 'visible' : ''}"><div class="interval-control-group"><button type="button" class="stepper-btn" data-action="interval-decrement">-</button><span class="interval-amount-display">${formatInteger(am)}</span><button type="button" class="stepper-btn" data-action="interval-increment">+</button><button type="button" class="unit-toggle-btn" data-action="interval-unit-toggle">${t(un === 'days' ? 'unitDays' : 'unitWeeks', { count: am })}</button></div></div></div></div>`;
+    const root = document.createElement('div');
+    root.className = 'form-section frequency-options';
+
+    const dailyRow = document.createElement('div');
+    dailyRow.className = 'form-row';
+    dailyRow.appendChild(buildFrequencyTypeLabel('daily', isD, t('freqDaily')));
+
+    const specificRow = document.createElement('div');
+    specificRow.className = 'form-row form-row--vertical';
+    specificRow.appendChild(buildFrequencyTypeLabel('specific_days_of_week', isS, t('freqSpecificDaysOfWeek')));
+
+    const specificDetails = document.createElement('div');
+    specificDetails.className = `frequency-details${isS ? ' visible' : ''}`;
+    const weekdayPicker = document.createElement('div');
+    weekdayPicker.className = 'weekday-picker';
+    days.forEach(d => {
+        const dayLabel = document.createElement('label');
+        const dayInput = document.createElement('input');
+        dayInput.type = 'checkbox';
+        dayInput.className = 'visually-hidden';
+        dayInput.dataset.day = String(d);
+        dayInput.checked = sel.has(d);
+        const dayBtn = document.createElement('span');
+        dayBtn.className = 'weekday-button';
+        dayBtn.textContent = t(`weekday${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d]}`).charAt(0);
+        dayLabel.append(dayInput, dayBtn);
+        weekdayPicker.appendChild(dayLabel);
+    });
+    specificDetails.appendChild(weekdayPicker);
+    specificRow.appendChild(specificDetails);
+
+    const intervalRow = document.createElement('div');
+    intervalRow.className = 'form-row form-row--vertical';
+    intervalRow.appendChild(buildFrequencyTypeLabel('interval', isI, t('freqEvery')));
+
+    const intervalDetails = document.createElement('div');
+    intervalDetails.className = `frequency-details${isI ? ' visible' : ''}`;
+    const controlGroup = document.createElement('div');
+    controlGroup.className = 'interval-control-group';
+
+    const decBtn = document.createElement('button');
+    decBtn.type = 'button';
+    decBtn.className = 'stepper-btn';
+    decBtn.dataset.action = 'interval-decrement';
+    decBtn.textContent = '-';
+
+    const amountDisplay = document.createElement('span');
+    amountDisplay.className = 'interval-amount-display';
+    amountDisplay.textContent = formatInteger(am);
+
+    const incBtn = document.createElement('button');
+    incBtn.type = 'button';
+    incBtn.className = 'stepper-btn';
+    incBtn.dataset.action = 'interval-increment';
+    incBtn.textContent = '+';
+
+    const unitBtn = document.createElement('button');
+    unitBtn.type = 'button';
+    unitBtn.className = 'unit-toggle-btn';
+    unitBtn.dataset.action = 'interval-unit-toggle';
+    unitBtn.textContent = t(un === 'days' ? 'unitDays' : 'unitWeeks', { count: am });
+
+    controlGroup.append(decBtn, amountDisplay, incBtn, unitBtn);
+    intervalDetails.appendChild(controlGroup);
+    intervalRow.appendChild(intervalDetails);
+
+    root.append(dailyRow, specificRow, intervalRow);
+    ui.frequencyOptionsContainer.replaceChildren(root);
 }
 
 export function refreshEditModalUI() {
     if (!state.editingHabit) return;
     renderFrequencyOptions();
     const fd = state.editingHabit.formData;
-    ui.habitTimeContainer.innerHTML = `<div class="segmented-control">${TIMES_OF_DAY.map(time => `<button type="button" class="segmented-control-option ${fd.times.includes(time) ? 'selected' : ''}" data-time="${time}">${getTimeOfDayIcon(time)}${getTimeOfDayName(time)}</button>`).join('')}</div>`;
+    ui.habitTimeContainer.replaceChildren(buildTimeSegmentedControl(fd.times));
     const nameIn = ui.editHabitForm.elements.namedItem('habit-name') as HTMLInputElement;
     if (nameIn) { 
         nameIn.placeholder = t('modalEditFormNameLabel');
@@ -252,7 +490,7 @@ export function openEditModal(habit: any, targetDateOverride?: string, onClose?:
         ni.value = isN ? (fd.nameKey ? t(fd.nameKey) : '') : getHabitDisplayInfo(habit, safe).name;
     }
     fd.icon = sanitizeHabitIcon(fd.icon, '❓');
-    const btn = ui.habitIconPickerBtn; btn.innerHTML = fd.icon; btn.style.backgroundColor = fd.color; btn.style.color = getContrastColor(fd.color);
+    const btn = ui.habitIconPickerBtn; btn.innerHTML = sanitizeHabitIcon(fd.icon, '❓'); btn.style.backgroundColor = fd.color; btn.style.color = getContrastColor(fd.color);
     
     const subtitle = isN 
         ? (fd.subtitleKey ? t(fd.subtitleKey) : '') 
@@ -270,21 +508,7 @@ export function openEditModal(habit: any, targetDateOverride?: string, onClose?:
 }
 
 export function renderExploreHabits() {
-    ui.exploreHabitList.innerHTML = PREDEFINED_HABITS.map((h, i) => 
-        `<div 
-            class="explore-habit-item" 
-            data-index="${i}" 
-            role="button" 
-            tabindex="0"
-            style="--delay: ${i * EXPLORE_STAGGER_DELAY_MS}ms;"
-        >
-            <div class="explore-habit-icon" style="background-color:${h.color}30;color:${h.color}">${h.icon}</div>
-            <div class="explore-habit-details">
-                <div class="name">${t(h.nameKey)}</div>
-                <div class="subtitle">${t(h.subtitleKey)}</div>
-            </div>
-        </div>`
-    ).join('');
+    ui.exploreHabitList.replaceChildren(...PREDEFINED_HABITS.map((h, i) => buildExploreHabitItem(h, i)));
 }
 
 export function renderLanguageFilter() {

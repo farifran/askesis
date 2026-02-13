@@ -61,7 +61,8 @@ export function openSyncDebugModal() {
     showConfirmationModal(containerHtml, () => {}, { 
         title: "Monitor de Sincronização", 
         confirmText: "Fechar",
-        hideCancel: true 
+        hideCancel: true,
+        allowHtml: true
     });
 }
 

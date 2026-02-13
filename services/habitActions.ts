@@ -45,12 +45,33 @@ const BATCH_HABITS_POOL: Habit[] = [];
 
 let _isBatchOpActive = false;
 
-const ActionContext = {
+type HabitReorderInfo = { id: string; pos: 'before' | 'after' };
+type ActionDropContext = { habitId: string; fromTime: TimeOfDay; toTime: TimeOfDay; reorderInfo?: HabitReorderInfo };
+type ActionRemovalContext = { habitId: string; time: TimeOfDay; targetDate: string };
+type ActionEndingContext = { habitId: string; targetDate: string };
+type ActionDeletionContext = { habitId: string };
+
+type ActionContextState = {
+    isLocked: boolean;
+    drop: ActionDropContext | null;
+    removal: ActionRemovalContext | null;
+    ending: ActionEndingContext | null;
+    deletion: ActionDeletionContext | null;
+    reset: () => void;
+};
+
+type CleanFormData = Omit<HabitTemplate, 'times' | 'goal' | 'frequency'> & {
+    times: readonly TimeOfDay[];
+    goal: HabitTemplate['goal'];
+    frequency: HabitTemplate['frequency'];
+};
+
+const ActionContext: ActionContextState = {
     isLocked: false,
-    drop: null as any,
-    removal: null as any,
-    ending: null as any,
-    deletion: null as any,
+    drop: null,
+    removal: null,
+    ending: null,
+    deletion: null,
     reset() {
         this.isLocked = false;
         this.drop = this.removal = this.ending = this.deletion = null;
@@ -102,6 +123,155 @@ export function deduplicateTimeOfDay(times: readonly TimeOfDay[]): readonly Time
         }
     }
     return result;
+}
+
+function _normalizeFormDataForSave(formData: HabitTemplate): { clean: CleanFormData; nameToUse: string } | null {
+    const normalizedName = formData.name ? sanitizeText(formData.name, MAX_HABIT_NAME_LENGTH) : formData.name;
+    const nameToUse = formData.nameKey ? t(formData.nameKey) : (normalizedName || '');
+    if (!nameToUse) return null;
+
+    const clean: CleanFormData = {
+        ...formData,
+        name: normalizedName,
+        times: deduplicateTimeOfDay(formData.times),
+        goal: { ...formData.goal },
+        frequency: formData.frequency.type === 'specific_days_of_week'
+            ? { ...formData.frequency, days: [...formData.frequency.days] }
+            : { ...formData.frequency }
+    };
+
+    return { clean, nameToUse };
+}
+
+function _findActiveHabitByName(nameToUse: string, targetDate: string): Habit | undefined {
+    const normalizedTarget = nameToUse.trim().toLowerCase();
+    return state.habits.find(h => {
+        if (h.deletedOn || h.graduatedOn) return false;
+        const info = getHabitDisplayInfo(h, targetDate);
+        const lastName = h.scheduleHistory[h.scheduleHistory.length - 1]?.name || info.name;
+        if ((lastName || '').trim().toLowerCase() !== normalizedTarget) return false;
+        const lastSchedule = h.scheduleHistory[h.scheduleHistory.length - 1];
+        return !!lastSchedule && (!lastSchedule.endDate || lastSchedule.endDate > targetDate);
+    });
+}
+
+function _handleEmptyTimesSave(isNew: boolean, habitId: string | undefined, targetDate: string, nameToUse: string) {
+    if (isNew) {
+        const activeHabit = _findActiveHabitByName(nameToUse, targetDate);
+        if (activeHabit) {
+            _requestFutureScheduleChange(activeHabit.id, targetDate, s => ({ ...s, endDate: targetDate }), true);
+        }
+        return;
+    }
+
+    const h = state.habits.find(x => x.id === habitId);
+    if (h) {
+        _requestFutureScheduleChange(h.id, targetDate, s => ({ ...s, endDate: targetDate }), true);
+    }
+}
+
+function _findResurrectionCandidates(nameToUse: string, targetDate: string): Habit[] {
+    const normalizedTarget = nameToUse.trim().toLowerCase();
+    return state.habits.filter(h => {
+        const info = getHabitDisplayInfo(h, targetDate);
+        const lastName = h.scheduleHistory[h.scheduleHistory.length - 1]?.name || h.deletedName || info.name;
+        return (lastName || '').trim().toLowerCase() === normalizedTarget;
+    });
+}
+
+function _pickExistingHabitCandidate(candidates: Habit[], targetDate: string): Habit | undefined {
+    const active = candidates.find(h =>
+        !h.deletedOn && !h.graduatedOn &&
+        (!h.scheduleHistory[h.scheduleHistory.length - 1].endDate || h.scheduleHistory[h.scheduleHistory.length - 1].endDate! > targetDate)
+    );
+    if (active) return active;
+
+    if (candidates.length === 0) return undefined;
+    const sorted = [...candidates].sort((a, b) => {
+        const aLast = a.scheduleHistory[a.scheduleHistory.length - 1];
+        const bLast = b.scheduleHistory[b.scheduleHistory.length - 1];
+        const aKey = aLast?.startDate || a.createdOn;
+        const bKey = bLast?.startDate || b.createdOn;
+        return bKey.localeCompare(aKey);
+    });
+    return sorted[0];
+}
+
+function _buildScheduleFromForm(targetDate: string, cleanFormData: CleanFormData): HabitSchedule {
+    return {
+        startDate: targetDate,
+        times: cleanFormData.times,
+        frequency: cleanFormData.frequency,
+        name: cleanFormData.name,
+        nameKey: cleanFormData.nameKey,
+        subtitleKey: cleanFormData.subtitleKey,
+        scheduleAnchor: targetDate,
+        icon: cleanFormData.icon,
+        color: cleanFormData.color,
+        goal: cleanFormData.goal,
+        philosophy: cleanFormData.philosophy
+    };
+}
+
+function _applyResurrection(existingHabit: Habit, targetDate: string, cleanFormData: CleanFormData) {
+    const wasDeleted = !!existingHabit.deletedOn;
+    if (existingHabit.deletedOn) existingHabit.deletedOn = undefined;
+    if (existingHabit.graduatedOn) existingHabit.graduatedOn = undefined;
+    if (existingHabit.deletedName) existingHabit.deletedName = undefined;
+    if (targetDate < existingHabit.createdOn) existingHabit.createdOn = targetDate;
+
+    if (wasDeleted) {
+        existingHabit.scheduleHistory = [];
+    }
+
+    if (existingHabit.scheduleHistory.length === 0) {
+        existingHabit.scheduleHistory.push(_buildScheduleFromForm(targetDate, cleanFormData));
+        existingHabit.createdOn = targetDate;
+        _notifyChanges(true);
+        return;
+    }
+
+    _requestFutureScheduleChange(existingHabit.id, targetDate, (s) => ({
+        ...s,
+        icon: cleanFormData.icon,
+        color: cleanFormData.color,
+        goal: cleanFormData.goal,
+        philosophy: cleanFormData.philosophy ?? s.philosophy,
+        name: cleanFormData.name,
+        nameKey: cleanFormData.nameKey,
+        subtitleKey: cleanFormData.subtitleKey,
+        times: cleanFormData.times,
+        frequency: cleanFormData.frequency,
+        endDate: undefined
+    }), false);
+
+    existingHabit.scheduleHistory = existingHabit.scheduleHistory.filter(s => {
+        if (s.startDate > targetDate) return false;
+        if (s.startDate === targetDate && s.endDate) return false;
+        return true;
+    });
+}
+
+function _createHabitFromForm(targetDate: string, cleanFormData: CleanFormData) {
+    state.habits.push({ id: generateUUID(), createdOn: targetDate, scheduleHistory: [_buildScheduleFromForm(targetDate, cleanFormData)] });
+    _notifyChanges(true);
+}
+
+function _updateExistingHabitFromForm(h: Habit, targetDate: string, cleanFormData: CleanFormData) {
+    ensureHabitDailyInfo(targetDate, h.id).dailySchedule = undefined;
+    if (targetDate < h.createdOn) h.createdOn = targetDate;
+    _requestFutureScheduleChange(h.id, targetDate, (s) => ({
+        ...s,
+        icon: cleanFormData.icon,
+        color: cleanFormData.color,
+        goal: cleanFormData.goal,
+        philosophy: cleanFormData.philosophy ?? s.philosophy,
+        name: cleanFormData.name,
+        nameKey: cleanFormData.nameKey,
+        subtitleKey: cleanFormData.subtitleKey,
+        times: cleanFormData.times,
+        frequency: cleanFormData.frequency
+    }), false);
 }
 
 function _notifyPartialUIRefresh(date: string) {
@@ -299,17 +469,9 @@ export function reorderHabit(movedHabitId: string, targetHabitId: string, pos: '
 export function saveHabitFromModal() {
     if (!state.editingHabit) return;
     const { isNew, habitId, formData, targetDate } = state.editingHabit;
-    if (formData.name) {
-        formData.name = sanitizeText(formData.name, MAX_HABIT_NAME_LENGTH);
-    }
-    const nameToUse = formData.nameKey ? t(formData.nameKey) : formData.name!;
-    if (!nameToUse) return;
-    const cleanFormData = {
-        ...formData,
-        times: deduplicateTimeOfDay(formData.times),
-        goal: { ...formData.goal },
-        frequency: formData.frequency.type === 'specific_days_of_week' ? { ...formData.frequency, days: [...formData.frequency.days] } : { ...formData.frequency }
-    };
+    const normalized = _normalizeFormDataForSave(formData);
+    if (!normalized) return;
+    const { clean: cleanFormData, nameToUse } = normalized;
     
     // NAVIGATION FIX [2025-06-14]: Suppress onClose callback (reopen Explore) on successful save.
     // The user has completed their action, so we shouldn't force them back to the list.
@@ -318,122 +480,19 @@ export function saveHabitFromModal() {
     // EMPTY TIMES FIX [2025-02-07]: Se nenhum horário foi selecionado, não adicionar/ressuscitar
     // o hábito. Se já existia e está ativo, encerrá-lo. Caso contrário, não fazer nada.
     if (cleanFormData.times.length === 0) {
-        if (isNew) {
-            // Verifica se existe um hábito ativo com este nome para encerrá-lo
-            const activeHabit = state.habits.find(h => {
-                if (h.deletedOn || h.graduatedOn) return false;
-                const info = getHabitDisplayInfo(h, targetDate);
-                const lastName = h.scheduleHistory[h.scheduleHistory.length - 1]?.name || info.name;
-                if ((lastName || '').trim().toLowerCase() !== nameToUse.trim().toLowerCase()) return false;
-                const lastSchedule = h.scheduleHistory[h.scheduleHistory.length - 1];
-                return !lastSchedule.endDate || lastSchedule.endDate > targetDate;
-            });
-            if (activeHabit) {
-                _requestFutureScheduleChange(activeHabit.id, targetDate, s => ({ ...s, endDate: targetDate }), true);
-            }
-        } else {
-            // Edição de hábito existente: encerrar o hábito
-            const h = state.habits.find(x => x.id === habitId);
-            if (h) {
-                _requestFutureScheduleChange(h.id, targetDate, s => ({ ...s, endDate: targetDate }), true);
-            }
-        }
+        _handleEmptyTimesSave(isNew, habitId, targetDate, nameToUse);
         return;
     }
     
     if (isNew) {
-        // RESURRECTION LOGIC:
-        // Reuse an existing habit with the same name to avoid duplicates.
-        const candidates = state.habits.filter(h => {
-               const info = getHabitDisplayInfo(h, targetDate);
-               const lastName = h.scheduleHistory[h.scheduleHistory.length - 1]?.name || h.deletedName || info.name;
-             return (lastName || '').trim().toLowerCase() === nameToUse.trim().toLowerCase();
-        });
-
-        // Pick priority:
-        // 1. Active (not deleted, not graduated, covers targetDate or has no endDate)
-        let existingHabit = candidates.find(h =>
-            !h.deletedOn && !h.graduatedOn && 
-            (!h.scheduleHistory[h.scheduleHistory.length-1].endDate || h.scheduleHistory[h.scheduleHistory.length-1].endDate! > targetDate)
-        );
-        
-        if (!existingHabit && candidates.length > 0) {
-            const sorted = [...candidates].sort((a, b) => {
-                const aLast = a.scheduleHistory[a.scheduleHistory.length - 1];
-                const bLast = b.scheduleHistory[b.scheduleHistory.length - 1];
-                const aKey = aLast?.startDate || a.createdOn;
-                const bKey = bLast?.startDate || b.createdOn;
-                return bKey.localeCompare(aKey);
-            });
-            existingHabit = sorted[0];
-        }
-
-        if (existingHabit) {
-            // Restore Logical state
-            const wasDeleted = !!existingHabit.deletedOn;
-            if (existingHabit.deletedOn) existingHabit.deletedOn = undefined;
-            if (existingHabit.graduatedOn) existingHabit.graduatedOn = undefined;
-            if (existingHabit.deletedName) existingHabit.deletedName = undefined;
-            if (targetDate < existingHabit.createdOn) existingHabit.createdOn = targetDate;
-
-            if (wasDeleted) {
-                existingHabit.scheduleHistory = [];
-            }
-
-            if (existingHabit.scheduleHistory.length === 0) {
-                existingHabit.scheduleHistory.push({
-                    startDate: targetDate,
-                    times: cleanFormData.times as readonly TimeOfDay[],
-                    frequency: cleanFormData.frequency,
-                    name: cleanFormData.name,
-                    nameKey: cleanFormData.nameKey,
-                    subtitleKey: cleanFormData.subtitleKey,
-                    scheduleAnchor: targetDate,
-                    icon: cleanFormData.icon,
-                    color: cleanFormData.color,
-                    goal: cleanFormData.goal,
-                    philosophy: cleanFormData.philosophy
-                });
-                existingHabit.createdOn = targetDate;
-                _notifyChanges(true);
-            } else {
-                _requestFutureScheduleChange(existingHabit.id, targetDate, (s) => ({ 
-                    ...s, 
-                    icon: cleanFormData.icon, 
-                    color: cleanFormData.color, 
-                    goal: cleanFormData.goal, 
-                    philosophy: cleanFormData.philosophy ?? s.philosophy, 
-                    name: cleanFormData.name, 
-                    nameKey: cleanFormData.nameKey, 
-                    subtitleKey: cleanFormData.subtitleKey, 
-                    times: cleanFormData.times as readonly TimeOfDay[], 
-                    frequency: cleanFormData.frequency,
-                    endDate: undefined // RESURRECTION FIX: Explicitly clear endDate on resurrected entry
-                }), false);
-
-                // RESURRECTION FIX [2025-06-17]: Remove stale schedule entries left over from
-                // the previous "ending" action. When a habit was ended (creating a split entry with
-                // endDate) and then deleted, those old ending entries remain in scheduleHistory.
-                // After resurrection via _requestFutureScheduleChange (which adds a new open-ended
-                // entry at targetDate), entries AFTER the resurrection point are orphaned and cause
-                // the Manage Habits modal to show "Encerrado" instead of "Ativo" because
-                // setupManageModal checks scheduleHistory[last].endDate.
-                existingHabit.scheduleHistory = existingHabit.scheduleHistory.filter(s => {
-                    if (s.startDate > targetDate) return false; // Remove entries after resurrection point
-                    if (s.startDate === targetDate && s.endDate) return false; // Remove stale same-date entries with endDate
-                    return true;
-                });
-            }
-        } else {
-            state.habits.push({ id: generateUUID(), createdOn: targetDate, scheduleHistory: [{ startDate: targetDate, times: cleanFormData.times as readonly TimeOfDay[], frequency: cleanFormData.frequency, name: cleanFormData.name, nameKey: cleanFormData.nameKey, subtitleKey: cleanFormData.subtitleKey, scheduleAnchor: targetDate, icon: cleanFormData.icon, color: cleanFormData.color, goal: cleanFormData.goal, philosophy: cleanFormData.philosophy }] });
-            _notifyChanges(true);
-        }
+        const candidates = _findResurrectionCandidates(nameToUse, targetDate);
+        const existingHabit = _pickExistingHabitCandidate(candidates, targetDate);
+        if (existingHabit) _applyResurrection(existingHabit, targetDate, cleanFormData);
+        else _createHabitFromForm(targetDate, cleanFormData);
     } else {
         const h = state.habits.find(x => x.id === habitId);
         if (!h) return;
-        ensureHabitDailyInfo(targetDate, h.id).dailySchedule = undefined;
-        if (targetDate < h.createdOn) h.createdOn = targetDate;
-        _requestFutureScheduleChange(h.id, targetDate, (s) => ({ ...s, icon: cleanFormData.icon, color: cleanFormData.color, goal: cleanFormData.goal, philosophy: cleanFormData.philosophy ?? s.philosophy, name: cleanFormData.name, nameKey: cleanFormData.nameKey, subtitleKey: cleanFormData.subtitleKey, times: cleanFormData.times as readonly TimeOfDay[], frequency: cleanFormData.frequency }), false);
+        _updateExistingHabitFromForm(h, targetDate, cleanFormData);
     }
 }
 
@@ -649,7 +708,7 @@ export function markAllHabitsForDate(dateISO: string, status: 'completed' | 'sno
     return changed;
 }
 
-export function handleHabitDrop(habitId: string, fromTime: TimeOfDay, toTime: TimeOfDay, reorderInfo?: any) {
+export function handleHabitDrop(habitId: string, fromTime: TimeOfDay, toTime: TimeOfDay, reorderInfo?: HabitReorderInfo) {
     // BOOT LOCK
     if (!state.initialSyncDone) return;
 
