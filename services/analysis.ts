@@ -21,6 +21,31 @@ const _analysisInFlight = new Map<string, Promise<any>>();
 const MIN_AI_CONTEXT_DAYS = 7;
 const AI_MIN_INTERVAL_DAYS = 7;
 
+export function getDailyNoteHistoryContext(dateISO: string) {
+    const orderedDates = Object.keys(state.dailyData).sort();
+    let historicalDaysWithNotes = 0;
+    let daysBeforeTargetWithNotes = 0;
+
+    for (const dayKey of orderedDates) {
+        if (dayKey > dateISO) continue;
+        const day = state.dailyData[dayKey];
+        const hasNotes = !!day && Object.values(day).some(info => {
+            if (!info || !info.instances) return false;
+            return Object.values(info.instances).some(instance => !!instance?.note && instance.note.trim().length > 0);
+        });
+
+        if (!hasNotes) continue;
+        historicalDaysWithNotes++;
+        if (dayKey < dateISO) daysBeforeTargetWithNotes++;
+    }
+
+    return {
+        historicalDaysWithNotes,
+        daysBeforeTargetWithNotes,
+        firstEntry: daysBeforeTargetWithNotes === 0
+    };
+}
+
 function _hasSufficientHistory(dateISO: string): boolean {
     let count = 0;
     for (const dayKey of Object.keys(state.dailyData)) {
@@ -69,6 +94,7 @@ export async function checkAndAnalyzeDayContext(dateISO: string) {
                 notes, 
                 themeList: t('aiThemeList'), 
                 languageName: getAiLanguageName(), 
+                dataContext: getDailyNoteHistoryContext(dateISO),
                 translations: { 
                     aiPromptQuote: t('aiPromptQuote'), 
                     aiSystemInstructionQuote: t('aiSystemInstructionQuote') 

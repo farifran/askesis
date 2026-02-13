@@ -117,15 +117,50 @@ function buildAiPrompt(data: any) {
         const name = h.scheduleHistory[h.scheduleHistory.length-1].name || translations[h.scheduleHistory[h.scheduleHistory.length-1].nameKey];
         details += `- ${name}\n`;
     });
+
+    let recordedDays = 0;
+    const orderedDates = Object.keys(dailyData || {}).sort();
+    orderedDates.forEach((dateKey) => {
+        const day = dailyData[dateKey] || {};
+        const hasEntries = Object.values(day).some((info: any) => {
+            if (!info || typeof info !== 'object') return false;
+            const instances = info.instances || {};
+            if (Object.keys(instances).length > 0) return true;
+            return !!Object.values(instances).find((instance: any) => instance?.note && String(instance.note).trim());
+        });
+        if (hasEntries) recordedDays++;
+    });
+
+    const isFirstEntry = recordedDays <= 1;
+    const sparseHistory = recordedDays > 1 && recordedDays < 7;
+    const contextBlock = [
+        '',
+        '[DATA_CONTEXT]',
+        `first_entry=${isFirstEntry ? 'true' : 'false'}`,
+        `sparse_history=${sparseHistory ? 'true' : 'false'}`,
+        `recorded_days_in_payload=${recordedDays}`,
+        'analysis_rules=When first_entry=true, treat this as beginning of journey. Do not infer "month without records" or prolonged inactivity. Focus only on provided data.'
+    ].join('\n');
+
     return {
-        prompt: translations.promptTemplate.replace('{activeHabitDetails}', details).replace('{history}', JSON.stringify(dailyData)),
+        prompt: translations.promptTemplate.replace('{activeHabitDetails}', details).replace('{history}', JSON.stringify(dailyData)) + contextBlock,
         systemInstruction: translations.aiSystemInstruction.replace('{languageName}', languageName)
     };
 }
 
 function buildAiQuoteAnalysisPrompt(data: any) {
+    const context = data.dataContext || {};
+    const contextBlock = [
+        '',
+        '[DATA_CONTEXT]',
+        `first_entry=${context.firstEntry ? 'true' : 'false'}`,
+        `historical_days_with_notes=${context.historicalDaysWithNotes ?? 0}`,
+        `historical_days_before_target=${context.daysBeforeTargetWithNotes ?? 0}`,
+        'analysis_rules=When first_entry=true, evaluate only today notes and avoid assumptions about prior missing months.'
+    ].join('\n');
+
     return {
-        prompt: data.translations.aiPromptQuote.replace('{notes}', data.notes).replace('{theme_list}', data.themeList),
+        prompt: data.translations.aiPromptQuote.replace('{notes}', data.notes).replace('{theme_list}', data.themeList) + contextBlock,
         systemInstruction: data.translations.aiSystemInstructionQuote
     };
 }
