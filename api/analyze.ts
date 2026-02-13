@@ -5,6 +5,13 @@
 */
 
 import { GoogleGenAI } from '@google/genai';
+import {
+    checkRateLimit,
+    getCorsOrigin as getCorsOriginFromRules,
+    isOriginAllowed,
+    parseAllowedOrigins,
+    parsePositiveInt
+} from './_httpSecurity';
 
 export const config = {
   runtime: 'edge',
@@ -14,61 +21,11 @@ const MAX_PROMPT_SIZE = 150 * 1024; // 150KB
 const CACHE_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 const CACHE_MAX_ENTRIES = 500;
 
-const ALLOWED_ORIGINS = (process.env.CORS_ALLOWED_ORIGINS || '')
-    .split(',')
-    .map(origin => origin.trim())
-    .filter(Boolean);
+const ALLOWED_ORIGINS = parseAllowedOrigins(process.env.CORS_ALLOWED_ORIGINS);
 const CORS_STRICT = process.env.CORS_STRICT === '1';
 
-function isSameDeploymentOrigin(req: Request, origin: string): boolean {
-    if (!origin) return false;
-    try {
-        const originUrl = new URL(origin);
-        const requestHost = req.headers.get('x-forwarded-host') || req.headers.get('host') || '';
-        return !!requestHost && originUrl.host === requestHost;
-    } catch {
-        return false;
-    }
-}
-
-function matchesOriginRule(origin: string, rule: string): boolean {
-    if (!origin || !rule) return false;
-    if (rule === '*') return true;
-    if (rule === origin) return true;
-
-    const wildcardMatch = rule.match(/^(https?):\/\/\*\.(.+)$/i);
-    if (!wildcardMatch) return false;
-
-    try {
-        const originUrl = new URL(origin);
-        const expectedProtocol = wildcardMatch[1].toLowerCase();
-        const expectedHostSuffix = wildcardMatch[2].toLowerCase();
-        const host = originUrl.hostname.toLowerCase();
-        return originUrl.protocol.replace(':', '').toLowerCase() === expectedProtocol
-            && host.endsWith(`.${expectedHostSuffix}`);
-    } catch {
-        return false;
-    }
-}
-
-function isOriginAllowed(req: Request, origin: string): boolean {
-    if (!origin) return false;
-    if (isSameDeploymentOrigin(req, origin)) return true;
-    return ALLOWED_ORIGINS.some(rule => matchesOriginRule(origin, rule));
-}
-
-function parsePositiveInt(value: string | undefined, fallback: number): number {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
-}
-
 function getCorsOrigin(req: Request): string {
-    const origin = req.headers.get('origin') || '';
-    if (ALLOWED_ORIGINS.length === 0) {
-        if (isSameDeploymentOrigin(req, origin)) return origin;
-        return '*';
-    }
-    return isOriginAllowed(req, origin) ? origin : 'null';
+    return getCorsOriginFromRules(req, ALLOWED_ORIGINS);
 }
 
 function getCorsHeaders(req: Request): Record<string, string> {
@@ -119,36 +76,33 @@ function setCachedResponse(key: string, value: string) {
 
 const ANALYZE_RATE_LIMIT_WINDOW_MS = parsePositiveInt(process.env.ANALYZE_RATE_LIMIT_WINDOW_MS, 60_000);
 const ANALYZE_RATE_LIMIT_MAX_REQUESTS = parsePositiveInt(process.env.ANALYZE_RATE_LIMIT_MAX_REQUESTS, 20);
-const analyzeRateLimitStore = new Map<string, { count: number; resetAt: number }>();
 const ANALYZE_RATE_LIMIT_DISABLED = process.env.NODE_ENV === 'test' || process.env.DISABLE_RATE_LIMIT === '1';
 
-function checkRateLimitAnalyze(key: string): { limited: boolean; retryAfterSec: number } {
-    if (ANALYZE_RATE_LIMIT_DISABLED) return { limited: false, retryAfterSec: 0 };
-    const now = Date.now();
-    if (analyzeRateLimitStore.size > 4000) {
-        for (const [k, v] of analyzeRateLimitStore.entries()) {
-            if (v.resetAt <= now) analyzeRateLimitStore.delete(k);
-        }
-    }
+type ErrorLike = {
+    name?: string;
+    message?: string;
+    status?: number | string;
+    code?: number | string;
+};
 
-    const current = analyzeRateLimitStore.get(key);
-    if (!current || current.resetAt <= now) {
-        analyzeRateLimitStore.set(key, { count: 1, resetAt: now + ANALYZE_RATE_LIMIT_WINDOW_MS });
-        return { limited: false, retryAfterSec: 0 };
-    }
+function getErrorMessage(error: unknown): string {
+    if (error instanceof Error) return error.message;
+    if (typeof error === 'string') return error;
+    if (error && typeof error === 'object' && typeof (error as ErrorLike).message === 'string') return (error as ErrorLike).message as string;
+    return 'Unknown error';
+}
 
-    if (current.count >= ANALYZE_RATE_LIMIT_MAX_REQUESTS) {
-        return { limited: true, retryAfterSec: Math.max(1, Math.ceil((current.resetAt - now) / 1000)) };
-    }
-
-    current.count += 1;
-    return { limited: false, retryAfterSec: 0 };
+function getErrorStatus(error: unknown): number {
+    if (!error || typeof error !== 'object') return 0;
+    const maybeStatus = (error as ErrorLike).status ?? (error as ErrorLike).code;
+    const parsed = Number(maybeStatus);
+    return Number.isFinite(parsed) ? parsed : 0;
 }
 
 export default async function handler(req: Request) {
     const reqOrigin = req.headers.get('origin') || '';
     const CORS_HEADERS = getCorsHeaders(req);
-    if (CORS_STRICT && ALLOWED_ORIGINS.length > 0 && reqOrigin && !isOriginAllowed(req, reqOrigin)) {
+    if (CORS_STRICT && ALLOWED_ORIGINS.length > 0 && reqOrigin && !isOriginAllowed(req, reqOrigin, ALLOWED_ORIGINS)) {
         return new Response(JSON.stringify({ error: 'Origin not allowed', code: 'CORS_DENIED' }), {
             status: 403,
             headers: CORS_HEADERS
@@ -160,7 +114,14 @@ export default async function handler(req: Request) {
 
     const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
     const origin = req.headers.get('origin') || 'unknown';
-    const limiter = checkRateLimitAnalyze(`${ip}:${origin}`);
+    const limiter = await checkRateLimit({
+        namespace: 'analyze',
+        key: `${ip}:${origin}`,
+        windowMs: ANALYZE_RATE_LIMIT_WINDOW_MS,
+        maxRequests: ANALYZE_RATE_LIMIT_MAX_REQUESTS,
+        disabled: ANALYZE_RATE_LIMIT_DISABLED,
+        localMaxEntries: 4000
+    });
     if (limiter.limited) {
         return new Response(JSON.stringify({ error: 'Too Many Requests', code: 'RATE_LIMITED' }), {
             status: 429,
@@ -211,7 +172,7 @@ export default async function handler(req: Request) {
         const timeoutPromise = new Promise<never>((_, reject) => {
             timeoutId = setTimeout(() => {
                 const timeoutError = new Error('AI generation timeout');
-                (timeoutError as any).name = 'AbortError';
+                timeoutError.name = 'AbortError';
                 reject(timeoutError);
             }, 30000);
         });
@@ -244,13 +205,15 @@ export default async function handler(req: Request) {
             } 
         });
 
-    } catch (error: any) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
+    } catch (error: unknown) {
+        const errorMessage = getErrorMessage(error);
         console.error("AI Analysis Failed:", errorMessage);
 
-        if (error.name === 'AbortError') return new Response('AI Gateway Timeout', { status: 504, headers: CORS_HEADERS });
+        if (typeof error === 'object' && error && (error as ErrorLike).name === 'AbortError') {
+            return new Response('AI Gateway Timeout', { status: 504, headers: CORS_HEADERS });
+        }
 
-        const status = Number((error as any)?.status || (error as any)?.code || 0);
+        const status = getErrorStatus(error);
         const normalizedMessage = errorMessage.toLowerCase();
         const isRateLimit = status === 429
             || normalizedMessage.includes('429')

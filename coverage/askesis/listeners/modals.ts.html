@@ -25,28 +25,28 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/362</span>
+                <span class='fraction'>0/365</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>0/154</span>
+                <span class='fraction'>0/156</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>0/46</span>
+                <span class='fraction'>0/47</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/325</span>
+                <span class='fraction'>0/327</span>
             </div>
         
             
@@ -684,7 +684,13 @@
 <a name='L619'></a><a href='#L619'>619</a>
 <a name='L620'></a><a href='#L620'>620</a>
 <a name='L621'></a><a href='#L621'>621</a>
-<a name='L622'></a><a href='#L622'>622</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L622'></a><a href='#L622'>622</a>
+<a name='L623'></a><a href='#L623'>623</a>
+<a name='L624'></a><a href='#L624'>624</a>
+<a name='L625'></a><a href='#L625'>625</a>
+<a name='L626'></a><a href='#L626'>626</a>
+<a name='L627'></a><a href='#L627'>627</a>
+<a name='L628'></a><a href='#L628'>628</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -750,6 +756,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -1125,8 +1132,13 @@
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -1334,6 +1346,7 @@ import {
     MAX_HABIT_NAME_LENGTH
 } from '../state';
 import { PREDEFINED_HABITS } from '../data/predefinedHabits';
+import { sanitizeHabitIcon } from '../data/icons';
 import {
     openModal,
     closeModal,
@@ -1746,14 +1759,19 @@ const _handleIconPickerClick = <span class="cstat-no" title="statement not cover
 <span class="cstat-no" title="statement not covered" >    openModal(ui.iconPickerModal);</span>
 };
 &nbsp;
+function <span class="fstat-no" title="function not covered" >_applySafeIconToEditForm(r</span>awIcon: string) {
+<span class="cstat-no" title="statement not covered" >    if (!state.editingHabit) <span class="cstat-no" title="statement not covered" >return;</span></span>
+    const <span class="cstat-no" title="statement not covered" >safeIcon = sanitizeHabitIcon(rawIcon, '❓');</span>
+<span class="cstat-no" title="statement not covered" >    state.editingHabit.formData.icon = safeIcon;</span>
+<span class="cstat-no" title="statement not covered" >    ui.habitIconPickerBtn.innerHTML = safeIcon;</span>
+}
+&nbsp;
 const _handleIconGridClick = <span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >(e</span>: MouseEvent) =&gt; {</span>
     const target = <span class="cstat-no" title="statement not covered" >e.target as HTMLElement;</span>
     const item = <span class="cstat-no" title="statement not covered" >target.closest&lt;HTMLButtonElement&gt;('.icon-picker-item');</span>
 <span class="cstat-no" title="statement not covered" >    if (item &amp;&amp; state.editingHabit) {</span>
 <span class="cstat-no" title="statement not covered" >        triggerHaptic('light');</span>
-        const iconSVG = <span class="cstat-no" title="statement not covered" >item.dataset.iconSvg!;</span>
-<span class="cstat-no" title="statement not covered" >        state.editingHabit.formData.icon = iconSVG;</span>
-<span class="cstat-no" title="statement not covered" >        ui.habitIconPickerBtn.innerHTML = iconSVG;</span>
+<span class="cstat-no" title="statement not covered" >        _applySafeIconToEditForm(item.dataset.iconSvg!);</span>
 <span class="cstat-no" title="statement not covered" >        closeModal(ui.iconPickerModal);</span>
     }
 };
@@ -1933,7 +1951,7 @@ export function <span class="fstat-no" title="function not covered" >setupModalL
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-02-13T00:40:02.437Z
+                at 2026-02-13T03:11:11.719Z
             </div>
         <script src="../../prettify.js"></script>
         <script>

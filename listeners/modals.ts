@@ -440,15 +440,19 @@ const _handleIconPickerClick = () => {
     openModal(ui.iconPickerModal);
 };
 
+function _applySafeIconToEditForm(rawIcon: string) {
+    if (!state.editingHabit) return;
+    const safeIcon = sanitizeHabitIcon(rawIcon, '❓');
+    state.editingHabit.formData.icon = safeIcon;
+    ui.habitIconPickerBtn.innerHTML = safeIcon;
+}
+
 const _handleIconGridClick = (e: MouseEvent) => {
     const target = e.target as HTMLElement;
     const item = target.closest<HTMLButtonElement>('.icon-picker-item');
     if (item && state.editingHabit) {
         triggerHaptic('light');
-        const iconSVG = item.dataset.iconSvg!;
-        const safeIcon = sanitizeHabitIcon(iconSVG, '❓');
-        state.editingHabit.formData.icon = safeIcon;
-        ui.habitIconPickerBtn.innerHTML = safeIcon;
+        _applySafeIconToEditForm(item.dataset.iconSvg!);
         closeModal(ui.iconPickerModal);
     }
 };

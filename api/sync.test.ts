@@ -31,6 +31,18 @@ function makePostRequest(body: unknown) {
   });
 }
 
+function makePostRequestWithLegacyBearer(body: unknown, rawKey = 'legacy-sync-key') {
+  return new Request('https://askesis.vercel.app/api/sync', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'authorization': `Bearer ${rawKey}`,
+      'origin': 'https://askesis.vercel.app'
+    },
+    body: JSON.stringify(body)
+  });
+}
+
 describe('api/sync payload hardening', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -38,8 +50,41 @@ describe('api/sync payload hardening', () => {
     process.env.KV_REST_API_TOKEN = 'token';
     process.env.CORS_ALLOWED_ORIGINS = 'https://askesis.vercel.app';
     process.env.CORS_STRICT = '1';
+    process.env.ALLOW_LEGACY_SYNC_AUTH = '0';
     evalMock.mockResolvedValue(['OK']);
     hgetallMock.mockResolvedValue(null);
+  });
+
+  it('não expõe Authorization em CORS por padrão', async () => {
+    const handler = await loadHandler();
+
+    const response = await handler(new Request('https://askesis.vercel.app/api/sync', {
+      method: 'OPTIONS',
+      headers: {
+        origin: 'https://askesis.vercel.app'
+      }
+    }));
+
+    expect(response.status).toBe(204);
+    const allowed = response.headers.get('Access-Control-Allow-Headers') || '';
+    expect(allowed).toContain('Content-Type');
+    expect(allowed).toContain('X-Sync-Key-Hash');
+    expect(allowed).not.toContain('Authorization');
+  });
+
+  it('aceita Authorization legado apenas com feature flag ativa', async () => {
+    process.env.ALLOW_LEGACY_SYNC_AUTH = '1';
+    const handler = await loadHandler();
+
+    const response = await handler(makePostRequestWithLegacyBearer({
+      lastModified: Date.now(),
+      shards: {
+        core: JSON.stringify({ version: 10 })
+      }
+    }));
+
+    expect(response.status).toBe(200);
+    expect(evalMock).toHaveBeenCalledTimes(1);
   });
 
   it('rejeita requisição com shards acima do limite', async () => {

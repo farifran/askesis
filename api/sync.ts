@@ -5,6 +5,13 @@
 */
 
 import { Redis } from '@upstash/redis';
+import {
+    checkRateLimit,
+    getCorsOrigin as getCorsOriginFromRules,
+    isOriginAllowed,
+    parseAllowedOrigins,
+    parsePositiveInt
+} from './_httpSecurity';
 
 export const config = {
   runtime: 'edge',
@@ -59,69 +66,24 @@ const MAX_SHARDS_PER_REQUEST = 256;
 const MAX_SHARD_VALUE_BYTES = 512 * 1024; // 512KB por shard
 const MAX_TOTAL_SHARDS_BYTES = 4 * 1024 * 1024; // 4MB total
 
-const ALLOWED_ORIGINS = (process.env.CORS_ALLOWED_ORIGINS || '')
-    .split(',')
-    .map(origin => origin.trim())
-    .filter(Boolean);
+const ALLOWED_ORIGINS = parseAllowedOrigins(process.env.CORS_ALLOWED_ORIGINS);
 const CORS_STRICT = process.env.CORS_STRICT === '1';
-
-function isSameDeploymentOrigin(req: Request, origin: string): boolean {
-    if (!origin) return false;
-    try {
-        const originUrl = new URL(origin);
-        const requestHost = req.headers.get('x-forwarded-host') || req.headers.get('host') || '';
-        return !!requestHost && originUrl.host === requestHost;
-    } catch {
-        return false;
-    }
-}
-
-function matchesOriginRule(origin: string, rule: string): boolean {
-    if (!origin || !rule) return false;
-    if (rule === '*') return true;
-    if (rule === origin) return true;
-
-    const wildcardMatch = rule.match(/^(https?):\/\/\*\.(.+)$/i);
-    if (!wildcardMatch) return false;
-
-    try {
-        const originUrl = new URL(origin);
-        const expectedProtocol = wildcardMatch[1].toLowerCase();
-        const expectedHostSuffix = wildcardMatch[2].toLowerCase();
-        const host = originUrl.hostname.toLowerCase();
-        return originUrl.protocol.replace(':', '').toLowerCase() === expectedProtocol
-            && host.endsWith(`.${expectedHostSuffix}`);
-    } catch {
-        return false;
-    }
-}
-
-function isOriginAllowed(req: Request, origin: string): boolean {
-    if (!origin) return false;
-    if (isSameDeploymentOrigin(req, origin)) return true;
-    return ALLOWED_ORIGINS.some(rule => matchesOriginRule(origin, rule));
-}
-
-function parsePositiveInt(value: string | undefined, fallback: number): number {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
-}
+const ALLOW_LEGACY_SYNC_AUTH = process.env.ALLOW_LEGACY_SYNC_AUTH === '1';
+const SYNC_HASH_REGEX = /^[a-f0-9]{64}$/i;
 
 function getCorsOrigin(req: Request): string {
-    const origin = req.headers.get('origin') || '';
-    if (ALLOWED_ORIGINS.length === 0) {
-        if (isSameDeploymentOrigin(req, origin)) return origin;
-        return '*';
-    }
-    return isOriginAllowed(req, origin) ? origin : 'null';
+    return getCorsOriginFromRules(req, ALLOWED_ORIGINS);
 }
 
 function getResponseHeaders(req: Request): Record<string, string> {
+    const allowHeaders = ['Content-Type', 'X-Sync-Key-Hash'];
+    if (ALLOW_LEGACY_SYNC_AUTH) allowHeaders.push('Authorization');
+
     return {
         'Content-Type': 'application/json',
         'Access-Control-Allow-Origin': getCorsOrigin(req),
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, X-Sync-Key-Hash, Authorization',
+        'Access-Control-Allow-Headers': allowHeaders.join(', '),
         'Vary': 'Origin'
     };
 }
@@ -139,36 +101,40 @@ function sleep(ms: number) {
 
 const SYNC_RATE_LIMIT_WINDOW_MS = parsePositiveInt(process.env.SYNC_RATE_LIMIT_WINDOW_MS, 60_000);
 const SYNC_RATE_LIMIT_MAX_REQUESTS = parsePositiveInt(process.env.SYNC_RATE_LIMIT_MAX_REQUESTS, 120);
-const syncRateLimitStore = new Map<string, { count: number; resetAt: number }>();
 const SYNC_RATE_LIMIT_DISABLED = process.env.NODE_ENV === 'test' || process.env.DISABLE_RATE_LIMIT === '1';
 
-function checkRateLimitSync(key: string): { limited: boolean; retryAfterSec: number } {
-    if (SYNC_RATE_LIMIT_DISABLED) return { limited: false, retryAfterSec: 0 };
-    const now = Date.now();
-    if (syncRateLimitStore.size > 2000) {
-        for (const [k, v] of syncRateLimitStore.entries()) {
-            if (v.resetAt <= now) syncRateLimitStore.delete(k);
-        }
-    }
+type ErrorLike = { message?: string };
 
-    const current = syncRateLimitStore.get(key);
-    if (!current || current.resetAt <= now) {
-        syncRateLimitStore.set(key, { count: 1, resetAt: now + SYNC_RATE_LIMIT_WINDOW_MS });
-        return { limited: false, retryAfterSec: 0 };
-    }
+type SyncPostBody = {
+    lastModified?: unknown;
+    shards?: Record<string, unknown>;
+};
 
-    if (current.count >= SYNC_RATE_LIMIT_MAX_REQUESTS) {
-        return { limited: true, retryAfterSec: Math.max(1, Math.ceil((current.resetAt - now) / 1000)) };
-    }
+function getErrorMessage(error: unknown): string {
+    if (error instanceof Error) return error.message;
+    if (typeof error === 'string') return error;
+    if (error && typeof error === 'object' && typeof (error as ErrorLike).message === 'string') return (error as ErrorLike).message as string;
+    return 'Internal Server Error';
+}
 
-    current.count += 1;
-    return { limited: false, retryAfterSec: 0 };
+async function extractKeyHash(req: Request): Promise<string | null> {
+    const directHash = req.headers.get('x-sync-key-hash')?.trim() || '';
+    if (SYNC_HASH_REGEX.test(directHash)) return directHash;
+
+    if (!ALLOW_LEGACY_SYNC_AUTH) return null;
+
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
+
+    const rawKey = authHeader.replace('Bearer ', '').trim();
+    if (rawKey.length < 8) return null;
+    return sha256(rawKey);
 }
 
 export default async function handler(req: Request) {
     const reqOrigin = req.headers.get('origin') || '';
     const HEADERS_BASE = getResponseHeaders(req);
-    if (CORS_STRICT && ALLOWED_ORIGINS.length > 0 && reqOrigin && !isOriginAllowed(req, reqOrigin)) {
+    if (CORS_STRICT && ALLOWED_ORIGINS.length > 0 && reqOrigin && !isOriginAllowed(req, reqOrigin, ALLOWED_ORIGINS)) {
         return new Response(JSON.stringify({ error: 'Origin not allowed', code: 'CORS_DENIED' }), {
             status: 403,
             headers: HEADERS_BASE
@@ -187,21 +153,21 @@ export default async function handler(req: Request) {
     const kv = new Redis({ url: dbUrl, token: dbToken });
 
     try {
-        let keyHash = req.headers.get('x-sync-key-hash');
-        if (!keyHash) {
-            const authHeader = req.headers.get('Authorization');
-            if (authHeader && authHeader.startsWith('Bearer ')) {
-                const rawKey = authHeader.replace('Bearer ', '').trim();
-                if (rawKey.length >= 8) keyHash = await sha256(rawKey);
-            }
-        }
+        const keyHash = await extractKeyHash(req);
 
-        if (!keyHash || !/^[a-f0-9]{64}$/i.test(keyHash)) {
+        if (!keyHash || !SYNC_HASH_REGEX.test(keyHash)) {
             return new Response(JSON.stringify({ error: 'Auth Required' }), { status: 401, headers: HEADERS_BASE });
         }
 
         const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
-        const limiter = checkRateLimitSync(`${keyHash}:${ip}:${req.method}`);
+        const limiter = await checkRateLimit({
+            namespace: 'sync',
+            key: `${keyHash}:${ip}:${req.method}`,
+            windowMs: SYNC_RATE_LIMIT_WINDOW_MS,
+            maxRequests: SYNC_RATE_LIMIT_MAX_REQUESTS,
+            disabled: SYNC_RATE_LIMIT_DISABLED,
+            localMaxEntries: 2000
+        });
         if (limiter.limited) {
             return new Response(JSON.stringify({ error: 'Too Many Requests', code: 'RATE_LIMITED' }), {
                 status: 429,
@@ -221,13 +187,13 @@ export default async function handler(req: Request) {
         }
 
         if (req.method === 'POST') {
-            const body = await req.json();
+            const body = await req.json() as SyncPostBody;
             const { lastModified, shards } = body;
 
             if (lastModified === undefined) {
                 return new Response(JSON.stringify({ error: 'Missing lastModified' }), { status: 400, headers: HEADERS_BASE });
             }
-            if (!shards || typeof shards !== 'object') {
+            if (!shards || typeof shards !== 'object' || Array.isArray(shards)) {
                 return new Response(JSON.stringify({ error: 'Invalid or missing shards' }), { status: 400, headers: HEADERS_BASE });
             }
 
@@ -256,9 +222,9 @@ export default async function handler(req: Request) {
                 }
             }
 
-            let result: any = null;
+            let result: unknown = null;
             for (let attempt = 0; attempt < 2; attempt++) {
-                result = await kv.eval(LUA_SHARDED_UPDATE, [dataKey], [String(lastModifiedNum), JSON.stringify(shards)]) as any;
+                result = await kv.eval(LUA_SHARDED_UPDATE, [dataKey], [String(lastModifiedNum), JSON.stringify(shards)]);
                 if (Array.isArray(result)) break;
                 await sleep(50);
             }
@@ -283,20 +249,23 @@ export default async function handler(req: Request) {
             
             if (result[0] === 'CONFLICT') {
                 // Lua returns a flat array [key, val, key, val...] for HGETALL
-                const rawList = result[1] as string[];
+                const rawList = Array.isArray(result[1]) ? (result[1] as string[]) : [];
                 const conflictShards: Record<string, string> = {};
                 for (let i = 0; i < rawList.length; i += 2) {
                     conflictShards[rawList[i]] = rawList[i+1];
                 }
                 return new Response(JSON.stringify(conflictShards), { status: 409, headers: HEADERS_BASE });
             }
-            
-            return new Response(JSON.stringify({ error: 'Lua Execution Error', code: result[1] || 'UNKNOWN', detail: result[2], detailType: result[3], raw: result }), { status: 400, headers: HEADERS_BASE });
+
+            const code = typeof result[1] === 'string' ? result[1] : 'UNKNOWN';
+            const detail = typeof result[2] === 'string' ? result[2] : undefined;
+            const detailType = typeof result[3] === 'string' ? result[3] : undefined;
+            return new Response(JSON.stringify({ error: 'Lua Execution Error', code, detail, detailType, raw: result }), { status: 400, headers: HEADERS_BASE });
         }
 
         return new Response(null, { status: 405 });
-    } catch (error: any) {
+    } catch (error: unknown) {
         logger.error('KV Error:', error);
-        return new Response(JSON.stringify({ error: error.message || 'Internal Server Error' }), { status: 500, headers: HEADERS_BASE });
+        return new Response(JSON.stringify({ error: getErrorMessage(error) }), { status: 500, headers: HEADERS_BASE });
     }
 }

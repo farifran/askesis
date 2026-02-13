@@ -171,14 +171,23 @@ describe('⚡ TESTE DE CENARIO 3: Estresse e Performance', () => {
       HabitService.setStatus(habitId, date, 'Morning', HABIT_STATE.DONE);
     }
 
-    // Benchmark: Ler 10,000 vezes aleatórias
+    // Pré-computa as datas para medir apenas custo de leitura (não geração aleatória/string)
+    const readDates = Array.from({ length: 10000 }, (_, i) => {
+      const day = (i % 365) + 1;
+      const month = Math.floor((day - 1) / 30) + 1;
+      const dayOfMonth = (day - 1) % 30 + 1;
+      return `2024-${month.toString().padStart(2, '0')}-${dayOfMonth.toString().padStart(2, '0')}`;
+    });
+
+    // Warm-up para reduzir ruído de JIT no primeiro loop medido
+    for (let i = 0; i < 500; i++) {
+      HabitService.getStatus(habitId, readDates[i], 'Morning');
+    }
+
+    // Benchmark: Ler 10,000 vezes
     const duration = monitor.measure('read-10k-random', () => {
       for (let i = 0; i < 10000; i++) {
-        const randomDay = Math.floor(Math.random() * 365) + 1;
-        const month = Math.floor((randomDay - 1) / 30) + 1;
-        const dayOfMonth = (randomDay - 1) % 30 + 1;
-        const date = `2024-${month.toString().padStart(2, '0')}-${dayOfMonth.toString().padStart(2, '0')}`;
-        HabitService.getStatus(habitId, date, 'Morning');
+        HabitService.getStatus(habitId, readDates[i], 'Morning');
       }
     });
 
