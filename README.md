@@ -1,15 +1,23 @@
 <div align="left" style="margin: 0 0 10px 0;">
-  <div style="display: flex; align-items: center; gap: 10px; justify-content: flex-start; margin-left: 0;">
-    <a href="#pt-br" style="display: block; line-height: 0; text-decoration: none; border: 0;">
-      <img src="assets/flags/pt-br.svg" width="30" height="18" alt="PT-BR" style="display: block; border: 0;">
-    </a>
-    <a href="#en" style="display: block; line-height: 0; text-decoration: none; border: 0;">
-      <img src="assets/flags/en.svg" width="30" height="18" alt="EN" style="display: block; border: 0;">
-    </a>
-    <a href="#es" style="display: block; line-height: 0; text-decoration: none; border: 0;">
-      <img src="assets/flags/es.svg" width="30" height="18" alt="ES" style="display: block; border: 0;">
-    </a>
-  </div>
+  <table border="0" cellspacing="0" cellpadding="0" style="border-collapse: collapse; margin: 0;">
+    <tr>
+      <td style="padding: 0 10px 0 0; line-height: 0;">
+        <a href="#pt-br" style="display: inline-block; line-height: 0; text-decoration: none; border: 0;">
+          <img src="assets/flags/pt-br.svg" width="30" height="18" alt="PT-BR" style="display: block; border: 0; text-decoration: none;">
+        </a>
+      </td>
+      <td style="padding: 0 10px 0 0; line-height: 0;">
+        <a href="#en" style="display: inline-block; line-height: 0; text-decoration: none; border: 0;">
+          <img src="assets/flags/en.svg" width="30" height="18" alt="EN" style="display: block; border: 0; text-decoration: none;">
+        </a>
+      </td>
+      <td style="padding: 0; line-height: 0;">
+        <a href="#es" style="display: inline-block; line-height: 0; text-decoration: none; border: 0;">
+          <img src="assets/flags/es.svg" width="30" height="18" alt="ES" style="display: block; border: 0; text-decoration: none;">
+        </a>
+      </td>
+    </tr>
+  </table>
 </div>
 
 <div align="center" style="margin-top: 0; font-size: 0; line-height: 0;">
