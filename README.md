@@ -1,13 +1,13 @@
-<div align="center" style="margin: 0 0 10px 0;">
-  <div style="display: flex; align-items: center; gap: 10px; justify-content: flex-start; margin-left: 20px;">
-    <a href="#pt-br">
-      <img src="assets/flags/pt-br.svg" width="30" height="18" alt="PT-BR">
+<div align="left" style="margin: 0 0 10px 0;">
+  <div style="display: flex; align-items: center; gap: 10px; justify-content: flex-start; margin-left: 0;">
+    <a href="#pt-br" style="display: block; line-height: 0; text-decoration: none; border: 0;">
+      <img src="assets/flags/pt-br.svg" width="30" height="18" alt="PT-BR" style="display: block; border: 0;">
     </a>
-    <a href="#en">
-      <img src="assets/flags/en.svg" width="30" height="18" alt="EN">
+    <a href="#en" style="display: block; line-height: 0; text-decoration: none; border: 0;">
+      <img src="assets/flags/en.svg" width="30" height="18" alt="EN" style="display: block; border: 0;">
     </a>
-    <a href="#es">
-      <img src="assets/flags/es.svg" width="30" height="18" alt="ES">
+    <a href="#es" style="display: block; line-height: 0; text-decoration: none; border: 0;">
+      <img src="assets/flags/es.svg" width="30" height="18" alt="ES" style="display: block; border: 0;">
     </a>
   </div>
 </div>
