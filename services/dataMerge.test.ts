@@ -468,7 +468,7 @@ describe('🔗 Deduplication by Name (Habit Name Collision Prevention)', () => {
         const incoming = createMockState(2000);
 
         // Local tem "Exercício" com ID 1
-        local.habits.push({
+        (local as any).habits = [...local.habits, {
             id: 'habit-1',
             createdOn: '2024-01-01',
             scheduleHistory: [
@@ -483,10 +483,10 @@ describe('🔗 Deduplication by Name (Habit Name Collision Prevention)', () => {
                     goal: { type: 'check' as const }
                 }
             ]
-        } as any);
+        } as any];
 
         // Incoming tem "EXERCÍCIO" com ID 2 (different ID, same name after normalization)
-        incoming.habits.push({
+        (incoming as any).habits = [...incoming.habits, {
             id: 'habit-2',
             createdOn: '2024-01-02',
             scheduleHistory: [
@@ -501,7 +501,7 @@ describe('🔗 Deduplication by Name (Habit Name Collision Prevention)', () => {
                     goal: { type: 'check' as const }
                 }
             ]
-        } as any);
+        } as any];
 
         const merged = await mergeStates(local, incoming);
 
@@ -523,7 +523,7 @@ describe('🔗 Deduplication by Name (Habit Name Collision Prevention)', () => {
         const incoming = createMockState(2000);
 
         // Local tem "Meditação" DELETADO
-        local.habits.push({
+        (local as any).habits.push({
             id: 'habit-1',
             createdOn: '2024-01-01',
             deletedOn: '2024-01-05',
@@ -532,7 +532,7 @@ describe('🔗 Deduplication by Name (Habit Name Collision Prevention)', () => {
         } as any);
 
         // Incoming tem "Meditação" ATIVO
-        incoming.habits.push({
+        (incoming as any).habits = [...incoming.habits, {
             id: 'habit-2',
             createdOn: '2024-01-02',
             scheduleHistory: [
@@ -547,7 +547,7 @@ describe('🔗 Deduplication by Name (Habit Name Collision Prevention)', () => {
                     goal: { type: 'check' as const }
                 }
             ]
-        } as any);
+        } as any];
 
         const merged = await mergeStates(local, incoming);
 
@@ -570,7 +570,7 @@ describe('🔗 Deduplication by Name (Habit Name Collision Prevention)', () => {
         const incoming = createMockState(2000);
 
         // Local tem "Leitura" (ID 1) com dados no dia 01
-        local.habits.push({
+        (local as any).habits = [...local.habits, {
             id: 'habit-1',
             createdOn: '2024-01-01',
             scheduleHistory: [
@@ -585,14 +585,14 @@ describe('🔗 Deduplication by Name (Habit Name Collision Prevention)', () => {
                     goal: { type: 'check' as const }
                 }
             ]
-        } as any);
+        } as any];
 
         local.dailyData['2024-01-01'] = {
             'habit-1': { instances: { Evening: { note: 'Read 30 pages' } } }
         } as any;
 
         // Incoming tem "LEITURA" (ID 2) com dados no dia 02
-        incoming.habits.push({
+        (incoming as any).habits = [...incoming.habits, {
             id: 'habit-2',
             createdOn: '2024-01-02',
             scheduleHistory: [
@@ -607,7 +607,7 @@ describe('🔗 Deduplication by Name (Habit Name Collision Prevention)', () => {
                     goal: { type: 'check' as const }
                 }
             ]
-        } as any);
+        } as any];
 
         incoming.dailyData['2024-01-02'] = {
             'habit-2': { instances: { Evening: { note: 'Read 40 pages' } } }
@@ -631,7 +631,7 @@ describe('🔗 Deduplication by Name (Habit Name Collision Prevention)', () => {
         const local = createMockState(1000);
         const incoming = createMockState(2000);
 
-        local.habits.push({
+        (local as any).habits = [...local.habits, {
             id: 'habit-1',
             createdOn: '2024-01-01',
             scheduleHistory: [
@@ -646,9 +646,9 @@ describe('🔗 Deduplication by Name (Habit Name Collision Prevention)', () => {
                     goal: { type: 'check' as const }
                 }
             ]
-        } as any);
+        } as any];
 
-        incoming.habits.push({
+        (incoming as any).habits = [...incoming.habits, {
             id: 'habit-2',
             createdOn: '2024-01-02',
             scheduleHistory: [
@@ -663,7 +663,7 @@ describe('🔗 Deduplication by Name (Habit Name Collision Prevention)', () => {
                     goal: { type: 'check' as const }
                 }
             ]
-        } as any);
+        } as any];
 
         const merged = await mergeStates(local, incoming);
 
@@ -683,7 +683,7 @@ describe('🔗 Deduplication by Name (Habit Name Collision Prevention)', () => {
             const incoming = createMockState(2000);
 
             // Local: hábito com times duplicados (corrupção de dados)
-            local.habits.push({
+            (local as any).habits = [...local.habits, {
                 id: 'habit-1',
                 createdOn: '2024-01-01',
                 scheduleHistory: [
@@ -698,10 +698,10 @@ describe('🔗 Deduplication by Name (Habit Name Collision Prevention)', () => {
                         goal: { type: 'check' as const }
                     }
                 ]
-            } as any);
+            } as any];
 
             // Incoming: mesmo hábito com times corretos
-            incoming.habits.push({
+            (incoming as any).habits = [...incoming.habits, {
                 id: 'habit-1',
                 createdOn: '2024-01-01',
                 scheduleHistory: [
@@ -716,7 +716,7 @@ describe('🔗 Deduplication by Name (Habit Name Collision Prevention)', () => {
                         goal: { type: 'check' as const }
                     }
                 ]
-            } as any);
+            } as any];
 
             const merged = await mergeStates(local, incoming);
 
@@ -734,7 +734,7 @@ describe('🔗 Deduplication by Name (Habit Name Collision Prevention)', () => {
             const incoming = createMockState(2000);
 
             // Local: ['Morning', 'Evening']
-            local.habits.push({
+            (local as any).habits = [...local.habits, {
                 id: 'habit-1',
                 createdOn: '2024-01-01',
                 scheduleHistory: [
@@ -749,10 +749,10 @@ describe('🔗 Deduplication by Name (Habit Name Collision Prevention)', () => {
                         goal: { type: 'check' as const }
                     }
                 ]
-            } as any);
+            } as any];
 
             // Incoming (mais recente): ['Evening', 'Morning', 'Afternoon']
-            incoming.habits.push({
+            (incoming as any).habits = [...incoming.habits, {
                 id: 'habit-1',
                 createdOn: '2024-01-01',
                 scheduleHistory: [
@@ -767,7 +767,7 @@ describe('🔗 Deduplication by Name (Habit Name Collision Prevention)', () => {
                         goal: { type: 'check' as const }
                     }
                 ]
-            } as any);
+            } as any];
 
             const merged = await mergeStates(local, incoming);
 
@@ -776,7 +776,7 @@ describe('🔗 Deduplication by Name (Habit Name Collision Prevention)', () => {
             const times = merged.habits[0].scheduleHistory[0].times;
             
             // Deve conter todos os 3 times única vez
-            expect(times.sort()).toEqual(['Afternoon', 'Evening', 'Morning'].sort());
+            expect([...times].sort()).toEqual(['Afternoon', 'Evening', 'Morning'].sort());
             expect(new Set(times).size).toBe(3); // Sem duplicatas
 
             logger.info('✅ Dedup TimeOfDay: Merge com order diferente preserva unicidade');
@@ -787,7 +787,7 @@ describe('🔗 Deduplication by Name (Habit Name Collision Prevention)', () => {
             const incoming = createMockState(2000);
 
             // Local: versão antiga do hábito com 2 times
-            local.habits.push({
+            (local as any).habits = [...local.habits, {
                 id: 'habit-1',
                 createdOn: '2024-01-01',
                 scheduleHistory: [
@@ -802,10 +802,10 @@ describe('🔗 Deduplication by Name (Habit Name Collision Prevention)', () => {
                         goal: { type: 'check' as const }
                     }
                 ]
-            } as any);
+            } as any];
 
             // Incoming: versão mais recente (com atualização), mas times potencialmente duplicados de bug anterior
-            incoming.habits.push({
+            (incoming as any).habits = [...incoming.habits, {
                 id: 'habit-1',
                 createdOn: '2024-01-01',
                 scheduleHistory: [
@@ -830,7 +830,7 @@ describe('🔗 Deduplication by Name (Habit Name Collision Prevention)', () => {
                         goal: { type: 'check' as const }
                     }
                 ]
-            } as any);
+            } as any];
 
             const merged = await mergeStates(local, incoming);
 
@@ -844,6 +844,28 @@ describe('🔗 Deduplication by Name (Habit Name Collision Prevention)', () => {
             expect(new Set(recentEntry.times).size).toBe(2); // Sem duplicatas
 
             logger.info('✅ Dedup TimeOfDay: Consolidação remove duplicatas em múltiplas versões');
+        });
+    });
+
+    describe('🛡️ Security regressions', () => {
+        it('deve ignorar chave __proto__ em dailyData durante merge', async () => {
+            const local = createMockState(1000);
+            const incoming = createMockState(2000);
+
+            (incoming as any).dailyData = Object.create(null);
+            incoming.dailyData['__proto__'] = {
+                hacked: { instances: { Morning: { note: 'polluted' } } }
+            } as any;
+            incoming.dailyData['2024-01-10'] = {
+                'habit-safe': { instances: { Morning: { note: 'safe' } } }
+            } as any;
+
+            const merged = await mergeStates(local, incoming);
+
+            expect(Object.prototype.hasOwnProperty.call(merged.dailyData, '__proto__')).toBe(false);
+            expect((merged.dailyData as any).hacked).toBeUndefined();
+            expect(merged.dailyData['2024-01-10']).toBeDefined();
+            expect(merged.dailyData['2024-01-10']['habit-safe'].instances.Morning?.note).toBe('safe');
         });
     });
 });

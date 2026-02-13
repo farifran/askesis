@@ -19,6 +19,7 @@ import {
 } from '../state';
 import { saveState, loadState, clearLocalPersistence } from './persistence';
 import { PREDEFINED_HABITS } from '../data/predefinedHabits';
+import { HABIT_ICONS, sanitizeHabitIcon } from '../data/icons';
 import { 
     getEffectiveScheduleForHabitOnDate, clearSelectorInternalCaches,
     calculateHabitStreak, shouldHabitAppearOnDate, getHabitDisplayInfo,
@@ -570,14 +571,11 @@ export function importData() {
             const data = JSON.parse(await file.text());
             if (data.habits && data.version && Array.isArray(data.habits) && data.habits.every((h: any) => h?.id && Array.isArray(h?.scheduleHistory))) {
                 // SECURITY FIX: Sanitize imported habit data to prevent Stored XSS via malicious JSON.
-                // Icon fields are rendered via innerHTML — only allow known SVG patterns.
-                const SVG_TAG_REGEX = /^<svg[\s>]/i;
+                // Icon fields are rendered via innerHTML — only allow known safe SVGs from icon repository.
                 data.habits.forEach((h: any) => {
                     if (Array.isArray(h.scheduleHistory)) {
                         h.scheduleHistory.forEach((s: any) => {
-                            if (s.icon && typeof s.icon === 'string' && !SVG_TAG_REGEX.test(s.icon.trim())) {
-                                s.icon = '❓'; // Replace non-SVG icon with safe fallback
-                            }
+                            s.icon = sanitizeHabitIcon(s.icon, '❓');
                             if (s.name && typeof s.name === 'string') s.name = sanitizeText(s.name, 60);
                             if (s.color && typeof s.color === 'string' && !/^#[0-9a-fA-F]{3,8}$/.test(s.color)) {
                                 s.color = '#808080'; // Replace invalid color

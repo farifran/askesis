@@ -136,8 +136,6 @@ export async function apiFetch(endpoint: string, options: RequestInit = {}, incl
         if (hash) {
             // O servidor usa o hash para encontrar o registro no KV/Redis
             headers.set('X-Sync-Key-Hash', hash);
-            // Bearer opcional para compatibilidade com middlewares de auth tradicionais
-            headers.set('Authorization', `Bearer ${getSyncKey()}`);
         } else {
             throw new Error("Sync Key missing or environment insecure (No Crypto API).");
         }

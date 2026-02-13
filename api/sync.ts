@@ -55,12 +55,30 @@ redis.call("HSET", key, "lastModified", newTs)
 return { "OK" }
 `;
 
-const HEADERS_BASE = {
-  'Content-Type': 'application/json',
-  'Access-Control-Allow-Origin': '*', 
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, X-Sync-Key-Hash, Authorization',
-};
+const MAX_SHARDS_PER_REQUEST = 256;
+const MAX_SHARD_VALUE_BYTES = 512 * 1024; // 512KB por shard
+const MAX_TOTAL_SHARDS_BYTES = 4 * 1024 * 1024; // 4MB total
+
+const ALLOWED_ORIGINS = (process.env.CORS_ALLOWED_ORIGINS || '')
+    .split(',')
+    .map(origin => origin.trim())
+    .filter(Boolean);
+
+function getCorsOrigin(req: Request): string {
+    if (ALLOWED_ORIGINS.length === 0) return '*';
+    const origin = req.headers.get('origin') || '';
+    return ALLOWED_ORIGINS.includes(origin) ? origin : 'null';
+}
+
+function getResponseHeaders(req: Request): Record<string, string> {
+    return {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': getCorsOrigin(req),
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, X-Sync-Key-Hash, Authorization',
+        'Vary': 'Origin'
+    };
+}
 
 async function sha256(message: string) {
     const msgBuffer = new TextEncoder().encode(message);
@@ -73,23 +91,34 @@ function sleep(ms: number) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-async function applyShardsNonLua(kv: Redis, dataKey: string, lastModified: number, shards: Record<string, string>) {
-    const currentTsRaw = await kv.hget(dataKey, 'lastModified');
-    const currentTs = Number(currentTsRaw || 0);
-    if (lastModified < currentTs) {
-        const all = await kv.hgetall(dataKey);
-        return { type: 'conflict', data: all } as const;
+const SYNC_RATE_LIMIT_WINDOW_MS = 60_000;
+const SYNC_RATE_LIMIT_MAX_REQUESTS = 120;
+const syncRateLimitStore = new Map<string, { count: number; resetAt: number }>();
+
+function checkRateLimitSync(key: string): { limited: boolean; retryAfterSec: number } {
+    const now = Date.now();
+    if (syncRateLimitStore.size > 2000) {
+        for (const [k, v] of syncRateLimitStore.entries()) {
+            if (v.resetAt <= now) syncRateLimitStore.delete(k);
+        }
     }
 
-    const entries = Object.entries(shards);
-    for (const [shardName, shardData] of entries) {
-        await kv.hset(dataKey, { [shardName]: shardData });
+    const current = syncRateLimitStore.get(key);
+    if (!current || current.resetAt <= now) {
+        syncRateLimitStore.set(key, { count: 1, resetAt: now + SYNC_RATE_LIMIT_WINDOW_MS });
+        return { limited: false, retryAfterSec: 0 };
     }
-    await kv.hset(dataKey, { lastModified: String(lastModified) });
-    return { type: 'ok' } as const;
+
+    if (current.count >= SYNC_RATE_LIMIT_MAX_REQUESTS) {
+        return { limited: true, retryAfterSec: Math.max(1, Math.ceil((current.resetAt - now) / 1000)) };
+    }
+
+    current.count += 1;
+    return { limited: false, retryAfterSec: 0 };
 }
 
 export default async function handler(req: Request) {
+    const HEADERS_BASE = getResponseHeaders(req);
     if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: HEADERS_BASE });
 
     const dbUrl = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
@@ -114,6 +143,18 @@ export default async function handler(req: Request) {
         if (!keyHash || !/^[a-f0-9]{64}$/i.test(keyHash)) {
             return new Response(JSON.stringify({ error: 'Auth Required' }), { status: 401, headers: HEADERS_BASE });
         }
+
+        const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
+        const limiter = checkRateLimitSync(`${keyHash}:${ip}:${req.method}`);
+        if (limiter.limited) {
+            return new Response(JSON.stringify({ error: 'Too Many Requests', code: 'RATE_LIMITED' }), {
+                status: 429,
+                headers: {
+                    ...HEADERS_BASE,
+                    'Retry-After': String(limiter.retryAfterSec)
+                }
+            });
+        }
         
         const dataKey = `sync_v3:${keyHash}`;
 
@@ -134,14 +175,28 @@ export default async function handler(req: Request) {
                 return new Response(JSON.stringify({ error: 'Invalid or missing shards' }), { status: 400, headers: HEADERS_BASE });
             }
 
+            const shardEntries = Object.entries(shards);
+            if (shardEntries.length > MAX_SHARDS_PER_REQUEST) {
+                return new Response(JSON.stringify({ error: 'Too many shards', code: 'SHARD_LIMIT_EXCEEDED' }), { status: 413, headers: HEADERS_BASE });
+            }
+
             const lastModifiedNum = Number(lastModified);
             if (!Number.isFinite(lastModifiedNum)) {
                 return new Response(JSON.stringify({ error: 'Invalid lastModified', code: 'INVALID_TS' }), { status: 400, headers: HEADERS_BASE });
             }
 
-            for (const [shardName, shardValue] of Object.entries(shards)) {
+            let totalBytes = 0;
+            for (const [shardName, shardValue] of shardEntries) {
                 if (typeof shardValue !== 'string') {
                     return new Response(JSON.stringify({ error: 'Invalid shard type', code: 'INVALID_SHARD_TYPE', detail: shardName, detailType: typeof shardValue }), { status: 400, headers: HEADERS_BASE });
+                }
+                const shardBytes = new TextEncoder().encode(shardValue).length;
+                if (shardBytes > MAX_SHARD_VALUE_BYTES) {
+                    return new Response(JSON.stringify({ error: 'Shard too large', code: 'SHARD_TOO_LARGE', detail: shardName }), { status: 413, headers: HEADERS_BASE });
+                }
+                totalBytes += shardBytes;
+                if (totalBytes > MAX_TOTAL_SHARDS_BYTES) {
+                    return new Response(JSON.stringify({ error: 'Payload too large', code: 'PAYLOAD_TOO_LARGE' }), { status: 413, headers: HEADERS_BASE });
                 }
             }
 
@@ -153,25 +208,21 @@ export default async function handler(req: Request) {
             }
 
             if (!Array.isArray(result)) {
-                const fallback = await applyShardsNonLua(kv, dataKey, lastModifiedNum, shards);
-                if (fallback.type === 'ok') {
-                    return new Response('{"success":true,"fallback":true}', { status: 200, headers: HEADERS_BASE });
-                }
-                // FIX: kv.hgetall returns an Object, not Array.
-                const conflictShards = (fallback.data || {}) as Record<string, string>;
-                return new Response(JSON.stringify(conflictShards), { status: 409, headers: HEADERS_BASE });
+                return new Response(JSON.stringify({
+                    error: 'Atomic sync unavailable',
+                    code: 'LUA_UNAVAILABLE',
+                    detail: 'Non-atomic fallback disabled to prevent shard desynchronization'
+                }), { status: 503, headers: HEADERS_BASE });
             }
             
             if (result[0] === 'OK') return new Response('{"success":true}', { status: 200, headers: HEADERS_BASE });
 
             if (typeof result[0] === 'number') {
-                const fallback = await applyShardsNonLua(kv, dataKey, lastModifiedNum, shards);
-                if (fallback.type === 'ok') {
-                    return new Response('{"success":true,"fallback":true}', { status: 200, headers: HEADERS_BASE });
-                }
-                // FIX: kv.hgetall returns an Object, not Array.
-                const conflictShards = (fallback.data || {}) as Record<string, string>;
-                return new Response(JSON.stringify(conflictShards), { status: 409, headers: HEADERS_BASE });
+                return new Response(JSON.stringify({
+                    error: 'Atomic sync unavailable',
+                    code: 'LUA_UNAVAILABLE',
+                    detail: 'Lua engine returned invalid format'
+                }), { status: 503, headers: HEADERS_BASE });
             }
             
             if (result[0] === 'CONFLICT') {

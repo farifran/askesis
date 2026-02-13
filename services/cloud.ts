@@ -16,7 +16,6 @@ import { t } from '../i18n';
 import { hasLocalSyncKey, getSyncKey, apiFetch } from './api';
 import { renderApp, updateNotificationUI } from '../render';
 import { mergeStates } from './dataMerge';
-import { HabitService } from './HabitService';
 import {
     CLOUD_SYNC_DEBOUNCE_MS,
     CLOUD_SYNC_LOG_MAX_ENTRIES,
@@ -26,6 +25,7 @@ import {
 } from '../constants';
 
 const HASH_STORAGE_KEY = 'askesis_sync_hashes';
+const TRANSIENT_SYNC_RETRY_DELAY_MS = 1500;
 
 let isSyncInProgress = false;
 let pendingSyncState: AppState | null = null;
@@ -96,10 +96,16 @@ function splitIntoShards(appState: AppState): Record<string, any> {
     };
     
     // Logs: Shards granulares mensais (Bitmasks)
-    // Usa o cache do HabitService para obter os dados já agrupados
-    const groupedLogs = HabitService.getLogsGroupedByMonth();
-    for (const month in groupedLogs) { 
-        shards[`logs:${month}`] = groupedLogs[month]; 
+    // SECURITY/CONSISTENCY: Usa o snapshot recebido (appState.monthlyLogs),
+    // evitando mistura entre estado pendente e estado global mutável.
+    const groupedLogs: Record<string, [string, string][]> = {};
+    for (const [key, value] of appState.monthlyLogs.entries()) {
+        const month = key.slice(-7);
+        if (!groupedLogs[month]) groupedLogs[month] = [];
+        groupedLogs[month].push([key, "0x" + value.toString(16)]);
+    }
+    for (const month in groupedLogs) {
+        shards[`logs:${month}`] = groupedLogs[month];
     }
     
     // Arquivos: Shards anuais (Dados frios)
@@ -264,6 +270,7 @@ async function performSync() {
     isSyncInProgress = true;
     const appState = pendingSyncState;
     pendingSyncState = null; 
+    let retryDelayMs = 500;
     const syncKey = getSyncKey();
     if (!syncKey) { setSyncStatus('syncError'); isSyncInProgress = false; return; }
 
@@ -331,18 +338,33 @@ async function performSync() {
             const code = errorData.code ? ` [${errorData.code}]` : '';
             const detail = errorData.detail ? ` (${errorData.detail}${errorData.detailType ? `:${errorData.detailType}` : ''})` : '';
             const raw = errorData.raw ? ` raw=${JSON.stringify(errorData.raw)}` : '';
-            throw new Error((errorData.error || `Erro ${response.status}`) + code + detail + raw);
+            const err = new Error((errorData.error || `Erro ${response.status}`) + code + detail + raw) as Error & { status?: number; code?: string };
+            err.status = response.status;
+            err.code = errorData.code;
+            throw err;
         }
         logger.info(`[Sync Perf] encrypt=${(encryptEnd - encryptStart).toFixed(1)}ms payload=${(payloadEnd - payloadStart).toFixed(1)}ms post=${(postEnd - postStart).toFixed(1)}ms total=${(performance.now() - perfStart).toFixed(1)}ms`);
     } catch (error: any) {
-        addSyncLog(`Falha no envio: ${error.message}`, "error");
-        setSyncStatus('syncError');
+        const status = Number(error?.status || 0);
+        const code = String(error?.code || '');
+        const isTransient = status === 503 || code === 'LUA_UNAVAILABLE' || status === 429 || status >= 500;
+
+        if (isTransient) {
+            pendingSyncState = pendingSyncState || appState;
+            retryDelayMs = TRANSIENT_SYNC_RETRY_DELAY_MS;
+            addSyncLog(`Falha transitória no sync: ${error.message}. Reenfileirado.`, "info");
+            setSyncStatus('syncSaving');
+        } else {
+            addSyncLog(`Falha no envio: ${error.message}`, "error");
+            setSyncStatus('syncError');
+        }
+
         if ('serviceWorker' in navigator && 'SyncManager' in window) {
             navigator.serviceWorker.ready.then(reg => (reg as any).sync?.register('sync-cloud-pending')).catch(() => {});
         }
     } finally {
         isSyncInProgress = false;
-        if (pendingSyncState) setTimeout(performSync, 500);
+        if (pendingSyncState) setTimeout(performSync, retryDelayMs);
     }
 }
 

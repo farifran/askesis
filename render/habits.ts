@@ -13,7 +13,7 @@ import { state, Habit, HabitDayData, STREAK_CONSOLIDATED, STREAK_SEMI_CONSOLIDAT
 import { calculateHabitStreak, getActiveHabitsForDate, getSmartGoalForHabit, getHabitDisplayInfo, getHabitPropertiesForDate } from '../services/selectors';
 import { ui } from './ui';
 import { t, formatInteger } from '../i18n';
-import { UI_ICONS, getTimeOfDayIcon } from './icons';
+import { UI_ICONS, getTimeOfDayIcon, sanitizeHabitIcon } from './icons';
 import { setTextContent } from './dom';
 import { CSS_CLASSES, DOM_SELECTORS } from './constants';
 import { parseUTCIsoDate } from '../utils';
@@ -163,9 +163,9 @@ export function updateHabitCardElement(card: HTMLElement, habit: Habit, time: Ti
     const schedule = getHabitPropertiesForDate(habit, state.selectedDate);
     if (!schedule) return;
 
-    // SECURITY FIX: Only allow SVG icons via innerHTML; escape anything else
+    // SECURITY FIX: Only allow known safe habit icons via innerHTML
     if (els.cachedIconHtml !== schedule.icon) {
-        const safeIcon = schedule.icon && schedule.icon.trim().startsWith('<svg') ? schedule.icon : (schedule.icon || '');
+        const safeIcon = sanitizeHabitIcon(schedule.icon, '❓');
         els.icon.innerHTML = els.cachedIconHtml = safeIcon;
     }
     els.icon.style.color = schedule.color;

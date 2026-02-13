@@ -89,6 +89,33 @@ describe('cloud sync basics', () => {
         expect(Object.keys(payload.shards)).toContain('logs:2024-01');
     });
 
+    it('usa logs do snapshot mesmo com estado global alterado antes do envio', async () => {
+        const { apiFetch, getSyncKey, hasLocalSyncKey } = await import('./api');
+        vi.mocked(hasLocalSyncKey).mockReturnValue(true);
+        vi.mocked(getSyncKey).mockReturnValue('k');
+        vi.mocked(apiFetch).mockResolvedValue({ ok: true, status: 200, json: async () => ({}) } as any);
+
+        const habitId = createTestHabit({ name: 'Snapshot Habit', time: 'Morning', goalType: 'check' });
+        HabitService.setStatus(habitId, '2024-01-01', 'Morning', 1);
+        state.lastModified = 456;
+
+        const snapshot = getPersistableState();
+
+        state.monthlyLogs = new Map();
+        HabitService.setStatus(habitId, '2024-02-01', 'Morning', 1);
+
+        const { syncStateWithCloud } = await import('./cloud');
+        syncStateWithCloud(snapshot, true);
+
+        await new Promise(resolve => setTimeout(resolve, 0));
+
+        const [, opts] = vi.mocked(apiFetch).mock.calls[0];
+        const payload = JSON.parse(opts!.body as string);
+
+        expect(Object.keys(payload.shards)).toContain('logs:2024-01');
+        expect(Object.keys(payload.shards)).not.toContain('logs:2024-02');
+    });
+
     it('faz merge e aplica estado remoto mais recente', async () => {
         const { apiFetch, getSyncKey, hasLocalSyncKey } = await import('./api');
         const { mergeStates } = await import('./dataMerge');
@@ -112,5 +139,40 @@ describe('cloud sync basics', () => {
         expect(persistStateLocally).toHaveBeenCalled();
         expect(loadState).toHaveBeenCalled();
         expect(renderApp).toHaveBeenCalled();
+    });
+
+    it('reenfileira e reenvia quando API retorna 503/LUA_UNAVAILABLE', async () => {
+        vi.useFakeTimers();
+        try {
+            const { apiFetch, getSyncKey, hasLocalSyncKey } = await import('./api');
+            vi.mocked(hasLocalSyncKey).mockReturnValue(true);
+            vi.mocked(getSyncKey).mockReturnValue('k');
+
+            vi.mocked(apiFetch)
+                .mockResolvedValueOnce({
+                    ok: false,
+                    status: 503,
+                    json: async () => ({ error: 'Atomic sync unavailable', code: 'LUA_UNAVAILABLE' })
+                } as any)
+                .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({}) } as any);
+
+            const habitId = createTestHabit({ name: 'Retry Habit', time: 'Morning', goalType: 'check' });
+            HabitService.setStatus(habitId, '2024-01-01', 'Morning', 1);
+            state.lastModified = 789;
+
+            const snapshot = getPersistableState();
+            const { syncStateWithCloud } = await import('./cloud');
+            syncStateWithCloud(snapshot, true);
+
+            await vi.advanceTimersByTimeAsync(0);
+            expect(apiFetch).toHaveBeenCalledTimes(1);
+            expect(state.syncState).toBe('syncSaving');
+
+            await vi.advanceTimersByTimeAsync(1600);
+            expect(apiFetch).toHaveBeenCalledTimes(2);
+            expect(state.syncState).toBe('syncSynced');
+        } finally {
+            vi.useRealTimers();
+        }
     });
 });

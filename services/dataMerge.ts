@@ -76,26 +76,34 @@ function isHabitInstanceKey(value: string): value is HabitInstanceKey {
     return value === 'Morning' || value === 'Afternoon' || value === 'Evening';
 }
 
+function isUnsafeObjectKey(key: string): boolean {
+    return key === '__proto__' || key === 'prototype' || key === 'constructor';
+}
+
 function mergeDayRecord(source: Record<string, HabitDailyInfo>, target: Record<string, HabitDailyInfo>) {
-    for (const habitId in source) {
-        if (!target[habitId]) {
-            target[habitId] = source[habitId];
+    for (const habitId of Object.keys(source)) {
+        if (isUnsafeObjectKey(habitId)) continue;
+
+        const sourceHabit = source[habitId];
+        const targetHabit = target[habitId];
+
+        if (!targetHabit) {
+            target[habitId] = structuredClone(sourceHabit);
             continue;
         }
 
-        const sourceInstances: HabitInstanceMap = source[habitId].instances ?? {};
-        const targetInstances: HabitInstanceMap = target[habitId].instances ?? {};
+        const sourceInstances: HabitInstanceMap = sourceHabit.instances ?? {};
+        const targetInstances: HabitInstanceMap = targetHabit.instances ?? {};
 
         for (const time of Object.keys(sourceInstances)) {
             if (!isHabitInstanceKey(time)) continue;
 
             const srcInst = sourceInstances[time];
             const tgtInst = targetInstances[time];
-
             if (!srcInst) continue;
 
             if (!tgtInst) {
-                targetInstances[time] = srcInst;
+                targetInstances[time] = { ...srcInst };
             } else {
                 if ((srcInst.note?.length || 0) > (tgtInst.note?.length || 0)) {
                     tgtInst.note = srcInst.note;
@@ -106,12 +114,33 @@ function mergeDayRecord(source: Record<string, HabitDailyInfo>, target: Record<s
             }
         }
 
-        target[habitId].instances = targetInstances;
-
-        if (source[habitId].dailySchedule) {
-            target[habitId].dailySchedule = source[habitId].dailySchedule;
+        targetHabit.instances = targetInstances;
+        if (sourceHabit.dailySchedule) {
+            targetHabit.dailySchedule = sourceHabit.dailySchedule;
         }
     }
+}
+
+function sanitizeDailyData(appState: AppState): void {
+    const sourceDailyData = appState.dailyData ?? {};
+    const sanitizedDailyData: Record<string, Record<string, HabitDailyInfo>> = {};
+
+    for (const date of Object.keys(sourceDailyData)) {
+        if (isUnsafeObjectKey(date)) continue;
+
+        const dayRecord = sourceDailyData[date];
+        if (!dayRecord || typeof dayRecord !== 'object') continue;
+
+        const sanitizedDayRecord: Record<string, HabitDailyInfo> = {};
+        for (const habitId of Object.keys(dayRecord)) {
+            if (isUnsafeObjectKey(habitId)) continue;
+            sanitizedDayRecord[habitId] = dayRecord[habitId];
+        }
+
+        sanitizedDailyData[date] = sanitizedDayRecord;
+    }
+
+    (appState as any).dailyData = sanitizedDailyData;
 }
 
 /**
@@ -134,6 +163,7 @@ function getHabitIdentity(h: Habit): string | null {
 
 export async function mergeStates(local: AppState, incoming: AppState): Promise<AppState> {
     [local, incoming].forEach(hydrateLogs);
+    [local, incoming].forEach(sanitizeDailyData);
 
     const localTs = local.lastModified || 0;
     const incomingTs = incoming.lastModified || 0;
@@ -170,7 +200,7 @@ export async function mergeStates(local: AppState, incoming: AppState): Promise<
     
     loser.habits.forEach(loserHabit => {
         let winnerHabit = mergedHabitsMap.get(loserHabit.id);
-        
+
         // --- SMART DEDUPLICATION ---
         if (!winnerHabit) {
             const identity = getHabitIdentity(loserHabit);
@@ -188,8 +218,7 @@ export async function mergeStates(local: AppState, incoming: AppState): Promise<
         }
 
         if (!winnerHabit) {
-            // Novo hábito genuíno
-            mergedHabitsMap.set(loserHabit.id, loserHabit);
+            mergedHabitsMap.set(loserHabit.id, structuredClone(loserHabit));
         } else {
             // Merge de hábito existente (mesmo ID ou deduplicado)
             winnerHabit.scheduleHistory = mergeHabitHistories(winnerHabit.scheduleHistory, loserHabit.scheduleHistory);
@@ -232,17 +261,22 @@ export async function mergeStates(local: AppState, incoming: AppState): Promise<
     }
 
     // MERGE DAILY DATA COM REMAP
-    for (const date in loser.dailyData) {
-        const remappedDailyData: Record<string, HabitDailyInfo> = {};
+    for (const date of Object.keys(loser.dailyData ?? {})) {
+        if (isUnsafeObjectKey(date)) continue;
+
+        const remappedDailyData: Record<string, HabitDailyInfo> = Object.create(null);
         const sourceDayData = loser.dailyData[date];
-        
-        for (const habitId in sourceDayData) {
+        if (!sourceDayData) continue;
+
+        for (const habitId of Object.keys(sourceDayData)) {
+            if (isUnsafeObjectKey(habitId)) continue;
             const targetId = idRemap.get(habitId) || habitId;
+            if (isUnsafeObjectKey(targetId)) continue;
             remappedDailyData[targetId] = sourceDayData[habitId];
         }
 
         if (!merged.dailyData[date]) {
-            (merged.dailyData as any)[date] = remappedDailyData;
+            (merged.dailyData as any)[date] = structuredClone(remappedDailyData);
         } else {
             mergeDayRecord(remappedDailyData, (merged.dailyData as any)[date]);
         }

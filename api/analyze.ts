@@ -14,11 +14,25 @@ const MAX_PROMPT_SIZE = 150 * 1024; // 150KB
 const CACHE_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 const CACHE_MAX_ENTRIES = 500;
 
-const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
-};
+const ALLOWED_ORIGINS = (process.env.CORS_ALLOWED_ORIGINS || '')
+    .split(',')
+    .map(origin => origin.trim())
+    .filter(Boolean);
+
+function getCorsOrigin(req: Request): string {
+    if (ALLOWED_ORIGINS.length === 0) return '*';
+    const origin = req.headers.get('origin') || '';
+    return ALLOWED_ORIGINS.includes(origin) ? origin : 'null';
+}
+
+function getCorsHeaders(req: Request): Record<string, string> {
+    return {
+        'Access-Control-Allow-Origin': getCorsOrigin(req),
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+        'Vary': 'Origin'
+    };
+}
 
 // ROBUSTNESS: Support both standard naming conventions
 const API_KEY = process.env.API_KEY || process.env.GEMINI_API_KEY;
@@ -57,9 +71,49 @@ function setCachedResponse(key: string, value: string) {
     }
 }
 
+const ANALYZE_RATE_LIMIT_WINDOW_MS = 60_000;
+const ANALYZE_RATE_LIMIT_MAX_REQUESTS = 20;
+const analyzeRateLimitStore = new Map<string, { count: number; resetAt: number }>();
+
+function checkRateLimitAnalyze(key: string): { limited: boolean; retryAfterSec: number } {
+    const now = Date.now();
+    if (analyzeRateLimitStore.size > 4000) {
+        for (const [k, v] of analyzeRateLimitStore.entries()) {
+            if (v.resetAt <= now) analyzeRateLimitStore.delete(k);
+        }
+    }
+
+    const current = analyzeRateLimitStore.get(key);
+    if (!current || current.resetAt <= now) {
+        analyzeRateLimitStore.set(key, { count: 1, resetAt: now + ANALYZE_RATE_LIMIT_WINDOW_MS });
+        return { limited: false, retryAfterSec: 0 };
+    }
+
+    if (current.count >= ANALYZE_RATE_LIMIT_MAX_REQUESTS) {
+        return { limited: true, retryAfterSec: Math.max(1, Math.ceil((current.resetAt - now) / 1000)) };
+    }
+
+    current.count += 1;
+    return { limited: false, retryAfterSec: 0 };
+}
+
 export default async function handler(req: Request) {
+    const CORS_HEADERS = getCorsHeaders(req);
     if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS_HEADERS });
     if (req.method !== 'POST') return new Response(null, { status: 405 });
+
+    const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
+    const origin = req.headers.get('origin') || 'unknown';
+    const limiter = checkRateLimitAnalyze(`${ip}:${origin}`);
+    if (limiter.limited) {
+        return new Response(JSON.stringify({ error: 'Too Many Requests', code: 'RATE_LIMITED' }), {
+            status: 429,
+            headers: {
+                ...CORS_HEADERS,
+                'Retry-After': String(limiter.retryAfterSec)
+            }
+        });
+    }
 
     if (!API_KEY) {
         console.error("Server Config Error: API_KEY or GEMINI_API_KEY not found in environment.");
@@ -97,19 +151,28 @@ export default async function handler(req: Request) {
         if (!aiClient) aiClient = new GoogleGenAI({ apiKey: API_KEY });
 
         // PROTEÇÃO CONTRA ZUMBIFICAÇÃO: Timeout de execução da IA
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 30000);
-
-        const geminiResponse = await aiClient.models.generateContent({
-            model: MODEL_NAME,
-            contents: prompt,
-            config: { 
-                systemInstruction,
-                temperature: 0.7,
-            },
+        let timeoutId: ReturnType<typeof setTimeout> | undefined;
+        const timeoutPromise = new Promise<never>((_, reject) => {
+            timeoutId = setTimeout(() => {
+                const timeoutError = new Error('AI generation timeout');
+                (timeoutError as any).name = 'AbortError';
+                reject(timeoutError);
+            }, 30000);
         });
 
-        clearTimeout(timeoutId);
+        const geminiResponse = await Promise.race([
+            aiClient.models.generateContent({
+                model: MODEL_NAME,
+                contents: prompt,
+                config: { 
+                    systemInstruction,
+                    temperature: 0.7,
+                },
+            }),
+            timeoutPromise
+        ]);
+
+        if (timeoutId) clearTimeout(timeoutId);
         
         const responseText = geminiResponse.text;
         if (!responseText) throw new Error('Empty AI response');

@@ -14,7 +14,7 @@ import { PREDEFINED_HABITS } from '../data/predefinedHabits';
 import { getScheduleForDate, calculateHabitStreak, getHabitDisplayInfo } from '../services/selectors';
 import { ui } from './ui';
 import { t, compareStrings, formatDate, formatInteger, getTimeOfDayName } from '../i18n';
-import { HABIT_ICONS, UI_ICONS, getTimeOfDayIcon } from './icons';
+import { HABIT_ICONS, UI_ICONS, getTimeOfDayIcon, sanitizeHabitIcon } from './icons';
 import { setTextContent, updateReelRotaryARIA } from './dom';
 import { MODAL_COLORS, EXPLORE_STAGGER_DELAY_MS } from './constants';
 import { escapeHTML, getContrastColor, parseUTCIsoDate, getTodayUTCIso, getSafeDate, triggerHaptic } from '../utils';
@@ -134,12 +134,13 @@ export function setupManageModal() {
     
     ui.habitList.innerHTML = items.map(({ h, st, name, subtitle }) => {
         const lastSchedule = h.scheduleHistory[h.scheduleHistory.length - 1];
+        const safeIcon = sanitizeHabitIcon(lastSchedule.icon, '❓');
         const safeName = escapeHTML(name);
         const safeSubtitle = subtitle ? escapeHTML(subtitle) : '';
         const ariaGraduate = escapeHTML(t('aria_graduate', { name }));
         const ariaEnd = escapeHTML(t('aria_end', { name }));
         const ariaDelete = escapeHTML(t('aria_delete_permanent', { name }));
-        return `<li class="habit-list-item ${st}" data-habit-id="${h.id}"><span class="habit-main-info"><span class="habit-icon-slot" style="color:${escapeHTML(lastSchedule.color)}">${lastSchedule.icon && lastSchedule.icon.trim().startsWith('<svg') ? lastSchedule.icon : escapeHTML(lastSchedule.icon || '')}</span><div style="display:flex;flex-direction:column;flex-grow:1;"><span class="habit-name">${safeName}</span>${subtitle ? `<span class="habit-subtitle" style="font-size:11px;color:var(--text-tertiary)">${safeSubtitle}</span>` : ''}</div>${st !== 'active' ? `<span class="habit-name-status">${t(st === 'graduated' ? 'modalStatusGraduated' : 'modalStatusEnded')}</span>` : ''}</span><div class="habit-list-actions">${st === 'active' ? `${calculateHabitStreak(h, today) >= STREAK_CONSOLIDATED ? `<button class="graduate-habit-btn" aria-label="${ariaGraduate}">${UI_ICONS.graduateAction}</button>` : `<button class="end-habit-btn" aria-label="${ariaEnd}">${UI_ICONS.endAction}</button>`}` : `<button class="permanent-delete-habit-btn" aria-label="${ariaDelete}">${UI_ICONS.deletePermanentAction}</button>`}</div></li>`;
+        return `<li class="habit-list-item ${st}" data-habit-id="${h.id}"><span class="habit-main-info"><span class="habit-icon-slot" style="color:${escapeHTML(lastSchedule.color)}">${safeIcon}</span><div style="display:flex;flex-direction:column;flex-grow:1;"><span class="habit-name">${safeName}</span>${subtitle ? `<span class="habit-subtitle" style="font-size:11px;color:var(--text-tertiary)">${safeSubtitle}</span>` : ''}</div>${st !== 'active' ? `<span class="habit-name-status">${t(st === 'graduated' ? 'modalStatusGraduated' : 'modalStatusEnded')}</span>` : ''}</span><div class="habit-list-actions">${st === 'active' ? `${calculateHabitStreak(h, today) >= STREAK_CONSOLIDATED ? `<button class="graduate-habit-btn" aria-label="${ariaGraduate}">${UI_ICONS.graduateAction}</button>` : `<button class="end-habit-btn" aria-label="${ariaEnd}">${UI_ICONS.endAction}</button>`}` : `<button class="permanent-delete-habit-btn" aria-label="${ariaDelete}">${UI_ICONS.deletePermanentAction}</button>`}</div></li>`;
     }).join('');
     state.uiDirtyState.habitListStructure = false;
     ui.manageModal.dataset.manageListLastModified = String(state.lastModified);
@@ -250,6 +251,7 @@ export function openEditModal(habit: any, targetDateOverride?: string, onClose?:
         ni.maxLength = MAX_HABIT_NAME_LENGTH;
         ni.value = isN ? (fd.nameKey ? t(fd.nameKey) : '') : getHabitDisplayInfo(habit, safe).name;
     }
+    fd.icon = sanitizeHabitIcon(fd.icon, '❓');
     const btn = ui.habitIconPickerBtn; btn.innerHTML = fd.icon; btn.style.backgroundColor = fd.color; btn.style.color = getContrastColor(fd.color);
     
     const subtitle = isN 
