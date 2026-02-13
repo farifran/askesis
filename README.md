@@ -1,23 +1,15 @@
-<div align="left" style="margin: 0 0 10px 0;">
-  <table border="0" cellspacing="0" cellpadding="0" style="border-collapse: collapse; margin: 0;">
-    <tr>
-      <td style="padding: 0 10px 0 0; line-height: 0;">
-        <a href="#pt-br" style="display: inline-block; line-height: 0; text-decoration: none; border: 0;">
-          <img src="assets/flags/pt-br.svg" width="30" height="18" alt="PT-BR" style="display: block; border: 0; text-decoration: none;">
-        </a>
-      </td>
-      <td style="padding: 0 10px 0 0; line-height: 0;">
-        <a href="#en" style="display: inline-block; line-height: 0; text-decoration: none; border: 0;">
-          <img src="assets/flags/en.svg" width="30" height="18" alt="EN" style="display: block; border: 0; text-decoration: none;">
-        </a>
-      </td>
-      <td style="padding: 0; line-height: 0;">
-        <a href="#es" style="display: inline-block; line-height: 0; text-decoration: none; border: 0;">
-          <img src="assets/flags/es.svg" width="30" height="18" alt="ES" style="display: block; border: 0; text-decoration: none;">
-        </a>
-      </td>
-    </tr>
-  </table>
+<div align="left" style="margin: 0 0 4px 0; line-height: 0;">
+  <div style="display: inline-flex; align-items: center; gap: 10px;">
+    <a href="#pt-br" style="display: inline-block; line-height: 0; text-decoration: none; border: 0;">
+      <img src="assets/flags/pt-br.svg" width="30" height="18" alt="PT-BR" style="display: block; border: 0; text-decoration: none;">
+    </a>
+    <a href="#en" style="display: inline-block; line-height: 0; text-decoration: none; border: 0;">
+      <img src="assets/flags/en.svg" width="30" height="18" alt="EN" style="display: block; border: 0; text-decoration: none;">
+    </a>
+    <a href="#es" style="display: inline-block; line-height: 0; text-decoration: none; border: 0;">
+      <img src="assets/flags/es.svg" width="30" height="18" alt="ES" style="display: block; border: 0; text-decoration: none;">
+    </a>
+  </div>
 </div>
 
 <div align="center" style="margin-top: 0; font-size: 0; line-height: 0;">
@@ -25,27 +17,6 @@
   <img src="assets/header-badges.svg" alt="Badges do Askesis" width="100%" style="display: block; margin-top: 2px;">
 </div>
 
-<div align="center">
-  <table border="0" cellspacing="10" cellpadding="0" style="border-collapse: separate; border-spacing: 10px;">
-    <tr>
-      <td align="center" style="padding: 10px 14px; border-radius: 10px; background: #1b1b1b; border: 1px solid #2a2a2a; color: #e5e5e5;">
-        🧪 <strong>350 testes</strong><br><span style="color: #9aa0a6;">350 tests</span>
-      </td>
-      <td align="center" style="padding: 10px 14px; border-radius: 10px; background: #1b1b1b; border: 1px solid #2a2a2a; color: #e5e5e5;">
-        📈 <strong>90% cobertura</strong><br><span style="color: #9aa0a6;">90% coverage</span>
-      </td>
-      <td align="center" style="padding: 10px 14px; border-radius: 10px; background: #1b1b1b; border: 1px solid #2a2a2a; color: #e5e5e5;">
-        🧾 <strong>ISC</strong><br><span style="color: #9aa0a6;">License</span>
-      </td>
-      <td align="center" style="padding: 10px 14px; border-radius: 10px; background: #1b1b1b; border: 1px solid #2a2a2a; color: #e5e5e5;">
-        🛰️ <strong>Offline-first</strong><br><span style="color: #9aa0a6;">100% offline</span>
-      </td>
-      <td align="center" style="padding: 10px 14px; border-radius: 10px; background: #1b1b1b; border: 1px solid #2a2a2a; color: #e5e5e5;">
-        🔐 <strong>Dados locais</strong><br><span style="color: #9aa0a6;">Local + encrypted</span>
-      </td>
-    </tr>
-  </table>
-</div>
 
 <p align="center">
   <img src="assets/app-preview.jpg" alt="Interface do Askesis" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
