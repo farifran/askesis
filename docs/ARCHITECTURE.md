@@ -23,7 +23,7 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-  subgraph Client[Cliente (Browser/PWA)]
+  subgraph Client
     UI[UI + Render]
     SW[Service Worker]
     IDB[(IndexedDB)]
@@ -31,7 +31,7 @@ flowchart LR
     CRYPTO[Crypto AES-GCM]
   end
 
-  subgraph Cloud[Nuvem]
+  subgraph Cloud
     API[Vercel API]
     AI[Gemini]
     PUSH[OneSignal]
@@ -50,37 +50,53 @@ flowchart LR
 ## 3) Componentes Internos (C4 - Nível 3)
 
 ```mermaid
-flowchart TB
-  subgraph App[Askesis App]
+flowchart LR
+  subgraph UI
     IDX[index.tsx]
-    RENDER[render/*]
     LISTEN[listeners/*]
-    STATE[state.ts]
-    SERVICES[services/*]
+    RENDER[render/*]
   end
 
-  IDX --> RENDER
-  IDX --> LISTEN
-  LISTEN --> STATE
-  RENDER --> STATE
-  SERVICES --> STATE
-
-  subgraph Services[Principais serviços]
-    PERSIST[persistence.ts]
-    MERGE[dataMerge.ts]
-    CLOUD[cloud.ts]
-    CRYP[crypto.ts]
-    ANALYSIS[analysis.ts]
+  subgraph DOMAIN
     ACTIONS[habitActions.ts]
+    SELECTORS[selectors.ts]
+    ANALYSIS[analysis.ts]
+    STATE[state.ts]
   end
 
-  SERVICES --> PERSIST
-  SERVICES --> MERGE
-  SERVICES --> CLOUD
-  SERVICES --> CRYP
-  SERVICES --> ANALYSIS
-  SERVICES --> ACTIONS
+  subgraph INFRA
+    PERSIST[persistence.ts]
+    CLOUD[cloud.ts]
+    MERGE[dataMerge.ts]
+    WORKER[sync.worker.ts]
+    API[api.ts + /api/*]
+    SW[sw.js]
+  end
+
+  IDX --> LISTEN
+  IDX --> RENDER
+
+  LISTEN --> ACTIONS
+  RENDER --> SELECTORS
+
+  ACTIONS --> STATE
+  SELECTORS --> STATE
+  ANALYSIS --> STATE
+
+  ACTIONS --> PERSIST
+  PERSIST --> STATE
+
+  LISTEN --> CLOUD
+  CLOUD --> WORKER
+  CLOUD --> API
+  CLOUD --> MERGE
+  MERGE --> STATE
+  ANALYSIS --> WORKER
+
+  IDX --> SW
 ```
+
+Leitura rápida: interação entra por `listeners/*`, regra de negócio vive em `habitActions.ts`/`selectors.ts`, estado central em `state.ts`, e persistência/sync ficam em `persistence.ts` + `cloud.ts` + `sync.worker.ts`.
 
 ## 4) Fluxo de Dados (Local-first + Sync)
 
@@ -88,19 +104,32 @@ flowchart TB
 sequenceDiagram
   participant User as Usuário
   participant UI as UI
-  participant Crypto as Crypto AES-GCM
+  participant Actions as habitActions
+  participant Persist as persistence
   participant DB as IndexedDB
-  participant Sync as Sync Worker
-  participant API as Vercel API
+  participant Cloud as cloud.ts
+  participant Crypto as sync.worker (crypto)
+  participant API as Vercel API /api/sync
+  participant Merge as dataMerge
 
   User->>UI: Marca hábito / adiciona nota
-  UI->>Crypto: Serializa e criptografa
-  Crypto->>DB: Persiste estado local
-  UI->>Sync: Agenda sincronização
-  Sync->>API: Envia diff/estado
-  API-->>Sync: Estado remoto
-  Sync->>UI: Merge resiliente (LWW + dedup)
-  UI->>DB: Persistência final consolidada
+  UI->>Actions: Atualiza hábito/nota
+  Actions->>Persist: saveState() (debounced)
+  Persist->>DB: Persistência local (split core + logs)
+  Persist-->>Cloud: syncHandler(snapshot)
+  Cloud->>Crypto: encrypt(shards alterados, syncKey)
+  Crypto-->>Cloud: shards criptografados
+  Cloud->>API: POST /api/sync
+  alt 200 OK
+    API-->>Cloud: ACK
+  else 409 CONFLICT
+    API-->>Cloud: shards remotos
+    Cloud->>Crypto: decrypt(shards remotos, syncKey)
+    Crypto-->>Cloud: estado remoto
+    Cloud->>Merge: mergeStates(local, remoto)
+    Merge-->>Cloud: estado consolidado
+    Cloud->>Persist: persistStateLocally(merged)
+  end
 ```
 
 ## 5) Fluxo de Conflito de Sync
@@ -122,27 +151,7 @@ sequenceDiagram
   Note over D1,D2: 3) LWW por schedule/history
 ```
 
-## 6) Máquina de Estados do Hábito
-
-```mermaid
-stateDiagram-v2
-  [*] --> Pendente
-  Pendente --> Concluido: Marcar feito
-  Pendente --> Adiado: Marcar adiado
-  Adiado --> Concluido: Completar depois
-  Concluido --> Pendente: Ajuste de status
-
-  Pendente --> Graduado: Graduação
-  Concluido --> Graduado: Graduação
-  Adiado --> Graduado: Graduação
-
-  Pendente --> Deletado: Remoção
-  Concluido --> Deletado: Remoção
-  Adiado --> Deletado: Remoção
-  Graduado --> Deletado: Remoção
-```
-
-## 7) Mapa rápido de módulos (pasta → responsabilidade)
+## 6) Mapa rápido de módulos (pasta → responsabilidade)
 
 - `render/`: composição visual e atualização de DOM.
 - `listeners/`: eventos de interação (toque, drag, swipe, modais).

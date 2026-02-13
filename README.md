@@ -110,7 +110,7 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-  subgraph Client[Cliente (Browser/PWA)]
+  subgraph Client
     UI[UI + Render]
     SW[Service Worker]
     IDB[(IndexedDB)]
@@ -119,7 +119,7 @@ flowchart LR
     CLOUD[cloud.ts]
   end
 
-  subgraph Cloud[Nuvem]
+  subgraph Cloud
     API[Vercel API /api/sync /api/analyze]
     AI[Gemini]
     PUSH[OneSignal]
@@ -139,54 +139,53 @@ flowchart LR
 ### Componentes Internos (C4 - Nível 3)
 
 ```mermaid
-flowchart TB
-  subgraph App[Askesis App]
+flowchart LR
+  subgraph UI
     IDX[index.tsx]
-    RENDER[render/*]
     LISTEN[listeners/*]
+    RENDER[render/*]
+  end
+
+  subgraph DOMAIN
+    ACTIONS[habitActions.ts]
+    SELECTORS[selectors.ts]
+    ANALYSIS[analysis.ts]
     STATE[state.ts]
+  end
+
+  subgraph INFRA
+    PERSIST[persistence.ts]
+    CLOUD[cloud.ts]
+    MERGE[dataMerge.ts]
+    WORKER[sync.worker.ts]
+    API[api.ts + /api/*]
     SW[sw.js]
   end
 
-  IDX --> RENDER
   IDX --> LISTEN
-  IDX --> SW
-  LISTEN --> STATE
-  RENDER --> STATE
-
-  subgraph Services[Principais serviços]
-    PERSIST[persistence.ts]
-    MIGRATION[migration.ts]
-    CLOUD[cloud.ts]
-    API_CLIENT[api.ts]
-    MERGE[dataMerge.ts]
-    CRYP[crypto.ts]
-    SELECTORS[selectors.ts]
-    HABIT_SERVICE[HabitService.ts]
-    ANALYSIS[analysis.ts]
-    QUOTE_ENGINE[quoteEngine.ts]
-    ACTIONS[habitActions.ts]
-    WORKER[sync.worker.ts]
-  end
+  IDX --> RENDER
 
   LISTEN --> ACTIONS
-  LISTEN --> ANALYSIS
-  LISTEN --> CLOUD
-  ACTIONS --> PERSIST
-  ACTIONS --> SELECTORS
-  ACTIONS --> HABIT_SERVICE
-  ACTIONS --> STATE
   RENDER --> SELECTORS
-  ANALYSIS --> WORKER
-  CLOUD --> WORKER
-  CLOUD --> API_CLIENT
-  CLOUD --> MERGE
-  CLOUD --> PERSIST
-  PERSIST --> MIGRATION
+
+  ACTIONS --> STATE
+  SELECTORS --> STATE
+  ANALYSIS --> STATE
+
+  ACTIONS --> PERSIST
   PERSIST --> STATE
-  CRYP --> STATE
-  QUOTE_ENGINE --> STATE
+
+  LISTEN --> CLOUD
+  CLOUD --> WORKER
+  CLOUD --> API
+  CLOUD --> MERGE
+  MERGE --> STATE
+  ANALYSIS --> WORKER
+
+  IDX --> SW
 ```
+
+Leitura rápida: interação entra por `listeners/*`, regra de negócio vive em `habitActions.ts`/`selectors.ts`, estado central em `state.ts`, e persistência/sync ficam em `persistence.ts` + `cloud.ts` + `sync.worker.ts`.
 
 ### Fluxo de Dados (Local-first + Sync)
 
@@ -199,7 +198,7 @@ sequenceDiagram
   participant Persist as persistence
   participant DB as IndexedDB
   participant Cloud as cloud.ts
-  participant Worker as sync.worker
+  participant Crypto as sync.worker (crypto)
   participant API as API /api/sync
   participant Merge as dataMerge
 
@@ -208,12 +207,13 @@ sequenceDiagram
   Actions->>State: Mutação de estado + dirty flags
   Actions->>Persist: saveState() (debounced)
   Persist->>DB: saveSplitState(core + logs)
+  Note over Persist,DB: Persistência local (IDB) sem criptografia de sync key
   Persist-->>Cloud: syncHandler(snapshot)
   Cloud->>Cloud: splitIntoShards + hash diff
 
   loop Para cada shard alterado
-    Cloud->>Worker: encrypt(shard, syncKey)
-    Worker-->>Cloud: shard criptografado
+    Cloud->>Crypto: encrypt(shard, syncKey)
+    Crypto-->>Cloud: shard criptografado
   end
 
   Cloud->>API: POST /api/sync (lastModified + shards)
@@ -222,8 +222,8 @@ sequenceDiagram
     Cloud->>State: syncSynced + atualiza hash cache
   else Conflito de versão (409)
     API-->>Cloud: shards remotos
-    Cloud->>Worker: decrypt(shards remotos)
-    Worker-->>Cloud: estado remoto
+    Cloud->>Crypto: decrypt(shards remotos)
+    Crypto-->>Cloud: estado remoto
     Cloud->>Merge: mergeStates(local, remoto)
     Merge-->>Cloud: estado consolidado (LWW + dedup)
     Cloud->>Persist: persistStateLocally(merged)
@@ -259,28 +259,6 @@ sequenceDiagram
   API-->>D2: 200 OK
 
   Note over M: Regras efetivas de merge\n1) Match por ID\n2) Dedup por nome normalizado\n3) LWW por schedule/history\n4) Normalização de mode/times/frequency
-```
-
-### Máquina de Estados do Hábito
-
-```mermaid
-stateDiagram-v2
-  [*] --> Ativo
-
-  state Ativo {
-    [*] --> Pendente
-    Pendente --> Concluido: Marcar feito
-    Pendente --> Adiado: Marcar adiado
-    Adiado --> Concluido: Completar depois
-    Concluido --> Pendente: Ajuste de status
-  }
-
-  Ativo --> Encerrado: Encerrar (endDate)
-  Ativo --> Graduado: Graduação
-  Ativo --> Deletado: Remoção permanente (tombstone)
-  Encerrado --> Ativo: Reativar/alterar schedule
-  Deletado --> Ativo: Ressurreição por nome
-  Graduado --> Deletado: Remoção
 ```
 
 ### Mapa rápido de módulos (pasta → responsabilidade)
