@@ -1,22 +1,8 @@
-<div align="left" style="margin: 0 0 4px 0; line-height: 0;">
-  <div style="display: inline-flex; align-items: center; gap: 10px;">
-    <div style="display: inline-block; line-height: 0;">
-      <a href="#pt-br" style="display: inline-block; line-height: 0; text-decoration: none; border: 0;">
-        <img src="assets/flags/pt-br.svg" width="30" height="18" alt="PT-BR" style="display: block; border: 0; text-decoration: none;">
-      </a>
-    </div>
-    <div style="display: inline-block; line-height: 0;">
-      <a href="#en" style="display: inline-block; line-height: 0; text-decoration: none; border: 0;">
-        <img src="assets/flags/en.svg" width="30" height="18" alt="EN" style="display: block; border: 0; text-decoration: none;">
-      </a>
-    </div>
-    <div style="display: inline-block; line-height: 0;">
-      <a href="#es" style="display: inline-block; line-height: 0; text-decoration: none; border: 0;">
-        <img src="assets/flags/es.svg" width="30" height="18" alt="ES" style="display: block; border: 0; text-decoration: none;">
-      </a>
-    </div>
-  </div>
-</div>
+<p align="left" style="margin: 0 0 4px 0; line-height: 0;">
+  <a href="#pt-br" style="text-decoration: none; border: 0;"><img src="assets/flags/pt-br.svg" width="30" height="18" alt="PT-BR" style="border: 0; vertical-align: middle;"></a>&nbsp;
+  <a href="#en" style="text-decoration: none; border: 0;"><img src="assets/flags/en.svg" width="30" height="18" alt="EN" style="border: 0; vertical-align: middle;"></a>&nbsp;
+  <a href="#es" style="text-decoration: none; border: 0;"><img src="assets/flags/es.svg" width="30" height="18" alt="ES" style="border: 0; vertical-align: middle;"></a>
+</p>
 
 <div align="center" style="margin-top: 0; font-size: 0; line-height: 0;">
   <img src="assets/header-unified.svg" alt="Askesis, plataformas e serviços" width="100%" style="display: block; width: 100%; height: auto; object-fit: contain;">
