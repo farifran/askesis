@@ -1,14 +1,20 @@
 <div align="left" style="margin: 0 0 4px 0; line-height: 0;">
   <div style="display: inline-flex; align-items: center; gap: 10px;">
-    <a href="#pt-br" style="display: inline-block; line-height: 0; text-decoration: none; border: 0;">
-      <img src="assets/flags/pt-br.svg" width="30" height="18" alt="PT-BR" style="display: block; border: 0; text-decoration: none;">
-    </a>
-    <a href="#en" style="display: inline-block; line-height: 0; text-decoration: none; border: 0;">
-      <img src="assets/flags/en.svg" width="30" height="18" alt="EN" style="display: block; border: 0; text-decoration: none;">
-    </a>
-    <a href="#es" style="display: inline-block; line-height: 0; text-decoration: none; border: 0;">
-      <img src="assets/flags/es.svg" width="30" height="18" alt="ES" style="display: block; border: 0; text-decoration: none;">
-    </a>
+    <div style="display: inline-block; line-height: 0;">
+      <a href="#pt-br" style="display: inline-block; line-height: 0; text-decoration: none; border: 0;">
+        <img src="assets/flags/pt-br.svg" width="30" height="18" alt="PT-BR" style="display: block; border: 0; text-decoration: none;">
+      </a>
+    </div>
+    <div style="display: inline-block; line-height: 0;">
+      <a href="#en" style="display: inline-block; line-height: 0; text-decoration: none; border: 0;">
+        <img src="assets/flags/en.svg" width="30" height="18" alt="EN" style="display: block; border: 0; text-decoration: none;">
+      </a>
+    </div>
+    <div style="display: inline-block; line-height: 0;">
+      <a href="#es" style="display: inline-block; line-height: 0; text-decoration: none; border: 0;">
+        <img src="assets/flags/es.svg" width="30" height="18" alt="ES" style="display: block; border: 0; text-decoration: none;">
+      </a>
+    </div>
   </div>
 </div>
 
