@@ -94,8 +94,10 @@ function sleep(ms: number) {
 const SYNC_RATE_LIMIT_WINDOW_MS = 60_000;
 const SYNC_RATE_LIMIT_MAX_REQUESTS = 120;
 const syncRateLimitStore = new Map<string, { count: number; resetAt: number }>();
+const SYNC_RATE_LIMIT_DISABLED = process.env.NODE_ENV === 'test' || process.env.DISABLE_RATE_LIMIT === '1';
 
 function checkRateLimitSync(key: string): { limited: boolean; retryAfterSec: number } {
+    if (SYNC_RATE_LIMIT_DISABLED) return { limited: false, retryAfterSec: 0 };
     const now = Date.now();
     if (syncRateLimitStore.size > 2000) {
         for (const [k, v] of syncRateLimitStore.entries()) {

@@ -147,7 +147,10 @@ function sanitizeDailyData(appState: AppState): void {
  * Obtém uma identidade normalizada para o hábito (Nome ou Chave de Tradução).
  */
 function getHabitIdentity(h: Habit): string | null {
-    if (!h.scheduleHistory || h.scheduleHistory.length === 0) return null;
+    if (!h.scheduleHistory || h.scheduleHistory.length === 0) {
+        const deletedRaw = (h.deletedName || '').trim().toLowerCase();
+        return deletedRaw.length > 0 ? deletedRaw : null;
+    }
     // Pega o agendamento mais recente
     const lastSchedule = h.scheduleHistory.reduce((prev, curr) => 
         (curr.startDate > prev.startDate ? curr : prev), h.scheduleHistory[0]);
@@ -222,10 +225,22 @@ export async function mergeStates(local: AppState, incoming: AppState): Promise<
         } else {
             // Merge de hábito existente (mesmo ID ou deduplicado)
             winnerHabit.scheduleHistory = mergeHabitHistories(winnerHabit.scheduleHistory, loserHabit.scheduleHistory);
+
+            const isDeduplicatedByIdentity = winnerHabit.id !== loserHabit.id;
+
+            // Regra de negócio: em deduplicação por identidade, estado ativo vence tombstone.
+            if (isDeduplicatedByIdentity && winnerHabit.deletedOn && !loserHabit.deletedOn) {
+                winnerHabit.deletedOn = undefined;
+                winnerHabit.deletedName = undefined;
+            }
             
             if (loserHabit.deletedOn) {
-                if (!winnerHabit.deletedOn || loserHabit.deletedOn > winnerHabit.deletedOn) {
-                    winnerHabit.deletedOn = loserHabit.deletedOn;
+                // Em merge de IDs diferentes (deduplicação), não propagar tombstone de um duplicado
+                // para um hábito ativo já selecionado como vencedor.
+                if (!isDeduplicatedByIdentity || winnerHabit.deletedOn) {
+                    if (!winnerHabit.deletedOn || loserHabit.deletedOn > winnerHabit.deletedOn) {
+                        winnerHabit.deletedOn = loserHabit.deletedOn;
+                    }
                 }
             }
 

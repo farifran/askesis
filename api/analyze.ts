@@ -74,8 +74,10 @@ function setCachedResponse(key: string, value: string) {
 const ANALYZE_RATE_LIMIT_WINDOW_MS = 60_000;
 const ANALYZE_RATE_LIMIT_MAX_REQUESTS = 20;
 const analyzeRateLimitStore = new Map<string, { count: number; resetAt: number }>();
+const ANALYZE_RATE_LIMIT_DISABLED = process.env.NODE_ENV === 'test' || process.env.DISABLE_RATE_LIMIT === '1';
 
 function checkRateLimitAnalyze(key: string): { limited: boolean; retryAfterSec: number } {
+    if (ANALYZE_RATE_LIMIT_DISABLED) return { limited: false, retryAfterSec: 0 };
     const now = Date.now();
     if (analyzeRateLimitStore.size > 4000) {
         for (const [k, v] of analyzeRateLimitStore.entries()) {
