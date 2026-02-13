@@ -78,6 +78,13 @@
     cursor: pointer;
 }
 
+.frequency-info {
+    margin: 0;
+    color: var(--text-tertiary);
+    font-size: 12px;
+    line-height: 1.4;
+}
+
 .habit-identity-section {
     display: flex;
     align-items: center;

@@ -14,7 +14,7 @@ import {
     ensureHabitInstanceData, clearScheduleCache,
     clearActiveHabitsCache, clearAllCaches, invalidateCachesForDateChange, getPersistableState,
     HabitDayData, STREAK_SEMI_CONSOLIDATED, STREAK_CONSOLIDATED, MAX_HABIT_NAME_LENGTH,
-    getHabitDailyInfoForDate, AppState, HABIT_STATE, AI_DAILY_LIMIT,
+    getHabitDailyInfoForDate, AppState, HABIT_STATE, AI_DAILY_LIMIT, HabitMode,
     pruneHabitAppearanceCache, pruneStreaksCache, HabitDailyInfo
 } from '../state';
 import { saveState, loadState, clearLocalPersistence } from './persistence';
@@ -61,6 +61,7 @@ type ActionContextState = {
 };
 
 type CleanFormData = Omit<HabitTemplate, 'times' | 'goal' | 'frequency'> & {
+    mode: HabitMode;
     times: readonly TimeOfDay[];
     goal: HabitTemplate['goal'];
     frequency: HabitTemplate['frequency'];
@@ -125,19 +126,37 @@ export function deduplicateTimeOfDay(times: readonly TimeOfDay[]): readonly Time
     return result;
 }
 
+export function normalizeHabitMode(mode: HabitTemplate['mode'] | HabitSchedule['mode'] | undefined): HabitMode {
+    return mode === 'attitudinal' ? 'attitudinal' : 'scheduled';
+}
+
+export function normalizeTimesByMode(mode: HabitMode, times: readonly TimeOfDay[]): readonly TimeOfDay[] {
+    const deduped = deduplicateTimeOfDay(times || []);
+    if (mode !== 'attitudinal') return deduped;
+    return deduped.length > 0 ? [deduped[0]] : [];
+}
+
+export function normalizeFrequencyByMode(mode: HabitMode, frequency: HabitTemplate['frequency']): HabitTemplate['frequency'] {
+    if (mode === 'attitudinal') return { type: 'daily' };
+    if (frequency.type === 'specific_days_of_week') {
+        return { ...frequency, days: [...frequency.days] };
+    }
+    return { ...frequency };
+}
+
 function _normalizeFormDataForSave(formData: HabitTemplate): { clean: CleanFormData; nameToUse: string } | null {
     const normalizedName = formData.name ? sanitizeText(formData.name, MAX_HABIT_NAME_LENGTH) : formData.name;
     const nameToUse = formData.nameKey ? t(formData.nameKey) : (normalizedName || '');
     if (!nameToUse) return null;
+    const mode = normalizeHabitMode(formData.mode);
 
     const clean: CleanFormData = {
         ...formData,
+        mode,
         name: normalizedName,
-        times: deduplicateTimeOfDay(formData.times),
+        times: normalizeTimesByMode(mode, formData.times),
         goal: { ...formData.goal },
-        frequency: formData.frequency.type === 'specific_days_of_week'
-            ? { ...formData.frequency, days: [...formData.frequency.days] }
-            : { ...formData.frequency }
+        frequency: normalizeFrequencyByMode(mode, formData.frequency)
     };
 
     return { clean, nameToUse };
@@ -200,6 +219,7 @@ function _pickExistingHabitCandidate(candidates: Habit[], targetDate: string): H
 function _buildScheduleFromForm(targetDate: string, cleanFormData: CleanFormData): HabitSchedule {
     return {
         startDate: targetDate,
+        mode: cleanFormData.mode,
         times: cleanFormData.times,
         frequency: cleanFormData.frequency,
         name: cleanFormData.name,
@@ -356,10 +376,17 @@ const _applyDropJustToday = () => {
     if (!ctx) return ActionContext.reset();
     const habit = state.habits.find(h => h.id === ctx.habitId);
     if (habit) {
-        const info = ensureHabitDailyInfo(target, ctx.habitId), sch = [...getEffectiveScheduleForHabitOnDate(habit, target)];
+        const info = ensureHabitDailyInfo(target, ctx.habitId);
+        const scheduleProps = getHabitPropertiesForDate(habit, target);
+        const mode = normalizeHabitMode(scheduleProps?.mode);
+        const sch = [...getEffectiveScheduleForHabitOnDate(habit, target)];
         const fIdx = sch.indexOf(ctx.fromTime);
         if (fIdx > -1) sch.splice(fIdx, 1);
-        if (!sch.includes(ctx.toTime)) sch.push(ctx.toTime);
+        if (mode === 'attitudinal') {
+            sch.splice(0, sch.length, ctx.toTime);
+        } else if (!sch.includes(ctx.toTime)) {
+            sch.push(ctx.toTime);
+        }
         const currentBit = HabitService.getStatus(ctx.habitId, target, ctx.fromTime);
         if (currentBit !== HABIT_STATE.NULL) { HabitService.setStatus(ctx.habitId, target, ctx.toTime, currentBit); HabitService.setStatus(ctx.habitId, target, ctx.fromTime, HABIT_STATE.NULL); }
         if (info.instances[ctx.fromTime as TimeOfDay]) { info.instances[ctx.toTime as TimeOfDay] = info.instances[ctx.fromTime as TimeOfDay]; delete info.instances[ctx.fromTime as TimeOfDay]; }
@@ -380,9 +407,16 @@ const _applyDropFromNowOn = () => {
     if (info.instances[ctx.fromTime as TimeOfDay]) { info.instances[ctx.toTime as TimeOfDay] = info.instances[ctx.fromTime as TimeOfDay]; delete info.instances[ctx.fromTime as TimeOfDay]; }
     if (ctx.reorderInfo) reorderHabit(ctx.habitId, ctx.reorderInfo.id, ctx.reorderInfo.pos, true);
     _requestFutureScheduleChange(ctx.habitId, target, (s) => {
-        const times = [...s.times], fIdx = times.indexOf(ctx.fromTime);
-        if (fIdx > -1) times.splice(fIdx, 1);
-        if (!times.includes(ctx.toTime)) times.push(ctx.toTime);
+        const mode = normalizeHabitMode(s.mode);
+        const times = mode === 'attitudinal'
+            ? [ctx.toTime]
+            : (() => {
+                const nextTimes = [...s.times];
+                const fIdx = nextTimes.indexOf(ctx.fromTime);
+                if (fIdx > -1) nextTimes.splice(fIdx, 1);
+                if (!nextTimes.includes(ctx.toTime)) nextTimes.push(ctx.toTime);
+                return nextTimes;
+            })();
         return { ...s, times: times as readonly TimeOfDay[] };
     });
     ActionContext.reset();

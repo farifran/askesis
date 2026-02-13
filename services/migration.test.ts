@@ -260,6 +260,49 @@ describe('🔄 Migração de Schema (migration.ts)', () => {
             expect((result.syncLogs[0] as any).extraField).toBeUndefined();
         });
 
+        it('deve normalizar mode em scheduleHistory e limitar times em attitudinal', () => {
+            const loaded = {
+                version: APP_VERSION,
+                habits: [
+                    {
+                        id: 'h-1',
+                        createdOn: '2025-01-01',
+                        scheduleHistory: [
+                            {
+                                startDate: '2025-01-01',
+                                icon: '🧠',
+                                color: '#fff',
+                                goal: { type: 'check' },
+                                frequency: { type: 'daily' },
+                                scheduleAnchor: '2025-01-01',
+                                times: ['Morning', 'Evening']
+                            },
+                            {
+                                startDate: '2025-01-02',
+                                icon: '🧠',
+                                color: '#fff',
+                                goal: { type: 'check' },
+                                frequency: { type: 'daily' },
+                                scheduleAnchor: '2025-01-02',
+                                mode: 'attitudinal',
+                                times: ['Evening', 'Morning']
+                            }
+                        ]
+                    }
+                ],
+                monthlyLogs: new Map()
+            };
+
+            const result = migrateState(loaded, APP_VERSION);
+            const [first, second] = result.habits[0].scheduleHistory;
+
+            expect(first.mode).toBe('scheduled');
+            expect(first.times).toEqual(['Morning', 'Evening']);
+            expect(second.mode).toBe('attitudinal');
+            expect(second.times).toEqual(['Evening']);
+            expect(second.frequency).toEqual({ type: 'daily' });
+        });
+
         it('deve forçar versão target no resultado', () => {
             const loaded = {
                 version: 5,

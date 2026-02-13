@@ -19,6 +19,7 @@ export type StoicLevel = 1 | 2 | 3;
 export type StoicDiscipline = 'Desire' | 'Action' | 'Assent';
 export type GovernanceSphere = 'Biological' | 'Structural' | 'Social' | 'Mental';
 export type HabitNature = 'Addition' | 'Subtraction';
+export type HabitMode = 'scheduled' | 'attitudinal';
 
 export interface HabitPhilosophy {
   readonly sphere: GovernanceSphere;
@@ -65,6 +66,7 @@ export interface HabitSchedule {
     readonly subtitle?: string;
     readonly nameKey?: string;
     readonly subtitleKey?: string;
+    readonly mode?: HabitMode;
     readonly times: readonly TimeOfDay[];
     readonly frequency: Frequency;
     readonly scheduleAnchor: string;
@@ -121,6 +123,7 @@ export interface AppState {
 export interface HabitTemplate {
     icon: string;
     color: string;
+    mode?: HabitMode;
     times: TimeOfDay[];
     goal: HabitGoal;
     frequency: Frequency;
@@ -137,7 +140,7 @@ export interface PredefinedHabit extends HabitTemplate {
 }
 
 // --- CONSTANTS ---
-export const APP_VERSION = 10; // Bump version for new state fields
+export const APP_VERSION = 11; // Bump version for Habit mode normalization
 export const STREAK_SEMI_CONSOLIDATED = 21;
 export const STREAK_CONSOLIDATED = 66;
 export const MAX_HABIT_NAME_LENGTH = 50;

@@ -119,7 +119,8 @@ function buildAiPrompt(data: any) {
         if (!lastSchedule) return;
         const translatedName = lastSchedule.nameKey ? translations?.[lastSchedule.nameKey] : undefined;
         const name = lastSchedule.name || translatedName || 'Hábito';
-        details += `- ${name}\n`;
+        const mode = lastSchedule.mode === 'attitudinal' ? 'attitudinal' : 'scheduled';
+        details += `- ${name} [mode=${mode}]\n`;
     });
 
     let recordedDays = 0;

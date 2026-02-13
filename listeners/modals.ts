@@ -499,6 +499,17 @@ const _handleTimeContainerClick = (e: MouseEvent) => {
     triggerHaptic('light');
     const time = button.dataset.time as TimeOfDay; 
     const currentlySelected = state.editingHabit.formData.times.includes(time);
+    const isAttitudinal = state.editingHabit.formData.mode === 'attitudinal';
+
+    if (isAttitudinal) {
+        if (currentlySelected) return;
+        state.editingHabit.formData.times = [time];
+        const options = ui.habitTimeContainer.querySelectorAll<HTMLButtonElement>('.segmented-control-option');
+        options.forEach(option => {
+            option.classList.toggle('selected', option.dataset.time === time);
+        });
+        return;
+    }
 
     if (currentlySelected) {
         state.editingHabit.formData.times = state.editingHabit.formData.times.filter(t => t !== time);
@@ -512,6 +523,10 @@ const _handleTimeContainerClick = (e: MouseEvent) => {
 const _handleFrequencyChange = (e: Event) => {
     const target = e.target as HTMLElement;
     if (!state.editingHabit) return;
+    if (state.editingHabit.formData.mode === 'attitudinal') {
+        state.editingHabit.formData.frequency = { type: 'daily' };
+        return;
+    }
 
     if (target.matches('input[name="frequency-type"]')) {
         const radio = target as HTMLInputElement;
@@ -545,7 +560,7 @@ const _handleFrequencyChange = (e: Event) => {
 const _handleFrequencyClick = (e: MouseEvent) => {
     const target = e.target as HTMLElement;
     const btn = target.closest<HTMLButtonElement>('.stepper-btn, .unit-toggle-btn');
-    if (!btn || !state.editingHabit || state.editingHabit.formData.frequency.type !== 'interval') return;
+    if (!btn || !state.editingHabit || state.editingHabit.formData.mode === 'attitudinal' || state.editingHabit.formData.frequency.type !== 'interval') return;
 
     const action = btn.dataset.action;
     const currentFreq = state.editingHabit.formData.frequency;

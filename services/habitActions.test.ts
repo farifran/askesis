@@ -51,7 +51,9 @@ import {
     consumeAndFormatCelebrations,
     exportData,
     saveHabitFromModal,
-    deduplicateTimeOfDay
+    deduplicateTimeOfDay,
+    normalizeTimesByMode,
+    normalizeFrequencyByMode
 } from './habitActions';
 
 describe('⚙️ Lógica de Negócios (habitActions.ts)', () => {
@@ -380,6 +382,33 @@ describe('⚙️ Lógica de Negócios (habitActions.ts)', () => {
                 : (habit.scheduleHistory[habit.scheduleHistory.length - 1].endDate ? 'ended' : 'active');
             expect(status).toBe('active');
         });
+
+        it('deve forçar um único horário ao salvar hábito atitudinal', () => {
+            state.selectedDate = '2025-02-01';
+            state.editingHabit = {
+                isNew: true,
+                habitId: undefined,
+                originalData: undefined,
+                formData: {
+                    icon: '🧠',
+                    color: '#f1c40f',
+                    goal: { type: 'check' },
+                    name: 'Discernimento',
+                    mode: 'attitudinal',
+                    times: ['Morning', 'Evening', 'Afternoon'],
+                    frequency: { type: 'daily' },
+                },
+                targetDate: '2025-02-01'
+            } as any;
+
+            saveHabitFromModal();
+
+            expect(state.habits).toHaveLength(1);
+            const saved = state.habits[0].scheduleHistory[0];
+            expect(saved.mode).toBe('attitudinal');
+            expect(saved.times).toEqual(['Morning']);
+            expect(saved.frequency).toEqual({ type: 'daily' });
+        });
     });
 
     describe('deduplicateTimeOfDay', () => {
@@ -410,6 +439,26 @@ describe('⚙️ Lógica de Negócios (habitActions.ts)', () => {
             const times = ['Morning', 'Afternoon'] as const;
             const result = deduplicateTimeOfDay(times);
             expect(Object.isFrozen(result) || !Array.isArray(result) || result.length === 2).toBe(true);
+        });
+
+        it('normalizeTimesByMode deve manter múltiplos horários para scheduled', () => {
+            const result = normalizeTimesByMode('scheduled', ['Morning', 'Evening', 'Morning']);
+            expect(result).toEqual(['Morning', 'Evening']);
+        });
+
+        it('normalizeTimesByMode deve manter apenas um horário para attitudinal', () => {
+            const result = normalizeTimesByMode('attitudinal', ['Evening', 'Morning']);
+            expect(result).toEqual(['Evening']);
+        });
+
+        it('normalizeFrequencyByMode deve forçar daily em attitudinal', () => {
+            const result = normalizeFrequencyByMode('attitudinal', { type: 'interval', amount: 2, unit: 'days' });
+            expect(result).toEqual({ type: 'daily' });
+        });
+
+        it('normalizeFrequencyByMode deve manter frequência em scheduled', () => {
+            const result = normalizeFrequencyByMode('scheduled', { type: 'interval', amount: 2, unit: 'days' });
+            expect(result).toEqual({ type: 'interval', amount: 2, unit: 'days' });
         });
     });
 });

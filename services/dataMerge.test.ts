@@ -845,6 +845,55 @@ describe('🔗 Deduplication by Name (Habit Name Collision Prevention)', () => {
 
             logger.info('✅ Dedup TimeOfDay: Consolidação remove duplicatas em múltiplas versões');
         });
+
+        it('deve manter attitudinal com um único horário após merge', async () => {
+            const local = createMockState(1000);
+            const incoming = createMockState(2000);
+
+            (local as any).habits = [...local.habits, {
+                id: 'habit-att',
+                createdOn: '2024-01-01',
+                scheduleHistory: [
+                    {
+                        startDate: '2024-01-01',
+                        name: 'Discernimento',
+                        mode: 'attitudinal',
+                        times: ['Morning', 'Evening'] as any,
+                        frequency: { type: 'daily' as const },
+                        scheduleAnchor: '2024-01-01',
+                        icon: '🧠',
+                        color: '#f1c40f',
+                        goal: { type: 'check' as const }
+                    }
+                ]
+            } as any];
+
+            (incoming as any).habits = [...incoming.habits, {
+                id: 'habit-att',
+                createdOn: '2024-01-01',
+                scheduleHistory: [
+                    {
+                        startDate: '2024-01-01',
+                        name: 'Discernimento',
+                        mode: 'attitudinal',
+                        times: ['Evening', 'Morning', 'Afternoon'] as any,
+                        frequency: { type: 'interval' as const, amount: 2, unit: 'days' as const },
+                        scheduleAnchor: '2024-01-01',
+                        icon: '🧠',
+                        color: '#f1c40f',
+                        goal: { type: 'check' as const }
+                    }
+                ]
+            } as any];
+
+            const merged = await mergeStates(local, incoming);
+            const entry = merged.habits[0].scheduleHistory[0];
+
+            expect(entry.mode).toBe('attitudinal');
+            expect(entry.times.length).toBe(1);
+            expect(entry.times).toEqual(['Evening']);
+            expect(entry.frequency).toEqual({ type: 'daily' });
+        });
     });
 
     describe('🛡️ Security regressions', () => {

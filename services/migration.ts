@@ -11,7 +11,7 @@
 
 import { logger, getTodayUTCIso } from '../utils';
 import { AppState } from '../state';
-import { deduplicateTimeOfDay } from './habitActions';
+import { normalizeHabitMode, normalizeTimesByMode, normalizeFrequencyByMode } from './habitActions';
 
 /**
  * Migra os bitmasks mensais de 6 bits/dia (v8) para 9 bits/dia (v9).
@@ -125,16 +125,33 @@ export function migrateState(loadedState: any, targetVersion: number): AppState 
         }));
     }
 
-    // Sanitize scheduleHistory times to avoid duplicate TimeOfDay entries.
+    // Sanitize scheduleHistory mode/times to avoid duplicate TimeOfDay entries
+    // e garantir regra de unicidade para hábitos atitudinais.
     if (state.habits && state.habits.length > 0) {
         for (const habit of state.habits) {
             for (let i = 0; i < habit.scheduleHistory.length; i++) {
                 const schedule = habit.scheduleHistory[i];
-                const originalLength = schedule.times.length;
-                const deduped = deduplicateTimeOfDay(schedule.times);
-                if (deduped.length < originalLength) {
-                    logger.warn(`[Migration] Habit "${schedule.name}": removed ${originalLength - deduped.length} duplicate times`);
-                    (habit.scheduleHistory[i] as any).times = deduped;
+                const normalizedMode = normalizeHabitMode(schedule.mode);
+                const normalizedTimes = normalizeTimesByMode(normalizedMode, schedule.times);
+                const normalizedFrequency = normalizeFrequencyByMode(normalizedMode, schedule.frequency as any);
+                const hadModeChange = schedule.mode !== normalizedMode;
+                const hadTimesChange =
+                    normalizedTimes.length !== schedule.times.length
+                    || normalizedTimes.some((time, idx) => time !== schedule.times[idx]);
+                const hadFrequencyChange = JSON.stringify(normalizedFrequency) !== JSON.stringify(schedule.frequency);
+
+                if (hadModeChange) {
+                    (habit.scheduleHistory[i] as any).mode = normalizedMode;
+                }
+
+                if (hadTimesChange) {
+                    logger.warn(`[Migration] Habit "${schedule.name}": normalized times for mode=${normalizedMode}`);
+                    (habit.scheduleHistory[i] as any).times = normalizedTimes;
+                }
+
+                if (hadFrequencyChange) {
+                    logger.warn(`[Migration] Habit "${schedule.name}": normalized frequency for mode=${normalizedMode}`);
+                    (habit.scheduleHistory[i] as any).frequency = normalizedFrequency;
                 }
             }
         }

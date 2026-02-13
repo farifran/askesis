@@ -14,7 +14,7 @@
 import { AppState, HabitDailyInfo, Habit, HabitSchedule } from '../state';
 import { logger } from '../utils';
 import { HabitService } from './HabitService';
-import { deduplicateTimeOfDay } from './habitActions';
+import { normalizeHabitMode, normalizeTimesByMode, normalizeFrequencyByMode } from './habitActions';
 
 function isValidBigIntString(value: string): boolean {
     if (!value) return false;
@@ -262,15 +262,31 @@ export async function mergeStates(local: AppState, incoming: AppState): Promise<
 
     (merged as any).habits = Array.from(mergedHabitsMap.values());
 
-    // Sanitize merged times to ensure no duplicate TimeOfDay entries.
+    // Sanitize merged mode/times to ensure consistency and no duplicate TimeOfDay entries.
     for (const habit of merged.habits) {
         for (let i = 0; i < habit.scheduleHistory.length; i++) {
             const schedule = habit.scheduleHistory[i];
-            const originalLength = schedule.times.length;
-            const deduped = deduplicateTimeOfDay(schedule.times);
-            if (deduped.length < originalLength) {
-                logger.warn(`[Merge] Habit "${schedule.name}": removed ${originalLength - deduped.length} duplicate times`);
-                (habit.scheduleHistory[i] as any).times = deduped;
+            const normalizedMode = normalizeHabitMode(schedule.mode);
+            const normalizedTimes = normalizeTimesByMode(normalizedMode, schedule.times);
+            const normalizedFrequency = normalizeFrequencyByMode(normalizedMode, schedule.frequency as any);
+            const hadModeChange = schedule.mode !== normalizedMode;
+            const hadTimesChange =
+                normalizedTimes.length !== schedule.times.length
+                || normalizedTimes.some((time, idx) => time !== schedule.times[idx]);
+            const hadFrequencyChange = JSON.stringify(normalizedFrequency) !== JSON.stringify(schedule.frequency);
+
+            if (hadModeChange) {
+                (habit.scheduleHistory[i] as any).mode = normalizedMode;
+            }
+
+            if (hadTimesChange) {
+                logger.warn(`[Merge] Habit "${schedule.name}": normalized times for mode=${normalizedMode}`);
+                (habit.scheduleHistory[i] as any).times = normalizedTimes;
+            }
+
+            if (hadFrequencyChange) {
+                logger.warn(`[Merge] Habit "${schedule.name}": normalized frequency for mode=${normalizedMode}`);
+                (habit.scheduleHistory[i] as any).frequency = normalizedFrequency;
             }
         }
     }

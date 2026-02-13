@@ -361,6 +361,31 @@ export function renderColorPicker() {
 
 export function renderFrequencyOptions() {
     if (!state.editingHabit) return;
+    const isAttitudinal = state.editingHabit.formData.mode === 'attitudinal';
+    if (isAttitudinal) {
+        state.editingHabit.formData.frequency = { type: 'daily' };
+
+        const root = document.createElement('div');
+        root.className = 'form-section frequency-options';
+
+        const dailyRow = document.createElement('div');
+        dailyRow.className = 'form-row';
+        const dailyLabel = document.createElement('label');
+        dailyLabel.textContent = t('freqDaily');
+        dailyRow.appendChild(dailyLabel);
+
+        const infoRow = document.createElement('div');
+        infoRow.className = 'form-row form-row--vertical';
+        const info = document.createElement('p');
+        info.className = 'frequency-info';
+        info.textContent = t('attitudinalFrequencyInfo');
+        infoRow.appendChild(info);
+
+        root.append(dailyRow, infoRow);
+        ui.frequencyOptionsContainer.replaceChildren(root);
+        return;
+    }
+
     const f = state.editingHabit.formData.frequency, isD = f.type === 'daily', isS = f.type === 'specific_days_of_week', isI = f.type === 'interval';
     const days = [0,1,2,3,4,5,6]; if (state.activeLanguageCode !== 'pt') days.push(days.shift()!);
     const sel = isS ? new Set(f.days) : new Set();
