@@ -113,8 +113,12 @@ function buildAiPrompt(data: any) {
     const { habits, dailyData, translations, languageName } = data;
     let details = "";
     habits.forEach((h: any) => {
-        if (h.graduatedOn) return;
-        const name = h.scheduleHistory[h.scheduleHistory.length-1].name || translations[h.scheduleHistory[h.scheduleHistory.length-1].nameKey];
+        if (!h || h.graduatedOn || h.deletedOn) return;
+        const scheduleHistory = Array.isArray(h.scheduleHistory) ? h.scheduleHistory : [];
+        const lastSchedule = scheduleHistory[scheduleHistory.length - 1];
+        if (!lastSchedule) return;
+        const translatedName = lastSchedule.nameKey ? translations?.[lastSchedule.nameKey] : undefined;
+        const name = lastSchedule.name || translatedName || 'Hábito';
         details += `- ${name}\n`;
     });
 

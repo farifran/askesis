@@ -7,12 +7,8 @@
     </g>
   </g>
   <g font-family="Arial, sans-serif" font-size="140" font-weight="700">
-    <text x="270" y="175" fill="#27ae60" letter-spacing="0">A</text>
-    <text x="330" y="175" fill="#ffffff" letter-spacing="2">s</text>
-    <text x="400" y="175" fill="#ffffff" letter-spacing="2">k</text>
-    <text x="470" y="175" fill="#ffffff" letter-spacing="2">e</text>
-    <text x="540" y="175" fill="#ffffff" letter-spacing="2">s</text>
-    <text x="610" y="175" fill="#27ae60" letter-spacing="2">I</text>
-    <text x="680" y="175" fill="#ffffff" letter-spacing="-2">s</text>
+    <text x="270" y="175" fill="#ffffff">
+      <tspan fill="#27ae60">A</tspan><tspan>skes</tspan><tspan fill="#27ae60">I</tspan><tspan>s</tspan>
+    </text>
   </g>
 </svg>

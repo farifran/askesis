@@ -12,18 +12,9 @@
   </div>
 </div>
 
-<p align="center">
+<div align="center" style="margin-top: 0;">
   <img src="assets/header.svg" alt="Askesis" width="100%">
-</p>
-<div align="center" style="width: 100%; margin-top: 2px;">
-  <img src="https://img.shields.io/badge/Offline--First-000000?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Offline-first" />
-  <img src="https://img.shields.io/badge/PWA-27ae60?style=for-the-badge&logo=pwa&logoColor=white" alt="PWA" />
-  <img src="https://img.shields.io/badge/Google_Gemini-ffffff?style=for-the-badge&logo=google-gemini&logoColor=000000" alt="Gemini AI" />
-  <img src="https://img.shields.io/badge/TypeScript-ffffff?style=for-the-badge&logo=typescript&logoColor=000000" alt="TypeScript" />
-  <img src="https://img.shields.io/badge/WCAG%202.1%20AA-ffffff?style=for-the-badge&logo=accessibilityinsights&logoColor=000000" alt="WCAG 2.1 AA" />
-  <img src="https://img.shields.io/badge/AES--GCM-ffffff?style=for-the-badge&logo=securityscorecard&logoColor=000000" alt="AES-GCM" />
-  <img src="https://img.shields.io/badge/ISC%20License-27ae60?style=for-the-badge&logo=opensourceinitiative&logoColor=000000" alt="ISC License" />
-  <img src="https://img.shields.io/badge/i18n-000000?style=for-the-badge&logo=googletranslate&logoColor=white" alt="i18n" />
+  <img src="assets/header-badges.svg" alt="Badges do Askesis" width="100%" style="display: block; margin-top: 0;">
 </div>
 
 <div align="center">
