@@ -90,6 +90,7 @@ describe('🧠 Análise diária IA (analysis.ts)', () => {
             expect(runWorkerTask).toHaveBeenCalledTimes(1);
             const [, payload] = vi.mocked(runWorkerTask).mock.calls[0];
             expect(payload.dataContext.firstEntry).toBe(true);
+            expect(payload.habitModes).toContain('[mode=');
         });
 
         it('deve enviar dataContext.firstEntry=false quando já existem notas anteriores', async () => {

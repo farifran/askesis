@@ -90,10 +90,21 @@ export async function checkAndAnalyzeDayContext(dateISO: string) {
             if (!_hasSufficientHistory(dateISO)) return;
             if (_hasRecentAiAnalysis()) return;
 
+            const activeHabitModes = state.habits
+                .filter(h => !h.graduatedOn && !h.deletedOn && h.scheduleHistory.length > 0)
+                .map(h => {
+                    const latest = h.scheduleHistory[h.scheduleHistory.length - 1];
+                    const name = latest.nameKey ? t(latest.nameKey) : (latest.name || 'Hábito');
+                    const mode = latest.mode === 'attitudinal' ? 'attitudinal' : 'scheduled';
+                    return `- ${name} [mode=${mode}]`;
+                })
+                .join('\n');
+
             const promptPayload = { 
                 notes, 
                 themeList: t('aiThemeList'), 
                 languageName: getAiLanguageName(), 
+                habitModes: activeHabitModes,
                 dataContext: getDailyNoteHistoryContext(dateISO),
                 translations: { 
                     aiPromptQuote: t('aiPromptQuote'), 

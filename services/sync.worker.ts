@@ -155,6 +155,9 @@ function buildAiPrompt(data: any) {
 
 function buildAiQuoteAnalysisPrompt(data: any) {
     const context = data.dataContext || {};
+    const habitModesBlock = (data.habitModes && String(data.habitModes).trim())
+        ? `\n\n[HABIT_MODES]\n${data.habitModes}`
+        : '';
     const contextBlock = [
         '',
         '[DATA_CONTEXT]',
@@ -165,7 +168,7 @@ function buildAiQuoteAnalysisPrompt(data: any) {
     ].join('\n');
 
     return {
-        prompt: data.translations.aiPromptQuote.replace('{notes}', data.notes).replace('{theme_list}', data.themeList) + contextBlock,
+        prompt: data.translations.aiPromptQuote.replace('{notes}', data.notes).replace('{theme_list}', data.themeList) + habitModesBlock + contextBlock,
         systemInstruction: data.translations.aiSystemInstructionQuote
     };
 }

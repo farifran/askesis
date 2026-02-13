@@ -100,6 +100,62 @@ flowchart LR
   Sync --> Storage
 ```
 
+### Componentes Internos (C4 - Nível 3)
+
+```mermaid
+flowchart TB
+  subgraph App[Askesis App]
+    IDX[index.tsx]
+    RENDER[render/*]
+    LISTEN[listeners/*]
+    STATE[state.ts]
+    SERVICES[services/*]
+  end
+
+  IDX --> RENDER
+  IDX --> LISTEN
+  LISTEN --> STATE
+  RENDER --> STATE
+  SERVICES --> STATE
+
+  subgraph Services[Principais serviços]
+    PERSIST[persistence.ts]
+    MERGE[dataMerge.ts]
+    CLOUD[cloud.ts]
+    CRYP[crypto.ts]
+    ANALYSIS[analysis.ts]
+    ACTIONS[habitActions.ts]
+  end
+
+  SERVICES --> PERSIST
+  SERVICES --> MERGE
+  SERVICES --> CLOUD
+  SERVICES --> CRYP
+  SERVICES --> ANALYSIS
+  SERVICES --> ACTIONS
+```
+
+### Fluxo de Dados (Local-first + Sync)
+
+```mermaid
+sequenceDiagram
+  participant User as Usuário
+  participant UI as UI
+  participant Crypto as Crypto AES-GCM
+  participant DB as IndexedDB
+  participant Sync as Sync Worker
+  participant API as Vercel API
+
+  User->>UI: Marca hábito / adiciona nota
+  UI->>Crypto: Serializa e criptografa
+  Crypto->>DB: Persiste estado local
+  UI->>Sync: Agenda sincronização
+  Sync->>API: Envia diff/estado
+  API-->>Sync: Estado remoto
+  Sync->>UI: Merge resiliente (LWW + dedup)
+  UI->>DB: Persistência final consolidada
+```
+
 <details>
   <summary>Mapa rapido de fluxos</summary>
 
