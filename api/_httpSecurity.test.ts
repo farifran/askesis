@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   checkRateLimit,
   getCorsOrigin,
+  getClientIp,
   isOriginAllowed,
   matchesOriginRule,
   parseAllowedOrigins
@@ -54,5 +55,23 @@ describe('api/_httpSecurity', () => {
     const third = await checkRateLimit(base);
     expect(third.limited).toBe(true);
     expect(third.retryAfterSec).toBeGreaterThan(0);
+  });
+
+  it('usa IP mais confiável e ignora primeiro hop forjado em x-forwarded-for', () => {
+    const req = makeReq({
+      'x-forwarded-for': '1.2.3.4, 203.0.113.10'
+    });
+
+    expect(getClientIp(req)).toBe('203.0.113.10');
+  });
+
+  it('prioriza x-vercel-forwarded-for sobre headers menos confiáveis', () => {
+    const req = makeReq({
+      'x-forwarded-for': '1.2.3.4, 203.0.113.10',
+      'x-real-ip': '198.51.100.2',
+      'x-vercel-forwarded-for': '192.0.2.5'
+    });
+
+    expect(getClientIp(req)).toBe('192.0.2.5');
   });
 });

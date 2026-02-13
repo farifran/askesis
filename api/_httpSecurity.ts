@@ -74,6 +74,37 @@ export function getCorsOrigin(req: Request, allowedOrigins: readonly string[]): 
     return isOriginAllowed(req, origin, allowedOrigins) ? origin : 'null';
 }
 
+function normalizeIpCandidate(value: string): string {
+    const candidate = value.trim();
+    if (!candidate) return '';
+    // Limita tamanho para evitar amplificação de memória/chave via headers forjados.
+    return candidate.slice(0, 64);
+}
+
+export function getClientIp(req: Request): string {
+    const vercelForwarded = req.headers.get('x-vercel-forwarded-for');
+    if (vercelForwarded) {
+        const normalized = normalizeIpCandidate(vercelForwarded);
+        if (normalized) return normalized;
+    }
+
+    const realIp = req.headers.get('x-real-ip');
+    if (realIp) {
+        const normalized = normalizeIpCandidate(realIp);
+        if (normalized) return normalized;
+    }
+
+    const forwardedFor = req.headers.get('x-forwarded-for');
+    if (forwardedFor) {
+        const chain = forwardedFor.split(',').map(part => part.trim()).filter(Boolean);
+        const lastHop = chain[chain.length - 1] || '';
+        const normalized = normalizeIpCandidate(lastHop);
+        if (normalized) return normalized;
+    }
+
+    return 'unknown';
+}
+
 function getDistributedLimiterRedis(): Redis | null {
     if (distributedLimiterRedis !== undefined) return distributedLimiterRedis;
 

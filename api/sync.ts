@@ -7,6 +7,7 @@
 import { Redis } from '@upstash/redis';
 import {
     checkRateLimit,
+    getClientIp,
     getCorsOrigin as getCorsOriginFromRules,
     isOriginAllowed,
     parseAllowedOrigins,
@@ -159,7 +160,7 @@ export default async function handler(req: Request) {
             return new Response(JSON.stringify({ error: 'Auth Required' }), { status: 401, headers: HEADERS_BASE });
         }
 
-        const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
+        const ip = getClientIp(req);
         const limiter = await checkRateLimit({
             namespace: 'sync',
             key: `${keyHash}:${ip}:${req.method}`,

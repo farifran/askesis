@@ -7,6 +7,7 @@
 import { GoogleGenAI } from '@google/genai';
 import {
     checkRateLimit,
+    getClientIp,
     getCorsOrigin as getCorsOriginFromRules,
     isOriginAllowed,
     parseAllowedOrigins,
@@ -20,6 +21,7 @@ export const config = {
 const MAX_PROMPT_SIZE = 150 * 1024; // 150KB
 const CACHE_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 const CACHE_MAX_ENTRIES = 500;
+const AI_QUOTA_COOLDOWN_MS = parsePositiveInt(process.env.AI_QUOTA_COOLDOWN_MS, 90_000);
 
 const ALLOWED_ORIGINS = parseAllowedOrigins(process.env.CORS_ALLOWED_ORIGINS);
 const CORS_STRICT = process.env.CORS_STRICT === '1';
@@ -43,7 +45,12 @@ const API_KEY = process.env.API_KEY || process.env.GEMINI_API_KEY;
 const MODEL_NAME = 'gemini-3-flash-preview';
 
 let aiClient: GoogleGenAI | null = null;
+let aiQuotaCooldownUntil = 0;
 const responseCache = new Map<string, { value: string; ts: number }>();
+
+function getAiQuotaRetryAfterSec(): number {
+    return Math.max(1, Math.ceil(Math.max(0, aiQuotaCooldownUntil - Date.now()) / 1000));
+}
 
 async function computeCacheKey(prompt: string, systemInstruction: string): Promise<string> {
     const data = new TextEncoder().encode(`${MODEL_NAME}|${prompt}|${systemInstruction}`);
@@ -112,11 +119,10 @@ export default async function handler(req: Request) {
     if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS_HEADERS });
     if (req.method !== 'POST') return new Response(null, { status: 405 });
 
-    const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
-    const origin = req.headers.get('origin') || 'unknown';
+    const ip = getClientIp(req);
     const limiter = await checkRateLimit({
         namespace: 'analyze',
-        key: `${ip}:${origin}`,
+        key: ip,
         windowMs: ANALYZE_RATE_LIMIT_WINDOW_MS,
         maxRequests: ANALYZE_RATE_LIMIT_MAX_REQUESTS,
         disabled: ANALYZE_RATE_LIMIT_DISABLED,
@@ -165,6 +171,16 @@ export default async function handler(req: Request) {
             });
         }
 
+        if (Date.now() < aiQuotaCooldownUntil) {
+            return new Response(JSON.stringify({ error: 'AI quota reached', details: 'RESOURCE_EXHAUSTED' }), {
+                status: 429,
+                headers: {
+                    ...CORS_HEADERS,
+                    'Retry-After': String(getAiQuotaRetryAfterSec())
+                }
+            });
+        }
+
         if (!aiClient) aiClient = new GoogleGenAI({ apiKey: API_KEY });
 
         // PROTEÇÃO CONTRA ZUMBIFICAÇÃO: Timeout de execução da IA
@@ -195,6 +211,7 @@ export default async function handler(req: Request) {
         if (!responseText) throw new Error('Empty AI response');
 
         setCachedResponse(cacheKey, responseText);
+        aiQuotaCooldownUntil = 0;
 
         return new Response(responseText, { 
             headers: { 
@@ -222,11 +239,12 @@ export default async function handler(req: Request) {
             || normalizedMessage.includes('rate limit');
 
         if (isRateLimit) {
+            aiQuotaCooldownUntil = Date.now() + AI_QUOTA_COOLDOWN_MS;
             return new Response(JSON.stringify({ error: 'AI quota reached', details: 'RESOURCE_EXHAUSTED' }), {
                 status: 429,
                 headers: {
                     ...CORS_HEADERS,
-                    'Retry-After': '300'
+                    'Retry-After': String(getAiQuotaRetryAfterSec())
                 }
             });
         }
