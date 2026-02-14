@@ -9,14 +9,13 @@
   <img src="assets/header-badges.svg" alt="Badges do Askesis" width="100%" style="display: block; margin-top: 2px;">
 </div>
 
-
-<p align="center">
-  <img src="assets/app-preview.jpg" alt="Interface do Askesis" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
-</p>
-
 ---
 
 ## PT-BR
+
+<p align="center">
+  <img src="assets/AristotelesPortugues.jpg" alt="Aristóteles (Português)" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
+</p>
 
 ## Fluxo da Aplicação
 
@@ -477,6 +476,10 @@ npm run dev
 
 ## EN
 
+<p align="center">
+  <img src="assets/AristotelesIngles.jpg" alt="Aristotle (English)" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
+</p>
+
 ### Summary
 
 - Stoic habit tracker focused on privacy, with AI for reflection and routine tuning.
@@ -640,6 +643,10 @@ npm run dev
 ---
 
 ## ES
+
+<p align="center">
+  <img src="assets/AristotelesEspanol.jpg" alt="Aristóteles (Español)" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
+</p>
 
 ### Resumen
 
