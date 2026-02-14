@@ -17,6 +17,10 @@
   <img src="assets/AristotelesPortugues.jpg" alt="Aristóteles (Português)" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
 </p>
 
+<p align="center">
+  <img src="assets/Jornada%20usuario.jpeg" alt="Jornada do Usuário" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
+</p>
+
 ## Fluxo da Aplicação
 
 O gráfico abaixo representa o fluxo lógico implementado na interface:
