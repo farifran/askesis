@@ -17,8 +17,9 @@ import { hasLocalSyncKey, getSyncKey, apiFetch } from './api';
 import { renderApp, updateNotificationUI } from '../render';
 import { mergeStates } from './dataMerge';
 import { HabitService } from './HabitService';
-import { runWorkerTask as runWorkerTaskInternal } from './workerClient';
+import { runWorkerTask as runWorkerTaskInternal, type WorkerTaskType } from './workerClient';
 import { emitHabitsChanged } from '../events';
+import { murmurHash3 } from './murmurHash3';
 import {
     CLOUD_SYNC_DEBOUNCE_MS,
     CLOUD_SYNC_LOG_MAX_ENTRIES,
@@ -36,7 +37,7 @@ const debouncedSync = createDebounced(() => { if (!isSyncInProgress) performSync
 
 // Mantém API pública (tests e outros módulos dependem disso), mas delega o plumbing.
 export function runWorkerTask<T>(
-    type: 'encrypt' | 'encrypt-json' | 'decrypt' | 'build-ai-prompt' | 'build-quote-analysis-prompt' | 'prune-habit' | 'archive',
+    type: WorkerTaskType,
     payload: any,
     key?: string
 ): Promise<T> {
@@ -114,33 +115,6 @@ export function clearSyncHashCache() {
     logger.info("[Sync] Hash cache cleared.");
 }
 
-function murmurHash3(key: string, seed: number = 0): string {
-    let remainder = key.length & 3, bytes = key.length - remainder, h1 = seed, c1 = 0xcc9e2d51, c2 = 0x1b873593, i = 0;
-    while (i < bytes) {
-        let k1 = ((key.charCodeAt(i) & 0xff)) | ((key.charCodeAt(++i) & 0xff) << 8) | ((key.charCodeAt(++i) & 0xff) << 16) | ((key.charCodeAt(++i) & 0xff) << 24);
-        ++i;
-        k1 = ((((k1 & 0xffff) * c1) + ((((k1 >>> 16) * c1) & 0xffff) << 16))) & 0xffffffff;
-        k1 = (k1 << 15) | (k1 >>> 17);
-        k1 = ((((k1 & 0xffff) * c2) + ((((k1 >>> 16) * c2) & 0xffff) << 16))) & 0xffffffff;
-        h1 ^= k1; h1 = (h1 << 13) | (h1 >>> 19); h1 = (((h1 * 5) + 0xe6546b64)) & 0xffffffff;
-    }
-    let k2 = 0;
-    switch (remainder) {
-        case 3: k2 ^= (key.charCodeAt(i + 2) & 0xff) << 16;
-        case 2: k2 ^= (key.charCodeAt(i + 1) & 0xff) << 8;
-        case 1: k2 ^= (key.charCodeAt(i) & 0xff);
-            k2 = (((k2 & 0xffff) * c1) + ((((k2 >>> 16) * c1) & 0xffff) << 16)) & 0xffffffff;
-            k2 = (k2 << 15) | (k2 >>> 17);
-            k2 = (((k2 & 0xffff) * c2) + ((((k2 >>> 16) * c2) & 0xffff) << 16)) & 0xffffffff;
-            h1 ^= k2;
-    }
-    h1 ^= key.length; h1 ^= h1 >>> 16;
-    h1 = (((h1 & 0xffff) * 0x85ebca6b) + ((((h1 >>> 16) * 0x85ebca6b) & 0xffff) << 16)) & 0xffffffff;
-    h1 ^= h1 >>> 13; h1 = (((h1 & 0xffff) * 0xc2b2ae35) + ((((h1 >>> 16) * 0xc2b2ae35) & 0xffff) << 16)) & 0xffffffff;
-    h1 ^= h1 >>> 16;
-    return (h1 >>> 0).toString(16);
-}
-
 async function readApiErrorMessage(response: Response, fallbackMessage: string): Promise<{ message: string; code?: string }> {
     const errorData = await response.json().catch(() => ({} as any));
     const code = errorData.code ? ` [${errorData.code}]` : '';
@@ -180,12 +154,25 @@ async function decryptServerShards(
     for (const key in shards) {
         if (key === 'lastModified') continue;
         try {
-            const value = await runWorkerTask<any>('decrypt', shards[key], syncKey);
-            decrypted[key] = value;
             if (options.updateHashCache) {
                 try {
-                    lastSyncedHashes.set(key, murmurHash3(JSON.stringify(value)));
-                } catch {}
+                    const res = await runWorkerTask<any>('decrypt-with-hash', shards[key], syncKey);
+                    if (!res || typeof res !== 'object' || !('value' in res)) {
+                        throw new Error('decrypt-with-hash unsupported');
+                    }
+                    decrypted[key] = (res as any).value;
+                    const hash = (res as any).hash;
+                    if (typeof hash === 'string') lastSyncedHashes.set(key, hash);
+                } catch {
+                    // Backward-compat / test mocks: fall back to plain decrypt.
+                    const value = await runWorkerTask<any>('decrypt', shards[key], syncKey);
+                    decrypted[key] = value;
+                    try {
+                        lastSyncedHashes.set(key, murmurHash3(JSON.stringify(value)));
+                    } catch {}
+                }
+            } else {
+                decrypted[key] = await runWorkerTask<any>('decrypt', shards[key], syncKey);
             }
         } catch (e) {
             logger.warn(`[Sync] Skip decrypt ${key}`, e);

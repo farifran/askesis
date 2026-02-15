@@ -10,6 +10,8 @@ export default defineConfig({
     include: ['**/*.test.ts'],
     // Limpa mocks automaticamente entre testes para evitar vazamento de estado
     mockReset: true,
+    // Setup global (mocks e polyfills) antes dos testes
+    setupFiles: ['./vitest.setup.ts'],
     // Aumenta timeout para testes de cenario que fazem operações pesadas
     testTimeout: 30000,
     // Performance budgets

@@ -9,6 +9,7 @@ import { state, HABIT_STATE, Habit } from '../state';
 import { clearTestState, createTestHabit } from '../tests/test-utils';
 import { HabitService } from './HabitService';
 import { generateUUID, getTodayUTCIso } from '../utils';
+import { CARD_EVENTS } from '../events';
 
 // Mock rich modules to avoid DOM/render dependencies
 vi.mock('../render', () => ({
@@ -101,12 +102,12 @@ describe('⚙️ Lógica de Negócios (habitActions.ts)', () => {
             const date = getTodayUTCIso();
 
             const listener = vi.fn();
-            document.addEventListener('card-status-changed', listener);
+            document.addEventListener(CARD_EVENTS.statusChanged, listener);
 
             toggleHabitStatus(id, 'Morning', date);
 
             expect(listener).toHaveBeenCalled();
-            document.removeEventListener('card-status-changed', listener);
+            document.removeEventListener(CARD_EVENTS.statusChanged, listener);
         });
     });
 

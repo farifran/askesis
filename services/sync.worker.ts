@@ -9,6 +9,8 @@
  * @description Web Worker para Criptografia e Processamento de Dados Pesados.
  */
 
+import { murmurHash3 } from './murmurHash3';
+
 const SALT_LEN = 16;
 const IV_LEN = 12;
 
@@ -75,6 +77,19 @@ async function decrypt(encryptedBase64: string, password: string): Promise<any> 
     return JSON.parse(new TextDecoder().decode(decrypted), jsonReviver);
 }
 
+async function decryptWithHash(encryptedBase64: string, password: string): Promise<{ value: any; hash: string }> {
+    const str = atob(encryptedBase64);
+    const bytes = new Uint8Array(str.length);
+    for (let i = 0; i < str.length; i++) bytes[i] = str.charCodeAt(i);
+    const salt = bytes.slice(0, SALT_LEN);
+    const iv = bytes.slice(SALT_LEN, SALT_LEN + IV_LEN);
+    const data = bytes.slice(SALT_LEN + IV_LEN);
+    const key = await deriveKey(password, salt);
+    const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, data);
+    const text = new TextDecoder().decode(decrypted);
+    return { value: JSON.parse(text, jsonReviver), hash: murmurHash3(text) };
+}
+
 /**
  * Remove todos os rastros de um hábito de dentro dos arquivos JSON comprimidos.
  */
@@ -110,6 +125,7 @@ self.onmessage = async (e) => {
             case 'encrypt': result = await encrypt(payload, key!); break;
             case 'encrypt-json': result = await encryptJson(String(payload || ''), key!); break;
             case 'decrypt': result = await decrypt(payload, key!); break;
+            case 'decrypt-with-hash': result = await decryptWithHash(payload, key!); break;
             case 'build-ai-prompt': result = buildAiPrompt(payload); break;
             case 'build-quote-analysis-prompt': result = buildAiQuoteAnalysisPrompt(payload); break;
             case 'archive': result = processArchiving(payload); break;

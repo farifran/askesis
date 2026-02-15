@@ -14,6 +14,7 @@ export type WorkerTaskType =
     | 'encrypt'
     | 'encrypt-json'
     | 'decrypt'
+    | 'decrypt-with-hash'
     | 'build-ai-prompt'
     | 'build-quote-analysis-prompt'
     | 'prune-habit'

@@ -39,7 +39,7 @@ import { t, getTimeOfDayName, formatDate, formatList, getAiLanguageName } from '
 import { runWorkerTask, addSyncLog } from './cloud';
 import { apiFetch, clearKey } from './api';
 import { HabitService } from './HabitService';
-import { emitHabitsChanged, emitRenderApp } from '../events';
+import { emitCardGoalChanged, emitCardStatusChanged, emitHabitsChanged, emitRenderApp } from '../events';
 
 const BATCH_IDS_POOL: string[] = [];
 const BATCH_HABITS_POOL: Habit[] = [];
@@ -709,7 +709,7 @@ export function toggleHabitStatus(habitId: string, time: TimeOfDay, dateISO: str
     if (nextStatus === HABIT_STATE.DONE) { if (h) _checkStreakMilestones(h, dateISO); triggerHaptic('light'); }
     else if (nextStatus === HABIT_STATE.DEFERRED) triggerHaptic('medium');
     else triggerHaptic('selection');
-    document.dispatchEvent(new CustomEvent('card-status-changed', { detail: { habitId, time, date: dateISO } }));
+    emitCardStatusChanged({ habitId, time, date: dateISO });
     _notifyPartialUIRefresh(dateISO);
 }
 
@@ -820,7 +820,7 @@ export function setGoalOverride(habitId: string, d: string, t: TimeOfDay, v: num
              if (props?.goal?.total && v > props.goal.total) { if (currentStatus !== HABIT_STATE.DONE_PLUS) HabitService.setStatus(habitId, d, t, HABIT_STATE.DONE_PLUS); }
              else { if (currentStatus !== HABIT_STATE.DONE) HabitService.setStatus(habitId, d, t, HABIT_STATE.DONE); }
         }
-        saveState(); document.dispatchEvent(new CustomEvent('card-goal-changed', { detail: { habitId, time: t, date: d } })); _notifyPartialUIRefresh(d); 
+        saveState(); emitCardGoalChanged({ habitId, time: t, date: d }); _notifyPartialUIRefresh(d); 
     } catch (e) { logger.error('setGoalOverride failed', e); } 
 }
 export function requestHabitTimeRemoval(habitId: string, time: TimeOfDay, targetDateOverride?: string) {

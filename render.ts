@@ -17,7 +17,7 @@ import { UI_ICONS } from './render/icons';
 import { STOIC_QUOTES, type Quote } from './data/quotes';
 import { selectBestQuote } from './services/quoteEngine'; 
 import { calculateDaySummary } from './services/selectors';
-import { emitRequestAnalysis } from './events';
+import { APP_EVENTS, emitRequestAnalysis } from './events';
 
 // Importa os renderizadores especializados
 import { setTextContent, updateReelRotaryARIA } from './render/dom';
@@ -361,7 +361,7 @@ export function renderStoicQuote() {
     });
 }
 
-document.addEventListener('language-changed', () => {
+document.addEventListener(APP_EVENTS.languageChanged, () => {
     initLanguageFilter();
     renderLanguageFilter();
     updateUIText();
@@ -369,7 +369,7 @@ document.addEventListener('language-changed', () => {
     renderApp();
 });
 
-document.addEventListener('habitsChanged', () => {
+document.addEventListener(APP_EVENTS.habitsChanged, () => {
     _cachedQuoteState = null;
     if ('requestIdleCallback' in window) requestIdleCallback(() => renderStoicQuote());
     else setTimeout(renderStoicQuote, 1000);

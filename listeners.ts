@@ -21,7 +21,7 @@ import { state, getPersistableState, invalidateCachesForDateChange } from './sta
 import { syncStateWithCloud } from './services/cloud';
 import { checkAndAnalyzeDayContext } from './services/analysis';
 import { NETWORK_DEBOUNCE_MS, PERMISSION_DELAY_MS, INTERACTION_DELAY_MS } from './constants';
-import { emitDayChanged } from './events';
+import { APP_EVENTS, CARD_EVENTS, emitDayChanged } from './events';
 
 let areListenersAttached = false;
 let visibilityRafId: number | null = null;
@@ -91,7 +91,7 @@ const _handleCardUpdate = (e: Event) => {
     let cardElement = getCachedHabitCard(habitId, time);
     if (!cardElement) cardElement = document.querySelector(`.habit-card[data-habit-id="${habitId}"][data-time="${time}"]`) as HTMLElement;
     if (habit && cardElement) {
-        const shouldAnimate = e.type === 'card-status-changed';
+        const shouldAnimate = e.type === CARD_EVENTS.statusChanged;
         updateHabitCardElement(cardElement, habit, time, undefined, { animate: shouldAnimate });
     }
     const targetDate = date || state.selectedDate;
@@ -110,14 +110,14 @@ export function setupEventListeners() {
     
     pushToOneSignal(_handleOneSignalInit);
 
-    document.addEventListener('render-app', renderApp);
-    document.addEventListener('request-analysis', (e: Event) => {
+    document.addEventListener(APP_EVENTS.renderApp, renderApp);
+    document.addEventListener(APP_EVENTS.requestAnalysis, (e: Event) => {
         const ce = e as CustomEvent;
         if (ce.detail?.date) checkAndAnalyzeDayContext(ce.detail.date);
     });
 
-    document.addEventListener('card-status-changed', _handleCardUpdate);
-    document.addEventListener('card-goal-changed', _handleCardUpdate);
+    document.addEventListener(CARD_EVENTS.statusChanged, _handleCardUpdate);
+    document.addEventListener(CARD_EVENTS.goalChanged, _handleCardUpdate);
 
     window.addEventListener('online', _handleNetworkChange);
     window.addEventListener('offline', _handleNetworkChange);

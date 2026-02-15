@@ -19,6 +19,9 @@ const DB_NAME = 'AskesisDB', DB_VERSION = 1, STORE_NAME = 'app_state';
 const STATE_JSON_KEY = 'askesis_core_json';
 const STATE_BINARY_KEY = 'askesis_logs_binary';
 
+const HAS_INDEXED_DB = typeof indexedDB !== 'undefined' && typeof indexedDB.open === 'function';
+const IS_TEST_ENV = typeof process !== 'undefined' && !!process.env && (process.env.VITEST || process.env.NODE_ENV === 'test');
+
 const DB_OPEN_TIMEOUT_MS = 15000, IDB_SAVE_DEBOUNCE_MS = 800;
 let dbPromise: Promise<IDBDatabase> | null = null;
 let saveTimeout: number | undefined;
@@ -26,10 +29,21 @@ let activeSavePromise: Promise<void> | null = null;
 let pendingSaveResolve: (() => void) | null = null;
 
 function getDB(): Promise<IDBDatabase> {
+    if (!HAS_INDEXED_DB) {
+        return Promise.reject(new Error('IndexedDB not available'));
+    }
     if (!dbPromise) {
         dbPromise = new Promise((resolve, reject) => {
             const timeoutId = setTimeout(() => { dbPromise = null; reject(new Error("Timeout IDB")); }, DB_OPEN_TIMEOUT_MS);
-            const request = indexedDB.open(DB_NAME, DB_VERSION);
+            let request: IDBOpenDBRequest;
+            try {
+                request = indexedDB.open(DB_NAME, DB_VERSION);
+            } catch (e) {
+                clearTimeout(timeoutId);
+                dbPromise = null;
+                reject(e);
+                return;
+            }
             request.onupgradeneeded = (e) => {
                 const db = (e.target as IDBOpenDBRequest).result;
                 if (!db.objectStoreNames.contains(STORE_NAME)) db.createObjectStore(STORE_NAME);
@@ -106,9 +120,15 @@ async function saveStateInternal(immediate = false, suppressSync = false) {
         // O timestamp já foi incrementado pelo chamador (_notifyChanges ou _notifyPartialUIRefresh)
         const structuredData = getPersistableState();
         try {
+            if (!HAS_INDEXED_DB) {
+                // Em testes/Node, não há IndexedDB. Mantém o fluxo (syncHandler) sem poluir stderr.
+                return;
+            }
             await saveSplitState(structuredData);
         } catch (e) { 
-            logger.error("IDB Save Failed:", e); 
+            if (!(IS_TEST_ENV && String(e).includes('IndexedDB not available'))) {
+                logger.error("IDB Save Failed:", e);
+            }
         }
         
         if (!suppressSync) {
@@ -172,9 +192,12 @@ export async function saveState(immediate = false, suppressSync = false): Promis
 export const persistStateLocally = async (data: AppState) => {
     if (activeSavePromise) await activeSavePromise;
     try {
+        if (!HAS_INDEXED_DB) return;
         await saveSplitState(data);
     } catch (e) {
-        logger.error("[Persistence] Immediate Cloud Persistence Failed:", e);
+        if (!(IS_TEST_ENV && String(e).includes('IndexedDB not available'))) {
+            logger.error("[Persistence] Immediate Cloud Persistence Failed:", e);
+        }
     }
 };
 
