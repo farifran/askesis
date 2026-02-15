@@ -1,0 +1,2 @@
+# Keep GitHub language stats focused on source by excluding generated artifacts.
+coverage/** linguist-generated=true
