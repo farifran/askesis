@@ -115,7 +115,7 @@ flowchart LR
 flowchart LR
   subgraph Client
     UI[UI + Render]
-    EV[Event Hub (events.ts)]
+    EV["Event Hub - events.ts"]
     SW[Service Worker]
     IDB[(IndexedDB)]
     PERSIST[persistence.ts]
@@ -146,59 +146,65 @@ flowchart LR
 ### Componentes Internos (C4 - Nível 3)
 
 ```mermaid
-flowchart LR
-  subgraph UI
-    IDX[index.tsx]
-    LISTEN[listeners/*]
-    RENDER[render/*]
-    EVENTS[events.ts]
+flowchart TB
+  %% Layout em camadas (mais fácil de ler): UI -> Domínio -> Infra
+  subgraph UI["UI (DOM)"]
+    direction TB
+    IDX["index.tsx (boot)"]
+    LISTEN["listeners/*"]
+    RENDER["render/*"]
+    EVENTS["events.ts (event hub)"]
   end
 
-  subgraph DOMAIN
-    ACTIONS[habitActions.ts]
-    SELECTORS[selectors.ts]
-    ANALYSIS[analysis.ts]
-    STATE[state.ts]
+  subgraph DOMAIN["Domínio"]
+    direction TB
+    ACTIONS["services/habitActions.ts"]
+    SELECTORS["services/selectors.ts"]
+    ANALYSIS["services/analysis.ts"]
+    STATE["state.ts (single source of truth)"]
   end
 
-  subgraph INFRA
-    PERSIST[persistence.ts]
-    CLOUD[cloud.ts]
-    MERGE[dataMerge.ts]
-    WRPC[workerClient.ts]
-    WORKER[sync.worker.ts]
-    HASH[murmurHash3.ts]
-    API[api.ts + /api/*]
-    SW[sw.js]
+  subgraph INFRA["Infra (persistência + sync)"]
+    direction TB
+    PERSIST["services/persistence.ts (IndexedDB)"]
+    CLOUD["services/cloud.ts (sync)"]
+    WRPC["services/workerClient.ts"]
+    WORKER["services/sync.worker.ts"]
+    HASH["services/murmurHash3.ts"]
+    API["services/api.ts + api/*"]
+    SW["sw.js (Service Worker)"]
   end
 
+  %% Boot / UI
   IDX --> LISTEN
   IDX --> RENDER
   IDX --> EVENTS
+  IDX --> SW
 
+  %% Domínio
   LISTEN --> ACTIONS
   RENDER --> SELECTORS
-  ACTIONS --> EVENTS
 
   ACTIONS --> STATE
   SELECTORS --> STATE
   ANALYSIS --> STATE
 
+  %% Persistência + Sync
   ACTIONS --> PERSIST
   PERSIST --> STATE
   PERSIST --> CLOUD
 
-  LISTEN --> CLOUD
-  CLOUD --> HASH
-  CLOUD --> WRPC
-  WRPC --> WORKER
-  WORKER --> HASH
-  CLOUD --> API
-  CLOUD --> MERGE
-  MERGE --> STATE
-  ANALYSIS --> CLOUD
+  %% Eventos globais (UI plumbing)
+  ACTIONS --> EVENTS
+  EVENTS --> RENDER
+  EVENTS --> LISTEN
 
-  IDX --> SW
+  %% Worker / Cloud
+  ANALYSIS --> CLOUD
+  CLOUD --> WRPC --> WORKER
+  CLOUD --> API
+  CLOUD --> HASH
+  WORKER --> HASH
 ```
 
 Leitura rápida: interação entra por `listeners/*`, regra de negócio vive em `habitActions.ts`/`selectors.ts`, estado central em `state.ts`, e persistência/sync ficam em `persistence.ts` + `cloud.ts` + `sync.worker.ts`.
