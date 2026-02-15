@@ -11,83 +11,7 @@
 
 ---
 
-## Índice
-
-- [PT-BR](#pt-br)
-- [EN](#en)
-- [ES](#es)
-
-<details>
-  <summary>Ver estrutura completa (TOC)</summary>
-
-- PT-BR
-  - [Diagramas (visão geral)](#pt-diagramas)
-    - [Visão Geral da Arquitetura e Fluxo do Usuário](#pt-architecture-user-flow)
-    - [Visão Geral de Integrações e Infraestrutura](#pt-integrations-infra)
-  - [Fluxo da Aplicação](#pt-fluxo)
-  - [Resumo](#pt-resumo)
-  - [Dashboard tecnologico](#pt-dashboard)
-  - [Contexto do Sistema (C4 - Nível 1)](#pt-c4-l1)
-  - [Contêineres (C4 - Nível 2)](#pt-c4-l2)
-  - [Componentes Internos (C4 - Nível 3)](#pt-c4-l3)
-  - [Fluxo de Dados (Local-first + Sync)](#pt-data-flow)
-  - [Fluxo de Conflito de Sync](#pt-sync-conflict)
-  - [Mapa rápido de módulos](#pt-modules-map)
-  - [Radar tecnico (ASCII)](#pt-tech-radar)
-  - [Ciclo de dados](#pt-data-lifecycle)
-  - [Regras de Unicidade de Hábitos](#pt-habit-uniqueness)
-  - [Plataformas e recursos](#pt-platforms)
-  - [Inicio rapido](#pt-quick-start)
-  - [Diferenciais](#pt-highlights)
-  - [Privacidade e Offline](#pt-privacy-offline)
-  - [Paradigma de Construcao: A Orquestracao Humano-IA](#pt-build-paradigm)
-  - [Tecnologia](#pt-tech)
-  - [Estrutura do projeto](#pt-project-structure)
-  - [Testes e qualidade](#pt-tests-quality)
-  - [Desenvolvimento](#pt-development)
-  - [Licenca](#pt-license)
-
-- EN
-  - [Diagrams (overview)](#en-diagrams)
-    - [Architecture & User Flow Overview](#en-architecture-user-flow)
-    - [Integrations & Infrastructure Overview](#en-integrations-infra)
-  - [Summary](#en-summary)
-  - [Tech dashboard](#en-dashboard)
-  - [Architecture at a glance](#en-architecture-glance)
-  - [Tech radar (ASCII)](#en-tech-radar)
-  - [Data lifecycle](#en-data-lifecycle)
-  - [Platforms and features](#en-platforms)
-  - [Quick Start](#en-quick-start)
-  - [Highlights](#en-highlights)
-  - [Privacy and Offline](#en-privacy-offline)
-  - [Build Paradigm: Human-AI Orchestration](#en-build-paradigm)
-  - [Tech](#en-tech)
-  - [Project Structure](#en-project-structure)
-  - [Tests and Quality](#en-tests-quality)
-  - [Development](#en-development)
-  - [License](#en-license)
-
-- ES
-  - [Diagramas (visión general)](#es-diagramas)
-    - [Descripción General de la Arquitectura y Flujo de Usuario](#es-architecture-user-flow)
-    - [Descripción General de Integraciones e Infraestructura](#es-integrations-infra)
-  - [Resumen](#es-resumen)
-  - [Panel tecnologico](#es-dashboard)
-  - [Arquitectura de un vistazo](#es-architecture-glance)
-  - [Radar tecnologico (ASCII)](#es-tech-radar)
-  - [Ciclo de datos](#es-data-lifecycle)
-  - [Plataformas y funciones](#es-platforms)
-  - [Inicio rapido](#es-quick-start)
-  - [Diferenciales](#es-highlights)
-  - [Privacidad y Offline](#es-privacy-offline)
-  - [Paradigma de Construccion: Orquestacion Humano-IA](#es-build-paradigm)
-  - [Tecnologia](#es-tech)
-  - [Estructura del proyecto](#es-project-structure)
-  - [Tests y calidad](#es-tests-quality)
-  - [Desarrollo](#es-development)
-  - [Licencia](#es-license)
-
-</details>
+<a id="pt-br"></a>
 
 ## PT-BR
 
@@ -100,6 +24,37 @@
 - [Arquitetura e fluxo do usuário (diagrama)](#pt-architecture-user-flow)
 - [Integrações e infraestrutura (diagrama)](#pt-integrations-infra)
 - [Fluxo da Aplicação](#pt-fluxo)
+
+<details>
+  <summary>Ver estrutura completa (TOC)</summary>
+
+- [Diagramas (visão geral)](#pt-diagramas)
+  - [Visão Geral da Arquitetura e Fluxo do Usuário](#pt-architecture-user-flow)
+  - [Visão Geral de Integrações e Infraestrutura](#pt-integrations-infra)
+- [Fluxo da Aplicação](#pt-fluxo)
+- [Resumo](#pt-resumo)
+- [Dashboard tecnologico](#pt-dashboard)
+- [Contexto do Sistema (C4 - Nível 1)](#pt-c4-l1)
+- [Contêineres (C4 - Nível 2)](#pt-c4-l2)
+- [Componentes Internos (C4 - Nível 3)](#pt-c4-l3)
+- [Fluxo de Dados (Local-first + Sync)](#pt-data-flow)
+- [Fluxo de Conflito de Sync](#pt-sync-conflict)
+- [Mapa rápido de módulos](#pt-modules-map)
+- [Radar tecnico (ASCII)](#pt-tech-radar)
+- [Ciclo de dados](#pt-data-lifecycle)
+- [Regras de Unicidade de Hábitos](#pt-habit-uniqueness)
+- [Plataformas e recursos](#pt-platforms)
+- [Inicio rapido](#pt-quick-start)
+- [Diferenciais](#pt-highlights)
+- [Privacidade e Offline](#pt-privacy-offline)
+- [Paradigma de Construcao: A Orquestracao Humano-IA](#pt-build-paradigm)
+- [Tecnologia](#pt-tech)
+- [Estrutura do projeto](#pt-project-structure)
+- [Testes e qualidade](#pt-tests-quality)
+- [Desenvolvimento](#pt-development)
+- [Licenca](#pt-license)
+
+</details>
 
 <a id="pt-diagramas"></a>
 
@@ -678,7 +633,8 @@ npm run dev
 
 - Apache-2.0 (ver [LICENSE](LICENSE)).
 
----
+
+<a id="en"></a>
 
 ## EN
 
@@ -690,6 +646,30 @@ npm run dev
 
 - [Architecture & User Flow (diagram)](#en-architecture-user-flow)
 - [Integrations & Infrastructure (diagram)](#en-integrations-infra)
+
+<details>
+  <summary>View full structure (TOC)</summary>
+
+- [Diagrams (overview)](#en-diagrams)
+  - [Architecture & User Flow Overview](#en-architecture-user-flow)
+  - [Integrations & Infrastructure Overview](#en-integrations-infra)
+- [Summary](#en-summary)
+- [Tech dashboard](#en-dashboard)
+- [Architecture at a glance](#en-architecture-glance)
+- [Tech radar (ASCII)](#en-tech-radar)
+- [Data lifecycle](#en-data-lifecycle)
+- [Platforms and features](#en-platforms)
+- [Quick Start](#en-quick-start)
+- [Highlights](#en-highlights)
+- [Privacy and Offline](#en-privacy-offline)
+- [Build Paradigm: Human-AI Orchestration](#en-build-paradigm)
+- [Tech](#en-tech)
+- [Project Structure](#en-project-structure)
+- [Tests and Quality](#en-tests-quality)
+- [Development](#en-development)
+- [License](#en-license)
+
+</details>
 
 <a id="en-diagrams"></a>
 
@@ -936,7 +916,8 @@ npm run dev
 
 - Apache-2.0 (see [LICENSE](LICENSE)).
 
----
+
+<a id="es"></a>
 
 ## ES
 
@@ -948,6 +929,30 @@ npm run dev
 
 - [Arquitectura y flujo de usuario (diagrama)](#es-architecture-user-flow)
 - [Integraciones e infraestructura (diagrama)](#es-integrations-infra)
+
+<details>
+  <summary>Ver estructura completa (TOC)</summary>
+
+- [Diagramas (visión general)](#es-diagramas)
+  - [Descripción General de la Arquitectura y Flujo de Usuario](#es-architecture-user-flow)
+  - [Descripción General de Integraciones e Infraestructura](#es-integrations-infra)
+- [Resumen](#es-resumen)
+- [Panel tecnologico](#es-dashboard)
+- [Arquitectura de un vistazo](#es-architecture-glance)
+- [Radar tecnologico (ASCII)](#es-tech-radar)
+- [Ciclo de datos](#es-data-lifecycle)
+- [Plataformas y funciones](#es-platforms)
+- [Inicio rapido](#es-quick-start)
+- [Diferenciales](#es-highlights)
+- [Privacidad y Offline](#es-privacy-offline)
+- [Paradigma de Construccion: Orquestacion Humano-IA](#es-build-paradigm)
+- [Tecnologia](#es-tech)
+- [Estructura del proyecto](#es-project-structure)
+- [Tests y calidad](#es-tests-quality)
+- [Desarrollo](#es-development)
+- [Licencia](#es-license)
+
+</details>
 
 <a id="es-diagramas"></a>
 
