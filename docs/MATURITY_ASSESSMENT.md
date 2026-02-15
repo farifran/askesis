@@ -23,7 +23,7 @@
 | api/_httpSecurity.ts | 89 | L5 Excelente | Rate limit híbrido, validação de origem/IP e fallback resiliente. |
 | api/analyze.ts | 86 | L5 Excelente | Timeout, limites, CORS estrito e sanitização de erro bem tratados. |
 | api/sync.ts | 85 | L4 Maduro | Validações fortes e concorrência otimista; fluxo Lua é complexo. |
-| build.js | 74 | L3 Sólido | Script robusto, porém transformação HTML por regex é frágil. |
+| build.js | 78 | L4 Maduro | Script robusto; copia o app shell sem transformação por regex e valida presença do bundle. |
 | cloud.ts | 22 | L1 Frágil | Arquivo morto explícito, gera ruído arquitetural e risco de confusão. |
 | constants.ts | 84 | L4 Maduro | Constantes centralizadas, sem lógica arriscada e boa legibilidade. |
 | habitActions.ts | 22 | L1 Frágil | Arquivo morto explícito, impacta higiene e manutenção futura. |
@@ -42,7 +42,6 @@
 | tsconfig.json | 83 | L4 Maduro | Configuração TypeScript estável e adequada ao projeto. |
 | utils.ts | 76 | L4 Maduro | Utilitários robustos, sanitização e helpers performáticos. |
 | vercel.json | 76 | L4 Maduro | Deploy config enxuta e sem riscos aparentes. |
-| vite.config.ts | 78 | L4 Maduro | Configuração clara; exposição de env exige governança cuidadosa. |
 | vitest.config.ts | 77 | L4 Maduro | Critérios de cobertura e timeout bem definidos. |
 | css/base.css | 74 | L3 Sólido | Base consistente, baixo risco de manutenção. |
 | css/calendar.css | 72 | L3 Sólido | Estilos específicos, complexidade moderada. |

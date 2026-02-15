@@ -83,25 +83,21 @@ async function build() {
         }
     };
 
-    // Transform index.html to remove Vite dev script for production
+    // Copy index.html as-is.
+    // Contract: index.html must reference only build artifacts (bundle.js / bundle.css).
     const indexHtmlPath = path.resolve(__dirname, 'index.html');
-    if (fs.existsSync(indexHtmlPath)) {
-        let html = await fs.promises.readFile(indexHtmlPath, 'utf-8');
-        if (isProd) {
-            html = html.replace(/<script type="module" src="\/index\.tsx"><\/script>/g, '');
-            html = html.replace(/<script type="module" src="\/@vite\/client"><\/script>/g, '');
-            html = html.replace(/<link rel="stylesheet" href="\/index\.css">\s*/g, '');
-            html = html.replace(/<script type="importmap">[\s\S]*?<\/script>\s*/g, '');
-            // Ensure bundle.js is loaded
-            if (!html.includes('src="bundle.js"')) {
-                 html = html.replace('</body>', '<script src="bundle.js" type="module"></script></body>');
-            }
-        }
-        await fs.promises.writeFile(path.join(OUT_DIR, 'index.html'), html);
-    } else {
+    if (!fs.existsSync(indexHtmlPath)) {
         console.error("Error: index.html not found.");
         process.exit(1);
     }
+    if (isProd) {
+        const html = await fs.promises.readFile(indexHtmlPath, 'utf-8');
+        if (!html.includes('bundle.js')) {
+            console.error('Error: index.html must include bundle.js for production builds.');
+            process.exit(1);
+        }
+    }
+    await copyFile('index.html', path.join(OUT_DIR, 'index.html'));
 
     await copyFile('manifest.json', path.join(OUT_DIR, 'manifest.json'));
     await copyFile('sw.js', path.join(OUT_DIR, 'sw.js'));

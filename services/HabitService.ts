@@ -165,6 +165,22 @@ export class HabitService {
     }
 
     /**
+     * Agrupamento a partir de snapshot (sem cache e sem dependência do state global).
+     * Útil para sincronização, onde precisamos garantir consistência usando um AppState clonado.
+     */
+    static groupLogsByMonthSnapshot(logs: Map<string, bigint> | undefined | null): Record<string, [string, string][]> {
+        if (!logs || logs.size === 0) return {};
+
+        const grouped: Record<string, [string, string][]> = Object.create(null);
+        for (const [key, value] of logs.entries()) {
+            const month = key.slice(-7);
+            if (!grouped[month]) grouped[month] = [];
+            grouped[month].push([key, '0x' + value.toString(16)]);
+        }
+        return grouped;
+    }
+
+    /**
      * Serialização para Cloud (Hexadecimal).
      * Usa a lógica cacheada de getLogsGroupedByMonth para eficiência.
      */

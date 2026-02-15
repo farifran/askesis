@@ -51,6 +51,18 @@ async function encrypt(payload: any, password: string): Promise<string> {
     return btoa(String.fromCharCode(...combined));
 }
 
+async function encryptJson(jsonText: string, password: string): Promise<string> {
+    const salt = crypto.getRandomValues(new Uint8Array(SALT_LEN));
+    const iv = crypto.getRandomValues(new Uint8Array(IV_LEN));
+    const key = await deriveKey(password, salt);
+    const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(jsonText));
+    const combined = new Uint8Array(salt.length + iv.length + encrypted.byteLength);
+    combined.set(salt);
+    combined.set(iv, salt.length);
+    combined.set(new Uint8Array(encrypted), salt.length + iv.length);
+    return btoa(String.fromCharCode(...combined));
+}
+
 async function decrypt(encryptedBase64: string, password: string): Promise<any> {
     const str = atob(encryptedBase64);
     const bytes = new Uint8Array(str.length);
@@ -96,6 +108,7 @@ self.onmessage = async (e) => {
         let result: any;
         switch (type) {
             case 'encrypt': result = await encrypt(payload, key!); break;
+            case 'encrypt-json': result = await encryptJson(String(payload || ''), key!); break;
             case 'decrypt': result = await decrypt(payload, key!); break;
             case 'build-ai-prompt': result = buildAiPrompt(payload); break;
             case 'build-quote-analysis-prompt': result = buildAiQuoteAnalysisPrompt(payload); break;

@@ -10,12 +10,14 @@
 
 import { AppState, state, getPersistableState } from '../state';
 import { loadState, persistStateLocally } from './persistence';
-import { pushToOneSignal, generateUUID, createDebounced, logger } from '../utils';
+import { pushToOneSignal, createDebounced, logger } from '../utils';
 import { ui } from '../render/ui';
 import { t } from '../i18n';
 import { hasLocalSyncKey, getSyncKey, apiFetch } from './api';
 import { renderApp, updateNotificationUI } from '../render';
 import { mergeStates } from './dataMerge';
+import { HabitService } from './HabitService';
+import { runWorkerTask as runWorkerTaskInternal } from './workerClient';
 import {
     CLOUD_SYNC_DEBOUNCE_MS,
     CLOUD_SYNC_LOG_MAX_ENTRIES,
@@ -31,54 +33,16 @@ let isSyncInProgress = false;
 let pendingSyncState: AppState | null = null;
 const debouncedSync = createDebounced(() => { if (!isSyncInProgress) performSync(); }, CLOUD_SYNC_DEBOUNCE_MS);
 
-// --- WORKER INFRASTRUCTURE ---
-let syncWorker: Worker | null = null;
-const workerCallbacks = new Map<string, { resolve: (val: any) => void, reject: (err: any) => void }>();
-
-function getWorker(): Worker {
-    if (!syncWorker) {
-        syncWorker = new Worker('./sync-worker.js', { type: 'module' });
-        syncWorker.onmessage = (e) => {
-            const { id, status, result, error } = e.data;
-            const callback = workerCallbacks.get(id);
-            if (callback) {
-                if (status === 'success') {
-                    callback.resolve(result);
-                } else {
-                    callback.reject(new Error(error));
-                }
-                workerCallbacks.delete(id);
-            }
-        };
-        
-        syncWorker.onerror = (e) => {
-            logger.error("Critical Worker Error:", e);
-            workerCallbacks.forEach(({ reject }) => reject(new Error('Worker crashed')));
-            workerCallbacks.clear();
-            syncWorker = null;
-        };
-    }
-    return syncWorker;
-}
-
-export function runWorkerTask<T>(type: 'encrypt' | 'decrypt' | 'build-ai-prompt' | 'build-quote-analysis-prompt' | 'prune-habit' | 'archive', payload: any, key?: string): Promise<T> {
-    return new Promise((resolve, reject) => {
-        const id = generateUUID();
-        const timeoutId = window.setTimeout(() => {
-            workerCallbacks.delete(id);
-            reject(new Error('Worker timeout'));
-        }, CLOUD_WORKER_TIMEOUT_MS);
-        workerCallbacks.set(id, { 
-            resolve: (val) => { clearTimeout(timeoutId); resolve(val); }, 
-            reject: (err) => { clearTimeout(timeoutId); reject(err); } 
-        });
-        try {
-            getWorker().postMessage({ id, type, payload, key });
-        } catch (err) {
-            clearTimeout(timeoutId);
-            workerCallbacks.delete(id);
-            reject(err);
-        }
+// Mantém API pública (tests e outros módulos dependem disso), mas delega o plumbing.
+export function runWorkerTask<T>(
+    type: 'encrypt' | 'encrypt-json' | 'decrypt' | 'build-ai-prompt' | 'build-quote-analysis-prompt' | 'prune-habit' | 'archive',
+    payload: any,
+    key?: string
+): Promise<T> {
+    return runWorkerTaskInternal<T>(type as any, payload, {
+        key,
+        timeoutMs: CLOUD_WORKER_TIMEOUT_MS,
+        workerUrl: './sync-worker.js'
     });
 }
 
@@ -96,17 +60,9 @@ function splitIntoShards(appState: AppState): Record<string, any> {
     };
     
     // Logs: Shards granulares mensais (Bitmasks)
-    // SECURITY/CONSISTENCY: Usa o snapshot recebido (appState.monthlyLogs),
-    // evitando mistura entre estado pendente e estado global mutável.
-    const groupedLogs: Record<string, [string, string][]> = {};
-    for (const [key, value] of appState.monthlyLogs.entries()) {
-        const month = key.slice(-7);
-        if (!groupedLogs[month]) groupedLogs[month] = [];
-        groupedLogs[month].push([key, "0x" + value.toString(16)]);
-    }
-    for (const month in groupedLogs) {
-        shards[`logs:${month}`] = groupedLogs[month];
-    }
+    // Usa snapshot (não o state global) para evitar mistura com mutações concorrentes.
+    const groupedLogs = HabitService.groupLogsByMonthSnapshot(appState.monthlyLogs);
+    for (const month in groupedLogs) shards[`logs:${month}`] = groupedLogs[month];
     
     // Arquivos: Shards anuais (Dados frios)
     for (const year in appState.archives) { 
@@ -205,48 +161,76 @@ export function setSyncStatus(statusKey: 'syncSaving' | 'syncSynced' | 'syncErro
     }
 }
 
+async function decryptServerShards(
+    shards: Record<string, string>,
+    syncKey: string,
+    options: { updateHashCache: boolean }
+): Promise<Record<string, any>> {
+    const decrypted: Record<string, any> = {};
+    for (const key in shards) {
+        if (key === 'lastModified') continue;
+        try {
+            const value = await runWorkerTask<any>('decrypt', shards[key], syncKey);
+            decrypted[key] = value;
+            if (options.updateHashCache) {
+                try {
+                    lastSyncedHashes.set(key, murmurHash3(JSON.stringify(value)));
+                } catch {}
+            }
+        } catch (e) {
+            logger.warn(`[Sync] Skip decrypt ${key}`, e);
+        }
+    }
+    return decrypted;
+}
+
+function buildAppStateFromDecryptedShards(decryptedShards: Record<string, any>, lastModifiedRaw: string | undefined): AppState | undefined {
+    const core = decryptedShards['core'];
+    if (core && (!Array.isArray(core.habits) || !core.habits.every((h: any) => h && typeof h.id === 'string' && Array.isArray(h.scheduleHistory)))) {
+        logger.error('[Sync] Decrypted core data has invalid structure. Aborting reconstruction.');
+        return undefined;
+    }
+
+    const result: any = {
+        version: core?.version || 0,
+        lastModified: parseInt(lastModifiedRaw || '0', 10),
+        habits: core?.habits || [],
+        dailyData: core?.dailyData || {},
+        dailyDiagnoses: core?.dailyDiagnoses || {},
+        archives: {},
+        monthlyLogs: new Map(),
+        notificationsShown: core?.notificationsShown || [],
+        hasOnboarded: core?.hasOnboarded ?? true,
+        quoteState: core?.quoteState
+    };
+
+    for (const key in decryptedShards) {
+        if (key.startsWith('archive:')) {
+            result.archives[key.replace('archive:', '')] = decryptedShards[key];
+        }
+        if (key.startsWith('logs:')) {
+            decryptedShards[key].forEach(([k, v]: [string, string]) => {
+                try {
+                    result.monthlyLogs.set(k, BigInt(v));
+                } catch (e) {
+                    logger.warn(`[Sync] Invalid log value for ${k}, skipping.`, e);
+                }
+            });
+        }
+    }
+
+    return result as AppState;
+}
+
 async function resolveConflictWithServerState(serverShards: Record<string, string>) {
     const syncKey = getSyncKey();
     if (!syncKey) return setSyncStatus('syncError');
     
     try {
         addSyncLog("Conflito detectado. Mesclando dados...", "info");
-        const remoteShards: Record<string, any> = {};
-        for (const key in serverShards) {
-            if (key === 'lastModified') continue;
-            try {
-                const decrypted = await runWorkerTask<any>('decrypt', serverShards[key], syncKey);
-                remoteShards[key] = decrypted;
-            } catch (err) {
-                logger.warn(`[Sync] Failed to decrypt shard ${key}, skipping.`, err);
-            }
-        }
-
-        const remoteState: any = {
-            version: remoteShards['core']?.version || 0,
-            lastModified: parseInt(serverShards.lastModified || '0', 10),
-            habits: remoteShards['core']?.habits || [],
-            dailyData: remoteShards['core']?.dailyData || {},
-            dailyDiagnoses: remoteShards['core']?.dailyDiagnoses || {},
-            archives: {},
-            monthlyLogs: new Map(),
-            notificationsShown: remoteShards['core']?.notificationsShown || [],
-            hasOnboarded: remoteShards['core']?.hasOnboarded ?? true,
-            quoteState: remoteShards['core']?.quoteState
-        };
-
-        for (const key in remoteShards) {
-            if (key.startsWith('archive:')) { remoteState.archives[key.replace('archive:', '')] = remoteShards[key]; }
-            if (key.startsWith('logs:')) { 
-                remoteShards[key].forEach(([k, v]: [string, string]) => {
-                    try {
-                        remoteState.monthlyLogs.set(k, BigInt(v));
-                    } catch (e) {
-                        logger.warn(`[Sync] Invalid log value for ${k}, skipping.`, e);
-                    }
-                }); 
-            }
-        }
+        const remoteShards = await decryptServerShards(serverShards, syncKey, { updateHashCache: false });
+        const remoteState = buildAppStateFromDecryptedShards(remoteShards, serverShards.lastModified);
+        if (!remoteState) throw new Error('Falha ao reconstruir estado remoto');
 
         const localState = getPersistableState();
         const mergedState = await mergeStates(localState, remoteState);
@@ -284,11 +268,13 @@ async function performSync() {
 
         const encryptStart = performance.now();
         for (const shardName in rawShards) {
-            const currentHash = murmurHash3(JSON.stringify(rawShards[shardName]));
+            // Reusa a mesma serialização para hash + encrypt (evita stringify duplicado no worker).
+            const json = JSON.stringify(rawShards[shardName]);
+            const currentHash = murmurHash3(json);
             const lastHash = lastSyncedHashes.get(shardName);
             
             if (currentHash !== lastHash) {
-                const encrypted = await runWorkerTask<string>('encrypt', rawShards[shardName], syncKey);
+                const encrypted = await runWorkerTask<string>('encrypt-json', json, syncKey);
                 encryptedShards[shardName] = encrypted;
                 pendingHashUpdates.set(shardName, currentHash);
                 changeCount++;
@@ -390,50 +376,9 @@ async function reconstructStateFromShards(shards: Record<string, string>): Promi
     const syncKey = getSyncKey();
     if (!syncKey) return undefined;
     try {
-        const decryptedShards: Record<string, any> = {};
-        for (const key in shards) {
-            if (key === 'lastModified') continue;
-            try {
-                decryptedShards[key] = await runWorkerTask<any>('decrypt', shards[key], syncKey);
-                lastSyncedHashes.set(key, murmurHash3(JSON.stringify(decryptedShards[key])));
-            } catch (e) {
-                logger.warn(`[Sync] Skip decrypt ${key}`, e);
-            }
-        }
-        
+        const decryptedShards = await decryptServerShards(shards, syncKey, { updateHashCache: true });
         persistHashCache();
-
-        const core = decryptedShards['core'];
-        if (core && (!Array.isArray(core.habits) || !core.habits.every((h: any) => h && typeof h.id === 'string' && Array.isArray(h.scheduleHistory)))) {
-            logger.error('[Sync] Decrypted core data has invalid structure. Aborting reconstruction.');
-            return undefined;
-        }
-
-        const result: any = {
-            version: core?.version || 0,
-            lastModified: parseInt(shards.lastModified || '0', 10),
-            habits: core?.habits || [],
-            dailyData: core?.dailyData || {},
-            dailyDiagnoses: core?.dailyDiagnoses || {},
-            archives: {},
-            monthlyLogs: new Map(),
-            notificationsShown: core?.notificationsShown || [],
-            hasOnboarded: core?.hasOnboarded ?? true,
-            quoteState: core?.quoteState
-        };
-        for (const key in decryptedShards) {
-            if (key.startsWith('archive:')) { result.archives[key.replace('archive:', '')] = decryptedShards[key]; }
-            if (key.startsWith('logs:')) { 
-                decryptedShards[key].forEach(([k, v]: [string, string]) => {
-                    try {
-                        result.monthlyLogs.set(k, BigInt(v));
-                    } catch (e) {
-                        logger.warn(`[Sync] Invalid log value for ${k}, skipping.`, e);
-                    }
-                }); 
-            }
-        }
-        return result;
+        return buildAppStateFromDecryptedShards(decryptedShards, shards.lastModified);
     } catch (e) {
         logger.error("State reconstruction failed:", e);
         return undefined;
