@@ -102,7 +102,7 @@ Este diagrama detalha a arquitetura de alto nível do sistema e o fluxo de comun
 - Rastreador de hábitos estoico, focado em privacidade, com IA para reflexões e ajustes de rotina.
 - Local-first: dados ficam no dispositivo; sincronização opcional com criptografia E2E (AES-GCM) em Web Worker.
 - Sync resiliente e sem conflitos (merge/CRDT-lite) via Vercel API (KV), sem login obrigatório.
-- Zero-deps por padrão no runtime local (sem SDKs no boot); integrações (push/IA) só sob demanda (opt-in).
+- Zero-deps por padrão no runtime local (sem SDKs no boot); após opt-in, push pode auto-carregar para manter o estado.
 
 <a id="pt-dashboard"></a>
 
@@ -666,7 +666,7 @@ This diagram details the high-level system architecture and the communication fl
 - Stoic habit tracker focused on privacy, with AI for reflection and routine tuning.
 - Local-first: data stays on-device; optional sync with E2E encryption (AES-GCM) via Web Worker.
 - Conflict-free/resilient sync (merge/CRDT-lite) through Vercel API (KV), no mandatory login.
-- Zero-deps by default at local runtime (no SDKs on boot); integrations (push/AI) load on demand (opt-in).
+- Zero-deps by default at local runtime (no SDKs on boot); after opt-in, push may auto-load to keep state consistent.
 
 <a id="en-dashboard"></a>
 
@@ -951,7 +951,7 @@ Este diagrama detalla la arquitectura de alto nivel del sistema y el flujo de co
 - Rastreador de hábitos estoico, enfocado en privacidad, con IA para reflexión y ajuste de rutina.
 - Local-first: los datos quedan en el dispositivo; sincronización opcional con cifrado E2E (AES-GCM) vía Web Worker.
 - Sync resiliente y sin conflictos (merge/CRDT-lite) a través de Vercel API (KV), sin login obligatorio.
-- Zero-deps por defecto en el runtime local (sin SDKs al iniciar); integraciones (push/IA) bajo demanda (opt-in).
+- Zero-deps por defecto en el runtime local (sin SDKs al iniciar); tras el opt-in, push puede auto-cargar para mantener el estado.
 
 <a id="es-dashboard"></a>
 

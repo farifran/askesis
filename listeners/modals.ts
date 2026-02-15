@@ -59,7 +59,7 @@ import {
 } from '../services/habitActions';
 import { t, setLanguage } from '../i18n';
 import { setupReelRotary } from '../render/rotary';
-import { simpleMarkdownToHTML, ensureOneSignalReady, getContrastColor, addDays, parseUTCIsoDate, toUTCIsoDateString, triggerHaptic, logger, escapeHTML, sanitizeText, getTodayUTCIso } from '../utils';
+import { simpleMarkdownToHTML, ensureOneSignalReady, setLocalPushOptIn, getContrastColor, addDays, parseUTCIsoDate, toUTCIsoDateString, triggerHaptic, logger, escapeHTML, sanitizeText, getTodayUTCIso } from '../utils';
 import { setTextContent } from '../render/dom';
 
 // --- STATIC HELPERS ---
@@ -203,17 +203,47 @@ const _handleNotificationToggleChange = async () => {
     setTextContent(ui.notificationStatusDesc, t('notificationChangePending'));
 
     try {
-        // OneSignal só carrega se o usuário explicitamente quiser ativar/desativar.
-        const OneSignal = await ensureOneSignalReady();
         if (wantsEnabled) {
-            await OneSignal.Notifications.requestPermission();
+            // 1) Primeiro, solicita permissão nativa do navegador (sem dependências externas).
+            // Isso permite deixar o toggle "verde" assim que o browser garantir a permissão.
+            const perm = (typeof Notification !== 'undefined' && (Notification as any).requestPermission)
+                ? await (Notification as any).requestPermission()
+                : 'default';
+
+            if (perm !== 'granted') {
+                ui.notificationToggle.checked = false;
+                setLocalPushOptIn(false);
+                setTextContent(ui.notificationStatusDesc, t('notificationStatusOptedOut'));
+                return;
+            }
+
+            // 2) Persistimos opt-in local imediatamente (boot pode refletir o estado sem SDK).
+            setLocalPushOptIn(true);
+            updateNotificationUI();
+
+            // 3) Só depois carregamos OneSignal em background para finalizar subscription.
+            ensureOneSignalReady()
+                .then((OneSignal) => {
+                    try {
+                        setLocalPushOptIn(!!OneSignal.User.PushSubscription.optedIn);
+                    } catch {}
+                    updateNotificationUI();
+                })
+                .catch(() => {
+                    // Se falhar, mantemos permissão do browser, mas não garantimos subscription.
+                    updateNotificationUI();
+                });
         } else {
+            // Desativar: aqui faz sentido carregar OneSignal para de fato opt-out.
+            const OneSignal = await ensureOneSignalReady();
             await OneSignal.User.PushSubscription.optOut();
+            setLocalPushOptIn(false);
         }
     } catch (e) {
         // Se o SDK falhar (bloqueio do browser/domínio), reverte a UI para um estado seguro.
         ui.notificationToggle.checked = false;
         setTextContent(ui.notificationStatusDesc, t('notificationStatusOptedOut'));
+        setLocalPushOptIn(false);
     } finally {
         ui.notificationToggle.disabled = false;
         updateNotificationUI();

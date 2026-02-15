@@ -265,7 +265,25 @@ export function simpleMarkdownToHTML(text: string): string {
 // --- 3rd Party Wrappers ---
 const ONESIGNAL_SDK_URL = 'https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js';
 const ONESIGNAL_APP_ID = '39454655-f1cd-4531-8ec5-d0f61eb1c478';
+const ONESIGNAL_OPTIN_STORAGE_KEY = 'askesis_onesignal_opted_in';
 let _oneSignalInitPromise: Promise<OneSignalLike> | null = null;
+
+export function getLocalPushOptIn(): boolean | null {
+    try {
+        const raw = localStorage.getItem(ONESIGNAL_OPTIN_STORAGE_KEY);
+        if (raw === '1') return true;
+        if (raw === '0') return false;
+        return null;
+    } catch {
+        return null;
+    }
+}
+
+export function setLocalPushOptIn(value: boolean) {
+    try {
+        localStorage.setItem(ONESIGNAL_OPTIN_STORAGE_KEY, value ? '1' : '0');
+    } catch {}
+}
 
 function _loadScript(src: string): Promise<void> {
     return new Promise((resolve, reject) => {
@@ -323,6 +341,10 @@ export async function ensureOneSignalReady(): Promise<OneSignalLike> {
 
         await _loadScript(ONESIGNAL_SDK_URL);
         const oneSignal = await ready;
+        try {
+            const optedIn = !!(oneSignal as any)?.User?.PushSubscription?.optedIn;
+            setLocalPushOptIn(optedIn);
+        } catch {}
         // Habilita SW (push delivery) só após opt-in explícito.
         await enableOneSignalInServiceWorker();
         return oneSignal;

@@ -9,7 +9,7 @@
  */
 
 import { state, LANGUAGES } from './state';
-import { parseUTCIsoDate, toUTCIsoDateString, addDays, pushToOneSignal, getTodayUTCIso, createDebounced, escapeHTML } from './utils';
+import { parseUTCIsoDate, toUTCIsoDateString, addDays, pushToOneSignal, getLocalPushOptIn, setLocalPushOptIn, getTodayUTCIso, createDebounced, escapeHTML } from './utils';
 import { QUOTE_COLLAPSE_DEBOUNCE_MS } from './constants';
 import { ui } from './render/ui';
 import { t, setLanguage, formatDate } from './i18n'; 
@@ -252,16 +252,24 @@ export function updateNotificationUI() {
     if (typeof window === 'undefined' || typeof (window as any).OneSignal === 'undefined') {
         const permission = (typeof Notification !== 'undefined' && (Notification as any).permission) ? (Notification as any).permission : 'default';
         const isDenied = permission === 'denied';
-        ui.notificationToggle.checked = false;
+        const localOptIn = getLocalPushOptIn();
+        const isGranted = permission === 'granted';
+        const assumeEnabled = isGranted && localOptIn === true;
+        ui.notificationToggle.checked = assumeEnabled;
         ui.notificationToggle.disabled = isDenied;
         ui.notificationToggleLabel.classList.toggle('disabled', isDenied);
-        setTextContent(ui.notificationStatusDesc, t(isDenied ? 'notificationStatusDisabled' : 'notificationStatusOptedOut'));
+
+        let statusKey = 'notificationStatusOptedOut';
+        if (isDenied) statusKey = 'notificationStatusDisabled';
+        else if (assumeEnabled) statusKey = 'notificationStatusEnabled';
+        setTextContent(ui.notificationStatusDesc, t(statusKey));
         return;
     }
 
     pushToOneSignal((OneSignal: OneSignalLike) => {
         const isPushEnabled = OneSignal.User.PushSubscription.optedIn;
         const permission = OneSignal.Notifications.permission;
+        setLocalPushOptIn(!!isPushEnabled);
         if (ui.notificationToggle.checked !== isPushEnabled) ui.notificationToggle.checked = isPushEnabled;
         const isDenied = permission === 'denied';
         if (ui.notificationToggle.disabled !== isDenied) {
