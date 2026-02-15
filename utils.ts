@@ -266,6 +266,7 @@ export function simpleMarkdownToHTML(text: string): string {
 const ONESIGNAL_SDK_URL = 'https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js';
 const ONESIGNAL_APP_ID = '39454655-f1cd-4531-8ec5-d0f61eb1c478';
 const ONESIGNAL_OPTIN_STORAGE_KEY = 'askesis_onesignal_opted_in';
+const PUSH_PERMISSION_REQUESTED_KEY = 'askesis_push_permission_requested';
 let _oneSignalInitPromise: Promise<OneSignalLike> | null = null;
 
 export function getLocalPushOptIn(): boolean | null {
@@ -282,6 +283,20 @@ export function getLocalPushOptIn(): boolean | null {
 export function setLocalPushOptIn(value: boolean) {
     try {
         localStorage.setItem(ONESIGNAL_OPTIN_STORAGE_KEY, value ? '1' : '0');
+    } catch {}
+}
+
+export function hasRequestedPushPermission(): boolean {
+    try {
+        return localStorage.getItem(PUSH_PERMISSION_REQUESTED_KEY) === '1';
+    } catch {
+        return false;
+    }
+}
+
+export function markPushPermissionRequested() {
+    try {
+        localStorage.setItem(PUSH_PERMISSION_REQUESTED_KEY, '1');
     } catch {}
 }
 

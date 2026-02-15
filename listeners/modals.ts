@@ -199,16 +199,18 @@ const _handleResetAppClick = () => {
 
 const _handleNotificationToggleChange = async () => {
     const wantsEnabled = ui.notificationToggle.checked;
-    ui.notificationToggle.disabled = true;
-    setTextContent(ui.notificationStatusDesc, t('notificationChangePending'));
 
     try {
         if (wantsEnabled) {
             // 1) Primeiro, solicita permissão nativa do navegador (sem dependências externas).
             // Isso permite deixar o toggle "verde" assim que o browser garantir a permissão.
-            const perm = (typeof Notification !== 'undefined' && (Notification as any).requestPermission)
-                ? await (Notification as any).requestPermission()
+            const currentPerm = (typeof Notification !== 'undefined' && (Notification as any).permission)
+                ? (Notification as any).permission
                 : 'default';
+
+            const perm = (currentPerm === 'default' && typeof Notification !== 'undefined' && (Notification as any).requestPermission)
+                ? await (Notification as any).requestPermission()
+                : currentPerm;
 
             if (perm !== 'granted') {
                 ui.notificationToggle.checked = false;
@@ -216,6 +218,9 @@ const _handleNotificationToggleChange = async () => {
                 setTextContent(ui.notificationStatusDesc, t('notificationStatusOptedOut'));
                 return;
             }
+
+            ui.notificationToggle.disabled = true;
+            setTextContent(ui.notificationStatusDesc, t('notificationChangePending'));
 
             // 2) Persistimos opt-in local imediatamente (boot pode refletir o estado sem SDK).
             setLocalPushOptIn(true);
@@ -234,6 +239,8 @@ const _handleNotificationToggleChange = async () => {
                     updateNotificationUI();
                 });
         } else {
+            ui.notificationToggle.disabled = true;
+            setTextContent(ui.notificationStatusDesc, t('notificationChangePending'));
             // Desativar: aqui faz sentido carregar OneSignal para de fato opt-out.
             const OneSignal = await ensureOneSignalReady();
             await OneSignal.User.PushSubscription.optOut();

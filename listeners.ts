@@ -16,7 +16,7 @@ import { setupDragHandler } from './listeners/drag';
 import { setupSwipeHandler } from './listeners/swipe';
 import { setupCalendarListeners } from './listeners/calendar';
 import { setupChartListeners } from './listeners/chart';
-import { getTodayUTCIso, resetTodayCache, createDebounced, logger } from './utils';
+import { getTodayUTCIso, resetTodayCache, createDebounced, logger, getLocalPushOptIn, setLocalPushOptIn, hasRequestedPushPermission, markPushPermissionRequested, ensureOneSignalReady } from './utils';
 import { state, getPersistableState, invalidateCachesForDateChange } from './state';
 import { syncStateWithCloud } from './services/cloud';
 import { checkAndAnalyzeDayContext } from './services/analysis';
@@ -102,6 +102,44 @@ export function setupEventListeners() {
     // OneSignal é carregado sob demanda (quando o usuário ativa notificações).
     // Ainda assim, atualizamos a UI usando permissões nativas quando o SDK não estiver presente.
     updateNotificationUI();
+
+    // Prompt automático (com user activation): na primeira interação do usuário, se ainda não houve decisão.
+    // Isso recupera o comportamento "na primeira abertura" sem carregar SDKs no boot.
+    const maybeRequestPushPermission = async () => {
+        try {
+            if (typeof Notification === 'undefined') return;
+
+            const isStandalone =
+                (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+                // iOS Safari legacy
+                (typeof (navigator as any).standalone === 'boolean' && (navigator as any).standalone === true);
+            if (!isStandalone) return;
+
+            const permission = (Notification as any).permission || 'default';
+            if (permission !== 'default') return;
+            if (getLocalPushOptIn() !== null) return;
+            if (hasRequestedPushPermission()) return;
+
+            markPushPermissionRequested();
+            const perm = (Notification as any).requestPermission ? await (Notification as any).requestPermission() : 'default';
+            if (perm === 'granted') {
+                setLocalPushOptIn(true);
+                updateNotificationUI();
+                ensureOneSignalReady().catch(() => {});
+            } else {
+                setLocalPushOptIn(false);
+                updateNotificationUI();
+            }
+        } catch {}
+    };
+
+    const oneShot = () => {
+        window.removeEventListener('pointerdown', oneShot, true);
+        window.removeEventListener('keydown', oneShot, true);
+        maybeRequestPushPermission();
+    };
+    window.addEventListener('pointerdown', oneShot, true);
+    window.addEventListener('keydown', oneShot, true);
 
     document.addEventListener(APP_EVENTS.renderApp, renderApp);
     document.addEventListener(APP_EVENTS.requestAnalysis, (e: Event) => {
