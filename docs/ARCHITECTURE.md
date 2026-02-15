@@ -25,10 +25,13 @@ flowchart LR
 flowchart LR
   subgraph Client
     UI[UI + Render]
+    EV[Event Hub (events.ts)]
     SW[Service Worker]
     IDB[(IndexedDB)]
-    SYNC[Sync Worker]
-    CRYPTO[Crypto AES-GCM]
+    PERSIST[persistence.ts]
+    CLOUD[cloud.ts]
+    WRPC[workerClient.ts]
+    W[sync.worker.ts]
   end
 
   subgraph Cloud
@@ -37,12 +40,14 @@ flowchart LR
     PUSH[OneSignal]
   end
 
-  UI --> IDB
-  UI --> CRYPTO
-  CRYPTO --> IDB
+  UI --> EV
+  UI --> PERSIST
+  PERSIST --> IDB
+  PERSIST --> CLOUD
   UI --> SW
-  UI --> SYNC
-  SYNC --> API
+  CLOUD --> WRPC
+  WRPC --> W
+  CLOUD --> API
   API --> AI
   UI --> PUSH
 ```
@@ -55,6 +60,7 @@ flowchart LR
     IDX[index.tsx]
     LISTEN[listeners/*]
     RENDER[render/*]
+    EVENTS[events.ts]
   end
 
   subgraph DOMAIN
@@ -68,16 +74,20 @@ flowchart LR
     PERSIST[persistence.ts]
     CLOUD[cloud.ts]
     MERGE[dataMerge.ts]
+    WRPC[workerClient.ts]
     WORKER[sync.worker.ts]
+    HASH[murmurHash3.ts]
     API[api.ts + /api/*]
     SW[sw.js]
   end
 
   IDX --> LISTEN
   IDX --> RENDER
+  IDX --> EVENTS
 
   LISTEN --> ACTIONS
   RENDER --> SELECTORS
+  ACTIONS --> EVENTS
 
   ACTIONS --> STATE
   SELECTORS --> STATE
@@ -85,13 +95,17 @@ flowchart LR
 
   ACTIONS --> PERSIST
   PERSIST --> STATE
+  PERSIST --> CLOUD
 
   LISTEN --> CLOUD
-  CLOUD --> WORKER
+  CLOUD --> HASH
+  CLOUD --> WRPC
+  WRPC --> WORKER
+  WORKER --> HASH
   CLOUD --> API
   CLOUD --> MERGE
   MERGE --> STATE
-  ANALYSIS --> WORKER
+  ANALYSIS --> CLOUD
 
   IDX --> SW
 ```
@@ -108,6 +122,7 @@ sequenceDiagram
   participant Persist as persistence
   participant DB as IndexedDB
   participant Cloud as cloud.ts
+  participant WRPC as workerClient
   participant Crypto as sync.worker (crypto)
   participant API as Vercel API /api/sync
   participant Merge as dataMerge
@@ -117,14 +132,16 @@ sequenceDiagram
   Actions->>Persist: saveState() (debounced)
   Persist->>DB: Persistência local (split core + logs)
   Persist-->>Cloud: syncHandler(snapshot)
-  Cloud->>Crypto: encrypt(shards alterados, syncKey)
+  Cloud->>WRPC: runWorkerTask(encrypt/decrypt...)
+  WRPC->>Crypto: encrypt(shards alterados, syncKey)
   Crypto-->>Cloud: shards criptografados
   Cloud->>API: POST /api/sync
   alt 200 OK
     API-->>Cloud: ACK
   else 409 CONFLICT
     API-->>Cloud: shards remotos
-    Cloud->>Crypto: decrypt(shards remotos, syncKey)
+    Cloud->>WRPC: runWorkerTask(decrypt...)
+    WRPC->>Crypto: decrypt(shards remotos, syncKey)
     Crypto-->>Cloud: estado remoto
     Cloud->>Merge: mergeStates(local, remoto)
     Merge-->>Cloud: estado consolidado

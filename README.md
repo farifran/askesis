@@ -115,11 +115,13 @@ flowchart LR
 flowchart LR
   subgraph Client
     UI[UI + Render]
+    EV[Event Hub (events.ts)]
     SW[Service Worker]
     IDB[(IndexedDB)]
-    SYNC[sync.worker.ts]
-    CRYPTO[Crypto AES-GCM]
+    PERSIST[persistence.ts]
     CLOUD[cloud.ts]
+    WRPC[workerClient.ts]
+    W[sync.worker.ts]
   end
 
   subgraph Cloud
@@ -128,13 +130,15 @@ flowchart LR
     PUSH[OneSignal]
   end
 
-  UI --> IDB
-  UI --> CRYPTO
-  CRYPTO --> IDB
+  UI --> EV
+  UI --> PERSIST
+  PERSIST --> IDB
+  PERSIST --> CLOUD
   UI --> SW
   UI --> CLOUD
-  CLOUD --> SYNC
-  SYNC --> API
+  CLOUD --> WRPC
+  WRPC --> W
+  CLOUD --> API
   API --> AI
   UI --> PUSH
 ```
@@ -147,6 +151,7 @@ flowchart LR
     IDX[index.tsx]
     LISTEN[listeners/*]
     RENDER[render/*]
+    EVENTS[events.ts]
   end
 
   subgraph DOMAIN
@@ -160,16 +165,20 @@ flowchart LR
     PERSIST[persistence.ts]
     CLOUD[cloud.ts]
     MERGE[dataMerge.ts]
+    WRPC[workerClient.ts]
     WORKER[sync.worker.ts]
+    HASH[murmurHash3.ts]
     API[api.ts + /api/*]
     SW[sw.js]
   end
 
   IDX --> LISTEN
   IDX --> RENDER
+  IDX --> EVENTS
 
   LISTEN --> ACTIONS
   RENDER --> SELECTORS
+  ACTIONS --> EVENTS
 
   ACTIONS --> STATE
   SELECTORS --> STATE
@@ -177,13 +186,17 @@ flowchart LR
 
   ACTIONS --> PERSIST
   PERSIST --> STATE
+  PERSIST --> CLOUD
 
   LISTEN --> CLOUD
-  CLOUD --> WORKER
+  CLOUD --> HASH
+  CLOUD --> WRPC
+  WRPC --> WORKER
+  WORKER --> HASH
   CLOUD --> API
   CLOUD --> MERGE
   MERGE --> STATE
-  ANALYSIS --> WORKER
+  ANALYSIS --> CLOUD
 
   IDX --> SW
 ```
@@ -201,6 +214,7 @@ sequenceDiagram
   participant Persist as persistence
   participant DB as IndexedDB
   participant Cloud as cloud.ts
+  participant WRPC as workerClient
   participant Crypto as sync.worker (crypto)
   participant API as API /api/sync
   participant Merge as dataMerge
@@ -215,7 +229,8 @@ sequenceDiagram
   Cloud->>Cloud: splitIntoShards + hash diff
 
   loop Para cada shard alterado
-    Cloud->>Crypto: encrypt(shard, syncKey)
+    Cloud->>WRPC: runWorkerTask(encrypt-json)
+    WRPC->>Crypto: encrypt(shard, syncKey)
     Crypto-->>Cloud: shard criptografado
   end
 
@@ -225,7 +240,8 @@ sequenceDiagram
     Cloud->>State: syncSynced + atualiza hash cache
   else Conflito de versão (409)
     API-->>Cloud: shards remotos
-    Cloud->>Crypto: decrypt(shards remotos)
+    Cloud->>WRPC: runWorkerTask(decrypt)
+    WRPC->>Crypto: decrypt(shards remotos)
     Crypto-->>Cloud: estado remoto
     Cloud->>Merge: mergeStates(local, remoto)
     Merge-->>Cloud: estado consolidado (LWW + dedup)
@@ -243,6 +259,7 @@ sequenceDiagram
   participant D2 as Dispositivo B
   participant API as /api/sync
   participant C as cloud.ts (cliente)
+  participant WRPC as workerClient
   participant W as sync.worker
   participant M as dataMerge
 
@@ -253,7 +270,8 @@ sequenceDiagram
   API-->>D2: 409 CONFLICT + shards remotos
 
   D2->>C: resolveConflictWithServerState()
-  C->>W: decrypt(shards remotos)
+  C->>WRPC: runWorkerTask(decrypt)
+  WRPC->>W: decrypt(shards remotos)
   W-->>C: estado remoto
   C->>M: mergeStates(local, remoto)
   M-->>C: estado consolidado
@@ -530,12 +548,14 @@ npm run dev
 
 ```mermaid
 flowchart LR
-  UI[UI] --> State[State Engine]
-  State --> Worker[Web Worker]
+  UI[UI] --> Events[events.ts]
+  UI --> State[State Engine]
+  State --> Persist[persistence.ts]
+  Persist --> Storage[IndexedDB]
+  Persist --> Cloud[cloud.ts]
+  Cloud --> WRPC[workerClient.ts]
+  WRPC --> Worker[sync.worker.ts]
   Worker --> Crypto[AES-GCM]
-  State --> Storage[IndexedDB]
-  State --> Sync[Cloud Sync]
-  Sync --> Storage
 ```
 
 <details>
@@ -698,12 +718,14 @@ npm run dev
 
 ```mermaid
 flowchart LR
-  UI[UI] --> State[State Engine]
-  State --> Worker[Web Worker]
+  UI[UI] --> Events[events.ts]
+  UI --> State[State Engine]
+  State --> Persist[persistence.ts]
+  Persist --> Storage[IndexedDB]
+  Persist --> Cloud[cloud.ts]
+  Cloud --> WRPC[workerClient.ts]
+  WRPC --> Worker[sync.worker.ts]
   Worker --> Crypto[AES-GCM]
-  State --> Storage[IndexedDB]
-  State --> Sync[Cloud Sync]
-  Sync --> Storage
 ```
 
 <details>
