@@ -44,12 +44,26 @@ flowchart LR
   UI --> PERSIST
   PERSIST --> IDB
   PERSIST --> CLOUD
-  UI --> SW
+
+  %% Cloud orchestration (worker + remote)
   CLOUD --> WRPC
   WRPC --> W
   CLOUD --> API
   API --> AI
-  UI --> PUSH
+
+  %% Return paths (remote updates + UI refresh)
+  CLOUD -->|persist merged/remote| PERSIST
+  CLOUD -->|render/update status| UI
+  CLOUD -->|emitHabitsChanged| EV
+
+  %% Service Worker (offline + background sync)
+  UI --> SW
+  CLOUD -->|register bg sync| SW
+
+  %% Push notifications (delivery goes to SW)
+  UI -->|opt-in/consent| PUSH
+  PUSH -->|push events| SW
+  SW -->|notificationclick| UI
 ```
 
 ## 3) Componentes Internos (C4 - Nível 3)
