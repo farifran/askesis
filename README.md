@@ -23,7 +23,6 @@
 
 - [Arquitetura e fluxo do usuário (diagrama)](#pt-architecture-user-flow)
 - [Integrações e infraestrutura (diagrama)](#pt-integrations-infra)
-- [Fluxo da Aplicação](#pt-fluxo)
 
 <details>
   <summary>Ver estrutura completa (TOC)</summary>
@@ -31,10 +30,8 @@
 - [Diagramas (visão geral)](#pt-diagramas)
   - [Visão Geral da Arquitetura e Fluxo do Usuário](#pt-architecture-user-flow)
   - [Visão Geral de Integrações e Infraestrutura](#pt-integrations-infra)
-- [Fluxo da Aplicação](#pt-fluxo)
 - [Resumo](#pt-resumo)
 - [Dashboard tecnologico](#pt-dashboard)
-- [Contexto do Sistema (C4 - Nível 1)](#pt-c4-l1)
 - [Contêineres (C4 - Nível 2)](#pt-c4-l2)
 - [Componentes Internos (C4 - Nível 3)](#pt-c4-l3)
 - [Fluxo de Dados (Local-first + Sync)](#pt-data-flow)
@@ -98,38 +95,6 @@ Este diagrama detalha a arquitetura de alto nível do sistema e o fluxo de comun
 - Notificações (OneSignal): Serviço de mensageria independente que registra o PWA e cuida do envio de notificações push assíncronas para engajar o usuário de volta no aplicativo.
 
 </details>
-
-
-## Fluxo da Aplicação
-
-<a id="pt-fluxo"></a>
-
-O gráfico abaixo representa o fluxo lógico implementado na interface:
-
-```mermaid
-graph TD
-    subgraph Daily Cycle
-        Start((Início)) --> S1[Preparação Estoica]
-        S1 --> S2{Registro de Status}
-        
-        S2 -- "Pendente / Adiado" --> S2
-        S2 -- "Feito" --> S3[Indicar Quantidade]
-        
-        S3 --> S4[Diário de Gratidão]
-        S4 -.-> S5[Ver Progresso]
-        S5 --> End((Fim do Ciclo))
-    end
-
-    style S1 fill:#f0fdf4,stroke:#16a34a,stroke-width:2px
-    style S2 fill:#fff,stroke:#16a34a,stroke-width:2px
-    style S3 fill:#fff,stroke:#16a34a,stroke-width:2px
-    style S4 fill:#fff,stroke:#16a34a,stroke-width:2px,stroke-dasharray: 5 5
-    style S5 fill:#fff,stroke:#16a34a,stroke-width:2px
-    
-    classDef default font-family:Inter,sans-serif;
-```
-
-
 <a id="pt-resumo"></a>
 
 ### Resumo
@@ -185,83 +150,39 @@ Como verificar (local / CI):
 - Privacidade/seguranca: `npm test` + `npm run test:scenario` (ver `tests/scenario-test-6-security-pentest.test.ts` e `services/crypto.test.ts`).
 - Offline-first (artefatos): `npm run build` (confira `dist/sw.js` e `dist/manifest.json`).
 
-<a id="pt-c4-l1"></a>
-
-### Contexto do Sistema (C4 - Nível 1)
-
-```mermaid
-flowchart LR
-  U[Usuário]
-  A[Askesis PWA]
-  G[Google Gemini API]
-  V[Vercel Serverless API]
-  O[OneSignal]
-
-  U -->|Usa diariamente| A
-  A -->|Análise e reflexão| V
-  A -->|Sync de estado| V
-  V -->|Proxy de IA| G
-  A -->|Registro de push| O
-  O -->|Notificações| U
-```
-
 <a id="pt-c4-l2"></a>
 
 ### Contêineres (C4 - Nível 2)
 
 ```mermaid
 flowchart TB
-  %% Layout em camadas para reduzir cruzamentos
-  subgraph Client["Client (Main Thread)"]
+  %% Nível 2 = visão de containers (sem repetir nomes de arquivos do Nível 3)
+  subgraph Client["Client (PWA)"]
     direction TB
-    UI[UI + Render]
-    EV["Event Hub - events.ts"]
-    PERSIST[persistence.ts]
-    IDB[(IndexedDB)]
-    CLOUD[cloud.ts]
+    PWA["Askesis PWA\n(UI + Render)"]
+    Sync["Sync Engine"]
+    Store["Local Storage\n(IndexedDB)"]
+    SW["Service Worker\n(offline + bg sync)"]
+    Worker["Web Worker\n(crypto + merge)"]
   end
 
-  subgraph Worker["Client (Worker)"]
+  subgraph External["External Services"]
     direction TB
-    WRPC[workerClient.ts]
-    W[sync.worker.ts]
+    API["Vercel API\n(/api/sync, /api/analyze)"]
+    AI["Gemini API"]
+    PUSH["OneSignal"]
   end
 
-  subgraph Platform["Platform"]
-    direction TB
-    SW[Service Worker]
-  end
+  %% Core flows
+  PWA --> Store
+  PWA --> Sync
+  Sync --> Worker
+  Sync --> API --> AI
 
-  subgraph Cloud["External Services"]
-    direction TB
-    API[Vercel API /api/sync /api/analyze]
-    AI[Gemini]
-    PUSH[OneSignal]
-  end
-
-  %% Main thread
-  UI --> EV
-  UI --> PERSIST
-  PERSIST --> IDB
-  PERSIST --> CLOUD
-
-  %% Cloud orchestration (worker + remote)
-  CLOUD --> WRPC --> W
-  CLOUD --> API --> AI
-
-  %% Return paths (remote updates + UI refresh)
-  CLOUD -->|persist merged/remote| PERSIST
-  CLOUD -->|render/update status| UI
-  CLOUD -->|emitHabitsChanged| EV
-
-  %% Service Worker (offline + background sync)
-  UI --> SW
-  CLOUD -->|register bg sync| SW
-
-  %% Push notifications (delivery goes to SW)
-  UI -->|opt-in/consent| PUSH
-  PUSH -->|push events| SW
-  SW -->|notificationclick| UI
+  %% Background sync + push notifications
+  Sync -->|register bg sync| SW
+  PWA -->|opt-in/consent| PUSH
+  PUSH -->|push events| SW -->|notificationclick| PWA
 ```
 
 <a id="pt-c4-l3"></a>
@@ -293,16 +214,14 @@ flowchart TB
     CLOUD["services/cloud.ts (sync)"]
     WRPC["services/workerClient.ts"]
     WORKER["services/sync.worker.ts"]
-    HASH["services/murmurHash3.ts"]
-    API["services/api.ts + api/*"]
-    SW["sw.js (Service Worker)"]
+    API["services/api.ts (HTTP client)"]
+    MERGE["services/dataMerge.ts"]
   end
 
   %% Boot / UI
   IDX --> LISTEN
   IDX --> RENDER
   IDX --> EVENTS
-  IDX --> SW
 
   %% Domínio
   LISTEN --> ACTIONS
@@ -326,8 +245,7 @@ flowchart TB
   ANALYSIS --> CLOUD
   CLOUD --> WRPC --> WORKER
   CLOUD --> API
-  CLOUD --> HASH
-  WORKER --> HASH
+  CLOUD --> MERGE
 ```
 
 Leitura rápida: interação entra por `listeners/*`, regra de negócio vive em `habitActions.ts`/`selectors.ts`, estado central em `state.ts`, e persistência/sync ficam em `persistence.ts` + `cloud.ts` + `sync.worker.ts`.

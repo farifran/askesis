@@ -23,57 +23,33 @@ flowchart LR
 
 ```mermaid
 flowchart TB
-  %% Layout em camadas para reduzir cruzamentos
-  subgraph Client["Client (Main Thread)"]
+  %% Nível 2 = visão de containers (sem repetir nomes de arquivos do Nível 3)
+  subgraph Client["Client (PWA)"]
     direction TB
-    UI[UI + Render]
-    EV["Event Hub - events.ts"]
-    PERSIST[persistence.ts]
-    IDB[(IndexedDB)]
-    CLOUD[cloud.ts]
+    PWA["Askesis PWA\n(UI + Render)"]
+    Sync["Sync Engine"]
+    Store["Local Storage\n(IndexedDB)"]
+    SW["Service Worker\n(offline + bg sync)"]
+    Worker["Web Worker\n(crypto + merge)"]
   end
 
-  subgraph Worker["Client (Worker)"]
+  subgraph External["External Services"]
     direction TB
-    WRPC[workerClient.ts]
-    W[sync.worker.ts]
+    API["Vercel API\n(/api/sync, /api/analyze)"]
+    AI["Gemini API"]
+    PUSH["OneSignal"]
   end
 
-  subgraph Platform["Platform"]
-    direction TB
-    SW[Service Worker]
-  end
+  %% Core flows
+  PWA --> Store
+  PWA --> Sync
+  Sync --> Worker
+  Sync --> API --> AI
 
-  subgraph Cloud["External Services"]
-    direction TB
-    API[Vercel API]
-    AI[Gemini]
-    PUSH[OneSignal]
-  end
-
-  %% Main thread
-  UI --> EV
-  UI --> PERSIST
-  PERSIST --> IDB
-  PERSIST --> CLOUD
-
-  %% Cloud orchestration (worker + remote)
-  CLOUD --> WRPC --> W
-  CLOUD --> API --> AI
-
-  %% Return paths (remote updates + UI refresh)
-  CLOUD -->|persist merged/remote| PERSIST
-  CLOUD -->|render/update status| UI
-  CLOUD -->|emitHabitsChanged| EV
-
-  %% Service Worker (offline + background sync)
-  UI --> SW
-  CLOUD -->|register bg sync| SW
-
-  %% Push notifications (delivery goes to SW)
-  UI -->|opt-in/consent| PUSH
-  PUSH -->|push events| SW
-  SW -->|notificationclick| UI
+  %% Background sync + push notifications
+  Sync -->|register bg sync| SW
+  PWA -->|opt-in/consent| PUSH
+  PUSH -->|push events| SW -->|notificationclick| PWA
 ```
 
 ## 3) Componentes Internos (C4 - Nível 3)
@@ -103,16 +79,14 @@ flowchart TB
     CLOUD["services/cloud.ts (sync)"]
     WRPC["services/workerClient.ts"]
     WORKER["services/sync.worker.ts"]
-    HASH["services/murmurHash3.ts"]
-    API["services/api.ts + api/*"]
-    SW["sw.js (Service Worker)"]
+    API["services/api.ts (HTTP client)"]
+    MERGE["services/dataMerge.ts"]
   end
 
   %% Boot / UI
   IDX --> LISTEN
   IDX --> RENDER
   IDX --> EVENTS
-  IDX --> SW
 
   %% Domínio
   LISTEN --> ACTIONS
@@ -136,8 +110,7 @@ flowchart TB
   ANALYSIS --> CLOUD
   CLOUD --> WRPC --> WORKER
   CLOUD --> API
-  CLOUD --> HASH
-  WORKER --> HASH
+  CLOUD --> MERGE
 ```
 
 Leitura rápida: interação entra por `listeners/*`, regra de negócio vive em `habitActions.ts`/`selectors.ts`, estado central em `state.ts`, e persistência/sync ficam em `persistence.ts` + `cloud.ts` + `sync.worker.ts`.
