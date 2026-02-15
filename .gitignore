@@ -12,6 +12,27 @@ dist
 dist-ssr
 *.local
 
+# Environment files (secrets)
+.env
+.env.*
+!.env.example
+
+# Tool caches
+.vite/
+.vitest/
+.cache/
+.eslintcache
+
+# TypeScript incremental build info
+*.tsbuildinfo
+
+# Vercel local artifacts
+.vercel/
+
+# OS / temp
+*~
+*.tmp
+
 # Test coverage output
 coverage
 coverage/
