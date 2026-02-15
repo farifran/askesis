@@ -24,7 +24,7 @@ flowchart LR
 ```mermaid
 flowchart TB
   %% Layout em camadas para reduzir cruzamentos
-  subgraph Client[Client (Main Thread)]
+  subgraph Client["Client (Main Thread)"]
     direction TB
     UI[UI + Render]
     EV["Event Hub - events.ts"]
@@ -33,18 +33,18 @@ flowchart TB
     CLOUD[cloud.ts]
   end
 
-  subgraph Worker[Client (Worker)]
+  subgraph Worker["Client (Worker)"]
     direction TB
     WRPC[workerClient.ts]
     W[sync.worker.ts]
   end
 
-  subgraph Platform[Platform]
+  subgraph Platform["Platform"]
     direction TB
     SW[Service Worker]
   end
 
-  subgraph Cloud[External Services]
+  subgraph Cloud["External Services"]
     direction TB
     API[Vercel API]
     AI[Gemini]
