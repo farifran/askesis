@@ -40,7 +40,7 @@ export * from './render/chart';
 export function openSyncDebugModal() {
     const logs = state.syncLogs || [];
     if (logs.length === 0) {
-        return showConfirmationModal(t('syncMonitorEmpty'), () => {}, { title: t('syncMonitorTitle'), hideCancel: true });
+        return showConfirmationModal("Nenhum log de sincronização disponível ainda.", () => {}, { title: "Monitor de Sync", hideCancel: true });
     }
 
     const logHtml = logs.slice().reverse().map(log => {
@@ -60,8 +60,8 @@ export function openSyncDebugModal() {
     `;
 
     showConfirmationModal(containerHtml, () => {}, { 
-        title: t('syncMonitorTitle'), 
-        confirmText: t('closeButton'),
+        title: "Monitor de Sincronização", 
+        confirmText: "Fechar",
         hideCancel: true,
         allowHtml: true
     });
