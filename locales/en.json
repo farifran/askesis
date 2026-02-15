@@ -315,6 +315,8 @@
     "syncUseCloud": "Use Cloud Data",
     "syncVerifying": "Verifying...",
     "syncViewKey": "View Key",
+    "syncMonitorTitle": "Sync Monitor",
+    "syncMonitorEmpty": "No sync logs available yet.",
     "syncWarning": "<strong>WRITE DOWN THIS KEY!</strong> It is the only way to access your data on other devices. If you lose it, your cloud data will be lost forever.",
     "unitCheck": {
         "one": "time",

@@ -316,6 +316,8 @@
     "syncUseCloud": "Usar Dados da Nuvem",
     "syncVerifying": "Verificando...",
     "syncViewKey": "Ver Chave",
+    "syncMonitorTitle": "Monitor de Sincronização",
+    "syncMonitorEmpty": "Nenhum log de sincronização disponível ainda.",
     "syncWarning": "<strong>ANOTE ESTA CHAVE!</strong> É a única maneira de acessar seus dados em outros dispositivos. Se você perdê-la, seus dados na nuvem serão perdidos para sempre.",
     "unitCheck": {
         "one": "vez",

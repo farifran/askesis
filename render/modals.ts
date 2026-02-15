@@ -78,13 +78,6 @@ function buildManageHabitListItem(item: ManageHabitItem, today: string): HTMLLIE
         detailsWrap.appendChild(subtitleEl);
     }
 
-    if (st !== 'active') {
-        const statusEl = document.createElement('span');
-        statusEl.className = 'habit-name-status';
-        statusEl.textContent = t(st === 'graduated' ? 'modalStatusGraduated' : 'modalStatusEnded');
-        mainInfo.appendChild(statusEl);
-    }
-
     const actions = document.createElement('div');
     actions.className = 'habit-list-actions';
 
@@ -104,6 +97,11 @@ function buildManageHabitListItem(item: ManageHabitItem, today: string): HTMLLIE
             ));
         }
     } else {
+        const statusEl = document.createElement('span');
+        statusEl.className = 'habit-name-status';
+        statusEl.textContent = t(st === 'graduated' ? 'modalStatusGraduated' : 'modalStatusEnded');
+        actions.appendChild(statusEl);
+
         actions.appendChild(buildManageActionButton(
             'permanent-delete-habit-btn',
             t('aria_delete_permanent', { name }),
@@ -292,7 +290,8 @@ export function closeModal(modal: HTMLElement, suppressCallbacks = false) {
 
 export function setupManageModal() {
     const lastRenderKey = ui.manageModal.dataset.manageListLastModified;
-    if (!state.uiDirtyState.habitListStructure && ui.habitList.children.length > 0 && lastRenderKey === String(state.lastModified)) return;
+    const renderKey = `${state.lastModified}|${state.activeLanguageCode}`;
+    if (!state.uiDirtyState.habitListStructure && ui.habitList.children.length > 0 && lastRenderKey === renderKey) return;
     // FILTER: Hide logically deleted habits
     const activeHabits = state.habits.filter(h => !h.deletedOn);
 
@@ -301,7 +300,7 @@ export function setupManageModal() {
         ui.noHabitsMessage.classList.remove('hidden'); 
         ui.habitList.replaceChildren();
         state.uiDirtyState.habitListStructure = false;
-        ui.manageModal.dataset.manageListLastModified = String(state.lastModified);
+        ui.manageModal.dataset.manageListLastModified = renderKey;
         return; 
     }
     
@@ -313,7 +312,7 @@ export function setupManageModal() {
 
     ui.habitList.replaceChildren(...items.map(item => buildManageHabitListItem(item, today)));
     state.uiDirtyState.habitListStructure = false;
-    ui.manageModal.dataset.manageListLastModified = String(state.lastModified);
+    ui.manageModal.dataset.manageListLastModified = renderKey;
 }
 
 export function showConfirmationModal(text: string, onConfirm: () => void, opts?: ConfirmationModalOptions) {

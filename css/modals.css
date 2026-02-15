@@ -229,6 +229,11 @@
     color: var(--text-tertiary);
     margin-inline-start: var(--space-md);
     flex-shrink: 0; /* Previne quebras de linha indesejadas */
+    white-space: nowrap;
+}
+
+.habit-list-actions .habit-name-status {
+    margin-inline-start: 0;
 }
 
 .empty-list-message {
