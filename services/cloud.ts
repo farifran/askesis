@@ -331,16 +331,13 @@ async function performSync() {
 
         const formatTransientSyncLog = (err: any) => {
             const tech = String(err?.message || 'Erro desconhecido');
-            if (code === 'LUA_UNAVAILABLE' || tech.includes('Atomic sync unavailable')) {
-                return `Servidor de sync temporariamente indisponível. Detalhe técnico: ${tech}. Reenfileirado.`;
+            if (code === 'LUA_UNAVAILABLE' || tech.includes('Atomic sync unavailable') || status === 503) {
+                return 'Servidor de sync temporariamente indisponível. Reenfileirado.';
             }
             if (status === 429 || code === 'RATE_LIMITED') {
-                return `Muitas tentativas de sincronização. Tentando novamente em instantes. Detalhe técnico: ${tech}. Reenfileirado.`;
+                return 'Muitas tentativas de sincronização. Tentando novamente em instantes. Reenfileirado.';
             }
-            if (status === 503) {
-                return `Servidor de sync temporariamente indisponível. Detalhe técnico: ${tech}. Reenfileirado.`;
-            }
-            return `Falha transitória no sync. Detalhe técnico: ${tech}. Reenfileirado.`;
+            return 'Falha transitória no sync. Reenfileirado.';
         };
 
         if (isTransient) {
