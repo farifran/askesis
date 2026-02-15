@@ -24,13 +24,14 @@ flowchart LR
 ```mermaid
 flowchart TB
   %% Nível 2 = visão de containers (sem repetir nomes de arquivos do Nível 3)
+  %% Nota: evitamos o "loop" SW -> PWA para reduzir cruzamentos no render do GitHub.
   subgraph Client["Client (PWA)"]
     direction TB
     PWA["Askesis PWA\n(UI + Render)"]
-    Sync["Sync Engine"]
     Store["Local Storage\n(IndexedDB)"]
-    SW["Service Worker\n(offline + bg sync)"]
+    Sync["Sync Engine"]
     Worker["Web Worker\n(crypto + merge)"]
+    SW["Service Worker\n(offline + bg sync)"]
   end
 
   subgraph External["External Services"]
@@ -49,7 +50,8 @@ flowchart TB
   %% Background sync + push notifications
   Sync -->|register bg sync| SW
   PWA -->|opt-in/consent| PUSH
-  PUSH -->|push events| SW -->|notificationclick| PWA
+  PUSH -->|push events| SW
+  SW -->|notificationclick| Open["Open / focus Askesis"]
 ```
 
 ## 3) Componentes Internos (C4 - Nível 3)

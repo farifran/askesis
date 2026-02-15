@@ -99,8 +99,10 @@ Este diagrama detalha a arquitetura de alto nível do sistema e o fluxo de comun
 
 ### Resumo
 
-- Rastreador de habitos estoico, focado em privacidade, com IA para reflexoes e ajustes de rotina.
-- PWA offline-first com dados locais criptografados e experiencia consistente em mobile e desktop.
+- Rastreador de hábitos estoico, focado em privacidade, com IA para reflexões e ajustes de rotina.
+- Local-first: dados ficam no dispositivo; sincronização opcional com criptografia E2E (AES-GCM) em Web Worker.
+- Sync resiliente e sem conflitos (merge/CRDT-lite) via Vercel API (KV), sem login obrigatório.
+- Acessível e rápido: WCAG 2.1 AA e budgets de performance verificados em testes.
 
 <a id="pt-dashboard"></a>
 
@@ -157,13 +159,14 @@ Como verificar (local / CI):
 ```mermaid
 flowchart TB
   %% Nível 2 = visão de containers (sem repetir nomes de arquivos do Nível 3)
+  %% Nota: evitamos o "loop" SW -> PWA para reduzir cruzamentos no render do GitHub.
   subgraph Client["Client (PWA)"]
     direction TB
     PWA["Askesis PWA\n(UI + Render)"]
-    Sync["Sync Engine"]
     Store["Local Storage\n(IndexedDB)"]
-    SW["Service Worker\n(offline + bg sync)"]
+    Sync["Sync Engine"]
     Worker["Web Worker\n(crypto + merge)"]
+    SW["Service Worker\n(offline + bg sync)"]
   end
 
   subgraph External["External Services"]
@@ -182,7 +185,8 @@ flowchart TB
   %% Background sync + push notifications
   Sync -->|register bg sync| SW
   PWA -->|opt-in/consent| PUSH
-  PUSH -->|push events| SW -->|notificationclick| PWA
+  PUSH -->|push events| SW
+  SW -->|notificationclick| Open["Open / focus Askesis"]
 ```
 
 <a id="pt-c4-l3"></a>
@@ -660,7 +664,9 @@ This diagram details the high-level system architecture and the communication fl
 ### Summary
 
 - Stoic habit tracker focused on privacy, with AI for reflection and routine tuning.
-- Offline-first PWA with encrypted local data and consistent UX across devices.
+- Local-first: data stays on-device; optional sync with E2E encryption (AES-GCM) via Web Worker.
+- Conflict-free/resilient sync (merge/CRDT-lite) through Vercel API (KV), no mandatory login.
+- Accessible and fast: WCAG 2.1 AA and performance budgets enforced by tests.
 
 <a id="en-dashboard"></a>
 
@@ -942,8 +948,10 @@ Este diagrama detalla la arquitectura de alto nivel del sistema y el flujo de co
 
 ### Resumen
 
-- Rastreador de habitos estoico, enfocado en privacidad, con IA para reflexion y ajuste de rutina.
-- PWA offline-first con datos locales cifrados y experiencia consistente en mobile y desktop.
+- Rastreador de hábitos estoico, enfocado en privacidad, con IA para reflexión y ajuste de rutina.
+- Local-first: los datos quedan en el dispositivo; sincronización opcional con cifrado E2E (AES-GCM) vía Web Worker.
+- Sync resiliente y sin conflictos (merge/CRDT-lite) a través de Vercel API (KV), sin login obligatorio.
+- Accesible y rápido: WCAG 2.1 AA y budgets de rendimiento verificados por tests.
 
 <a id="es-dashboard"></a>
 
