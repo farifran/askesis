@@ -16,25 +16,16 @@ import { setupDragHandler } from './listeners/drag';
 import { setupSwipeHandler } from './listeners/swipe';
 import { setupCalendarListeners } from './listeners/calendar';
 import { setupChartListeners } from './listeners/chart';
-import { pushToOneSignal, getTodayUTCIso, resetTodayCache, createDebounced, logger } from './utils';
+import { getTodayUTCIso, resetTodayCache, createDebounced, logger } from './utils';
 import { state, getPersistableState, invalidateCachesForDateChange } from './state';
 import { syncStateWithCloud } from './services/cloud';
 import { checkAndAnalyzeDayContext } from './services/analysis';
-import { NETWORK_DEBOUNCE_MS, PERMISSION_DELAY_MS, INTERACTION_DELAY_MS } from './constants';
+import { NETWORK_DEBOUNCE_MS, INTERACTION_DELAY_MS } from './constants';
 import { APP_EVENTS, CARD_EVENTS, emitDayChanged } from './events';
 
 let areListenersAttached = false;
 let visibilityRafId: number | null = null;
 let isHandlingVisibility = false;
-
-const _handlePermissionChange = () => {
-    window.setTimeout(updateNotificationUI, PERMISSION_DELAY_MS);
-};
-
-const _handleOneSignalInit = (OneSignal: OneSignalLike) => {
-    OneSignal.Notifications.addEventListener('permissionChange', _handlePermissionChange);
-    updateNotificationUI();
-};
 
 const _handleNetworkChange = createDebounced(() => {
     const isOnline = navigator.onLine;
@@ -108,7 +99,9 @@ export function setupEventListeners() {
     setupCardListeners();
     setupCalendarListeners();
     
-    pushToOneSignal(_handleOneSignalInit);
+    // OneSignal é carregado sob demanda (quando o usuário ativa notificações).
+    // Ainda assim, atualizamos a UI usando permissões nativas quando o SDK não estiver presente.
+    updateNotificationUI();
 
     document.addEventListener(APP_EVENTS.renderApp, renderApp);
     document.addEventListener(APP_EVENTS.requestAnalysis, (e: Event) => {

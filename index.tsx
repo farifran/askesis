@@ -138,9 +138,6 @@ function finalizeInit(loader: HTMLElement | null) {
     }
     const runBackgroundTasks = () => {
         performArchivalCheck();
-        if (process.env.NODE_ENV === 'production') {
-            import('./services/analytics').then(({ initAnalytics }) => initAnalytics()).catch(() => {});
-        }
     };
     if ((window as any).scheduler?.postTask) {
         (window as any).scheduler.postTask(runBackgroundTasks, { priority: 'background' });

@@ -247,6 +247,18 @@ export function updateNotificationUI() {
         setTextContent(ui.notificationStatusDesc, t('notificationChangePending'));
         return;
     }
+
+    // Zero-deps por padrão: se OneSignal não estiver carregado, usa permissões nativas.
+    if (typeof window === 'undefined' || typeof (window as any).OneSignal === 'undefined') {
+        const permission = (typeof Notification !== 'undefined' && (Notification as any).permission) ? (Notification as any).permission : 'default';
+        const isDenied = permission === 'denied';
+        ui.notificationToggle.checked = false;
+        ui.notificationToggle.disabled = isDenied;
+        ui.notificationToggleLabel.classList.toggle('disabled', isDenied);
+        setTextContent(ui.notificationStatusDesc, t(isDenied ? 'notificationStatusDisabled' : 'notificationStatusOptedOut'));
+        return;
+    }
+
     pushToOneSignal((OneSignal: OneSignalLike) => {
         const isPushEnabled = OneSignal.User.PushSubscription.optedIn;
         const permission = OneSignal.Notifications.permission;

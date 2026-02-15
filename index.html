@@ -41,7 +41,7 @@
     <!-- PERFORMANCE: Network Socket Warming. 
          Inicia o handshake DNS/TCP/TLS com o CDN do OneSignal antes que o parser encontre a tag de script.
          Reduz a latência de carregamento do SDK em ~50-100ms em redes móveis. -->
-    <link rel="preconnect" href="https://cdn.onesignal.com">
+    <!-- Zero-deps por padrão: OneSignal é carregado sob demanda quando o usuário ativa notificações -->
 
     <!-- Metadados para PWA em iOS -->
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -104,24 +104,7 @@
         }
     </style>
     
-    <!-- OneSignal SDK: Async para NÃO BLOQUEAR o DOMContentLoaded/First Interactive -->
-    <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" async></script>
-    <script>
-      window.OneSignalDeferred = window.OneSignalDeferred || [];
-      window.OneSignalDeferred.push(async function(OneSignal) {
-        // [ROBUSTNESS FIX]: OneSignal throws a domain-mismatch error if initialized on a URL 
-        // that doesn't match the dashboard configuration. We wrap this in a try/catch to 
-        // prevent it from triggering the app's Fatal Error UI during staging/local previews.
-        try {
-          await OneSignal.init({
-            appId: "39454655-f1cd-4531-8ec5-d0f61eb1c478",
-            allowLocalhostAsSecureOrigin: true,
-          });
-        } catch (e) {
-          console.warn("OneSignal initialization skipped: likely domain mismatch or blocked by browser.", e);
-        }
-      });
-    </script>
+        <!-- OneSignal removido do boot: carregado via runtime (utils.ensureOneSignalReady) -->
 </head>
 <body>
     <!-- PERFORMANCE: SVG Sprite System.

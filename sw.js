@@ -8,11 +8,27 @@
  * @description Service Worker: Proxy de Rede e Gerenciador de Cache (Offline Engine).
  */
 
-try {
-    importScripts("https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js");
-} catch (e) {
-    // Non-blocking failure for optional SDK
+// Zero-deps por padrão: OneSignal SW SDK só é carregado quando o usuário ativa notificações.
+let _oneSignalSwLoaded = false;
+function _enableOneSignalInSw() {
+    if (_oneSignalSwLoaded) return true;
+    try {
+        importScripts("https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js");
+        _oneSignalSwLoaded = true;
+        return true;
+    } catch (e) {
+        return false;
+    }
 }
+
+self.addEventListener('message', (event) => {
+    const data = event && event.data;
+    if (!data || data.type !== 'ENABLE_ONESIGNAL') return;
+    const ok = _enableOneSignalInSw();
+    try {
+        event.source?.postMessage?.({ type: 'ONESIGNAL_ENABLED', ok });
+    } catch (e) {}
+});
 
 try {
     importScripts('/workbox-sw.js');

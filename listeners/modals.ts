@@ -59,7 +59,7 @@ import {
 } from '../services/habitActions';
 import { t, setLanguage } from '../i18n';
 import { setupReelRotary } from '../render/rotary';
-import { simpleMarkdownToHTML, pushToOneSignal, getContrastColor, addDays, parseUTCIsoDate, toUTCIsoDateString, triggerHaptic, logger, escapeHTML, sanitizeText, getTodayUTCIso } from '../utils';
+import { simpleMarkdownToHTML, ensureOneSignalReady, getContrastColor, addDays, parseUTCIsoDate, toUTCIsoDateString, triggerHaptic, logger, escapeHTML, sanitizeText, getTodayUTCIso } from '../utils';
 import { setTextContent } from '../render/dom';
 
 // --- STATIC HELPERS ---
@@ -197,17 +197,27 @@ const _handleResetAppClick = () => {
     );
 };
 
-const _handleNotificationToggleChange = () => {
-    pushToOneSignal(async (OneSignal: OneSignalLike) => {
-        const wantsEnabled = ui.notificationToggle.checked;
+const _handleNotificationToggleChange = async () => {
+    const wantsEnabled = ui.notificationToggle.checked;
+    ui.notificationToggle.disabled = true;
+    setTextContent(ui.notificationStatusDesc, t('notificationChangePending'));
+
+    try {
+        // OneSignal só carrega se o usuário explicitamente quiser ativar/desativar.
+        const OneSignal = await ensureOneSignalReady();
         if (wantsEnabled) {
             await OneSignal.Notifications.requestPermission();
         } else {
             await OneSignal.User.PushSubscription.optOut();
         }
-        ui.notificationToggle.disabled = true;
-        setTextContent(ui.notificationStatusDesc, t('notificationChangePending'));
-    });
+    } catch (e) {
+        // Se o SDK falhar (bloqueio do browser/domínio), reverte a UI para um estado seguro.
+        ui.notificationToggle.checked = false;
+        setTextContent(ui.notificationStatusDesc, t('notificationStatusOptedOut'));
+    } finally {
+        ui.notificationToggle.disabled = false;
+        updateNotificationUI();
+    }
 };
 
 const _handleExploreHabitListClick = (e: MouseEvent) => {

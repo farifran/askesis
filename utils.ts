@@ -263,10 +263,72 @@ export function simpleMarkdownToHTML(text: string): string {
 }
 
 // --- 3rd Party Wrappers ---
+const ONESIGNAL_SDK_URL = 'https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js';
+const ONESIGNAL_APP_ID = '39454655-f1cd-4531-8ec5-d0f61eb1c478';
+let _oneSignalInitPromise: Promise<OneSignalLike> | null = null;
+
+function _loadScript(src: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+        const existing = document.querySelector<HTMLScriptElement>(`script[src="${src}"]`);
+        if (existing) {
+            if ((existing as any)._loaded) return resolve();
+            existing.addEventListener('load', () => resolve(), { once: true });
+            existing.addEventListener('error', () => reject(new Error(`Failed to load ${src}`)), { once: true });
+            return;
+        }
+        const script = document.createElement('script');
+        script.async = true;
+        script.src = src;
+        script.addEventListener('load', () => { (script as any)._loaded = true; resolve(); }, { once: true });
+        script.addEventListener('error', () => reject(new Error(`Failed to load ${src}`)), { once: true });
+        document.head.appendChild(script);
+    });
+}
+
+export async function enableOneSignalInServiceWorker(): Promise<void> {
+    try {
+        if (!('serviceWorker' in navigator)) return;
+        const reg = await navigator.serviceWorker.ready;
+        reg.active?.postMessage?.({ type: 'ENABLE_ONESIGNAL' });
+    } catch {}
+}
+
 export function pushToOneSignal(callback: (oneSignal: OneSignalLike) => void) {
+    // Zero-deps por padrão: NÃO faz lazy-load automaticamente.
     if (typeof window === 'undefined') return;
-    if (typeof window.OneSignal === 'undefined') { window.OneSignalDeferred = window.OneSignalDeferred || []; window.OneSignalDeferred.push(callback); }
-    else callback(window.OneSignal);
+    if (typeof window.OneSignal === 'undefined') return;
+    callback(window.OneSignal);
+}
+
+export async function ensureOneSignalReady(): Promise<OneSignalLike> {
+    if (typeof window === 'undefined') throw new Error('OneSignal unavailable');
+    if (window.OneSignal) return window.OneSignal;
+    if (_oneSignalInitPromise) return _oneSignalInitPromise;
+
+    _oneSignalInitPromise = (async () => {
+        window.OneSignalDeferred = window.OneSignalDeferred || [];
+        const ready = new Promise<OneSignalLike>((resolve, reject) => {
+            window.OneSignalDeferred!.push(async (OneSignal: OneSignalLike) => {
+                try {
+                    await OneSignal.init({
+                        appId: ONESIGNAL_APP_ID,
+                        allowLocalhostAsSecureOrigin: true,
+                    } as any);
+                    resolve(OneSignal);
+                } catch (e: any) {
+                    reject(e);
+                }
+            });
+        });
+
+        await _loadScript(ONESIGNAL_SDK_URL);
+        const oneSignal = await ready;
+        // Habilita SW (push delivery) só após opt-in explícito.
+        await enableOneSignalInServiceWorker();
+        return oneSignal;
+    })();
+
+    return _oneSignalInitPromise;
 }
 
 export function triggerHaptic(type: keyof typeof HAPTIC_PATTERNS) {

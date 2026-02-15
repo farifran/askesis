@@ -78,7 +78,6 @@
 | scripts/dev-api-mock.js | 68 | L3 Sólido | Mock útil, com tratamento de erro básico. |
 | services/HabitService.ts | 82 | L4 Maduro | Lógica bitmask sólida e foco claro de responsabilidade. |
 | services/analysis.ts | 76 | L4 Maduro | Tratamento de erro e fluxo assíncrono bem definidos. |
-| services/analytics.ts | 70 | L3 Sólido | Simples e seguro, sem grande sofisticação. |
 | services/api.ts | 84 | L4 Maduro | Timeout, retries e hash de chave bem implementados. |
 | services/badge.ts | 74 | L3 Sólido | Escopo pequeno, robustez adequada. |
 | services/cloud.ts | 72 | L3 Sólido | Resiliente, porém muito complexo e com `any` recorrente. |
