@@ -22,34 +22,44 @@ flowchart LR
 ## 2) Contêineres (C4 - Nível 2)
 
 ```mermaid
-flowchart LR
-  subgraph Client
+flowchart TB
+  %% Layout em camadas para reduzir cruzamentos
+  subgraph Client[Client (Main Thread)]
+    direction TB
     UI[UI + Render]
     EV["Event Hub - events.ts"]
-    SW[Service Worker]
-    IDB[(IndexedDB)]
     PERSIST[persistence.ts]
+    IDB[(IndexedDB)]
     CLOUD[cloud.ts]
+  end
+
+  subgraph Worker[Client (Worker)]
+    direction TB
     WRPC[workerClient.ts]
     W[sync.worker.ts]
   end
 
-  subgraph Cloud
+  subgraph Platform[Platform]
+    direction TB
+    SW[Service Worker]
+  end
+
+  subgraph Cloud[External Services]
+    direction TB
     API[Vercel API]
     AI[Gemini]
     PUSH[OneSignal]
   end
 
+  %% Main thread
   UI --> EV
   UI --> PERSIST
   PERSIST --> IDB
   PERSIST --> CLOUD
 
   %% Cloud orchestration (worker + remote)
-  CLOUD --> WRPC
-  WRPC --> W
-  CLOUD --> API
-  API --> AI
+  CLOUD --> WRPC --> W
+  CLOUD --> API --> AI
 
   %% Return paths (remote updates + UI refresh)
   CLOUD -->|persist merged/remote| PERSIST
