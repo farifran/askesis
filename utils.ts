@@ -321,8 +321,7 @@ function _loadScript(src: string): Promise<void> {
 export async function enableOneSignalInServiceWorker(): Promise<void> {
     try {
         if (!('serviceWorker' in navigator)) return;
-        const reg = await navigator.serviceWorker.ready;
-        reg.active?.postMessage?.({ type: 'ENABLE_ONESIGNAL' });
+        await navigator.serviceWorker.register('./sw.js?push=1');
     } catch {}
 }
 

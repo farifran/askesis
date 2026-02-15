@@ -61,10 +61,13 @@ let isInitialized = false;
 const registerServiceWorker = () => {
     if ('serviceWorker' in navigator && !window.location.protocol.startsWith('file')) {
         const loadSW = () => {
+            const permission = (typeof Notification !== 'undefined' && (Notification as any).permission) ? (Notification as any).permission : 'default';
+            const pushEnabled = getLocalPushOptIn() === true && permission === 'granted';
+            const swUrl = pushEnabled ? './sw.js?push=1' : './sw.js';
             // FIX: Use relative path './sw.js' instead of absolute '/sw.js'.
             // This ensures the SW is fetched from the same origin even in subdirectories or proxies,
             // preventing "Script origin does not match" errors.
-            navigator.serviceWorker.register('./sw.js')
+            navigator.serviceWorker.register(swUrl)
                 .then(registration => {
                     logger.info('Service Worker registered with scope:', registration.scope);
                 })
@@ -143,7 +146,9 @@ function finalizeInit(loader: HTMLElement | null) {
         // Isso mantém o runtime zero-deps por padrão (para quem não optou), mas respeita a decisão do usuário.
         const permission = (typeof Notification !== 'undefined' && (Notification as any).permission) ? (Notification as any).permission : 'default';
         if (getLocalPushOptIn() === true && permission === 'granted') {
-            ensureOneSignalReady().catch(() => {});
+            ensureOneSignalReady()
+                .then((OneSignal) => OneSignal.Notifications.requestPermission?.().catch(() => {}))
+                .catch(() => {});
         }
     };
     if ((window as any).scheduler?.postTask) {

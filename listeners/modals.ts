@@ -228,11 +228,20 @@ const _handleNotificationToggleChange = async () => {
 
             // 3) Só depois carregamos OneSignal em background para finalizar subscription.
             ensureOneSignalReady()
-                .then((OneSignal) => {
+                .then(async (OneSignal) => {
+                    // Garante que o OneSignal complete a inscrição/subscription (sem prompt extra se já granted).
+                    try {
+                        await OneSignal.Notifications.requestPermission?.();
+                    } catch {}
                     try {
                         setLocalPushOptIn(!!OneSignal.User.PushSubscription.optedIn);
                     } catch {}
                     updateNotificationUI();
+
+                    // Garante recebimento de push em background: SW com ?push=1 carrega OneSignal SW SDK no boot.
+                    if ('serviceWorker' in navigator) {
+                        navigator.serviceWorker.register('./sw.js?push=1').catch(() => {});
+                    }
                 })
                 .catch(() => {
                     // Se falhar, mantemos permissão do browser, mas não garantimos subscription.
@@ -245,6 +254,11 @@ const _handleNotificationToggleChange = async () => {
             const OneSignal = await ensureOneSignalReady();
             await OneSignal.User.PushSubscription.optOut();
             setLocalPushOptIn(false);
+
+            // Volta ao SW padrão (sem push=1) para manter zero-deps quando desabilitado.
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.register('./sw.js').catch(() => {});
+            }
         }
     } catch (e) {
         // Se o SDK falhar (bloqueio do browser/domínio), reverte a UI para um estado seguro.

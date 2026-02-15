@@ -8,27 +8,19 @@
  * @description Service Worker: Proxy de Rede e Gerenciador de Cache (Offline Engine).
  */
 
-// Zero-deps por padrão: OneSignal SW SDK só é carregado quando o usuário ativa notificações.
-let _oneSignalSwLoaded = false;
-function _enableOneSignalInSw() {
-    if (_oneSignalSwLoaded) return true;
+// Zero-deps por padrão: OneSignal SW SDK só é carregado quando o SW é registrado com ?push=1.
+// Isso garante que o handler de push esteja ativo mesmo com o app fechado, sem depender de mensagens do client.
+const _pushEnabled = (self.location && typeof self.location.search === 'string')
+    ? self.location.search.includes('push=1')
+    : false;
+
+if (_pushEnabled) {
     try {
         importScripts("https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js");
-        _oneSignalSwLoaded = true;
-        return true;
     } catch (e) {
-        return false;
+        // Non-blocking failure
     }
 }
-
-self.addEventListener('message', (event) => {
-    const data = event && event.data;
-    if (!data || data.type !== 'ENABLE_ONESIGNAL') return;
-    const ok = _enableOneSignalInSw();
-    try {
-        event.source?.postMessage?.({ type: 'ONESIGNAL_ENABLED', ok });
-    } catch (e) {}
-});
 
 try {
     importScripts('/workbox-sw.js');

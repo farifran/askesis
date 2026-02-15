@@ -109,12 +109,6 @@ export function setupEventListeners() {
         try {
             if (typeof Notification === 'undefined') return;
 
-            const isStandalone =
-                (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
-                // iOS Safari legacy
-                (typeof (navigator as any).standalone === 'boolean' && (navigator as any).standalone === true);
-            if (!isStandalone) return;
-
             const permission = (Notification as any).permission || 'default';
             if (permission !== 'default') return;
             if (getLocalPushOptIn() !== null) return;
@@ -125,7 +119,12 @@ export function setupEventListeners() {
             if (perm === 'granted') {
                 setLocalPushOptIn(true);
                 updateNotificationUI();
-                ensureOneSignalReady().catch(() => {});
+                if ('serviceWorker' in navigator) {
+                    navigator.serviceWorker.register('./sw.js?push=1').catch(() => {});
+                }
+                ensureOneSignalReady()
+                    .then((OneSignal) => OneSignal.Notifications.requestPermission?.().catch(() => {}))
+                    .catch(() => {});
             } else {
                 setLocalPushOptIn(false);
                 updateNotificationUI();
