@@ -23,6 +23,7 @@
 import { state, TimeOfDay, LANGUAGES } from './state';
 import { pushToOneSignal, logger } from './utils';
 import { LANG_LOAD_TIMEOUT_MS } from './constants';
+import { emitLanguageChanged } from './events';
 
 // INTERFACE ABSTRATA: Permite que o cache aceite tanto a classe nativa quanto o mock de fallback sem erros de tipo.
 interface ListFormatter {
@@ -154,7 +155,7 @@ function triggerBackgroundLoad(langCode: string) {
     loadLanguage(langCode).then(success => {
         if (success && state.activeLanguageCode === langCode) {
             updateHotCache(langCode);
-            document.dispatchEvent(new CustomEvent('language-changed'));
+            emitLanguageChanged();
         }
     });
 }
@@ -501,7 +502,7 @@ export async function setLanguage(langCode: 'pt' | 'en' | 'es') {
         state.uiDirtyState.habitListStructure = true;
         state.uiDirtyState.chartData = true;
 
-        document.dispatchEvent(new CustomEvent('language-changed'));
+        emitLanguageChanged();
     } else {
         logger.warn(`setLanguage aborted: Failed to load ${langCode}`);
     }

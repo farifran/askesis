@@ -9,6 +9,7 @@
  */
 
 import { HAPTIC_PATTERNS } from './constants';
+import { emitDayChanged } from './events';
 
 export const MS_PER_DAY = 86400000;
 
@@ -150,7 +151,7 @@ export function setupMidnightLoop() {
     const msToMidnight = Math.max(1000, tomorrow.getTime() - now.getTime());
     _midnightTimer = window.setTimeout(() => {
         resetTodayCache();
-        document.dispatchEvent(new CustomEvent('dayChanged'));
+        emitDayChanged();
         setupMidnightLoop();
     }, msToMidnight + 1000);
 }

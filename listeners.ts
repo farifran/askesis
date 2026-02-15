@@ -21,6 +21,7 @@ import { state, getPersistableState, invalidateCachesForDateChange } from './sta
 import { syncStateWithCloud } from './services/cloud';
 import { checkAndAnalyzeDayContext } from './services/analysis';
 import { NETWORK_DEBOUNCE_MS, PERMISSION_DELAY_MS, INTERACTION_DELAY_MS } from './constants';
+import { emitDayChanged } from './events';
 
 let areListenersAttached = false;
 let visibilityRafId: number | null = null;
@@ -58,7 +59,7 @@ const _handleVisibilityChange = () => {
         const realToday = getTodayUTCIso();
         if (cachedToday !== realToday) {
             if (state.selectedDate === cachedToday) state.selectedDate = realToday;
-            document.dispatchEvent(new CustomEvent('dayChanged'));
+            emitDayChanged();
             isHandlingVisibility = false;
         } else {
             if (visibilityRafId) cancelAnimationFrame(visibilityRafId);

@@ -13,6 +13,7 @@ import { migrateState } from './migration';
 import { HabitService } from './HabitService';
 import { clearHabitDomCache } from '../render';
 import { logger } from '../utils';
+import { emitRenderApp } from '../events';
 
 const DB_NAME = 'AskesisDB', DB_VERSION = 1, STORE_NAME = 'app_state';
 const STATE_JSON_KEY = 'askesis_core_json';
@@ -265,7 +266,7 @@ export async function loadState(cloudState?: AppState): Promise<AppState | null>
             setTimeout(runCleanup, 50);
         }
 
-        document.dispatchEvent(new CustomEvent('render-app'));
+        emitRenderApp();
         return migrated;
     }
     return null;

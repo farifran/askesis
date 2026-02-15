@@ -17,6 +17,7 @@ import { UI_ICONS } from './render/icons';
 import { STOIC_QUOTES, type Quote } from './data/quotes';
 import { selectBestQuote } from './services/quoteEngine'; 
 import { calculateDaySummary } from './services/selectors';
+import { emitRequestAnalysis } from './events';
 
 // Importa os renderizadores especializados
 import { setTextContent, updateReelRotaryARIA } from './render/dom';
@@ -299,7 +300,7 @@ function _setupQuoteAutoCollapse() {
 
 export function renderStoicQuote() {
     if (!state.dailyDiagnoses[state.selectedDate]) {
-        document.dispatchEvent(new CustomEvent('request-analysis', { detail: { date: state.selectedDate } }));
+        emitRequestAnalysis(state.selectedDate);
     }
     const hour = new Date().getHours();
     const timeOfDay = hour < 12 ? 'Morning' : (hour < 18 ? 'Afternoon' : 'Evening');

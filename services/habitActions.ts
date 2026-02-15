@@ -39,6 +39,7 @@ import { t, getTimeOfDayName, formatDate, formatList, getAiLanguageName } from '
 import { runWorkerTask, addSyncLog } from './cloud';
 import { apiFetch, clearKey } from './api';
 import { HabitService } from './HabitService';
+import { emitHabitsChanged, emitRenderApp } from '../events';
 
 const BATCH_IDS_POOL: string[] = [];
 const BATCH_HABITS_POOL: Habit[] = [];
@@ -109,7 +110,8 @@ function _notifyChanges(fullRebuild = false, immediate = false) {
     document.body.classList.remove('is-interaction-active', 'is-dragging-active');
     saveState(immediate);
     requestAnimationFrame(() => {
-        ['render-app', 'habitsChanged'].forEach(ev => document.dispatchEvent(new CustomEvent(ev)));
+        emitRenderApp();
+        emitHabitsChanged();
     });
 }
 
@@ -309,7 +311,8 @@ function _notifyPartialUIRefresh(date: string) {
     requestAnimationFrame(() => {
         updateDayVisuals(date);
         // Os eventos abaixo ainda são necessários para charts, badges, etc.
-        ['render-app', 'habitsChanged'].forEach(ev => document.dispatchEvent(new CustomEvent(ev)));
+        emitRenderApp();
+        emitHabitsChanged();
     });
 }
 
@@ -684,7 +687,7 @@ export function importData() {
                     data.monthlyLogsSerialized.forEach(([k, v]: [string, string]) => { logsMap[k] = v; });
                     data.monthlyLogs = logsMap;
                 }
-                await loadState(data); await saveState(); ['render-app', 'habitsChanged'].forEach(ev => document.dispatchEvent(new CustomEvent(ev))); closeModal(ui.manageModal); showConfirmationModal(t('importSuccess'), () => {}, { title: t('privacyLabel'), confirmText: 'OK', hideCancel: true });
+                await loadState(data); await saveState(); emitRenderApp(); emitHabitsChanged(); closeModal(ui.manageModal); showConfirmationModal(t('importSuccess'), () => {}, { title: t('privacyLabel'), confirmText: 'OK', hideCancel: true });
             } else throw 0;
         } catch { showConfirmationModal(t('importError'), () => {}, { title: t('importError'), confirmText: 'OK', hideCancel: true, confirmButtonStyle: 'danger' }); }
     };
@@ -756,7 +759,7 @@ export function handleHabitDrop(habitId: string, fromTime: TimeOfDay, toTime: Ti
         ActionContext.reset();
         // FORCE RENDER: Marca a estrutura como suja e dispara render para limpar classe .dragging
         state.uiDirtyState.habitListStructure = true;
-        document.dispatchEvent(new CustomEvent('render-app'));
+        emitRenderApp();
     };
 
     showConfirmationModal(
@@ -800,10 +803,10 @@ export async function resetApplicationData() {
     state.uiDirtyState = { calendarVisuals: true, habitListStructure: true, chartData: true };
     HabitService.resetCache();
     state.aiDailyCount = 0; state.lastAIContextHash = null;
-    document.dispatchEvent(new CustomEvent('render-app'));
+    emitRenderApp();
     try { await clearLocalPersistence(); } catch (e) { logger.error('Clear persistence failed', e); } finally { clearKey(); window.location.reload(); } 
 }
-export function handleSaveNote() { if (!state.editingNoteFor) return; const { habitId, date, time } = state.editingNoteFor, val = sanitizeText(ui.notesTextarea.value), inst = ensureHabitInstanceData(date, habitId, time); if ((inst.note || '') !== val) { inst.note = val || undefined; state.uiDirtyState.habitListStructure = true; saveState(); document.dispatchEvent(new CustomEvent('render-app')); } closeModal(ui.notesModal); }
+export function handleSaveNote() { if (!state.editingNoteFor) return; const { habitId, date, time } = state.editingNoteFor, val = sanitizeText(ui.notesTextarea.value), inst = ensureHabitInstanceData(date, habitId, time); if ((inst.note || '') !== val) { inst.note = val || undefined; state.uiDirtyState.habitListStructure = true; saveState(); emitRenderApp(); } closeModal(ui.notesModal); }
 export function setGoalOverride(habitId: string, d: string, t: TimeOfDay, v: number) { 
     // BOOT LOCK
     if (!state.initialSyncDone) return;
@@ -845,7 +848,7 @@ export function handleDayTransition() {
     state.uiDirtyState.calendarVisuals = state.uiDirtyState.habitListStructure = state.uiDirtyState.chartData = true; 
     state.calendarDates = []; 
     if (state.selectedDate !== today) state.selectedDate = today; 
-    document.dispatchEvent(new CustomEvent('render-app')); 
+    emitRenderApp(); 
 }
 
 function _processAndFormatCelebrations(pendingIds: string[], translationKey: 'aiCelebration21Day' | 'aiCelebration66Day', streakMilestone: number): string {

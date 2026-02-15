@@ -18,6 +18,7 @@ import { renderApp, updateNotificationUI } from '../render';
 import { mergeStates } from './dataMerge';
 import { HabitService } from './HabitService';
 import { runWorkerTask as runWorkerTaskInternal } from './workerClient';
+import { emitHabitsChanged } from '../events';
 import {
     CLOUD_SYNC_DEBOUNCE_MS,
     CLOUD_SYNC_LOG_MAX_ENTRIES,
@@ -138,6 +139,15 @@ function murmurHash3(key: string, seed: number = 0): string {
     h1 ^= h1 >>> 13; h1 = (((h1 & 0xffff) * 0xc2b2ae35) + ((((h1 >>> 16) * 0xc2b2ae35) & 0xffff) << 16)) & 0xffffffff;
     h1 ^= h1 >>> 16;
     return (h1 >>> 0).toString(16);
+}
+
+async function readApiErrorMessage(response: Response, fallbackMessage: string): Promise<{ message: string; code?: string }> {
+    const errorData = await response.json().catch(() => ({} as any));
+    const code = errorData.code ? ` [${errorData.code}]` : '';
+    const detail = errorData.detail ? ` (${errorData.detail}${errorData.detailType ? `:${errorData.detailType}` : ''})` : '';
+    const raw = errorData.raw ? ` raw=${JSON.stringify(errorData.raw)}` : '';
+    const message = String(errorData.error || fallbackMessage) + code + detail + raw;
+    return { message, code: errorData.code };
 }
 
 export function addSyncLog(msg: string, type: 'success' | 'error' | 'info' = 'info') {
@@ -318,15 +328,12 @@ async function performSync() {
             setSyncStatus('syncSynced');
             pendingHashUpdates.forEach((hash, shard) => lastSyncedHashes.set(shard, hash));
             persistHashCache();
-            document.dispatchEvent(new CustomEvent('habitsChanged')); 
+            emitHabitsChanged();
         } else {
-            const errorData = await response.json().catch(() => ({} as any));
-            const code = errorData.code ? ` [${errorData.code}]` : '';
-            const detail = errorData.detail ? ` (${errorData.detail}${errorData.detailType ? `:${errorData.detailType}` : ''})` : '';
-            const raw = errorData.raw ? ` raw=${JSON.stringify(errorData.raw)}` : '';
-            const err = new Error((errorData.error || `Erro ${response.status}`) + code + detail + raw) as Error & { status?: number; code?: string };
+            const parsed = await readApiErrorMessage(response, `Erro ${response.status}`);
+            const err = new Error(parsed.message) as Error & { status?: number; code?: string };
             err.status = response.status;
-            err.code = errorData.code;
+            err.code = parsed.code;
             throw err;
         }
         logger.info(`[Sync Perf] encrypt=${(encryptEnd - encryptStart).toFixed(1)}ms payload=${(payloadEnd - payloadStart).toFixed(1)}ms post=${(postEnd - postStart).toFixed(1)}ms total=${(performance.now() - perfStart).toFixed(1)}ms`);
@@ -390,11 +397,8 @@ export async function downloadRemoteState(): Promise<AppState | undefined> {
     const response = await apiFetch('/api/sync', {}, true);
     if (response.status === 304) { addSyncLog("Sem novidades na nuvem.", "info"); return undefined; }
     if (!response.ok) {
-        const errorData = await response.json().catch(() => ({} as any));
-        const code = errorData.code ? ` [${errorData.code}]` : '';
-        const detail = errorData.detail ? ` (${errorData.detail}${errorData.detailType ? `:${errorData.detailType}` : ''})` : '';
-        const raw = errorData.raw ? ` raw=${JSON.stringify(errorData.raw)}` : '';
-        throw new Error((errorData.error || "Falha na conexão com a nuvem") + code + detail + raw);
+        const parsed = await readApiErrorMessage(response, 'Falha na conexão com a nuvem');
+        throw new Error(parsed.message);
     }
     const shards = await response.json();
     if (!shards || Object.keys(shards).length === 0) { addSyncLog("Cofre vazio na nuvem.", "info"); return undefined; }
