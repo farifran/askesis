@@ -18,11 +18,11 @@
 </p>
 
 <p align="center">
-  <img src="assets/Jornada%20usuario.jpeg" alt="Jornada do Usuário" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
+  <img src="assets/JornadaUsuario.png" alt="Jornada do Usuário" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
 </p>
 
 <p align="center">
-  <img src="assets/FluxoDados.JPG" alt="Fluxo de Dados" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
+  <img src="assets/FluxoDados.jpg" alt="Fluxo de Dados" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
 </p>
 
 
@@ -69,7 +69,7 @@ graph TD
         <div style="margin-top: 6px; width: 140px; background: #2a2a2a; border-radius: 6px;">
           <div style="width: 95%; background: #27ae60; height: 8px; border-radius: 6px;"></div>
         </div>
-        <div style="color: #9aa0a6;">< 50ms load</div>
+        <div style="color: #9aa0a6;">Budgets em testes</div>
       </td>
       <td align="center" style="padding: 10px 14px; border-radius: 10px; background: #111; border: 1px solid #2a2a2a; color: #e5e5e5;">
         Privacidade
@@ -95,6 +95,15 @@ graph TD
     </tr>
   </table>
 </div>
+
+> Nota: esse “dashboard” e um resumo **qualitativo** (metas/intenções de engenharia) e nao uma medicao automatica. Para evidencias verificaveis, veja [tests/README.md](tests/README.md) e [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+Como verificar (local / CI):
+
+- Performance (budgets): `npm run test:scenario` (ver `tests/scenario-test-3-performance.test.ts`).
+- Acessibilidade (WCAG): `npm run test:scenario` (ver `tests/scenario-test-4-accessibility.test.ts`).
+- Privacidade/seguranca: `npm test` + `npm run test:scenario` (ver `tests/scenario-test-6-security-pentest.test.ts` e `services/crypto.test.ts`).
+- Offline-first (artefatos): `npm run build` (confira `dist/sw.js` e `dist/manifest.json`).
 
 ### Contexto do Sistema (C4 - Nível 1)
 
@@ -464,7 +473,7 @@ Esta tabela destaca onde a IA forneceu a base e onde a minha visao estrategica e
 | Recurso | Tradicional / IA "Pura" | Minha Intervencao (Arquiteto) | Resultado: Askesis |
 |---|---|---|---|
 | Privacidade | Login social e dados em nuvem comercial. | Decisao Etica: Implementei Anonimato Coletivo e criptografia AES-GCM no cliente via Web Workers para garantir soberania absoluta. | Seguranca de nivel bancario sem coletar um unico dado pessoal. |
-| Performance | Uso de frameworks pesados (React/Next) que geram latencia. | Refinamento: Rejeitei abstracoes em favor de Vanilla TS e APIs Nativas para maxima eficiencia de hardware. | Carregamento instantaneo (< 50ms) e interface de 60fps constante. |
+| Performance | Uso de frameworks pesados (React/Next) que geram latencia. | Refinamento: Rejeitei abstracoes em favor de Vanilla TS e APIs Nativas para maxima eficiencia de hardware. | Budgets verificados em testes (ex.: operacoes criticas < 50ms) e UI responsiva. |
 | UX e Psicologia | Gamificacao superficial baseada em dopamina (badges/cores vibrantes). | Grounding Teorico: Apliquei principios de Neuropsicologia para focar na "virtude da consistencia", evitando o vicio digital. | Interface minimalista que promove a autorreflexao e o treinamento mental real. |
 | Acessibilidade | Frequentemente ignorada ou tratada como secundaria em codigos gerados por IA. | Inclusao Digital: Garanti conformidade WCAG 2.1 AA, implementando semantica ARIA robusta e navegacao total por teclado. | Aplicacao universalmente utilizavel, respeitando usuarios com diferentes necessidades. |
 | Confiabilidade | Testes unitarios isolados ou ausencia de validacao em cenarios de erro criticos. | Chaos Engineering: Desenvolvi uma suite de "Super-Testes" para validar a resiliencia do sistema em condicoes extremas de hardware. | Software robusto que recupera dados automaticamente mesmo apos falhas criticas de sistema. |
@@ -491,6 +500,7 @@ Esta tabela destaca onde a IA forneceu a base e onde a minha visao estrategica e
 
 - Cobertura de cenarios de usuario, seguranca, acessibilidade e resiliencia.
 - Detalhes em [tests/README.md](tests/README.md).
+- CI: workflow em `.github/workflows/ci.yml` roda testes/build e publica artifacts (dist + coverage).
 
 ### Desenvolvimento
 
@@ -503,7 +513,7 @@ npm run dev
 
 ### Licenca
 
-- ISC
+- Apache-2.0 (ver [LICENSE](LICENSE)).
 
 ---
 
@@ -528,7 +538,7 @@ npm run dev
         <div style="margin-top: 6px; width: 140px; background: #2a2a2a; border-radius: 6px;">
           <div style="width: 95%; background: #27ae60; height: 8px; border-radius: 6px;"></div>
         </div>
-        <div style="color: #9aa0a6;">< 50ms load</div>
+        <div style="color: #9aa0a6;">Test budgets</div>
       </td>
       <td align="center" style="padding: 10px 14px; border-radius: 10px; background: #111; border: 1px solid #2a2a2a; color: #e5e5e5;">
         Privacy
@@ -554,6 +564,15 @@ npm run dev
     </tr>
   </table>
 </div>
+
+> Note: this “dashboard” is a **qualitative** snapshot (targets/engineering intent), not an automated measurement. For verifiable evidence, see [tests/README.md](tests/README.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+How to verify (local / CI):
+
+- Performance (budgets): `npm run test:scenario` (see `tests/scenario-test-3-performance.test.ts`).
+- Accessibility (WCAG): `npm run test:scenario` (see `tests/scenario-test-4-accessibility.test.ts`).
+- Privacy/security: `npm test` + `npm run test:scenario` (see `tests/scenario-test-6-security-pentest.test.ts` and `services/crypto.test.ts`).
+- Offline-first (artifacts): `npm run build` (check `dist/sw.js` and `dist/manifest.json`).
 
 ### Architecture at a glance
 
@@ -634,7 +653,7 @@ This table shows where AI provided a base and where strategic vision and Psychol
 | Capability | Traditional / "Pure" AI | My Intervention (Architect) | Result: Askesis |
 |---|---|---|---|
 | Privacy | Social login and commercial cloud storage. | Ethical decision: collective anonymity and client-side AES-GCM via Web Workers to ensure sovereignty. | Bank-grade security without collecting personal data. |
-| Performance | Heavy frameworks (React/Next) that add latency. | Refinement: replaced abstractions with Vanilla TS and native APIs. | Instant load (< 50ms) and stable 60fps UI. |
+| Performance | Heavy frameworks (React/Next) that add latency. | Refinement: replaced abstractions with Vanilla TS and native APIs. | Test-verified budgets (e.g. critical ops < 50ms) and responsive UI. |
 | UX and Psychology | Dopamine-driven gamification (badges, loud colors). | Theoretical grounding: Neuropsychology principles focused on the "virtue of consistency." | Minimalist interface that promotes real self-reflection. |
 | Accessibility | Often ignored in AI-generated code. | Digital inclusion: WCAG 2.1 AA, robust ARIA, full keyboard nav. | Universally usable app for diverse needs. |
 | Reliability | Isolated unit tests or missing critical error validation. | Chaos engineering: "Super-Tests" to validate extreme conditions. | Resilient software that recovers from critical failures. |
@@ -661,6 +680,7 @@ This table shows where AI provided a base and where strategic vision and Psychol
 
 - Coverage across user flows, security, accessibility, and resilience.
 - Details in [tests/README.md](tests/README.md).
+- CI: workflow in `.github/workflows/ci.yml` runs tests/build and uploads artifacts (dist + coverage).
 
 ### Development
 
@@ -673,7 +693,7 @@ npm run dev
 
 ### License
 
-- ISC
+- Apache-2.0 (see [LICENSE](LICENSE)).
 
 ---
 
@@ -698,7 +718,7 @@ npm run dev
         <div style="margin-top: 6px; width: 140px; background: #2a2a2a; border-radius: 6px;">
           <div style="width: 95%; background: #27ae60; height: 8px; border-radius: 6px;"></div>
         </div>
-        <div style="color: #9aa0a6;">< 50ms load</div>
+        <div style="color: #9aa0a6;">Budgets en tests</div>
       </td>
       <td align="center" style="padding: 10px 14px; border-radius: 10px; background: #111; border: 1px solid #2a2a2a; color: #e5e5e5;">
         Privacidad
@@ -724,6 +744,15 @@ npm run dev
     </tr>
   </table>
 </div>
+
+> Nota: este “panel” es un resumen **cualitativo** (metas/intencion de ingenieria), no una medicion automatica. Para evidencias verificables, ve [tests/README.md](tests/README.md) y [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+Como verificar (local / CI):
+
+- Performance (budgets): `npm run test:scenario` (ver `tests/scenario-test-3-performance.test.ts`).
+- Accesibilidad (WCAG): `npm run test:scenario` (ver `tests/scenario-test-4-accessibility.test.ts`).
+- Privacidad/seguridad: `npm test` + `npm run test:scenario` (ver `tests/scenario-test-6-security-pentest.test.ts` y `services/crypto.test.ts`).
+- Offline-first (artefactos): `npm run build` (revisar `dist/sw.js` y `dist/manifest.json`).
 
 ### Arquitectura de un vistazo
 
@@ -804,7 +833,7 @@ Esta tabla muestra donde la IA dio la base y donde la vision estrategica y forma
 | Recurso | Tradicional / IA "Pura" | Mi Intervencion (Arquitecto) | Resultado: Askesis |
 |---|---|---|---|
 | Privacidad | Login social y datos en nube comercial. | Decision etica: anonimato colectivo y AES-GCM en el cliente via Web Workers para garantizar soberania. | Seguridad de nivel bancario sin recolectar datos personales. |
-| Performance | Frameworks pesados (React/Next) con latencia. | Refinamiento: Vanilla TS y APIs nativas. | Carga instantanea (< 50ms) y UI estable a 60fps. |
+| Performance | Frameworks pesados (React/Next) con latencia. | Refinamiento: Vanilla TS y APIs nativas. | Budgets verificados en tests (p. ej. ops criticas < 50ms) y UI responsiva. |
 | UX y Psicologia | Gamificacion basada en dopamina (badges/colores fuertes). | Grounding teorico: principios de Neuropsicologia y "virtud de la consistencia". | Interfaz minimalista para autorreflexion real. |
 | Accesibilidad | A menudo ignorada en codigo generado por IA. | Inclusion digital: WCAG 2.1 AA, ARIA robusto y navegacion por teclado. | App usable por personas con distintas necesidades. |
 | Confiabilidad | Tests unitarios aislados o sin validacion de errores criticos. | Chaos engineering: "Super-Tests" para condiciones extremas. | Software resiliente con recuperacion ante fallos criticos. |
@@ -831,6 +860,7 @@ Esta tabla muestra donde la IA dio la base y donde la vision estrategica y forma
 
 - Cobertura de flujos, seguridad, accesibilidad y resiliencia.
 - Detalles en [tests/README.md](tests/README.md).
+- CI: workflow en `.github/workflows/ci.yml` ejecuta tests/build y sube artifacts (dist + coverage).
 
 ### Desarrollo
 
@@ -843,7 +873,7 @@ npm run dev
 
 ### Licencia
 
-- ISC
+- Apache-2.0 (ver [LICENSE](LICENSE)).
 
 <h3>💡 Por que essa abordagem de testes importa?</h3>
 
@@ -1006,4 +1036,4 @@ A visão para o Askesis é expandir sua presença nativa mantendo a base de cód
 
 <h2>Licença</h2>
 
-Este projeto é open-source e está licenciado sob a [Licença ISC](LICENSE).
+Este projeto é open-source e está licenciado sob a [Licenca Apache 2.0](LICENSE).
