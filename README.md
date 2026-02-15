@@ -11,22 +11,143 @@
 
 ---
 
+## Índice
+
+- [PT-BR](#pt-br)
+- [EN](#en)
+- [ES](#es)
+
+<details>
+  <summary>Ver estrutura completa (TOC)</summary>
+
+- PT-BR
+  - [Diagramas (visão geral)](#pt-diagramas)
+    - [Visão Geral da Arquitetura e Fluxo do Usuário](#pt-architecture-user-flow)
+    - [Visão Geral de Integrações e Infraestrutura](#pt-integrations-infra)
+  - [Fluxo da Aplicação](#pt-fluxo)
+  - [Resumo](#pt-resumo)
+  - [Dashboard tecnologico](#pt-dashboard)
+  - [Contexto do Sistema (C4 - Nível 1)](#pt-c4-l1)
+  - [Contêineres (C4 - Nível 2)](#pt-c4-l2)
+  - [Componentes Internos (C4 - Nível 3)](#pt-c4-l3)
+  - [Fluxo de Dados (Local-first + Sync)](#pt-data-flow)
+  - [Fluxo de Conflito de Sync](#pt-sync-conflict)
+  - [Mapa rápido de módulos](#pt-modules-map)
+  - [Radar tecnico (ASCII)](#pt-tech-radar)
+  - [Ciclo de dados](#pt-data-lifecycle)
+  - [Regras de Unicidade de Hábitos](#pt-habit-uniqueness)
+  - [Plataformas e recursos](#pt-platforms)
+  - [Inicio rapido](#pt-quick-start)
+  - [Diferenciais](#pt-highlights)
+  - [Privacidade e Offline](#pt-privacy-offline)
+  - [Paradigma de Construcao: A Orquestracao Humano-IA](#pt-build-paradigm)
+  - [Tecnologia](#pt-tech)
+  - [Estrutura do projeto](#pt-project-structure)
+  - [Testes e qualidade](#pt-tests-quality)
+  - [Desenvolvimento](#pt-development)
+  - [Licenca](#pt-license)
+
+- EN
+  - [Diagrams (overview)](#en-diagrams)
+    - [Architecture & User Flow Overview](#en-architecture-user-flow)
+    - [Integrations & Infrastructure Overview](#en-integrations-infra)
+  - [Summary](#en-summary)
+  - [Tech dashboard](#en-dashboard)
+  - [Architecture at a glance](#en-architecture-glance)
+  - [Tech radar (ASCII)](#en-tech-radar)
+  - [Data lifecycle](#en-data-lifecycle)
+  - [Platforms and features](#en-platforms)
+  - [Quick Start](#en-quick-start)
+  - [Highlights](#en-highlights)
+  - [Privacy and Offline](#en-privacy-offline)
+  - [Build Paradigm: Human-AI Orchestration](#en-build-paradigm)
+  - [Tech](#en-tech)
+  - [Project Structure](#en-project-structure)
+  - [Tests and Quality](#en-tests-quality)
+  - [Development](#en-development)
+  - [License](#en-license)
+
+- ES
+  - [Diagramas (visión general)](#es-diagramas)
+    - [Descripción General de la Arquitectura y Flujo de Usuario](#es-architecture-user-flow)
+    - [Descripción General de Integraciones e Infraestructura](#es-integrations-infra)
+  - [Resumen](#es-resumen)
+  - [Panel tecnologico](#es-dashboard)
+  - [Arquitectura de un vistazo](#es-architecture-glance)
+  - [Radar tecnologico (ASCII)](#es-tech-radar)
+  - [Ciclo de datos](#es-data-lifecycle)
+  - [Plataformas y funciones](#es-platforms)
+  - [Inicio rapido](#es-quick-start)
+  - [Diferenciales](#es-highlights)
+  - [Privacidad y Offline](#es-privacy-offline)
+  - [Paradigma de Construccion: Orquestacion Humano-IA](#es-build-paradigm)
+  - [Tecnologia](#es-tech)
+  - [Estructura del proyecto](#es-project-structure)
+  - [Tests y calidad](#es-tests-quality)
+  - [Desarrollo](#es-development)
+  - [Licencia](#es-license)
+
+</details>
+
 ## PT-BR
 
 <p align="center">
   <img src="assets/AristotelesPortugues.jpg" alt="Aristóteles (Português)" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
 </p>
 
-<p align="center">
-  <img src="assets/JornadaUsuario.png" alt="Jornada do Usuário" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
-</p>
+### Índice rápido
+
+- [Arquitetura e fluxo do usuário (diagrama)](#pt-architecture-user-flow)
+- [Integrações e infraestrutura (diagrama)](#pt-integrations-infra)
+- [Fluxo da Aplicação](#pt-fluxo)
+
+<a id="pt-diagramas"></a>
+
+### Diagramas (visão geral)
+
+<a id="pt-architecture-user-flow"></a>
+
+#### Visão Geral da Arquitetura e Fluxo do Usuário
 
 <p align="center">
-  <img src="assets/FluxoDados.jpg" alt="Fluxo de Dados" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
+  <img src="assets/diagram/system-architecture-flow-pt.png" alt="Visão Geral da Arquitetura e Fluxo do Usuário" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
 </p>
+
+<details>
+  <summary>Texto de apoio</summary>
+
+Este diagrama ilustra o ciclo de vida principal da aplicação, estruturado em três fases fundamentais:
+
+- Fase 1: Definição (Onboarding): Criação e customização de hábitos com foco absoluto em privacidade, utilizando uma abordagem Local-first com criptografia de ponta a ponta (E2E).
+- Fase 2: Execução (Engajamento): Gerenciamento diário, métricas de performance e persistência de dados. A interface (Main Thread) é isolada do processamento de dados (Worker), utilizando IndexedDB para armazenamento local e protocolo CRDT-lite para sincronização sem conflitos com a nuvem (Vercel KV).
+- Fase 3: Inteligência (Feedback): Um motor de análise avalia os dados do usuário para gerar insights comportamentais personalizados, injetando esse contexto de volta na experiência para criar um loop de engajamento contínuo.
+
+</details>
+
+<a id="pt-integrations-infra"></a>
+
+#### Visão Geral de Integrações e Infraestrutura
+
+<p align="center">
+  <img src="assets/diagram/system-integrations-pt.png" alt="Visão Geral de Integrações e Infraestrutura" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
+</p>
+
+<details>
+  <summary>Texto de apoio</summary>
+
+Este diagrama detalha a arquitetura de alto nível do sistema e o fluxo de comunicação entre os serviços externos:
+
+- Cliente (Askesis PWA): A interface em React que interage com o usuário no dia a dia, gerenciando o estado local e iniciando as requisições.
+- Backend Serverless (Vercel API): Atua como uma camada intermediária segura. Ele gerencia a sincronização de estado e funciona como um "Proxy de IA", protegendo as chaves de API e validando as requisições antes de enviá-las ao modelo de linguagem.
+- Motor de IA (Google Gemini API): O cérebro por trás da análise, recebendo os dados filtrados pelo backend para processar as reflexões e gerar insights personalizados.
+- Notificações (OneSignal): Serviço de mensageria independente que registra o PWA e cuida do envio de notificações push assíncronas para engajar o usuário de volta no aplicativo.
+
+</details>
 
 
 ## Fluxo da Aplicação
+
+<a id="pt-fluxo"></a>
 
 O gráfico abaixo representa o fluxo lógico implementado na interface:
 
@@ -54,10 +175,14 @@ graph TD
 ```
 
 
+<a id="pt-resumo"></a>
+
 ### Resumo
 
 - Rastreador de habitos estoico, focado em privacidade, com IA para reflexoes e ajustes de rotina.
 - PWA offline-first com dados locais criptografados e experiencia consistente em mobile e desktop.
+
+<a id="pt-dashboard"></a>
 
 ### Dashboard tecnologico
 
@@ -105,6 +230,8 @@ Como verificar (local / CI):
 - Privacidade/seguranca: `npm test` + `npm run test:scenario` (ver `tests/scenario-test-6-security-pentest.test.ts` e `services/crypto.test.ts`).
 - Offline-first (artefatos): `npm run build` (confira `dist/sw.js` e `dist/manifest.json`).
 
+<a id="pt-c4-l1"></a>
+
 ### Contexto do Sistema (C4 - Nível 1)
 
 ```mermaid
@@ -122,6 +249,8 @@ flowchart LR
   A -->|Registro de push| O
   O -->|Notificações| U
 ```
+
+<a id="pt-c4-l2"></a>
 
 ### Contêineres (C4 - Nível 2)
 
@@ -156,6 +285,8 @@ flowchart LR
   API --> AI
   UI --> PUSH
 ```
+
+<a id="pt-c4-l3"></a>
 
 ### Componentes Internos (C4 - Nível 3)
 
@@ -223,6 +354,8 @@ flowchart TB
 
 Leitura rápida: interação entra por `listeners/*`, regra de negócio vive em `habitActions.ts`/`selectors.ts`, estado central em `state.ts`, e persistência/sync ficam em `persistence.ts` + `cloud.ts` + `sync.worker.ts`.
 
+<a id="pt-data-flow"></a>
+
 ### Fluxo de Dados (Local-first + Sync)
 
 ```mermaid
@@ -271,6 +404,8 @@ sequenceDiagram
   end
 ```
 
+<a id="pt-sync-conflict"></a>
+
 ### Fluxo de Conflito de Sync
 
 ```mermaid
@@ -302,6 +437,8 @@ sequenceDiagram
   Note over M: Regras efetivas de merge\n1) Match por ID\n2) Dedup por nome normalizado\n3) LWW por schedule/history\n4) Normalização de mode/times/frequency
 ```
 
+<a id="pt-modules-map"></a>
+
 ### Mapa rápido de módulos (pasta → responsabilidade)
 
 - render/: composição visual, diffs de DOM, modais, calendário e gráficos.
@@ -323,6 +460,8 @@ sequenceDiagram
 | Sincronizacao | Chave de sync | Merge resiliente |
 </details>
 
+<a id="pt-tech-radar"></a>
+
 ### Radar tecnico (ASCII)
 
 ```text
@@ -335,11 +474,15 @@ sequenceDiagram
        Resiliencia
 ```
 
+<a id="pt-data-lifecycle"></a>
+
 ### Ciclo de dados
 
 ```text
 Entrada -> Validacao -> Criptografia (AES-GCM) -> IndexedDB -> Sync -> Merge -> UI
 ```
+
+<a id="pt-habit-uniqueness"></a>
 
 ### Regras de Unicidade de Hábitos
 
@@ -437,6 +580,8 @@ graph TD
 | Sync merge combina times de duas versões | DataMerge deduplica após LWW (Last-Write-Wins) |
 | Drag-drop tenta mover hábito para TimeOfDay já ocupado | Operação rejeitada (validação em listeners/drag.ts) |
 
+<a id="pt-platforms"></a>
+
 ### Plataformas e recursos
 
 | Plataforma | Instalavel | Offline | Sync | Notificacoes |
@@ -446,12 +591,16 @@ graph TD
 | Android (PWA) | Sim | Sim | Sim | Sim |
 | Desktop (PWA) | Sim | Sim | Sim | Sim |
 
+<a id="pt-quick-start"></a>
+
 ### Inicio rapido
 
 1. **Instalar:** [Abra o app](https://askesis-psi.vercel.app/) e selecione "Instalar".
 2. **Criar habito:** Botao `+` → nome → periodo do dia → salvar.
 3. **Marcar:** 1 toque = feito, 2 toques = adiado.
 4. **Progresso:** Calendario com aneis resume o dia.
+
+<a id="pt-highlights"></a>
 
 ### Diferenciais
 
@@ -460,11 +609,15 @@ graph TD
 - Fluxo rapido: foco em consistencia, nao em streaks.
 - Acessibilidade WCAG 2.1 AA e suporte completo a teclado.
 
+<a id="pt-privacy-offline"></a>
+
 ### Privacidade e Offline
 
 - Criptografia no cliente com AES-GCM e Web Workers.
 - Dados permanecem no dispositivo e sincronizam sob demanda.
 - Funciona 100% offline, inclusive historico e graficos.
+
+<a id="pt-build-paradigm"></a>
 
 ### Paradigma de Construcao: A Orquestracao Humano-IA
 
@@ -482,12 +635,16 @@ Esta tabela destaca onde a IA forneceu a base e onde a minha visao estrategica e
 > [ 🧠 ] Psicologia Cognitiva + [ 🤖 ] IA Generativa + [ 💻 ] Engenharia de Baixo Nivel
 > Este projeto nao e apenas uma ferramenta; e um estudo de caso sobre como a tecnologia moderna pode ser domesticada por principios humanos para servir a virtude, e nao o lucro.
 
+<a id="pt-tech"></a>
+
 ### Tecnologia
 
 - TypeScript puro, sem frameworks.
 - PWA com Service Worker e cache atomico.
 - Criptografia AES-GCM e sync resiliente.
 - Renderizacao eficiente e UI responsiva.
+
+<a id="pt-project-structure"></a>
 
 ### Estrutura do projeto
 
@@ -496,11 +653,15 @@ Esta tabela destaca onde a IA forneceu a base e onde a minha visao estrategica e
 - Gestos e eventos: [listeners/](listeners/)
 - Dados e criptografia: [services/](services/)
 
+<a id="pt-tests-quality"></a>
+
 ### Testes e qualidade
 
 - Cobertura de cenarios de usuario, seguranca, acessibilidade e resiliencia.
 - Detalhes em [tests/README.md](tests/README.md).
 - CI: workflow em `.github/workflows/ci.yml` roda testes/build e publica artifacts (dist + coverage).
+
+<a id="pt-development"></a>
 
 ### Desenvolvimento
 
@@ -510,6 +671,8 @@ npm run dev
 ```
 
 > Rodar uma instancia propria e possivel, mas reduz o anonimato coletivo.
+
+<a id="pt-license"></a>
 
 ### Licenca
 
@@ -523,10 +686,62 @@ npm run dev
   <img src="assets/AristotelesIngles.jpg" alt="Aristotle (English)" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
 </p>
 
+### Quick index
+
+- [Architecture & User Flow (diagram)](#en-architecture-user-flow)
+- [Integrations & Infrastructure (diagram)](#en-integrations-infra)
+
+<a id="en-diagrams"></a>
+
+### Diagrams (overview)
+
+<a id="en-architecture-user-flow"></a>
+
+#### Architecture & User Flow Overview
+
+<p align="center">
+  <img src="assets/diagram/system-architecture-flow-en.png" alt="Architecture & User Flow Overview" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
+</p>
+
+<details>
+  <summary>Supporting text</summary>
+
+This diagram illustrates the core application lifecycle, broken down into three main phases:
+
+- Phase 1: Definition (Onboarding): Habit creation and customization focused on privacy, utilizing a Local-first approach with End-to-End (E2E) encryption.
+- Phase 2: Execution (Engagement): Daily management, performance metrics, and data persistence. The UI (Main Thread) is decoupled from data processing (Worker), leveraging IndexedDB for local storage and a CRDT-lite protocol for conflict-free cloud synchronization (Vercel KV).
+- Phase 3: Intelligence (Feedback): An analysis engine processes user data to generate personalized behavioral insights, injecting this context back into the user experience to create a continuous engagement loop.
+
+</details>
+
+<a id="en-integrations-infra"></a>
+
+#### Integrations & Infrastructure Overview
+
+<p align="center">
+  <img src="assets/diagram/system-integrations-en.png" alt="Integrations & Infrastructure Overview" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
+</p>
+
+<details>
+  <summary>Supporting text</summary>
+
+This diagram details the high-level system architecture and the communication flow between external services:
+
+- Client (Askesis PWA): The React-based frontend handling daily user interactions, local state management, and request initiations.
+- Serverless Backend (Vercel API): Acts as a secure middleware layer. It handles state synchronization and serves as an "AI Proxy," protecting API keys and validating requests before routing them to the LLM.
+- AI Engine (Google Gemini API): The analytical brain of the app, receiving filtered context from the backend to process reflections and generate personalized insights.
+- Push Notifications (OneSignal): A dedicated messaging service that handles PWA push registrations and delivers asynchronous notifications to re-engage the user.
+
+</details>
+
+<a id="en-summary"></a>
+
 ### Summary
 
 - Stoic habit tracker focused on privacy, with AI for reflection and routine tuning.
 - Offline-first PWA with encrypted local data and consistent UX across devices.
+
+<a id="en-dashboard"></a>
 
 ### Tech dashboard
 
@@ -574,6 +789,8 @@ How to verify (local / CI):
 - Privacy/security: `npm test` + `npm run test:scenario` (see `tests/scenario-test-6-security-pentest.test.ts` and `services/crypto.test.ts`).
 - Offline-first (artifacts): `npm run build` (check `dist/sw.js` and `dist/manifest.json`).
 
+<a id="en-architecture-glance"></a>
+
 ### Architecture at a glance
 
 ```mermaid
@@ -599,6 +816,8 @@ flowchart LR
 | Sync | Sync key | Resilient merge |
 </details>
 
+<a id="en-tech-radar"></a>
+
 ### Tech radar (ASCII)
 
 ```text
@@ -611,11 +830,15 @@ flowchart LR
        Resilience
 ```
 
+<a id="en-data-lifecycle"></a>
+
 ### Data lifecycle
 
 ```text
 Input -> Validation -> Encryption (AES-GCM) -> IndexedDB -> Sync -> Merge -> UI
 ```
+
+<a id="en-platforms"></a>
 
 ### Platforms and features
 
@@ -626,12 +849,16 @@ Input -> Validation -> Encryption (AES-GCM) -> IndexedDB -> Sync -> Merge -> UI
 | Android (PWA) | Yes | Yes | Yes | Yes |
 | Desktop (PWA) | Yes | Yes | Yes | Yes |
 
+<a id="en-quick-start"></a>
+
 ### Quick Start
 
 1. **Install:** [Open the app](https://askesis-psi.vercel.app/) and choose "Install".
 2. **Create habit:** `+` button → name → day period → save.
 3. **Mark:** tap once = done, twice = deferred.
 4. **Progress:** calendar rings summarize the day.
+
+<a id="en-highlights"></a>
 
 ### Highlights
 
@@ -640,11 +867,15 @@ Input -> Validation -> Encryption (AES-GCM) -> IndexedDB -> Sync -> Merge -> UI
 - Fast flow: consistency over streaks.
 - WCAG 2.1 AA accessibility and full keyboard support.
 
+<a id="en-privacy-offline"></a>
+
 ### Privacy and Offline
 
 - Client-side AES-GCM with Web Workers.
 - Data stays local and syncs on demand.
 - 100% offline, including history and charts.
+
+<a id="en-build-paradigm"></a>
 
 ### Build Paradigm: Human-AI Orchestration
 
@@ -662,12 +893,16 @@ This table shows where AI provided a base and where strategic vision and Psychol
 > [ 🧠 ] Cognitive Psychology + [ 🤖 ] Generative AI + [ 💻 ] Low-Level Engineering
 > This project is a case study in how modern tech can be guided by human principles to serve virtue, not profit.
 
+<a id="en-tech"></a>
+
 ### Tech
 
 - Vanilla TypeScript, no heavy frameworks.
 - PWA with Service Worker and atomic caching.
 - AES-GCM encryption and resilient sync.
 - Efficient rendering and 60fps UX.
+
+<a id="en-project-structure"></a>
 
 ### Project Structure
 
@@ -676,11 +911,15 @@ This table shows where AI provided a base and where strategic vision and Psychol
 - Gestures and events: [listeners/](listeners/)
 - Data and crypto: [services/](services/)
 
+<a id="en-tests-quality"></a>
+
 ### Tests and Quality
 
 - Coverage across user flows, security, accessibility, and resilience.
 - Details in [tests/README.md](tests/README.md).
 - CI: workflow in `.github/workflows/ci.yml` runs tests/build and uploads artifacts (dist + coverage).
+
+<a id="en-development"></a>
 
 ### Development
 
@@ -690,6 +929,8 @@ npm run dev
 ```
 
 > Self-hosting is possible, but it reduces the anonymity set.
+
+<a id="en-license"></a>
 
 ### License
 
@@ -703,10 +944,62 @@ npm run dev
   <img src="assets/AristotelesEspanol.jpg" alt="Aristóteles (Español)" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
 </p>
 
+### Índice rápido
+
+- [Arquitectura y flujo de usuario (diagrama)](#es-architecture-user-flow)
+- [Integraciones e infraestructura (diagrama)](#es-integrations-infra)
+
+<a id="es-diagramas"></a>
+
+### Diagramas (visión general)
+
+<a id="es-architecture-user-flow"></a>
+
+#### Descripción General de la Arquitectura y Flujo de Usuario
+
+<p align="center">
+  <img src="assets/diagram/system-architecture-flow-es.png" alt="Descripción General de la Arquitectura y Flujo de Usuario" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
+</p>
+
+<details>
+  <summary>Texto de apoyo</summary>
+
+Este diagrama ilustra el ciclo de vida principal de la aplicación, estructurado en tres fases fundamentales:
+
+- Fase 1: Definición (Onboarding): Creación y personalización de hábitos con un enfoque absoluto en la privacidad, utilizando un enfoque Local-first con encriptación de extremo a extremo (E2E).
+- Fase 2: Ejecución (Engagement): Gestión diaria, métricas de rendimiento y persistencia de datos. La interfaz (Main Thread) está aislada del procesamiento de datos (Worker), utilizando IndexedDB para el almacenamiento local y el protocolo CRDT-lite para una sincronización sin conflictos con la nube (Vercel KV).
+- Fase 3: Inteligencia (Feedback): Un motor de análisis evalúa los datos del usuario para generar insights de comportamiento personalizados, inyectando este contexto de vuelta en la experiencia para crear un ciclo de interacción continuo.
+
+</details>
+
+<a id="es-integrations-infra"></a>
+
+#### Descripción General de Integraciones e Infraestructura
+
+<p align="center">
+  <img src="assets/diagram/system-integrations-es.png" alt="Descripción General de Integraciones e Infraestructura" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
+</p>
+
+<details>
+  <summary>Texto de apoyo</summary>
+
+Este diagrama detalla la arquitectura de alto nivel del sistema y el flujo de comunicación entre los servicios externos:
+
+- Cliente (Askesis PWA): La interfaz basada en React que gestiona las interacciones diarias del usuario, el estado local y el inicio de las solicitudes.
+- Backend Serverless (Vercel API): Actúa como una capa intermedia segura. Gestiona la sincronización del estado y funciona como un "Proxy de IA", protegiendo las claves de API y validando las solicitudes antes de enviarlas al modelo de lenguaje.
+- Motor de IA (Google Gemini API): El cerebro analítico de la aplicación, que recibe el contexto filtrado por el backend para procesar las reflexiones y generar insights personalizados.
+- Notificaciones (OneSignal): Servicio de mensajería independiente que gestiona los registros push de la PWA y entrega notificaciones asíncronas para volver a captar la atención del usuario.
+
+</details>
+
+<a id="es-resumen"></a>
+
 ### Resumen
 
 - Rastreador de habitos estoico, enfocado en privacidad, con IA para reflexion y ajuste de rutina.
 - PWA offline-first con datos locales cifrados y experiencia consistente en mobile y desktop.
+
+<a id="es-dashboard"></a>
 
 ### Panel tecnologico
 
@@ -754,6 +1047,8 @@ Como verificar (local / CI):
 - Privacidad/seguridad: `npm test` + `npm run test:scenario` (ver `tests/scenario-test-6-security-pentest.test.ts` y `services/crypto.test.ts`).
 - Offline-first (artefactos): `npm run build` (revisar `dist/sw.js` y `dist/manifest.json`).
 
+<a id="es-architecture-glance"></a>
+
 ### Arquitectura de un vistazo
 
 ```mermaid
@@ -779,6 +1074,8 @@ flowchart LR
 | Sincronizacion | Clave de sync | Merge resiliente |
 </details>
 
+<a id="es-tech-radar"></a>
+
 ### Radar tecnologico (ASCII)
 
 ```text
@@ -791,11 +1088,15 @@ flowchart LR
        Resiliencia
 ```
 
+<a id="es-data-lifecycle"></a>
+
 ### Ciclo de datos
 
 ```text
 Entrada -> Validacion -> Cifrado (AES-GCM) -> IndexedDB -> Sync -> Merge -> UI
 ```
+
+<a id="es-platforms"></a>
 
 ### Plataformas y funciones
 
@@ -806,12 +1107,16 @@ Entrada -> Validacion -> Cifrado (AES-GCM) -> IndexedDB -> Sync -> Merge -> UI
 | Android (PWA) | Si | Si | Si | Si |
 | Desktop (PWA) | Si | Si | Si | Si |
 
+<a id="es-quick-start"></a>
+
 ### Inicio rapido
 
 1. **Instalar:** [Abre la app](https://askesis-psi.vercel.app/) y selecciona "Instalar".
 2. **Crear habito:** boton `+` → nombre → periodo del dia → guardar.
 3. **Marcar:** 1 toque = hecho, 2 toques = aplazado.
 4. **Progreso:** el calendario con anillos resume el dia.
+
+<a id="es-highlights"></a>
 
 ### Diferenciales
 
@@ -820,11 +1125,15 @@ Entrada -> Validacion -> Cifrado (AES-GCM) -> IndexedDB -> Sync -> Merge -> UI
 - Flujo rapido: consistencia sobre streaks.
 - Accesibilidad WCAG 2.1 AA y soporte completo de teclado.
 
+<a id="es-privacy-offline"></a>
+
 ### Privacidad y Offline
 
 - Cifrado en el cliente con AES-GCM y Web Workers.
 - Los datos permanecen locales y sincronizan bajo demanda.
 - 100% offline, incluyendo historial y graficos.
+
+<a id="es-build-paradigm"></a>
 
 ### Paradigma de Construccion: Orquestacion Humano-IA
 
@@ -842,12 +1151,16 @@ Esta tabla muestra donde la IA dio la base y donde la vision estrategica y forma
 > [ 🧠 ] Psicologia Cognitiva + [ 🤖 ] IA Generativa + [ 💻 ] Ingenieria de Bajo Nivel
 > Este proyecto es un estudio de caso sobre como la tecnologia moderna puede guiarse por principios humanos para servir a la virtud y no al lucro.
 
+<a id="es-tech"></a>
+
 ### Tecnologia
 
 - TypeScript puro, sin frameworks pesados.
 - PWA con Service Worker y cache atomico.
 - Cifrado AES-GCM y sync resiliente.
 - Render eficiente y UX a 60fps.
+
+<a id="es-project-structure"></a>
 
 ### Estructura del proyecto
 
@@ -856,11 +1169,15 @@ Esta tabla muestra donde la IA dio la base y donde la vision estrategica y forma
 - Gestos y eventos: [listeners/](listeners/)
 - Datos y criptografia: [services/](services/)
 
+<a id="es-tests-quality"></a>
+
 ### Tests y calidad
 
 - Cobertura de flujos, seguridad, accesibilidad y resiliencia.
 - Detalles en [tests/README.md](tests/README.md).
 - CI: workflow en `.github/workflows/ci.yml` ejecuta tests/build y sube artifacts (dist + coverage).
+
+<a id="es-development"></a>
 
 ### Desarrollo
 
@@ -870,6 +1187,8 @@ npm run dev
 ```
 
 > Self-hosting es posible, pero reduce el conjunto de anonimato.
+
+<a id="es-license"></a>
 
 ### Licencia
 
