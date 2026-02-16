@@ -216,9 +216,8 @@ flowchart LR
     direction TB
     PERSIST["persistence.ts<br/>(IndexedDB)"]
     EVENTS["events.ts<br/>(pub/sub bus)"]
-    CLOUD["cloud.ts<br/>(sync orchestrator)"]
-    WRPC["workerClient.ts<br/>(RPC)"]
-    WORKER["sync.worker.ts<br/>(crypto)"]
+    CLOUD["cloud.ts<br/>(sync)"]
+    WORKER["workerClient + sync.worker<br/>(crypto)"]
     API["api.ts<br/>(HTTP)"]
     MERGE["dataMerge.ts<br/>(CRDT-lite)"]
   end
@@ -248,10 +247,9 @@ flowchart LR
 
   %% === Pipeline de Sync ===
   ANALYSIS --> CLOUD
-  CLOUD --> WRPC
+  CLOUD --> WORKER
   CLOUD --> API
   CLOUD --> MERGE
-  WRPC --> WORKER
 
   %% === Callback de Persistência ===
   PERSIST -.->|callback| CLOUD
