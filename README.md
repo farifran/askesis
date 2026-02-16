@@ -190,79 +190,24 @@ flowchart LR
 
 ### Componentes Internos (C4 - Nível 3)
 
-```mermaid
-flowchart LR
-  %% Layout horizontal: fluxo da esquerda para direita, minimizando cruzamentos
+A arquitetura do Askesis segue um modelo em camadas, inspirado no padrão C4, para organizar os componentes internos. Isso facilita a manutenção e o entendimento, separando responsabilidades claras. Pense nisso como um restaurante: a apresentação é o atendimento ao cliente, o domínio é a cozinha que prepara os pratos, e a infraestrutura é o estoque e fornecedores que garantem os ingredientes.
 
-  subgraph PRESENTATION["Camada de Apresentação"]
-    direction TB
-    IDX["index.tsx<br/>(bootstrap)"]
-    LISTEN["listeners/*<br/>(eventos DOM)"]
-    RENDER["render/*<br/>(DOM updates)"]
-  end
+#### Camadas Principais:
+- **🎨 Camada de Apresentação:**  
+  Responsável pela interface do usuário e pelas interações. Aqui, o app "conversa" com o usuário, capturando cliques, toques e exibindo informações na tela. É como o garçom que recebe pedidos e serve os pratos.
 
-  subgraph DOMAIN["Camada de Domínio"]
-    direction TB
-    ACTIONS["habitActions.ts<br/>(mutações)"]
-    SELECTORS["selectors.ts<br/>(queries)"]
-    ANALYSIS["analysis.ts<br/>(IA insights)"]
-    STATE[("state.ts<br/>(SSOT)")]
-  end
+- **🧠 Camada de Domínio:**  
+  Contém a lógica central do negócio, como regras para hábitos, cálculos de progresso e gerenciamento do estado geral da aplicação. É o "coração" do app, onde decisões importantes são tomadas, semelhante à cozinha que decide como preparar cada prato.
 
-  subgraph INFRA["Camada de Infraestrutura"]
-    direction TB
-    PERSIST["persistence.ts<br/>(IndexedDB)"]
-    EVENTS["events.ts<br/>(pub/sub bus)"]
-    CLOUD["cloud.ts<br/>(sync orchestrator)"]
-    WRPC["workerClient.ts<br/>(RPC)"]
-    WORKER["sync.worker.ts<br/>(crypto)"]
-    API["api.ts<br/>(HTTP)"]
-    MERGE["dataMerge.ts<br/>(CRDT-lite)"]
-  end
+- **⚙️ Camada de Infraestrutura:**  
+  Lida com armazenamento de dados, sincronização com a nuvem e comunicações externas. Garante que tudo funcione de forma confiável, como o estoque que mantém ingredientes frescos e organiza entregas.
 
-  %% === Bootstrap (inicialização) ===
-  IDX --> LISTEN
-  IDX --> RENDER
+#### Como as Camadas Interagem:
+- O usuário interage com a **Apresentação**, que passa as informações para o **Domínio**.
+- O **Domínio** processa e atualiza o estado, então aciona a **Infraestrutura** para salvar ou sincronizar dados.
+- Tudo flui de forma organizada: da interface para a lógica, e da lógica para o armazenamento/comunicação.
 
-  %% === UI → Domínio ===
-  LISTEN --> ACTIONS
-  LISTEN --> ANALYSIS
-  RENDER --> SELECTORS
-
-  %% === Domínio → Estado ===
-  ACTIONS --> STATE
-  SELECTORS --> STATE
-  ANALYSIS --> STATE
-
-  %% === Persistência Local ===
-  ACTIONS --> PERSIST
-  PERSIST --> STATE
-
-  %% === Event Bus (comunicação assíncrona) ===
-  ACTIONS --> EVENTS
-  EVENTS --> RENDER
-  EVENTS --> LISTEN
-
-  %% === Pipeline de Sync ===
-  ANALYSIS --> CLOUD
-  CLOUD --> WRPC
-  CLOUD --> API
-  CLOUD --> MERGE
-  WRPC --> WORKER
-
-  %% === Callback de Persistência ===
-  PERSIST -.->|callback| CLOUD
-```
-
-**Leitura do diagrama:**
-- **Fluxo principal:** Apresentação → Domínio → Infraestrutura (esquerda para direita)
-- **Inicialização:** `index.tsx` configura listeners e render
-- **Interação do usuário:** `listeners/*` → `habitActions.ts` (mutações) + `analysis.ts` (insights IA)
-- **Estado central:** Tudo converge para `state.ts` (Single Source of Truth)
-- **Persistência:** `habitActions.ts` → `persistence.ts` → IndexedDB + callback para sync
-- **Comunicação assíncrona:** `events.ts` como barramento pub/sub entre componentes
-- **Sync pipeline:** `analysis.ts` → `cloud.ts` → worker/crypto → API → merge
-
+Essa estrutura garante que o app seja local-first (prioriza dados locais) e suporte sincronização segura entre dispositivos.
 <a id="pt-data-flow"></a>
 
 ### Fluxo de Dados (Local-first + Sync)
@@ -271,45 +216,39 @@ flowchart LR
 sequenceDiagram
   participant User as Usuário
   participant UI as UI
-  participant State as State
+  participant State as Estado
   participant Actions as habitActions
   participant Persist as persistence
   participant DB as IndexedDB
   participant Cloud as cloud.ts
-  participant WRPC as workerClient
-  participant Crypto as sync.worker (crypto)
+  participant Worker as Worker (Crypto)
   participant API as API /api/sync
   participant Merge as dataMerge
 
   User->>UI: Marca hábito / adiciona nota
-  UI->>Actions: Atualiza hábito/nota
-  Actions->>State: Mutação de estado + dirty flags
+  UI->>Actions: Atualiza estado
+  Actions->>State: Mutação + flags sujos
   Actions->>Persist: saveState() (debounced)
-  Persist->>DB: saveSplitState(core + logs)
-  Note over Persist,DB: Persistência local (IDB) sem criptografia de sync key
+  Persist->>DB: Salva core + logs (sem cripto)
   Persist-->>Cloud: syncHandler(snapshot)
-  Cloud->>Cloud: splitIntoShards + hash diff
+  Cloud->>Cloud: Divide em shards + calcula diffs
 
-  loop Para cada shard alterado
-    Cloud->>WRPC: runWorkerTask(encrypt-json)
-    WRPC->>Crypto: encrypt(shard, syncKey)
-    Crypto-->>Cloud: shard criptografado
-  end
+  Cloud->>Worker: Criptografa shards alterados
+  Worker-->>Cloud: Shards criptografados
 
   Cloud->>API: POST /api/sync (lastModified + shards)
-  alt Sync sem conflito (200)
+  alt Sem conflito (200)
     API-->>Cloud: OK
-    Cloud->>State: syncSynced + atualiza hash cache
-  else Conflito de versão (409)
-    API-->>Cloud: shards remotos
-    Cloud->>WRPC: runWorkerTask(decrypt)
-    WRPC->>Crypto: decrypt(shards remotos)
-    Crypto-->>Cloud: estado remoto
-    Cloud->>Merge: mergeStates(local, remoto)
-    Merge-->>Cloud: estado consolidado (LWW + dedup)
-    Cloud->>Persist: persistStateLocally(merged)
-    Cloud->>Persist: loadState(merged)
-    Persist-->>UI: render-app
+    Cloud->>State: Sincronizado + atualiza cache
+  else Conflito (409)
+    API-->>Cloud: Shards remotos
+    Cloud->>Worker: Descriptografa shards
+    Worker-->>Cloud: Estado remoto
+    Cloud->>Merge: Mescla estados (LWW + dedup)
+    Merge-->>Cloud: Estado consolidado
+    Cloud->>Persist: Persiste mesclado
+    Persist->>State: Carrega estado
+    State-->>UI: Renderiza app
   end
 ```
 
