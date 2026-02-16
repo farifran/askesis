@@ -32,7 +32,6 @@ Texto de apoio: epígrafe do projeto — conecta direto com o propósito do Aske
 - [Diagramas (visão geral)](#pt-diagramas)
   - [Visão Geral da Arquitetura e Fluxo do Usuário](#pt-architecture-user-flow)
   - [Visão Geral de Integrações e Infraestrutura](#pt-integrations-infra)
-- [Radar tecnico (ASCII)](#pt-tech-radar)
 - [Ciclo de dados](#pt-data-lifecycle)
 - [Contêineres (C4 - Nível 2)](#pt-c4-l2)
 - [Componentes Internos (C4 - Nível 3)](#pt-c4-l3)
@@ -65,7 +64,7 @@ Texto de apoio: epígrafe do projeto — conecta direto com o propósito do Aske
 
 A criação do Askesis foi motivada por conta da necessidade por privacidade e e a nova possibilidade de gerar e criar codigo por medio de IA Gen:
 
-1.  **Soberania e Privacidade de Dados:** O registro de hábitos é, por natureza, um diário íntimo da vida pessoal. Eu precisava de uma garantia absoluta de que essas informações não seriam compartilhadas, vendidas ou analisadas por terceiros. 
+1.  **Soberania e Privacidade de Dados:** O registro de hábitos é, por natureza, um diário pessoal. Eu precisava de uma garantia absoluta de que essas informações não seriam compartilhadas, vendidas ou analisadas por terceiros. 
 
 2.  **Tecnológia Disponivel:** Em uma era dominada por modelos de assinatura (SaaS), recusei-me a pagar por um software que poderia ser construído com ajuda da IA Gen, sendo posible obter uma ferramenta profissional, segura, robusta e gratuita para o auto-aperfeiçoamento.
 
@@ -136,45 +135,18 @@ Este diagrama detalha a arquitetura de alto nível do sistema e o fluxo de comun
 </details>
 ---
 
-<a id="pt-tech-radar"></a>
-
-### Radar tecnico (ASCII)
-
-```text
-                          Assess / Trial
-                    /-----------------------\
-            Adopt /                           \ Hold
-          /---------------------------------------\
-    Languages & Runtimes          Tools & Infra
-  /-----------------------------------------------\
- |                                               |
- |  TypeScript (Adopt)     Service Worker (Adopt) |
- |                                               |
- |  ESNext APIs (Adopt)    IndexedDB (Adopt)     |
- |                                               |
- |  Web Workers (Adopt)    Vercel KV (Trial)     |
- |                                               |
-  \-----------------------------------------------/
-    Security & Privacy         Data & Sync
-          \---------------------------------------/
-            \                           / Adopt
-             \-----------------------/
-                    Hold / Legacy
-```
-
-Legenda:
-- **Adopt**: Tecnologias maduras e recomendadas para uso amplo.
-- **Trial**: Em avaliação, com potencial para adoção futura.
-- **Assess**: Em análise inicial.
-- **Hold**: Evitar ou migrar quando possível (ex.: frameworks pesados).
-```
-
 <a id="pt-data-lifecycle"></a>
 
 ### Ciclo de dados
 
-```text
-Entrada -> Validacao -> Criptografia (AES-GCM) -> IndexedDB -> Sync -> Merge -> UI
+```mermaid
+flowchart LR
+    Entrada --> Validacao
+    Validacao --> Criptografia["Criptografia (AES-GCM)"]
+    Criptografia --> IndexedDB
+    IndexedDB --> Sync
+    Sync --> Merge
+    Merge --> UI
 ```
 
 <a id="pt-c4-l2"></a>
@@ -182,36 +154,38 @@ Entrada -> Validacao -> Criptografia (AES-GCM) -> IndexedDB -> Sync -> Merge -> 
 ### Contêineres (C4 - Nível 2)
 
 ```mermaid
-flowchart TB
-  %% Nível 2 = visão de containers (sem repetir nomes de arquivos do Nível 3)
-  %% Nota: evitamos o "loop" SW -> PWA para reduzir cruzamentos no render do GitHub.
-  subgraph Client["Client (PWA)"]
-    direction TB
-    PWA["Askesis PWA\n(UI + Render)"]
-    Store["Local Storage\n(IndexedDB)"]
-    Sync["Sync Engine"]
-    Worker["Web Worker\n(crypto + merge)"]
-    SW["Service Worker\n(offline + bg sync)"]
+flowchart LR
+  %% Nível 2 = visão de containers (contêineres de alto nível, sem detalhes internos do Nível 3)
+  %% Ajustado para evitar cruzamentos: fluxo horizontal, contêiner único para o cliente
+
+  subgraph Client["Cliente (PWA)"]
+    PWA["Askesis PWA\n(Aplicação Web)"]
   end
 
-  subgraph External["External Services"]
-    direction TB
-    API["Vercel API\n(/api/sync, /api/analyze)"]
-    AI["Gemini API"]
-    PUSH["OneSignal"]
+  subgraph Storage["Armazenamento Local"]
+    Store["IndexedDB"]
   end
 
-  %% Core flows
+  subgraph Workers["Processos Auxiliares"]
+    Worker["Web Worker\n(Criptografia)"]
+    SW["Service Worker\n(Offline + Sync)"]
+  end
+
+  subgraph External["Serviços Externos"]
+    API["Vercel API\n(Sync + Análise)"]
+    AI["Gemini API\n(IA)"]
+    PUSH["OneSignal\n(Notificações)"]
+  end
+
+  %% Fluxos principais (sem cruzamentos)
   PWA --> Store
-  PWA --> Sync
-  Sync --> Worker
-  Sync --> API --> AI
-
-  %% Background sync + push notifications
-  Sync -->|register bg sync| SW
-  PWA -->|opt-in/consent| PUSH
-  PUSH -->|push events| SW
-  SW -->|notificationclick| Open["Open / focus Askesis"]
+  PWA --> Worker
+  PWA --> SW
+  Worker --> API
+  API --> AI
+  PWA --> PUSH
+  PUSH --> SW
+  SW --> PWA
 ```
 
 <a id="pt-c4-l3"></a>
@@ -2074,7 +2048,6 @@ Supporting text: project epigraph — ties directly to Askesis as a **habit trac
 - [Diagrams (overview)](#en-diagrams)
   - [Architecture & User Flow Overview](#en-architecture-user-flow)
   - [Integrations & Infrastructure Overview](#en-integrations-infra)
-- [Tech radar (ASCII)](#en-tech-radar)
 - [Data lifecycle](#en-data-lifecycle)
 - [Containers (C4 - Level 2)](#en-c4-l2)
 - [Internal Components (C4 - Level 3)](#en-c4-l3)
@@ -2166,26 +2139,18 @@ This diagram details the high-level system architecture and the communication fl
 
 </details>
 
-<a id="en-tech-radar"></a>
-
-### Tech radar (ASCII)
-
-```text
-      Privacy 10
-        /\
- A11y 9  /-----/  \-----\  Offline 10
-       /           \
-    UX 8 \           /  Performance 9
-      \--- 10 ---/
-       Resilience
-```
-
 <a id="en-data-lifecycle"></a>
 
 ### Data lifecycle
 
-```text
-Input -> Validation -> Encryption (AES-GCM) -> IndexedDB -> Sync -> Merge -> UI
+```mermaid
+flowchart LR
+    Input --> Validation
+    Validation --> Encryption["Encryption (AES-GCM)"]
+    Encryption --> IndexedDB
+    IndexedDB --> Sync
+    Sync --> Merge
+    Merge --> UI
 ```
 
 <a id="en-c4-l2"></a>
@@ -2193,36 +2158,38 @@ Input -> Validation -> Encryption (AES-GCM) -> IndexedDB -> Sync -> Merge -> UI
 ### Containers (C4 - Level 2)
 
 ```mermaid
-flowchart TB
-  %% Level 2 = container view (avoid repeating file names from Level 3)
-  %% Note: we avoid the "loop" SW -> PWA to reduce crossings in GitHub rendering.
+flowchart LR
+  %% Level 2 = container view (high-level containers, no Level 3 details)
+  %% Adjusted to avoid crossings: horizontal flow, single client container
+
   subgraph Client["Client (PWA)"]
-    direction TB
-    PWA["Askesis PWA\n(UI + Render)"]
-    Store["Local Storage\n(IndexedDB)"]
-    Sync["Sync Engine"]
-    Worker["Web Worker\n(crypto + merge)"]
-    SW["Service Worker\n(offline + bg sync)"]
+    PWA["Askesis PWA\n(Web App)"]
+  end
+
+  subgraph Storage["Local Storage"]
+    Store["IndexedDB"]
+  end
+
+  subgraph Workers["Auxiliary Processes"]
+    Worker["Web Worker\n(Encryption)"]
+    SW["Service Worker\n(Offline + Sync)"]
   end
 
   subgraph External["External Services"]
-    direction TB
-    API["Vercel API\n(/api/sync, /api/analyze)"]
-    AI["Gemini API"]
-    PUSH["OneSignal"]
+    API["Vercel API\n(Sync + Analysis)"]
+    AI["Gemini API\n(AI)"]
+    PUSH["OneSignal\n(Notifications)"]
   end
 
-  %% Core flows
+  %% Main flows (no crossings)
   PWA --> Store
-  PWA --> Sync
-  Sync --> Worker
-  Sync --> API --> AI
-
-  %% Background sync + push notifications
-  Sync -->|register bg sync| SW
-  PWA -->|opt-in/consent| PUSH
-  PUSH -->|push events| SW
-  SW -->|notificationclick| Open["Open / focus Askesis"]
+  PWA --> Worker
+  PWA --> SW
+  Worker --> API
+  API --> AI
+  PWA --> PUSH
+  PUSH --> SW
+  SW --> PWA
 ```
 
 <a id="en-c4-l3"></a>
@@ -2941,7 +2908,6 @@ Texto de apoyo: epígrafe del proyecto — conecta con Askesis como **habit trac
 - [Diagramas (visión general)](#es-diagramas)
   - [Descripción General de la Arquitectura y Flujo de Usuario](#es-architecture-user-flow)
   - [Descripción General de Integraciones e Infraestructura](#es-integrations-infra)
-- [Radar tecnologico (ASCII)](#es-tech-radar)
 - [Ciclo de datos](#es-data-lifecycle)
 - [Contenedores (C4 - Nivel 2)](#es-c4-l2)
 - [Componentes internos (C4 - Nivel 3)](#es-c4-l3)
@@ -3033,26 +2999,18 @@ Este diagrama detalla la arquitectura de alto nivel del sistema y el flujo de co
 
 </details>
 
-<a id="es-tech-radar"></a>
-
-### Radar tecnologico (ASCII)
-
-```text
-      Privacidad 10
-        /\
- A11y 9  /-----/  \-----\  Offline 10
-       /           \
-    UX 8 \           /  Performance 9
-      \--- 10 ---/
-       Resiliencia
-```
-
 <a id="es-data-lifecycle"></a>
 
 ### Ciclo de datos
 
-```text
-Entrada -> Validacion -> Cifrado (AES-GCM) -> IndexedDB -> Sync -> Merge -> UI
+```mermaid
+flowchart LR
+    Entrada --> Validacion
+    Validacion --> Cifrado["Cifrado (AES-GCM)"]
+    Cifrado --> IndexedDB
+    IndexedDB --> Sync
+    Sync --> Merge
+    Merge --> UI
 ```
 
 <a id="es-c4-l2"></a>
@@ -3060,36 +3018,38 @@ Entrada -> Validacion -> Cifrado (AES-GCM) -> IndexedDB -> Sync -> Merge -> UI
 ### Contenedores (C4 - Nivel 2)
 
 ```mermaid
-flowchart TB
-  %% Nivel 2 = vista de contenedores (sin repetir nombres de archivos del Nivel 3)
-  %% Nota: evitamos el "loop" SW -> PWA para reducir cruces en el render de GitHub.
+flowchart LR
+  %% Nivel 2 = vista de contenedores (contenedores de alto nivel, sin detalles del Nivel 3)
+  %% Ajustado para evitar cruces: flujo horizontal, contenedor unico para el cliente
+
   subgraph Client["Cliente (PWA)"]
-    direction TB
-    PWA["Askesis PWA\n(UI + Render)"]
-    Store["Almacenamiento local\n(IndexedDB)"]
-    Sync["Motor de sync"]
-    Worker["Web Worker\n(crypto + merge)"]
-    SW["Service Worker\n(offline + bg sync)"]
+    PWA["Askesis PWA\n(Aplicacion web)"]
+  end
+
+  subgraph Storage["Almacenamiento local"]
+    Store["IndexedDB"]
+  end
+
+  subgraph Workers["Procesos auxiliares"]
+    Worker["Web Worker\n(Cifrado)"]
+    SW["Service Worker\n(Offline + Sync)"]
   end
 
   subgraph External["Servicios externos"]
-    direction TB
-    API["Vercel API\n(/api/sync, /api/analyze)"]
-    AI["Gemini API"]
-    PUSH["OneSignal"]
+    API["Vercel API\n(Sync + Analisis)"]
+    AI["Gemini API\n(IA)"]
+    PUSH["OneSignal\n(Notificaciones)"]
   end
 
-  %% Flujos base
+  %% Flujos principales (sin cruces)
   PWA --> Store
-  PWA --> Sync
-  Sync --> Worker
-  Sync --> API --> AI
-
-  %% Sync en background + notificaciones push
-  Sync -->|registrar bg sync| SW
-  PWA -->|opt-in/consentimiento| PUSH
-  PUSH -->|eventos push| SW
-  SW -->|notificationclick| Open["Abrir / enfocar Askesis"]
+  PWA --> Worker
+  PWA --> SW
+  Worker --> API
+  API --> AI
+  PWA --> PUSH
+  PUSH --> SW
+  SW --> PWA
 ```
 
 <a id="es-c4-l3"></a>
