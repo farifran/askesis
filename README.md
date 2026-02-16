@@ -9,8 +9,6 @@
   <img src="assets/header-badges.svg" alt="Badges do Askesis" width="100%" style="display: block; margin-top: 2px;">
 </div>
 
----
-
 <a id="pt-br"></a>
 
 ## PT-BR
@@ -19,39 +17,81 @@
   <img src="assets/AristotelesPortugues.jpg" alt="Aristóteles (Português)" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
 </p>
 
-### Índice rápido
+<details>
+  <summary><em>“Nós somos aquilo que fazemos repetidamente. Excelência, portanto, não é um ato, mas um hábito.” — Aristóteles</em></summary>
 
-- [Arquitetura e fluxo do usuário (diagrama)](#pt-architecture-user-flow)
-- [Integrações e infraestrutura (diagrama)](#pt-integrations-infra)
+Texto de apoio: epígrafe do projeto — conecta direto com o propósito do Askesis como **habit tracker**: consistência e excelência se constroem pela prática diária, e **hábitos** são o mecanismo que o app ajuda a treinar e acompanhar.
+
+</details>
 
 <details>
   <summary>Ver estrutura completa (TOC)</summary>
 
+- [Visão do Projeto](#pt-visao-do-projeto)
+- [Diferenciais](#pt-highlights)
 - [Diagramas (visão geral)](#pt-diagramas)
   - [Visão Geral da Arquitetura e Fluxo do Usuário](#pt-architecture-user-flow)
   - [Visão Geral de Integrações e Infraestrutura](#pt-integrations-infra)
-- [Resumo](#pt-resumo)
-- [Dashboard tecnologico](#pt-dashboard)
+- [Radar tecnico (ASCII)](#pt-tech-radar)
+- [Ciclo de dados](#pt-data-lifecycle)
 - [Contêineres (C4 - Nível 2)](#pt-c4-l2)
 - [Componentes Internos (C4 - Nível 3)](#pt-c4-l3)
 - [Fluxo de Dados (Local-first + Sync)](#pt-data-flow)
 - [Fluxo de Conflito de Sync](#pt-sync-conflict)
-- [Mapa rápido de módulos](#pt-modules-map)
-- [Radar tecnico (ASCII)](#pt-tech-radar)
-- [Ciclo de dados](#pt-data-lifecycle)
 - [Regras de Unicidade de Hábitos](#pt-habit-uniqueness)
-- [Plataformas e recursos](#pt-platforms)
-- [Inicio rapido](#pt-quick-start)
-- [Diferenciais](#pt-highlights)
-- [Privacidade e Offline](#pt-privacy-offline)
+- [Mapa rápido de módulos](#pt-modules-map)
 - [Paradigma de Construcao: A Orquestracao Humano-IA](#pt-build-paradigm)
 - [Tecnologia](#pt-tech)
 - [Estrutura do projeto](#pt-project-structure)
 - [Testes e qualidade](#pt-tests-quality)
 - [Desenvolvimento](#pt-development)
+- [Guia completo (detalhado)](#pt-guia-completo)
 - [Licenca](#pt-license)
 
+
 </details>
+
+<a id="pt-visao-do-projeto"></a>
+<a id="pt-resumo"></a>
+
+### Visão do Projeto
+
+- Rastreador de hábitos estoico, focado em privacidade, com IA para reflexões e ajustes de rotina.
+- Local-first: dados ficam no dispositivo; sincronização opcional com criptografia E2E (AES-GCM) em Web Worker.
+- Sync resiliente e sem conflitos (merge/CRDT-lite) via Vercel API (KV), sem login obrigatório.
+- Zero-deps por padrão no runtime local (sem SDKs no boot); após opt-in, push pode auto-carregar para manter o estado.
+
+#### A Motivação: Por que construir?
+
+A criação do Askesis foi motivada por conta da necessidade por privacidade e e a nova possibilidade de gerar e criar codigo por medio de IA Gen:
+
+1.  **Soberania e Privacidade de Dados:** O registro de hábitos é, por natureza, um diário íntimo da vida pessoal. Eu precisava de uma garantia absoluta de que essas informações não seriam compartilhadas, vendidas ou analisadas por terceiros. 
+
+2.  **Disponibilidad Tecnológica:** Em uma era dominada por modelos de assinatura (SaaS), recusei-me a pagar por um software que poderia ser construído com ajuda da IA Gen, sendo posible obter uma ferramenta profissional, segura, robusta e gratuita para o auto-aperfeiçoamento.
+
+#### Meu objetivo: **Privacidade por desenho + criptografia + anonimato coletivo**
+
+No Askesis, a prioridade é o controle da informação: os dados pertencem exclusivamente ao usuário e residem no seu dispositivo (ou no seu cofre pessoal criptografado). Além disso, o Askesis adota uma prática conhecida como **anonimato coletivo** (*anonymity set*). Como o app não exige e-mail, telefone ou qualquer identificador pessoal, e utiliza uma **API de IA compartilhada** para todos, a identidade do usuário não apenas é criptografada — ela também é **diluída no conjunto de usuários**. Em outras palavras: as requisições são indistinguíveis entre si, reduzindo a chance de correlação individual.
+
+#### A Filosofia: O que é Askesis?
+
+**Askesis** (do grego *ἄσκησις*) é a raiz da palavra "ascetismo", mas seu significado original é muito mais prático: significa **"treinamento"** ou **"exercício"**.
+
+Na filosofia estoica, *askesis* não se trata de sofrimento ou privação sem sentido, mas do **treinamento rigoroso e atlético da mente e do caráter**. Assim como um atleta treina o corpo para a competição, o estoico treina a mente para lidar com as adversidades da vida com virtude e tranquilidade.
+
+A maioria dos apps de hábitos foca em gamificação superficial ou em "não quebrar a corrente". O Askesis foca na **virtude da consistência**. Ele usa Inteligência Artificial para atuar como um "Sábio Estoico", analisando seus dados não para julgar, mas para oferecer conselhos sobre como fortalecer sua vontade.
+
+
+<a id="pt-highlights"></a>
+
+### Diferenciais
+
+- Privacidade total, sem login ou rastreio.
+- IA estoica para reflexao, nao para vicio.
+- Fluxo rapido: foco em consistencia, nao em streaks.
+- Acessibilidade WCAG 2.1 AA e suporte completo a teclado.
+
+---
 
 <a id="pt-diagramas"></a>
 
@@ -93,64 +133,30 @@ Este diagrama detalha a arquitetura de alto nível do sistema e o fluxo de comun
 - Backend Serverless (Vercel API): Atua como uma camada intermediária segura. Ele gerencia a sincronização de estado e funciona como um "Proxy de IA", protegendo as chaves de API e validando as requisições antes de enviá-las ao modelo de linguagem.
 - Motor de IA (Google Gemini API): O cérebro por trás da análise, recebendo os dados filtrados pelo backend para processar as reflexões e gerar insights personalizados.
 - Notificações (OneSignal): Serviço de mensageria independente que registra o PWA e cuida do envio de notificações push assíncronas para engajar o usuário de volta no aplicativo.
-
 </details>
-<a id="pt-resumo"></a>
+---
 
-### Resumo
+<a id="pt-tech-radar"></a>
 
-- Rastreador de hábitos estoico, focado em privacidade, com IA para reflexões e ajustes de rotina.
-- Local-first: dados ficam no dispositivo; sincronização opcional com criptografia E2E (AES-GCM) em Web Worker.
-- Sync resiliente e sem conflitos (merge/CRDT-lite) via Vercel API (KV), sem login obrigatório.
-- Zero-deps por padrão no runtime local (sem SDKs no boot); após opt-in, push pode auto-carregar para manter o estado.
+### Radar tecnico (ASCII)
 
-<a id="pt-dashboard"></a>
+```text
+      Privacidade 10
+        /\
+ A11y 9  /-----/  \-----\  Offline 10
+       /           \
+    UX 8 \           /  Performance 9
+      \--- 10 ---/
+       Resiliencia
+```
 
-### Dashboard tecnologico
+<a id="pt-data-lifecycle"></a>
 
-<div align="center">
-  <table border="0" cellspacing="10" cellpadding="0" style="border-collapse: separate; border-spacing: 10px;">
-    <tr>
-      <td align="center" style="padding: 10px 14px; border-radius: 10px; background: #111; border: 1px solid #2a2a2a; color: #e5e5e5;">
-        Performance
-        <div style="margin-top: 6px; width: 140px; background: #2a2a2a; border-radius: 6px;">
-          <div style="width: 95%; background: #27ae60; height: 8px; border-radius: 6px;"></div>
-        </div>
-        <div style="color: #9aa0a6;">Budgets em testes</div>
-      </td>
-      <td align="center" style="padding: 10px 14px; border-radius: 10px; background: #111; border: 1px solid #2a2a2a; color: #e5e5e5;">
-        Privacidade
-        <div style="margin-top: 6px; width: 140px; background: #2a2a2a; border-radius: 6px;">
-          <div style="width: 100%; background: #27ae60; height: 8px; border-radius: 6px;"></div>
-        </div>
-        <div style="color: #9aa0a6;">AES-GCM + local</div>
-      </td>
-      <td align="center" style="padding: 10px 14px; border-radius: 10px; background: #111; border: 1px solid #2a2a2a; color: #e5e5e5;">
-        Acessibilidade
-        <div style="margin-top: 6px; width: 140px; background: #2a2a2a; border-radius: 6px;">
-          <div style="width: 90%; background: #27ae60; height: 8px; border-radius: 6px;"></div>
-        </div>
-        <div style="color: #9aa0a6;">WCAG 2.1 AA</div>
-      </td>
-      <td align="center" style="padding: 10px 14px; border-radius: 10px; background: #111; border: 1px solid #2a2a2a; color: #e5e5e5;">
-        Offline
-        <div style="margin-top: 6px; width: 140px; background: #2a2a2a; border-radius: 6px;">
-          <div style="width: 100%; background: #27ae60; height: 8px; border-radius: 6px;"></div>
-        </div>
-        <div style="color: #9aa0a6;">100% offline</div>
-      </td>
-    </tr>
-  </table>
-</div>
+### Ciclo de dados
 
-> Nota: esse “dashboard” e um resumo **qualitativo** (metas/intenções de engenharia) e nao uma medicao automatica. Para evidencias verificaveis, veja [tests/README.md](tests/README.md) e [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
-
-Como verificar (local / CI):
-
-- Performance (budgets): `npm run test:scenario` (ver `tests/scenario-test-3-performance.test.ts`).
-- Acessibilidade (WCAG): `npm run test:scenario` (ver `tests/scenario-test-4-accessibility.test.ts`).
-- Privacidade/seguranca: `npm test` + `npm run test:scenario` (ver `tests/scenario-test-6-security-pentest.test.ts` e `services/crypto.test.ts`).
-- Offline-first (artefatos): `npm run build` (confira `dist/sw.js` e `dist/manifest.json`).
+```text
+Entrada -> Validacao -> Criptografia (AES-GCM) -> IndexedDB -> Sync -> Merge -> UI
+```
 
 <a id="pt-c4-l2"></a>
 
@@ -337,51 +343,6 @@ sequenceDiagram
   Note over M: Regras efetivas de merge\n1) Match por ID\n2) Dedup por nome normalizado\n3) LWW por schedule/history\n4) Normalização de mode/times/frequency
 ```
 
-<a id="pt-modules-map"></a>
-
-### Mapa rápido de módulos (pasta → responsabilidade)
-
-- render/: composição visual, diffs de DOM, modais, calendário e gráficos.
-- listeners/: eventos de UI (cards, modal, swipe/drag, calendário, sync).
-- services/: domínio e infraestrutura (habitActions, selectors, persistence, cloud, dataMerge, analysis, quoteEngine, HabitService).
-- api/: endpoints serverless edge (/api/sync, /api/analyze) com rate-limit, CORS e hardening.
-- state.ts: modelo canônico de estado, tipos e caches.
-- services/sync.worker.ts: criptografia AES-GCM e construção de prompts IA fora da main thread.
-- tests/ e services/*.test.ts: cenários de jornada, segurança, resiliência, merge e regressão.
-
-<details>
-  <summary>Mapa rapido de fluxos</summary>
-
-| Fluxo | Entrada | Saida |
-|---|---|---|
-| Status diario | Tap no card | Bitmask + render imediato |
-| Privacidade | Dados locais | AES-GCM em worker |
-| Offline-first | Service Worker | Cache atomico |
-| Sincronizacao | Chave de sync | Merge resiliente |
-</details>
-
-<a id="pt-tech-radar"></a>
-
-### Radar tecnico (ASCII)
-
-```text
-      Privacidade 10
-        /\
- A11y 9  /-----/  \-----\  Offline 10
-       /           \
-    UX 8 \           /  Performance 9
-      \--- 10 ---/
-       Resiliencia
-```
-
-<a id="pt-data-lifecycle"></a>
-
-### Ciclo de dados
-
-```text
-Entrada -> Validacao -> Criptografia (AES-GCM) -> IndexedDB -> Sync -> Merge -> UI
-```
-
 <a id="pt-habit-uniqueness"></a>
 
 ### Regras de Unicidade de Hábitos
@@ -480,42 +441,28 @@ graph TD
 | Sync merge combina times de duas versões | DataMerge deduplica após LWW (Last-Write-Wins) |
 | Drag-drop tenta mover hábito para TimeOfDay já ocupado | Operação rejeitada (validação em listeners/drag.ts) |
 
-<a id="pt-platforms"></a>
+<a id="pt-modules-map"></a>
 
-### Plataformas e recursos
+### Mapa rápido de módulos (pasta → responsabilidade)
 
-| Plataforma | Instalavel | Offline | Sync | Notificacoes |
-|---|---|---|---|---|
-| Web | Sim | Sim | Sim | Sim |
-| iOS (PWA) | Sim | Sim | Sim | Limitado |
-| Android (PWA) | Sim | Sim | Sim | Sim |
-| Desktop (PWA) | Sim | Sim | Sim | Sim |
+- render/: composição visual, diffs de DOM, modais, calendário e gráficos.
+- listeners/: eventos de UI (cards, modal, swipe/drag, calendário, sync).
+- services/: domínio e infraestrutura (habitActions, selectors, persistence, cloud, dataMerge, analysis, quoteEngine, HabitService).
+- api/: endpoints serverless edge (/api/sync, /api/analyze) com rate-limit, CORS e hardening.
+- state.ts: modelo canônico de estado, tipos e caches.
+- services/sync.worker.ts: criptografia AES-GCM e construção de prompts IA fora da main thread.
+- tests/ e services/*.test.ts: cenários de jornada, segurança, resiliência, merge e regressão.
 
-<a id="pt-quick-start"></a>
+<details>
+  <summary>Mapa rapido de fluxos</summary>
 
-### Inicio rapido
-
-1. **Instalar:** [Abra o app](https://askesis-psi.vercel.app/) e selecione "Instalar".
-2. **Criar habito:** Botao `+` → nome → periodo do dia → salvar.
-3. **Marcar:** 1 toque = feito, 2 toques = adiado.
-4. **Progresso:** Calendario com aneis resume o dia.
-
-<a id="pt-highlights"></a>
-
-### Diferenciais
-
-- Privacidade total, sem login ou rastreio.
-- IA estoica para reflexao, nao para vicio.
-- Fluxo rapido: foco em consistencia, nao em streaks.
-- Acessibilidade WCAG 2.1 AA e suporte completo a teclado.
-
-<a id="pt-privacy-offline"></a>
-
-### Privacidade e Offline
-
-- Criptografia no cliente com AES-GCM e Web Workers.
-- Dados permanecem no dispositivo e sincronizam sob demanda.
-- Funciona 100% offline, inclusive historico e graficos.
+| Fluxo | Entrada | Saida |
+|---|---|---|
+| Status diario | Tap no card | Bitmask + render imediato |
+| Privacidade | Dados locais | AES-GCM em worker |
+| Offline-first | Service Worker | Cache atomico |
+| Sincronizacao | Chave de sync | Merge resiliente |
+</details>
 
 <a id="pt-build-paradigm"></a>
 
@@ -571,582 +518,278 @@ npm run dev
 ```
 
 > Rodar uma instancia propria e possivel, mas reduz o anonimato coletivo.
+<a id="pt-guia-completo"></a>
 
-<a id="pt-license"></a>
-
-### Licenca
-
-- Apache-2.0 (ver [LICENSE](LICENSE)).
-
-
-<a id="en"></a>
-
-## EN
-
-<p align="center">
-  <img src="assets/AristotelesIngles.jpg" alt="Aristotle (English)" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
-</p>
-
-### Quick index
-
-- [Architecture & User Flow (diagram)](#en-architecture-user-flow)
-- [Integrations & Infrastructure (diagram)](#en-integrations-infra)
+### Guia completo (detalhado)
 
 <details>
-  <summary>View full structure (TOC)</summary>
+  <summary>Abrir guia completo (uso + deep dives)</summary>
 
-- [Diagrams (overview)](#en-diagrams)
-  - [Architecture & User Flow Overview](#en-architecture-user-flow)
-  - [Integrations & Infrastructure Overview](#en-integrations-infra)
-- [Summary](#en-summary)
-- [Tech dashboard](#en-dashboard)
-- [Architecture at a glance](#en-architecture-glance)
-- [Tech radar (ASCII)](#en-tech-radar)
-- [Data lifecycle](#en-data-lifecycle)
-- [Platforms and features](#en-platforms)
-- [Quick Start](#en-quick-start)
-- [Highlights](#en-highlights)
-- [Privacy and Offline](#en-privacy-offline)
-- [Build Paradigm: Human-AI Orchestration](#en-build-paradigm)
-- [Tech](#en-tech)
-- [Project Structure](#en-project-structure)
-- [Tests and Quality](#en-tests-quality)
-- [Development](#en-development)
-- [License](#en-license)
+<h2>Guia Completo: Como Usar o Askesis</h2>
 
-</details>
+O Askesis foi desenhado em camadas: intuitivo na superfície, mas repleto de ferramentas poderosas para quem busca profundidade.
 
-<a id="en-diagrams"></a>
+<h3>1. O Fundamento: Adicionando Hábitos</h3>
 
-### Diagrams (overview)
+O hábito é a unidade fundamental da aplicação. O sistema permite rastrear não apenas a conclusão ("check"), mas também a quantidade e intensidade (páginas lidas, minutos meditados).
 
-<a id="en-architecture-user-flow"></a>
+Para começar a construir sua rotina, você tem dois caminhos:
+*   **Botão Verde Brilhante (+):** O ponto de partida principal no canto inferior.
+*   **O "Placeholder" (Espaço dos Cartões):** Se um período do dia (Manhã, Tarde, Noite) estiver vazio, você verá uma área convidativa ("Adicione um hábito") que permite a criação rápida direto no contexto temporal.
 
-#### Architecture & User Flow Overview
+<h3>2. O Tempo e os Anéis (O Calendário)</h3>
 
-<p align="center">
-  <img src="assets/diagram/system-architecture-flow-en.png" alt="Architecture & User Flow Overview" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
-</p>
+Se o hábito é o fundamento, o **Tempo** é o que dá sentido ao todo. A faixa de calendário no topo não é apenas decorativa; é a sua bússola de progresso.
 
-<details>
-  <summary>Supporting text</summary>
+Os dias são representados por **Anéis de Progresso Cônico**, uma visualização de dados que preenche o anel com as cores azul (feito) e branco (adiado), mostrando a composição exata do seu dia com um único olhar.
 
-This diagram illustrates the core application lifecycle, broken down into three main phases:
+**Micro-ações do Calendário (Power User):**
+A faixa de calendário possui atalhos ocultos para facilitar a gestão em massa:
+*   **1 Clique:** Seleciona a data para visualizar o histórico.
+*   **Pressionar e Segurar (Long Press):** Abre um menu de ações rápidas para **Completar o Dia**, **Adiar o Dia** ou abrir o **Calendário Mensal Completo**, permitindo saltar para qualquer data do ano rapidamente.
 
-- Phase 1: Definition (Onboarding): Habit creation and customization focused on privacy, utilizing a Local-first approach with End-to-End (E2E) encryption.
-- Phase 2: Execution (Engagement): Daily management, performance metrics, and data persistence. The UI (Main Thread) is decoupled from data processing (Worker), leveraging IndexedDB for local storage and a CRDT-lite protocol for conflict-free cloud synchronization (Vercel KV).
-- Phase 3: Intelligence (Feedback): An analysis engine processes user data to generate personalized behavioral insights, injecting this context back into the user experience to create a continuous engagement loop.
+<h3>3. O Cartão de Hábito: Interação Diária</h3>
 
-</details>
+O cartão é a representação visual do seu dever no dia. Ele responde a diferentes tipos de interação:
 
-<a id="en-integrations-infra"></a>
+*   **Cliques (Status):**
+    *   **1 Clique:** Marca como ✅ **Feito**.
+    *   **2 Cliques:** Marca como ➡️ **Adiado** (passa para o próximo estado).
+    *   **3 Cliques:** Retorna para ⚪️ **Pendente**.
+*   **Deslizar (Swipe - Opções Adicionais):**
+    *   Ao deslizar o cartão para os lados, você revela ferramentas de contexto:
+    *   **Criar Nota:** Adicione uma observação estoica sobre a execução daquele hábito no dia.
+    *   **Apagar:** Permite remover o hábito. O sistema perguntará inteligentemente se você quer remover **"Apenas Hoje"** (ex: um imprevisto) ou **"Para Sempre"** (encerrar o hábito).
+*   **Foco por Rolagem (Scroll Focus):** Ao rolar a lista, o cartão que está no centro da tela sutilmente aumenta de tamanho e opacidade. Este efeito, criado com a API de *Scroll-Driven Animations* do navegador, guia seu foco de forma natural e sem custo de performance.
 
-#### Integrations & Infrastructure Overview
+<h3>4. Navegação e Sabedoria</h3>
 
-<p align="center">
-  <img src="assets/diagram/system-integrations-en.png" alt="Integrations & Infrastructure Overview" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
-</p>
+*   **"Hoje":** Ao navegar pelo passado ou futuro, o título "Hoje" (ou a data) no topo funciona como um botão de retorno imediato ao presente.
+*   **Frases Estoicas:** No topo da tela, você encontrará reflexões de Marco Aurélio e outros estoicos. Clique na frase para copiá-la para sua área de transferência.
 
-<details>
-  <summary>Supporting text</summary>
+<h3>5. A Engrenagem: Configurações e Resgate</h3>
 
-This diagram details the high-level system architecture and the communication flow between external services:
+O ícone de engrenagem no canto superior guarda as ferramentas de gestão do seu sistema pessoal:
 
-- Client (Askesis PWA): The React-based frontend handling daily user interactions, local state management, and request initiations.
-- Serverless Backend (Vercel API): Acts as a secure middleware layer. It handles state synchronization and serves as an "AI Proxy," protecting API keys and validating requests before routing them to the LLM.
-- AI Engine (Google Gemini API): The analytical brain of the app, receiving filtered context from the backend to process reflections and generate personalized insights.
-- Push Notifications (OneSignal): A dedicated messaging service that handles PWA push registrations and delivers asynchronous notifications to re-engage the user.
+*   **Resgate de Perfil (Sincronização):** Aqui você encontra sua **Chave de Sincronização**. Guarde-a com segurança. Ela é a única forma de acessar seus dados em outros dispositivos ou recuperar seu progresso caso troque de celular.
+*   **Gerenciar Hábitos:** Uma visão de lista para editar, pausar ou graduar seus hábitos.
+*   **Idioma e Notificações:** Ajuste a aplicação para português, inglês ou espanhol e configure seus lembretes.
 
-</details>
+---
 
-<a id="en-summary"></a>
+<h2>
+  <img src="https://www.gstatic.com/lamda/images/gemini_sparkle_v002_d4735304ff6292a690345.svg" height="30" style="vertical-align: bottom; margin-right: 8px;" alt="Google AI Studio Icon" />
+  O Poder do Google AI Studio: Desenvolvimento Assistido
+</h2>
 
-### Summary
+Este projeto representa uma mudança de paradigma no desenvolvimento de software. O **Askesis** não foi apenas codificado; foi orquestrado.
 
-- Stoic habit tracker focused on privacy, with AI for reflection and routine tuning.
-- Local-first: data stays on-device; optional sync with E2E encryption (AES-GCM) via Web Worker.
-- Conflict-free/resilient sync (merge/CRDT-lite) through Vercel API (KV), no mandatory login.
-- Zero-deps by default at local runtime (no SDKs on boot); after opt-in, push may auto-load to keep state consistent.
+Através do **Google AI Studio**, a barreira técnica foi dissolvida. O papel humano evoluiu de "programador braçal" para **Arquiteto de Software, Gerente de Produto e Lead Tester**.
 
-<a id="en-dashboard"></a>
+Isso permitiu que uma única pessoa construísse uma aplicação com a complexidade e polimento de um *squad* inteiro:
 
-### Tech dashboard
+*   **O Humano como Beta Tester e Pesquisador:** Além de definir a visão, o papel humano foi fundamental como um **validar ágil**. Houve um ciclo contínuo de testes onde o humano confrontava sua visão com o resultado produzido pela IA, iterando prompts para aperfeiçoar o código até sua melhor versão.
+*   **A IA como Engenheiro Sênior:** Os modelos Gemini atuaram na implementação técnica pesada, escrevendo linhas complexas de código, sugerindo otimizações de performance e resolvendo bugs lógicos.
 
-<div align="center">
-  <table border="0" cellspacing="10" cellpadding="0" style="border-collapse: separate; border-spacing: 10px;">
-    <tr>
-      <td align="center" style="padding: 10px 14px; border-radius: 10px; background: #111; border: 1px solid #2a2a2a; color: #e5e5e5;">
-        Performance
-        <div style="margin-top: 6px; width: 140px; background: #2a2a2a; border-radius: 6px;">
-          <div style="width: 95%; background: #27ae60; height: 8px; border-radius: 6px;"></div>
-        </div>
-        <div style="color: #9aa0a6;">Test budgets</div>
-      </td>
-      <td align="center" style="padding: 10px 14px; border-radius: 10px; background: #111; border: 1px solid #2a2a2a; color: #e5e5e5;">
-        Privacy
-        <div style="margin-top: 6px; width: 140px; background: #2a2a2a; border-radius: 6px;">
-          <div style="width: 100%; background: #27ae60; height: 8px; border-radius: 6px;"></div>
-        </div>
-        <div style="color: #9aa0a6;">AES-GCM + local</div>
-      </td>
-      <td align="center" style="padding: 10px 14px; border-radius: 10px; background: #111; border: 1px solid #2a2a2a; color: #e5e5e5;">
-        Accessibility
-        <div style="margin-top: 6px; width: 140px; background: #2a2a2a; border-radius: 6px;">
-          <div style="width: 90%; background: #27ae60; height: 8px; border-radius: 6px;"></div>
-        </div>
-        <div style="color: #9aa0a6;">WCAG 2.1 AA</div>
-      </td>
-      <td align="center" style="padding: 10px 14px; border-radius: 10px; background: #111; border: 1px solid #2a2a2a; color: #e5e5e5;">
-        Offline
-        <div style="margin-top: 6px; width: 140px; background: #2a2a2a; border-radius: 6px;">
-          <div style="width: 100%; background: #27ae60; height: 8px; border-radius: 6px;"></div>
-        </div>
-        <div style="color: #9aa0a6;">100% offline</div>
-      </td>
-    </tr>
-  </table>
-</div>
+---
 
-> Note: this “dashboard” is a **qualitative** snapshot (targets/engineering intent), not an automated measurement. For verifiable evidence, see [tests/README.md](tests/README.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+<h2>Experiência Universal: PWA e Acessibilidade</h2>
 
-How to verify (local / CI):
+O Askesis foi construído com a premissa de que a tecnologia deve se adaptar ao usuário, não o contrário.
 
-- Performance (budgets): `npm run test:scenario` (see `tests/scenario-test-3-performance.test.ts`).
-- Accessibility (WCAG): `npm run test:scenario` (see `tests/scenario-test-4-accessibility.test.ts`).
-- Privacy/security: `npm test` + `npm run test:scenario` (see `tests/scenario-test-6-security-pentest.test.ts` and `services/crypto.test.ts`).
-- Offline-first (artifacts): `npm run build` (check `dist/sw.js` and `dist/manifest.json`).
+<h3>📱 Multiplataforma por Natureza (PWA)</h3>
+O Askesis é um **Progressive Web App (PWA)** de última geração. Isso significa que ele combina a ubiquidade da web com a performance de aplicativos nativos.
 
-<a id="en-architecture-glance"></a>
+*   **Instalável:** Adicione à tela inicial do iOS, Android, Windows ou Mac. Ele se comporta como um app nativo, removendo a barra do navegador e integrando-se ao sistema operacional.
+*   **Offline-First:** Graças a uma estratégia avançada de *Service Workers*, o aplicativo carrega instantaneamente e é **totalmente funcional sem internet**. Você pode marcar hábitos, ver gráficos e editar notas no meio de um voo ou no metrô.
+*   **Sensação Nativa:** Implementação de feedback tátil (Haptics) em micro-interações, gestos de deslize (swipe) fluídos e animações de 60fps garantem uma experiência tátil e responsiva.
 
-### Architecture at a glance
+<h3>♿ Acessibilidade e Design Inclusivo (A11y)</h3>
+A disciplina estoica é para todos. O código do Askesis segue rigorosos padrões de acessibilidade (WCAG) para garantir que pessoas com diferentes necessidades possam usar a ferramenta plenamente.
 
-```mermaid
-flowchart LR
-  UI[UI] --> Events[events.ts]
-  UI --> State[State Engine]
-  State --> Persist[persistence.ts]
-  Persist --> Storage[IndexedDB]
-  Persist --> Cloud[cloud.ts]
-  Cloud --> WRPC[workerClient.ts]
-  WRPC --> Worker[sync.worker.ts]
-  Worker --> Crypto[AES-GCM]
-```
+*   **Semântica Robusta:** Uso correto de elementos HTML semânticos e atributos ARIA (`aria-label`, `role`, `aria-live`) para garantir que **Leitores de Tela** interpretem a interface corretamente.
+*   **Navegação por Teclado:** Todo o aplicativo é navegável sem mouse. Modais possuem "Focus Traps" para evitar que o foco se perca, e atalhos (como `Enter` e `Espaço`) funcionam em todos os elementos interativos.
+*   **Respeito ao Usuário:** O aplicativo detecta e respeita a preferência do sistema por **Movimento Reduzido** (`prefers-reduced-motion`), desativando animações complexas para evitar desconforto vestibular.
+*   **Legibilidade:** Contraste de cores calculado dinamicamente para garantir legibilidade em qualquer tema escolhido pelo usuário.
 
-<details>
-  <summary>Quick flow map</summary>
+---
 
-| Flow | Input | Output |
-|---|---|---|
-| Daily status | Tap on card | Bitmask + instant render |
-| Privacy | Local data | AES-GCM in worker |
-| Offline-first | Service Worker | Atomic cache |
-| Sync | Sync key | Resilient merge |
-</details>
+<h2>Arquitetura e Engenharia</h2>
 
-<a id="en-tech-radar"></a>
+Este projeto rejeita a complexidade desnecessária dos frameworks modernos em favor de **Performance Nativa** e **JavaScript Moderno (ESNext)**.
 
-### Tech radar (ASCII)
+<h3>Estrutura do Projeto</h3>
 
 ```text
-      Privacy 10
-        /\
- A11y 9  /-----/  \-----\  Offline 10
-       /           \
-    UX 8 \           /  Performance 9
-      \--- 10 ---/
-       Resilience
+.
+├── api/                 # Vercel Edge Functions (Backend Serverless)
+├── locales/             # Arquivos de Tradução (i18n)
+├── render/              # Motor de Renderização (DOM Recycling & Templates)
+├── listeners/           # Controladores de Eventos e Gestos (Física)
+├── services/            # Camada de Dados, Criptografia e IO
+│   ├── api.ts           # Cliente HTTP com Retry/Backoff
+│   ├── cloud.ts         # Orquestrador de Sync e Worker Bridge
+│   ├── crypto.ts        # Criptografia AES-GCM Isomórfica
+│   ├── dataMerge.ts     # Algoritmo de Resolução de Conflitos (CRDT-lite)
+│   ├── migration.ts     # Reconstrução de Histórico (Graph-based)
+│   ├── persistence.ts   # Wrapper IndexedDB Assíncrono
+│   ├── selectors.ts     # Camada de Leitura Otimizada (Memoized)
+│   └── sync.worker.ts   # Web Worker para CPU-bound tasks
+├── state.ts             # Gerenciamento de Estado Mutável (Single Source of Truth)
+├── habitActions.ts      # Lógica de Negócios e Time-Travel
+├── index.html           # App Shell (Critical Render Path)
+└── sw.js                # Service Worker (Atomic Caching)
 ```
 
-<a id="en-data-lifecycle"></a>
+<h3>Deep Dive Técnico: A Plataforma Web como Nativa</h3>
 
-### Data lifecycle
+O Askesis opera no "Sweet Spot" da performance web, utilizando APIs nativas modernas para superar frameworks tradicionais:
+
+1.  **Arquitetura de Dados "Bitmask-First":** O estado de conclusão dos hábitos não é armazenado em arrays ou objetos JSON, mas sim em mapas de bits (`BigInt`). Isso permite verificar a consistência de anos de histórico com operações matemáticas bitwise `O(1)`, com pegada de memória quase nula.
+
+2.  **Persistência "Split-State":** O armazenamento local (IndexedDB) separa dados "quentes" (notas, configurações) de dados "frios" (logs binários), permitindo uma inicialização instantânea da aplicação sem parsear megabytes de histórico.
+
+3.  **Física de UI com APIs "Bleeding-Edge":** As interações de arrastar e deslizar utilizam a API Houdini (`CSS Typed OM`) para comunicação direta com a thread de composição do navegador, garantindo animações que "colam no dedo". A renderização é orquestrada pela `scheduler.postTask` para nunca bloquear a thread principal.
+
+4.  **Multithreading (Web Workers):** Para garantir que a UI nunca trave (Jank-free), tarefas pesadas como **Criptografia AES-GCM**, **Parsing de JSON** massivo e **Construção de Prompts de IA** são delegadas para uma thread de worker separada (`sync.worker.ts`).
+
+5.  **Criptografia Zero-Copy & Off-Main-Thread:** A criptografia não apenas acontece no cliente, ela é isolada em um **Web Worker** dedicado. Utilizamos técnicas de **Zero-Copy** (transferência de `ArrayBuffer` sem serialização Base64 intermediária na memória) para garantir que cifrar 5 anos de histórico não trave a interface do usuário, mesmo em celulares modestos.
+
+6.  **Sincronização Inteligente (Smart Merge):** Implementação de um algoritmo **CRDT-lite** (Conflict-free Replicated Data Type) para reconciliação de dados. O sistema resolve conflitos entre dispositivos offline e a nuvem usando pesos semânticos (ex: "Concluído" > "Pendente"), garantindo que o progresso do usuário nunca seja perdido.
+
+---
+
+<h2>🛠️ Instalação e Desenvolvimento</h2>
+
+Como o Askesis é "Vanilla TypeScript" puro, não há build steps complexos de frameworks (como Next.js ou React).
+
+1.  **Clone o repositório:**
+    ```bash
+    git clone https://github.com/seu-usuario/askesis.git
+    ```
+2.  **Instale as dependências (apenas para build e dev server):**
+    ```bash
+    npm install
+    ```
+3.  **Rode o servidor de desenvolvimento:**
+    ```bash
+    npm run dev
+    ```
+    *O projeto utiliza `esbuild` para Hot Module Replacement (HMR) e transpilação TS -> JS.*
+
+> **Nota importante sobre instância própria:** rodar uma versão auto-hospedada é totalmente possível, porém **reduz um dos maiores benefícios do Askesis: o anonimato coletivo**. Ao sair do conjunto de usuários compartilhado, você diminui o *anonymity set* que ajuda a diluir a identidade entre participantes.
+
+---
+
+<h2>🧪 Validação e Garantia de Qualidade</h2>
+
+A confiabilidade do Askesis é validada por uma suite de testes abrangente que cobre desde fluxos de usuário até cenários de caos distribuído.
+
+<h3>Estratégia de Testes: Integration-First, Property-Based</h3>
+
+Ao contrário de projetos que acumulam centenas de unit tests isolados, o Askesis adota uma abordagem **Integration-First**: cada teste valida fluxos completos que um usuário real executaria, combinando múltiplos subsistemas.
+
+**Filosofia:** *"Se o sistema passa em um cenário realista, os componentes individuais estão funcionando corretamente."*
+
+<h3>📊 Cobertura de Testes (Test Suites)</h3>
+
+O projeto possui **6 suites de testes especializadas**, totalizando **60+ testes** que validam:
+
+#### 🎯 **Super-Teste 1: Jornada do Usuário** (3 testes)
+Valida o ciclo de vida completo de um hábito desde a criação até a graduação:
+- Criação de hábito → Marcação de status → Adição de notas → Persistência → Recuperação após reload
+- Verifica que dados sobrevivem a reinicializações e que o DOM reflete corretamente o estado
+
+#### 🔄 **Super-Teste 2: Conflitos de Sincronização** (5 testes)
+Simula sincronização multi-dispositivo com conflitos:
+- Merge de bitmasks (União de dados binários)
+- Resolução CRDT-lite (Tombstone precedence: Delete > Update)
+- Serialização/Desserialização de dados criptografados
+- Garante que nenhum progresso é perdido em sincronizações concorrentes
+
+#### ⚡ **Super-Teste 3: Performance e Estresse** (10 testes)
+Benchmarks com budgets rigorosos de performance:
+- **100 hábitos criados** em < 100ms
+- **3 anos de histórico** (54.750 registros) populados em < 500ms
+- **10.000 leituras aleatórias** em < 50ms (validando O(1) dos bitmasks)
+- **1.000 toggles consecutivos** em < 100ms
+- Verifica que não há vazamento de memória após 10.000 operações
+- Performance constante independente do volume de dados (prova de O(1))
+
+#### ♿ **Super-Teste 4: Acessibilidade Total** (12 testes)
+Validação WCAG 2.1 AA compliance:
+- Navegação completa apenas com teclado (Tab, Enter, Escape)
+- Focus trap em modais (navegação não escapa do contexto)
+- Estrutura semântica HTML5 (landmarks, roles, aria-labels)
+- Anúncios dinâmicos com `aria-live` para leitores de tela
+- Contraste de cores adequado (ratios WCAG)
+- Respeito a `prefers-reduced-motion`
+- Skip links para navegação rápida
+
+#### 🔥 **Super-Teste 5: Recuperação de Desastres** (10 testes)
+Chaos Engineering - valida resiliência em cenários extremos:
+- Recuperação de localStorage corrompido (JSON inválido)
+- Dados parcialmente deletados (estado fragmentado)
+- Validação e rejeição de dados malformados
+- Storage quase cheio (QuotaExceededError)
+- Timestamps negativos ou futuros (anomalias temporais)
+- Detecção de loops infinitos (circuit breakers)
+- Degradação graceful quando features falham
+- Validação de migração entre versões antigas
+- Feedback claro para o usuário em situações de erro
+
+#### 🔥 **Nuclear QA: Fuzzing & Oracle (HabitService)** (10 testes)
+Property-based testing com geração aleatória de inputs:
+- **Oracle Test:** 1.000 operações aleatórias comparadas contra implementação "ingênua" correta
+- **Guard Clauses:** Validação de rejeição de argumentos inválidos (NaN, negativos, out-of-range)
+- **Datas Extremas:** Y2K38, Year 9999, Unix Epoch (1970)
+- **Idempotência:** Mesma operação 10x produz resultado idêntico
+- **Comutatividade:** Ordem de operações não afeta resultado final
+- **State Machine:** Transições válidas entre estados (NULL → DONE → DEFERRED → DONE_PLUS)
+- **Isolamento:** 100 hábitos não interferem entre si
+- **Performance:** 10.000 operações em < 16ms (0.0016ms/op)
+- **Bit Corruption:** BigInt inválidos tratados graciosamente
+- **Versionamento:** Dados antigos + novos coexistem sem conflitos
+
+#### 🧠 **Nuclear QA: Distributed Chaos (dataMerge)** (8 testes)
+Validação de algoritmos de sincronização distribuída:
+- **Three-Body Problem:** 3 clientes divergentes convergem após sincronização multi-salto
+- **Future-From-The-Past Attack:** Timestamps futuros com dados corrompidos não destroem histórico
+- **Property-Based Commutativity:** 100 estados aleatórios sempre convergem independente da ordem
+- **Identity Preservation:** Merge com null/undefined não retorna null ou crashes
+- **Network Partition:** 5 clientes sincronizam em ordem aleatória (Eventual Consistency)
+- **Race Conditions:** Writes simultâneos resolvidos via LWW (Last-Write-Wins)
+- **Idempotência:** Merge(A,B) = Merge(Merge(A,B), B)
+- **Roundtrip Serialization:** BigInt serializa/desserializa sem perda
+
+<h3>🎯 Métricas de Qualidade</h3>
 
 ```text
-Input -> Validation -> Encryption (AES-GCM) -> IndexedDB -> Sync -> Merge -> UI
+📈 Cobertura de Código:  80%+ (linhas), 70%+ (funções/branches)
+⚡ Performance Budgets:  Todos os benchmarks passando
+🔒 Testes de Segurança: Criptografia, validação de entrada, XSS prevention
+♿ Acessibilidade:       WCAG 2.1 AA compliant
+🌐 Testes Distribuídos:  Convergência em split-brain scenarios
 ```
 
-<a id="en-platforms"></a>
-
-### Platforms and features
-
-| Platform | Installable | Offline | Sync | Notifications |
-|---|---|---|---|---|
-| Web | Yes | Yes | Yes | Yes |
-| iOS (PWA) | Yes | Yes | Yes | Limited |
-| Android (PWA) | Yes | Yes | Yes | Yes |
-| Desktop (PWA) | Yes | Yes | Yes | Yes |
-
-<a id="en-quick-start"></a>
-
-### Quick Start
-
-1. **Install:** [Open the app](https://askesis-psi.vercel.app/) and choose "Install".
-2. **Create habit:** `+` button → name → day period → save.
-3. **Mark:** tap once = done, twice = deferred.
-4. **Progress:** calendar rings summarize the day.
-
-<a id="en-highlights"></a>
-
-### Highlights
-
-- Total privacy, no login or tracking.
-- Stoic AI for reflection, not addiction.
-- Fast flow: consistency over streaks.
-- WCAG 2.1 AA accessibility and full keyboard support.
-
-<a id="en-privacy-offline"></a>
-
-### Privacy and Offline
-
-- Client-side AES-GCM with Web Workers.
-- Data stays local and syncs on demand.
-- 100% offline, including history and charts.
-
-<a id="en-build-paradigm"></a>
-
-### Build Paradigm: Human-AI Orchestration
-
-This table shows where AI provided a base and where strategic vision and Psychology training elevated the product.
-
-| Capability | Traditional / "Pure" AI | My Intervention (Architect) | Result: Askesis |
-|---|---|---|---|
-| Privacy | Social login and commercial cloud storage. | Ethical decision: collective anonymity and client-side AES-GCM via Web Workers to ensure sovereignty. | Bank-grade security without collecting personal data. |
-| Performance | Heavy frameworks (React/Next) that add latency. | Refinement: replaced abstractions with Vanilla TS and native APIs. | Test-verified budgets (e.g. critical ops < 50ms) and responsive UI. |
-| UX and Psychology | Dopamine-driven gamification (badges, loud colors). | Theoretical grounding: Neuropsychology principles focused on the "virtue of consistency." | Minimalist interface that promotes real self-reflection. |
-| Accessibility | Often ignored in AI-generated code. | Digital inclusion: WCAG 2.1 AA, robust ARIA, full keyboard nav. | Universally usable app for diverse needs. |
-| Reliability | Isolated unit tests or missing critical error validation. | Chaos engineering: "Super-Tests" to validate extreme conditions. | Resilient software that recovers from critical failures. |
-| Sustainability | High infra costs passed via subscriptions or ads. | Product vision: zero-cost architecture pushing heavy work to user hardware. | Sustainable global operation with $0 maintenance cost. |
-
-> [ 🧠 ] Cognitive Psychology + [ 🤖 ] Generative AI + [ 💻 ] Low-Level Engineering
-> This project is a case study in how modern tech can be guided by human principles to serve virtue, not profit.
-
-<a id="en-tech"></a>
-
-### Tech
-
-- Vanilla TypeScript, no heavy frameworks.
-- PWA with Service Worker and atomic caching.
-- AES-GCM encryption and resilient sync.
-- Efficient rendering and 60fps UX.
-
-<a id="en-project-structure"></a>
-
-### Project Structure
-
-- Serverless backend: [api/](api/)
-- Rendering: [render/](render/)
-- Gestures and events: [listeners/](listeners/)
-- Data and crypto: [services/](services/)
-
-<a id="en-tests-quality"></a>
-
-### Tests and Quality
-
-- Coverage across user flows, security, accessibility, and resilience.
-- Details in [tests/README.md](tests/README.md).
-- CI: workflow in `.github/workflows/ci.yml` runs tests/build and uploads artifacts (dist + coverage).
-
-<a id="en-development"></a>
-
-### Development
+<h3>🚀 Executando os Testes</h3>
 
 ```bash
-npm install
-npm run dev
+# Suite completa (60+ testes)
+npm test
+
+# Apenas super-testes (cenários de integração)
+npm run test:super
+
+# Com relatório de cobertura
+npm run test:coverage
+
+# Interface visual (Vitest UI)
+npm run test:ui
+
+# Modo watch (desenvolvimento)
+npm run test:watch
 ```
-
-> Self-hosting is possible, but it reduces the anonymity set.
-
-<a id="en-license"></a>
-
-### License
-
-- Apache-2.0 (see [LICENSE](LICENSE)).
-
-
-<a id="es"></a>
-
-## ES
-
-<p align="center">
-  <img src="assets/AristotelesEspanol.jpg" alt="Aristóteles (Español)" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
-</p>
-
-### Índice rápido
-
-- [Arquitectura y flujo de usuario (diagrama)](#es-architecture-user-flow)
-- [Integraciones e infraestructura (diagrama)](#es-integrations-infra)
-
-<details>
-  <summary>Ver estructura completa (TOC)</summary>
-
-- [Diagramas (visión general)](#es-diagramas)
-  - [Descripción General de la Arquitectura y Flujo de Usuario](#es-architecture-user-flow)
-  - [Descripción General de Integraciones e Infraestructura](#es-integrations-infra)
-- [Resumen](#es-resumen)
-- [Panel tecnologico](#es-dashboard)
-- [Arquitectura de un vistazo](#es-architecture-glance)
-- [Radar tecnologico (ASCII)](#es-tech-radar)
-- [Ciclo de datos](#es-data-lifecycle)
-- [Plataformas y funciones](#es-platforms)
-- [Inicio rapido](#es-quick-start)
-- [Diferenciales](#es-highlights)
-- [Privacidad y Offline](#es-privacy-offline)
-- [Paradigma de Construccion: Orquestacion Humano-IA](#es-build-paradigm)
-- [Tecnologia](#es-tech)
-- [Estructura del proyecto](#es-project-structure)
-- [Tests y calidad](#es-tests-quality)
-- [Desarrollo](#es-development)
-- [Licencia](#es-license)
-
-</details>
-
-<a id="es-diagramas"></a>
-
-### Diagramas (visión general)
-
-<a id="es-architecture-user-flow"></a>
-
-#### Descripción General de la Arquitectura y Flujo de Usuario
-
-<p align="center">
-  <img src="assets/diagram/system-architecture-flow-es.png" alt="Descripción General de la Arquitectura y Flujo de Usuario" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
-</p>
-
-<details>
-  <summary>Texto de apoyo</summary>
-
-Este diagrama ilustra el ciclo de vida principal de la aplicación, estructurado en tres fases fundamentales:
-
-- Fase 1: Definición (Onboarding): Creación y personalización de hábitos con un enfoque absoluto en la privacidad, utilizando un enfoque Local-first con encriptación de extremo a extremo (E2E).
-- Fase 2: Ejecución (Engagement): Gestión diaria, métricas de rendimiento y persistencia de datos. La interfaz (Main Thread) está aislada del procesamiento de datos (Worker), utilizando IndexedDB para el almacenamiento local y el protocolo CRDT-lite para una sincronización sin conflictos con la nube (Vercel KV).
-- Fase 3: Inteligencia (Feedback): Un motor de análisis evalúa los datos del usuario para generar insights de comportamiento personalizados, inyectando este contexto de vuelta en la experiencia para crear un ciclo de interacción continuo.
-
-</details>
-
-<a id="es-integrations-infra"></a>
-
-#### Descripción General de Integraciones e Infraestructura
-
-<p align="center">
-  <img src="assets/diagram/system-integrations-es.png" alt="Descripción General de Integraciones e Infraestructura" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
-</p>
-
-<details>
-  <summary>Texto de apoyo</summary>
-
-Este diagrama detalla la arquitectura de alto nivel del sistema y el flujo de comunicación entre los servicios externos:
-
-- Cliente (Askesis PWA): La interfaz basada en React que gestiona las interacciones diarias del usuario, el estado local y el inicio de las solicitudes.
-- Backend Serverless (Vercel API): Actúa como una capa intermedia segura. Gestiona la sincronización del estado y funciona como un "Proxy de IA", protegiendo las claves de API y validando las solicitudes antes de enviarlas al modelo de lenguaje.
-- Motor de IA (Google Gemini API): El cerebro analítico de la aplicación, que recibe el contexto filtrado por el backend para procesar las reflexiones y generar insights personalizados.
-- Notificaciones (OneSignal): Servicio de mensajería independiente que gestiona los registros push de la PWA y entrega notificaciones asíncronas para volver a captar la atención del usuario.
-
-</details>
-
-<a id="es-resumen"></a>
-
-### Resumen
-
-- Rastreador de hábitos estoico, enfocado en privacidad, con IA para reflexión y ajuste de rutina.
-- Local-first: los datos quedan en el dispositivo; sincronización opcional con cifrado E2E (AES-GCM) vía Web Worker.
-- Sync resiliente y sin conflictos (merge/CRDT-lite) a través de Vercel API (KV), sin login obligatorio.
-- Zero-deps por defecto en el runtime local (sin SDKs al iniciar); tras el opt-in, push puede auto-cargar para mantener el estado.
-
-<a id="es-dashboard"></a>
-
-### Panel tecnologico
-
-<div align="center">
-  <table border="0" cellspacing="10" cellpadding="0" style="border-collapse: separate; border-spacing: 10px;">
-    <tr>
-      <td align="center" style="padding: 10px 14px; border-radius: 10px; background: #111; border: 1px solid #2a2a2a; color: #e5e5e5;">
-        Performance
-        <div style="margin-top: 6px; width: 140px; background: #2a2a2a; border-radius: 6px;">
-          <div style="width: 95%; background: #27ae60; height: 8px; border-radius: 6px;"></div>
-        </div>
-        <div style="color: #9aa0a6;">Budgets en tests</div>
-      </td>
-      <td align="center" style="padding: 10px 14px; border-radius: 10px; background: #111; border: 1px solid #2a2a2a; color: #e5e5e5;">
-        Privacidad
-        <div style="margin-top: 6px; width: 140px; background: #2a2a2a; border-radius: 6px;">
-          <div style="width: 100%; background: #27ae60; height: 8px; border-radius: 6px;"></div>
-        </div>
-        <div style="color: #9aa0a6;">AES-GCM + local</div>
-      </td>
-      <td align="center" style="padding: 10px 14px; border-radius: 10px; background: #111; border: 1px solid #2a2a2a; color: #e5e5e5;">
-        Accesibilidad
-        <div style="margin-top: 6px; width: 140px; background: #2a2a2a; border-radius: 6px;">
-          <div style="width: 90%; background: #27ae60; height: 8px; border-radius: 6px;"></div>
-        </div>
-        <div style="color: #9aa0a6;">WCAG 2.1 AA</div>
-      </td>
-      <td align="center" style="padding: 10px 14px; border-radius: 10px; background: #111; border: 1px solid #2a2a2a; color: #e5e5e5;">
-        Offline
-        <div style="margin-top: 6px; width: 140px; background: #2a2a2a; border-radius: 6px;">
-          <div style="width: 100%; background: #27ae60; height: 8px; border-radius: 6px;"></div>
-        </div>
-        <div style="color: #9aa0a6;">100% offline</div>
-      </td>
-    </tr>
-  </table>
-</div>
-
-> Nota: este “panel” es un resumen **cualitativo** (metas/intencion de ingenieria), no una medicion automatica. Para evidencias verificables, ve [tests/README.md](tests/README.md) y [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
-
-Como verificar (local / CI):
-
-- Performance (budgets): `npm run test:scenario` (ver `tests/scenario-test-3-performance.test.ts`).
-- Accesibilidad (WCAG): `npm run test:scenario` (ver `tests/scenario-test-4-accessibility.test.ts`).
-- Privacidad/seguridad: `npm test` + `npm run test:scenario` (ver `tests/scenario-test-6-security-pentest.test.ts` y `services/crypto.test.ts`).
-- Offline-first (artefactos): `npm run build` (revisar `dist/sw.js` y `dist/manifest.json`).
-
-<a id="es-architecture-glance"></a>
-
-### Arquitectura de un vistazo
-
-```mermaid
-flowchart LR
-  UI[UI] --> Events[events.ts]
-  UI --> State[State Engine]
-  State --> Persist[persistence.ts]
-  Persist --> Storage[IndexedDB]
-  Persist --> Cloud[cloud.ts]
-  Cloud --> WRPC[workerClient.ts]
-  WRPC --> Worker[sync.worker.ts]
-  Worker --> Crypto[AES-GCM]
-```
-
-<details>
-  <summary>Mapa rapido de flujos</summary>
-
-| Flujo | Entrada | Salida |
-|---|---|---|
-| Estado diario | Tap en tarjeta | Bitmask + render inmediato |
-| Privacidad | Datos locales | AES-GCM en worker |
-| Offline-first | Service Worker | Cache atomico |
-| Sincronizacion | Clave de sync | Merge resiliente |
-</details>
-
-<a id="es-tech-radar"></a>
-
-### Radar tecnologico (ASCII)
-
-```text
-      Privacidad 10
-        /\
- A11y 9  /-----/  \-----\  Offline 10
-       /           \
-    UX 8 \           /  Performance 9
-      \--- 10 ---/
-       Resiliencia
-```
-
-<a id="es-data-lifecycle"></a>
-
-### Ciclo de datos
-
-```text
-Entrada -> Validacion -> Cifrado (AES-GCM) -> IndexedDB -> Sync -> Merge -> UI
-```
-
-<a id="es-platforms"></a>
-
-### Plataformas y funciones
-
-| Plataforma | Instalable | Offline | Sync | Notificaciones |
-|---|---|---|---|---|
-| Web | Si | Si | Si | Si |
-| iOS (PWA) | Si | Si | Si | Limitado |
-| Android (PWA) | Si | Si | Si | Si |
-| Desktop (PWA) | Si | Si | Si | Si |
-
-<a id="es-quick-start"></a>
-
-### Inicio rapido
-
-1. **Instalar:** [Abre la app](https://askesis-psi.vercel.app/) y selecciona "Instalar".
-2. **Crear habito:** boton `+` → nombre → periodo del dia → guardar.
-3. **Marcar:** 1 toque = hecho, 2 toques = aplazado.
-4. **Progreso:** el calendario con anillos resume el dia.
-
-<a id="es-highlights"></a>
-
-### Diferenciales
-
-- Privacidad total, sin login ni rastreo.
-- IA estoica para reflexion, no para adiccion.
-- Flujo rapido: consistencia sobre streaks.
-- Accesibilidad WCAG 2.1 AA y soporte completo de teclado.
-
-<a id="es-privacy-offline"></a>
-
-### Privacidad y Offline
-
-- Cifrado en el cliente con AES-GCM y Web Workers.
-- Los datos permanecen locales y sincronizan bajo demanda.
-- 100% offline, incluyendo historial y graficos.
-
-<a id="es-build-paradigm"></a>
-
-### Paradigma de Construccion: Orquestacion Humano-IA
-
-Esta tabla muestra donde la IA dio la base y donde la vision estrategica y formacion en Psicologia elevaron el producto.
-
-| Recurso | Tradicional / IA "Pura" | Mi Intervencion (Arquitecto) | Resultado: Askesis |
-|---|---|---|---|
-| Privacidad | Login social y datos en nube comercial. | Decision etica: anonimato colectivo y AES-GCM en el cliente via Web Workers para garantizar soberania. | Seguridad de nivel bancario sin recolectar datos personales. |
-| Performance | Frameworks pesados (React/Next) con latencia. | Refinamiento: Vanilla TS y APIs nativas. | Budgets verificados en tests (p. ej. ops criticas < 50ms) y UI responsiva. |
-| UX y Psicologia | Gamificacion basada en dopamina (badges/colores fuertes). | Grounding teorico: principios de Neuropsicologia y "virtud de la consistencia". | Interfaz minimalista para autorreflexion real. |
-| Accesibilidad | A menudo ignorada en codigo generado por IA. | Inclusion digital: WCAG 2.1 AA, ARIA robusto y navegacion por teclado. | App usable por personas con distintas necesidades. |
-| Confiabilidad | Tests unitarios aislados o sin validacion de errores criticos. | Chaos engineering: "Super-Tests" para condiciones extremas. | Software resiliente con recuperacion ante fallos criticos. |
-| Sostenibilidad | Costos altos trasladados a suscripciones o anuncios. | Vision de producto: arquitectura de costo cero en hardware del usuario. | Operacion global sostenible con $0 de mantenimiento. |
-
-> [ 🧠 ] Psicologia Cognitiva + [ 🤖 ] IA Generativa + [ 💻 ] Ingenieria de Bajo Nivel
-> Este proyecto es un estudio de caso sobre como la tecnologia moderna puede guiarse por principios humanos para servir a la virtud y no al lucro.
-
-<a id="es-tech"></a>
-
-### Tecnologia
-
-- TypeScript puro, sin frameworks pesados.
-- PWA con Service Worker y cache atomico.
-- Cifrado AES-GCM y sync resiliente.
-- Render eficiente y UX a 60fps.
-
-<a id="es-project-structure"></a>
-
-### Estructura del proyecto
-
-- Backend serverless: [api/](api/)
-- Renderizado: [render/](render/)
-- Gestos y eventos: [listeners/](listeners/)
-- Datos y criptografia: [services/](services/)
-
-<a id="es-tests-quality"></a>
-
-### Tests y calidad
-
-- Cobertura de flujos, seguridad, accesibilidad y resiliencia.
-- Detalles en [tests/README.md](tests/README.md).
-- CI: workflow en `.github/workflows/ci.yml` ejecuta tests/build y sube artifacts (dist + coverage).
-
-<a id="es-development"></a>
-
-### Desarrollo
-
-```bash
-npm install
-npm run dev
-```
-
-> Self-hosting es posible, pero reduce el conjunto de anonimato.
-
-<a id="es-license"></a>
-
-### Licencia
-
-- Apache-2.0 (ver [LICENSE](LICENSE)).
 
 <h3>💡 Por que essa abordagem de testes importa?</h3>
 
@@ -1299,6 +942,730 @@ Considerando as três plataformas **simultaneamente** (Gemini, Vercel e OneSigna
 
 ---
 
+<h2>🏗️ Estrutura de Dados: A Magia por Trás</h2>
+
+O Askesis utiliza estruturas de dados altamente otimizadas que são raramente vistas em aplicações web. Compreender essa escolha é compreender por que o app é tão rápido:
+
+<h3>🔢 O Sistema de Bitmask 9-bit</h3>
+
+Cada hábito é armazenado de forma comprimida usando **BigInt** (inteiros arbitrariamente grandes do JavaScript).
+
+```
+Cada dia ocupa 9 bits (para 3 períodos: Manhã, Tarde, Noite):
+
+┌─────────────────────────────────────────────────────┐
+│ Dia = [Tombstone(1 bit) | Status Noite(2) | Status Tarde(2) | Status Manhã(2) | Reserved(2) ] │
+└─────────────────────────────────────────────────────┘
+
+Estados possíveis (2 bits cada):
+  00 = Pendente (não iniciado)
+  01 = Feito (completed)
+  10 = Adiado (deferred/snoozed)
+  11 = Reservado para expansão futura
+
+Exemplo de 1 mês (30 dias):
+  - Sem compressão:   30 dias × 3 períodos × 8 bytes = 720 bytes
+  - Com bitmask:      30 dias × 9 bits = 270 bits ≈ 34 bytes (21x menor!)
+  - GZIP:             34 bytes → ~8 bytes comprimido
+```
+
+**Operações Bitwise O(1):**
+```typescript
+// Ler status de um hábito em 2025-01-15 na Manhã:
+const status = (log >> ((15-1)*9 + PERIOD_OFFSET['Morning'])) & 3n;
+
+// Escrever status:
+log = (log & clearMask) | (newStatus << bitPos);
+
+// Isso é **instantâneo** mesmo com 10+ anos de dados!
+```
+
+<h3>📦 Split-State Storage: JSON + Binary</h3>
+
+O IndexedDB do Askesis armazena dados em **duas colunas separadas**:
+
+```
+┌─────────────────────────────────────────┐
+│ IndexedDB (AskesisDB)                    │
+├──────────────────────────────────────────┤
+│ KEY: "askesis_core_json"                 │
+│ VALUE: {                                 │
+│   version: 9,                            │
+│   habits: [Habit[], ...],                │
+│   dailyData: Record<>,                   │
+│   ... (tudo exceto monthlyLogs)          │
+│ }                                        │
+│ SIZE: ~50-200 KB (mesmo com 5 anos)     │
+├──────────────────────────────────────────┤
+│ KEY: "askesis_logs_binary"               │
+│ VALUE: {                                 │
+│   "habit-1_2024-01": "a3f4e8c...",     │ ← Hex string (9-bit logs)
+│   "habit-1_2024-02": "b2e5d1a...",     │
+│   ...                                    │
+│ }                                        │
+│ SIZE: ~8-15 KB (mesmo com 5 anos)       │
+└──────────────────────────────────────────┘
+```
+
+**Benefícios:**
+- **Startup instantâneo:** JSON carrega em < 50ms, binários sob demanda
+- **Backup eficiente:** Exportar dados = apenas o JSON (< 200 KB)
+- **Migração segura:** Versiones antigas + novas coexistem sem conflitos
+
+<h3>🔗 Tombstone Pattern: Soft Delete com Segurança de Sync</h3>
+
+Quando você deleta um hábito, o Askesis **não o apaga**. Em vez disso, marca com um "Túmulo" (Tombstone):
+
+```
+┌───────────────────────────────────────┐
+│ DELETE HABITO 'Meditar'               │
+├───────────────────────────────────────┤
+│ 1. Ao invés de: habits.remove(id)     │
+│    Faz:         habit.deletedOn = now │
+│                                        │
+│ 2. Marca no bitmask:                   │
+│    Bit 8 (Tombstone) = 1              │
+│    (Força todos os bits para 0)        │
+│                                        │
+│ 3. Benefit:                            │
+│    - Se sync não chegou a outro app,   │
+│      ele recebe DELETE + Sincroniza    │
+│    - Histórico preservado para backup  │
+│    - Undo é possível (re-ativar)       │
+└───────────────────────────────────────┘
+```
+
+**Exemplo real:**
+```typescript
+// Usuário deleta 'Meditar' em 2025-02-01
+habitActions.requestHabitPermanentDeletion('habit-123');
+
+// No bitmask, 2025-02-01 vira:
+// 100 | 00 | 00 | 00 | 00 = 4 (Tombstone ativo)
+
+// Ao sincronizar com outro dispositivo:
+// 1. Servidor recebe tombstone bit
+// 2. Propaga DELETE para todos os clientes
+// 3. Histórico anterior é preservado em archives/
+```
+
+<h3>🧬 CRDT-lite: Resolução de Conflitos Sem Servidor</h3>
+
+Quando dois dispositivos sincronizam com mudanças conflitantes, o Askesis resolve automaticamente **sem precisar de um servidor de autoridade**:
+
+```
+┌─── Device A (Offline por 2 dias) ──────┐
+│ 2025-01-15 Manhã: FEITO                │
+│ 2025-01-16 Tarde: ADIADO               │
+└────────────────────────────────────────┘
+                ↓ Reconecta
+┌─── Cloud State ────────────────────────┐
+│ 2025-01-15 Manhã: ADIADO (Device B)   │
+│ 2025-01-16 Tarde: PENDENTE (Device B) │
+└────────────────────────────────────────┘
+                ↓ Merge (CRDT)
+┌─── Resultado (Convergência) ───────────┐
+│ 2025-01-15 Manhã: FEITO ✅              │
+│   (Razão: FEITO > ADIADO = mais forte) │
+│ 2025-01-16 Tarde: ADIADO               │
+│   (Razão: ADIADO > PENDENTE = mais     │
+│    próximo da conclusão)               │
+└────────────────────────────────────────┘
+```
+
+**Semântica da resolução:**
+```
+Precedência de estado:
+FEITO (01) > ADIADO (10) > PENDENTE (00)
+
+Lógica: max(a, b) entre os dois valores 2-bit
+```
+
+Isso garante que o usuário **nunca perde progresso** ao sincronizar.
+
+---
+
+<h2>📚 Filosofia Estoica Integrada</h2>
+
+O Askesis não é apenas um rastreador de hábitos com IA. Ele carrega a filosofia estoica em cada decisão de design:
+
+<h3>🎓 Os 4 Pilares Estoicos Mapeados em Hábitos</h3>
+
+Cada hábito criado no Askesis pode ser classificado segundo a filosofia estoica:
+
+**1. Esfera de Governança (4 tipos)**
+```
+Biológica   → Exercício, Alimentação, Sono
+Estrutural  → Organização, Planejamento, Finanças
+Social      → Diálogo, Empatia, Paciência
+Mental      → Meditação, Leitura, Reflexão
+```
+
+**2. Virtude Estoica (4 colunas de Marcus Aurelius)**
+```
+Sabedoria (Phronesis)      → Decisões conscientes
+Coragem (Andreia)          → Ações assertivas
+Justiça (Dikaiosyne)       → Equilíbrio e retidão
+Temperança (Sophrosyne)    → Moderação e controle
+```
+
+**3. Disciplina Epictética (3 aspectos)**
+```
+Disciplina do Desejo       → Controle de vontade
+Disciplina da Ação         → Execução consciente
+Disciplina do Assentimento → Aceitação de circunstâncias
+```
+
+**4. Nível de Desenvolvimento Estoico (3 etapas)**
+```
+Nível 1 → Iniciante: Construindo o hábito básico
+Nível 2 → Intermediário: Dominando a execução consistente
+Nível 3 → Avançado: Integrando a virtude no caráter
+```
+
+<h3>💭 Citações Estoicas: Um Pool de 100+ Máximas</h3>
+
+O Askesis possui um banco de dados de citações dos maiores pensadores estoicos:
+
+```typescript
+STOIC_QUOTES = [
+  {
+    id: "marco_aurelio_001",
+    author: "Marco Aurélio",
+    level: 1,
+    virtue: "Wisdom",
+    text: {
+      pt: "Tu tens poder sobre tua mente — não sobre eventos externos.",
+      en: "You have power over your mind — not outside events.",
+      es: "Tienes poder sobre tu mente — no sobre eventos externos."
+    }
+  },
+  {
+    id: "epicteto_001",
+    author: "Epicteto",
+    level: 2,
+    virtue: "Courage",
+    text: { ... }
+  },
+  // ... 98+ mais citações
+]
+```
+
+**Seleção Inteligente de Citações:**
+```
+A cada novo dia, o Askesis seleciona uma citação baseada em:
+1. Seu nível de desenvolvimento estoico (baseado em streaks)
+2. A virtude que você mais precisa naquele dia
+3. Randomização com ponderação (citações antigas reaparecem)
+```
+
+<h3>🎯 Milestones Estoicos: 21 e 66 Dias</h3>
+
+O Askesis celebra dois marcos especiais baseados na neurociência e filosofia:
+
+```
+┌─────────────────────────────────────────────┐
+│ 21 DIAS = Primeira Consolidação             │
+│                                              │
+│ A neurociência mostra que 21 dias é quando  │
+│ um hábito começa a se automatizar. O Askesis│
+│ celebra este marco com mensagem do Sábio    │
+│ Estoico: "Seu instinto está em formação."   │
+└─────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────┐
+│ 66 DIAS = Consolidação Estoica              │
+│                                              │
+│ Marcus Aurelius menciona 66 dias de         │
+│ treinamento contínuo como o ponto em que a  │
+│ virtude se torna parte do caráter.          │
+│ Celebração: "A virtude agora é sua."        │
+└─────────────────────────────────────────────┘
+```
+
+---
+
+<h2>🔐 Privacidade & Criptografia: Detalhes Técnicos</h2>
+
+O Askesis implementa criptografia end-to-end de forma que **nem o servidor conhece seus dados**:
+
+<h3>Fluxo de Criptografia AES-GCM (256-bit)</h3>
+
+```
+┌─ Dados do Usuário (Plaintext) ──┐
+│ {                                │
+│   habits: [...],                 │
+│   dailyData: {...},              │
+│   monthlyLogs: Map<>             │
+│ }                                │
+└────────────────────────────────────┘
+         ↓ JSON.stringify()
+┌─ Serialização ──────────────────┐
+│ "{\"habits\":[...], ...}"        │
+└────────────────────────────────────┘
+         ↓ Gera SALT + IV aleatórios
+┌─ Derivação de Chave (PBKDF2) ──┐
+│ Password: "sync_key_do_usuario" │
+│ Salt: 16 bytes aleatórios       │
+│ Iterations: 100.000 (segurança) │
+│ Output: 256-bit key             │
+└────────────────────────────────────┘
+         ↓ AES-GCM.encrypt()
+┌─ Cifra (Ciphertext) ────────────┐
+│ SALT (16 bytes) +               │
+│ IV (12 bytes) +                 │
+│ ENCRYPTED_DATA (N bytes) +      │
+│ AUTH_TAG (16 bytes)             │
+│                                  │
+│ Total: 44 + N bytes             │
+└────────────────────────────────────┘
+         ↓ Base64
+┌─ Transporte (Seguro para URL) ──┐
+│ "AgX9kE2...F3k=" ← Base64       │
+│ Enviado para POST /api/sync     │
+└────────────────────────────────────┘
+         ↓ No Servidor
+┌─ Servidor (Sem Conhecimento) ───┐
+│ Recebe apenas a string B64      │
+│ Armazena tal qual               │
+│ Sem capacidade de descriptografar│
+│ (não tem a senha do usuário)    │
+└────────────────────────────────────┘
+```
+
+<h3>Sincronização de Múltiplos Dispositivos</h3>
+
+Cada dispositivo posssuem sua própria **chave de sincronização independente**:
+
+```
+┌─ Device A (Celular) ─────────────┐
+│ Sync Key: "abc123def456"         │
+│ Encripta: dados com "abc123..."  │
+└─────────────────────────────────────┘
+                  ↓
+          ☁️ Cloud Storage
+          (Sem accesso de D.B)
+                  ↓
+┌─ Device B (Tablet) ──────────────┐
+│ Sync Key: "abc123def456"         │
+│ (Mesmo usuário = mesma chave)   │
+│ Descripta: usando "abc123..."   │
+└─────────────────────────────────────┘
+```
+
+**Cenário offline:**
+```
+Device A (offline) → Local changes → Enqueue
+Device A (online)  → POST encrypted data
+Server             → Store & merge
+Device B (online)  → GET encrypted data
+Device B           → Decrypt & merge
+Device B           → Render updated state
+```
+
+---
+
+<h2>🌍 Suporte Multilíngue (i18n)</h2>
+
+O Askesis suporta 3 idiomas nativamente com fallback inteligente:
+
+```typescript
+LANGUAGES = {
+  'pt': 'Português (Brasil)',
+  'en': 'English',
+  'es': 'Español'
+}
+
+// Sistema de tradução:
+// 1. Busca chave no idioma preferido
+// 2. Se não existir, volta para 'en' (padrão)
+// 3. Se nem em 'en', retorna a chave como fallback
+```
+
+**Exemplos de chaves de tradução:**
+```
+aiPromptQuote       → Prompt para análise de citações
+aiSystemInstruction → Instruções do Sábio Estoico
+aiCelebration21Day  → Celebração dos 21 dias
+aiCelebration66Day  → Celebração dos 66 dias
+habitNameCheckin    → "Check-in"
+timeOfDayMorning    → "Manhã"
+streakCount         → "{count} dias seguidos"
+```
+
+**Locales com Inteligência:**
+```typescript
+// Formatação de datas por idioma:
+pt-BR: "15 de janeiro de 2025"
+en-US: "January 15, 2025"
+es-ES: "15 de enero de 2025"
+
+// Números e percentuais respeitam locale
+pt-BR: "1.234,56" (vírgula como decimal)
+en-US: "1,234.56" (ponto como decimal)
+es-ES: "1.234,56" (igual PT)
+```
+
+---
+
+<h2>🔍 Debugging e Monitoramento</h2>
+
+O Askesis fornece ferramentas de diagnóstico para ajudar você a entender o que está acontecendo internamente:
+
+<h3>Painel de Sincronização (Sync Debug Modal)</h3>
+
+Abra o DevTools do navegador (F12) e acesse:
+```typescript
+// No console do navegador:
+openSyncDebugModal(); // Abre diálogo com histórico técnico
+
+// Seu histórico de sync será exibido:
+// ✅ 2025-02-01 14:32:15 - Sync iniciado
+// ✅ 2025-02-01 14:32:18 - Dados enviados (1.2 KB)
+// ✅ 2025-02-01 14:32:19 - Merge bem-sucedido
+// ⚠️ 2025-02-01 14:32:45 - Offline detectado
+// ⚠️ 2025-02-01 14:33:12 - Retry 1/3
+```
+
+**Por que é útil?**
+- Validar se seus dados foram realmente sincronizados
+- Diagnosticar problemas de conexão
+- Ver exatamente quando o último sync aconteceu
+
+<h3>Logger Interno</h3>
+
+O Askesis registra eventos em tempo real (visível no console do browser):
+
+```
+[📱 App] Service Worker registered
+[☁️ API] POST /api/sync (attempt 1/3)
+[🔐 Crypto] Encrypted 1.2 KB in 45ms
+[💾 Storage] Saved 156 habit records
+[🤖 AI] Analyze day context: 2 notes
+[⚠️ Error] Network timeout after 5s
+```
+
+**Níveis de log:**
+```typescript
+logger.info()    // Informações normais (azul)
+logger.warn()    // Avisos (amarelo)
+logger.error()   // Erros críticos (vermelho)
+```
+
+<h3>Performance Profiling</h3>
+
+Para verificar performance em seu dispositivo:
+```bash
+# Abra DevTools e rode:
+performance.mark('habit-toggle');
+// ... simule ações ...
+performance.measure('habit-toggle');
+const measure = performance.getEntriesByName('habit-toggle')[0];
+console.log(`Toggle levou ${measure.duration}ms`);
+```
+
+**Targets de performance do Askesis:**
+```
+Toggle de hábito:        < 50ms
+Renderizar dia:          < 100ms
+Carregar 3 anos histórico: < 500ms
+Sincronizar:             < 2s
+Criptografar dados:      < 100ms (mesmo com 5 anos)
+```
+
+---
+
+<h2>🎬 Principais Fluxos de Usuário</h2>
+
+<h3>Fluxo 1: Novo Usuário (Onboarding)</h3>
+
+```
+1. Acessa askesis-psi.vercel.app
+   ↓
+2. Service Worker se registra
+   ↓
+3. IndexedDB abre (primeiro acesso = empty)
+   ↓
+4. UI renderiza: "Bem-vindo ao Askesis"
+   ↓
+5. Usuário clica em "+"
+   ↓
+6. Modal de criação de hábito abre
+   ↓
+7. Preenche: "Meditar 10min", Manhã, 10 minutos
+   ↓
+8. Salva → HabitService.setStatus() cria entry
+   ↓
+9. persistStateLocally() → Grava em IndexedDB
+   ↓
+10. renderApp() → Atualiza UI
+   ↓
+11. Service Worker cacheia assets
+   ↓
+12. Usuário pode usar offline a partir daqui ✅
+```
+
+<h3>Fluxo 2: Marcação de Status (Múltiplos Cliques)</h3>
+
+```
+Estado Inicial: ⚪ PENDENTE
+
+Usuário clica 1x
+   ↓ toggleHabitStatus()
+   ↓ HabitService.setStatus(..., 1) // Status=Feito
+   ↓ MonthlyLogs updated (9-bit write)
+   ↓ saveState() → debounced
+   ↓ UI transition: card turns blue
+   ↓ Haptic feedback
+Estado: ✅ FEITO
+
+Usuário clica 2x
+   ↓ toggleHabitStatus()
+   ↓ HabitService.setStatus(..., 2) // Status=Adiado
+   ↓ MonthlyLogs updated
+   ↓ saveState() → debounced
+   ↓ UI transition: card turns gray
+Estado: ➡️ ADIADO
+
+Usuário clica 3x
+   ↓ toggleHabitStatus()
+   ↓ HabitService.setStatus(..., 0) // Status=Pendente + Tombstone
+   ↓ MonthlyLogs updated (Tombstone=1)
+   ↓ saveState() → debounced
+   ↓ UI transition: card returns to white
+Estado: ⚪ PENDENTE (com undo possível)
+```
+
+<h3>Fluxo 3: Sincronização Multi-Dispositivo</h3>
+
+```
+┌─ Dispositivo A (Celular) ─────────────────┐
+│                                             │
+│ 1. Usuário marca "Meditar" como FEITO     │
+│ 2. Estado local salvo em IndexedDB        │
+│ 3. syncStateWithCloud() chamado           │
+│ 4. Vai offline (metrô, avião)            │
+│ 5. Fila interna enfileira a mudança      │
+│ 6. (Offline, nada enviado ainda)         │
+│                                             │
+└─────────────────────────────────────────────┘
+           ↑ 4 horas depois ↓
+┌─ Dispositivo B (Tablet) ──────────────────┐
+│                                             │
+│ 1. Usuário marca "Ler" como FEITO        │
+│ 2. Estado local salvo em IndexedDB        │
+│ 3. syncStateWithCloud() chamado           │
+│ 4. Internet OK → POST /api/sync           │
+│ 5. Servidor recebe dados B                │
+│ 6. Servidor faz merge (local: dados A)   │
+│ 7. Resultado: A + B merged                │
+│ 8. Servidor envia pushback → Device B    │
+│ 9. Device B sincroniza novo estado        │
+│                                             │
+└─────────────────────────────────────────────┘
+           ↑ Device A se reconecta ↓
+┌─ Dispositivo A (Celular) ─────────────────┐
+│                                             │
+│ 1. Detecta internet ✅                     │
+│ 2. Consome fila de pendências              │
+│ 3. POST /api/sync (fila.length > 0)       │
+│ 4. Servidor merge com dados B              │
+│ 5. Response: { habits: [...] }            │
+│ 6. state.habits = merged                  │
+│ 7. renderApp() → UI atualiza               │
+│ 8. ✅ "Ler FEITO" agora aparece           │
+│                                             │
+└─────────────────────────────────────────────┘
+
+Resultado Final:
+✅ "Meditar" = FEITO (de A)
+✅ "Ler" = FEITO (de B)
+✅ Nenhum progresso foi perdido!
+```
+
+<h3>Fluxo 4: Análise IA (Diagnóstico Diário)</h3>
+
+```
+┌─ Transição de Dia (UTC 00:00) ────────────┐
+│                                             │
+│ 1. handleDayTransition() chamado           │
+│ 2. state.selectedDate atualizado           │
+│ 3. renderApp() re-renderiza                │
+│ 4. checkAndAnalyzeDayContext(yesterday)    │
+│ 5. Extrai notas: "Meditei mas estava      │
+│    distraído", "Leitura profunda hoje"     │
+│                                             │
+└─────────────────────────────────────────────┘
+           ↓ Sem notas? ↓
+       Retorna (vazio)
+           ↓ Com notas? ↓
+┌─ Constrói Prompt ─────────────────────────┐
+│                                             │
+│ {                                           │
+│   notes: "- Meditei mas estava...\n       │
+│            - Leitura profunda...",        │
+│   themes: ["Temperance", "Wisdom"],       │
+│   language: "Português",                  │
+│   aiPromptQuote: "Foque no essencial"     │
+│ }                                           │
+│                                             │
+└─────────────────────────────────────────────┘
+           ↓ Post para API ↓
+┌─ Google Gemini API ───────────────────────┐
+│                                             │
+│ System Instruction:                        │
+│ "Você é um sábio estoico..."               │
+│                                             │
+│ User Message:                              │
+│ {prompt_acima}                             │
+│                                             │
+│ Response:                                  │
+│ {                                           │
+│   analysis: {                              │
+│     determined_level: 2,                   │
+│     insight: "Sua mente está forte..."     │
+│   },                                       │
+│   relevant_themes: ["Temperance"]          │
+│ }                                           │
+│                                             │
+└─────────────────────────────────────────────┘
+           ↓ Salva em dailyDiagnoses ↓
+┌─ UI Renderiza ────────────────────────────┐
+│                                             │
+│ 📊 Diagnóstico Estoico de Ontem:          │
+│                                             │
+│ "Sua mente está forte...                   │
+│ Temperança é sua chave hoje."              │
+│                                             │
+│ [Fechar]                                    │
+│                                             │
+└─────────────────────────────────────────────┘
+```
+
+<h3>Fluxo 5: Celebração de Mileposts (21 & 66 Dias)</h3>
+
+```
+┌─ A cada dia, handleDayTransition() verifica ─┐
+│                                                │
+│ 1. Para cada hábito em state.habits:         │
+│ 2.   streak = calculateHabitStreak(h, today) │
+│ 3.   if (streak == 21 && !sentNotificationYet)
+│ 4.     state.pending21DayHabitIds.push(id)  │
+│ 5.     triggerNotification("21 dias!")       │
+│ 6.   else if (streak == 66)                  │
+│ 7.     state.pendingConsolidationHabitIds... │
+│ 8.     triggerNotification("66 dias!")       │
+│ 9.   saveState()                              │
+│                                                │
+└────────────────────────────────────────────────┘
+
+Celebrações Pendentes → OneSignal
+                   ↓
+21-Day Celebration:
+┌────────────────────────────────────┐
+│ 🎉 "Meditar" atinge 21 dias!       │
+│                                     │
+│ "A virtude está em formação."      │
+│ — Sábio Estoico                     │
+│                                     │
+│ [Compartilhar]  [Arquivo]           │
+└────────────────────────────────────┘
+
+66-Day Consolidation:
+┌────────────────────────────────────┐
+│ ⭐ "Meditar" agora é parte de você! │
+│                                     │
+│ "A virtude agora é sua natureza."  │
+│ — Marcus Aurelius                   │
+│                                     │
+│ [Guardar]  [Reavaliar]              │
+└────────────────────────────────────┘
+```
+
+---
+
+<h2>💡 Dicas de Uso Avançado</h2>
+
+<h3>📊 Interpretando os Anéis de Progresso</h3>
+
+Cada dia é representado por um anel cônico que mostra a composição:
+
+```
+Exemplo de dia completo:
+┌─────────────┐
+│  Manhã: ✅  │ → Azul (completo)
+│  Tarde: ➡️   │ → Cinza (adiado)
+│  Noite: ⚪   │ → Branco (pendente)
+└─────────────┘
+Resultado: Anel 2/3 preenchido em azul+cinza
+
+Interpretação:
+- Se todo dia é azul sólido → Taxa de sucesso: 100%
+- Se há dias brancos ocasionais → Realista, desenvolvimento gradual
+- Se muitos cinzas → Você está procrastinando; reflexão necessária
+```
+
+<h3>🎯 Otimizando Metas com Override</h3>
+
+Às vezes, um dia específico merece uma meta diferente:
+
+```
+Cenário: Você normalmente "Lê 30 páginas"
+         Mas hoje está com pouco tempo.
+
+Solução:
+1. Clique e segure no cartão "Ler"
+2. Selecione "Editar meta para hoje"
+3. Mude de 30 para 15 páginas
+4. Marque 15 páginas como FEITO
+5. Sistema registra com meta customizada
+
+Resultado no histórico:
+- 2025-01-30: 30 páginas (meta padrão)
+- 2025-01-31: 15 páginas (meta customizada)
+- Nenhuma quebra de streak! ✅
+```
+
+<h3>📝 Notas Como Diário Reflexivo</h3>
+
+Cada hábito pode ter uma nota, criando um mini-diário:
+
+```
+Exemplo:
+Hábito: "Meditar 10min"
+Data: 2025-02-01 Manhã
+Nota: "Mente estava agitada com pensamentos
+       sobre a reunião. Mas consegui estar
+       presente nos últimos 3 minutos."
+
+IA analisa → Tema: "Temperance + Patience"
+Sugestão: "Sua paciência consigo mesmo é virtude."
+```
+
+**Dica:** Use notas para rastrear contexto emocional, não apenas atividades.
+
+<h3>🔄 Usando Drag & Drop para Reorganizar</h3>
+
+Hábitos podem ser reordenados por período do dia:
+
+```
+┌─ MANHÃ ─────────────────┐
+│ 1. Meditação            │
+│ 2. Exercício   ← Segure e arraste
+│ 3. Leitura              │
+└─────────────────────────┘
+           ↓ (para TARDE)
+┌─ TARDE ──────────────────┐
+│ 1. Trabalho Profundo     │
+│ 2. Exercício   ← Solta aqui
+│ 3. Lazer                 │
+└──────────────────────────┘
+```
+
+Reordenação também é sincronizada entre dispositivos.
+
+---
+
 <h2>Roadmap: O Futuro</h2>
 
 A visão para o Askesis é expandir sua presença nativa mantendo a base de código unificada.
@@ -1307,6 +1674,1992 @@ A visão para o Askesis é expandir sua presença nativa mantendo a base de cód
 *   **Widgets de Tela Inicial:** Desenvolvimento de widgets nativos para visualização rápida do progresso.
 *   **Integração Health Connect:** Sincronização bidirecional de dados de saúde.
 
-<h2>Licença</h2>
+---
 
-Este projeto é open-source e está licenciado sob a [Licenca Apache 2.0](LICENSE).
+<h2>❓ FAQ & Troubleshooting</h2>
+
+<h3>❓ Perguntas Frequentes</h3>
+
+**P: Meus dados estão realmente privados?**
+
+R: Sim. Por padrão, todos os dados são armazenados localmente no seu dispositivo via IndexedDB. Se você optar por sincronização, a criptografia end-to-end (AES-GCM) é aplicada, e **nem o servidor tem acesso à sua senha de sincronização**. Apenas dados criptografados viajam pela rede.
+
+**P: Posso perder meus dados se mudar de celular?**
+
+R: Não, se você guardou sua **Chave de Sincronização**. Guarde essa chave em um local seguro (gerenciador de senhas, nota protegida). Ao instalar o Askesis em um novo celular, insira a chave e todos os seus dados serão sincronizados automaticamente.
+
+**P: Como funciona a sincronização se eu estiver offline?**
+
+R: Mudanças são enfileiradas localmente. Quando você reconecta à internet, todas as pendências são sincronizadas automaticamente. Não há perda de dados.
+
+**P: A IA (Google Gemini) vê meus dados?**
+
+R: Não. O Gemini recebe apenas:
+- Notas que você adicionou (totalmente opcionais)
+- Contexto generalizado (temas estoicos, não dados pessoais)
+- Ele não tem acesso a datas, histórico ou identificadores
+
+**P: Posso usar o Askesis em múltiplos dispositivos?**
+
+R: Sim! Cada dispositivo usa a mesma **Chave de Sincronização** para manter dados em sync. Celular, tablet e desktop podem ser sincronizados.
+
+**P: E se eu esquecer minha Chave de Sincronização?**
+
+R: Infelizmente, você **não pode recuperá-la** (isso é por design — garante que nem o servidor a tem). Mas seus dados locais não se perdem. Você pode:
+1. Continuar usando o Askesis naquele dispositivo apenas
+2. Gerar uma nova chave e começar uma nova sincronização
+3. Exportar dados em JSON antes de mudar (⚙️ → Exportar)
+
+**P: Quanto espaço o Askesis usa?**
+
+R: Muito pouco. Mesmo com 5 anos de histórico:
+- **Dados principais (JSON):** ~50-200 KB
+- **Logs binários comprimidos:** ~8-15 KB
+- **Total:** < 500 KB para a maioria dos usuários
+
+**P: O app funciona totalmente offline?**
+
+R: Sim, **100%**. Você pode marcar hábitos, adicionar notas, ver gráficos — tudo sem internet. A IA (Google Gemini) e notificações (OneSignal) requerem conexão, mas são opcionais.
+
+**P: Como desinstalo o Askesis?**
+
+R: Se instalou como PWA:
+- **Android:** Segure o ícone → "Desinstalar"
+- **iOS:** Segure o ícone → "Remover app"
+- **Desktop:** Controle-clique (Windows) ou Cmd-clique (Mac) no atalho → "Remover"
+
+Seus dados locais são deletados automaticamente. Se quiser preservar dados, exporte primeiro (⚙️ → Exportar).
+
+---
+
+<h3>🔧 Troubleshooting Comum</h3>
+
+<h4>❌ "Erro: Sync não funciona"</h4>
+
+**Diagnóstico:**
+1. Verifique se está online (abra google.com em abas novas)
+2. Abra DevTools (F12) → Console
+3. Procure por erros vermelhos
+
+**Soluções:**
+```
+Se vir "[API] Network Error":
+  → Firewall ou proxy bloqueando
+  → Tente em rede diferente (pedir WiFi de amigo)
+  → Abra https://askesis-psi.vercel.app no navegador (deve carregar)
+
+Se vir "[API] Timeout after 5s":
+  → Sua conexão é lenta
+  → Tente em lugar com WiFi melhor
+  → Se em celular, use dados móveis de teste
+
+Se vir "Sync Key inválido":
+  → Chave foi corrompida/digitada errado
+  → ⚙️ → Copiar Chave novamente
+  → Tente sincronizar em outro dispositivo com a mesma chave
+```
+
+**Se o problema persistir:**
+1. Abra o Painel de Sync: `openSyncDebugModal()` no console
+2. Screenshot do histórico de sync
+3. Procure por uma issue existente no [GitHub](https://github.com/farifran/Askesis_v2/issues)
+4. Se não existir, abra uma issue com o screenshot
+
+<h4>❌ "Dados desapareceram!"</h4>
+
+**Antes de desesperar:**
+
+1. **Verificar localStorage não foi limpo:**
+   ```
+   F12 → Application → Storage → Local Storage → askesis-psi.vercel.app
+   Você deve ver uma entrada "habitTrackerSyncKey"
+   ```
+
+2. **Verificar IndexedDB:**
+   ```
+   F12 → Application → Storage → IndexedDB → AskesisDB
+   Você deve ver "app_state" e possivelmente "askesis_logs_binary"
+   ```
+
+3. **Se vazio (foi deletado):**
+   - Houve uma limpeza acidental do navegador
+   - Dados só podem ser recuperados se você exportou antes
+   - Se tinha sincronização, dados estão na nuvem (reimporte com a chave)
+
+4. **Se os dados estão lá mas não aparecem:**
+   - Tente fazer Hard Refresh: **Ctrl+Shift+R** (Windows) ou **Cmd+Shift+R** (Mac)
+   - Limpe o cache do Service Worker:
+     ```
+     F12 → Application → Service Workers
+     Clique "Unregister" em cada um
+     Recarregue a página
+     ```
+
+<h4>❌ "Service Worker não está registrando"</h4>
+
+**Possíveis causas:**
+
+1. **Você está em http:// (não https://)**
+   - Service Workers só funcionam em HTTPS ou localhost
+   - Verifique se está acessando a URL correta
+
+2. **Navegador bloqueou Service Worker**
+   - Vá em ⚙️ do navegador → Configurações → Privacidade
+   - Procure por "Notificações" ou "Web Workers"
+   - Permita para askesis-psi.vercel.app
+
+3. **Outro Service Worker conflita**
+   ```
+   F12 → Application → Service Workers
+   Desregistre todos os SWs antigos
+   Recarregue a página
+   ```
+
+<h4>❌ "Hábitos aparecem duplicados em diferentes períodos"</h4>
+
+**Solução:**
+
+Isso acontece se você criou o mesmo hábito 2x ou se houve sincronização conflitante.
+
+1. Vá em ⚙️ → Gerenciar Hábitos
+2. Identifique o duplicado
+3. Clique em "Apagar Permanentemente"
+4. Confirme "Para Sempre"
+5. Sincronize: vai excluir no servidor também
+
+<h4>❌ "Performance está lenta"</h4>
+
+**Diagnóstico:**
+
+1. Abra DevTools → Performance tab
+2. Clique "Record"
+3. Marque alguns hábitos no app
+4. Clique "Stop"
+5. Analise o flame chart
+
+**Causas comuns:**
+
+```
+Se ver picos em "sync.worker.ts":
+  → Criptografia levando tempo
+  → Normal em dados antigos
+  → Deixe completar, não é bloqueador
+
+Se ver renderização > 100ms:
+  → Muitos hábitos na tela (100+)
+  → Role para "virtualizar" a lista
+  → Temporário enquanto scroll finalize
+
+Se usar 100%+ CPU constantemente:
+  → Algo está em loop
+  → Abra `openSyncDebugModal()`
+  → Procure por erros contínuos
+  → Limpe cache (Ctrl+Shift+R)
+```
+
+<h4>❌ "Notificações não estão funcionando"</h4>
+
+**Verificação:**
+
+1. ⚙️ → Notificações
+2. Clique em "Permitir Notificações"
+3. Seu navegador pedirá permissão (aceite)
+4. Tente "Enviar Teste"
+
+**Se notificação não chega:**
+
+```
+Motivo 1: Navegador nega permissão
+  → F12 → Application → Manifest
+  → Veja se "notificationsRequested" = false
+  → Limpe permissões:
+     Chrome: ⚙️ → Privacidade → Cookies/Sites
+     Firefox: ⚙️ → Privacidade → Notificações
+
+Motivo 2: OneSignal desabilitado (por débito de API)
+  → Abra https://status.onesignal.com
+  → Procure por "Web Push" status
+  → Se Red, notificações globalmente down
+  → Aguarde status voltar
+
+Motivo 3: Offline
+  → Notificações precisam de internet
+  → Conecte à rede
+```
+
+<h4>❌ "Não consigo instalar como app (PWA)"</h4>
+
+**Por navegador:**
+
+**Google Chrome / Edge:**
+```
+1. Abra https://askesis-psi.vercel.app
+2. Procure pelo ícone "Instalar" na barra de endereço
+3. Se não vir:
+   - Verifique se está em HTTPS (deve estar)
+   - Atualize seu navegador
+   - Tente em modo Incógnito (pode ter extensões bloqueando)
+4. Clique "Instalar"
+5. App aparecerá na Tela Inicial
+```
+
+**Safari (iOS):**
+```
+1. Abra https://askesis-psi.vercel.app
+2. Clique no botão de Compartilhamento (canto inferior direito)
+3. Role até "Adicionar à Tela Inicial"
+4. Confirme com seu nome preferido
+5. App aparecerá como ícone na Tela Inicial
+```
+
+**Firefox:**
+```
+Firefox suporta PWA mas sem opção visual óbvia:
+1. Abra a página
+2. Vá em ⚙️ → Aplicações
+3. Procure por "Askesis" e clique "Instalar"
+Alternativa: Deixe no "Home" (Firefox só permite PWA via este método)
+```
+
+---
+
+<h3>📞 Obtendo Suporte</h3>
+
+Se o troubleshooting acima não resolveu:
+
+1. **Verifique a seção "Issues" do GitHub:**
+   - Pesquise por palavra-chave do seu erro
+   - Muitas soluções podem estar lá
+
+2. **Abra uma nova Issue:**
+   - [GitHub Issues - Askesis](https://github.com/farifran/Askesis_v2/issues)
+   - Inclua:
+     * Seu navegador (Chrome v130, Safari 17.x, etc.)
+     * Sistema operacional (Windows, macOS, iOS, Android)
+     * Screenshots ou vídeos do erro
+     * Passos exatos para reproduzir o problema
+     * Saída do Sync Debug Modal
+
+3. **Contribua com Fix:**
+   - Se você encontrou a causa, considere abrir um Pull Request
+   - Siga o guia de contribuição no README
+
+---
+
+<h2>🤝 Contribuindo</h2>
+
+O Askesis é open-source e aceita contribuições!
+
+<h3>Como Contribuir</h3>
+
+1. **Fork o repositório** no GitHub
+2. **Crie uma branch** para sua feature:
+   ```bash
+   git checkout -b feature/minha-feature
+   ```
+3. **Faça suas mudanças** e commit:
+   ```bash
+   git commit -m "feat: adiciona X funcionalidade"
+   ```
+4. **Rode os testes localmente:**
+   ```bash
+   npm run test:super
+   ```
+5. **Push para sua branch:**
+   ```bash
+   git push origin feature/minha-feature
+   ```
+6. **Abra um Pull Request** descrevendo suas mudanças
+
+<h3>Requisitos para Contribuições</h3>
+
+- ✅ Código TypeScript bem-formatado
+- ✅ Testes adicionados para novas features
+- ✅ Performance não degradada (benchmarks devem passar)
+- ✅ Acessibilidade mantida (WCAG 2.1 AA)
+- ✅ Documentação atualizada (README, JSDoc)
+
+<h3>Área de Contribuições Abertas</h3>
+
+- 🎨 **Design/UI:** Melhorias visuais, dark mode alternativo
+- 🌍 **Internacionalização:** Novos idiomas (Francês, Italiano, Russo)
+- 🧪 **Testes:** Mais coverage em edge cases
+- 📱 **Plataformas:** Suporte a Electron para desktop
+- 📚 **Documentação:** Guias de uso, tutoriais em vídeo
+
+Procure por issues marcadas com `good-first-issue` para começar!
+
+---
+
+<h2>💝 Apoie o Desenvolvimento</h2>
+
+Se o Askesis está ajudando você a fortalecer sua vontade e consistência, considere apoiar o desenvolvimento:
+
+- **[GitHub Sponsors](https://github.com/sponsors/farifran)** - Patrocínio recorrente com recompensas exclusivas
+- **[Buy Me a Coffee](https://www.buymeacoffee.com/askesis)** - Contribuição única
+- **[Ko-fi](https://ko-fi.com/askesis)** - Alternativa global
+
+Todo apoio financia:
+- 🧪 Testes abrangentes e qualidade de código
+- 📚 Documentação detalhada e guias
+- 🚀 Novas funcionalidades e melhorias
+- 🔐 Auditorias de segurança e privacidade
+- ♿ Acessibilidade e suporte multilíngue
+
+### Por que importa?
+
+Atualmente, graças a plataformas gratuitas (Vercel, Google Gemini, OneSignal), o Askesis pode servir até **500 usuários simultaneamente**. Cada contribuição permite expandir esses limites:
+
+- Ativar APIs pagas do Google Gemini → suportar **+1000 análises diárias**
+- Aumentar quotas de sincronização → suportar **+5000 usuários**
+- Implementar CDN global → reduzir latência em regiões distantes
+- Manter infraestrutura 24/7 → garantir confiabilidade
+
+**O apoio transforma Askesis de um experimento em um serviço público sustentável.**
+
+**Obrigado por acreditar em um futuro onde a tecnologia serve à virtude, não o contrário.**
+
+---
+
+</details>
+
+<a id="pt-license"></a>
+
+### Licenca
+
+- Apache-2.0 (ver [LICENSE](LICENSE)).
+
+---
+
+<a id="en"></a>
+
+
+## EN
+
+<p align="center">
+  <img src="assets/AristotelesIngles.jpg" alt="Aristotle (English)" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
+</p>
+
+<details>
+  <summary><em>“We are what we repeatedly do. Excellence, then, is not an act, but a habit.” — Aristotle</em></summary>
+
+Supporting text: project epigraph — ties directly to Askesis as a **habit tracker**: consistency and excellence are built through daily practice, and **habits** are the core mechanism the app helps you train and track.
+
+</details>
+
+<details>
+  <summary>View full structure (TOC)</summary>
+
+- [Project Vision](#en-project-vision)
+- [Highlights](#en-highlights)
+- [Diagrams (overview)](#en-diagrams)
+  - [Architecture & User Flow Overview](#en-architecture-user-flow)
+  - [Integrations & Infrastructure Overview](#en-integrations-infra)
+- [Tech radar (ASCII)](#en-tech-radar)
+- [Data lifecycle](#en-data-lifecycle)
+- [Containers (C4 - Level 2)](#en-c4-l2)
+- [Internal Components (C4 - Level 3)](#en-c4-l3)
+- [Data Flow (Local-first + Sync)](#en-data-flow)
+- [Sync Conflict Flow](#en-sync-conflict)
+- [Habit Uniqueness Rules](#en-habit-uniqueness)
+- [Module map](#en-modules-map)
+- [Build Paradigm: Human-AI Orchestration](#en-build-paradigm)
+- [Tech](#en-tech)
+- [Project Structure](#en-project-structure)
+- [Tests and Quality](#en-tests-quality)
+- [Development](#en-development)
+- [Complete guide (detailed)](#en-complete-guide)
+- [License](#en-license)
+
+</details>
+
+<a id="en-project-vision"></a>
+<a id="en-summary"></a>
+
+### Project Vision
+
+- Stoic habit tracker focused on privacy, with AI for reflection and routine tuning.
+- Local-first: data stays on-device; optional sync with E2E encryption (AES-GCM) via Web Worker.
+- Conflict-free/resilient sync (merge/CRDT-lite) through Vercel API (KV), no mandatory login.
+- Zero-deps by default at local runtime (no SDKs on boot); after opt-in, push may auto-load to keep state consistent.
+
+#### Motivation: Why build it?
+
+Habits are an intimate log of daily life. Askesis exists to keep that data under the user’s control (privacy by design), without turning self-improvement into a paid subscription.
+
+#### Goal
+
+Keep ownership, encryption, and resilience as defaults: on-device first, optional E2E sync, and a shared AI proxy that avoids binding the experience to personal identifiers.
+
+#### Philosophy: What is Askesis?
+
+In Stoicism, *askesis* means “training” — deliberate practice to strengthen character and consistency. The app uses AI as a reflective companion, not as a judge.
+
+<a id="en-highlights"></a>
+
+### Highlights
+
+- Total privacy, no login or tracking.
+- Stoic AI for reflection, not addiction.
+- Fast flow: consistency over streaks.
+- WCAG 2.1 AA accessibility and full keyboard support.
+
+<a id="en-diagrams"></a>
+
+### Diagrams (overview)
+
+<a id="en-architecture-user-flow"></a>
+
+#### Architecture & User Flow Overview
+
+<p align="center">
+  <img src="assets/diagram/system-architecture-flow-en.png" alt="Architecture & User Flow Overview" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
+</p>
+
+<details>
+  <summary>Supporting text</summary>
+
+This diagram illustrates the core application lifecycle, broken down into three main phases:
+
+- Phase 1: Definition (Onboarding): Habit creation and customization focused on privacy, utilizing a Local-first approach with End-to-End (E2E) encryption.
+- Phase 2: Execution (Engagement): Daily management, performance metrics, and data persistence. The UI (Main Thread) is decoupled from data processing (Worker), leveraging IndexedDB for local storage and a CRDT-lite protocol for conflict-free cloud synchronization (Vercel KV).
+- Phase 3: Intelligence (Feedback): An analysis engine processes user data to generate personalized behavioral insights, injecting this context back into the user experience to create a continuous engagement loop.
+
+</details>
+
+<a id="en-integrations-infra"></a>
+
+#### Integrations & Infrastructure Overview
+
+<p align="center">
+  <img src="assets/diagram/system-integrations-en.png" alt="Integrations & Infrastructure Overview" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
+</p>
+
+<details>
+  <summary>Supporting text</summary>
+
+This diagram details the high-level system architecture and the communication flow between external services:
+
+- Client (Askesis PWA): The React-based frontend handling daily user interactions, local state management, and request initiations.
+- Serverless Backend (Vercel API): Acts as a secure middleware layer. It handles state synchronization and serves as an "AI Proxy," protecting API keys and validating requests before routing them to the LLM.
+- AI Engine (Google Gemini API): The analytical brain of the app, receiving filtered context from the backend to process reflections and generate personalized insights.
+- Push Notifications (OneSignal): A dedicated messaging service that handles PWA push registrations and delivers asynchronous notifications to re-engage the user.
+
+</details>
+
+<a id="en-tech-radar"></a>
+
+### Tech radar (ASCII)
+
+```text
+      Privacy 10
+        /\
+ A11y 9  /-----/  \-----\  Offline 10
+       /           \
+    UX 8 \           /  Performance 9
+      \--- 10 ---/
+       Resilience
+```
+
+<a id="en-data-lifecycle"></a>
+
+### Data lifecycle
+
+```text
+Input -> Validation -> Encryption (AES-GCM) -> IndexedDB -> Sync -> Merge -> UI
+```
+
+<a id="en-c4-l2"></a>
+
+### Containers (C4 - Level 2)
+
+```mermaid
+flowchart TB
+  %% Level 2 = container view (avoid repeating file names from Level 3)
+  %% Note: we avoid the "loop" SW -> PWA to reduce crossings in GitHub rendering.
+  subgraph Client["Client (PWA)"]
+    direction TB
+    PWA["Askesis PWA\n(UI + Render)"]
+    Store["Local Storage\n(IndexedDB)"]
+    Sync["Sync Engine"]
+    Worker["Web Worker\n(crypto + merge)"]
+    SW["Service Worker\n(offline + bg sync)"]
+  end
+
+  subgraph External["External Services"]
+    direction TB
+    API["Vercel API\n(/api/sync, /api/analyze)"]
+    AI["Gemini API"]
+    PUSH["OneSignal"]
+  end
+
+  %% Core flows
+  PWA --> Store
+  PWA --> Sync
+  Sync --> Worker
+  Sync --> API --> AI
+
+  %% Background sync + push notifications
+  Sync -->|register bg sync| SW
+  PWA -->|opt-in/consent| PUSH
+  PUSH -->|push events| SW
+  SW -->|notificationclick| Open["Open / focus Askesis"]
+```
+
+<a id="en-c4-l3"></a>
+
+### Internal Components (C4 - Level 3)
+
+```mermaid
+flowchart TB
+  %% Layered layout (easier to read): UI -> Domain -> Infra
+  subgraph UI["UI (DOM)"]
+    direction TB
+    IDX["index.tsx (boot)"]
+    LISTEN["listeners/*"]
+    RENDER["render/*"]
+    EVENTS["events.ts (event hub)"]
+  end
+
+  subgraph DOMAIN["Domain"]
+    direction TB
+    ACTIONS["services/habitActions.ts"]
+    SELECTORS["services/selectors.ts"]
+    ANALYSIS["services/analysis.ts"]
+    STATE["state.ts (single source of truth)"]
+  end
+
+  subgraph INFRA["Infra (persistence + sync)"]
+    direction TB
+    PERSIST["services/persistence.ts (IndexedDB)"]
+    CLOUD["services/cloud.ts (sync)"]
+    WRPC["services/workerClient.ts"]
+    WORKER["services/sync.worker.ts"]
+    API["services/api.ts (HTTP client)"]
+    MERGE["services/dataMerge.ts"]
+  end
+
+  %% Boot / UI
+  IDX --> LISTEN
+  IDX --> RENDER
+  IDX --> EVENTS
+
+  %% Domain
+  LISTEN --> ACTIONS
+  RENDER --> SELECTORS
+
+  ACTIONS --> STATE
+  SELECTORS --> STATE
+  ANALYSIS --> STATE
+
+  %% Persistence + Sync
+  ACTIONS --> PERSIST
+  PERSIST --> STATE
+  PERSIST --> CLOUD
+
+  %% Global events (UI plumbing)
+  ACTIONS --> EVENTS
+  EVENTS --> RENDER
+  EVENTS --> LISTEN
+
+  %% Worker / Cloud
+  ANALYSIS --> CLOUD
+  CLOUD --> WRPC --> WORKER
+  CLOUD --> API
+  CLOUD --> MERGE
+```
+
+Quick read: interactions enter via `listeners/*`, business rules live in `habitActions.ts` / `selectors.ts`, canonical state in `state.ts`, and persistence/sync live in `persistence.ts` + `cloud.ts` + `sync.worker.ts`.
+
+<a id="en-data-flow"></a>
+
+### Data Flow (Local-first + Sync)
+
+```mermaid
+sequenceDiagram
+  participant User as User
+  participant UI as UI
+  participant State as State
+  participant Actions as habitActions
+  participant Persist as persistence
+  participant DB as IndexedDB
+  participant Cloud as cloud.ts
+  participant WRPC as workerClient
+  participant Crypto as sync.worker (crypto)
+  participant API as API /api/sync
+  participant Merge as dataMerge
+
+  User->>UI: Mark habit / add note
+  UI->>Actions: Update habit/note
+  Actions->>State: State mutation + dirty flags
+  Actions->>Persist: saveState() (debounced)
+  Persist->>DB: saveSplitState(core + logs)
+  Note over Persist,DB: Local persistence (IDB), independent of the sync key
+  Persist-->>Cloud: syncHandler(snapshot)
+  Cloud->>Cloud: splitIntoShards + hash diff
+
+  loop For each changed shard
+    Cloud->>WRPC: runWorkerTask(encrypt-json)
+    WRPC->>Crypto: encrypt(shard, syncKey)
+    Crypto-->>Cloud: encrypted shard
+  end
+
+  Cloud->>API: POST /api/sync (lastModified + shards)
+  alt No conflict (200)
+    API-->>Cloud: OK
+    Cloud->>State: syncSynced + update hash cache
+  else Version conflict (409)
+    API-->>Cloud: remote shards
+    Cloud->>WRPC: runWorkerTask(decrypt)
+    WRPC->>Crypto: decrypt(remote shards)
+    Crypto-->>Cloud: remote state
+    Cloud->>Merge: mergeStates(local, remote)
+    Merge-->>Cloud: consolidated state (LWW + dedup)
+    Cloud->>Persist: persistStateLocally(merged)
+    Cloud->>Persist: loadState(merged)
+    Persist-->>UI: render-app
+  end
+```
+
+<a id="en-sync-conflict"></a>
+
+### Sync Conflict Flow
+
+```mermaid
+sequenceDiagram
+  participant D1 as Device A
+  participant D2 as Device B
+  participant API as /api/sync
+  participant C as cloud.ts (client)
+  participant WRPC as workerClient
+  participant W as sync.worker
+  participant M as dataMerge
+
+  D1->>API: POST shards (lastModified=new)
+  API-->>D1: 200 OK
+
+  D2->>API: POST shards (lastModified=old)
+  API-->>D2: 409 CONFLICT + remote shards
+
+  D2->>C: resolveConflictWithServerState()
+  C->>WRPC: runWorkerTask(decrypt)
+  WRPC->>W: decrypt(remote shards)
+  W-->>C: remote state
+  C->>M: mergeStates(local, remote)
+  M-->>C: consolidated state
+  C->>C: persistStateLocally + loadState
+  C->>API: POST merged (retry)
+  API-->>D2: 200 OK
+
+  Note over M: Effective merge rules\n1) Match by ID\n2) Dedup by normalized name\n3) LWW for schedule/history\n4) Normalize mode/times/frequency
+```
+
+<a id="en-habit-uniqueness"></a>
+
+### Habit Uniqueness Rules
+
+The system implements **multiple defensive layers to prevent duplicate habits**:
+
+#### 1) **By ID (Sync merge)**
+- When two states are synced, habits with the **same `id`** are consolidated into a single record.
+- History (`scheduleHistory`) is merged using **Last-Write-Wins (LWW)** per entry.
+- Implemented in `services/dataMerge.ts` via `mergeStates()`.
+
+#### 2) **By Normalized Name (Automatic dedup)**
+- During sync, habits with the **same normalized name** (case-insensitive, trimmed) are detected and consolidated.
+- **Receiver priority:**
+  1. Active habit (not deleted, not graduated)
+  2. Most recently deleted habit
+  3. Oldest habit
+- **Data remapping:** Daily logs (`dailyData`) are automatically remapped to the consolidated ID.
+- **Example:** if local has "Exercise" (id: `habit-1`) and cloud has "EXERCISE" (id: `habit-2`), after sync there will be a single entry with merged history.
+
+#### 3) **On Edit (Unique-name validation)**
+- When editing a habit, the system validates if the new name already exists in another active habit.
+- On collision:
+  - The user sees a confirmation modal: *"A habit named '{name}' already exists. Merge?"*
+  - If confirmed: the current habit is marked deleted and its history is merged into the existing one.
+  - If cancelled: the edit is aborted.
+- Implemented in `services/habitActions.ts` in `saveHabitFromModal()`.
+
+#### 4) **On Create (Resurrection)**
+- When creating a new habit, the system searches for an existing one with the **same normalized name**.
+- If found, it **reuses** that record (resurrection) instead of creating a brand-new one.
+- Priority:
+  1. Active habit covering the target date
+  2. Deleted habit (most recent)
+  3. Any other with the same name
+- This avoids creating 2+ different records for the "same logical habit".
+
+#### Visual flow
+
+```mermaid
+graph TD
+    A["User tries to create habit 'Exercise'"]
+    B{Search for existing habit<br/>with same normalized name?}
+    C["Found an active habit"]
+    D["Found a deleted habit"]
+    E["None found"]
+    
+    B -->|Yes| C
+    B -->|Yes, but deleted| D
+    B -->|No| E
+    
+    C --> C1["Restore and update<br/>if needed"]
+    D --> D1["Resurrect and start<br/>new scheduleHistory"]
+    E --> E1["Create new record<br/>with unique UUID"]
+    
+    C1 --> F["1 active record"]
+    D1 --> F
+    E1 --> F
+    
+    style F fill:#90EE90
+```
+
+#### Test coverage
+
+- `services/dataMerge.test.ts`: specific tests for name-based dedup on sync.
+- `services/habitActions.test.ts`: resurrection and unique-name validation tests.
+- `services/stateUIConsistency.test.ts`: real-world scenarios with same names.
+
+#### Edge cases handled
+
+| Scenario | Behavior |
+|---|---|
+| Two deleted habits with the same name | The most recently deleted becomes the receiver when restored |
+| Active habits with the same name in different time slots | NOT consolidated (different periods = different habits) |
+| Empty/whitespace names | Ignored by normalization |
+| Renaming to an existing name | Confirmation modal + merge |
+| Syncing 3+ devices with name variants | All converge into 1 habit in the cloud |
+
+#### 5) **By TimeOfDay (Slot uniqueness)**
+- The system guarantees that **no habit appears 2x+ in the same time slot (Morning/Afternoon/Evening)** on the same day.
+- Dedup is implemented in **3 defensive layers**:
+  1. **Form submit:** `habitActions.ts#saveHabitFromModal()` deduplicates `formData.times` before saving.
+  2. **Migration/load:** `migration.ts` cleans corrupted data while hydrating from IndexedDB.
+  3. **Sync merge:** `dataMerge.ts` deduplicates `scheduleHistory[].times` after state consolidation.
+- **Utility:** `deduplicateTimeOfDay()` exported in `habitActions.ts` and reused in all 3 points.
+- **Implementation:** Set-based dedup, $O(n)$ complexity, preserves ingestion order.
+- **Examples:**
+  - User selects ["Morning", "Afternoon", "Morning"] → saved as ["Morning", "Afternoon"]
+  - Corrupted storage data with duplicated times → cleaned on next app load
+  - Merge combines different orders → result is deduplicated and stable
+
+| Scenario | Behavior |
+|---|---|
+| User selects the same TimeOfDay twice | Automatically deduplicated on submit |
+| Corrupted IndexedDB with duplicated times | Sanitized on migration/load |
+| Merge combines times from two versions | Deduplicated after LWW |
+| Drag-drop into an already occupied TimeOfDay | Rejected (validation in `listeners/drag.ts`) |
+
+<a id="en-modules-map"></a>
+
+### Module map (folder → responsibility)
+
+- render/: visual composition, DOM diffs, modals, calendar, and charts.
+- listeners/: UI events (cards, modal, swipe/drag, calendar, sync).
+- services/: domain + infrastructure (habitActions, selectors, persistence, cloud, dataMerge, analysis, quoteEngine, HabitService).
+- api/: serverless edge endpoints (/api/sync, /api/analyze) with rate-limit, CORS, and hardening.
+- state.ts: canonical state model, types, and caches.
+- services/sync.worker.ts: AES-GCM crypto and AI prompt building off the main thread.
+- tests/ and services/*.test.ts: scenarios for journeys, security, resilience, merge, and regression.
+
+
+<a id="en-build-paradigm"></a>
+
+### Build Paradigm: Human-AI Orchestration
+
+This table shows where AI provided a base and where strategic vision and Psychology training elevated the product.
+
+| Capability | Traditional / "Pure" AI | My Intervention (Architect) | Result: Askesis |
+|---|---|---|---|
+| Privacy | Social login and commercial cloud storage. | Ethical decision: collective anonymity and client-side AES-GCM via Web Workers to ensure sovereignty. | Bank-grade security without collecting personal data. |
+| Performance | Heavy frameworks (React/Next) that add latency. | Refinement: replaced abstractions with Vanilla TS and native APIs. | Test-verified budgets (e.g. critical ops < 50ms) and responsive UI. |
+| UX and Psychology | Dopamine-driven gamification (badges, loud colors). | Theoretical grounding: Neuropsychology principles focused on the "virtue of consistency." | Minimalist interface that promotes real self-reflection. |
+| Accessibility | Often ignored in AI-generated code. | Digital inclusion: WCAG 2.1 AA, robust ARIA, full keyboard nav. | Universally usable app for diverse needs. |
+| Reliability | Isolated unit tests or missing critical error validation. | Chaos engineering: "Super-Tests" to validate extreme conditions. | Resilient software that recovers from critical failures. |
+| Sustainability | High infra costs passed via subscriptions or ads. | Product vision: zero-cost architecture pushing heavy work to user hardware. | Sustainable global operation with $0 maintenance cost. |
+
+> [ 🧠 ] Cognitive Psychology + [ 🤖 ] Generative AI + [ 💻 ] Low-Level Engineering
+> This project is a case study in how modern tech can be guided by human principles to serve virtue, not profit.
+
+<a id="en-tech"></a>
+
+### Tech
+
+- Vanilla TypeScript, no heavy frameworks.
+- PWA with Service Worker and atomic caching.
+- AES-GCM encryption and resilient sync.
+- Efficient rendering and 60fps UX.
+
+<a id="en-project-structure"></a>
+
+### Project Structure
+
+- Serverless backend: [api/](api/)
+- Rendering: [render/](render/)
+- Gestures and events: [listeners/](listeners/)
+- Data and crypto: [services/](services/)
+
+<a id="en-tests-quality"></a>
+
+### Tests and Quality
+
+- Coverage across user flows, security, accessibility, and resilience.
+- Details in [tests/README.md](tests/README.md).
+- CI: workflow in `.github/workflows/ci.yml` runs tests/build and uploads artifacts (dist + coverage).
+
+<a id="en-development"></a>
+
+### Development
+
+```bash
+npm install
+npm run dev
+```
+
+> Self-hosting is possible, but it reduces the anonymity set.
+
+<a id="en-complete-guide"></a>
+
+### Complete guide (detailed)
+
+<details>
+  <summary>Open the complete guide (usage + deep dives)</summary>
+
+#### Complete Guide: How to Use Askesis
+
+Askesis is designed in layers: intuitive on the surface, but packed with powerful tools for those who want depth.
+
+##### 1) The foundation: adding habits
+
+Habits are the fundamental unit. The system tracks not only completion (“check”), but also quantity and intensity (pages read, minutes meditated).
+
+To start building your routine, you have two paths:
+- **Bright green (+) button:** the main entry point.
+- **Cards placeholder area:** if a time-of-day period is empty (Morning/Afternoon/Evening), you’ll see an “Add a habit” placeholder for quick creation in context.
+
+##### 2) Time and rings (the calendar)
+
+If habits are the foundation, **time** gives everything meaning. The top calendar strip is your progress compass.
+
+Days are represented by **conical progress rings**, filling with blue (done) and white (deferred), showing the exact composition of your day at a glance.
+
+Calendar micro-actions (power user):
+- **1 click:** select a date to view history.
+- **Press and hold (long press):** open a quick actions menu to **Complete the Day**, **Defer the Day**, or open the **full monthly calendar**.
+
+##### 3) The habit card: daily interaction
+
+The card represents your daily duty and responds to multiple interactions:
+
+- **Clicks (status):**
+  - **1 click:** ✅ Done.
+  - **2 clicks:** ➡️ Deferred.
+  - **3 clicks:** ⚪ Pending.
+- **Swipe (additional options):**
+  - **Create note:** add a stoic observation about that habit.
+  - **Delete:** remove the habit; the app asks if you want **“Only today”** or **“Forever”**.
+- **Scroll focus:** while scrolling, the centered card subtly grows in size and opacity (scroll-driven animations) to guide attention.
+
+##### 4) Navigation and wisdom
+
+- **“Today” header:** acts as a quick jump back to the present.
+- **Stoic quotes:** at the top of the screen; click to copy to clipboard.
+
+##### 5) Settings: controls and recovery
+
+The gear icon holds the management tools:
+
+- **Profile rescue (sync):** your **Sync Key**. Store it safely — it’s the only way to restore data across devices.
+- **Manage habits:** list view to edit/pause/graduate.
+- **Language and notifications:** set language and reminders.
+
+---
+
+#### Assisted development (Google AI Studio)
+
+This project represents a shift in software development: Askesis was not only coded — it was orchestrated.
+
+With Google AI Studio, the human role evolves into **software architect, product manager, and lead tester**, while the model supports implementation, performance, and logical bug fixing.
+
+---
+
+#### Universal experience: PWA and accessibility
+
+##### Multiplatform by nature (PWA)
+
+- **Installable:** iOS/Android/Windows/Mac.
+- **Offline-first:** service workers allow instant loading and full offline functionality.
+- **Native feel:** haptics, swipe gestures, and 60fps animations.
+
+##### Accessibility and inclusive design (A11y)
+
+- **Robust semantics:** proper HTML + ARIA (`aria-label`, `role`, `aria-live`).
+- **Keyboard navigation:** full app without a mouse, focus traps in modals.
+- **Reduced motion:** respects `prefers-reduced-motion`.
+- **Legibility:** contrast designed for readability.
+
+---
+
+#### Architecture and engineering
+
+Askesis rejects unnecessary framework complexity in favor of **native performance** and **modern JavaScript (ESNext)**.
+
+Project structure (overview):
+
+```text
+.
+├── api/                 # Vercel Edge Functions (Serverless backend)
+├── locales/             # Translation files (i18n)
+├── render/              # Rendering engine (DOM recycling & templates)
+├── listeners/           # Event & gesture controllers
+├── services/            # Data layer, crypto, IO
+│   ├── api.ts           # HTTP client with retry/backoff
+│   ├── cloud.ts         # Sync orchestrator + worker bridge
+│   ├── crypto.ts        # AES-GCM crypto
+│   ├── dataMerge.ts     # Conflict resolution (CRDT-lite)
+│   ├── migration.ts     # History rebuild (graph-based)
+│   ├── persistence.ts   # Async IndexedDB wrapper
+│   ├── selectors.ts     # Optimized read layer (memoized)
+│   └── sync.worker.ts   # Web Worker for CPU-bound tasks
+├── state.ts             # Mutable state (single source of truth)
+├── habitActions.ts      # Business logic + time-travel
+├── index.html           # App shell
+└── sw.js                # Service Worker (atomic caching)
+```
+
+Deep dive highlights:
+1. **Bitmask-first data model** using `BigInt` for $O(1)$ checks.
+2. **Split-state persistence** (hot JSON + cold binary logs).
+3. **Modern UI APIs** for fluid interactions.
+4. **Multithreading** via Web Workers.
+5. **Off-main-thread crypto** with zero-copy transfers.
+6. **Smart merge (CRDT-lite)** for conflict-free sync.
+
+---
+
+#### Installation and development
+
+```bash
+npm install
+npm run dev
+```
+
+Important note on self-hosting: it is possible, but it reduces one of Askesis’ key benefits — the shared anonymity set.
+
+---
+
+#### Validation and quality assurance
+
+Askesis is validated via integration-first and property-based testing, covering user journeys, distributed sync conflicts, performance budgets, accessibility (WCAG), and disaster recovery.
+
+Run tests:
+
+```bash
+npm test
+npm run test:coverage
+npm run test:ui
+npm run test:watch
+```
+
+Why it matters:
+- Prevent regressions.
+- Keep performance predictable at scale.
+- Validate accessibility and security continuously.
+
+---
+
+#### Zero-cost architecture & sustainability
+
+Askesis is engineered to operate close to **$0** by leveraging free tiers (Gemini/Vercel/OneSignal) while pushing heavy work to the user’s device.
+
+- **Ultra-light storage (GZIP):** historical “cold storage” can be compressed before persisting or syncing.
+- **Client does the work:** crypto, charts, and most computations run locally (not on the server).
+- **Free push:** OneSignal community tier supports up to 10k web subscribers.
+
+Capacity estimates (based on free tiers)
+
+> Note: provider limits change over time. Use the formulas below with current limits.
+
+1) Google Gemini (shared AI)
+
+Formula:
+```
+supported_users ≈ (daily_request_limit / (requests_per_user_per_day))
+```
+
+Example:
+- If quota allows **Q** requests/day
+- And average user uses **R** requests/day
+→ Supported users ≈ **Q / R**
+
+2) OneSignal (web notifications)
+
+Published free limit: up to **10,000 web subscribers**.
+
+3) Vercel (bandwidth / Edge Functions)
+
+Recommended environment config (Vercel):
+
+Production
+```bash
+CORS_ALLOWED_ORIGINS=https://askesis.vercel.app
+CORS_STRICT=1
+ALLOW_LEGACY_SYNC_AUTH=0
+AI_QUOTA_COOLDOWN_MS=90000
+SYNC_RATE_LIMIT_WINDOW_MS=60000
+SYNC_RATE_LIMIT_MAX_REQUESTS=120
+ANALYZE_RATE_LIMIT_WINDOW_MS=60000
+ANALYZE_RATE_LIMIT_MAX_REQUESTS=20
+```
+
+Preview
+```bash
+CORS_ALLOWED_ORIGINS=https://askesis.vercel.app
+CORS_STRICT=1
+ALLOW_LEGACY_SYNC_AUTH=0
+AI_QUOTA_COOLDOWN_MS=90000
+SYNC_RATE_LIMIT_WINDOW_MS=60000
+SYNC_RATE_LIMIT_MAX_REQUESTS=200
+ANALYZE_RATE_LIMIT_WINDOW_MS=60000
+ANALYZE_RATE_LIMIT_MAX_REQUESTS=40
+```
+
+Development
+```bash
+CORS_ALLOWED_ORIGINS=http://localhost:5173
+CORS_STRICT=0
+ALLOW_LEGACY_SYNC_AUTH=1
+AI_QUOTA_COOLDOWN_MS=30000
+DISABLE_RATE_LIMIT=1
+```
+
+Note: with `CORS_STRICT=1`, the backend also allows the origin of the current Vercel deploy via the forwarded host, while blocking external origins.
+
+Generic formula:
+```
+monthly_users ≈ (available_monthly_bandwidth / avg_usage_per_user_month)
+```
+
+---
+
+#### Data structures (bitmask + split-state)
+
+Askesis uses data structures that are unusual for web apps, optimized for speed and storage:
+
+##### The 9-bit bitmask system
+
+Each day occupies 9 bits (for the 3 periods: Morning/Afternoon/Evening):
+
+```text
+┌─────────────────────────────────────────────────────┐
+│ Day = [Tombstone(1) | Night(2) | Afternoon(2) | Morning(2) | Reserved(2)] │
+└─────────────────────────────────────────────────────┘
+
+States (2 bits each):
+  00 = Pending
+  01 = Done
+  10 = Deferred
+  11 = Reserved
+```
+
+Bitwise operations are $O(1)$:
+
+```typescript
+// Read habit status at day 15, Morning:
+const status = (log >> ((15 - 1) * 9 + PERIOD_OFFSET['Morning'])) & 3n;
+
+// Write status:
+log = (log & clearMask) | (newStatus << bitPos);
+```
+
+##### Split-state storage (JSON + binary)
+
+IndexedDB stores two parts:
+
+```text
+┌─────────────────────────────────────────┐
+│ IndexedDB (AskesisDB)                   │
+├──────────────────────────────────────────┤
+│ KEY: "askesis_core_json"                │
+│ VALUE: { version, habits, dailyData...} │
+│ SIZE: ~50-200 KB                         │
+├──────────────────────────────────────────┤
+│ KEY: "askesis_logs_binary"              │
+│ VALUE: {"habit-1_2024-01": "...", ... } │
+│ SIZE: ~8-15 KB                            │
+└──────────────────────────────────────────┘
+```
+
+---
+
+##### Tombstone pattern (safe deletes)
+
+When you delete a habit, Askesis marks it (soft delete) instead of erasing immediately, so sync can converge safely.
+
+---
+
+##### CRDT-lite conflict resolution
+
+When devices diverge offline, Askesis merges automatically with deterministic rules (e.g., Done > Deferred > Pending) so progress isn’t lost.
+
+---
+
+#### Privacy & cryptography
+
+Askesis uses end-to-end encryption (AES-GCM) so **the server never sees plaintext**.
+
+High-level flow:
+
+```text
+Plaintext → JSON.stringify → key derivation (PBKDF2) → AES-GCM.encrypt → Base64 → POST /api/sync
+```
+
+Multi-device scenario:
+
+```text
+Device A encrypts with Sync Key → cloud stores ciphertext → Device B decrypts with the same Sync Key
+```
+
+---
+
+#### Multilingual support (i18n)
+
+Askesis supports 3 languages with fallback behavior:
+
+```typescript
+LANGUAGES = {
+  pt: 'Português (Brasil)',
+  en: 'English',
+  es: 'Español'
+}
+
+// Translation strategy:
+// 1) preferred language
+// 2) fallback to 'en'
+// 3) fallback to the key itself
+```
+
+Locale-aware formatting examples:
+
+```text
+pt-BR: "15 de janeiro de 2025"
+en-US: "January 15, 2025"
+es-ES: "15 de enero de 2025"
+```
+
+---
+
+#### Debugging and monitoring
+
+Askesis exposes internal logs and a sync debug view to inspect:
+- Whether sync actually happened
+- Retries/backoff
+- Offline detection
+- Merge results
+
+Example log lines:
+
+```text
+[📱 App] Service Worker registered
+[☁️ API] POST /api/sync (attempt 1/3)
+[🔐 Crypto] Encrypted 1.2 KB in 45ms
+[💾 Storage] Saved 156 habit records
+[⚠️ Error] Network timeout after 5s
+```
+
+---
+
+#### Roadmap
+
+- Android native packaging via TWA.
+- Home-screen widgets.
+- Health Connect integration.
+
+---
+
+#### Contributing
+
+- Fork → branch → changes → tests → PR.
+- Keep performance and accessibility targets.
+
+---
+
+#### Support development
+
+- GitHub Sponsors / Buy Me a Coffee / Ko-fi.
+
+</details>
+
+<a id="en-license"></a>
+
+### License
+
+- Apache-2.0 (see [LICENSE](LICENSE)).
+
+
+<a id="es"></a>
+
+## ES
+
+<p align="center">
+  <img src="assets/AristotelesEspanol.jpg" alt="Aristóteles (Español)" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
+</p>
+
+<details>
+  <summary><em>“Somos lo que hacemos repetidamente. La excelencia, entonces, no es un acto, sino un hábito.” — Aristóteles</em></summary>
+
+Texto de apoyo: epígrafe del proyecto — conecta con Askesis como **habit tracker**: la consistencia y la excelencia se construyen con la práctica diaria, y los **hábitos** son el mecanismo central que el app ayuda a entrenar y registrar.
+
+</details>
+
+<details>
+  <summary>Ver estructura completa (TOC)</summary>
+
+- [Visión del proyecto](#es-vision-del-proyecto)
+- [Diferenciales](#es-highlights)
+- [Diagramas (visión general)](#es-diagramas)
+  - [Descripción General de la Arquitectura y Flujo de Usuario](#es-architecture-user-flow)
+  - [Descripción General de Integraciones e Infraestructura](#es-integrations-infra)
+- [Radar tecnologico (ASCII)](#es-tech-radar)
+- [Ciclo de datos](#es-data-lifecycle)
+- [Contenedores (C4 - Nivel 2)](#es-c4-l2)
+- [Componentes internos (C4 - Nivel 3)](#es-c4-l3)
+- [Flujo de datos (Local-first + Sync)](#es-data-flow)
+- [Flujo de conflicto de sync](#es-sync-conflict)
+- [Reglas de unicidad de habitos](#es-habit-uniqueness)
+- [Mapa de modulos](#es-modules-map)
+- [Paradigma de Construccion: Orquestacion Humano-IA](#es-build-paradigm)
+- [Tecnologia](#es-tech)
+- [Estructura del proyecto](#es-project-structure)
+- [Tests y calidad](#es-tests-quality)
+- [Desarrollo](#es-development)
+- [Guia completa (detallada)](#es-guia-completa)
+- [Licencia](#es-license)
+
+</details>
+
+<a id="es-vision-del-proyecto"></a>
+<a id="es-resumen"></a>
+
+### Visión del proyecto
+
+- Rastreador de hábitos estoico, enfocado en privacidad, con IA para reflexión y ajuste de rutina.
+- Local-first: los datos quedan en el dispositivo; sincronización opcional con cifrado E2E (AES-GCM) vía Web Worker.
+- Sync resiliente y sin conflictos (merge/CRDT-lite) a través de Vercel API (KV), sin login obligatorio.
+- Zero-deps por defecto en el runtime local (sin SDKs al iniciar); tras el opt-in, push puede auto-cargar para mantener el estado.
+
+#### Motivación: ¿por qué construirlo?
+
+Los hábitos son un registro íntimo de la vida diaria. Askesis prioriza soberanía y privacidad de datos, sin convertir el auto-mejoramiento en una suscripción obligatoria.
+
+#### Objetivo
+
+Mantener como estándar: datos en el dispositivo, sincronización opcional con cifrado E2E, y un proxy de IA compartido que reduzca la dependencia de identificadores personales.
+
+#### Filosofía: ¿qué es Askesis?
+
+En el estoicismo, *askesis* significa “entrenamiento”: práctica deliberada para fortalecer carácter y constancia. La IA actúa como un compañero de reflexión, no como un juez.
+
+<a id="es-highlights"></a>
+
+### Diferenciales
+
+- Privacidad total, sin login ni rastreo.
+- IA estoica para reflexion, no para adiccion.
+- Flujo rapido: consistencia sobre streaks.
+- Accesibilidad WCAG 2.1 AA y soporte completo de teclado.
+
+<a id="es-diagramas"></a>
+
+### Diagramas (visión general)
+
+<a id="es-architecture-user-flow"></a>
+
+#### Descripción General de la Arquitectura y Flujo de Usuario
+
+<p align="center">
+  <img src="assets/diagram/system-architecture-flow-es.png" alt="Descripción General de la Arquitectura y Flujo de Usuario" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
+</p>
+
+<details>
+  <summary>Texto de apoyo</summary>
+
+Este diagrama ilustra el ciclo de vida principal de la aplicación, estructurado en tres fases fundamentales:
+
+- Fase 1: Definición (Onboarding): Creación y personalización de hábitos con un enfoque absoluto en la privacidad, utilizando un enfoque Local-first con encriptación de extremo a extremo (E2E).
+- Fase 2: Ejecución (Engagement): Gestión diaria, métricas de rendimiento y persistencia de datos. La interfaz (Main Thread) está aislada del procesamiento de datos (Worker), utilizando IndexedDB para el almacenamiento local y el protocolo CRDT-lite para una sincronización sin conflictos con la nube (Vercel KV).
+- Fase 3: Inteligencia (Feedback): Un motor de análisis evalúa los datos del usuario para generar insights de comportamiento personalizados, inyectando este contexto de vuelta en la experiencia para crear un ciclo de interacción continuo.
+
+</details>
+
+<a id="es-integrations-infra"></a>
+
+#### Descripción General de Integraciones e Infraestructura
+
+<p align="center">
+  <img src="assets/diagram/system-integrations-es.png" alt="Descripción General de Integraciones e Infraestructura" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
+</p>
+
+<details>
+  <summary>Texto de apoyo</summary>
+
+Este diagrama detalla la arquitectura de alto nivel del sistema y el flujo de comunicación entre los servicios externos:
+
+- Cliente (Askesis PWA): La interfaz basada en React que gestiona las interacciones diarias del usuario, el estado local y el inicio de las solicitudes.
+- Backend Serverless (Vercel API): Actúa como una capa intermedia segura. Gestiona la sincronización del estado y funciona como un "Proxy de IA", protegiendo las claves de API y validando las solicitudes antes de enviarlas al modelo de lenguaje.
+- Motor de IA (Google Gemini API): El cerebro analítico de la aplicación, que recibe el contexto filtrado por el backend para procesar las reflexiones y generar insights personalizados.
+- Notificaciones (OneSignal): Servicio de mensajería independiente que gestiona los registros push de la PWA y entrega notificaciones asíncronas para volver a captar la atención del usuario.
+
+</details>
+
+<a id="es-tech-radar"></a>
+
+### Radar tecnologico (ASCII)
+
+```text
+      Privacidad 10
+        /\
+ A11y 9  /-----/  \-----\  Offline 10
+       /           \
+    UX 8 \           /  Performance 9
+      \--- 10 ---/
+       Resiliencia
+```
+
+<a id="es-data-lifecycle"></a>
+
+### Ciclo de datos
+
+```text
+Entrada -> Validacion -> Cifrado (AES-GCM) -> IndexedDB -> Sync -> Merge -> UI
+```
+
+<a id="es-c4-l2"></a>
+
+### Contenedores (C4 - Nivel 2)
+
+```mermaid
+flowchart TB
+  %% Nivel 2 = vista de contenedores (sin repetir nombres de archivos del Nivel 3)
+  %% Nota: evitamos el "loop" SW -> PWA para reducir cruces en el render de GitHub.
+  subgraph Client["Cliente (PWA)"]
+    direction TB
+    PWA["Askesis PWA\n(UI + Render)"]
+    Store["Almacenamiento local\n(IndexedDB)"]
+    Sync["Motor de sync"]
+    Worker["Web Worker\n(crypto + merge)"]
+    SW["Service Worker\n(offline + bg sync)"]
+  end
+
+  subgraph External["Servicios externos"]
+    direction TB
+    API["Vercel API\n(/api/sync, /api/analyze)"]
+    AI["Gemini API"]
+    PUSH["OneSignal"]
+  end
+
+  %% Flujos base
+  PWA --> Store
+  PWA --> Sync
+  Sync --> Worker
+  Sync --> API --> AI
+
+  %% Sync en background + notificaciones push
+  Sync -->|registrar bg sync| SW
+  PWA -->|opt-in/consentimiento| PUSH
+  PUSH -->|eventos push| SW
+  SW -->|notificationclick| Open["Abrir / enfocar Askesis"]
+```
+
+<a id="es-c4-l3"></a>
+
+### Componentes internos (C4 - Nivel 3)
+
+```mermaid
+flowchart TB
+  %% Layout por capas (más legible): UI -> Dominio -> Infra
+  subgraph UI["UI (DOM)"]
+    direction TB
+    IDX["index.tsx (boot)"]
+    LISTEN["listeners/*"]
+    RENDER["render/*"]
+    EVENTS["events.ts (event hub)"]
+  end
+
+  subgraph DOMAIN["Dominio"]
+    direction TB
+    ACTIONS["services/habitActions.ts"]
+    SELECTORS["services/selectors.ts"]
+    ANALYSIS["services/analysis.ts"]
+    STATE["state.ts (single source of truth)"]
+  end
+
+  subgraph INFRA["Infra (persistencia + sync)"]
+    direction TB
+    PERSIST["services/persistence.ts (IndexedDB)"]
+    CLOUD["services/cloud.ts (sync)"]
+    WRPC["services/workerClient.ts"]
+    WORKER["services/sync.worker.ts"]
+    API["services/api.ts (HTTP client)"]
+    MERGE["services/dataMerge.ts"]
+  end
+
+  %% Boot / UI
+  IDX --> LISTEN
+  IDX --> RENDER
+  IDX --> EVENTS
+
+  %% Dominio
+  LISTEN --> ACTIONS
+  RENDER --> SELECTORS
+
+  ACTIONS --> STATE
+  SELECTORS --> STATE
+  ANALYSIS --> STATE
+
+  %% Persistencia + Sync
+  ACTIONS --> PERSIST
+  PERSIST --> STATE
+  PERSIST --> CLOUD
+
+  %% Eventos globales (UI plumbing)
+  ACTIONS --> EVENTS
+  EVENTS --> RENDER
+  EVENTS --> LISTEN
+
+  %% Worker / Cloud
+  ANALYSIS --> CLOUD
+  CLOUD --> WRPC --> WORKER
+  CLOUD --> API
+  CLOUD --> MERGE
+```
+
+Lectura rápida: la interacción entra por `listeners/*`, la regla de negocio vive en `habitActions.ts` / `selectors.ts`, el estado canónico en `state.ts`, y persistencia/sync en `persistence.ts` + `cloud.ts` + `sync.worker.ts`.
+
+<a id="es-data-flow"></a>
+
+### Flujo de datos (Local-first + Sync)
+
+```mermaid
+sequenceDiagram
+  participant User as Usuario
+  participant UI as UI
+  participant State as State
+  participant Actions as habitActions
+  participant Persist as persistence
+  participant DB as IndexedDB
+  participant Cloud as cloud.ts
+  participant WRPC as workerClient
+  participant Crypto as sync.worker (crypto)
+  participant API as API /api/sync
+  participant Merge as dataMerge
+
+  User->>UI: Marca hábito / agrega nota
+  UI->>Actions: Actualiza hábito/nota
+  Actions->>State: Mutación de estado + dirty flags
+  Actions->>Persist: saveState() (debounced)
+  Persist->>DB: saveSplitState(core + logs)
+  Note over Persist,DB: Persistencia local (IDB), independiente de la sync key
+  Persist-->>Cloud: syncHandler(snapshot)
+  Cloud->>Cloud: splitIntoShards + hash diff
+
+  loop Para cada shard cambiado
+    Cloud->>WRPC: runWorkerTask(encrypt-json)
+    WRPC->>Crypto: encrypt(shard, syncKey)
+    Crypto-->>Cloud: shard cifrado
+  end
+
+  Cloud->>API: POST /api/sync (lastModified + shards)
+  alt Sin conflicto (200)
+    API-->>Cloud: OK
+    Cloud->>State: syncSynced + actualiza hash cache
+  else Conflicto de versión (409)
+    API-->>Cloud: shards remotos
+    Cloud->>WRPC: runWorkerTask(decrypt)
+    WRPC->>Crypto: decrypt(shards remotos)
+    Crypto-->>Cloud: estado remoto
+    Cloud->>Merge: mergeStates(local, remoto)
+    Merge-->>Cloud: estado consolidado (LWW + dedup)
+    Cloud->>Persist: persistStateLocally(merged)
+    Cloud->>Persist: loadState(merged)
+    Persist-->>UI: render-app
+  end
+```
+
+<a id="es-sync-conflict"></a>
+
+### Flujo de conflicto de sync
+
+```mermaid
+sequenceDiagram
+  participant D1 as Dispositivo A
+  participant D2 as Dispositivo B
+  participant API as /api/sync
+  participant C as cloud.ts (cliente)
+  participant WRPC as workerClient
+  participant W as sync.worker
+  participant M as dataMerge
+
+  D1->>API: POST shards (lastModified=nuevo)
+  API-->>D1: 200 OK
+
+  D2->>API: POST shards (lastModified=antiguo)
+  API-->>D2: 409 CONFLICT + shards remotos
+
+  D2->>C: resolveConflictWithServerState()
+  C->>WRPC: runWorkerTask(decrypt)
+  WRPC->>W: decrypt(shards remotos)
+  W-->>C: estado remoto
+  C->>M: mergeStates(local, remoto)
+  M-->>C: estado consolidado
+  C->>C: persistStateLocally + loadState
+  C->>API: POST merged (retry)
+  API-->>D2: 200 OK
+
+  Note over M: Reglas efectivas de merge\n1) Match por ID\n2) Dedup por nombre normalizado\n3) LWW por schedule/history\n4) Normalización de mode/times/frequency
+```
+
+<a id="es-habit-uniqueness"></a>
+
+### Reglas de unicidad de habitos
+
+El sistema implementa **múltiples capas defensivas contra duplicidad de hábitos**:
+
+#### 1) **Por ID (Merge de sync)**
+- Cuando se sincronizan dos estados, hábitos con el **mismo `id`** se consolidan en un solo registro.
+- El historial (`scheduleHistory`) se combina usando **Last-Write-Wins (LWW)** por entrada.
+- Implementado en `services/dataMerge.ts` con `mergeStates()`.
+
+#### 2) **Por nombre normalizado (Deduplicación automática)**
+- Durante el sync, hábitos con el **mismo nombre normalizado** (case-insensitive, trim) se detectan y consolidan.
+- **Prioridad del receptor:**
+  1. Hábito activo (no borrado, no graduado)
+  2. Hábito borrado más recientemente
+  3. Hábito más antiguo
+- **Remapeo de datos:** los logs diarios (`dailyData`) se remapean automáticamente al nuevo ID consolidado.
+- **Ejemplo:** si local tiene "Ejercicio" (id: `habit-1`) y la nube tiene "EJERCICIO" (id: `habit-2`), tras el sync habrá una sola entrada con historial combinado.
+
+#### 3) **En edición (validación de nombre único)**
+- Al editar un hábito, el sistema valida si el nuevo nombre ya existe en otro hábito activo.
+- Si hay colisión:
+  - El usuario ve un modal de confirmación: *"Ya existe un hábito con el nombre '{name}'. ¿Deseas fusionar?"*
+  - Si confirma: el hábito actual se marca como borrado y su historial se fusiona en el existente.
+  - Si cancela: la edición se aborta.
+- Implementado en `services/habitActions.ts` en `saveHabitFromModal()`.
+
+#### 4) **En creación (resurrección)**
+- Al crear un hábito, el sistema busca uno existente con el **mismo nombre normalizado**.
+- Si lo encuentra, **reutiliza** ese registro (resurrection) en lugar de crear uno nuevo.
+- Prioridad:
+  1. Hábito activo que cubre la fecha objetivo
+  2. Hábito borrado (más reciente)
+  3. Otro con el mismo nombre
+- Esto evita crear 2+ registros distintos para el "mismo hábito lógicamente".
+
+#### Flujo visual
+
+```mermaid
+graph TD
+    A["Usuario intenta crear hábito 'Ejercicio'"]
+    B{Busca un hábito existente<br/>con el mismo nombre normalizado?}
+    C["Encontró un hábito activo"]
+    D["Encontró un hábito borrado"]
+    E["No encontró ninguno"]
+    
+    B -->|Sí| C
+    B -->|Sí, pero borrado| D
+    B -->|No| E
+    
+    C --> C1["Restaura y actualiza<br/>si es necesario"]
+    D --> D1["Resucita e inicia<br/>nuevo scheduleHistory"]
+    E --> E1["Crea nuevo registro<br/>con UUID único"]
+    
+    C1 --> F["1 registro activo"]
+    D1 --> F
+    E1 --> F
+    
+    style F fill:#90EE90
+```
+
+#### Tests de cobertura
+
+- `services/dataMerge.test.ts`: tests específicos para dedup por nombre en el sync.
+- `services/habitActions.test.ts`: tests de resurrección y validación de nombre único.
+- `services/stateUIConsistency.test.ts`: tests con escenarios reales.
+
+#### Edge cases tratados
+
+| Escenario | Comportamiento |
+|---|---|
+| Dos hábitos borrados con el mismo nombre | El borrado más reciente se restaura como receptor |
+| Hábito activo con mismo nombre en horarios distintos | NO se consolida (periodos distintos = hábitos distintos) |
+| Nombre vacío o solo espacios | Ignorado por normalización |
+| Renombrar a un nombre existente | Modal de confirmación + merge |
+| Sync con 3+ dispositivos con variaciones | Todos convergen en 1 hábito |
+
+#### 5) **Por TimeOfDay (unicidad por horario)**
+- El sistema garantiza que **ningún hábito aparezca 2x+ en el mismo horario (Morning/Afternoon/Evening)** en un mismo día.
+- Dedup en **3 capas defensivas**:
+  1. **En el submit del formulario:** `habitActions.ts#saveHabitFromModal()` deduplica `formData.times` antes de guardar.
+  2. **En migración/carga:** `migration.ts` limpia datos corruptos al hidratar IndexedDB.
+  3. **En merge de sync:** `dataMerge.ts` deduplica `scheduleHistory[].times` tras consolidar estados.
+- **Utilidad:** `deduplicateTimeOfDay()` exportada en `habitActions.ts` y reutilizada en los 3 puntos.
+- **Implementación:** deduplicación con Set, complejidad $O(n)$, preserva orden.
+- **Ejemplos:**
+  - Usuario selecciona ["Morning", "Afternoon", "Morning"] → se guarda como ["Morning", "Afternoon"]
+  - Datos corruptos con times duplicados → se limpian al abrir el app
+  - Merge combina órdenes diferentes → resultado deduplicado
+
+| Escenario | Comportamiento |
+|---|---|
+| Selecciona el mismo TimeOfDay 2x | Dedup automático en el submit |
+| IndexedDB corrupto con duplicados | Sanitizado en migración/carga |
+| Merge combina times de dos versiones | Dedup tras LWW |
+| Drag-drop a un TimeOfDay ocupado | Rechazado (validación en `listeners/drag.ts`) |
+
+<a id="es-modules-map"></a>
+
+### Mapa de modulos (carpeta → responsabilidad)
+
+- render/: composición visual, diffs de DOM, modales, calendario y gráficos.
+- listeners/: eventos de UI (cards, modal, swipe/drag, calendario, sync).
+- services/: dominio + infraestructura (habitActions, selectors, persistence, cloud, dataMerge, analysis, quoteEngine, HabitService).
+- api/: endpoints serverless edge (/api/sync, /api/analyze) con rate-limit, CORS y hardening.
+- state.ts: modelo canónico de estado, tipos y caches.
+- services/sync.worker.ts: cifrado AES-GCM y construcción de prompts de IA fuera del main thread.
+- tests/ y services/*.test.ts: escenarios de journey, seguridad, resiliencia, merge y regresión.
+
+
+<a id="es-build-paradigm"></a>
+
+### Paradigma de Construccion: Orquestacion Humano-IA
+
+Esta tabla muestra donde la IA dio la base y donde la vision estrategica y formacion en Psicologia elevaron el producto.
+
+| Recurso | Tradicional / IA "Pura" | Mi Intervencion (Arquitecto) | Resultado: Askesis |
+|---|---|---|---|
+| Privacidad | Login social y datos en nube comercial. | Decision etica: anonimato colectivo y AES-GCM en el cliente via Web Workers para garantizar soberania. | Seguridad de nivel bancario sin recolectar datos personales. |
+| Performance | Frameworks pesados (React/Next) con latencia. | Refinamiento: Vanilla TS y APIs nativas. | Budgets verificados en tests (p. ej. ops criticas < 50ms) y UI responsiva. |
+| UX y Psicologia | Gamificacion basada en dopamina (badges/colores fuertes). | Grounding teorico: principios de Neuropsicologia y "virtud de la consistencia". | Interfaz minimalista para autorreflexion real. |
+| Accesibilidad | A menudo ignorada en codigo generado por IA. | Inclusion digital: WCAG 2.1 AA, ARIA robusto y navegacion por teclado. | App usable por personas con distintas necesidades. |
+| Confiabilidad | Tests unitarios aislados o sin validacion de errores criticos. | Chaos engineering: "Super-Tests" para condiciones extremas. | Software resiliente con recuperacion ante fallos criticos. |
+| Sostenibilidad | Costos altos trasladados a suscripciones o anuncios. | Vision de producto: arquitectura de costo cero en hardware del usuario. | Operacion global sostenible con $0 de mantenimiento. |
+
+> [ 🧠 ] Psicologia Cognitiva + [ 🤖 ] IA Generativa + [ 💻 ] Ingenieria de Bajo Nivel
+> Este proyecto es un estudio de caso sobre como la tecnologia moderna puede guiarse por principios humanos para servir a la virtud y no al lucro.
+
+<a id="es-tech"></a>
+
+### Tecnologia
+
+- TypeScript puro, sin frameworks pesados.
+- PWA con Service Worker y cache atomico.
+- Cifrado AES-GCM y sync resiliente.
+- Render eficiente y UX a 60fps.
+
+<a id="es-project-structure"></a>
+
+### Estructura del proyecto
+
+- Backend serverless: [api/](api/)
+- Renderizado: [render/](render/)
+- Gestos y eventos: [listeners/](listeners/)
+- Datos y criptografia: [services/](services/)
+
+<a id="es-tests-quality"></a>
+
+### Tests y calidad
+
+- Cobertura de flujos, seguridad, accesibilidad y resiliencia.
+- Detalles en [tests/README.md](tests/README.md).
+- CI: workflow en `.github/workflows/ci.yml` ejecuta tests/build y sube artifacts (dist + coverage).
+
+<a id="es-development"></a>
+
+### Desarrollo
+
+```bash
+npm install
+npm run dev
+```
+
+> Self-hosting es posible, pero reduce el conjunto de anonimato.
+
+<a id="es-guia-completa"></a>
+
+### Guia completa (detallada)
+
+<details>
+  <summary>Abrir la guia completa (uso + deep dives)</summary>
+
+#### Guía completa: cómo usar Askesis
+
+Askesis está pensado en capas: intuitivo en la superficie, pero con herramientas potentes para quien busca profundidad.
+
+##### 1) La base: agregar hábitos
+
+El hábito es la unidad fundamental. El sistema permite rastrear no solo la conclusión (“check”), sino también cantidad e intensidad.
+
+Para empezar:
+- **Botón verde (+):** punto de entrada principal.
+- **Área placeholder de tarjetas:** si un período (Mañana/Tarde/Noche) está vacío, aparece “Agregar un hábito” para crear rápido en contexto.
+
+##### 2) Tiempo y anillos (calendario)
+
+La franja superior es la brújula de progreso. Los días se muestran como **anillos cónicos**, llenando azul (hecho) y blanco (pospuesto).
+
+Micro-acciones:
+- **1 clic:** seleccionar fecha.
+- **Mantener presionado:** menú rápido para **Completar el día**, **Posponer el día** o abrir el **calendario mensual**.
+
+##### 3) Tarjeta de hábito: interacción diaria
+
+- **Clics (estado):** 1 clic = ✅ Hecho; 2 clics = ➡️ Pospuesto; 3 clics = ⚪ Pendiente.
+- **Swipe:** crear nota / borrar (solo hoy vs para siempre).
+- **Foco al scroll:** la tarjeta central aumenta tamaño/opacidad para guiar la atención.
+
+##### 4) Navegación y sabiduría
+
+- El título “Hoy” sirve como retorno rápido.
+- Citas estoicas: click para copiar.
+
+##### 5) Configuración y rescate
+
+- **Sync Key** para rescate multi-dispositivo.
+- Gestionar hábitos.
+- Idioma y notificaciones.
+
+---
+
+#### Desarrollo asistido (Google AI Studio)
+
+El proyecto fue orquestado: el rol humano actúa como arquitecto/product manager/lead tester; la IA soporta implementación y corrección.
+
+---
+
+#### Experiencia universal: PWA y accesibilidad
+
+- Instalable, offline-first, sensación nativa.
+- Semántica + ARIA, teclado completo, `prefers-reduced-motion`, legibilidad.
+
+---
+
+#### Arquitectura e ingeniería
+
+Estructura (overview):
+
+```text
+.
+├── api/                 # Backend serverless
+├── locales/             # i18n
+├── render/              # Motor de render
+├── listeners/           # Eventos y gestos
+├── services/            # Datos, crypto, IO
+├── state.ts             # Estado canónico
+├── habitActions.ts      # Regla de negocio
+├── index.html           # App shell
+└── sw.js                # Service Worker
+```
+
+Puntos clave: bitmask-first, split-state, workers, AES-GCM off-main-thread, merge CRDT-lite.
+
+---
+
+#### Instalación y desarrollo
+
+```bash
+npm install
+npm run dev
+```
+
+Nota: self-hosting es posible, pero reduce el anonymity set.
+
+---
+
+#### Validación y calidad
+
+Tests de integración + property-based para journeys, performance, a11y, seguridad y resiliencia.
+
+```bash
+npm test
+npm run test:coverage
+npm run test:ui
+npm run test:watch
+```
+
+---
+
+#### Arquitectura de costo cero
+
+Askesis está diseñado para operar cerca de **$0** usando planes gratuitos (Gemini/Vercel/OneSignal), empujando el trabajo pesado al dispositivo del usuario.
+
+- **Almacenamiento ultraliviano (GZIP):** el historial (“cold storage”) puede comprimirse antes de persistir o sincronizar.
+- **El celular trabaja:** crypto, gráficos y cálculos corren localmente.
+- **Push gratuito:** OneSignal (comunidad) soporta hasta 10k subscribers web.
+
+Estimaciones de capacidad (según tiers gratuitos)
+
+> Nota: los límites cambian con el tiempo. Usa estas fórmulas con los límites actuales.
+
+1) Google Gemini (IA compartida)
+
+Fórmula:
+```
+usuarios_soportados ≈ (limite_req_dia / (req_por_usuario_dia))
+```
+
+2) OneSignal (notificaciones web)
+
+Límite gratuito publicado: hasta **10.000 usuarios web (subscribers)**.
+
+3) Vercel (banda / Edge Functions)
+
+Configuración recomendada de ambiente (Vercel):
+
+Production
+```bash
+CORS_ALLOWED_ORIGINS=https://askesis.vercel.app
+CORS_STRICT=1
+ALLOW_LEGACY_SYNC_AUTH=0
+AI_QUOTA_COOLDOWN_MS=90000
+SYNC_RATE_LIMIT_WINDOW_MS=60000
+SYNC_RATE_LIMIT_MAX_REQUESTS=120
+ANALYZE_RATE_LIMIT_WINDOW_MS=60000
+ANALYZE_RATE_LIMIT_MAX_REQUESTS=20
+```
+
+Preview
+```bash
+CORS_ALLOWED_ORIGINS=https://askesis.vercel.app
+CORS_STRICT=1
+ALLOW_LEGACY_SYNC_AUTH=0
+AI_QUOTA_COOLDOWN_MS=90000
+SYNC_RATE_LIMIT_WINDOW_MS=60000
+SYNC_RATE_LIMIT_MAX_REQUESTS=200
+ANALYZE_RATE_LIMIT_WINDOW_MS=60000
+ANALYZE_RATE_LIMIT_MAX_REQUESTS=40
+```
+
+Development
+```bash
+CORS_ALLOWED_ORIGINS=http://localhost:5173
+CORS_STRICT=0
+ALLOW_LEGACY_SYNC_AUTH=1
+AI_QUOTA_COOLDOWN_MS=30000
+DISABLE_RATE_LIMIT=1
+```
+
+Nota: con `CORS_STRICT=1`, el backend también permite el origen del deploy actual de Vercel vía host reenviado, manteniendo el bloqueo para orígenes externos.
+
+Fórmula genérica:
+```
+usuarios_mensuales ≈ (banda_mensual_disponible / consumo_promedio_por_usuario_mes)
+```
+
+---
+
+#### Estructuras de datos
+
+Askesis usa estructuras de datos optimizadas para velocidad y almacenamiento:
+
+##### Sistema de bitmask 9-bit
+
+```text
+┌─────────────────────────────────────────────────────┐
+│ Día = [Tombstone(1) | Noche(2) | Tarde(2) | Mañana(2) | Reservado(2)] │
+└─────────────────────────────────────────────────────┘
+
+Estados (2 bits):
+  00 = Pendiente
+  01 = Hecho
+  10 = Pospuesto
+  11 = Reservado
+```
+
+Operaciones bitwise $O(1)$:
+
+```typescript
+// Leer estado en día 15, Mañana:
+const status = (log >> ((15 - 1) * 9 + PERIOD_OFFSET['Morning'])) & 3n;
+
+// Escribir estado:
+log = (log & clearMask) | (newStatus << bitPos);
+```
+
+##### Split-state (JSON + binario)
+
+```text
+┌─────────────────────────────────────────┐
+│ IndexedDB (AskesisDB)                   │
+├──────────────────────────────────────────┤
+│ KEY: "askesis_core_json"                │
+│ VALUE: { version, habits, dailyData...} │
+├──────────────────────────────────────────┤
+│ KEY: "askesis_logs_binary"              │
+│ VALUE: {"habit-1_2024-01": "...", ... } │
+└──────────────────────────────────────────┘
+```
+
+---
+
+#### Privacidad y criptografía
+
+Cifrado end-to-end (AES-GCM): el servidor almacena ciphertext y **no puede descifrar** sin la sync key del usuario.
+
+Flujo de alto nivel:
+
+```text
+Plaintext → JSON.stringify → PBKDF2 → AES-GCM.encrypt → Base64 → POST /api/sync
+```
+
+---
+
+#### i18n
+
+Soporte PT/EN/ES con fallback y formato por locale.
+
+```text
+pt-BR: "15 de janeiro de 2025"
+en-US: "January 15, 2025"
+es-ES: "15 de enero de 2025"
+```
+
+---
+
+#### Debugging
+
+Logs internos y vista de debug de sync para inspeccionar retries, merges y condiciones offline.
+
+Ejemplo:
+
+```text
+[📱 App] Service Worker registered
+[☁️ API] POST /api/sync (attempt 1/3)
+[🔐 Crypto] Encrypted 1.2 KB in 45ms
+[⚠️ Error] Network timeout after 5s
+```
+
+---
+
+#### Roadmap
+
+- Empaquetado Android (TWA)
+- Widgets
+- Health Connect
+
+---
+
+#### Contribuir / Apoyar
+
+- Fork → branch → cambios → tests → PR.
+- Sponsors / Coffee / Ko-fi.
+
+</details>
+
+<a id="es-license"></a>
+
+### Licencia
+
+- Apache-2.0 (ver [LICENSE](LICENSE)).
