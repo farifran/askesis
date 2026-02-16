@@ -192,40 +192,76 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-  %% Nível 3 = visão de componentes (módulos internos)
-  %% Layout similar ao Nível 2: fluxo L→R com subgrupos
+  %% Layout horizontal: fluxo da esquerda para direita, minimizando cruzamentos
 
-  subgraph Presentation["🎨 Apresentação"]
+  subgraph PRESENTATION["🎨 Camada de Apresentação"]
     direction TB
-    UI["Interface do Usuário"]
-    Events["Gerenciamento de Eventos"]
+    IDX["index.tsx<br/>(bootstrap)"]
+    LISTEN["listeners/*<br/>(eventos DOM)"]
+    RENDER["render/*<br/>(DOM updates)"]
   end
 
-  subgraph Domain["🧠 Domínio"]
+  subgraph DOMAIN["🧠 Camada de Domínio"]
     direction TB
-    Logic["Lógica de Negócios"]
-    State[("Estado Central")]
+    ACTIONS["habitActions.ts<br/>(mutações)"]
+    SELECTORS["selectors.ts<br/>(queries)"]
+    ANALYSIS["analysis.ts<br/>(IA insights)"]
+    STATE[("state.ts<br/>(SSOT)")]
   end
 
-  subgraph Infra["⚙️ Infraestrutura"]
+  subgraph INFRA["⚙️ Camada de Infraestrutura"]
     direction TB
-    Persistence["Persistência Local"]
-    Sync["Sincronização"]
+    PERSIST["persistence.ts<br/>(IndexedDB)"]
+    EVENTS["events.ts<br/>(pub/sub bus)"]
+    CLOUD["cloud.ts<br/>(sync orchestrator)"]
+    WRPC["workerClient.ts<br/>(RPC)"]
+    WORKER["sync.worker.ts<br/>(crypto)"]
+    API["api.ts<br/>(HTTP)"]
+    MERGE["dataMerge.ts<br/>(CRDT-lite)"]
   end
 
-  %% Fluxos
-  UI --> Logic
-  Events --> Logic
-  Logic --> State
-  State --> Persistence
-  State --> Sync
+  %% === Bootstrap (inicialização) ===
+  IDX --> LISTEN
+  IDX --> RENDER
+
+  %% === UI → Domínio ===
+  LISTEN --> ACTIONS
+  LISTEN --> ANALYSIS
+  RENDER --> SELECTORS
+
+  %% === Domínio → Estado ===
+  ACTIONS --> STATE
+  SELECTORS --> STATE
+  ANALYSIS --> STATE
+
+  %% === Persistência Local ===
+  ACTIONS --> PERSIST
+  PERSIST --> STATE
+
+  %% === Event Bus (comunicação assíncrona) ===
+  ACTIONS --> EVENTS
+  EVENTS --> RENDER
+  EVENTS --> LISTEN
+
+  %% === Pipeline de Sync ===
+  ANALYSIS --> CLOUD
+  CLOUD --> WRPC
+  CLOUD --> API
+  CLOUD --> MERGE
+  WRPC --> WORKER
+
+  %% === Callback de Persistência ===
+  PERSIST -.->|callback| CLOUD
 ```
 
 **Leitura do diagrama:**
-- **Apresentação:** Interface e interações do usuário.
-- **Domínio:** Regras de negócio e gerenciamento de estado.
-- **Infraestrutura:** Armazenamento e comunicação externa.
-- Fluxo: Da UI para lógica, estado e infraestrutura.
+- **Fluxo principal:** Apresentação → Domínio → Infraestrutura (esquerda para direita)
+- **Inicialização:** `index.tsx` configura listeners e render
+- **Interação do usuário:** `listeners/*` → `habitActions.ts` (mutações) + `analysis.ts` (insights IA)
+- **Estado central:** Tudo converge para `state.ts` (Single Source of Truth)
+- **Persistência:** `habitActions.ts` → `persistence.ts` → IndexedDB + callback para sync
+- **Comunicação assíncrona:** `events.ts` como barramento pub/sub entre componentes
+- **Sync pipeline:** `analysis.ts` → `cloud.ts` → worker/crypto → API → merge
 <a id="pt-data-flow"></a>
 
 ### Fluxo de Dados (Local-first + Sync)
