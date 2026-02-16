@@ -62,15 +62,15 @@ Texto de apoio: epígrafe do projeto — conecta direto com o propósito do Aske
 
 #### A Motivação: Por que construir?
 
-A criação do Askesis foi motivada por conta da necessidade por privacidade e e a nova possibilidade de gerar e criar codigo por medio de IA Gen:
+Ncessidade por privacidade e e a possibilidade de gerar e criar codigo por medio de IA Gen:
 
-1.  **Soberania e Privacidade de Dados:** O registro de hábitos é, por natureza, um diário pessoal. Eu precisava de uma garantia absoluta de que essas informações não seriam compartilhadas, vendidas ou analisadas por terceiros. 
+1. **Soberania e Privacidade de Dados:** Garantia absoluta de que as informações não seriam compartilhadas, vendidas ou analisadas por terceiros. 
 
-2.  **Tecnológia Disponivel:** Em uma era dominada por modelos de assinatura (SaaS), recusei-me a pagar por um software que poderia ser construído com ajuda da IA Gen, sendo posible obter uma ferramenta profissional, segura, robusta e gratuita para o auto-aperfeiçoamento.
+2. **Tecnológia Disponivel:** Em uma era dominada por modelos de assinatura (SaaS), recusei-me pagar por um software que pode ser construído ainda melhor com ajuda da IA Gen.
 
 #### Meu objetivo: **Privacidade por desenho + criptografia + anonimato coletivo**
 
-No Askesis, a prioridade é o controle da informação: os dados pertencem exclusivamente ao usuário e residem no seu dispositivo (ou no seu cofre pessoal criptografado). Além disso, o Askesis adota uma prática conhecida como **anonimato coletivo** (*anonymity set*). Como o app não exige e-mail, telefone ou qualquer identificador pessoal, e utiliza uma **API de IA compartilhada** para todos, a identidade do usuário não apenas é criptografada — ela também é **diluída no conjunto de usuários**. Em outras palavras: as requisições são indistinguíveis entre si, reduzindo a chance de correlação individual.
+No Askesis a prioridade é o controle da informação, os dados pertencem exclusivamente ao usuário e residem no seu dispositivo (ou no seu cofre pessoal criptografado). Além disso, o Askesis adota uma prática conhecida como **anonimato coletivo** (*anonymity set*); como o app não exige e-mail, telefone ou qualquer identificador pessoal, e utiliza uma **API de IA compartilhada** para todos, a identidade do usuário  é **diluída no conjunto de usuários**. Em outras palavras: as requisições são indistinguíveis entre si, reduzindo a chance de correlação individual.
 
 #### A Filosofia: O que é Askesis?
 
@@ -155,37 +155,35 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-  %% Nível 2 = visão de containers (contêineres de alto nível, sem detalhes internos do Nível 3)
-  %% Ajustado para evitar cruzamentos: fluxo horizontal, contêiner único para o cliente
+  %% Nível 2 = visão de containers (contêineres de alto nível)
+  %% Layout otimizado: fluxo L→R com agrupamentos verticais para evitar cruzamentos
 
   subgraph Client["Cliente (PWA)"]
     PWA["Askesis PWA\n(Aplicação Web)"]
   end
 
-  subgraph Storage["Armazenamento Local"]
-    Store["IndexedDB"]
+  subgraph Local["Camada Local"]
+    direction TB
+    Store[("IndexedDB")]
+    Worker["Web Worker\n(Criptografia AES-GCM)"]
+    SW["Service Worker\n(Cache + Offline)"]
   end
 
-  subgraph Workers["Processos Auxiliares"]
-    Worker["Web Worker\n(Criptografia)"]
-    SW["Service Worker\n(Offline + Sync)"]
-  end
-
-  subgraph External["Serviços Externos"]
-    API["Vercel API\n(Sync + Análise)"]
-    AI["Gemini API\n(IA)"]
-    PUSH["OneSignal\n(Notificações)"]
+  subgraph Cloud["Serviços Externos"]
+    direction TB
+    API["Vercel API\n(Sync + Proxy IA)"]
+    AI["Gemini API\n(Análise)"]
+    PUSH["OneSignal\n(Push)"]
   end
 
   %% Fluxos principais (sem cruzamentos)
   PWA --> Store
   PWA --> Worker
-  PWA --> SW
-  Worker --> API
-  API --> AI
+  PWA --> API
   PWA --> PUSH
-  PUSH --> SW
-  SW --> PWA
+  API --> AI
+  PUSH -.->|push event| SW
+  SW -.->|notify| PWA
 ```
 
 <a id="pt-c4-l3"></a>
@@ -194,59 +192,66 @@ flowchart LR
 
 ```mermaid
 flowchart TB
-  %% Layout em camadas (mais fácil de ler): UI -> Domínio -> Infra
-  subgraph UI["UI (DOM)"]
-    direction TB
-    IDX["index.tsx (boot)"]
-    LISTEN["listeners/*"]
-    RENDER["render/*"]
-    EVENTS["events.ts (event hub)"]
+  %% Layout em camadas: UI → Domínio → Infra (fluxo vertical sem cruzamentos)
+
+  subgraph UI["Camada UI"]
+    direction LR
+    IDX["index.tsx\n(bootstrap)"]
+    LISTEN["listeners/*\n(eventos DOM)"]
+    RENDER["render/*\n(DOM updates)"]
+    EVENTS["events.ts\n(pub/sub)"]
   end
 
-  subgraph DOMAIN["Domínio"]
-    direction TB
-    ACTIONS["services/habitActions.ts"]
-    SELECTORS["services/selectors.ts"]
-    ANALYSIS["services/analysis.ts"]
-    STATE["state.ts (single source of truth)"]
+  subgraph DOMAIN["Camada de Domínio"]
+    direction LR
+    ACTIONS["habitActions.ts\n(mutações)"]
+    SELECTORS["selectors.ts\n(queries)"]
+    ANALYSIS["analysis.ts\n(IA insights)"]
+    STATE[("state.ts\n(SSOT)")]
   end
 
-  subgraph INFRA["Infra (persistência + sync)"]
-    direction TB
-    PERSIST["services/persistence.ts (IndexedDB)"]
-    CLOUD["services/cloud.ts (sync)"]
-    WRPC["services/workerClient.ts"]
-    WORKER["services/sync.worker.ts"]
-    API["services/api.ts (HTTP client)"]
-    MERGE["services/dataMerge.ts"]
+  subgraph INFRA["Camada de Infraestrutura"]
+    direction LR
+    PERSIST["persistence.ts\n(IndexedDB)"]
+    CLOUD["cloud.ts\n(sync orchestrator)"]
+    WRPC["workerClient.ts"]
+    WORKER["sync.worker.ts\n(crypto)"]
   end
 
-  %% Boot / UI
+  subgraph INFRA_AUX[" "]
+    direction LR
+    API["api.ts\n(HTTP)"]
+    MERGE["dataMerge.ts\n(CRDT-lite)"]
+  end
+
+  %% === Boot ===
   IDX --> LISTEN
   IDX --> RENDER
-  IDX --> EVENTS
 
-  %% Domínio
+  %% === UI → Domínio ===
   LISTEN --> ACTIONS
+  LISTEN --> ANALYSIS
   RENDER --> SELECTORS
 
+  %% === Domínio → State ===
   ACTIONS --> STATE
   SELECTORS --> STATE
   ANALYSIS --> STATE
 
-  %% Persistência + Sync
+  %% === Persistência ===
   ACTIONS --> PERSIST
   PERSIST --> STATE
-  PERSIST --> CLOUD
+  PERSIST -.->|callback| CLOUD
 
-  %% Eventos globais (UI plumbing)
+  %% === Event Bus (publish/subscribe) ===
   ACTIONS --> EVENTS
-  EVENTS --> RENDER
-  EVENTS --> LISTEN
+  EVENTS -.->|subscribe| RENDER
+  EVENTS -.->|subscribe| LISTEN
 
-  %% Worker / Cloud
+  %% === Sync Pipeline ===
   ANALYSIS --> CLOUD
-  CLOUD --> WRPC --> WORKER
+  CLOUD --> WRPC
+  WRPC --> WORKER
   CLOUD --> API
   CLOUD --> MERGE
 ```
