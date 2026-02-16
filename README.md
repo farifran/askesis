@@ -67,7 +67,7 @@ A criação do Askesis foi motivada por conta da necessidade por privacidade e e
 
 1.  **Soberania e Privacidade de Dados:** O registro de hábitos é, por natureza, um diário íntimo da vida pessoal. Eu precisava de uma garantia absoluta de que essas informações não seriam compartilhadas, vendidas ou analisadas por terceiros. 
 
-2.  **Disponibilidad Tecnológica:** Em uma era dominada por modelos de assinatura (SaaS), recusei-me a pagar por um software que poderia ser construído com ajuda da IA Gen, sendo posible obter uma ferramenta profissional, segura, robusta e gratuita para o auto-aperfeiçoamento.
+2.  **Tecnológia Disponivel:** Em uma era dominada por modelos de assinatura (SaaS), recusei-me a pagar por um software que poderia ser construído com ajuda da IA Gen, sendo posible obter uma ferramenta profissional, segura, robusta e gratuita para o auto-aperfeiçoamento.
 
 #### Meu objetivo: **Privacidade por desenho + criptografia + anonimato coletivo**
 
@@ -141,13 +141,32 @@ Este diagrama detalha a arquitetura de alto nível do sistema e o fluxo de comun
 ### Radar tecnico (ASCII)
 
 ```text
-      Privacidade 10
-        /\
- A11y 9  /-----/  \-----\  Offline 10
-       /           \
-    UX 8 \           /  Performance 9
-      \--- 10 ---/
-       Resiliencia
+                          Assess / Trial
+                    /-----------------------\
+            Adopt /                           \ Hold
+          /---------------------------------------\
+    Languages & Runtimes          Tools & Infra
+  /-----------------------------------------------\
+ |                                               |
+ |  TypeScript (Adopt)     Service Worker (Adopt) |
+ |                                               |
+ |  ESNext APIs (Adopt)    IndexedDB (Adopt)     |
+ |                                               |
+ |  Web Workers (Adopt)    Vercel KV (Trial)     |
+ |                                               |
+  \-----------------------------------------------/
+    Security & Privacy         Data & Sync
+          \---------------------------------------/
+            \                           / Adopt
+             \-----------------------/
+                    Hold / Legacy
+```
+
+Legenda:
+- **Adopt**: Tecnologias maduras e recomendadas para uso amplo.
+- **Trial**: Em avaliação, com potencial para adoção futura.
+- **Assess**: Em análise inicial.
+- **Hold**: Evitar ou migrar quando possível (ex.: frameworks pesados).
 ```
 
 <a id="pt-data-lifecycle"></a>
