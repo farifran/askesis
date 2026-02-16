@@ -194,14 +194,14 @@ flowchart LR
 flowchart LR
   %% Layout horizontal: fluxo da esquerda para direita, minimizando cruzamentos
 
-  subgraph PRESENTATION["🎨 Camada de Apresentação"]
+  subgraph PRESENTATION["Camada de Apresentação"]
     direction TB
     IDX["index.tsx<br/>(bootstrap)"]
     LISTEN["listeners/*<br/>(eventos DOM)"]
     RENDER["render/*<br/>(DOM updates)"]
   end
 
-  subgraph DOMAIN["🧠 Camada de Domínio"]
+  subgraph DOMAIN["Camada de Domínio"]
     direction TB
     ACTIONS["habitActions.ts<br/>(mutações)"]
     SELECTORS["selectors.ts<br/>(queries)"]
@@ -209,7 +209,7 @@ flowchart LR
     STATE[("state.ts<br/>(SSOT)")]
   end
 
-  subgraph INFRA["⚙️ Camada de Infraestrutura"]
+  subgraph INFRA["Camada de Infraestrutura"]
     direction TB
     PERSIST["persistence.ts<br/>(IndexedDB)"]
     EVENTS["events.ts<br/>(pub/sub bus)"]
