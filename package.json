@@ -21,7 +21,7 @@
     "vercel"
   ],
   "author": "AI-Powered Engineer",
-  "license": "Apache-2.0",
+  "license": "MIT",
   "dependencies": {
     "@google/genai": "^1.33.0",
     "@upstash/redis": "^1.36.2"

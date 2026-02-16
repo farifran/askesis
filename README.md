@@ -2027,7 +2027,7 @@ Atualmente, graças a plataformas gratuitas (Vercel, Google Gemini, OneSignal), 
 
 ### Licenca
 
-- Apache-2.0 (ver [LICENSE](LICENSE)).
+- MIT (ver [LICENSE](LICENSE)).
 
 ---
 
@@ -2896,7 +2896,7 @@ Example log lines:
 
 ### License
 
-- Apache-2.0 (see [LICENSE](LICENSE)).
+- MIT (see [LICENSE](LICENSE)).
 
 
 <a id="es"></a>
@@ -3662,4 +3662,4 @@ Ejemplo:
 
 ### Licencia
 
-- Apache-2.0 (ver [LICENSE](LICENSE)).
+- MIT (ver [LICENSE](LICENSE)).
