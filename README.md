@@ -137,6 +137,9 @@ Este diagrama detalha a arquitetura de alto nível do sistema e o fluxo de comun
 
 <a id="pt-data-lifecycle"></a>
 
+<details>
+  <summary>Graficos</summary>
+
 ### Ciclo de dados
 
 ```mermaid
@@ -338,6 +341,8 @@ sequenceDiagram
 
   Note over M: Regras efetivas de merge\n1) Match por ID\n2) Dedup por nome normalizado\n3) LWW por schedule/history\n4) Normalização de mode/times/frequency
 ```
+
+</details>
 
 <a id="pt-habit-uniqueness"></a>
 
