@@ -189,6 +189,9 @@ flowchart LR
 
 <a id="pt-c4-l3"></a>
 
+<details>
+  <summary>Diagrama detalhado</summary>
+
 ### Arquitetura Interna (Resumo)
 
 A arquitetura do Askesis é organizada em camadas para separar responsabilidades: **Apresentação** (interface e interações), **Domínio** (lógica de negócio e estado) e **Infraestrutura** (persistência e sincronização). Isso garante modularidade e facilita a manutenção.
@@ -211,6 +214,8 @@ Em caso de conflitos de sincronização (ex.: edições simultâneas em disposit
 Para o diagrama detalhado de sequência, consulte [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 <a id="pt-habit-uniqueness"></a>
+
+</details>
 
 ### Regras de Unicidade de Hábitos
 
