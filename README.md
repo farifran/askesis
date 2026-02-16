@@ -137,8 +137,6 @@ Este diagrama detalha a arquitetura de alto nível do sistema e o fluxo de comun
 
 <a id="pt-data-lifecycle"></a>
 
-<details>
-  <summary>Graficos</summary>
 
 ### Ciclo de dados
 
@@ -211,8 +209,6 @@ Para o diagrama detalhado de sequência, consulte [docs/ARCHITECTURE.md](docs/AR
 Em caso de conflitos de sincronização (ex.: edições simultâneas em dispositivos diferentes), o sistema descriptografa o estado remoto, mescla com o local usando regras de LWW e deduplicação, persiste o resultado e retenta o sync.
 
 Para o diagrama detalhado de sequência, consulte [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
-
-</details>
 
 <a id="pt-habit-uniqueness"></a>
 
