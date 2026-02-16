@@ -10,11 +10,12 @@
 
 import { AppState, state, getPersistableState } from '../state';
 import { loadState, persistStateLocally } from './persistence';
-import { pushToOneSignal, createDebounced, logger } from '../utils';
+import { pushToOneSignal, createDebounced, logger, escapeHTML } from '../utils';
 import { ui } from '../render/ui';
 import { t } from '../i18n';
 import { hasLocalSyncKey, getSyncKey, apiFetch } from './api';
 import { renderApp, updateNotificationUI } from '../render';
+import { showConfirmationModal } from '../render/modals';
 import { mergeStates } from './dataMerge';
 import { HabitService } from './HabitService';
 import { runWorkerTask as runWorkerTaskInternal, type WorkerTaskType } from './workerClient';
@@ -219,6 +220,44 @@ function buildAppStateFromDecryptedShards(decryptedShards: Record<string, any>, 
     return result as AppState;
 }
 
+function confirmDeduplicationViaModal(identity: string, winnerHabit: any, loserHabit: any): Promise<'deduplicate' | 'keep_separate'> {
+    const winnerName = escapeHTML((winnerHabit.scheduleHistory?.[winnerHabit.scheduleHistory.length - 1]?.name
+        || winnerHabit.scheduleHistory?.[winnerHabit.scheduleHistory.length - 1]?.nameKey
+        || identity
+        || ''));
+    const loserName = escapeHTML((loserHabit.scheduleHistory?.[loserHabit.scheduleHistory.length - 1]?.name
+        || loserHabit.scheduleHistory?.[loserHabit.scheduleHistory.length - 1]?.nameKey
+        || identity
+        || ''));
+
+    const html = `
+        <p>Foram detectados dois hábitos potencialmente iguais durante a sincronização.</p>
+        <div style="margin:10px 0; padding:10px; border:1px solid var(--border-color); border-radius:10px;">
+            <div><strong>Hábito A:</strong> “${winnerName}”</div>
+            <div style="opacity:0.7; font-size:12px; margin-top:4px;">ID: ${escapeHTML(String(winnerHabit.id || ''))}</div>
+            <hr style="border:none; border-top:1px solid var(--border-color); margin:10px 0;" />
+            <div><strong>Hábito B:</strong> “${loserName}”</div>
+            <div style="opacity:0.7; font-size:12px; margin-top:4px;">ID: ${escapeHTML(String(loserHabit.id || ''))}</div>
+        </div>
+        <p style="margin-top:10px;">Consolidar irá mesclar históricos e remapear dados do calendário. Se você não tiver certeza, escolha manter separados.</p>
+    `;
+
+    return new Promise((resolve) => {
+        showConfirmationModal(
+            html,
+            () => resolve('deduplicate'),
+            {
+                title: 'Consolidar hábitos?',
+                confirmText: 'Consolidar',
+                allowHtml: true,
+                onEdit: () => resolve('keep_separate'),
+                editText: 'Manter separados',
+                onCancel: () => resolve('keep_separate')
+            }
+        );
+    });
+}
+
 async function resolveConflictWithServerState(serverShards: Record<string, string>) {
     const syncKey = getSyncKey();
     if (!syncKey) return setSyncStatus('syncError');
@@ -230,7 +269,10 @@ async function resolveConflictWithServerState(serverShards: Record<string, strin
         if (!remoteState) throw new Error('Falha ao reconstruir estado remoto');
 
         const localState = getPersistableState();
-        const mergedState = await mergeStates(localState, remoteState);
+
+        const mergedState = await mergeStates(localState, remoteState, {
+            onDedupCandidate: ({ identity, winnerHabit, loserHabit }) => confirmDeduplicationViaModal(identity, winnerHabit, loserHabit)
+        });
         
         await persistStateLocally(mergedState);
         await loadState(mergedState);
@@ -433,7 +475,9 @@ export async function fetchStateFromCloud(): Promise<AppState | undefined> {
         
         if (remoteModified > localModified) {
             addSyncLog("Atualização remota detectada.", "info");
-            const mergedState = await mergeStates(localState, remoteState);
+            const mergedState = await mergeStates(localState, remoteState, {
+                onDedupCandidate: ({ identity, winnerHabit, loserHabit }) => confirmDeduplicationViaModal(identity, winnerHabit, loserHabit)
+            });
             await persistStateLocally(mergedState);
             await loadState(mergedState);
             renderApp();

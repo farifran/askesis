@@ -503,7 +503,9 @@ describe('🔗 Deduplication by Name (Habit Name Collision Prevention)', () => {
             ]
         } as any];
 
-        const merged = await mergeStates(local, incoming);
+        const merged = await mergeStates(local, incoming, {
+            onDedupCandidate: () => 'deduplicate'
+        });
 
         // Após merge, deve haver apenas 1 hábito (consolidado)
         expect(merged.habits.length).toBe(1);
@@ -549,7 +551,9 @@ describe('🔗 Deduplication by Name (Habit Name Collision Prevention)', () => {
             ]
         } as any];
 
-        const merged = await mergeStates(local, incoming);
+        const merged = await mergeStates(local, incoming, {
+            onDedupCandidate: () => 'deduplicate'
+        });
 
         // Deve haver 1 hábito consolidado
         expect(merged.habits.length).toBe(1);
@@ -613,7 +617,9 @@ describe('🔗 Deduplication by Name (Habit Name Collision Prevention)', () => {
             'habit-2': { instances: { Evening: { note: 'Read 40 pages' } } }
         } as any;
 
-        const merged = await mergeStates(local, incoming);
+        const merged = await mergeStates(local, incoming, {
+            onDedupCandidate: () => 'deduplicate'
+        });
 
         // Deve haver apenas 1 hábito
         expect(merged.habits.length).toBe(1);

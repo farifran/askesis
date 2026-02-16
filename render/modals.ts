@@ -27,9 +27,11 @@ interface ConfirmationModalOptions {
     title?: string;
     confirmButtonStyle?: 'danger' | 'primary';
     confirmText?: string;
+    cancelText?: string;
     editText?: string;
     onCancel?: () => void;
     allowHtml?: boolean;
+    hideCancel?: boolean;
 }
 type ManageHabitStatus = 'active' | 'graduated' | 'ended';
 type ManageHabitItem = { h: Habit; st: ManageHabitStatus; name: string; subtitle: string };
@@ -321,12 +323,19 @@ export function showConfirmationModal(text: string, onConfirm: () => void, opts?
     if (opts?.allowHtml) ui.confirmModalText.innerHTML = text;
     else setTextContent(ui.confirmModalText, text);
     state.confirmAction = onConfirm;
-    state.confirmEditAction = opts?.onEdit || null;
+    // O modal atual tem 2 ações: Confirmar (primária) e um botão secundário (historicamente chamado de "Editar").
+    // Para compatibilidade, usamos o secundário como "cancelar" quando cancelText é fornecido.
+    const secondaryAction = opts?.onEdit
+        || (opts?.cancelText ? (() => opts?.onCancel?.()) : null);
+
+    state.confirmEditAction = secondaryAction;
     setTextContent(ui.confirmModal.querySelector('h2'), opts?.title || t('modalConfirmTitle'));
     ui.confirmModalConfirmBtn.className = `btn ${opts?.confirmButtonStyle === 'danger' ? 'btn--danger' : 'btn--primary'}`;
     setTextContent(ui.confirmModalConfirmBtn, opts?.confirmText || t('confirmButton'));
-    ui.confirmModalEditBtn.classList.toggle('hidden', !opts?.onEdit);
-    if (opts?.editText) setTextContent(ui.confirmModalEditBtn, opts.editText);
+    const shouldShowSecondary = !opts?.hideCancel && !!secondaryAction;
+    ui.confirmModalEditBtn.classList.toggle('hidden', !shouldShowSecondary);
+    const secondaryText = opts?.editText || opts?.cancelText;
+    if (secondaryText) setTextContent(ui.confirmModalEditBtn, secondaryText);
 
     const onCancel = () => {
         state.confirmAction = null;

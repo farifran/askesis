@@ -16,6 +16,21 @@ import { logger } from '../utils';
 import { HabitService } from './HabitService';
 import { normalizeHabitMode, normalizeTimesByMode, normalizeFrequencyByMode } from './habitActions';
 
+export type DeduplicationDecision = 'deduplicate' | 'keep_separate';
+export interface DedupCandidate {
+    identity: string;
+    winnerHabit: Habit;
+    loserHabit: Habit;
+}
+
+export interface MergeOptions {
+    /**
+     * Opcional: permite pedir confirmação do usuário antes de deduplicar hábitos com IDs diferentes.
+     * Se retornar 'keep_separate', o hábito do loser NÃO será remapeado/mesclado e será mantido separado.
+     */
+    onDedupCandidate?: (candidate: DedupCandidate) => DeduplicationDecision | Promise<DeduplicationDecision>;
+}
+
 function isValidBigIntString(value: string): boolean {
     if (!value) return false;
     const normalized = value.startsWith('0x') ? value.slice(2) : value;
@@ -164,7 +179,50 @@ function getHabitIdentity(h: Habit): string | null {
     return normalized.length > 0 ? normalized : null;
 }
 
-export async function mergeStates(local: AppState, incoming: AppState): Promise<AppState> {
+function getLatestSchedule(h: Habit): HabitSchedule | null {
+    if (!h.scheduleHistory || h.scheduleHistory.length === 0) return null;
+    // scheduleHistory não garante ordenação; escolhe por startDate
+    return h.scheduleHistory.reduce((prev, curr) => (curr.startDate > prev.startDate ? curr : prev), h.scheduleHistory[0]);
+}
+
+function schedulesEquivalent(a: HabitSchedule | null, b: HabitSchedule | null): boolean {
+    if (!a || !b) return false;
+    if ((a.name || '') !== (b.name || '')) return false;
+    if ((a.nameKey || '') !== (b.nameKey || '')) return false;
+    if ((a.mode || '') !== (b.mode || '')) return false;
+
+    const aTimes = a.times || [];
+    const bTimes = b.times || [];
+    if (aTimes.length !== bTimes.length) return false;
+    for (let i = 0; i < aTimes.length; i++) {
+        if (aTimes[i] !== bTimes[i]) return false;
+    }
+
+    // Frequency e Goal são objetos; compara por JSON (com chaves estáveis, já que são literais simples)
+    if (JSON.stringify(a.frequency) !== JSON.stringify(b.frequency)) return false;
+    if (JSON.stringify(a.goal) !== JSON.stringify(b.goal)) return false;
+
+    return true;
+}
+
+function shouldConfirmIdentityDedup(identity: string, winnerHabit: Habit, loserHabit: Habit): boolean {
+    // Regra conservadora: nomes curtos/genéricos são propensos a colisões.
+    if (identity.length < 5) return true;
+
+    // Se os históricos diferem em “forma”, confirmar.
+    const wLen = winnerHabit.scheduleHistory?.length || 0;
+    const lLen = loserHabit.scheduleHistory?.length || 0;
+    if (wLen !== lLen) return true;
+
+    // Se o schedule mais recente diverge, confirmar.
+    const wLast = getLatestSchedule(winnerHabit);
+    const lLast = getLatestSchedule(loserHabit);
+    if (!schedulesEquivalent(wLast, lLast)) return true;
+
+    return false;
+}
+
+export async function mergeStates(local: AppState, incoming: AppState, options?: MergeOptions): Promise<AppState> {
     [local, incoming].forEach(hydrateLogs);
     [local, incoming].forEach(sanitizeDailyData);
 
@@ -191,6 +249,7 @@ export async function mergeStates(local: AppState, incoming: AppState): Promise<
     // MAPA DE IDENTIDADE PARA DEDUPLICAÇÃO
     const winnerIdentityMap = new Map<string, string>(); // IdentityString -> ID
     const idRemap = new Map<string, string>(); // OldID -> NewID
+    const blockedIdentities = new Set<string>(); // Identities que NÃO podem ser deduplicadas nesta execução
 
     // Popula mapa inicial com hábitos do vencedor
     merged.habits.forEach(h => {
@@ -201,20 +260,50 @@ export async function mergeStates(local: AppState, incoming: AppState): Promise<
         }
     });
     
-    loser.habits.forEach(loserHabit => {
+    for (const loserHabit of loser.habits) {
         let winnerHabit = mergedHabitsMap.get(loserHabit.id);
 
         // --- SMART DEDUPLICATION ---
         if (!winnerHabit) {
             const identity = getHabitIdentity(loserHabit);
             if (identity) {
-                const matchedId = winnerIdentityMap.get(identity);
-                if (matchedId) {
-                    winnerHabit = mergedHabitsMap.get(matchedId);
-                    if (winnerHabit) {
-                        // DUPLICATA ENCONTRADA: Mapeia o ID antigo para o vencedor
-                        idRemap.set(loserHabit.id, winnerHabit.id);
-                        logger.info(`[Merge] Deduplicated habit "${identity}" (${loserHabit.id} -> ${winnerHabit.id})`);
+                if (blockedIdentities.has(identity)) {
+                    // Identidade marcada como ambígua: nunca deduplicar automaticamente neste merge.
+                    winnerHabit = undefined;
+                } else {
+                    const matchedId = winnerIdentityMap.get(identity);
+                    if (matchedId) {
+                        winnerHabit = mergedHabitsMap.get(matchedId);
+                        if (winnerHabit) {
+                            const needsConfirm = shouldConfirmIdentityDedup(identity, winnerHabit, loserHabit);
+                            if (needsConfirm) {
+                                if (options?.onDedupCandidate) {
+                                    try {
+                                        const decision = await options.onDedupCandidate({ identity, winnerHabit, loserHabit });
+                                        if (decision === 'keep_separate') {
+                                            blockedIdentities.add(identity);
+                                            winnerHabit = undefined;
+                                        }
+                                    } catch (e) {
+                                        // Fail-safe: se a UI/callback falhar, não deduplicar.
+                                        blockedIdentities.add(identity);
+                                        winnerHabit = undefined;
+                                        logger.warn('[Merge] Dedup confirmation callback failed; keeping habits separate.', e);
+                                    }
+                                } else {
+                                    // Sem UI/callback: nunca deduplicar candidato considerado arriscado.
+                                    blockedIdentities.add(identity);
+                                    winnerHabit = undefined;
+                                    logger.warn(`[Merge] Dedup candidate "${identity}" requires confirmation; keeping habits separate.`);
+                                }
+                            }
+
+                            if (winnerHabit) {
+                                // DUPLICATA ENCONTRADA: Mapeia o ID antigo para o vencedor
+                                idRemap.set(loserHabit.id, winnerHabit.id);
+                                logger.info(`[Merge] Deduplicated habit "${identity}" (${loserHabit.id} -> ${winnerHabit.id})`);
+                            }
+                        }
                     }
                 }
             }
@@ -258,7 +347,7 @@ export async function mergeStates(local: AppState, incoming: AppState): Promise<
                 }
             }
         }
-    });
+    }
 
     (merged as any).habits = Array.from(mergedHabitsMap.values());
 

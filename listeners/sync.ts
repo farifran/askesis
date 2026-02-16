@@ -14,6 +14,7 @@ import { generateUUID } from "../utils";
 import { SYNC_ENABLE_RETRY_MS, SYNC_COPY_FEEDBACK_MS, SYNC_INPUT_FOCUS_MS } from "../constants";
 import { getPersistableState, state, clearActiveHabitsCache } from "../state";
 import { mergeStates } from "../services/dataMerge";
+import { escapeHTML } from "../utils";
 
 
 function showView(view: 'inactive' | 'enterKey' | 'displayKey' | 'active') {
@@ -57,7 +58,44 @@ async function _processKey(key: string) {
         if (cloudState && cloudState.habits && cloudState.habits.length > 0) {
             addSyncLog("Dados encontrados na nuvem. Mesclando...", "info");
             const localState = getPersistableState();
-            const mergedState = await mergeStates(localState, cloudState);
+            const mergedState = await mergeStates(localState, cloudState, {
+                onDedupCandidate: ({ identity, winnerHabit, loserHabit }) => {
+                    const winnerName = escapeHTML((winnerHabit.scheduleHistory?.[winnerHabit.scheduleHistory.length - 1]?.name
+                        || winnerHabit.scheduleHistory?.[winnerHabit.scheduleHistory.length - 1]?.nameKey
+                        || identity
+                        || ''));
+                    const loserName = escapeHTML((loserHabit.scheduleHistory?.[loserHabit.scheduleHistory.length - 1]?.name
+                        || loserHabit.scheduleHistory?.[loserHabit.scheduleHistory.length - 1]?.nameKey
+                        || identity
+                        || ''));
+                    const html = `
+                        <p>Foram detectados dois hábitos potencialmente iguais durante a sincronização.</p>
+                        <div style="margin:10px 0; padding:10px; border:1px solid var(--border-color); border-radius:10px;">
+                            <div><strong>Hábito A:</strong> “${winnerName}”</div>
+                            <div style="opacity:0.7; font-size:12px; margin-top:4px;">ID: ${escapeHTML(winnerHabit.id)}</div>
+                            <hr style="border:none; border-top:1px solid var(--border-color); margin:10px 0;" />
+                            <div><strong>Hábito B:</strong> “${loserName}”</div>
+                            <div style="opacity:0.7; font-size:12px; margin-top:4px;">ID: ${escapeHTML(loserHabit.id)}</div>
+                        </div>
+                        <p style="margin-top:10px;">Consolidar irá mesclar históricos e remapear dados do calendário. Se você não tiver certeza, escolha manter separados.</p>
+                    `;
+
+                    return new Promise<'deduplicate' | 'keep_separate'>((resolve) => {
+                        showConfirmationModal(
+                            html,
+                            () => resolve('deduplicate'),
+                            {
+                                title: 'Consolidar hábitos?',
+                                confirmText: 'Consolidar',
+                                allowHtml: true,
+                                onEdit: () => resolve('keep_separate'),
+                                editText: 'Manter separados',
+                                onCancel: () => resolve('keep_separate')
+                            }
+                        );
+                    });
+                }
+            });
             await loadState(mergedState);
             clearActiveHabitsCache();
             clearHabitDomCache();

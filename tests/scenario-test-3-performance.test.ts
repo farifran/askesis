@@ -262,6 +262,19 @@ describe('⚡ TESTE DE CENARIO 3: Estresse e Performance', () => {
     const datasets = [100, 500, 1000, 5000, 10000];
     const timings: number[] = [];
 
+    const medianOf = (values: number[]): number => {
+      if (values.length === 0) return 0;
+      const sorted = [...values].sort((a, b) => a - b);
+      return sorted[Math.floor(sorted.length / 2)];
+    };
+
+    // Evita custo/variância de Math.random dentro do benchmark.
+    // Sequência pseudo-aleatória determinística (cobre 1..30) para manter o padrão de acesso realista.
+    const queryDates = Array.from({ length: 1000 }, (_, i) => {
+      const day = (((i * 7 + 13) % 30) + 1).toString().padStart(2, '0');
+      return `2024-01-${day}`;
+    });
+
     datasets.forEach(size => {
       // Popular N dias
       for (let i = 1; i <= size; i++) {
@@ -269,15 +282,19 @@ describe('⚡ TESTE DE CENARIO 3: Estresse e Performance', () => {
         HabitService.setStatus(habitId, date, 'Morning', HABIT_STATE.DONE);
       }
 
-      // Medir tempo de leitura (1000 iterações para estabilizar micro-benchmarks sub-ms)
-      const duration = monitor.measure(`read-with-${size}-records`, () => {
-        for (let i = 0; i < 1000; i++) {
-          const randomDay = (Math.floor(Math.random() * 30) + 1).toString().padStart(2, '0');
-          HabitService.getStatus(habitId, `2024-01-${randomDay}`, 'Morning');
-        }
-      });
+      // Medir tempo de leitura (várias amostras + mediana) para reduzir flakiness por GC/jitter.
+      const samples: number[] = [];
+      const sampleCount = 5;
+      for (let s = 0; s < sampleCount; s++) {
+        const duration = monitor.measure(`read-with-${size}-records`, () => {
+          for (let i = 0; i < queryDates.length; i++) {
+            HabitService.getStatus(habitId, queryDates[i], 'Morning');
+          }
+        });
+        samples.push(duration);
+      }
 
-      timings.push(duration);
+      timings.push(medianOf(samples));
     });
 
     // Performance deve ser relativamente constante (O(1))
