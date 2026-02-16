@@ -216,6 +216,7 @@ Para o diagrama detalhado de sequência, consulte [docs/ARCHITECTURE.md](docs/AR
 <a id="pt-habit-uniqueness"></a>
 
 </details>
+---
 
 ### Regras de Unicidade de Hábitos
 
