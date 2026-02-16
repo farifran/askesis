@@ -34,7 +34,7 @@ Texto de apoio: epígrafe do projeto — conecta direto com o propósito do Aske
   - [Visão Geral de Integrações e Infraestrutura](#pt-integrations-infra)
 - [Ciclo de dados](#pt-data-lifecycle)
 - [Contêineres (C4 - Nível 2)](#pt-c4-l2)
-- [Componentes Internos (C4 - Nível 3)](#pt-c4-l3)
+- [Arquitetura em Camadas: Componentes Internos (Modelo C4 - Nível 3)](#pt-c4-l3)
 - [Fluxo de Dados (Local-first + Sync)](#pt-data-flow)
 - [Fluxo de Conflito de Sync](#pt-sync-conflict)
 - [Regras de Unicidade de Hábitos](#pt-habit-uniqueness)
@@ -135,8 +135,6 @@ Este diagrama detalha a arquitetura de alto nível do sistema e o fluxo de comun
 </details>
 ---
 
-<details><summary>Arquitetura e Fluxos Técnicos</summary>
-
 <a id="pt-data-lifecycle"></a>
 
 ### Ciclo de dados
@@ -190,7 +188,7 @@ flowchart LR
 
 <a id="pt-c4-l3"></a>
 
-### Arquitetura Interna: Componentes do Sistema
+### Arquitetura em Camadas: Componentes Internos (Modelo C4 - Nível 3)
 
 ```mermaid
 flowchart LR
@@ -339,9 +337,6 @@ sequenceDiagram
   API-->>D2: 200 OK
 
   Note over M: Regras efetivas de merge\n1) Match por ID\n2) Dedup por nome normalizado\n3) LWW por schedule/history\n4) Normalização de mode/times/frequency
-
-</details>
-
 ```
 
 <a id="pt-habit-uniqueness"></a>
