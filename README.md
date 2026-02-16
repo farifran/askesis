@@ -34,9 +34,9 @@ Texto de apoio: epígrafe do projeto — conecta direto com o propósito do Aske
   - [Visão Geral de Integrações e Infraestrutura](#pt-integrations-infra)
 - [Ciclo de dados](#pt-data-lifecycle)
 - [Contêineres (C4 - Nível 2)](#pt-c4-l2)
-- [Arquitetura em Camadas: Componentes Internos (Modelo C4 - Nível 3)](#pt-c4-l3)
-- [Fluxo de Dados (Local-first + Sync)](#pt-data-flow)
-- [Fluxo de Conflito de Sync](#pt-sync-conflict)
+- [Arquitetura Interna (Resumo)](#pt-c4-l3)
+- [Fluxo de Dados (Resumo)](#pt-data-flow)
+- [Fluxo de Conflito de Sync (Resumo)](#pt-sync-conflict)
 - [Regras de Unicidade de Hábitos](#pt-habit-uniqueness)
 - [Mapa rápido de módulos](#pt-modules-map)
 - [Paradigma de Construcao: A Orquestracao Humano-IA](#pt-build-paradigm)
@@ -191,154 +191,26 @@ flowchart LR
 
 <a id="pt-c4-l3"></a>
 
-### Arquitetura em Camadas: Componentes Internos (Modelo C4 - Nível 3)
+### Arquitetura Interna (Resumo)
 
-```mermaid
-flowchart LR
-  %% Layout horizontal: fluxo da esquerda para direita, minimizando cruzamentos
+A arquitetura do Askesis é organizada em camadas para separar responsabilidades: **Apresentação** (interface e interações), **Domínio** (lógica de negócio e estado) e **Infraestrutura** (persistência e sincronização). Isso garante modularidade e facilita a manutenção.
 
-  subgraph PRESENTATION["🎨 Camada de Apresentação"]
-    direction TB
-    IDX["index.tsx<br/>(bootstrap)"]
-    LISTEN["listeners/*<br/>(eventos DOM)"]
-    RENDER["render/*<br/>(DOM updates)"]
-  end
-
-  subgraph DOMAIN["🧠 Camada de Domínio"]
-    direction TB
-    ACTIONS["habitActions.ts<br/>(mutações)"]
-    SELECTORS["selectors.ts<br/>(queries)"]
-    ANALYSIS["analysis.ts<br/>(IA insights)"]
-    STATE[("state.ts<br/>(SSOT)")]
-  end
-
-  subgraph INFRA["⚙️ Camada de Infraestrutura"]
-    direction TB
-    PERSIST["persistence.ts<br/>(IndexedDB)"]
-    EVENTS["events.ts<br/>(pub/sub bus)"]
-    CLOUD["cloud.ts<br/>(sync)"]
-    WORKER["workerClient + sync.worker<br/>(crypto)"]
-    API["api.ts<br/>(HTTP)"]
-    MERGE["dataMerge.ts<br/>(CRDT-lite)"]
-  end
-
-  %% === Bootstrap (inicialização) ===
-  IDX --> LISTEN
-  IDX --> RENDER
-
-  %% === UI → Domínio ===
-  LISTEN --> ACTIONS
-  LISTEN --> ANALYSIS
-  RENDER --> SELECTORS
-
-  %% === Domínio → Estado ===
-  ACTIONS --> STATE
-  SELECTORS --> STATE
-  ANALYSIS --> STATE
-
-  %% === Persistência Local ===
-  ACTIONS --> PERSIST
-  PERSIST --> STATE
-
-  %% === Event Bus (comunicação assíncrona) ===
-  ACTIONS --> EVENTS
-  EVENTS --> RENDER
-  EVENTS --> LISTEN
-
-  %% === Pipeline de Sync ===
-  ANALYSIS --> CLOUD
-  CLOUD --> WORKER
-  CLOUD --> API
-  CLOUD --> MERGE
-
-  %% === Callback de Persistência ===
-  PERSIST -.->|callback| CLOUD
-```
-
-**Leitura do diagrama:**
-- **Fluxo principal:** Apresentação → Domínio → Infraestrutura (esquerda para direita)
-- **Inicialização:** `index.tsx` configura listeners e render
-- **Interação do usuário:** `listeners/*` → `habitActions.ts` (mutações) + `analysis.ts` (insights IA)
-- **Estado central:** Tudo converge para `state.ts` (Single Source of Truth)
-- **Persistência:** `habitActions.ts` → `persistence.ts` → IndexedDB + callback para sync
-- **Comunicação assíncrona:** `events.ts` como barramento pub/sub entre componentes
-- **Sync pipeline:** `analysis.ts` → `cloud.ts` → worker/crypto → API → merge
+Para detalhes completos, incluindo diagramas técnicos, consulte [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 <a id="pt-data-flow"></a>
 
-### Fluxo de Dados (Local-first + Sync)
+### Fluxo de Dados (Resumo)
 
-```mermaid
-sequenceDiagram
-  participant User as Usuário
-  participant UI as UI
-  participant State as Estado
-  participant Actions as habitActions
-  participant Persist as persistence
-  participant DB as IndexedDB
-  participant Cloud as cloud.ts
-  participant Worker as Worker (Crypto)
-  participant API as API /api/sync
-  participant Merge as dataMerge
+O Askesis segue um modelo local-first: dados são salvos localmente no IndexedDB e sincronizados com a nuvem de forma incremental e criptografada. Mudanças são divididas em shards, criptografadas via Web Worker, enviadas para a API e mescladas em caso de conflitos usando LWW (Last Write Wins) e deduplicação.
 
-  User->>UI: Marca hábito / adiciona nota
-  UI->>Actions: Atualiza estado
-  Actions->>State: Mutação + flags sujos
-  Actions->>Persist: saveState() (debounced)
-  Persist->>DB: Salva core + logs (sem cripto)
-  Persist-->>Cloud: syncHandler(snapshot)
-  Cloud->>Cloud: Divide em shards + calcula diffs
-
-  Cloud->>Worker: Criptografa shards alterados
-  Worker-->>Cloud: Shards criptografados
-
-  Cloud->>API: POST /api/sync (lastModified + shards)
-  alt Sem conflito (200)
-    API-->>Cloud: OK
-    Cloud->>State: Sincronizado + atualiza cache
-  else Conflito (409)
-    API-->>Cloud: Shards remotos
-    Cloud->>Worker: Descriptografa shards
-    Worker-->>Cloud: Estado remoto
-    Cloud->>Merge: Mescla estados (LWW + dedup)
-    Merge-->>Cloud: Estado consolidado
-    Cloud->>Persist: Persiste mesclado
-    Persist->>State: Carrega estado
-    State-->>UI: Renderiza app
-  end
-```
+Para o diagrama detalhado de sequência, consulte [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 <a id="pt-sync-conflict"></a>
 
-### Fluxo de Conflito de Sync
+### Fluxo de Conflito de Sync (Resumo)
 
-```mermaid
-sequenceDiagram
-  participant D1 as Dispositivo A
-  participant D2 as Dispositivo B
-  participant API as /api/sync
-  participant C as cloud.ts (cliente)
-  participant WRPC as workerClient
-  participant W as sync.worker
-  participant M as dataMerge
+Em caso de conflitos de sincronização (ex.: edições simultâneas em dispositivos diferentes), o sistema descriptografa o estado remoto, mescla com o local usando regras de LWW e deduplicação, persiste o resultado e retenta o sync.
 
-  D1->>API: POST shards (lastModified=novo)
-  API-->>D1: 200 OK
-
-  D2->>API: POST shards (lastModified=antigo)
-  API-->>D2: 409 CONFLICT + shards remotos
-
-  D2->>C: resolveConflictWithServerState()
-  C->>WRPC: runWorkerTask(decrypt)
-  WRPC->>W: decrypt(shards remotos)
-  W-->>C: estado remoto
-  C->>M: mergeStates(local, remoto)
-  M-->>C: estado consolidado
-  C->>C: persistStateLocally + loadState
-  C->>API: POST merged (retry)
-  API-->>D2: 200 OK
-
-  Note over M: Regras efetivas de merge\n1) Match por ID\n2) Dedup por nome normalizado\n3) LWW por schedule/history\n4) Normalização de mode/times/frequency
-```
+Para o diagrama detalhado de sequência, consulte [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 </details>
 
