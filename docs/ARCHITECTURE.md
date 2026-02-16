@@ -19,7 +19,7 @@ flowchart LR
   O -->|Notificações| U
 ```
 
-## 2) Contêineres (C4 - Nível 2)
+## 2) Diagrama Detalhado de Contêineres (C4 N2)
 
 ```mermaid
 flowchart TB
@@ -54,7 +54,8 @@ flowchart TB
   SW -->|notificationclick| Open["Open / focus Askesis"]
 ```
 
-## 3) Componentes Internos (C4 - Nível 3)
+<a id="componentes-internos"></a>
+## 3) Componentes Internos (C4 N3)
 
 ```mermaid
 flowchart TB
@@ -117,6 +118,7 @@ flowchart TB
 
 Leitura rápida: interação entra por `listeners/*`, regra de negócio vive em `habitActions.ts`/`selectors.ts`, estado central em `state.ts`, e persistência/sync ficam em `persistence.ts` + `cloud.ts` + `sync.worker.ts`.
 
+<a id="fluxo-dados"></a>
 ## 4) Fluxo de Dados (Local-first + Sync)
 
 ```mermaid
@@ -154,6 +156,7 @@ sequenceDiagram
   end
 ```
 
+<a id="fluxo-conflito"></a>
 ## 5) Fluxo de Conflito de Sync
 
 ```mermaid

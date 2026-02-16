@@ -17,12 +17,8 @@
   <img src="assets/AristotelesPortugues.jpg" alt="Aristóteles (Português)" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
 </p>
 
-<details>
-  <summary><em>“Nós somos aquilo que fazemos repetidamente. Excelência, portanto, não é um ato, mas um hábito.” — Aristóteles</em></summary>
+Epígrafe do projeto — conecta direto com o propósito do Askesis como **habit tracker**: consistência e excelência se constroem pela prática diária, e **hábitos** são o mecanismo que o app ajuda a treinar e acompanhar.
 
-Texto de apoio: epígrafe do projeto — conecta direto com o propósito do Askesis como **habit tracker**: consistência e excelência se constroem pela prática diária, e **hábitos** são o mecanismo que o app ajuda a treinar e acompanhar.
-
-</details>
 
 <details>
   <summary>Ver estrutura completa (TOC)</summary>
@@ -30,10 +26,10 @@ Texto de apoio: epígrafe do projeto — conecta direto com o propósito do Aske
 - [Visão do Projeto](#pt-visao-do-projeto)
 - [Diferenciais](#pt-highlights)
 - [Diagramas (visão geral)](#pt-diagramas)
+- [Diagramas (visão geral)](#pt-diagramas)
   - [Visão Geral da Arquitetura e Fluxo do Usuário](#pt-architecture-user-flow)
   - [Visão Geral de Integrações e Infraestrutura](#pt-integrations-infra)
-- [Ciclo de dados](#pt-data-lifecycle)
-- [Contêineres (C4 - Nível 2)](#pt-c4-l2)
+  - [Visão Geral do Ciclo de Dados](#pt-data-lifecycle)
 - [Arquitetura Interna (Resumo)](#pt-c4-l3)
 - [Fluxo de Dados (Resumo)](#pt-data-flow)
 - [Fluxo de Conflito de Sync (Resumo)](#pt-sync-conflict)
@@ -55,10 +51,7 @@ Texto de apoio: epígrafe do projeto — conecta direto com o propósito do Aske
 
 ### Visão do Projeto
 
-- Rastreador de hábitos estoico, focado em privacidade, com IA para reflexões e ajustes de rotina.
-- Local-first: dados ficam no dispositivo; sincronização opcional com criptografia E2E (AES-GCM) em Web Worker.
-- Sync resiliente e sem conflitos (merge/CRDT-lite) via Vercel API (KV), sem login obrigatório.
-- Zero-deps por padrão no runtime local (sem SDKs no boot); após opt-in, push pode auto-carregar para manter o estado.
+Rastreador de hábitos estoico, focado em privacidade, com IA para reflexões e ajustes de rotina.
 
 #### A Motivação: Por que construir?
 
@@ -70,7 +63,7 @@ Ncessidade por privacidade e e a possibilidade de gerar e criar codigo por medio
 
 #### Meu objetivo: **Privacidade por desenho + criptografia + anonimato coletivo**
 
-No Askesis a prioridade é o controle da informação, os dados pertencem exclusivamente ao usuário e residem no seu dispositivo (ou no seu cofre pessoal criptografado). Além disso, o Askesis adota uma prática conhecida como **anonimato coletivo** (*anonymity set*); como o app não exige e-mail, telefone ou qualquer identificador pessoal, e utiliza uma **API de IA compartilhada** para todos, a identidade do usuário  é **diluída no conjunto de usuários**. Em outras palavras: as requisições são indistinguíveis entre si, reduzindo a chance de correlação individual.
+No Askesis os dados pertencem exclusivamente ao usuário e residem no seu dispositivo (ou no seu cofre pessoal criptografado). Além disso, no caso da IA se adota uma prática conhecida como **anonimato coletivo** (*anonymity set*); como a app não exige identificacao o uso e os dados sao **diluídos no conjunto de usuários**. 
 
 #### A Filosofia: O que é Askesis?
 
@@ -85,14 +78,255 @@ A maioria dos apps de hábitos foca em gamificação superficial ou em "não que
 
 ### Diferenciais
 
-- Privacidade total, sem login ou rastreio.
-- IA estoica para reflexao, nao para vicio.
-- Fluxo rapido: foco em consistencia, nao em streaks.
-- Acessibilidade WCAG 2.1 AA e suporte completo a teclado.
+#### Comparação com Concorrentes
+
+| Aspecto | Askesis | Concorrentes (ex: Habitica, Streaks, Loop) |
+|---------|---------|--------------------------------------------|
+| Privacidade de Dados | Local-first, E2E encryption, sem login obrigatório | Muitos exigem conta, dados centralizados na nuvem |
+| Uso de IA | Reflexão filosófica (estoica), ajuste de rotina | Gamificação ou sem IA |
+| Dependências Técnicas | Zero-deps no boot, opt-in para notificações | SDKs obrigatórios para funcionalidades básicas |
+| Sincronização | Opcional, resiliente (CRDT-lite) | Limitada ou obrigatória com login |
+| Filosofia | Foco em consistência e caráter | Recompensas, streaks, competição |
+| Sustentabilidade Econômica | Custo zero de infraestrutura, processamento no dispositivo | Custos altos de servidor, assinaturas obrigatórias |
+
+<details>
+<summary>Deep Dive Técnico</summary>
+<br>
+O Askesis opera no "Sweet Spot" da performance web, utilizando APIs nativas modernas para superar frameworks:
 
 ---
 
-<a id="pt-diagramas"></a>
+| Aspecto | Descrição | Benefício |
+|---------|-----------|-----------|
+| **Arquitetura de Dados "Bitmask-First"** | Estado de hábitos em mapas de bits (`BigInt`) para verificações `O(1)` e memória mínima. | Consultas instantâneas de histórico sem impacto na performance, mesmo com anos de dados. |
+| **Persistência "Split-State"** | IndexedDB separa dados quentes/frios para inicialização instantânea. | App abre em segundos, sem parsing desnecessário de dados antigos. |
+| **Física de UI com APIs Avançadas** | Interações fluidas via Houdini e `scheduler.postTask` para UI sem bloqueios. | Animações suaves e responsivas, melhorando a experiência do usuário em qualquer dispositivo. |
+| **Multithreading (Web Workers)** | Tarefas pesadas (cripto, parsing, IA) isoladas em workers para UI Jank-free. | Interface sempre fluida, sem travamentos durante operações intensas. |
+| **Criptografia Zero-Copy** | AES-GCM off-main-thread com `ArrayBuffer` direto, eficiente em dispositivos modestos. | Segurança máxima sem sacrificar velocidade, mesmo em celulares básicos. |
+| **Sincronização Inteligente (CRDT-lite)** | Resolução de conflitos com pesos semânticos, progresso sempre preservado. | Sync confiável entre dispositivos, sem perda de dados ou conflitos manuais. |
+
+<h2>🏗️ Estrutura de Dados: A Magia por Trás</h2>
+
+O Askesis utiliza estruturas de dados altamente otimizadas que são raramente vistas em aplicações web. Compreender essa escolha é compreender por que o app é tão rápido:
+
+<h3>🔢 O Sistema de Bitmask 9-bit</h3>
+
+Cada hábito é armazenado de forma comprimida usando **BigInt** (inteiros arbitrariamente grandes do JavaScript).
+
+```
+Cada dia ocupa 9 bits (para 3 períodos: Manhã, Tarde, Noite):
+
+┌───────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Dia = [Tombstone(1 bit) | Status Noite(2) | Status Tarde(2) | Status Manhã(2) | Reserved(2) ] │
+└───────────────────────────────────────────────────────────────────────────────────────────────┘
+
+Estados possíveis (2 bits cada):
+  00 = Pendente (não iniciado)
+  01 = Feito (completed)
+  10 = Adiado (deferred/snoozed)
+  11 = Reservado para expansão futura
+
+Exemplo de 1 mês (30 dias):
+  - Sem compressão:   30 dias × 3 períodos × 8 bytes = 720 bytes
+  - Com bitmask:      30 dias × 9 bits = 270 bits ≈ 34 bytes (21x menor!)
+  - GZIP:             34 bytes → ~8 bytes comprimido
+```
+
+**Operações Bitwise O(1):**
+```typescript
+// Ler status de um hábito em 2025-01-15 na Manhã:
+const status = (log >> ((15-1)*9 + PERIOD_OFFSET['Morning'])) & 3n;
+
+// Escrever status:
+log = (log & clearMask) | (newStatus << bitPos);
+
+// Isso é **instantâneo** mesmo com 10+ anos de dados!
+```
+
+<h3>📦 Split-State Storage: JSON + Binary</h3>
+
+O IndexedDB do Askesis armazena dados em **duas colunas separadas**:
+
+```
+┌──────────────────────────────────────────┐
+│ IndexedDB (AskesisDB)                    │
+├──────────────────────────────────────────┤
+│ KEY: "askesis_core_json"                 │
+│ VALUE: {                                 │
+│   version: 9,                            │
+│   habits: [Habit[], ...],                │
+│   dailyData: Record<>,                   │
+│   ... (tudo exceto monthlyLogs)          │
+│ }                                        │
+│ SIZE: ~50-200 KB (mesmo com 5 anos)      │
+├──────────────────────────────────────────┤
+│ KEY: "askesis_logs_binary"               │
+│ VALUE: {                                 │
+│   "habit-1_2024-01": "a3f4e8c...",       │ ← Hex string (9-bit logs)
+│   "habit-1_2024-02": "b2e5d1a...",       │
+│   ...                                    │
+│ }                                        │
+│ SIZE: ~8-15 KB (mesmo com 5 anos)        │
+└──────────────────────────────────────────┘
+```
+
+**Benefícios:**
+- **Startup instantâneo:** JSON carrega em < 50ms, binários sob demanda
+- **Backup eficiente:** Exportar dados = apenas o JSON (< 200 KB)
+- **Migração segura:** Versiones antigas + novas coexistem sem conflitos
+
+<h3>🔗 Tombstone Pattern: Soft Delete com Segurança de Sync</h3>
+
+Quando você deleta um hábito, o Askesis **não o apaga**. Em vez disso, marca com um "Túmulo" (Tombstone):
+
+```
+┌───────────────────────────────────────┐
+│ DELETE HABITO 'Meditar'               │
+├───────────────────────────────────────┤
+│ 1. Ao invés de: habits.remove(id)     │
+│    Faz:         habit.deletedOn = now │
+│                                       │
+│ 2. Marca no bitmask:                  │
+│    Bit 8 (Tombstone) = 1              │
+│    (Força todos os bits para 0)       │
+│                                       │
+│ 3. Benefit:                           │
+│    - Se sync não chegou a outro app,  │
+│      ele recebe DELETE + Sincroniza   │
+│    - Histórico preservado para backup │
+│    - Undo é possível (re-ativar)      │
+└───────────────────────────────────────┘
+```
+
+**Exemplo real:**
+```typescript
+// Usuário deleta 'Meditar' em 2025-02-01
+habitActions.requestHabitPermanentDeletion('habit-123');
+
+// No bitmask, 2025-02-01 vira:
+// 100 | 00 | 00 | 00 | 00 = 4 (Tombstone ativo)
+
+// Ao sincronizar com outro dispositivo:
+// 1. Servidor recebe tombstone bit
+// 2. Propaga DELETE para todos os clientes
+// 3. Histórico anterior é preservado em archives/
+```
+
+<h3>🧬 CRDT-lite: Resolução de Conflitos Sem Servidor</h3>
+
+Quando dois dispositivos sincronizam com mudanças conflitantes, o Askesis resolve automaticamente **sem precisar de um servidor de autoridade**:
+
+```
+┌─── Device A (Offline por 2 dias) ──────┐
+│ 2025-01-15 Manhã: FEITO                │
+│ 2025-01-16 Tarde: ADIADO               │
+└────────────────────────────────────────┘
+                ↓ Reconecta
+┌─── Cloud State ────────────────────────┐
+│ 2025-01-15 Manhã: ADIADO (Device B)    │
+│ 2025-01-16 Tarde: PENDENTE (Device B)  │ 
+└────────────────────────────────────────┘
+                ↓ Merge (CRDT)
+┌─── Resultado (Convergência) ───────────┐
+│ 2025-01-15 Manhã: FEITO ✅             │
+│   (Razão: FEITO > ADIADO = mais forte) │
+│ 2025-01-16 Tarde: ADIADO               │
+│   (Razão: ADIADO > PENDENTE = mais     │
+│    próximo da conclusão)               │
+└────────────────────────────────────────┘
+```
+
+**Semântica da resolução:**
+```
+Precedência de estado:
+FEITO (01) > ADIADO (10) > PENDENTE (00)
+
+Lógica: max(a, b) entre os dois valores 2-bit
+```
+
+Isso garante que o usuário **nunca perde progresso** ao sincronizar.
+
+<h2>🔐 Privacidade & Criptografia: Detalhes Técnicos</h2>
+
+O Askesis implementa criptografia end-to-end de forma que **nem o servidor conhece seus dados**:
+
+<h3>Fluxo de Criptografia AES-GCM (256-bit)</h3>
+
+```
+┌─ Dados do Usuário (Plaintext) ───┐
+│ {                                │
+│   habits: [...],                 │
+│   dailyData: {...},              │
+│   monthlyLogs: Map<>             │
+│ }                                │
+└──────────────────────────────────┘
+         ↓ JSON.stringify()
+┌─ Serialização ───────────────────┐
+│ "{\"habits\":[...], ...}"        │
+└──────────────────────────────────┘
+         ↓ Gera SALT + IV aleatórios
+┌─ Derivação de Chave (PBKDF2) ───┐
+│ Password: "sync_key_do_usuario" │
+│ Salt: 16 bytes aleatórios       │
+│ Iterations: 100.000 (segurança) │
+│ Output: 256-bit key             │
+└─────────────────────────────────┘
+         ↓ AES-GCM.encrypt()
+┌─ Cifra (Ciphertext) ────────────┐
+│ SALT (16 bytes) +               │
+│ IV (12 bytes) +                 │
+│ ENCRYPTED_DATA (N bytes) +      │
+│ AUTH_TAG (16 bytes)             │
+│                                 │
+│ Total: 44 + N bytes             │
+└─────────────────────────────────┘
+         ↓ Base64
+┌─ Transporte (Seguro para URL) ──┐
+│ "AgX9kE2...F3k=" ← Base64       │
+│ Enviado para POST /api/sync     │
+└─────────────────────────────────┘
+         ↓ No Servidor
+┌─ Servidor (Sem Conhecimento) ─────┐
+│ Recebe apenas a string B64        │
+│ Armazena tal qual                 │
+│ Sem capacidade de descriptografar │
+│ (não tem a senha do usuário)      │
+└───────────────────────────────────┘
+```
+
+<h3>Sincronização de Múltiplos Dispositivos</h3>
+
+Cada dispositivo posssuem sua própria **chave de sincronização independente**:
+
+```
+┌─ Device A (Celular) ─────────────┐
+│ Sync Key: "abc123def456"         │
+│ Encripta: dados com "abc123..."  │
+└──────────────────────────────────┘
+                  ↓
+          ☁️ Cloud Storage
+          (Sem accesso de D.B)
+                  ↓
+┌─ Device B (Tablet) ──────────────┐
+│ Sync Key: "abc123def456"         │
+│ (Mesmo usuário = mesma chave)    │
+│ Descripta: usando "abc123..."    │
+└──────────────────────────────────┘
+```
+
+**Cenário offline:**
+```
+Device A (offline) → Local changes → Enqueue
+Device A (online)  → POST encrypted data
+Server             → Store & merge
+Device B (online)  → GET encrypted data
+Device B           → Decrypt & merge
+Device B           → Render updated state
+```
+
+---
+
+</details>
 
 ### Diagramas (visão geral)
 
@@ -138,7 +372,7 @@ Este diagrama detalha a arquitetura de alto nível do sistema e o fluxo de comun
 <a id="pt-data-lifecycle"></a>
 
 
-### Ciclo de dados
+### Visão Geral do Ciclo de Dados
 
 ```mermaid
 flowchart LR
@@ -150,43 +384,6 @@ flowchart LR
     Merge --> UI
 ```
 
-<a id="pt-c4-l2"></a>
-
-### Contêineres (C4 - Nível 2)
-
-```mermaid
-flowchart LR
-  %% Nível 2 = visão de containers (contêineres de alto nível)
-  %% Layout otimizado: fluxo L→R com agrupamentos verticais para evitar cruzamentos
-
-  subgraph Client["Cliente (PWA)"]
-    PWA["Askesis PWA\n(Aplicação Web)"]
-  end
-
-  subgraph Local["Camada Local"]
-    direction TB
-    Store[("IndexedDB")]
-    Worker["Web Worker\n(Criptografia AES-GCM)"]
-    SW["Service Worker\n(Cache + Offline)"]
-  end
-
-  subgraph Cloud["Serviços Externos"]
-    direction TB
-    API["Vercel API\n(Sync + Proxy IA)"]
-    AI["Gemini API\n(Análise)"]
-    PUSH["OneSignal\n(Push)"]
-  end
-
-  %% Fluxos principais (sem cruzamentos)
-  PWA --> Store
-  PWA --> Worker
-  PWA --> API
-  PWA --> PUSH
-  API --> AI
-  PUSH -.->|push event| SW
-  SW -.->|notify| PWA
-```
-
 <a id="pt-c4-l3"></a>
 
 <details>
@@ -194,24 +391,18 @@ flowchart LR
 
 ### Arquitetura Interna (Resumo)
 
-A arquitetura do Askesis é organizada em camadas para separar responsabilidades: **Apresentação** (interface e interações), **Domínio** (lógica de negócio e estado) e **Infraestrutura** (persistência e sincronização). Isso garante modularidade e facilita a manutenção.
-
-Para detalhes completos, incluindo diagramas técnicos, consulte [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+Arquitetura em camadas: Apresentação (UI), Domínio (lógica/estado), Infraestrutura (persistência/sync). Detalhes em [docs/ARCHITECTURE.md#componentes-internos](docs/ARCHITECTURE.md#componentes-internos).
 <a id="pt-data-flow"></a>
 
 ### Fluxo de Dados (Resumo)
 
-O Askesis segue um modelo local-first: dados são salvos localmente no IndexedDB e sincronizados com a nuvem de forma incremental e criptografada. Mudanças são divididas em shards, criptografadas via Web Worker, enviadas para a API e mescladas em caso de conflitos usando LWW (Last Write Wins) e deduplicação.
-
-Para o diagrama detalhado de sequência, consulte [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+Modelo local-first: salvamento em IndexedDB, sync incremental criptografado (shards via Web Worker, merge com LWW/deduplicação). Diagrama em [docs/ARCHITECTURE.md#fluxo-dados](docs/ARCHITECTURE.md#fluxo-dados).
 
 <a id="pt-sync-conflict"></a>
 
 ### Fluxo de Conflito de Sync (Resumo)
 
-Em caso de conflitos de sincronização (ex.: edições simultâneas em dispositivos diferentes), o sistema descriptografa o estado remoto, mescla com o local usando regras de LWW e deduplicação, persiste o resultado e retenta o sync.
-
-Para o diagrama detalhado de sequência, consulte [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+Conflitos: descriptografia remota, merge com LWW/deduplicação, persistência e retry. Diagrama em [docs/ARCHITECTURE.md#fluxo-conflito](docs/ARCHITECTURE.md#fluxo-conflito).
 
 <a id="pt-habit-uniqueness"></a>
 
@@ -514,23 +705,165 @@ Este projeto rejeita a complexidade desnecessária dos frameworks modernos em fa
 └── sw.js                # Service Worker (Atomic Caching)
 ```
 
-<h3>Deep Dive Técnico: A Plataforma Web como Nativa</h3>
+<details>
+<summary>Technical Deep Dive: The Web Platform as Native</summary>
 
-O Askesis opera no "Sweet Spot" da performance web, utilizando APIs nativas modernas para superar frameworks tradicionais:
+Askesis operates in the "Sweet Spot" of web performance, using modern native APIs to surpass traditional frameworks:
 
-1.  **Arquitetura de Dados "Bitmask-First":** O estado de conclusão dos hábitos não é armazenado em arrays ou objetos JSON, mas sim em mapas de bits (`BigInt`). Isso permite verificar a consistência de anos de histórico com operações matemáticas bitwise `O(1)`, com pegada de memória quase nula.
+| Aspect | Description | Benefit |
+|--------|-------------|---------|
+| **"Bitmask-First" Data Architecture** | Habit state in bitmaps (`BigInt`) for `O(1)` checks and minimal memory. | Instant history queries without performance impact, even with years of data. |
+| **"Split-State" Persistence** | IndexedDB separates hot/cold data for instant app initialization. | App opens in seconds, without unnecessary parsing of old data. |
+| **UI Physics with Advanced APIs** | Smooth interactions via Houdini and `scheduler.postTask` for non-blocking UI. | Smooth and responsive animations, improving user experience on any device. |
+| **Multithreading (Web Workers)** | Heavy tasks (crypto, parsing, AI) isolated in workers for Jank-free UI. | Always fluid interface, no freezes during intensive operations. |
+| **Zero-Copy Encryption** | AES-GCM off-main-thread with direct `ArrayBuffer`, efficient on modest devices. | Maximum security without sacrificing speed, even on basic cell phones. |
+| **Smart Synchronization (CRDT-lite)** | Conflict resolution with semantic weights, progress always preserved. | Reliable sync across devices, without data loss or manual conflicts. |
 
-2.  **Persistência "Split-State":** O armazenamento local (IndexedDB) separa dados "quentes" (notas, configurações) de dados "frios" (logs binários), permitindo uma inicialização instantânea da aplicação sem parsear megabytes de histórico.
+🏗️ Data Structures: The Magic Behind
 
-3.  **Física de UI com APIs "Bleeding-Edge":** As interações de arrastar e deslizar utilizam a API Houdini (`CSS Typed OM`) para comunicação direta com a thread de composição do navegador, garantindo animações que "colam no dedo". A renderização é orquestrada pela `scheduler.postTask` para nunca bloquear a thread principal.
+Askesis uses highly optimized data structures rarely seen in web applications. Understanding this choice is understanding why the app is so fast:
 
-4.  **Multithreading (Web Workers):** Para garantir que a UI nunca trave (Jank-free), tarefas pesadas como **Criptografia AES-GCM**, **Parsing de JSON** massivo e **Construção de Prompts de IA** são delegadas para uma thread de worker separada (`sync.worker.ts`).
+🔢 The 9-bit Bitmask System
 
-5.  **Criptografia Zero-Copy & Off-Main-Thread:** A criptografia não apenas acontece no cliente, ela é isolada em um **Web Worker** dedicado. Utilizamos técnicas de **Zero-Copy** (transferência de `ArrayBuffer` sem serialização Base64 intermediária na memória) para garantir que cifrar 5 anos de histórico não trave a interface do usuário, mesmo em celulares modestos.
+Each habit is stored in a compressed way using BigInt (JavaScript's arbitrarily large integers).
 
-6.  **Sincronização Inteligente (Smart Merge):** Implementação de um algoritmo **CRDT-lite** (Conflict-free Replicated Data Type) para reconciliação de dados. O sistema resolve conflitos entre dispositivos offline e a nuvem usando pesos semânticos (ex: "Concluído" > "Pendente"), garantindo que o progresso do usuário nunca seja perdido.
+Each day occupies 9 bits (for 3 periods: Morning, Afternoon, Evening).
 
----
+Possible states (2 bits each):
+  00 = Pending (not started)
+  01 = Done (completed)
+  10 = Deferred (snoozed)
+  11 = Reserved for future expansion
+
+Example of 1 month (30 days):
+  - Without compression:   30 days × 3 periods × 8 bytes = 720 bytes
+  - With bitmask:          30 days × 9 bits = 270 bits ≈ 34 bytes (21x smaller!)
+  - GZIP:                  34 bytes → ~8 bytes compressed
+
+Bitwise Operations O(1):
+
+// Read status of a habit on 2025-01-15 in the Morning:
+const status = (log >> ((15-1)*9 + PERIOD_OFFSET['Morning'])) & 3n;
+
+// Write status:
+log = (log & clearMask) | (newStatus << bitPos);
+
+// This is **instantaneous** even with 10+ years of data!
+
+📦 Split-State Storage: JSON + Binary
+
+Askesis's IndexedDB stores data in two separate columns.
+
+Benefits:
+
+Instant startup: JSON loads in < 50ms, binaries on demand
+Efficient backup: Export data = only JSON (< 200 KB)
+Safe migration: Old + new versions coexist without conflicts
+
+🔗 Tombstone Pattern: Soft Delete with Sync Safety
+
+When you delete a habit, Askesis doesn't erase it. Instead, it marks it with a "Tombstone".
+
+Real example:
+
+// User deletes 'Meditate' on 2025-02-01
+habitActions.requestHabitPermanentDeletion('habit-123');
+
+// In bitmask, 2025-02-01 becomes:
+// 100 | 00 | 00 | 00 | 00 = 4 (Tombstone active)
+
+// When syncing with another device:
+// 1. Server receives tombstone bit
+// 2. Propagates DELETE to all clients
+// 3. Previous history preserved in archives/
+
+🧬 CRDT-lite: Serverless Conflict Resolution
+
+When two devices sync with conflicting changes, Askesis resolves automatically without needing an authority server.
+
+Resolution semantics:
+
+State precedence:
+DONE (01) > DEFERRED (10) > PENDING (00)
+
+Logic: max(a, b) between the two 2-bit values
+This ensures the user never loses progress when syncing.
+
+📊 Technical Diagrams
+
+**9-bit Bitmask Structure:**
+```
+┌─────────────────────────────────────────────────────┐
+│ Day = [Tombstone(1 bit) | Evening Status(2) | Afternoon Status(2) | Morning Status(2) | Reserved(2) ] │
+└─────────────────────────────────────────────────────┘
+```
+
+**IndexedDB Split-State:**
+```
+┌─────────────────────────────────────────┐
+│ IndexedDB (AskesisDB)                    │
+├──────────────────────────────────────────┤
+│ KEY: "askesis_core_json"                 │
+│ VALUE: {                                 │
+│   version: 9,                            │
+│   habits: [Habit[], ...],                │
+│   dailyData: Record<>,                   │
+│   ... (everything except monthlyLogs)    │
+│ }                                        │
+│ SIZE: ~50-200 KB (even with 5 years)    │
+├──────────────────────────────────────────┤
+│ KEY: "askesis_logs_binary"               │
+│ VALUE: {                                 │
+│   "habit-1_2024-01": "a3f4e8c...",     │ ← Hex string (9-bit logs)
+│   "habit-1_2024-02": "b2e5d1a...",     │
+│   ...                                    │
+│ }                                        │
+│ SIZE: ~8-15 KB (even with 5 years)      │
+└──────────────────────────────────────────┘
+```
+
+**Tombstone Pattern:**
+```
+┌───────────────────────────────────────┐
+│ DELETE HABIT 'Meditate'               │
+├───────────────────────────────────────┤
+│ 1. Instead of: habits.remove(id)      │
+│    Does:        habit.deletedOn = now │
+│                                        │
+│ 2. Marks in bitmask:                   │
+│    Bit 8 (Tombstone) = 1              │
+│    (Forces all bits to 0)             │
+│                                        │
+│ 3. Benefit:                            │
+│    - If sync didn't reach another app, │
+│      it receives DELETE + Syncs        │
+│    - History preserved for backup      │
+│    - Undo is possible (re-activate)    │
+└───────────────────────────────────────┘
+```
+
+**CRDT-lite Conflict Resolution:**
+```
+┌─── Device A (Offline for 2 days) ──────┐
+│ 2025-01-15 Morning: DONE               │
+│ 2025-01-16 Afternoon: DEFERRED         │
+└────────────────────────────────────────┘
+                ↓ Reconnects
+┌─── Cloud State ────────────────────────┐
+│ 2025-01-15 Morning: DEFERRED (Device B)│
+│ 2025-01-16 Afternoon: PENDING (Device B)│
+└────────────────────────────────────────┘
+                ↓ Merge (CRDT)
+┌─── Result (Convergence) ───────────────┐
+│ 2025-01-15 Morning: DONE ✅             │
+│   (Reason: DONE > DEFERRED = stronger) │
+│ 2025-01-16 Afternoon: DEFERRED         │
+│   (Reason: DEFERRED > PENDING = closer │
+│    to completion)                      │
+└────────────────────────────────────────┘
+```
+
+</details>
 
 <h2>🛠️ Instalação e Desenvolvimento</h2>
 
@@ -1914,7 +2247,7 @@ Atualmente, graças a plataformas gratuitas (Vercel, Google Gemini, OneSignal), 
 </p>
 
 <details>
-  <summary><em>“We are what we repeatedly do. Excellence, then, is not an act, but a habit.” — Aristotle</em></summary>
+  <summary><p align="center"><em>“We are what we repeatedly do. Excellence, then, is not an act, but a habit.” — Aristotle</em></p></summary>
 
 Supporting text: project epigraph — ties directly to Askesis as a **habit tracker**: consistency and excellence are built through daily practice, and **habits** are the core mechanism the app helps you train and track.
 
@@ -1928,11 +2261,10 @@ Supporting text: project epigraph — ties directly to Askesis as a **habit trac
 - [Diagrams (overview)](#en-diagrams)
   - [Architecture & User Flow Overview](#en-architecture-user-flow)
   - [Integrations & Infrastructure Overview](#en-integrations-infra)
-- [Data lifecycle](#en-data-lifecycle)
-- [Containers (C4 - Level 2)](#en-c4-l2)
-- [Internal Components (C4 - Level 3)](#en-c4-l3)
-- [Data Flow (Local-first + Sync)](#en-data-flow)
-- [Sync Conflict Flow](#en-sync-conflict)
+  - [Data Lifecycle Overview](#en-data-lifecycle)
+- [Internal Architecture (Summary)](#en-c4-l3)
+- [Data Flow (Summary)](#en-data-flow)
+- [Sync Conflict Flow (Summary)](#en-sync-conflict)
 - [Habit Uniqueness Rules](#en-habit-uniqueness)
 - [Module map](#en-modules-map)
 - [Build Paradigm: Human-AI Orchestration](#en-build-paradigm)
@@ -1950,10 +2282,7 @@ Supporting text: project epigraph — ties directly to Askesis as a **habit trac
 
 ### Project Vision
 
-- Stoic habit tracker focused on privacy, with AI for reflection and routine tuning.
-- Local-first: data stays on-device; optional sync with E2E encryption (AES-GCM) via Web Worker.
-- Conflict-free/resilient sync (merge/CRDT-lite) through Vercel API (KV), no mandatory login.
-- Zero-deps by default at local runtime (no SDKs on boot); after opt-in, push may auto-load to keep state consistent.
+Stoic habit tracker focused on privacy, with AI for reflection and routine tuning.
 
 #### Motivation: Why build it?
 
@@ -1971,12 +2300,32 @@ In Stoicism, *askesis* means “training” — deliberate practice to strengthe
 
 ### Highlights
 
-- Total privacy, no login or tracking.
-- Stoic AI for reflection, not addiction.
-- Fast flow: consistency over streaks.
-- WCAG 2.1 AA accessibility and full keyboard support.
+#### Comparison with Competitors
 
-<a id="en-diagrams"></a>
+| Aspect | Askesis | Competitors (e.g., Habitica, Streaks, Loop) |
+|--------|---------|---------------------------------------------|
+| Data Privacy | Local-first, E2E encryption, no mandatory login | Many require account, centralized cloud data |
+| AI Usage | Philosophical reflection (Stoic), routine tuning | Gamification or no AI |
+| Technical Dependencies | Zero-deps on boot, opt-in for notifications | Mandatory SDKs for basic features |
+| Synchronization | Optional, resilient (CRDT-lite) | Limited or mandatory with login |
+| Philosophy | Focus on consistency and character | Rewards, streaks, competition |
+| Economic Sustainability | Zero infrastructure cost, processing on device | High server costs, mandatory subscriptions |
+
+#### Deep Dive Technical: The Web Platform as Native
+
+Askesis operates in the "Sweet Spot" of web performance, using modern native APIs to surpass traditional frameworks:
+
+1. **"Bitmask-First" Data Architecture:** Habit state in bitmaps (`BigInt`) for `O(1)` checks and minimal memory.
+
+2. **"Split-State" Persistence:** IndexedDB separates hot/cold data for instant app startup.
+
+3. **UI Physics with Advanced APIs:** Fluid interactions via Houdini and `scheduler.postTask` for non-blocking UI.
+
+4. **Multithreading (Web Workers):** Heavy tasks (crypto, parsing, AI) isolated in workers for Jank-free UI.
+
+5. **Zero-Copy Encryption:** AES-GCM off-main-thread with direct `ArrayBuffer`, efficient on modest devices.
+
+6. **Smart Synchronization (CRDT-lite):** Conflict resolution with semantic weights, progress always preserved.
 
 ### Diagrams (overview)
 
@@ -2021,7 +2370,7 @@ This diagram details the high-level system architecture and the communication fl
 
 <a id="en-data-lifecycle"></a>
 
-### Data lifecycle
+### Data Lifecycle Overview
 
 ```mermaid
 flowchart LR
@@ -2033,192 +2382,23 @@ flowchart LR
     Merge --> UI
 ```
 
-<a id="en-c4-l2"></a>
-
-### Containers (C4 - Level 2)
-
-```mermaid
-flowchart LR
-  %% Level 2 = container view (high-level containers, no Level 3 details)
-  %% Adjusted to avoid crossings: horizontal flow, single client container
-
-  subgraph Client["Client (PWA)"]
-    PWA["Askesis PWA\n(Web App)"]
-  end
-
-  subgraph Storage["Local Storage"]
-    Store["IndexedDB"]
-  end
-
-  subgraph Workers["Auxiliary Processes"]
-    Worker["Web Worker\n(Encryption)"]
-    SW["Service Worker\n(Offline + Sync)"]
-  end
-
-  subgraph External["External Services"]
-    API["Vercel API\n(Sync + Analysis)"]
-    AI["Gemini API\n(AI)"]
-    PUSH["OneSignal\n(Notifications)"]
-  end
-
-  %% Main flows (no crossings)
-  PWA --> Store
-  PWA --> Worker
-  PWA --> SW
-  Worker --> API
-  API --> AI
-  PWA --> PUSH
-  PUSH --> SW
-  SW --> PWA
-```
-
 <a id="en-c4-l3"></a>
 
-### Internal Components (C4 - Level 3)
+### Internal Architecture (Summary)
 
-```mermaid
-flowchart TB
-  %% Layered layout (easier to read): UI -> Domain -> Infra
-  subgraph UI["UI (DOM)"]
-    direction TB
-    IDX["index.tsx (boot)"]
-    LISTEN["listeners/*"]
-    RENDER["render/*"]
-    EVENTS["events.ts (event hub)"]
-  end
-
-  subgraph DOMAIN["Domain"]
-    direction TB
-    ACTIONS["services/habitActions.ts"]
-    SELECTORS["services/selectors.ts"]
-    ANALYSIS["services/analysis.ts"]
-    STATE["state.ts (single source of truth)"]
-  end
-
-  subgraph INFRA["Infra (persistence + sync)"]
-    direction TB
-    PERSIST["services/persistence.ts (IndexedDB)"]
-    CLOUD["services/cloud.ts (sync)"]
-    WRPC["services/workerClient.ts"]
-    WORKER["services/sync.worker.ts"]
-    API["services/api.ts (HTTP client)"]
-    MERGE["services/dataMerge.ts"]
-  end
-
-  %% Boot / UI
-  IDX --> LISTEN
-  IDX --> RENDER
-  IDX --> EVENTS
-
-  %% Domain
-  LISTEN --> ACTIONS
-  RENDER --> SELECTORS
-
-  ACTIONS --> STATE
-  SELECTORS --> STATE
-  ANALYSIS --> STATE
-
-  %% Persistence + Sync
-  ACTIONS --> PERSIST
-  PERSIST --> STATE
-  PERSIST --> CLOUD
-
-  %% Global events (UI plumbing)
-  ACTIONS --> EVENTS
-  EVENTS --> RENDER
-  EVENTS --> LISTEN
-
-  %% Worker / Cloud
-  ANALYSIS --> CLOUD
-  CLOUD --> WRPC --> WORKER
-  CLOUD --> API
-  CLOUD --> MERGE
-```
-
-Quick read: interactions enter via `listeners/*`, business rules live in `habitActions.ts` / `selectors.ts`, canonical state in `state.ts`, and persistence/sync live in `persistence.ts` + `cloud.ts` + `sync.worker.ts`.
+Layered architecture: Presentation (UI), Domain (logic/state), Infrastructure (persistence/sync). Details in [docs/ARCHITECTURE.md#componentes-internos](docs/ARCHITECTURE.md#componentes-internos).
 
 <a id="en-data-flow"></a>
 
-### Data Flow (Local-first + Sync)
+### Data Flow (Summary)
 
-```mermaid
-sequenceDiagram
-  participant User as User
-  participant UI as UI
-  participant State as State
-  participant Actions as habitActions
-  participant Persist as persistence
-  participant DB as IndexedDB
-  participant Cloud as cloud.ts
-  participant WRPC as workerClient
-  participant Crypto as sync.worker (crypto)
-  participant API as API /api/sync
-  participant Merge as dataMerge
-
-  User->>UI: Mark habit / add note
-  UI->>Actions: Update habit/note
-  Actions->>State: State mutation + dirty flags
-  Actions->>Persist: saveState() (debounced)
-  Persist->>DB: saveSplitState(core + logs)
-  Note over Persist,DB: Local persistence (IDB), independent of the sync key
-  Persist-->>Cloud: syncHandler(snapshot)
-  Cloud->>Cloud: splitIntoShards + hash diff
-
-  loop For each changed shard
-    Cloud->>WRPC: runWorkerTask(encrypt-json)
-    WRPC->>Crypto: encrypt(shard, syncKey)
-    Crypto-->>Cloud: encrypted shard
-  end
-
-  Cloud->>API: POST /api/sync (lastModified + shards)
-  alt No conflict (200)
-    API-->>Cloud: OK
-    Cloud->>State: syncSynced + update hash cache
-  else Version conflict (409)
-    API-->>Cloud: remote shards
-    Cloud->>WRPC: runWorkerTask(decrypt)
-    WRPC->>Crypto: decrypt(remote shards)
-    Crypto-->>Cloud: remote state
-    Cloud->>Merge: mergeStates(local, remote)
-    Merge-->>Cloud: consolidated state (LWW + dedup)
-    Cloud->>Persist: persistStateLocally(merged)
-    Cloud->>Persist: loadState(merged)
-    Persist-->>UI: render-app
-  end
-```
+Data flows from UI events → actions → state mutations → persistence → optional sync. Details in [docs/ARCHITECTURE.md#fluxo-de-dados](docs/ARCHITECTURE.md#fluxo-de-dados).
 
 <a id="en-sync-conflict"></a>
 
-### Sync Conflict Flow
+### Sync Conflict Flow (Summary)
 
-```mermaid
-sequenceDiagram
-  participant D1 as Device A
-  participant D2 as Device B
-  participant API as /api/sync
-  participant C as cloud.ts (client)
-  participant WRPC as workerClient
-  participant W as sync.worker
-  participant M as dataMerge
-
-  D1->>API: POST shards (lastModified=new)
-  API-->>D1: 200 OK
-
-  D2->>API: POST shards (lastModified=old)
-  API-->>D2: 409 CONFLICT + remote shards
-
-  D2->>C: resolveConflictWithServerState()
-  C->>WRPC: runWorkerTask(decrypt)
-  WRPC->>W: decrypt(remote shards)
-  W-->>C: remote state
-  C->>M: mergeStates(local, remote)
-  M-->>C: consolidated state
-  C->>C: persistStateLocally + loadState
-  C->>API: POST merged (retry)
-  API-->>D2: 200 OK
-
-  Note over M: Effective merge rules\n1) Match by ID\n2) Dedup by normalized name\n3) LWW for schedule/history\n4) Normalize mode/times/frequency
-```
+Conflicts: decrypt remote, merge with LWW/deduplication, persist and retry. Details in [docs/ARCHITECTURE.md#fluxo-conflito](docs/ARCHITECTURE.md#fluxo-conflito).
 
 <a id="en-habit-uniqueness"></a>
 
@@ -2786,13 +2966,14 @@ Texto de apoyo: epígrafe del proyecto — conecta con Askesis como **habit trac
 - [Visión del proyecto](#es-vision-del-proyecto)
 - [Diferenciales](#es-highlights)
 - [Diagramas (visión general)](#es-diagramas)
+- [Diagramas (visión general)](#es-diagramas)
   - [Descripción General de la Arquitectura y Flujo de Usuario](#es-architecture-user-flow)
   - [Descripción General de Integraciones e Infraestructura](#es-integrations-infra)
 - [Ciclo de datos](#es-data-lifecycle)
-- [Contenedores (C4 - Nivel 2)](#es-c4-l2)
-- [Componentes internos (C4 - Nivel 3)](#es-c4-l3)
-- [Flujo de datos (Local-first + Sync)](#es-data-flow)
-- [Flujo de conflicto de sync](#es-sync-conflict)
+- [Contenedores (Resumen)](#es-c4-l2)
+- [Arquitectura Interna (Resumen)](#es-c4-l3)
+- [Flujo de Datos (Resumen)](#es-data-flow)
+- [Flujo de Conflicto de Sync (Resumen)](#es-sync-conflict)
 - [Reglas de unicidad de habitos](#es-habit-uniqueness)
 - [Mapa de modulos](#es-modules-map)
 - [Paradigma de Construccion: Orquestacion Humano-IA](#es-build-paradigm)
@@ -2810,10 +2991,7 @@ Texto de apoyo: epígrafe del proyecto — conecta con Askesis como **habit trac
 
 ### Visión del proyecto
 
-- Rastreador de hábitos estoico, enfocado en privacidad, con IA para reflexión y ajuste de rutina.
-- Local-first: los datos quedan en el dispositivo; sincronización opcional con cifrado E2E (AES-GCM) vía Web Worker.
-- Sync resiliente y sin conflictos (merge/CRDT-lite) a través de Vercel API (KV), sin login obligatorio.
-- Zero-deps por defecto en el runtime local (sin SDKs al iniciar); tras el opt-in, push puede auto-cargar para mantener el estado.
+Rastreador de hábitos estoico, enfocado en privacidad, con IA para reflexión y ajuste de rutina.
 
 #### Motivación: ¿por qué construirlo?
 
@@ -2831,14 +3009,114 @@ En el estoicismo, *askesis* significa “entrenamiento”: práctica deliberada 
 
 ### Diferenciales
 
-- Privacidad total, sin login ni rastreo.
-- IA estoica para reflexion, no para adiccion.
-- Flujo rapido: consistencia sobre streaks.
-- Accesibilidad WCAG 2.1 AA y soporte completo de teclado.
+#### Comparación con Competidores
 
-<a id="es-diagramas"></a>
+| Aspecto | Askesis | Competidores (ej: Habitica, Streaks, Loop) |
+|---------|---------|--------------------------------------------|
+| Privacidad de Datos | Local-first, cifrado E2E, sin login obligatorio | Muchos requieren cuenta, datos centralizados en la nube |
+| Uso de IA | Reflexión filosófica (estoica), ajuste de rutina | Gamificación o sin IA |
+| Dependencias Técnicas | Zero-deps en el boot, opt-in para notificaciones | SDKs obligatorios para funcionalidades básicas |
+| Sincronización | Opcional, resiliente (CRDT-lite) | Limitada u obligatoria con login |
+| Filosofía | Enfoque en consistencia y carácter | Recompensas, streaks, competición |
+| Sostenibilidad Económica | Costo cero de infraestructura, procesamiento en el dispositivo | Costos altos de servidor, suscripciones obligatorias |
 
-### Diagramas (visión general)
+<details>
+<summary>Deep Dive Técnico: La Plataforma Web como Nativa</summary>
+
+Askesis opera en el "Sweet Spot" del rendimiento web, utilizando APIs nativas modernas para superar frameworks tradicionales:
+
+| Aspecto | Descripción | Beneficio |
+|---------|-------------|-----------|
+| **Arquitectura de Datos "Bitmask-First"** | Estado de hábitos en mapas de bits (`BigInt`) para verificaciones `O(1)` y memoria mínima. | Consultas instantáneas de historial sin impacto en el rendimiento, incluso con años de datos. |
+| **Persistencia "Split-State"** | IndexedDB separa datos calientes/fríos para inicio instantáneo. | App abre en segundos, sin análisis innecesario de datos antiguos. |
+| **Física de UI con APIs Avanzadas** | Interacciones fluidas via Houdini y `scheduler.postTask` para UI sin bloqueos. | Animaciones suaves y responsivas, mejorando la experiencia del usuario en cualquier dispositivo. |
+| **Multihilo (Web Workers)** | Tareas pesadas (cripto, análisis, IA) aisladas en workers para UI sin Jank. | Interfaz siempre fluida, sin bloqueos durante operaciones intensas. |
+| **Criptografía Zero-Copy** | AES-GCM off-main-thread con `ArrayBuffer` directo, eficiente en dispositivos modestos. | Seguridad máxima sin sacrificar velocidad, incluso en celulares básicos. |
+| **Sincronización Inteligente (CRDT-lite)** | Resolución de conflictos con pesos semánticos, progreso siempre preservado. | Sincronización confiable entre dispositivos, sin pérdida de datos o conflictos manuales. |
+
+🏗️ Estructuras de Datos: La Magia Detrás
+
+Askesis utiliza estructuras de datos altamente optimizadas que rara vez se ven en aplicaciones web. Comprender esta elección es comprender por qué la app es tan rápida:
+
+🔢 El Sistema de Bitmask de 9 bits
+
+Cada hábito se almacena de forma comprimida usando BigInt (enteros arbitrariamente grandes de JavaScript).
+
+📊 Diagramas Técnicos
+
+**Estructura de Bitmask de 9 bits:**
+```
+┌─────────────────────────────────────────────────────┐
+│ Día = [Tombstone(1 bit) | Estado Noche(2) | Estado Tarde(2) | Estado Mañana(2) | Reservado(2) ] │
+└─────────────────────────────────────────────────────┘
+```
+
+**IndexedDB Split-State:**
+```
+┌─────────────────────────────────────────┐
+│ IndexedDB (AskesisDB)                    │
+├──────────────────────────────────────────┤
+│ KEY: "askesis_core_json"                 │
+│ VALUE: {                                 │
+│   version: 9,                            │
+│   habits: [Habit[], ...],                │
+│   dailyData: Record<>,                   │
+│   ... (todo excepto monthlyLogs)         │
+│ }                                        │
+│ SIZE: ~50-200 KB (incluso con 5 años)   │
+├──────────────────────────────────────────┤
+│ KEY: "askesis_logs_binary"               │
+│ VALUE: {                                 │
+│   "habit-1_2024-01": "a3f4e8c...",     │ ← Hex string (9-bit logs)
+│   "habit-1_2024-02": "b2e5d1a...",     │
+│   ...                                    │
+│ }                                        │
+│ SIZE: ~8-15 KB (incluso con 5 años)     │
+└──────────────────────────────────────────┘
+```
+
+**Patrón Tombstone:**
+```
+┌───────────────────────────────────────┐
+│ ELIMINAR HÁBITO 'Meditar'             │
+├───────────────────────────────────────┤
+│ 1. En lugar de: habits.remove(id)     │
+│    Hace:        habit.deletedOn = now │
+│                                        │
+│ 2. Marca en bitmask:                   │
+│    Bit 8 (Tombstone) = 1              │
+│    (Fuerza todos los bits a 0)        │
+│                                        │
+│ 3. Beneficio:                          │
+│    - Si sync no llegó a otra app,      │
+│      recibe DELETE + Sincroniza       │
+│    - Historial preservado para backup  │
+│    - Undo es posible (re-activar)      │
+└───────────────────────────────────────┘
+```
+
+**CRDT-lite Resolución de Conflictos:**
+```
+┌─── Dispositivo A (Offline por 2 días) ──────┐
+│ 2025-01-15 Mañana: HECHO                   │
+│ 2025-01-16 Tarde: DIFERIDO                 │
+└────────────────────────────────────────────┘
+                ↓ Reconecta
+┌─── Estado Nube ─────────────────────────────┐
+│ 2025-01-15 Mañana: DIFERIDO (Dispositivo B) │
+│ 2025-01-16 Tarde: PENDIENTE (Dispositivo B) │
+└────────────────────────────────────────────┘
+                ↓ Merge (CRDT)
+┌─── Resultado (Convergencia) ────────────────┐
+│ 2025-01-15 Mañana: HECHO ✅                  │
+│   (Razón: HECHO > DIFERIDO = más fuerte)    │
+│ 2025-01-16 Tarde: DIFERIDO                  │
+│   (Razón: DIFERIDO > PENDIENTE = más cerca  │
+│    de completarse)                          │
+└─────────────────────────────────────────────┘
+```
+
+</details>
 
 <a id="es-architecture-user-flow"></a>
 
@@ -2895,190 +3173,27 @@ flowchart LR
 
 <a id="es-c4-l2"></a>
 
-### Contenedores (C4 - Nivel 2)
+### Contenedores (Resumen)
 
-```mermaid
-flowchart LR
-  %% Nivel 2 = vista de contenedores (contenedores de alto nivel, sin detalles del Nivel 3)
-  %% Ajustado para evitar cruces: flujo horizontal, contenedor unico para el cliente
-
-  subgraph Client["Cliente (PWA)"]
-    PWA["Askesis PWA\n(Aplicacion web)"]
-  end
-
-  subgraph Storage["Almacenamiento local"]
-    Store["IndexedDB"]
-  end
-
-  subgraph Workers["Procesos auxiliares"]
-    Worker["Web Worker\n(Cifrado)"]
-    SW["Service Worker\n(Offline + Sync)"]
-  end
-
-  subgraph External["Servicios externos"]
-    API["Vercel API\n(Sync + Analisis)"]
-    AI["Gemini API\n(IA)"]
-    PUSH["OneSignal\n(Notificaciones)"]
-  end
-
-  %% Flujos principales (sin cruces)
-  PWA --> Store
-  PWA --> Worker
-  PWA --> SW
-  Worker --> API
-  API --> AI
-  PWA --> PUSH
-  PUSH --> SW
-  SW --> PWA
-```
+Cliente PWA, almacenamiento local (IndexedDB), workers (cifrado/sync), servicios externos (API/Vercel, IA/Gemini, notificaciones/OneSignal). Detalles en [docs/ARCHITECTURE.md#contenedores](docs/ARCHITECTURE.md#contenedores).
 
 <a id="es-c4-l3"></a>
 
-### Componentes internos (C4 - Nivel 3)
+### Arquitectura Interna (Resumen)
 
-```mermaid
-flowchart TB
-  %% Layout por capas (más legible): UI -> Dominio -> Infra
-  subgraph UI["UI (DOM)"]
-    direction TB
-    IDX["index.tsx (boot)"]
-    LISTEN["listeners/*"]
-    RENDER["render/*"]
-    EVENTS["events.ts (event hub)"]
-  end
-
-  subgraph DOMAIN["Dominio"]
-    direction TB
-    ACTIONS["services/habitActions.ts"]
-    SELECTORS["services/selectors.ts"]
-    ANALYSIS["services/analysis.ts"]
-    STATE["state.ts (single source of truth)"]
-  end
-
-  subgraph INFRA["Infra (persistencia + sync)"]
-    direction TB
-    PERSIST["services/persistence.ts (IndexedDB)"]
-    CLOUD["services/cloud.ts (sync)"]
-    WRPC["services/workerClient.ts"]
-    WORKER["services/sync.worker.ts"]
-    API["services/api.ts (HTTP client)"]
-    MERGE["services/dataMerge.ts"]
-  end
-
-  %% Boot / UI
-  IDX --> LISTEN
-  IDX --> RENDER
-  IDX --> EVENTS
-
-  %% Dominio
-  LISTEN --> ACTIONS
-  RENDER --> SELECTORS
-
-  ACTIONS --> STATE
-  SELECTORS --> STATE
-  ANALYSIS --> STATE
-
-  %% Persistencia + Sync
-  ACTIONS --> PERSIST
-  PERSIST --> STATE
-  PERSIST --> CLOUD
-
-  %% Eventos globales (UI plumbing)
-  ACTIONS --> EVENTS
-  EVENTS --> RENDER
-  EVENTS --> LISTEN
-
-  %% Worker / Cloud
-  ANALYSIS --> CLOUD
-  CLOUD --> WRPC --> WORKER
-  CLOUD --> API
-  CLOUD --> MERGE
-```
-
-Lectura rápida: la interacción entra por `listeners/*`, la regla de negocio vive en `habitActions.ts` / `selectors.ts`, el estado canónico en `state.ts`, y persistencia/sync en `persistence.ts` + `cloud.ts` + `sync.worker.ts`.
+Arquitectura en capas: Presentación (UI), Dominio (lógica/estado), Infraestructura (persistencia/sync). Detalles en [docs/ARCHITECTURE.md#componentes-internos](docs/ARCHITECTURE.md#componentes-internos).
 
 <a id="es-data-flow"></a>
 
-### Flujo de datos (Local-first + Sync)
+### Flujo de Datos (Resumen)
 
-```mermaid
-sequenceDiagram
-  participant User as Usuario
-  participant UI as UI
-  participant State as State
-  participant Actions as habitActions
-  participant Persist as persistence
-  participant DB as IndexedDB
-  participant Cloud as cloud.ts
-  participant WRPC as workerClient
-  participant Crypto as sync.worker (crypto)
-  participant API as API /api/sync
-  participant Merge as dataMerge
-
-  User->>UI: Marca hábito / agrega nota
-  UI->>Actions: Actualiza hábito/nota
-  Actions->>State: Mutación de estado + dirty flags
-  Actions->>Persist: saveState() (debounced)
-  Persist->>DB: saveSplitState(core + logs)
-  Note over Persist,DB: Persistencia local (IDB), independiente de la sync key
-  Persist-->>Cloud: syncHandler(snapshot)
-  Cloud->>Cloud: splitIntoShards + hash diff
-
-  loop Para cada shard cambiado
-    Cloud->>WRPC: runWorkerTask(encrypt-json)
-    WRPC->>Crypto: encrypt(shard, syncKey)
-    Crypto-->>Cloud: shard cifrado
-  end
-
-  Cloud->>API: POST /api/sync (lastModified + shards)
-  alt Sin conflicto (200)
-    API-->>Cloud: OK
-    Cloud->>State: syncSynced + actualiza hash cache
-  else Conflicto de versión (409)
-    API-->>Cloud: shards remotos
-    Cloud->>WRPC: runWorkerTask(decrypt)
-    WRPC->>Crypto: decrypt(shards remotos)
-    Crypto-->>Cloud: estado remoto
-    Cloud->>Merge: mergeStates(local, remoto)
-    Merge-->>Cloud: estado consolidado (LWW + dedup)
-    Cloud->>Persist: persistStateLocally(merged)
-    Cloud->>Persist: loadState(merged)
-    Persist-->>UI: render-app
-  end
-```
+Flujo de datos desde eventos UI → acciones → mutaciones de estado → persistencia → sync opcional. Detalles en [docs/ARCHITECTURE.md#fluxo-de-dados](docs/ARCHITECTURE.md#fluxo-de-dados).
 
 <a id="es-sync-conflict"></a>
 
-### Flujo de conflicto de sync
+### Flujo de Conflicto de Sync (Resumen)
 
-```mermaid
-sequenceDiagram
-  participant D1 as Dispositivo A
-  participant D2 as Dispositivo B
-  participant API as /api/sync
-  participant C as cloud.ts (cliente)
-  participant WRPC as workerClient
-  participant W as sync.worker
-  participant M as dataMerge
-
-  D1->>API: POST shards (lastModified=nuevo)
-  API-->>D1: 200 OK
-
-  D2->>API: POST shards (lastModified=antiguo)
-  API-->>D2: 409 CONFLICT + shards remotos
-
-  D2->>C: resolveConflictWithServerState()
-  C->>WRPC: runWorkerTask(decrypt)
-  WRPC->>W: decrypt(shards remotos)
-  W-->>C: estado remoto
-  C->>M: mergeStates(local, remoto)
-  M-->>C: estado consolidado
-  C->>C: persistStateLocally + loadState
-  C->>API: POST merged (retry)
-  API-->>D2: 200 OK
-
-  Note over M: Reglas efectivas de merge\n1) Match por ID\n2) Dedup por nombre normalizado\n3) LWW por schedule/history\n4) Normalización de mode/times/frequency
-```
+Conflicto: descifrar remoto, merge con LWW/deduplicación, persistir y retry. Detalles en [docs/ARCHITECTURE.md#fluxo-conflito](docs/ARCHITECTURE.md#fluxo-conflito).
 
 <a id="es-habit-uniqueness"></a>
 
