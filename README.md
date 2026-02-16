@@ -191,40 +191,36 @@ flowchart LR
 ### Componentes Internos (C4 - Nível 3)
 
 ```mermaid
-flowchart TB
-  %% Layout em camadas: UI → Domínio → Infra (fluxo vertical sem cruzamentos)
+flowchart LR
+  %% Layout horizontal: fluxo da esquerda para direita, minimizando cruzamentos
 
-  subgraph UI["Camada UI"]
-    direction LR
-    IDX["index.tsx\n(bootstrap)"]
-    LISTEN["listeners/*\n(eventos DOM)"]
-    RENDER["render/*\n(DOM updates)"]
-    EVENTS["events.ts\n(pub/sub)"]
+  subgraph PRESENTATION["🎨 Camada de Apresentação"]
+    direction TB
+    IDX["index.tsx<br/>(bootstrap)"]
+    LISTEN["listeners/*<br/>(eventos DOM)"]
+    RENDER["render/*<br/>(DOM updates)"]
   end
 
-  subgraph DOMAIN["Camada de Domínio"]
-    direction LR
-    ACTIONS["habitActions.ts\n(mutações)"]
-    SELECTORS["selectors.ts\n(queries)"]
-    ANALYSIS["analysis.ts\n(IA insights)"]
-    STATE[("state.ts\n(SSOT)")]
+  subgraph DOMAIN["🧠 Camada de Domínio"]
+    direction TB
+    ACTIONS["habitActions.ts<br/>(mutações)"]
+    SELECTORS["selectors.ts<br/>(queries)"]
+    ANALYSIS["analysis.ts<br/>(IA insights)"]
+    STATE[("state.ts<br/>(SSOT)")]
   end
 
-  subgraph INFRA["Camada de Infraestrutura"]
-    direction LR
-    PERSIST["persistence.ts\n(IndexedDB)"]
-    CLOUD["cloud.ts\n(sync orchestrator)"]
-    WRPC["workerClient.ts"]
-    WORKER["sync.worker.ts\n(crypto)"]
+  subgraph INFRA["⚙️ Camada de Infraestrutura"]
+    direction TB
+    PERSIST["persistence.ts<br/>(IndexedDB)"]
+    EVENTS["events.ts<br/>(pub/sub bus)"]
+    CLOUD["cloud.ts<br/>(sync orchestrator)"]
+    WRPC["workerClient.ts<br/>(RPC)"]
+    WORKER["sync.worker.ts<br/>(crypto)"]
+    API["api.ts<br/>(HTTP)"]
+    MERGE["dataMerge.ts<br/>(CRDT-lite)"]
   end
 
-  subgraph INFRA_AUX[" "]
-    direction LR
-    API["api.ts\n(HTTP)"]
-    MERGE["dataMerge.ts\n(CRDT-lite)"]
-  end
-
-  %% === Boot ===
+  %% === Bootstrap (inicialização) ===
   IDX --> LISTEN
   IDX --> RENDER
 
@@ -233,30 +229,39 @@ flowchart TB
   LISTEN --> ANALYSIS
   RENDER --> SELECTORS
 
-  %% === Domínio → State ===
+  %% === Domínio → Estado ===
   ACTIONS --> STATE
   SELECTORS --> STATE
   ANALYSIS --> STATE
 
-  %% === Persistência ===
+  %% === Persistência Local ===
   ACTIONS --> PERSIST
   PERSIST --> STATE
-  PERSIST -.->|callback| CLOUD
 
-  %% === Event Bus (publish/subscribe) ===
+  %% === Event Bus (comunicação assíncrona) ===
   ACTIONS --> EVENTS
-  EVENTS -.->|subscribe| RENDER
-  EVENTS -.->|subscribe| LISTEN
+  EVENTS --> RENDER
+  EVENTS --> LISTEN
 
-  %% === Sync Pipeline ===
+  %% === Pipeline de Sync ===
   ANALYSIS --> CLOUD
   CLOUD --> WRPC
-  WRPC --> WORKER
   CLOUD --> API
   CLOUD --> MERGE
+  WRPC --> WORKER
+
+  %% === Callback de Persistência ===
+  PERSIST -.->|callback| CLOUD
 ```
 
-Leitura rápida: interação entra por `listeners/*`, regra de negócio vive em `habitActions.ts`/`selectors.ts`, estado central em `state.ts`, e persistência/sync ficam em `persistence.ts` + `cloud.ts` + `sync.worker.ts`.
+**Leitura do diagrama:**
+- **Fluxo principal:** Apresentação → Domínio → Infraestrutura (esquerda para direita)
+- **Inicialização:** `index.tsx` configura listeners e render
+- **Interação do usuário:** `listeners/*` → `habitActions.ts` (mutações) + `analysis.ts` (insights IA)
+- **Estado central:** Tudo converge para `state.ts` (Single Source of Truth)
+- **Persistência:** `habitActions.ts` → `persistence.ts` → IndexedDB + callback para sync
+- **Comunicação assíncrona:** `events.ts` como barramento pub/sub entre componentes
+- **Sync pipeline:** `analysis.ts` → `cloud.ts` → worker/crypto → API → merge
 
 <a id="pt-data-flow"></a>
 
