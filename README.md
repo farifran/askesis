@@ -135,6 +135,8 @@ Este diagrama detalha a arquitetura de alto nível do sistema e o fluxo de comun
 </details>
 ---
 
+<details><summary>Arquitetura e Fluxos Técnicos</summary>
+
 <a id="pt-data-lifecycle"></a>
 
 ### Ciclo de dados
@@ -188,7 +190,7 @@ flowchart LR
 
 <a id="pt-c4-l3"></a>
 
-### Componentes Internos (C4 - Nível 3)
+### Arquitetura Interna: Componentes do Sistema
 
 ```mermaid
 flowchart LR
@@ -337,6 +339,9 @@ sequenceDiagram
   API-->>D2: 200 OK
 
   Note over M: Regras efetivas de merge\n1) Match por ID\n2) Dedup por nome normalizado\n3) LWW por schedule/history\n4) Normalização de mode/times/frequency
+
+</details>
+
 ```
 
 <a id="pt-habit-uniqueness"></a>
