@@ -190,24 +190,21 @@ flowchart LR
 
 ### Componentes Internos (C4 - Nível 3)
 
-A arquitetura do Askesis segue um modelo em camadas, inspirado no padrão C4, para organizar os componentes internos. Isso facilita a manutenção e o entendimento, separando responsabilidades claras. Pense nisso como um restaurante: a apresentação é o atendimento ao cliente, o domínio é a cozinha que prepara os pratos, e a infraestrutura é o estoque e fornecedores que garantem os ingredientes.
+```mermaid
+graph TD
+    User[Usuário] --> Presentation[🎨 Apresentação<br/>Interface e Interações]
+    Presentation --> Domain[🧠 Domínio<br/>Lógica de Negócios]
+    Domain --> Infra[⚙️ Infraestrutura<br/>Persistência e Sync]
+    Infra --> DB[(IndexedDB)]
+    Infra --> Cloud[(Nuvem)]
+```
 
-#### Camadas Principais:
-- **🎨 Camada de Apresentação:**  
-  Responsável pela interface do usuário e pelas interações. Aqui, o app "conversa" com o usuário, capturando cliques, toques e exibindo informações na tela. É como o garçom que recebe pedidos e serve os pratos.
-
-- **🧠 Camada de Domínio:**  
-  Contém a lógica central do negócio, como regras para hábitos, cálculos de progresso e gerenciamento do estado geral da aplicação. É o "coração" do app, onde decisões importantes são tomadas, semelhante à cozinha que decide como preparar cada prato.
-
-- **⚙️ Camada de Infraestrutura:**  
-  Lida com armazenamento de dados, sincronização com a nuvem e comunicações externas. Garante que tudo funcione de forma confiável, como o estoque que mantém ingredientes frescos e organiza entregas.
-
-#### Como as Camadas Interagem:
-- O usuário interage com a **Apresentação**, que passa as informações para o **Domínio**.
-- O **Domínio** processa e atualiza o estado, então aciona a **Infraestrutura** para salvar ou sincronizar dados.
-- Tudo flui de forma organizada: da interface para a lógica, e da lógica para o armazenamento/comunicação.
-
-Essa estrutura garante que o app seja local-first (prioriza dados locais) e suporte sincronização segura entre dispositivos.
+**Leitura do diagrama:**
+- **Fluxo principal:** Usuário → Apresentação → Domínio → Infraestrutura
+- **Apresentação:** Cuida da UI e eventos do usuário.
+- **Domínio:** Gerencia regras de negócio e estado.
+- **Infraestrutura:** Lida com armazenamento local e sincronização na nuvem.
+- Essa estrutura em camadas facilita a manutenção e garante que o app seja local-first.
 <a id="pt-data-flow"></a>
 
 ### Fluxo de Dados (Local-first + Sync)
