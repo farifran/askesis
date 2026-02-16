@@ -191,20 +191,41 @@ flowchart LR
 ### Componentes Internos (C4 - Nível 3)
 
 ```mermaid
-graph TD
-    User[Usuário] --> Presentation[🎨 Apresentação<br/>Interface e Interações]
-    Presentation --> Domain[🧠 Domínio<br/>Lógica de Negócios]
-    Domain --> Infra[⚙️ Infraestrutura<br/>Persistência e Sync]
-    Infra --> DB[(IndexedDB)]
-    Infra --> Cloud[(Nuvem)]
+flowchart LR
+  %% Nível 3 = visão de componentes (módulos internos)
+  %% Layout similar ao Nível 2: fluxo L→R com subgrupos
+
+  subgraph Presentation["🎨 Apresentação"]
+    direction TB
+    UI["Interface do Usuário"]
+    Events["Gerenciamento de Eventos"]
+  end
+
+  subgraph Domain["🧠 Domínio"]
+    direction TB
+    Logic["Lógica de Negócios"]
+    State[("Estado Central")]
+  end
+
+  subgraph Infra["⚙️ Infraestrutura"]
+    direction TB
+    Persistence["Persistência Local"]
+    Sync["Sincronização"]
+  end
+
+  %% Fluxos
+  UI --> Logic
+  Events --> Logic
+  Logic --> State
+  State --> Persistence
+  State --> Sync
 ```
 
 **Leitura do diagrama:**
-- **Fluxo principal:** Usuário → Apresentação → Domínio → Infraestrutura
-- **Apresentação:** Cuida da UI e eventos do usuário.
-- **Domínio:** Gerencia regras de negócio e estado.
-- **Infraestrutura:** Lida com armazenamento local e sincronização na nuvem.
-- Essa estrutura em camadas facilita a manutenção e garante que o app seja local-first.
+- **Apresentação:** Interface e interações do usuário.
+- **Domínio:** Regras de negócio e gerenciamento de estado.
+- **Infraestrutura:** Armazenamento e comunicação externa.
+- Fluxo: Da UI para lógica, estado e infraestrutura.
 <a id="pt-data-flow"></a>
 
 ### Fluxo de Dados (Local-first + Sync)
