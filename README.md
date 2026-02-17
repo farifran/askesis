@@ -15,7 +15,7 @@
 
 <p align="center">
   <div style="display: inline-block; background-color: black; border-radius: 10px; vertical-align: top;">
-    <img src="assets/AristotelesPortugues.jpg" alt="Aristóteles (Português)" width="63%" style="border-radius: 10px; border: 1px solid #2a2a2a; display: block; margin: 0 auto;">
+    <img src="Imagem PNG.png" alt="Aristóteles (Português)" width="63%" style="border-radius: 10px; border: 1px solid #2a2a2a; display: block; margin: 0 auto;">
   </div>
 </p>
 
