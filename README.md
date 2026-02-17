@@ -27,10 +27,25 @@ Epígrafe do projeto — conecta direto com o propósito do Askesis como **habit
 - [IA como assistente de código e prototipação](#pt-ai-assistant)
   - [Paradigma de Construção: A Orquestração Humano-IA](#pt-build-paradigm)
 - [Diferenciais e Arquitectura](#pt-highlights)
+  - [Deep Dive Técnico](#pt-deep-dive-technical)
+    - Arquitetura de Dados "Bitmask-First"
+    - Persistência "Split-State"
+    - Física de UI com APIs Avançadas
+    - Multithreading (Web Workers)
+    - Criptografia Zero-Copy
+    - Sincronização Inteligente (CRDT-lite)
+    - Estrutura do Projeto
+    - Sistema de Bitmask 9-bit
+    - Split-State Storage: JSON + Binary
+    - Tombstone Pattern: Soft Delete
+    - CRDT-lite: Resolução de Conflitos
+    - Fluxo de Criptografia AES-GCM
+    - Sincronização de Múltiplos Dispositivos
 - [Diagramas (visão geral)](#pt-diagramas)
   - [Visão Geral da Arquitetura e Fluxo do Usuário](#pt-architecture-user-flow)
   - [Visão Geral de Integrações e Infraestrutura](#pt-integrations-infra)
   - [Visão Geral do Ciclo de Dados](#pt-data-lifecycle)
+  - [Diagrama detalhado](#pt-c4-l3)
 - [Arquitetura Interna (Resumo)](#pt-c4-l3)
 - [Fluxo de Dados (Resumo)](#pt-data-flow)
 - [Fluxo de Conflito de Sync (Resumo)](#pt-sync-conflict)
@@ -116,6 +131,7 @@ Esta tabela explicita onde a IA entregou velocidade de implementação e onde mi
 | Filosofia | Foco em consistência e caráter | Recompensas, streaks, competição |
 | Sustentabilidade Econômica | Custo zero de infraestrutura, processamento no dispositivo | Custos altos de servidor, assinaturas obrigatórias |
 
+<a id="pt-deep-dive-technical"></a>
 <details>
 <summary>Deep Dive Técnico</summary>
 <br>
@@ -3689,8 +3705,9 @@ Ejemplo:
 
 <script>
 (function() {
-  if (window.location.hash === '#pt-build-paradigm') {
-    const target = document.getElementById('pt-build-paradigm');
+  const hash = window.location.hash;
+  if (hash === '#pt-build-paradigm' || hash === '#pt-deep-dive-technical') {
+    const target = document.getElementById(hash.substring(1));
     if (target) {
       const details = target.closest('details');
       if (details && !details.open) {
