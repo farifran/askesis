@@ -417,11 +417,11 @@ Device B           → Render updated state
   <img src="assets/diagram/system-architecture-flow-pt.png" alt="Visão Geral da Arquitetura e Fluxo do Usuário" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
 </p>
 
-<small>Este diagrama ilustra o ciclo de vida principal da aplicação, estruturado em três fases fundamentais:
+<span style="font-size: 0.8em;">Este diagrama ilustra o ciclo de vida principal da aplicação, estruturado em três fases fundamentais:
 
 - Fase 1: Definição (Onboarding): Criação e customização de hábitos com foco absoluto em privacidade, utilizando uma abordagem Local-first com criptografia de ponta a ponta (E2E).
 - Fase 2: Execução (Engajamento): Gerenciamento diário, métricas de performance e persistência de dados. A interface (Main Thread) é isolada do processamento de dados (Worker), utilizando IndexedDB para armazenamento local e protocolo CRDT-lite para sincronização sem conflitos com a nuvem (Vercel KV).
-- Fase 3: Inteligência (Feedback): Um motor de análise avalia os dados do usuário para gerar insights comportamentais personalizados, injetando esse contexto de volta na experiência para criar um loop de engajamento contínuo.</small>
+- Fase 3: Inteligência (Feedback): Um motor de análise avalia os dados do usuário para gerar insights comportamentais personalizados, injetando esse contexto de volta na experiência para criar um loop de engajamento contínuo.</span>
 
 <a id="pt-integrations-infra"></a>
 
@@ -431,12 +431,12 @@ Device B           → Render updated state
   <img src="assets/diagram/system-integrations-pt.png" alt="Visão Geral de Integrações e Infraestrutura" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
 </p>
 
-<small>Este diagrama detalha a arquitetura de alto nível do sistema e o fluxo de comunicação entre os serviços externos:
+<span style="font-size: 0.8em;">Este diagrama detalha a arquitetura de alto nível do sistema e o fluxo de comunicação entre os serviços externos:
 
 - Cliente (Askesis PWA): A interface em React que interage com o usuário no dia a dia, gerenciando o estado local e iniciando as requisições.
 - Backend Serverless (Vercel API): Atua como uma camada intermediária segura. Ele gerencia a sincronização de estado e funciona como um "Proxy de IA", protegendo as chaves de API e validando as requisições antes de enviá-las ao modelo de linguagem.
 - Motor de IA (Google Gemini API): O cérebro por trás da análise, recebendo os dados filtrados pelo backend para processar as reflexões e gerar insights personalizados.
-- Notificações (OneSignal): Serviço de mensageria independente que registra o PWA e cuida do envio de notificações push assíncronas para engajar o usuário de volta no aplicativo.</small>
+- Notificações (OneSignal): Serviço de mensageria independente que registra o PWA e cuida do envio de notificações push assíncronas para engajar o usuário de volta no aplicativo.</span>
 ---
 
 <a id="pt-data-lifecycle"></a>
@@ -2397,11 +2397,11 @@ Askesis operates in the "Sweet Spot" of web performance, using modern native API
   <img src="assets/diagram/system-architecture-flow-en.png" alt="Architecture & User Flow Overview" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
 </p>
 
-<small>This diagram illustrates the core application lifecycle, broken down into three main phases:
+<span style="font-size: 0.8em;">This diagram illustrates the core application lifecycle, broken down into three main phases:
 
 - Phase 1: Definition (Onboarding): Habit creation and customization focused on privacy, utilizing a Local-first approach with End-to-End (E2E) encryption.
 - Phase 2: Execution (Engagement): Daily management, performance metrics, and data persistence. The UI (Main Thread) is decoupled from data processing (Worker), leveraging IndexedDB for local storage and a CRDT-lite protocol for conflict-free cloud synchronization (Vercel KV).
-- Phase 3: Intelligence (Feedback): An analysis engine processes user data to generate personalized behavioral insights, injecting this context back into the user experience to create a continuous engagement loop.</small>
+- Phase 3: Intelligence (Feedback): An analysis engine processes user data to generate personalized behavioral insights, injecting this context back into the user experience to create a continuous engagement loop.</span>
 
 <a id="en-integrations-infra"></a>
 
@@ -2411,12 +2411,12 @@ Askesis operates in the "Sweet Spot" of web performance, using modern native API
   <img src="assets/diagram/system-integrations-en.png" alt="Integrations & Infrastructure Overview" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
 </p>
 
-<small>This diagram details the high-level system architecture and the communication flow between external services:
+<span style="font-size: 0.8em;">This diagram details the high-level system architecture and the communication flow between external services:
 
 - Client (Askesis PWA): The React-based frontend handling daily user interactions, local state management, and request initiations.
 - Serverless Backend (Vercel API): Acts as a secure middleware layer. It handles state synchronization and serves as an "AI Proxy," protecting API keys and validating requests before routing them to the LLM.
 - AI Engine (Google Gemini API): The analytical brain of the app, receiving filtered context from the backend to process reflections and generate personalized insights.
-- Push Notifications (OneSignal): A dedicated messaging service that handles PWA push registrations and delivers asynchronous notifications to re-engage the user.</small>
+- Push Notifications (OneSignal): A dedicated messaging service that handles PWA push registrations and delivers asynchronous notifications to re-engage the user.</span>
 
 <a id="en-data-lifecycle"></a>
 
@@ -3173,11 +3173,11 @@ Cada hábito se almacena de forma comprimida usando BigInt (enteros arbitrariame
   <img src="assets/diagram/system-architecture-flow-es.png" alt="Descripción General de la Arquitectura y Flujo de Usuario" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
 </p>
 
-<small>Este diagrama ilustra el ciclo de vida principal de la aplicación, estructurado en tres fases fundamentales:
+<span style="font-size: 0.8em;">Este diagrama ilustra el ciclo de vida principal de la aplicación, estructurado en tres fases fundamentales:
 
 - Fase 1: Definición (Onboarding): Creación y personalización de hábitos con un enfoque absoluto en la privacidad, utilizando un enfoque Local-first con encriptación de extremo a extremo (E2E).
 - Fase 2: Ejecución (Engagement): Gestión diaria, métricas de rendimiento y persistencia de datos. La interfaz (Main Thread) está aislada del procesamiento de datos (Worker), utilizando IndexedDB para el almacenamiento local y el protocolo CRDT-lite para una sincronización sin conflictos con la nube (Vercel KV).
-- Fase 3: Inteligencia (Feedback): Un motor de análisis evalúa los datos del usuario para generar insights de comportamiento personalizados, inyectando este contexto de vuelta en la experiencia para crear un ciclo de interacción continuo.</small>
+- Fase 3: Inteligencia (Feedback): Un motor de análisis evalúa los datos del usuario para generar insights de comportamiento personalizados, inyectando este contexto de vuelta en la experiencia para crear un ciclo de interacción continuo.</span>
 
 <a id="es-integrations-infra"></a>
 
@@ -3187,12 +3187,12 @@ Cada hábito se almacena de forma comprimida usando BigInt (enteros arbitrariame
   <img src="assets/diagram/system-integrations-es.png" alt="Descripción General de Integraciones e Infraestructura" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
 </p>
 
-<small>Este diagrama detalla la arquitectura de alto nivel del sistema y el flujo de comunicación entre los servicios externos:
+<span style="font-size: 0.8em;">Este diagrama detalla la arquitectura de alto nivel del sistema y el flujo de comunicación entre los servicios externos:
 
 - Cliente (Askesis PWA): La interfaz basada en React que gestiona las interacciones diarias del usuario, el estado local y el inicio de las solicitudes.
 - Backend Serverless (Vercel API): Actúa como una capa intermedia segura. Gestiona la sincronización del estado y funciona como un "Proxy de IA", protegiendo las claves de API y validando las solicitudes antes de enviarlas al modelo de lenguaje.
 - Motor de IA (Google Gemini API): El cerebro analítico de la aplicación, que recibe el contexto filtrado por el backend para procesar las reflexiones y generar insights personalizados.
-- Notificaciones (OneSignal): Servicio de mensajería independiente que gestiona los registros push de la PWA y entrega notificaciones asíncronas para volver a captar la atención del usuario.</small>
+- Notificaciones (OneSignal): Servicio de mensajería independiente que gestiona los registros push de la PWA y entrega notificaciones asíncronas para volver a captar la atención del usuario.</span>
 
 <a id="es-data-lifecycle"></a>
 
