@@ -23,7 +23,7 @@ Epígrafe do projeto — conecta direto com o propósito do Askesis como **habit
 
 
 <details>
-  <summary>**Ver estrutura completa (TOC)**</summary>
+  <summary><b>Ver estrutura completa (TOC)</b></summary>
 
 - [Visão do Projeto](#pt-visao-do-projeto)
 - [IA como assistente de código e prototipação](#pt-ai-assistant)
@@ -66,7 +66,7 @@ Epígrafe do projeto — conecta direto com o propósito do Askesis como **habit
 <a id="pt-visao-do-projeto"></a>
 <a id="pt-resumo"></a>
 
-### Visão do Projeto
+### <span style="font-size: 1.5em;">Visão do Projeto</span>
 
 Rastreador de hábitos estoico, focado em privacidade, com IA para reflexões e ajustes de rotina.
 
@@ -95,17 +95,18 @@ A maioria dos apps de hábitos foca em gamificação superficial ou em "não que
 
 ### IA como assistente de código e prototipação
 
-O Askesis não foi só “codificado”; foi **orquestrado** com IA como parceira. Usei o Google AI Studio como playground de prototipação e o GitHub Codespaces como ambiente de desenvolvimento em nuvem.
+O Askesis não foi só “codificado”; foi **orquestrado** com IA como parceira. Usei o Google AI Studio como playground de prototipação, o GitHub Codespaces como ambiente de desenvolvimento em nuvem, e o GitHub Copilot para assistência direta no desenvolvimento de código.
 
 - **Papel humano:** definir visão, arquitetura e prioridades; validar o que foi gerado via iteração de prompts e testes.
 - **Papel da IA:** acelerar a implementação pesada, sugerir ajustes de performance e ajudar a eliminar bugs lógicos.
+
 <a id="pt-build-paradigm"></a>
 O resultado é uma aplicação que uma única pessoa consegue levar a um nível de complexidade e polimento mais comum em um time.
 
 <details>
-  <summary>**Paradigma de Construção: A Orquestração Humano-IA**</summary>
+  <summary><b>Paradigma de Construção: A Orquestração Humano-IA</b></summary>
 <br>
-Esta tabela explicita onde a IA entregou velocidade de implementação e onde minha visão de produto e formação em Psicologia transformaram código em experiência.
+Esta tabela explicita onde a IA entregou velocidade de implementação e onde minha visão de produto e intervenção incrementam o valor técnico e dão passo à inovação.
 
 ---
 
@@ -121,7 +122,7 @@ Esta tabela explicita onde a IA entregou velocidade de implementação e onde mi
 
 <a id="pt-highlights"></a>
 
-### Diferenciais e Arquitectura
+### <span style="font-size: 1.5em;">Diferenciais e Arquitectura</span>
 
 #### Comparação com Concorrentes
 
@@ -136,7 +137,7 @@ Esta tabela explicita onde a IA entregou velocidade de implementação e onde mi
 
 <a id="pt-deep-dive-technical"></a>
 <details>
-<summary>**Deep Dive Técnico**</summary>
+<summary><b>Deep Dive Técnico</b></summary>
 <br>
 O Askesis opera no "Sweet Spot" da performance web, utilizando APIs nativas modernas para superar frameworks:
 
@@ -410,47 +411,38 @@ Device B           → Render updated state
 
 <a id="pt-architecture-user-flow"></a>
 
-#### Visão Geral da Arquitetura e Fluxo do Usuário
+#### <span style="font-size: 1.5em;">Visão Geral da Arquitetura e Fluxo do Usuário</span>
 
 <p align="center">
   <img src="assets/diagram/system-architecture-flow-pt.png" alt="Visão Geral da Arquitetura e Fluxo do Usuário" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
 </p>
 
-<details>
-  <summary>**Texto de apoio**</summary>
-
-Este diagrama ilustra o ciclo de vida principal da aplicação, estruturado em três fases fundamentais:
+<small>Este diagrama ilustra o ciclo de vida principal da aplicação, estruturado em três fases fundamentais:
 
 - Fase 1: Definição (Onboarding): Criação e customização de hábitos com foco absoluto em privacidade, utilizando uma abordagem Local-first com criptografia de ponta a ponta (E2E).
 - Fase 2: Execução (Engajamento): Gerenciamento diário, métricas de performance e persistência de dados. A interface (Main Thread) é isolada do processamento de dados (Worker), utilizando IndexedDB para armazenamento local e protocolo CRDT-lite para sincronização sem conflitos com a nuvem (Vercel KV).
-- Fase 3: Inteligência (Feedback): Um motor de análise avalia os dados do usuário para gerar insights comportamentais personalizados, injetando esse contexto de volta na experiência para criar um loop de engajamento contínuo.
-
-</details>
+- Fase 3: Inteligência (Feedback): Um motor de análise avalia os dados do usuário para gerar insights comportamentais personalizados, injetando esse contexto de volta na experiência para criar um loop de engajamento contínuo.</small>
 
 <a id="pt-integrations-infra"></a>
 
-#### Visão Geral de Integrações e Infraestrutura
+#### <span style="font-size: 1.5em;">Visão Geral de Integrações e Infraestrutura</span>
 
 <p align="center">
   <img src="assets/diagram/system-integrations-pt.png" alt="Visão Geral de Integrações e Infraestrutura" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
 </p>
 
-<details>
-  <summary>**Texto de apoio**</summary>
-
-Este diagrama detalha a arquitetura de alto nível do sistema e o fluxo de comunicação entre os serviços externos:
+<small>Este diagrama detalha a arquitetura de alto nível do sistema e o fluxo de comunicação entre os serviços externos:
 
 - Cliente (Askesis PWA): A interface em React que interage com o usuário no dia a dia, gerenciando o estado local e iniciando as requisições.
 - Backend Serverless (Vercel API): Atua como uma camada intermediária segura. Ele gerencia a sincronização de estado e funciona como um "Proxy de IA", protegendo as chaves de API e validando as requisições antes de enviá-las ao modelo de linguagem.
 - Motor de IA (Google Gemini API): O cérebro por trás da análise, recebendo os dados filtrados pelo backend para processar as reflexões e gerar insights personalizados.
-- Notificações (OneSignal): Serviço de mensageria independente que registra o PWA e cuida do envio de notificações push assíncronas para engajar o usuário de volta no aplicativo.
-</details>
+- Notificações (OneSignal): Serviço de mensageria independente que registra o PWA e cuida do envio de notificações push assíncronas para engajar o usuário de volta no aplicativo.</small>
 ---
 
 <a id="pt-data-lifecycle"></a>
 
 
-### Visão Geral do Ciclo de Dados
+#### <span style="font-size: 1.5em;">Visão Geral do Ciclo de Dados</span>
 
 ```mermaid
 flowchart LR
@@ -465,7 +457,7 @@ flowchart LR
 <a id="pt-c4-l3"></a>
 
 <details>
-  <summary>**Diagrama detalhado**</summary>
+  <summary><b>Diagrama detalhado</b></summary>
 
 ### Arquitetura Interna (Resumo)
 
@@ -596,7 +588,7 @@ graph TD
 - tests/ e services/*.test.ts: cenários de jornada, segurança, resiliência, merge e regressão.
 
 <details>
-  <summary>**Mapa rapido de fluxos**</summary>
+  <summary><b>Mapa rapido de fluxos</b></summary>
 
 | Fluxo | Entrada | Saida |
 |---|---|---|
@@ -2348,7 +2340,7 @@ Supporting text: project epigraph — ties directly to Askesis as a **habit trac
 <a id="en-project-vision"></a>
 <a id="en-summary"></a>
 
-### Project Vision
+### <span style="font-size: 1.5em;">Project Vision</span>
 
 Stoic habit tracker focused on privacy, with AI for reflection and routine tuning.
 
@@ -2366,7 +2358,7 @@ In Stoicism, *askesis* means “training” — deliberate practice to strengthe
 
 <a id="en-highlights"></a>
 
-### Highlights
+### <span style="font-size: 1.5em;">Highlights</span>
 
 #### Comparison with Competitors
 
@@ -2399,46 +2391,36 @@ Askesis operates in the "Sweet Spot" of web performance, using modern native API
 
 <a id="en-architecture-user-flow"></a>
 
-#### Architecture & User Flow Overview
+#### <span style="font-size: 1.5em;">Architecture & User Flow Overview</span>
 
 <p align="center">
   <img src="assets/diagram/system-architecture-flow-en.png" alt="Architecture & User Flow Overview" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
 </p>
 
-<details>
-  <summary>Supporting text</summary>
-
-This diagram illustrates the core application lifecycle, broken down into three main phases:
+<small>This diagram illustrates the core application lifecycle, broken down into three main phases:
 
 - Phase 1: Definition (Onboarding): Habit creation and customization focused on privacy, utilizing a Local-first approach with End-to-End (E2E) encryption.
 - Phase 2: Execution (Engagement): Daily management, performance metrics, and data persistence. The UI (Main Thread) is decoupled from data processing (Worker), leveraging IndexedDB for local storage and a CRDT-lite protocol for conflict-free cloud synchronization (Vercel KV).
-- Phase 3: Intelligence (Feedback): An analysis engine processes user data to generate personalized behavioral insights, injecting this context back into the user experience to create a continuous engagement loop.
-
-</details>
+- Phase 3: Intelligence (Feedback): An analysis engine processes user data to generate personalized behavioral insights, injecting this context back into the user experience to create a continuous engagement loop.</small>
 
 <a id="en-integrations-infra"></a>
 
-#### Integrations & Infrastructure Overview
+#### <span style="font-size: 1.5em;">Integrations & Infrastructure Overview</span>
 
 <p align="center">
   <img src="assets/diagram/system-integrations-en.png" alt="Integrations & Infrastructure Overview" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
 </p>
 
-<details>
-  <summary>Supporting text</summary>
-
-This diagram details the high-level system architecture and the communication flow between external services:
+<small>This diagram details the high-level system architecture and the communication flow between external services:
 
 - Client (Askesis PWA): The React-based frontend handling daily user interactions, local state management, and request initiations.
 - Serverless Backend (Vercel API): Acts as a secure middleware layer. It handles state synchronization and serves as an "AI Proxy," protecting API keys and validating requests before routing them to the LLM.
 - AI Engine (Google Gemini API): The analytical brain of the app, receiving filtered context from the backend to process reflections and generate personalized insights.
-- Push Notifications (OneSignal): A dedicated messaging service that handles PWA push registrations and delivers asynchronous notifications to re-engage the user.
-
-</details>
+- Push Notifications (OneSignal): A dedicated messaging service that handles PWA push registrations and delivers asynchronous notifications to re-engage the user.</small>
 
 <a id="en-data-lifecycle"></a>
 
-### Data Lifecycle Overview
+#### <span style="font-size: 1.5em;">Data Lifecycle Overview</span>
 
 ```mermaid
 flowchart LR
@@ -2583,7 +2565,7 @@ graph TD
 
 ### Build Paradigm: Human-AI Orchestration
 
-This table shows where AI provided a base and where strategic vision and Psychology training elevated the product.
+This table shows where AI provided speed of implementation and where my product vision and intervention increased technical value and paved the way for innovation.
 
 | Capability | Traditional / "Pure" AI | My Intervention (Architect) | Result: Askesis |
 |---|---|---|---|
@@ -2593,9 +2575,6 @@ This table shows where AI provided a base and where strategic vision and Psychol
 | Accessibility | Often ignored in AI-generated code. | Digital inclusion: WCAG 2.1 AA, robust ARIA, full keyboard nav. | Universally usable app for diverse needs. |
 | Reliability | Isolated unit tests or missing critical error validation. | Chaos engineering: "Super-Tests" to validate extreme conditions. | Resilient software that recovers from critical failures. |
 | Sustainability | High infra costs passed via subscriptions or ads. | Product vision: zero-cost architecture pushing heavy work to user hardware. | Sustainable global operation with $0 maintenance cost. |
-
-> [ 🧠 ] Cognitive Psychology + [ 🤖 ] Generative AI + [ 💻 ] Low-Level Engineering
-> This project is a case study in how modern tech can be guided by human principles to serve virtue, not profit.
 
 <a id="en-tech"></a>
 
@@ -3057,7 +3036,7 @@ Texto de apoyo: epígrafe del proyecto — conecta con Askesis como **habit trac
 <a id="es-vision-del-proyecto"></a>
 <a id="es-resumen"></a>
 
-### Visión del proyecto
+### <span style="font-size: 1.5em;">Visión del proyecto</span>
 
 Rastreador de hábitos estoico, enfocado en privacidad, con IA para reflexión y ajuste de rutina.
 
@@ -3075,7 +3054,7 @@ En el estoicismo, *askesis* significa “entrenamiento”: práctica deliberada 
 
 <a id="es-highlights"></a>
 
-### Diferenciales
+### <span style="font-size: 1.5em;">Diferenciales</span>
 
 #### Comparación con Competidores
 
@@ -3188,46 +3167,36 @@ Cada hábito se almacena de forma comprimida usando BigInt (enteros arbitrariame
 
 <a id="es-architecture-user-flow"></a>
 
-#### Descripción General de la Arquitectura y Flujo de Usuario
+#### <span style="font-size: 1.5em;">Descripción General de la Arquitectura y Flujo de Usuario</span>
 
 <p align="center">
   <img src="assets/diagram/system-architecture-flow-es.png" alt="Descripción General de la Arquitectura y Flujo de Usuario" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
 </p>
 
-<details>
-  <summary>Texto de apoyo</summary>
-
-Este diagrama ilustra el ciclo de vida principal de la aplicación, estructurado en tres fases fundamentales:
+<small>Este diagrama ilustra el ciclo de vida principal de la aplicación, estructurado en tres fases fundamentales:
 
 - Fase 1: Definición (Onboarding): Creación y personalización de hábitos con un enfoque absoluto en la privacidad, utilizando un enfoque Local-first con encriptación de extremo a extremo (E2E).
 - Fase 2: Ejecución (Engagement): Gestión diaria, métricas de rendimiento y persistencia de datos. La interfaz (Main Thread) está aislada del procesamiento de datos (Worker), utilizando IndexedDB para el almacenamiento local y el protocolo CRDT-lite para una sincronización sin conflictos con la nube (Vercel KV).
-- Fase 3: Inteligencia (Feedback): Un motor de análisis evalúa los datos del usuario para generar insights de comportamiento personalizados, inyectando este contexto de vuelta en la experiencia para crear un ciclo de interacción continuo.
-
-</details>
+- Fase 3: Inteligencia (Feedback): Un motor de análisis evalúa los datos del usuario para generar insights de comportamiento personalizados, inyectando este contexto de vuelta en la experiencia para crear un ciclo de interacción continuo.</small>
 
 <a id="es-integrations-infra"></a>
 
-#### Descripción General de Integraciones e Infraestructura
+#### <span style="font-size: 1.5em;">Descripción General de Integraciones e Infraestructura</span>
 
 <p align="center">
   <img src="assets/diagram/system-integrations-es.png" alt="Descripción General de Integraciones e Infraestructura" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
 </p>
 
-<details>
-  <summary>Texto de apoyo</summary>
-
-Este diagrama detalla la arquitectura de alto nivel del sistema y el flujo de comunicación entre los servicios externos:
+<small>Este diagrama detalla la arquitectura de alto nivel del sistema y el flujo de comunicación entre los servicios externos:
 
 - Cliente (Askesis PWA): La interfaz basada en React que gestiona las interacciones diarias del usuario, el estado local y el inicio de las solicitudes.
 - Backend Serverless (Vercel API): Actúa como una capa intermedia segura. Gestiona la sincronización del estado y funciona como un "Proxy de IA", protegiendo las claves de API y validando las solicitudes antes de enviarlas al modelo de lenguaje.
 - Motor de IA (Google Gemini API): El cerebro analítico de la aplicación, que recibe el contexto filtrado por el backend para procesar las reflexiones y generar insights personalizados.
-- Notificaciones (OneSignal): Servicio de mensajería independiente que gestiona los registros push de la PWA y entrega notificaciones asíncronas para volver a captar la atención del usuario.
-
-</details>
+- Notificaciones (OneSignal): Servicio de mensajería independiente que gestiona los registros push de la PWA y entrega notificaciones asíncronas para volver a captar la atención del usuario.</small>
 
 <a id="es-data-lifecycle"></a>
 
-### Ciclo de datos
+#### <span style="font-size: 1.5em;">Ciclo de datos</span>
 
 ```mermaid
 flowchart LR
@@ -3378,7 +3347,7 @@ graph TD
 
 ### Paradigma de Construccion: Orquestacion Humano-IA
 
-Esta tabla muestra donde la IA dio la base y donde la vision estrategica y formacion en Psicologia elevaron el producto.
+Esta tabla muestra donde la IA dio velocidad de implementación y donde mi visión de producto e intervención incrementaron el valor técnico y dieron paso a la innovación.
 
 | Recurso | Tradicional / IA "Pura" | Mi Intervencion (Arquitecto) | Resultado: Askesis |
 |---|---|---|---|
@@ -3388,9 +3357,6 @@ Esta tabla muestra donde la IA dio la base y donde la vision estrategica y forma
 | Accesibilidad | A menudo ignorada en codigo generado por IA. | Inclusion digital: WCAG 2.1 AA, ARIA robusto y navegacion por teclado. | App usable por personas con distintas necesidades. |
 | Confiabilidad | Tests unitarios aislados o sin validacion de errores criticos. | Chaos engineering: "Super-Tests" para condiciones extremas. | Software resiliente con recuperacion ante fallos criticos. |
 | Sostenibilidad | Costos altos trasladados a suscripciones o anuncios. | Vision de producto: arquitectura de costo cero en hardware del usuario. | Operacion global sostenible con $0 de mantenimiento. |
-
-> [ 🧠 ] Psicologia Cognitiva + [ 🤖 ] IA Generativa + [ 💻 ] Ingenieria de Bajo Nivel
-> Este proyecto es un estudio de caso sobre como la tecnologia moderna puede guiarse por principios humanos para servir a la virtud y no al lucro.
 
 <a id="es-tech"></a>
 
