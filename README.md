@@ -24,8 +24,9 @@ Epígrafe do projeto — conecta direto com o propósito do Askesis como **habit
   <summary>Ver estrutura completa (TOC)</summary>
 
 - [Visão do Projeto](#pt-visao-do-projeto)
+- [IA como assistente de código e prototipação](#pt-ai-assistant)
+  - [Paradigma de Construção: A Orquestração Humano-IA](#pt-build-paradigm)
 - [Diferenciais](#pt-highlights)
-- [Diagramas (visão geral)](#pt-diagramas)
 - [Diagramas (visão geral)](#pt-diagramas)
   - [Visão Geral da Arquitetura e Fluxo do Usuário](#pt-architecture-user-flow)
   - [Visão Geral de Integrações e Infraestrutura](#pt-integrations-infra)
@@ -35,7 +36,6 @@ Epígrafe do projeto — conecta direto com o propósito do Askesis como **habit
 - [Fluxo de Conflito de Sync (Resumo)](#pt-sync-conflict)
 - [Regras de Unicidade de Hábitos](#pt-habit-uniqueness)
 - [Mapa rápido de módulos](#pt-modules-map)
-- [Paradigma de Construcao: A Orquestracao Humano-IA](#pt-build-paradigm)
 - [Tecnologia](#pt-tech)
 - [Estrutura do projeto](#pt-project-structure)
 - [Testes e qualidade](#pt-tests-quality)
@@ -74,6 +74,34 @@ Na filosofia estoica, *askesis* não se trata de sofrimento ou privação sem se
 A maioria dos apps de hábitos foca em gamificação superficial ou em "não quebrar a corrente". O Askesis foca na **virtude da consistência**. Ele usa Inteligência Artificial para atuar como um "Sábio Estoico", analisando seus dados não para julgar, mas para oferecer conselhos sobre como fortalecer sua vontade.
 
 
+<a id="pt-ai-assistant"></a>
+
+### IA como assistente de código e prototipação
+
+O Askesis não foi só “codificado”; foi **orquestrado** com IA como parceira. Usei o Google AI Studio como playground de prototipação e o GitHub Codespaces como ambiente de desenvolvimento em nuvem.
+
+- **Papel humano:** definir visão, arquitetura e prioridades; validar o que foi gerado via iteração de prompts e testes.
+- **Papel da IA:** acelerar a implementação pesada, sugerir ajustes de performance e ajudar a eliminar bugs lógicos.
+
+O resultado é uma aplicação que uma única pessoa consegue levar a um nível de complexidade e polimento mais comum em um time.
+
+<details>
+  <summary>Paradigma de Construção: A Orquestração Humano-IA</summary>
+
+<a id="pt-build-paradigm"></a>
+
+Esta tabela explicita onde a IA entregou velocidade de implementação e onde minha visão de produto e formação em Psicologia transformaram código em experiência.
+
+| Recurso | Tradicional / IA “pura” | Minha intervenção (arquiteto) | Resultado: Askesis |
+|---|---|---|---|
+| Privacidade | Login obrigatório e dados em nuvem comercial. | Local-first por padrão; sync opt-in; E2E com AES-GCM no cliente (em Web Worker) e sem coleta de PII. | Dados ficam no dispositivo; na rede/servidor trafega e persiste apenas ciphertext. |
+| Performance | Frameworks pesados e re-renderizações custosas que adicionam latência. | Vanilla TypeScript + APIs nativas; bitmask-first/split-state; workers para tarefas CPU-bound; budgets cobertos por testes de cenário. | Budgets verificados (ex.: leituras massivas em < 50ms nos testes) e UI responsiva. |
+| UX & Psicologia | Gamificação ruidosa (streaks, dopamina, competição) como padrão. | Diretriz de produto: reforçar a “virtude da consistência” com UX minimalista e feedback orientado à autorreflexão. | Menos ruído, mais aderência: o app serve ao treino mental, não à dependência. |
+| Acessibilidade | A11y tratada como detalhe ou pós-facto. | Semântica HTML + ARIA, navegação por teclado e gestão de foco; validação contínua via testes de cenário de acessibilidade. | Experiência inclusiva e navegável sem mouse, com suporte prático a leitores de tela. |
+| Confiabilidade | Testes unitários isolados ou baixa cobertura de falhas reais. | Suite de “super-testes” (jornada, conflitos de sync, performance, acessibilidade, segurança e disaster recovery). | Regressões detectadas cedo e comportamento resiliente sob estresse. |
+| Sustentabilidade | Backend stateful, custos recorrentes e pressão por assinaturas/anúncios. | Arquitetura local-first; serverless apenas como ponte opcional; processamento pesado no dispositivo do usuário. | Infra enxuta e custo marginal baixo para escalar, sem monetização agressiva. |
+</details>
+
 <a id="pt-highlights"></a>
 
 ### Diferenciais
@@ -104,6 +132,38 @@ O Askesis opera no "Sweet Spot" da performance web, utilizando APIs nativas mode
 | **Multithreading (Web Workers)** | Tarefas pesadas (cripto, parsing, IA) isoladas em workers para UI Jank-free. | Interface sempre fluida, sem travamentos durante operações intensas. |
 | **Criptografia Zero-Copy** | AES-GCM off-main-thread com `ArrayBuffer` direto, eficiente em dispositivos modestos. | Segurança máxima sem sacrificar velocidade, mesmo em celulares básicos. |
 | **Sincronização Inteligente (CRDT-lite)** | Resolução de conflitos com pesos semânticos, progresso sempre preservado. | Sync confiável entre dispositivos, sem perda de dados ou conflitos manuais. |
+
+<h3>Estrutura do Projeto</h3>
+
+```text
+.
+├── api/                 # Vercel Edge Functions (Backend Serverless)
+├── assets/              # Imagens/flags/diagramas usados no app/README
+├── css/                 # CSS modular (layout, componentes, etc.)
+├── data/                # Dados estáticos (quotes, hábitos pré-definidos)
+├── icons/               # Ícones (SVG) e assets relacionados
+├── locales/             # Arquivos de Tradução (i18n)
+├── render/              # Motor de Renderização (DOM Recycling & Templates)
+├── listeners/           # Controladores de Eventos e Gestos
+├── services/            # Camada de Dados, Criptografia e IO
+│   ├── api.ts           # Cliente HTTP
+│   ├── cloud.ts         # Orquestrador de Sync e Worker Bridge
+│   ├── crypto.ts        # Criptografia AES-GCM Isomórfica
+│   ├── dataMerge.ts     # Resolução de Conflitos (CRDT-lite)
+│   ├── habitActions.ts  # Lógica de Negócios (ações sobre hábitos)
+│   ├── migration.ts     # Migrações de schema/bitmasks
+│   ├── persistence.ts   # Wrapper IndexedDB Assíncrono
+│   ├── quoteEngine.ts   # Motor de seleção de citações
+│   ├── selectors.ts     # Camada de leitura otimizada (memoized)
+│   └── sync.worker.ts   # Web Worker para tarefas CPU-bound
+├── tests/               # Testes de cenário (resiliência, performance, segurança)
+├── state.ts             # Estado global (Single Source of Truth)
+├── render.ts            # Facade/orquestrador de render (re-export)
+├── listeners.ts         # Setup de listeners (bootstrap)
+├── index.tsx            # Entry point
+├── index.html           # App Shell (Critical Render Path)
+└── sw.js                # Service Worker (Atomic Caching)
+```
 
 <h2>🏗️ Estrutura de Dados: A Magia por Trás</h2>
 
@@ -527,25 +587,6 @@ graph TD
 | Offline-first | Service Worker | Cache atomico |
 | Sincronizacao | Chave de sync | Merge resiliente |
 </details>
-
-<a id="pt-build-paradigm"></a>
-
-### Paradigma de Construcao: A Orquestracao Humano-IA
-
-Esta tabela destaca onde a IA forneceu a base e onde a minha visao estrategica e formacao em Psicologia transformaram o codigo em um produto de nivel superior.
-
-| Recurso | Tradicional / IA "Pura" | Minha Intervencao (Arquiteto) | Resultado: Askesis |
-|---|---|---|---|
-| Privacidade | Login social e dados em nuvem comercial. | Decisao Etica: Implementei Anonimato Coletivo e criptografia AES-GCM no cliente via Web Workers para garantir soberania absoluta. | Seguranca de nivel bancario sem coletar um unico dado pessoal. |
-| Performance | Uso de frameworks pesados (React/Next) que geram latencia. | Refinamento: Rejeitei abstracoes em favor de Vanilla TS e APIs Nativas para maxima eficiencia de hardware. | Budgets verificados em testes (ex.: operacoes criticas < 50ms) e UI responsiva. |
-| UX e Psicologia | Gamificacao superficial baseada em dopamina (badges/cores vibrantes). | Grounding Teorico: Apliquei principios de Neuropsicologia para focar na "virtude da consistencia", evitando o vicio digital. | Interface minimalista que promove a autorreflexao e o treinamento mental real. |
-| Acessibilidade | Frequentemente ignorada ou tratada como secundaria em codigos gerados por IA. | Inclusao Digital: Garanti conformidade WCAG 2.1 AA, implementando semantica ARIA robusta e navegacao total por teclado. | Aplicacao universalmente utilizavel, respeitando usuarios com diferentes necessidades. |
-| Confiabilidade | Testes unitarios isolados ou ausencia de validacao em cenarios de erro criticos. | Chaos Engineering: Desenvolvi uma suite de "Super-Testes" para validar a resiliencia do sistema em condicoes extremas de hardware. | Software robusto que recupera dados automaticamente mesmo apos falhas criticas de sistema. |
-| Sustentabilidade | Custos de infraestrutura altos repassados via assinaturas ou anuncios. | Visao de Produto: Desenvolvi uma arquitetura de Custo Zero, movendo o processamento pesado para o hardware do usuario. | Operacao global sustentavel com custo de manutencao de $0. |
-
-> [ 🧠 ] Psicologia Cognitiva + [ 🤖 ] IA Generativa + [ 💻 ] Engenharia de Baixo Nivel
-> Este projeto nao e apenas uma ferramenta; e um estudo de caso sobre como a tecnologia moderna pode ser domesticada por principios humanos para servir a virtude, e nao o lucro.
-
 <a id="pt-tech"></a>
 
 ### Tecnologia
@@ -687,6 +728,10 @@ Este projeto rejeita a complexidade desnecessária dos frameworks modernos em fa
 ```text
 .
 ├── api/                 # Vercel Edge Functions (Backend Serverless)
+├── assets/              # Imagens/flags/diagramas usados no app/README
+├── css/                 # CSS modular (layout, componentes, etc.)
+├── data/                # Dados estáticos (quotes, hábitos pré-definidos)
+├── icons/               # Ícones (SVG) e assets relacionados
 ├── locales/             # Arquivos de Tradução (i18n)
 ├── render/              # Motor de Renderização (DOM Recycling & Templates)
 ├── listeners/           # Controladores de Eventos e Gestos (Física)
@@ -695,12 +740,17 @@ Este projeto rejeita a complexidade desnecessária dos frameworks modernos em fa
 │   ├── cloud.ts         # Orquestrador de Sync e Worker Bridge
 │   ├── crypto.ts        # Criptografia AES-GCM Isomórfica
 │   ├── dataMerge.ts     # Algoritmo de Resolução de Conflitos (CRDT-lite)
+│   ├── habitActions.ts  # Lógica de Negócios (ações sobre hábitos)
 │   ├── migration.ts     # Reconstrução de Histórico (Graph-based)
 │   ├── persistence.ts   # Wrapper IndexedDB Assíncrono
+│   ├── quoteEngine.ts   # Motor de seleção de citações
 │   ├── selectors.ts     # Camada de Leitura Otimizada (Memoized)
 │   └── sync.worker.ts   # Web Worker para CPU-bound tasks
+├── tests/               # Testes de cenário (resiliência, performance, segurança)
 ├── state.ts             # Gerenciamento de Estado Mutável (Single Source of Truth)
-├── habitActions.ts      # Lógica de Negócios e Time-Travel
+├── render.ts            # Facade/orquestrador de render (re-export)
+├── listeners.ts         # Setup de listeners (bootstrap)
+├── index.tsx            # Entry point
 ├── index.html           # App Shell (Critical Render Path)
 └── sw.js                # Service Worker (Atomic Caching)
 ```
@@ -3637,3 +3687,17 @@ Ejemplo:
 ### Licencia
 
 - MIT (ver [LICENSE](LICENSE)).
+
+<script>
+(function() {
+  if (window.location.hash === '#pt-build-paradigm') {
+    const target = document.getElementById('pt-build-paradigm');
+    if (target) {
+      const details = target.closest('details');
+      if (details && !details.open) {
+        details.open = true;
+      }
+    }
+  }
+})();
+</script>

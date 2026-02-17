@@ -558,6 +558,532 @@ const MIND_QUOTES: Quote[] = [
             }
         }
     }
+    ,
+    {
+        id: "quote_add_001",
+        author: "marcusAurelius",
+        original_text: {
+            pt: "Você não precisa seguir cada pensamento que aparece; pode examiná-lo e deixá-lo ir.",
+            en: "You don't have to follow every thought that appears; you can examine it and let it go.",
+            es: "No tienes que seguir cada pensamiento que aparece; puedes examinarlo y dejarlo ir."
+        },
+        source: "Paráfrase — Meditações (insp.)",
+        metadata: {
+            virtue: "Wisdom",
+            level: 1,
+            discipline: "Assent",
+            sphere: "Mental",
+            tags: ["mindfulness", "perception", "control", "focus", "clarity", "present"],
+            coercion_type: "Directive"
+        },
+        adaptations: {
+            level_1: {
+                pt: "Pare. Observe. Escolha.",
+                en: "Pause. Observe. Choose.",
+                es: "Pausa. Observa. Elige."
+            },
+            level_2: {
+                pt: "Pensamentos surgem por hábito. A liberdade começa quando você os questiona antes de obedecer.",
+                en: "Thoughts arise by habit. Freedom begins when you question them before you obey.",
+                es: "Los pensamientos surgen por hábito. La libertad empieza cuando los cuestionas antes de obedecer."
+            },
+            level_3: {
+                pt: "Você escolhe o próximo pensamento.",
+                en: "You choose the next thought.",
+                es: "Tú eliges el próximo pensamiento."
+            }
+        }
+    },
+    {
+        id: "quote_add_002",
+        author: "epictetus",
+        original_text: {
+            pt: "Quando uma impressão chega, não a trate como verdade: trate como um convite para investigar.",
+            en: "When an impression arrives, don't treat it as truth: treat it as an invitation to investigate.",
+            es: "Cuando llega una impresión, no la trates como verdad: trátala como una invitación a investigar."
+        },
+        source: "Paráfrase — Discursos/Enchiridion (insp.)",
+        metadata: {
+            virtue: "Wisdom",
+            level: 2,
+            discipline: "Assent",
+            sphere: "Mental",
+            tags: ["judgment", "perception", "control", "attention", "clarity", "reason"],
+            coercion_type: "Reflective"
+        },
+        adaptations: {
+            level_1: {
+                pt: "Não concorde no impulso.",
+                en: "Don't agree on impulse.",
+                es: "No aceptes por impulso."
+            },
+            level_2: {
+                pt: "A primeira impressão é rápida e barulhenta. A razão é lenta e firme. Dê um passo atrás e pergunte: 'isso é fato ou interpretação?'.",
+                en: "The first impression is fast and loud. Reason is slow and steady. Step back and ask: 'is this fact or interpretation?'.",
+                es: "La primera impresión es rápida y ruidosa. La razón es lenta y firme. Retrocede y pregunta: '¿es un hecho o una interpretación?'."
+            },
+            level_3: {
+                pt: "Impressão não é sentença.",
+                en: "An impression is not a verdict.",
+                es: "Una impresión no es un veredicto."
+            }
+        }
+    },
+    {
+        id: "quote_add_003",
+        author: "seneca",
+        original_text: {
+            pt: "A pressa nasce do medo de perder a vida — e nos faz perder o dia.",
+            en: "Haste is born from the fear of losing life — and it makes us lose the day.",
+            es: "La prisa nace del miedo a perder la vida — y nos hace perder el día."
+        },
+        source: "Paráfrase — Sobre a Brevidade da Vida (insp.)",
+        metadata: {
+            virtue: "Temperance",
+            level: 2,
+            discipline: "Desire",
+            sphere: "Mental",
+            tags: ["time", "urgency", "present", "peace", "mindfulness", "anxiety"],
+            coercion_type: "Reflective"
+        },
+        adaptations: {
+            level_1: {
+                pt: "Desacelere. Não fuja do dia.",
+                en: "Slow down. Don't flee the day.",
+                es: "Baja el ritmo. No huyas del día."
+            },
+            level_2: {
+                pt: "Você não ganha tempo correndo; ganha tempo vivendo com intenção. A pressa é um vício que rouba presença.",
+                en: "You don't gain time by rushing; you gain time by living intentionally. Haste is a vice that steals presence.",
+                es: "No ganas tiempo corriendo; lo ganas viviendo con intención. La prisa es un vicio que roba presencia."
+            },
+            level_3: {
+                pt: "A pressa custa o presente.",
+                en: "Haste costs the present.",
+                es: "La prisa cuesta el presente."
+            }
+        }
+    },
+    {
+        id: "quote_add_004",
+        author: "musoniusRufus",
+        original_text: {
+            pt: "Filosofia que não treina o caráter é só conversa bonita.",
+            en: "Philosophy that doesn't train character is just beautiful talk.",
+            es: "La filosofía que no entrena el carácter es solo charla bonita."
+        },
+        source: "Paráfrase — Musônio Rufo (insp.)",
+        metadata: {
+            virtue: "Courage",
+            level: 1,
+            discipline: "Action",
+            sphere: "Structural",
+            tags: ["practice", "discipline", "character", "habit", "action", "growth"],
+            coercion_type: "Directive"
+        },
+        adaptations: {
+            level_1: {
+                pt: "Treine. Não discurse.",
+                en: "Train. Don't just talk.",
+                es: "Entrena. No solo hables."
+            },
+            level_2: {
+                pt: "Se a ideia não muda sua rotina, ela não mudou você. Transforme princípios em prática diária.",
+                en: "If an idea doesn't change your routine, it hasn't changed you. Turn principles into daily practice.",
+                es: "Si una idea no cambia tu rutina, no te ha cambiado. Convierte principios en práctica diaria."
+            },
+            level_3: {
+                pt: "Virtude é treino.",
+                en: "Virtue is training.",
+                es: "La virtud es entrenamiento."
+            }
+        }
+    },
+    {
+        id: "quote_add_005",
+        author: "zeno",
+        original_text: {
+            pt: "A vida boa é simples: alinhe seus desejos com a razão e com a natureza.",
+            en: "The good life is simple: align your desires with reason and with nature.",
+            es: "La buena vida es simple: alinea tus deseos con la razón y con la naturaleza."
+        },
+        source: "Paráfrase — Zeno (insp.)",
+        metadata: {
+            virtue: "Wisdom",
+            level: 3,
+            discipline: "Desire",
+            sphere: "Mental",
+            tags: ["simplicity", "nature", "reason", "self-control", "purpose"],
+            coercion_type: "Inspirational"
+        },
+        adaptations: {
+            level_1: {
+                pt: "Deseje com razão.",
+                en: "Desire with reason.",
+                es: "Desea con razón."
+            },
+            level_2: {
+                pt: "O excesso nasce de desejos sem freio. Quando a razão guia o querer, a vida fica leve e consistente.",
+                en: "Excess is born from unchecked desire. When reason guides wanting, life becomes lighter and steadier.",
+                es: "El exceso nace del deseo sin freno. Cuando la razón guía el querer, la vida se vuelve más ligera y constante."
+            },
+            level_3: {
+                pt: "Razão, então paz.",
+                en: "Reason, then peace.",
+                es: "Razón, luego paz."
+            }
+        }
+    },
+    {
+        id: "quote_add_006",
+        author: "hierocles",
+        original_text: {
+            pt: "Antes de agir, lembre-se: você é parte de círculos — de si, da casa, da cidade, do mundo.",
+            en: "Before you act, remember: you belong to circles — self, home, city, world.",
+            es: "Antes de actuar, recuerda: perteneces a círculos — tú, tu casa, tu ciudad, el mundo."
+        },
+        source: "Paráfrase — Hierocles (insp.)",
+        metadata: {
+            virtue: "Justice",
+            level: 2,
+            discipline: "Action",
+            sphere: "Social",
+            tags: ["community", "duty", "responsibility", "cosmopolitanism", "kindness"],
+            coercion_type: "Reflective"
+        },
+        adaptations: {
+            level_1: {
+                pt: "Aja como cidadão do mundo.",
+                en: "Act as a citizen of the world.",
+                es: "Actúa como ciudadano del mundo."
+            },
+            level_2: {
+                pt: "Seu caráter aparece no modo como você trata o próximo círculo. Aproximar os círculos é treinar justiça.",
+                en: "Your character shows in how you treat the next circle. Drawing circles closer is training justice.",
+                es: "Tu carácter se ve en cómo tratas el siguiente círculo. Acercar los círculos es entrenar la justicia."
+            },
+            level_3: {
+                pt: "Círculos, não muros.",
+                en: "Circles, not walls.",
+                es: "Círculos, no muros."
+            }
+        }
+    },
+    {
+        id: "quote_add_007",
+        author: "socrates",
+        original_text: {
+            pt: "O começo da sabedoria é admitir: eu posso estar errado.",
+            en: "The beginning of wisdom is admitting: I may be wrong.",
+            es: "El comienzo de la sabiduría es admitir: puedo estar equivocado."
+        },
+        source: "Paráfrase — Sócrates (insp.)",
+        metadata: {
+            virtue: "Wisdom",
+            level: 1,
+            discipline: "Assent",
+            sphere: "Mental",
+            tags: ["humility", "learning", "truth", "judgment", "clarity"],
+            coercion_type: "Inspirational"
+        },
+        adaptations: {
+            level_1: {
+                pt: "Assuma a dúvida.",
+                en: "Assume doubt.",
+                es: "Asume la duda."
+            },
+            level_2: {
+                pt: "Quando você aceita a possibilidade de erro, você fica ensinável — e se aproxima da verdade sem vaidade.",
+                en: "When you accept the possibility of error, you become teachable — and you approach truth without vanity.",
+                es: "Cuando aceptas la posibilidad de error, te vuelves enseñable — y te acercas a la verdad sin vanidad."
+            },
+            level_3: {
+                pt: "Humildade é lucidez.",
+                en: "Humility is clarity.",
+                es: "La humildad es claridad."
+            }
+        }
+    },
+    {
+        id: "quote_add_008",
+        author: "seneca",
+        original_text: {
+            pt: "Quem precisa de pouco é rico mesmo antes de ter; quem deseja demais é pobre mesmo com muito.",
+            en: "Who needs little is rich before having; who desires too much is poor even with much.",
+            es: "Quien necesita poco es rico antes de tener; quien desea demasiado es pobre incluso con mucho."
+        },
+        source: "Paráfrase — Cartas a Lucílio (insp.)",
+        metadata: {
+            virtue: "Temperance",
+            level: 2,
+            discipline: "Desire",
+            sphere: "Structural",
+            tags: ["wealth", "simplicity", "self-control", "freedom", "minimalism"],
+            coercion_type: "Reflective"
+        },
+        adaptations: {
+            level_1: {
+                pt: "Reduza o necessário.",
+                en: "Reduce what you need.",
+                es: "Reduce lo que necesitas."
+            },
+            level_2: {
+                pt: "A inveja e a ansiedade diminuem quando você corta desejos supérfluos. Menos necessidade, mais liberdade.",
+                en: "Envy and anxiety shrink when you cut unnecessary wants. Less need, more freedom.",
+                es: "La envidia y la ansiedad disminuyen cuando cortas deseos superfluos. Menos necesidad, más libertad."
+            },
+            level_3: {
+                pt: "Riqueza é suficiência.",
+                en: "Wealth is sufficiency.",
+                es: "La riqueza es suficiencia."
+            }
+        }
+    },
+    {
+        id: "quote_add_009",
+        author: "epictetus",
+        original_text: {
+            pt: "Se algo te domina, pergunte: isso depende de mim — ou eu entreguei o comando?",
+            en: "If something rules you, ask: is this up to me — or did I hand over command?",
+            es: "Si algo te domina, pregunta: ¿depende de mí — o entregué el mando?"
+        },
+        source: "Paráfrase — Enchiridion (insp.)",
+        metadata: {
+            virtue: "Wisdom",
+            level: 1,
+            discipline: "Desire",
+            sphere: "Mental",
+            tags: ["control", "freedom", "desire", "self-control", "responsibility"],
+            coercion_type: "Directive"
+        },
+        adaptations: {
+            level_1: {
+                pt: "Retome o comando.",
+                en: "Take back command.",
+                es: "Recupera el mando."
+            },
+            level_2: {
+                pt: "Vícios crescem quando você terceiriza a própria vontade. Traga para si o que é seu: escolha, atenção e ação.",
+                en: "Vices grow when you outsource your will. Bring back what is yours: choice, attention, action.",
+                es: "Los vicios crecen cuando externalizas tu voluntad. Recupera lo que es tuyo: elección, atención, acción."
+            },
+            level_3: {
+                pt: "Comando é escolha.",
+                en: "Command is choice.",
+                es: "El mando es elección."
+            }
+        }
+    },
+    {
+        id: "quote_add_010",
+        author: "marcusAurelius",
+        original_text: {
+            pt: "A mortalidade não é motivo de pânico: é um lembrete para agir com retidão hoje.",
+            en: "Mortality isn't a reason for panic: it's a reminder to act rightly today.",
+            es: "La mortalidad no es motivo de pánico: es un recordatorio para actuar con rectitud hoy."
+        },
+        source: "Paráfrase — Meditações (insp.)",
+        metadata: {
+            virtue: "Courage",
+            level: 2,
+            discipline: "Action",
+            sphere: "Mental",
+            tags: ["death", "urgency", "duty", "virtue", "presence"],
+            coercion_type: "Inspirational"
+        },
+        adaptations: {
+            level_1: {
+                pt: "Viva como se fosse hoje.",
+                en: "Live as if it's today.",
+                es: "Vive como si fuera hoy."
+            },
+            level_2: {
+                pt: "A lembrança do fim não é tristeza; é clareza. Ela corta distrações e fortalece escolhas boas.",
+                en: "The reminder of the end isn't sadness; it's clarity. It cuts distractions and strengthens good choices.",
+                es: "El recordatorio del fin no es tristeza; es claridad. Corta distracciones y fortalece buenas elecciones."
+            },
+            level_3: {
+                pt: "Finitude dá forma.",
+                en: "Finitude gives shape.",
+                es: "La finitud da forma."
+            }
+        }
+    },
+    {
+        id: "quote_add_011",
+        author: "seneca",
+        original_text: {
+            pt: "A raiva promete força, mas entrega arrependimento.",
+            en: "Anger promises strength, but delivers regret.",
+            es: "La ira promete fuerza, pero entrega arrepentimiento."
+        },
+        source: "Paráfrase — Sobre a Ira (insp.)",
+        metadata: {
+            virtue: "Temperance",
+            level: 1,
+            discipline: "Assent",
+            sphere: "Mental",
+            tags: ["anger", "self-control", "judgment", "peace", "consequences"],
+            coercion_type: "Directive"
+        },
+        adaptations: {
+            level_1: {
+                pt: "Espere 10 respirações.",
+                en: "Wait 10 breaths.",
+                es: "Espera 10 respiraciones."
+            },
+            level_2: {
+                pt: "O intervalo entre estímulo e resposta é seu território. Use-o para escolher o que você não vai precisar consertar depois.",
+                en: "The gap between stimulus and response is your territory. Use it to choose what you won't have to fix later.",
+                es: "El espacio entre estímulo y respuesta es tu territorio. Úsalo para elegir lo que no tendrás que arreglar luego."
+            },
+            level_3: {
+                pt: "Paz é poder.",
+                en: "Peace is power.",
+                es: "La paz es poder."
+            }
+        }
+    },
+    {
+        id: "quote_add_012",
+        author: "musoniusRufus",
+        original_text: {
+            pt: "O corpo aprende com o que você repete; repita o que te torna livre.",
+            en: "The body learns what you repeat; repeat what makes you free.",
+            es: "El cuerpo aprende lo que repites; repite lo que te hace libre."
+        },
+        source: "Paráfrase — Musônio Rufo (insp.)",
+        metadata: {
+            virtue: "Courage",
+            level: 2,
+            discipline: "Action",
+            sphere: "Biological",
+            tags: ["habit", "discipline", "body", "practice", "freedom"],
+            coercion_type: "Directive"
+        },
+        adaptations: {
+            level_1: {
+                pt: "Repita o essencial.",
+                en: "Repeat the essential.",
+                es: "Repite lo esencial."
+            },
+            level_2: {
+                pt: "Hábitos são instruções para o corpo. Quando você repete o que fortalece sua vontade, você reduz a necessidade de força de vontade.",
+                en: "Habits are instructions to the body. When you repeat what strengthens your will, you reduce the need for willpower.",
+                es: "Los hábitos son instrucciones para el cuerpo. Cuando repites lo que fortalece tu voluntad, reduces la necesidad de fuerza de voluntad."
+            },
+            level_3: {
+                pt: "Repetição é destino.",
+                en: "Repetition is destiny.",
+                es: "La repetición es destino."
+            }
+        }
+    },
+    {
+        id: "quote_add_013",
+        author: "marcusAurelius",
+        original_text: {
+            pt: "O mundo muda; sua tarefa é mudar bem — sem perder o caráter.",
+            en: "The world changes; your task is to change well — without losing character.",
+            es: "El mundo cambia; tu tarea es cambiar bien — sin perder el carácter."
+        },
+        source: "Paráfrase — Meditações (insp.)",
+        metadata: {
+            virtue: "Wisdom",
+            level: 2,
+            discipline: "Assent",
+            sphere: "Mental",
+            tags: ["change", "flux", "integrity", "character", "acceptance"],
+            coercion_type: "Inspirational"
+        },
+        adaptations: {
+            level_1: {
+                pt: "Mude sem se vender.",
+                en: "Change without selling yourself.",
+                es: "Cambia sin venderte."
+            },
+            level_2: {
+                pt: "Tudo é impermanente, exceto o que você escolhe praticar. Faça da mudança uma aliada da virtude, não um pretexto.",
+                en: "Everything is impermanent except what you choose to practice. Make change an ally of virtue, not an excuse.",
+                es: "Todo es impermanente excepto lo que eliges practicar. Haz del cambio un aliado de la virtud, no una excusa."
+            },
+            level_3: {
+                pt: "Mudar é treinar.",
+                en: "Changing is training.",
+                es: "Cambiar es entrenar."
+            }
+        }
+    },
+    {
+        id: "quote_add_014",
+        author: "epictetus",
+        original_text: {
+            pt: "Seu papel não é escolher o cenário, mas desempenhar bem o seu papel.",
+            en: "Your role isn't to choose the stage, but to play your part well.",
+            es: "Tu papel no es elegir el escenario, sino desempeñar bien tu papel."
+        },
+        source: "Paráfrase — Enchiridion (insp.)",
+        metadata: {
+            virtue: "Justice",
+            level: 1,
+            discipline: "Action",
+            sphere: "Social",
+            tags: ["role", "duty", "responsibility", "integrity", "action"],
+            coercion_type: "Directive"
+        },
+        adaptations: {
+            level_1: {
+                pt: "Faça bem sua parte.",
+                en: "Do your part well.",
+                es: "Haz bien tu parte."
+            },
+            level_2: {
+                pt: "Quando você foca no papel, você reduz reclamações e aumenta consistência. O dever bem feito organiza a mente.",
+                en: "When you focus on the role, you reduce complaints and increase consistency. Duty done well organizes the mind.",
+                es: "Cuando te enfocas en el papel, reduces quejas y aumentas constancia. El deber bien hecho organiza la mente."
+            },
+            level_3: {
+                pt: "Papel, depois paz.",
+                en: "Role, then peace.",
+                es: "Papel, luego paz."
+            }
+        }
+    },
+    {
+        id: "quote_add_015",
+        author: "seneca",
+        original_text: {
+            pt: "A distração é uma forma elegante de desistência: ela te mantém ocupado e te impede de viver.",
+            en: "Distraction is an elegant form of quitting: it keeps you busy and prevents you from living.",
+            es: "La distracción es una forma elegante de rendirse: te mantiene ocupado y te impide vivir."
+        },
+        source: "Paráfrase — Cartas a Lucílio (insp.)",
+        metadata: {
+            virtue: "Wisdom",
+            level: 2,
+            discipline: "Action",
+            sphere: "Structural",
+            tags: ["distraction", "attention", "focus", "purpose", "time"],
+            coercion_type: "Directive"
+        },
+        adaptations: {
+            level_1: {
+                pt: "Corte distrações.",
+                en: "Cut distractions.",
+                es: "Corta distracciones."
+            },
+            level_2: {
+                pt: "O que você chama de falta de tempo muitas vezes é excesso de ruído. Proteja sua atenção como se fosse sua vida — porque é.",
+                en: "What you call lack of time is often excess noise. Guard your attention as if it were your life — because it is.",
+                es: "Lo que llamas falta de tiempo a menudo es exceso de ruido. Protege tu atención como si fuera tu vida — porque lo es."
+            },
+            level_3: {
+                pt: "Atenção é vida.",
+                en: "Attention is life.",
+                es: "La atención es vida."
+            }
+        }
+    }
 ];
 
 // --- CATEGORY 2: ACTION & DISCIPLINE (The Engine) ---
