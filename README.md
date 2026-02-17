@@ -82,11 +82,8 @@ O Askesis não foi só “codificado”; foi **orquestrado** com IA como parceir
 
 - **Papel humano:** definir visão, arquitetura e prioridades; validar o que foi gerado via iteração de prompts e testes.
 - **Papel da IA:** acelerar a implementação pesada, sugerir ajustes de performance e ajudar a eliminar bugs lógicos.
-
-O resultado é uma aplicação que uma única pessoa consegue levar a um nível de complexidade e polimento mais comum em um time.
-
 <a id="pt-build-paradigm"></a>
-
+O resultado é uma aplicação que uma única pessoa consegue levar a um nível de complexidade e polimento mais comum em um time.
 
 <details>
   <summary>Paradigma de Construção: A Orquestração Humano-IA</summary>
