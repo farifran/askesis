@@ -26,7 +26,7 @@ Epígrafe do projeto — conecta direto com o propósito do Askesis como **habit
 - [Visão do Projeto](#pt-visao-do-projeto)
 - [IA como assistente de código e prototipação](#pt-ai-assistant)
   - [Paradigma de Construção: A Orquestração Humano-IA](#pt-build-paradigm)
-- [Diferenciais](#pt-highlights)
+- [Diferenciais e Arquitectura](#pt-highlights)
 - [Diagramas (visão geral)](#pt-diagramas)
   - [Visão Geral da Arquitetura e Fluxo do Usuário](#pt-architecture-user-flow)
   - [Visão Geral de Integrações e Infraestrutura](#pt-integrations-infra)
@@ -103,7 +103,7 @@ Esta tabela explicita onde a IA entregou velocidade de implementação e onde mi
 
 <a id="pt-highlights"></a>
 
-### Diferenciais
+### Diferenciais e Arquitectura
 
 #### Comparação com Concorrentes
 
