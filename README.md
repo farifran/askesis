@@ -14,7 +14,9 @@
 ## PT-BR
 
 <p align="center">
-  <img src="assets/AristotelesPortugues.jpg" alt="Aristóteles (Português)" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
+<div style="background-color: black; border-radius: 10px;">
+  <img src="assets/AristotelesPortugues.jpg" alt="Aristóteles (Português)" width="63%" style="border-radius: 10px; border: 1px solid #2a2a2a; display: block; margin: 0 auto;">
+</div>
 </p>
 
 Epígrafe do projeto — conecta direto com o propósito do Askesis como **habit tracker**: consistência e excelência se constroem pela prática diária, e **hábitos** são o mecanismo que o app ajuda a treinar e acompanhar.
@@ -102,9 +104,10 @@ O resultado é uma aplicação que uma única pessoa consegue levar a um nível 
 
 <details>
   <summary>Paradigma de Construção: A Orquestração Humano-IA</summary>
-
-
+<br>
 Esta tabela explicita onde a IA entregou velocidade de implementação e onde minha visão de produto e formação em Psicologia transformaram código em experiência.
+
+---
 
 | Recurso | Tradicional / IA “pura” | Minha intervenção (arquiteto) | Resultado: Askesis |
 |---|---|---|---|
