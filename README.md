@@ -15,7 +15,7 @@
 
 <p align="center">
   <div>
-    <img src="assets/aristoteles-pt.png" alt="Aristóteles (Português)" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a; display: block; margin: 0 auto;">
+    <img src="assets/AristotelesPortugues.jpg" alt="Aristóteles (Português)" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a; display: block; margin: 0 auto;">
   </div>
 </p>
 
@@ -23,7 +23,7 @@ Epígrafe do projeto — conecta direto com o propósito do Askesis como **habit
 
 
 <details>
-  <summary>Ver estrutura completa (TOC)</summary>
+  <summary>**Ver estrutura completa (TOC)**</summary>
 
 - [Visão do Projeto](#pt-visao-do-projeto)
 - [IA como assistente de código e prototipação](#pt-ai-assistant)
@@ -103,7 +103,7 @@ O Askesis não foi só “codificado”; foi **orquestrado** com IA como parceir
 O resultado é uma aplicação que uma única pessoa consegue levar a um nível de complexidade e polimento mais comum em um time.
 
 <details>
-  <summary>Paradigma de Construção: A Orquestração Humano-IA</summary>
+  <summary>**Paradigma de Construção: A Orquestração Humano-IA**</summary>
 <br>
 Esta tabela explicita onde a IA entregou velocidade de implementação e onde minha visão de produto e formação em Psicologia transformaram código em experiência.
 
@@ -136,7 +136,7 @@ Esta tabela explicita onde a IA entregou velocidade de implementação e onde mi
 
 <a id="pt-deep-dive-technical"></a>
 <details>
-<summary>Deep Dive Técnico</summary>
+<summary>**Deep Dive Técnico**</summary>
 <br>
 O Askesis opera no "Sweet Spot" da performance web, utilizando APIs nativas modernas para superar frameworks:
 
@@ -417,7 +417,7 @@ Device B           → Render updated state
 </p>
 
 <details>
-  <summary>Texto de apoio</summary>
+  <summary>**Texto de apoio**</summary>
 
 Este diagrama ilustra o ciclo de vida principal da aplicação, estruturado em três fases fundamentais:
 
@@ -436,7 +436,7 @@ Este diagrama ilustra o ciclo de vida principal da aplicação, estruturado em t
 </p>
 
 <details>
-  <summary>Texto de apoio</summary>
+  <summary>**Texto de apoio**</summary>
 
 Este diagrama detalha a arquitetura de alto nível do sistema e o fluxo de comunicação entre os serviços externos:
 
@@ -465,7 +465,7 @@ flowchart LR
 <a id="pt-c4-l3"></a>
 
 <details>
-  <summary>Diagrama detalhado</summary>
+  <summary>**Diagrama detalhado**</summary>
 
 ### Arquitetura Interna (Resumo)
 
