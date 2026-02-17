@@ -66,7 +66,7 @@ Epígrafe do projeto — conecta direto com o propósito do Askesis como **habit
 <a id="pt-visao-do-projeto"></a>
 <a id="pt-resumo"></a>
 
-### <span style="font-size: 1.5em;">Visão do Projeto</span>
+<h3 style="font-size: 1.5em;">Visão do Projeto</h3>
 
 Rastreador de hábitos estoico, focado em privacidade, com IA para reflexões e ajustes de rotina.
 
@@ -122,7 +122,7 @@ Esta tabela explicita onde a IA entregou velocidade de implementação e onde mi
 
 <a id="pt-highlights"></a>
 
-### <span style="font-size: 1.5em;">Diferenciais e Arquitectura</span>
+<h3 style="font-size: 1.5em;">Diferenciais e Arquitectura</h3>
 
 #### Comparação com Concorrentes
 
@@ -411,7 +411,7 @@ Device B           → Render updated state
 
 <a id="pt-architecture-user-flow"></a>
 
-#### <span style="font-size: 1.5em;">Visão Geral da Arquitetura e Fluxo do Usuário</span>
+<h4 style="font-size: 1.5em;">Visão Geral da Arquitetura e Fluxo do Usuário</h4>
 
 <p align="center">
   <img src="assets/diagram/system-architecture-flow-pt.png" alt="Visão Geral da Arquitetura e Fluxo do Usuário" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
@@ -425,7 +425,7 @@ Device B           → Render updated state
 
 <a id="pt-integrations-infra"></a>
 
-#### <span style="font-size: 1.5em;">Visão Geral de Integrações e Infraestrutura</span>
+<h4 style="font-size: 1.5em;">Visão Geral de Integrações e Infraestrutura</h4>
 
 <p align="center">
   <img src="assets/diagram/system-integrations-pt.png" alt="Visão Geral de Integrações e Infraestrutura" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
@@ -442,7 +442,7 @@ Device B           → Render updated state
 <a id="pt-data-lifecycle"></a>
 
 
-#### <span style="font-size: 1.5em;">Visão Geral do Ciclo de Dados</span>
+<h4 style="font-size: 1.5em;">Visão Geral do Ciclo de Dados</h4>
 
 ```mermaid
 flowchart LR
@@ -2340,7 +2340,7 @@ Supporting text: project epigraph — ties directly to Askesis as a **habit trac
 <a id="en-project-vision"></a>
 <a id="en-summary"></a>
 
-### <span style="font-size: 1.5em;">Project Vision</span>
+<h3 style="font-size: 1.5em;">Project Vision</h3>
 
 Stoic habit tracker focused on privacy, with AI for reflection and routine tuning.
 
@@ -2358,7 +2358,7 @@ In Stoicism, *askesis* means “training” — deliberate practice to strengthe
 
 <a id="en-highlights"></a>
 
-### <span style="font-size: 1.5em;">Highlights</span>
+<h3 style="font-size: 1.5em;">Highlights</h3>
 
 #### Comparison with Competitors
 
@@ -2391,7 +2391,7 @@ Askesis operates in the "Sweet Spot" of web performance, using modern native API
 
 <a id="en-architecture-user-flow"></a>
 
-#### <span style="font-size: 1.5em;">Architecture & User Flow Overview</span>
+<h4 style="font-size: 1.5em;">Architecture & User Flow Overview</h4>
 
 <p align="center">
   <img src="assets/diagram/system-architecture-flow-en.png" alt="Architecture & User Flow Overview" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
@@ -2405,7 +2405,7 @@ Askesis operates in the "Sweet Spot" of web performance, using modern native API
 
 <a id="en-integrations-infra"></a>
 
-#### <span style="font-size: 1.5em;">Integrations & Infrastructure Overview</span>
+<h4 style="font-size: 1.5em;">Integrations & Infrastructure Overview</h4>
 
 <p align="center">
   <img src="assets/diagram/system-integrations-en.png" alt="Integrations & Infrastructure Overview" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
@@ -2420,7 +2420,7 @@ Askesis operates in the "Sweet Spot" of web performance, using modern native API
 
 <a id="en-data-lifecycle"></a>
 
-#### <span style="font-size: 1.5em;">Data Lifecycle Overview</span>
+<h4 style="font-size: 1.5em;">Data Lifecycle Overview</h4>
 
 ```mermaid
 flowchart LR
@@ -3036,7 +3036,7 @@ Texto de apoyo: epígrafe del proyecto — conecta con Askesis como **habit trac
 <a id="es-vision-del-proyecto"></a>
 <a id="es-resumen"></a>
 
-### <span style="font-size: 1.5em;">Visión del proyecto</span>
+<h3 style="font-size: 1.5em;">Visión del proyecto</h3>
 
 Rastreador de hábitos estoico, enfocado en privacidad, con IA para reflexión y ajuste de rutina.
 
@@ -3054,7 +3054,7 @@ En el estoicismo, *askesis* significa “entrenamiento”: práctica deliberada 
 
 <a id="es-highlights"></a>
 
-### <span style="font-size: 1.5em;">Diferenciales</span>
+<h3 style="font-size: 1.5em;">Diferenciales</h3>
 
 #### Comparación con Competidores
 
@@ -3167,7 +3167,7 @@ Cada hábito se almacena de forma comprimida usando BigInt (enteros arbitrariame
 
 <a id="es-architecture-user-flow"></a>
 
-#### <span style="font-size: 1.5em;">Descripción General de la Arquitectura y Flujo de Usuario</span>
+<h4 style="font-size: 1.5em;">Descripción General de la Arquitectura y Flujo de Usuario</h4>
 
 <p align="center">
   <img src="assets/diagram/system-architecture-flow-es.png" alt="Descripción General de la Arquitectura y Flujo de Usuario" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
@@ -3181,7 +3181,7 @@ Cada hábito se almacena de forma comprimida usando BigInt (enteros arbitrariame
 
 <a id="es-integrations-infra"></a>
 
-#### <span style="font-size: 1.5em;">Descripción General de Integraciones e Infraestructura</span>
+<h4 style="font-size: 1.5em;">Descripción General de Integraciones e Infraestructura</h4>
 
 <p align="center">
   <img src="assets/diagram/system-integrations-es.png" alt="Descripción General de Integraciones e Infraestructura" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
@@ -3196,7 +3196,7 @@ Cada hábito se almacena de forma comprimida usando BigInt (enteros arbitrariame
 
 <a id="es-data-lifecycle"></a>
 
-#### <span style="font-size: 1.5em;">Ciclo de datos</span>
+<h4 style="font-size: 1.5em;">Ciclo de datos</h4>
 
 ```mermaid
 flowchart LR
