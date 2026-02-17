@@ -596,7 +596,7 @@ graph TD
 - tests/ e services/*.test.ts: cenários de jornada, segurança, resiliência, merge e regressão.
 
 <details>
-  <summary>Mapa rapido de fluxos</summary>
+  <summary>**Mapa rapido de fluxos**</summary>
 
 | Fluxo | Entrada | Saida |
 |---|---|---|
