@@ -86,6 +86,8 @@ O Askesis não foi só “codificado”; foi **orquestrado** com IA como parceir
 O resultado é uma aplicação que uma única pessoa consegue levar a um nível de complexidade e polimento mais comum em um time.
 
 <a id="pt-build-paradigm"></a>
+
+
 <details>
   <summary>Paradigma de Construção: A Orquestração Humano-IA</summary>
 
