@@ -186,6 +186,30 @@ const _handleStripClick = (e: MouseEvent) => {
     }
 };
 
+const _handleStripKeydown = (e: KeyboardEvent) => {
+    const item = (e.target as HTMLElement).closest<HTMLElement>(DOM_SELECTORS.DAY_ITEM);
+    if (!item || !item.dataset.date) return;
+
+    if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        item.click();
+        return;
+    }
+
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+
+    e.preventDefault();
+
+    const sibling = (e.key === 'ArrowRight'
+        ? item.nextElementSibling
+        : item.previousElementSibling) as HTMLElement | null;
+
+    if (!sibling || !sibling.matches(DOM_SELECTORS.DAY_ITEM)) return;
+
+    sibling.focus();
+    sibling.click();
+};
+
 const _openQuickActions = (anchorEl: HTMLElement) => {
     const dateISO = anchorEl.dataset.date;
     if (!dateISO) return;
@@ -230,6 +254,7 @@ export function setupCalendarListeners() {
     // Strip Interactions
     ui.calendarStrip.addEventListener('pointerdown', _handlePointerDown);
     ui.calendarStrip.addEventListener('click', _handleStripClick);
+    ui.calendarStrip.addEventListener('keydown', _handleStripKeydown);
     ui.calendarStrip.addEventListener('scroll', _handleScroll, { passive: true });
     
     // Navigation Buttons

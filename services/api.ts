@@ -57,7 +57,7 @@ function mergeSignals(primary: AbortSignal, secondary?: AbortSignal): AbortSigna
 
 async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit, timeoutMs: number): Promise<Response> {
     const timeoutSignal = createTimeoutSignal(timeoutMs);
-    const signal = mergeSignals(timeoutSignal, init.signal);
+    const signal = mergeSignals(timeoutSignal, init.signal || undefined);
     return await fetch(input, { ...init, signal });
 }
 

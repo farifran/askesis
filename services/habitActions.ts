@@ -17,6 +17,7 @@ import {
     getHabitDailyInfoForDate, AppState, HABIT_STATE, AI_DAILY_LIMIT, HabitMode,
     pruneHabitAppearanceCache, pruneStreaksCache, HabitDailyInfo
 } from '../state';
+import type { HabitTemplate } from '../state';
 import { saveState, loadState, clearLocalPersistence } from './persistence';
 import { PREDEFINED_HABITS } from '../data/predefinedHabits';
 import { HABIT_ICONS, sanitizeHabitIcon } from '../data/icons';
@@ -638,11 +639,13 @@ export async function performAIAnalysis(type: 'monthly' | 'quarterly' | 'histori
             
             // Handle 429/Quota/Overload gracefully with Friendly Message
             if (errStr.includes('429') || errStr.includes('Quota') || errStr.includes('RESOURCE_EXHAUSTED')) {
-                ui.aiResponse.innerHTML = `<div class="ai-error-message"><h3>${escapeHTML(t('aiServerBusyTitle'))}</h3><p>${escapeHTML(t('aiServerBusy'))}</p></div>`;
+                const html = `<div class="ai-error-message"><h3>${escapeHTML(t('aiServerBusyTitle'))}</h3><p>${escapeHTML(t('aiServerBusy'))}</p></div>`;
+                ui.aiResponse.replaceChildren(document.createRange().createContextualFragment(html));
             } else {
                 // Show detailed error in UI for user feedback
                 // SECURITY FIX: escapeHTML on errStr to prevent XSS via crafted API error messages
-                ui.aiResponse.innerHTML = `<div class="ai-error-message"><h3>${t('aiLimitTitle') === 'Daily Limit Reached' ? 'Error' : 'Erro'}</h3><p>${escapeHTML(t('aiErrorGeneric'))}</p><div class="debug-info"><small>${escapeHTML(errStr)}</small></div></div>`;
+                const html = `<div class="ai-error-message"><h3>${t('aiLimitTitle') === 'Daily Limit Reached' ? 'Error' : 'Erro'}</h3><p>${escapeHTML(t('aiErrorGeneric'))}</p><div class="debug-info"><small>${escapeHTML(errStr)}</small></div></div>`;
+                ui.aiResponse.replaceChildren(document.createRange().createContextualFragment(html));
             }
             
             // UX FIX: Provide close handler to clear notification state

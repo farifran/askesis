@@ -34,8 +34,10 @@ function jsonReviver(key: string, value: any) {
 async function deriveKey(password: string, salt: Uint8Array): Promise<CryptoKey> {
     const enc = new TextEncoder();
     const keyMaterial = await crypto.subtle.importKey("raw", enc.encode(password), { name: "PBKDF2" }, false, ["deriveKey"]);
+    // Normalize to an ArrayBuffer-backed view for stricter TS lib definitions.
+    const normalizedSalt = new Uint8Array(salt);
     return crypto.subtle.deriveKey(
-        { name: "PBKDF2", salt, iterations: 100000, hash: "SHA-256" },
+        { name: "PBKDF2", salt: normalizedSalt, iterations: 100000, hash: "SHA-256" },
         keyMaterial, { name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]
     );
 }

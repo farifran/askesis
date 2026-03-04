@@ -27,14 +27,35 @@ const OPTS_ARIA = { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'U
 // --- TEMPLATES (Lazy Init) ---
 
 const getDayItemTemplate = () => dayItemTemplate || (dayItemTemplate = (() => {
-    const el = document.createElement('div'); el.className = CSS_CLASSES.DAY_ITEM; el.setAttribute('role', 'button');
-    el.innerHTML = `<span class="${CSS_CLASSES.DAY_NAME}"></span><div class="${CSS_CLASSES.DAY_PROGRESS_RING}"><span class="${CSS_CLASSES.DAY_NUMBER}"></span></div>`;
+    const el = document.createElement('div');
+    el.className = CSS_CLASSES.DAY_ITEM;
+    el.setAttribute('role', 'button');
+
+    const dayName = document.createElement('span');
+    dayName.className = CSS_CLASSES.DAY_NAME;
+
+    const ring = document.createElement('div');
+    ring.className = CSS_CLASSES.DAY_PROGRESS_RING;
+    const dayNumber = document.createElement('span');
+    dayNumber.className = CSS_CLASSES.DAY_NUMBER;
+    ring.appendChild(dayNumber);
+
+    el.append(dayName, ring);
     return el;
 })());
 
 const getFullCalendarDayTemplate = () => fullCalendarDayTemplate || (fullCalendarDayTemplate = (() => {
-    const el = document.createElement('div'); el.className = 'full-calendar-day'; el.setAttribute('role', 'button');
-    el.innerHTML = `<div class="${CSS_CLASSES.DAY_PROGRESS_RING}"><span class="${CSS_CLASSES.DAY_NUMBER}"></span></div>`;
+    const el = document.createElement('div');
+    el.className = 'full-calendar-day';
+    el.setAttribute('role', 'button');
+
+    const ring = document.createElement('div');
+    ring.className = CSS_CLASSES.DAY_PROGRESS_RING;
+    const dayNumber = document.createElement('span');
+    dayNumber.className = CSS_CLASSES.DAY_NUMBER;
+    ring.appendChild(dayNumber);
+
+    el.appendChild(ring);
     return el;
 })());
 
@@ -129,7 +150,7 @@ export function renderCalendar() {
         frag.appendChild(el);
     }
 
-    ui.calendarStrip.innerHTML = '';
+    ui.calendarStrip.replaceChildren();
     dayElementCache.clear();
     ui.calendarStrip.appendChild(frag);
     
@@ -247,7 +268,7 @@ export function renderFullCalendar() {
         frag.appendChild(el);
     }
 
-    ui.fullCalendarGrid.innerHTML = '';
+    ui.fullCalendarGrid.replaceChildren();
     ui.fullCalendarGrid.appendChild(frag);
 }
 

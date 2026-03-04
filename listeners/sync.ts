@@ -167,7 +167,13 @@ const _handleCopyKey = () => {
             const originalText = ui.copyKeyBtn.innerHTML;
             ui.copyKeyBtn.innerHTML = '✓';
             setTimeout(() => { ui.copyKeyBtn.innerHTML = originalText; }, SYNC_COPY_FEEDBACK_MS);
-        }).catch(() => alert("Copie manualmente: " + key));
+        }).catch(() => {
+            showConfirmationModal(`Copie manualmente: ${key}`, () => {}, {
+                title: t('syncKeyLabel'),
+                confirmText: t('closeButton'),
+                hideCancel: true
+            });
+        });
     }
 };
 const _handleViewKey = () => { const key = getSyncKey(); if (key) { ui.syncKeyText.textContent = key; ui.syncDisplayKeyView.dataset.context = 'view'; showView('displayKey'); } };

@@ -29,6 +29,7 @@ declare global {
     }
 
     interface OneSignalLike {
+        init(options: { appId: string; allowLocalhostAsSecureOrigin?: boolean }): Promise<void>;
         Notifications: OneSignalNotifications;
         User: OneSignalUser;
     }

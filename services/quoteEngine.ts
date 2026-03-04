@@ -100,7 +100,7 @@ function _getDominantVirtues(habits: Habit[], dateISO: string): Set<StoicVirtue>
     // @fix: Get philosophy from the habit's schedule for the given date.
     habits.forEach(h => {
         const habitSchedule = getScheduleForDate(h, dateISO);
-        if (habitSchedule?.times.length > 0 && habitSchedule.philosophy) {
+        if (habitSchedule && habitSchedule.times && habitSchedule.times.length > 0 && habitSchedule.philosophy) {
             const v = habitSchedule.philosophy.virtue;
             counts[v] = (counts[v] || 0) + 1;
         }

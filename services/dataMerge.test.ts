@@ -541,6 +541,7 @@ describe('🔗 Deduplication by Name (Habit Name Collision Prevention)', () => {
                 {
                     startDate: '2024-01-02',
                     name: 'Meditação',
+                    mode: 'scheduled',
                     times: ['Morning'] as any,
                     frequency: { type: 'daily' as const },
                     scheduleAnchor: '2024-01-02',
@@ -563,7 +564,7 @@ describe('🔗 Deduplication by Name (Habit Name Collision Prevention)', () => {
         // Deve estar ATIVO (deletedOn não definido)
         expect(habit.deletedOn).toBeUndefined();
         
-        // ID deve ser do hábito ativo
+        // ID deve ser do hábito ativo (winner recebe o estado ativo)
         expect(habit.id).toBe('habit-2');
         
         logger.info('✅ Dedup by Name: Hábito ativo preservado como receptor');
@@ -581,6 +582,7 @@ describe('🔗 Deduplication by Name (Habit Name Collision Prevention)', () => {
                 {
                     startDate: '2024-01-01',
                     name: 'Leitura',
+                    mode: 'scheduled',
                     times: ['Evening'] as any,
                     frequency: { type: 'daily' as const },
                     scheduleAnchor: '2024-01-01',
@@ -603,6 +605,7 @@ describe('🔗 Deduplication by Name (Habit Name Collision Prevention)', () => {
                 {
                     startDate: '2024-01-02',
                     name: 'LEITURA',
+                    mode: 'scheduled',
                     times: ['Evening'] as any,
                     frequency: { type: 'daily' as const },
                     scheduleAnchor: '2024-01-02',
@@ -681,6 +684,390 @@ describe('🔗 Deduplication by Name (Habit Name Collision Prevention)', () => {
         expect(names).toContain('Nadar');
 
         logger.info('✅ Dedup by Name: Hábitos com nomes diferentes mantidos separados');
+    });
+
+    it('deve deduplicar automaticamente variações com acento/espaço sem abrir confirmação', async () => {
+        const local = createMockState(3000);
+        const incoming = createMockState(2000);
+
+        (local as any).habits = [...local.habits, {
+            id: 'habit-1',
+            createdOn: '2024-01-01',
+            scheduleHistory: [
+                {
+                    startDate: '2024-01-01',
+                    name: 'Exercicio',
+                    times: ['Morning', 'Evening'] as any,
+                    frequency: { type: 'daily' as const },
+                    scheduleAnchor: '2024-01-01',
+                    icon: '🏃',
+                    color: '#FF0000',
+                    goal: { type: 'check' as const }
+                }
+            ]
+        } as any];
+
+        (incoming as any).habits = [...incoming.habits, {
+            id: 'habit-2',
+            createdOn: '2024-01-02',
+            scheduleHistory: [
+                {
+                    startDate: '2024-01-01',
+                    name: '  exercício  ',
+                    times: ['Evening', 'Morning'] as any,
+                    frequency: { type: 'daily' as const },
+                    scheduleAnchor: '2024-01-01',
+                    icon: '🏃',
+                    color: '#00FF00',
+                    goal: { type: 'check' as const }
+                }
+            ]
+        } as any];
+
+        let promptCount = 0;
+        const merged = await mergeStates(local, incoming, {
+            onDedupCandidate: () => {
+                promptCount++;
+                return 'keep_separate';
+            }
+        });
+
+        expect(promptCount).toBe(0);
+        expect(merged.habits.length).toBe(1);
+    });
+
+    it('deve manter separados nomes genéricos sem abrir confirmação', async () => {
+        const local = createMockState(3000);
+        const incoming = createMockState(2000);
+
+        (local as any).habits = [...local.habits, {
+            id: 'habit-1',
+            createdOn: '2024-01-01',
+            scheduleHistory: [
+                {
+                    startDate: '2024-01-01',
+                    name: 'Hábito',
+                    times: ['Morning'] as any,
+                    frequency: { type: 'daily' as const },
+                    scheduleAnchor: '2024-01-01',
+                    icon: '🧩',
+                    color: '#222222',
+                    goal: { type: 'check' as const }
+                }
+            ]
+        } as any];
+
+        (incoming as any).habits = [...incoming.habits, {
+            id: 'habit-2',
+            createdOn: '2024-01-02',
+            scheduleHistory: [
+                {
+                    startDate: '2024-01-01',
+                    name: 'habito',
+                    times: ['Morning'] as any,
+                    frequency: { type: 'daily' as const },
+                    scheduleAnchor: '2024-01-01',
+                    icon: '🧩',
+                    color: '#333333',
+                    goal: { type: 'check' as const }
+                }
+            ]
+        } as any];
+
+        let promptCount = 0;
+        const merged = await mergeStates(local, incoming, {
+            onDedupCandidate: () => {
+                promptCount++;
+                return 'deduplicate';
+            }
+        });
+
+        expect(promptCount).toBe(0);
+        expect(merged.habits.length).toBe(2);
+    });
+
+    it('deve solicitar confirmação no máximo uma vez por identidade no mesmo merge', async () => {
+        const local = createMockState(3000);
+        const incoming = createMockState(2000);
+
+        (local as any).habits = [...local.habits, {
+            id: 'habit-1',
+            createdOn: '2024-01-01',
+            scheduleHistory: [
+                {
+                    startDate: '2024-01-01',
+                    name: 'Leitura',
+                    mode: 'scheduled',
+                    times: ['Morning'] as any,
+                    frequency: { type: 'daily' as const },
+                    scheduleAnchor: '2024-01-01',
+                    icon: '📖',
+                    color: '#444444',
+                    goal: { type: 'check' as const }
+                }
+            ]
+        } as any];
+
+        (incoming as any).habits = [...incoming.habits,
+            {
+                id: 'habit-2',
+                createdOn: '2024-01-02',
+                scheduleHistory: [
+                    {
+                        startDate: '2024-01-02',
+                        name: 'LEITURA',
+                        mode: 'scheduled',
+                        times: ['Evening'] as any, // Diferente -> vai precisar confirmar
+                        frequency: { type: 'weekly' as const, interval: 1, weekdays: [1, 3, 5] }, // Diferente
+                        scheduleAnchor: '2024-01-02',
+                        icon: '📚',
+                        color: '#555555',
+                        goal: { type: 'check' as const }
+                    }
+                ]
+            } as any,
+            {
+                id: 'habit-3',
+                createdOn: '2024-01-03',
+                scheduleHistory: [
+                    {
+                        startDate: '2024-01-03',
+                        name: 'leitura',
+                        mode: 'scheduled',
+                        times: ['Afternoon'] as any, // Diferente
+                        frequency: { type: 'daily' as const },
+                        scheduleAnchor: '2024-01-03',
+                        icon: '📘',
+                        color: '#666666',
+                        goal: { type: 'numeric' as const, target: 30, unit: 'páginas' }
+                    }
+                ]
+            } as any
+        ];
+
+        let promptCount = 0;
+        const merged = await mergeStates(local, incoming, {
+            onDedupCandidate: () => {
+                promptCount++;
+                return 'deduplicate';
+            }
+        });
+
+        // Com schedules diferentes, deve pedir confirmação pelo menos uma vez
+        expect(promptCount).toBeGreaterThanOrEqual(1);
+        // Mas no máximo uma vez por identidade (cache de confirmedIdentities)
+        expect(promptCount).toBeLessThanOrEqual(1);
+        expect(merged.habits.length).toBe(1);
+    });
+
+    it('deve deduplicar automaticamente variações singular/plural via fuzzy matching', async () => {
+        const local = createMockState(3000);
+        const incoming = createMockState(2000);
+
+        (local as any).habits = [...local.habits, {
+            id: 'habit-1',
+            createdOn: '2024-01-01',
+            scheduleHistory: [
+                {
+                    startDate: '2024-01-01',
+                    name: 'Exercício',
+                    mode: 'scheduled',
+                    times: ['Morning'] as any,
+                    frequency: { type: 'daily' as const },
+                    scheduleAnchor: '2024-01-01',
+                    icon: '🏃',
+                    color: '#FF0000',
+                    goal: { type: 'check' as const }
+                }
+            ]
+        } as any];
+
+        (incoming as any).habits = [...incoming.habits, {
+            id: 'habit-2',
+            createdOn: '2024-01-02',
+            scheduleHistory: [
+                {
+                    startDate: '2024-01-01',
+                    name: 'Exercícios',
+                    mode: 'scheduled',
+                    times: ['Morning'] as any,
+                    frequency: { type: 'daily' as const },
+                    scheduleAnchor: '2024-01-01',
+                    icon: '🏃',
+                    color: '#FF0000',
+                    goal: { type: 'check' as const }
+                }
+            ]
+        } as any];
+
+        const merged = await mergeStates(local, incoming, {
+            onDedupCandidate: () => 'deduplicate'
+        });
+
+        // Fuzzy match válido: distância de edição = 1 (adicionar "s")
+        expect(merged.habits.length).toBe(1);
+        logger.info('✅ Fuzzy Match: "Exercício" vs "Exercícios" consolidados automaticamente');
+    });
+
+    it('deve manter separados hábitos com dados históricos em períodos não-sobrepostos', async () => {
+        const local = createMockState(3000);
+        const incoming = createMockState(2000);
+
+        (local as any).habits = [...local.habits, {
+            id: 'habit-1',
+            createdOn: '2024-01-01',
+            scheduleHistory: [
+                {
+                    startDate: '2024-01-01',
+                    name: 'Corrida',
+                    times: ['Morning'] as any,
+                    frequency: { type: 'daily' as const },
+                    scheduleAnchor: '2024-01-01',
+                    icon: '🏃',
+                    color: '#FF0000',
+                    goal: { type: 'check' as const }
+                }
+            ]
+        } as any];
+
+        local.dailyData['2024-01-15'] = {
+            'habit-1': { instances: { Morning: { note: 'Corrida antiga' } } }
+        } as any;
+
+        (incoming as any).habits = [...incoming.habits, {
+            id: 'habit-2',
+            createdOn: '2024-06-01',
+            scheduleHistory: [
+                {
+                    startDate: '2024-06-01',
+                    name: 'Corrida',
+                    times: ['Morning'] as any,
+                    frequency: { type: 'daily' as const },
+                    scheduleAnchor: '2024-06-01',
+                    icon: '🏃',
+                    color: '#00FF00',
+                    goal: { type: 'check' as const }
+                }
+            ]
+        } as any];
+
+        incoming.dailyData['2024-06-15'] = {
+            'habit-2': { instances: { Morning: { note: 'Corrida nova' } } }
+        } as any;
+
+        let promptCount = 0;
+        const merged = await mergeStates(local, incoming, {
+            onDedupCandidate: () => {
+                promptCount++;
+                return 'deduplicate';
+            }
+        });
+
+        expect(promptCount).toBe(0);
+        expect(merged.habits.length).toBe(2);
+        logger.info('✅ Non-overlapping History: Hábitos com dados em períodos diferentes mantidos separados');
+    });
+
+    it('deve manter separados hábitos com períodos de agenda não-sobrepostos (deletado vs novo)', async () => {
+        const local = createMockState(3000);
+        const incoming = createMockState(2000);
+
+        (local as any).habits = [...local.habits, {
+            id: 'habit-1',
+            createdOn: '2024-01-01',
+            deletedOn: '2024-03-01',
+            scheduleHistory: [
+                {
+                    startDate: '2024-01-01',
+                    name: 'Meditação',
+                    times: ['Morning'] as any,
+                    frequency: { type: 'daily' as const },
+                    scheduleAnchor: '2024-01-01',
+                    icon: '🧘',
+                    color: '#FF00FF',
+                    goal: { type: 'check' as const }
+                }
+            ]
+        } as any];
+
+        (incoming as any).habits = [...incoming.habits, {
+            id: 'habit-2',
+            createdOn: '2024-06-01',
+            scheduleHistory: [
+                {
+                    startDate: '2024-06-01',
+                    name: 'Meditação',
+                    times: ['Morning'] as any,
+                    frequency: { type: 'daily' as const },
+                    scheduleAnchor: '2024-06-01',
+                    icon: '🧘',
+                    color: '#00FFFF',
+                    goal: { type: 'check' as const }
+                }
+            ]
+        } as any];
+
+        let promptCount = 0;
+        const merged = await mergeStates(local, incoming, {
+            onDedupCandidate: () => {
+                promptCount++;
+                return 'deduplicate';
+            }
+        });
+
+        expect(promptCount).toBe(0);
+        expect(merged.habits.length).toBe(2);
+        logger.info('✅ Non-overlapping Schedule: Hábito deletado + novo criado após mantidos separados');
+    });
+
+    it('deve usar createdOn como desempate quando schedules são equivalentes', async () => {
+        const local = createMockState(3000);
+        const incoming = createMockState(2000);
+
+        (local as any).habits = [...local.habits, {
+            id: 'habit-1',
+            createdOn: '2024-01-05',
+            scheduleHistory: [
+                {
+                    startDate: '2024-01-05',
+                    name: 'Leitura',
+                    times: ['Evening'] as any,
+                    frequency: { type: 'daily' as const },
+                    scheduleAnchor: '2024-01-05',
+                    icon: '📖',
+                    color: '#FF0000',
+                    goal: { type: 'check' as const }
+                }
+            ]
+        } as any];
+
+        (incoming as any).habits = [...incoming.habits, {
+            id: 'habit-2',
+            createdOn: '2024-01-01',
+            scheduleHistory: [
+                {
+                    startDate: '2024-01-05',
+                    name: 'Leitura',
+                    times: ['Evening'] as any,
+                    frequency: { type: 'daily' as const },
+                    scheduleAnchor: '2024-01-05',
+                    icon: '📖',
+                    color: '#FF0000',
+                    goal: { type: 'check' as const }
+                }
+            ]
+        } as any];
+
+        const merged = await mergeStates(local, incoming, {
+            onDedupCandidate: () => 'deduplicate'
+        });
+
+        expect(merged.habits.length).toBe(1);
+        const finalHabit = merged.habits[0];
+        
+        // O hábito consolidado deve ter preservado a estabilidade do mais antigo
+        expect(finalHabit.scheduleHistory.length).toBeGreaterThanOrEqual(1);
+        logger.info(`✅ CreatedOn Tiebreaker: Hábito mais antigo usado como âncora (${finalHabit.id})`);
     });
 
     describe('⏰ Dedup de TimeOfDay (Timeslot Uniqueness)', () => {

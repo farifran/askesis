@@ -75,6 +75,10 @@ let _cachedRefToday: string | null = null;
 let _cachedYesterdayISO: string | null = null;
 let _cachedTomorrowISO: string | null = null;
 
+function replaceWithHtmlFragment(target: HTMLElement, html: string) {
+    target.replaceChildren(document.createRange().createContextualFragment(html));
+}
+
 const OPTS_HEADER_DESKTOP: Intl.DateTimeFormatOptions = { month: 'long', day: 'numeric', timeZone: 'UTC' };
 const OPTS_HEADER_ARIA: Intl.DateTimeFormatOptions = { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'UTC' };
 const OPTS_HEADER_MOBILE_NUMERIC: Intl.DateTimeFormatOptions = { day: '2-digit', month: '2-digit', timeZone: 'UTC' };
@@ -123,16 +127,15 @@ function _updateHeaderTitle() {
 }
 
 function _renderHeaderIcons() {
-    if (!ui.manageHabitsBtn.hasChildNodes()) ui.manageHabitsBtn.innerHTML = UI_ICONS.settings;
+    if (!ui.manageHabitsBtn.hasChildNodes()) replaceWithHtmlFragment(ui.manageHabitsBtn, UI_ICONS.settings);
     const defaultIconSpan = ui.aiEvalBtn.querySelector('.default-icon');
-    if (defaultIconSpan && !defaultIconSpan.hasChildNodes()) defaultIconSpan.innerHTML = UI_ICONS.ai;
+    if (defaultIconSpan && !defaultIconSpan.hasChildNodes()) replaceWithHtmlFragment(defaultIconSpan as HTMLElement, UI_ICONS.ai);
 }
 
 export function updateUIText() {
     const appNameHtml = t('appName');
-    const tempEl = document.createElement('div');
-    tempEl.innerHTML = appNameHtml;
-    document.title = tempEl.textContent || 'Askesis';
+    const appNameText = appNameHtml.replace(/<[^>]*>/g, '').trim();
+    document.title = appNameText || 'Askesis';
 
     ui.fabAddHabit.setAttribute('aria-label', t('fabAddHabit_ariaLabel'));
     ui.manageHabitsBtn.setAttribute('aria-label', t('manageHabits_ariaLabel'));
@@ -160,7 +163,7 @@ export function updateUIText() {
     setTextContent(ui.labelEnterKey, t('syncLabelEnterKey'));
     setTextContent(ui.cancelEnterKeyBtn, t('cancelButton'));
     setTextContent(ui.submitKeyBtn, t('syncSubmitKey'));
-    if (ui.syncWarningText.innerHTML !== t('syncWarning')) ui.syncWarningText.innerHTML = t('syncWarning');
+    setTextContent(ui.syncWarningText, t('syncWarning'));
     setTextContent(ui.keySavedBtn, ui.syncDisplayKeyView.dataset.context === 'view' ? t('closeButton') : t('syncKeySaved'));
     setTextContent(ui.syncActiveDesc, t('syncActiveDesc'));
     setTextContent(ui.viewKeyBtn, t('syncViewKey'));
@@ -191,8 +194,20 @@ export function updateUIText() {
     setTextContent(ui.colorPickerModal.querySelector('.modal-close-btn'), t('cancelButton'));
 
     const setBtnHtml = (btn: HTMLButtonElement, icon: string, text: string) => {
-        const html = `${icon} ${text}`;
-        if (btn.innerHTML !== html) btn.innerHTML = html;
+        const currentText = btn.textContent || '';
+        const hasSingleTextNode = btn.childNodes.length === 1 && btn.firstChild?.nodeType === Node.TEXT_NODE;
+        const expectedText = ` ${text}`;
+
+        if (hasSingleTextNode && currentText === text) {
+            replaceWithHtmlFragment(btn, icon);
+            btn.append(document.createTextNode(expectedText));
+            return;
+        }
+
+        if (currentText.trim() !== text || btn.childNodes.length < 2) {
+            replaceWithHtmlFragment(btn, icon);
+            btn.append(document.createTextNode(expectedText));
+        }
     };
     setBtnHtml(ui.quickActionDone, UI_ICONS.check, t('quickActionMarkAllDone'));
     setBtnHtml(ui.quickActionSnooze, UI_ICONS.snoozed, t('quickActionMarkAllSnoozed'));
@@ -270,7 +285,7 @@ export function updateNotificationUI() {
         const isPushEnabled = OneSignal.User.PushSubscription.optedIn;
         const permission = OneSignal.Notifications.permission;
         setLocalPushOptIn(!!isPushEnabled);
-        if (ui.notificationToggle.checked !== isPushEnabled) ui.notificationToggle.checked = isPushEnabled;
+        if (ui.notificationToggle.checked !== !!isPushEnabled) ui.notificationToggle.checked = !!isPushEnabled;
         const isDenied = permission === 'denied';
         if (ui.notificationToggle.disabled !== isDenied) {
             ui.notificationToggle.disabled = isDenied;
@@ -285,7 +300,14 @@ export function updateNotificationUI() {
 
 export function initLanguageFilter() {
     const langNames = LANGUAGES.map(lang => t(lang.nameKey));
-    ui.languageReel.innerHTML = langNames.map(name => `<span class="reel-option">${name}</span>`).join('');
+    ui.languageReel.replaceChildren(
+        ...langNames.map(name => {
+            const option = document.createElement('span');
+            option.className = 'reel-option';
+            option.textContent = name;
+            return option;
+        })
+    );
     updateReelRotaryARIA(ui.languageViewport, LANGUAGES.findIndex(l => l.code === state.activeLanguageCode), langNames, 'language_ariaLabel');
 }
 
@@ -345,7 +367,7 @@ export function renderStoicQuote() {
     
     const container = ui.stoicQuoteDisplay;
     container.classList.remove('visible');
-    container.innerHTML = '';
+    container.replaceChildren();
     
     const adaptationSpan = document.createElement('span');
     adaptationSpan.className = 'quote-adaptation';
@@ -358,7 +380,7 @@ export function renderStoicQuote() {
 
     expander.onclick = (e) => {
         e.stopPropagation();
-        container.innerHTML = '';
+        container.replaceChildren();
         const originalSpan = document.createElement('span');
         originalSpan.className = 'quote-expanded';
         originalSpan.style.fontStyle = 'italic';

@@ -31,6 +31,10 @@ type CardElements = {
 };
 const cardElementsCache = new WeakMap<HTMLElement, CardElements>();
 
+function replaceWithHtmlFragment(target: HTMLElement, html: string) {
+    target.replaceChildren(document.createRange().createContextualFragment(html));
+}
+
 function getGroupDOM(time: TimeOfDay) {
     let cached = groupDomCache.get(time);
     if (!cached && ui.habitContainer) {
@@ -54,12 +58,37 @@ let placeholderTemplate: HTMLElement | null = null;
 const getGoalControlsTemplate = () => goalControlsTemplate || (goalControlsTemplate = (() => {
     const div = document.createElement('div');
     div.className = CSS_CLASSES.HABIT_GOAL_CONTROLS;
-    div.innerHTML = `<button type="button" class="${CSS_CLASSES.GOAL_CONTROL_BTN}" data-action="decrement">-</button><div class="${CSS_CLASSES.GOAL_VALUE_WRAPPER}"><div class="progress"></div><div class="unit"></div></div><button type="button" class="${CSS_CLASSES.GOAL_CONTROL_BTN}" data-action="increment">+</button>`;
+
+    const decBtn = document.createElement('button');
+    decBtn.type = 'button';
+    decBtn.className = CSS_CLASSES.GOAL_CONTROL_BTN;
+    decBtn.dataset.action = 'decrement';
+    decBtn.textContent = '-';
+
+    const wrapper = document.createElement('div');
+    wrapper.className = CSS_CLASSES.GOAL_VALUE_WRAPPER;
+
+    const progress = document.createElement('div');
+    progress.className = 'progress';
+    const unit = document.createElement('div');
+    unit.className = 'unit';
+    wrapper.append(progress, unit);
+
+    const incBtn = document.createElement('button');
+    incBtn.type = 'button';
+    incBtn.className = CSS_CLASSES.GOAL_CONTROL_BTN;
+    incBtn.dataset.action = 'increment';
+    incBtn.textContent = '+';
+
+    div.append(decBtn, wrapper, incBtn);
     return div;
 })());
 
 const getStatusWrapperTemplate = (cls: string, icon: string) => statusTemplates[cls] || (statusTemplates[cls] = (() => {
-    const w = document.createElement('div'); w.className = cls; w.innerHTML = icon; return w;
+    const w = document.createElement('div');
+    w.className = cls;
+    replaceWithHtmlFragment(w, icon);
+    return w;
 })());
 
 const getPlaceholderTemplate = () => placeholderTemplate || (placeholderTemplate = (() => {
@@ -68,9 +97,53 @@ const getPlaceholderTemplate = () => placeholderTemplate || (placeholderTemplate
 })());
 
 const getHabitCardTemplate = () => habitCardTemplate || (habitCardTemplate = (() => {
-    const li = document.createElement('li'); li.className = CSS_CLASSES.HABIT_CARD;
-    // REMOVED: draggable="true" - Agora gerenciado via Pointer Events no listeners/swipe.ts
-    li.innerHTML = `<div class="habit-actions-left"><button type="button" class="${CSS_CLASSES.SWIPE_DELETE_BTN}">${UI_ICONS.swipeDelete}</button></div><div class="habit-actions-right"><button type="button" class="${CSS_CLASSES.SWIPE_NOTE_BTN}">${UI_ICONS.swipeNote}</button></div><div class="${CSS_CLASSES.HABIT_CONTENT_WRAPPER}" role="button" tabindex="0"><div class="habit-icon"></div><div class="${CSS_CLASSES.HABIT_DETAILS}"><div class="name"></div><div class="subtitle"></div><div class="consolidation-message" hidden></div></div><div class="habit-goal"></div><div class="ripple-container"></div></div>`;
+    const li = document.createElement('li');
+    li.className = CSS_CLASSES.HABIT_CARD;
+
+    const leftActions = document.createElement('div');
+    leftActions.className = 'habit-actions-left';
+    const deleteBtn = document.createElement('button');
+    deleteBtn.type = 'button';
+    deleteBtn.className = CSS_CLASSES.SWIPE_DELETE_BTN;
+    replaceWithHtmlFragment(deleteBtn, UI_ICONS.swipeDelete);
+    leftActions.appendChild(deleteBtn);
+
+    const rightActions = document.createElement('div');
+    rightActions.className = 'habit-actions-right';
+    const noteBtn = document.createElement('button');
+    noteBtn.type = 'button';
+    noteBtn.className = CSS_CLASSES.SWIPE_NOTE_BTN;
+    replaceWithHtmlFragment(noteBtn, UI_ICONS.swipeNote);
+    rightActions.appendChild(noteBtn);
+
+    const contentWrapper = document.createElement('div');
+    contentWrapper.className = CSS_CLASSES.HABIT_CONTENT_WRAPPER;
+    contentWrapper.setAttribute('role', 'button');
+    contentWrapper.setAttribute('tabindex', '0');
+
+    const icon = document.createElement('div');
+    icon.className = 'habit-icon';
+
+    const details = document.createElement('div');
+    details.className = CSS_CLASSES.HABIT_DETAILS;
+
+    const name = document.createElement('div');
+    name.className = 'name';
+    const subtitle = document.createElement('div');
+    subtitle.className = 'subtitle';
+    const consolidation = document.createElement('div');
+    consolidation.className = 'consolidation-message';
+    consolidation.hidden = true;
+    details.append(name, subtitle, consolidation);
+
+    const goal = document.createElement('div');
+    goal.className = 'habit-goal';
+
+    const ripple = document.createElement('div');
+    ripple.className = 'ripple-container';
+
+    contentWrapper.append(icon, details, goal, ripple);
+    li.append(leftActions, rightActions, contentWrapper);
     return li;
 })());
 
@@ -103,7 +176,11 @@ function _renderPendingGoalControls(habit: Habit, time: TimeOfDay, dayData: Habi
     
     if (!progressEl) {
         // ROBUSTNESS: Restaura estrutura destruída
-        wrapper.innerHTML = `<div class="progress"></div><div class="unit"></div>`;
+        const restoredProgress = document.createElement('div');
+        restoredProgress.className = 'progress';
+        const restoredUnit = document.createElement('div');
+        restoredUnit.className = 'unit';
+        wrapper.replaceChildren(restoredProgress, restoredUnit);
         els.goalProgress = wrapper.querySelector('.progress') as HTMLElement;
         els.goalUnit = wrapper.querySelector('.unit') as HTMLElement;
     } else if (!els.goalProgress || !els.goalProgress.isConnected) {
@@ -163,10 +240,11 @@ export function updateHabitCardElement(card: HTMLElement, habit: Habit, time: Ti
     const schedule = getHabitPropertiesForDate(habit, state.selectedDate);
     if (!schedule) return;
 
-    // SECURITY FIX: Only allow known safe habit icons via innerHTML
+    // SECURITY FIX: Only allow known safe habit icons via sanitized fragment
     if (els.cachedIconHtml !== schedule.icon) {
         const safeIcon = sanitizeHabitIcon(schedule.icon, '❓');
-        els.icon.innerHTML = els.cachedIconHtml = safeIcon;
+        replaceWithHtmlFragment(els.icon, safeIcon);
+        els.cachedIconHtml = safeIcon;
     }
     els.icon.style.color = schedule.color;
     // RESTORED [2025-06-15]: Match Explore Modal style (Color + Opacity 30 for background)
@@ -181,7 +259,7 @@ export function updateHabitCardElement(card: HTMLElement, habit: Habit, time: Ti
 
     const hasN = !!info?.note;
     if (els.noteBtn.dataset.hasNote !== String(hasN)) {
-        els.noteBtn.innerHTML = hasN ? UI_ICONS.swipeNoteHasNote : UI_ICONS.swipeNote;
+        replaceWithHtmlFragment(els.noteBtn, hasN ? UI_ICONS.swipeNoteHasNote : UI_ICONS.swipeNote);
         els.noteBtn.dataset.hasNote = String(hasN);
     }
 
@@ -231,7 +309,7 @@ export function renderHabits() {
         const habits = habitsByTimePool[time], hasH = habits.length > 0;
         
         dom.marker.style.display = hasH ? '' : 'none';
-        if (hasH) dom.marker.innerHTML = getTimeOfDayIcon(time);
+        if (hasH) replaceWithHtmlFragment(dom.marker, getTimeOfDayIcon(time));
 
         const newChildren: HTMLElement[] = [];
         if (hasH) {
@@ -263,8 +341,47 @@ export function renderHabits() {
             }
             ph.dataset.time = time;
             ph.classList.toggle('show-smart-placeholder', isSmart);
-            const iconHtml = isSmart ? `<span class="placeholder-icon-generic">${empty.map(getTimeOfDayIcon).join('<span class="icon-separator">/</span>')}</span><span class="placeholder-icon-specific">${getTimeOfDayIcon(time)}</span>` : `<span class="placeholder-icon-specific">${getTimeOfDayIcon(time)}</span>`;
-            ph.innerHTML = `<div class="time-of-day-icon">${iconHtml}</div><span class="placeholder-arrow">→</span><span>${t('dragToAddHabit')}</span>`;
+
+            const iconRoot = document.createElement('div');
+            iconRoot.className = 'time-of-day-icon';
+
+            if (isSmart) {
+                const genericSpan = document.createElement('span');
+                genericSpan.className = 'placeholder-icon-generic';
+
+                empty.forEach((emptyTime, index) => {
+                    const temp = document.createElement('span');
+                    replaceWithHtmlFragment(temp, getTimeOfDayIcon(emptyTime));
+                    while (temp.firstChild) genericSpan.appendChild(temp.firstChild);
+
+                    if (index < empty.length - 1) {
+                        const sep = document.createElement('span');
+                        sep.className = 'icon-separator';
+                        sep.textContent = '/';
+                        genericSpan.appendChild(sep);
+                    }
+                });
+
+                const specificSpan = document.createElement('span');
+                specificSpan.className = 'placeholder-icon-specific';
+                replaceWithHtmlFragment(specificSpan, getTimeOfDayIcon(time));
+
+                iconRoot.append(genericSpan, specificSpan);
+            } else {
+                const specificSpan = document.createElement('span');
+                specificSpan.className = 'placeholder-icon-specific';
+                replaceWithHtmlFragment(specificSpan, getTimeOfDayIcon(time));
+                iconRoot.appendChild(specificSpan);
+            }
+
+            const arrow = document.createElement('span');
+            arrow.className = 'placeholder-arrow';
+            arrow.textContent = '→';
+
+            const label = document.createElement('span');
+            label.textContent = t('dragToAddHabit');
+
+            ph.replaceChildren(iconRoot, arrow, label);
             newChildren.push(ph);
         }
         

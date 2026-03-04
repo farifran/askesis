@@ -1,499 +1,259 @@
-# 🧪 Testes do Askesis
+# Testes do Askesis
 
-## Visão Geral
+## Objetivo
+Este documento descreve o **estado real atual** da suíte de testes do projeto.
 
-Esta suíte de testes combina duas abordagens complementares:
+## Para que este arquivo existe
+- Mostrar rapidamente se a suíte está saudável (sem depender de histórico de chat/terminal).
+- Servir como referência de execução para quem vai abrir PR.
+- Evitar divergência entre o que a documentação diz e o que o projeto realmente executa.
 
-1. **Testes de Cenario (Integration-First):** Validam jornadas completas do usuário, combinando múltiplos subsistemas.
-2. **Testes Unitários:** Cobertura detalhada de cada módulo crítico do sistema.
-
-**Total: 21 arquivos de teste | 350 testes | 21 suites**
-
-## Os Testes de Cenario
-
-### 🚀 Teste de Cenario 1: Jornada do Novo Usuário
-**Arquivo:** `tests/scenario-test-1-user-journey.test.ts`
-
-Simula a experiência completa de um novo usuário desde o primeiro acesso até o uso avançado.
-
-**Valida simultaneamente:**
-- ✅ Criação de hábitos (3 turnos diferentes)
-- ✅ Marcação de status (feito/adiado/pendente)
-- ✅ Adição de notas com emojis e caracteres especiais
-- ✅ Navegação no calendário (passado/futuro)
-- ✅ Swipe e long-press
-- ✅ Persistência após reload
-- ✅ Renderização de DOM
-- ✅ Acessibilidade básica (tabindex, aria-label)
-- ✅ Integridade de dados após múltiplas operações
-
-**Métricas de sucesso:**
-- Todos os hábitos criados corretamente
-- Status persistidos após reload
-- Notas mantêm caracteres especiais
-- DOM renderizado sem erros
+Última verificação executada em: **2026-02-20**
+Comando usado: `npm test -- --run`
 
 ---
 
-### 🔄 Teste de Cenario 2: Sincronização Conflitante
-**Arquivo:** `tests/scenario-test-2-sync-conflicts.test.ts`
+## Resumo Atual da Suíte
 
-Simula conflitos entre dispositivos offline e testa o algoritmo CRDT-lite de merge.
+- **Arquivos de teste:** 26
+- **Testes totais:** 399
+- **Resultado atual:** 399 passando, 0 falhando
+- **Status de arquivos:** 26 passando, 0 falhando
 
-**Valida simultaneamente:**
-- ✅ Criptografia AES-GCM (encrypt/decrypt)
-- ✅ Web Worker (operações off-main-thread)
-- ✅ Merge de conflitos (DONE vs DEFERRED)
-- ✅ Resolução de Tombstone (delete vence update)
-- ✅ Merge de 3+ dispositivos
-- ✅ Integridade de bitmask após 100+ merges
-- ✅ Serialização para nuvem
-- ✅ Race conditions
-
-**Métricas de sucesso:**
-- Conflitos resolvidos semanticamente (DONE > DEFERRED)
-- Nenhum dado perdido em merge de múltiplos dispositivos
-- Tombstone sempre vence
-- Bitmasks mantêm integridade
+### Status
+✅ Suíte totalmente aprovada.
 
 ---
 
-### ⚡ Teste de Cenario 3: Estresse e Performance
-**Arquivo:** `tests/scenario-test-3-performance.test.ts`
+## Fluxo Rápido (dia a dia)
 
-Testa limites de escalabilidade e performance budgets.
-
-**Valida simultaneamente:**
-- ✅ Criação de 100 hábitos < 100ms
-- ✅ Popular 3 anos (54,750 registros) < 500ms
-- ✅ Leitura de 10,000 status < 50ms (O(1) verificado)
-- ✅ Renderização de 100 cartões < 200ms
-- ✅ 1,000 toggles consecutivos < 100ms
-- ✅ Performance constante com crescimento de dados
-- ✅ Ausência de memory leaks
-- ✅ Batch de 1,000 operações < 150ms
-- ✅ Serialização de 10 anos < 1s
-
-**Performance Budgets:**
-```
-Operação                  | Budget    | Meta
--------------------------------------------------
-Criar 100 hábitos        | 100ms     | < 50ms
-Popular 3 anos           | 500ms     | < 300ms
-Ler 10k status           | 50ms      | < 20ms
-Renderizar 100 cards     | 200ms     | < 100ms
-1000 toggles             | 100ms     | < 50ms
-Serializar 10 anos       | 1000ms    | < 500ms
-```
-
----
-
-### ♿ Teste de Cenario 4: Acessibilidade Total
-**Arquivo:** `tests/scenario-test-4-accessibility.test.ts`
-
-Valida conformidade com WCAG 2.1 AA e navegação completa por teclado.
-
-**Valida simultaneamente:**
-- ✅ Navegação completa apenas com Tab/Enter/Space
-- ✅ Todos os elementos têm aria-label ou role
-- ✅ Estrutura semântica HTML5 (landmarks)
-- ✅ Focus trap em modais
-- ✅ Fechamento de modal com Escape
-- ✅ prefers-reduced-motion respeitado
-- ✅ aria-live para anúncios dinâmicos
-- ✅ Foco visível em elementos interativos
-- ✅ Contraste de cores (WCAG AA)
-- ✅ Formulários com feedback acessível
-- ✅ Skip links para navegação rápida
-
-**Critérios WCAG:**
-- Nível A: ✅ Obrigatório (100% conformidade)
-- Nível AA: ✅ Recomendado (100% conformidade)
-- Nível AAA: 🎯 Aspiracional (best effort)
-
----
-
-### 🔥 Teste de Cenario 5: Recuperação de Desastres
-**Arquivo:** `tests/scenario-test-5-disaster-recovery.test.ts`
-
----
-
-### 🔴 Teste de Cenario 6: Segurança (Pentest)
-**Arquivo:** `tests/scenario-test-6-security-pentest.test.ts`
-
-Valida resiliência contra XSS, prototype pollution, injection em API, import path traversal e SSRF.
-
----
-
-### 🟠 Teste de Cenario 7: Cloud e Resiliência de Rede
-**Arquivo:** `tests/scenario-test-7-cloud-network-resilience.test.ts`
-
-Valida sync com falhas de rede, debounce de sync, race conditions e merges avançados.
-
-Testa resiliência do sistema sob condições extremas (Chaos Engineering).
-
-**Valida simultaneamente:**
-- ✅ Recuperação de localStorage corrompido
-- ✅ Dados parcialmente deletados
-- ✅ Validação e rejeição de dados inválidos
-- ✅ Operação com storage 95% cheio
-- ✅ Timestamps negativos ou futuros
-- ✅ Detecção de loops infinitos
-- ✅ Graceful degradation
-- ✅ Consistência durante falhas parciais de escrita
-- ✅ Migração de versões antigas
-- ✅ Feedback amigável para usuário
-
-**Cenários de Caos:**
-1. JSON inválido no localStorage
-2. IndexedDB corrompido
-3. Storage quota excedido
-4. Dados órfãos (logs sem hábitos)
-5. Relógio do sistema incorreto
-6. Interrupção durante escrita
-7. Dados estruturalmente válidos mas semanticamente incorretos
-
----
-
-## � Testes Unitários (12 suites)
-
-### 🔐 Criptografia AES-GCM (14 testes)
-**Arquivo:** `services/crypto.test.ts`
-
-Cobertura completa do módulo de criptografia isomórfica.
-
-**Valida:**
-- ✅ Roundtrip encrypt/decrypt (texto, emojis, Unicode)
-- ✅ Senhas edge-case (1 char, 64 chars, caracteres especiais)
-- ✅ Falha com senha incorreta
-- ✅ Rejeição de dados corrompidos (Base64 inválido, payload truncado)
-- ✅ Integridade com payloads grandes (10KB+)
-- ✅ Saída sempre em Base64 válido
-
----
-
-### 🔄 Migração de Schema (19 testes)
-**Arquivo:** `services/migration.test.ts`
-
-Valida o motor de migração de dados entre versões.
-
-**Valida:**
-- ✅ Fresh install → valores default corretos
-- ✅ Hidratação de monthlyLogs (Object→Map, Array→Map, BigInt serializado)
-- ✅ Tratamento gracioso de BigInt inválidos
-- ✅ V8→V9: expansão de bitmask 6-bit → 9-bit
-- ✅ Preservação de múltiplos status durante migração
-- ✅ Inicialização de quotas e campos AI
-
----
-
-### 💾 Persistência de Estado (7 testes)
-**Arquivo:** `services/persistence.test.ts`
-
-Valida a camada de persistência IndexedDB.
-
-**Valida:**
-- ✅ Snapshot serializável (sem Maps/Sets/BigInts raw)
-- ✅ Limpeza completa de caches
-- ✅ Integridade estrutural do estado CRUD
-
----
-
-### 🛠️ Utilitários (44 testes)
-**Arquivo:** `utils.test.ts`
-
-Cobertura exaustiva das funções utilitárias do sistema.
-
-**Valida:**
-- ✅ Sanitização HTML e prevenção XSS (escapeHTML, sanitizeText)
-- ✅ Parsing de datas UTC (edge cases: 2025-02-30, null, undefined)
-- ✅ Geração UUID v4 (unicidade em 1000 UUIDs, formato RFC4122)
-- ✅ Conversão ArrayBuffer ↔ Base64 ↔ Hex
-- ✅ Parser Markdown simplificado
-- ✅ Debounce com timer
-- ✅ Contraste de cores WCAG
-- ✅ toUTCIsoDateString, getTodayUTC, addDays, getSafeDate
-
----
-
-### 📋 Seletores e Scheduling (23 testes)
-**Arquivo:** `services/selectors.test.ts`
-
-Valida a camada de leitura otimizada (memoized).
-
-**Valida:**
-- ✅ Resolução de schedule por data (multi-scheduleHistory)
-- ✅ Frequência diária, dias específicos da semana, intervalo
-- ✅ Cálculo de streaks consecutivos
-- ✅ Resumo diário (calculateDaySummary)
-- ✅ Visibilidade de hábitos por dia/frequência
-- ✅ Limpeza de caches internos
-
----
-
-### 🌐 Cliente API (14 testes)
-**Arquivo:** `services/api.test.ts`
-
-Valida o cliente HTTP com retry e autenticação.
-
-**Valida:**
-- ✅ CRUD de chave de sincronização (localStorage)
-- ✅ Validação de formato UUID
-- ✅ Retry com backoff exponencial (3 tentativas)
-- ✅ Auto-limpeza em resposta 401
-- ✅ Fetch com headers corretos
-
----
-
-### 🌍 Internacionalização (22 testes)
-**Arquivo:** `i18n.test.ts`
-
-Cobertura do motor de i18n e formatação.
-
-**Valida:**
-- ✅ Tradução de chaves (existentes e ausentes)
-- ✅ Interpolação de variáveis ({name} → valor)
-- ✅ Pluralização CLDR (regra PT: 0 = singular)
-- ✅ Formatação de datas (válida, null, undefined, inválida, timestamp)
-- ✅ Formatação numérica (inteiros, decimais, evolução)
-- ✅ Formatação de listas e comparação collation-aware
-- ✅ Troca dinâmica de idioma (PT → EN → PT)
-- ✅ Nomes de períodos do dia e dias da semana
-
----
-
-### 🏛️ Motor de Citações Estoicas (10 testes)
-**Arquivo:** `services/quoteEngine.test.ts`
-
-Valida o algoritmo de recomendação contextual.
-
-**Valida:**
-- ✅ Seleção básica e erro para array vazio
-- ✅ Anti-repetição (penalidade na última citação)
-- ✅ Boost de IA (tags alinhadas ao diagnóstico)
-- ✅ Determinismo por seed (mesma data → mesma citação)
-- ✅ Variação temporal (diversidade em 28 dias)
-- ✅ Reação a performance state (defeat → resiliência)
-- ✅ Stickiness (tempo mínimo de exibição)
-
----
-
-### ⚙️ Lógica de Negócios (19 testes)
-**Arquivo:** `services/habitActions.test.ts`
-
-### 📦 Importação/Exportação (1 teste)
-**Arquivo:** `services/importExport.test.ts`
-
-Valida o round-trip de importação/backup com reidratação de `monthlyLogsSerialized`.
-
----
-
-### ☁️ Sincronização Cloud (Básico) (2 testes)
-**Arquivo:** `services/cloud.test.ts`
-
-Valida envio de shards (core/logs) e merge de estado remoto mais recente.
-
----
-
-### 🔒 Consistência Estado ↔ UI (35 testes)
-**Arquivo:** `services/stateUIConsistency.test.ts`
-
-Testes de invariantes entre bitmask, `scheduleHistory`, `dailyData` e estado visual.
-
-Valida o controlador principal de ações.
-
-**Valida:**
-- ✅ Boot lock (operações bloqueadas antes de sync)
-- ✅ Ciclo de toggle: NULL→DONE→DEFERRED→NULL
-- ✅ Operações batch (markAllDone, markAllDeferred)
-- ✅ Graduação de hábitos (21 e 66 dias)
-- ✅ Celebrações com interpolação i18n
-- ✅ Reordenação e atualização de hábitos
-- ✅ Formatação de celebrações multi-hábito
-
----
-
-## 📊 Métricas de Qualidade
-
-### Coverage Mínimo Exigido
-```
-Lines:       90%+
-Functions:   85%+
-Branches:    80%+
-Statements:  90%+
-```
-
-### Áreas Críticas (100% Coverage)
-- `services/dataMerge.ts`
-- `services/crypto.ts`
-- `services/habitActions.ts`
-- `services/HabitService.ts`
-- `utils.ts`
-- `services/selectors.ts`
-- `services/migration.ts`
-
----
-
-## 🚀 Como Executar
-
-### Todos os testes
+### 1) Validar apenas o que você mexeu
 ```bash
-npm test
+npm test -- --run services/dataMerge.test.ts
 ```
 
-### Apenas os testes de cenario
+### 2) Validar a suíte de cenários
 ```bash
 npm run test:scenario
 ```
 
-### Com interface visual
+### 3) Validar tudo antes de PR
 ```bash
-npm run test:ui
+npm test -- --run
 ```
 
-### Com coverage
+---
+
+## Checklist para Pull Request
+- [ ] Teste(s) diretamente afetado(s) passando
+- [ ] Suíte completa passando (`npm test -- --run`)
+- [ ] Se contagem de testes mudou, este README foi atualizado
+- [ ] Se novo arquivo `*.test.ts` foi adicionado/removido, inventário atualizado
+
+---
+
+## Inventário Exato (arquivo → testes)
+
+### Cenários (`tests/`)
+- `tests/scenario-test-1-user-journey.test.ts` → 3
+- `tests/scenario-test-2-sync-conflicts.test.ts` → 5
+- `tests/scenario-test-3-performance.test.ts` → 9
+- `tests/scenario-test-4-accessibility.test.ts` → 12
+- `tests/scenario-test-5-disaster-recovery.test.ts` → 10
+- `tests/scenario-test-6-security-pentest.test.ts` → 42
+- `tests/scenario-test-7-cloud-network-resilience.test.ts` → 33
+
+### Serviços (`services/`)
+- `services/HabitService.test.ts` → 16
+- `services/analysis.test.ts` → 5
+- `services/api.test.ts` → 14
+- `services/cloud.test.ts` → 4
+- `services/cloudDataMerge.integration.test.ts` → 1
+- `services/crypto.test.ts` → 14
+- `services/dataMerge.test.ts` → 27
+- `services/habitActions.test.ts` → 29
+- `services/importExport.test.ts` → 1
+- `services/migration.test.ts` → 20
+- `services/persistence.test.ts` → 7
+- `services/quoteEngine.test.ts` → 10
+- `services/selectors.test.ts` → 23
+- `services/stateUIConsistency.test.ts` → 35
+
+### API (`api/`)
+- `api/_httpSecurity.test.ts` → 5
+- `api/analyze.test.ts` → 2
+- `api/sync.test.ts` → 6
+
+### Raiz
+- `i18n.test.ts` → 22
+- `utils.test.ts` → 44
+
+> Soma total validada: **399 testes**.
+
+---
+
+## Cobertura de Testes (detalhado)
+
+###  Cenário 1: Jornada do Usuário (3)
+- Criação de hábitos, marcação de status e notas
+- Persistência e recuperação após reload
+- Integridade de estado + renderização de DOM
+
+###  Cenário 2: Conflitos de Sincronização (5)
+- Merge de bitmasks e reconciliação CRDT-lite
+- Prioridade de tombstone (delete vence update)
+- Serialização/desserialização e convergência
+
+###  Cenário 3: Performance e Estresse (9)
+- Budget de criação, leitura, render e toggles
+- Escalabilidade com volume alto de dados
+- Serialização de longo histórico com tempo controlado
+
+###  Cenário 4: Acessibilidade (12)
+- Navegação por teclado e gerenciamento de foco
+- Semântica HTML/ARIA e feedback assistivo
+- Validações de contraste e interação acessível
+
+###  Cenário 5: Recuperação de Desastres (10)
+- Corrupção de storage e dados parciais
+- Quota/erros de persistência e degradação graceful
+- Robustez de migração e recuperação de estado
+
+###  Cenário 6: Segurança (42)
+- Hardening contra XSS e prototype pollution
+- Validação de entrada, injeções e abuso de API
+- Cobertura de fluxos críticos de segurança de ponta a ponta
+
+###  Cenário 7: Cloud e Resiliência de Rede (33)
+- Falhas de rede, retries, debounce e race conditions
+- Consistência eventual em sincronização
+- Resiliência em cenários de indisponibilidade parcial
+
+###  Nuclear QA: HabitService (16)
+- Fuzzing/property-based para operações de domínio
+- Oracle test para validar consistência funcional
+- Idempotência, comutatividade e guard clauses
+
+###  Nuclear QA: dataMerge (27)
+- Convergência distribuída (split-brain/network partition)
+- Deduplicação por identidade com heurísticas seguras
+- Roundtrip e invariantes de merge sob cenários extremos
+
+> Observação: esse resumo detalha objetivos por suíte; a fonte de verdade para contagem permanece no inventário acima.
+
+---
+
+## Regras de Unicidade de Hábitos
+
+O sistema implementa **cinco mecanismos complementares** para evitar duplicidade e inconsistência de hábitos:
+
+### 1. **Por ID (Merge de Sync)**
+- Quando dois estados são sincronizados, hábitos com o **mesmo `id`** são consolidados em um único registro.
+- O histórico (`scheduleHistory`) é mesclado por `startDate`, com prioridade para o hábito vencedor do merge global.
+- Implementado em `services/dataMerge.ts` com lógica de `mergeStates()`.
+
+### 2. **Por Nome Normalizado (Deduplicação Automática)**
+- Durante o sync, candidatos de deduplicação são avaliados por **identidade normalizada** (nome ou `nameKey`, com remoção de acentos, trim e lowercase).
+- A deduplicação por nome **não é sempre automática**: pode ser auto-deduplicada, exigir confirmação ou manter separado, conforme heurísticas de risco (nome genérico, sobreposição de períodos/dados e similaridade estrutural).
+- **Remapeamento de dados:** Logs diários (`dailyData`) são automaticamente remapeados para o novo ID consolidado.
+- **Exemplo:** Se local tem "Exercício" (id: `habit-1`) e cloud tem "EXERCÍCIO" (id: `habit-2`), o merge tende a consolidar os históricos quando as heurísticas classificam o caso como seguro.
+
+### 3. **Na Edição (Validação de Nome Único)**
+- Hoje, a edição **não abre modal de mesclagem por colisão de nome**.
+- O fluxo atual de `saveHabitFromModal()` aplica normalização/sanitização de dados e atualiza o hábito alvo.
+
+### 4. **Na Criação (Ressurreição)**
+- Ao criar um novo hábito, o sistema procura por um existente com o **mesmo nome normalizado**.
+- Se encontrar, **reaproveita** aquele registro (resurrection) em vez de criar um novo.
+- Prioridade:
+	1. Hábito ativo que cobre a data alvo
+	2. Caso contrário, seleciona o candidato mais recente por `startDate`/`createdOn`
+- Isso evita criar 2+ registros diferentes para o "mesmo hábito logicamente".
+
+### Fluxo Visual
+
+```mermaid
+graph TD
+		A["Usuario tenta criar Habito 'Exercicio'"]
+		B{Procura por existente com<br/>mesmo nome normalizado?}
+		C["Encontrou hábito ativo"]
+		D["Encontrou hábito deletado"]
+		E["Nenhum encontrado"]
+
+		B -->|Sim| C
+		B -->|Sim, mas deletado| D
+		B -->|Não| E
+
+		C --> C1["Restaura e atualiza<br/>se necessário"]
+		D --> D1["Ressuscita e inicia<br/>novo scheduleHistory"]
+		E --> E1["Cria novo registro<br/>com UUID único"]
+
+		C1 --> F["1 registro ativo"]
+		D1 --> F
+		E1 --> F
+
+		style F fill:#90EE90
+```
+
+### Testes de Cobertura
+
+- **`services/dataMerge.test.ts`**: testes de merge/deduplicação no sync (incluindo cenários distribuídos e confirmação de dedup).
+- **`services/habitActions.test.ts`**: testes de "resurrection", normalização de `times` e utilitários de deduplicação.
+- **`services/migration.test.ts`**: testes de sanitização de `scheduleHistory` (mode/times/frequency) na migração.
+
+### Casos Limites Tratados
+
+| Cenário | Comportamento |
+|---|---|
+| Dois hábitos com mesmo nome e identidade ambígua | Merge pode manter separados (sem dedup forçada) |
+| Hábito ativo com mesmo nome em diferentes horários | Pode exigir confirmação e permanecer separado, conforme heurísticas |
+| Nome vazio ou whitespace | Ignorado pela normalização; não gera duplicidade |
+| Renomear hábito para nome que já existe | Edição atualiza o hábito sem modal de merge por nome |
+| Sincronizar 3+ dispositivos com variações de nome ("Exercicio"/"EXERCÍCIO"/"exercício") | Pode consolidar ou manter separado, conforme heurísticas de dedup |
+
+### 5. **Por TimeOfDay (Unicidade de Horário)**
+- O sistema garante que **nenhum hábito aparece 2x ou mais no mesmo horário (Morning/Afternoon/Evening)** em um mesmo dia.
+- Deduplicação implementada em **3 camadas defensivas**:
+	1. **Na Submissão do Formulário:** `habitActions.ts#saveHabitFromModal()` deduplica `formData.times` antes de salvar.
+	2. **Na Migração/Carregamento:** `migration.ts` limpa qualquer dado corrompido durante hidratação de IndexedDB.
+	3. **No Merge de Sync:** `dataMerge.ts` deduplica `scheduleHistory[].times` após consolidação de dois estados.
+- **Função Utilitária:** `deduplicateTimeOfDay()` exportada em habitActions.ts, reutilizada nos 3 pontos.
+- **Implementação:** Set-based deduplication com `O(n)` complexidade, preserva ordem de ingestão.
+- **Exemplos:**
+	- Usuário seleciona ["Morning", "Afternoon", "Morning"] no modal → Salvo como ["Morning", "Afternoon"]
+	- Dados corrompidos em storage com times duplicados → Limpos na próxima abertura do app
+	- Merge de 2 dispositivos com diferentes ordens → Resultado deduplicated mantém todos os tempos únicos
+
+| Cenário | Comportamento |
+|---|---|
+| Usuário seleciona mesmo TimeOfDay 2x na UI | Sistema deduplicará automaticamente na submissão |
+| Dados corrompidos em IndexedDB com duplicatas de times | Migração sanitiza ao carregar o estado |
+| Sync merge combina times de duas versões | DataMerge normaliza/deduplica `times` após consolidação dos estados |
+| Drag-drop tenta mover hábito para TimeOfDay já ocupado | Operação rejeitada (validação em listeners/drag.ts) |
+
+---
+
+## Comandos Disponíveis
+(Conferidos em `package.json`)
+
+- `npm test` → roda toda a suíte (`vitest run`)
+- `npm run test:scenario` → roda apenas cenários (`tests/scenario-test-*.test.ts`)
+- `npm run test:watch` → modo watch
+- `npm run test:ui` → interface do Vitest
+- `npm run test:coverage` → cobertura
+
+---
+
+## Convenção de Atualização
+Sempre que mudar a suíte (novos arquivos, remoção, alteração de contagem), atualizar este README com base em execução real:
+
 ```bash
-npm run test:coverage
+npm test -- --run
 ```
 
-### Watch mode (desenvolvimento)
-```bash
-npm run test:watch
-```
+Atualize também quando:
+- houver mudança de scripts de teste em `package.json`;
+- um teste for movido de pasta;
+- o status global mudar (ex.: falhas temporárias conhecidas).
 
 ---
-
-## 📈 Relatórios
-
-### Performance Report
-Cada teste de performance exibe:
-- Tempo médio (avg)
-- Tempo mediano (median)
-- Percentil 95 (p95)
-- Número de amostras
-
-### Accessibility Report
-Erros de A11y são listados com:
-- Contexto do elemento
-- Tipo de violação
-- Sugestão de correção
-
-### Recovery Report
-Falhas de recuperação mostram:
-- Tipo de erro
-- Estado antes/depois
-- Ações tomadas
-
----
-
-## ✅ Critérios de Aprovação
-
-Para considerar o sistema **"Production Ready"**, todos os seguintes devem passar:
-
-1. **Todos os testes de cenario passam** (0 falhas)
-2. **Coverage mínimo atingido** (80%+ linhas)
-3. **Performance budgets respeitados**
-4. **Zero erros críticos de A11y**
-5. **Recuperação de todos os cenários de desastre**
-
----
-
-## 🎯 Filosofia dos Testes
-
-> "Um teste que valida 20 coisas é melhor que 20 testes que validam 1 coisa cada"
-
-Cada teste de cenario simula uma **jornada real do usuário**, garantindo que:
-- Componentes funcionam **em conjunto** (não apenas isolados)
-- Edge cases são testados **em contexto**
-- Performance é validada **sob carga real**
-- Acessibilidade funciona **na prática**
-- Recuperação funciona **em cenários reais**
-
----
-
-## 📚 Próximos Passos
-
-### Mutation Testing (Avançado)
-```bash
-npm install -D @stryker-mutator/core
-npx stryker run
-```
-Meta: 70%+ mutation score
-
-### Visual Regression (Opcional)
-```bash
-npm install -D @percy/cli
-npx percy snapshot tests/
-```
-
-### E2E com Playwright (Opcional)
-```bash
-npm install -D playwright
-npx playwright test
-```
-
----
-
-## 🤝 Contribuindo
-
-Ao adicionar novos testes:
-1. Prefira **adicionar casos aos testes de cenario existentes**
-2. Só crie novo arquivo se for funcionalidade completamente nova
-3. Mantenha foco em **jornadas do usuário**, não testes unitários isolados
-4. Sempre adicione **métricas de performance** quando relevante
-
----
-
-## 📝 Notas Técnicas
-
-### Por que "Testes de Cenario"?
-Testes tradicionais focam em **isolamento** (mocks, stubs). Testes de cenario focam em **integração real**.
-
-**Vantagens:**
-- ✅ Detectam bugs de integração
-- ✅ Validam fluxos completos
-- ✅ Menos manutenção (menos arquivos)
-- ✅ Mais confiança (testam o que usuário faz)
-
-**Desvantagens:**
-- ⚠️  Mais lentos que unit tests
-- ⚠️  Falhas podem ter múltiplas causas
-- ⚠️  Requerem setup mais complexo
-
-Para o Askesis, as vantagens superam as desvantagens.
-
----
-
-## 🏆 Status Atual
-
-```
-✅ Teste de Cenario 1: Jornada do Novo Usuário      (3 testes)
-✅ Teste de Cenario 2: Sincronização Conflitante    (5 testes)
-✅ Teste de Cenario 3: Estresse e Performance       (9 testes)
-✅ Teste de Cenario 4: Acessibilidade Total         (12 testes)
-✅ Teste de Cenario 5: Recuperação de Desastres     (10 testes)
-✅ Teste de Cenario 6: Segurança (Pentest)          (41 testes)
-✅ Teste de Cenario 7: Cloud e Resiliência de Rede  (33 testes)
-✅ Nuclear QA: HabitService (Fuzzing & Oracle)      (16 testes)
-✅ Nuclear QA: dataMerge (Distributed Chaos)        (11 testes)
-✅ Unitário: Criptografia AES-GCM                  (14 testes)
-✅ Unitário: Migração de Schema                    (19 testes)
-✅ Unitário: Persistência de Estado                 (7 testes)
-✅ Unitário: Utilitários                            (44 testes)
-✅ Unitário: Seletores e Scheduling                 (23 testes)
-✅ Unitário: Cliente API                            (14 testes)
-✅ Unitário: Internacionalização                    (22 testes)
-✅ Unitário: Motor de Citações Estoicas             (10 testes)
-✅ Unitário: Lógica de Negócios                     (19 testes)
-✅ Unitário: Importação/Exportação                  (1 teste)
-✅ Unitário: Sincronização Cloud (Básico)           (2 testes)
-✅ Teste: Consistência Estado ↔ UI                  (35 testes)
-                                          Total:   350 testes
-
-Cobertura: 90%+
-Performance budgets: Todos passando
-A11y compliance: WCAG 2.1 AA
-Chaos scenarios: 10 cenários
-```
-
-**Status:** 🟢 Todos os 350 testes passando

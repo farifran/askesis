@@ -19,6 +19,7 @@ import { DOM_SELECTORS, CSS_CLASSES } from '../render/constants';
 
 const GOAL_STEP = 5, MAX_GOAL = 9999;
 const SELECTOR = `${DOM_SELECTORS.HABIT_CONTENT_WRAPPER}, ${DOM_SELECTORS.GOAL_CONTROL_BTN}, ${DOM_SELECTORS.GOAL_VALUE_WRAPPER}, ${DOM_SELECTORS.SWIPE_DELETE_BTN}, ${DOM_SELECTORS.SWIPE_NOTE_BTN}, ${DOM_SELECTORS.EMPTY_GROUP_PLACEHOLDER}`;
+const KEYBOARD_NAV_SELECTOR = `${DOM_SELECTORS.HABIT_CONTENT_WRAPPER}, ${DOM_SELECTORS.EMPTY_GROUP_PLACEHOLDER}`;
 
 /**
  * Cria o efeito visual de ripple (onda) na posição do clique.
@@ -163,6 +164,77 @@ const _handleContainerClick = (e: MouseEvent) => {
     }
 };
 
+const _getKeyboardNavigableElements = (): HTMLElement[] => {
+    const candidates = Array.from(ui.habitContainer.querySelectorAll<HTMLElement>(KEYBOARD_NAV_SELECTOR));
+    return candidates.filter(el => el.offsetParent !== null);
+};
+
+const _focusRelativeCardElement = (current: HTMLElement, delta: -1 | 1) => {
+    const items = _getKeyboardNavigableElements();
+    if (items.length === 0) return;
+
+    const currentIndex = items.indexOf(current);
+    if (currentIndex === -1) return;
+
+    const nextIndex = currentIndex + delta;
+    if (nextIndex < 0 || nextIndex >= items.length) return;
+
+    items[nextIndex].focus();
+};
+
+const _handleContainerKeydown = (e: KeyboardEvent) => {
+    const target = e.target as HTMLElement;
+    if (!target || target.closest('input, textarea, select, [contenteditable="true"]')) return;
+
+    const el = target.closest<HTMLElement>(KEYBOARD_NAV_SELECTOR);
+    if (!el) return;
+
+    if (e.key === 'Tab') return;
+
+    if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        el.click();
+        return;
+    }
+
+    if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        _focusRelativeCardElement(el, -1);
+        return;
+    }
+
+    if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        _focusRelativeCardElement(el, 1);
+        return;
+    }
+
+    if (!el.classList.contains(CSS_CLASSES.HABIT_CONTENT_WRAPPER)) return;
+
+    const card = el.closest<HTMLElement>(DOM_SELECTORS.HABIT_CARD);
+    if (!card) return;
+
+    if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        card.classList.remove(CSS_CLASSES.IS_OPEN_RIGHT);
+        card.classList.add(CSS_CLASSES.IS_OPEN_LEFT);
+        triggerHaptic('selection');
+        const deleteBtn = card.querySelector<HTMLButtonElement>(DOM_SELECTORS.SWIPE_DELETE_BTN);
+        deleteBtn?.focus();
+        return;
+    }
+
+    if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        card.classList.remove(CSS_CLASSES.IS_OPEN_LEFT);
+        card.classList.add(CSS_CLASSES.IS_OPEN_RIGHT);
+        triggerHaptic('selection');
+        const noteBtn = card.querySelector<HTMLButtonElement>(DOM_SELECTORS.SWIPE_NOTE_BTN);
+        noteBtn?.focus();
+    }
+};
+
 export function setupCardListeners() {
     ui.habitContainer.addEventListener('click', _handleContainerClick);
+    ui.habitContainer.addEventListener('keydown', _handleContainerKeydown);
 }

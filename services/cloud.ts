@@ -16,7 +16,7 @@ import { t } from '../i18n';
 import { hasLocalSyncKey, getSyncKey, apiFetch } from './api';
 import { renderApp, updateNotificationUI } from '../render';
 import { showConfirmationModal } from '../render/modals';
-import { mergeStates } from './dataMerge';
+import { mergeStates, buildDedupModalContext } from './dataMerge';
 import { HabitService } from './HabitService';
 import { runWorkerTask as runWorkerTaskInternal, type WorkerTaskType } from './workerClient';
 import { emitHabitsChanged } from '../events';

@@ -174,15 +174,20 @@ function _resolveDropZone(x: number, y: number): HTMLElement | null {
 // --- PHYSICS LOOP ---
 
 function _computeScrollSpeed(y: number): number {
-    if (!DragMachine.containerRect) return 0;
+    if (!DragMachine.containerRect || !DragMachine.container) return 0;
     const { top, height } = DragMachine.containerRect;
     const bottom = top + height;
+    const { scrollTop, scrollHeight, clientHeight } = DragMachine.container;
+    const maxScroll = Math.max(0, scrollHeight - clientHeight);
+    const EDGE_EPSILON = 0.5;
     
     if (y < top + SCROLL_ZONE_PX) {
+        if (scrollTop <= EDGE_EPSILON) return 0;
         const ratio = (top + SCROLL_ZONE_PX - y) / SCROLL_ZONE_PX;
         return -Math.max(2, ratio * MAX_SCROLL_SPEED);
     }
     if (y > bottom - SCROLL_ZONE_PX) {
+        if (scrollTop >= maxScroll - EDGE_EPSILON) return 0;
         const ratio = (y - (bottom - SCROLL_ZONE_PX)) / SCROLL_ZONE_PX;
         return Math.max(2, ratio * MAX_SCROLL_SPEED);
     }
@@ -195,21 +200,15 @@ function _renderFrame() {
     // 1. Auto Scroll with Bounds Check
     if (DragMachine.scrollSpeed !== 0 && DragMachine.container) {
         const { scrollTop, scrollHeight, clientHeight } = DragMachine.container;
-        const maxScroll = scrollHeight - clientHeight;
-        
-        // BOUNCE PROTECTION: Só rola se houver espaço. 
-        // Evita "pulos" quando tenta forçar scroll além do limite (que em overflow: hidden pode causar problemas de repaint).
-        // FIX [2025-06-16]: Aumentado buffer de 1px para 5px para absorver imprecisões de sub-pixel em telas High DPI.
-        const SCROLL_BUFFER = 5;
+        const maxScroll = Math.max(0, scrollHeight - clientHeight);
+        const nextScrollTop = Math.max(0, Math.min(maxScroll, scrollTop + DragMachine.scrollSpeed));
+        const movedEnough = Math.abs(nextScrollTop - scrollTop) > 0.5;
 
-        if (DragMachine.scrollSpeed > 0) { // Scrolling Down
-            if (scrollTop < maxScroll - SCROLL_BUFFER) {
-                DragMachine.container.scrollBy(0, DragMachine.scrollSpeed);
-            }
-        } else { // Scrolling Up
-            if (scrollTop > SCROLL_BUFFER) {
-                DragMachine.container.scrollBy(0, DragMachine.scrollSpeed);
-            }
+        if (movedEnough) {
+            DragMachine.container.scrollTop = nextScrollTop;
+        } else {
+            // Bateu no limite (topo/fim): interrompe tentativa contínua de overscroll.
+            DragMachine.scrollSpeed = 0;
         }
     }
 

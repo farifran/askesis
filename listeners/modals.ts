@@ -339,7 +339,8 @@ const _handleAiEvalClick = async () => {
                     </div>
                 </div>
             `;
-            ui.aiResponse.innerHTML = message;
+            const fragment = document.createRange().createContextualFragment(message);
+            ui.aiResponse.replaceChildren(fragment);
             openModal(ui.aiModal);
         } catch (e) {
             logger.error("Failed to load offline quote", e);
@@ -359,7 +360,8 @@ const _handleAiEvalClick = async () => {
     }
     
     if (message) {
-        ui.aiResponse.innerHTML = message;
+        const fragment = document.createRange().createContextualFragment(message);
+        ui.aiResponse.replaceChildren(fragment);
         openModal(ui.aiModal, undefined, () => {
             state.hasSeenAIResult = true;
             renderAINotificationState();

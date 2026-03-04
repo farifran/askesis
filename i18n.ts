@@ -494,7 +494,7 @@ export async function setLanguage(langCode: 'pt' | 'en' | 'es') {
         localStorage.setItem('habitTrackerLanguage', langCode);
         
         pushToOneSignal((OneSignal: OneSignalLike) => {
-            OneSignal.User.setLanguage(langCode);
+            OneSignal.User.setLanguage?.(langCode);
         });
 
         // Dirty Checking flags

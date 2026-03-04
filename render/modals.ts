@@ -36,11 +36,43 @@ interface ConfirmationModalOptions {
 type ManageHabitStatus = 'active' | 'graduated' | 'ended';
 type ManageHabitItem = { h: Habit; st: ManageHabitStatus; name: string; subtitle: string };
 
+function replaceWithHtmlFragment(target: HTMLElement, html: string) {
+    target.replaceChildren(document.createRange().createContextualFragment(html));
+}
+
+function sanitizeHtmlToFragment(html: string): DocumentFragment {
+    const template = document.createElement('template');
+    template.innerHTML = html;
+
+    const blockedTags = ['script', 'iframe', 'object', 'embed', 'link', 'meta', 'style'];
+    for (const tag of blockedTags) {
+        template.content.querySelectorAll(tag).forEach(node => node.remove());
+    }
+
+    const elements = template.content.querySelectorAll('*');
+    for (const el of elements) {
+        const attrs = Array.from(el.attributes);
+        for (const attr of attrs) {
+            const attrName = attr.name.toLowerCase();
+            const attrValue = attr.value.trim().toLowerCase();
+            if (attrName.startsWith('on')) {
+                el.removeAttribute(attr.name);
+                continue;
+            }
+            if ((attrName === 'href' || attrName === 'src' || attrName === 'xlink:href') && attrValue.startsWith('javascript:')) {
+                el.removeAttribute(attr.name);
+            }
+        }
+    }
+
+    return template.content;
+}
+
 function buildManageActionButton(className: string, ariaLabel: string, iconHtml: string): HTMLButtonElement {
     const btn = document.createElement('button');
     btn.className = className;
     btn.setAttribute('aria-label', ariaLabel);
-    btn.innerHTML = iconHtml;
+    replaceWithHtmlFragment(btn, iconHtml);
     return btn;
 }
 
@@ -59,7 +91,7 @@ function buildManageHabitListItem(item: ManageHabitItem, today: string): HTMLLIE
     const iconSlot = document.createElement('span');
     iconSlot.className = 'habit-icon-slot';
     iconSlot.style.color = lastSchedule.color;
-    iconSlot.innerHTML = safeIcon;
+    replaceWithHtmlFragment(iconSlot, safeIcon);
 
     const detailsWrap = document.createElement('div');
     detailsWrap.style.display = 'flex';
@@ -136,7 +168,7 @@ function buildIconPickerItem(svg: string): HTMLButtonElement {
     btn.type = 'button';
     btn.className = 'icon-picker-item';
     btn.dataset.iconSvg = svg;
-    btn.innerHTML = svg;
+    replaceWithHtmlFragment(btn, svg);
     return btn;
 }
 
@@ -172,7 +204,7 @@ function buildExploreHabitItem(h: PredefinedHabit, index: number): HTMLElement {
     icon.className = 'explore-habit-icon';
     icon.style.backgroundColor = `${h.color}30`;
     icon.style.color = h.color;
-    icon.innerHTML = sanitizeHabitIcon(h.icon, '❓');
+    replaceWithHtmlFragment(icon, sanitizeHabitIcon(h.icon, '❓'));
 
     const details = document.createElement('div');
     details.className = 'explore-habit-details';
@@ -197,7 +229,7 @@ function buildTimeSegmentedButton(time: TimeOfDay, isSelected: boolean): HTMLBut
     btn.dataset.time = time;
     const icon = document.createElement('span');
     icon.className = 'segmented-control-option-icon';
-    icon.innerHTML = getTimeOfDayIcon(time);
+    replaceWithHtmlFragment(icon, getTimeOfDayIcon(time));
     const label = document.createElement('span');
     label.className = 'segmented-control-option-label';
     label.textContent = getTimeOfDayName(time);
@@ -258,7 +290,7 @@ export function openModal(modal: HTMLElement, focusEl?: HTMLElement, onClose?: (
         if (spacer && !spacer.previousElementSibling?.classList.contains('modal-back-btn')) {
             const backBtn = document.createElement('button');
             backBtn.className = 'modal-back-btn';
-            backBtn.innerHTML = UI_ICONS.backArrow;
+            replaceWithHtmlFragment(backBtn, UI_ICONS.backArrow);
             backBtn.type = 'button';
             backBtn.setAttribute('aria-label', t('aria_go_back'));
             backBtn.addEventListener('click', () => {
@@ -320,8 +352,11 @@ export function setupManageModal() {
 }
 
 export function showConfirmationModal(text: string, onConfirm: () => void, opts?: ConfirmationModalOptions) {
-    if (opts?.allowHtml) ui.confirmModalText.innerHTML = text;
-    else setTextContent(ui.confirmModalText, text);
+    if (opts?.allowHtml) {
+        ui.confirmModalText.replaceChildren(sanitizeHtmlToFragment(text));
+    } else {
+        setTextContent(ui.confirmModalText, text);
+    }
     state.confirmAction = onConfirm;
     // O modal atual tem 2 ações: Confirmar (primária) e um botão secundário (historicamente chamado de "Editar").
     // Para compatibilidade, usamos o secundário como "cancelar" quando cancelText é fornecido.
@@ -361,7 +396,8 @@ export function renderIconPicker() {
     ui.iconPickerGrid.style.setProperty('--current-habit-bg-color', bg);
     ui.iconPickerGrid.style.setProperty('--current-habit-fg-color', fg);
     ui.iconPickerGrid.replaceChildren(...Object.values(HABIT_ICONS).map(svg => buildIconPickerItem(svg)));
-    ui.iconPickerModal.querySelector<HTMLElement>('#change-color-from-picker-btn')!.innerHTML = UI_ICONS.colorPicker;
+    const changeColorBtn = ui.iconPickerModal.querySelector<HTMLElement>('#change-color-from-picker-btn');
+    if (changeColorBtn) replaceWithHtmlFragment(changeColorBtn, UI_ICONS.colorPicker);
 }
 
 export function renderColorPicker() {
@@ -525,7 +561,10 @@ export function openEditModal(habit: any, targetDateOverride?: string, onClose?:
         ni.value = isN ? (fd.nameKey ? t(fd.nameKey) : '') : getHabitDisplayInfo(habit, safe).name;
     }
     fd.icon = sanitizeHabitIcon(fd.icon, '❓');
-    const btn = ui.habitIconPickerBtn; btn.innerHTML = sanitizeHabitIcon(fd.icon, '❓'); btn.style.backgroundColor = fd.color; btn.style.color = getContrastColor(fd.color);
+    const btn = ui.habitIconPickerBtn;
+    replaceWithHtmlFragment(btn, sanitizeHabitIcon(fd.icon, '❓'));
+    btn.style.backgroundColor = fd.color;
+    btn.style.color = getContrastColor(fd.color);
     
     const subtitle = isN 
         ? (fd.subtitleKey ? t(fd.subtitleKey) : '') 
@@ -536,7 +575,7 @@ export function openEditModal(habit: any, targetDateOverride?: string, onClose?:
     
     const overlay = btn.nextElementSibling as HTMLElement;
     if (overlay && overlay.classList.contains('edit-icon-overlay')) {
-        overlay.innerHTML = HABIT_ICONS.learnSkill;
+        replaceWithHtmlFragment(overlay, HABIT_ICONS.learnSkill);
     }
 
     refreshEditModalUI(); openModal(ui.editHabitModal, undefined, onClose);

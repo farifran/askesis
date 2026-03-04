@@ -21,7 +21,7 @@ import './css/modals.css';
 
 import { state } from './state';
 import { loadState, registerSyncHandler, saveState } from './services/persistence';
-import { renderApp, initI18n, updateUIText } from './render';
+import { renderApp, initI18n, updateUIText, showConfirmationModal } from './render';
 import { setupEventListeners } from './listeners';
 import { handleDayTransition, performArchivalCheck } from './services/habitActions';
 import { initSync } from './listeners/sync';
@@ -30,10 +30,18 @@ import { hasLocalSyncKey, initAuth } from './services/api';
 import { updateAppBadge } from './services/badge';
 import { setupMidnightLoop, logger, getLocalPushOptIn, ensureOneSignalReady } from './utils';
 import { BOOT_RELOAD_DELAY_MS, BOOT_SYNC_TIMEOUT_MS } from './constants';
+import { t } from './i18n';
 
 // --- AUTO-HEALING & INTEGRITY CHECK ---
 const BOOT_ATTEMPTS_KEY = 'askesis_boot_attempts';
 const MAX_BOOT_ATTEMPTS = 3;
+
+interface BeforeInstallPromptEvent extends Event {
+    prompt: () => Promise<void>;
+    userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
+}
+
+let deferredInstallPrompt: BeforeInstallPromptEvent | null = null;
 
 function checkIntegrityAndHeal() {
     const attempts = parseInt(sessionStorage.getItem(BOOT_ATTEMPTS_KEY) || '0', 10);
@@ -53,6 +61,63 @@ function checkIntegrityAndHeal() {
     }
     sessionStorage.setItem(BOOT_ATTEMPTS_KEY, (attempts + 1).toString());
     return true;
+}
+
+function isRunningAsInstalledPwa(): boolean {
+    const standaloneDisplay = window.matchMedia?.('(display-mode: standalone)')?.matches === true;
+    const iosStandalone = (window.navigator as Navigator & { standalone?: boolean }).standalone === true;
+    return standaloneDisplay || iosStandalone;
+}
+
+function setupInstallPromptCapture() {
+    window.addEventListener('beforeinstallprompt', (event) => {
+        event.preventDefault();
+        deferredInstallPrompt = event as BeforeInstallPromptEvent;
+    });
+
+    window.addEventListener('appinstalled', () => {
+        deferredInstallPrompt = null;
+    });
+}
+
+function recommendInstallForNewUsers(isFirstTimeUser: boolean) {
+    if (!isFirstTimeUser) return;
+    if (isRunningAsInstalledPwa()) return;
+
+    const openFallback = () => {
+        showConfirmationModal(
+            t('installPromptFallbackBody'),
+            () => {},
+            {
+                title: t('installPromptFallbackTitle'),
+                confirmText: t('closeButton'),
+                hideCancel: true
+            }
+        );
+    };
+
+    showConfirmationModal(
+        t('installPromptBody'),
+        async () => {
+            if (!deferredInstallPrompt) {
+                openFallback();
+                return;
+            }
+
+            try {
+                await deferredInstallPrompt.prompt();
+                await deferredInstallPrompt.userChoice;
+                deferredInstallPrompt = null;
+            } catch (error) {
+                logger.warn('Install prompt failed', error);
+            }
+        },
+        {
+            title: t('installPromptTitle'),
+            confirmText: t('installPromptConfirm'),
+            cancelText: t('installPromptLater')
+        }
+    );
 }
 
 let isInitializing = false;
@@ -172,10 +237,12 @@ async function init(loader: HTMLElement | null) {
     await Promise.all([initI18n(), updateUIText()]);
 
     await loadInitialState();
+    const isFirstTimeUser = !state.hasOnboarded;
 
     setupAppListeners();
     handleFirstTimeUser();
     renderApp(); 
+    setTimeout(() => recommendInstallForNewUsers(isFirstTimeUser), 1200);
     
     updateAppBadge();
     finalizeInit(loader);
@@ -186,6 +253,7 @@ async function init(loader: HTMLElement | null) {
 
 const startApp = () => {
     if (!checkIntegrityAndHeal()) return;
+    setupInstallPromptCapture();
     registerServiceWorker();
     if (isInitializing || isInitialized) return;
     const loader = document.getElementById('initial-loader');

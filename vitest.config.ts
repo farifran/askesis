@@ -35,11 +35,12 @@ export default defineConfig({
         'api/**',
         'scripts/**'
       ],
-      all: true,
-      lines: 80,
-      functions: 70,
-      branches: 70,
-      statements: 80
+      thresholds: {
+        lines: 80,
+        functions: 70,
+        branches: 70,
+        statements: 80
+      }
     }
   },
 });

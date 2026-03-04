@@ -31,6 +31,157 @@ export interface MergeOptions {
     onDedupCandidate?: (candidate: DedupCandidate) => DeduplicationDecision | Promise<DeduplicationDecision>;
 }
 
+type IdentityDedupStrategy = 'auto_deduplicate' | 'ask_confirmation' | 'auto_keep_separate';
+
+const GENERIC_HABIT_IDENTITIES = new Set([
+    'habit',
+    'habito',
+    'novo habito',
+    'new habit',
+    'nuevo habito',
+    'teste',
+    'test'
+]);
+
+/**
+ * Calcula distância de Levenshtein entre duas strings.
+ * Usado para fuzzy matching de nomes de hábitos (singular/plural, typos).
+ */
+function levenshteinDistance(a: string, b: string): number {
+    if (a === b) return 0;
+    if (a.length === 0) return b.length;
+    if (b.length === 0) return a.length;
+
+    const matrix: number[][] = [];
+    for (let i = 0; i <= b.length; i++) {
+        matrix[i] = [i];
+    }
+    for (let j = 0; j <= a.length; j++) {
+        matrix[0][j] = j;
+    }
+
+    for (let i = 1; i <= b.length; i++) {
+        for (let j = 1; j <= a.length; j++) {
+            if (b.charAt(i - 1) === a.charAt(j - 1)) {
+                matrix[i][j] = matrix[i - 1][j - 1];
+            } else {
+                matrix[i][j] = Math.min(
+                    matrix[i - 1][j - 1] + 1, // substituição
+                    matrix[i][j - 1] + 1,     // inserção
+                    matrix[i - 1][j] + 1      // deleção
+                );
+            }
+        }
+    }
+    return matrix[b.length][a.length];
+}
+
+/**
+ * Verifica se dois nomes são similares o suficiente para serem considerados o mesmo hábito.
+ * @param threshold máximo de edições aceitas (default: 2)
+ */
+function areNamesFuzzySimilar(name1: string, name2: string, threshold = 2): boolean {
+    const n1 = normalizeIdentityText(name1);
+    const n2 = normalizeIdentityText(name2);
+    
+    if (n1 === n2) return true;
+    if (n1.length < 5 || n2.length < 5) return false; // muito curto = arriscado
+    
+    const distance = levenshteinDistance(n1, n2);
+    return distance > 0 && distance <= threshold;
+}
+
+/**
+ * Extrai datas onde o hábito tem registros em dailyData.
+ */
+function getHabitDataDates(habitId: string, dailyData: Record<string, Record<string, HabitDailyInfo>>): Set<string> {
+    const dates = new Set<string>();
+    for (const date in dailyData) {
+        if (dailyData[date]?.[habitId]) {
+            dates.add(date);
+        }
+    }
+    return dates;
+}
+
+/**
+ * Verifica se dois conjuntos de datas têm interseção (uso simultâneo).
+ */
+function hasDateOverlap(dates1: Set<string>, dates2: Set<string>): boolean {
+    for (const date of dates1) {
+        if (dates2.has(date)) return true;
+    }
+    return false;
+}
+
+function parseUtcDate(date: string): Date | null {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+    const parsed = new Date(`${date}T00:00:00.000Z`);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return parsed;
+}
+
+function getDateRange(dates: Set<string>): { min: Date; max: Date } | null {
+    let min: Date | null = null;
+    let max: Date | null = null;
+
+    for (const value of dates) {
+        const parsed = parseUtcDate(value);
+        if (!parsed) continue;
+        if (!min || parsed < min) min = parsed;
+        if (!max || parsed > max) max = parsed;
+    }
+
+    if (!min || !max) return null;
+    return { min, max };
+}
+
+function dayGapBetweenRanges(
+    rangeA: { min: Date; max: Date },
+    rangeB: { min: Date; max: Date }
+): number {
+    const msPerDay = 24 * 60 * 60 * 1000;
+
+    if (rangeA.max < rangeB.min) {
+        return Math.floor((rangeB.min.getTime() - rangeA.max.getTime()) / msPerDay);
+    }
+
+    if (rangeB.max < rangeA.min) {
+        return Math.floor((rangeA.min.getTime() - rangeB.max.getTime()) / msPerDay);
+    }
+
+    return 0;
+}
+
+/**
+ * Verifica se períodos de agenda dos hábitos se sobrepõem temporalmente.
+ * Retorna true se há overlap OU se não pode determinar com certeza (para evitar bloqueio agressivo).
+ */
+function hasScheduleOverlap(habit1: Habit, habit2: Habit): boolean {
+    // Se ambos estão ativos, consideram-se sobrepostos (uso simultâneo possível)
+    if (!habit1.deletedOn && !habit2.deletedOn) return true;
+    
+    // Se ambos deletados, verificar períodos reais
+    if (habit1.deletedOn && habit2.deletedOn) {
+        const h1Start = habit1.createdOn || '0000-01-01';
+        const h1End = habit1.deletedOn;
+        const h2Start = habit2.createdOn || '0000-01-01';
+        const h2End = habit2.deletedOn;
+        return h1Start <= h2End && h2Start <= h1End;
+    }
+    
+    // Um deletado, um ativo: verificar se o deletado foi antes do ativo iniciar
+    const deleted = habit1.deletedOn ? habit1 : habit2;
+    const active = habit1.deletedOn ? habit2 : habit1;
+    
+    if (!deleted.deletedOn || !active.createdOn) return true; // incerteza = overlap
+    
+    // Se o deletado terminou ANTES do ativo começar, não há overlap (hábitos sequenciais)
+    if (deleted.deletedOn < active.createdOn) return false;
+    
+    return true; // qualquer outro caso = possível overlap
+}
+
 function isValidBigIntString(value: string): boolean {
     if (!value) return false;
     const normalized = value.startsWith('0x') ? value.slice(2) : value;
@@ -158,12 +309,21 @@ function sanitizeDailyData(appState: AppState): void {
     (appState as any).dailyData = sanitizedDailyData;
 }
 
+function normalizeIdentityText(raw: string): string {
+    return raw
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, ' ');
+}
+
 /**
  * Obtém uma identidade normalizada para o hábito (Nome ou Chave de Tradução).
  */
 function getHabitIdentity(h: Habit): string | null {
     if (!h.scheduleHistory || h.scheduleHistory.length === 0) {
-        const deletedRaw = (h.deletedName || '').trim().toLowerCase();
+        const deletedRaw = normalizeIdentityText(h.deletedName || '');
         return deletedRaw.length > 0 ? deletedRaw : null;
     }
     // Pega o agendamento mais recente
@@ -174,7 +334,7 @@ function getHabitIdentity(h: Habit): string | null {
     const raw = lastSchedule.name || lastSchedule.nameKey || '';
     
     // Normalização: Minúsculo, sem espaços extras nas pontas
-    const normalized = raw.trim().toLowerCase();
+    const normalized = normalizeIdentityText(raw);
     
     return normalized.length > 0 ? normalized : null;
 }
@@ -187,12 +347,12 @@ function getLatestSchedule(h: Habit): HabitSchedule | null {
 
 function schedulesEquivalent(a: HabitSchedule | null, b: HabitSchedule | null): boolean {
     if (!a || !b) return false;
-    if ((a.name || '') !== (b.name || '')) return false;
-    if ((a.nameKey || '') !== (b.nameKey || '')) return false;
+    if (normalizeIdentityText(a.name || '') !== normalizeIdentityText(b.name || '')) return false;
+    if (normalizeIdentityText(a.nameKey || '') !== normalizeIdentityText(b.nameKey || '')) return false;
     if ((a.mode || '') !== (b.mode || '')) return false;
 
-    const aTimes = a.times || [];
-    const bTimes = b.times || [];
+    const aTimes = Array.from(new Set(a.times || [])).sort();
+    const bTimes = Array.from(new Set(b.times || [])).sort();
     if (aTimes.length !== bTimes.length) return false;
     for (let i = 0; i < aTimes.length; i++) {
         if (aTimes[i] !== bTimes[i]) return false;
@@ -205,21 +365,94 @@ function schedulesEquivalent(a: HabitSchedule | null, b: HabitSchedule | null): 
     return true;
 }
 
-function shouldConfirmIdentityDedup(identity: string, winnerHabit: Habit, loserHabit: Habit): boolean {
-    // Regra conservadora: nomes curtos/genéricos são propensos a colisões.
-    if (identity.length < 5) return true;
+function evaluateIdentityDedupStrategy(
+    identity: string, 
+    winnerHabit: Habit, 
+    loserHabit: Habit,
+    dailyDataContext?: Record<string, Record<string, HabitDailyInfo>>
+): IdentityDedupStrategy {
+    // Nomes muito curtos/genericos são propensos a colisão: separar sem intervenção.
+    if (identity.length < 5 || GENERIC_HABIT_IDENTITIES.has(identity)) {
+        return 'auto_keep_separate';
+    }
 
-    // Se os históricos diferem em “forma”, confirmar.
-    const wLen = winnerHabit.scheduleHistory?.length || 0;
-    const lLen = loserHabit.scheduleHistory?.length || 0;
-    if (wLen !== lLen) return true;
+    // Verificar se hábitos têm históricos claramente separados no tempo.
+    // Evita bloquear dedup quando a diferença é pequena (ex.: dias consecutivos no mesmo hábito).
+    if (dailyDataContext) {
+        const winnerDates = getHabitDataDates(winnerHabit.id, dailyDataContext);
+        const loserDates = getHabitDataDates(loserHabit.id, dailyDataContext);
+        
+        // Se ambos têm histórico mas sem overlap, só bloqueia automaticamente quando há separação temporal significativa.
+        if (winnerDates.size > 0 && loserDates.size > 0 && !hasDateOverlap(winnerDates, loserDates)) {
+            const winnerRange = getDateRange(winnerDates);
+            const loserRange = getDateRange(loserDates);
 
-    // Se o schedule mais recente diverge, confirmar.
+            if (winnerRange && loserRange) {
+                const gapDays = dayGapBetweenRanges(winnerRange, loserRange);
+                if (gapDays >= 30) {
+                    return 'auto_keep_separate';
+                }
+            }
+        }
+    }
+
+    // Verificar se períodos de agenda não se sobrepõem (ex: "Corrida" 2024 deletado, novo "Corrida" 2025).
+    if (!hasScheduleOverlap(winnerHabit, loserHabit)) {
+        return 'auto_keep_separate';
+    }
+
     const wLast = getLatestSchedule(winnerHabit);
     const lLast = getLatestSchedule(loserHabit);
-    if (!schedulesEquivalent(wLast, lLast)) return true;
+    const wName = wLast?.name || wLast?.nameKey || '';
+    const lName = lLast?.name || lLast?.nameKey || '';
 
-    return false;
+    // Alta confiança: mesmo schedule lógico mais recente.
+    if (schedulesEquivalent(wLast, lLast)) {
+        return 'auto_deduplicate';
+    }
+
+    // Alta confiança: nomes são fuzzy-similares (ex: "Exercício" vs "Exercícios") e schedules compatíveis.
+    if (areNamesFuzzySimilar(wName, lName, 2)) {
+        // Verificar se pelo menos mode e frequency são compatíveis
+        if (wLast?.mode === lLast?.mode && JSON.stringify(wLast?.frequency) === JSON.stringify(lLast?.frequency)) {
+            return 'auto_deduplicate';
+        }
+    }
+
+    // Alta confiança: ativo vs deletado com mesma identidade normalizada.
+    const winnerActive = !winnerHabit.deletedOn;
+    const loserActive = !loserHabit.deletedOn;
+    if (winnerActive !== loserActive) {
+        const activeHabit = winnerActive ? winnerHabit : loserHabit;
+        const activeIdentity = getHabitIdentity(activeHabit);
+        if (activeIdentity === identity && areNamesFuzzySimilar(wName, lName, 1)) {
+            return 'auto_deduplicate';
+        }
+    }
+
+    return 'ask_confirmation';
+}
+
+function findFuzzyIdentityMatchId(
+    loserIdentity: string,
+    winnerIdentityMap: Map<string, string>
+): string | undefined {
+    if (loserIdentity.length < 5 || GENERIC_HABIT_IDENTITIES.has(loserIdentity)) {
+        return undefined;
+    }
+
+    const fuzzyMatches: string[] = [];
+    for (const [winnerIdentity, winnerId] of winnerIdentityMap.entries()) {
+        if (winnerIdentity.length < 5 || GENERIC_HABIT_IDENTITIES.has(winnerIdentity)) {
+            continue;
+        }
+
+        if (areNamesFuzzySimilar(loserIdentity, winnerIdentity, 1)) {
+            fuzzyMatches.push(winnerId);
+        }
+    }
+
+    return fuzzyMatches.length === 1 ? fuzzyMatches[0] : undefined;
 }
 
 export async function mergeStates(local: AppState, incoming: AppState, options?: MergeOptions): Promise<AppState> {
@@ -250,6 +483,16 @@ export async function mergeStates(local: AppState, incoming: AppState, options?:
     const winnerIdentityMap = new Map<string, string>(); // IdentityString -> ID
     const idRemap = new Map<string, string>(); // OldID -> NewID
     const blockedIdentities = new Set<string>(); // Identities que NÃO podem ser deduplicadas nesta execução
+    const confirmedIdentities = new Set<string>(); // Identities já confirmadas/deduplicadas nesta execução
+    
+    // Contexto de dados históricos para validação de dedup
+    const mergedDailyData = structuredClone(winner.dailyData || {});
+    for (const date in loser.dailyData || {}) {
+        if (!mergedDailyData[date]) {
+            mergedDailyData[date] = {};
+        }
+        Object.assign(mergedDailyData[date], loser.dailyData[date]);
+    }
 
     // Popula mapa inicial com hábitos do vencedor
     merged.habits.forEach(h => {
@@ -271,30 +514,40 @@ export async function mergeStates(local: AppState, incoming: AppState, options?:
                     // Identidade marcada como ambígua: nunca deduplicar automaticamente neste merge.
                     winnerHabit = undefined;
                 } else {
-                    const matchedId = winnerIdentityMap.get(identity);
+                    const matchedId = winnerIdentityMap.get(identity) || findFuzzyIdentityMatchId(identity, winnerIdentityMap);
                     if (matchedId) {
                         winnerHabit = mergedHabitsMap.get(matchedId);
                         if (winnerHabit) {
-                            const needsConfirm = shouldConfirmIdentityDedup(identity, winnerHabit, loserHabit);
-                            if (needsConfirm) {
-                                if (options?.onDedupCandidate) {
-                                    try {
-                                        const decision = await options.onDedupCandidate({ identity, winnerHabit, loserHabit });
-                                        if (decision === 'keep_separate') {
-                                            blockedIdentities.add(identity);
-                                            winnerHabit = undefined;
-                                        }
-                                    } catch (e) {
-                                        // Fail-safe: se a UI/callback falhar, não deduplicar.
-                                        blockedIdentities.add(identity);
-                                        winnerHabit = undefined;
-                                        logger.warn('[Merge] Dedup confirmation callback failed; keeping habits separate.', e);
-                                    }
-                                } else {
-                                    // Sem UI/callback: nunca deduplicar candidato considerado arriscado.
+                            if (!confirmedIdentities.has(identity)) {
+                                const strategy = evaluateIdentityDedupStrategy(identity, winnerHabit, loserHabit, mergedDailyData);
+                                if (strategy === 'auto_keep_separate') {
                                     blockedIdentities.add(identity);
                                     winnerHabit = undefined;
-                                    logger.warn(`[Merge] Dedup candidate "${identity}" requires confirmation; keeping habits separate.`);
+                                    logger.warn(`[Merge] Dedup candidate "${identity}" auto-blocked as ambiguous.`);
+                                } else if (strategy === 'ask_confirmation') {
+                                    if (options?.onDedupCandidate) {
+                                        try {
+                                            const decision = await options.onDedupCandidate({ identity, winnerHabit, loserHabit });
+                                            if (decision === 'keep_separate') {
+                                                blockedIdentities.add(identity);
+                                                winnerHabit = undefined;
+                                            } else {
+                                                confirmedIdentities.add(identity);
+                                            }
+                                        } catch (e) {
+                                            // Fail-safe: se a UI/callback falhar, não deduplicar.
+                                            blockedIdentities.add(identity);
+                                            winnerHabit = undefined;
+                                            logger.warn('[Merge] Dedup confirmation callback failed; keeping habits separate.', e);
+                                        }
+                                    } else {
+                                        // Sem UI/callback: nunca deduplicar candidato considerado arriscado.
+                                        blockedIdentities.add(identity);
+                                        winnerHabit = undefined;
+                                        logger.warn(`[Merge] Dedup candidate "${identity}" requires confirmation; keeping habits separate.`);
+                                    }
+                                } else {
+                                    confirmedIdentities.add(identity);
                                 }
                             }
 
@@ -321,6 +574,17 @@ export async function mergeStates(local: AppState, incoming: AppState, options?:
             if (isDeduplicatedByIdentity && winnerHabit.deletedOn && !loserHabit.deletedOn) {
                 winnerHabit.deletedOn = undefined;
                 winnerHabit.deletedName = undefined;
+            }
+            
+            // Desempate: se schedules equivalentes, preferir o hábito mais antigo (createdOn) como âncora estável.
+            if (schedulesEquivalent(getLatestSchedule(winnerHabit), getLatestSchedule(loserHabit))) {
+                const winnerCreated = winnerHabit.createdOn || '9999-12-31';
+                const loserCreated = loserHabit.createdOn || '9999-12-31';
+                if (loserCreated < winnerCreated) {
+                    // Loser é mais antigo: inverter lógica de merge para preservar estabilidade.
+                    const tempHistory = winnerHabit.scheduleHistory;
+                    winnerHabit.scheduleHistory = mergeHabitHistories(loserHabit.scheduleHistory, tempHistory);
+                }
             }
             
             if (loserHabit.deletedOn) {
@@ -427,4 +691,66 @@ export async function mergeStates(local: AppState, incoming: AppState, options?:
     merged.lastModified = Math.max(localTs, incomingTs, Date.now()) + 1;
 
     return merged;
+}
+
+/**
+ * Prepara informações para modal de confirmação de dedup com contexto detalhado.
+ * Retorna null se a consolidação foi auto-decidida (não precisa modal).
+ */
+export interface DedupModalContext {
+    identity: string;
+    winnerName: string;
+    loserName: string;
+    winnerCreatedOn: string;
+    loserCreatedOn: string;
+    winnerScheduleCount: number;
+    loserScheduleCount: number;
+    winnerIsActive: boolean;
+    loserIsActive: boolean;
+    confidenceLevel: 'high' | 'medium' | 'low';
+    recommendationText: string;
+}
+
+export function buildDedupModalContext(
+    identity: string,
+    winnerHabit: Habit,
+    loserHabit: Habit
+): DedupModalContext {
+    const winnerLast = getLatestSchedule(winnerHabit);
+    const loserLast = getLatestSchedule(loserHabit);
+    const winnerName = (winnerLast?.name || winnerLast?.nameKey || identity || '').trim();
+    const loserName = (loserLast?.name || loserLast?.nameKey || identity || '').trim();
+    const winnerIsActive = !winnerHabit.deletedOn;
+    const loserIsActive = !loserHabit.deletedOn;
+    const winnerScheduleCount = winnerHabit.scheduleHistory?.length || 0;
+    const loserScheduleCount = loserHabit.scheduleHistory?.length || 0;
+
+    // Determinar nivel de confiança
+    let confidenceLevel: 'high' | 'medium' | 'low' = 'low';
+    let recommendationText = 'Decida manualmente se agrupar o histórico com certeza total.';
+
+    if (schedulesEquivalent(winnerLast, loserLast)) {
+        confidenceLevel = 'high';
+        recommendationText = '✓ Recomendamos consolidar (agendas idênticas).';
+    } else if (winnerIsActive !== loserIsActive) {
+        confidenceLevel = 'medium';
+        recommendationText = '⚠️ Um está ativo, outro deletado - Recomendamos consolidar.';
+    } else if (winnerName === loserName && winnerScheduleCount === loserScheduleCount) {
+        confidenceLevel = 'medium';
+        recommendationText = '⚠️ Nomes idênticos e histórico similar - Recomendamos consolidar.';
+    }
+
+    return {
+        identity,
+        winnerName,
+        loserName,
+        winnerCreatedOn: winnerHabit.createdOn || '(desconhecido)',
+        loserCreatedOn: loserHabit.createdOn || '(desconhecido)',
+        winnerScheduleCount,
+        loserScheduleCount,
+        winnerIsActive,
+        loserIsActive,
+        confidenceLevel,
+        recommendationText
+    };
 }
