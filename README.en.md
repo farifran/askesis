@@ -19,7 +19,6 @@
 
 Project epigraph — directly connects with Askesis's purpose as a **habit tracker**: consistency and excellence are built through daily practice, and **habits** are the core mechanism that helps train and track them.<br>
 
-
 <table>
 <tr>
 <td>
@@ -44,6 +43,7 @@ Project epigraph — directly connects with Askesis's purpose as a **habit track
 - [FAQ & Troubleshooting](#en-faq)
 - [Roadmap: The Future](#en-roadmap)
 - [Who Wants to Contribute](#en-contribute)
+
 </td>
 <td align="center" valign="middle">
   <img src="assets/screenshot/sistema_en.gif" alt="APP" width="75%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
@@ -62,7 +62,7 @@ Habit tracker focused on Stoicism, with AI for reflections and adjustments in qu
 
 Real data privacy and the ability to generate code and create complete applications using Generative AI (Gen AI):
 
-1. **Sovereign and Data Privacy:** Absolute guarantee that information would not be shared, sold, or analyzed by third parties. 
+1. **Sovereign and Data Privacy:** Absolute guarantee that information would not be shared, sold, or analyzed by third parties.
 
 2. **Available Technology:** In an era dominated by subscription models (SaaS), I refused to pay for software that could be built even better with Gen AI help.
 
@@ -90,9 +90,7 @@ Askesis was not just "coded"; it was **orchestrated** with Gen AI as a partner. 
 <a id="en-build-paradigm"></a>
 The result is an application that one person can take to a level of complexity and polish more common in a 3-5 dev team.
 
-
 <b>BUILD PARADIGM: HUMAN-AI ORCHESTRATION</b>
-
 
 This table explicits where Gen AI offers fast implementation and where my value intervention increments the technical result and gives innovation a step.
 
@@ -125,14 +123,14 @@ Askesis is designed in layers: intuitive on the surface, but packed with powerfu
 Habits are the fundamental unit of the application. The system allows tracking not only completion ("check"), but also quantity and intensity (pages read, minutes meditated).
 
 To start building your routine, you have two paths:
-*   **Bright Green (+) Button:** The main entry point in the bottom corner.
+- **Bright Green (+) Button:** The main entry point in the bottom corner.
 
 <br>
 <p align="center">
   <img src="assets/screenshot/botao.gif" alt="Button" width="20%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
 </p>
 
-*   **The "Placeholder" (Card Space):** If a time-of-day period (Morning/Afternoon/Evening) is empty, you’ll see an inviting area ("Add a habit") that allows quick creation directly in the temporal context.
+- **The "Placeholder" (Card Space):** If a time-of-day period (Morning/Afternoon/Evening) is empty, you’ll see an inviting area ("Add a habit") that allows quick creation directly in the temporal context.
 
 <br>
 <p align="center">
@@ -140,19 +138,19 @@ To start building your routine, you have two paths:
 
 Once created, your habits can be explored and managed in detail:
 
-*   **Habits List:** Explore a list of pre-defined habits (like meditation, reading, exercise) or create your own custom ones. Here, you can manage active and paused habits as needed.
+- **Habits List:** Explore a list of pre-defined habits (like meditation, reading, exercise) or create your own custom ones. Here, you can manage active and paused habits as needed.
 
 <br>
 <p align="center">  <img src="assets/screenshot/habito_en.jpeg" alt="List" width="60%" style="border-radius:   10px; border: 1px solid  #2a2a2a;">
 </p>
 
-*   **Habit Modal:** You can edit the default goal, adjust the time of day and more.
+- **Habit Modal:** You can edit the default goal, adjust the time of day and more.
 
 <br>
 <p align="center">  <img src="assets/screenshot/modal_en.jpeg" alt="Habit modal" width="60%" style="border-radius:   10px; border: 1px solid  #2a2a2a;">
 </p>
 
-*   **Icon and Color Change Modal:** Within the habit modal, there is a section dedicated to visual customization. Choose from a variety of representative icons (like books for reading or weights for exercise) and colors that reflect your personal style, making the interface more intuitive and motivating.
+- **Icon and Color Change Modal:** Within the habit modal, there is a section dedicated to visual customization. Choose from a variety of representative icons (like books for reading or weights for exercise) and colors that reflect your personal style, making the interface more intuitive and motivating.
 
 <br>
   <div style="text-align: center;">
@@ -176,8 +174,8 @@ Days are represented by **Conical Progress Rings**, a data visualization that fi
 
 **Calendar Micro-Actions (Power User):**
 The calendar strip has hidden shortcuts to facilitate bulk management:
-*   **1 Click:** Select the date to view history.
-*   **Press and Hold (Long Press):** Open a quick actions menu to **Complete the Day**, **Defer the Day**, or open the **Full Monthly Calendar**, allowing you to jump to any date in the year quickly.
+- **1 Click:** Select the date to view history.
+- **Press and Hold (Long Press):** Open a quick actions menu to **Complete the Day**, **Defer the Day**, or open the **Full Monthly Calendar**, allowing you to jump to any date in the year quickly.
 
 <br>
 <p align="center">
@@ -188,18 +186,18 @@ The calendar strip has hidden shortcuts to facilitate bulk management:
 
 The card is the visual representation of your daily duty. It responds to different types of interaction:
 
-*   **Clicks (Status):**
-    *   **1 Click:** Mark as ✅ **Done**.
-    *   **2 Clicks:** Mark as ➡️ **Deferred** (passes to the next state).
-    *   **3 Clicks:** Return to ⚪️ **Pending**.
-*   **Swipe (Swipe - Additional Options):**
-    *   When swiping the card sideways, you reveal contextual tools:
-    *   **Create Note:** Add a Stoic observation about the execution of that habit on the day.
-    *   **Delete:** Allows removing the habit. The system will ask for confirmation to ensure a thoughtful action.
-*   **Drag (Drag & Drop - Reorganization):**
-    *   Press and hold the card to initiate dragging.
-    *   Move the habit between Morning, Afternoon and Evening to adjust your routine.
-    *   Drop in the new time block to save the new position.
+- **Clicks (Status):**
+  - **1 Click:** Mark as ✅ **Done**.
+  - **2 Clicks:** Mark as ➡️ **Deferred** (passes to the next state).
+  - **3 Clicks:** Return to ⚪️ **Pending**.
+- **Swipe (Swipe - Additional Options):**
+  - When swiping the card sideways, you reveal contextual tools:
+  - **Create Note:** Add a Stoic observation about the execution of that habit on the day.
+  - **Delete:** Allows removing the habit. The system will ask for confirmation to ensure a thoughtful action.
+- **Drag (Drag & Drop - Reorganization):**
+  - Press and hold the card to initiate dragging.
+  - Move the habit between Morning, Afternoon and Evening to adjust your routine.
+  - Drop in the new time block to save the new position.
 
 <br>
 <div style="display: flex; justify-content: center; gap: 10px;">
@@ -209,16 +207,16 @@ The card is the visual representation of your daily duty. It responds to differe
 
 <b>STOIC ADVICE AND ANALYSIS (AI)</b>
 
-*   **AI Button (icon at the top):** Opens the contextual Stoic advice flow.
-    *   **Period Analysis:** You can request monthly, quarterly or historical reading to receive diagnosis and next practical action.
-    *   **Offline Mode:** If you're without internet, the app displays a fallback with a Stoic quote to keep the experience useful.
+- **AI Button (icon at the top):** Opens the contextual Stoic advice flow.
+  - **Period Analysis:** You can request monthly, quarterly or historical reading to receive diagnosis and next practical action.
+  - **Offline Mode:** If you're without internet, the app displays a fallback with a Stoic quote to keep the experience useful.
 
 <br>
   <p align="center">
   <img src="assets/screenshot/ia.jpeg" alt="AI" width="10%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
   </p>
-    
-*   **Stoic Quotes:** Right below the calendar, you’ll find reflections from Marcus Aurelius and other Stoics. Click on the quote to read it in full.
+
+- **Stoic Quotes:** Right below the calendar, you’ll find reflections from Marcus Aurelius and other Stoics. Click on the quote to read it in full.
 
 <br>
   <p align="center">
@@ -227,9 +225,9 @@ The card is the visual representation of your daily duty. It responds to differe
 
 <b>EVOLUTION GRAPH</b>
 
-*   **Trend Panel:** Shows the recent behavior of habits and the direction of your consistency.
-*   **Quick Reading:** Use the graph to identify drop, stability or improvement and adjust goals based on evidence.
-*   **Rings Complement:** The rings show the day; the graph shows the pattern over time.
+- **Trend Panel:** Shows the recent behavior of habits and the direction of your consistency.
+- **Quick Reading:** Use the graph to identify drop, stability or improvement and adjust goals based on evidence.
+- **Rings Complement:** The rings show the day; the graph shows the pattern over time.
 
 <br>
   <p align="center">
@@ -238,7 +236,7 @@ The card is the visual representation of your daily duty. It responds to differe
 
 <b>NAVIGATION</b>
 
-*   **"Today":** When navigating the past or future, the title "Today" (or the date) at the top acts as an immediate return button to the present.
+- **"Today":** When navigating the past or future, the title "Today" (or the date) at the top acts as an immediate return button to the present.
 
   <br>
   <div style="text-align: center;">
@@ -257,24 +255,23 @@ The gear icon in the top corner allows configuration and management of the entir
   <img src="assets/screenshot/engranagem.jpeg" alt="Gear" width="15%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
 </p>
 
-*   **Language:** Change between Portuguese, English and Spanish directly in the rotary selector.
-*   **Notifications:** Activate or deactivate reminders and see the current permission status in the panel itself.
-*   **Cloud Synchronization (Profile Recovery):**
-    *   Activate synchronization by generating a new key.
-    *   Insert an existing key to recover data on another device.
-    *   View/copy your key when sync is already active.
-    *   Deactivate synchronization when you want to operate only locally.
-*   **Data & Privacy:**
-    *   **Export Backup** to save a snapshot of your data.
-    *   **Restore Backup** to import a valid Askesis file.
-*   **Reset:** Option to delete all local data with security confirmation.
-*   **Manage Habits:** Complete list of habits, being able to pause when closing or delete habits and their history.
+- **Language:** Change between Portuguese, English and Spanish directly in the rotary selector.
+- **Notifications:** Activate or deactivate reminders and see the current permission status in the panel itself.
+- **Cloud Synchronization (Profile Recovery):**
+  - Activate synchronization by generating a new key.
+  - Insert an existing key to recover data on another device.
+  - View/copy your key when sync is already active.
+  - Deactivate synchronization when you want to operate only locally.
+- **Data & Privacy:**
+  - **Export Backup** to save a snapshot of your data.
+  - **Restore Backup** to import a valid Askesis file.
+- **Reset:** Option to delete all local data with security confirmation.
+- **Manage Habits:** Complete list of habits, being able to pause when closing or delete habits and their history.
 
 <br>
   <p align="center">
   <img src="assets/screenshot/config_en.jpeg" alt="option" width="50%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
   </p>
-
 
 <br>
 <a id="en-user-flows"></a>
@@ -429,19 +426,18 @@ Askesis was built with the premise that technology should adapt to the user, not
 
 Askesis is a **Progressive Web App (PWA)** of the latest generation. This means it combines the ubiquity of the web with the performance of native applications.
 
-*   **Installable:** Add to the home screen of iOS, Android, Windows or Mac. It behaves like a native app, removing the browser bar and integrating with the operating system.
-*   **Offline-First:** Thanks to an advanced Service Workers strategy, the app loads instantly and is **totally functional without internet**. You can mark habits, view charts and edit notes on a flight or subway.
-*   **Native Feel:** Implementation of haptic feedback (Haptics) in micro-interactions, fluid swipe gestures and 60fps animations guarantee a tactile and responsive experience.
-
+- **Installable:** Add to the home screen of iOS, Android, Windows or Mac. It behaves like a native app, removing the browser bar and integrating with the operating system.
+- **Offline-First:** Thanks to an advanced Service Workers strategy, the app loads instantly and is **totally functional without internet**. You can mark habits, view charts and edit notes on a flight or subway.
+- **Native Feel:** Implementation of haptic feedback (Haptics) in micro-interactions, fluid swipe gestures and 60fps animations guarantee a tactile and responsive experience.
 
 <b style="display:inline; margin:0; padding:0; border:0;">INCLUSION (A11Y) AND LOCALIZATION</b><br>
 
 Stoic discipline is for everyone. Askesis's code follows rigorous accessibility standards (WCAG) to ensure that people with different needs can fully use the tool.
 
-*   **Robust Semantics:** Correct use of semantic HTML elements and ARIA attributes (`aria-label`, `role`, `aria-live`) to ensure that **Screen Readers** correctly interpret the interface.
-*   **Keyboard Navigation:** The entire app is navigable without a mouse. Modals have "Focus Traps" to prevent focus from getting lost, and shortcuts (like `Enter` and `Space`) work in all interactive elements.
-*   **User Respect:** The app detects and respects the system's preference for **Reduced Motion** (`prefers-reduced-motion`), disabling complex animations to avoid vestibular discomfort.
-*   **Legibility:** Color contrast calculated dynamically to ensure legibility in any theme chosen by the user.
+- **Robust Semantics:** Correct use of semantic HTML elements and ARIA attributes (`aria-label`, `role`, `aria-live`) to ensure that **Screen Readers** correctly interpret the interface.
+- **Keyboard Navigation:** The entire app is navigable without a mouse. Modals have "Focus Traps" to prevent focus from getting lost, and shortcuts (like `Enter` and `Space`) work in all interactive elements.
+- **User Respect:** The app detects and respects the system's preference for **Reduced Motion** (`prefers-reduced-motion`), disabling complex animations to avoid vestibular discomfort.
+- **Legibility:** Color contrast calculated dynamically to ensure legibility in any theme chosen by the user.
 
 **MULTI-LANGUAGE SUPPORT (I18N)**
 
@@ -461,6 +457,7 @@ LANGUAGES = {
 ```
 
 **Translation Key Examples:**
+
 ```
 aiPromptQuote       → Prompt for quote analysis
 aiSystemInstruction → Stoic Sage Instructions
@@ -472,6 +469,7 @@ streakCount         → "{count} days in a row"
 ```
 
 **Intelligent Locales:**
+
 ```typescript
 // Date formatting by language:
 pt-BR: "15 de janeiro de 2025"
@@ -488,9 +486,9 @@ es-ES: "1.234,56" (same as PT)
 
 This project was designed with intelligent engineering to operate with **Zero Cost ($0)**, leveraging free modern services without losing quality.<br>
 
-*   **Ultra-Light Storage (GZIP):** Historical data ("Cold Storage") is compressed via GZIP Stream API before being saved or sent to the cloud. This drastically reduces bandwidth and storage usage.
-*   **The Phone Works:** Most of the "thinking" (cryptography, chart generation, calculations) is done by your own device, not the server. This saves cloud resources, ensuring we never exceed free limits.
-*   **Free Notifications:** We use OneSignal's community plan, which allows up to 10,000 web users for free.
+- **Ultra-Light Storage (GZIP):** Historical data ("Cold Storage") is compressed via GZIP Stream API before being saved or sent to the cloud. This drastically reduces bandwidth and storage usage.
+- **The Phone Works:** Most of the "thinking" (cryptography, chart generation, calculations) is done by your own device, not the server. This saves cloud resources, ensuring we never exceed free limits.
+- **Free Notifications:** We use OneSignal's community plan, which allows up to 10,000 web users for free.
 
 <b>CAPACITY ESTIMATES (BASED ON FREE LIMITS)</b><br>
 
@@ -518,7 +516,6 @@ Considering the three platforms simultaneously (Gemini, Vercel and OneSignal), t
 - Phase 1: Definition (Onboarding): Habit creation and customization with absolute focus on privacy, using a Local-first approach with End-to-End encryption (E2E).
 - Phase 2: Execution (Engagement): Daily management, performance metrics and data persistence. The interface (Main Thread) is isolated from data processing (Worker), using IndexedDB for local storage and CRDT-lite protocol for conflict-free cloud synchronization (Vercel KV).
 - Phase 3: Intelligence (Feedback): An analysis engine evaluates user data to generate personalized behavioral insights, injecting this context back into the experience to create a continuous engagement loop.</span>
-
 
 <a id="en-integrations-infra"></a>
 <b>GENERAL INTEGRATIONS AND INFRASTRUCTURE</b><br>
@@ -554,11 +551,9 @@ flowchart LR
 
 Layered architecture: Presentation (UI), Domain (logic/state), Infrastructure (persistence/sync). Details in [docs/ARCHITECTURE.md#componentes-internos](docs/ARCHITECTURE.md#componentes-internos).
 
-
 <b> Data Flow</b>
 
 Local-first model: saving in IndexedDB, incremental encrypted sync (shards via Web Worker, merge with LWW/deduplication). Diagram in [docs/ARCHITECTURE.md#fluxo-dados](docs/ARCHITECTURE.md#fluxo-dados).
-
 
 <b>Sync Conflict Flow</b>
 
@@ -612,7 +607,6 @@ Conflicts: remote decryption, merge with LWW/deduplication, persistence and retr
 - Gestures and events: [listeners/](listeners/)
 - Data and cryptography: [services/](services/)
 
-
 <a id="en-modules-map"></a>
 
 **QUICK MODULE MAP (FOLDER → RESPONSIBILITY)**
@@ -624,7 +618,6 @@ Conflicts: remote decryption, merge with LWW/deduplication, persistence and retr
 - state.ts: canonical state model, types and caches.
 - services/sync.worker.ts: AES-GCM crypto and AI prompt building off the main thread.
 - tests/ and services/*.test.ts: journey scenarios, security, resilience, merge and regression.
-
 
 **MAIN TECHNICAL ASPECTS**
 
@@ -659,7 +652,6 @@ Askesis operates in the "Sweet Spot" of web performance, using modern native API
 | Offline-first | Service Worker | Atomic cache |
 | Synchronization | Sync key | Resilient merge |
 
-
 <b style="display:inline; margin:0; padding:0; border:0;">DATA STRUCTURE: THE MAGIC BEHIND</b>
 
 Askesis uses highly optimized data structures that are rarely seen in web applications. Understanding this choice is understanding why the app is so fast:
@@ -690,6 +682,7 @@ Example of 1 month (30 days):
 ```
 
 **Bitwise Operations O(1):**
+
 ```typescript
 // Read habit status at 2025-01-15 in Morning:
 const status = (log >> ((15-1)*9 + PERIOD_OFFSET['Morning'])) & 3n;
@@ -728,6 +721,7 @@ Askesis's IndexedDB stores data in **two separate columns**:
 ```
 
 **Benefits:**
+
 - **Instant startup:** JSON loads in < 50ms, binaries on demand
 - **Efficient backup:** Export data = only JSON (< 200 KB)
 - **Safe migration:** Old versions + new coexist without conflicts
@@ -756,6 +750,7 @@ When you delete a habit, Askesis **does not erase it**. Instead, it marks with a
 ```
 
 **Example real:**
+
 ```typescript
 // User deletes 'Meditate' on 2025-02-01
 habitActions.requestHabitPermanentDeletion('habit-123');
@@ -794,6 +789,7 @@ When two devices sync with conflicting changes, Askesis resolves automatically *
 ```
 
 **Semantics of resolution:**
+
 ```
 State precedence:
 DONE (01) > DEFERRED (10) > PENDING (00)
@@ -875,6 +871,7 @@ Each device has its own **independent sync key**:
 ```
 
 **Offline scenario:**
+
 ```
 Device A (offline) → Local changes → Enqueue
 Device A (online)  → POST encrypted data
@@ -896,6 +893,7 @@ Askesis's reliability is validated by a comprehensive suite, focusing on real us
 - To avoid divergence between documentation and execution, the operational detailing of the suite (inventory, current counts, daily flow, PR checklist and update convention) is centralized in [tests/README.md](tests/README.md).
 
 Quick summary:
+
 - Full execution: `npm test -- --run`
 - Integration scenarios: `npm run test:scenario`
 - Coverage: `npm run test:coverage`
@@ -907,6 +905,7 @@ Quick summary:
 <b style="display:inline; margin:0; padding:0; border:0;">VERCEL (BANDWIDTH/EDGE FUNCTIONS)</b><br>
 
 **Production**
+
 ```bash
 CORS_ALLOWED_ORIGINS=https://askesis.vercel.app
 CORS_STRICT=1
@@ -919,6 +918,7 @@ ANALYZE_RATE_LIMIT_MAX_REQUESTS=20
 ```
 
 **Preview**
+
 ```bash
 CORS_ALLOWED_ORIGINS=https://askesis.vercel.app
 CORS_STRICT=1
@@ -931,6 +931,7 @@ ANALYZE_RATE_LIMIT_MAX_REQUESTS=40
 ```
 
 **Development**
+
 ```bash
 CORS_ALLOWED_ORIGINS=http://localhost:5173
 CORS_STRICT=0
@@ -953,11 +954,13 @@ Askesis provides native monitoring in the app itself, without depending on DevTo
 **SYNCHRONIZATION PANEL (SYNC DEBUG MODAL)**
 
 How to open through normal flow:
+
 1. Open **Manage** (gear icon).
 2. Enter **Cloud Synchronization**.
 3. Touch the sync status indicator (status text) to open the diagnostic modal.
 
 In the modal, you follow the technical history of synchronization in real time, for example:
+
 ```
 ✅ Syncing 3 packages...
 ✅ Cloud updated.
@@ -967,11 +970,13 @@ In the modal, you follow the technical history of synchronization in real time, 
 ```
 
 **Why is it useful?**
+
 - Confirm if data arrived in cloud
 - Understand if app is in `syncSaving`, `syncSynced`, `syncError` or `syncInitial`
 - Identify offline scenarios, automatic retry and conflicts
 
 **Quick reading of states**
+
 ```
 syncInitial  → Sync disabled / no local key
 syncSaving   → Pending changes being sent
@@ -980,18 +985,19 @@ syncError    → Non-transient failure (requires attention)
 ```
 
 **When to act**
+
 - `syncSaving` for little time: expected behavior (debounce + batch sending)
 - `syncSaving` for long time: check connection and open diagnostic panel
 - `syncError`: review sync key and network status
 - “Re-enqueued” messages: transient failure, app will retry automatically
 <br>
+
 <br>
 
 <a id="en-roadmap"></a>
 <h1>Roadmap: The Future</h1>
 
 The vision for Askesis is to expand its native presence while maintaining the unified code base.
-
 
 - **Less daily friction:** reduce the gap between intention and execution (habit check-ins in seconds through fast and contextual flows).
   - **Quick Marking (almost without opening the app):** Pure PWAs cannot mark habits 100% in background without user interaction. As a practical alternative, use interactive push actions (OneSignal/FCM) and app shortcuts with `/quick-mark?period=...` to open a minimal view, mark and return quickly.
@@ -1024,6 +1030,7 @@ A: Changes are queued locally. When you reconnect to the internet, all pendings 
 **Q: Does AI (Google Gemini) see my data?**
 
 A: No. Gemini receives only:
+
 - Notes you added (totally optional)
 - Generalized context (Stoic themes, not personal data)
 - It has no access to dates, history or identifiers
@@ -1035,6 +1042,7 @@ A: Yes! Each device uses the same **Sync Key** to keep data in sync. Phone, tabl
 **Q: What if I forget my Sync Key?**
 
 A: Unfortunately, you **cannot recover it** (this is by design — ensures even the server doesn't have it). But your local data doesn't get lost. You can:
+
 1. Continue using Askesis on that device only
 2. Generate a new key and start a new sync
 3. Export data before changing (⚙️ → Export)
@@ -1042,6 +1050,7 @@ A: Unfortunately, you **cannot recover it** (this is by design — ensures even 
 **Q: How much space does Askesis use?**
 
 A: Very little. Even with 5 years of history:
+
 - **Main data (JSON):** ~50-200 KB
 - **Compressed binary logs:** ~8-15 KB
 - **Total:** < 500 KB for most users
@@ -1053,6 +1062,7 @@ A: Yes, **100%**. You can mark habits, add notes, view charts — everything wit
 **Q: How do I uninstall Askesis?**
 
 A: If installed as PWA:
+
 - **Android:** Long press the icon → "Uninstall"
 - **iOS:** Long press the icon → "Remove App"
 - **Desktop:** Control-click (Windows) or Cmd-click (Mac) on the shortcut → "Remove"
@@ -1066,11 +1076,13 @@ Your local data is deleted automatically. If you want to preserve data, export f
 <h4>❌ "Sync not working"</h4>
 
 **Diagnosis:**
+
 1. Check if online (open google.com in new tabs)
 2. Open DevTools (F12) → Console
 3. Look for red errors
 
 **Solutions:**
+
 ```
 If you see "[API] Network Error":
   → Firewall or proxy blocking
@@ -1089,6 +1101,7 @@ If you see "Sync Key invalid":
 ```
 
 **If the problem persists:**
+
 1. Open Sync Debug Panel: `openSyncDebugModal()` in console
 2. Screenshot the sync history
 3. Look for an existing issue in [GitHub](https://github.com/farifran/Askesis/issues)
@@ -1099,12 +1112,14 @@ If you see "Sync Key invalid":
 **Before panicking:**
 
 1. **Check localStorage not cleared:**
+
    ```
    F12 → Application → Storage → Local Storage → askesis-psi.vercel.app
    You should see an entry "habitTrackerSyncKey"
    ```
 
 2. **Check IndexedDB:**
+
    ```
    F12 → Application → Storage → IndexedDB → AskesisDB
    You should see "app_state" and possibly "askesis_logs_binary"
@@ -1118,6 +1133,7 @@ If you see "Sync Key invalid":
 4. **If data is there but not showing:**
    - Try Hard Refresh: **Ctrl+Shift+R** (Windows) or **Cmd+Shift+R** (Mac)
    - Clear Service Worker cache:
+
      ```
      F12 → Application → Service Workers
      Click "Unregister" on each one
@@ -1138,6 +1154,7 @@ If you see "Sync Key invalid":
    - Allow for askesis-psi.vercel.app
 
 3. **Another Service Worker conflicting**
+
    ```
    F12 → Application → Service Workers
    Unregister all old SWs
@@ -1221,6 +1238,7 @@ Reason 3: Offline
 **By browser:**
 
 **Google Chrome / Edge:**
+
 ```
 1. Open https://askesis.vercel.app
 2. Look for "Install" icon in address bar
@@ -1233,6 +1251,7 @@ Reason 3: Offline
 ```
 
 **Safari (iOS):**
+
 ```
 1. Open https://askesis.vercel.app
 2. Click Share button (bottom right)
@@ -1242,6 +1261,7 @@ Reason 3: Offline
 ```
 
 **Firefox:**
+
 ```
 Firefox supports PWA but no obvious visual option:
 1. Open page
@@ -1261,15 +1281,16 @@ If the troubleshooting above didn't resolve:
    - Many solutions may be there
 
 2. **Open a new Issue:**
-  - [GitHub Issues - Askesis](https://github.com/farifran/Askesis/issues)
-   - Include:
-     * Your browser (Chrome v130, Safari 17.x, etc.)
-     * Operating system (Windows, macOS, iOS, Android)
-     * Screenshots or videos of error
-     * Exact steps to reproduce problem
-     * Output from Sync Debug Panel
 
-3. **Contribute Fix:**
+- [GitHub Issues - Askesis](https://github.com/farifran/Askesis/issues)
+- Include:
+  - Your browser (Chrome v130, Safari 17.x, etc.)
+  - Operating system (Windows, macOS, iOS, Android)
+  - Screenshots or videos of error
+  - Exact steps to reproduce problem
+  - Output from Sync Debug Panel
+
+1. **Contribute Fix:**
    - If you found the cause, consider opening a Pull Request
    - Follow contribution guide in README
 
@@ -1287,21 +1308,29 @@ If the troubleshooting above didn't resolve:
 
 1. **Fork the repository** on GitHub
 2. **Create a branch** for your feature:
+
    ```bash
    git checkout -b feature/my-feature
    ```
+
 3. **Make your changes** and commit:
+
    ```bash
    git commit -m "feat: add X functionality"
    ```
+
 4. **Run tests locally:**
+
    ```bash
    npm run test:super
    ```
+
 5. **Push to your branch:**
+
    ```bash
    git push origin feature/my-feature
    ```
+
 6. **Open a Pull Request** describing your changes
 
 Look for issues marked with `good-first-issue` to start!
@@ -1313,7 +1342,6 @@ If Askesis is helping you strengthen your will and consistency, consider support
 - **[GitHub Sponsors](https://github.com/sponsors/tecnocratoshi)** - Recurring patronage with exclusive rewards
 - **[Buy Me a Coffee](https://www.buymeacoffee.com/askesis)** - Single contribution
 - **[Ko-fi](https://ko-fi.com/askesis)** - Global alternative
-
 
 **Why it matters?**
 
@@ -1330,8 +1358,6 @@ Currently, thanks to free platforms (Vercel, Google Gemini, OneSignal), Askesis 
 
 **Thank you for believing in a future where technology serves virtue**
 
-
 ---
 
 <br>
-
