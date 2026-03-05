@@ -17,7 +17,7 @@ import { t, compareStrings, formatDate, formatInteger, getTimeOfDayName } from '
 import { HABIT_ICONS, UI_ICONS, getTimeOfDayIcon, sanitizeHabitIcon } from './icons';
 import { setTextContent, updateReelRotaryARIA } from './dom';
 import { MODAL_COLORS, EXPLORE_STAGGER_DELAY_MS } from './constants';
-import { getContrastColor, parseUTCIsoDate, getTodayUTCIso, getSafeDate, triggerHaptic } from '../utils';
+import { getContrastColor, parseUTCIsoDate, getTodayUTCIso, getSafeDate, triggerHaptic, isEscapeKeyboardEvent, getNormalizedKeyboardKey } from '../utils';
 
 interface ModalContext { element: HTMLElement; previousFocus: HTMLElement | null; onClose?: () => void; firstFocusable?: HTMLElement; lastFocusable?: HTMLElement; }
 const modalStack: ModalContext[] = [];
@@ -260,11 +260,12 @@ function _getLeastUsedColor(): string {
 export function initModalEngine() {
     document.addEventListener('keydown', e => {
         const ctx = modalStack[modalStack.length - 1]; if (!ctx) return;
-        if (e.key === 'Escape') {
+        const key = getNormalizedKeyboardKey(e);
+        if (isEscapeKeyboardEvent(e)) {
             triggerHaptic('light');
             closeModal(ctx.element);
         }
-        else if (e.key === 'Tab') {
+        else if (key === 'Tab') {
             const { firstFocusable: f, lastFocusable: l } = ctx;
             if (f && l) {
                 if (e.shiftKey && document.activeElement === f) { l.focus(); e.preventDefault(); }

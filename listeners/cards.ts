@@ -14,7 +14,7 @@ import { state, TimeOfDay } from '../state';
 import { getCurrentGoalForInstance, getEffectiveScheduleForHabitOnDate } from '../services/selectors';
 import { openNotesModal, renderExploreHabits, openModal } from '../render';
 import { toggleHabitStatus, setGoalOverride, requestHabitTimeRemoval, requestHabitEndingFromModal } from '../services/habitActions';
-import { triggerHaptic } from '../utils';
+import { triggerHaptic, getNormalizedKeyboardKey, isActivationKeyboardEvent } from '../utils';
 import { DOM_SELECTORS, CSS_CLASSES } from '../render/constants';
 
 const GOAL_STEP = 5, MAX_GOAL = 9999;
@@ -50,10 +50,10 @@ const _handleGoalInput = (wrapper: HTMLElement, hId: string, time: TimeOfDay) =>
     if (!habit) return;
 
     const currentVal = getCurrentGoalForInstance(habit, state.selectedDate, time);
-    const originalHTML = wrapper.innerHTML;
+    const originalChildren = Array.from(wrapper.childNodes).map(node => node.cloneNode(true));
 
     // Create Input
-    wrapper.innerHTML = '';
+    wrapper.replaceChildren();
     const input = document.createElement('input');
     input.type = 'number';
     input.value = String(currentVal);
@@ -74,13 +74,14 @@ const _handleGoalInput = (wrapper: HTMLElement, hId: string, time: TimeOfDay) =>
             triggerHaptic('medium');
         } else {
             // Restore visual if no change (re-render handles it usually via updateHabitCardElement logic, but we restore here just in case)
-            wrapper.innerHTML = originalHTML;
+            wrapper.replaceChildren(...originalChildren.map(node => node.cloneNode(true)));
         }
     };
 
     input.addEventListener('blur', saveAndClose);
     input.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
+        const key = getNormalizedKeyboardKey(e);
+        if (key === 'Enter') {
             input.blur();
         }
     });
@@ -189,21 +190,23 @@ const _handleContainerKeydown = (e: KeyboardEvent) => {
     const el = target.closest<HTMLElement>(KEYBOARD_NAV_SELECTOR);
     if (!el) return;
 
-    if (e.key === 'Tab') return;
+    const key = getNormalizedKeyboardKey(e);
 
-    if (e.key === 'Enter' || e.key === ' ') {
+    if (key === 'Tab') return;
+
+    if (isActivationKeyboardEvent(e)) {
         e.preventDefault();
         el.click();
         return;
     }
 
-    if (e.key === 'ArrowUp') {
+    if (key === 'ArrowUp') {
         e.preventDefault();
         _focusRelativeCardElement(el, -1);
         return;
     }
 
-    if (e.key === 'ArrowDown') {
+    if (key === 'ArrowDown') {
         e.preventDefault();
         _focusRelativeCardElement(el, 1);
         return;
@@ -214,7 +217,7 @@ const _handleContainerKeydown = (e: KeyboardEvent) => {
     const card = el.closest<HTMLElement>(DOM_SELECTORS.HABIT_CARD);
     if (!card) return;
 
-    if (e.key === 'ArrowRight') {
+    if (key === 'ArrowRight') {
         e.preventDefault();
         card.classList.remove(CSS_CLASSES.IS_OPEN_RIGHT);
         card.classList.add(CSS_CLASSES.IS_OPEN_LEFT);
@@ -224,7 +227,7 @@ const _handleContainerKeydown = (e: KeyboardEvent) => {
         return;
     }
 
-    if (e.key === 'ArrowLeft') {
+    if (key === 'ArrowLeft') {
         e.preventDefault();
         card.classList.remove(CSS_CLASSES.IS_OPEN_LEFT);
         card.classList.add(CSS_CLASSES.IS_OPEN_RIGHT);

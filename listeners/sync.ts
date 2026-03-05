@@ -164,9 +164,9 @@ const _handleCopyKey = () => {
     const key = ui.syncKeyText.textContent;
     if(key) {
         navigator.clipboard.writeText(key).then(() => {
-            const originalText = ui.copyKeyBtn.innerHTML;
-            ui.copyKeyBtn.innerHTML = '✓';
-            setTimeout(() => { ui.copyKeyBtn.innerHTML = originalText; }, SYNC_COPY_FEEDBACK_MS);
+            const originalText = ui.copyKeyBtn.textContent || '';
+            ui.copyKeyBtn.textContent = '✓';
+            setTimeout(() => { ui.copyKeyBtn.textContent = originalText; }, SYNC_COPY_FEEDBACK_MS);
         }).catch(() => {
             showConfirmationModal(`Copie manualmente: ${key}`, () => {}, {
                 title: t('syncKeyLabel'),

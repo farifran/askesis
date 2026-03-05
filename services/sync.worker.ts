@@ -10,6 +10,7 @@
  */
 
 import { murmurHash3 } from './murmurHash3';
+import { type WorkerTaskMessage, type WorkerResponseMessage } from '../contracts/worker';
 
 const SALT_LEN = 16;
 const IV_LEN = 12;
@@ -119,7 +120,7 @@ function pruneHabitFromArchives(habitId: string, archives: Record<string, any>):
     return updated;
 }
 
-self.onmessage = async (e) => {
+self.onmessage = async (e: MessageEvent<WorkerTaskMessage>) => {
     const { id, type, payload, key } = e.data;
     try {
         let result: any;
@@ -134,9 +135,11 @@ self.onmessage = async (e) => {
             case 'prune-habit': result = pruneHabitFromArchives(payload.habitId, payload.archives); break;
             default: throw new Error(`Task unknown: ${type}`);
         }
-        self.postMessage({ id, status: 'success', result });
+        const msg: WorkerResponseMessage = { id, status: 'success', result };
+        self.postMessage(msg);
     } catch (error: any) {
-        self.postMessage({ id, status: 'error', error: error.message });
+        const msg: WorkerResponseMessage = { id, status: 'error', error: error.message };
+        self.postMessage(msg);
     }
 };
 

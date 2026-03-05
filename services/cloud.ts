@@ -18,9 +18,11 @@ import { renderApp, updateNotificationUI } from '../render';
 import { showConfirmationModal } from '../render/modals';
 import { mergeStates, buildDedupModalContext } from './dataMerge';
 import { HabitService } from './HabitService';
-import { runWorkerTask as runWorkerTaskInternal, type WorkerTaskType } from './workerClient';
+import { runWorkerTask as runWorkerTaskInternal } from './workerClient';
 import { emitHabitsChanged } from '../events';
 import { murmurHash3 } from './murmurHash3';
+import { type WorkerTaskType, type WorkerDecryptWithHashResult } from '../contracts/worker';
+import { type SyncPostRequest, type SyncPostResponse, type SyncServerShards } from '../contracts/api-sync';
 import {
     CLOUD_SYNC_DEBOUNCE_MS,
     CLOUD_SYNC_LOG_MAX_ENTRIES,
@@ -157,7 +159,7 @@ async function decryptServerShards(
         try {
             if (options.updateHashCache) {
                 try {
-                    const res = await runWorkerTask<any>('decrypt-with-hash', shards[key], syncKey);
+                    const res = await runWorkerTask<WorkerDecryptWithHashResult>('decrypt-with-hash', shards[key], syncKey);
                     if (!res || typeof res !== 'object' || !('value' in res)) {
                         throw new Error('decrypt-with-hash unsupported');
                     }
@@ -258,7 +260,7 @@ function confirmDeduplicationViaModal(identity: string, winnerHabit: any, loserH
     });
 }
 
-async function resolveConflictWithServerState(serverShards: Record<string, string>) {
+async function resolveConflictWithServerState(serverShards: SyncServerShards) {
     const syncKey = getSyncKey();
     if (!syncKey) return setSyncStatus('syncError');
     
@@ -332,7 +334,7 @@ async function performSync() {
         const safeTs = appState.lastModified || Date.now();
         
         const payloadStart = performance.now();
-        const payload = { lastModified: safeTs, shards: encryptedShards };
+        const payload: SyncPostRequest = { lastModified: safeTs, shards: encryptedShards };
         const payloadBody = JSON.stringify(payload);
         const payloadEnd = performance.now();
 
@@ -345,10 +347,10 @@ async function performSync() {
 
         if (response.status === 409) {
             clearSyncHashCache();
-            await resolveConflictWithServerState(await response.json());
+            await resolveConflictWithServerState(await response.json() as SyncServerShards);
         } else if (response.ok) {
             try {
-                const payload = await response.json();
+                const payload = await response.json() as SyncPostResponse;
                 if (payload?.fallback) {
                     addSyncLog("Fallback sem Lua aplicado.", "info");
                 }
@@ -419,7 +421,7 @@ export async function pullRemoteChanges(): Promise<void> {
     await fetchStateFromCloud();
 }
 
-async function reconstructStateFromShards(shards: Record<string, string>): Promise<AppState | undefined> {
+async function reconstructStateFromShards(shards: SyncServerShards): Promise<AppState | undefined> {
     const syncKey = getSyncKey();
     if (!syncKey) return undefined;
     try {
@@ -440,7 +442,7 @@ export async function downloadRemoteState(): Promise<AppState | undefined> {
         const parsed = await readApiErrorMessage(response, 'Falha na conexão com a nuvem');
         throw new Error(parsed.message);
     }
-    const shards = await response.json();
+    const shards = await response.json() as SyncServerShards;
     if (!shards || Object.keys(shards).length === 0) { addSyncLog("Cofre vazio na nuvem.", "info"); return undefined; }
     addSyncLog("Dados baixados com sucesso.", "success");
     return await reconstructStateFromShards(shards);
@@ -460,7 +462,7 @@ export async function fetchStateFromCloud(): Promise<AppState | undefined> {
             return undefined; 
         }
         if (!response.ok) throw new Error("Cloud fetch failed with status " + response.status);
-        const shards = await response.json();
+        const shards = await response.json() as SyncServerShards;
         if (!shards || Object.keys(shards).length === 0) {
             state.initialSyncDone = true;
             return undefined;

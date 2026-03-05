@@ -8,21 +8,17 @@
  * @description Nomes e helpers de eventos globais do app (UI plumbing).
  */
 
-export const APP_EVENTS = {
-    renderApp: 'render-app',
-    habitsChanged: 'habitsChanged',
-    dayChanged: 'dayChanged',
-    languageChanged: 'language-changed',
-    requestAnalysis: 'request-analysis'
-} as const;
+import {
+    APP_EVENTS,
+    CARD_EVENTS,
+    type AppEventName,
+    type CardEventName,
+    type RequestAnalysisDetail,
+    type CardEventDetail
+} from './contracts/events';
 
-export const CARD_EVENTS = {
-    statusChanged: 'card-status-changed',
-    goalChanged: 'card-goal-changed'
-} as const;
-
-export type AppEventName = (typeof APP_EVENTS)[keyof typeof APP_EVENTS];
-export type CardEventName = (typeof CARD_EVENTS)[keyof typeof CARD_EVENTS];
+export { APP_EVENTS, CARD_EVENTS };
+export type { AppEventName, CardEventName, RequestAnalysisDetail, CardEventDetail };
 
 function _emitEvent<TDetail = undefined>(name: string, detail?: TDetail): void {
     if (detail === undefined) {
@@ -44,10 +40,10 @@ export const emitRenderApp = () => emitAppEvent(APP_EVENTS.renderApp);
 export const emitHabitsChanged = () => emitAppEvent(APP_EVENTS.habitsChanged);
 export const emitDayChanged = () => emitAppEvent(APP_EVENTS.dayChanged);
 export const emitLanguageChanged = () => emitAppEvent(APP_EVENTS.languageChanged);
-export const emitRequestAnalysis = (date: string) => emitAppEvent(APP_EVENTS.requestAnalysis, { date });
+export const emitRequestAnalysis = (date: string) => emitAppEvent<RequestAnalysisDetail>(APP_EVENTS.requestAnalysis, { date });
 
-export const emitCardStatusChanged = (detail: { habitId: string; time: string; date?: string }) =>
+export const emitCardStatusChanged = (detail: CardEventDetail) =>
     emitCardEvent(CARD_EVENTS.statusChanged, detail);
 
-export const emitCardGoalChanged = (detail: { habitId: string; time: string; date?: string }) =>
+export const emitCardGoalChanged = (detail: CardEventDetail) =>
     emitCardEvent(CARD_EVENTS.goalChanged, detail);

@@ -199,6 +199,43 @@ export function sanitizeText(value: string, maxLength?: number): string {
     return sanitized;
 }
 
+// --- Keyboard Helpers (Cross-Browser Key Normalization) ---
+export function normalizeKeyboardKey(key: string): string {
+    switch (key) {
+        case ' ':
+        case 'Space':
+        case 'Spacebar':
+            return 'Space';
+        case 'Esc':
+            return 'Escape';
+        case 'Left':
+            return 'ArrowLeft';
+        case 'Right':
+            return 'ArrowRight';
+        case 'Up':
+            return 'ArrowUp';
+        case 'Down':
+            return 'ArrowDown';
+        default:
+            return key;
+    }
+}
+
+export function getNormalizedKeyboardKey(event: Pick<KeyboardEvent, 'key' | 'code'>): string {
+    // Use `code` as fallback to keep Space detection stable across layouts.
+    if (event.code === 'Space') return 'Space';
+    return normalizeKeyboardKey(event.key || '');
+}
+
+export function isActivationKeyboardEvent(event: Pick<KeyboardEvent, 'key' | 'code'>): boolean {
+    const key = getNormalizedKeyboardKey(event);
+    return key === 'Enter' || key === 'Space';
+}
+
+export function isEscapeKeyboardEvent(event: Pick<KeyboardEvent, 'key' | 'code'>): boolean {
+    return getNormalizedKeyboardKey(event) === 'Escape';
+}
+
 // Simple Markdown Parser (Zero-Dep)
 const MD_INLINE_COMBINED_REGEX = /(\*\*\*(.*?)\*\*\*)|(\*\*(.*?)\*\*)|(\*(.*?)\*)|(~~(.*?)~~)/g;
 const MD_ORDERED_LIST_REGEX = /^\d+\.\s/;
@@ -215,7 +252,10 @@ const MD_H3_REGEX = /^### /;
 
 // --- Logger (Dev Only) ---
 // Política: usar `logger` em código de app; `console` fica restrito a testes/build.
-const SHOULD_LOG = typeof process !== 'undefined' && !!process.env && process.env.NODE_ENV !== 'production';
+const SHOULD_LOG = (() => {
+    const maybeProcess = (globalThis as { process?: { env?: { NODE_ENV?: string } } }).process;
+    return maybeProcess?.env?.NODE_ENV !== 'production';
+})();
 export const logger = {
     info: (message: string, data?: unknown) => {
         if (!SHOULD_LOG) return;
@@ -267,6 +307,28 @@ const ONESIGNAL_SDK_URL = 'https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.p
 const ONESIGNAL_APP_ID = '39454655-f1cd-4531-8ec5-d0f61eb1c478';
 const ONESIGNAL_OPTIN_STORAGE_KEY = 'askesis_onesignal_opted_in';
 const PUSH_PERMISSION_REQUESTED_KEY = 'askesis_push_permission_requested';
+
+type OneSignalLike = {
+    init(options: { appId: string; allowLocalhostAsSecureOrigin?: boolean }): Promise<void>;
+    Notifications: {
+        addEventListener(event: 'permissionChange', handler: () => void): void;
+        requestPermission(): Promise<void>;
+        permission?: 'default' | 'denied' | 'granted';
+    };
+    User: {
+        PushSubscription: {
+            optOut(): Promise<void>;
+            optedIn?: boolean;
+        };
+        setLanguage?(lang: string): void;
+    };
+};
+
+type OneSignalWindow = Window & {
+    OneSignal?: OneSignalLike;
+    OneSignalDeferred?: Array<(oneSignal: OneSignalLike) => void>;
+};
+
 let _oneSignalInitPromise: Promise<OneSignalLike> | null = null;
 
 export function getLocalPushOptIn(): boolean | null {
@@ -342,19 +404,21 @@ export async function enableOneSignalInServiceWorker(): Promise<void> {
 export function pushToOneSignal(callback: (oneSignal: OneSignalLike) => void) {
     // Zero-deps por padrão: NÃO faz lazy-load automaticamente.
     if (typeof window === 'undefined') return;
-    if (typeof window.OneSignal === 'undefined') return;
-    callback(window.OneSignal);
+    const oneSignalWindow = window as OneSignalWindow;
+    if (typeof oneSignalWindow.OneSignal === 'undefined') return;
+    callback(oneSignalWindow.OneSignal);
 }
 
 export async function ensureOneSignalReady(): Promise<OneSignalLike> {
     if (typeof window === 'undefined') throw new Error('OneSignal unavailable');
-    if (window.OneSignal) return window.OneSignal;
+    const oneSignalWindow = window as OneSignalWindow;
+    if (oneSignalWindow.OneSignal) return oneSignalWindow.OneSignal;
     if (_oneSignalInitPromise) return _oneSignalInitPromise;
 
     _oneSignalInitPromise = (async () => {
-        window.OneSignalDeferred = window.OneSignalDeferred || [];
+        oneSignalWindow.OneSignalDeferred = oneSignalWindow.OneSignalDeferred || [];
         const ready = new Promise<OneSignalLike>((resolve, reject) => {
-            window.OneSignalDeferred!.push(async (OneSignal: OneSignalLike) => {
+            oneSignalWindow.OneSignalDeferred!.push(async (OneSignal: OneSignalLike) => {
                 try {
                     await OneSignal.init({
                         appId: ONESIGNAL_APP_ID,

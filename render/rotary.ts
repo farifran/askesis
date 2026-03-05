@@ -25,6 +25,8 @@
  * 2. **State Tracking:** A posição visual é rastreada em JS (`currentVisualX`), eliminando a necessidade de ler a matriz CSS.
  */
 
+import { getNormalizedKeyboardKey } from '../utils';
+
 interface RotaryConfig {
     viewportEl: HTMLElement;
     reelEl: HTMLElement;
@@ -100,8 +102,15 @@ export function setupReelRotary({
     nextBtn.addEventListener('click', () => handleIndexChange('next'));
 
     viewportEl.addEventListener('keydown', (e: KeyboardEvent) => {
-        if (e.key === 'ArrowRight') handleIndexChange('next');
-        else if (e.key === 'ArrowLeft') handleIndexChange('prev');
+        const key = getNormalizedKeyboardKey(e);
+        if (key === 'ArrowRight') {
+            e.preventDefault();
+            handleIndexChange('next');
+        }
+        else if (key === 'ArrowLeft') {
+            e.preventDefault();
+            handleIndexChange('prev');
+        }
     });
 
     // Variáveis de estado para o gesto de swipe

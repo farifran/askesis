@@ -20,7 +20,10 @@ const STATE_JSON_KEY = 'askesis_core_json';
 const STATE_BINARY_KEY = 'askesis_logs_binary';
 
 const HAS_INDEXED_DB = typeof indexedDB !== 'undefined' && typeof indexedDB.open === 'function';
-const IS_TEST_ENV = typeof process !== 'undefined' && !!process.env && (process.env.VITEST || process.env.NODE_ENV === 'test');
+const IS_TEST_ENV = (() => {
+    const maybeProcess = (globalThis as { process?: { env?: { VITEST?: string; NODE_ENV?: string } } }).process;
+    return !!(maybeProcess?.env?.VITEST || maybeProcess?.env?.NODE_ENV === 'test');
+})();
 
 const DB_OPEN_TIMEOUT_MS = 15000, IDB_SAVE_DEBOUNCE_MS = 800;
 let dbPromise: Promise<IDBDatabase> | null = null;

@@ -328,7 +328,7 @@ export function renderChart() {
 
         if (ui.chart.title) {
             const newTitle = t('appName');
-            if (ui.chart.title.innerHTML !== newTitle) ui.chart.title.innerHTML = newTitle;
+            if (ui.chart.title.textContent !== newTitle) ui.chart.title.textContent = newTitle;
         }
         if (ui.chart.subtitle) {
             const summary = calculateDaySummary(state.selectedDate);

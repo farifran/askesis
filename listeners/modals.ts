@@ -59,7 +59,7 @@ import {
 } from '../services/habitActions';
 import { t, setLanguage } from '../i18n';
 import { setupReelRotary } from '../render/rotary';
-import { simpleMarkdownToHTML, ensureOneSignalReady, setLocalPushOptIn, getContrastColor, addDays, parseUTCIsoDate, toUTCIsoDateString, triggerHaptic, logger, escapeHTML, sanitizeText, getTodayUTCIso } from '../utils';
+import { simpleMarkdownToHTML, ensureOneSignalReady, setLocalPushOptIn, getContrastColor, addDays, parseUTCIsoDate, toUTCIsoDateString, triggerHaptic, logger, escapeHTML, sanitizeText, getTodayUTCIso, getNormalizedKeyboardKey, isActivationKeyboardEvent } from '../utils';
 import { setTextContent } from '../render/dom';
 
 // --- STATIC HELPERS ---
@@ -287,7 +287,7 @@ const _handleExploreHabitListClick = (e: MouseEvent) => {
 };
 
 const _handleExploreHabitListKeydown = (e: KeyboardEvent) => {
-    if (e.key === 'Enter' || e.key === ' ') {
+    if (isActivationKeyboardEvent(e)) {
         e.preventDefault();
         const item = (e.target as HTMLElement).closest<HTMLElement>('.explore-habit-item');
         if (item) {
@@ -441,12 +441,14 @@ const _handleFullCalendarGridClick = (e: MouseEvent) => {
 };
 
 const _handleFullCalendarGridKeydown = (e: KeyboardEvent) => {
-    if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter', ' '].includes(e.key)) {
+    const key = getNormalizedKeyboardKey(e);
+
+    if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter', 'Space'].includes(key)) {
         return;
     }
     e.preventDefault();
 
-    if (e.key === 'Enter' || e.key === ' ') {
+    if (key === 'Enter' || key === 'Space') {
         _navigateToDateFromAlmanac(state.selectedDate);
         return;
     }
@@ -454,7 +456,7 @@ const _handleFullCalendarGridKeydown = (e: KeyboardEvent) => {
     const currentSelectedDate = parseUTCIsoDate(state.selectedDate);
     let newDate: Date;
 
-    switch (e.key) {
+    switch (key) {
         case 'ArrowRight': newDate = addDays(currentSelectedDate, 1); break;
         case 'ArrowLeft': newDate = addDays(currentSelectedDate, -1); break;
         case 'ArrowUp': newDate = addDays(currentSelectedDate, -7); break;

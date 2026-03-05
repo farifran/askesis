@@ -54,7 +54,9 @@ flowchart TB
   SW -->|notificationclick| Open["Open / focus Askesis"]
 ```
 
+<!-- markdownlint-disable-next-line MD033 -->
 <a id="componentes-internos"></a>
+
 ## 3) Componentes Internos (C4 N3)
 
 ```mermaid
@@ -118,7 +120,9 @@ flowchart TB
 
 Leitura rápida: interação entra por `listeners/*`, regra de negócio vive em `habitActions.ts`/`selectors.ts`, estado central em `state.ts`, e persistência/sync ficam em `persistence.ts` + `cloud.ts` + `sync.worker.ts`.
 
+<!-- markdownlint-disable-next-line MD033 -->
 <a id="fluxo-dados"></a>
+
 ## 4) Fluxo de Dados (Local-first + Sync)
 
 ```mermaid
@@ -156,7 +160,9 @@ sequenceDiagram
   end
 ```
 
+<!-- markdownlint-disable-next-line MD033 -->
 <a id="fluxo-conflito"></a>
+
 ## 5) Fluxo de Conflito de Sync
 
 ```mermaid

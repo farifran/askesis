@@ -1,6 +1,7 @@
 # Relatório de Maturidade por Arquivo (sem testes)
 
 ## Resumo Executivo
+
 - O workspace mostra boa maturidade geral, com forte base de segurança no backend (`api/`) e boa cobertura de erros em serviços críticos.
 - Pontos fortes: rate limit robusto, validações de payload, fallback seguro, uso consistente de Web Crypto e retries de rede.
 - Principal dívida técnica está na camada de UI render/listeners, com uso intenso de `innerHTML` e arquivos muito grandes/acoplados.
@@ -10,6 +11,7 @@
 - Priorização recomendada: reduzir superfície de sinks HTML, quebrar módulos gigantes e remover código morto.
 
 ## Escala
+
 - **L5 Excelente**: 86-100
 - **L4 Maduro**: 76-85
 - **L3 Sólido**: 66-75
@@ -19,7 +21,7 @@
 ## Ponderação por arquivo
 
 | Arquivo | Score | Nível | Justificativa |
-|---|---:|---|---|
+| --- | ---: | --- | --- |
 | api/_httpSecurity.ts | 89 | L5 Excelente | Rate limit híbrido, validação de origem/IP e fallback resiliente. |
 | api/analyze.ts | 86 | L5 Excelente | Timeout, limites, CORS estrito e sanitização de erro bem tratados. |
 | api/sync.ts | 85 | L4 Maduro | Validações fortes e concorrência otimista; fluxo Lua é complexo. |
@@ -92,6 +94,7 @@
 | types/global.d.ts | 79 | L4 Maduro | Tipos globais úteis e baixo risco operacional. |
 
 ## Top 10 para priorizar melhoria
+
 1. cloud.ts — remover arquivo morto.
 2. habitActions.ts — remover arquivo morto.
 3. render/modals.ts — reduzir `innerHTML` e quebrar responsabilidades.
