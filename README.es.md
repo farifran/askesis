@@ -279,7 +279,7 @@ El icono de engranaje en la esquina superior permite configuración y gestión d
 <br>
 <a id="es-user-flows"></a>
 <details>
-<summary><h1 style="display:inline; margin:0;">Flujos de Usuario Principales</h1><span style="display:inline; margin-left:8px; font-size:0.95em; opacity:0.8;">(haz clic para expandir)</span>
+<summary><h1 style="display:inline; margin:0;">Flujos de Usuario Principales</h1><span style="display:inline; font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:0.85em; opacity:0.85;">&nbsp;&nbsp;(haz clic para expandir)</span>
 </summary>
 
 <br>
@@ -567,7 +567,7 @@ Conflictos: desencriptación remota, merge con LWW/deduplicación, persistencia 
 <br>
 <a id="es-deep-dive-technical"></a>
 <details>
-<summary><h1 style="display:inline; margin:0;">Inmersión Técnica Profunda</h1><span style="display:inline; margin-left:8px; font-size:0.95em; opacity:0.8;">(haz clic para expandir)</span>
+<summary><h1 style="display:inline; margin:0;">Inmersión Técnica Profunda</h1><span style="display:inline; font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:0.85em; opacity:0.85;">&nbsp;&nbsp;(haz clic para expandir)</span>
 </summary>
 
 <br>
@@ -1003,7 +1003,7 @@ La visión para Askesis es expandir su presencia nativa mientras mantiene la bas
 
 <a id="es-faq"></a>
 <details>
-<summary><h1 style="display:inline; margin:0;">Preguntas Frecuentes y Solución de Problemas</h1><span style="display:inline; margin-left:8px; font-size:0.95em; opacity:0.8;">(haz clic para expandir)</span></summary>
+<summary><h1 style="display:inline; margin:0;">Preguntas Frecuentes y Solución de Problemas</h1><span style="display:inline; font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:0.85em; opacity:0.85;">&nbsp;&nbsp;(haz clic para expandir)</span></summary>
 
 <br>
 

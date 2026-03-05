@@ -278,7 +278,7 @@ The gear icon in the top corner allows configuration and management of the entir
 <br>
 <a id="en-user-flows"></a>
 <details>
-<summary><h1 style="display:inline; margin:0;">Main User Flows</h1><span style="display:inline; margin-left:8px; font-size:0.95em; opacity:0.8;">(click to expand)</span>
+<summary><h1 style="display:inline; margin:0;">Main User Flows</h1><span style="display:inline; font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:0.85em; opacity:0.85;">&nbsp;&nbsp;(click to expand)</span>
 </summary>
 
 <br>
@@ -564,7 +564,7 @@ Conflicts: remote decryption, merge with LWW/deduplication, persistence and retr
 <br>
 <a id="en-deep-dive-technical"></a>
 <details>
-<summary><h1 style="display:inline; margin:0;">Deep Dive Technical</h1><span style="display:inline; margin-left:8px; font-size:0.95em; opacity:0.8;">(click to expand)</span>
+<summary><h1 style="display:inline; margin:0;">Deep Dive Technical</h1><span style="display:inline; font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:0.85em; opacity:0.85;">&nbsp;&nbsp;(click to expand)</span>
 </summary>
 
 <br>
@@ -1013,7 +1013,7 @@ The vision for Askesis is to expand its native presence while maintaining the un
 
 <a id="en-faq"></a>
 <details>
-<summary><h1 style="display:inline; margin:0;">FAQ & Troubleshooting</h1><span style="display:inline; margin-left:8px; font-size:0.95em; opacity:0.8;">(click to expand)</span></summary>
+<summary><h1 style="display:inline; margin:0;">FAQ & Troubleshooting</h1><span style="display:inline; font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:0.85em; opacity:0.85;">&nbsp;&nbsp;(click to expand)</span></summary>
 
 <br>
 

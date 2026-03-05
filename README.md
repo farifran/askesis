@@ -279,7 +279,7 @@ O ícone de engrenagem no canto superior permite a configuração e gestão de t
 <br>
 <a id="pt-fluxos-usuario"></a>
 <details>
-<summary><h1 style="display:inline; margin:0;">Principais Fluxos de Usuário</h1><span style="display:inline; margin-left:8px; font-size:0.95em; opacity:0.8;">(clique para expandir)</span>
+<summary><h1 style="display:inline; margin:0;">Principais Fluxos de Usuário</h1><span style="display:inline; font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:0.85em; opacity:0.85;">&nbsp;&nbsp;(clique para expandir)</span>
 </summary>
 
 <br>
@@ -567,7 +567,7 @@ Conflitos: descriptografia remota, merge com LWW/deduplicação, persistência e
 <br>
 <a id="pt-deep-dive-technical"></a>
 <details>
-<summary><h1 style="display:inline; margin:0;">Deep Dive Técnico</h1><span style="display:inline; margin-left:8px; font-size:0.95em; opacity:0.8;">(clique para expandir)</span>
+<summary><h1 style="display:inline; margin:0;">Deep Dive Técnico</h1><span style="display:inline; font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:0.85em; opacity:0.85;">&nbsp;&nbsp;(clique para expandir)</span>
 </summary>
 
 <br>
@@ -1005,7 +1005,7 @@ A visão para o Askesis é expandir sua presença nativa mantendo a base de cód
 
 <a id="pt-faq"></a>
 <details>
-<summary><h1 style="display:inline; margin:0;">FAQ & Troubleshooting</h1><span style="display:inline; margin-left:8px; font-size:0.95em; opacity:0.8;">(clique para expandir)</span></summary>
+<summary><h1 style="display:inline; margin:0;">FAQ & Troubleshooting</h1><span style="display:inline; font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:0.85em; opacity:0.85;">&nbsp;&nbsp;(clique para expandir)</span></summary>
 
 <br>
 
