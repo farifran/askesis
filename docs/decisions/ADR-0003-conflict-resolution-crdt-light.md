@@ -19,7 +19,7 @@ Adopt a CRDT-light policy:
 - Apply conservative dedup heuristics for likely duplicates
 - Escalate ambiguous dedup cases to user confirmation modal
 
-Implemented in `services/dataMerge.ts` and orchestrated in `services/cloud.ts`.
+Implemented in `services/dataMerge/merge.ts` (public API re-exported by `services/dataMerge.ts`) and orchestrated in `services/cloud.ts`.
 
 ## Alternatives considered
 
@@ -41,5 +41,6 @@ Implemented in `services/dataMerge.ts` and orchestrated in `services/cloud.ts`.
 ## References
 
 - `services/dataMerge.ts`
+- `services/dataMerge/merge.ts`
 - `services/cloud.ts`
 - `tests/scenario-test-2-sync-conflicts.test.ts`

@@ -589,8 +589,10 @@ Conflitos: descriptografia remota, merge com LWW/deduplicação, persistência e
 │   ├── api.ts           # Cliente HTTP
 │   ├── cloud.ts         # Orquestrador de Sync e Worker Bridge
 │   ├── crypto.ts        # Criptografia AES-GCM Isomórfica
-│   ├── dataMerge.ts     # Resolução de Conflitos (CRDT-lite)
-│   ├── habitActions.ts  # Lógica de Negócios (ações sobre hábitos)
+│   ├── dataMerge.ts     # Barrel público de merge/deduplicação
+│   ├── dataMerge/       # Núcleo modular de merge (CRDT-lite)
+│   ├── habitActions.ts  # Barrel público de ações de hábito
+│   ├── habitActions/    # Núcleo modular de lógica de negócio
 │   ├── migration.ts     # Migrações de schema/bitmasks
 │   ├── persistence.ts   # Wrapper IndexedDB Assíncrono
 │   ├── quoteEngine.ts   # Motor de seleção de citações
@@ -620,7 +622,7 @@ Conflitos: descriptografia remota, merge com LWW/deduplicação, persistência e
 
 - render/: composição visual, diffs de DOM, modais, calendário e gráficos.
 - listeners/: eventos de UI (cards, modal, swipe/drag, calendário, sync).
-- services/: domínio e infraestrutura (habitActions, selectors, persistence, cloud, dataMerge, analysis, quoteEngine, HabitService).
+- services/: domínio e infraestrutura (habitActions/*, selectors, persistence, cloud, dataMerge/*, analysis, quoteEngine, HabitService).
 - api/: endpoints serverless edge (/api/sync, /api/analyze) com rate-limit, CORS e hardening.
 - state.ts: modelo canônico de estado, tipos e caches.
 - services/sync.worker.ts: criptografia AES-GCM e construção de prompts IA fora da main thread.

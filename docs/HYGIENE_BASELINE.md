@@ -9,13 +9,13 @@
 ## Riscos ainda existentes (prioridade)
 
 1. Uso amplo de `innerHTML` fora dos três sinks críticos (principalmente em `render/*`).
-2. Módulos grandes com múltiplas responsabilidades (`services/habitActions.ts`, `listeners/modals.ts`, `render/modals.ts`).
+2. Módulos grandes com múltiplas responsabilidades (principalmente `listeners/modals.ts` e `render/modals.ts`).
 3. Uso de `any` em fluxos de worker/sync.
 
 ## Meta de curto prazo
 
 - Reduzir ao menos 30% de atribuições `innerHTML` em `render/*` com utilitários seguros.
-- Quebrar `services/habitActions.ts` em submódulos por domínio.
+- Consolidar a modularização de `services/habitActions/*` e reduzir os próximos alvos (`listeners/modals.ts`, `render/modals.ts`).
 - Tratar os principais `any` nos pipelines de sync/worker.
 
 ## Definição de pronto (higiene)

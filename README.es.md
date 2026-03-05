@@ -589,8 +589,10 @@ Conflictos: desencriptación remota, merge con LWW/deduplicación, persistencia 
 │   ├── api.ts           # Cliente HTTP
 │   ├── cloud.ts         # Orquestador de Sinc + Puente Worker
 │   ├── crypto.ts        # Criptografía AES-GCM Isomórfica
-│   ├── dataMerge.ts     # Resolución de Conflictos (CRDT-lite)
-│   ├── habitActions.ts  # Lógica de Negocio (acciones en hábitos)
+│   ├── dataMerge.ts     # Barrel público de merge/deduplicación
+│   ├── dataMerge/       # Núcleo modular de merge (CRDT-lite)
+│   ├── habitActions.ts  # Barrel público de acciones de hábitos
+│   ├── habitActions/    # Núcleo modular de lógica de negocio
 │   ├── migration.ts     # Migraciones de Schema/bitmasks
 │   ├── persistence.ts   # Wrapper Asíncrono de IndexedDB
 │   ├── quoteEngine.ts   # Motor de selección de citas
@@ -620,7 +622,7 @@ Conflictos: desencriptación remota, merge con LWW/deduplicación, persistencia 
 
 - render/: composición visual, diffs de DOM, modales, calendario y gráficos.
 - listeners/: eventos UI (tarjetas, modal, swipe/drag, calendario, sinc).
-- services/: dominio + infraestructura (habitActions, selectors, persistence, cloud, dataMerge, analysis, quoteEngine, HabitService).
+- services/: dominio + infraestructura (habitActions/*, selectors, persistence, cloud, dataMerge/*, analysis, quoteEngine, HabitService).
 - api/: endpoints de borde sin servidor (/api/sync, /api/analyze) con rate-limit, CORS y hardening.
 - state.ts: modelo de estado canónico, tipos y caches.
 - services/sync.worker.ts: crypto AES-GCM y construcción de prompt IA fuera del hilo principal.

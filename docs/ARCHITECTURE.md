@@ -72,7 +72,7 @@ flowchart TB
 
   subgraph DOMAIN["Domínio"]
     direction TB
-    ACTIONS["services/habitActions.ts"]
+    ACTIONS["services/habitActions/*\n(public API via habitActions.ts)"]
     SELECTORS["services/selectors.ts"]
     ANALYSIS["services/analysis.ts"]
     STATE["state.ts (single source of truth)"]
@@ -85,7 +85,7 @@ flowchart TB
     WRPC["services/workerClient.ts"]
     WORKER["services/sync.worker.ts"]
     API["services/api.ts (HTTP client)"]
-    MERGE["services/dataMerge.ts"]
+    MERGE["services/dataMerge/*\n(public API via dataMerge.ts)"]
   end
 
   %% Boot / UI
@@ -118,7 +118,7 @@ flowchart TB
   CLOUD --> MERGE
 ```
 
-Leitura rápida: interação entra por `listeners/*`, regra de negócio vive em `habitActions.ts`/`selectors.ts`, estado central em `state.ts`, e persistência/sync ficam em `persistence.ts` + `cloud.ts` + `sync.worker.ts`.
+Leitura rápida: interação entra por `listeners/*`, regra de negócio vive em `services/habitActions/*` (re-export em `habitActions.ts`) e `selectors.ts`, estado central em `state.ts`, e persistência/sync ficam em `persistence.ts` + `cloud.ts` + `sync.worker.ts`.
 
 <!-- markdownlint-disable-next-line MD033 -->
 <a id="fluxo-dados"></a>

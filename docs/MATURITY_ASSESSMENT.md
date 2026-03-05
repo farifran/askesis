@@ -84,8 +84,8 @@
 | services/badge.ts | 74 | L3 Sólido | Escopo pequeno, robustez adequada. |
 | services/cloud.ts | 72 | L3 Sólido | Resiliente, porém muito complexo e com `any` recorrente. |
 | services/crypto.ts | 80 | L4 Maduro | AES-GCM/PBKDF2 correto; faltam validações extras de entrada. |
-| services/dataMerge.ts | 81 | L4 Maduro | Merge robusto, sanitização e deduplicação consistentes. |
-| services/habitActions.ts | 60 | L2 Em evolução | Arquivo gigante, alto acoplamento e múltiplos sinks HTML. |
+| services/dataMerge.ts | 86 | L4 Maduro | Barrel estável para API pública; merge modular em `services/dataMerge/*`. |
+| services/habitActions.ts | 84 | L4 Maduro | Barrel estável para API pública; lógica modular em `services/habitActions/*`. |
 | services/migration.ts | 73 | L3 Sólido | Migração defensiva, porém dependente de casts amplos. |
 | services/persistence.ts | 78 | L4 Maduro | Persistência resiliente com debounce e fallback adequados. |
 | services/quoteEngine.ts | 75 | L3 Sólido | Algoritmo rico, porém complexo e difícil de validar integralmente. |
@@ -98,7 +98,7 @@
 1. cloud.ts — remover arquivo morto.
 2. habitActions.ts — remover arquivo morto.
 3. render/modals.ts — reduzir `innerHTML` e quebrar responsabilidades.
-4. services/habitActions.ts — modularizar fluxo e reduzir acoplamento.
+4. services/cloud.ts — reduzir acoplamento interno e substituir `any` por tipos explícitos.
 5. listeners/drag.ts — simplificar máquina de estado e reduzir complexidade ciclomática.
 6. listeners/modals.ts — dividir handlers por domínio/modal.
 7. render/habits.ts — migrar partes críticas para construção DOM segura.

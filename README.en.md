@@ -586,8 +586,10 @@ Conflicts: remote decryption, merge with LWW/deduplication, persistence and retr
 │   ├── api.ts           # HTTP client
 │   ├── cloud.ts         # Sync Orchestrator + Worker Bridge
 │   ├── crypto.ts        # Isomorphic AES-GCM Cryptography
-│   ├── dataMerge.ts     # Conflict Resolution (CRDT-lite)
-│   ├── habitActions.ts  # Business Logic (actions on habits)
+│   ├── dataMerge.ts     # Public merge/dedup barrel
+│   ├── dataMerge/       # Modular merge core (CRDT-lite)
+│   ├── habitActions.ts  # Public habit actions barrel
+│   ├── habitActions/    # Modular business logic core
 │   ├── migration.ts     # Schema/bitmasks migrations
 │   ├── persistence.ts   # Async IndexedDB Wrapper
 │   ├── quoteEngine.ts   # Quote selection engine
@@ -616,7 +618,7 @@ Conflicts: remote decryption, merge with LWW/deduplication, persistence and retr
 
 - render/: visual composition, DOM diffs, modals, calendar and charts.
 - listeners/: UI events (cards, modal, swipe/drag, calendar, sync).
-- services/: domain + infrastructure (habitActions, selectors, persistence, cloud, dataMerge, analysis, quoteEngine, HabitService).
+- services/: domain + infrastructure (habitActions/*, selectors, persistence, cloud, dataMerge/*, analysis, quoteEngine, HabitService).
 - api/: serverless edge endpoints (/api/sync, /api/analyze) with rate-limit, CORS and hardening.
 - state.ts: canonical state model, types and caches.
 - services/sync.worker.ts: AES-GCM crypto and AI prompt building off the main thread.
