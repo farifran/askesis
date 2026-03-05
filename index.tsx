@@ -1,275 +1,86 @@
-/**
- * @license
- * SPDX-License-Identifier: MIT
-*/
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Celestial Toggle - Vanilla</title>
+  </head>
+  <body class="transition-colors duration-700 ease-in-out bg-slate-50 min-h-screen flex items-center justify-center overflow-hidden">
+    <div class="text-center space-y-8">
+      <h1 id="mode-text" class="text-2xl font-medium tracking-tight text-slate-800 transition-colors duration-700">
+        Day Mode
+      </h1>
 
-/**
- * @file index.tsx
- * @description Bootstrapper e Orquestrador de Ciclo de Vida da Aplicação.
- */
+      <div id="toggle-container" class="relative flex items-center justify-center cursor-pointer">
+        <!-- SVG Definitions for Gradients and Filters -->
+        <svg class="absolute w-0 h-0" aria-hidden="true">
+          <defs>
+            <linearGradient id="sun-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" style="stop-color:#fbbf24;stop-opacity:1" />
+              <stop offset="100%" style="stop-color:#f59e0b;stop-opacity:1" />
+            </linearGradient>
+            <linearGradient id="moon-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" style="stop-color:#e2e8f0;stop-opacity:1" />
+              <stop offset="100%" style="stop-color:#94a3b8;stop-opacity:1" />
+            </linearGradient>
+            <filter id="glow">
+              <feGaussianBlur stdDeviation="1.5" result="coloredBlur"/>
+              <feMerge>
+                <feMergeNode in="coloredBlur"/>
+                <feMergeNode in="SourceGraphic"/>
+              </feMerge>
+            </filter>
+          </defs>
+        </svg>
 
-import './css/variables.css';
-import './css/base.css';
-import './css/layout.css';
-import './css/header.css';
-import './css/components.css';
-import './css/calendar.css';
-import './css/habits.css';
-import './css/charts.css';
-import './css/forms.css';
-import './css/modals.css';
+        <!-- Toggle Track -->
+        <div id="toggle-track" class="w-32 h-16 rounded-full border-2 border-slate-300 bg-slate-200 relative overflow-hidden transition-all duration-500">
+          
+          <!-- Stars (Hidden by default) -->
+          <div id="stars" class="absolute inset-0 opacity-0 transition-opacity duration-500 pointer-events-none">
+            <div class="absolute top-3 left-4 w-1 h-1 bg-white rounded-full opacity-40"></div>
+            <div class="absolute top-10 left-8 w-0.5 h-0.5 bg-white rounded-full opacity-60"></div>
+            <div class="absolute top-5 left-12 w-1 h-1 bg-white rounded-full opacity-30"></div>
+            <div class="absolute top-8 right-10 w-1 h-1 bg-white rounded-full opacity-40"></div>
+            <div class="absolute bottom-4 left-16 w-0.5 h-0.5 bg-white rounded-full opacity-50"></div>
+          </div>
 
-import { state } from './state';
-import { loadState, registerSyncHandler, saveState } from './services/persistence';
-import { renderApp, initI18n, updateUIText, showConfirmationModal } from './render';
-import { setupEventListeners } from './listeners';
-import { handleDayTransition, performArchivalCheck } from './services/habitActions';
-import { initSync } from './listeners/sync';
-import { fetchStateFromCloud, syncStateWithCloud, setSyncStatus } from './services/cloud';
-import { hasLocalSyncKey, initAuth } from './services/api';
-import { updateAppBadge } from './services/badge';
-import { setupMidnightLoop, logger, getLocalPushOptIn, ensureOneSignalReady } from './utils';
-import { BOOT_RELOAD_DELAY_MS, BOOT_SYNC_TIMEOUT_MS } from './constants';
-import { t } from './i18n';
-
-// --- AUTO-HEALING & INTEGRITY CHECK ---
-const BOOT_ATTEMPTS_KEY = 'askesis_boot_attempts';
-const MAX_BOOT_ATTEMPTS = 3;
-
-interface BeforeInstallPromptEvent extends Event {
-    prompt: () => Promise<void>;
-    userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
-}
-
-let deferredInstallPrompt: BeforeInstallPromptEvent | null = null;
-
-function checkIntegrityAndHeal() {
-    const attempts = parseInt(sessionStorage.getItem(BOOT_ATTEMPTS_KEY) || '0', 10);
-    if (attempts >= MAX_BOOT_ATTEMPTS) {
-        logger.warn('🚨 Detected boot loop. Initiating Auto-Healing...');
-        if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.getRegistrations().then(registrations => {
-                for (const registration of registrations) { registration.unregister(); }
-            });
-        }
-        if ('caches' in window) {
-            caches.keys().then(names => { for (const name of names) { caches.delete(name); } });
-        }
-        sessionStorage.removeItem(BOOT_ATTEMPTS_KEY);
-        setTimeout(() => window.location.reload(), BOOT_RELOAD_DELAY_MS);
-        return false;
-    }
-    sessionStorage.setItem(BOOT_ATTEMPTS_KEY, (attempts + 1).toString());
-    return true;
-}
-
-function isRunningAsInstalledPwa(): boolean {
-    const standaloneDisplay = window.matchMedia?.('(display-mode: standalone)')?.matches === true;
-    const iosStandalone = (window.navigator as Navigator & { standalone?: boolean }).standalone === true;
-    return standaloneDisplay || iosStandalone;
-}
-
-function setupInstallPromptCapture() {
-    window.addEventListener('beforeinstallprompt', (event) => {
-        event.preventDefault();
-        deferredInstallPrompt = event as BeforeInstallPromptEvent;
-    });
-
-    window.addEventListener('appinstalled', () => {
-        deferredInstallPrompt = null;
-    });
-}
-
-function recommendInstallForNewUsers(isFirstTimeUser: boolean) {
-    if (!isFirstTimeUser) return;
-    if (isRunningAsInstalledPwa()) return;
-
-    const openFallback = () => {
-        showConfirmationModal(
-            t('installPromptFallbackBody'),
-            () => {},
-            {
-                title: t('installPromptFallbackTitle'),
-                confirmText: t('closeButton'),
-                hideCancel: true
-            }
-        );
-    };
-
-    showConfirmationModal(
-        t('installPromptBody'),
-        async () => {
-            if (!deferredInstallPrompt) {
-                openFallback();
-                return;
-            }
-
-            try {
-                await deferredInstallPrompt.prompt();
-                await deferredInstallPrompt.userChoice;
-                deferredInstallPrompt = null;
-            } catch (error) {
-                logger.warn('Install prompt failed', error);
-            }
-        },
-        {
-            title: t('installPromptTitle'),
-            confirmText: t('installPromptConfirm'),
-            cancelText: t('installPromptLater')
-        }
-    );
-}
-
-let isInitializing = false;
-let isInitialized = false;
-
-const registerServiceWorker = () => {
-    if ('serviceWorker' in navigator && !window.location.protocol.startsWith('file')) {
-        const loadSW = () => {
-            const permission = (typeof Notification !== 'undefined' && (Notification as any).permission) ? (Notification as any).permission : 'default';
-            const pushEnabled = getLocalPushOptIn() === true && permission === 'granted';
-            const swUrl = pushEnabled ? './sw.js?push=1' : './sw.js';
-            // FIX: Use relative path './sw.js' instead of absolute '/sw.js'.
-            // This ensures the SW is fetched from the same origin even in subdirectories or proxies,
-            // preventing "Script origin does not match" errors.
-            navigator.serviceWorker.register(swUrl)
-                .then(registration => {
-                    logger.info('Service Worker registered with scope:', registration.scope);
-                })
-                .catch(err => {
-                    logger.warn('Service worker registration failed:', err);
-                });
-        };
-
-        if (document.readyState === 'complete') loadSW();
-        else window.addEventListener('load', loadSW);
-    }
-};
-
-async function loadInitialState() {
-    // 1. CARREGAMENTO IMEDIATO (Local-First)
-    await loadState();
-
-    // 2. SINCRONIZAÇÃO PROATIVA (Background/Decisiva)
-    if (hasLocalSyncKey()) {
-        // Trava visual de boot: Bloqueia interações até o sync terminar ou dar timeout
-        document.body.classList.add('is-booting');
-        
-        // Timeout de segurança para destravar a UI se a nuvem demorar demais
-        const syncPromise = fetchStateFromCloud();
-        const timeoutPromise = new Promise<void>((resolve) => 
-            setTimeout(() => {
-                if (!state.initialSyncDone) {
-                    logger.warn('Boot sync timeout. Unlocking UI.');
-                    state.initialSyncDone = true; // Força desbloqueio lógico
-                    resolve();
-                }
-            }, BOOT_SYNC_TIMEOUT_MS)
-        );
-
-        Promise.race([syncPromise, timeoutPromise])
-            .finally(() => {
-                document.body.classList.remove('is-booting');
-            });
+          <!-- Sliding Thumb -->
+          <div id="toggle-thumb" class="absolute top-[2px] left-[2px] w-14 h-14 rounded-full bg-white flex items-center justify-center shadow-sm transition-all duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)]">
             
-    } else {
-        state.initialSyncDone = true;
-    }
-}
+            <!-- Sun Icon (Enhanced) -->
+            <svg id="sun-icon" xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" class="transition-all duration-300 transform scale-100 rotate-0" style="filter: url(#glow);">
+              <circle cx="12" cy="12" r="5" fill="url(#sun-gradient)"/>
+              <g stroke="url(#sun-gradient)" stroke-width="2" stroke-linecap="round">
+                <line x1="12" y1="1" x2="12" y2="3" />
+                <line x1="12" y1="21" x2="12" y2="23" />
+                <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
+                <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+                <line x1="1" y1="12" x2="3" y2="12" />
+                <line x1="21" y1="12" x2="23" y2="12" />
+                <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
+                <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+              </g>
+            </svg>
 
-function handleFirstTimeUser() {
-    if (!state.hasOnboarded) {
-        state.hasOnboarded = true;
-        saveState();
-    }
-}
+            <!-- Moon Icon (Enhanced) -->
+            <svg id="moon-icon" xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" class="absolute opacity-0 transition-all duration-300 transform scale-0 rotate-90" style="filter: url(#glow);">
+              <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" fill="url(#moon-gradient)"/>
+              <!-- Craters -->
+              <circle cx="8" cy="12" r="1.5" fill="#94a3b8" opacity="0.4"/>
+              <circle cx="12" cy="16" r="1" fill="#94a3b8" opacity="0.4"/>
+              <circle cx="14" cy="10" r="0.8" fill="#94a3b8" opacity="0.4"/>
+            </svg>
 
-function setupAppListeners() {
-    setupEventListeners();
-    initSync();
-    document.addEventListener('habitsChanged', updateAppBadge);
-    setupMidnightLoop();
-    document.addEventListener('dayChanged', handleDayTransition);
-    registerSyncHandler(syncStateWithCloud);
-}
+          </div>
+        </div>
+      </div>
+      
+      <p id="hint-text" class="text-sm font-mono text-slate-500 opacity-50 transition-colors duration-700">
+        Hover to toggle
+      </p>
+    </div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
 
-function finalizeInit(loader: HTMLElement | null) {
-    sessionStorage.removeItem(BOOT_ATTEMPTS_KEY);
-    if (loader) {
-        loader.classList.add('hidden');
-        const cleanup = () => {
-            loader.remove();
-            document.getElementById('initial-loader-container')?.remove();
-        };
-        const timer = setTimeout(cleanup, 400); 
-        loader.addEventListener('transitionend', () => { clearTimeout(timer); cleanup(); }, { once: true });
-    }
-    const runBackgroundTasks = () => {
-        performArchivalCheck();
-
-        // Se o usuário já optou por notificações, carregamos o OneSignal automaticamente.
-        // Isso mantém o runtime zero-deps por padrão (para quem não optou), mas respeita a decisão do usuário.
-        const permission = (typeof Notification !== 'undefined' && (Notification as any).permission) ? (Notification as any).permission : 'default';
-        if (getLocalPushOptIn() === true && permission === 'granted') {
-            ensureOneSignalReady()
-                .then((OneSignal) => OneSignal.Notifications.requestPermission?.().catch(() => {}))
-                .catch(() => {});
-        }
-    };
-    if ((window as any).scheduler?.postTask) {
-        (window as any).scheduler.postTask(runBackgroundTasks, { priority: 'background' });
-    } else {
-        (window.requestIdleCallback || ((cb) => setTimeout(cb, 1000)))(runBackgroundTasks);
-    }
-}
-
-async function init(loader: HTMLElement | null) {
-    if (isInitializing || isInitialized) return;
-    isInitializing = true;
-
-    if ((window as any).bootWatchdog) {
-        clearTimeout((window as any).bootWatchdog);
-        delete (window as any).bootWatchdog;
-    }
-
-    await initAuth();
-    
-    await Promise.all([initI18n(), updateUIText()]);
-
-    await loadInitialState();
-    const isFirstTimeUser = !state.hasOnboarded;
-
-    setupAppListeners();
-    handleFirstTimeUser();
-    renderApp(); 
-    setTimeout(() => recommendInstallForNewUsers(isFirstTimeUser), 1200);
-    
-    updateAppBadge();
-    finalizeInit(loader);
-    
-    isInitialized = true;
-    isInitializing = false;
-}
-
-const startApp = () => {
-    if (!checkIntegrityAndHeal()) return;
-    setupInstallPromptCapture();
-    registerServiceWorker();
-    if (isInitializing || isInitialized) return;
-    const loader = document.getElementById('initial-loader');
-    init(loader).catch(err => {
-        logger.error('Boot failed', err);
-        isInitializing = false;
-        if ((window as any).showFatalError) {
-            (window as any).showFatalError("Erro na inicialização: " + (err.message || err));
-        } else if(loader && loader.isConnected) {
-            loader.innerHTML = '<div style="color:#ff6b6b;padding:2rem;text-align:center;"><h3>Falha Crítica</h3><button onclick="location.reload()">Tentar Novamente</button></div>';
-        }
-    });
-};
-
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', startApp);
-} else {
-    startApp();
-}
