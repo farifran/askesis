@@ -9,7 +9,7 @@
  * @description Motor de Renderização de Modais e Diálogos (UI Overlay Layer).
  */
 
-import { state, Habit, HabitTemplate, Frequency, STREAK_CONSOLIDATED, FREQUENCIES, LANGUAGES, getHabitDailyInfoForDate, MAX_HABIT_NAME_LENGTH } from '../state';
+import { state, Habit, HabitTemplate, Frequency, TimeOfDay, STREAK_CONSOLIDATED, FREQUENCIES, LANGUAGES, getHabitDailyInfoForDate, MAX_HABIT_NAME_LENGTH } from '../state';
 import { PREDEFINED_HABITS } from '../data/predefinedHabits';
 import { getScheduleForDate, calculateHabitStreak, getHabitDisplayInfo } from '../services/selectors';
 import { ui } from './ui';
@@ -408,7 +408,7 @@ export function refreshEditModalUI() {
 }
 
 export function openEditModal(habit: Habit | HabitTemplate | null, targetDateOverride?: string, onClose?: () => void) {
-    const isN = !habit || !habit.id;
+    const isN = !habit || !('id' in habit);
     const safe = getSafeDate(targetDateOverride || state.selectedDate);
 
     let fd: HabitTemplate;
@@ -420,7 +420,8 @@ export function openEditModal(habit: Habit | HabitTemplate | null, targetDateOve
         }
     } else {
         // Para edição, cria cópias defensivas para isolar o formulário do estado original
-        const scheduleToEdit = getScheduleForDate(habit, safe) || habit.scheduleHistory[0];
+        const h = habit as Habit;
+        const scheduleToEdit = getScheduleForDate(h, safe) || h.scheduleHistory[0];
         
         const originalFrequency = scheduleToEdit.frequency;
         const newFrequency: Frequency = originalFrequency.type === 'specific_days_of_week' 
@@ -429,7 +430,9 @@ export function openEditModal(habit: Habit | HabitTemplate | null, targetDateOve
 
         fd = {
             ...(scheduleToEdit as Partial<HabitTemplate>), // HabitSchedule é compatível estruturalmente com HabitTemplate
-            times: [...scheduleToEdit.times],
+            icon: scheduleToEdit.icon,
+            color: scheduleToEdit.color,
+            times: [...scheduleToEdit.times] as TimeOfDay[],
             frequency: newFrequency,
             goal: { ...scheduleToEdit.goal }
         };
@@ -437,11 +440,11 @@ export function openEditModal(habit: Habit | HabitTemplate | null, targetDateOve
 
     state.pendingHabitTime = null;
 
-    state.editingHabit = { isNew: isN, habitId: isN ? undefined : habit.id, originalData: isN ? undefined : habit, formData: fd, targetDate: safe };
+    state.editingHabit = { isNew: isN, habitId: isN ? undefined : (habit as Habit).id, originalData: isN ? undefined : (habit as Habit), formData: fd, targetDate: safe };
     const ni = ui.editHabitForm.elements.namedItem('habit-name') as HTMLInputElement;
     if (ni) {
         ni.maxLength = MAX_HABIT_NAME_LENGTH;
-        ni.value = isN ? (fd.nameKey ? t(fd.nameKey) : '') : getHabitDisplayInfo(habit, safe).name;
+        ni.value = isN ? (fd.nameKey ? t(fd.nameKey) : '') : getHabitDisplayInfo(habit as Habit, safe).name;
     }
     fd.icon = sanitizeHabitIcon(fd.icon, '❓');
     const btn = ui.habitIconPickerBtn;
@@ -451,7 +454,7 @@ export function openEditModal(habit: Habit | HabitTemplate | null, targetDateOve
     
     const subtitle = isN 
         ? (fd.subtitleKey ? t(fd.subtitleKey) : '') 
-        : getHabitDisplayInfo(habit, safe).subtitle;
+        : getHabitDisplayInfo(habit as Habit, safe).subtitle;
     if (ui.habitSubtitleDisplay) {
         setTextContent(ui.habitSubtitleDisplay, subtitle);
     }

@@ -79,9 +79,10 @@ export function getHabitDisplayInfo(habit: Habit | PredefinedHabit, dateISO?: st
         source = getHabitPropertiesForDate(habit as Habit, effectiveDate) ?? habit;
     }
     
+    const src = source as typeof source & { nameKey?: string; name?: string; subtitleKey?: string; subtitle?: string };
     const baseInfo = {
-        name: source.nameKey ? t(source.nameKey) : (source.name || ''),
-        subtitle: source.subtitleKey ? t(source.subtitleKey) : (source.subtitle || '')
+        name: src.nameKey ? t(src.nameKey) : (src.name || ''),
+        subtitle: src.subtitleKey ? t(src.subtitleKey) : (src.subtitle || '')
     };
 
     if (time && 'id' in habit) {
