@@ -4,25 +4,29 @@
 
 - O workspace mostra boa maturidade geral, com forte base de segurança no backend (`api/`) e boa cobertura de erros em serviços críticos.
 - Pontos fortes: rate limit robusto, validações de payload, fallback seguro, uso consistente de Web Crypto e retries de rede.
-- Principal dívida técnica está na camada de UI render/listeners, com uso intenso de `innerHTML` e arquivos muito grandes/acoplados.
-- A modularização de `services/habitActions/*`, `services/dataMerge/*` e `listeners/modals/*` reduziu acoplamento em pontos críticos.
+- **Todos os 10 itens do ciclo de melhoria anterior foram concluídos** (março/2026): drag, swipe, modals, quotes, cards, sw.js, audit, metadata, testes.
+- A modularização de `services/habitActions/*`, `services/dataMerge/*`, `listeners/modals/*` e agora `render/modalBuilders.ts` reduziu acoplamento em pontos críticos.
 - Tipagem: `services/cloud.ts`, `services/sync.worker.ts`, `services/selectors.ts`, `services/migration.ts`, `data/predefinedHabits.ts`, `index.tsx` e `state.ts` zerados de `any`.
-- `render/modals.ts` endurecido com `sanitizeHtmlToFragment()` — XSS via modal eliminado; `openEditModal` tipado como `Habit | HabitTemplate | null` (zero `any`); 13 `.textContent =` migrados para `setTextContent()` (API consistente).
+- `render/modals.ts` endurecido com `sanitizeHtmlToFragment()` — XSS via modal eliminado; `openEditModal` tipado como `Habit | HabitTemplate | null` (zero `any`); 13 `.textContent =` migrados para `setTextContent()` (API consistente); builders DOM extraídos para `render/modalBuilders.ts`.
 - `services/crypto.ts` com 5 guards de validação de entrada em `decrypt()`.
+- `listeners/drag.ts` refatorado: 5 helpers extraídos, `_onPointerUp` reduzido a 3 linhas; 6 testes de estado adicionados.
+- `listeners/swipe.ts` refatorado: 4 helpers extraídos (`_startSwiping`, `_handleDetectingPhase`, `_requestSwipeRender`, `_installPostSwipeClickBlocker`); 3 testes adicionados.
 - `services/analysis.ts` e `listeners/swipe.ts` com `catch` tipados como `unknown`; `listeners/swipe.ts` não possui mais `any` residuais.
 - `render/calendar.ts`: 3 `.textContent =` em `renderFullCalendar` migrados para `setTextContent()`; `firstElementChild!` substituído por encadeamento opcional seguro.
 - `scripts/dev-api-mock.js`: `KEY_HASH_RE` para validação de formato do header, `lastModified` validado como `number`, mensagem genérica em respostas 500.
-- `sw.js`: `Promise.all` → `Promise.allSettled` no install — asset indisponível não aborta mais toda a instalação do SW.
+- `sw.js`: `Promise.allSettled` no install + `SW_CACHE_VERSION = 'v2'` + guardrail de versioning.
 - `types/global.d.ts` com `showFatalError` e `CSSTranslate` declarados na `interface Window`.
 - `state.ts` com interface `DaySummary` exportada; `originalData` tipado como `Habit`.
 - `render/calendar.ts`, `listeners/sync.ts` e `render/chart.ts` sem `innerHTML`; zero `any` confirmado.
-- `listeners/cards.ts` sem `innerHTML`; usa `replaceChildren` e `cloneNode` (padrão seguro).
+- `listeners/cards.ts` sem `innerHTML`; timer de animação limpo via `WeakMap` (sem leak).
 - `render/rotary.ts` e `render/chart.ts` sem `(window as any).CSSTranslate` — declarado em `global.d.ts`.
 - `listeners/chart.ts` e `render/habits.ts` auditados: zero `any`, zero `innerHTML`.
 - `render.ts` zerado de `any`: `Document.startViewTransition`, `scheduler`, `OneSignal` e `Notification.permission` declarados.
 - `listeners/calendar.ts` e `services/badge.ts` auditados: zero `any`, zero `innerHTML`.
+- `data/quotes.ts` com validação de schema formal via `data/quotes.test.ts` (ID únicos, enums, adaptações).
+- `scripts/guardrail-audit.js` formaliza política de vulnerabilidades npm (HIGH/CRITICAL bloqueiam CI); integrado a `guardrail:all`.
 - Performance está razoável: existem caches, debounce e agendamento; hot paths de DOM usam `setTrustedSvgContent` e `sanitizeHtmlToFragment`.
-- Priorização recomendada: simplificar drag e swipe, consolidar helpers duplicados.
+- Priorização recomendada: expandir cobertura de testes E2E/integração; avaliar `services/selectors.ts` e `services/persistence.ts` para testes adicionais.
 
 ## Escala
 
@@ -47,12 +51,12 @@
 | index.tsx | 76 | L4 Maduro | Boot resiliente; `(window as any)` eliminado via declaração em `global.d.ts`. |
 | listeners.ts | 77 | L4 Maduro | Orquestração clara de eventos com debounce e proteções. |
 | manifest.json | 78 | L4 Maduro | Configuração PWA direta e estável. |
-| metadata.json | 68 | L3 Sólido | Metadado simples, sem validação formal de schema. |
-| package-lock.json | 60 | L2 Em evolução | Arquivo gerado e volumoso, difícil auditoria manual. |
+| metadata.json | 78 | L4 Maduro | Guardrail de schema (`guardrail-metadata-schema.js`) valida `name`, `description` e `requestFramePermissions`. |
+| package-lock.json | 74 | L3 Sólido | `guardrail-audit.js` com política formal HIGH/CRITICAL→bloqueio CI; deps de produção sem vulnerabilidades conhecidas. |
 | package.json | 80 | L4 Maduro | Configuração de projeto consistente e scripts claros. |
 | render.ts | 78 | L4 Maduro | Zero `any`; `Document.startViewTransition`, `scheduler`, `OneSignal` declarados em `global.d.ts`. |
 | state.ts | 82 | L4 Maduro | `DaySummary` interface exportada; `originalData` tipado como `Habit`; zero `any` no schema público. |
-| sw.js | 78 | L4 Maduro | `Promise.allSettled` no install — asset indisponível não aborta instalação; Workbox + fallback manual sólido. |
+| sw.js | 81 | L4 Maduro | `Promise.allSettled` no install; `SW_CACHE_VERSION = 'v2'` com cache names versionados; `guardrail-sw-cache-version.js` impede regressão. |
 | tsconfig.json | 83 | L4 Maduro | Configuração TypeScript estável e adequada ao projeto. |
 | utils.ts | 76 | L4 Maduro | Utilitários robustos, sanitização e helpers performáticos. |
 | vercel.json | 76 | L4 Maduro | Deploy config enxuta e sem riscos aparentes. |
@@ -69,16 +73,16 @@
 | css/variables.css | 80 | L4 Maduro | Tokens centralizados melhoram consistência e manutenção. |
 | data/icons.ts | 83 | L4 Maduro | Repositório controlado de ícones com sanitização associada. |
 | data/predefinedHabits.ts | 76 | L4 Maduro | Zero `any`; `HabitGoal` e `Frequency` tipados explicitamente. |
-| data/quotes.ts | 69 | L3 Sólido | Grande massa de dados; pouca lógica, difícil revisão manual. |
+| data/quotes.ts | 78 | L4 Maduro | Schema validado via `quotes.test.ts`: IDs únicos, enums de virtue/discipline/sphere/coercion, 3 níveis de adaptação obrigatórios. |
 | listeners/calendar.ts | 76 | L4 Maduro | Zero `any`, zero `innerHTML`; eventos bem definidos; fluxo de interação extenso. |
-| listeners/cards.ts | 74 | L3 Sólido | Zero `innerHTML`; usa `replaceChildren` e `cloneNode`; padrão seguro de restauração DOM. |
+| listeners/cards.ts | 78 | L4 Maduro | Zero `innerHTML`; `replaceChildren` e `cloneNode`; timer de animação limpo via `WeakMap` — sem leak de `setTimeout`. |
 | listeners/chart.ts | 76 | L4 Maduro | Zero `any`; `(window as any).CSSTranslate` eliminado; interações via pointer events sem leaks. |
-| listeners/drag.ts | 62 | L2 Em evolução | Máquina de estado complexa e alto acoplamento ao DOM. |
+| listeners/drag.ts | 78 | L4 Maduro | 5 helpers extraídos (`_isValidDropTarget`, `_resolveTargetCard`, `_setNoDropTarget`, `_buildReorderInfo`, `_executeDropAction`); `_onPointerUp` reduzido a 3 linhas; 6 testes de estado (drag.test.ts). |
 | listeners/modals.ts | 76 | L4 Maduro | Handlers extraídos para aiHandlers, fullCalendarHandlers, formHandlers. |
 | listeners/modals/aiHandlers.ts | 80 | L4 Maduro | `sanitizeHtmlToFragment` nos 2 paths; offline quote e online message seguros. |
 | listeners/modals/fullCalendarHandlers.ts | 80 | L4 Maduro | Navegação bem encapsulada; navegateToDate privada. |
 | listeners/modals/formHandlers.ts | 79 | L4 Maduro | Handlers de form/pickers bem isolados; validateAndFeedback privada. |
-| listeners/swipe.ts | 71 | L3 Sólido | Zero `any`; 3 `catch` sem tipo → `catch(_e: unknown)` / `catch(e: unknown)`; listener lifecycle sem leaks. |
+| listeners/swipe.ts | 78 | L4 Maduro | 4 helpers extraídos (`_startSwiping`, `_handleDetectingPhase`, `_requestSwipeRender`, `_installPostSwipeClickBlocker`); zero `any`; 3 testes (swipe.test.ts). |
 | listeners/sync.ts | 76 | L4 Maduro | Zero `any`; `catch (unknown)` + `instanceof Error`; manipulação HTML via `textContent` e `escapeHTML`. |
 | locales/en.json | 78 | L4 Maduro | Catálogo estruturado e consistente para runtime. |
 | locales/es.json | 77 | L4 Maduro | Boa cobertura textual, manutenção manual inevitável. |
@@ -89,10 +93,15 @@
 | render/dom.ts | 84 | L4 Maduro | `sanitizeHtmlToFragment` com blocklist explícita; único `innerHTML` interno é o parser sandbox. |
 | render/habits.ts | 78 | L4 Maduro | Zero `any`, zero `innerHTML`; `setTrustedSvgContent` em todos os 10 sinks de ícone. |
 | render/icons.ts | 79 | L4 Maduro | Catálogo central e coerente com sanitização de uso. |
-| render/modals.ts | 80 | L4 Maduro | Zero `any`; `openEditModal` tipado como `Habit \| HabitTemplate \| null`; `setTextContent()` em todos os 13 sinks; `sanitizeHtmlToFragment()` implementado. |
+| render/modalBuilders.ts | 83 | L4 Maduro | Novo módulo com 7 builders DOM puros extraídos de `modals.ts`; única dependência de `dom/icons/i18n/state`; zero `innerHTML`. |
+| render/modals.ts | 83 | L4 Maduro | Zero `any`; `openEditModal` tipado como `Habit \| HabitTemplate \| null`; `setTextContent()` em todos os sinks; builders DOM movidos para `modalBuilders.ts`; arquivo 60+ linhas mais enxuto. |
 | render/rotary.ts | 77 | L4 Maduro | Zero `any`; `(window as any).CSSTranslate` eliminado; interação via pointer events bem estruturada. |
 | render/ui.ts | 77 | L4 Maduro | Mapeamento UI centralizado e previsível. |
 | scripts/dev-api-mock.js | 80 | L4 Maduro | `KEY_HASH_RE` valida formato do header; `lastModified` validado como `number`; 500 sem expor `e.message`. |
+| scripts/guardrail-audit.js | 78 | L4 Maduro | Política formal: HIGH/CRITICAL → bloqueio CI; MODERATE → janela 30 dias; separa deps produção vs dev. |
+| scripts/guardrail-metadata-schema.js | 78 | L4 Maduro | Valida `metadata.json`: presença de `name`/`description`/`requestFramePermissions`, array sem duplicatas. |
+| scripts/guardrail-locales-parity.js | 78 | L4 Maduro | Valida paridade de chaves entre `pt.json`, `en.json` e `es.json`; detecta tipos divergentes e placeholders `{var}` ausentes. |
+| scripts/guardrail-sw-cache-version.js | 78 | L4 Maduro | Exige `SW_CACHE_VERSION = 'v<N>'` em `sw.js` e que todos os cache names referenciem a variável. |
 | services/HabitService.ts | 82 | L4 Maduro | Lógica bitmask sólida e foco claro de responsabilidade. |
 | services/analysis.ts | 78 | L4 Maduro | `catch (e: unknown)` em todos os paths assíncronos; tratamento de erro robusto. |
 | services/api.ts | 84 | L4 Maduro | Timeout, retries e hash de chave bem implementados. |
@@ -103,23 +112,33 @@
 | services/habitActions.ts | 84 | L4 Maduro | Barrel estável para API pública; lógica modular em `services/habitActions/*`. |
 | services/migration.ts | 80 | L4 Maduro | Zero `any`; `Object.assign` para campos `readonly`; parâmetro `unknown`. |
 | services/persistence.ts | 78 | L4 Maduro | Persistência resiliente com debounce e fallback adequados. |
-| services/quoteEngine.ts | 76 | L4 Maduro | Zero `any`; algoritmo rico com cobertura de testes parcial. |
+| services/quoteEngine.ts | 80 | L4 Maduro | Zero `any`; 5 novos testes cobrindo urgência noturna, stickiness break e imutabilidade de `state.quoteState` em datas históricas. |
 | services/selectors.ts | 76 | L4 Maduro | Zero `any`; `source` tipado com `HabitSchedule \| PredefinedHabit \| Habit`. |
 | services/sync.worker.ts | 80 | L4 Maduro | Zero `any`; isRecord() guard; payloads tipados. |
 | types/global.d.ts | 85 | L4 Maduro | `showFatalError`, `CSSTranslate`, `Document.startViewTransition` e `ViewTransition` declarados; sem `any`. |
 
-## Top 10 para priorizar melhoria
+## Top 10 — Ciclo Anterior (concluído em março/2026)
 
-1. listeners/drag.ts — simplificar máquina de estado e reduzir complexidade ciclomática (score 62, maior dívida técnica).
-2. listeners/swipe.ts — fragmentar funções longas; extrair `_renderFrame` e `_onPointerMove` para sub-módulos (score 71).
-3. render/modals.ts — extrair helpers de renderização para sub-módulos dado o tamanho do arquivo (score 80; `setTextContent` já consistente).
-4. data/quotes.ts — grande massa de dados sem validação de schema formal (score 69).
-5. listeners/cards.ts — zero `any`, zero `innerHTML`; `setTimeout` de animação sem ref de cleanup (score 74).
-6. sw.js — `Promise.allSettled` implementado; próximo: validar versioning do cache-name (score 78).
-7. package-lock.json — `npm audit`; revisar dependências e policy de atualização (score 60).
-8. metadata.json — adicionar validação de schema para evitar valores inválidos em runtime (score 68).
-9. listeners/drag.ts — adicionar cobertura de testes para os estados da máquina de estado.
-10. services/quoteEngine.ts — expandir cobertura de testes; algoritmo de diversidade já bem estruturado (score 76).
+| # | Arquivo | Status | O que foi feito |
+|---|---------|--------|-----------------|
+| 1 | listeners/drag.ts | ✅ Concluído | 5 helpers extraídos; `_onPointerUp` → 3 linhas; complexidade ciclomática reduzida |
+| 2 | listeners/swipe.ts | ✅ Concluído | 4 helpers extraídos; `_handleDetectingPhase` com early-return |
+| 3 | render/modals.ts | ✅ Concluído | 7 builders DOM extraídos para `render/modalBuilders.ts` |
+| 4 | data/quotes.ts | ✅ Concluído | `quotes.test.ts` valida schema completo do catálogo |
+| 5 | listeners/cards.ts | ✅ Concluído | Timer de animação limpo via `WeakMap` |
+| 6 | sw.js | ✅ Concluído | `SW_CACHE_VERSION = 'v2'` + `guardrail-sw-cache-version.js` |
+| 7 | package-lock.json | ✅ Concluído | `guardrail-audit.js` com política formal de severidade integrada a `guardrail:all` |
+| 8 | metadata.json | ✅ Concluído | `guardrail-metadata-schema.js` valida schema em CI |
+| 9 | listeners/drag.ts | ✅ Concluído | 6 testes de estado em `drag.test.ts` |
+| 10 | services/quoteEngine.ts | ✅ Concluído | 5 novos testes: urgência noturna, stickiness break, imutabilidade histórica |
+
+## Próximas oportunidades de melhoria
+
+1. **Testes E2E / integração** — cenários de jornada completa (criar hábito → completar → verificar streak); `tests/scenario-test-*.test.ts` existentes podem ser expandidos.
+2. **services/selectors.ts** — cobertura de testes para `getEffectiveScheduleForHabitOnDate` e `calculateHabitStreak` em bordas de fuso horário (score 76).
+3. **services/persistence.ts** — testes para debounce e fallback de localStorage; atualmente sem cobertura dedicada (score 78).
+4. **render/calendar.ts** — arquivo grande (~600 linhas); avaliar extração de `renderDayCell` e `renderWeekGrid` para sub-módulos (score 80).
+5. **i18n.ts** — módulo extenso com cache `Intl`; extrair cache para módulo dedicado; adicionar testes de fallback de locale (score 82).
 
 ---
 Obs.: Esta ponderação é heurística e orientada a priorização prática, não substitui threat model formal.
