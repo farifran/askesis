@@ -15,9 +15,10 @@ vi.mock('../services/selectors', () => ({
   getEffectiveScheduleForHabitOnDate: vi.fn(() => ['Morning']),
 }));
 
-vi.mock('../utils', () => ({
-  triggerHaptic: vi.fn(),
-}));
+vi.mock('../utils', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../utils')>();
+  return { ...actual, triggerHaptic: vi.fn() };
+});
 
 vi.mock('../render', () => ({
   renderApp: vi.fn(),

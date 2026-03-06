@@ -175,10 +175,11 @@ describe('🏆 CENÁRIO 8: Streak & Graduação', () => {
         it('hábito não deve aparecer após ser graduado', () => {
             const habit = makeHabit({ name: 'Caminhada', startDate: '2025-01-01' });
 
-            expect(shouldHabitAppearOnDate(habit, '2025-03-01')).toBe(true);
+            expect(shouldHabitAppearOnDate(habit, '2025-02-28')).toBe(true);
 
-            // Graduar
+            // Graduar — limpar cache pois shouldHabitAppearOnDate armazena resultado por data
             habit.graduatedOn = '2025-03-01';
+            state.habitAppearanceCache.delete(habit.id);
 
             expect(shouldHabitAppearOnDate(habit, '2025-03-01')).toBe(false);
             expect(shouldHabitAppearOnDate(habit, '2025-06-01')).toBe(false);

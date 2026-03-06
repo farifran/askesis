@@ -124,6 +124,8 @@ describe('listeners/swipe.ts', () => {
     document.body.appendChild(container);
 
     const { card, content } = makeCard();
+    // happy-dom não implementa setPointerCapture — stub necessário para o fluxo de drag
+    card.setPointerCapture = vi.fn();
     container.appendChild(card);
 
     setupSwipeHandler(container);

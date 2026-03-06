@@ -123,11 +123,9 @@ async function saveStateInternal(immediate = false, suppressSync = false) {
         // O timestamp já foi incrementado pelo chamador (_notifyChanges ou _notifyPartialUIRefresh)
         const structuredData = getPersistableState();
         try {
-            if (!HAS_INDEXED_DB) {
-                // Em testes/Node, não há IndexedDB. Mantém o fluxo (syncHandler) sem poluir stderr.
-                return;
+            if (HAS_INDEXED_DB) {
+                await saveSplitState(structuredData);
             }
-            await saveSplitState(structuredData);
         } catch (e) { 
             if (!(IS_TEST_ENV && String(e).includes('IndexedDB not available'))) {
                 logger.error("IDB Save Failed:", e);
