@@ -306,6 +306,56 @@ const _triggerDrag = () => {
     }
 };
 
+function _startSwiping(pointerId: number) {
+    _cancelLongPress();
+    try {
+        if (SwipeMachine.card) SwipeMachine.card.setPointerCapture(pointerId);
+    } catch(_err: unknown) {}
+
+    SwipeMachine.state = 'SWIPING';
+    document.body.classList.add('is-interaction-active');
+    if (SwipeMachine.card) {
+        SwipeMachine.card.classList.add(CSS_CLASSES.IS_SWIPING);
+    }
+}
+
+function _handleDetectingPhase(e: PointerEvent, absDx: number, absDy: number) {
+    // Se houver movimento significativo...
+    if (absDx <= DIRECTION_LOCKED_THRESHOLD && absDy <= DIRECTION_LOCKED_THRESHOLD) return;
+
+    // ...e for claramente horizontal -> SWIPE
+    if (absDx > absDy) {
+        _startSwiping(e.pointerId);
+        return;
+    }
+
+    // ...e for vertical -> SCROLL NATIVO (Cancela nossa lógica)
+    _cancelLongPress();
+    SwipeMachine.state = 'LOCKED_OUT';
+}
+
+function _requestSwipeRender() {
+    if (!SwipeMachine.rafId) {
+        SwipeMachine.rafId = requestAnimationFrame(_renderFrame);
+    }
+}
+
+function _installPostSwipeClickBlocker(dx: number) {
+    if (Math.abs(dx) <= ACTION_THRESHOLD) return;
+
+    const blockClick = (ev: MouseEvent) => {
+        const t = ev.target as HTMLElement;
+        if (!t.closest(DOM_SELECTORS.SWIPE_DELETE_BTN) && !t.closest(DOM_SELECTORS.SWIPE_NOTE_BTN)) {
+            ev.stopPropagation();
+            ev.preventDefault();
+        }
+        window.removeEventListener('click', blockClick, true);
+    };
+
+    window.addEventListener('click', blockClick, true);
+    setTimeout(() => window.removeEventListener('click', blockClick, true), SWIPE_BLOCK_CLICK_MS);
+}
+
 const _onPointerMove = (e: PointerEvent) => {
     if (SwipeMachine.state === 'IDLE' || SwipeMachine.state === 'LOCKED_OUT') return;
     
@@ -326,36 +376,12 @@ const _onPointerMove = (e: PointerEvent) => {
 
     // PHASE: DETECTING
     if (SwipeMachine.state === 'DETECTING') {
-        
-        // Se houver movimento significativo...
-        if (absDx > DIRECTION_LOCKED_THRESHOLD || absDy > DIRECTION_LOCKED_THRESHOLD) {
-            
-            // ...e for claramente horizontal -> SWIPE
-            if (absDx > absDy) {
-                _cancelLongPress();
-                try {
-                    if (SwipeMachine.card) SwipeMachine.card.setPointerCapture(e.pointerId);
-                } catch(_err: unknown) {}
-
-                SwipeMachine.state = 'SWIPING';
-                document.body.classList.add('is-interaction-active');
-                if (SwipeMachine.card) {
-                    SwipeMachine.card.classList.add(CSS_CLASSES.IS_SWIPING);
-                }
-            } 
-            // ...e for vertical -> SCROLL NATIVO (Cancela nossa lógica)
-            else {
-                _cancelLongPress();
-                SwipeMachine.state = 'LOCKED_OUT';
-            }
-        }
+        _handleDetectingPhase(e, absDx, absDy);
     }
 
     // PHASE: SWIPING
     if (SwipeMachine.state === 'SWIPING') {
-        if (!SwipeMachine.rafId) {
-            SwipeMachine.rafId = requestAnimationFrame(_renderFrame);
-        }
+        _requestSwipeRender();
     }
 };
 
@@ -366,18 +392,8 @@ const _onPointerUp = (e: PointerEvent) => {
     if (SwipeMachine.state === 'SWIPING') {
         const dx = SwipeMachine.currentX - SwipeMachine.startX;
         _finalizeAction(dx);
-        
-        const blockClick = (ev: MouseEvent) => {
-            const t = ev.target as HTMLElement;
-            if (!t.closest(DOM_SELECTORS.SWIPE_DELETE_BTN) && !t.closest(DOM_SELECTORS.SWIPE_NOTE_BTN)) {
-                ev.stopPropagation(); ev.preventDefault();
-            }
-            window.removeEventListener('click', blockClick, true);
-        };
-        if (Math.abs(dx) > ACTION_THRESHOLD) {
-            window.addEventListener('click', blockClick, true);
-            setTimeout(() => window.removeEventListener('click', blockClick, true), SWIPE_BLOCK_CLICK_MS);
-        }
+
+        _installPostSwipeClickBlocker(dx);
     }
 
     _forceReset();
