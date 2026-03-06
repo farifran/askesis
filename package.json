@@ -36,7 +36,7 @@
   "author": "AI-Powered Engineer",
   "license": "MIT",
   "dependencies": {
-    "@google/genai": "^1.33.0",
+    "@google/genai": "^1.40.0",
     "@upstash/redis": "^1.36.2"
   },
   "devDependencies": {
@@ -48,6 +48,6 @@
     "typescript": "^5.9.3",
     "vite": "^6.3.0",
     "vitest": "^4.0.18",
-    "workbox-build": "^7.3.0"
+    "workbox-build": "^7.0.0"
   }
 }

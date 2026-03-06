@@ -25,6 +25,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Audit fix (prod)
+        # Aplica correções automáticas de vulnerabilidades nas deps de produção.
+        # || true garante que o step não falhe se não houver nada a corrigir
+        # ou se o fix precisar de --force (situação que o guardrail:audit vai reportar).
+        run: npm audit fix --omit=dev || true
+
       - name: Typecheck
         run: npm run typecheck
 
