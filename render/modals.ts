@@ -9,16 +9,16 @@
  * @description Motor de Renderização de Modais e Diálogos (UI Overlay Layer).
  */
 
-import { state, Habit, HabitTemplate, Frequency, PredefinedHabit, TimeOfDay, STREAK_CONSOLIDATED, TIMES_OF_DAY, FREQUENCIES, LANGUAGES, getHabitDailyInfoForDate, MAX_HABIT_NAME_LENGTH } from '../state';
+import { state, Habit, HabitTemplate, Frequency, STREAK_CONSOLIDATED, FREQUENCIES, LANGUAGES, getHabitDailyInfoForDate, MAX_HABIT_NAME_LENGTH } from '../state';
 import { PREDEFINED_HABITS } from '../data/predefinedHabits';
 import { getScheduleForDate, calculateHabitStreak, getHabitDisplayInfo } from '../services/selectors';
 import { ui } from './ui';
 import { t, compareStrings, formatDate, formatInteger, getTimeOfDayName } from '../i18n';
-import { HABIT_ICONS, UI_ICONS, getTimeOfDayIcon, sanitizeHabitIcon } from './icons';
+import { HABIT_ICONS, UI_ICONS, sanitizeHabitIcon } from './icons';
 import { setTextContent, updateReelRotaryARIA } from './dom';
-import { MODAL_COLORS, EXPLORE_STAGGER_DELAY_MS } from './constants';
+import { MODAL_COLORS } from './constants';
 import { getContrastColor, parseUTCIsoDate, getTodayUTCIso, getSafeDate, triggerHaptic, isEscapeKeyboardEvent, getNormalizedKeyboardKey } from '../utils';
-import { replaceWithHtmlFragment, buildManageActionButton, buildIconPickerItem, buildColorSwatch, buildFrequencyTypeLabel } from './modalBuilders';
+import { replaceWithHtmlFragment, buildManageActionButton, buildIconPickerItem, buildColorSwatch, buildFrequencyTypeLabel, buildExploreHabitItem, buildTimeSegmentedControl } from './modalBuilders';
 
 interface ModalContext { element: HTMLElement; previousFocus: HTMLElement | null; onClose?: () => void; firstFocusable?: HTMLElement; lastFocusable?: HTMLElement; }
 const modalStack: ModalContext[] = [];
@@ -125,58 +125,6 @@ function computeManageHabitItems(activeHabits: Habit[]): ManageHabitItem[] {
         .sort((a, b) => (order[a.st] - order[b.st]) || compareStrings(a.name, b.name));
 }
 
-
-function buildExploreHabitItem(h: PredefinedHabit, index: number): HTMLElement {
-    const item = document.createElement('div');
-    item.className = 'explore-habit-item';
-    item.dataset.index = String(index);
-    item.setAttribute('role', 'button');
-    item.tabIndex = 0;
-    item.style.setProperty('--delay', `${index * EXPLORE_STAGGER_DELAY_MS}ms`);
-
-    const icon = document.createElement('div');
-    icon.className = 'explore-habit-icon';
-    icon.style.backgroundColor = `${h.color}30`;
-    icon.style.color = h.color;
-    replaceWithHtmlFragment(icon, sanitizeHabitIcon(h.icon, '❓'));
-
-    const details = document.createElement('div');
-    details.className = 'explore-habit-details';
-
-    const name = document.createElement('div');
-    name.className = 'name';
-    setTextContent(name, t(h.nameKey));
-
-    const subtitle = document.createElement('div');
-    subtitle.className = 'subtitle';
-    setTextContent(subtitle, t(h.subtitleKey));
-
-    details.append(name, subtitle);
-    item.append(icon, details);
-    return item;
-}
-
-function buildTimeSegmentedButton(time: TimeOfDay, isSelected: boolean): HTMLButtonElement {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = `segmented-control-option${isSelected ? ' selected' : ''}`;
-    btn.dataset.time = time;
-    const icon = document.createElement('span');
-    icon.className = 'segmented-control-option-icon';
-    replaceWithHtmlFragment(icon, getTimeOfDayIcon(time));
-    const label = document.createElement('span');
-    label.className = 'segmented-control-option-label';
-    setTextContent(label, getTimeOfDayName(time));
-    btn.append(icon, label);
-    return btn;
-}
-
-function buildTimeSegmentedControl(selectedTimes: readonly TimeOfDay[]): HTMLElement {
-    const wrap = document.createElement('div');
-    wrap.className = 'segmented-control';
-    wrap.replaceChildren(...TIMES_OF_DAY.map(time => buildTimeSegmentedButton(time, selectedTimes.includes(time))));
-    return wrap;
-}
 
 function _getLeastUsedColor(): string {
     const counts = new Map<string, number>(MODAL_COLORS.map(c => [c, 0]));
