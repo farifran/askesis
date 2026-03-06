@@ -1,5 +1,5 @@
 /**
- * @file tests/scenario-test-7-cloud-network-resilience.test.ts
+ * @file tests/scenario-test-4-cloud-network-resilience.test.ts
  * @description Teste de Cenario 7 — Cloud Sync, Network Resilience e Data Merge avançado
  * 
  * Testa cenários que faltavam na cobertura:
@@ -556,7 +556,7 @@ describe('🟠 TESTE DE CENARIO 7: Cloud, Network & Data Resilience', () => {
             
             // Popular caches
             state.activeHabitsCache.set('2025-01-01', []);
-            state.daySummaryCache.set('2025-01-01', {});
+            state.daySummaryCache.set('2025-01-01', { total: 0, completed: 0, snoozed: 0, pending: 0, completedPercent: 0, snoozedPercent: 0, showPlusIndicator: false });
             state.calendarDates = ['2025-01-01', '2025-01-02'];
 
             handleDayTransition();
@@ -671,7 +671,7 @@ describe('🟠 TESTE DE CENARIO 7: Cloud, Network & Data Resilience', () => {
             const { clearAllCaches } = await import('../state');
 
             state.activeHabitsCache.set('test', []);
-            state.daySummaryCache.set('test', {});
+            state.daySummaryCache.set('test', { total: 0, completed: 0, snoozed: 0, pending: 0, completedPercent: 0, snoozedPercent: 0, showPlusIndicator: false });
             state.streaksCache.set('test', new Map());
             state.habitAppearanceCache.set('test', new Map());
             state.scheduleCache.set('test', new Map());

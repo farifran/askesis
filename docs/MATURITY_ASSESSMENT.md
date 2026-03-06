@@ -26,7 +26,7 @@
 - `data/quotes.ts` com validação de schema formal via `data/quotes.test.ts` (ID únicos, enums, adaptações).
 - `scripts/guardrail-audit.js` formaliza política de vulnerabilidades npm (HIGH/CRITICAL bloqueiam CI); integrado a `guardrail:all`.
 - Performance está razoável: existem caches, debounce e agendamento; hot paths de DOM usam `setTrustedSvgContent` e `sanitizeHtmlToFragment`.
-- Priorização recomendada: expandir cobertura de testes E2E/integração; avaliar `services/selectors.ts` e `services/persistence.ts` para testes adicionais.
+- Guardrails mantidos: `guardrail-security-html.js`, `guardrail-locales-parity.js`, `guardrail-audit.js` — removidos os 4 que cobriam riscos hipotéticos ou já obsoletos (dead-files, file-size, sw-cache-version, metadata-schema).
 
 ## Escala
 
@@ -51,12 +51,12 @@
 | index.tsx | 76 | L4 Maduro | Boot resiliente; `(window as any)` eliminado via declaração em `global.d.ts`. |
 | listeners.ts | 77 | L4 Maduro | Orquestração clara de eventos com debounce e proteções. |
 | manifest.json | 78 | L4 Maduro | Configuração PWA direta e estável. |
-| metadata.json | 78 | L4 Maduro | Guardrail de schema (`guardrail-metadata-schema.js`) valida `name`, `description` e `requestFramePermissions`. |
-| package-lock.json | 74 | L3 Sólido | `guardrail-audit.js` com política formal HIGH/CRITICAL→bloqueio CI; deps de produção sem vulnerabilidades conhecidas. |
+| metadata.json | 75 | L3 Sólido | Configuração estável; schema simples validado pela própria sintaxe JSON. |
+| package-lock.json | 74 | L3 Sólido | `guardrail-audit.js` bloqueia HIGH/CRITICAL em prod; deps sem vulnerabilidades conhecidas. |
 | package.json | 80 | L4 Maduro | Configuração de projeto consistente e scripts claros. |
 | render.ts | 78 | L4 Maduro | Zero `any`; `Document.startViewTransition`, `scheduler`, `OneSignal` declarados em `global.d.ts`. |
 | state.ts | 82 | L4 Maduro | `DaySummary` interface exportada; `originalData` tipado como `Habit`; zero `any` no schema público. |
-| sw.js | 81 | L4 Maduro | `Promise.allSettled` no install; `SW_CACHE_VERSION = 'v2'` com cache names versionados; `guardrail-sw-cache-version.js` impede regressão. |
+| sw.js | 80 | L4 Maduro | `Promise.allSettled` no install; `SW_CACHE_VERSION = 'v2'` com cache names versionados. |
 | tsconfig.json | 83 | L4 Maduro | Configuração TypeScript estável e adequada ao projeto. |
 | utils.ts | 76 | L4 Maduro | Utilitários robustos, sanitização e helpers performáticos. |
 | vercel.json | 76 | L4 Maduro | Deploy config enxuta e sem riscos aparentes. |
@@ -97,12 +97,10 @@
 | render/modalBuilders.ts | 83 | L4 Maduro | Novo módulo com 7 builders DOM puros extraídos de `modals.ts`; única dependência de `dom/icons/i18n/state`; zero `innerHTML`. |
 | render/modals.ts | 83 | L4 Maduro | Zero `any`; `openEditModal` tipado como `Habit \| HabitTemplate \| null`; `setTextContent()` em todos os sinks; builders DOM movidos para `modalBuilders.ts`; arquivo 60+ linhas mais enxuto. |
 | render/rotary.ts | 77 | L4 Maduro | Zero `any`; `(window as any).CSSTranslate` eliminado; interação via pointer events bem estruturada. |
-| render/ui.ts | 77 | L4 Maduro | Mapeamento UI centralizado e previsível. |
+| render/ui.ts | 77 | L4 Maduro | Registro lazy de referências DOM; getters cacheados com `Object.defineProperty`. |
 | scripts/dev-api-mock.js | 80 | L4 Maduro | `KEY_HASH_RE` valida formato do header; `lastModified` validado como `number`; 500 sem expor `e.message`. |
 | scripts/guardrail-audit.js | 78 | L4 Maduro | Política formal: HIGH/CRITICAL → bloqueio CI; MODERATE → janela 30 dias; separa deps produção vs dev. |
-| scripts/guardrail-metadata-schema.js | 78 | L4 Maduro | Valida `metadata.json`: presença de `name`/`description`/`requestFramePermissions`, array sem duplicatas. |
 | scripts/guardrail-locales-parity.js | 78 | L4 Maduro | Valida paridade de chaves entre `pt.json`, `en.json` e `es.json`; detecta tipos divergentes e placeholders `{var}` ausentes. |
-| scripts/guardrail-sw-cache-version.js | 78 | L4 Maduro | Exige `SW_CACHE_VERSION = 'v<N>'` em `sw.js` e que todos os cache names referenciem a variável. |
 | services/HabitService.ts | 82 | L4 Maduro | Lógica bitmask sólida e foco claro de responsabilidade. |
 | services/analysis.ts | 78 | L4 Maduro | `catch (e: unknown)` em todos os paths assíncronos; tratamento de erro robusto. |
 | services/api.ts | 84 | L4 Maduro | Timeout, retries e hash de chave bem implementados. |
@@ -121,23 +119,23 @@
 ## Top 10 — Ciclo Anterior (concluído em março/2026)
 
 | # | Arquivo | Status | O que foi feito |
-|---|---------|--------|-----------------|
+| --- | --- | --- | --- |
 | 1 | listeners/drag.ts | ✅ Concluído | 5 helpers extraídos; `_onPointerUp` → 3 linhas; complexidade ciclomática reduzida |
 | 2 | listeners/swipe.ts | ✅ Concluído | 4 helpers extraídos; `_handleDetectingPhase` com early-return |
 | 3 | render/modals.ts | ✅ Concluído | 7 builders DOM extraídos para `render/modalBuilders.ts` |
 | 4 | data/quotes.ts | ✅ Concluído | `quotes.test.ts` valida schema completo do catálogo |
 | 5 | listeners/cards.ts | ✅ Concluído | Timer de animação limpo via `WeakMap` |
-| 6 | sw.js | ✅ Concluído | `SW_CACHE_VERSION = 'v2'` + `guardrail-sw-cache-version.js` |
+| 6 | sw.js | ✅ Concluído | `SW_CACHE_VERSION = 'v2'`; versioning nos cache names |
 | 7 | package-lock.json | ✅ Concluído | `guardrail-audit.js` com política formal de severidade integrada a `guardrail:all` |
-| 8 | metadata.json | ✅ Concluído | `guardrail-metadata-schema.js` valida schema em CI |
+| 8 | metadata.json | ✅ Concluído | Schema estável; guardrail removido por cobrir risco hipotético |
 | 9 | listeners/drag.ts | ✅ Concluído | 6 testes de estado em `drag.test.ts` |
 | 10 | services/quoteEngine.ts | ✅ Concluído | 5 novos testes: urgência noturna, stickiness break, imutabilidade histórica |
 
 ## Ciclo 2 — Oportunidades de melhoria (concluído)
 
 | # | Arquivo | Status | O que foi feito |
-|---|---------|--------|------------------|
-| 1 | tests/scenario-test-8 | ✅ Concluído | 10 testes E2E: streak diário, quebra, multi-turno, `specific_days_of_week`, `interval`, graduação |
+| --- | --- | --- | --- |
+| 1 | tests/scenario-test-5 | ✅ Concluído | 10 testes E2E: streak diário, quebra, multi-turno, `specific_days_of_week`, `interval`, graduação |
 | 2 | services/selectors.ts | ✅ Concluído | 6 novos testes: `getEffectiveScheduleForHabitOnDate` (3) + streak não-diário (3) |
 | 3 | services/persistence.ts | ✅ Concluído | 4 novos testes: `pruneOrphanedDailyData` (2) + debounce de `saveState` (2) |
 | 4 | render/calendar.ts | ✅ Concluído | `renderFullCalendar` extraído para `render/calendarGrid.ts`; barrel `render.ts` atualizado |

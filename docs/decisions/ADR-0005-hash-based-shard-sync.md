@@ -41,4 +41,4 @@ Implemented in `services/cloud.ts`, `services/murmurHash3.ts`, and `api/sync.ts`
 - `services/cloud.ts`
 - `services/murmurHash3.ts`
 - `api/sync.ts`
-- `tests/scenario-test-7-cloud-network-resilience.test.ts`
+- `tests/scenario-test-4-cloud-network-resilience.test.ts`

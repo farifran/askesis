@@ -6,15 +6,7 @@
 
 /**
  * @file render/ui.ts
- * @description Registro Central de Referências DOM (UI Registry).
- * 
- * [MAIN THREAD CONTEXT]:
- * Este módulo atua como um cache inteligente (Lazy-Loaded) para referências de elementos DOM.
- * 
- * ARQUITETURA (Lazy Singleton & O(1) Access):
- * - **Lazy Access:** Elementos só são consultados no DOM (`querySelector`) na primeira vez que são acessados.
- * - **Memoization:** Referências são cacheadas em `uiCache`, tornando acessos subsequentes instantâneos.
- * - **Type Safety:** Interface `UIElements` garante autocompletar e verificação de tipos em todo o projeto.
+ * @description Registro lazy de referências DOM — consultadas uma vez e cacheadas.
  */
 
 export interface UIElements {
@@ -138,19 +130,11 @@ export interface UIElements {
     }
 }
 
-// MEMORY: Cache "Flat" para acesso O(1).
-// Usamos 'any' internamente para evitar overhead de tipos complexos no runtime.
 const uiCache: Record<string, Element> = {};
 const chartCache: Record<string, Element> = {};
 
-/**
- * Utilitário de consulta DOM otimizado (Micro-optimization).
- * @param selector String seletora CSS.
- * @param isOptional Se true, suprime erro caso elemento não seja encontrado.
- */
 function queryElement(selector: string, isOptional = false): Element | null {
-    // PERFORMANCE OPTIMIZATION: Hybrid Selector Strategy.
-    // Detectamos seletores de ID simples para usar o caminho rápido (Fast Path).
+    // IDs simples usam getElementById (mais rápido que querySelector)
     const isSimpleId = selector.charCodeAt(0) === 35 /* # */ && !/[\s.\[]/.test(selector);
     
     const element = isSimpleId
@@ -163,18 +147,9 @@ function queryElement(selector: string, isOptional = false): Element | null {
     return element as Element;
 }
 
-/**
- * Configura um getter lazy no objeto alvo.
- * @param target Objeto onde a propriedade será definida.
- * @param prop Nome da propriedade.
- * @param selector Seletor CSS.
- * @param cache Objeto de cache a ser usado.
- * @param isOptional Se true, permite que o elemento não exista no DOM inicialmente.
- */
 function defineLazy(target: any, prop: string, selector: string, cache: Record<string, Element>, isOptional = false) {
     Object.defineProperty(target, prop, {
         get: function() {
-            // Check cache direct property access (Fastest in V8)
             if (cache[prop] === undefined) {
                 const el = queryElement(selector, isOptional);
                 if (el) cache[prop] = el;
@@ -187,11 +162,8 @@ function defineLazy(target: any, prop: string, selector: string, cache: Record<s
     });
 }
 
-// Inicializa o objeto UI
 export const ui = {} as UIElements;
 
-// --- ROOT ELEMENTS DEFINITION ---
-// Batch definition avoids creating intermediate objects.
 defineLazy(ui, 'appContainer', '.app-container', uiCache);
 defineLazy(ui, 'calendarStrip', '#calendar-strip', uiCache);
 defineLazy(ui, 'headerTitle', '#header-title', uiCache);

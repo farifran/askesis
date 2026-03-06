@@ -10,17 +10,17 @@ Este documento descreve o **estado real atual** da suíte de testes do projeto.
 - Servir como referência de execução para quem vai abrir PR.
 - Evitar divergência entre o que a documentação diz e o que o projeto realmente executa.
 
-Última verificação executada em: **2026-02-20**
+Última verificação executada em: **2026-03-06**
 Comando usado: `npm test -- --run`
 
 ---
 
 ## Resumo Atual da Suíte
 
-- **Arquivos de teste:** 26
-- **Testes totais:** 399
-- **Resultado atual:** 399 passando, 0 falhando
-- **Status de arquivos:** 26 passando, 0 falhando
+- **Arquivos de teste:** 23
+- **Testes totais:** 368
+- **Resultado atual:** 368 passando, 0 falhando
+- **Status de arquivos:** 23 passando, 0 falhando
 
 ### Status
 
@@ -65,11 +65,9 @@ npm test -- --run
 
 - `tests/scenario-test-1-user-journey.test.ts` → 3
 - `tests/scenario-test-2-sync-conflicts.test.ts` → 5
-- `tests/scenario-test-3-performance.test.ts` → 9
-- `tests/scenario-test-4-accessibility.test.ts` → 12
-- `tests/scenario-test-5-disaster-recovery.test.ts` → 10
-- `tests/scenario-test-6-security-pentest.test.ts` → 42
-- `tests/scenario-test-7-cloud-network-resilience.test.ts` → 33
+- `tests/scenario-test-3-security-pentest.test.ts` → 42
+- `tests/scenario-test-4-cloud-network-resilience.test.ts` → 33
+- `tests/scenario-test-5-streak-graduation.test.ts` → 10
 
 ### Serviços (`services/`)
 

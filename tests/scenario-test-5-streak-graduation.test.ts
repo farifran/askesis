@@ -1,5 +1,5 @@
 /**
- * @file tests/scenario-test-8-streak-graduation.test.ts
+ * @file tests/scenario-test-5-streak-graduation.test.ts
  * @description Teste de Cenário 8 — Jornada de Streak e Graduação
  *
  * Valida o fluxo completo:
