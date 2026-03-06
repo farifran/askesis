@@ -61,12 +61,14 @@ function sameSet(a, b) {
 
 const localeMaps = Object.fromEntries(SUPPORTED_LOCALES.map((code) => [code, readLocale(code)]));
 const baseEntries = localeMaps[BASE_LOCALE];
-const baseKeys = Object.keys(baseEntries).sort();
+// Chaves que começam com '_' são metadados/comentários internos, não strings de UI
+const IGNORED_KEY_PREFIX = '_';
+const baseKeys = Object.keys(baseEntries).filter((k) => !k.startsWith(IGNORED_KEY_PREFIX)).sort();
 const errors = [];
 
 for (const locale of SUPPORTED_LOCALES) {
   const entries = localeMaps[locale];
-  const keys = Object.keys(entries).sort();
+  const keys = Object.keys(entries).filter((k) => !k.startsWith(IGNORED_KEY_PREFIX)).sort();
 
   const missing = baseKeys.filter((key) => !(key in entries));
   const extra = keys.filter((key) => !(key in baseEntries));
