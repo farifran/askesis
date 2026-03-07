@@ -1346,9 +1346,9 @@ Look for issues marked with `good-first-issue` to start!
 
 If Askesis is helping you strengthen your will and consistency, consider supporting development:
 
-- **[GitHub Sponsors](https://github.com/sponsors/tecnocratoshi)** - Recurring patronage with exclusive rewards
+- **[GitHub Sponsors](https://github.com/sponsors/farifran)** - Recurring patronage with exclusive rewards
 - **[Buy Me a Coffee](https://www.buymeacoffee.com/askesis)** - Single contribution
-- **[Ko-fi](https://ko-fi.com/askesis)** - Global alternative
+- **[Ko-fi](https://ko-fi.com/farifran)** - Global alternative
 
 **Why it matters?**
 

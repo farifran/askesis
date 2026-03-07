@@ -1312,9 +1312,9 @@ Busca issues marcados con `good-first-issue` para empezar!
 
 Si Askesis te está ayudando a fortalecer tu voluntad y consistencia, considera apoyar desarrollo:
 
-- **[GitHub Sponsors](https://github.com/sponsors/tecnocratoshi)** - Patrocinio recurrente con recompensas exclusivas
+- **[GitHub Sponsors](https://github.com/sponsors/farifran)** - Patrocinio recurrente con recompensas exclusivas
 - **[Buy Me a Coffee](https://www.buymeacoffee.com/askesis)** - Contribución única
-- **[Ko-fi](https://ko-fi.com/askesis)** - Alternativa global
+- **[Ko-fi](https://ko-fi.com/farifran)** - Alternativa global
 
 
 **¿Por qué importa?**
