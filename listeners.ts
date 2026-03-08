@@ -16,7 +16,7 @@ import { setupDragHandler } from './listeners/drag';
 import { setupSwipeHandler } from './listeners/swipe';
 import { setupCalendarListeners } from './listeners/calendar';
 import { setupChartListeners } from './listeners/chart';
-import { getTodayUTCIso, resetTodayCache, createDebounced, logger, getLocalPushOptIn, setLocalPushOptIn, hasRequestedPushPermission, getPushPermissionRequestAgeMs, markPushPermissionRequested, ensureOneSignalReady } from './utils';
+import { getTodayUTCIso, resetTodayCache, createDebounced, logger, getLocalPushOptIn, setLocalPushOptIn, hasRequestedPushPermission, getPushPermissionRequestAgeMs, markPushPermissionRequested, clearPushPermissionState, ensureOneSignalReady } from './utils';
 import { state, getPersistableState, invalidateCachesForDateChange } from './state';
 import { syncStateWithCloud } from './services/cloud';
 import { checkAndAnalyzeDayContext } from './services/analysis';
@@ -112,8 +112,19 @@ export function setupEventListeners() {
 
             const permission = (Notification as any).permission || 'default';
             if (permission !== 'default') return;
-            if (getLocalPushOptIn() !== null) return;
-            if (hasRequestedPushPermission()) {
+
+            // Detecção de reinstalação do PWA no iOS Safari:
+            // O WebKit reseta Notification.permission para 'default' ao desinstalar,
+            // mas preserva o localStorage. Se há estado salvo (localOptIn ou cooldown)
+            // mas o browser não tem mais a permissão, o estado é stale — limpa tudo
+            // para que o prompt apareça imediatamente no novo install.
+            const hasStaleState = getLocalPushOptIn() !== null || hasRequestedPushPermission();
+            if (hasStaleState) {
+                clearPushPermissionState();
+            }
+
+            // Só verifica cooldown se não é um reinstall (estado já foi limpo acima).
+            if (!hasStaleState && hasRequestedPushPermission()) {
                 const ageMs = getPushPermissionRequestAgeMs();
                 if (ageMs !== null && ageMs < PUSH_PERMISSION_RETRY_COOLDOWN_MS) return;
             }
@@ -126,9 +137,7 @@ export function setupEventListeners() {
                 if ('serviceWorker' in navigator) {
                     navigator.serviceWorker.register('./sw.js?push=1').catch(() => {});
                 }
-                ensureOneSignalReady()
-                    .then((OneSignal) => OneSignal.Notifications.requestPermission?.().catch(() => {}))
-                    .catch(() => {});
+                ensureOneSignalReady().catch(() => {});
             } else if (perm === 'denied') {
                 setLocalPushOptIn(false);
                 updateNotificationUI();

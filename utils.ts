@@ -376,6 +376,18 @@ export function markPushPermissionRequested() {
     } catch {}
 }
 
+/**
+ * Limpa todo o estado de push persistido no localStorage.
+ * Usado para resetar estado stale após reinstalação do PWA (iOS Safari preserva
+ * localStorage ao desinstalar, mas reseta Notification.permission para 'default').
+ */
+export function clearPushPermissionState() {
+    try {
+        localStorage.removeItem(ONESIGNAL_OPTIN_STORAGE_KEY);
+        localStorage.removeItem(PUSH_PERMISSION_REQUESTED_KEY);
+    } catch {}
+}
+
 function _loadScript(src: string): Promise<void> {
     return new Promise((resolve, reject) => {
         const existing = document.querySelector<HTMLScriptElement>(`script[src="${src}"]`);

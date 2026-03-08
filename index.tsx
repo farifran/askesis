@@ -21,14 +21,14 @@ import './css/modals.css';
 
 import { state } from './state';
 import { loadState, registerSyncHandler, saveState } from './services/persistence';
-import { renderApp, initI18n, updateUIText, showConfirmationModal, updateNotificationUI } from './render';
+import { renderApp, initI18n, updateUIText, showConfirmationModal } from './render';
 import { setupEventListeners } from './listeners';
 import { handleDayTransition, performArchivalCheck } from './services/habitActions';
 import { initSync } from './listeners/sync';
 import { fetchStateFromCloud, syncStateWithCloud, setSyncStatus } from './services/cloud';
 import { hasLocalSyncKey, initAuth } from './services/api';
 import { updateAppBadge } from './services/badge';
-import { setupMidnightLoop, logger, getLocalPushOptIn, setLocalPushOptIn, ensureOneSignalReady } from './utils';
+import { setupMidnightLoop, logger, getLocalPushOptIn, ensureOneSignalReady } from './utils';
 import { BOOT_RELOAD_DELAY_MS, BOOT_SYNC_TIMEOUT_MS } from './constants';
 import { t } from './i18n';
 
@@ -100,58 +100,9 @@ function renderCriticalBootError(loader: HTMLElement) {
     loader.replaceChildren(wrapper);
 }
 
-// Exibido apenas uma vez, na primeira abertura como PWA instalado (standalone).
-// iOS Safari WebKit exige que Notification.requestPermission() seja chamado
-// sincronamente dentro de um gesto do usuário — o clique no botão "Ativar" é
-// esse gesto. Não usar async/await antes da chamada.
-function promptNotificationsForNewPwaUsers(isFirstTimeUser: boolean) {
-    if (!isFirstTimeUser) return;
-    if (!isRunningAsInstalledPwa()) return;
-    if (typeof Notification === 'undefined') return;
-    if ((Notification as any).permission !== 'default') return;
-    if (getLocalPushOptIn() !== null) return; // já tomou uma decisão antes
-
-    showConfirmationModal(
-        t('notificationPromptBody'),
-        () => {
-            // CRÍTICO: esta callback é chamada sincronamente dentro do click do botão.
-            // Isso garante o "user activation token" no WebKit do iOS Safari.
-            const permPromise: Promise<string> =
-                typeof (Notification as any).requestPermission === 'function'
-                    ? (Notification as any).requestPermission()
-                    : Promise.resolve('denied');
-
-            permPromise.then(perm => {
-                if (perm === 'granted') {
-                    setLocalPushOptIn(true);
-                    updateNotificationUI();
-                    ensureOneSignalReady()
-                        .then(() => {
-                            if ('serviceWorker' in navigator) {
-                                navigator.serviceWorker.register('./sw.js?push=1').catch(() => {});
-                            }
-                            updateNotificationUI();
-                        })
-                        .catch(() => { updateNotificationUI(); });
-                } else {
-                    setLocalPushOptIn(false);
-                    updateNotificationUI();
-                }
-            }).catch(() => {
-                setLocalPushOptIn(false);
-                updateNotificationUI();
-            });
-        },
-        {
-            title: t('notificationPromptTitle'),
-            confirmText: t('notificationPromptConfirm'),
-            cancelText: t('notificationPromptLater'),
-            onCancel: () => { setLocalPushOptIn(false); }
-        }
-    );
-}
-
 function recommendInstallForNewUsers(isFirstTimeUser: boolean) {
+    if (!isFirstTimeUser) return;
+    if (isRunningAsInstalledPwa()) return;
 
     const isSafariFamily = (() => {
         const ua = window.navigator.userAgent || '';
@@ -331,9 +282,6 @@ async function init(loader: HTMLElement | null) {
     handleFirstTimeUser();
     renderApp(); 
     setTimeout(() => recommendInstallForNewUsers(isFirstTimeUser), 1200);
-    // Prompt de notificações para primeira abertura como PWA instalado (iOS Safari standalone).
-    // Delay maior para não conflitar com o modal de install e deixar a UI se estabilizar.
-    setTimeout(() => promptNotificationsForNewPwaUsers(isFirstTimeUser), 2000);
     
     updateAppBadge();
     finalizeInit(loader);
