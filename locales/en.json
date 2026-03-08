@@ -156,7 +156,7 @@
     "installPromptConfirm": "Install now",
     "installPromptLater": "Not now",
     "installPromptFallbackTitle": "How to install in your browser",
-    "installPromptFallbackBody": "Open your browser menu and choose \"Add to Home Screen\" or \"Install app\".",
+    "installPromptFallbackBody": "Open the browser \"Share\" menu and choose \"Add to Home Screen\" or \"Install app\".",
     "langEnglish": "English",
     "langPortuguese": "Portuguese",
     "langSpanish": "Spanish",

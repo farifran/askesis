@@ -157,7 +157,7 @@
     "installPromptConfirm": "Instalar agora",
     "installPromptLater": "Agora não",
     "installPromptFallbackTitle": "Como instalar no seu navegador",
-    "installPromptFallbackBody": "Abra o menu do navegador e escolha \"Adicionar à tela inicial\" ou \"Instalar aplicativo\".",
+    "installPromptFallbackBody": "Abra o menu do navegador \"Compartilhar\" e escolha \"Adicionar à tela inicial\" ou \"Instalar aplicativo\".",
     "langEnglish": "Inglês",
     "langPortuguese": "Português",
     "langSpanish": "Espanhol",
