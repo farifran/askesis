@@ -204,10 +204,14 @@ const _handleNotificationToggleChange = async () => {
             }
         }
     } catch (e) {
-        // Se o SDK falhar (bloqueio do browser/domínio), reverte a UI para um estado seguro.
-        ui.notificationToggle.checked = false;
+        // Se o SDK falhar, só reverte a UI se o browser também não concedeu permissão.
+        // Caso contrário, preserva a intenção do usuário (permissão nativa já foi concedida).
+        const nativePermOnError = (typeof Notification !== 'undefined') ? (Notification as any).permission : 'default';
+        if (nativePermOnError !== 'granted') {
+            ui.notificationToggle.checked = false;
+            setLocalPushOptIn(false);
+        }
         setTextContent(ui.notificationStatusDesc, t('notificationStatusOptedOut'));
-        setLocalPushOptIn(false);
     } finally {
         ui.notificationToggle.disabled = false;
         updateNotificationUI();

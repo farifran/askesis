@@ -289,7 +289,10 @@ export function updateNotificationUI() {
         if (isPushEnabled || nativePerm !== 'granted') {
             setLocalPushOptIn(!!isPushEnabled);
         }
-        if (ui.notificationToggle.checked !== !!isPushEnabled) ui.notificationToggle.checked = !!isPushEnabled;
+        // Usa o estado mais confiável: se o OneSignal já confirma optedIn, usa isso;
+        // senão, se a permissão nativa está concedida e o usuário optou, mantém ativo.
+        const effectiveEnabled = isPushEnabled || (nativePerm === 'granted' && getLocalPushOptIn() === true);
+        if (ui.notificationToggle.checked !== !!effectiveEnabled) ui.notificationToggle.checked = !!effectiveEnabled;
         const isDenied = permission === 'denied';
         if (ui.notificationToggle.disabled !== isDenied) {
             ui.notificationToggle.disabled = isDenied;
@@ -297,7 +300,7 @@ export function updateNotificationUI() {
         }
         let statusTextKey = 'notificationStatusOptedOut';
         if (isDenied) statusTextKey = 'notificationStatusDisabled';
-        else if (isPushEnabled) statusTextKey = 'notificationStatusEnabled';
+        else if (effectiveEnabled) statusTextKey = 'notificationStatusEnabled';
         setTextContent(ui.notificationStatusDesc, t(statusTextKey));
     });
 }
