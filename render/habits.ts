@@ -14,7 +14,7 @@ import { calculateHabitStreak, getActiveHabitsForDate, getSmartGoalForHabit, get
 import { ui } from './ui';
 import { t, formatInteger } from '../i18n';
 import { UI_ICONS, getTimeOfDayIcon, sanitizeHabitIcon } from './icons';
-import { setTextContent, setTrustedSvgContent } from './dom';
+import { setTextContent } from './dom';
 import { CSS_CLASSES, DOM_SELECTORS } from './constants';
 import { parseUTCIsoDate } from '../utils';
 import { HabitService } from '../services/HabitService';
@@ -30,6 +30,10 @@ type CardElements = {
     goalDecBtn?: HTMLButtonElement; goalIncBtn?: HTMLButtonElement; cachedIconHtml?: string;
 };
 const cardElementsCache = new WeakMap<HTMLElement, CardElements>();
+
+function replaceWithHtmlFragment(target: HTMLElement, html: string) {
+    target.replaceChildren(document.createRange().createContextualFragment(html));
+}
 
 function getGroupDOM(time: TimeOfDay) {
     let cached = groupDomCache.get(time);
@@ -83,7 +87,7 @@ const getGoalControlsTemplate = () => goalControlsTemplate || (goalControlsTempl
 const getStatusWrapperTemplate = (cls: string, icon: string) => statusTemplates[cls] || (statusTemplates[cls] = (() => {
     const w = document.createElement('div');
     w.className = cls;
-    setTrustedSvgContent(w, icon);
+    replaceWithHtmlFragment(w, icon);
     return w;
 })());
 
@@ -101,7 +105,7 @@ const getHabitCardTemplate = () => habitCardTemplate || (habitCardTemplate = (()
     const deleteBtn = document.createElement('button');
     deleteBtn.type = 'button';
     deleteBtn.className = CSS_CLASSES.SWIPE_DELETE_BTN;
-    setTrustedSvgContent(deleteBtn, UI_ICONS.swipeDelete);
+    replaceWithHtmlFragment(deleteBtn, UI_ICONS.swipeDelete);
     leftActions.appendChild(deleteBtn);
 
     const rightActions = document.createElement('div');
@@ -109,7 +113,7 @@ const getHabitCardTemplate = () => habitCardTemplate || (habitCardTemplate = (()
     const noteBtn = document.createElement('button');
     noteBtn.type = 'button';
     noteBtn.className = CSS_CLASSES.SWIPE_NOTE_BTN;
-    setTrustedSvgContent(noteBtn, UI_ICONS.swipeNote);
+    replaceWithHtmlFragment(noteBtn, UI_ICONS.swipeNote);
     rightActions.appendChild(noteBtn);
 
     const contentWrapper = document.createElement('div');
@@ -148,6 +152,17 @@ const _getCacheKey = (habitId: string, time: TimeOfDay): string => `${habitId}|$
 
 export const clearHabitDomCache = () => habitElementCache.clear();
 export const getCachedHabitCard = (id: string, t: TimeOfDay) => habitElementCache.get(_getCacheKey(id, t));
+
+function hasSameChildOrder(parent: HTMLElement, nextChildren: readonly HTMLElement[]): boolean {
+    const currentChildren = parent.children;
+    if (currentChildren.length !== nextChildren.length) return false;
+
+    for (let i = 0; i < nextChildren.length; i++) {
+        if (currentChildren[i] !== nextChildren[i]) return false;
+    }
+
+    return true;
+}
 
 function _renderPendingGoalControls(habit: Habit, time: TimeOfDay, dayData: HabitDayData | undefined, els: CardElements) {
     const schedule = getHabitPropertiesForDate(habit, state.selectedDate);
@@ -239,7 +254,7 @@ export function updateHabitCardElement(card: HTMLElement, habit: Habit, time: Ti
     // SECURITY FIX: Only allow known safe habit icons via sanitized fragment
     if (els.cachedIconHtml !== schedule.icon) {
         const safeIcon = sanitizeHabitIcon(schedule.icon, '❓');
-        setTrustedSvgContent(els.icon, safeIcon);
+        replaceWithHtmlFragment(els.icon, safeIcon);
         els.cachedIconHtml = safeIcon;
     }
     els.icon.style.color = schedule.color;
@@ -255,7 +270,7 @@ export function updateHabitCardElement(card: HTMLElement, habit: Habit, time: Ti
 
     const hasN = !!info?.note;
     if (els.noteBtn.dataset.hasNote !== String(hasN)) {
-        setTrustedSvgContent(els.noteBtn, hasN ? UI_ICONS.swipeNoteHasNote : UI_ICONS.swipeNote);
+        replaceWithHtmlFragment(els.noteBtn, hasN ? UI_ICONS.swipeNoteHasNote : UI_ICONS.swipeNote);
         els.noteBtn.dataset.hasNote = String(hasN);
     }
 
@@ -305,7 +320,10 @@ export function renderHabits() {
         const habits = habitsByTimePool[time], hasH = habits.length > 0;
         
         dom.marker.style.display = hasH ? '' : 'none';
-        if (hasH) setTrustedSvgContent(dom.marker, getTimeOfDayIcon(time));
+        if (hasH && dom.marker.dataset.renderedTime !== time) {
+            replaceWithHtmlFragment(dom.marker, getTimeOfDayIcon(time));
+            dom.marker.dataset.renderedTime = time;
+        }
 
         const newChildren: HTMLElement[] = [];
         if (hasH) {
@@ -347,7 +365,7 @@ export function renderHabits() {
 
                 empty.forEach((emptyTime, index) => {
                     const temp = document.createElement('span');
-                    setTrustedSvgContent(temp, getTimeOfDayIcon(emptyTime));
+                    replaceWithHtmlFragment(temp, getTimeOfDayIcon(emptyTime));
                     while (temp.firstChild) genericSpan.appendChild(temp.firstChild);
 
                     if (index < empty.length - 1) {
@@ -360,13 +378,13 @@ export function renderHabits() {
 
                 const specificSpan = document.createElement('span');
                 specificSpan.className = 'placeholder-icon-specific';
-                setTrustedSvgContent(specificSpan, getTimeOfDayIcon(time));
+                replaceWithHtmlFragment(specificSpan, getTimeOfDayIcon(time));
 
                 iconRoot.append(genericSpan, specificSpan);
             } else {
                 const specificSpan = document.createElement('span');
                 specificSpan.className = 'placeholder-icon-specific';
-                setTrustedSvgContent(specificSpan, getTimeOfDayIcon(time));
+                replaceWithHtmlFragment(specificSpan, getTimeOfDayIcon(time));
                 iconRoot.appendChild(specificSpan);
             }
 
@@ -381,7 +399,9 @@ export function renderHabits() {
             newChildren.push(ph);
         }
         
-        dom.group.replaceChildren(...newChildren);
+        if (!hasSameChildOrder(dom.group, newChildren)) {
+            dom.group.replaceChildren(...newChildren);
+        }
     });
 
     for (const key of habitElementCache.keys()) {
