@@ -23,19 +23,18 @@ if (_pushEnabled) {
 }
 
 try {
-    importScripts('/workbox-sw.js');
+    importScripts('./workbox-sw.js');
 } catch (e) {
     // Workbox runtime opcional
 }
 
 const HTML_FALLBACK = '/index.html';
 const NETWORK_TIMEOUT_MS = 3000;
-const SW_CACHE_VERSION = 'v2';
 
 const timeout = (ms) => new Promise((_, reject) => setTimeout(() => reject(new Error('Network Timeout')), ms));
 
 if (self.workbox) {
-    self.workbox.core.setCacheNameDetails({ prefix: 'askesis', suffix: SW_CACHE_VERSION });
+    self.workbox.core.setCacheNameDetails({ prefix: 'askesis' });
     self.workbox.core.skipWaiting();
     self.workbox.core.clientsClaim();
 
@@ -55,18 +54,18 @@ if (self.workbox) {
     self.workbox.routing.registerRoute(
         ({ request }) => request.mode === 'navigate',
         new self.workbox.strategies.NetworkFirst({
-            cacheName: `pages-${SW_CACHE_VERSION}`,
+            cacheName: 'pages',
             networkTimeoutSeconds: NETWORK_TIMEOUT_MS / 1000
         })
     );
 
     self.workbox.routing.registerRoute(
         ({ request }) => ['style', 'script', 'image', 'font'].includes(request.destination),
-        new self.workbox.strategies.StaleWhileRevalidate({ cacheName: `assets-${SW_CACHE_VERSION}` })
+        new self.workbox.strategies.StaleWhileRevalidate({ cacheName: 'assets' })
     );
 } else {
     // --- FALLBACK: Cache manual mínimo (sem Workbox) ---
-    const CACHE_NAME = `askesis-fallback-${SW_CACHE_VERSION}`;
+    const CACHE_NAME = 'askesis-fallback-v1';
     const CACHE_FILES = [
         '/',
         '/index.html',
@@ -96,17 +95,14 @@ if (self.workbox) {
     self.addEventListener('install', (event) => {
         self.skipWaiting();
         event.waitUntil(
-            caches.open(CACHE_NAME).then(cache =>
-                // allSettled: a single unavailable asset never aborts the entire SW install
-                Promise.allSettled(CACHE_FILES.map(url =>
-                    fetch(url, RELOAD_OPTS)
-                        .then(res => {
-                            if (!res.ok) throw new Error(`${res.status}`);
-                            return cache.put(url, res);
-                        })
-                        .catch(err => console.warn('[SW] Skipping uncacheable asset:', url, err.message))
-                ))
-            )
+            caches.open(CACHE_NAME).then(cache => {
+                return Promise.all(CACHE_FILES.map(url => 
+                    fetch(url, RELOAD_OPTS).then(res => {
+                        if (!res.ok) throw new Error(`[SW] Failed to cache: ${url}`);
+                        return cache.put(url, res);
+                    })
+                ));
+            })
         );
     });
 
