@@ -72,17 +72,16 @@ export function getHabitPropertiesForDate(habit: Habit, dateISO: string): HabitS
 }
 
 export function getHabitDisplayInfo(habit: Habit | PredefinedHabit, dateISO?: string, time?: TimeOfDay): { name: string, subtitle: string, status?: number, isCompleted?: boolean, note?: string, value?: number } {
-    let source: HabitSchedule | PredefinedHabit | Habit = habit;
+    let source: any = habit;
     const effectiveDate = dateISO || getTodayUTCIso();
 
     if ('scheduleHistory' in habit && habit.scheduleHistory.length > 0) {
-        source = getHabitPropertiesForDate(habit as Habit, effectiveDate) ?? habit;
+        source = getHabitPropertiesForDate(habit as Habit, effectiveDate);
     }
     
-    const src = source as typeof source & { nameKey?: string; name?: string; subtitleKey?: string; subtitle?: string };
     const baseInfo = {
-        name: src.nameKey ? t(src.nameKey) : (src.name || ''),
-        subtitle: src.subtitleKey ? t(src.subtitleKey) : (src.subtitle || '')
+        name: source.nameKey ? t(source.nameKey) : (source.name || ''),
+        subtitle: source.subtitleKey ? t(source.subtitleKey) : (source.subtitle || '')
     };
 
     if (time && 'id' in habit) {
@@ -261,11 +260,10 @@ export function calculateDaySummary(dateISO: string, preParsedDate?: Date) {
     let total = 0, completed = 0, snoozed = 0, pending = 0;
     const dateObj = preParsedDate || parseUTCIsoDate(dateISO);
     const activeHabitsForPlusCheck: { habit: Habit, time: TimeOfDay, status: number }[] = [];
+    const activeHabits = getActiveHabitsForDate(dateISO, dateObj);
 
-    for (let i = 0; i < state.habits.length; i++) {
-        const h = state.habits[i];
-        if (!shouldHabitAppearOnDate(h, dateISO, dateObj)) continue;
-        const sch = getEffectiveScheduleForHabitOnDate(h, dateISO);
+    for (let i = 0; i < activeHabits.length; i++) {
+        const { habit: h, schedule: sch } = activeHabits[i];
         const scheduleProps = getHabitPropertiesForDate(h, dateISO);
         
         for (let j = 0; j < sch.length; j++) {
