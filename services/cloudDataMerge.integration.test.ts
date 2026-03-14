@@ -156,9 +156,12 @@ class MockWorker {
 }
 
 describe('cloud + dataMerge integration', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     clearTestState();
     vi.clearAllMocks();
+    localStorage.clear();
+    const { clearSyncHashCache } = await import('./cloud');
+    clearSyncHashCache();
     // @ts-expect-error test override
     globalThis.Worker = MockWorker;
   });
