@@ -78,10 +78,12 @@ class TimeoutThenSuccessWorker {
     terminate() {}
 }
 
-beforeEach(() => {
+beforeEach(async () => {
     clearTestState();
     vi.clearAllMocks();
     localStorage.clear();
+    const { clearSyncHashCache } = await import('./cloud');
+    clearSyncHashCache();
     // @ts-expect-error - test override
     globalThis.Worker = MockWorker;
 });
@@ -205,9 +207,9 @@ describe('cloud sync basics', () => {
             vi.mocked(hasLocalSyncKey).mockReturnValue(true);
             vi.mocked(getSyncKey).mockReturnValue('k');
 
-            let resolveFirst: ((value: any) => void) | null = null;
+            let resolveFirst!: (value: any) => void;
             vi.mocked(apiFetch)
-                .mockImplementationOnce(() => new Promise((resolve) => { resolveFirst = resolve; }) as any)
+                .mockImplementationOnce(() => new Promise<any>((resolve) => { resolveFirst = resolve; }) as any)
                 .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({}) } as any);
 
             const habitId = createTestHabit({ name: 'Queued Habit', time: 'Morning', goalType: 'check' });
@@ -224,9 +226,10 @@ describe('cloud sync basics', () => {
             const secondSnapshot = getPersistableState();
             syncStateWithCloud(secondSnapshot, true);
 
+            await vi.advanceTimersByTimeAsync(0);
             expect(apiFetch).toHaveBeenCalledTimes(1);
 
-            resolveFirst?.({ ok: true, status: 200, json: async () => ({}) } as any);
+            resolveFirst({ ok: true, status: 200, json: async () => ({}) } as any);
             await vi.runAllTimersAsync();
 
             expect(apiFetch).toHaveBeenCalledTimes(2);
