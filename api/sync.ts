@@ -13,7 +13,6 @@ import {
     parseAllowedOrigins,
     parsePositiveInt
 } from './_httpSecurity';
-import type { SyncPostBody } from '../contracts/api-sync';
 
 export const config = {
   runtime: 'edge',
@@ -122,6 +121,11 @@ const SYNC_RATE_LIMIT_MAX_REQUESTS = parsePositiveInt(process.env.SYNC_RATE_LIMI
 const SYNC_RATE_LIMIT_DISABLED = process.env.NODE_ENV === 'test' || process.env.DISABLE_RATE_LIMIT === '1';
 
 type ErrorLike = { message?: string };
+
+type SyncPostBody = {
+    lastModified?: unknown;
+    shards?: Record<string, unknown>;
+};
 
 function getErrorMessage(error: unknown): string {
     if (error instanceof Error) return error.message;

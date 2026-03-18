@@ -19,8 +19,6 @@ import { showConfirmationModal } from '../render/modals';
 import { mergeStates, buildDedupModalContext } from './dataMerge';
 import { HabitService } from './HabitService';
 import { runWorkerTask as runWorkerTaskInternal, type WorkerTaskType } from './workerClient';
-import type { WorkerDecryptWithHashResult } from '../contracts/worker';
-import type { SyncPostRequest } from '../contracts/api-sync';
 import { emitHabitsChanged } from '../events';
 import { murmurHash3 } from './murmurHash3';
 import {
@@ -296,12 +294,12 @@ async function decryptServerShards(
         try {
             if (options.updateHashCache) {
                 try {
-                    const res = await runWorkerTask<WorkerDecryptWithHashResult>('decrypt-with-hash', shards[key], syncKey);
+                    const res = await runWorkerTask<any>('decrypt-with-hash', shards[key], syncKey);
                     if (!res || typeof res !== 'object' || !('value' in res)) {
                         throw new Error('decrypt-with-hash unsupported');
                     }
-                    decrypted[key] = res.value;
-                    const hash = res.hash;
+                    decrypted[key] = (res as any).value;
+                    const hash = (res as any).hash;
                     if (typeof hash === 'string') lastSyncedHashes.set(key, hash);
                 } catch {
                     // Backward-compat / test mocks: fall back to plain decrypt.
@@ -486,7 +484,7 @@ async function performSync() {
         const safeTs = appState.lastModified || Date.now();
         
         const payloadStart = performance.now();
-        const payload: SyncPostRequest = { lastModified: safeTs, shards: encryptedShards };
+        const payload = { lastModified: safeTs, shards: encryptedShards };
         const payloadBody = JSON.stringify(payload);
         const payloadEnd = performance.now();
 

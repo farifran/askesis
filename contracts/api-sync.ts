@@ -10,12 +10,6 @@
 
 export type EncryptedShardMap = Record<string, string>;
 
-/** Raw, untrusted shape from JSON.parse (pre-validation). */
-export type SyncPostBody = {
-    lastModified?: unknown;
-    shards?: Record<string, unknown>;
-};
-
 export type SyncPostRequest = {
     lastModified: number;
     shards: EncryptedShardMap;
