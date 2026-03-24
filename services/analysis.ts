@@ -137,8 +137,8 @@ export async function checkAndAnalyzeDayContext(dateISO: string) {
             }
         } catch (e: unknown) { 
             logger.error("Context analysis failed", e);
-            // Fallback to level 1 on error, as 'error' string is invalid for StoicLevel type
-            state.dailyDiagnoses[dateISO] = { level: 1, themes: [], timestamp: Date.now() };
+            // Do not write to dailyDiagnoses on failure — the absence of an entry
+            // allows the next call to retry rather than being blocked for AI_MIN_INTERVAL_DAYS.
         } finally { 
             _analysisInFlight.delete(dateISO); 
         }

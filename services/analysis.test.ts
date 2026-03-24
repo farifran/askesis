@@ -121,5 +121,52 @@ describe('🧠 Análise diária IA (analysis.ts)', () => {
             expect(payload.dataContext.firstEntry).toBe(false);
             expect(payload.dataContext.daysBeforeTargetWithNotes).toBe(1);
         });
+
+        it('não deve gravar diagnóstico quando a análise falha por erro de rede', async () => {
+            const habitId = createTestHabit({ name: 'Diário', time: 'Morning' });
+
+            const supportDates = ['2026-02-07', '2026-02-08', '2026-02-09', '2026-02-10', '2026-02-11', '2026-02-12'];
+            supportDates.forEach((date) => {
+                state.dailyData[date] = {
+                    [habitId]: { instances: { Morning: {} }, dailySchedule: undefined }
+                };
+            });
+            addTestNote(habitId, '2026-02-13', 'Morning', 'Nota de hoje.');
+
+            vi.mocked(runWorkerTask).mockRejectedValue(new Error('Network error'));
+
+            await checkAndAnalyzeDayContext('2026-02-13');
+
+            expect(state.dailyDiagnoses['2026-02-13']).toBeUndefined();
+        });
+
+        it('não deve bloquear nova tentativa após falha anterior', async () => {
+            const habitId = createTestHabit({ name: 'Diário', time: 'Morning' });
+
+            const supportDates = ['2026-02-07', '2026-02-08', '2026-02-09', '2026-02-10', '2026-02-11', '2026-02-12'];
+            supportDates.forEach((date) => {
+                state.dailyData[date] = {
+                    [habitId]: { instances: { Morning: {} }, dailySchedule: undefined }
+                };
+            });
+            addTestNote(habitId, '2026-02-13', 'Morning', 'Nota de hoje.');
+
+            // First call fails
+            vi.mocked(runWorkerTask).mockRejectedValueOnce(new Error('Network error'));
+            await checkAndAnalyzeDayContext('2026-02-13');
+            expect(state.dailyDiagnoses['2026-02-13']).toBeUndefined();
+
+            // Second call succeeds — must not be skipped due to the failed first attempt
+            vi.mocked(runWorkerTask).mockResolvedValue({ prompt: 'p', systemInstruction: 's' } as any);
+            vi.mocked(apiFetch).mockResolvedValue(new Response(JSON.stringify({
+                analysis: { determined_level: 3 },
+                relevant_themes: ['coragem']
+            }), { status: 200 }));
+
+            await checkAndAnalyzeDayContext('2026-02-13');
+
+            expect(state.dailyDiagnoses['2026-02-13']).toBeDefined();
+            expect(state.dailyDiagnoses['2026-02-13'].level).toBe(3);
+        });
     });
 });
