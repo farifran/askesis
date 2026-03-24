@@ -9,7 +9,7 @@
  */
 
 import { state, LANGUAGES } from './state';
-import { parseUTCIsoDate, toUTCIsoDateString, addDays, pushToOneSignal, getLocalPushOptIn, setLocalPushOptIn, getTodayUTCIso, createDebounced, escapeHTML } from './utils';
+import { parseUTCIsoDate, toUTCIsoDateString, addDays, pushToOneSignal, getLocalPushOptIn, getTodayUTCIso, createDebounced, escapeHTML } from './utils';
 import { QUOTE_COLLAPSE_DEBOUNCE_MS } from './constants';
 import { ui } from './render/ui';
 import { t, setLanguage, formatDate } from './i18n'; 
@@ -282,16 +282,16 @@ export function updateNotificationUI() {
     pushToOneSignal((OneSignal: OneSignalLike) => {
         const isPushEnabled = OneSignal.User.PushSubscription.optedIn;
         const permission = OneSignal.Notifications.permission;
-        // Chrome/Brave Android, Safari e outros: não sobrescrever localOptIn para false se a
-        // permissão nativa ainda é 'granted'. O OneSignal pode reportar optedIn=false enquanto
-        // a subscription assíncrona ainda está sendo finalizada.
         const nativePerm = (typeof Notification !== 'undefined') ? Notification.permission : 'default';
-        if (isPushEnabled || nativePerm !== 'granted') {
-            setLocalPushOptIn(!!isPushEnabled);
-        }
-        // Usa o estado mais confiável: se o OneSignal já confirma optedIn, usa isso;
-        // senão, se a permissão nativa está concedida e o usuário optou, mantém ativo.
-        const effectiveEnabled = isPushEnabled || (nativePerm === 'granted' && getLocalPushOptIn() === true);
+        const localOptIn = getLocalPushOptIn();
+        // updateNotificationUI é somente leitura: nunca escreve no localStorage.
+        // localOptIn é a fonte de verdade da intenção do usuário.
+        // Se localOptIn=false, o toggle fica desativado independentemente do que o SDK reporta
+        // (o SDK pode estar em race condition pós-optOut e ainda reportar optedIn=true).
+        // Se localOptIn=null (nunca decidiu), usa o SDK como fallback.
+        const effectiveEnabled = localOptIn === false
+            ? false
+            : (isPushEnabled || (nativePerm === 'granted' && localOptIn === true));
         if (ui.notificationToggle.checked !== !!effectiveEnabled) ui.notificationToggle.checked = !!effectiveEnabled;
         const isDenied = permission === 'denied';
         if (ui.notificationToggle.disabled !== isDenied) {

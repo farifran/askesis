@@ -135,48 +135,36 @@ const _handleResetAppClick = () => {
 
 // Async helper chamado após obter a permissão (ou já possuí-la).
 const _enableNotificationsAsync = async (perm: string) => {
-    try {
-        if (perm !== 'granted') {
-            ui.notificationToggle.checked = false;
-            setLocalPushOptIn(false);
-            setTextContent(ui.notificationStatusDesc, t('notificationStatusOptedOut'));
-            return;
-        }
-
-        ui.notificationToggle.disabled = true;
-        setTextContent(ui.notificationStatusDesc, t('notificationChangePending'));
-
-        // Persiste opt-in local imediatamente (boot pode refletir sem SDK).
-        setLocalPushOptIn(true);
-        updateNotificationUI();
-
-        // Carrega OneSignal em background para finalizar subscription.
-        ensureOneSignalReady()
-            .then(async (OneSignal) => {
-                try { await OneSignal.Notifications.requestPermission?.(); } catch {}
-                try {
-                    const optedIn = !!OneSignal.User.PushSubscription.optedIn;
-                    // Chrome/Brave Android, Safari e outros: protege localOptIn de ser sobrescrito
-                    // para false quando a permissão nativa já foi concedida e o OneSignal ainda
-                    // não finalizou a subscription assíncrona.
-                    const nativePerm = (typeof Notification !== 'undefined') ? (Notification as any).permission : 'default';
-                    if (optedIn || nativePerm !== 'granted') {
-                        setLocalPushOptIn(optedIn);
-                    }
-                } catch {}
-                updateNotificationUI();
-                if ('serviceWorker' in navigator) {
-                    navigator.serviceWorker.register('./sw.js?push=1').catch(() => {});
-                }
-            })
-            .catch(() => { updateNotificationUI(); });
-    } catch {
-        const nativePerm = (typeof Notification !== 'undefined') ? (Notification as any).permission : 'default';
-        if (nativePerm !== 'granted') {
-            ui.notificationToggle.checked = false;
-            setLocalPushOptIn(false);
-        }
+    if (perm !== 'granted') {
+        ui.notificationToggle.checked = false;
+        setLocalPushOptIn(false);
         setTextContent(ui.notificationStatusDesc, t('notificationStatusOptedOut'));
+        ui.notificationToggle.disabled = false;
+        return;
+    }
+
+    ui.notificationToggle.disabled = true;
+    setTextContent(ui.notificationStatusDesc, t('notificationChangePending'));
+
+    try {
+        // Registra o SW com push antes de inicializar o SDK para que o OneSignal
+        // encontre o service worker ativo ao criar a subscription.
+        if ('serviceWorker' in navigator) {
+            await navigator.serviceWorker.register('./sw.js?push=1').catch(() => {});
+        }
+
+        const OneSignal = await ensureOneSignalReady();
+
+        // optIn() cria a subscription push no OneSignal v16.
+        // requestPermission() sozinho não é suficiente — apenas exibe o diálogo nativo.
+        await OneSignal.User.PushSubscription.optIn();
+
+        setLocalPushOptIn(true);
+    } catch {
+        // SDK indisponível ou optIn() falhou. Persiste true assim mesmo — a permissão
+        // nativa foi concedida e o boot tentará reconectar ao OneSignal na próxima sessão.
+        setLocalPushOptIn(true);
+        logger.warn('OneSignal optIn failed; localOptIn persisted as true for retry on next boot.');
     } finally {
         ui.notificationToggle.disabled = false;
         updateNotificationUI();

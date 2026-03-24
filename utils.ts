@@ -317,6 +317,7 @@ type OneSignalLike = {
     };
     User: {
         PushSubscription: {
+            optIn(): Promise<void>;
             optOut(): Promise<void>;
             optedIn?: boolean;
         };
