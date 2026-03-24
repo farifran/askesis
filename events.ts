@@ -21,6 +21,7 @@ export { APP_EVENTS, CARD_EVENTS };
 export type { AppEventName, CardEventName, RequestAnalysisDetail, CardEventDetail };
 
 function _emitEvent<TDetail = undefined>(name: string, detail?: TDetail): void {
+    if (typeof document === 'undefined') return;
     if (detail === undefined) {
         document.dispatchEvent(new CustomEvent(name));
     } else {
