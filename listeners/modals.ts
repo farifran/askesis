@@ -156,12 +156,10 @@ const _enableNotificationsAsync = async (perm: string) => {
                 try { await OneSignal.Notifications.requestPermission?.(); } catch {}
                 try {
                     const optedIn = !!OneSignal.User.PushSubscription.optedIn;
-                    // Chrome/Brave Android, Safari e outros: protege localOptIn de ser sobrescrito
-                    // para false quando a permissão nativa já foi concedida e o OneSignal ainda
-                    // não finalizou a subscription assíncrona.
-                    const nativePerm = (typeof Notification !== 'undefined') ? (Notification as any).permission : 'default';
-                    if (optedIn || nativePerm !== 'granted') {
-                        setLocalPushOptIn(optedIn);
+                    // Só persiste quando o SDK confirma opt-in. Se optedIn=false logo após
+                    // a ativação (race condition do SDK), não sobrescreve o true já persistido.
+                    if (optedIn) {
+                        setLocalPushOptIn(true);
                     }
                 } catch {}
                 updateNotificationUI();
