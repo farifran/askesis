@@ -40,10 +40,11 @@
 #habit-container::before {
     content: '';
     position: sticky;
-    top: 0;
+    top: calc(-1 * var(--space-sm));
     display: block;
     flex: 0 0 auto;
     align-self: stretch;
+    margin-top: calc(-1 * var(--space-sm));
     height: calc(var(--space-sm) + 18px);
     margin-bottom: calc(-1 * (var(--space-sm) + 18px));
     background: linear-gradient(
