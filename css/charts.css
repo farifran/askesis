@@ -16,8 +16,9 @@
     max-height: none;
     overflow: visible; /* CRÍTICO: Permite que o tooltip saia da caixa */
     
-    /* UI FIX: Margem superior reduzida de 16px para 8px para aproximar o gráfico dos cartões. */
-    margin-top: var(--space-sm);
+     /* SYMMETRY FIX: remove a margem superior extra do gráfico para alinhar a distância
+         visual da borda inferior com a mesma folga usada no topo do container rolável. */
+     margin-top: 0;
     margin-inline: var(--space-lg); 
     
     /* Margem inferior para não colar na borda da tela */

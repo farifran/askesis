@@ -6,6 +6,9 @@
     gap: var(--space-md);
     position: relative;
     isolation: isolate;
+    --edge-fade-solid: 4px;
+    --edge-fade-depth: 12px;
+    --edge-fade-bleed: 5px;
     
     /* SMART LAYOUT: 
        flex-grow: 0 (Não ocupa espaço vazio desnecessário, deixando o gráfico subir)
@@ -40,17 +43,17 @@
 #habit-container::before {
     content: '';
     position: sticky;
-    top: calc(-1 * var(--space-sm) - 5px);
+    top: calc(-1 * var(--space-sm) - var(--edge-fade-bleed));
     display: block;
     flex: 0 0 auto;
     align-self: stretch;
-    margin-top: calc(-1 * var(--space-sm) - 5px);
-    height: calc(var(--space-sm) + 18px);
-    margin-bottom: calc(-1 * (var(--space-sm) + 18px));
+    margin-top: calc(-1 * var(--space-sm) - var(--edge-fade-bleed));
+    height: calc(var(--edge-fade-solid) + var(--edge-fade-depth));
+    margin-bottom: calc(-1 * (var(--edge-fade-solid) + var(--edge-fade-depth)));
     background: linear-gradient(
         to bottom,
         var(--bg-color) 0,
-        var(--bg-color) var(--space-sm),
+        var(--bg-color) var(--edge-fade-solid),
         rgba(0, 0, 0, 0) 100%
     );
     pointer-events: none;
@@ -62,17 +65,17 @@
 #habit-container::after {
     content: '';
     position: sticky;
-    bottom: calc(-1 * var(--space-sm) - 5px);
+    bottom: calc(-1 * var(--space-sm) - var(--edge-fade-bleed));
     display: block;
     flex: 0 0 auto;
     align-self: stretch;
-    margin-top: calc(-1 * (var(--space-sm) + 18px));
-    margin-bottom: calc(-1 * var(--space-sm) - 5px);
-    height: calc(var(--space-sm) + 18px);
+    margin-top: calc(-1 * (var(--edge-fade-solid) + var(--edge-fade-depth)));
+    margin-bottom: calc(-1 * var(--space-sm) - var(--edge-fade-bleed));
+    height: calc(var(--edge-fade-solid) + var(--edge-fade-depth));
     background: linear-gradient(
         to top,
         var(--bg-color) 0,
-        var(--bg-color) var(--space-sm),
+        var(--bg-color) var(--edge-fade-solid),
         rgba(0, 0, 0, 0) 100%
     );
     pointer-events: none;
