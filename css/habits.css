@@ -40,15 +40,35 @@
 #habit-container::before {
     content: '';
     position: sticky;
-    top: calc(-1 * var(--space-sm));
+    top: calc(-1 * var(--space-sm) - 5px);
     display: block;
     flex: 0 0 auto;
     align-self: stretch;
-    margin-top: calc(-1 * var(--space-sm));
+    margin-top: calc(-1 * var(--space-sm) - 5px);
     height: calc(var(--space-sm) + 18px);
     margin-bottom: calc(-1 * (var(--space-sm) + 18px));
     background: linear-gradient(
         to bottom,
+        var(--bg-color) 0,
+        var(--bg-color) var(--space-sm),
+        rgba(0, 0, 0, 0) 100%
+    );
+    pointer-events: none;
+    z-index: var(--z-index-sticky);
+}
+
+#habit-container::after {
+    content: '';
+    position: sticky;
+    bottom: calc(-1 * var(--space-sm) - 5px);
+    display: block;
+    flex: 0 0 auto;
+    align-self: stretch;
+    margin-top: calc(-1 * (var(--space-sm) + 18px));
+    margin-bottom: calc(-1 * var(--space-sm) - 5px);
+    height: calc(var(--space-sm) + 18px);
+    background: linear-gradient(
+        to top,
         var(--bg-color) 0,
         var(--bg-color) var(--space-sm),
         rgba(0, 0, 0, 0) 100%
