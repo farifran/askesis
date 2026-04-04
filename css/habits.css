@@ -19,7 +19,7 @@
     
     /* UX: Padding para o conteúdo não colar nas bordas */
     padding-inline: var(--space-lg);
-    padding-top: var(--space-lg); /* Space between header and habits, matches chart margin. */
+    padding-top: var(--space-sm); /* Reduced from 16px to 8px between header and habit cards. */
     
     /* UX FIX [2025-04-01]: Reduzido de space-xl para space-sm. 
        Evita criar um grande espaço vazio no final da lista, já que o gráfico possui sua própria margem superior. */
@@ -253,7 +253,7 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 /* --- COMPONENTES: CARTÃO DE HÁBITO --- */
 .habit-card {
     border-radius: var(--border-radius-large);
-    margin-block-end: var(--space-sm);
+    margin-block-end: var(--space-xs);
     position: relative;
     overflow: hidden;
     display: flex;
