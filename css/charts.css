@@ -16,13 +16,12 @@
     max-height: none;
     overflow: visible; /* CRÍTICO: Permite que o tooltip saia da caixa */
     
-     /* SYMMETRY FIX: remove a margem superior extra do gráfico para alinhar a distância
-         visual da borda inferior com a mesma folga usada no topo do container rolável. */
-     margin-top: 0;
-    margin-inline: var(--space-lg); 
-    
-    /* Margem inferior para não colar na borda da tela */
-    margin-bottom: var(--space-md);
+     /* SYMMETRY FIX: iguala as margens superior e inferior do gráfico para var(--space-lg) (16px) */
+     margin-top: var(--space-lg);
+     margin-inline: var(--space-lg); 
+     
+     /* Margem inferior igualada para simetria vertical */
+     margin-bottom: var(--space-lg);
     
     /* Estilos visuais normais */
     z-index: var(--z-index-footer);
