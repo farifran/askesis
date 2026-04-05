@@ -16,12 +16,12 @@
     max-height: none;
     overflow: visible; /* CRÍTICO: Permite que o tooltip saia da caixa */
     
-     /* SYMMETRY FIX: iguala as margens superior e inferior do gráfico para var(--space-lg) (16px) */
-     margin-top: var(--space-lg);
-     margin-inline: var(--space-lg); 
+    /* SYMMETRY FIX: iguala as margens superior e inferior do gráfico para 13px */
+    margin-top: 13px;
+    margin-inline: var(--space-lg); 
      
-     /* Margem inferior igualada para simetria vertical */
-     margin-bottom: var(--space-lg);
+    /* Margem inferior igualada para simetria vertical */
+    margin-bottom: 13px;
     
     /* Estilos visuais normais */
     z-index: var(--z-index-footer);
