@@ -331,11 +331,12 @@ export function renderChart() {
             setTrustedHtmlFragment(ui.chart.title, newTitle);
         }
         if (ui.chart.subtitle) {
-            const summary = calculateDaySummary(state.selectedDate);
-            const hasCompletedHabits = summary.completed > 0;
-            const newSubtitleKey = hasCompletedHabits ? 'chartSubtitleProgress' : 'appSubtitle';
-            const newSubtitle = t(newSubtitleKey);
-            if (ui.chart.subtitle.textContent !== newSubtitle) ui.chart.subtitle.textContent = newSubtitle;
+            // Mostrar as duas frases na mesma linha (lado esquerdo):
+            // "Progresso Composto / Aja até ser..." — com separador estilizado.
+            const leftPrimary = t('chartSubtitleProgress');
+            const leftSecondary = t('appSubtitle');
+            const subtitleHtml = `<span class="subtitle-primary">${leftPrimary}</span><span class="subtitle-sep">/</span><span class="subtitle-secondary">${leftSecondary}</span>`;
+            setTrustedHtmlFragment(ui.chart.subtitle, subtitleHtml);
         }
         
         if (isEmpty) {
