@@ -56,8 +56,10 @@
 .chart-header > .app-subtitle {
     flex: 1 1 0%;
     min-width: 0; /* allow proper truncation/wrapping */
+    max-width: 50%;
     margin: 0;
-    overflow-wrap: break-word;
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 
 .chart-header > .chart-title-row {
@@ -113,7 +115,10 @@
     .chart-header > .app-subtitle {
         flex: 1 1 0%;
         min-width: 0;
+        max-width: 50%;
         font-size: 12px; /* keep smaller type on mobile */
+        white-space: normal;
+        overflow-wrap: anywhere;
     }
 
     .chart-header > .chart-title-row {
