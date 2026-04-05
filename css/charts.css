@@ -101,6 +101,34 @@
         font-size: 12px;
     }
 }
+    
+    /* On narrow screens keep left text and right title on the same flex line.
+       Left column should shrink and wrap its text internally; right column
+       stays intrisically-sized (Askesis + %) and remains on the same line. */
+    .chart-header {
+        flex-wrap: nowrap;
+        gap: var(--space-sm);
+    }
+
+    .chart-header > .app-subtitle {
+        flex: 1 1 0%;
+        min-width: 0;
+        font-size: 12px; /* keep smaller type on mobile */
+    }
+
+    .chart-header > .chart-title-row {
+        flex: 0 0 auto;
+        align-items: center;
+        justify-content: flex-end;
+        gap: var(--space-xs);
+    }
+
+    .chart-evolution-indicator {
+        position: static;
+        transform: none;
+        margin-left: var(--space-xs);
+        display: inline-block;
+    }
 
 .chart-title strong {
     color: var(--accent-green);
