@@ -41,7 +41,7 @@
 
 .chart-header {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: space-between;
     gap: var(--space-lg);
     flex-wrap: wrap;
@@ -57,6 +57,7 @@
     max-width: 50%;
     min-width: 0; /* allow the text to wrap instead of overflowing */
     box-sizing: border-box;
+    margin: 0; /* remove extra bottom gap so Askesis aligns on same line */
 }
 
 .chart-header > .chart-title-row {
@@ -68,7 +69,6 @@
     align-items: center;
     justify-content: flex-end;
     gap: var(--space-sm);
-    margin-bottom: 8px;
 }
 
 .app-subtitle, .chart-title {
@@ -87,13 +87,12 @@
     display: flex;
     align-items: baseline;
     gap: 30px;
-    margin-bottom: 8px; /* Espaço extra entre título (%/logo) e o gráfico */
 }
 .app-subtitle {
     font-size: 13px;
     font-style: italic;
     color: var(--text-secondary);
-    margin-bottom: 13px; /* Aumentado para criar mais espaçamento vertical */
+    margin: 0; /* no extra margin to keep header items aligned */
     line-height: 1.4;
 }
 
@@ -117,6 +116,14 @@
     /* Z-Index removido (auto) para permitir o entrelaçamento de camadas (SVG < Header < Tooltip) */
     z-index: auto;
 }
+@media (min-width: 481px) {
+    .chart-header { flex-wrap: nowrap; }
+    .chart-header > .app-subtitle,
+    .chart-header > .chart-title-row {
+        flex: 0 0 50%;
+        max-width: 50%;
+    }
+}
 .chart-container.is-empty .chart-empty-state {
     display: flex;
 }
@@ -124,14 +131,6 @@
     position: relative; 
     height: 75px; 
     touch-action: pan-y; 
-    @media (min-width: 481px) {
-        .chart-header { flex-wrap: nowrap; }
-        .chart-header > .app-subtitle,
-        .chart-header > .chart-title-row {
-            flex: 0 0 50%;
-            max-width: 50%;
-        }
-    }
     user-select: none; 
 }
 .chart-svg { 
