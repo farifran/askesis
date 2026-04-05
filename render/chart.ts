@@ -326,20 +326,16 @@ export function renderChart() {
         const isEmpty = chartInteractionState.lastChartData.length < 2 || chartInteractionState.lastChartData.every(d => d.scheduledCount === 0);
         ui.chartContainer.classList.toggle('is-empty', isEmpty);
 
-        // Mostrar ambas frases à esquerda: título do gráfico e subtítulo
         if (ui.chart.title) {
-            const newTitle = t('chartSubtitleProgress');
-            if (ui.chart.title.textContent !== newTitle) setTextContent(ui.chart.title, newTitle);
+            const newTitle = t('appName');
+            setTrustedHtmlFragment(ui.chart.title, newTitle);
         }
         if (ui.chart.subtitle) {
-            const newSubtitle = t('appSubtitle');
+            const summary = calculateDaySummary(state.selectedDate);
+            const hasCompletedHabits = summary.completed > 0;
+            const newSubtitleKey = hasCompletedHabits ? 'chartSubtitleProgress' : 'appSubtitle';
+            const newSubtitle = t(newSubtitleKey);
             if (ui.chart.subtitle.textContent !== newSubtitle) ui.chart.subtitle.textContent = newSubtitle;
-        }
-
-        // Preencher o logo/appName no lado direito (HTML com <strong>)
-        if (ui.chart.logo) {
-            const newLogoHtml = t('appName');
-            setTrustedHtmlFragment(ui.chart.logo, newLogoHtml);
         }
         
         if (isEmpty) {

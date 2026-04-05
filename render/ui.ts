@@ -112,7 +112,6 @@ export interface UIElements {
     chart: {
         title: HTMLElement;
         subtitle: HTMLElement;
-        logo: HTMLElement;
         emptyState: HTMLElement;
         dataView: HTMLElement;
         wrapper: HTMLElement;
@@ -266,7 +265,6 @@ defineLazy(ui, 'syncErrorMsg', '#sync-error-msg', uiCache);
 ui.chart = {} as UIElements['chart'];
 defineLazy(ui.chart, 'title', '#chart-container .chart-title', chartCache);
 defineLazy(ui.chart, 'subtitle', '#chart-container .app-subtitle', chartCache);
-defineLazy(ui.chart, 'logo', '#chart-container #chart-app-logo', chartCache, true);
 defineLazy(ui.chart, 'emptyState', '#chart-container .chart-empty-state', chartCache);
 defineLazy(ui.chart, 'dataView', '#chart-container .chart-data-view', chartCache);
 defineLazy(ui.chart, 'wrapper', '#chart-container .chart-wrapper', chartCache);

@@ -40,68 +40,47 @@
 }
 
 .chart-header {
-    margin-bottom: 0;
     position: relative;
-    /* LAYER MID: Acima da linha do gráfico (10), abaixo do tooltip (60) */
+    margin-bottom: 0;
+    padding-right: calc(var(--space-lg) + 56px); /* Reserva espaço para o indicador (% / logo) no lado direito */
     z-index: 20;
-    pointer-events: none; /* Permite clicar no gráfico atrás do texto */
-    padding-bottom: 0;
+    pointer-events: none;
     text-shadow: 0 1px 2px var(--bg-color);
-    /* LAYOUT TWEAK [2025-06-15]: Margem negativa para aproximar o texto do topo (reduzindo o padding visual do container) */
     margin-top: -6px;
 }
 
-/* Linha única: esquerda (textos) / direita (logo + %) */
-.chart-header-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-lg);
-    width: 100%;
+.chart-header > .app-subtitle,
+.chart-header > .chart-title-row {
+    display: block;
+    width: 50%;
+    max-width: 50%;
+    box-sizing: border-box;
 }
 
-.chart-left {
-    display: flex;
-    align-items: center;
-    gap: var(--space-md);
-    flex: 1 1 50%;
-    min-width: 0;
-}
-
-.chart-right {
-    display: flex;
-    align-items: center;
-    gap: var(--space-md);
-    flex: 0 0 auto;
-}
-
-.chart-app-logo {
-    font-size: 18px;
-    font-weight: 700;
-    color: var(--text-primary);
-    text-align: right;
-    line-height: 1;
+.app-subtitle, .chart-title {
+    white-space: normal;
+    overflow-wrap: break-word;
+    word-break: break-word;
 }
 
 .chart-title {
     font-size: 18px;
     font-weight: 700;
     line-height: 1.2;
-    margin: 0;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
 }
 
+.chart-title-row {
+    display: flex;
+    align-items: baseline;
+    gap: 30px;
+    margin-bottom: 8px; /* Espaço extra entre título (%/logo) e o gráfico */
+}
 .app-subtitle {
     font-size: 13px;
     font-style: italic;
     color: var(--text-secondary);
-    margin: 0;
-    line-height: 1.2;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    margin-bottom: 13px; /* Aumentado para criar mais espaçamento vertical */
+    line-height: 1.4;
 }
 
 /* TYPOGRAPHY TWEAK [2025-05-02]: Reduz fonte para 12px em mobile */
@@ -194,6 +173,10 @@
     height: 42px; color: var(--text-tertiary); font-style: italic; text-align: center;
 }
 .chart-evolution-indicator {
+    position: absolute;
+    right: var(--space-lg);
+    top: 50%;
+    transform: translateY(-50%);
     font-size: 16px;
     font-weight: 700;
     background-color: transparent;
@@ -202,6 +185,21 @@
     pointer-events: none;
     white-space: nowrap;
     transition: color var(--transition-duration-slow);
+    z-index: 30;
+}
+
+@media (max-width: 480px) {
+    .chart-header > .app-subtitle,
+    .chart-header > .chart-title-row {
+        width: 100%;
+        max-width: 100%;
+    }
+    .chart-evolution-indicator {
+        position: static;
+        transform: none;
+        margin-top: var(--space-xs);
+        display: inline-block;
+    }
 }
 .chart-evolution-indicator.positive { 
     color: var(--accent-green);
