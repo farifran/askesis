@@ -64,12 +64,13 @@
     display: flex;
     align-items: baseline;
     gap: 30px;
+    margin-bottom: 8px; /* Espaço extra entre título (%/logo) e o gráfico */
 }
 .app-subtitle {
     font-size: 13px;
     font-style: italic;
     color: var(--text-secondary);
-    margin-bottom: var(--space-xs);
+    margin-bottom: 13px; /* Aumentado para criar mais espaçamento vertical */
     line-height: 1.4;
 }
 
@@ -88,7 +89,7 @@
 }
 .chart-container:not(.is-empty) .chart-data-view {
     display: block;
-    margin-top: -75px; 
+    margin-top: -40px; /* Reduzida a sobreposição para aumentar o espaçamento visual */
     position: relative;
     /* Z-Index removido (auto) para permitir o entrelaçamento de camadas (SVG < Header < Tooltip) */
     z-index: auto;
