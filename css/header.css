@@ -199,12 +199,6 @@
     .header-bottom {
         gap: var(--space-sm);
     }
-
-    /* Quando o usuário seleciona o dia atual ou uma data passada, aumentar levemente
-       o espaçamento entre a citação e o cabeçalho para melhorar legibilidade. */
-    .app-header.date-selected .header-bottom {
-        gap: calc(var(--space-sm) * 2);
-    }
     
     /* LAYOUT TWEAK [2025-05-02]: Swap title elements for mobile density */
     .header-title-desktop { display: none; }

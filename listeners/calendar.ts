@@ -183,15 +183,6 @@ const _handleStripClick = (e: MouseEvent) => {
             state.uiDirtyState.chartData = true;
             viewTransitionRender(flipDir);
         }
-            // Add or remove header marker when a non-future date is selected
-            try {
-                const todayIso = getTodayUTCIso();
-                const isPastOrToday = parseUTCIsoDate(clickedDate).getTime() <= parseUTCIsoDate(todayIso).getTime();
-                const appHeaderEl = document.querySelector('.app-header');
-                if (appHeaderEl) appHeaderEl.classList.toggle('date-selected', isPastOrToday);
-            } catch (e) {
-                // non-blocking: if date parsing fails, do nothing
-            }
     }
 };
 
