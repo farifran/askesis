@@ -231,16 +231,28 @@
 }
 
 @media (max-width: 480px) {
-    .chart-header { flex-wrap: wrap; }
-    .chart-header > .app-subtitle,
+    .chart-header { 
+        flex-wrap: nowrap;
+        gap: var(--space-sm);
+    }
+    .chart-header > .app-subtitle {
+        flex: 1 1 auto;
+        min-width: 0;
+        max-width: 60%;
+        font-size: 12px;
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
     .chart-header > .chart-title-row {
-        width: 100%;
-        max-width: 100%;
+        flex: 0 1 auto;
+        min-width: 0;
+        gap: var(--space-xs);
+        justify-content: flex-end;
     }
     .chart-evolution-indicator {
         position: static;
         transform: none;
-        margin-top: var(--space-xs);
+        margin-left: var(--space-xs);
         display: inline-block;
     }
 }
