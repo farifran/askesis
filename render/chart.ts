@@ -335,7 +335,20 @@ export function renderChart() {
             const hasCompletedHabits = summary.completed > 0;
             const newSubtitleKey = hasCompletedHabits ? 'chartSubtitleProgress' : 'appSubtitle';
             const newSubtitle = t(newSubtitleKey);
-            if (ui.chart.subtitle.textContent !== newSubtitle) ui.chart.subtitle.textContent = newSubtitle;
+
+            // On mobile we want a forced break right before the word "somatório".
+            // Insert a <wbr> before the word when the viewport matches the mobile breakpoint.
+            let finalSubtitleHtml = newSubtitle;
+            try {
+                if (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(max-width:480px)').matches) {
+                    finalSubtitleHtml = newSubtitle.replace(/\bsomatório\b/gi, '<wbr>somatório');
+                }
+            } catch (e) {
+                // If matchMedia isn't available or replacement fails, fall back to plain text.
+                finalSubtitleHtml = newSubtitle;
+            }
+
+            setTrustedHtmlFragment(ui.chart.subtitle, finalSubtitleHtml);
         }
         
         if (isEmpty) {
