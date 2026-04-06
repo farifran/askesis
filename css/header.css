@@ -199,6 +199,11 @@
     .header-bottom {
         gap: var(--space-sm);
     }
+
+    /* MOBILE: Aumenta levemente o espaçamento quando a data selecionada é hoje ou passada. */
+    .app-header.date-selected .header-bottom {
+        gap: calc(var(--space-sm) * 2);
+    }
     
     /* LAYOUT TWEAK [2025-05-02]: Swap title elements for mobile density */
     .header-title-desktop { display: none; }

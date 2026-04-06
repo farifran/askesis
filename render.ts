@@ -120,7 +120,13 @@ function _updateHeaderTitle() {
     ui.navArrowPast.classList.toggle('hidden', !(selected < todayISO));
     ui.navArrowFuture.classList.toggle('hidden', !(selected > todayISO));
 
-    ui.appHeader.classList.toggle('date-selected', selected <= todayISO);
+    // Em telas mobile, adiciona classe para ajustar espaçamento quando a data
+    // selecionada for hoje ou no passado. Isso ativa a regra CSS que dobra o gap.
+    const headerEl = document.querySelector('.app-header') as HTMLElement | null;
+    if (headerEl) {
+        const isPastOrToday = selected <= todayISO;
+        headerEl.classList.toggle('date-selected', isPastOrToday);
+    }
 
     _lastTitleDate = selected;
     _lastTitleLang = state.activeLanguageCode;
