@@ -9,10 +9,10 @@
     --edge-fade-solid: 4px;
     --edge-fade-depth: 12px;
     --edge-fade-top-bleed: 3px;
-    /* Aumenta a área do fade inferior e o 'bleed' para posicioná-lo mais abaixo */
-    --edge-fade-bottom-solid: 8px;
-    --edge-fade-bottom-depth: 36px;
-    --edge-fade-bleed: 14px;
+    /* Diminuído: fade inferior um pouco mais discreto */
+    --edge-fade-bottom-solid: 4px;
+    --edge-fade-bottom-depth: 14px;
+    --edge-fade-bleed: 4px;
     
     /* SMART LAYOUT: 
        flex-grow: 0 (Não ocupa espaço vazio desnecessário, deixando o gráfico subir)
