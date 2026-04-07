@@ -12,11 +12,11 @@
 import { ui } from '../render/ui';
 import { state, TimeOfDay, ensureHabitDailyInfo } from '../state';
 import { getCurrentGoalForInstance, getEffectiveScheduleForHabitOnDate, getHabitDisplayInfo } from '../services/selectors';
-import { t, getTimeOfDayName } from '../i18n';
+import { t, getTimeOfDayName, formatDate } from '../i18n';
 import { openNotesModal, renderExploreHabits, openModal, showConfirmationModal } from '../render';
 import { toggleHabitStatus, setGoalOverride, requestHabitTimeRemoval, requestHabitEndingFromModal } from '../services/habitActions';
 import { ActionContext, _lockActionHabit, _requestFutureScheduleChange } from '../services/habitActions/shared';
-import { triggerHaptic, getNormalizedKeyboardKey, isActivationKeyboardEvent, getSafeDate } from '../utils';
+import { triggerHaptic, getNormalizedKeyboardKey, isActivationKeyboardEvent, getSafeDate, parseUTCIsoDate } from '../utils';
 import { DOM_SELECTORS, CSS_CLASSES } from '../render/constants';
 
 const GOAL_STEP = 5, MAX_GOAL = 9999;
@@ -123,9 +123,10 @@ const _handleContainerClick = (e: MouseEvent) => {
         const confirmMsgGeneric = t('confirmDeleteGeneric');
 
         if (h && getEffectiveScheduleForHabitOnDate(h, state.selectedDate).length <= 1) {
-            // Ending the habit (affects future schedule)
+            // Ending the habit (affects future schedule) — use a clearer, contextual message
             ActionContext.ending = { habitId: hId, targetDate: target };
-            showConfirmationModal(confirmMsgGeneric, () => {
+            const confirmMsgEnd = t('confirmEndHabit', { habitName: getHabitDisplayInfo(h, target).name, date: formatDate(parseUTCIsoDate(target), { day: 'numeric', month: 'long', timeZone: 'UTC' }) });
+            showConfirmationModal(confirmMsgEnd, () => {
                 _requestFutureScheduleChange(hId, target, s => ({ ...s, endDate: target }), true);
                 ActionContext.reset();
             }, { confirmButtonStyle: 'danger', confirmText: t('deleteButton'), onCancel: () => ActionContext.reset() });

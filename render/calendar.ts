@@ -206,32 +206,35 @@ export function scrollToSelectedDate(smooth = true) {
     // Duplo rAF garante que o browser completou reflow + paint antes de ler dimensões.
     requestAnimationFrame(() => requestAnimationFrame(() => {
         const selectedEl = ui.calendarStrip.querySelector(`.${CSS_CLASSES.SELECTED}`) as HTMLElement;
-
         if (!selectedEl) return;
-
-        const stripRect = ui.calendarStrip.getBoundingClientRect();
-        const elRect = selectedEl.getBoundingClientRect();
-        const currentScroll = ui.calendarStrip.scrollLeft;
         const isToday = selectedEl.classList.contains(CSS_CLASSES.TODAY);
 
-        let targetScroll: number;
-
-        if (isToday) {
-            // ALIGN END: o dia atual fica no limite direito visível, deixando o histórico à esquerda.
-            // elRect.right - stripRect.right = gap entre a borda direita do elemento e a do container.
-            // Somando ao scrollLeft atual obtemos o scroll exato sem depender de offsetLeft.
-            const paddingRight = 10;
-            targetScroll = currentScroll + (elRect.right - stripRect.right) + paddingRight;
-        } else {
-            // ALIGN CENTER: posiciona o elemento no centro da fita.
-            const elCenter = elRect.left + elRect.width / 2;
-            const stripCenter = stripRect.left + stripRect.width / 2;
-            targetScroll = currentScroll + (elCenter - stripCenter);
+        // Use the browser-native scroll snapping via scrollIntoView to center
+        // items normally but keep `today` aligned to the end (right).
+        try {
+            selectedEl.scrollIntoView({
+                block: 'nearest',
+                inline: isToday ? 'end' : 'center',
+                behavior: smooth ? 'smooth' : 'auto'
+            });
+        } catch (e) {
+            // Fallback to manual calculation if scrollIntoView is not available
+            const stripRect = ui.calendarStrip.getBoundingClientRect();
+            const elRect = selectedEl.getBoundingClientRect();
+            const currentScroll = ui.calendarStrip.scrollLeft;
+            let targetScroll = currentScroll;
+            if (isToday) {
+                const paddingRight = 10;
+                targetScroll = currentScroll + (elRect.right - stripRect.right) + paddingRight;
+            } else {
+                const elCenter = elRect.left + elRect.width / 2;
+                const stripCenter = stripRect.left + stripRect.width / 2;
+                targetScroll = currentScroll + (elCenter - stripCenter);
+            }
+            ui.calendarStrip.scrollTo({
+                left: targetScroll,
+                behavior: smooth ? 'smooth' : 'auto'
+            });
         }
-
-        ui.calendarStrip.scrollTo({
-            left: targetScroll,
-            behavior: smooth ? 'smooth' : 'auto'
-        });
     }));
 }
