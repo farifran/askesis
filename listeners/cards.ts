@@ -10,11 +10,13 @@
  */
 
 import { ui } from '../render/ui';
-import { state, TimeOfDay } from '../state';
-import { getCurrentGoalForInstance, getEffectiveScheduleForHabitOnDate } from '../services/selectors';
-import { openNotesModal, renderExploreHabits, openModal } from '../render';
+import { state, TimeOfDay, ensureHabitDailyInfo } from '../state';
+import { getCurrentGoalForInstance, getEffectiveScheduleForHabitOnDate, getHabitDisplayInfo } from '../services/selectors';
+import { t, getTimeOfDayName } from '../i18n';
+import { openNotesModal, renderExploreHabits, openModal, showConfirmationModal } from '../render';
 import { toggleHabitStatus, setGoalOverride, requestHabitTimeRemoval, requestHabitEndingFromModal } from '../services/habitActions';
-import { triggerHaptic, getNormalizedKeyboardKey, isActivationKeyboardEvent } from '../utils';
+import { ActionContext, _lockActionHabit, _requestFutureScheduleChange } from '../services/habitActions/shared';
+import { triggerHaptic, getNormalizedKeyboardKey, isActivationKeyboardEvent, getSafeDate } from '../utils';
 import { DOM_SELECTORS, CSS_CLASSES } from '../render/constants';
 
 const GOAL_STEP = 5, MAX_GOAL = 9999;
@@ -106,24 +108,49 @@ const _handleContainerClick = (e: MouseEvent) => {
     const card = el.closest<HTMLElement>(DOM_SELECTORS.HABIT_CARD);
     const { habitId: hId, time } = card?.dataset || {};
     if (!hId || !time) return;
-    const t = time as TimeOfDay;
+    const timeOfDay = time as TimeOfDay;
 
     if (el.classList.contains(CSS_CLASSES.SWIPE_DELETE_BTN)) {
         triggerHaptic('light');
-        const h = state.habits.find(x => x.id === hId);
-        if (h && getEffectiveScheduleForHabitOnDate(h, state.selectedDate).length <= 1) requestHabitEndingFromModal(hId);
-        else requestHabitTimeRemoval(hId, t);
+
+        // Use lock helper to avoid race conditions (same as other action flows)
+        const h = _lockActionHabit(hId);
+        if (!h) return;
+
+        const target = getSafeDate(state.selectedDate);
+
+        // Standardized generic confirmation message for delete actions triggered from the card
+        const confirmMsgGeneric = t('confirmDeleteGeneric');
+
+        if (h && getEffectiveScheduleForHabitOnDate(h, state.selectedDate).length <= 1) {
+            // Ending the habit (affects future schedule)
+            ActionContext.ending = { habitId: hId, targetDate: target };
+            showConfirmationModal(confirmMsgGeneric, () => {
+                _requestFutureScheduleChange(hId, target, s => ({ ...s, endDate: target }), true);
+                ActionContext.reset();
+            }, { confirmButtonStyle: 'danger', confirmText: t('deleteButton'), onCancel: () => ActionContext.reset() });
+        } else {
+            // Removing a time slot from the habit
+            ActionContext.removal = { habitId: hId, time: timeOfDay, targetDate: target };
+            const confirmMsg = t('confirmRemoveTimePermanent', { habitName: getHabitDisplayInfo(h, target).name, time: getTimeOfDayName(timeOfDay) });
+            showConfirmationModal(confirmMsg, () => {
+                ensureHabitDailyInfo(target, hId).dailySchedule = undefined;
+                _requestFutureScheduleChange(hId, target, s => ({ ...s, times: s.times.filter(x => x !== timeOfDay) as readonly TimeOfDay[] }), true);
+                ActionContext.reset();
+            }, { title: t('modalRemoveTimeTitle'), confirmText: t('deleteButton'), confirmButtonStyle: 'danger', onCancel: () => ActionContext.reset() });
+        }
+
         return;
     }
 
     if (el.classList.contains(CSS_CLASSES.SWIPE_NOTE_BTN)) {
-        triggerHaptic('light'); openNotesModal(hId, state.selectedDate, t); return;
+        triggerHaptic('light'); openNotesModal(hId, state.selectedDate, timeOfDay); return;
     }
 
     // DIRECT INPUT (Edit Goal Value)
     if (el.classList.contains(CSS_CLASSES.GOAL_VALUE_WRAPPER)) {
         e.stopPropagation();
-        _handleGoalInput(el, hId, t);
+        _handleGoalInput(el, hId, timeOfDay);
         return;
     }
 
@@ -153,7 +180,7 @@ const _handleContainerClick = (e: MouseEvent) => {
             goalAnimationCleanupTimers.set(wrapperEl, timerId);
         }
 
-        setGoalOverride(hId, state.selectedDate, t, next);
+        setGoalOverride(hId, state.selectedDate, timeOfDay, next);
         triggerHaptic('light'); return;
     }
 
@@ -171,7 +198,7 @@ const _handleContainerClick = (e: MouseEvent) => {
         triggerHaptic('light');
 
         // --- AÇÃO IMEDIATA ---
-        toggleHabitStatus(hId, t, state.selectedDate);
+        toggleHabitStatus(hId, timeOfDay, state.selectedDate);
     }
 };
 
