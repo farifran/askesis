@@ -14,6 +14,9 @@
     scroll-snap-type: x proximity;
     padding-inline-start: 0;
     padding-inline-end: 0;
+    justify-content: center;
+    /* Slight end padding so `today` aligned to end has a small inset */
+    scroll-padding-inline-end: 10px;
 }
 .calendar-strip::-webkit-scrollbar { display: none; }
 
@@ -28,6 +31,11 @@
     transition: background-color var(--transition-duration), transform 0.1s ease-out;
     border: 2px solid transparent;
     flex-shrink: 0;
+    scroll-snap-align: center;
+}
+
+/* Keep the special-case for today's item to align to the end (right) */
+.day-item.today {
     scroll-snap-align: end;
 }
 
