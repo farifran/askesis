@@ -14,6 +14,7 @@ import { QUOTE_COLLAPSE_DEBOUNCE_MS } from './constants';
 import { ui } from './render/ui';
 import { t, setLanguage, formatDate } from './i18n'; 
 import { UI_ICONS } from './render/icons';
+import { DOM_SELECTORS } from './render/constants';
 import { STOIC_QUOTES, type Quote } from './data/quotes';
 import { selectBestQuote } from './services/quoteEngine'; 
 import { calculateDaySummary } from './services/selectors';
@@ -347,7 +348,25 @@ function _applyHabitEdgeFadeState() {
     const maxScrollTop = Math.max(0, container.scrollHeight - container.clientHeight);
     const hasScrollableOverflow = maxScrollTop > 1;
     const showTopFade = hasScrollableOverflow && container.scrollTop > 1;
-    const showBottomFade = hasScrollableOverflow && container.scrollTop < maxScrollTop - 1;
+
+    // Only show bottom edge fade when the last card is actually close to the
+    // container bottom. This avoids showing the fade on short lists where the
+    // last card is far from the visual bottom even though the container is scrollable.
+    let showBottomFade = false;
+    if (hasScrollableOverflow) {
+        const cards = Array.from(container.querySelectorAll(DOM_SELECTORS.HABIT_CARD)) as HTMLElement[];
+        if (cards.length === 0) {
+            showBottomFade = container.scrollTop < maxScrollTop - 1;
+        } else {
+            const lastCard = cards[cards.length - 1];
+            const containerRect = container.getBoundingClientRect();
+            const lastRect = lastCard.getBoundingClientRect();
+            const distanceToBottom = containerRect.bottom - lastRect.bottom;
+            // Threshold (px) under which we consider the last card "near" the bottom.
+            const NEAR_BOTTOM_THRESHOLD = 32;
+            showBottomFade = (distanceToBottom <= NEAR_BOTTOM_THRESHOLD) && (container.scrollTop < maxScrollTop - 1);
+        }
+    }
 
     container.classList.toggle('show-edge-fade-top', showTopFade);
     container.classList.toggle('show-edge-fade-bottom', showBottomFade);
