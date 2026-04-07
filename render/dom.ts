@@ -35,12 +35,36 @@ const ALLOWED_ATTR = [
  * Use quando for necessário manipular HTML como string antes de parsear.
  */
 export function sanitize(html: string): string {
-    const clean = DOMPurify.sanitize(html, {
+    const cleaned = DOMPurify.sanitize(html, {
         ALLOWED_TAGS,
         ALLOWED_ATTR,
         RETURN_TRUSTED_TYPE: false,
     }) as string;
-    return clean;
+
+    // Extra hardening: ensure any remaining on* handlers or javascript: URIs are removed
+    // Parse the sanitized string into a template and scrub attributes then serialize back.
+    try {
+        const template = document.createElement('template');
+        template.innerHTML = cleaned;
+        const elements = template.content.querySelectorAll('*');
+        for (const el of elements) {
+            const attrs = Array.from(el.attributes);
+            for (const attr of attrs) {
+                const name = attr.name.toLowerCase();
+                const value = (attr.value || '').trim().toLowerCase();
+                if (name.startsWith('on')) {
+                    el.removeAttribute(attr.name);
+                    continue;
+                }
+                if ((name === 'href' || name === 'src' || name === 'xlink:href') && value.startsWith('javascript:')) {
+                    el.removeAttribute(attr.name);
+                }
+            }
+        }
+        return template.innerHTML;
+    } catch {
+        return cleaned;
+    }
 }
 
 /**
