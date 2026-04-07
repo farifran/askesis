@@ -13,9 +13,22 @@ Visando agilidade, captei 20 arquivos com análise detalhada (risco alto/impacto
 1. Algoritmo de merge (`services/dataMerge/merge.ts`) com risco de regressões que quebram invariantes CRDT. Sugestão: property-tests, benchmarks e checkpoints antes de merges.
 2. Validações e rate-limits sensíveis no endpoint `/api/sync` — revisar e testar em E2E. (`api/_httpSecurity.ts`, `api/sync.ts`)
 3. Service Worker (`sw.js`) e política de cache — risco de servir bundles desatualizados. Status: já possui precaching Workbox; recomenda-se confirmar geração do manifest em build e adicionar verificação no CI.
-4. Respostas da IA potencialmente malformadas/contendo HTML — sanear/restringir antes de renderizar em modais/tooltips. Status: parcialmente mitigado — `listeners/modals/aiHandlers.ts` já usa `sanitizeHtmlToFragment` em caminhos críticos; ainda recomendamos esquema/validação de saída estruturada.
-5. Guardrails (scripts) existem, mas não necessariamente executados no CI — integrar e bloquear PRs com violações. (`scripts/*.js`)
+4. Respostas da IA potencialmente malformadas/contendo HTML — sanear/restringir antes de renderizar em modais/tooltips. Status: parcialmente mitigado — sink central de sanitização foi substituído por `DOMPurify` (ver `render/dom.ts`) e caminhos críticos já usam a função; recomenda-se auditoria de call‑sites para garantir uso consistente e esquema/validação de saída estruturada.
+5. Guardrails (scripts) existem; integração no CI foi adicionada em modo *warning* (não bloqueante) com upload de relatório. Recomendação: monitorar warnings e migrar para *fail* após 7–14 dias. (`scripts/*.js`)
 6. Hot-path de renderização de gráficos — cálculo por frame pesado em dispositivos fracos. Sugestão: offload para worker, memoização e throttling. (`render/chart.ts`)
+
+## Implementações realizadas (até 2026-04-07)
+
+- **Sanitização central:** Substituído o sanitizador caseiro por `DOMPurify` e hardening adicional; sink central `sanitizeHtmlToFragment` agora usa `DOMPurify` em [render/dom.ts](render/dom.ts). Testes unitários adicionados: [tests/render.dom.test.ts](tests/render.dom.test.ts).
+- **Persistência / Migração:** Snapshot pré-migração, restauração e limpeza implementados (`createBackupSnapshot`, `restoreBackupSnapshot`, `clearBackupSnapshot`) e uso no fluxo de `loadState` para rollback seguro — [services/persistence.ts](services/persistence.ts).
+- **API / Sync Key:** Fallback para ambientes sem SubtleCrypto e limpeza de sync key em 401 implementados em [services/api.ts](services/api.ts).
+- **CI Guardrails:** Guardrails integrados em CI em modo *warning* com upload de log (artifact), sem bloquear PRs — [.github/workflows/ci.yml](.github/workflows/ci.yml).
+- **ESLint:** Regras para sinalizar `innerHTML`/`createContextualFragment` adicionadas como `warn` em [eslint.config.mjs](eslint.config.mjs).
+- **Dependências / Auditoria:** Documento de auditoria e helper adicionados (`docs/DEPENDENCY-AUDIT.md`, `scripts/check-vite.sh`, script npm `check:deps`); `vitest` e `@vitest/*` atualizados para `^4.1.2` em `package.json`.
+- **TypeScript fix:** Cast ajustado para inicialização do DOMPurify em `render/dom.ts` para resolver `tsc` errors.
+
+Essas alterações já estão aplicadas no workspace; próximos passos: revisar call‑sites que ainda usam `innerHTML` e abrir PRs formais.
+
 7. Desserialização/hydration de formatos antigos/corrompidos — precisar de validações robustas e recovery paths. (`services/dataMerge/hydration.ts`, `services/dataMerge/validation.ts`)
 
 ---

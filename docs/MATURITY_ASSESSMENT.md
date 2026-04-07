@@ -26,7 +26,9 @@
 - `data/quotes.ts` com validação de schema formal via `data/quotes.test.ts` (ID únicos, enums, adaptações).
 - `scripts/guardrail-audit.js` formaliza política de vulnerabilidades npm (HIGH/CRITICAL bloqueiam CI); integrado a `guardrail:all`.
 - Performance está razoável: existem caches, debounce e agendamento; hot paths de DOM usam `setTrustedSvgContent` e `sanitizeHtmlToFragment`.
-- Guardrails mantidos: `guardrail-security-html.js`, `guardrail-locales-parity.js`, `guardrail-audit.js` — removidos os 4 que cobriam riscos hipotéticos ou já obsoletos (dead-files, file-size, sw-cache-version, metadata-schema).
+- Guardrails mantidos: `guardrail-security-html.js`, `guardrail-locales-parity.js`, `guardrail-audit.js`, `check-sw-manifest.js` — integrados ao CI via `guardrail:all`; removidos os 4 que cobriam riscos hipotéticos ou já obsoletos (dead-files, file-size, sw-cache-version, metadata-schema).
+
+- Atualizações recentes (abril/2026): substituição do sanitizador caseiro por `DOMPurify` em `render/dom.ts`; adição de esqueleto de property-tests com `fast-check` (`tests/property/merge.property.test.ts`); regras ESLint para sinalizar `innerHTML`/`createContextualFragment`; refatoração em `render/habits.ts` para usar `setTrustedHtmlFragment` (sink seguro).
 
 ## Escala
 
@@ -91,15 +93,15 @@
 | render/calendarGrid.ts | 82 | L4 Maduro | Novo módulo extraído de `calendar.ts`; renderiza grade do calendário almanaque; `getTodayUTCIso()` consistente; zero `innerHTML`. |
 | render/chart.ts | 76 | L4 Maduro | Zero `any` e zero `innerHTML`; SVG via `setAttribute`; `setTextContent` e `setTrustedHtmlFragment` usados. |
 | render/constants.ts | 83 | L4 Maduro | Constantes de render bem isoladas e seguras. |
-| render/dom.ts | 84 | L4 Maduro | `sanitizeHtmlToFragment` com blocklist explícita; único `innerHTML` interno é o parser sandbox. |
-| render/habits.ts | 78 | L4 Maduro | Zero `any`, zero `innerHTML`; `setTrustedSvgContent` em todos os 10 sinks de ícone. |
+| render/dom.ts | 84 | L4 Maduro | `sanitizeHtmlToFragment` agora usa `DOMPurify` com blocklist explícita; único `innerHTML` interno é o parser sandbox. |
+| render/habits.ts | 78 | L4 Maduro | Zero `any`, zero `innerHTML`; `setTrustedSvgContent` em todos os 10 sinks de ícone; `createContextualFragment` substituído por `setTrustedHtmlFragment` (sink seguro). |
 | render/icons.ts | 79 | L4 Maduro | Catálogo central e coerente com sanitização de uso. |
 | render/modalBuilders.ts | 83 | L4 Maduro | Novo módulo com 7 builders DOM puros extraídos de `modals.ts`; única dependência de `dom/icons/i18n/state`; zero `innerHTML`. |
 | render/modals.ts | 83 | L4 Maduro | Zero `any`; `openEditModal` tipado como `Habit \| HabitTemplate \| null`; `setTextContent()` em todos os sinks; builders DOM movidos para `modalBuilders.ts`; arquivo 60+ linhas mais enxuto. |
 | render/rotary.ts | 77 | L4 Maduro | Zero `any`; `(window as any).CSSTranslate` eliminado; interação via pointer events bem estruturada. |
 | render/ui.ts | 77 | L4 Maduro | Registro lazy de referências DOM; getters cacheados com `Object.defineProperty`. |
 | scripts/dev-api-mock.js | 80 | L4 Maduro | `KEY_HASH_RE` valida formato do header; `lastModified` validado como `number`; 500 sem expor `e.message`. |
-| scripts/guardrail-audit.js | 78 | L4 Maduro | Política formal: HIGH/CRITICAL → bloqueio CI; MODERATE → janela 30 dias; separa deps produção vs dev. |
+| scripts/guardrail-audit.js | 78 | L4 Maduro | Política formal: HIGH/CRITICAL → bloqueio CI; MODERATE → janela 30 dias; separa deps produção vs dev. Adicionado `scripts/check-sw-manifest.js` e `guardrail:sw-manifest` para validação de precache Workbox. |
 | scripts/guardrail-locales-parity.js | 78 | L4 Maduro | Valida paridade de chaves entre `pt.json`, `en.json` e `es.json`; detecta tipos divergentes e placeholders `{var}` ausentes. |
 | services/HabitService.ts | 82 | L4 Maduro | Lógica bitmask sólida e foco claro de responsabilidade. |
 | services/analysis.ts | 78 | L4 Maduro | `catch (e: unknown)` em todos os paths assíncronos; tratamento de erro robusto. |
@@ -107,7 +109,7 @@
 | services/badge.ts | 78 | L4 Maduro | `NavigatorWithBadging` interface local; zero `any`; falha silênciosa bem documentada. |
 | services/cloud.ts | 83 | L4 Maduro | Zero `any`; DecryptedCore type guard; erro tipado com instanceof. |
 | services/crypto.ts | 86 | L5 Excelente | AES-GCM/PBKDF2 correto; 5 guards de validação de entrada em `decrypt()`. |
-| services/dataMerge.ts | 86 | L4 Maduro | Barrel estável para API pública; merge modular em `services/dataMerge/*`. |
+| services/dataMerge.ts | 86 | L4 Maduro | Barrel estável para API pública; merge modular em `services/dataMerge/*`. Esqueleto de property-tests adicionado em `tests/property/merge.property.test.ts` (fast-check). |
 | services/habitActions.ts | 84 | L4 Maduro | Barrel estável para API pública; lógica modular em `services/habitActions/*`. |
 | services/migration.ts | 80 | L4 Maduro | Zero `any`; `Object.assign` para campos `readonly`; parâmetro `unknown`. |
 | services/persistence.ts | 81 | L4 Maduro | Persistência resiliente com debounce e fallback adequados; testes para `pruneOrphanedDailyData` (2) e debounce de `saveState` (2) adicionados. |

@@ -24,7 +24,8 @@ export function mergeHabitHistories(winnerHistory: HabitSchedule[], loserHistory
     const historyMap = new Map<string, HabitSchedule>();
     loserHistory.forEach(s => historyMap.set(s.startDate, { ...s }));
     winnerHistory.forEach(s => historyMap.set(s.startDate, { ...s }));
-    return Array.from(historyMap.values()).sort((a, b) => a.startDate.localeCompare(b.startDate));
+    // Use stable string comparison to avoid locale-dependent ordering
+    return Array.from(historyMap.values()).sort((a, b) => (a.startDate < b.startDate ? -1 : a.startDate > b.startDate ? 1 : 0));
 }
 
 function mergeDayRecord(source: Record<string, HabitDailyInfo>, target: Record<string, HabitDailyInfo>) {

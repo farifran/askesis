@@ -14,7 +14,7 @@ import { calculateHabitStreak, getActiveHabitsForDate, getSmartGoalForHabit, get
 import { ui } from './ui';
 import { t, formatInteger } from '../i18n';
 import { UI_ICONS, getTimeOfDayIcon, sanitizeHabitIcon } from './icons';
-import { setTextContent } from './dom';
+import { setTextContent, setTrustedHtmlFragment } from './dom';
 import { CSS_CLASSES, DOM_SELECTORS } from './constants';
 import { parseUTCIsoDate } from '../utils';
 import { HabitService } from '../services/HabitService';
@@ -32,7 +32,8 @@ type CardElements = {
 const cardElementsCache = new WeakMap<HTMLElement, CardElements>();
 
 function replaceWithHtmlFragment(target: HTMLElement, html: string) {
-    target.replaceChildren(document.createRange().createContextualFragment(html));
+    // Use centralized sanitizer and fragment creator to avoid unsafe insertion.
+    setTrustedHtmlFragment(target, html);
 }
 
 function getGroupDOM(time: TimeOfDay) {

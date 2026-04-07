@@ -102,8 +102,24 @@ export function setTrustedHtmlFragment(target: HTMLElement | null, html: string)
  */
 export function sanitizeHtmlToFragment(html: string): DocumentFragment {
     // Use DOMPurify to produce a safe HTML string, then parse into a DocumentFragment.
-    const allowedTags = ['a','b','i','em','strong','p','ul','ol','li','br','span','div','img','svg','path','g'];
-    const allowedAttrs = ['href','src','alt','title','class','id','width','height','viewBox','xmlns'];
+    const allowedTags = [
+        'a', 'b', 'i', 'em', 'strong', 'p', 'ul', 'ol', 'li', 'br', 'span', 'div', 'img',
+        // SVG tags commonly used by the app's icon set + accessibility/structure tags
+        'svg', 'path', 'g', 'defs', 'symbol', 'use', 'rect', 'circle', 'ellipse', 'line',
+        'polyline', 'polygon', 'stop', 'lineargradient', 'title', 'desc', 'clippath', 'mask', 'pattern', 'metadata'
+    ];
+
+    const allowedAttrs = [
+        // Generic attributes
+        'href', 'src', 'alt', 'title', 'class', 'id', 'width', 'height', 'viewbox', 'viewBox', 'xmlns', 'xmlns:xlink',
+        // Preserve common SVG sizing/presentation attributes
+        'preserveAspectRatio', 'preserveaspectratio',
+        // SVG-specific attributes required to render vector icons
+        'd', 'fill', 'stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoin', 'stroke-opacity', 'fill-opacity',
+        'transform', 'transform-origin', 'cx', 'cy', 'r', 'x', 'y', 'points', 'offset', 'stop-color', 'stop-opacity',
+        'xlink:href', 'href', 'aria-hidden', 'focusable', 'role', 'clip-path', 'mask', 'clip-rule', 'stroke-miterlimit',
+        'stroke-dasharray', 'stroke-dashoffset', 'opacity', 'vector-effect'
+    ];
 
     const clean = DOMPurify.sanitize(html, {
         ALLOWED_TAGS: allowedTags,
