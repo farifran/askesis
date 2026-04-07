@@ -388,6 +388,31 @@ export function clearPushPermissionState() {
     } catch {}
 }
 
+// --- Notification helpers (typed wrappers to avoid unsafe casts) ---
+export function getNotificationPermission(): NotificationPermission {
+    try {
+        if (typeof Notification === 'undefined') return 'default';
+        // Some environments expose Notification.permission as a string; guard and coerce
+        const maybe = (Notification as unknown) as { permission?: NotificationPermission };
+        return maybe.permission ?? 'default';
+    } catch {
+        return 'default';
+    }
+}
+
+export async function requestNotificationPermission(): Promise<NotificationPermission> {
+    try {
+        if (typeof Notification === 'undefined') return 'default';
+        const req = (Notification as unknown) as { requestPermission?: () => Promise<NotificationPermission> };
+        if (typeof req.requestPermission === 'function') {
+            return await req.requestPermission();
+        }
+        return 'default';
+    } catch {
+        return 'default';
+    }
+}
+
 function _loadScript(src: string): Promise<void> {
     return new Promise((resolve, reject) => {
         const existing = document.querySelector<HTMLScriptElement>(`script[src="${src}"]`);

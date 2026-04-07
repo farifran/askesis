@@ -16,7 +16,7 @@ import { setupDragHandler } from './listeners/drag';
 import { setupSwipeHandler } from './listeners/swipe';
 import { setupCalendarListeners } from './listeners/calendar';
 import { setupChartListeners } from './listeners/chart';
-import { getTodayUTCIso, resetTodayCache, createDebounced, logger, getLocalPushOptIn, setLocalPushOptIn, hasRequestedPushPermission, getPushPermissionRequestAgeMs, markPushPermissionRequested, ensureOneSignalReady } from './utils';
+import { getTodayUTCIso, resetTodayCache, createDebounced, logger, getLocalPushOptIn, setLocalPushOptIn, hasRequestedPushPermission, getPushPermissionRequestAgeMs, markPushPermissionRequested, ensureOneSignalReady, getNotificationPermission, requestNotificationPermission } from './utils';
 import { state, getPersistableState, invalidateCachesForDateChange } from './state';
 import { pullRemoteChanges, syncStateWithCloud } from './services/cloud';
 import { checkAndAnalyzeDayContext } from './services/analysis';
@@ -109,10 +109,8 @@ export function setupEventListeners() {
     // Prompt automático (com user activation): na primeira interação do usuário, se ainda não houve decisão.
     // Isso recupera o comportamento "na primeira abertura" sem carregar SDKs no boot.
     const maybeRequestPushPermission = async () => {
-        try {
-            if (typeof Notification === 'undefined') return;
-
-            const permission = (Notification as any).permission || 'default';
+            try {
+            const permission = getNotificationPermission();
             if (permission !== 'default') return;
             if (getLocalPushOptIn() !== null) return;
             if (hasRequestedPushPermission()) {
@@ -121,7 +119,7 @@ export function setupEventListeners() {
             }
 
             markPushPermissionRequested();
-            const perm = (Notification as any).requestPermission ? await (Notification as any).requestPermission() : 'default';
+            const perm = await requestNotificationPermission();
             if (perm === 'granted') {
                 setLocalPushOptIn(true);
                 updateNotificationUI();
@@ -177,8 +175,8 @@ export function setupEventListeners() {
         } catch (e) {}
     };
 
-    if ('scheduler' in window && (window as any).scheduler) {
-        (window as any).scheduler.postTask(setupHeavyInteractions, { priority: 'user-visible' });
+    if (window.scheduler?.postTask) {
+        window.scheduler.postTask(setupHeavyInteractions, { priority: 'user-visible' });
     } else {
         setTimeout(setupHeavyInteractions, INTERACTION_DELAY_MS);
     }

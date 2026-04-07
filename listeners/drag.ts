@@ -58,7 +58,7 @@ const DragMachine = {
     rafId: 0,
     
     // Typed OM
-    hasTypedOM: typeof window !== 'undefined' && !!(window.CSS && (window as any).CSSTranslate && CSS.px)
+    hasTypedOM: typeof window !== 'undefined' && !!(window.CSS && window.CSSTranslate && CSS.px)
 };
 
 export const isDragging = () => DragMachine.isActive;
@@ -330,8 +330,8 @@ function _renderFrame() {
                 }
             }
             
-            if (DragMachine.hasTypedOM && DragMachine.indicator.attributeStyleMap) {
-                DragMachine.indicator.attributeStyleMap.set('transform', new (window as any).CSSTranslate(CSS.px(0), CSS.px(topPos), CSS.px(0)));
+            if (DragMachine.hasTypedOM && DragMachine.indicator.attributeStyleMap && window.CSSTranslate) {
+                DragMachine.indicator.attributeStyleMap.set('transform', new window.CSSTranslate(CSS.px(0), CSS.px(topPos), CSS.px(0)));
             } else {
                 DragMachine.indicator.style.transform = `translate3d(0, ${topPos}px, 0)`;
             }
@@ -368,11 +368,11 @@ const _onPointerMove = (e: PointerEvent) => {
         const x = pageX - DragMachine.grabOffsetX;
         const y = pageY - DragMachine.grabOffsetY;
 
-        if (DragMachine.hasTypedOM && DragMachine.ghostEl.attributeStyleMap) {
-            DragMachine.ghostEl.attributeStyleMap.set('transform', new (window as any).CSSTranslate(CSS.px(x), CSS.px(y)));
-        } else {
-            DragMachine.ghostEl.style.transform = `translate3d(${x}px, ${y}px, 0) scale(1.05)`;
-        }
+        if (DragMachine.hasTypedOM && DragMachine.ghostEl.attributeStyleMap && window.CSSTranslate) {
+                DragMachine.ghostEl.attributeStyleMap.set('transform', new window.CSSTranslate(CSS.px(x), CSS.px(y)));
+            } else {
+                DragMachine.ghostEl.style.transform = `translate3d(${x}px, ${y}px, 0) scale(1.05)`;
+            }
     }
 
     // B. Logic
@@ -474,8 +474,8 @@ export function startDragSession(card: HTMLElement, content: HTMLElement, startE
     const startX = startEvent.clientX + window.scrollX - DragMachine.grabOffsetX;
     const startY = startEvent.clientY + window.scrollY - DragMachine.grabOffsetY;
     
-    if (DragMachine.hasTypedOM && ghost.attributeStyleMap) {
-        ghost.attributeStyleMap.set('transform', new (window as any).CSSTranslate(CSS.px(startX), CSS.px(startY)));
+    if (DragMachine.hasTypedOM && ghost.attributeStyleMap && window.CSSTranslate) {
+        ghost.attributeStyleMap.set('transform', new window.CSSTranslate(CSS.px(startX), CSS.px(startY)));
     } else {
         ghost.style.transform = `translate3d(${startX}px, ${startY}px, 0) scale(1.05)`;
     }

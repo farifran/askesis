@@ -345,10 +345,10 @@ export async function loadState(cloudState?: AppState): Promise<AppState | null>
         Object.assign(state.uiDirtyState, { calendarVisuals: true, habitListStructure: true, chartData: true });
         
         const runCleanup = () => pruneOrphanedDailyData(state.habits, state.dailyData);
-        if ('scheduler' in window && (window as any).scheduler) {
-             (window as any).scheduler.postTask(runCleanup, { priority: 'background' });
-        } else if ('requestIdleCallback' in window) {
-            requestIdleCallback(() => runCleanup());
+        if (window.scheduler?.postTask) {
+             window.scheduler.postTask(runCleanup, { priority: 'background' });
+        } else if (window.requestIdleCallback) {
+            window.requestIdleCallback(() => runCleanup());
         } else {
             setTimeout(runCleanup, 50);
         }

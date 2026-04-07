@@ -46,7 +46,7 @@ import {
 } from '../services/habitActions';
 import { t, setLanguage } from '../i18n';
 import { setupReelRotary } from '../render/rotary';
-import { ensureOneSignalReady, setLocalPushOptIn, triggerHaptic, logger, getTodayUTCIso, isActivationKeyboardEvent } from '../utils';
+import { ensureOneSignalReady, setLocalPushOptIn, triggerHaptic, logger, getTodayUTCIso, isActivationKeyboardEvent, getNotificationPermission } from '../utils';
 import { setTextContent } from '../render/dom';
 import {
     handleAiEvalClick,
@@ -169,7 +169,7 @@ const _enableNotificationsAsync = async (perm: string) => {
             })
             .catch(() => { updateNotificationUI(); });
     } catch {
-        const nativePerm = (typeof Notification !== 'undefined') ? (Notification as any).permission : 'default';
+        const nativePerm = getNotificationPermission();
         if (nativePerm !== 'granted') {
             ui.notificationToggle.checked = false;
             setLocalPushOptIn(false);
@@ -214,16 +214,15 @@ const _handleNotificationToggleChange = () => {
         return;
     }
 
-    const currentPerm: string =
-        (typeof Notification !== 'undefined' && (Notification as any).permission) || 'default';
+    const currentPerm: string = getNotificationPermission();
 
     // Chama requestPermission() SINCRONAMENTE dentro do gesto do usuário (sem async antes).
     // Isso garante compatibilidade com iOS Safari PWA e qualquer browser com restrição de gesto.
     const permPromise: Promise<string> =
         (currentPerm === 'default' &&
             typeof Notification !== 'undefined' &&
-            typeof (Notification as any).requestPermission === 'function')
-            ? ((Notification as any).requestPermission() as Promise<string>)
+            typeof (Notification as unknown as { requestPermission?: Function }).requestPermission === 'function')
+            ? ((Notification as unknown as { requestPermission?: () => Promise<string> }).requestPermission() as Promise<string>)
             : Promise.resolve(currentPerm);
 
     permPromise

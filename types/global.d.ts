@@ -37,6 +37,7 @@ declare global {
     interface Window {
         OneSignal?: OneSignalLike;
         OneSignalDeferred?: Array<(oneSignal: OneSignalLike) => void>;
+        bootWatchdog?: number;
         showFatalError?: (message: string, isWatchdog?: boolean) => void;
         CSSTranslate?: new (x: unknown, y: unknown, z?: unknown) => unknown;
         scheduler?: {

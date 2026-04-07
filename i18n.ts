@@ -209,8 +209,13 @@ function updateHotCache(langCode: string) {
     // 4. List Format (Arrays)
     if (!listFormatCache[langCode]) {
         try {
-            // @fix: Cast Intl to any to support ListFormat which might be missing in TS libs
-            listFormatCache[langCode] = new (Intl as any).ListFormat(langCode, { style: 'long', type: 'conjunction' });
+            // Prefer a typed access to Intl.ListFormat when available in the runtime.
+            const ListFormatCtor = (Intl as unknown as { ListFormat?: new (locales?: string | string[], options?: Intl.ListFormatOptions) => Intl.ListFormat }).ListFormat;
+            if (ListFormatCtor) {
+                listFormatCache[langCode] = new ListFormatCtor(langCode, { style: 'long', type: 'conjunction' });
+            } else {
+                throw new Error('ListFormat not available');
+            }
         } catch (e) {
             // ROBUSTEZ: Fallback seguro se a API não existir (Browser antigo).
             listFormatCache[langCode] = { 
@@ -351,7 +356,7 @@ export function formatDate(date: Date | number | null | undefined, options: Intl
         dateObj = date;
     } else {
         // Fallback for corrupted data types (e.g. string from JSON without parsing)
-        dateObj = new Date(date as any);
+        dateObj = new Date(String(date));
     }
 
     if (isNaN(dateObj.getTime())) {

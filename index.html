@@ -31,12 +31,17 @@
          em modo escuro IMEDIATAMENTE, evitando flash branco antes do CSS carregar. -->
     <meta name="color-scheme" content="dark">
     
+        <!-- Minimal SEO / privacy -->
+        <meta name="description" content="Um rastreador de hábitos dinâmico com visualizações e feedback personalizado com IA.">
+        <meta name="referrer" content="strict-origin-when-cross-origin">
+        <link rel="canonical" href="/">
     <title>Askesis</title>
     
     <!-- PERFORMANCE: Resource Hints. Instruem o navegador a baixar assets críticos em alta prioridade. -->
     <link rel="preload" href="bundle.css" as="style">
     <!-- OPTIMIZATION: 'modulepreload' garante o tratamento correto de credenciais/cache para ESM. -->
     <link rel="modulepreload" href="bundle.js">
+    <link rel="modulepreload" href="boot/error-handler.js">
     
     <!-- PERFORMANCE: Network Socket Warming. 
          Inicia o handshake DNS/TCP/TLS com o CDN do OneSignal antes que o parser encontre a tag de script.
@@ -51,7 +56,7 @@
 
     <!-- Metadados para Compartilhamento Social (Open Graph) -->
     <meta property="og:title" content="Askesis">
-    <meta property="og:description" content="A dynamic habit tracker with data visualization and personalized AI-powered feedback.">
+    <meta property="og:description" content="Um rastreador de hábitos dinâmico com visualizações e feedback personalizado com IA.">
     <meta property="og:type" content="website">
     <meta property="og:image" content="icons/icon-512.svg">
     
@@ -102,11 +107,33 @@
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
+        /* Skip-link: visible only on focus to improve keyboard accessibility */
+        .skip-link {
+            position: absolute;
+            left: -999px;
+            top: auto;
+            width: 1px;
+            height: 1px;
+            overflow: hidden;
+        }
+        .skip-link:focus {
+            left: 1rem;
+            top: 1rem;
+            width: auto;
+            height: auto;
+            padding: 8px 12px;
+            background: #e5e5e5;
+            color: #000000;
+            border-radius: 4px;
+            z-index: 10000;
+        }
     </style>
     
         <!-- OneSignal removido do boot: carregado via runtime (utils.ensureOneSignalReady) -->
 </head>
 <body>
+    <script>window.showFatalError=window.showFatalError||function(m){try{console.error('fatal',m);}catch(e){}};</script>
+    <a href="#main" class="skip-link">Pular para o conteúdo</a>
     <!-- PERFORMANCE: SVG Sprite System.
          Usa width/height 0 e visibility hidden em vez de display:none para garantir
          que alguns navegadores (Safari antigo) calculem corretamente as dimensões internas dos símbolos. -->
@@ -145,99 +172,15 @@
             <div id="fatal-error-ui" class="d-none" style="color:#ff6b6b;padding:2rem;text-align:center;font-family:sans-serif;max-width:400px;line-height:1.5;">
                 <h3 id="error-title" style="margin-bottom:10px;">Erro Fatal</h3>
                 <p id="error-message" style="font-size:14px;opacity:0.8;">Erro desconhecido</p>
-                <button onclick="location.reload()" style="margin-top:20px;padding:10px 20px;background:#333;color:white;border:none;border-radius:4px;cursor:pointer;">
+                <a href="." id="fatal-retry-btn" role="button" style="margin-top:20px;display:inline-block;padding:10px 20px;background:#333;color:white;border:none;border-radius:4px;cursor:pointer;text-decoration:none;">
                     Tentar Novamente
-                </button>
+                </a>
             </div>
         </div>
     </div>
 
-    <!-- ROBUSTEZ: Global Error Handler & Watchdog. 
-         1. IIFE para isolamento de escopo.
-         2. Evita Memory Leaks (Detached DOM Nodes) não mantendo referências globais.
-         3. Watchdog Timer para falhas de boot silenciosas. -->
-    <script>
-      (function() {
-          var errorDisplayed = false;
-
-          // Helper para buscar elementos apenas quando necessário (evita cache obsoleto)
-          function getUI() {
-              return {
-                  loader: document.getElementById('initial-loader'),
-                  spinner: document.getElementById('loader-spinner'),
-                  errUi: document.getElementById('fatal-error-ui'),
-                  errTitle: document.getElementById('error-title'),
-                  errMsg: document.getElementById('error-message')
-              };
-          }
-
-          window.showFatalError = function(msg, isWatchdog) {
-            if (errorDisplayed) return;
-            errorDisplayed = true;
-
-            var ui = getUI();
-            
-            // Se o loader já foi removido do DOM (app carregou), não tente mostrar erro nele.
-            // Em vez disso, use um alert de fallback ou injete um novo modal.
-            if (!ui.loader || !ui.loader.isConnected) {
-                if (!isWatchdog) alert("Erro Crítico: " + msg);
-                return;
-            }
-
-            if (ui.loader) {
-                if (ui.spinner) ui.spinner.style.display = 'none';
-                
-                if (ui.errUi) {
-                    if (ui.errTitle) ui.errTitle.textContent = isWatchdog ? 'Tempo Excedido' : 'Falha Crítica';
-                    if (ui.errMsg) ui.errMsg.textContent = msg || 'Erro interno.';
-                    ui.errUi.classList.remove('d-none');
-                }
-                
-                ui.loader.classList.remove('hidden');
-            }
-          };
-
-          window.onerror = function(message, source, lineno, colno, error) {
-            // [ROBUSTNESS FIX]: Suppress domain-mismatch errors from OneSignal.
-            // These errors are expected on non-production domains and should not trigger the Fatal Error UI.
-            var msg = message || (error && error.message) || "";
-            if (typeof msg === 'string' && (msg.indexOf('OneSignal') !== -1 || msg.indexOf('onesignal') !== -1)) {
-              console.warn("Caught and suppressed OneSignal library error:", msg);
-              return true; // Prevents the error from being reported globally
-            }
-            
-            // IGNORE RESIZE OBSERVER LOOP ERROR: Benign warning in modern browsers when layout is stressed.
-            if (typeof msg === 'string' && msg.includes('ResizeObserver loop')) {
-                return true;
-            }
-
-            window.showFatalError(msg);
-            return false; 
-          };
-
-          window.onunhandledrejection = function(event) {
-            var reason = event.reason;
-            var msg = 'Erro Assíncrono: ' + (reason ? (reason.message || reason) : 'Desconhecido');
-            
-            // Suppress OneSignal-related promise rejections
-            if (typeof msg === 'string' && (msg.indexOf('OneSignal') !== -1 || msg.indexOf('onesignal') !== -1)) {
-               console.warn("Caught and suppressed OneSignal unhandled rejection:", msg);
-               return;
-            }
-            
-            window.showFatalError(msg);
-          };
-
-          // Watchdog: Verifica se o loader ainda está visível após 8s.
-          window.bootWatchdog = setTimeout(function() {
-            var ui = getUI();
-            // Verifica 'isConnected' para evitar falso positivo se o JS removeu o elemento mas o GC ainda não rodou
-            if (ui.loader && ui.loader.isConnected && !ui.loader.classList.contains('hidden')) {
-                window.showFatalError("O aplicativo demorou muito para responder. Verifique sua conexão.", true);
-            }
-          }, 8000);
-      })();
-    </script>
+        <!-- ROBUSTEZ: Global Error Handler & Watchdog moved to an external module (boot/error-handler.js) -->
+        <script type="module" src="boot/error-handler.js"></script>
 
     <!-- APP SHELL: Estrutura estática que será hidratada pelo JavaScript -->
     <div class="app-container">
@@ -275,7 +218,7 @@
             </div>
         </header>
 
-        <main>
+        <main id="main">
             <div id="habit-container">
                 <div class="habit-group-wrapper" data-time-wrapper="Morning">
                     <div class="time-marker"></div>

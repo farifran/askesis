@@ -31,6 +31,10 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Guardrail L3-L4 (PRs)
+        if: github.event_name == 'pull_request'
+        run: npm run guardrail:l3-l4
+
       - name: Guardrails (warning)
         run: npm run guardrail:all 2>&1 | tee guardrails.log || true
         continue-on-error: true

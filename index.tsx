@@ -28,7 +28,7 @@ import { initSync } from './listeners/sync';
 import { fetchStateFromCloud, syncStateWithCloud, setSyncStatus } from './services/cloud';
 import { hasLocalSyncKey, initAuth } from './services/api';
 import { updateAppBadge } from './services/badge';
-import { setupMidnightLoop, logger, getLocalPushOptIn, ensureOneSignalReady } from './utils';
+import { setupMidnightLoop, logger, getLocalPushOptIn, ensureOneSignalReady, getNotificationPermission } from './utils';
 import { BOOT_RELOAD_DELAY_MS, BOOT_SYNC_TIMEOUT_MS } from './constants';
 import { t } from './i18n';
 
@@ -164,8 +164,8 @@ let isInitialized = false;
 const registerServiceWorker = () => {
     if ('serviceWorker' in navigator && !window.location.protocol.startsWith('file')) {
         const loadSW = () => {
-            const permission = (typeof Notification !== 'undefined' && (Notification as any).permission) ? (Notification as any).permission : 'default';
-            const pushEnabled = getLocalPushOptIn() === true && permission === 'granted';
+                const permission = getNotificationPermission();
+                const pushEnabled = getLocalPushOptIn() === true && permission === 'granted';
             const swUrl = pushEnabled ? './sw.js?push=1' : './sw.js';
             // FIX: Use relative path './sw.js' instead of absolute '/sw.js'.
             // This ensures the SW is fetched from the same origin even in subdirectories or proxies,
@@ -250,13 +250,13 @@ function finalizeInit(loader: HTMLElement | null) {
         // IMPORTANTE: NÃO chamamos requestPermission() aqui — isso está fora de um gesto do usuário
         // e no iOS Safari PWA causaria interferência (silenciosamente bloqueado pelo WebKit),
         // além de conflitar com a solicitação feita pelo toggle. Apenas inicializamos a conexão.
-        const permission = (typeof Notification !== 'undefined' && (Notification as any).permission) ? (Notification as any).permission : 'default';
+        const permission = getNotificationPermission();
         if (getLocalPushOptIn() === true && permission === 'granted') {
             ensureOneSignalReady().catch(() => {});
         }
     };
-    if ((window as any).scheduler?.postTask) {
-        (window as any).scheduler.postTask(runBackgroundTasks, { priority: 'background' });
+    if (window.scheduler?.postTask) {
+        window.scheduler.postTask(runBackgroundTasks, { priority: 'background' });
     } else {
         (window.requestIdleCallback || ((cb) => setTimeout(cb, 1000)))(runBackgroundTasks);
     }
@@ -266,9 +266,9 @@ async function init(loader: HTMLElement | null) {
     if (isInitializing || isInitialized) return;
     isInitializing = true;
 
-    if ((window as any).bootWatchdog) {
-        clearTimeout((window as any).bootWatchdog);
-        delete (window as any).bootWatchdog;
+    if (window.bootWatchdog) {
+        clearTimeout(window.bootWatchdog);
+        window.bootWatchdog = undefined;
     }
 
     await initAuth();
