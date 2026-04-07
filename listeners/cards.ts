@@ -155,13 +155,15 @@ const _handleContainerClick = (e: MouseEvent) => {
         return;
     }
 
-    if (el.classList.contains(CSS_CLASSES.GOAL_CONTROL_BTN)) {
+        if (el.classList.contains(CSS_CLASSES.GOAL_CONTROL_BTN)) {
         e.stopPropagation();
         const habit = state.habits.find(h => h.id === hId);
         if (!habit) return;
-        const act = el.dataset.action, cur = getCurrentGoalForInstance(habit, state.selectedDate, t);
+
+        const act = el.dataset.action;
+        const cur = getCurrentGoalForInstance(habit, state.selectedDate, timeOfDay);
         const next = act === 'increment' ? Math.min(MAX_GOAL, cur + GOAL_STEP) : Math.max(1, cur - GOAL_STEP);
-        
+
         // VISUAL FEEDBACK FIX [2025-06-03]: Add animation class to wrapper
         const wrapper = el.parentElement?.querySelector(`.${CSS_CLASSES.GOAL_VALUE_WRAPPER}`);
         if (wrapper) {
@@ -182,7 +184,8 @@ const _handleContainerClick = (e: MouseEvent) => {
         }
 
         setGoalOverride(hId, state.selectedDate, timeOfDay, next);
-        triggerHaptic('light'); return;
+        triggerHaptic('light');
+        return;
     }
 
     if (el.classList.contains(CSS_CLASSES.HABIT_CONTENT_WRAPPER)) {
