@@ -34,6 +34,7 @@ Project epigraph — directly connects with Askesis's purpose as a **habit track
 - [Generative AI as Code and Prototyping Assistant](#en-ai-assistant)
 - [Usage Guide (Step by Step)](#en-usage-guide)
 - [Main User Flows](#en-user-flows)
+- [Elite Performance: The Browser's Theoretical Limit](#en-performance)
 - [Universal Platform and Sustainability](#en-platform)
 - [Architecture](#en-architecture)
   - General Architecture and User Flow
@@ -424,6 +425,22 @@ Result:
 </details>
 
 <br>
+<a id="en-performance"></a>
+<h1>Elite Performance: The Browser's Theoretical Limit</h1>
+
+<p align="center">
+  <img src="assets/screenshot/performance-insights.jpeg" alt="Performance Benchmark" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
+</p>
+
+Askesis runs at peak efficiency, turning architectural choices into real user smoothness. These metrics, captured via **Vercel Speed Insights**, validate our engineering:
+
+* **Score 100 & FID 7ms:** Instant interaction guaranteed by using **Vanilla TypeScript** and isolating heavy tasks (Crypto/AI) into **Web Workers**, keeping the *Main Thread* free from jank.
+* **LCP 0.95s:** Fast visual load thanks to **ultra-light bundles** (<60KB) and inline **Critical CSS** injection in the App Shell.
+* **CLS 0:** Absolute visual stability via **DOM Recycling**, avoiding expensive re-renders typical of modern frameworks.
+* **TTFB 0.32s:** Minimal server latency through distributed processing on the **Vercel Edge**.
+* **INP 136ms:** Snappy tactile response, optimized by a native event system and decoupled UI physics.
+<br><br>
+
 <a id="en-platform"></a>
 <h1>Universal Platform and Sustainability</h1>
 

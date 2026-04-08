@@ -34,6 +34,7 @@ Proyecto epígrafe — conecta directamente con el propósito de Askesis como **
 - [Asistente de IA para Código y Prototipado](#es-ai-assistant)
 - [Guía de Uso (Paso a Paso)](#es-usage-guide)
 - [Flujos de Usuario Principales](#es-user-flows)
+- [Rendimiento de Élite: El Límite Teórico del Navegador](#es-performance)
 - [Plataforma Universal y Sostenibilidad](#es-platform)
 - [Arquitectura](#es-architecture)
   - Arquitectura General y Flujo de Usuario
@@ -424,6 +425,22 @@ Resultado:
 </details>
 
 <br>
+<a id="es-performance"></a>
+<h1>Rendimiento de Élite: El Límite Teórico del Navegador</h1>
+
+<p align="center">
+  <img src="assets/screenshot/performance-insights.jpeg" alt="Benchmark de Rendimiento" width="100%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
+</p>
+
+Askesis opera con máxima eficiencia, convirtiendo elecciones arquitectónicas en fluidez real para el usuario. Estos datos, capturados vía **Vercel Speed Insights**, validan nuestra ingeniería:
+
+* **Score 100 & FID 7ms:** Interacción instantánea garantizada por el uso de **Vanilla TypeScript** y el aislamiento de tareas pesadas (Cifrado/IA) en **Web Workers**, manteniendo el *Main Thread* libre de bloqueos.
+* **LCP 0.95s:** Carga visual rápida gracias a **bundles ultra-ligeros** (<60KB) y la inyección inline de **Critical CSS** en el App Shell.
+* **CLS 0:** Estabilidad visual absoluta mediante **DOM Recycling**, evitando re-renders costosos típicos de frameworks modernos.
+* **TTFB 0.32s:** Latencia mínima de servidor mediante procesamiento distribuido en **Vercel Edge**.
+* **INP 136ms:** Respuesta táctil ágil, optimizada por un sistema de eventos nativo y una física de UI desacoplada.
+<br><br>
+
 <a id="es-platform"></a>
 <h1>Plataforma Universal y Sostenibilidad</h1>
 
