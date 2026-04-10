@@ -44,6 +44,20 @@
     scrollbar-width: none;
 }
 
+/* Wrapper for scroll content so we can apply transforms without changing scrollTop */
+#habit-container .habit-scroll-content {
+    will-change: transform;
+    transform: translateZ(0);
+    /* Ensure we don't change layout; visual-only movement */
+    display: block;
+}
+
+/* Visual state while overscrolling (JS toggles `is-overscrolling`) */
+#habit-container.is-overscrolling {
+    /* Slightly reduce pointer events on children to emphasize feedback */
+    --overscroll-active: 1;
+}
+
 #habit-container::before {
     content: '';
     position: sticky;
