@@ -126,16 +126,6 @@
     display: none;
 }
 
-/* Overscroll release transition (visual assist) */
-#habit-container {
-    /* will-change set dynamically by JS; fallback here */
-    will-change: transform;
-}
-
-#habit-container.overscroll-release {
-    transition: transform 260ms cubic-bezier(.22,.9,.32,1);
-}
-
 /* --- COMPONENTES: GRUPO DE HÁBITOS (WRAPPER) --- */
 .habit-group-wrapper {
     margin-block-end: 0;

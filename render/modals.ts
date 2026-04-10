@@ -164,6 +164,102 @@ export function initModalEngine() {
     });
 }
 
+// --- Elastic overscroll visual feedback for modal scroll areas ---
+const _elasticRegistry: WeakMap<HTMLElement, any> = new WeakMap();
+
+function attachElasticOverscroll(modal: HTMLElement) {
+    const sc = modal.querySelector<HTMLElement>('.modal-scroll-wrapper');
+    if (!sc || _elasticRegistry.has(sc)) return;
+
+    // runtime state
+    let startY = 0;
+    let dragging = false;
+    let currentTranslate = 0;
+    const MAX_STRETCH = 80; // px
+    const DAMPING = 0.35; // how much of the drag gets applied
+    const RESET_MS = 300;
+
+    const setTranslate = (y: number) => {
+        currentTranslate = y;
+        sc.style.transform = `translateY(${y}px)`;
+    };
+
+    const resetTranslate = () => {
+        sc.style.transition = `transform ${RESET_MS}ms cubic-bezier(.22,.8,.36,1)`;
+        setTranslate(0);
+        window.setTimeout(() => { sc.style.transition = ''; }, RESET_MS + 20);
+    };
+
+    function onPointerDown(e: PointerEvent) {
+        // only left button for mouse
+        if (e.pointerType === 'mouse' && e.button !== 0) return;
+        dragging = true;
+        startY = e.clientY;
+        try { (e.target as Element).setPointerCapture?.(e.pointerId); } catch {}
+    }
+
+    function onPointerMove(e: PointerEvent) {
+        if (!dragging) return;
+        const delta = e.clientY - startY;
+        const atTop = sc.scrollTop === 0;
+        const atBottom = sc.scrollTop + sc.clientHeight >= sc.scrollHeight - 1;
+
+        if ((atTop && delta > 0) || (atBottom && delta < 0)) {
+            // user is attempting to scroll past boundary — apply elastic transform
+            e.preventDefault();
+            const disp = Math.max(-MAX_STRETCH, Math.min(MAX_STRETCH, delta * DAMPING));
+            setTranslate(disp);
+        }
+    }
+
+    function onPointerUp(e: PointerEvent) {
+        if (!dragging) return;
+        dragging = false;
+        try { (e.target as Element).releasePointerCapture?.(e.pointerId); } catch {}
+        if (currentTranslate !== 0) resetTranslate();
+    }
+
+    function onWheel(e: WheelEvent) {
+        const atTop = sc.scrollTop === 0;
+        const atBottom = sc.scrollTop + sc.clientHeight >= sc.scrollHeight - 1;
+        // small nudge visual for wheel overscroll
+        if ((atTop && e.deltaY < 0) || (atBottom && e.deltaY > 0)) {
+            const nudge = (e.deltaY > 0) ? -18 : 18;
+            sc.style.transition = 'transform 200ms ease-out';
+            sc.style.transform = `translateY(${nudge}px)`;
+            window.setTimeout(() => { sc.style.transform = ''; sc.style.transition = ''; }, 220);
+        }
+    }
+
+    // Ensure pointer events can be controlled
+    sc.style.touchAction = sc.style.touchAction || 'pan-y';
+
+    sc.addEventListener('pointerdown', onPointerDown);
+    sc.addEventListener('pointermove', onPointerMove);
+    sc.addEventListener('pointerup', onPointerUp);
+    sc.addEventListener('pointercancel', onPointerUp);
+    sc.addEventListener('wheel', onWheel, { passive: true });
+
+    _elasticRegistry.set(sc, { onPointerDown, onPointerMove, onPointerUp, onWheel });
+}
+
+function detachElasticOverscroll(modal: HTMLElement) {
+    const sc = modal.querySelector<HTMLElement>('.modal-scroll-wrapper');
+    if (!sc) return;
+    const rec = _elasticRegistry.get(sc);
+    if (!rec) return;
+    const { onPointerDown, onPointerMove, onPointerUp, onWheel } = rec;
+    sc.removeEventListener('pointerdown', onPointerDown);
+    sc.removeEventListener('pointermove', onPointerMove);
+    sc.removeEventListener('pointerup', onPointerUp);
+    sc.removeEventListener('pointercancel', onPointerUp);
+    sc.removeEventListener('wheel', onWheel);
+    _elasticRegistry.delete(sc);
+    sc.style.transform = '';
+    sc.style.transition = '';
+}
+
+
 export function openModal(modal: HTMLElement, focusEl?: HTMLElement, onClose?: () => void) {
     const ctx: ModalContext = { element: modal, previousFocus: document.activeElement as HTMLElement, onClose };
     
@@ -187,12 +283,18 @@ export function openModal(modal: HTMLElement, focusEl?: HTMLElement, onClose?: (
     modal.classList.add('visible');
     const fobs = modal.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
     if (fobs.length) { ctx.firstFocusable = fobs[0]; ctx.lastFocusable = fobs[fobs.length - 1]; setTimeout(() => (focusEl || fobs[0]).focus(), 100); }
-    modalStack.push(ctx); ui.appContainer.setAttribute('inert', '');
+    modalStack.push(ctx);
+    // Attach elastic overscroll behavior for the modal's scroll area (if any)
+    try { attachElasticOverscroll(modal); } catch {}
+    ui.appContainer.setAttribute('inert', '');
 }
 
 export function closeModal(modal: HTMLElement, suppressCallbacks = false) {
     const idx = modalStack.findIndex(c => c.element === modal); if (idx === -1) return;
-    const [ctx] = modalStack.splice(idx, 1); modal.classList.remove('visible');
+    const [ctx] = modalStack.splice(idx, 1);
+    // Detach elastic overscroll listeners to avoid leaks
+    try { detachElasticOverscroll(modal); } catch {}
+    modal.classList.remove('visible');
     if (modalStack.length === 0) ui.appContainer.removeAttribute('inert');
     
     const header = modal.querySelector('.modal-header');
