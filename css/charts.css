@@ -51,9 +51,10 @@
     text-shadow: 0 1px 2px var(--bg-color);
     margin-top: -6px;
     user-select: none;
-    /* Reserve a minimum width on the right column so the logo doesn't shrink too much */
-    --chart-title-min-width: 160px;
-    --chart-logo-max-width: 220px;
+    /* Reserve a minimum width on the right column so the logo doesn't shrink too much.
+       Reduced to allow the subtitle ('Aja até ser') usar mais espaço. */
+    --chart-title-min-width: 110px;
+    --chart-logo-max-width: 160px;
 }
 
 .chart-header > .app-subtitle {
@@ -67,13 +68,13 @@
 }
 
 .chart-header > .chart-title-row {
-    flex: 0 0 auto;
+    /* Allow the right column to shrink when necessary but keep a small minimum width */
+    flex: 0 1 auto;
     box-sizing: border-box;
     display: flex;
     align-items: center;
     justify-content: flex-end;
     gap: var(--space-sm);
-    /* keep a minimum width so the right column (logo) is readable */
     min-width: var(--chart-title-min-width);
 }
 
@@ -267,11 +268,12 @@
         overflow-wrap: anywhere;
     }
     .chart-header > .chart-title-row {
-        flex: 0 0 auto;
+        flex: 0 1 auto;
         align-items: center;
         gap: var(--space-xs);
         justify-content: flex-end;
         white-space: nowrap; /* ensure the logo stays on one line */
+        min-width: var(--chart-title-min-width);
     }
     .chart-title-row { 
         display: flex;
