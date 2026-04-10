@@ -10,9 +10,12 @@
  * `MAX_OVERSCROLL_PX` e retorna com animação elástica.
  */
 
+import { triggerHaptic } from '../utils';
+
 const MAX_OVERSCROLL_PX = 10; // deslocamento máximo visual
 const SCALE_FACTOR = 0.35; // reduz impacto do delta do gesto
-const RELEASE_ANIM_CLASS = 'overscroll-release';
+const TRANSITION_MS = 220; // duração da transição de retorno
+const TRANSITION_EASING = 'cubic-bezier(0.22, 1, 0.36, 1)';
 
 export function setupOverscroll(container: HTMLElement) {
     if (!container) return;
@@ -21,31 +24,52 @@ export function setupOverscroll(container: HTMLElement) {
     let lastTouchY = 0;
     let isTouching = false;
     let wheelResetTimer: number | null = null;
+    let limitVibrationTimer: number | null = null;
+    let lastFeedbackStep = 0;
+
+    let pendingTransition = false;
 
     function applyOffset(px: number) {
         activeOffset = Math.max(-MAX_OVERSCROLL_PX, Math.min(MAX_OVERSCROLL_PX, px));
-        // set CSS var used by release animation and also apply immediate transform
+        // set CSS var for potential debugging and consistent styling
         container.style.setProperty('--overscroll', `${activeOffset}px`);
+        // disable transition while tracking the gesture for immediate response
+        container.style.transition = 'none';
         container.style.transform = `translateY(${activeOffset}px)`;
         // hint for compositor
         container.style.willChange = 'transform';
     }
 
+    function _stopLimitVibration() {
+        if (limitVibrationTimer) {
+            clearInterval(limitVibrationTimer);
+            limitVibrationTimer = null;
+            if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(0);
+        }
+    }
+
     function resetOffsetWithAnimation() {
-        if (activeOffset === 0) return;
-        // Ensure CSS var is set so keyframes can reference it
-        container.style.setProperty('--overscroll', `${activeOffset}px`);
-        // Trigger animation class which uses --overscroll variable
-        container.classList.add(RELEASE_ANIM_CLASS);
-        const onAnimEnd = () => {
-            container.classList.remove(RELEASE_ANIM_CLASS);
+        if (activeOffset === 0 || pendingTransition) return;
+        _stopLimitVibration();
+        pendingTransition = true;
+        // apply a lightweight transition back to 0 (no bounce overshoot)
+        container.style.transition = `transform ${TRANSITION_MS}ms ${TRANSITION_EASING}`;
+        container.style.willChange = 'transform';
+
+        const onTransitionEnd = (ev: TransitionEvent) => {
+            if (ev.propertyName !== 'transform') return;
+            pendingTransition = false;
+            container.style.transition = '';
             container.style.transform = '';
             container.style.removeProperty('--overscroll');
             container.style.willChange = '';
             activeOffset = 0;
-            container.removeEventListener('animationend', onAnimEnd);
+            container.removeEventListener('transitionend', onTransitionEnd as EventListener);
         };
-        container.addEventListener('animationend', onAnimEnd);
+
+        container.addEventListener('transitionend', onTransitionEnd as EventListener);
+        // trigger the transition to zero
+        container.style.transform = 'translateY(0)';
     }
 
     // TOUCH HANDLERS
@@ -74,7 +98,30 @@ export function setupOverscroll(container: HTMLElement) {
             e.preventDefault();
             const sign = dy > 0 ? 1 : -1;
             const additional = Math.abs(dy) * SCALE_FACTOR;
-            applyOffset(activeOffset + sign * additional);
+            const target = activeOffset + sign * additional;
+            const willBeAtLimit = Math.abs(target) >= MAX_OVERSCROLL_PX - 0.001;
+
+            if (willBeAtLimit) {
+                if (!limitVibrationTimer) {
+                    triggerHaptic('heavy');
+                    limitVibrationTimer = window.setInterval(() => triggerHaptic('medium'), 120);
+                }
+            } else {
+                _stopLimitVibration();
+                const HAPTIC_GRAIN = 3;
+                const absTarget = Math.min(Math.abs(target), MAX_OVERSCROLL_PX);
+                const currentStep = Math.floor(absTarget / HAPTIC_GRAIN);
+                if (currentStep !== lastFeedbackStep) {
+                    if (currentStep > lastFeedbackStep) {
+                        const ratio = absTarget / MAX_OVERSCROLL_PX;
+                        if (ratio > 0.6) triggerHaptic('light');
+                        else triggerHaptic('selection');
+                    }
+                    lastFeedbackStep = currentStep;
+                }
+            }
+
+            applyOffset(target);
         } else if (activeOffset !== 0) {
             // User moved back into range: reduce offset smoothly
             applyOffset(activeOffset * 0.6);
@@ -83,6 +130,8 @@ export function setupOverscroll(container: HTMLElement) {
 
     function onTouchEnd() {
         isTouching = false;
+        _stopLimitVibration();
+        lastFeedbackStep = 0;
         resetOffsetWithAnimation();
     }
 
@@ -98,12 +147,37 @@ export function setupOverscroll(container: HTMLElement) {
             e.preventDefault();
             const sign = e.deltaY > 0 ? -1 : 1; // wheel down -> negative offset
             const delta = Math.abs(e.deltaY) * 0.02; // gentle mapping
-            applyOffset(activeOffset + sign * delta);
+            const target = activeOffset + sign * delta;
+            const willBeAtLimit = Math.abs(target) >= MAX_OVERSCROLL_PX - 0.001;
+
+            if (willBeAtLimit) {
+                if (!limitVibrationTimer) {
+                    triggerHaptic('heavy');
+                    limitVibrationTimer = window.setInterval(() => triggerHaptic('medium'), 120);
+                }
+            } else {
+                _stopLimitVibration();
+                const HAPTIC_GRAIN = 3;
+                const absTarget = Math.min(Math.abs(target), MAX_OVERSCROLL_PX);
+                const currentStep = Math.floor(absTarget / HAPTIC_GRAIN);
+                if (currentStep !== lastFeedbackStep) {
+                    if (currentStep > lastFeedbackStep) {
+                        const ratio = absTarget / MAX_OVERSCROLL_PX;
+                        if (ratio > 0.6) triggerHaptic('light');
+                        else triggerHaptic('selection');
+                    }
+                    lastFeedbackStep = currentStep;
+                }
+            }
+
+            applyOffset(target);
 
             // Reset after user stops wheel (debounced)
             if (wheelResetTimer) clearTimeout(wheelResetTimer);
             wheelResetTimer = window.setTimeout(() => {
                 wheelResetTimer = null;
+                _stopLimitVibration();
+                lastFeedbackStep = 0;
                 resetOffsetWithAnimation();
             }, 120);
         }

@@ -859,16 +859,6 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     }
 }
 
-    /* --- OVERSCROLL ELASTIC --- */
-    @keyframes overscroll-release {
-        0% { transform: translateY(var(--overscroll, 0px)); }
-        50% { transform: translateY(calc(var(--overscroll, 0px) * -0.25)); }
-        70% { transform: translateY(calc(var(--overscroll, 0px) * 0.08)); }
-        100% { transform: translateY(0); }
-    }
-
-    #habit-container.overscroll-release {
-        animation: overscroll-release 560ms cubic-bezier(0.22, 1, 0.36, 1);
-        will-change: transform;
-    }
+    /* Overscroll handled via lightweight JS transition (no keyframes).
+       This reduces GPU churn and avoids extra bounce/jump on animation end. */
 
