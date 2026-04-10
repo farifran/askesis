@@ -105,6 +105,8 @@
     max-width: var(--chart-logo-max-width);
     object-fit: contain;
     vertical-align: middle;
+    transform: translateY(-2px);
+    -webkit-transform: translateY(-2px);
 }
 .app-subtitle {
     font-size: 13px;
@@ -247,8 +249,6 @@
     white-space: nowrap;
     transition: color var(--transition-duration-slow);
     margin-left: var(--space-sm);
-    /* Ajuste visual: mover 2px para baixo para alinhar com o logo */
-    transform: translateY(2px);
 }
 
 @media (max-width: 480px) {
