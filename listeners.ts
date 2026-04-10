@@ -16,6 +16,7 @@ import { setupDragHandler } from './listeners/drag';
 import { setupSwipeHandler } from './listeners/swipe';
 import { setupCalendarListeners } from './listeners/calendar';
 import { setupChartListeners } from './listeners/chart';
+import { setupHabitOverscroll } from './listeners/overscroll';
 import { getTodayUTCIso, resetTodayCache, createDebounced, logger, getLocalPushOptIn, setLocalPushOptIn, hasRequestedPushPermission, getPushPermissionRequestAgeMs, markPushPermissionRequested, ensureOneSignalReady, getNotificationPermission, requestNotificationPermission } from './utils';
 import { state, getPersistableState, invalidateCachesForDateChange } from './state';
 import { pullRemoteChanges, syncStateWithCloud } from './services/cloud';
@@ -171,6 +172,7 @@ export function setupEventListeners() {
             const container = ui.habitContainer;
             setupDragHandler(container);
             setupSwipeHandler(container);
+            setupHabitOverscroll(container);
             setupChartListeners();
         } catch (e) {}
     };
