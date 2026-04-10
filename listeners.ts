@@ -167,6 +167,20 @@ export function setupEventListeners() {
 
     document.body.classList.toggle('is-offline', !navigator.onLine);
 
+    // Attach lightweight overscroll handler early to avoid first-interaction lag.
+    try {
+        const earlyContainer = ui.habitContainer;
+        if (earlyContainer) setupOverscroll(earlyContainer);
+    } catch (err) {
+        // If DOM not ready yet, fallback to next frame.
+        requestAnimationFrame(() => {
+            try {
+                const c = ui.habitContainer;
+                if (c) setupOverscroll(c);
+            } catch (_) {}
+        });
+    }
+
     const setupHeavyInteractions = () => {
         try {
             const container = ui.habitContainer;

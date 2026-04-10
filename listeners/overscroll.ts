@@ -20,6 +20,23 @@ const TRANSITION_EASING = 'cubic-bezier(0.22, 1, 0.36, 1)';
 export function setupOverscroll(container: HTMLElement) {
     if (!container) return;
 
+    // Idempotency: don't attach twice
+    if ((container as any).__overscroll_attached) return;
+
+    // Use direct children as transform targets (avoid DOM rewrap that would break flex layout)
+    const targets = Array.from(container.children).filter((n): n is HTMLElement => n.nodeType === 1);
+
+    // Pre-warm compositor for smoother first-frame transforms:
+    try {
+        const comp = getComputedStyle(container).transform;
+        if (!comp || comp === 'none') {
+            // translateZ(0) promotes to a composite layer without visual shift.
+            container.style.transform = 'translateZ(0)';
+        }
+    } catch (e) {}
+    // Hint the browser early that we'll animate transform to reduce jank.
+    container.style.willChange = 'transform';
+
     let activeOffset = 0; // px, + = downwards, - = upwards
     let lastTouchY = 0;
     let isTouching = false;
@@ -28,16 +45,34 @@ export function setupOverscroll(container: HTMLElement) {
     let lastFeedbackStep = 0;
 
     let pendingTransition = false;
+    let rafId: number | null = null;
+    let queuedOffset: number | null = null;
+    const hasTypedOM = typeof window !== 'undefined' && !!(window.CSS && (window as any).CSSTranslate && (CSS as any).px);
+
+    function commitOffset() {
+        rafId = null;
+        if (queuedOffset === null) return;
+        const val = queuedOffset;
+        queuedOffset = null;
+        for (const t of targets) {
+            if (hasTypedOM && t.attributeStyleMap) {
+                try {
+                    t.attributeStyleMap.set('transform', new (window as any).CSSTranslate!(CSS.px(0), CSS.px(val)));
+                } catch (_) {
+                    t.style.transform = `translateY(${val}px)`;
+                }
+            } else {
+                t.style.transform = `translateY(${val}px)`;
+            }
+            t.style.willChange = 'transform';
+        }
+    }
 
     function applyOffset(px: number) {
         activeOffset = Math.max(-MAX_OVERSCROLL_PX, Math.min(MAX_OVERSCROLL_PX, px));
-        // set CSS var for potential debugging and consistent styling
-        container.style.setProperty('--overscroll', `${activeOffset}px`);
-        // disable transition while tracking the gesture for immediate response
-        container.style.transition = 'none';
-        container.style.transform = `translateY(${activeOffset}px)`;
-        // hint for compositor
-        container.style.willChange = 'transform';
+        // queue and batch the visual update via RAF
+        queuedOffset = activeOffset;
+        if (!rafId) rafId = requestAnimationFrame(commitOffset);
     }
 
     function _stopLimitVibration() {
@@ -52,24 +87,28 @@ export function setupOverscroll(container: HTMLElement) {
         if (activeOffset === 0 || pendingTransition) return;
         _stopLimitVibration();
         pendingTransition = true;
-        // apply a lightweight transition back to 0 (no bounce overshoot)
-        container.style.transition = `transform ${TRANSITION_MS}ms ${TRANSITION_EASING}`;
-        container.style.willChange = 'transform';
+        // apply a lightweight transition back to 0 (no bounce overshoot) on the target
+        for (const t of targets) t.style.transition = `transform ${TRANSITION_MS}ms ${TRANSITION_EASING}`;
+        // use first target to detect end of transition
+        const primary = targets[0];
+        if (primary) primary.style.willChange = 'transform';
 
         const onTransitionEnd = (ev: TransitionEvent) => {
             if (ev.propertyName !== 'transform') return;
             pendingTransition = false;
-            container.style.transition = '';
-            container.style.transform = '';
-            container.style.removeProperty('--overscroll');
-            container.style.willChange = '';
+            for (const tt of targets) {
+                tt.style.transition = '';
+                tt.style.transform = '';
+                tt.style.willChange = '';
+            }
             activeOffset = 0;
-            container.removeEventListener('transitionend', onTransitionEnd as EventListener);
+            primary.removeEventListener('transitionend', onTransitionEnd as EventListener);
         };
 
-        container.addEventListener('transitionend', onTransitionEnd as EventListener);
+        if (primary) primary.addEventListener('transitionend', onTransitionEnd as EventListener);
         // trigger the transition to zero
-        container.style.transform = 'translateY(0)';
+        queuedOffset = 0;
+        if (!rafId) rafId = requestAnimationFrame(commitOffset);
     }
 
     // TOUCH HANDLERS
@@ -200,6 +239,8 @@ export function setupOverscroll(container: HTMLElement) {
 
     // wheel needs to be non-passive to call preventDefault
     container.addEventListener('wheel', _onWheel as EventListener, { passive: false });
+    // mark attached
+    try { (container as any).__overscroll_attached = true; } catch (_) {}
 }
 
-export default setupOverscroll;
+// Export only named to avoid unused default export
