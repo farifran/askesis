@@ -241,34 +241,39 @@
 }
 
 @media (max-width: 480px) {
-    /* Em telas pequenas empilhamos o header para evitar quebras no texto/logo */
+    /* Em telas pequenas, mantemos o layout em linha.
+       O SVG (logo) é reduzido via `clamp()` para evitar quebras de linha. */
     .chart-header { 
-        flex-direction: column;
-        align-items: flex-start;
+        flex-direction: row;
+        align-items: center;
         gap: var(--space-xs);
+        flex-wrap: nowrap;
     }
     .chart-header > .app-subtitle {
-        flex: 1 1 auto;
+        flex: 1 1 0%;
         min-width: 0;
-        max-width: 60%;
+        max-width: 68%;
         font-size: 12px;
         white-space: normal;
         overflow-wrap: anywhere;
     }
     .chart-header > .chart-title-row {
-        flex: 0 1 auto;
-        min-width: 0;
+        flex: 0 0 auto;
+        align-items: center;
         gap: var(--space-xs);
         justify-content: flex-end;
+        white-space: nowrap; /* ensure the logo stays on one line */
     }
     .chart-title-row { 
-        width: 100%;
         display: flex;
         align-items: center;
-        justify-content: space-between;
         gap: var(--space-sm);
     }
-    .chart-logo { height: 28px; margin-bottom: 2px; }
+    .chart-logo { 
+        height: clamp(20px, 4vw, 28px);
+        margin-bottom: 0;
+        max-width: 140px;
+    }
     .chart-evolution-indicator {
         position: static;
         transform: none;
