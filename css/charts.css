@@ -51,12 +51,16 @@
     text-shadow: 0 1px 2px var(--bg-color);
     margin-top: -6px;
     user-select: none;
+    /* Reserve a minimum width on the right column so the logo doesn't shrink too much */
+    --chart-title-min-width: 160px;
+    --chart-logo-max-width: 220px;
 }
 
 .chart-header > .app-subtitle {
     flex: 1 1 0%;
     min-width: 0; /* allow proper truncation/wrapping */
-    max-width: 50%;
+    /* Limit subtitle to available space minus the chart title column */
+    max-width: calc(100% - var(--chart-title-min-width));
     margin: 0;
     white-space: normal;
     overflow-wrap: anywhere;
@@ -69,6 +73,8 @@
     align-items: center;
     justify-content: flex-end;
     gap: var(--space-sm);
+    /* keep a minimum width so the right column (logo) is readable */
+    min-width: var(--chart-title-min-width);
 }
 
 .app-subtitle, .chart-title {
@@ -95,7 +101,7 @@
     display: inline-block;
     height: 34px;
     width: auto;
-    max-width: 220px;
+    max-width: var(--chart-logo-max-width);
     object-fit: contain;
     vertical-align: middle;
 }
@@ -125,7 +131,8 @@
     .chart-header > .app-subtitle {
         flex: 1 1 0%;
         min-width: 0;
-        max-width: 50%;
+        /* Respect the reserved right-column width */
+        max-width: calc(100% - var(--chart-title-min-width));
         font-size: 12px; /* keep smaller type on mobile */
         white-space: normal;
         overflow-wrap: anywhere;
@@ -136,6 +143,7 @@
         align-items: center;
         justify-content: flex-end;
         gap: var(--space-xs);
+        min-width: var(--chart-title-min-width);
     }
 
     .chart-evolution-indicator {
@@ -252,7 +260,8 @@
     .chart-header > .app-subtitle {
         flex: 1 1 0%;
         min-width: 0;
-        max-width: 68%;
+        /* On narrow screens still reserve the right column space */
+        max-width: calc(100% - var(--chart-title-min-width));
         font-size: 12px;
         white-space: normal;
         overflow-wrap: anywhere;
