@@ -327,8 +327,19 @@ export function renderChart() {
         ui.chartContainer.classList.toggle('is-empty', isEmpty);
 
         if (ui.chart.title) {
-            const newTitle = t('appName');
-            setTrustedHtmlFragment(ui.chart.title, newTitle);
+            // Substitui o título de texto pela imagem SVG para evitar quebras de linha
+            // (o texto 'Askesis' vinha quebrando o último caractere em telas pequenas).
+            const logoPath = 'assets/header-2.min.svg';
+            // Tenta derivar um 'alt' amigável a partir da tradução (remove tags HTML).
+            let altText = 'Askesis';
+            try {
+                const raw = t('appName') || 'Askesis';
+                altText = raw.replace(/<[^>]*>/g, '');
+            } catch (e) {
+                /* fallback já definido */
+            }
+            const newTitleHtml = `<img src="${logoPath}" alt="${altText}" class="chart-logo"/>`;
+            setTrustedHtmlFragment(ui.chart.title, newTitleHtml);
         }
         if (ui.chart.subtitle) {
             const summary = calculateDaySummary(state.selectedDate);
