@@ -45,6 +45,19 @@ body.is-booting {
     cursor: wait;
 }
 
+/* Safe-area overlay to cover system navigation bar gap on some Android Chrome
+   (ensures the bottom area matches the app background and hides thin gray line) */
+.safe-area-bottom {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: env(safe-area-inset-bottom, 0px);
+    background: var(--bg-color);
+    z-index: 99999;
+    pointer-events: none;
+}
+
 /* --- VIEW TRANSITIONS (SWEET SPOT IMPROVEMENT) --- */
 /* Configura transições nativas suaves entre estados (ex: mudar de dia) */
 ::view-transition-old(root),
