@@ -51,10 +51,46 @@ export function importData() {
 }
 
 export function exportData() {
-    const stateToExport = getPersistableState();
-    const logs = HabitService.serializeLogsForCloud();
-    if (logs.length > 0) (stateToExport as any).monthlyLogsSerialized = logs;
-    const blob = new Blob([JSON.stringify(stateToExport, null, 2)], { type: 'application/json' });
+    // Build a JSON-safe export payload that excludes deleted habits, archives and syncLogs,
+    // and includes monthly logs only for exported habits.
+    const stateSnapshot = getPersistableState();
+
+    // Filter out habits that were permanently deleted (have deletedOn)
+    const exportedHabits = (stateSnapshot.habits || []).filter(h => !h.deletedOn);
+    const exportedHabitIds = new Set(exportedHabits.map(h => h.id));
+
+    // Collect serialized logs and keep only those that belong to exported habits
+    const allLogs = HabitService.serializeLogsForCloud(); // [key, hex]
+    const filteredLogs: [string, string][] = allLogs.filter(([k]) => {
+        const parts = k.split('_'); // habit id may contain underscores
+        const suffix = parts.pop(); // YYYY-MM
+        if (!suffix || !/^[0-9]{4}-[0-9]{2}$/.test(String(suffix))) return false;
+        const habitId = parts.join('_');
+        return exportedHabitIds.has(habitId);
+    });
+
+    const payload: any = {
+        version: stateSnapshot.version,
+        lastModified: stateSnapshot.lastModified,
+        habits: exportedHabits,
+        dailyData: stateSnapshot.dailyData,
+        // archives intentionally excluded to reduce backup size (policy decision)
+        dailyDiagnoses: stateSnapshot.dailyDiagnoses,
+        notificationsShown: stateSnapshot.notificationsShown,
+        pending21DayHabitIds: stateSnapshot.pending21DayHabitIds,
+        pendingConsolidationHabitIds: stateSnapshot.pendingConsolidationHabitIds,
+        quoteState: stateSnapshot.quoteState,
+        hasOnboarded: stateSnapshot.hasOnboarded,
+        // syncLogs excluded (monitoring info should not be part of user backup)
+        // monthly logs exported in serialized form below
+        aiDailyCount: stateSnapshot.aiDailyCount,
+        aiQuotaDate: stateSnapshot.aiQuotaDate,
+        lastAIContextHash: stateSnapshot.lastAIContextHash
+    };
+
+    if (filteredLogs.length > 0) payload.monthlyLogsSerialized = filteredLogs;
+
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = `askesis-backup-${getTodayUTCIso()}.json`; a.click(); URL.revokeObjectURL(url);
 }
