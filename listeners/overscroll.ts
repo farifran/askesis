@@ -5,172 +5,127 @@
 
 /**
  * @file listeners/overscroll.ts
- * @description Elastic overscroll visual feedback for `#habit-container`.
- *
- * Implements a lightweight JS-based elastic effect when the user attempts to scroll
- * past the top or bottom of the habit list. The effect is intentionally non-invasive:
- * - Does not change scrollTop (visual-only)
- * - Respects existing interaction locks (drag/swipe)
- * - Uses a damping factor and clamps overshoot
+ * @description Efeito elástico (overscroll) visual para o container de hábitos.
+ * Quando o usuário tenta rolar além do topo/fundo, o container desloca-se até
+ * `MAX_OVERSCROLL_PX` e retorna com animação elástica.
  */
 
-const DAMPING = 0.35;
-const MAX_OVERSCROLL = 96; // px
-const DIRECTION_LOCK_THRESHOLD = 6;
+const MAX_OVERSCROLL_PX = 10; // deslocamento máximo visual
+const SCALE_FACTOR = 0.35; // reduz impacto do delta do gesto
+const RELEASE_ANIM_CLASS = 'overscroll-release';
 
-function wrapContent(container: HTMLElement) {
-    const existing = container.querySelector('.habit-scroll-content') as HTMLElement | null;
-    if (existing) return existing;
-
-    const wrapper = document.createElement('div');
-    wrapper.className = 'habit-scroll-content';
-    // Move children into wrapper
-    while (container.firstChild) wrapper.appendChild(container.firstChild);
-    container.appendChild(wrapper);
-    return wrapper;
-}
-
-export function setupOverscrollHandler(container: HTMLElement) {
+export function setupOverscroll(container: HTMLElement) {
     if (!container) return;
-    // Avoid double-install
-    if ((container as any).__overscroll_installed) return;
-    (container as any).__overscroll_installed = true;
 
-    const content = wrapContent(container);
+    let activeOffset = 0; // px, + = downwards, - = upwards
+    let lastTouchY = 0;
+    let isTouching = false;
+    let wheelResetTimer: number | null = null;
 
-    let tracking = false;
-    let startY = 0;
-    let startX = 0;
-    let startScrollTop = 0;
-    let pointerId = -1;
-    let directionLocked = false;
-    let currentTranslate = 0;
+    function applyOffset(px: number) {
+        activeOffset = Math.max(-MAX_OVERSCROLL_PX, Math.min(MAX_OVERSCROLL_PX, px));
+        // set CSS var used by release animation and also apply immediate transform
+        container.style.setProperty('--overscroll', `${activeOffset}px`);
+        container.style.transform = `translateY(${activeOffset}px)`;
+        // hint for compositor
+        container.style.willChange = 'transform';
+    }
 
-    const setTransform = (y: number) => {
-        currentTranslate = y;
-        // disable transition while dragging
-        content.style.transition = 'none';
-        content.style.transform = `translateY(${y}px)`;
-        container.classList.toggle('is-overscrolling', y !== 0);
-    };
-
-    const resetTransform = () => {
-        if (currentTranslate === 0) return;
-        content.style.transition = 'transform 520ms cubic-bezier(0.22,0.8,0.28,1)';
-        content.style.transform = '';
-        container.classList.remove('is-overscrolling');
-        currentTranslate = 0;
-        const cleanup = () => {
-            content.style.transition = '';
-            content.removeEventListener('transitionend', cleanup);
+    function resetOffsetWithAnimation() {
+        if (activeOffset === 0) return;
+        // Ensure CSS var is set so keyframes can reference it
+        container.style.setProperty('--overscroll', `${activeOffset}px`);
+        // Trigger animation class which uses --overscroll variable
+        container.classList.add(RELEASE_ANIM_CLASS);
+        const onAnimEnd = () => {
+            container.classList.remove(RELEASE_ANIM_CLASS);
+            container.style.transform = '';
+            container.style.removeProperty('--overscroll');
+            container.style.willChange = '';
+            activeOffset = 0;
+            container.removeEventListener('animationend', onAnimEnd);
         };
-        content.addEventListener('transitionend', cleanup);
-    };
+        container.addEventListener('animationend', onAnimEnd);
+    }
 
-    const onPointerDown = (e: PointerEvent) => {
-        // Only track touch/pen interactions for the elastic effect
-        if (e.button !== 0) return;
-        if (e.pointerType !== 'touch' && e.pointerType !== 'pen') return;
-        // Skip if other heavy interactions are active
-        if (document.body.classList.contains('is-interaction-active') || document.body.classList.contains('is-dragging-active')) return;
+    // TOUCH HANDLERS
+    function onTouchStart(e: TouchEvent) {
+        if (e.touches.length !== 1) return;
+        isTouching = true;
+        lastTouchY = e.touches[0].clientY;
+        if (wheelResetTimer) { clearTimeout(wheelResetTimer); wheelResetTimer = null; }
+    }
 
-        tracking = true;
-        pointerId = e.pointerId;
-        startY = e.clientY;
-        startX = e.clientX;
-        startScrollTop = container.scrollTop;
-        directionLocked = false;
+    function onTouchMove(e: TouchEvent) {
+        if (!isTouching) return;
+        if (e.touches.length !== 1) return;
 
-        window.addEventListener('pointermove', onPointerMove, { passive: false });
-        window.addEventListener('pointerup', onPointerUp);
-        window.addEventListener('pointercancel', onPointerCancel);
-    };
-
-    const onPointerMove = (e: PointerEvent) => {
-        if (!tracking || e.pointerId !== pointerId) return;
-
-        const dx = e.clientX - startX;
-        const dy = e.clientY - startY;
-
-        if (!directionLocked) {
-            if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > DIRECTION_LOCK_THRESHOLD) {
-                // Horizontal interaction -> do not treat as vertical overscroll
-                directionLocked = true;
-                // Stop tracking vertical overscroll for this gesture
-                return;
-            }
-            if (Math.abs(dy) > DIRECTION_LOCK_THRESHOLD) directionLocked = true;
-        }
-
-        // No vertical significant movement yet
-        if (Math.abs(dy) < 2) return;
+        const touchY = e.touches[0].clientY;
+        const dy = touchY - lastTouchY; // positive = pulling down
+        lastTouchY = touchY;
 
         const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight);
+        const atTop = container.scrollTop <= 0;
+        const atBottom = container.scrollTop >= maxScroll - 0.5;
 
-        // TOP overscroll
-        if (startScrollTop <= 0 && dy > 0) {
-            const damped = Math.min(MAX_OVERSCROLL, dy * DAMPING);
-            setTransform(damped);
-            // Prevent browser from doing anything unexpected
-            if (e.cancelable) e.preventDefault();
-            return;
+        // If the user attempts to scroll beyond bounds, activate overscroll visual
+        if ((atTop && dy > 0) || (atBottom && dy < 0)) {
+            // Prevent native overscroll & page scroll
+            e.preventDefault();
+            const sign = dy > 0 ? 1 : -1;
+            const additional = Math.abs(dy) * SCALE_FACTOR;
+            applyOffset(activeOffset + sign * additional);
+        } else if (activeOffset !== 0) {
+            // User moved back into range: reduce offset smoothly
+            applyOffset(activeOffset * 0.6);
         }
+    }
 
-        // BOTTOM overscroll
-        if (startScrollTop >= maxScroll && dy < 0) {
-            const damped = Math.max(-MAX_OVERSCROLL, dy * DAMPING);
-            setTransform(damped);
-            if (e.cancelable) e.preventDefault();
-            return;
-        }
+    function onTouchEnd() {
+        isTouching = false;
+        resetOffsetWithAnimation();
+    }
 
-        // If the user moved back into bounds while we had a transform applied, reset it
-        if (currentTranslate !== 0) {
-            resetTransform();
-        }
-    };
-
-    const cleanupPointers = () => {
-        window.removeEventListener('pointermove', onPointerMove);
-        window.removeEventListener('pointerup', onPointerUp);
-        window.removeEventListener('pointercancel', onPointerCancel);
-    };
-
-    const onPointerUp = (_e: PointerEvent) => {
-        tracking = false;
-        pointerId = -1;
-        directionLocked = false;
-        cleanupPointers();
-        resetTransform();
-    };
-
-    const onPointerCancel = (_e: PointerEvent) => {
-        tracking = false;
-        pointerId = -1;
-        directionLocked = false;
-        cleanupPointers();
-        resetTransform();
-    };
-
-    container.addEventListener('pointerdown', onPointerDown);
-
-    // Desktop 'wheel' gentle feedback (subtle, non-blocking)
-    const onWheel = (e: WheelEvent) => {
-        // Only act when at edge and user still attempts to scroll further
-        const delta = e.deltaY;
-        const st = container.scrollTop;
+    // WHEEL HANDLER (desktop)
+    function onWheel(e: WheelEvent) {
+        if (e.deltaY === 0) return;
         const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight);
-        if (st <= 0 && delta < 0) {
-            // small visual nudge
-            setTransform(Math.max(-8, Math.min(24, -delta * 0.06)));
-            window.setTimeout(resetTransform, 160);
-        } else if (st >= maxScroll && delta > 0) {
-            setTransform(Math.min(8, Math.max(-24, -delta * 0.06)));
-            window.setTimeout(resetTransform, 160);
-        }
-    };
+        const atTop = container.scrollTop <= 0;
+        const atBottom = container.scrollTop >= maxScroll - 0.5;
 
-    container.addEventListener('wheel', onWheel, { passive: true });
+        if ((atTop && e.deltaY < 0) || (atBottom && e.deltaY > 0) || maxScroll === 0) {
+            // Prevent default scrolling beyond bounds and show overscroll effect
+            e.preventDefault();
+            const sign = e.deltaY > 0 ? -1 : 1; // wheel down -> negative offset
+            const delta = Math.abs(e.deltaY) * 0.02; // gentle mapping
+            applyOffset(activeOffset + sign * delta);
+
+            // Reset after user stops wheel (debounced)
+            if (wheelResetTimer) clearTimeout(wheelResetTimer);
+            wheelResetTimer = window.setTimeout(() => {
+                wheelResetTimer = null;
+                resetOffsetWithAnimation();
+            }, 120);
+        }
+    }
+
+    // Respect interaction and dragging modes
+    const shouldIgnore = () => document.body.classList.contains('is-dragging-active') || document.body.classList.contains('is-interaction-active') || container.classList.contains('is-dragging');
+
+    // Wrapped handlers with guard
+    const _onTouchStart = (e: TouchEvent) => { if (shouldIgnore()) return; onTouchStart(e); };
+    const _onTouchMove = (e: TouchEvent) => { if (shouldIgnore()) return; onTouchMove(e); };
+    const _onTouchEnd = (e: TouchEvent) => { if (shouldIgnore()) return onTouchEnd(); onTouchEnd(); };
+    const _onWheel = (e: WheelEvent) => { if (shouldIgnore()) return; onWheel(e); };
+
+    container.addEventListener('touchstart', _onTouchStart, { passive: true });
+    // touchmove must be non-passive so we can preventDefault when overscrolling
+    container.addEventListener('touchmove', _onTouchMove as EventListener, { passive: false });
+    container.addEventListener('touchend', _onTouchEnd, { passive: true });
+    container.addEventListener('touchcancel', _onTouchEnd, { passive: true });
+
+    // wheel needs to be non-passive to call preventDefault
+    container.addEventListener('wheel', _onWheel as EventListener, { passive: false });
 }
 
-export default setupOverscrollHandler;
+export default setupOverscroll;
