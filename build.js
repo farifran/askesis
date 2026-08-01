@@ -143,6 +143,10 @@ async function build() {
     await fs.promises.writeFile(path.join(OUT_DIR, 'index.html'), html);
 
     await copyFile('manifest.json', path.join(OUT_DIR, 'manifest.json'));
+    // Worker dedicado da OneSignal (push). Sem ele em produção, o SDK tenta
+    // registrar /OneSignalSDKWorker.js, o catch-all da Vercel devolve HTML e a
+    // inscrição de push falha silenciosamente.
+    await copyFile('OneSignalSDKWorker.js', path.join(OUT_DIR, 'OneSignalSDKWorker.js'));
 
     // Processa sw.js: injeta nomes hasheados no CACHE_FILES e o hash de build no
     // CACHE_NAME. O cache versionado garante que o `activate` de cada deploy apague

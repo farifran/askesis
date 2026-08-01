@@ -460,6 +460,12 @@ export async function ensureOneSignalReady(): Promise<OneSignalLike> {
                     await OneSignal.init({
                         appId: ONESIGNAL_APP_ID,
                         allowLocalhostAsSecureOrigin: true,
+                        // Sem estes campos o SDK registra /OneSignalSDKWorker.js no
+                        // escopo '/', o que (a) recebia HTML do catch-all da Vercel,
+                        // abortando a inscrição, e (b) substituiria o sw.js do app.
+                        // O escopo dedicado '/onesignal/' isola o worker de push.
+                        serviceWorkerPath: 'OneSignalSDKWorker.js',
+                        serviceWorkerParam: { scope: '/onesignal/' },
                     } as any);
                     resolve(OneSignal);
                 } catch (e: any) {
