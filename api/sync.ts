@@ -70,7 +70,6 @@ const MAX_REQUEST_BODY_BYTES = 5 * 1024 * 1024; // 5MB total bruto
 
 const ALLOWED_ORIGINS = parseAllowedOrigins(process.env.CORS_ALLOWED_ORIGINS);
 const CORS_STRICT = process.env.CORS_STRICT === '1';
-const ALLOW_LEGACY_SYNC_AUTH = process.env.ALLOW_LEGACY_SYNC_AUTH === '1';
 const SYNC_HASH_REGEX = /^[a-f0-9]{64}$/i;
 
 function getCorsOrigin(req: Request): string {
@@ -78,14 +77,11 @@ function getCorsOrigin(req: Request): string {
 }
 
 function getResponseHeaders(req: Request): Record<string, string> {
-    const allowHeaders = ['Content-Type', 'X-Sync-Key-Hash'];
-    if (ALLOW_LEGACY_SYNC_AUTH) allowHeaders.push('Authorization');
-
     return {
         'Content-Type': 'application/json',
         'Access-Control-Allow-Origin': getCorsOrigin(req),
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers': allowHeaders.join(', '),
+        'Access-Control-Allow-Headers': 'Content-Type, X-Sync-Key-Hash',
         'Vary': 'Origin'
     };
 }
@@ -134,18 +130,14 @@ function getErrorMessage(error: unknown): string {
     return 'Internal Server Error';
 }
 
-async function extractKeyHash(req: Request): Promise<string | null> {
+/**
+ * O cliente envia apenas o HASH da chave de sync (X-Sync-Key-Hash). A chave bruta
+ * nunca sai do dispositivo: ela deriva a criptografia dos dados, então o servidor
+ * conhecê-la anularia a premissa zero-knowledge.
+ */
+function extractKeyHash(req: Request): string | null {
     const directHash = req.headers.get('x-sync-key-hash')?.trim() || '';
-    if (SYNC_HASH_REGEX.test(directHash)) return directHash;
-
-    if (!ALLOW_LEGACY_SYNC_AUTH) return null;
-
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
-
-    const rawKey = authHeader.replace('Bearer ', '').trim();
-    if (rawKey.length < 8) return null;
-    return sha256(rawKey);
+    return SYNC_HASH_REGEX.test(directHash) ? directHash : null;
 }
 
 export default async function handler(req: Request) {
@@ -170,7 +162,7 @@ export default async function handler(req: Request) {
     const kv = new Redis({ url: dbUrl, token: dbToken });
 
     try {
-        const keyHash = await extractKeyHash(req);
+        const keyHash = extractKeyHash(req);
 
         if (!keyHash || !SYNC_HASH_REGEX.test(keyHash)) {
             return new Response(JSON.stringify({ error: 'Auth Required' }), { status: 401, headers: HEADERS_BASE });

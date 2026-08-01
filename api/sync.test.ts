@@ -111,7 +111,10 @@ describe('api/sync payload hardening', () => {
     expect(allowed).not.toContain('Authorization');
   });
 
-  it('aceita Authorization legado apenas com feature flag ativa', async () => {
+  it('rejeita Authorization legado mesmo com a antiga feature flag presente', async () => {
+    // A chave bruta no header Bearer anularia o zero-knowledge (o servidor
+    // passaria a conhecer o segredo que deriva a criptografia). O caminho foi
+    // removido: nem a flag antiga o ressuscita.
     process.env.ALLOW_LEGACY_SYNC_AUTH = '1';
     const handler = await loadHandler();
 
@@ -122,8 +125,8 @@ describe('api/sync payload hardening', () => {
       }
     }));
 
-    expect(response.status).toBe(200);
-    expect(evalMock).toHaveBeenCalledTimes(1);
+    expect(response.status).toBe(401);
+    expect(evalMock).not.toHaveBeenCalled();
   });
 
   it('rejeita requisição com shards acima do limite', async () => {
