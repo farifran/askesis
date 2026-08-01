@@ -14,7 +14,7 @@ import { QUOTE_COLLAPSE_DEBOUNCE_MS } from './constants';
 import { ui } from './render/ui';
 import { t, setLanguage, formatDate } from './i18n'; 
 import { UI_ICONS } from './render/icons';
-import { STOIC_QUOTES, type Quote } from './data/quotes';
+import type { Quote } from './data/quotes';
 import { selectBestQuote } from './services/quoteEngine'; 
 import { calculateDaySummary } from './services/selectors';
 import { APP_EVENTS, emitRequestAnalysis } from './events';
@@ -388,7 +388,30 @@ function _setupQuoteAutoCollapse() {
     ui.habitContainer.addEventListener('scroll', _quoteCollapseScrollHandler, { passive: true });
 }
 
+// LAZY CHUNK: data/quotes.ts é ~28% do bundle e nunca está no caminho crítico —
+// renderStoicQuote só roda via requestIdleCallback/postTask(background). O dynamic
+// import move esse peso para um chunk separado, carregado em paralelo após o boot.
+let _quotes: readonly Quote[] | null = null;
+let _quotesLoading: Promise<void> | null = null;
+
+function ensureQuotesLoaded(): boolean {
+    if (_quotes) return true;
+    if (!_quotesLoading) {
+        _quotesLoading = import('./data/quotes')
+            .then(m => {
+                _quotes = m.STOIC_QUOTES;
+                renderStoicQuote();
+            })
+            .catch(() => {
+                // Offline antes do chunk chegar: permite nova tentativa no próximo render.
+                _quotesLoading = null;
+            });
+    }
+    return false;
+}
+
 export function renderStoicQuote() {
+    if (!ensureQuotesLoaded()) return;
     if (!state.dailyDiagnoses[state.selectedDate]) {
         emitRequestAnalysis(state.selectedDate);
     }
@@ -402,9 +425,9 @@ export function renderStoicQuote() {
 
     let selectedQuote: Quote;
     try {
-        selectedQuote = selectBestQuote(STOIC_QUOTES, state.selectedDate);
+        selectedQuote = selectBestQuote(_quotes!, state.selectedDate);
     } catch (e) {
-        selectedQuote = STOIC_QUOTES[0];
+        selectedQuote = _quotes![0];
     }
 
     _cachedQuoteState = { id: selectedQuote.id, contextKey: currentContextKey };

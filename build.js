@@ -37,6 +37,7 @@ async function build() {
     // 1. Bundle App (index.tsx -> bundle.[hash].js + bundle.[hash].css em prod)
     let jsBundleName  = 'bundle.js';
     let cssBundleName = 'bundle.css';
+    let chunkNames    = [];
 
     const sharedBuildOptions = {
         bundle: true,
@@ -63,6 +64,10 @@ async function build() {
             entryPoints: { bundle: 'index.tsx' }, // chave 'bundle' → saída 'bundle-[hash].js'
             outdir: OUT_DIR,
             entryNames: '[name]-[hash]',
+            // CODE SPLITTING: dynamic imports (ex.: data/quotes.ts em render.ts) viram
+            // chunks separados, tirando peso do JS crítico de boot.
+            splitting: true,
+            chunkNames: 'chunk-[hash]',
             minify: true,
             sourcemap: false,
             metafile: true,
@@ -79,7 +84,11 @@ async function build() {
 
         jsBundleName  = path.basename(jsOut);
         cssBundleName = path.basename(cssOut);
-        console.log(`Content-hashed bundles: ${jsBundleName}, ${cssBundleName}`);
+        chunkNames = outputs
+            .map(f => path.basename(f))
+            .filter(f => /^chunk-[A-Za-z0-9]+\.js$/.test(f));
+        console.log(`Content-hashed bundles: ${jsBundleName}, ${cssBundleName}` +
+            (chunkNames.length ? ` (+ chunks: ${chunkNames.join(', ')})` : ''));
 
     } else {
         // Desenvolvimento: nomes fixos + watch mode (sem overhead de hash em dev)
@@ -135,19 +144,35 @@ async function build() {
 
     await copyFile('manifest.json', path.join(OUT_DIR, 'manifest.json'));
 
-    // Processa sw.js: injeta nomes hasheados no CACHE_FILES do fallback em prod.
+    // Processa sw.js: injeta nomes hasheados no CACHE_FILES e o hash de build no
+    // CACHE_NAME. O cache versionado garante que o `activate` de cada deploy apague
+    // os caches anteriores (sem isso, bundles hasheados antigos acumulam para sempre).
     let swSrc = await fs.promises.readFile(path.resolve(__dirname, 'sw.js'), 'utf-8');
+    const buildHash = isProd
+        ? (jsBundleName.match(/^bundle-([A-Za-z0-9]+)\.js$/) || [])[1] || String(Date.now())
+        : 'dev';
+    swSrc = swSrc.replace('__BUILD_HASH__', buildHash);
     if (isProd) {
         swSrc = swSrc
             .replace("'/bundle.js'",  `'/${jsBundleName}'`)
-            .replace("'/bundle.css'", `'/${cssBundleName}'`);
+            .replace("'/bundle.css'", `'/${cssBundleName}'`)
+            .replace('/*__EXTRA_PRECACHE__*/', chunkNames.map(c => `'/${c}'`).join(', '));
     }
     await fs.promises.writeFile(path.join(OUT_DIR, 'sw.js'), swSrc);
     
     // Copy Dirs
     await copyDir(path.resolve(__dirname, 'locales'), path.join(OUT_DIR, 'locales'));
     await copyDir(path.resolve(__dirname, 'icons'), path.join(OUT_DIR, 'icons'));
-    await copyDir(path.resolve(__dirname, 'assets'), path.join(OUT_DIR, 'assets')); 
+    // boot/error-handler.js: referenciado pelo index.html (watchdog global). Sem esta
+    // cópia, a rota catch-all da Vercel devolvia index.html no lugar do módulo e o
+    // error handler nunca carregava em produção.
+    await copyDir(path.resolve(__dirname, 'boot'), path.join(OUT_DIR, 'boot'));
+
+    // Assets: o diretório assets/ é majoritariamente documentação do README (~22MB de
+    // screenshots, GIFs e diagramas). O app em produção usa apenas o logo do export
+    // de gráfico — copiar só ele mantém o deploy enxuto.
+    await fs.promises.mkdir(path.join(OUT_DIR, 'assets'), { recursive: true });
+    await copyFile('assets/header-2.min.svg', path.join(OUT_DIR, 'assets', 'header-2.min.svg'));
 
     console.log('Build complete.');
 }
