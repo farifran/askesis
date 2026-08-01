@@ -94,6 +94,35 @@ describe('updateAppBadge', () => {
         });
     });
 
+    describe('Android com setAppBadge exposta (regressão)', () => {
+        // Navegadores Android podem expor setAppBadge sem que ela tenha efeito.
+        // Confiar apenas no feature detection fazia o código entrar no ramo
+        // nativo e nunca publicar a notificação — badge mudo no Android.
+        function pretendAndroid() {
+            Object.defineProperty(navigator, 'userAgent', {
+                value: 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36',
+                configurable: true
+            });
+            Object.defineProperty(navigator, 'userAgentData', { value: { platform: 'Android' }, configurable: true });
+        }
+
+        it('ignora o badge nativo e usa notificação quando o UA é Android', async () => {
+            pretendAndroid();
+            const setAppBadge = vi.fn().mockResolvedValue(undefined);
+            Object.assign(navigator, { setAppBadge, clearAppBadge: vi.fn() });
+
+            setSummary(2);
+            setVisibility('hidden');
+
+            const { updateAppBadge } = await import('./badge');
+            await updateAppBadge();
+
+            expect(setAppBadge).not.toHaveBeenCalled();
+            expect(showNotificationMock).toHaveBeenCalledTimes(1);
+            expect(showNotificationMock.mock.calls[0][1].body).toBe('pendingBadgeBody:2');
+        });
+    });
+
     describe('Fallback Android (sem Badging API)', () => {
         it('publica notificação silenciosa quando o app esconde com pendências', async () => {
             setSummary(3);

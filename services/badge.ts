@@ -44,6 +44,23 @@ function supportsNativeBadge(): boolean {
     return 'setAppBadge' in navigator && 'clearAppBadge' in navigator;
 }
 
+/**
+ * O Android não pinta badge numérico no ícone: lá o emblema do launcher vem de
+ * notificações não lidas. Navegadores Android podem EXPOR setAppBadge sem que
+ * ela tenha efeito — confiar só no feature detection faz o código entrar no
+ * ramo nativo, chamar uma função inócua e nunca publicar a notificação.
+ */
+function isAndroid(): boolean {
+    const uaData = (navigator as { userAgentData?: { platform?: string } }).userAgentData;
+    if (uaData?.platform) return /android/i.test(uaData.platform);
+    return /Android/i.test(navigator.userAgent || '');
+}
+
+/** Badge nativo só é confiável fora do Android (iOS 16.4+ PWA, desktop). */
+function hasWorkingNativeBadge(): boolean {
+    return supportsNativeBadge() && !isAndroid();
+}
+
 async function getSwRegistration(): Promise<ServiceWorkerRegistration | null> {
     if (!('serviceWorker' in navigator)) return null;
     try {
@@ -131,9 +148,9 @@ export async function updateAppBadge(): Promise<void> {
         // para obter a contagem de pendentes (custo O(1) na maioria das chamadas).
         const { pending: count } = calculateDaySummary(getTodayUTCIso());
 
-        // PROGRESSIVE ENHANCEMENT: Badging API nativa quando disponível
-        // (iOS 16.4+ PWA, Chrome/Edge desktop).
-        if (supportsNativeBadge()) {
+        // PROGRESSIVE ENHANCEMENT: Badging API nativa quando ela realmente
+        // funciona (iOS 16.4+ PWA, Chrome/Edge desktop) — nunca no Android.
+        if (hasWorkingNativeBadge()) {
             const nav = navigator as NavigatorWithBadging;
             if (count > 0) {
                 await nav.setAppBadge(count);
@@ -143,7 +160,7 @@ export async function updateAppBadge(): Promise<void> {
             return;
         }
 
-        // Sem Badging API (Android): badge via notificação silenciosa.
+        // Android (ou sem Badging API): badge via notificação silenciosa.
         await updateNotificationFallback(count);
     } catch (error) {
         // ROBUSTEZ: Falha silenciosa ou log discreto é aceitável para funcionalidades de UI progressivas.
