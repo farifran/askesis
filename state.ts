@@ -289,13 +289,31 @@ class CacheManager {
     invalidateForDate(dateISO: string) {
         state.daySummaryCache.delete(dateISO);
         state.activeHabitsCache.delete(dateISO);
-        this.invalidateDateKeyInCacheMap(state.streaksCache, dateISO);
+        // Um streak é uma corrida de dias consecutivos terminando na data lida, então
+        // mudar o dia D altera o streak de D e de TODOS os dias posteriores. Apagar só
+        // a chave D deixava a UI mostrando streaks obsoletos para as datas seguintes
+        // até um reload — visível ao editar/desmarcar um dia passado.
+        this.invalidateDateKeyForwardInCacheMap(state.streaksCache, dateISO);
+        // Aparência e agenda dependem apenas da própria data (frequência e
+        // scheduleHistory), nunca do status registrado — invalidação pontual basta.
         this.invalidateDateKeyInCacheMap(state.habitAppearanceCache, dateISO);
         this.invalidateDateKeyInCacheMap(state.scheduleCache, dateISO);
     }
 
     private invalidateDateKeyInCacheMap<T>(cache: Map<string, Map<string, T>>, dateISO: string) {
         cache.forEach((dateMap) => dateMap.delete(dateISO));
+    }
+
+    /**
+     * Remove a data indicada e todas as posteriores. Datas em ISO 8601 ordenam
+     * lexicograficamente, então a comparação de string é suficiente.
+     */
+    private invalidateDateKeyForwardInCacheMap<T>(cache: Map<string, Map<string, T>>, dateISO: string) {
+        cache.forEach((dateMap) => {
+            dateMap.forEach((_, key) => {
+                if (key >= dateISO) dateMap.delete(key);
+            });
+        });
     }
 }
 
