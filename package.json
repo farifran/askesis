@@ -19,6 +19,7 @@
     "guardrail:audit": "node scripts/guardrail-audit.js",
     "guardrail:sw-manifest": "node scripts/check-sw-manifest.js",
     "guardrail:all": "npm run guardrail:security-html && npm run guardrail:locales && npm run guardrail:audit && npm run guardrail:sw-manifest",
+    "smoke:prod": "node scripts/smoke-prod.js",
     "test": "npm run guardrail:all && vitest run",
     "check:deps": "bash scripts/check-vite.sh",
     "test:ui": "vitest --ui",
