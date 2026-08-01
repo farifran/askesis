@@ -850,7 +850,7 @@ Askesis implements end-to-end encryption so that **the server never knows your d
 ┌─ Key Derivation (PBKDF2) ─┐
 │ Password: "user_sync_key" │
 │ Salt: 16 bytes random     │
-│ Iterations: 100.000 (security)│
+│ Iterations: 600.000 (OWASP)   │
 │ Output: 256-bit key      │
 └───────────────────────────┘
          ↓ AES-GCM.encrypt()

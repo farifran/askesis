@@ -17,19 +17,9 @@
  * todos os caches antigos, eliminando acúmulo de bundles hasheados obsoletos.
  */
 
-// Zero-deps por padrão: OneSignal SW SDK só é carregado quando o SW é registrado com ?push=1.
-// Isso garante que o handler de push esteja ativo mesmo com o app fechado, sem depender de mensagens do client.
-const _pushEnabled = (self.location && typeof self.location.search === 'string')
-    ? self.location.search.includes('push=1')
-    : false;
-
-if (_pushEnabled) {
-    try {
-        importScripts("https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js");
-    } catch (e) {
-        // Non-blocking failure
-    }
-}
+// PUSH: entregue pelo worker dedicado da OneSignal (OneSignalSDKWorker.js,
+// escopo '/onesignal/', registrado pelo SDK na init). Este SW cuida apenas de
+// offline, cache e do notification-click do badge local.
 
 const HTML_FALLBACK = '/index.html';
 const NETWORK_TIMEOUT_MS = 3000;

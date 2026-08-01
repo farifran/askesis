@@ -851,7 +851,7 @@ O Askesis implementa criptografia end-to-end de forma que **nem o servidor conhe
 ┌─ Derivação de Chave (PBKDF2) ───┐
 │ Password: "sync_key_do_usuario" │
 │ Salt: 16 bytes aleatórios       │
-│ Iterations: 100.000 (segurança) │
+│ Iterations: 600.000 (OWASP)     │
 │ Output: 256-bit key             │
 └─────────────────────────────────┘
          ↓ AES-GCM.encrypt()

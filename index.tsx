@@ -164,13 +164,9 @@ let isInitialized = false;
 const registerServiceWorker = () => {
     if ('serviceWorker' in navigator && !window.location.protocol.startsWith('file')) {
         const loadSW = () => {
-                const permission = getNotificationPermission();
-                const pushEnabled = getLocalPushOptIn() === true && permission === 'granted';
-            const swUrl = pushEnabled ? './sw.js?push=1' : './sw.js';
-            // FIX: Use relative path './sw.js' instead of absolute '/sw.js'.
-            // This ensures the SW is fetched from the same origin even in subdirectories or proxies,
-            // preventing "Script origin does not match" errors.
-            navigator.serviceWorker.register(swUrl)
+            // Caminho relativo garante mesma origem em subdiretórios/proxies.
+            // Push não passa por este SW: vive no worker da OneSignal ('/onesignal/').
+            navigator.serviceWorker.register('./sw.js')
                 .then(registration => {
                     logger.info('Service Worker registered with scope:', registration.scope);
                 })

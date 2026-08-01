@@ -32,16 +32,6 @@
     "guardrail:l3-l4": "npm run validate:metadata && npm run lint:style",
     "guardrail:l3-l4:fix": "npm run validate:metadata && npm run lint:style:fix"
   },
-  "prepare": "husky install",
-  "lint-staged": {
-    "css/**/*.css": [
-      "stylelint --fix",
-      "git add"
-    ],
-    "metadata.json": [
-      "node scripts/validate-json.js metadata.json"
-    ]
-  },
   "keywords": [
     "habit-tracker",
     "pwa",
@@ -67,9 +57,7 @@
     "ajv-formats": "^2.1.1",
     "esbuild": "^0.27.3",
     "fast-check": "^3.5.0",
-    "husky": "^8.0.0",
     "jsdom": "^30.0.1",
-    "lint-staged": "^14.0.0",
     "stylelint": "^15.0.0",
     "stylelint-config-standard": "^31.0.0",
     "typescript": "^5.9.3",

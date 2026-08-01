@@ -163,9 +163,6 @@ const _enableNotificationsAsync = async (perm: string) => {
                     }
                 } catch {}
                 updateNotificationUI();
-                if ('serviceWorker' in navigator) {
-                    navigator.serviceWorker.register('./sw.js?push=1').catch(() => {});
-                }
             })
             .catch(() => { updateNotificationUI(); });
     } catch {

@@ -45,7 +45,8 @@ async function build() {
         target: ['es2020'],
         define: {
             'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'development'),
-            'process.env.API_KEY': JSON.stringify(process.env.API_KEY || process.env.GEMINI_API_KEY || ''),
+            // NUNCA adicionar chaves de API aqui: o define substitui referências no
+            // BUNDLE PÚBLICO. A chave do Gemini vive só no servidor (api/analyze).
         },
         loader: {
             '.svg': 'text',

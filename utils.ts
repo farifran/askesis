@@ -431,13 +431,6 @@ function _loadScript(src: string): Promise<void> {
     });
 }
 
-export async function enableOneSignalInServiceWorker(): Promise<void> {
-    try {
-        if (!('serviceWorker' in navigator)) return;
-        await navigator.serviceWorker.register('./sw.js?push=1');
-    } catch {}
-}
-
 export function pushToOneSignal(callback: (oneSignal: OneSignalLike) => void) {
     // Zero-deps por padrão: NÃO faz lazy-load automaticamente.
     if (typeof window === 'undefined') return;
@@ -485,8 +478,6 @@ export async function ensureOneSignalReady(): Promise<OneSignalLike> {
                 setLocalPushOptIn(true);
             }
         } catch {}
-        // Habilita SW (push delivery) só após opt-in explícito.
-        await enableOneSignalInServiceWorker();
         return oneSignal;
     })();
 

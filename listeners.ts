@@ -132,9 +132,6 @@ export function setupEventListeners() {
             if (perm === 'granted') {
                 setLocalPushOptIn(true);
                 updateNotificationUI();
-                if ('serviceWorker' in navigator) {
-                    navigator.serviceWorker.register('./sw.js?push=1').catch(() => {});
-                }
                 ensureOneSignalReady()
                     .then((OneSignal) => OneSignal.Notifications.requestPermission?.().catch(() => {}))
                     .catch(() => {});
