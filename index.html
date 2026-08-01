@@ -62,6 +62,11 @@
     
     <link rel="stylesheet" href="bundle.css">
     <link rel="manifest" href="manifest.json">
+    <!-- ANDROID NAV BAR: em modo escuro, versões do Chrome ignoram um theme-color
+         sem media query para a barra de navegação do sistema e usam o cinza padrão
+         (#202124). As variantes com media garantem preto uniforme nos dois modos. -->
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000000">
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#000000">
     <meta name="theme-color" content="#000000">
     
     <!-- PERFORMANCE: Critical CSS Inline. 
