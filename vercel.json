@@ -1,6 +1,12 @@
 {
   "framework": null,
   "buildCommand": "npm run build",
+  "crons": [
+    {
+      "path": "/api/reminder",
+      "schedule": "0 0 * * *"
+    }
+  ],
   "outputDirectory": "dist",
   "devCommand": "npm run dev",
   "installCommand": "npm install",

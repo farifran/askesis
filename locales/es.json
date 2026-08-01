@@ -197,6 +197,11 @@
     "noticeHabitAlreadyExistsInTime": "El hábito '{habitName}' ya está activo en: {times}.",
     "noticeNameCannotBeEmpty": "El nombre del hábito no puede estar vacío.",
     "noticeNameTooLong": "Máx 16 caracteres. Usa una descripción sucinta.",
+    "pendingBadgeBody": {
+        "one": "Tienes 1 hábito pendiente hoy.",
+        "other": "Tienes {count} hábitos pendientes hoy."
+    },
+    "pendingBadgeTitle": "Hábitos pendientes",
     "notificationChangePending": "El cambio tendrá efecto tras reiniciar la app.",
     "notificationStatusActivated": "activado",
     "notificationStatusDeactivated": "desactivado",

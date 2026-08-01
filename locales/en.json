@@ -197,6 +197,11 @@
     "noticeHabitAlreadyExistsInTime": "Habit '{habitName}' is already active in: {times}.",
     "noticeNameCannotBeEmpty": "Habit name cannot be empty.",
     "noticeNameTooLong": "Max 16 chars. Use a succinct description.",
+    "pendingBadgeBody": {
+        "one": "You have 1 pending habit today.",
+        "other": "You have {count} pending habits today."
+    },
+    "pendingBadgeTitle": "Pending habits",
     "notificationChangePending": "Change will take effect after app restart.",
     "notificationStatusActivated": "activated",
     "notificationStatusDeactivated": "deactivated",

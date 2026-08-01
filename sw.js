@@ -128,6 +128,25 @@ self.addEventListener('fetch', (event) => {
     );
 });
 
+// --- NOTIFICATION CLICK (badge de pendências no Android) ---
+
+/**
+ * Toque na notificação de hábitos pendentes: foca uma aba existente do app ou
+ * abre uma nova. Restrito à nossa tag para não interferir nos handlers do
+ * OneSignal (múltiplos listeners de notificationclick coexistem).
+ */
+self.addEventListener('notificationclick', (event) => {
+    if (event.notification.tag !== 'askesis-pending-habits') return;
+    event.notification.close();
+    event.waitUntil(
+        self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clients => {
+            const existing = clients.find(c => 'focus' in c);
+            if (existing) return existing.focus();
+            return self.clients.openWindow('/');
+        })
+    );
+});
+
 // --- BACKGROUND SYNC ---
 
 /**

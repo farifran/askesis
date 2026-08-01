@@ -17,6 +17,7 @@ import { setupSwipeHandler } from './listeners/swipe';
 import { setupOverscroll } from './listeners/overscroll';
 import { setupCalendarListeners } from './listeners/calendar';
 import { setupChartListeners } from './listeners/chart';
+import { updateAppBadge } from './services/badge';
 import { getTodayUTCIso, resetTodayCache, createDebounced, logger, getLocalPushOptIn, setLocalPushOptIn, hasRequestedPushPermission, getPushPermissionRequestAgeMs, markPushPermissionRequested, ensureOneSignalReady, getNotificationPermission, requestNotificationPermission } from './utils';
 import { state, getPersistableState, invalidateCachesForDateChange } from './state';
 import { pullRemoteChanges, syncStateWithCloud } from './services/cloud';
@@ -43,7 +44,14 @@ const _handleNetworkChange = createDebounced(() => {
 }, NETWORK_DEBOUNCE_MS);
 
 const _handleVisibilityChange = () => {
-    if (document.visibilityState !== 'visible') return;
+    if (document.visibilityState !== 'visible') {
+        // App indo para background: sincroniza o badge — no Android (sem Badging
+        // API) isso publica a notificação silenciosa de pendências do dia.
+        updateAppBadge().catch(() => {});
+        return;
+    }
+    // App voltando ao foco: remove a notificação de pendências (o usuário já está olhando).
+    updateAppBadge().catch(() => {});
     if (isHandlingVisibility) return;
     isHandlingVisibility = true;
 

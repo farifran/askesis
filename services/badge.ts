@@ -23,7 +23,8 @@
  */
 
 import { calculateDaySummary } from './selectors';
-import { getTodayUTCIso, logger } from '../utils';
+import { getTodayUTCIso, getLocalPushOptIn, getNotificationPermission, logger } from '../utils';
+import { t } from '../i18n';
 
 // [2025-01-15] TYPE SAFETY: Definição de interface local para a Badging API.
 // Evita o uso repetido de 'as any' e fornece autocompletar/verificação se o TS for atualizado.
@@ -34,30 +35,92 @@ interface NavigatorWithBadging extends Navigator {
 }
 
 /**
+ * Tag estável: garante que exista no máximo UMA notificação de pendências
+ * (showNotification com a mesma tag substitui a anterior).
+ */
+export const PENDING_NOTIFICATION_TAG = 'askesis-pending-habits';
+
+function supportsNativeBadge(): boolean {
+    return 'setAppBadge' in navigator && 'clearAppBadge' in navigator;
+}
+
+async function getSwRegistration(): Promise<ServiceWorkerRegistration | null> {
+    if (!('serviceWorker' in navigator)) return null;
+    try {
+        return await navigator.serviceWorker.ready;
+    } catch {
+        return null;
+    }
+}
+
+async function closePendingNotification(): Promise<void> {
+    const reg = await getSwRegistration();
+    if (!reg) return;
+    const notifications = await reg.getNotifications({ tag: PENDING_NOTIFICATION_TAG });
+    notifications.forEach(n => n.close());
+}
+
+async function showPendingNotification(count: number): Promise<void> {
+    const reg = await getSwRegistration();
+    if (!reg) return;
+    await reg.showNotification(t('pendingBadgeTitle'), {
+        tag: PENDING_NOTIFICATION_TAG,
+        body: t('pendingBadgeBody', { count }),
+        icon: 'icons/icon-192.svg',
+        badge: 'icons/badge.svg',
+        silent: true,
+        data: { url: '/' }
+    } as NotificationOptions);
+}
+
+/**
+ * FALLBACK ANDROID: o Chrome/Android não expõe a Badging API — lá, o badge do
+ * launcher só aparece quando existe uma notificação não lida. Quando o app vai
+ * para background com pendências, publicamos uma notificação silenciosa com a
+ * tag fixa; ela é removida ao voltar ao app ou ao zerar as pendências.
+ */
+async function updateNotificationFallback(count: number): Promise<void> {
+    // Requisitos: permissão concedida E opt-in explícito do usuário no app.
+    if (typeof Notification === 'undefined') return;
+    if (getNotificationPermission() !== 'granted' || getLocalPushOptIn() !== true) return;
+
+    const isHidden = typeof document !== 'undefined' && document.visibilityState === 'hidden';
+    if (isHidden && count > 0) {
+        await showPendingNotification(count);
+    } else {
+        // App visível (o usuário já está olhando) ou zero pendências: limpa.
+        await closePendingNotification();
+    }
+}
+
+/**
  * Atualiza o emblema do ícone do aplicativo com o número atual de hábitos pendentes para hoje.
  * Se a contagem for zero, o emblema é limpo.
  * Esta função verifica o suporte do navegador antes de tentar definir o emblema.
  */
 export async function updateAppBadge(): Promise<void> {
-    // PROGRESSIVE ENHANCEMENT: Verifica suporte antes de executar.
-    // Evita erros em navegadores que não suportam PWA Badging (ex: Firefox Desktop antigo).
-    if ('setAppBadge' in navigator && 'clearAppBadge' in navigator) {
-        try {
-            // REFACTOR [2025-03-05]: Remove a função local redundante e usa a função
-            // centralizada e cacheada 'calculateDaySummary' para obter a contagem de pendentes.
-            // PERFORMANCE: calculateDaySummary usa cache interno (memoization), então o custo é O(1) na maioria das chamadas.
-            const { pending: count } = calculateDaySummary(getTodayUTCIso());
-            const nav = navigator as NavigatorWithBadging;
+    try {
+        // REFACTOR [2025-03-05]: usa a função centralizada e cacheada 'calculateDaySummary'
+        // para obter a contagem de pendentes (custo O(1) na maioria das chamadas).
+        const { pending: count } = calculateDaySummary(getTodayUTCIso());
 
+        // PROGRESSIVE ENHANCEMENT: Badging API nativa quando disponível
+        // (iOS 16.4+ PWA, Chrome/Edge desktop).
+        if (supportsNativeBadge()) {
+            const nav = navigator as NavigatorWithBadging;
             if (count > 0) {
                 await nav.setAppBadge(count);
             } else {
                 await nav.clearAppBadge();
             }
-        } catch (error) {
-            // ROBUSTEZ: Falha silenciosa ou log discreto é aceitável para funcionalidades de UI progressivas.
-            // Não queremos alertar o usuário se o OS rejeitar o badge (ex: permissões).
-            logger.error('Failed to set app badge:', error);
+            return;
         }
+
+        // Sem Badging API (Android): badge via notificação silenciosa.
+        await updateNotificationFallback(count);
+    } catch (error) {
+        // ROBUSTEZ: Falha silenciosa ou log discreto é aceitável para funcionalidades de UI progressivas.
+        // Não queremos alertar o usuário se o OS rejeitar o badge (ex: permissões).
+        logger.error('Failed to set app badge:', error);
     }
 }
