@@ -173,7 +173,10 @@ describe('updateAppBadge', () => {
             expect(getNotificationsMock).not.toHaveBeenCalled();
         });
 
-        it('delega ao service worker por postMessage quando há controller', async () => {
+        it('prefere a registration em cache (sobrevive ao encerramento abrupto)', async () => {
+            // showNotification via registration é executado pelo processo do
+            // navegador — não depende de acordar o SW nem de a mensagem ser
+            // processada, que é o que falha quando o app é encerrado de vez.
             const postMessage = vi.fn();
             Object.defineProperty(navigator, 'serviceWorker', {
                 value: { ready: Promise.resolve({ showNotification: showNotificationMock, getNotifications: getNotificationsMock }), controller: { postMessage } },
@@ -185,13 +188,9 @@ describe('updateAppBadge', () => {
             const { updateAppBadge } = await import('./badge');
             await updateAppBadge();
 
-            expect(postMessage).toHaveBeenCalledWith({
-                type: 'SHOW_PENDING_BADGE',
-                title: 'pendingBadgeTitle',
-                body: 'pendingBadgeBody:2'
-            });
-            // Delegou: não deve tocar na registration diretamente.
-            expect(showNotificationMock).not.toHaveBeenCalled();
+            expect(showNotificationMock).toHaveBeenCalledTimes(1);
+            expect(showNotificationMock.mock.calls[0][1].body).toBe('pendingBadgeBody:2');
+            expect(postMessage).not.toHaveBeenCalled();
         });
 
         it('posta ao SW de forma SÍNCRONA (a página pode congelar logo após esconder)', async () => {

@@ -61,10 +61,40 @@ function hasWorkingNativeBadge(): boolean {
     return supportsNativeBadge() && !isAndroid();
 }
 
+/**
+ * Registration pré-aquecida no boot.
+ *
+ * `registration.showNotification()` é executado pelo PROCESSO DO NAVEGADOR, não
+ * pelo service worker — não exige acordar o SW nem esperar mensagem ser
+ * processada. Com a registration já em mãos, a chamada é iniciada de forma
+ * síncrona, o que sobrevive ao encerramento abrupto do app (botão Voltar do
+ * Android), onde tanto a página quanto o SW podem ser derrubados juntos.
+ */
+let _cachedRegistration: ServiceWorkerRegistration | null = null;
+
+if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+    navigator.serviceWorker.ready
+        .then(reg => { _cachedRegistration = reg; })
+        .catch(() => { /* sem SW: caminhos de fallback assumem */ });
+}
+
+function buildNotificationOptions(body: string): NotificationOptions {
+    return {
+        tag: PENDING_NOTIFICATION_TAG,
+        body,
+        icon: 'icons/icon-192.svg',
+        badge: 'icons/badge.svg',
+        silent: true,
+        data: { url: '/' }
+    } as NotificationOptions;
+}
+
 async function getSwRegistration(): Promise<ServiceWorkerRegistration | null> {
+    if (_cachedRegistration) return _cachedRegistration;
     if (!('serviceWorker' in navigator)) return null;
     try {
-        return await navigator.serviceWorker.ready;
+        _cachedRegistration = await navigator.serviceWorker.ready;
+        return _cachedRegistration;
     } catch {
         return null;
     }
@@ -102,19 +132,23 @@ async function showPendingNotification(count: number): Promise<void> {
     const title = t('pendingBadgeTitle');
     const body = t('pendingBadgeBody', { count });
 
+    // 1) Registration em cache: chamada iniciada sincronamente e executada pelo
+    //    processo do navegador. É o caminho que sobrevive ao encerramento
+    //    abrupto (Voltar), onde página e SW podem cair juntos.
+    if (_cachedRegistration) {
+        try {
+            await _cachedRegistration.showNotification(title, buildNotificationOptions(body));
+            return;
+        } catch { /* cai para os próximos caminhos */ }
+    }
+
+    // 2) Delega ao SW (página pode congelar; o SW conclui via waitUntil).
     if (postToServiceWorker({ type: 'SHOW_PENDING_BADGE', title, body })) return;
 
-    // Fallback (SW ainda sem controller, ex.: primeiro carregamento).
+    // 3) Último recurso: aguarda a registration (primeiro carregamento).
     const reg = await getSwRegistration();
     if (!reg) return;
-    await reg.showNotification(title, {
-        tag: PENDING_NOTIFICATION_TAG,
-        body,
-        icon: 'icons/icon-192.svg',
-        badge: 'icons/badge.svg',
-        silent: true,
-        data: { url: '/' }
-    } as NotificationOptions);
+    await reg.showNotification(title, buildNotificationOptions(body));
 }
 
 /**
