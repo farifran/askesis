@@ -26,7 +26,7 @@ export const config = {
     runtime: 'edge',
 };
 
-const DEFAULT_APP_ID = '39454655-f1cd-4531-8ec5-d0f61eb1c478';
+const DEFAULT_APP_ID = 'd69cf0b6-bc03-4375-b3b7-dd7b37e05a17';
 const ONESIGNAL_API_URL = 'https://api.onesignal.com/notifications';
 
 const HEADINGS = {
