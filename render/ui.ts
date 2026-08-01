@@ -96,8 +96,6 @@ export interface UIElements {
     labelNotifications: HTMLElement;
     labelReset: HTMLElement;
     labelPrivacy: HTMLElement;
-    testNotificationBtn: HTMLButtonElement;
-    testNotificationResult: HTMLElement;
     exportDataBtn: HTMLButtonElement;
     importDataBtn: HTMLButtonElement;
     syncInactiveDesc: HTMLElement;
@@ -252,8 +250,6 @@ defineLazy(ui, 'labelSync', '#label-sync', uiCache);
 defineLazy(ui, 'labelNotifications', '#label-notifications', uiCache);
 defineLazy(ui, 'labelReset', '#label-reset', uiCache);
 defineLazy(ui, 'labelPrivacy', '#label-privacy', uiCache);
-defineLazy(ui, 'testNotificationBtn', '#test-notification-btn', uiCache);
-defineLazy(ui, 'testNotificationResult', '#test-notification-result', uiCache);
 defineLazy(ui, 'exportDataBtn', '#export-data-btn', uiCache);
 defineLazy(ui, 'importDataBtn', '#import-data-btn', uiCache);
 defineLazy(ui, 'syncInactiveDesc', '#sync-inactive-desc', uiCache);

@@ -157,7 +157,6 @@ export function updateUIText() {
     ui.languageNextBtn.setAttribute('aria-label', t('languageNext_ariaLabel'));
     setTextContent(ui.labelSync, t('syncLabel'));
     setTextContent(ui.labelNotifications, t('modalManageNotifications'));
-    setTextContent(ui.testNotificationBtn, t('notificationTestButton'));
     setTextContent(ui.labelReset, t('modalManageReset'));
     setTextContent(ui.resetAppBtn, t('modalManageResetButton'));
     setTextContent(ui.manageModal.querySelector('.modal-close-btn'), t('cancelButton'));
