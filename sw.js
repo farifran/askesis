@@ -118,6 +118,43 @@ self.addEventListener('fetch', (event) => {
     );
 });
 
+// --- BADGE DE PENDÊNCIAS (Android) ---
+
+/**
+ * A página pede a notificação de badge por postMessage em vez de chamar
+ * showNotification diretamente. Motivo: o pedido acontece no instante em que o
+ * app vai para segundo plano, quando o Android congela/mata a página — um
+ * `await` na página pode nunca completar. O SW não é congelado junto e o
+ * `waitUntil` garante a conclusão do trabalho.
+ */
+const PENDING_TAG = 'askesis-pending-habits';
+
+function clearPendingBadge() {
+    return self.registration.getNotifications({ tag: PENDING_TAG })
+        .then(list => list.forEach(n => n.close()));
+}
+
+self.addEventListener('message', (event) => {
+    const data = event.data;
+    if (!data || typeof data !== 'object') return;
+
+    if (data.type === 'SHOW_PENDING_BADGE') {
+        event.waitUntil(
+            self.registration.showNotification(String(data.title || ''), {
+                tag: PENDING_TAG,
+                body: String(data.body || ''),
+                icon: 'icons/icon-192.svg',
+                badge: 'icons/badge.svg',
+                silent: true,
+                renotify: false,
+                data: { url: '/' }
+            }).catch(() => {})
+        );
+    } else if (data.type === 'CLEAR_PENDING_BADGE') {
+        event.waitUntil(clearPendingBadge().catch(() => {}));
+    }
+});
+
 // --- NOTIFICATION CLICK (badge de pendências no Android) ---
 
 /**

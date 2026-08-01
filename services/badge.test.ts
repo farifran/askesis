@@ -144,6 +144,57 @@ describe('updateAppBadge', () => {
             expect(getNotificationsMock).not.toHaveBeenCalled();
         });
 
+        it('delega ao service worker por postMessage quando há controller', async () => {
+            const postMessage = vi.fn();
+            Object.defineProperty(navigator, 'serviceWorker', {
+                value: { ready: Promise.resolve({ showNotification: showNotificationMock, getNotifications: getNotificationsMock }), controller: { postMessage } },
+                configurable: true
+            });
+            setSummary(2);
+            setVisibility('hidden');
+
+            const { updateAppBadge } = await import('./badge');
+            await updateAppBadge();
+
+            expect(postMessage).toHaveBeenCalledWith({
+                type: 'SHOW_PENDING_BADGE',
+                title: 'pendingBadgeTitle',
+                body: 'pendingBadgeBody:2'
+            });
+            // Delegou: não deve tocar na registration diretamente.
+            expect(showNotificationMock).not.toHaveBeenCalled();
+        });
+
+        it('posta ao SW de forma SÍNCRONA (a página pode congelar logo após esconder)', async () => {
+            const postMessage = vi.fn();
+            Object.defineProperty(navigator, 'serviceWorker', {
+                value: { ready: new Promise(() => { /* nunca resolve: simula congelamento */ }), controller: { postMessage } },
+                configurable: true
+            });
+            setSummary(1);
+            setVisibility('hidden');
+
+            const { updateAppBadge } = await import('./badge');
+            updateAppBadge(); // sem await: nenhuma microtask pendente pode ser necessária
+
+            expect(postMessage).toHaveBeenCalledTimes(1);
+        });
+
+        it('manda limpar via postMessage ao voltar ao foco', async () => {
+            const postMessage = vi.fn();
+            Object.defineProperty(navigator, 'serviceWorker', {
+                value: { ready: Promise.resolve({}), controller: { postMessage } },
+                configurable: true
+            });
+            setSummary(3);
+            setVisibility('visible');
+
+            const { updateAppBadge } = await import('./badge');
+            await updateAppBadge();
+
+            expect(postMessage).toHaveBeenCalledWith({ type: 'CLEAR_PENDING_BADGE' });
+        });
+
         it('não faz nada sem opt-in explícito do usuário', async () => {
             _optIn = false;
             setSummary(3);

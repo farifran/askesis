@@ -53,7 +53,28 @@ async function getSwRegistration(): Promise<ServiceWorkerRegistration | null> {
     }
 }
 
+/**
+ * Delega o trabalho ao service worker por postMessage.
+ *
+ * `navigator.serviceWorker.controller` é SÍNCRONO: nada é aguardado no momento
+ * crítico (a página indo para segundo plano, quando o Android pode congelá-la a
+ * qualquer instante). O SW sobrevive ao congelamento e conclui via waitUntil.
+ * Retorna false quando não há controller — aí o chamador usa o caminho direto.
+ */
+function postToServiceWorker(message: Record<string, unknown>): boolean {
+    const controller = navigator.serviceWorker?.controller;
+    if (!controller) return false;
+    try {
+        controller.postMessage(message);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
 async function closePendingNotification(): Promise<void> {
+    if (postToServiceWorker({ type: 'CLEAR_PENDING_BADGE' })) return;
+
     const reg = await getSwRegistration();
     if (!reg) return;
     const notifications = await reg.getNotifications({ tag: PENDING_NOTIFICATION_TAG });
@@ -61,11 +82,17 @@ async function closePendingNotification(): Promise<void> {
 }
 
 async function showPendingNotification(count: number): Promise<void> {
+    const title = t('pendingBadgeTitle');
+    const body = t('pendingBadgeBody', { count });
+
+    if (postToServiceWorker({ type: 'SHOW_PENDING_BADGE', title, body })) return;
+
+    // Fallback (SW ainda sem controller, ex.: primeiro carregamento).
     const reg = await getSwRegistration();
     if (!reg) return;
-    await reg.showNotification(t('pendingBadgeTitle'), {
+    await reg.showNotification(title, {
         tag: PENDING_NOTIFICATION_TAG,
-        body: t('pendingBadgeBody', { count }),
+        body,
         icon: 'icons/icon-192.svg',
         badge: 'icons/badge.svg',
         silent: true,
