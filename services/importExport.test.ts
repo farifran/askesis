@@ -63,7 +63,12 @@ describe('import/export round-trip', () => {
         };
 
         const file = new File([JSON.stringify(payload)], 'backup.json', { type: 'application/json' });
-        (fileInput as any).files = [file];
+        // `input.files` só aceita um FileList real; definimos a propriedade
+        // diretamente porque não há como construir um FileList em ambiente de teste.
+        Object.defineProperty(fileInput, 'files', {
+            value: Object.assign([file], { item: (i: number) => [file][i] ?? null }),
+            configurable: true
+        });
 
         await (fileInput as unknown as HTMLInputElement)?.onchange?.({ target: fileInput } as any);
         await new Promise(resolve => setTimeout(resolve, 0));

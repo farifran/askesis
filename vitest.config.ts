@@ -2,8 +2,9 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
-    // Simula um navegador para que 'window', 'document' e 'localStorage' existam
-    environment: 'happy-dom',
+    // Simula um navegador para que 'window', 'document' e 'localStorage' existam.
+    // jsdom (e não happy-dom): DOMPurify >= 3.4.8 não sanitiza sob happy-dom.
+    environment: 'jsdom',
     // Permite usar describe, it, expect sem importar em cada arquivo
     globals: true,
     // Padrão de busca de arquivos de teste
