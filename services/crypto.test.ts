@@ -5,7 +5,30 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { encrypt, decrypt } from './crypto';
+import { encrypt, decrypt, bytesToBase64, PBKDF2_ITERATIONS } from './crypto';
+
+/**
+ * Reproduz o formato legado (v1): SALT(16) | IV(12) | CIPHERTEXT, 100k iterações,
+ * sem cabeçalho. Serve para garantir que dados já sincronizados na nuvem antes da
+ * introdução do envelope versionado continuem legíveis.
+ */
+async function encryptLegacyV1(text: string, password: string): Promise<string> {
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const keyMaterial = await crypto.subtle.importKey(
+        'raw', new TextEncoder().encode(password), { name: 'PBKDF2' }, false, ['deriveKey']
+    );
+    const key = await crypto.subtle.deriveKey(
+        { name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' },
+        keyMaterial, { name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']
+    );
+    const encrypted = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(text));
+    const combined = new Uint8Array(16 + 12 + encrypted.byteLength);
+    combined.set(salt);
+    combined.set(iv, 16);
+    combined.set(new Uint8Array(encrypted), 28);
+    return bytesToBase64(combined);
+}
 
 describe('🔐 Criptografia AES-GCM (crypto.ts)', () => {
 
@@ -88,6 +111,55 @@ describe('🔐 Criptografia AES-GCM (crypto.ts)', () => {
             const bytes = atob(encrypted);
             // SALT(16) + IV(12) + pelo menos 1 byte de dados cifrados + tag GCM(16)
             expect(bytes.length).toBeGreaterThanOrEqual(16 + 12 + 1 + 16);
+        });
+    });
+
+    describe('Envelope versionado e retrocompatibilidade', () => {
+        it('deve usar 600.000 iterações (recomendação OWASP)', () => {
+            expect(PBKDF2_ITERATIONS).toBe(600_000);
+        });
+
+        it('deve descriptografar blobs no formato legado v1 (100k iterações, sem cabeçalho)', async () => {
+            const text = 'dados sincronizados antes da migração';
+            const password = 'senha-antiga';
+
+            const legacyBlob = await encryptLegacyV1(text, password);
+            expect(await decrypt(legacyBlob, password)).toBe(text);
+        });
+
+        it('deve rejeitar blob legado com senha errada em vez de aceitar silenciosamente', async () => {
+            const legacyBlob = await encryptLegacyV1('segredo', 'senha-certa');
+            await expect(decrypt(legacyBlob, 'senha-errada')).rejects.toThrow();
+        });
+
+        it('deve gravar o cabeçalho v2 (MAGIC "ASK2" + versão + iterações)', async () => {
+            const encrypted = await encrypt('teste', 'senha');
+            const bytes = Uint8Array.from(atob(encrypted), c => c.charCodeAt(0));
+
+            expect(Array.from(bytes.slice(0, 4))).toEqual([0x41, 0x53, 0x4b, 0x32]);
+            expect(bytes[4]).toBe(2);
+
+            const iterations = new DataView(bytes.buffer).getUint32(5, false);
+            expect(iterations).toBe(PBKDF2_ITERATIONS);
+        });
+
+        it('deve rejeitar envelope forjado com contagem de iterações abusiva (DoS)', async () => {
+            const encrypted = await encrypt('teste', 'senha');
+            const bytes = Uint8Array.from(atob(encrypted), c => c.charCodeAt(0));
+            new DataView(bytes.buffer).setUint32(5, 0xffffffff, false);
+
+            await expect(decrypt(bytesToBase64(bytes), 'senha')).rejects.toThrow(/out of range/);
+        });
+    });
+
+    describe('Payloads grandes', () => {
+        it('deve cifrar payload de ~2MB sem estourar a pilha de argumentos', async () => {
+            // `btoa(String.fromCharCode(...bytes))` lança RangeError nessa ordem de
+            // grandeza; a codificação em blocos precisa segurar o caso.
+            const bigText = 'x'.repeat(2_000_000);
+
+            const encrypted = await encrypt(bigText, 'senha');
+            expect(await decrypt(encrypted, 'senha')).toBe(bigText);
         });
     });
 

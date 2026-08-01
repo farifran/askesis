@@ -10,10 +10,8 @@
  */
 
 import { murmurHash3 } from './murmurHash3';
+import { encrypt as encryptText, decrypt as decryptText } from './crypto';
 import { type WorkerTaskMessage, type WorkerResponseMessage } from '../contracts/worker';
-
-const SALT_LEN = 16;
-const IV_LEN = 12;
 
 type JsonRecord = Record<string, unknown>;
 
@@ -38,64 +36,23 @@ function jsonReviver(key: string, value: unknown) {
     return value;
 }
 
-async function deriveKey(password: string, salt: Uint8Array): Promise<CryptoKey> {
-    const enc = new TextEncoder();
-    const keyMaterial = await crypto.subtle.importKey("raw", enc.encode(password), { name: "PBKDF2" }, false, ["deriveKey"]);
-    // Normalize to an ArrayBuffer-backed view for stricter TS lib definitions.
-    const normalizedSalt = new Uint8Array(salt);
-    return crypto.subtle.deriveKey(
-        { name: "PBKDF2", salt: normalizedSalt, iterations: 100000, hash: "SHA-256" },
-        keyMaterial, { name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]
-    );
-}
+// O envelope criptográfico vive em ./crypto (fonte única de verdade). Aqui ficam
+// apenas as camadas de (de)serialização JSON que são específicas do worker.
 
 async function encrypt(payload: unknown, password: string): Promise<string> {
-    const text = JSON.stringify(payload, jsonReplacer);
-    const salt = crypto.getRandomValues(new Uint8Array(SALT_LEN));
-    const iv = crypto.getRandomValues(new Uint8Array(IV_LEN));
-    const key = await deriveKey(password, salt);
-    const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(text));
-    const combined = new Uint8Array(salt.length + iv.length + encrypted.byteLength);
-    combined.set(salt);
-    combined.set(iv, salt.length);
-    combined.set(new Uint8Array(encrypted), salt.length + iv.length);
-    return btoa(String.fromCharCode(...combined));
+    return encryptText(JSON.stringify(payload, jsonReplacer), password);
 }
 
 async function encryptJson(jsonText: string, password: string): Promise<string> {
-    const salt = crypto.getRandomValues(new Uint8Array(SALT_LEN));
-    const iv = crypto.getRandomValues(new Uint8Array(IV_LEN));
-    const key = await deriveKey(password, salt);
-    const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(jsonText));
-    const combined = new Uint8Array(salt.length + iv.length + encrypted.byteLength);
-    combined.set(salt);
-    combined.set(iv, salt.length);
-    combined.set(new Uint8Array(encrypted), salt.length + iv.length);
-    return btoa(String.fromCharCode(...combined));
+    return encryptText(jsonText, password);
 }
 
 async function decrypt(encryptedBase64: string, password: string): Promise<unknown> {
-    const str = atob(encryptedBase64);
-    const bytes = new Uint8Array(str.length);
-    for (let i = 0; i < str.length; i++) bytes[i] = str.charCodeAt(i);
-    const salt = bytes.slice(0, SALT_LEN);
-    const iv = bytes.slice(SALT_LEN, SALT_LEN + IV_LEN);
-    const data = bytes.slice(SALT_LEN + IV_LEN);
-    const key = await deriveKey(password, salt);
-    const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, data);
-    return JSON.parse(new TextDecoder().decode(decrypted), jsonReviver);
+    return JSON.parse(await decryptText(encryptedBase64, password), jsonReviver);
 }
 
 async function decryptWithHash(encryptedBase64: string, password: string): Promise<{ value: unknown; hash: string }> {
-    const str = atob(encryptedBase64);
-    const bytes = new Uint8Array(str.length);
-    for (let i = 0; i < str.length; i++) bytes[i] = str.charCodeAt(i);
-    const salt = bytes.slice(0, SALT_LEN);
-    const iv = bytes.slice(SALT_LEN, SALT_LEN + IV_LEN);
-    const data = bytes.slice(SALT_LEN + IV_LEN);
-    const key = await deriveKey(password, salt);
-    const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, data);
-    const text = new TextDecoder().decode(decrypted);
+    const text = await decryptText(encryptedBase64, password);
     return { value: JSON.parse(text, jsonReviver), hash: murmurHash3(text) };
 }
 
