@@ -43,6 +43,46 @@ const getDayItemTemplate = () => dayItemTemplate || (dayItemTemplate = (() => {
     return el;
 })());
 
+// --- STRIP TILING ---
+// Faz N células inteiras preencherem exatamente a largura do strip, para que em
+// repouso nunca apareça um dia cortado nas bordas (em qualquer tamanho de tela).
+// N é derivado do espaço disponível respeitando uma largura mínima de célula.
+
+const MIN_DAY_CELL_PX = 56;
+const FALLBACK_STRIP_GAP_PX = 8; // var(--space-sm)
+let tilingObserver: ResizeObserver | null = null;
+
+function applyStripTiling() {
+    const strip = ui.calendarStrip;
+    if (!strip) return;
+    const width = strip.clientWidth;
+    if (width <= 0) return;
+
+    let gap = FALLBACK_STRIP_GAP_PX;
+    try {
+        const parsed = parseFloat(getComputedStyle(strip).columnGap);
+        if (Number.isFinite(parsed)) gap = parsed;
+    } catch { /* keep fallback */ }
+
+    const n = Math.max(2, Math.floor((width + gap) / (MIN_DAY_CELL_PX + gap)));
+    const cellWidth = (width - gap * (n - 1)) / n;
+    strip.style.setProperty('--day-cell-width', `${cellWidth}px`);
+}
+
+function ensureStripTiling() {
+    if (tilingObserver || !ui.calendarStrip) {
+        applyStripTiling();
+        return;
+    }
+    if (typeof ResizeObserver !== 'undefined') {
+        tilingObserver = new ResizeObserver(() => applyStripTiling());
+        tilingObserver.observe(ui.calendarStrip);
+    } else {
+        window.addEventListener('resize', applyStripTiling);
+    }
+    applyStripTiling();
+}
+
 // --- CORE RENDERING (STRIP) ---
 
 function applyDayVisuals(el: HTMLElement, dateISO: string, dateObj?: Date, ringEl?: HTMLElement, numEl?: HTMLElement) {
@@ -133,6 +173,8 @@ export function renderCalendar() {
         const el = createDayElement(iso, iso === centerDateISO, iso === todayISO);
         frag.appendChild(el);
     }
+
+    ensureStripTiling();
 
     ui.calendarStrip.replaceChildren();
     dayElementCache.clear();

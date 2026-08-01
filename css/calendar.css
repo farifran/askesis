@@ -11,7 +11,10 @@
     user-select: none;
     contain: content;
     overscroll-behavior: contain;
-    scroll-snap-type: x proximity;
+    /* TILING EXATO: em repouso, apenas células inteiras visíveis (sem dias cortados
+       nas bordas). O JS define --day-cell-width para que N células preencham
+       exatamente o container; o snap mandatory garante o repouso alinhado. */
+    scroll-snap-type: x mandatory;
     padding-inline-start: 0;
     padding-inline-end: 0;
 }
@@ -27,8 +30,11 @@
     cursor: pointer;
     transition: background-color var(--transition-duration), transform 0.1s ease-out;
     border: 2px solid transparent;
-    flex-shrink: 0;
-    scroll-snap-align: end;
+    /* Largura calculada pelo tiling (render/calendar.ts); fallback = intrínseca. */
+    flex: 0 0 var(--day-cell-width, auto);
+    min-width: 0;
+    scroll-snap-align: start;
+    scroll-snap-stop: normal;
 }
 
 .day-item.selected { 
