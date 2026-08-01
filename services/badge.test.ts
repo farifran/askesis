@@ -175,56 +175,6 @@ describe('updateAppBadge', () => {
             expect(getNotificationsMock).not.toHaveBeenCalled();
         });
 
-        it('prefere a registration em cache (sobrevive ao encerramento abrupto)', async () => {
-            // showNotification via registration é executado pelo processo do
-            // navegador — não depende de acordar o SW nem de a mensagem ser
-            // processada, que é o que falha quando o app é encerrado de vez.
-            const postMessage = vi.fn();
-            Object.defineProperty(navigator, 'serviceWorker', {
-                value: { ready: Promise.resolve({ showNotification: showNotificationMock, getNotifications: getNotificationsMock }), controller: { postMessage } },
-                configurable: true
-            });
-            setSummary(2);
-            setVisibility('hidden');
-
-            const { updateAppBadge } = await import('./badge');
-            await updateAppBadge();
-
-            expect(showNotificationMock).toHaveBeenCalledTimes(1);
-            expect(showNotificationMock.mock.calls[0][1].body).toBe('pendingBadgeBody:2');
-            expect(postMessage).not.toHaveBeenCalled();
-        });
-
-        it('posta ao SW de forma SÍNCRONA (a página pode congelar logo após esconder)', async () => {
-            const postMessage = vi.fn();
-            Object.defineProperty(navigator, 'serviceWorker', {
-                value: { ready: new Promise(() => { /* nunca resolve: simula congelamento */ }), controller: { postMessage } },
-                configurable: true
-            });
-            setSummary(1);
-            setVisibility('hidden');
-
-            const { updateAppBadge } = await import('./badge');
-            updateAppBadge(); // sem await: nenhuma microtask pendente pode ser necessária
-
-            expect(postMessage).toHaveBeenCalledTimes(1);
-        });
-
-        it('manda limpar via postMessage quando as pendências zeram', async () => {
-            const postMessage = vi.fn();
-            Object.defineProperty(navigator, 'serviceWorker', {
-                value: { ready: Promise.resolve({}), controller: { postMessage } },
-                configurable: true
-            });
-            setSummary(0);
-            setVisibility('visible');
-
-            const { updateAppBadge } = await import('./badge');
-            await updateAppBadge();
-
-            expect(postMessage).toHaveBeenCalledWith({ type: 'CLEAR_PENDING_BADGE' });
-        });
-
         it('não faz nada sem opt-in explícito do usuário', async () => {
             _optIn = false;
             setSummary(3);

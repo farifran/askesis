@@ -62,13 +62,8 @@ function hasWorkingNativeBadge(): boolean {
 }
 
 /**
- * Registration pré-aquecida no boot.
- *
- * `registration.showNotification()` é executado pelo PROCESSO DO NAVEGADOR, não
- * pelo service worker — não exige acordar o SW nem esperar mensagem ser
- * processada. Com a registration já em mãos, a chamada é iniciada de forma
- * síncrona, o que sobrevive ao encerramento abrupto do app (botão Voltar do
- * Android), onde tanto a página quanto o SW podem ser derrubados juntos.
+ * Registration pré-aquecida no boot: evita esperar `serviceWorker.ready` na
+ * primeira sincronização do badge.
  */
 let _cachedRegistration: ServiceWorkerRegistration | null = null;
 
@@ -100,28 +95,7 @@ async function getSwRegistration(): Promise<ServiceWorkerRegistration | null> {
     }
 }
 
-/**
- * Delega o trabalho ao service worker por postMessage.
- *
- * `navigator.serviceWorker.controller` é SÍNCRONO: nada é aguardado no momento
- * crítico (a página indo para segundo plano, quando o Android pode congelá-la a
- * qualquer instante). O SW sobrevive ao congelamento e conclui via waitUntil.
- * Retorna false quando não há controller — aí o chamador usa o caminho direto.
- */
-function postToServiceWorker(message: Record<string, unknown>): boolean {
-    const controller = navigator.serviceWorker?.controller;
-    if (!controller) return false;
-    try {
-        controller.postMessage(message);
-        return true;
-    } catch {
-        return false;
-    }
-}
-
 async function closePendingNotification(): Promise<void> {
-    if (postToServiceWorker({ type: 'CLEAR_PENDING_BADGE' })) return;
-
     const reg = await getSwRegistration();
     if (!reg) return;
     const notifications = await reg.getNotifications({ tag: PENDING_NOTIFICATION_TAG });
@@ -132,20 +106,6 @@ async function showPendingNotification(count: number): Promise<void> {
     const title = t('pendingBadgeTitle');
     const body = t('pendingBadgeBody', { count });
 
-    // 1) Registration em cache: chamada iniciada sincronamente e executada pelo
-    //    processo do navegador. É o caminho que sobrevive ao encerramento
-    //    abrupto (Voltar), onde página e SW podem cair juntos.
-    if (_cachedRegistration) {
-        try {
-            await _cachedRegistration.showNotification(title, buildNotificationOptions(body));
-            return;
-        } catch { /* cai para os próximos caminhos */ }
-    }
-
-    // 2) Delega ao SW (página pode congelar; o SW conclui via waitUntil).
-    if (postToServiceWorker({ type: 'SHOW_PENDING_BADGE', title, body })) return;
-
-    // 3) Último recurso: aguarda a registration (primeiro carregamento).
     const reg = await getSwRegistration();
     if (!reg) return;
     await reg.showNotification(title, buildNotificationOptions(body));

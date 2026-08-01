@@ -44,14 +44,11 @@ const _handleNetworkChange = createDebounced(() => {
 }, NETWORK_DEBOUNCE_MS);
 
 const _handleVisibilityChange = () => {
-    if (document.visibilityState !== 'visible') {
-        // App indo para background: sincroniza o badge — no Android (sem Badging
-        // API) isso publica a notificação silenciosa de pendências do dia.
-        updateAppBadge().catch(() => {});
-        return;
-    }
-    // App voltando ao foco: remove a notificação de pendências (o usuário já está olhando).
+    // Sincroniza o badge nas duas direções: cobre a volta ao app depois de o dia
+    // ter virado em segundo plano, quando as pendências mudam sozinhas.
     updateAppBadge().catch(() => {});
+
+    if (document.visibilityState !== 'visible') return;
     if (isHandlingVisibility) return;
     isHandlingVisibility = true;
 
