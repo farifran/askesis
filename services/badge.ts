@@ -123,12 +123,14 @@ async function showPendingNotification(count: number): Promise<void> {
  * para background com pendências, publicamos uma notificação silenciosa com a
  * tag fixa; ela é removida ao voltar ao app ou ao zerar as pendências.
  */
-async function updateNotificationFallback(count: number): Promise<void> {
+async function updateNotificationFallback(count: number, leaving = false): Promise<void> {
     // Requisitos: permissão concedida E opt-in explícito do usuário no app.
     if (typeof Notification === 'undefined') return;
     if (getNotificationPermission() !== 'granted' || getLocalPushOptIn() !== true) return;
 
-    const isHidden = typeof document !== 'undefined' && document.visibilityState === 'hidden';
+    // `leaving` cobre a saída por descarregamento (botão Voltar do Android):
+    // o documento está indo embora, mas visibilityState ainda pode ser 'visible'.
+    const isHidden = leaving || (typeof document !== 'undefined' && document.visibilityState === 'hidden');
     if (isHidden && count > 0) {
         await showPendingNotification(count);
     } else {
@@ -142,7 +144,7 @@ async function updateNotificationFallback(count: number): Promise<void> {
  * Se a contagem for zero, o emblema é limpo.
  * Esta função verifica o suporte do navegador antes de tentar definir o emblema.
  */
-export async function updateAppBadge(): Promise<void> {
+export async function updateAppBadge(options?: { leaving?: boolean }): Promise<void> {
     try {
         // REFACTOR [2025-03-05]: usa a função centralizada e cacheada 'calculateDaySummary'
         // para obter a contagem de pendentes (custo O(1) na maioria das chamadas).
@@ -161,7 +163,7 @@ export async function updateAppBadge(): Promise<void> {
         }
 
         // Android (ou sem Badging API): badge via notificação silenciosa.
-        await updateNotificationFallback(count);
+        await updateNotificationFallback(count, options?.leaving === true);
     } catch (error) {
         // ROBUSTEZ: Falha silenciosa ou log discreto é aceitável para funcionalidades de UI progressivas.
         // Não queremos alertar o usuário se o OS rejeitar o badge (ex: permissões).

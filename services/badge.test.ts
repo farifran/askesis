@@ -224,6 +224,19 @@ describe('updateAppBadge', () => {
             expect(postMessage).toHaveBeenCalledWith({ type: 'CLEAR_PENDING_BADGE' });
         });
 
+        it('publica ao sair por descarregamento mesmo com visibilityState visible', async () => {
+            // Botão Voltar do Android encerra o app: o documento vai embora sem
+            // que o visibilitychange chegue a tempo.
+            setSummary(2);
+            setVisibility('visible');
+
+            const { updateAppBadge } = await import('./badge');
+            await updateAppBadge({ leaving: true });
+
+            expect(showNotificationMock).toHaveBeenCalledTimes(1);
+            expect(showNotificationMock.mock.calls[0][1].body).toBe('pendingBadgeBody:2');
+        });
+
         it('não faz nada sem opt-in explícito do usuário', async () => {
             _optIn = false;
             setSummary(3);

@@ -221,7 +221,8 @@ function handleFirstTimeUser() {
 function setupAppListeners() {
     setupEventListeners();
     initSync();
-    document.addEventListener('habitsChanged', updateAppBadge);
+    // Arrow function: evita que o Event seja passado como options de updateAppBadge.
+    document.addEventListener('habitsChanged', () => { updateAppBadge().catch(() => {}); });
     setupMidnightLoop();
     document.addEventListener('dayChanged', handleDayTransition);
     registerSyncHandler(syncStateWithCloud);
