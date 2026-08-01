@@ -48,6 +48,7 @@ import { t, setLanguage } from '../i18n';
 import { setupReelRotary } from '../render/rotary';
 import { ensureOneSignalReady, setLocalPushOptIn, triggerHaptic, logger, getTodayUTCIso, isActivationKeyboardEvent, getNotificationPermission } from '../utils';
 import { setTextContent } from '../render/dom';
+import { runBadgeNotificationTest } from '../services/badge';
 import {
     handleAiEvalClick,
     handleAiOptionsClick,
@@ -115,6 +116,32 @@ const _handleManageModalClick = (e: MouseEvent) => {
         exportData();
     } else if (target.id === 'import-data-btn') {
         importData();
+    }
+};
+
+/**
+ * Dispara a notificação de pendências sob demanda e mostra o resultado.
+ * Em celular não há devtools, então o texto expõe o estado que a bloqueou
+ * (permissão, opt-in, contagem, controller do service worker).
+ */
+const _handleTestNotificationClick = async () => {
+    triggerHaptic('light');
+    ui.testNotificationBtn.disabled = true;
+    try {
+        const diag = await runBadgeNotificationTest();
+        const message = t(diag.reason, { permission: diag.permission });
+        const details = t('notificationTestDetails', {
+            pending: diag.pending,
+            native: String(diag.nativeBadge),
+            sw: String(diag.swController),
+            delivery: diag.delivery
+        });
+        setTextContent(ui.testNotificationResult, `${message} (${details})`);
+    } catch (error) {
+        logger.error('[Settings] test notification failed', error);
+        setTextContent(ui.testNotificationResult, t('notificationTestFailed'));
+    } finally {
+        ui.testNotificationBtn.disabled = false;
     }
 };
 
@@ -320,6 +347,7 @@ export function setupModalListeners() {
     ui.manageModal.addEventListener('click', _handleManageModalClick);
     ui.resetAppBtn.addEventListener('click', _handleResetAppClick);
     ui.notificationToggle.addEventListener('change', _handleNotificationToggleChange);
+    ui.testNotificationBtn.addEventListener('click', _handleTestNotificationClick);
 
     // Rotary Config
     setupReelRotary({

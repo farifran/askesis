@@ -120,6 +120,68 @@ async function updateNotificationFallback(count: number): Promise<void> {
     }
 }
 
+export interface BadgeDiagnostics {
+    ok: boolean;
+    reason: string;
+    pending: number;
+    nativeBadge: boolean;
+    permission: string;
+    optIn: boolean | null;
+    swController: boolean;
+    delivery: 'sw-message' | 'direct' | 'none';
+}
+
+/**
+ * DIAGNÓSTICO: dispara a notificação de pendências sob demanda e relata o
+ * resultado, incluindo a condição exata que a bloqueou.
+ *
+ * Existe porque a cadeia tem várias condições invisíveis ao usuário (permissão,
+ * opt-in, controller do SW, contagem) e, em celular, não há devtools para
+ * inspecioná-las.
+ */
+export async function runBadgeNotificationTest(): Promise<BadgeDiagnostics> {
+    const { pending } = calculateDaySummary(getTodayUTCIso());
+    const permission = typeof Notification !== 'undefined' ? getNotificationPermission() : 'sem-api';
+    const optIn = getLocalPushOptIn();
+    const swController = !!navigator.serviceWorker?.controller;
+
+    const diag: BadgeDiagnostics = {
+        ok: false,
+        reason: '',
+        pending,
+        nativeBadge: supportsNativeBadge(),
+        permission,
+        optIn,
+        swController,
+        delivery: 'none'
+    };
+
+    if (typeof Notification === 'undefined') {
+        diag.reason = 'notificationTestNoApi';
+        return diag;
+    }
+    if (permission !== 'granted') {
+        diag.reason = 'notificationTestNoPermission';
+        return diag;
+    }
+    if (optIn !== true) {
+        diag.reason = 'notificationTestNoOptIn';
+        return diag;
+    }
+
+    // O teste usa uma contagem mínima de 1 para funcionar mesmo com o dia zerado.
+    try {
+        await showPendingNotification(Math.max(1, pending));
+        diag.ok = true;
+        diag.delivery = swController ? 'sw-message' : 'direct';
+        diag.reason = 'notificationTestSent';
+    } catch (error) {
+        diag.reason = 'notificationTestFailed';
+        logger.error('[Badge] test notification failed', error);
+    }
+    return diag;
+}
+
 /**
  * Atualiza o emblema do ícone do aplicativo com o número atual de hábitos pendentes para hoje.
  * Se a contagem for zero, o emblema é limpo.
