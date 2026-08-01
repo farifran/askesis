@@ -165,10 +165,6 @@ export function setupEventListeners() {
     window.addEventListener('online', _handleNetworkChange);
     window.addEventListener('offline', _handleNetworkChange);
     document.addEventListener('visibilitychange', _handleVisibilityChange);
-    // Saída por descarregamento (botão Voltar do Android encerra o app): o
-    // visibilitychange não chega a tempo. `leaving` força o tratamento de
-    // "indo embora" mesmo com visibilityState ainda 'visible'.
-    window.addEventListener('pagehide', () => { updateAppBadge({ leaving: true }).catch(() => {}); });
     
     if ('serviceWorker' in navigator) {
         navigator.serviceWorker.addEventListener('message', _handleServiceWorkerMessage);

@@ -152,23 +152,25 @@ async function showPendingNotification(count: number): Promise<void> {
 }
 
 /**
- * FALLBACK ANDROID: o Chrome/Android não expõe a Badging API — lá, o badge do
- * launcher só aparece quando existe uma notificação não lida. Quando o app vai
- * para background com pendências, publicamos uma notificação silenciosa com a
- * tag fixa; ela é removida ao voltar ao app ou ao zerar as pendências.
+ * FALLBACK ANDROID: o Chrome/Android não pinta badge numérico no ícone — lá o
+ * emblema do launcher vem de notificações não lidas.
+ *
+ * ESTRATÉGIA (espelho, não corrida): a notificação reflete o estado a qualquer
+ * momento — existe enquanto houver pendências, some quando zeram —, inclusive
+ * com o app aberto. Assim ela JÁ ESTÁ publicada quando o usuário sai, não
+ * importa como: Home, gerenciador de janelas ou botão Voltar.
+ *
+ * A tentativa anterior era criá-la no instante da saída, o que exige rodar
+ * JavaScript enquanto o Android encerra o app — corrida que o Voltar perde.
  */
-async function updateNotificationFallback(count: number, leaving = false): Promise<void> {
+async function updateNotificationFallback(count: number): Promise<void> {
     // Requisitos: permissão concedida E opt-in explícito do usuário no app.
     if (typeof Notification === 'undefined') return;
     if (getNotificationPermission() !== 'granted' || getLocalPushOptIn() !== true) return;
 
-    // `leaving` cobre a saída por descarregamento (botão Voltar do Android):
-    // o documento está indo embora, mas visibilityState ainda pode ser 'visible'.
-    const isHidden = leaving || (typeof document !== 'undefined' && document.visibilityState === 'hidden');
-    if (isHidden && count > 0) {
+    if (count > 0) {
         await showPendingNotification(count);
     } else {
-        // App visível (o usuário já está olhando) ou zero pendências: limpa.
         await closePendingNotification();
     }
 }
@@ -178,7 +180,7 @@ async function updateNotificationFallback(count: number, leaving = false): Promi
  * Se a contagem for zero, o emblema é limpo.
  * Esta função verifica o suporte do navegador antes de tentar definir o emblema.
  */
-export async function updateAppBadge(options?: { leaving?: boolean }): Promise<void> {
+export async function updateAppBadge(): Promise<void> {
     try {
         // REFACTOR [2025-03-05]: usa a função centralizada e cacheada 'calculateDaySummary'
         // para obter a contagem de pendentes (custo O(1) na maioria das chamadas).
@@ -197,7 +199,7 @@ export async function updateAppBadge(options?: { leaving?: boolean }): Promise<v
         }
 
         // Android (ou sem Badging API): badge via notificação silenciosa.
-        await updateNotificationFallback(count, options?.leaving === true);
+        await updateNotificationFallback(count);
     } catch (error) {
         // ROBUSTEZ: Falha silenciosa ou log discreto é aceitável para funcionalidades de UI progressivas.
         // Não queremos alertar o usuário se o OS rejeitar o badge (ex: permissões).

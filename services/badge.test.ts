@@ -139,15 +139,17 @@ describe('updateAppBadge', () => {
             expect(options.silent).toBe(true);
         });
 
-        it('remove a notificação quando o app volta a ficar visível', async () => {
+        it('mantém a notificação mesmo com o app visível (espelho do estado)', async () => {
+            // A notificação precisa JÁ existir antes da saída, porque o botão
+            // Voltar do Android encerra o app sem deixar rodar JavaScript.
             setSummary(3);
             setVisibility('visible');
 
             const { updateAppBadge } = await import('./badge');
             await updateAppBadge();
 
-            expect(showNotificationMock).not.toHaveBeenCalled();
-            expect(closeMock).toHaveBeenCalled();
+            expect(showNotificationMock).toHaveBeenCalledTimes(1);
+            expect(closeMock).not.toHaveBeenCalled();
         });
 
         it('remove a notificação quando as pendências zeram', async () => {
@@ -208,32 +210,19 @@ describe('updateAppBadge', () => {
             expect(postMessage).toHaveBeenCalledTimes(1);
         });
 
-        it('manda limpar via postMessage ao voltar ao foco', async () => {
+        it('manda limpar via postMessage quando as pendências zeram', async () => {
             const postMessage = vi.fn();
             Object.defineProperty(navigator, 'serviceWorker', {
                 value: { ready: Promise.resolve({}), controller: { postMessage } },
                 configurable: true
             });
-            setSummary(3);
+            setSummary(0);
             setVisibility('visible');
 
             const { updateAppBadge } = await import('./badge');
             await updateAppBadge();
 
             expect(postMessage).toHaveBeenCalledWith({ type: 'CLEAR_PENDING_BADGE' });
-        });
-
-        it('publica ao sair por descarregamento mesmo com visibilityState visible', async () => {
-            // Botão Voltar do Android encerra o app: o documento vai embora sem
-            // que o visibilitychange chegue a tempo.
-            setSummary(2);
-            setVisibility('visible');
-
-            const { updateAppBadge } = await import('./badge');
-            await updateAppBadge({ leaving: true });
-
-            expect(showNotificationMock).toHaveBeenCalledTimes(1);
-            expect(showNotificationMock.mock.calls[0][1].body).toBe('pendingBadgeBody:2');
         });
 
         it('não faz nada sem opt-in explícito do usuário', async () => {

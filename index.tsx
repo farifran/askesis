@@ -225,6 +225,8 @@ function setupAppListeners() {
     document.addEventListener('habitsChanged', () => { updateAppBadge().catch(() => {}); });
     setupMidnightLoop();
     document.addEventListener('dayChanged', handleDayTransition);
+    // Virada de dia: as pendências mudam sem passar por habitsChanged.
+    document.addEventListener('dayChanged', () => { updateAppBadge().catch(() => {}); });
     registerSyncHandler(syncStateWithCloud);
 }
 
