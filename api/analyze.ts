@@ -41,8 +41,10 @@ function getCorsHeaders(req: Request): Record<string, string> {
 
 // ROBUSTNESS: Support both standard naming conventions
 const API_KEY = process.env.API_KEY || process.env.GEMINI_API_KEY;
-// MODEL UPDATE: Use supported Gemini 3 model.
-const MODEL_NAME = 'gemini-3-flash-preview';
+// Gemini 3.5 Flash-Lite: GA, menor latência e custo da família 3.5 — dimensionado
+// para esta carga (prompt curto, resposta JSON pequena, poucas chamadas por dia).
+// MODEL_NAME entra na chave de cache: trocar o modelo invalida respostas antigas.
+const MODEL_NAME = 'gemini-3.5-flash-lite';
 
 let aiClient: GoogleGenAI | null = null;
 let aiQuotaCooldownUntil = 0;
@@ -197,9 +199,12 @@ export default async function handler(req: Request) {
             aiClient.models.generateContent({
                 model: MODEL_NAME,
                 contents: prompt,
-                config: { 
+                // Sem temperature/top_p/top_k: desaconselhados em toda a família
+                // Gemini 3.x, onde interferem na otimização de raciocínio. O
+                // determinismo vem da systemInstruction, que já impõe pontuação
+                // rigorosa e resposta exclusivamente em JSON.
+                config: {
                     systemInstruction,
-                    temperature: 0.7,
                 },
             }),
             timeoutPromise

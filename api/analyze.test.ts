@@ -34,6 +34,24 @@ describe('api/analyze quota cooldown', () => {
     process.env.AI_QUOTA_COOLDOWN_MS = '120000';
   });
 
+  it('chama o modelo esperado sem parâmetros de amostragem depreciados', async () => {
+    // temperature/top_p/top_k são desaconselhados em toda a família Gemini 3.x
+    // (interferem na otimização de raciocínio). O determinismo vem da
+    // systemInstruction. Este teste impede que voltem por descuido.
+    generateContentMock.mockResolvedValueOnce({ text: '{"ok":true}' });
+
+    const mod = await import('./analyze');
+    await mod.default(makeAnalyzeRequest('p', 's'));
+
+    expect(generateContentMock).toHaveBeenCalledTimes(1);
+    const args = generateContentMock.mock.calls[0][0];
+    expect(args.model).toBe('gemini-3.5-flash-lite');
+    expect(args.config.systemInstruction).toBe('s');
+    expect(args.config).not.toHaveProperty('temperature');
+    expect(args.config).not.toHaveProperty('topP');
+    expect(args.config).not.toHaveProperty('topK');
+  });
+
   it('ativa cooldown após erro de quota e bloqueia nova chamada ao provedor', async () => {
     generateContentMock.mockRejectedValueOnce(Object.assign(new Error('RESOURCE_EXHAUSTED'), { status: 429 }));
 
