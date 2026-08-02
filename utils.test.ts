@@ -333,4 +333,41 @@ describe('🧰 Utilitários de Infraestrutura (utils.ts)', () => {
             expect(HEX_LUT[16]).toBe('10');
         });
     });
+
+    describe('ensurePushSubscribed', () => {
+        afterEach(() => {
+            try {
+                delete (window as any).OneSignal;
+                delete (window as any).OneSignalDeferred;
+                localStorage.removeItem('askesis_onesignal_opted_in');
+            } catch {}
+        });
+
+        it('chama optIn e persiste localOptIn quando o SDK reporta optedIn=true', async () => {
+            const optIn = vi.fn(async () => {});
+            const requestPermission = vi.fn(async () => {});
+            (window as any).OneSignal = {
+                User: {
+                    PushSubscription: {
+                        optIn,
+                        optOut: vi.fn(),
+                        optedIn: true,
+                        id: 'sub-android-1',
+                        token: 'fcm-token',
+                    },
+                },
+                Notifications: { requestPermission, permission: true },
+                init: vi.fn(),
+            };
+
+            const { ensurePushSubscribed, getLocalPushOptIn } = await import('./utils');
+            const result = await ensurePushSubscribed();
+
+            expect(requestPermission).toHaveBeenCalled();
+            expect(optIn).toHaveBeenCalled();
+            expect(result.optedIn).toBe(true);
+            expect(result.subscriptionId).toBe('sub-android-1');
+            expect(getLocalPushOptIn()).toBe(true);
+        });
+    });
 });

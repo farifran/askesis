@@ -18,7 +18,7 @@ import { setupOverscroll } from './listeners/overscroll';
 import { setupCalendarListeners } from './listeners/calendar';
 import { setupChartListeners } from './listeners/chart';
 import { updateAppBadge } from './services/badge';
-import { getTodayUTCIso, resetTodayCache, createDebounced, logger, getLocalPushOptIn, setLocalPushOptIn, hasRequestedPushPermission, getPushPermissionRequestAgeMs, markPushPermissionRequested, ensureOneSignalReady, getNotificationPermission, requestNotificationPermission } from './utils';
+import { getTodayUTCIso, resetTodayCache, createDebounced, logger, getLocalPushOptIn, setLocalPushOptIn, hasRequestedPushPermission, getPushPermissionRequestAgeMs, markPushPermissionRequested, ensurePushSubscribed, getNotificationPermission, requestNotificationPermission } from './utils';
 import { state, getPersistableState, invalidateCachesForDateChange } from './state';
 import { pullRemoteChanges, syncStateWithCloud } from './services/cloud';
 import { checkAndAnalyzeDayContext } from './services/analysis';
@@ -129,9 +129,8 @@ export function setupEventListeners() {
             if (perm === 'granted') {
                 setLocalPushOptIn(true);
                 updateNotificationUI();
-                ensureOneSignalReady()
-                    .then((OneSignal) => OneSignal.Notifications.requestPermission?.().catch(() => {}))
-                    .catch(() => {});
+                // optIn() é obrigatório no Chrome/Android para registrar o device no OneSignal.
+                ensurePushSubscribed().catch((err) => logger.warn('Auto push subscribe failed', err));
             } else if (perm === 'denied') {
                 setLocalPushOptIn(false);
                 updateNotificationUI();

@@ -15,12 +15,16 @@ declare global {
     interface OneSignalNotifications {
         addEventListener(event: 'permissionChange', handler: () => void): void;
         requestPermission(): Promise<void>;
-        permission?: 'default' | 'denied' | 'granted';
+        /** SDK v16: boolean (true = granted). */
+        permission?: boolean | 'default' | 'denied' | 'granted';
     }
 
     interface OneSignalUserPushSubscription {
+        optIn(): Promise<void>;
         optOut(): Promise<void>;
         optedIn?: boolean;
+        id?: string | null;
+        token?: string | null;
     }
 
     interface OneSignalUser {
@@ -29,7 +33,13 @@ declare global {
     }
 
     interface OneSignalLike {
-        init(options: { appId: string; allowLocalhostAsSecureOrigin?: boolean }): Promise<void>;
+        init(options: {
+            appId: string;
+            allowLocalhostAsSecureOrigin?: boolean;
+            autoResubscribe?: boolean;
+            serviceWorkerPath?: string;
+            serviceWorkerParam?: { scope?: string };
+        }): Promise<void>;
         Notifications: OneSignalNotifications;
         User: OneSignalUser;
     }

@@ -28,7 +28,7 @@ import { initSync } from './listeners/sync';
 import { fetchStateFromCloud, syncStateWithCloud, setSyncStatus } from './services/cloud';
 import { hasLocalSyncKey, initAuth } from './services/api';
 import { updateAppBadge } from './services/badge';
-import { setupMidnightLoop, logger, getLocalPushOptIn, ensureOneSignalReady, getNotificationPermission } from './utils';
+import { setupMidnightLoop, logger, getLocalPushOptIn, ensurePushSubscribed, getNotificationPermission } from './utils';
 import { BOOT_RELOAD_DELAY_MS, BOOT_SYNC_TIMEOUT_MS } from './constants';
 import { t } from './i18n';
 
@@ -244,14 +244,14 @@ function finalizeInit(loader: HTMLElement | null) {
     const runBackgroundTasks = () => {
         performArchivalCheck();
 
-        // Se o usuário já optou por notificações, carregamos o OneSignal automaticamente.
-        // Isso mantém o runtime zero-deps por padrão (para quem não optou), mas respeita a decisão do usuário.
-        // IMPORTANTE: NÃO chamamos requestPermission() aqui — isso está fora de um gesto do usuário
-        // e no iOS Safari PWA causaria interferência (silenciosamente bloqueado pelo WebKit),
-        // além de conflitar com a solicitação feita pelo toggle. Apenas inicializamos a conexão.
+        // Se o usuário já optou por notificações, re-inscreve no OneSignal.
+        // Só init NÃO basta no Chrome Android: se a permissão já está granted mas o
+        // token FCM nunca foi criado (ou foi perdido), optIn() completa a subscription
+        // sem reabrir o prompt nativo. requestPermission nativo NÃO é chamado aqui
+        // (fora de gesto — iOS Safari PWA bloqueia / conflita com o toggle).
         const permission = getNotificationPermission();
         if (getLocalPushOptIn() === true && permission === 'granted') {
-            ensureOneSignalReady().catch(() => {});
+            ensurePushSubscribed().catch((err) => logger.warn('Boot push resubscribe failed', err));
         }
     };
     if (window.scheduler?.postTask) {

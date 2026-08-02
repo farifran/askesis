@@ -46,7 +46,7 @@ import {
 } from '../services/habitActions';
 import { t, setLanguage } from '../i18n';
 import { setupReelRotary } from '../render/rotary';
-import { ensureOneSignalReady, setLocalPushOptIn, triggerHaptic, logger, getTodayUTCIso, isActivationKeyboardEvent, getNotificationPermission } from '../utils';
+import { ensureOneSignalReady, ensurePushSubscribed, setLocalPushOptIn, triggerHaptic, logger, getTodayUTCIso, isActivationKeyboardEvent, getNotificationPermission } from '../utils';
 import { setTextContent } from '../render/dom';
 import {
     handleAiEvalClick,
@@ -146,26 +146,21 @@ const _enableNotificationsAsync = async (perm: string) => {
         ui.notificationToggle.disabled = true;
         setTextContent(ui.notificationStatusDesc, t('notificationChangePending'));
 
-        // Persiste opt-in local imediatamente (boot pode refletir sem SDK).
+        // Intenção local imediata (UI/boot). A subscription real no OneSignal
+        // só completa com ensurePushSubscribed (optIn + token FCM no Chromium).
         setLocalPushOptIn(true);
         updateNotificationUI();
 
-        // Carrega OneSignal em background para finalizar subscription.
-        ensureOneSignalReady()
-            .then(async (OneSignal) => {
-                try { await OneSignal.Notifications.requestPermission?.(); } catch {}
-                try {
-                    const optedIn = !!OneSignal.User.PushSubscription.optedIn;
-                    // Só persiste quando o SDK confirma opt-in. Se optedIn=false logo após
-                    // a ativação (race condition do SDK), não sobrescreve o true já persistido.
-                    if (optedIn) {
-                        setLocalPushOptIn(true);
-                    }
-                } catch {}
-                updateNotificationUI();
-            })
-            .catch(() => { updateNotificationUI(); });
-    } catch {
+        const { optedIn } = await ensurePushSubscribed();
+        if (!optedIn && getNotificationPermission() !== 'granted') {
+            ui.notificationToggle.checked = false;
+            setLocalPushOptIn(false);
+            setTextContent(ui.notificationStatusDesc, t('notificationStatusOptedOut'));
+        }
+        // Se permissão segue granted mas optedIn=false (race/rede), mantém intenção
+        // local true: o boot e reaberturas chamam ensurePushSubscribed de novo.
+    } catch (err) {
+        logger.warn('Enable notifications failed', err);
         const nativePerm = getNotificationPermission();
         if (nativePerm !== 'granted') {
             ui.notificationToggle.checked = false;

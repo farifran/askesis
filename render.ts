@@ -290,8 +290,9 @@ export function updateNotificationUI() {
     }
 
     pushToOneSignal((OneSignal: OneSignalLike) => {
-        const isPushEnabled = OneSignal.User.PushSubscription.optedIn;
-        const permission = OneSignal.Notifications.permission;
+        const isPushEnabled = !!OneSignal.User.PushSubscription.optedIn;
+        // SDK v16: permission é boolean; nativo usa string 'denied'|'granted'|'default'.
+        const sdkPerm = OneSignal.Notifications.permission;
         const nativePerm = (typeof Notification !== 'undefined') ? Notification.permission : 'default';
         const localOptIn = getLocalPushOptIn();
         // updateNotificationUI é somente leitura: nunca escreve no localStorage.
@@ -301,7 +302,7 @@ export function updateNotificationUI() {
         // escrito como false pelo fluxo de opt-out, então effectiveEnabled=false corretamente.
         const effectiveEnabled = isPushEnabled || (nativePerm === 'granted' && localOptIn === true);
         if (ui.notificationToggle.checked !== !!effectiveEnabled) ui.notificationToggle.checked = !!effectiveEnabled;
-        const isDenied = permission === 'denied';
+        const isDenied = nativePerm === 'denied' || sdkPerm === 'denied';
         if (ui.notificationToggle.disabled !== isDenied) {
             ui.notificationToggle.disabled = isDenied;
             ui.notificationToggleLabel.classList.toggle('disabled', isDenied);
