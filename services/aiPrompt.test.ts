@@ -69,6 +69,27 @@ describe('Prompt de análise estoica', () => {
             }
         });
 
+        it('documenta todos os blocos que o montador injeta', () => {
+            // REGRESSÃO: [DATA_CONTEXT] era anexado a todo prompt sem que nenhum
+            // template o explicasse — o modelo recebia dados que as instruções
+            // nunca mandavam usar, ao contrário de [HABIT_MODES].
+            for (const lang of LOCALES) {
+                const prompt = String(loadLocale(lang).aiPromptQuote);
+                expect(prompt, `locale ${lang}`).toContain('[HABIT_MODES]');
+                expect(prompt, `locale ${lang}`).toContain('[DATA_CONTEXT]');
+                expect(prompt, `locale ${lang}`).toContain('first_entry=true');
+            }
+        });
+
+        it('numera os passos sequencialmente, sem saltos nem repetições', () => {
+            for (const lang of LOCALES) {
+                const prompt = String(loadLocale(lang).aiPromptQuote);
+                const steps = [...prompt.matchAll(/^(\d+)\.\s{2}\*\*/gm)].map(m => Number(m[1]));
+                expect(steps.length, `locale ${lang}`).toBeGreaterThan(1);
+                expect(steps, `locale ${lang}`).toEqual(steps.map((_, i) => i + 1));
+            }
+        });
+
         it('não vaza palavras de outro idioma no template português', () => {
             const pt = String(loadLocale('pt').aiPromptQuote);
             for (const leak of ['palabras', 'Granularidad ', 'puntuación', 'siguiente']) {
