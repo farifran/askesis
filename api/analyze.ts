@@ -54,8 +54,8 @@ function getAiQuotaRetryAfterSec(): number {
     return Math.max(1, Math.ceil(Math.max(0, aiQuotaCooldownUntil - Date.now()) / 1000));
 }
 
-async function computeCacheKey(prompt: string, systemInstruction: string): Promise<string> {
-    const data = new TextEncoder().encode(`${MODEL_NAME}|${prompt}|${systemInstruction}`);
+async function computeCacheKey(prompt: string, systemInstruction: string, schemaKey: string): Promise<string> {
+    const data = new TextEncoder().encode(`${MODEL_NAME}|${prompt}|${systemInstruction}|${schemaKey}`);
     const hashBuffer = await crypto.subtle.digest('SHA-256', data);
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
@@ -156,11 +156,18 @@ export default async function handler(req: Request) {
         if (bodyText.length > MAX_PROMPT_SIZE) return new Response(null, { status: 413 });
 
         const body = JSON.parse(bodyText);
-        const { prompt, systemInstruction } = body;
+        const { prompt, systemInstruction, responseSchema } = body;
 
         if (!prompt || !systemInstruction) return new Response(null, { status: 400 });
 
-        const cacheKey = await computeCacheKey(prompt, systemInstruction);
+        // Saída estruturada é OPCIONAL: a análise de citação envia um schema e
+        // recebe JSON garantido; a avaliação de hábitos não envia e segue
+        // recebendo prosa em markdown. O schema é dado do cliente, então entra
+        // na chave de cache — schemas distintos produzem saídas distintas.
+        const useSchema = !!responseSchema && typeof responseSchema === 'object';
+        const schemaKey = useSchema ? JSON.stringify(responseSchema) : '';
+
+        const cacheKey = await computeCacheKey(prompt, systemInstruction, schemaKey);
         const cached = getCachedResponse(cacheKey);
         if (cached) {
             return new Response(cached, {
@@ -203,9 +210,9 @@ export default async function handler(req: Request) {
                 // Gemini 3.x, onde interferem na otimização de raciocínio. O
                 // determinismo vem da systemInstruction, que já impõe pontuação
                 // rigorosa e resposta exclusivamente em JSON.
-                config: {
-                    systemInstruction,
-                },
+                config: useSchema
+                    ? { systemInstruction, responseMimeType: 'application/json', responseSchema }
+                    : { systemInstruction },
             }),
             timeoutPromise
         ]);

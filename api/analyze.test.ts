@@ -52,6 +52,33 @@ describe('api/analyze quota cooldown', () => {
     expect(args.config).not.toHaveProperty('topK');
   });
 
+  it('ativa saída estruturada quando o cliente envia responseSchema', async () => {
+    generateContentMock.mockResolvedValueOnce({ text: '{"ok":true}' });
+    const schema = { type: 'object', properties: { a: { type: 'string' } } };
+
+    const mod = await import('./analyze');
+    await mod.default(new Request('https://askesis.vercel.app/api/analyze', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: 'https://askesis.vercel.app', 'x-vercel-forwarded-for': '203.0.113.10' },
+      body: JSON.stringify({ prompt: 'p', systemInstruction: 's', responseSchema: schema })
+    }));
+
+    const cfg = generateContentMock.mock.calls[0][0].config;
+    expect(cfg.responseMimeType).toBe('application/json');
+    expect(cfg.responseSchema).toEqual(schema);
+  });
+
+  it('mantém resposta em prosa quando não há responseSchema (avaliação de hábitos)', async () => {
+    generateContentMock.mockResolvedValueOnce({ text: '# Relatório' });
+
+    const mod = await import('./analyze');
+    await mod.default(makeAnalyzeRequest('p', 's'));
+
+    const cfg = generateContentMock.mock.calls[0][0].config;
+    expect(cfg).not.toHaveProperty('responseMimeType');
+    expect(cfg).not.toHaveProperty('responseSchema');
+  });
+
   it('ativa cooldown após erro de quota e bloqueia nova chamada ao provedor', async () => {
     generateContentMock.mockRejectedValueOnce(Object.assign(new Error('RESOURCE_EXHAUSTED'), { status: 429 }));
 

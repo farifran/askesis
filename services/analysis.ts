@@ -13,7 +13,50 @@
 import { state, getHabitDailyInfoForDate, TimeOfDay } from '../state';
 import { runWorkerTask } from './cloud';
 import { apiFetch } from './api';
-import { t, getAiLanguageName } from '../i18n';
+import { t } from '../i18n';
+
+import { AI_THEMES, AI_THEMES_PROMPT_LIST } from '../data/aiThemes';
+
+/**
+ * Saída estruturada (Gemini responseSchema).
+ *
+ * O enum de `relevant_themes` é a MESMA lista tipada oferecida no prompt, então
+ * um tema fora do vocabulário deixa de ser improvável e passa a ser impossível:
+ * o modelo é restringido na decodificação, não apenas instruído.
+ *
+ * `propertyOrdering` mantém as pontuações antes da conclusão — a documentação
+ * do Gemini indica que a ordem influencia o raciocínio, e o prompt exibe os
+ * campos na mesma sequência.
+ */
+const SCORE_FIELDS = [
+    'locus_of_control_score',
+    'cognitive_distancing_score',
+    'habit_integration_score',
+    'philosophical_granularity_score',
+    'resilience_syntax_score'
+] as const;
+
+export const QUOTE_ANALYSIS_SCHEMA = {
+    type: 'object',
+    properties: {
+        analysis: {
+            type: 'object',
+            properties: {
+                ...Object.fromEntries(SCORE_FIELDS.map(f => [f, { type: 'integer' }])),
+                determined_level: { type: 'integer' }
+            },
+            required: [...SCORE_FIELDS, 'determined_level'],
+            propertyOrdering: [...SCORE_FIELDS, 'determined_level']
+        },
+        relevant_themes: {
+            type: 'array',
+            maxItems: 3,
+            items: { type: 'string', enum: [...AI_THEMES] }
+        }
+    },
+    required: ['analysis', 'relevant_themes'],
+    propertyOrdering: ['analysis', 'relevant_themes']
+} as const;
 import { logger, MS_PER_DAY } from '../utils';
 import { saveState } from './persistence';
 
@@ -102,8 +145,7 @@ export async function checkAndAnalyzeDayContext(dateISO: string) {
 
             const promptPayload = { 
                 notes, 
-                themeList: t('aiThemeList'), 
-                languageName: getAiLanguageName(), 
+                themeList: AI_THEMES_PROMPT_LIST,
                 habitModes: activeHabitModes,
                 dataContext: getDailyNoteHistoryContext(dateISO),
                 translations: { 
@@ -116,7 +158,7 @@ export async function checkAndAnalyzeDayContext(dateISO: string) {
 
             const res = await apiFetch('/api/analyze', { 
                 method: 'POST', 
-                body: JSON.stringify({ prompt, systemInstruction }) 
+                body: JSON.stringify({ prompt, systemInstruction, responseSchema: QUOTE_ANALYSIS_SCHEMA }) 
             });
 
             if (!res.ok) {

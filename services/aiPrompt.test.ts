@@ -9,6 +9,8 @@
 
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { AI_THEMES } from '../data/aiThemes';
+import { QUOTE_ANALYSIS_SCHEMA } from './analysis';
 
 const LOCALES = ['pt', 'en', 'es'] as const;
 
@@ -25,29 +27,29 @@ function loadStoicTags(): Set<string> {
 }
 
 describe('Prompt de análise estoica', () => {
-    describe('aiThemeList é vocabulário de máquina, não texto de interface', () => {
-        // REGRESSÃO: as listas de PT e ES estavam traduzidas ("resiliencia",
-        // "coragem"), mas as tags das citações são inglesas. Os temas devolvidos
-        // pela IA nunca casavam com quote.metadata.tags, então o AI_MATCH boost
-        // ficava morto — justamente no idioma padrão do app.
-        it('é idêntica em todos os idiomas', () => {
-            const canonical = loadLocale('en').aiThemeList;
-            expect(typeof canonical).toBe('string');
+    describe('vocabulário de temas', () => {
+        // REGRESSÃO: a lista vivia nos locales e foi traduzida em pt/es, enquanto
+        // as tags das citações são inglesas. Os temas devolvidos pela IA nunca
+        // casavam com quote.metadata.tags e o AI_MATCH boost ficava morto — no
+        // idioma padrão do app. Agora é constante tipada, validada na compilação.
+        it('contém apenas tags que existem em StoicTag', () => {
+            const tags = loadStoicTags();
+            expect(AI_THEMES.length).toBeGreaterThan(0);
+            const invalid = AI_THEMES.filter(theme => !tags.has(theme));
+            expect(invalid, `temas sem tag correspondente: ${invalid.join(', ')}`).toEqual([]);
+        });
+
+        it('saiu dos arquivos de locale (não é texto de interface)', () => {
             for (const lang of LOCALES) {
-                expect(loadLocale(lang).aiThemeList, `locale ${lang}`).toBe(canonical);
+                expect(loadLocale(lang), `locale ${lang}`).not.toHaveProperty('aiThemeList');
             }
         });
 
-        it('contém apenas tags que existem em StoicTag', () => {
-            const tags = loadStoicTags();
-            const themes = String(loadLocale('en').aiThemeList)
-                .split(',')
-                .map(s => s.trim())
-                .filter(Boolean);
-
-            expect(themes.length).toBeGreaterThan(0);
-            const invalid = themes.filter(theme => !tags.has(theme));
-            expect(invalid, `temas sem tag correspondente: ${invalid.join(', ')}`).toEqual([]);
+        it('o schema restringe os temas ao mesmo vocabulário do prompt', () => {
+            // Enum no responseSchema: tema fora da lista deixa de ser improvável
+            // e passa a ser impossível — o modelo é restringido na decodificação.
+            const themesSchema = QUOTE_ANALYSIS_SCHEMA.properties.relevant_themes;
+            expect(themesSchema.items.enum).toEqual([...AI_THEMES]);
         });
     });
 
@@ -87,6 +89,34 @@ describe('Prompt de análise estoica', () => {
                 const steps = [...prompt.matchAll(/^(\d+)\.\s{2}\*\*/gm)].map(m => Number(m[1]));
                 expect(steps.length, `locale ${lang}`).toBeGreaterThan(1);
                 expect(steps, `locale ${lang}`).toEqual(steps.map((_, i) => i + 1));
+            }
+        });
+
+        it('manda copiar os identificadores de tema sem traduzir', () => {
+            // O prompt é escrito em pt/es mas a lista de temas é inglesa: sem
+            // instrução explícita, o modelo traduz e o boost volta a morrer.
+            const markers = { pt: 'sem traduzir', en: 'without translating', es: 'sin traducir' };
+            for (const lang of LOCALES) {
+                const prompt = String(loadLocale(lang).aiPromptQuote);
+                expect(prompt, `locale ${lang}`).toContain(markers[lang]);
+            }
+        });
+
+        it('define o nível por rubrica direta, não por média aritmética', () => {
+            // A média de 5 critérios 1-3, arredondada, prende 82,7% dos casos no
+            // nível 2 — a adaptação de registro deixava de diferenciar.
+            const markers = { pt: 'NÃO uma média aritmética', en: 'NOT an arithmetic average', es: 'NO un promedio aritmético' };
+            for (const lang of LOCALES) {
+                const prompt = String(loadLocale(lang).aiPromptQuote);
+                expect(prompt, `locale ${lang}`).toContain(markers[lang]);
+                expect(prompt, `locale ${lang}`).not.toContain('average_score');
+            }
+        });
+
+        it('cobre entrada sem sinal reflexivo suficiente', () => {
+            for (const lang of LOCALES) {
+                const prompt = String(loadLocale(lang).aiPromptQuote);
+                expect(prompt, `locale ${lang}`).toContain('relevant_themes: []');
             }
         });
 
