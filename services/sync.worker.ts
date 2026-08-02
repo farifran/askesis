@@ -168,12 +168,14 @@ function buildAiPrompt(data: unknown) {
     const systemTemplate = typeof translations.aiSystemInstruction === 'string' ? translations.aiSystemInstruction : '';
 
     return {
-        prompt: promptTemplate.replace('{activeHabitDetails}', details).replace('{history}', JSON.stringify(dailyData)) + contextBlock,
-        systemInstruction: systemTemplate.replace('{languageName}', languageName)
+        // Substituição por função: nomes de hábitos e notas são texto do usuário e
+        // não podem ser interpretados como padrões (`$&`, `$\``, `$'`, `$$`).
+        prompt: promptTemplate.replace('{activeHabitDetails}', () => details).replace('{history}', () => JSON.stringify(dailyData)) + contextBlock,
+        systemInstruction: systemTemplate.replace('{languageName}', () => languageName)
     };
 }
 
-function buildAiQuoteAnalysisPrompt(data: unknown) {
+export function buildAiQuoteAnalysisPrompt(data: unknown) {
     const payload = isRecord(data) ? data : {};
     const context = isRecord(payload.dataContext) ? payload.dataContext : {};
     const habitModes = typeof payload.habitModes === 'string' ? payload.habitModes : '';
@@ -196,7 +198,9 @@ function buildAiQuoteAnalysisPrompt(data: unknown) {
     const themeList = typeof payload.themeList === 'string' ? payload.themeList : '';
 
     return {
-        prompt: promptTemplate.replace('{notes}', notes).replace('{theme_list}', themeList) + habitModesBlock + contextBlock,
+        // Substituição por função: com string, `$&`, `$\``, `$'` e `$$` dentro das
+        // notas seriam interpretados como padrões e corromperiam o texto do usuário.
+        prompt: promptTemplate.replace('{notes}', () => notes).replace('{theme_list}', () => themeList) + habitModesBlock + contextBlock,
         systemInstruction
     };
 }
