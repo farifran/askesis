@@ -87,8 +87,14 @@ async function main() {
     const manifest = await get('/manifest.json');
     try {
         const m = JSON.parse(manifest.body);
-        if (m.display === 'fullscreen' && m.theme_color === '#000000') ok('manifest.json válido (fullscreen, preto)');
-        else fail('manifest.json', `display=${m.display}, theme_color=${m.theme_color}`);
+        // display DEVE ser 'standalone': é o que o iOS exige para tratar o app como
+        // web app de tela inicial e expor a Badging API. O fullscreen do Android
+        // vem por display_override, que o Safari ignora.
+        const displayOk = m.display === 'standalone'
+            && Array.isArray(m.display_override)
+            && m.display_override[0] === 'fullscreen';
+        if (displayOk && m.theme_color === '#000000') ok('manifest.json válido (standalone + override fullscreen, preto)');
+        else fail('manifest.json', `display=${m.display}, display_override=${JSON.stringify(m.display_override)}, theme_color=${m.theme_color}`);
     } catch { fail('manifest.json', 'não é JSON válido'); }
 
     for (const lang of ['pt', 'en', 'es']) {
