@@ -115,7 +115,34 @@ async function decryptV2(bytes: Uint8Array, password: string): Promise<string> {
     return new TextDecoder().decode(decrypted);
 }
 
+/**
+ * DEPRECIADO — formato v1 (100k iterações, sem cabeçalho).
+ *
+ * Introduzido antes de 2026-08-01; o envelope v2 entrou em produção nessa data.
+ * Todo save regrava em v2, então os blobs v1 desaparecem conforme os
+ * dispositivos ressincronizam.
+ *
+ * CRITÉRIO DE REMOÇÃO (não é prazo de calendário): remover quando for razoável
+ * assumir que todos os dispositivos ativos já ressincronizaram ao menos uma vez
+ * — na prática, alguns meses após 2026-08-01. Remover cedo demais deixa
+ * ilegíveis os dados de quem ficou offline no intervalo, sem recuperação
+ * possível: a chave deriva no cliente e o servidor só guarda ciphertext.
+ *
+ * EVIDÊNCIA: o aviso abaixo é a única sinalização disponível — não há telemetria
+ * por decisão de privacidade. Se ninguém vir esse warning no console por um
+ * período longo, é o sinal de que o caminho pode cair.
+ */
+let _warnedLegacy = false;
+
 async function decryptLegacy(bytes: Uint8Array, password: string): Promise<string> {
+    // Uma vez por sessão: o sync percorre vários shards e repetir por blob só
+    // geraria ruído. `console` direto mantém crypto.ts sem dependências (ele é
+    // isomórfico e roda também dentro do Web Worker).
+    if (!_warnedLegacy) {
+        _warnedLegacy = true;
+        console.warn('[crypto] Envelope v1 (depreciado) em uso. Será regravado em v2 no próximo save.');
+    }
+
     const minLength = SALT_LEN + IV_LEN + 1;
     if (bytes.length < minLength) {
         throw new Error(`decrypt: ciphertext too short (${bytes.length} < ${minLength})`);

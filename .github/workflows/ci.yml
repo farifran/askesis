@@ -52,6 +52,12 @@ jobs:
       - name: Unit and integration tests
         run: npm test
 
+      # O inventário de tests/README.md é gerado a partir de execução real.
+      # Sem esta verificação ele volta a derivar: chegou a declarar 23
+      # arquivos/399 testes contra 37/471 reais, contradizendo a si mesmo.
+      - name: Test inventory up to date
+        run: node scripts/update-test-inventory.js --check
+
   scenario:
     name: Scenario Tests
     runs-on: ubuntu-latest

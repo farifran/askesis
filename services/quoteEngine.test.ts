@@ -4,8 +4,8 @@
  * P2 - Algoritmo de scoring ponderado, anti-repetição, histerese de performance.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { getTodayUTCIso } from '../utils';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { getTodayUTCIso, resetTodayCache } from '../utils';
 import { state, HABIT_STATE } from '../state';
 import { clearTestState, createTestHabit } from '../tests/test-utils';
 import { HabitService } from './HabitService';
@@ -44,12 +44,35 @@ function createMockQuote(id: string, overrides: Partial<Quote['metadata']> = {})
     };
 }
 
+/**
+ * Fixa o relógio por HORA LOCAL, não por instante UTC.
+ *
+ * `_getTimeOfDay()` do quoteEngine lê `new Date().getHours()`, que é local.
+ * Fixar "20:00Z" dá noite em UTC e manhã em Auckland, então os testes de
+ * "noite improdutiva" viravam reféns do fuso de quem roda a suíte.
+ *
+ * Também limpa o cache de `getTodayUTCIso()` (60s), sem o qual a data do
+ * código e a do teste divergem sob timers falsos.
+ */
+function setLocalClock(dateISO: string, localHour: number) {
+    vi.useFakeTimers();
+    const d = new Date(`${dateISO}T00:00:00`); // sem 'Z': interpretado como local
+    d.setHours(localHour, 0, 0, 0);
+    vi.setSystemTime(d);
+    resetTodayCache();
+}
+
 describe('🏛️ Motor de Citações Estoicas (quoteEngine.ts)', () => {
 
     beforeEach(() => {
         clearTestState();
         state.quoteState = undefined;
         state.dailyDiagnoses = {};
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+        resetTodayCache();
     });
 
     describe('selectBestQuote - Casos básicos', () => {
@@ -211,13 +234,13 @@ describe('🏛️ Motor de Citações Estoicas (quoteEngine.ts)', () => {
         });
 
         it('deve ignorar stickiness quando há major shift para urgencia', () => {
-            vi.useFakeTimers();
-            vi.setSystemTime(new Date('2026-03-06T20:30:00Z'));
+            setLocalClock('2026-03-06', 20); // noite no fuso local, seja qual for
 
             // Um habito pendente garante total>0 e completion/snooze baixos.
+            // Criado DEPOIS do relógio: startDate vem de getTodayUTCIso().
             createTestHabit({ name: 'Pendencia', time: 'Morning' });
 
-            const today = new Date().toISOString().split('T')[0];
+            const today = getTodayUTCIso();
             state.quoteState = {
                 currentId: 'sticky',
                 displayedAt: Date.now() - 500,
@@ -231,20 +254,17 @@ describe('🏛️ Motor de Citações Estoicas (quoteEngine.ts)', () => {
 
             const result = selectBestQuote(quotes, today);
             expect(result.id).toBe('urgent');
-
-            vi.useRealTimers();
         });
     });
 
     describe('Estados contextuais adicionais', () => {
         it('deve priorizar tag de urgencia em noite improdutiva (estado urgency)', () => {
-            vi.useFakeTimers();
-            vi.setSystemTime(new Date('2026-03-06T20:00:00Z'));
+            setLocalClock('2026-03-06', 20); // noite no fuso local, seja qual for
 
             createTestHabit({ name: 'H1', time: 'Morning' });
             createTestHabit({ name: 'H2', time: 'Afternoon' });
 
-            const today = new Date().toISOString().split('T')[0];
+            const today = getTodayUTCIso();
             const quotes = [
                 createMockQuote('q_urgency', { tags: ['urgency', 'action'] }),
                 createMockQuote('q_neutral', { tags: ['truth'] })
@@ -252,8 +272,6 @@ describe('🏛️ Motor de Citações Estoicas (quoteEngine.ts)', () => {
 
             const result = selectBestQuote(quotes, today);
             expect(result.id).toBe('q_urgency');
-
-            vi.useRealTimers();
         });
 
         it('nao deve mutar quoteState para datas historicas', () => {
