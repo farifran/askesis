@@ -61,17 +61,8 @@ function hasWorkingNativeBadge(): boolean {
     return supportsNativeBadge() && !isAndroid();
 }
 
-/**
- * Registration pré-aquecida no boot: evita esperar `serviceWorker.ready` na
- * primeira sincronização do badge.
- */
+/** Memoiza a registration: o badge é sincronizado a cada marcação de hábito. */
 let _cachedRegistration: ServiceWorkerRegistration | null = null;
-
-if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
-    navigator.serviceWorker.ready
-        .then(reg => { _cachedRegistration = reg; })
-        .catch(() => { /* sem SW: caminhos de fallback assumem */ });
-}
 
 function buildNotificationOptions(body: string): NotificationOptions {
     return {
