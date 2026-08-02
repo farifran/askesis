@@ -11,6 +11,7 @@
 
 import { murmurHash3 } from './murmurHash3';
 import { encrypt as encryptText, decrypt as decryptText } from './crypto';
+import { compressArchive, decompressArchive } from './compression';
 import { type WorkerTaskMessage, type WorkerResponseMessage } from '../contracts/worker';
 
 type JsonRecord = Record<string, unknown>;
@@ -57,18 +58,32 @@ async function decryptWithHash(encryptedBase64: string, password: string): Promi
 }
 
 /**
- * Remove todos os rastros de um hábito de dentro dos arquivos JSON comprimidos.
+ * Lê um arquivo anual, seja ele envelope gzip ou o JSON puro do formato legado.
+ * Devolve `null` quando o conteúdo é ilegível — os chamadores usam isso para
+ * PRESERVAR o ano em vez de regravá-lo a partir de um objeto vazio.
  */
-function pruneHabitFromArchives(habitId: string, archives: Record<string, unknown>): Record<string, string> {
+async function readArchiveYear(content: unknown): Promise<JsonRecord | null> {
+    if (isRecord(content)) return content;
+    if (typeof content !== 'string') return null;
+    if (!content.trim()) return {};
+
+    try {
+        const parsed = JSON.parse(await decompressArchive(content));
+        return isRecord(parsed) ? parsed : null;
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Remove todos os rastros de um hábito de dentro dos arquivos anuais.
+ */
+export async function pruneHabitFromArchives(habitId: string, archives: Record<string, unknown>): Promise<Record<string, string>> {
     const updated: Record<string, string> = {};
     for (const year in archives) {
-        let content = archives[year];
-        if (typeof content === 'string') {
-            try { content = JSON.parse(content); } catch { continue; }
-        }
+        const content = await readArchiveYear(archives[year]);
+        if (!content) continue;
 
-        if (!isRecord(content)) continue;
-        
         let changed = false;
         for (const date in content) {
             const day = content[date];
@@ -79,9 +94,9 @@ function pruneHabitFromArchives(habitId: string, archives: Record<string, unknow
             }
             if (Object.keys(day).length === 0) delete content[date];
         }
-        
+
         if (changed) {
-            updated[year] = Object.keys(content).length === 0 ? "" : JSON.stringify(content);
+            updated[year] = Object.keys(content).length === 0 ? "" : await compressArchive(JSON.stringify(content));
         }
     }
     return updated;
@@ -98,12 +113,12 @@ self.onmessage = async (e: MessageEvent<WorkerTaskMessage>) => {
             case 'decrypt-with-hash': result = await decryptWithHash(payload, key!); break;
             case 'build-ai-prompt': result = buildAiPrompt(payload); break;
             case 'build-quote-analysis-prompt': result = buildAiQuoteAnalysisPrompt(payload); break;
-            case 'archive': result = processArchiving(payload); break;
+            case 'archive': result = await processArchiving(payload); break;
             case 'prune-habit': {
                 const p = isRecord(payload) ? payload : {};
                 const habitId = typeof p.habitId === 'string' ? p.habitId : '';
                 const archives = isRecord(p.archives) ? p.archives : {};
-                result = pruneHabitFromArchives(habitId, archives);
+                result = await pruneHabitFromArchives(habitId, archives);
                 break;
             }
             default: throw new Error(`Task unknown: ${type}`);
@@ -205,19 +220,20 @@ export function buildAiQuoteAnalysisPrompt(data: unknown) {
     };
 }
 
-function processArchiving(payload: unknown) {
+export async function processArchiving(payload: unknown) {
     const data = isRecord(payload) ? payload : {};
     const result: Record<string, string> = {};
     for (const year in data) {
         const yearPayload = isRecord(data[year]) ? data[year] : {};
-        let base = yearPayload.base ?? {};
-        if (typeof base === 'string') {
-            try { base = JSON.parse(base); } catch { base = {}; }
-        }
+        const base = await readArchiveYear(yearPayload.base ?? {});
+        // Base ilegível: omitir o ano do resultado mantém o arquivo atual intacto e
+        // os dias em dailyData para a próxima tentativa. Mesclar sobre `{}` gravaria
+        // só as adições por cima de anos inteiros de histórico.
+        if (!base) continue;
+
         const additions = isRecord(yearPayload.additions) ? yearPayload.additions : {};
-        const normalizedBase = isRecord(base) ? base : {};
-        const merged = { ...normalizedBase, ...additions };
-        result[year] = JSON.stringify(merged);
+        const merged = { ...base, ...additions };
+        result[year] = await compressArchive(JSON.stringify(merged));
     }
     return result;
 }

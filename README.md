@@ -112,7 +112,7 @@ Esta tabela explicita onde a IA Gen oferece uma implementação rápida e onde m
 | Acessibilidade | A11y tratada como detalhe ou pós-facto. | Semântica HTML + ARIA, navegação por teclado e gestão de foco; validação contínua via testes de cenário de acessibilidade. | Experiência inclusiva e navegável sem mouse, com suporte prático a leitores de tela. |
 | Confiabilidade | Testes unitários isolados ou baixa cobertura de falhas reais. | Suite de “super-testes” (jornada, conflitos de sync, performance, acessibilidade, segurança e disaster recovery). | Regressões detectadas cedo e comportamento resiliente sob estresse. |
 | Sustentabilidade | Backend stateful, custos recorrentes e pressão por assinaturas/anúncios. | Arquitetura local-first; serverless apenas como ponte opcional; processamento pesado no dispositivo do usuário. | Infra enxuta e custo marginal baixo para escalar, sem monetização agressiva. |
-| Eficiência | Apps inchados com bundles grandes e alto consumo de bateria/CPU. | Otimização de cores (LED-friendly), workers para offload de CPU e melhoria de FPS; comunicação local-first para reduzir transferências; testes de carga e budgets de dados. | Tempos de carga rápidos (< 2s inicial), bundles leves (< 60KB gzipped) e baixo impacto energético, priorizando dispositivos móveis. |
+| Eficiência | Apps inchados com bundles grandes e alto consumo de bateria/CPU. | Otimização de cores (LED-friendly), workers para offload de CPU e melhoria de FPS; comunicação local-first para reduzir transferências; testes de carga e budgets de dados. | Tempos de carga rápidos (< 2s inicial), boot leve (~83 KB gzipped: 72 KB de JS crítico + 11 KB de CSS; o restante vem em chunks sob demanda) e baixo impacto energético, priorizando dispositivos móveis. |
 
 <br>
 
@@ -509,20 +509,34 @@ es-ES: "1.234,56" (igual PT)
 
 Este projeto foi desenhado com uma engenharia inteligente para operar com **Custo Zero ($0)**, aproveitando os planos gratuitos de serviços modernos sem perder qualidade.<br>
 
-*   **Armazenamento Ultraleve (GZIP):** Os dados históricos ("Cold Storage") são comprimidos via GZIP Stream API antes de serem salvos ou enviados para a nuvem. Isso reduz drasticamente o uso de banda e armazenamento.
+*   **Compressão em duas camadas (GZIP):** (1) **Em disco**, os arquivos anuais ("Cold Storage" — dias com mais de 90 dias, movidos para fora do `dailyData` quente) passam pela Compression Streams API antes de irem ao IndexedDB, num envelope `gz1:` + base64: 290 KB de um ano viram **3,3 KB**. (2) **Na rede**, todo shard é comprimido dentro do envelope criptográfico, antes do AES-GCM (formato v3 — ver [ADR-0007](docs/decisions/ADR-0007-compression-inside-crypto-envelope.md)): o shard `core`, que sobe a cada mudança, cai de **~97 KB para ~1,4 KB**. Comprimir depois de cifrar seria inútil, porque ciphertext é ruído. Onde a Compression Streams não existe (Safari < 16.4), grava-se sem compressão — perde-se a economia, não a funcionalidade.
 *   **O Celular Trabalha:** A maior parte do "pensamento" (criptografia, geração de gráficos, cálculos) é feita pelo seu próprio dispositivo, não pelo servidor. Isso poupa recursos da nuvem, garantindo que nunca ultrapassemos os limites gratuitos.
 *   **Notificações Gratuitas:** Utilizamos o plano de comunidade do OneSignal, que permite até 10.000 usuários Web gratuitamente.
 
 <b>ESTIMATIVAS DE CAPACIDADE (COM BASE EM LIMITES GRATUITOS)</b><br>
 
-Considerando as três plataformas **simultaneamente** (Gemini, Vercel e OneSignal), o limite prático da app é dado pelo **menor teto** entre elas:
+Quatro tetos gratuitos operam ao mesmo tempo. O limite prático da app é o **menor** entre eles:
 
 - **Gemini 3.5 Flash-Lite:** ~**2.000 usuários/dia** (1.000 req/dia ÷ ~0,5 req/usuário/dia)
   <br><sub>A análise de citação roda no máximo 1 vez a cada 7 dias por usuário (~0,14 req/dia); os 0,5 assumidos são folga para as avaliações manuais, limitadas a 4/dia.</sub>
-- **Vercel (100 GB/mês):** ~**1.780 usuários/mês** (≈ 57,5 MB/usuário/mês)
+- **Vercel — banda (100 GB/mês):** ~**60.000 usuários** (≈ 1,7 MB/usuário/mês)
+  <br><sub>Composição: ~0,2 MB de app shell (83 KB gzipped, servido do cache do Service Worker; contadas 2 recargas completas por mês) + ~1,4 MB de uploads de sync a 30 syncs/dia + GETs, que voltam 304 na maioria das vezes por causa do ETag.</sub>
+- **Redis (Upstash via Vercel) — 256 MB de Data Size:** ~**13.000 usuários** com 5 anos de histórico cada (≈ 20 KB/usuário), ou ~50.000 no primeiro ano (≈ 5 KB/usuário)
+  <br><sub>Único teto **cumulativo**: não zera todo mês, cresce com o tempo de uso. Os shards não têm TTL. Medido com 6 hábitos e nota diária.</sub>
 - **OneSignal:** **10.000 usuários** (limite por subscribers)
 
-**Conclusão:** com a cadência real de chamadas, a IA deixou de ser o gargalo. O teto prático passa a ser a **banda da Vercel**, e o de assinantes o do **OneSignal** — ambos endereçáveis por infraestrutura, sem depender de colaboração comunitária.
+**ARMAZENAMENTO POR USUÁRIO** (6 hábitos, nota diária; valores medidos)
+
+| Onde | 1 ano de uso | 5 anos de uso |
+| :--- | :--- | :--- |
+| IndexedDB (local, em claro) | 82 KB | 124 KB |
+| Redis (nuvem, cifrado) | 5,2 KB | 20,2 KB |
+
+<sub>Sem as duas camadas de compressão os mesmos perfis dariam 369 KB / 1,5 MB em disco e 494 KB / 2,0 MB no Redis.</sub>
+
+**Conclusão:** o teto prático é o **OneSignal** (10.000 assinantes), com o armazenamento do Redis logo atrás. A IA deixou de ser gargalo pela cadência real de chamadas, e a banda deixou de ser depois da compressão do envelope.
+
+> **Correção.** Esta seção já anunciou `~1.780 usuários` considerando apenas a banda da Vercel, e omitia o teto de armazenamento. Era o número errado: o gargalo real era o Redis, e era severo — sem compressão, um usuário com 5 anos de histórico ocupava ~2 MB, o que dava **~125 usuários** dentro dos 256 MB. Um arquivo anual também chegava a ~390 KB cifrado, perto do limite de 512 KB por shard imposto em `api/sync.ts`, além do qual o sync devolve 413. As duas camadas de GZIP tiraram os dois problemas do caminho.
 
 <a id="pt-highlights"></a><br>
 <a id="pt-arquitetura"></a>
@@ -610,8 +624,10 @@ Conflitos: descriptografia remota, merge com LWW/deduplicação, persistência e
 ├── listeners/           # Controladores de Eventos e Gestos
 ├── services/            # Camada de Dados, Criptografia e IO
 │   ├── api.ts           # Cliente HTTP
+│   ├── base64.ts        # Conversão bytes ↔ base64 (isomórfica)
 │   ├── cloud.ts         # Orquestrador de Sync e Worker Bridge
-│   ├── crypto.ts        # Criptografia AES-GCM Isomórfica
+│   ├── compression.ts   # GZIP do cold storage (Compression Streams)
+│   ├── crypto.ts        # Envelope AES-GCM v3 (cifra + compressão)
 │   ├── dataMerge.ts     # Barrel público de merge/deduplicação
 │   ├── dataMerge/       # Núcleo modular de merge (CRDT-lite)
 │   ├── habitActions.ts  # Barrel público de ações de hábito
@@ -650,7 +666,7 @@ Conflitos: descriptografia remota, merge com LWW/deduplicação, persistência e
 - services/: domínio e infraestrutura (habitActions/*, selectors, persistence, cloud, dataMerge/*, analysis, quoteEngine, HabitService).
 - api/: endpoints serverless edge (/api/sync, /api/analyze) com rate-limit, CORS e hardening.
 - state.ts: modelo canônico de estado, tipos e caches.
-- services/sync.worker.ts: criptografia AES-GCM e construção de prompts IA fora da main thread.
+- services/sync.worker.ts: criptografia AES-GCM, arquivamento com GZIP e construção de prompts IA fora da main thread.
 - tests/ e services/*.test.ts: cenários de jornada, segurança, resiliência, merge e regressão.
 
 
@@ -714,8 +730,13 @@ Estados possíveis (2 bits cada):
 Exemplo de 1 mês (30 dias):
   - Sem compressão:   30 dias × 3 períodos × 8 bytes = 720 bytes
   - Com bitmask:      30 dias × 9 bits = 270 bits ≈ 34 bytes (21x menor!)
-  - GZIP:             34 bytes → ~8 bytes comprimido
+  - Em disco/rede:    ~68 caracteres hex (o BigInt viaja em base 16)
 ```
+
+> O GZIP **não** entra aqui. Bitmasks já são densos: gzipar 34 bytes custaria mais
+> em cabeçalho e base64 do que economizaria. A compressão atua só no cold storage
+> (arquivos anuais), onde há JSON repetitivo de verdade — ver a seção de
+> Arquitetura Zero Cost.
 
 **Operações Bitwise O(1):**
 ```typescript
@@ -1067,10 +1088,11 @@ R: Infelizmente, você **não pode recuperá-la** (isso é por design — garant
 
 **P: Quanto espaço o Askesis usa?**
 
-R: Muito pouco. Mesmo com 5 anos de histórico:
-- **Dados principais (JSON):** ~50-200 KB
-- **Logs binários comprimidos:** ~8-15 KB
-- **Total:** < 500 KB para a maioria dos usuários
+R: Muito pouco. Com 6 hábitos e nota diária, mesmo após 5 anos:
+- **Núcleo (JSON, 90 dias quentes):** ~72 KB
+- **Logs binários (bitmask, em hex):** ~36 KB
+- **Arquivos anuais (GZIP):** ~3,3 KB por ano
+- **Total:** ~124 KB — sem a compressão dos arquivos seriam ~1,5 MB
 
 **P: O app funciona totalmente offline?**
 

@@ -19,3 +19,5 @@ Use `ADR-XXXX-short-title.md` where `XXXX` is a zero-padded sequence.
 - ADR-0003: Conflict resolution policy (CRDT-light + tombstones)
 - ADR-0004: Worker offload for crypto and merge-heavy flows
 - ADR-0005: Hash-based shard sync with 409 merge retry
+- ADR-0006: GZIP for cold storage archives (`gz1:` envelope) — amended by ADR-0007
+- ADR-0007: Compression inside the crypto envelope (v3)

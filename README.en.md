@@ -111,7 +111,7 @@ This table explicits where Gen AI offers fast implementation and where my value 
 | Accessibility | A11y treated as detail or post-facto. | HTML semantics + ARIA, keyboard navigation and focus management; continuous validation via scenario accessibility tests. | Inclusive and navigable experience without mouse, with practical screen reader support. |
 | Reliability | Isolated unit tests or low coverage of real failures. | "Super-tests" suite (journey, sync conflicts, performance, accessibility, security and disaster recovery). | Regressions detected early and resilient behavior under stress. |
 | Sustainability | Stateful backend, recurring costs and pressure for subscriptions/ads. | Local-first architecture; serverless only as optional bridge; heavy processing on user's device. | Lean infrastructure and low marginal cost to scale, without aggressive monetization. |
-| Efficiency | Bloated apps with large bundles and high battery/CPU consumption. | LED-friendly color optimization, workers for CPU offload and FPS improvement; local-first communication to reduce transfers; load tests and data budgets. | Fast load times (< 2s initial), light bundles (< 60KB gzipped) and low energy impact, prioritizing mobile devices. |
+| Efficiency | Bloated apps with large bundles and high battery/CPU consumption. | LED-friendly color optimization, workers for CPU offload and FPS improvement; local-first communication to reduce transfers; load tests and data budgets. | Fast load times (< 2s initial), light boot (~83 KB gzipped: 72 KB of critical JS + 11 KB of CSS; the rest arrives as on-demand chunks) and low energy impact, prioritizing mobile devices. |
 
 <br>
 
@@ -510,20 +510,34 @@ es-ES: "1.234,56" (same as PT)
 
 This project was designed with intelligent engineering to operate with **Zero Cost ($0)**, leveraging free modern services without losing quality.<br>
 
-- **Ultra-Light Storage (GZIP):** Historical data ("Cold Storage") is compressed via GZIP Stream API before being saved or sent to the cloud. This drastically reduces bandwidth and storage usage.
+- **Two-layer compression (GZIP):** (1) **On disk**, yearly archives ("Cold Storage" — days older than 90, moved out of the hot `dailyData`) go through the Compression Streams API before reaching IndexedDB, in a `gz1:` + base64 envelope: 290 KB of one year become **3.3 KB**. (2) **On the wire**, every shard is compressed inside the cryptographic envelope, before AES-GCM (format v3 — see [ADR-0007](docs/decisions/ADR-0007-compression-inside-crypto-envelope.md)): the `core` shard, uploaded on every change, drops from **~97 KB to ~1.4 KB**. Compressing after encrypting would be pointless, since ciphertext is noise. Where Compression Streams is missing (Safari < 16.4) it writes uncompressed — you lose the savings, not the feature.
 - **The Phone Works:** Most of the "thinking" (cryptography, chart generation, calculations) is done by your own device, not the server. This saves cloud resources, ensuring we never exceed free limits.
 - **Free Notifications:** We use OneSignal's community plan, which allows up to 10,000 web users for free.
 
 <b>CAPACITY ESTIMATES (BASED ON FREE LIMITS)</b><br>
 
-Considering the three platforms simultaneously (Gemini, Vercel and OneSignal), the app's practical limit is given by the **lowest ceiling** among them:
+Four free ceilings operate at once. The app's practical limit is the **lowest** among them:
 
 - **Gemini 3.5 Flash-Lite:** ~**2,000 users/day** (1,000 req/day ÷ ~0.5 req/user/day)
   <br><sub>Quote analysis runs at most once every 7 days per user (~0.14 req/day); the assumed 0.5 leaves headroom for manual evaluations, capped at 4/day.</sub>
-- **Vercel (100 GB/month):** ~**1,780 users/month** (≈ 57.5 MB/user/month)
+- **Vercel — bandwidth (100 GB/month):** ~**60,000 users** (≈ 1.7 MB/user/month)
+  <br><sub>Breakdown: ~0.2 MB of app shell (83 KB gzipped, served from the Service Worker cache; counting 2 full reloads per month) + ~1.4 MB of sync uploads at 30 syncs/day + GETs, which return 304 most of the time thanks to the ETag.</sub>
+- **Redis (Upstash via Vercel) — 256 MB Data Size:** ~**13,000 users** with 5 years of history each (≈ 20 KB/user), or ~50,000 in the first year (≈ 5 KB/user)
+  <br><sub>The only **cumulative** ceiling: it does not reset monthly, it grows with tenure. Shards have no TTL. Measured with 6 habits and a daily note.</sub>
 - **OneSignal:** **10,000 users** (limit per subscribers)
 
-**Conclusion:** at the real call cadence, AI is no longer the bottleneck. The practical ceiling becomes **Vercel bandwidth**, and the subscriber ceiling **OneSignal** — both addressable through infrastructure, without depending on community collaboration.
+**STORAGE PER USER** (6 habits, daily note; measured values)
+
+| Where | 1 year of use | 5 years of use |
+| :--- | :--- | :--- |
+| IndexedDB (local, in the clear) | 82 KB | 124 KB |
+| Redis (cloud, encrypted) | 5.2 KB | 20.2 KB |
+
+<sub>Without the two compression layers the same profiles would take 369 KB / 1.5 MB on disk and 494 KB / 2.0 MB in Redis.</sub>
+
+**Conclusion:** the practical ceiling is **OneSignal** (10,000 subscribers), with Redis storage right behind it. AI stopped being the bottleneck because of the real call cadence, and bandwidth stopped being one after envelope compression.
+
+> **Correction.** This section used to announce `~1,780 users` considering only Vercel bandwidth, and omitted the storage ceiling entirely. It was the wrong number: the real bottleneck was Redis, and it was severe — uncompressed, a user with 5 years of history took ~2 MB, which fits **~125 users** inside 256 MB. A yearly archive also reached ~390 KB encrypted, close to the 512 KB per-shard limit enforced in `api/sync.ts`, beyond which sync returns 413. The two GZIP layers removed both problems.
 
 <a id="en-highlights"></a><br>
 <a id="en-architecture"></a>
@@ -607,8 +621,10 @@ Conflicts: remote decryption, merge with LWW/deduplication, persistence and retr
 ├── listeners/           # Event & Gesture Controllers
 ├── services/            # Data Layer, Cryptography and IO
 │   ├── api.ts           # HTTP client
+│   ├── base64.ts        # Bytes ↔ base64 conversion (isomorphic)
 │   ├── cloud.ts         # Sync Orchestrator + Worker Bridge
-│   ├── crypto.ts        # Isomorphic AES-GCM Cryptography
+│   ├── compression.ts   # Cold storage GZIP (Compression Streams)
+│   ├── crypto.ts        # AES-GCM v3 envelope (cipher + compression)
 │   ├── dataMerge.ts     # Public merge/dedup barrel
 │   ├── dataMerge/       # Modular merge core (CRDT-lite)
 │   ├── habitActions.ts  # Public habit actions barrel
@@ -646,7 +662,7 @@ Conflicts: remote decryption, merge with LWW/deduplication, persistence and retr
 - services/: domain + infrastructure (habitActions/*, selectors, persistence, cloud, dataMerge/*, analysis, quoteEngine, HabitService).
 - api/: serverless edge endpoints (/api/sync, /api/analyze) with rate-limit, CORS and hardening.
 - state.ts: canonical state model, types and caches.
-- services/sync.worker.ts: AES-GCM crypto and AI prompt building off the main thread.
+- services/sync.worker.ts: AES-GCM crypto, GZIP archiving and AI prompt building off the main thread.
 - tests/ and services/*.test.ts: journey scenarios, security, resilience, merge and regression.
 
 **MAIN TECHNICAL ASPECTS**
@@ -708,8 +724,13 @@ Possible states (2 bits each):
 Example of 1 month (30 days):
   - Without compression:   30 days × 3 periods × 8 bytes = 720 bytes
   - With bitmask:      30 days × 9 bits = 270 bits ≈ 34 bytes (21x smaller!)
-  - GZIP:             34 bytes → ~8 bytes compressed
+  - On disk/wire:      ~68 hex characters (the BigInt travels in base 16)
 ```
+
+> GZIP does **not** apply here. Bitmasks are already dense: gzipping 34 bytes would
+> cost more in header and base64 than it saves. Compression runs only on cold
+> storage (yearly archives), where there is genuinely repetitive JSON — see the
+> Zero Cost Architecture section.
 
 **Bitwise Operations O(1):**
 
@@ -1078,11 +1099,12 @@ A: Unfortunately, you **cannot recover it** (this is by design — ensures even 
 
 **Q: How much space does Askesis use?**
 
-A: Very little. Even with 5 years of history:
+A: Very little. With 6 habits and a daily note, even after 5 years:
 
-- **Main data (JSON):** ~50-200 KB
-- **Compressed binary logs:** ~8-15 KB
-- **Total:** < 500 KB for most users
+- **Core (JSON, 90 hot days):** ~72 KB
+- **Binary logs (bitmask, in hex):** ~36 KB
+- **Yearly archives (GZIP):** ~3.3 KB per year
+- **Total:** ~124 KB — without archive compression it would be ~1.5 MB
 
 **Q: Does the app work fully offline?**
 

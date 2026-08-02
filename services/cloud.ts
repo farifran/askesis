@@ -289,6 +289,7 @@ async function decryptServerShards(
     options: { updateHashCache: boolean }
 ): Promise<Record<string, any>> {
     const decrypted: Record<string, any> = {};
+    let coreDecryptFailed = false;
     for (const key in shards) {
         if (key === 'lastModified') continue;
         try {
@@ -314,8 +315,18 @@ async function decryptServerShards(
             }
         } catch (e) {
             logger.warn(`[Sync] Skip decrypt ${key}`, e);
+            if (key === 'core') coreDecryptFailed = true;
         }
     }
+
+    // Um `core` ilegível é indistinguível de um cofre vazio depois da reconstrução:
+    // ambos produzem habits: []. Seguir daqui mandaria esse estado vazio para o
+    // merge. Acontece na janela em que um dispositivo atualizado grava um envelope
+    // que a versão antiga do outro dispositivo ainda não sabe ler.
+    if (coreDecryptFailed) {
+        throw new Error('[Sync] Shard "core" não pôde ser descriptografado — reconstrução abortada');
+    }
+
     return decrypted;
 }
 

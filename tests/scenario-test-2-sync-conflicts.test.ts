@@ -7,8 +7,9 @@
  * ✓ CRDT-lite merge algorithm
  * ✓ API retry/backoff
  * ✓ Offline-first functionality
- * ✓ Compression GZIP
  * ✓ Data integrity (bitmask operations)
+ *
+ * O GZIP do cold storage NÃO passa por aqui — vive em services/compression.test.ts.
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
