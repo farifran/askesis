@@ -517,11 +517,12 @@ Este proyecto fue diseñado con ingeniería inteligente para operar con **Costo 
 
 Considerando las tres plataformas simultáneamente (Gemini, Vercel y OneSignal), el límite práctico de la aplicación está dado por el **techo más bajo** entre ellos:
 
-- **Gemini Flash:** ~**500 usuarios/día** (1,000 req/día ÷ 2 req/usuario/día)
+- **Gemini 3.5 Flash-Lite:** ~**2.000 usuarios/día** (1.000 req/día ÷ ~0,5 req/usuario/día)
+  <br><sub>El análisis de cita se ejecuta como máximo 1 vez cada 7 días por usuario (~0,14 req/día); los 0,5 asumidos dejan margen para las evaluaciones manuales, limitadas a 4/día.</sub>
 - **Vercel (100 GB/mes):** ~**1,780 usuarios/mes** (≈ 57.5 MB/usuario/mes)
 - **OneSignal:** **10,000 usuarios** (límite por suscriptores)
 
-**Conclusión:** el cuello de botella actual es **Gemini Flash (≈ 500 usuarios/día)**. Aunque Vercel y OneSignal soportan más, la IA es el limitador antes de depender de colaboración comunitaria o ajustes de infraestructura.
+**Conclusión:** con la cadencia real de llamadas, la IA dejó de ser el cuello de botella. El techo práctico pasa a ser el **ancho de banda de Vercel**, y el de suscriptores el de **OneSignal** — ambos abordables por infraestructura, sin depender de colaboración comunitaria.
 
 <a id="es-highlights"></a><br>
 <a id="es-architecture"></a>
@@ -600,7 +601,8 @@ Conflictos: desencriptación remota, merge con LWW/deduplicación, persistencia 
 ├── api/                 # Funciones de Borde de Vercel (Backend sin Servidor)
 ├── assets/              # Imágenes/flags/diagramas usados en app/README
 ├── css/                 # CSS Modular (layout, componentes, etc.)
-├── data/                # Datos Estáticos (citas, hábitos predefinidos)
+├── contracts/           # Contratos tipados (worker, eventos, API de sync)
+├── data/                # Datos estáticos (citas, hábitos, temas de la IA)
 ├── icons/               # Iconos (SVG) y assets relacionados
 ├── locales/             # Archivos de Traducción (i18n)
 ├── render/              # Motor de Renderizado (Reciclaje de DOM y Plantillas)
@@ -618,13 +620,15 @@ Conflictos: desencriptación remota, merge con LWW/deduplicación, persistencia 
 │   ├── quoteEngine.ts   # Motor de selección de citas
 │   ├── selectors.ts     # Capa de lectura optimizada (memoizada)
 │   └── sync.worker.ts   # Web Worker para tareas CPU-bound
+├── scripts/             # Guardarraíles de CI y smoke test de producción
 ├── tests/               # Pruebas de escenario (resiliencia, rendimiento, seguridad)
 ├── state.ts             # Modelo de estado canónico, tipos y caches
 ├── render.ts            # Fachada/orquestador de render (re-export)
 ├── listeners.ts         # Configuración de listeners (bootstrap)
 ├── index.tsx            # Punto de entrada
 ├── index.html           # App Shell (Ruta Crítica de Render)
-└── sw.js                # Service Worker (Cache Atómico)
+├── sw.js                # Service Worker (offline, caché versionada por build)
+└── OneSignalSDKWorker.js # Worker dedicado de push (ámbito /onesignal/)
 ```
 
 <a id="es-project-structure"></a>
@@ -915,7 +919,7 @@ Dispositivo B      → Render estado actualizado
 La fiabilidad de Askesis se valida con una suite completa, enfocada en escenarios de uso real, seguridad, accesibilidad, rendimiento y resiliencia.
 
 - Cobertura de flujos de usuario, seguridad, accesibilidad y resiliencia.
-- CI: workflow en `.github/workflows/ci.yml` ejecuta pruebas/build y sube artifacts (dist + cobertura).
+- CI: `ci.yml` ejecuta pruebas/build y sube artifacts (dist + cobertura); `smoke-prod.yml` valida la **producción real** tras cada push y a diario; `nightly-audit.yml` audita dependencias.
 - Para evitar divergencia entre documentación y ejecución, el detalle operativo de la suite (inventario, conteos actuales, flujo diario, checklist PR y convención de actualización) está centralizado en [tests/README.md](tests/README.md).
 
 Resumen rápido:

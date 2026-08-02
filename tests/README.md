@@ -17,14 +17,73 @@ Comando usado: `npm test -- --run`
 
 ## Resumo Atual da Suíte
 
-- **Arquivos de teste:** 23
-- **Testes totais:** 368
-- **Resultado atual:** 368 passando, 0 falhando
-- **Status de arquivos:** 23 passando, 0 falhando
+<!-- INVENTARIO:INICIO -->
 
-### Status
+- **Arquivos de teste:** 37
+- **Testes totais:** 471
 
-✅ Suíte totalmente aprovada.
+> Gerado por `node scripts/update-test-inventory.js` a partir de execução real.
+> Não editar à mão: `--check` falha o CI quando divergir.
+
+### `api`
+
+- `api/_httpSecurity.test.ts` → 5
+- `api/analyze.test.ts` → 5
+- `api/reminder.test.ts` → 6
+- `api/sync.test.ts` → 10
+
+### `data`
+
+- `data/quotes.test.ts` → 3
+
+### `listeners`
+
+- `listeners/drag.test.ts` → 6
+- `listeners/notifications.test.ts` → 5
+- `listeners/swipe.test.ts` → 3
+
+### `raiz`
+
+- `i18n.test.ts` → 26
+- `utils.test.ts` → 44
+
+### `render`
+
+- `render/chart.test.ts` → 9
+
+### `services`
+
+- `services/aiPrompt.test.ts` → 12
+- `services/analysis.test.ts` → 5
+- `services/api.test.ts` → 14
+- `services/badge.test.ts` → 8
+- `services/cloud.test.ts` → 8
+- `services/cloudDataMerge.integration.test.ts` → 2
+- `services/crypto.test.ts` → 20
+- `services/dataMerge.test.ts` → 27
+- `services/exportFiltering.test.ts` → 1
+- `services/habitActions.test.ts` → 29
+- `services/HabitService.test.ts` → 16
+- `services/importExport.test.ts` → 1
+- `services/migration.test.ts` → 20
+- `services/persistence.test.ts` → 11
+- `services/quoteEngine.test.ts` → 13
+- `services/selectors.test.ts` → 24
+- `services/stateUIConsistency.test.ts` → 35
+
+### `tests`
+
+- `tests/property/cacheCoherence.property.test.ts` → 5
+- `tests/property/merge.property.test.ts` → 1
+- `tests/render.dom.test.ts` → 2
+- `tests/render.sanitize.test.ts` → 2
+- `tests/scenario-test-1-user-journey.test.ts` → 3
+- `tests/scenario-test-2-sync-conflicts.test.ts` → 5
+- `tests/scenario-test-3-security-pentest.test.ts` → 42
+- `tests/scenario-test-4-cloud-network-resilience.test.ts` → 33
+- `tests/scenario-test-5-streak-graduation.test.ts` → 10
+
+<!-- INVENTARIO:FIM -->
 
 ---
 
@@ -54,50 +113,8 @@ npm test -- --run
 
 - [ ] Teste(s) diretamente afetado(s) passando
 - [ ] Suíte completa passando (`npm test -- --run`)
-- [ ] Se contagem de testes mudou, este README foi atualizado
-- [ ] Se novo arquivo `*.test.ts` foi adicionado/removido, inventário atualizado
+- [ ] Inventário regenerado (`npm run test:inventory`) se a contagem mudou
 
----
-
-## Inventário Exato (arquivo → testes)
-
-### Cenários (`tests/`)
-
-- `tests/scenario-test-1-user-journey.test.ts` → 3
-- `tests/scenario-test-2-sync-conflicts.test.ts` → 5
-- `tests/scenario-test-3-security-pentest.test.ts` → 42
-- `tests/scenario-test-4-cloud-network-resilience.test.ts` → 33
-- `tests/scenario-test-5-streak-graduation.test.ts` → 10
-
-### Serviços (`services/`)
-
-- `services/HabitService.test.ts` → 16
-- `services/analysis.test.ts` → 5
-- `services/api.test.ts` → 14
-- `services/cloud.test.ts` → 4
-- `services/cloudDataMerge.integration.test.ts` → 1
-- `services/crypto.test.ts` → 14
-- `services/dataMerge.test.ts` → 27
-- `services/habitActions.test.ts` → 29
-- `services/importExport.test.ts` → 1
-- `services/migration.test.ts` → 20
-- `services/persistence.test.ts` → 7
-- `services/quoteEngine.test.ts` → 10
-- `services/selectors.test.ts` → 23
-- `services/stateUIConsistency.test.ts` → 35
-
-### API (`api/`)
-
-- `api/_httpSecurity.test.ts` → 5
-- `api/analyze.test.ts` → 2
-- `api/sync.test.ts` → 6
-
-### Raiz
-
-- `i18n.test.ts` → 22
-- `utils.test.ts` → 44
-
-> Soma total validada: **399 testes**.
 
 ---
 

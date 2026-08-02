@@ -518,11 +518,12 @@ This project was designed with intelligent engineering to operate with **Zero Co
 
 Considering the three platforms simultaneously (Gemini, Vercel and OneSignal), the app's practical limit is given by the **lowest ceiling** among them:
 
-- **Gemini Flash:** ~**500 users/day** (1,000 req/day ÷ 2 req/user/day)
+- **Gemini 3.5 Flash-Lite:** ~**2,000 users/day** (1,000 req/day ÷ ~0.5 req/user/day)
+  <br><sub>Quote analysis runs at most once every 7 days per user (~0.14 req/day); the assumed 0.5 leaves headroom for manual evaluations, capped at 4/day.</sub>
 - **Vercel (100 GB/month):** ~**1,780 users/month** (≈ 57.5 MB/user/month)
 - **OneSignal:** **10,000 users** (limit per subscribers)
 
-**Conclusion:** the current bottleneck is **Gemini Flash (≈ 500 users/day)**. Even though Vercel and OneSignal support more, AI is the limiter before depending on community collaboration or infrastructure adjustments.
+**Conclusion:** at the real call cadence, AI is no longer the bottleneck. The practical ceiling becomes **Vercel bandwidth**, and the subscriber ceiling **OneSignal** — both addressable through infrastructure, without depending on community collaboration.
 
 <a id="en-highlights"></a><br>
 <a id="en-architecture"></a>
@@ -598,7 +599,8 @@ Conflicts: remote decryption, merge with LWW/deduplication, persistence and retr
 ├── api/                 # Vercel Edge Functions (Serverless Backend)
 ├── assets/              # Images/flags/diagrams used in app/README
 ├── css/                 # Modular CSS (layout, components, etc.)
-├── data/                # Static data (quotes, pre-defined habits)
+├── contracts/           # Typed contracts (worker, events, sync API)
+├── data/                # Static data (quotes, habits, AI themes)
 ├── icons/               # Icons (SVG) and related assets
 ├── locales/             # Translation Files (i18n)
 ├── render/              # Rendering Engine (DOM Recycling & Templates)
@@ -616,13 +618,15 @@ Conflicts: remote decryption, merge with LWW/deduplication, persistence and retr
 │   ├── quoteEngine.ts   # Quote selection engine
 │   ├── selectors.ts     # Optimized read layer (memoized)
 │   └── sync.worker.ts   # Web Worker for CPU-bound tasks
+├── scripts/             # CI guardrails and production smoke test
 ├── tests/               # Scenario tests (resilience, performance, security)
 ├── state.ts             # Global state (Single Source of Truth)
 ├── render.ts            # Render facade/orchestrator (re-export)
 ├── listeners.ts         # Listeners setup (bootstrap)
 ├── index.tsx            # Entry point
 ├── index.html           # App Shell (Critical Render Path)
-└── sw.js                # Service Worker (Atomic Caching)
+├── sw.js                # Service Worker (offline, per-build versioned cache)
+└── OneSignalSDKWorker.js # Dedicated push worker (/onesignal/ scope)
 ```
 
 <a id="en-project-structure"></a>
@@ -915,7 +919,7 @@ Device B          → Render updated state
 Askesis's reliability is validated by a comprehensive suite, focusing on real usage scenarios, security, accessibility, performance and resilience.
 
 - Coverage of user flows, security, accessibility and resilience.
-- CI: workflow in `.github/workflows/ci.yml` runs tests/build and uploads artifacts (dist + coverage).
+- CI: `ci.yml` runs tests/build and uploads artifacts (dist + coverage); `smoke-prod.yml` validates **real production** after each push and daily; `nightly-audit.yml` audits dependencies.
 - To avoid divergence between documentation and execution, the operational detailing of the suite (inventory, current counts, daily flow, PR checklist and update convention) is centralized in [tests/README.md](tests/README.md).
 
 Quick summary:

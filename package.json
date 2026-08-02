@@ -25,6 +25,7 @@
     "test:ui": "vitest --ui",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "test:inventory": "node scripts/update-test-inventory.js",
     "test:scenario": "vitest run tests/scenario-test-*.test.ts",
     "lint:style": "stylelint \"css/**/*.css\" --allow-empty-input",
     "lint:style:fix": "stylelint \"css/**/*.css\" --allow-empty-input --fix",
