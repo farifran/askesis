@@ -368,7 +368,7 @@ export function renderChart() {
             } catch (e) {
                 /* fallback já definido */
             }
-            const newTitleHtml = `<img src="${logoPath}" alt="${altText}" class="chart-logo"/>`;
+            const newTitleHtml = `<img src="${logoPath}" alt="${altText}" class="chart-logo" width="160" height="40"/>`;
             setTrustedHtmlFragment(ui.chart.title, newTitleHtml);
         }
         if (ui.chart.subtitle) {

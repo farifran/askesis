@@ -93,7 +93,7 @@ const getStatusWrapperTemplate = (cls: string, icon: string) => statusTemplates[
 })());
 
 const getPlaceholderTemplate = () => placeholderTemplate || (placeholderTemplate = (() => {
-    const p = document.createElement('div'); p.className = CSS_CLASSES.EMPTY_GROUP_PLACEHOLDER;
+    const p = document.createElement('li'); p.className = CSS_CLASSES.EMPTY_GROUP_PLACEHOLDER;
     p.setAttribute('role', 'button'); p.setAttribute('tabindex', '0'); return p;
 })());
 

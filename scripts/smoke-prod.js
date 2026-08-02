@@ -103,7 +103,24 @@ async function main() {
         catch { fail(`locale ${lang}.json`, `HTTP ${l.status} / JSON inválido`); }
     }
 
-    // 5. APIs: vivas e protegidas
+    // 5. Headers de segurança e comportamento de arquivo ausente
+    //
+    // Ambos já falharam em produção: `routes` (legado) no vercel.json é mutuamente
+    // exclusivo com `headers`, e o bloco inteiro era ignorado em silêncio — sem
+    // CSP, sem XFO. E o fallback de SPA devolvia index.html com HTTP 200 para
+    // QUALQUER caminho inexistente, o que já quebrou o worker de push, o
+    // error-handler e o robots.txt.
+    const secured = await fetch(BASE + '/');
+    const required = ['content-security-policy', 'x-content-type-options', 'x-frame-options', 'referrer-policy'];
+    const missing = required.filter(h => !secured.headers.get(h));
+    if (missing.length === 0) ok('headers de segurança aplicados');
+    else fail('headers de segurança', `ausentes: ${missing.join(', ')}`);
+
+    const ghost = await get(`/nao-existe-${Date.now()}.js`);
+    if (ghost.status === 404) ok('arquivo ausente responde 404 (sem disfarce de HTML)');
+    else fail('arquivo ausente', `HTTP ${ghost.status} ${ghost.type} — o fallback está mascarando 404`);
+
+    // 6. APIs: vivas e protegidas
     const reminder = await get('/api/reminder');
     if (reminder.status === 401) ok('/api/reminder exige autenticação (401 sem Bearer)');
     else if (reminder.status === 200) fail('/api/reminder DESPROTEGIDO', 'respondeu 200 sem auth — CRON_SECRET ausente do deploy');
@@ -115,7 +132,7 @@ async function main() {
         else fail(`${ep}`, `OPTIONS HTTP ${r.status} (esperado 204)`);
     }
 
-    // 6. OneSignal: o app id embarcado existe e aponta para esta origem
+    // 7. OneSignal: o app id embarcado existe e aponta para esta origem
     const os = await get(`https://api.onesignal.com/sync/${ONESIGNAL_APP_ID}/web`);
     try {
         const cfg = JSON.parse(os.body);
