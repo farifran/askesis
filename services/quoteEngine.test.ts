@@ -5,6 +5,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { getTodayUTCIso } from '../utils';
 import { state, HABIT_STATE } from '../state';
 import { clearTestState, createTestHabit } from '../tests/test-utils';
 import { HabitService } from './HabitService';
@@ -192,8 +193,11 @@ describe('🏛️ Motor de Citações Estoicas (quoteEngine.ts)', () => {
                 createMockQuote('other', { tags: ['discipline'] })
             ];
 
-            // Configura como a citação acabou de ser mostrada HOJE
-            const today = new Date().toISOString().split('T')[0];
+            // MESMA FONTE DE VERDADE do código sob teste: getTodayUTCIso() é
+            // cacheado, então derivar a data de `new Date()` fazia o teste falhar
+            // quando o dia UTC virava entre o preenchimento do cache e a execução
+            // (isToday=false desligava a stickiness).
+            const today = getTodayUTCIso();
             const hour = new Date().getHours();
             const timeOfDay = hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : 'evening';
             state.quoteState = {

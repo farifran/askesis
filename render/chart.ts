@@ -101,6 +101,35 @@ let resizeObserver: ResizeObserver | null = null;
 let observersInitialized = false;
 let resizeRaf = 0; // Prevent stacked RAFs
 
+/**
+ * Um dia é "em andamento" enquanto for hoje e ainda restarem instâncias sem
+ * decisão. Concluir ou adiar tudo fecha o dia, mesmo antes da meia-noite.
+ */
+export function isDayInProgress(isToday: boolean, pendingCount: number): boolean {
+    return isToday && pendingCount > 0;
+}
+
+/**
+ * Fator de desempenho do dia, em [-1, +1] (ou o bônus de superação).
+ *
+ * DIA FECHADO: metade concluída é neutro; abaixo disso pune, acima premia.
+ * DIA EM ANDAMENTO: escala apenas positiva (0 a 1), para que cada hábito
+ * marcado mova a linha para cima sem punir um dia que ainda pode ser cumprido.
+ * Ao fechar, a fórmula padrão assume e o ponto assenta no valor real.
+ */
+export function dailyPerformanceFactor(
+    completedCount: number,
+    scheduledCount: number,
+    inProgress: boolean,
+    showPlusIndicator: boolean
+): number {
+    if (showPlusIndicator) return CHART_PLUS_BONUS_MULTIPLIER;
+    if (scheduledCount <= 0) return 0;
+
+    const completionRatio = completedCount / scheduledCount;
+    return inProgress ? completionRatio : (completionRatio - 0.5) * 2;
+}
+
 function calculateChartData(): ChartDataPoint[] {
     try {
         const endDate = parseUTCIsoDate(state.selectedDate);
@@ -122,14 +151,15 @@ function calculateChartData(): ChartDataPoint[] {
             const isFuture = currentDateISO > todayISO;
 
             let currentValue: number;
-            if (isFuture || (isToday && pendingCount > 0)) {
+            if (isFuture) {
                 currentValue = previousDayValue;
             } else if (scheduledCount > 0) {
-                const completionRatio = completedCount / scheduledCount;
-                let performanceFactor = (completionRatio - 0.5) * 2;
-                if (showPlusIndicator) {
-                    performanceFactor = 1.0 * CHART_PLUS_BONUS_MULTIPLIER;
-                }
+                const performanceFactor = dailyPerformanceFactor(
+                    completedCount,
+                    scheduledCount,
+                    isDayInProgress(isToday, pendingCount),
+                    showPlusIndicator
+                );
                 const dailyChange = performanceFactor * CHART_MAX_DAILY_CHANGE_RATE;
                 currentValue = previousDayValue * (1 + dailyChange);
             } else {
