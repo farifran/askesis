@@ -14,7 +14,7 @@ declare global {
 
     interface OneSignalNotifications {
         addEventListener(event: 'permissionChange', handler: () => void): void;
-        requestPermission(): Promise<void>;
+        requestPermission(): Promise<void | boolean>;
         /** SDK v16: boolean (true = granted). */
         permission?: boolean | 'default' | 'denied' | 'granted';
     }

@@ -164,7 +164,7 @@ let isInitialized = false;
 const registerServiceWorker = () => {
     if ('serviceWorker' in navigator && !window.location.protocol.startsWith('file')) {
         const loadSW = () => {
-            // SW único (offline + push OneSignal via importScripts). Escopo `/`.
+            // Offline/cache (escopo `/`). Push fica no worker OneSignal em /push/onesignal/.
             navigator.serviceWorker.register('./sw.js')
                 .then(registration => {
                     logger.info('Service Worker registered with scope:', registration.scope);

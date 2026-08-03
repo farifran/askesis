@@ -644,8 +644,9 @@ Conflitos: descriptografia remota, merge com LWW/deduplicação, persistência e
 ├── listeners.ts         # Setup de listeners (bootstrap)
 ├── index.tsx            # Entry point
 ├── index.html           # App Shell (Critical Render Path)
-├── sw.js                 # SW único: offline + push OneSignal (importScripts)
-└── OneSignalSDKWorker.js # Legado/compat (push novo usa sw.js)
+├── sw.js                          # Offline/cache (escopo /)
+├── push/onesignal/OneSignalSDKWorker.js  # Push OneSignal (escopo isolado)
+└── OneSignalSDKWorker.js          # Legado (raiz)
 ```
 
 <a id="pt-project-structure"></a>

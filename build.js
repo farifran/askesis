@@ -144,8 +144,13 @@ async function build() {
     await fs.promises.writeFile(path.join(OUT_DIR, 'index.html'), html);
 
     await copyFile('manifest.json', path.join(OUT_DIR, 'manifest.json'));
-    // Compat: clients antigos e default do dashboard OneSignal ainda pedem este path.
-    // Push novo usa sw.js (importScripts do SDK). Manter o arquivo evita 404 em update.
+    // Push OneSignal: worker dedicado em subpath (não compete com sw.js).
+    await fs.promises.mkdir(path.join(OUT_DIR, 'push', 'onesignal'), { recursive: true });
+    await copyFile(
+        'push/onesignal/OneSignalSDKWorker.js',
+        path.join(OUT_DIR, 'push', 'onesignal', 'OneSignalSDKWorker.js')
+    );
+    // Path legado na raiz (dashboard default + clients antigos).
     await copyFile('OneSignalSDKWorker.js', path.join(OUT_DIR, 'OneSignalSDKWorker.js'));
 
     // Processa sw.js: injeta nomes hasheados no CACHE_FILES e o hash de build no

@@ -5,28 +5,22 @@
 
 /**
  * @file sw.js
- * @description Service Worker único do Askesis: offline/cache + push OneSignal.
+ * @description Service Worker: Proxy de Rede e Gerenciador de Cache (Offline Engine).
  *
  * Implementação zero-deps (sem Workbox). Estratégias:
  *  - /api/*        → rede direta (nunca cacheia dados do usuário)
  *  - navegação     → NetworkFirst com timeout e fallback para o shell cacheado
  *  - demais assets → CacheFirst com preenchimento em runtime
- *  - push          → OneSignal (importScripts abaixo)
  *
  * CACHE VERSIONING: BUILD_HASH é injetado pelo build.js a partir do content hash
  * do bundle. Cada deploy gera um CACHE_NAME novo; o handler de `activate` apaga
  * todos os caches antigos, eliminando acúmulo de bundles hasheados obsoletos.
  *
- * PUSH / CHROME: um único SW no escopo `/`. Dois workers (sw.js + OneSignalSDKWorker
- * em escopos diferentes ou competindo por `/`) quebram a subscription FCM no
- * Chromium — o app re-registrava sw.js no boot e invalidava o worker de push.
- * Safari/APNs tolerava; Chrome Android não. Ver OneSignal "Combining multiple
- * service workers".
+ * PUSH: NÃO vive aqui. OneSignal registra o worker dedicado em
+ * /push/onesignal/OneSignalSDKWorker.js (escopo /push/onesignal/), isolado deste
+ * SW de escopo `/`. Misturar importScripts do OneSignal neste arquivo quebrou a
+ * inscrição em todas as plataformas (install/fetch conflitam com o SDK).
  */
-
-// OneSignal push handlers (push / notificationclick / notificationclose).
-// Deve permanecer no topo do arquivo (importScripts síncrono).
-importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js');
 
 const HTML_FALLBACK = '/index.html';
 const NETWORK_TIMEOUT_MS = 3000;
@@ -96,6 +90,9 @@ self.addEventListener('fetch', (event) => {
 
     if (url.pathname.startsWith('/api/')) return;
 
+    // Não interceptar o worker de push nem updates do próprio SW offline.
+    if (url.pathname === '/sw.js' || url.pathname.startsWith('/push/onesignal/')) return;
+
     if (req.mode === 'navigate') {
         event.respondWith(
             (async () => {
@@ -125,9 +122,8 @@ self.addEventListener('fetch', (event) => {
     );
 });
 
-// --- NOTIFICATION CLICK (badge local de pendências no Android) ---
-// Restrito à tag do app: o OneSignal registra o próprio notificationclick no
-// mesmo SW; listeners coexistem e cada um ignora o que não é seu.
+// --- NOTIFICATION CLICK (badge de pendências no Android) ---
+// Só a tag local do app. Push remoto da OneSignal é tratado no worker dedicado.
 self.addEventListener('notificationclick', (event) => {
     if (event.notification.tag !== 'askesis-pending-habits') return;
     event.notification.close();
@@ -151,7 +147,6 @@ self.addEventListener('sync', (event) => {
         console.log('[SW] Conectividade recuperada. Solicitando sincronização às abas ativas...');
         event.waitUntil(
             self.clients.matchAll({ type: 'window' }).then(clients => {
-                // Notifica todas as abas abertas para que tentem sincronizar agora
                 clients.forEach(client => {
                     client.postMessage({ type: 'REQUEST_SYNC' });
                 });

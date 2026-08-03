@@ -5,13 +5,10 @@
 
 /**
  * @file OneSignalSDKWorker.js
- * @description Compat / migração do worker legado de push.
+ * @description Compatibilidade: path legado na raiz.
  *
- * O push ativo agora vive em sw.js (importScripts do SDK OneSignal + offline).
- * Mantemos este arquivo na raiz para:
- *  1) clients antigos que ainda têm registration em /OneSignalSDKWorker.js
- *  2) smoke test e o default do dashboard OneSignal (workerName neste path)
- *
- * Novas inscrições usam serviceWorkerPath: 'sw.js' (ver ensureOneSignalReady).
+ * Novas inscrições usam /push/onesignal/OneSignalSDKWorker.js.
+ * Mantido para clients que ainda têm registration no path antigo e para o
+ * default do dashboard OneSignal (workerName na raiz).
  */
 importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js');

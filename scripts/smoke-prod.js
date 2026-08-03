@@ -64,22 +64,22 @@ async function main() {
         assertAsset(`bundle CSS existe`, await get(`/${cssName}`), { expectType: 'css' });
     }
 
-    // 2. Service worker único: offline + OneSignal (importScripts) + hash de build
+    // 2. Service worker offline: hash de build (sem OneSignal misturado)
     const sw = await get('/sw.js');
-    assertAsset('sw.js com hash de build + OneSignal push', sw, {
+    assertAsset('sw.js com hash de build (offline only)', sw, {
         expectType: 'javascript',
-        mustContain: [
-            ...(jsName ? [jsName] : []),
-            'cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js',
-        ],
-        mustNotContain: ['__BUILD_HASH__']
+        mustContain: jsName ? [jsName] : [],
+        mustNotContain: ['__BUILD_HASH__', "importScripts('https://cdn.onesignal.com"]
     });
     for (const chunk of new Set(sw.body.match(/chunk-[A-Za-z0-9]+\.js/g) || [])) {
         assertAsset(`chunk precacheado ${chunk} existe`, await get(`/${chunk}`), { expectType: 'javascript' });
     }
 
-    // 3. Worker legado OneSignal (migração) + boot
-    assertAsset('OneSignalSDKWorker.js legado ainda acessível', await get('/OneSignalSDKWorker.js'), {
+    // 3. Workers de push OneSignal (path novo + legado) e boot
+    assertAsset('push worker OneSignal em /push/onesignal/', await get('/push/onesignal/OneSignalSDKWorker.js'), {
+        expectType: 'javascript', mustContain: 'cdn.onesignal.com'
+    });
+    assertAsset('OneSignalSDKWorker.js legado na raiz', await get('/OneSignalSDKWorker.js'), {
         expectType: 'javascript', mustContain: 'cdn.onesignal.com'
     });
     assertAsset('boot/error-handler.js chega à produção', await get('/boot/error-handler.js'), {

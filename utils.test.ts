@@ -343,8 +343,9 @@ describe('🧰 Utilitários de Infraestrutura (utils.ts)', () => {
             } catch {}
         });
 
-        it('chama optIn e persiste localOptIn quando o SDK reporta optedIn=true', async () => {
+        it('chama requestPermission + optIn e persiste localOptIn quando optedIn=true', async () => {
             const optIn = vi.fn(async () => {});
+            const requestPermission = vi.fn(async () => true);
             (window as any).OneSignal = {
                 User: {
                     PushSubscription: {
@@ -355,13 +356,14 @@ describe('🧰 Utilitários de Infraestrutura (utils.ts)', () => {
                         token: 'fcm-token',
                     },
                 },
-                Notifications: { requestPermission: vi.fn(), permission: true },
+                Notifications: { requestPermission, permission: true },
                 init: vi.fn(),
             };
 
             const { ensurePushSubscribed, getLocalPushOptIn } = await import('./utils');
             const result = await ensurePushSubscribed();
 
+            expect(requestPermission).toHaveBeenCalled();
             expect(optIn).toHaveBeenCalled();
             expect(result.optedIn).toBe(true);
             expect(result.subscriptionId).toBe('sub-android-1');
