@@ -38,6 +38,8 @@ declare global {
             safari_web_id?: string;
             allowLocalhostAsSecureOrigin?: boolean;
             autoResubscribe?: boolean;
+            serviceWorkerOverrideForTypical?: boolean;
+            path?: string;
             serviceWorkerPath?: string;
             serviceWorkerParam?: { scope?: string };
         }): Promise<void>;

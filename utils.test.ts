@@ -341,12 +341,40 @@ describe('🧰 Utilitários de Infraestrutura (utils.ts)', () => {
                 delete (window as any).OneSignalDeferred;
                 localStorage.removeItem('askesis_onesignal_opted_in');
             } catch {}
+            vi.useRealTimers();
+            vi.restoreAllMocks();
+            vi.resetModules();
         });
 
-        it('chama requestPermission + optIn e persiste localOptIn quando optedIn=true', async () => {
+        async function runWithMockSdk(sdk: any) {
+            (window as any).OneSignal = sdk;
+            (window as any).OneSignalDeferred = [];
+            // Impede fetch real do CDN no jsdom
+            vi.spyOn(document.head, 'appendChild').mockImplementation((node: any) => {
+                if (node?.tagName === 'SCRIPT') {
+                    queueMicrotask(() => {
+                        // Simula page+es6: OneSignal já no window; processa deferred
+                        const deferred = (window as any).OneSignalDeferred as Array<(os: any) => any>;
+                        const list = [...(deferred || [])];
+                        (async () => {
+                            for (const fn of list) await fn(sdk);
+                        })();
+                        node.dispatchEvent(new Event('load'));
+                    });
+                }
+                return node;
+            });
+
+            const { ensurePushSubscribed, getLocalPushOptIn } = await import('./utils');
+            const result = await ensurePushSubscribed();
+            return { result, getLocalPushOptIn, sdk };
+        }
+
+        it('persiste localOptIn só com optedIn+id/token reais', async () => {
             const optIn = vi.fn(async () => {});
             const requestPermission = vi.fn(async () => true);
-            (window as any).OneSignal = {
+            const { result, getLocalPushOptIn } = await runWithMockSdk({
+                init: vi.fn(async () => {}),
                 User: {
                     PushSubscription: {
                         optIn,
@@ -354,20 +382,49 @@ describe('🧰 Utilitários de Infraestrutura (utils.ts)', () => {
                         optedIn: true,
                         id: 'sub-android-1',
                         token: 'fcm-token',
+                        addEventListener: vi.fn(),
+                        removeEventListener: vi.fn(),
                     },
                 },
-                Notifications: { requestPermission, permission: true },
-                init: vi.fn(),
-            };
-
-            const { ensurePushSubscribed, getLocalPushOptIn } = await import('./utils');
-            const result = await ensurePushSubscribed();
+                Notifications: {
+                    requestPermission,
+                    permission: true,
+                    isPushSupported: () => true,
+                },
+            });
 
             expect(requestPermission).toHaveBeenCalled();
             expect(optIn).toHaveBeenCalled();
             expect(result.optedIn).toBe(true);
             expect(result.subscriptionId).toBe('sub-android-1');
             expect(getLocalPushOptIn()).toBe(true);
+        });
+
+        it('limpa localOptIn quando a subscription não se completa', async () => {
+            const optIn = vi.fn(async () => {});
+            const { result, getLocalPushOptIn } = await runWithMockSdk({
+                init: vi.fn(async () => {}),
+                User: {
+                    PushSubscription: {
+                        optIn,
+                        optOut: vi.fn(),
+                        optedIn: false,
+                        id: null,
+                        token: null,
+                        addEventListener: vi.fn(),
+                        removeEventListener: vi.fn(),
+                    },
+                },
+                Notifications: {
+                    requestPermission: vi.fn(async () => false),
+                    permission: false,
+                    isPushSupported: () => true,
+                },
+            });
+
+            expect(optIn).toHaveBeenCalled();
+            expect(result.optedIn).toBe(false);
+            expect(getLocalPushOptIn()).toBe(false);
         });
     });
 });

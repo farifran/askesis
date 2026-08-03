@@ -133,7 +133,8 @@ const _handleResetAppClick = () => {
     );
 };
 
-// Após permissão nativa (ou já granted): grava intenção e finaliza subscription OneSignal.
+// Após permissão nativa (ou já granted): tenta subscription real no OneSignal.
+// localOptIn só fica true se ensurePushSubscribed confirmar optedIn+token/id.
 const _enableNotificationsAsync = async (perm: string) => {
     try {
         if (perm !== 'granted') {
@@ -145,25 +146,17 @@ const _enableNotificationsAsync = async (perm: string) => {
 
         ui.notificationToggle.disabled = true;
         setTextContent(ui.notificationStatusDesc, t('notificationChangePending'));
-        setLocalPushOptIn(true);
 
         const { optedIn } = await ensurePushSubscribed();
         if (!optedIn) {
-            // Mantém intenção local se permissão segue granted (boot tenta de novo);
-            // se permissão sumiu, desliga de vez.
-            if (getNotificationPermission() !== 'granted') {
-                ui.notificationToggle.checked = false;
-                setLocalPushOptIn(false);
-                setTextContent(ui.notificationStatusDesc, t('notificationStatusOptedOut'));
-            }
-        }
-    } catch (err) {
-        logger.warn('Enable notifications failed', err);
-        if (getNotificationPermission() !== 'granted') {
             ui.notificationToggle.checked = false;
-            setLocalPushOptIn(false);
             setTextContent(ui.notificationStatusDesc, t('notificationStatusOptedOut'));
         }
+    } catch (err) {
+        logger.error('Enable notifications failed', err);
+        ui.notificationToggle.checked = false;
+        setLocalPushOptIn(false);
+        setTextContent(ui.notificationStatusDesc, t('notificationStatusOptedOut'));
     } finally {
         ui.notificationToggle.disabled = false;
         updateNotificationUI();

@@ -127,10 +127,13 @@ export function setupEventListeners() {
             markPushPermissionRequested();
             const perm = await requestNotificationPermission();
             if (perm === 'granted') {
-                setLocalPushOptIn(true);
-                updateNotificationUI();
-                // optIn() é obrigatório no Chrome/Android para registrar o device no OneSignal.
-                ensurePushSubscribed().catch((err) => logger.warn('Auto push subscribe failed', err));
+                // Só grava localOptIn dentro de ensurePushSubscribed se a subscription for real.
+                ensurePushSubscribed()
+                    .then(() => updateNotificationUI())
+                    .catch((err) => {
+                        logger.error('Auto push subscribe failed', err);
+                        updateNotificationUI();
+                    });
             } else if (perm === 'denied') {
                 setLocalPushOptIn(false);
                 updateNotificationUI();

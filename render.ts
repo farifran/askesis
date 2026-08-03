@@ -290,17 +290,13 @@ export function updateNotificationUI() {
     }
 
     pushToOneSignal((OneSignal: OneSignalLike) => {
+        // Com SDK carregado: só conta subscription real (optedIn). Flag local sozinha
+        // mentia "ligado" sem criar subscriber no dashboard OneSignal.
         const isPushEnabled = !!OneSignal.User.PushSubscription.optedIn;
         const sdkPerm = OneSignal.Notifications.permission;
         const nativePerm = (typeof Notification !== 'undefined') ? Notification.permission : 'default';
         const localOptIn = getLocalPushOptIn();
-        // updateNotificationUI é só leitura do storage.
-        // - optedIn no SDK → ligado
-        // - localOptIn false → desligado (vence race pós-optOut)
-        // - localOptIn true + permissão granted → ligado (intenção; boot/optIn finalizam)
-        const effectiveEnabled = localOptIn === false
-            ? false
-            : (isPushEnabled || (nativePerm === 'granted' && localOptIn === true));
+        const effectiveEnabled = localOptIn === false ? false : isPushEnabled;
         if (ui.notificationToggle.checked !== effectiveEnabled) ui.notificationToggle.checked = effectiveEnabled;
         const isDenied = nativePerm === 'denied' || sdkPerm === 'denied';
         if (ui.notificationToggle.disabled !== isDenied) {
@@ -310,6 +306,9 @@ export function updateNotificationUI() {
         let statusTextKey = 'notificationStatusOptedOut';
         if (isDenied) statusTextKey = 'notificationStatusDisabled';
         else if (effectiveEnabled) statusTextKey = 'notificationStatusEnabled';
+        else if (localOptIn === true && nativePerm === 'granted' && !isPushEnabled) {
+            statusTextKey = 'notificationChangePending';
+        }
         setTextContent(ui.notificationStatusDesc, t(statusTextKey));
     });
 }
