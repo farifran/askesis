@@ -75,11 +75,8 @@ async function main() {
         assertAsset(`chunk precacheado ${chunk} existe`, await get(`/${chunk}`), { expectType: 'javascript' });
     }
 
-    // 3. Workers de push OneSignal (path novo + legado) e boot
-    assertAsset('push worker OneSignal em /push/onesignal/', await get('/push/onesignal/OneSignalSDKWorker.js'), {
-        expectType: 'javascript', mustContain: 'cdn.onesignal.com'
-    });
-    assertAsset('OneSignalSDKWorker.js legado na raiz', await get('/OneSignalSDKWorker.js'), {
+    // 3. Worker de push OneSignal (raiz, escopo /onesignal/) e boot
+    assertAsset('OneSignalSDKWorker.js na raiz', await get('/OneSignalSDKWorker.js'), {
         expectType: 'javascript', mustContain: 'cdn.onesignal.com'
     });
     assertAsset('boot/error-handler.js chega à produção', await get('/boot/error-handler.js'), {

@@ -303,31 +303,27 @@ export function simpleMarkdownToHTML(text: string): string {
 }
 
 // --- OneSignal (web push) ---
-// Offline: sw.js (escopo `/`). Push: worker dedicado em /push/onesignal/
-// (escopo isolado). NÃO misturar OneSignal em sw.js.
+//
+// Arquitetura estável:
+//  - Offline: sw.js (escopo `/`)
+//  - Push: OneSignalSDKWorker.js na raiz, escopo `/onesignal/` (não compete com offline)
+//  - CSP DEVE permitir script de https://api.onesignal.com (JSONP do init)
+//
+// Fluxo de opt-in (simples, o que já funcionava no produto):
+//  1) permissão nativa no gesto (iOS)
+//  2) setLocalPushOptIn(true) imediatamente
+//  3) init + requestPermission + optIn em background
+//
 const ONESIGNAL_SDK_URL = 'https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js';
 const ONESIGNAL_APP_ID = 'd69cf0b6-bc03-4375-b3b7-dd7b37e05a17';
 const ONESIGNAL_SAFARI_WEB_ID = 'web.onesignal.auto.2465995d-af39-44d0-9727-0f4afeb298e1';
-/** Path relativo (sem leading slash). SDK junta com path '/' → /push/onesignal/... */
-const ONESIGNAL_SW_PATH = 'push/onesignal/OneSignalSDKWorker.js';
-const ONESIGNAL_SW_SCOPE = '/push/onesignal/';
 const ONESIGNAL_OPTIN_STORAGE_KEY = 'askesis_onesignal_opted_in';
 const PUSH_PERMISSION_REQUESTED_KEY = 'askesis_push_permission_requested';
 
 type OneSignalLike = {
-    init(options: {
-        appId: string;
-        safari_web_id?: string;
-        allowLocalhostAsSecureOrigin?: boolean;
-        autoResubscribe?: boolean;
-        /** Força uso de serviceWorkerPath/Param mesmo no modo "typical" do dashboard. */
-        serviceWorkerOverrideForTypical?: boolean;
-        path?: string;
-        serviceWorkerPath?: string;
-        serviceWorkerParam?: { scope?: string };
-    }): Promise<void>;
+    init(options: Record<string, unknown>): Promise<void>;
     Notifications: {
-        addEventListener(event: 'permissionChange', handler: (permission?: boolean) => void): void;
+        addEventListener(event: 'permissionChange', handler: () => void): void;
         requestPermission(): Promise<void | boolean>;
         permission?: boolean | 'default' | 'denied' | 'granted';
         isPushSupported?(): boolean;
@@ -339,15 +335,9 @@ type OneSignalLike = {
             optedIn?: boolean;
             id?: string | null;
             token?: string | null;
-            addEventListener?(event: 'change', handler: (event: {
-                current: { id?: string | null; token?: string | null; optedIn?: boolean };
-                previous: { id?: string | null; token?: string | null; optedIn?: boolean };
-            }) => void): void;
-            removeEventListener?(event: 'change', handler: (...args: unknown[]) => void): void;
         };
         setLanguage?(lang: string): void;
     };
-    Debug?: { setLogLevel?(level: string): void };
 };
 
 type OneSignalWindow = Window & {
@@ -356,8 +346,6 @@ type OneSignalWindow = Window & {
 };
 
 let _oneSignalInitPromise: Promise<OneSignalLike> | null = null;
-/** true só depois de init() concluir com sucesso nesta página. */
-let _oneSignalInitDone = false;
 
 export function getLocalPushOptIn(): boolean | null {
     try {
@@ -403,7 +391,6 @@ export function markPushPermissionRequested() {
     } catch {}
 }
 
-// --- Notification helpers ---
 export function getNotificationPermission(): NotificationPermission {
     try {
         if (typeof Notification === 'undefined') return 'default';
@@ -445,6 +432,8 @@ function _loadScript(src: string): Promise<void> {
     });
 }
 
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
 /** Roda callback se o SDK já estiver no window (sem lazy-load). */
 export function pushToOneSignal(callback: (oneSignal: OneSignalLike) => void) {
     if (typeof window === 'undefined') return;
@@ -453,124 +442,71 @@ export function pushToOneSignal(callback: (oneSignal: OneSignalLike) => void) {
     callback(oneSignalWindow.OneSignal);
 }
 
-const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
-
-/** page.js só injeta o es6; esperamos o objeto real com init(). */
-async function _waitForOneSignalObject(timeoutMs = 15000): Promise<OneSignalLike> {
-    const win = window as OneSignalWindow;
-    const start = Date.now();
-    while (Date.now() - start < timeoutMs) {
-        const os = win.OneSignal;
-        if (os && typeof os.init === 'function') return os;
-        await sleep(50);
-    }
-    throw new Error('OneSignal SDK load timeout');
-}
-
-function _isAlreadyInitializedError(err: unknown): boolean {
-    const msg = err instanceof Error ? err.message : String(err ?? '');
-    return /already initialized/i.test(msg);
-}
-
 /**
- * Carrega e inicializa o OneSignal Web SDK (uma vez por página).
- * NÃO confiar em `window.OneSignal.User.PushSubscription` como sinal de init —
- * o SDK expõe User antes de init() rodar.
+ * Carrega o page.js + espera o es6 (init real) e roda OneSignal.init uma vez.
  */
 export async function ensureOneSignalReady(): Promise<OneSignalLike> {
     if (typeof window === 'undefined') throw new Error('OneSignal unavailable');
-    const oneSignalWindow = window as OneSignalWindow;
+    const win = window as OneSignalWindow;
 
-    if (_oneSignalInitDone && oneSignalWindow.OneSignal) {
-        return oneSignalWindow.OneSignal;
-    }
-
-    if (_oneSignalInitPromise) {
-        try {
-            return await _oneSignalInitPromise;
-        } catch (e) {
-            _oneSignalInitPromise = null;
-            throw e;
-        }
-    }
+    if (_oneSignalInitPromise) return _oneSignalInitPromise;
 
     _oneSignalInitPromise = (async () => {
-        // Não sobrescrever o array se o SDK já redefiniu .push
-        if (!oneSignalWindow.OneSignalDeferred) {
-            oneSignalWindow.OneSignalDeferred = [];
-        }
+        if (!win.OneSignalDeferred) win.OneSignalDeferred = [];
 
         const ready = new Promise<OneSignalLike>((resolve, reject) => {
-            const task = async (OneSignal: OneSignalLike) => {
+            win.OneSignalDeferred!.push(async (OneSignal) => {
                 try {
                     await OneSignal.init({
                         appId: ONESIGNAL_APP_ID,
                         safari_web_id: ONESIGNAL_SAFARI_WEB_ID,
                         allowLocalhostAsSecureOrigin: true,
                         autoResubscribe: true,
-                        // Garante path custom mesmo se o dashboard estiver em modo typical.
-                        serviceWorkerOverrideForTypical: true,
-                        path: '/',
-                        serviceWorkerPath: ONESIGNAL_SW_PATH,
-                        serviceWorkerParam: { scope: ONESIGNAL_SW_SCOPE },
+                        // Isola o worker de push do sw.js offline (escopo `/`).
+                        serviceWorkerPath: 'OneSignalSDKWorker.js',
+                        serviceWorkerParam: { scope: '/onesignal/' },
                     });
-                    _oneSignalInitDone = true;
                     resolve(OneSignal);
                 } catch (e: unknown) {
-                    if (_isAlreadyInitializedError(e) && oneSignalWindow.OneSignal) {
-                        _oneSignalInitDone = true;
-                        resolve(oneSignalWindow.OneSignal);
+                    const msg = e instanceof Error ? e.message : String(e);
+                    // Re-init na mesma página: devolve a instância já pronta.
+                    if (/already initialized/i.test(msg) && win.OneSignal) {
+                        resolve(win.OneSignal);
                         return;
                     }
                     reject(e);
                 }
-            };
-            // SDK v16: deferred push aceita (OneSignal) => void | Promise
-            oneSignalWindow.OneSignalDeferred!.push(task);
+            });
         });
 
         await _loadScript(ONESIGNAL_SDK_URL);
-        // page.js carrega es6 de forma assíncrona — não considerar o load do page.js suficiente.
-        await _waitForOneSignalObject();
-        const timeout = sleep(15000).then(() => {
-            throw new Error('OneSignal init timeout');
-        });
-        return await Promise.race([ready, timeout]);
-    })();
 
-    try {
-        return await _oneSignalInitPromise;
-    } catch (e) {
+        // page.js só enfileira o es6; sem esta espera o init pode nunca rodar a tempo.
+        const t0 = Date.now();
+        while (!(win.OneSignal && typeof win.OneSignal.init === 'function') && Date.now() - t0 < 15000) {
+            await sleep(40);
+        }
+        if (!win.OneSignal) throw new Error('OneSignal SDK load timeout');
+
+        return await Promise.race([
+            ready,
+            sleep(20000).then(() => { throw new Error('OneSignal init timeout'); }),
+        ]);
+    })().catch((e) => {
         _oneSignalInitPromise = null;
-        _oneSignalInitDone = false;
         throw e;
-    }
-}
+    });
 
-function _readSubscription(OneSignal: OneSignalLike): { optedIn: boolean; subscriptionId: string | null; token: string | null } {
-    const sub = OneSignal.User.PushSubscription;
-    const subscriptionId = sub.id ?? null;
-    const token = sub.token ?? null;
-    // optedIn do SDK é a fonte de verdade; id/token chegam assíncronos mas optedIn
-    // true já indica subscription criada no OneSignal (salvo Push API indisponível).
-    const optedIn = !!sub.optedIn;
-    return { optedIn, subscriptionId, token };
+    return _oneSignalInitPromise;
 }
 
 /**
- * Completa a subscription no OneSignal.
- * Só retorna optedIn=true quando o SDK tem optedIn + (id ou token).
- * NÃO grava localOptIn=true em caso de falha (evita toggle mentiroso).
+ * Finaliza inscrição no OneSignal (requestPermission + optIn).
+ * Em caso de permissão já granted, mantém intenção local mesmo se o SDK
+ * demorar a reportar optedIn (evita toggle “morto” e mensagem de reiniciar).
  */
 export async function ensurePushSubscribed(): Promise<{ optedIn: boolean; subscriptionId?: string | null }> {
     const OneSignal = await ensureOneSignalReady();
-
-    if (typeof OneSignal.Notifications.isPushSupported === 'function'
-        && !OneSignal.Notifications.isPushSupported()) {
-        logger.error('OneSignal: push not supported in this browser');
-        setLocalPushOptIn(false);
-        return { optedIn: false, subscriptionId: null };
-    }
 
     try {
         await OneSignal.Notifications.requestPermission();
@@ -579,62 +515,41 @@ export async function ensurePushSubscribed(): Promise<{ optedIn: boolean; subscr
     }
 
     try {
-        await OneSignal.User.PushSubscription.optIn();
+        // Necessário no Chromium quando a permissão nativa já foi dada fora do SDK.
+        if (typeof OneSignal.User.PushSubscription.optIn === 'function') {
+            await OneSignal.User.PushSubscription.optIn();
+        }
     } catch (err) {
         logger.error('OneSignal optIn failed', err);
     }
 
-    // Espera o evento de mudança (mais confiável que poll fixo).
-    let state = _readSubscription(OneSignal);
-    if (!state.optedIn) {
-        state = await new Promise((resolve) => {
-            let settled = false;
-            const finish = () => {
-                if (settled) return;
-                settled = true;
-                try {
-                    OneSignal.User.PushSubscription.removeEventListener?.('change', onChange);
-                } catch { /* ignore */ }
-                resolve(_readSubscription(OneSignal));
-            };
-            const onChange = () => {
-                const next = _readSubscription(OneSignal);
-                if (next.optedIn) finish();
-            };
-            try {
-                OneSignal.User.PushSubscription.addEventListener?.('change', onChange);
-            } catch { /* ignore */ }
-            // Poll de fallback + timeout (~3s)
-            (async () => {
-                for (let i = 0; i < 12 && !settled; i++) {
-                    await sleep(250);
-                    const next = _readSubscription(OneSignal);
-                    if (next.optedIn) {
-                        finish();
-                        return;
-                    }
-                }
-                finish();
-            })();
-        });
+    for (let i = 0; i < 15; i++) {
+        if (OneSignal.User.PushSubscription.optedIn) break;
+        await sleep(200);
     }
 
-    if (state.optedIn) {
+    const optedIn = !!OneSignal.User.PushSubscription.optedIn;
+    const subscriptionId = OneSignal.User.PushSubscription.id ?? null;
+    const nativeGranted = getNotificationPermission() === 'granted';
+
+    // Intenção do usuário + permissão do browser: mantém opt-in local.
+    // Só zera se o browser recusou (denied/default).
+    if (optedIn || nativeGranted) {
         setLocalPushOptIn(true);
-        logger.info('OneSignal subscribed', { id: state.subscriptionId });
     } else {
-        // Falha real: não manter flag local que deixa o toggle "ligado" sem subscriber.
         setLocalPushOptIn(false);
-        logger.error('OneSignal push not subscribed', {
+    }
+
+    if (!optedIn) {
+        logger.error('OneSignal subscription not confirmed yet', {
             permission: getNotificationPermission(),
             sdkPermission: OneSignal.Notifications.permission,
-            optedIn: OneSignal.User.PushSubscription.optedIn,
-            id: state.subscriptionId,
-            tokenPresent: !!state.token,
+            id: subscriptionId,
+            token: !!OneSignal.User.PushSubscription.token,
         });
     }
 
-    return { optedIn: state.optedIn, subscriptionId: state.subscriptionId };
+    return { optedIn, subscriptionId };
 }
 
 export function triggerHaptic(type: keyof typeof HAPTIC_PATTERNS) {

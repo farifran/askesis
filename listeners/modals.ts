@@ -133,8 +133,7 @@ const _handleResetAppClick = () => {
     );
 };
 
-// Após permissão nativa (ou já granted): tenta subscription real no OneSignal.
-// localOptIn só fica true se ensurePushSubscribed confirmar optedIn+token/id.
+// Após permissão nativa (ou já granted): intenção local imediata + subscription OneSignal.
 const _enableNotificationsAsync = async (perm: string) => {
     try {
         if (perm !== 'granted') {
@@ -144,41 +143,49 @@ const _enableNotificationsAsync = async (perm: string) => {
             return;
         }
 
-        ui.notificationToggle.disabled = true;
-        setTextContent(ui.notificationStatusDesc, t('notificationChangePending'));
+        // Intenção imediata: UI fica “ligada” sem pedir reinício.
+        setLocalPushOptIn(true);
+        ui.notificationToggle.checked = true;
+        setTextContent(ui.notificationStatusDesc, t('notificationStatusEnabled'));
 
-        const { optedIn } = await ensurePushSubscribed();
-        if (!optedIn) {
-            ui.notificationToggle.checked = false;
-            setTextContent(ui.notificationStatusDesc, t('notificationStatusOptedOut'));
+        try {
+            await ensurePushSubscribed();
+        } catch (err) {
+            logger.error('Enable notifications: OneSignal subscribe failed', err);
+            // Mantém ligado se o browser ainda tem permissão (retry no boot).
+            if (getNotificationPermission() !== 'granted') {
+                ui.notificationToggle.checked = false;
+                setLocalPushOptIn(false);
+                setTextContent(ui.notificationStatusDesc, t('notificationStatusOptedOut'));
+            }
         }
     } catch (err) {
         logger.error('Enable notifications failed', err);
-        ui.notificationToggle.checked = false;
-        setLocalPushOptIn(false);
-        setTextContent(ui.notificationStatusDesc, t('notificationStatusOptedOut'));
+        if (getNotificationPermission() !== 'granted') {
+            ui.notificationToggle.checked = false;
+            setLocalPushOptIn(false);
+            setTextContent(ui.notificationStatusDesc, t('notificationStatusOptedOut'));
+        }
     } finally {
-        ui.notificationToggle.disabled = false;
         updateNotificationUI();
     }
 };
 
-// iOS Safari PWA: NÃO async. requestPermission nativo deve rodar no mesmo tick do gesto.
+// iOS Safari PWA: NÃO async. requestPermission nativo no mesmo tick do gesto.
 const _handleNotificationToggleChange = () => {
     const wantsEnabled = ui.notificationToggle.checked;
 
     if (!wantsEnabled) {
         (async () => {
-            ui.notificationToggle.disabled = true;
-            setTextContent(ui.notificationStatusDesc, t('notificationChangePending'));
             setLocalPushOptIn(false);
+            ui.notificationToggle.checked = false;
+            setTextContent(ui.notificationStatusDesc, t('notificationStatusOptedOut'));
             try {
                 const OneSignal = await ensureOneSignalReady();
                 await OneSignal.User.PushSubscription.optOut();
             } catch {
-                // Opt-out local já persistido; falha de rede/SDK não reativa o toggle.
+                // Opt-out local já persistido.
             } finally {
-                ui.notificationToggle.disabled = false;
                 updateNotificationUI();
             }
         })();
@@ -191,7 +198,7 @@ const _handleNotificationToggleChange = () => {
         try {
             const res = (Notification as { requestPermission?: () => Promise<NotificationPermission> | NotificationPermission })
                 .requestPermission?.call(Notification);
-            permPromise = Promise.resolve(res as string ?? currentPerm);
+            permPromise = Promise.resolve((res as string) ?? currentPerm);
         } catch {
             permPromise = Promise.resolve(currentPerm);
         }
@@ -205,9 +212,8 @@ const _handleNotificationToggleChange = () => {
             if (getNotificationPermission() !== 'granted') {
                 ui.notificationToggle.checked = false;
                 setLocalPushOptIn(false);
+                setTextContent(ui.notificationStatusDesc, t('notificationStatusOptedOut'));
             }
-            setTextContent(ui.notificationStatusDesc, t('notificationStatusOptedOut'));
-            ui.notificationToggle.disabled = false;
             updateNotificationUI();
         });
 };

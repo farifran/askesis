@@ -341,24 +341,22 @@ describe('🧰 Utilitários de Infraestrutura (utils.ts)', () => {
                 delete (window as any).OneSignalDeferred;
                 localStorage.removeItem('askesis_onesignal_opted_in');
             } catch {}
-            vi.useRealTimers();
             vi.restoreAllMocks();
             vi.resetModules();
         });
 
-        async function runWithMockSdk(sdk: any) {
+        async function runWithMockSdk(sdk: any, nativePerm: NotificationPermission = 'granted') {
             (window as any).OneSignal = sdk;
             (window as any).OneSignalDeferred = [];
-            // Impede fetch real do CDN no jsdom
+            Object.defineProperty(window, 'Notification', {
+                configurable: true,
+                value: { permission: nativePerm },
+            });
             vi.spyOn(document.head, 'appendChild').mockImplementation((node: any) => {
                 if (node?.tagName === 'SCRIPT') {
-                    queueMicrotask(() => {
-                        // Simula page+es6: OneSignal já no window; processa deferred
+                    queueMicrotask(async () => {
                         const deferred = (window as any).OneSignalDeferred as Array<(os: any) => any>;
-                        const list = [...(deferred || [])];
-                        (async () => {
-                            for (const fn of list) await fn(sdk);
-                        })();
+                        for (const fn of [...(deferred || [])]) await fn(sdk);
                         node.dispatchEvent(new Event('load'));
                     });
                 }
@@ -367,10 +365,10 @@ describe('🧰 Utilitários de Infraestrutura (utils.ts)', () => {
 
             const { ensurePushSubscribed, getLocalPushOptIn } = await import('./utils');
             const result = await ensurePushSubscribed();
-            return { result, getLocalPushOptIn, sdk };
+            return { result, getLocalPushOptIn };
         }
 
-        it('persiste localOptIn só com optedIn+id/token reais', async () => {
+        it('chama requestPermission+optIn e grava localOptIn quando optedIn=true', async () => {
             const optIn = vi.fn(async () => {});
             const requestPermission = vi.fn(async () => true);
             const { result, getLocalPushOptIn } = await runWithMockSdk({
@@ -380,10 +378,8 @@ describe('🧰 Utilitários de Infraestrutura (utils.ts)', () => {
                         optIn,
                         optOut: vi.fn(),
                         optedIn: true,
-                        id: 'sub-android-1',
-                        token: 'fcm-token',
-                        addEventListener: vi.fn(),
-                        removeEventListener: vi.fn(),
+                        id: 'sub-1',
+                        token: 'tok',
                     },
                 },
                 Notifications: {
@@ -396,11 +392,10 @@ describe('🧰 Utilitários de Infraestrutura (utils.ts)', () => {
             expect(requestPermission).toHaveBeenCalled();
             expect(optIn).toHaveBeenCalled();
             expect(result.optedIn).toBe(true);
-            expect(result.subscriptionId).toBe('sub-android-1');
             expect(getLocalPushOptIn()).toBe(true);
         });
 
-        it('limpa localOptIn quando a subscription não se completa', async () => {
+        it('mantém localOptIn se permissão nativa granted mesmo com optedIn lento', async () => {
             const optIn = vi.fn(async () => {});
             const { result, getLocalPushOptIn } = await runWithMockSdk({
                 init: vi.fn(async () => {}),
@@ -411,20 +406,18 @@ describe('🧰 Utilitários de Infraestrutura (utils.ts)', () => {
                         optedIn: false,
                         id: null,
                         token: null,
-                        addEventListener: vi.fn(),
-                        removeEventListener: vi.fn(),
                     },
                 },
                 Notifications: {
-                    requestPermission: vi.fn(async () => false),
-                    permission: false,
+                    requestPermission: vi.fn(async () => true),
+                    permission: true,
                     isPushSupported: () => true,
                 },
-            });
+            }, 'granted');
 
-            expect(optIn).toHaveBeenCalled();
             expect(result.optedIn).toBe(false);
-            expect(getLocalPushOptIn()).toBe(false);
+            // Intenção + permissão: toggle não fica “morto” nem pede reinício.
+            expect(getLocalPushOptIn()).toBe(true);
         });
     });
 });

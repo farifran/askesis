@@ -33,16 +33,7 @@ declare global {
     }
 
     interface OneSignalLike {
-        init(options: {
-            appId: string;
-            safari_web_id?: string;
-            allowLocalhostAsSecureOrigin?: boolean;
-            autoResubscribe?: boolean;
-            serviceWorkerOverrideForTypical?: boolean;
-            path?: string;
-            serviceWorkerPath?: string;
-            serviceWorkerParam?: { scope?: string };
-        }): Promise<void>;
+        init(options: Record<string, unknown>): Promise<void>;
         Notifications: OneSignalNotifications;
         User: OneSignalUser;
     }

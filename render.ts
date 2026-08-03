@@ -265,19 +265,12 @@ export function renderApp() {
 }
 
 export function updateNotificationUI() {
-    const isPendingChange = ui.notificationToggle.disabled && !ui.notificationToggleLabel.classList.contains('disabled');
-    if (isPendingChange) {
-        setTextContent(ui.notificationStatusDesc, t('notificationChangePending'));
-        return;
-    }
-
-    // Zero-deps por padrão: se OneSignal não estiver carregado, usa permissões nativas.
+    // Zero-deps: sem SDK, espelha permissão nativa + intenção local.
     if (typeof window === 'undefined' || typeof window.OneSignal === 'undefined') {
         const permission = (typeof Notification !== 'undefined' && Notification.permission) ? Notification.permission : 'default';
         const isDenied = permission === 'denied';
         const localOptIn = getLocalPushOptIn();
-        const isGranted = permission === 'granted';
-        const assumeEnabled = isGranted && localOptIn === true;
+        const assumeEnabled = permission === 'granted' && localOptIn === true;
         ui.notificationToggle.checked = assumeEnabled;
         ui.notificationToggle.disabled = isDenied;
         ui.notificationToggleLabel.classList.toggle('disabled', isDenied);
@@ -290,13 +283,14 @@ export function updateNotificationUI() {
     }
 
     pushToOneSignal((OneSignal: OneSignalLike) => {
-        // Com SDK carregado: só conta subscription real (optedIn). Flag local sozinha
-        // mentia "ligado" sem criar subscriber no dashboard OneSignal.
         const isPushEnabled = !!OneSignal.User.PushSubscription.optedIn;
         const sdkPerm = OneSignal.Notifications.permission;
         const nativePerm = (typeof Notification !== 'undefined') ? Notification.permission : 'default';
         const localOptIn = getLocalPushOptIn();
-        const effectiveEnabled = localOptIn === false ? false : isPushEnabled;
+        // SDK optedIn OU (permissão + intenção local). Opt-out explícito (local false) vence.
+        const effectiveEnabled = localOptIn === false
+            ? false
+            : (isPushEnabled || (nativePerm === 'granted' && localOptIn === true));
         if (ui.notificationToggle.checked !== effectiveEnabled) ui.notificationToggle.checked = effectiveEnabled;
         const isDenied = nativePerm === 'denied' || sdkPerm === 'denied';
         if (ui.notificationToggle.disabled !== isDenied) {
@@ -306,9 +300,6 @@ export function updateNotificationUI() {
         let statusTextKey = 'notificationStatusOptedOut';
         if (isDenied) statusTextKey = 'notificationStatusDisabled';
         else if (effectiveEnabled) statusTextKey = 'notificationStatusEnabled';
-        else if (localOptIn === true && nativePerm === 'granted' && !isPushEnabled) {
-            statusTextKey = 'notificationChangePending';
-        }
         setTextContent(ui.notificationStatusDesc, t(statusTextKey));
     });
 }

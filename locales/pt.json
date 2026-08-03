@@ -202,7 +202,7 @@
         "other": "Você tem {count} hábitos pendentes hoje."
     },
     "pendingBadgeTitle": "Hábitos pendentes",
-    "notificationChangePending": "A alteração terá efeito após reiniciar o app.",
+    "notificationChangePending": "Ativando notificações…",
     "notificationStatusActivated": "ativado",
     "notificationStatusDeactivated": "desativado",
     "notificationStatusDisabled": "As notificações estão bloqueadas. Você precisa alterar as permissões nas configurações do navegador.",

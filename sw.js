@@ -16,10 +16,8 @@
  * do bundle. Cada deploy gera um CACHE_NAME novo; o handler de `activate` apaga
  * todos os caches antigos, eliminando acúmulo de bundles hasheados obsoletos.
  *
- * PUSH: NÃO vive aqui. OneSignal registra o worker dedicado em
- * /push/onesignal/OneSignalSDKWorker.js (escopo /push/onesignal/), isolado deste
- * SW de escopo `/`. Misturar importScripts do OneSignal neste arquivo quebrou a
- * inscrição em todas as plataformas (install/fetch conflitam com o SDK).
+ * PUSH: NÃO vive aqui. OneSignal registra OneSignalSDKWorker.js com escopo
+ * `/onesignal/`, isolado deste SW de escopo `/`.
  */
 
 const HTML_FALLBACK = '/index.html';
@@ -90,8 +88,8 @@ self.addEventListener('fetch', (event) => {
 
     if (url.pathname.startsWith('/api/')) return;
 
-    // Não interceptar o worker de push nem updates do próprio SW offline.
-    if (url.pathname === '/sw.js' || url.pathname.startsWith('/push/onesignal/')) return;
+    // Não interceptar workers (offline update + push OneSignal).
+    if (url.pathname === '/sw.js' || url.pathname === '/OneSignalSDKWorker.js' || url.pathname.startsWith('/onesignal/') || url.pathname.startsWith('/push/onesignal/')) return;
 
     if (req.mode === 'navigate') {
         event.respondWith(

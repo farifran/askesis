@@ -127,7 +127,8 @@ export function setupEventListeners() {
             markPushPermissionRequested();
             const perm = await requestNotificationPermission();
             if (perm === 'granted') {
-                // Só grava localOptIn dentro de ensurePushSubscribed se a subscription for real.
+                setLocalPushOptIn(true);
+                updateNotificationUI();
                 ensurePushSubscribed()
                     .then(() => updateNotificationUI())
                     .catch((err) => {
@@ -138,7 +139,6 @@ export function setupEventListeners() {
                 setLocalPushOptIn(false);
                 updateNotificationUI();
             } else {
-                // User dismissed/ignored the browser prompt. Keep undecided state for future retries.
                 updateNotificationUI();
             }
         } catch {}
