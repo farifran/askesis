@@ -92,11 +92,13 @@ export function _notifyChanges(fullRebuild = false, immediate = false) {
     });
 }
 
-export function _notifyPartialUIRefresh(date: string) {
+export function _notifyPartialUIRefresh(date: string, immediate = false) {
     invalidateCachesForDateChange(date);
 
     _bumpLastModified();
-    saveState();
+    // immediate=true no toggle de status: a 1ª marcação pós-install não pode
+    // depender só do debounce de 800ms (fechar o app cancela o timer).
+    saveState(immediate);
 
     requestAnimationFrame(() => {
         updateDayVisuals(date);

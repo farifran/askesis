@@ -202,6 +202,48 @@ function cancelPendingSave() {
     }
 }
 
+function hasPendingDebouncedSave(): boolean {
+    return saveTimeout !== undefined || pendingSaveResolve !== null;
+}
+
+/**
+ * Força gravação imediata se houver save debounced pendente.
+ * Crítico em pagehide/visibility hidden: o debounce de 800ms perde a 1ª
+ * marcação se o usuário fechar o PWA logo após instalar.
+ */
+export async function flushPendingSave(suppressSync = true): Promise<void> {
+    if (!hasPendingDebouncedSave() && !activeSavePromise) return;
+    try {
+        await saveState(true, suppressSync);
+    } catch (e) {
+        logger.warn('[Persistence] flushPendingSave failed', e);
+    }
+}
+
+let _lifecycleFlushAttached = false;
+
+/**
+ * Garante que mudanças em memória não se percam ao fechar/background o app.
+ * Idempotente — pode ser chamado no boot.
+ */
+export function setupPersistenceLifecycleFlush(): void {
+    if (_lifecycleFlushAttached || typeof window === 'undefined') return;
+    _lifecycleFlushAttached = true;
+
+    const onHide = () => {
+        // Fire-and-forget: pagehide não espera async, mas iniciamos a tx IDB já.
+        void flushPendingSave(true);
+    };
+
+    window.addEventListener('pagehide', onHide);
+    // iOS/Android: ao mandar o PWA para segundo plano.
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') onHide();
+    });
+    // Page Lifecycle API (Chrome): aba freezada.
+    window.addEventListener('freeze', onHide as EventListener);
+}
+
 export async function saveState(immediate = false, suppressSync = false): Promise<void> {
     if (saveTimeout !== undefined) {
         clearTimeout(saveTimeout);

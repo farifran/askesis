@@ -83,7 +83,10 @@ export function migrateState(loadedState: unknown, targetVersion: number): AppSt
                 } else if (typeof v === 'bigint') {
                     bigVal = v;
                 } else {
-                    bigVal = BigInt(v as string);
+                    // Logs no IDB são hex (toString(16)); sem prefixo 0x o BigInt
+                    // interpreta decimal ou falha em dígitos a-f → Map vazio na 1ª carga.
+                    const raw = String(v);
+                    bigVal = /^0x/i.test(raw) ? BigInt(raw) : BigInt('0x' + raw);
                 }
                 return [k, bigVal] as [string, bigint];
             }));

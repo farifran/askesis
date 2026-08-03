@@ -54,7 +54,8 @@ export function toggleHabitStatus(habitId: string, time: TimeOfDay, dateISO: str
     else if (nextStatus === HABIT_STATE.DEFERRED) triggerHaptic('medium');
     else triggerHaptic('selection');
     emitCardStatusChanged({ habitId, time, date: dateISO });
-    _notifyPartialUIRefresh(dateISO);
+    // Persistência imediata: evita perda da 1ª mudança se o app for fechado cedo.
+    _notifyPartialUIRefresh(dateISO, true);
 }
 
 export function markAllHabitsForDate(dateISO: string, status: 'completed' | 'snoozed'): boolean {

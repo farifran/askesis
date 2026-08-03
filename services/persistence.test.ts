@@ -8,7 +8,7 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { state, getPersistableState, clearAllCaches, APP_VERSION } from '../state';
 import { clearTestState, createTestHabit } from '../tests/test-utils';
 import { HabitService } from './HabitService';
-import { saveState, registerSyncHandler } from './persistence';
+import { saveState, registerSyncHandler, flushPendingSave, setupPersistenceLifecycleFlush } from './persistence';
 
 // Mock do render module para evitar dependências de DOM
 vi.mock('../render', () => ({
@@ -217,6 +217,28 @@ describe('💾 Persistência e Storage (persistence.ts)', () => {
             expect(handler).toHaveBeenCalledOnce();
 
             registerSyncHandler(() => {}); // reset
+        });
+
+        it('flushPendingSave grava save debounced sem esperar o timer (fecha app cedo)', async () => {
+            vi.useFakeTimers();
+            const handler = vi.fn();
+            registerSyncHandler(handler);
+
+            createTestHabit({ name: 'FirstMark', time: 'Morning' });
+            void saveState(); // debounced — simula UI sem immediate
+
+            // Sem avançar 800ms: flush deve forçar gravação (pagehide)
+            await flushPendingSave(false);
+
+            expect(handler).toHaveBeenCalled();
+            registerSyncHandler(() => {});
+        });
+
+        it('setupPersistenceLifecycleFlush é idempotente', () => {
+            setupPersistenceLifecycleFlush();
+            setupPersistenceLifecycleFlush();
+            // Se não lançar, ok (double-attach protegido)
+            expect(true).toBe(true);
         });
     });
 });

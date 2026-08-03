@@ -20,7 +20,7 @@ import './css/forms.css';
 import './css/modals.css';
 
 import { state } from './state';
-import { loadState, registerSyncHandler, saveState } from './services/persistence';
+import { loadState, registerSyncHandler, saveState, setupPersistenceLifecycleFlush } from './services/persistence';
 import { renderApp, initI18n, updateUIText, showConfirmationModal } from './render';
 import { setupEventListeners } from './listeners';
 import { handleDayTransition, performArchivalCheck } from './services/habitActions';
@@ -213,7 +213,8 @@ async function loadInitialState() {
 function handleFirstTimeUser() {
     if (!state.hasOnboarded) {
         state.hasOnboarded = true;
-        saveState();
+        // Imediato: cria o store IDB na 1ª abertura (sem esperar debounce).
+        saveState(true);
     }
 }
 
@@ -272,6 +273,8 @@ async function init(loader: HTMLElement | null) {
     await loadInitialState();
     const isFirstTimeUser = !state.hasOnboarded;
 
+    // Flush de saves debounced ao fechar/background (1ª sessão pós-install).
+    setupPersistenceLifecycleFlush();
     setupAppListeners();
     handleFirstTimeUser();
     renderApp(); 
