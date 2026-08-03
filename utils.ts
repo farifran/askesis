@@ -302,15 +302,21 @@ export function simpleMarkdownToHTML(text: string): string {
     return html.join('');
 }
 
-// --- 3rd Party Wrappers ---
+// --- OneSignal (web push) ---
+// Um SW só: sw.js (offline + importScripts do OneSignal). NÃO usar worker/scope
+// separado — no Chromium isso compete com o registro de sw.js e a subscription
+// FCM nunca fica estável. Safari/APNs mascarava o problema.
 const ONESIGNAL_SDK_URL = 'https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js';
 const ONESIGNAL_APP_ID = 'd69cf0b6-bc03-4375-b3b7-dd7b37e05a17';
+/** Safari Web ID do app (dashboard OneSignal). */
+const ONESIGNAL_SAFARI_WEB_ID = 'web.onesignal.auto.2465995d-af39-44d0-9727-0f4afeb298e1';
 const ONESIGNAL_OPTIN_STORAGE_KEY = 'askesis_onesignal_opted_in';
 const PUSH_PERMISSION_REQUESTED_KEY = 'askesis_push_permission_requested';
 
 type OneSignalLike = {
     init(options: {
         appId: string;
+        safari_web_id?: string;
         allowLocalhostAsSecureOrigin?: boolean;
         autoResubscribe?: boolean;
         serviceWorkerPath?: string;
@@ -319,7 +325,7 @@ type OneSignalLike = {
     Notifications: {
         addEventListener(event: 'permissionChange', handler: () => void): void;
         requestPermission(): Promise<void>;
-        /** SDK v16: boolean (granted = true). Mantemos string legado por compat. */
+        /** SDK v16: boolean (true = granted). */
         permission?: boolean | 'default' | 'denied' | 'granted';
     };
     User: {
@@ -370,7 +376,7 @@ export function getPushPermissionRequestAgeMs(): number | null {
     try {
         const raw = localStorage.getItem(PUSH_PERMISSION_REQUESTED_KEY);
         if (!raw) return null;
-        // Backward compatibility: old boolean marker means "requested long ago".
+        // Marcador legado booleano "1" = pedido antigo.
         if (raw === '1') return Number.POSITIVE_INFINITY;
         const ts = Number(raw);
         if (!Number.isFinite(ts) || ts <= 0) return Number.POSITIVE_INFINITY;
@@ -386,23 +392,10 @@ export function markPushPermissionRequested() {
     } catch {}
 }
 
-/**
- * Limpa todo o estado de push persistido no localStorage.
- * Usado para resetar estado stale após reinstalação do PWA (iOS Safari preserva
- * localStorage ao desinstalar, mas reseta Notification.permission para 'default').
- */
-export function clearPushPermissionState() {
-    try {
-        localStorage.removeItem(ONESIGNAL_OPTIN_STORAGE_KEY);
-        localStorage.removeItem(PUSH_PERMISSION_REQUESTED_KEY);
-    } catch {}
-}
-
 // --- Notification helpers (typed wrappers to avoid unsafe casts) ---
 export function getNotificationPermission(): NotificationPermission {
     try {
         if (typeof Notification === 'undefined') return 'default';
-        // Some environments expose Notification.permission as a string; guard and coerce
         const maybe = (Notification as unknown) as { permission?: NotificationPermission };
         return maybe.permission ?? 'default';
     } catch {
@@ -441,24 +434,26 @@ function _loadScript(src: string): Promise<void> {
     });
 }
 
+/** Roda callback se o SDK já estiver no window (sem lazy-load). */
 export function pushToOneSignal(callback: (oneSignal: OneSignalLike) => void) {
-    // Zero-deps por padrão: NÃO faz lazy-load automaticamente.
     if (typeof window === 'undefined') return;
     const oneSignalWindow = window as OneSignalWindow;
     if (typeof oneSignalWindow.OneSignal === 'undefined') return;
     callback(oneSignalWindow.OneSignal);
 }
 
+/**
+ * Carrega e inicializa o OneSignal Web SDK (uma vez).
+ * O service worker de push é o mesmo do app: sw.js no escopo `/`.
+ */
 export async function ensureOneSignalReady(): Promise<OneSignalLike> {
     if (typeof window === 'undefined') throw new Error('OneSignal unavailable');
     const oneSignalWindow = window as OneSignalWindow;
-    // Só reutiliza se a init já concluiu (promise resolvida). Antes disso o SDK
-    // pode expor `window.OneSignal` sem PushSubscription utilizável.
+
     if (_oneSignalInitPromise) {
         try {
             return await _oneSignalInitPromise;
         } catch (e) {
-            // Permite nova tentativa após falha (rede, SW, CSP).
             _oneSignalInitPromise = null;
             throw e;
         }
@@ -474,35 +469,23 @@ export async function ensureOneSignalReady(): Promise<OneSignalLike> {
                 try {
                     await OneSignal.init({
                         appId: ONESIGNAL_APP_ID,
+                        safari_web_id: ONESIGNAL_SAFARI_WEB_ID,
                         allowLocalhostAsSecureOrigin: true,
-                        // Re-inscreve visitantes que limparam cache / migraram de SW.
                         autoResubscribe: true,
-                        // Sem estes campos o SDK registra /OneSignalSDKWorker.js no
-                        // escopo '/', o que (a) recebia HTML do catch-all da Vercel,
-                        // abortando a inscrição, e (b) substituiria o sw.js do app.
-                        // O escopo dedicado '/onesignal/' isola o worker de push.
-                        serviceWorkerPath: 'OneSignalSDKWorker.js',
-                        serviceWorkerParam: { scope: '/onesignal/' },
+                        // Mesmo arquivo e escopo do PWA: o app já registra sw.js no boot.
+                        // Apontar o SDK para cá evita um segundo worker e a race no Chromium.
+                        serviceWorkerPath: 'sw.js',
+                        serviceWorkerParam: { scope: '/' },
                     });
                     resolve(OneSignal);
-                } catch (e: any) {
+                } catch (e: unknown) {
                     reject(e);
                 }
             });
         });
 
         await _loadScript(ONESIGNAL_SDK_URL);
-        const oneSignal = await ready;
-        try {
-            const optedIn = !!oneSignal?.User?.PushSubscription?.optedIn;
-            // Só persiste quando o SDK confirma opt-in. Se optedIn=false logo após a init
-            // (race condition: subscription ainda sendo finalizada), não sobrescreve a
-            // intenção explícita do usuário (localOptIn pode ser true ou false).
-            if (optedIn) {
-                setLocalPushOptIn(true);
-            }
-        } catch {}
-        return oneSignal;
+        return await ready;
     })();
 
     try {
@@ -516,43 +499,27 @@ export async function ensureOneSignalReady(): Promise<OneSignalLike> {
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /**
- * Finaliza a inscrição push no OneSignal (token FCM/APNs + status subscribed).
- *
- * Por que existe: no Chrome (sobretudo Android), conceder `Notification.permission`
- * e só chamar `Notifications.requestPermission()` NÃO garante subscription no
- * OneSignal quando a permissão nativa já foi pedida fora do SDK. É preciso
- * `User.PushSubscription.optIn()` para criar o token e registrar o dispositivo.
- *
- * @returns se o SDK reporta optedIn=true ao final (pode ainda estar em race curta)
+ * Garante subscription push no OneSignal (token FCM/APNs + optedIn).
+ * Chamar após permissão nativa granted (ou dentro de gesto se ainda default).
+ * optIn() cria/restaura o token; só requestPermission não basta no Chromium.
  */
 export async function ensurePushSubscribed(): Promise<{ optedIn: boolean; subscriptionId?: string | null }> {
     const OneSignal = await ensureOneSignalReady();
 
     try {
-        await OneSignal.Notifications.requestPermission?.();
-    } catch (err) {
-        logger.warn('OneSignal requestPermission failed', err);
-    }
-
-    try {
-        // Com permissão já granted: marca subscribed e/ou obtém token se faltar.
-        // Com permissão default: tenta o prompt nativo (pode falhar fora de gesto).
-        await OneSignal.User.PushSubscription.optIn?.();
+        await OneSignal.User.PushSubscription.optIn();
     } catch (err) {
         logger.warn('OneSignal optIn failed', err);
     }
 
-    // A criação do token/subscription costuma ser assíncrona no Chromium.
+    // Token/id chegam de forma assíncrona no Chromium após optIn.
     let optedIn = !!OneSignal.User.PushSubscription.optedIn;
     let subscriptionId = OneSignal.User.PushSubscription.id ?? null;
-    for (let i = 0; i < 8 && !optedIn; i++) {
-        await sleep(250);
-        optedIn = !!OneSignal.User.PushSubscription.optedIn;
+    for (let i = 0; i < 10 && !(optedIn && subscriptionId); i++) {
+        await sleep(300);
+        optedIn = !!OneSignal.User.PushSubscription.optedIn
+            || !!OneSignal.User.PushSubscription.token;
         subscriptionId = OneSignal.User.PushSubscription.id ?? null;
-        // Token presente sem optedIn ainda conta como progresso de inscrição.
-        if (!optedIn && OneSignal.User.PushSubscription.token) {
-            optedIn = true;
-        }
     }
 
     if (optedIn) {

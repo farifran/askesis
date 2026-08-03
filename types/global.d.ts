@@ -35,6 +35,7 @@ declare global {
     interface OneSignalLike {
         init(options: {
             appId: string;
+            safari_web_id?: string;
             allowLocalhostAsSecureOrigin?: boolean;
             autoResubscribe?: boolean;
             serviceWorkerPath?: string;

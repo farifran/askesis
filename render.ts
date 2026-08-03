@@ -290,18 +290,15 @@ export function updateNotificationUI() {
     }
 
     pushToOneSignal((OneSignal: OneSignalLike) => {
+        // Com SDK carregado, só o OneSignal manda: localOptIn sozinho mentia "ligado"
+        // no Chrome quando a subscription FCM nunca existiu.
         const isPushEnabled = !!OneSignal.User.PushSubscription.optedIn;
-        // SDK v16: permission é boolean; nativo usa string 'denied'|'granted'|'default'.
         const sdkPerm = OneSignal.Notifications.permission;
         const nativePerm = (typeof Notification !== 'undefined') ? Notification.permission : 'default';
         const localOptIn = getLocalPushOptIn();
-        // updateNotificationUI é somente leitura: nunca escreve no localStorage.
-        // Quem persiste o estado são os fluxos explícitos de opt-in/opt-out.
-        // effectiveEnabled: SDK confirma opt-in, OU permissão concedida e usuário optou explicitamente.
-        // Quando o SDK reporta optedIn=false por race condition pós-optOut(), localOptIn já foi
-        // escrito como false pelo fluxo de opt-out, então effectiveEnabled=false corretamente.
-        const effectiveEnabled = isPushEnabled || (nativePerm === 'granted' && localOptIn === true);
-        if (ui.notificationToggle.checked !== !!effectiveEnabled) ui.notificationToggle.checked = !!effectiveEnabled;
+        // Opt-out explícito (local false) vence race em que o SDK ainda diz optedIn.
+        const effectiveEnabled = localOptIn === false ? false : isPushEnabled;
+        if (ui.notificationToggle.checked !== effectiveEnabled) ui.notificationToggle.checked = effectiveEnabled;
         const isDenied = nativePerm === 'denied' || sdkPerm === 'denied';
         if (ui.notificationToggle.disabled !== isDenied) {
             ui.notificationToggle.disabled = isDenied;
@@ -310,6 +307,7 @@ export function updateNotificationUI() {
         let statusTextKey = 'notificationStatusOptedOut';
         if (isDenied) statusTextKey = 'notificationStatusDisabled';
         else if (effectiveEnabled) statusTextKey = 'notificationStatusEnabled';
+        else if (localOptIn === true && nativePerm === 'granted') statusTextKey = 'notificationChangePending';
         setTextContent(ui.notificationStatusDesc, t(statusTextKey));
     });
 }

@@ -641,8 +641,8 @@ Conflicts: remote decryption, merge with LWW/deduplication, persistence and retr
 ├── listeners.ts         # Listeners setup (bootstrap)
 ├── index.tsx            # Entry point
 ├── index.html           # App Shell (Critical Render Path)
-├── sw.js                # Service Worker (offline, per-build versioned cache)
-└── OneSignalSDKWorker.js # Dedicated push worker (/onesignal/ scope)
+├── sw.js                 # Single SW: offline + OneSignal push (importScripts)
+└── OneSignalSDKWorker.js # Legacy/compat (new push uses sw.js)
 ```
 
 <a id="en-project-structure"></a>

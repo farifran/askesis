@@ -164,8 +164,7 @@ let isInitialized = false;
 const registerServiceWorker = () => {
     if ('serviceWorker' in navigator && !window.location.protocol.startsWith('file')) {
         const loadSW = () => {
-            // Caminho relativo garante mesma origem em subdiretórios/proxies.
-            // Push não passa por este SW: vive no worker da OneSignal ('/onesignal/').
+            // SW único (offline + push OneSignal via importScripts). Escopo `/`.
             navigator.serviceWorker.register('./sw.js')
                 .then(registration => {
                     logger.info('Service Worker registered with scope:', registration.scope);
@@ -244,11 +243,7 @@ function finalizeInit(loader: HTMLElement | null) {
     const runBackgroundTasks = () => {
         performArchivalCheck();
 
-        // Se o usuário já optou por notificações, re-inscreve no OneSignal.
-        // Só init NÃO basta no Chrome Android: se a permissão já está granted mas o
-        // token FCM nunca foi criado (ou foi perdido), optIn() completa a subscription
-        // sem reabrir o prompt nativo. requestPermission nativo NÃO é chamado aqui
-        // (fora de gesto — iOS Safari PWA bloqueia / conflita com o toggle).
+        // Re-inscreve push se o usuário já optou (sem prompt nativo — fora de gesto).
         const permission = getNotificationPermission();
         if (getLocalPushOptIn() === true && permission === 'granted') {
             ensurePushSubscribed().catch((err) => logger.warn('Boot push resubscribe failed', err));

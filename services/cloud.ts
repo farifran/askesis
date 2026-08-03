@@ -10,11 +10,11 @@
 
 import { AppState, state, getPersistableState } from '../state';
 import { loadState, persistStateLocally } from './persistence';
-import { pushToOneSignal, createDebounced, logger, escapeHTML } from '../utils';
+import { createDebounced, logger, escapeHTML } from '../utils';
 import { ui } from '../render/ui';
 import { t } from '../i18n';
 import { hasLocalSyncKey, getSyncKey, apiFetch } from './api';
-import { renderApp, updateNotificationUI } from '../render';
+import { renderApp } from '../render';
 import { showConfirmationModal } from '../render/modals';
 import { mergeStates, buildDedupModalContext } from './dataMerge';
 import { HabitService } from './HabitService';

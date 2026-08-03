@@ -5,11 +5,13 @@
 
 /**
  * @file OneSignalSDKWorker.js
- * @description Service worker dedicado da OneSignal (push).
+ * @description Compat / migração do worker legado de push.
  *
- * Registrado pelo SDK v16 com escopo restrito '/onesignal/' (ver
- * ensureOneSignalReady em utils.ts) para coexistir com o SW principal do app
- * (sw.js, escopo '/'): este cuida apenas de push/notification-click da
- * OneSignal; o offline e o badge local continuam no sw.js.
+ * O push ativo agora vive em sw.js (importScripts do SDK OneSignal + offline).
+ * Mantemos este arquivo na raiz para:
+ *  1) clients antigos que ainda têm registration em /OneSignalSDKWorker.js
+ *  2) smoke test e o default do dashboard OneSignal (workerName neste path)
+ *
+ * Novas inscrições usam serviceWorkerPath: 'sw.js' (ver ensureOneSignalReady).
  */
 importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js');

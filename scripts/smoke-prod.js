@@ -64,19 +64,22 @@ async function main() {
         assertAsset(`bundle CSS existe`, await get(`/${cssName}`), { expectType: 'css' });
     }
 
-    // 2. Service worker: hash injetado + precache consistente
+    // 2. Service worker único: offline + OneSignal (importScripts) + hash de build
     const sw = await get('/sw.js');
-    assertAsset('sw.js com hash de build injetado', sw, {
+    assertAsset('sw.js com hash de build + OneSignal push', sw, {
         expectType: 'javascript',
-        mustContain: jsName ? [jsName] : [],
+        mustContain: [
+            ...(jsName ? [jsName] : []),
+            'cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js',
+        ],
         mustNotContain: ['__BUILD_HASH__']
     });
     for (const chunk of new Set(sw.body.match(/chunk-[A-Za-z0-9]+\.js/g) || [])) {
         assertAsset(`chunk precacheado ${chunk} existe`, await get(`/${chunk}`), { expectType: 'javascript' });
     }
 
-    // 3. Workers e boot — os "nunca funcionaram em produção" históricos
-    assertAsset('OneSignalSDKWorker.js é JS real com o SDK', await get('/OneSignalSDKWorker.js'), {
+    // 3. Worker legado OneSignal (migração) + boot
+    assertAsset('OneSignalSDKWorker.js legado ainda acessível', await get('/OneSignalSDKWorker.js'), {
         expectType: 'javascript', mustContain: 'cdn.onesignal.com'
     });
     assertAsset('boot/error-handler.js chega à produção', await get('/boot/error-handler.js'), {

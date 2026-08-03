@@ -133,7 +133,7 @@ const _handleResetAppClick = () => {
     );
 };
 
-// Async helper chamado após obter a permissão (ou já possuí-la).
+// Após permissão nativa (ou já granted): grava intenção e finaliza subscription OneSignal.
 const _enableNotificationsAsync = async (perm: string) => {
     try {
         if (perm !== 'granted') {
@@ -145,59 +145,45 @@ const _enableNotificationsAsync = async (perm: string) => {
 
         ui.notificationToggle.disabled = true;
         setTextContent(ui.notificationStatusDesc, t('notificationChangePending'));
-
-        // Intenção local imediata (UI/boot). A subscription real no OneSignal
-        // só completa com ensurePushSubscribed (optIn + token FCM no Chromium).
         setLocalPushOptIn(true);
-        updateNotificationUI();
 
         const { optedIn } = await ensurePushSubscribed();
-        if (!optedIn && getNotificationPermission() !== 'granted') {
+        if (!optedIn) {
+            // Mantém intenção local se permissão segue granted (boot tenta de novo);
+            // se permissão sumiu, desliga de vez.
+            if (getNotificationPermission() !== 'granted') {
+                ui.notificationToggle.checked = false;
+                setLocalPushOptIn(false);
+                setTextContent(ui.notificationStatusDesc, t('notificationStatusOptedOut'));
+            }
+        }
+    } catch (err) {
+        logger.warn('Enable notifications failed', err);
+        if (getNotificationPermission() !== 'granted') {
             ui.notificationToggle.checked = false;
             setLocalPushOptIn(false);
             setTextContent(ui.notificationStatusDesc, t('notificationStatusOptedOut'));
         }
-        // Se permissão segue granted mas optedIn=false (race/rede), mantém intenção
-        // local true: o boot e reaberturas chamam ensurePushSubscribed de novo.
-    } catch (err) {
-        logger.warn('Enable notifications failed', err);
-        const nativePerm = getNotificationPermission();
-        if (nativePerm !== 'granted') {
-            ui.notificationToggle.checked = false;
-            setLocalPushOptIn(false);
-        }
-        setTextContent(ui.notificationStatusDesc, t('notificationStatusOptedOut'));
     } finally {
         ui.notificationToggle.disabled = false;
         updateNotificationUI();
     }
 };
 
-// iOS Safari PWA CRÍTICO: esta função NÃO pode ser async.
-// O WebKit exige que Notification.requestPermission() seja chamado sincronamente dentro
-// de um handler de gesto do usuário sem nenhum contexto async antes.
-// Usar async/await aqui faz o token de ativação do usuário não ser propagado
-// corretamente, causando o diálogo de permissão não aparecer intermitentemente.
+// iOS Safari PWA: NÃO async. requestPermission nativo deve rodar no mesmo tick do gesto.
 const _handleNotificationToggleChange = () => {
     const wantsEnabled = ui.notificationToggle.checked;
 
     if (!wantsEnabled) {
-        // Desativar: não requer gesto do usuário, pode ser async.
         (async () => {
             ui.notificationToggle.disabled = true;
             setTextContent(ui.notificationStatusDesc, t('notificationChangePending'));
+            setLocalPushOptIn(false);
             try {
                 const OneSignal = await ensureOneSignalReady();
                 await OneSignal.User.PushSubscription.optOut();
-                setLocalPushOptIn(false);
-                if ('serviceWorker' in navigator) {
-                    navigator.serviceWorker.register('./sw.js').catch(() => {});
-                }
             } catch {
-                // Persiste opt-out mesmo em caso de falha do SDK (sem conexão, timeout, etc.)
-                // para que updateNotificationUI() não releia localOptIn=true e reative o toggle.
-                setLocalPushOptIn(false);
-                setTextContent(ui.notificationStatusDesc, t('notificationStatusOptedOut'));
+                // Opt-out local já persistido; falha de rede/SDK não reativa o toggle.
             } finally {
                 ui.notificationToggle.disabled = false;
                 updateNotificationUI();
@@ -206,22 +192,14 @@ const _handleNotificationToggleChange = () => {
         return;
     }
 
-    const currentPerm: string = getNotificationPermission();
-
-    // Chama requestPermission() SINCRONAMENTE dentro do gesto do usuário (sem async antes).
-    // Isso garante compatibilidade com iOS Safari PWA e qualquer browser com restrição de gesto.
+    const currentPerm = getNotificationPermission();
     let permPromise: Promise<string>;
     if (currentPerm === 'default' && typeof Notification !== 'undefined') {
-        const req = (Notification as any).requestPermission;
-        if (typeof req === 'function') {
-            try {
-                // requestPermission may return a Promise<string> or a string (older browsers).
-                const res = req.call(Notification);
-                permPromise = Promise.resolve(res as any);
-            } catch {
-                permPromise = Promise.resolve(currentPerm);
-            }
-        } else {
+        try {
+            const res = (Notification as { requestPermission?: () => Promise<NotificationPermission> | NotificationPermission })
+                .requestPermission?.call(Notification);
+            permPromise = Promise.resolve(res as string ?? currentPerm);
+        } catch {
             permPromise = Promise.resolve(currentPerm);
         }
     } else {
@@ -229,10 +207,9 @@ const _handleNotificationToggleChange = () => {
     }
 
     permPromise
-        .then(perm => _enableNotificationsAsync(perm))
+        .then((perm) => _enableNotificationsAsync(perm))
         .catch(() => {
-            const nativePerm = (typeof Notification !== 'undefined') ? (Notification as any).permission : 'default';
-            if (nativePerm !== 'granted') {
+            if (getNotificationPermission() !== 'granted') {
                 ui.notificationToggle.checked = false;
                 setLocalPushOptIn(false);
             }

@@ -144,9 +144,8 @@ async function build() {
     await fs.promises.writeFile(path.join(OUT_DIR, 'index.html'), html);
 
     await copyFile('manifest.json', path.join(OUT_DIR, 'manifest.json'));
-    // Worker dedicado da OneSignal (push). Sem ele em produção, o SDK tenta
-    // registrar /OneSignalSDKWorker.js, o catch-all da Vercel devolve HTML e a
-    // inscrição de push falha silenciosamente.
+    // Compat: clients antigos e default do dashboard OneSignal ainda pedem este path.
+    // Push novo usa sw.js (importScripts do SDK). Manter o arquivo evita 404 em update.
     await copyFile('OneSignalSDKWorker.js', path.join(OUT_DIR, 'OneSignalSDKWorker.js'));
 
     // Processa sw.js: injeta nomes hasheados no CACHE_FILES e o hash de build no
