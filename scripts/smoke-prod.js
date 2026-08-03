@@ -118,6 +118,13 @@ async function main() {
     const missing = required.filter(h => !secured.headers.get(h));
     if (missing.length === 0) ok('headers de segurança aplicados');
     else fail('headers de segurança', `ausentes: ${missing.join(', ')}`);
+    // OneSignal carrega config via JSONP em api.onesignal.com — sem isso o init trava.
+    const csp = secured.headers.get('content-security-policy') || '';
+    if (csp.includes('api.onesignal.com') && csp.includes('cdn.onesignal.com')) {
+        ok('CSP permite scripts OneSignal (cdn + api JSONP)');
+    } else {
+        fail('CSP OneSignal', 'script-src precisa de cdn.onesignal.com e api.onesignal.com');
+    }
 
     const ghost = await get(`/nao-existe-${Date.now()}.js`);
     if (ghost.status === 404) ok('arquivo ausente responde 404 (sem disfarce de HTML)');

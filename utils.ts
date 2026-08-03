@@ -551,8 +551,9 @@ function _readSubscription(OneSignal: OneSignalLike): { optedIn: boolean; subscr
     const sub = OneSignal.User.PushSubscription;
     const subscriptionId = sub.id ?? null;
     const token = sub.token ?? null;
-    // Subscrição real no dashboard exige optedIn; token/id sozinhos podem ser estado parcial.
-    const optedIn = !!sub.optedIn && (!!subscriptionId || !!token);
+    // optedIn do SDK é a fonte de verdade; id/token chegam assíncronos mas optedIn
+    // true já indica subscription criada no OneSignal (salvo Push API indisponível).
+    const optedIn = !!sub.optedIn;
     return { optedIn, subscriptionId, token };
 }
 
