@@ -62,6 +62,24 @@ function json(status: number, body: Record<string, unknown>): Response {
     });
 }
 
+interface OneSignalResponse {
+    id?: string;
+    recipients?: number;
+    /** Ora um array de mensagens, ora um objeto com listas por tipo de erro. */
+    errors?: string[] | Record<string, unknown>;
+}
+
+/** Normaliza as duas formas de `errors` da OneSignal numa lista de mensagens. */
+export function extractErrors(body: OneSignalResponse): string[] {
+    const { errors } = body;
+    if (!errors) return [];
+    if (Array.isArray(errors)) return errors.map(String);
+    if (typeof errors === 'object') {
+        return Object.entries(errors).map(([key, value]) => `${key}: ${JSON.stringify(value)}`);
+    }
+    return [];
+}
+
 /**
  * Chave de idempotência determinística por data (UTC): se o cron reexecutar no
  * mesmo dia (retry/redeploy), a OneSignal deduplica em vez de enviar duas vezes.
@@ -118,7 +136,6 @@ export default async function handler(req: Request) {
         // Vira o `tag` da Notification no navegador. É o que permite ao
         // OneSignalSDKWorker.js substituir este texto genérico pelo lembrete
         // personalizado montado no aparelho, sem empilhar duas notificações.
-        // Mesma tag do badge local (services/badge.ts) para colapsarem numa só.
         web_push_topic: NOTIFICATION_TAG,
         idempotency_key: await idempotencyKeyForDate(todayISO)
     };
@@ -133,12 +150,40 @@ export default async function handler(req: Request) {
             body: JSON.stringify(payload)
         });
 
-        const body = await res.json().catch(() => ({}));
+        const body = await res.json().catch(() => ({})) as OneSignalResponse;
+
         if (!res.ok) {
+            console.error('[reminder] OneSignal recusou a requisição', { status: res.status, body });
             return json(502, { error: 'OneSignal request failed', status: res.status, details: body });
         }
-        return json(200, { ok: true, date: todayISO, id: (body as { id?: string }).id ?? null });
+
+        // HTTP 200 NÃO significa notificação criada: a OneSignal responde 200 com
+        // `errors` quando aceita a requisição e não cria nada (segmento sem
+        // destinatários elegíveis, por exemplo). Sem esta checagem o cron reporta
+        // sucesso todo dia enquanto ninguém recebe nada.
+        const errors = extractErrors(body);
+        if (errors.length > 0 || !body.id) {
+            console.error('[reminder] OneSignal aceitou sem criar notificação', {
+                errors,
+                recipients: body.recipients ?? null,
+                body
+            });
+            return json(502, {
+                error: 'OneSignal accepted the request without creating a notification',
+                errors,
+                recipients: body.recipients ?? null
+            });
+        }
+
+        console.log('[reminder] notificação criada', {
+            id: body.id,
+            recipients: body.recipients ?? null,
+            date: todayISO,
+            deliveryTime
+        });
+        return json(200, { ok: true, date: todayISO, id: body.id, recipients: body.recipients ?? null });
     } catch (error) {
+        console.error('[reminder] falha ao chamar a OneSignal', error);
         return json(502, { error: 'OneSignal request failed', details: String(error).slice(0, 200) });
     }
 }

@@ -98,7 +98,7 @@ describe('api/reminder', () => {
 
     it('usa auth Basic para chaves legadas', async () => {
         process.env.ONESIGNAL_REST_API_KEY = 'legacy_key_abc';
-        fetchMock.mockResolvedValueOnce(new Response('{}', { status: 200 }));
+        fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ id: 'notif-1' }), { status: 200 }));
 
         const mod = await import('./reminder');
         await mod.default(makeRequest({ authorization: 'Bearer segredo' }));
@@ -111,5 +111,55 @@ describe('api/reminder', () => {
         const mod = await import('./reminder');
         const res = await mod.default(makeRequest({ authorization: 'Bearer segredo' }));
         expect(res.status).toBe(502);
+    });
+
+    // A OneSignal responde 200 mesmo quando não cria notificação nenhuma.
+    // Tratar isso como sucesso fazia o cron reportar OK todo dia enquanto
+    // ninguém recebia nada — e o log da Vercel mostrava 200.
+    it('trata 200 com "errors" como falha (aceitou e não criou nada)', async () => {
+        fetchMock.mockResolvedValueOnce(new Response(
+            JSON.stringify({ errors: ['All included players are not subscribed'] }),
+            { status: 200 }
+        ));
+
+        const mod = await import('./reminder');
+        const res = await mod.default(makeRequest({ authorization: 'Bearer segredo' }));
+
+        expect(res.status).toBe(502);
+        const body = await res.json();
+        expect(body.errors).toContain('All included players are not subscribed');
+    });
+
+    it('trata 200 sem id como falha', async () => {
+        fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ recipients: 0 }), { status: 200 }));
+
+        const mod = await import('./reminder');
+        const res = await mod.default(makeRequest({ authorization: 'Bearer segredo' }));
+
+        expect(res.status).toBe(502);
+        expect((await res.json()).recipients).toBe(0);
+    });
+
+    it('reporta o número de destinatários no sucesso', async () => {
+        fetchMock.mockResolvedValueOnce(new Response(
+            JSON.stringify({ id: 'notif-1', recipients: 7 }),
+            { status: 200 }
+        ));
+
+        const mod = await import('./reminder');
+        const res = await mod.default(makeRequest({ authorization: 'Bearer segredo' }));
+
+        expect(res.status).toBe(200);
+        const body = await res.json();
+        expect(body).toMatchObject({ ok: true, id: 'notif-1', recipients: 7 });
+    });
+
+    it('normaliza as duas formas de "errors" da OneSignal', async () => {
+        const { extractErrors } = await import('./reminder');
+
+        expect(extractErrors({ errors: ['a', 'b'] })).toEqual(['a', 'b']);
+        expect(extractErrors({ errors: { invalid_player_ids: ['x'] } }))
+            .toEqual(['invalid_player_ids: ["x"]']);
+        expect(extractErrors({ id: 'ok' })).toEqual([]);
     });
 });
