@@ -19,8 +19,8 @@ Comando usado: `npm test -- --run`
 
 <!-- INVENTARIO:INICIO -->
 
-- **Arquivos de teste:** 38
-- **Testes totais:** 493
+- **Arquivos de teste:** 40
+- **Testes totais:** 533
 
 > Gerado por `node scripts/update-test-inventory.js` a partir de execução real.
 > Não editar à mão: `--check` falha o CI quando divergir.
@@ -29,7 +29,7 @@ Comando usado: `npm test -- --run`
 
 - `api/_httpSecurity.test.ts` → 5
 - `api/analyze.test.ts` → 5
-- `api/reminder.test.ts` → 6
+- `api/reminder.test.ts` → 14
 - `api/sync.test.ts` → 10
 
 ### `data`
@@ -45,7 +45,7 @@ Comando usado: `npm test -- --run`
 ### `raiz`
 
 - `i18n.test.ts` → 26
-- `utils.test.ts` → 44
+- `utils.test.ts` → 46
 
 ### `render`
 
@@ -61,13 +61,14 @@ Comando usado: `npm test -- --run`
 - `services/cloudDataMerge.integration.test.ts` → 2
 - `services/compression.test.ts` → 16
 - `services/crypto.test.ts` → 26
-- `services/dataMerge.test.ts` → 27
+- `services/dataMerge.test.ts` → 30
 - `services/exportFiltering.test.ts` → 1
 - `services/habitActions.test.ts` → 29
-- `services/HabitService.test.ts` → 16
+- `services/HabitService.test.ts` → 22
 - `services/importExport.test.ts` → 1
-- `services/migration.test.ts` → 20
-- `services/persistence.test.ts` → 11
+- `services/migration.test.ts` → 21
+- `services/notificationCard.test.ts` → 8
+- `services/persistence.test.ts` → 13
 - `services/quoteEngine.test.ts` → 13
 - `services/selectors.test.ts` → 24
 - `services/stateUIConsistency.test.ts` → 35
@@ -76,11 +77,12 @@ Comando usado: `npm test -- --run`
 
 - `tests/property/cacheCoherence.property.test.ts` → 5
 - `tests/property/merge.property.test.ts` → 1
+- `tests/pushWorker.test.ts` → 9
 - `tests/render.dom.test.ts` → 2
 - `tests/render.sanitize.test.ts` → 2
 - `tests/scenario-test-1-user-journey.test.ts` → 3
 - `tests/scenario-test-2-sync-conflicts.test.ts` → 5
-- `tests/scenario-test-3-security-pentest.test.ts` → 42
+- `tests/scenario-test-3-security-pentest.test.ts` → 43
 - `tests/scenario-test-4-cloud-network-resilience.test.ts` → 33
 - `tests/scenario-test-5-streak-graduation.test.ts` → 10
 
