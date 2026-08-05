@@ -22,10 +22,16 @@ importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js');
  * POR QUE SUBSTITUIR EM VEZ DE INTERCEPTAR:
  * No SDK v16 o listener de `push` é registrado como função anônima inline, sem
  * referência exportada — `removeEventListener` é impossível. Então deixamos a
- * OneSignal exibir a dela e trocamos o conteúdo em seguida, reusando a MESMA
- * tag: `showNotification` com tag repetida substitui a anterior no lugar de
- * empilhar. A OneSignal define `tag` a partir do `web_push_topic` enviado pela
- * REST API (ver api/reminder.ts).
+ * OneSignal exibir a dela e trocamos o conteúdo em seguida.
+ *
+ * COMO IDENTIFICAMOS O NOSSO PUSH:
+ * Pelo marcador em `data` (REMINDER_MARKER, ver api/reminder.ts), não pela tag.
+ * A primeira versão dependia de `web_push_topic` virar `Notification.tag` —
+ * suposição sobre o interno do SDK que não se confirmou, e que fazia o worker
+ * desistir em silêncio. O marcador chega íntegro ao evento `push`.
+ *
+ * O marcador também evita sequestro: um push de anúncio enviado pelo painel da
+ * OneSignal não o carrega, e portanto não é reescrito com texto de hábitos.
  *
  * Requisito do iOS/Safari: todo push precisa virar notificação visível. Por
  * isso este código nunca "desiste em silêncio" — se o cartão não servir, a
@@ -34,11 +40,7 @@ importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js');
 (function () {
     'use strict';
 
-    // Espelha o web_push_topic enviado por api/reminder.ts. É por essa tag que
-    // trocamos o texto genérico pelo personalizado.
-    // Distinta da tag do badge (services/badge.ts) de propósito: substituição por
-    // tag só vale dentro da MESMA registration, e o badge vive no sw.js.
-    var NOTIFICATION_TAG = 'askesis-reminder';
+    var REMINDER_MARKER = 'askesis-reminder';
 
     // Espelha services/persistence.ts / services/notificationCard.ts.
     var DB_NAME = 'AskesisDB';
@@ -57,13 +59,27 @@ importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js');
     }
 
     /**
-     * Abre o banco SEM informar versão: com versão explícita, um worker mais
-     * antigo que o app dispararia upgrade/bloqueio. Sem ela, apenas anexamos à
-     * versão corrente. IndexedDB é escopado por origem, então o worker de push
-     * (escopo /onesignal/) enxerga o banco do app normalmente.
+     * O marcador pode chegar em lugares diferentes conforme o formato de payload
+     * do SDK (`custom.a` no legado, `data` no novo). Procura em todos.
      */
+    function isReminderPush(event) {
+        try {
+            var payload = event.data ? event.data.json() : null;
+            if (!payload) return false;
+
+            var extra = (payload.custom && payload.custom.a) || payload.data || payload.additionalData;
+            if (extra && extra.askesis === REMINDER_MARKER) return true;
+
+            return payload.topic === REMINDER_MARKER;
+        } catch (e) {
+            return false;
+        }
+    }
+
     function openDB() {
         return new Promise(function (resolve, reject) {
+            // Sem versão explícita: um worker mais antigo que o app dispararia
+            // upgrade/bloqueio. Assim apenas anexamos à versão corrente.
             var req = indexedDB.open(DB_NAME);
             req.onsuccess = function () { resolve(req.result); };
             req.onerror = function () { reject(req.error); };
@@ -87,16 +103,18 @@ importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js');
     }
 
     /**
-     * A OneSignal e este handler correm em paralelo. Esperamos a notificação
-     * dela aparecer antes de trocar — sem isso, se a nossa chegasse primeiro, a
-     * dela sobrescreveria o texto personalizado com o genérico.
+     * Espera a OneSignal publicar a notificação dela. Sem filtro de tag: o que
+     * esta registration exibe é dela, e assim não dependemos de qual tag usou.
+     *
+     * A espera é necessária porque os dois handlers correm em paralelo — se a
+     * nossa chegasse primeiro, a genérica sobrescreveria o texto personalizado.
      */
     function waitForNotification(registration) {
         var deadline = Date.now() + POLL_TIMEOUT_MS;
 
         function attempt() {
-            return registration.getNotifications({ tag: NOTIFICATION_TAG }).then(function (list) {
-                if (list.length > 0) return list[0];
+            return registration.getNotifications().then(function (list) {
+                if (list.length > 0) return list[list.length - 1];
                 if (Date.now() >= deadline) return null;
                 return sleep(POLL_INTERVAL_MS).then(attempt);
             });
@@ -105,6 +123,8 @@ importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js');
     }
 
     self.addEventListener('push', function (event) {
+        if (!isReminderPush(event)) return;
+
         event.waitUntil(
             readCard().then(function (card) {
                 // Cartão de outro dia significa que o app não foi aberto hoje:
@@ -116,9 +136,8 @@ importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js');
                     // uma aqui arriscaria duplicar caso a dela ainda esteja a caminho.
                     if (!existing) return;
 
-                    return self.registration.showNotification(card.title, {
+                    var options = {
                         body: card.body,
-                        tag: NOTIFICATION_TAG,
                         icon: existing.icon || 'icons/icon-192.svg',
                         badge: existing.badge || 'icons/badge.svg',
                         // Substituição silenciosa: a OneSignal já alertou o usuário.
@@ -126,7 +145,18 @@ importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js');
                         // Preserva o payload da OneSignal para o notificationclick
                         // dela continuar abrindo a URL e registrando o clique.
                         data: existing.data
-                    });
+                    };
+
+                    if (existing.tag) {
+                        // Mesma tag substitui no lugar de empilhar.
+                        options.tag = existing.tag;
+                        return self.registration.showNotification(card.title, options);
+                    }
+
+                    // Sem tag não há substituição possível: fecha a original antes,
+                    // senão ficariam duas notificações na bandeja.
+                    existing.close();
+                    return self.registration.showNotification(card.title, options);
                 });
             }).catch(function () {
                 // Falhar aqui só significa manter a notificação genérica.

@@ -57,9 +57,9 @@ describe('api/reminder', () => {
         expect(payload.contents.pt).toContain('hábitos');
         expect(payload.headings.en).toBe('Pending habits');
         expect(payload.idempotency_key).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-a[0-9a-f]{3}-[0-9a-f]{12}$/);
-        // Sem o topic, a OneSignal gera uma tag aleatória e o worker não
-        // consegue substituir o texto genérico pelo lembrete personalizado.
         expect(payload.web_push_topic).toBe('askesis-reminder');
+        // Sem o marcador o worker ignora o push e o texto genérico permanece.
+        expect(payload.data).toEqual({ askesis: 'askesis-reminder' });
 
         // Regressão: agendar por fuso zerava o público elegível ("All included
         // players are not subscribed") e nenhum lembrete chegava. Quem define o
@@ -77,14 +77,14 @@ describe('api/reminder', () => {
         expect(reminderCron.schedule).toBe('0 23 * * *');
     });
 
-    it('servidor e worker de push concordam na mesma tag', async () => {
+    it('servidor e worker de push concordam no marcador', async () => {
         const { readFileSync } = await import('node:fs');
-        const { NOTIFICATION_TAG } = await import('./reminder');
+        const { REMINDER_MARKER } = await import('./reminder');
 
-        // Edge runtime e service worker não podem se importar: a única garantia
-        // possível é comparar o literal.
+        // É o marcador — não a tag — que autoriza a personalização. Edge runtime
+        // e service worker não podem se importar: só resta comparar o literal.
         expect(readFileSync('OneSignalSDKWorker.js', 'utf8'))
-            .toContain(`var NOTIFICATION_TAG = '${NOTIFICATION_TAG}'`);
+            .toContain(`var REMINDER_MARKER = '${REMINDER_MARKER}'`);
     });
 
     it('a tag do lembrete não colide com a do badge local', async () => {
@@ -102,13 +102,27 @@ describe('api/reminder', () => {
         expect(NOTIFICATION_TAG.length).toBeLessThanOrEqual(64);
     });
 
-    it('idempotency key é estável para a mesma data e distinta entre datas', async () => {
+    it('idempotency key é estável na mesma hora e distinta entre horas', async () => {
         const { idempotencyKeyForDate } = await import('./reminder');
-        const a1 = await idempotencyKeyForDate('2026-08-01');
-        const a2 = await idempotencyKeyForDate('2026-08-01');
-        const b = await idempotencyKeyForDate('2026-08-02');
+        const a1 = await idempotencyKeyForDate('2026-08-01T23');
+        const a2 = await idempotencyKeyForDate('2026-08-01T23');
+        const b = await idempotencyKeyForDate('2026-08-02T00');
         expect(a1).toBe(a2);
         expect(a1).not.toBe(b);
+    });
+
+    it('a chave usa granularidade de hora, não de dia', async () => {
+        // Com chave diária a OneSignal devolvia a notificação já criada e nenhum
+        // push novo saía — impossível testar o lembrete duas vezes no mesmo dia.
+        fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ id: 'notif-1' }), { status: 200 }));
+
+        const mod = await import('./reminder');
+        await mod.default(makeRequest({ authorization: 'Bearer segredo' }));
+
+        const now = new Date().toISOString();
+        const payload = JSON.parse(fetchMock.mock.calls[0][1].body);
+        expect(payload.idempotency_key).toBe(await mod.idempotencyKeyForDate(now.slice(0, 13)));
+        expect(payload.idempotency_key).not.toBe(await mod.idempotencyKeyForDate(now.slice(0, 10)));
     });
 
     it('usa auth Basic para chaves legadas', async () => {

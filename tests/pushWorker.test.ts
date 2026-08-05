@@ -13,6 +13,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 
 const TAG = 'askesis-reminder';
+const MARKER = 'askesis-reminder';
 const TODAY = new Date().toISOString().slice(0, 10);
 
 type Card = { date: string; lang: string; title: string; body: string } | null;
@@ -59,8 +60,10 @@ function loadWorker(card: Card, existingNotifications: any[], idbOpts = {}) {
     const selfStub = {
         addEventListener: (type: string, fn: (event: any) => void) => { listeners[type] = fn; },
         registration: {
-            getNotifications: async ({ tag }: { tag: string }) =>
-                existingNotifications.filter(n => n.tag === tag),
+            // Sem filtro devolve tudo — é assim que a API se comporta, e é como
+            // o worker passou a chamar (não depende mais da tag).
+            getNotifications: async (filter?: { tag?: string }) =>
+                filter?.tag ? existingNotifications.filter(n => n.tag === filter.tag) : existingNotifications,
             showNotification: async (title: string, options: any) => { shown.push({ title, options }); }
         }
     };
@@ -68,9 +71,13 @@ function loadWorker(card: Card, existingNotifications: any[], idbOpts = {}) {
     // eslint-disable-next-line no-new-func
     new Function('self', 'indexedDB', source)(selfStub, fakeIndexedDB(card, idbOpts));
 
-    async function firePush() {
+    /** Payload real da OneSignal carrega os dados adicionais em `custom.a`. */
+    async function firePush(payload: unknown = { custom: { a: { askesis: MARKER } } }) {
         let pending: Promise<unknown> = Promise.resolve();
-        listeners.push({ waitUntil: (p: Promise<unknown>) => { pending = p; } });
+        listeners.push({
+            data: { json: () => payload },
+            waitUntil: (p: Promise<unknown>) => { pending = p; }
+        });
         await pending;
     }
 
@@ -105,6 +112,46 @@ describe('OneSignalSDKWorker — personalização local do lembrete', () => {
         expect(shown[0].options.tag).toBe(TAG);
         // Sem renotify a troca é silenciosa: a OneSignal já alertou.
         expect(shown[0].options.renotify).toBe(false);
+    });
+
+    it('ignora push sem o marcador (não sequestra anúncio enviado pelo painel)', async () => {
+        const { firePush, shown } = loadWorker(CARD_HOJE, [oneSignalNotification()]);
+        await firePush({ custom: { a: {} }, alert: 'Novidade no Askesis!' });
+
+        expect(shown).toHaveLength(0);
+    });
+
+    it('aceita o marcador vindo em `data` além de `custom.a`', async () => {
+        const { firePush, shown } = loadWorker(CARD_HOJE, [oneSignalNotification()]);
+        await firePush({ data: { askesis: MARKER } });
+
+        expect(shown).toHaveLength(1);
+    });
+
+    it('substitui mesmo quando a notificação da OneSignal usa outra tag', async () => {
+        // Regressão: a 1ª versão filtrava por tag e desistia em silêncio quando
+        // `web_push_topic` não virava `Notification.tag`.
+        const outraTag = { ...oneSignalNotification(), tag: 'os-uuid-aleatorio' };
+        const { firePush, shown } = loadWorker(CARD_HOJE, [outraTag]);
+        await firePush();
+
+        expect(shown).toHaveLength(1);
+        expect(shown[0].options.tag).toBe('os-uuid-aleatorio');
+    });
+
+    it('fecha a original quando ela não tem tag, para não duplicar', async () => {
+        const closed: boolean[] = [];
+        const semTag = {
+            ...oneSignalNotification(),
+            tag: '',
+            close: () => { closed.push(true); }
+        };
+        const { firePush, shown } = loadWorker(CARD_HOJE, [semTag]);
+        await firePush();
+
+        expect(closed).toHaveLength(1);
+        expect(shown).toHaveLength(1);
+        expect(shown[0].options.tag).toBeUndefined();
     });
 
     it('preserva o data da OneSignal para o clique continuar funcionando', async () => {

@@ -67,6 +67,19 @@ export const NOTIFICATION_TAG = 'askesis-reminder';
  */
 export const TARGET_SEGMENT = 'Total Subscriptions';
 
+/**
+ * Marcador em `data` (dados adicionais) que identifica ESTE push no Service
+ * Worker. É o que autoriza a personalização local.
+ *
+ * Não usamos a `tag` para isso: depender de `web_push_topic` virar
+ * `Notification.tag` é suposição sobre o interno do SDK. O marcador em `data`
+ * chega íntegro ao `push` event e não depende de nada disso.
+ *
+ * Também evita sequestro: um push de anúncio enviado pelo painel não tem este
+ * marcador e portanto não é reescrito com o texto de hábitos.
+ */
+export const REMINDER_MARKER = 'askesis-reminder';
+
 const HEADINGS = {
     en: 'Pending habits',
     pt: 'Hábitos pendentes',
@@ -105,12 +118,17 @@ export function extractErrors(body: OneSignalResponse): string[] {
 }
 
 /**
- * Chave de idempotência determinística por data (UTC): se o cron reexecutar no
- * mesmo dia (retry/redeploy), a OneSignal deduplica em vez de enviar duas vezes.
- * Formato UUID exigido pela API, derivado de SHA-256 da data.
+ * Chave de idempotência determinística por HORA (UTC): se o cron reexecutar
+ * logo em seguida (retry/redeploy), a OneSignal deduplica em vez de enviar duas
+ * vezes. Formato UUID exigido pela API, derivado de SHA-256 do carimbo.
+ *
+ * Granularidade de hora, e não de dia, porque com chave diária a OneSignal
+ * devolve a notificação já criada e NENHUM push novo sai — o que tornava
+ * impossível testar o lembrete mais de uma vez no mesmo dia. Retries do cron
+ * acontecem em minutos, então a hora ainda os cobre.
  */
-export async function idempotencyKeyForDate(dateISO: string): Promise<string> {
-    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`askesis-reminder|${dateISO}`));
+export async function idempotencyKeyForDate(stamp: string): Promise<string> {
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`askesis-reminder|${stamp}`));
     const hex = Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
     // Formata como UUID v4-like (nibbles de versão/variante fixos para validade).
     return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-a${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
@@ -143,7 +161,9 @@ export default async function handler(req: Request) {
     }
 
     const appId = process.env.ONESIGNAL_APP_ID || DEFAULT_APP_ID;
-    const todayISO = new Date().toISOString().slice(0, 10);
+    const now = new Date().toISOString();
+    const todayISO = now.slice(0, 10);
+    const hourStamp = now.slice(0, 13); // YYYY-MM-DDTHH
 
     const payload = {
         app_id: appId,
@@ -154,11 +174,13 @@ export default async function handler(req: Request) {
         // Sem agendamento: quem define o horário é o cron. Ver o cabeçalho.
         // Expira sem entrega após 24h (evita lembrete atrasado no dia seguinte).
         ttl: 86400,
-        // Vira o `tag` da Notification no navegador. É o que permite ao
-        // OneSignalSDKWorker.js substituir este texto genérico pelo lembrete
-        // personalizado montado no aparelho, sem empilhar duas notificações.
+        // Marcador lido pelo OneSignalSDKWorker.js: é ele que autoriza a
+        // substituição deste texto genérico pelo lembrete real do aparelho.
+        data: { askesis: REMINDER_MARKER },
+        // Agrupa as notificações do lembrete numa só quando o navegador honra o
+        // topic. A personalização NÃO depende disto — ver REMINDER_MARKER.
         web_push_topic: NOTIFICATION_TAG,
-        idempotency_key: await idempotencyKeyForDate(todayISO)
+        idempotency_key: await idempotencyKeyForDate(hourStamp)
     };
 
     try {
