@@ -445,6 +445,28 @@ export function pushToOneSignal(callback: (oneSignal: OneSignalLike) => void) {
 /**
  * Carrega o page.js + espera o es6 (init real) e roda OneSignal.init uma vez.
  */
+/**
+ * Força a checagem de atualização do worker de push.
+ *
+ * POR QUE É PRECISO PEDIR EXPLICITAMENTE:
+ * O navegador revalida um service worker quando o usuário navega para uma
+ * página SOB O ESCOPO dele. O worker de push vive em `/onesignal/`, onde não
+ * existe página alguma — abrir o app (`/`) atualiza o `sw.js`, nunca este.
+ * Sem isto, ele só seria revalidado num evento `push` depois de 24h, e uma
+ * correção no lembrete levaria um dia para chegar ao aparelho.
+ *
+ * Falha em silêncio de propósito: é manutenção de fundo, não fluxo do usuário.
+ */
+async function refreshPushWorker(): Promise<void> {
+    try {
+        if (!('serviceWorker' in navigator)) return;
+        const registration = await navigator.serviceWorker.getRegistration('/onesignal/');
+        await registration?.update();
+    } catch (error) {
+        logger.warn('[Push] Falha ao checar atualização do worker de push.', error);
+    }
+}
+
 export async function ensureOneSignalReady(): Promise<OneSignalLike> {
     if (typeof window === 'undefined') throw new Error('OneSignal unavailable');
     const win = window as OneSignalWindow;
@@ -466,6 +488,7 @@ export async function ensureOneSignalReady(): Promise<OneSignalLike> {
                         serviceWorkerPath: 'OneSignalSDKWorker.js',
                         serviceWorkerParam: { scope: '/onesignal/' },
                     });
+                    void refreshPushWorker();
                     resolve(OneSignal);
                 } catch (e: unknown) {
                     const msg = e instanceof Error ? e.message : String(e);
