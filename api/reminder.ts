@@ -53,6 +53,20 @@ const ONESIGNAL_API_URL = 'https://api.onesignal.com/notifications';
  */
 export const NOTIFICATION_TAG = 'askesis-reminder';
 
+/**
+ * Segmento alvo. É o segmento "Default" do app (Audience -> Segments).
+ *
+ * ATENÇÃO: a OneSignal renomeou os segmentos padrão no modelo de usuários novo.
+ * O antigo "Subscribed Users" NÃO existe mais, e mirar um segmento inexistente
+ * não dá erro de validação — a API responde 200 com "All included players are
+ * not subscribed" e não cria nada. Foi assim que o lembrete ficou dias sem
+ * chegar a ninguém enquanto o cron reportava sucesso.
+ *
+ * Se um dia isso quebrar de novo, confira o nome em Audience -> Segments antes
+ * de suspeitar de qualquer outra coisa.
+ */
+export const TARGET_SEGMENT = 'Total Subscriptions';
+
 const HEADINGS = {
     en: 'Pending habits',
     pt: 'Hábitos pendentes',
@@ -133,7 +147,7 @@ export default async function handler(req: Request) {
 
     const payload = {
         app_id: appId,
-        included_segments: ['Subscribed Users'],
+        included_segments: [TARGET_SEGMENT],
         headings: HEADINGS,
         contents: CONTENTS,
         url: 'https://askesis.vercel.app/',
@@ -170,9 +184,13 @@ export default async function handler(req: Request) {
         // sucesso todo dia enquanto ninguém recebe nada.
         const errors = extractErrors(body);
         if (errors.length > 0 || !body.id) {
+            // Inclui alvo e app: a causa quase sempre é um deles, e sem isso no
+            // log só resta conferir o painel na mão.
             console.error('[reminder] OneSignal aceitou sem criar notificação', {
                 errors,
                 recipients: body.recipients ?? null,
+                segment: TARGET_SEGMENT,
+                appId,
                 body
             });
             return json(502, {

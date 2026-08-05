@@ -49,7 +49,10 @@ describe('api/reminder', () => {
         expect(init.headers['Authorization']).toBe('Key os_v2_test_key');
 
         const payload = JSON.parse(init.body);
-        expect(payload.included_segments).toEqual(['Subscribed Users']);
+        // "Subscribed Users" não existe mais no modelo novo da OneSignal, e mirar
+        // um segmento inexistente não dá erro de validação — só resulta em zero
+        // destinatários com HTTP 200.
+        expect(payload.included_segments).toEqual(['Total Subscriptions']);
         expect(payload.ttl).toBe(86400);
         expect(payload.contents.pt).toContain('hábitos');
         expect(payload.headings.en).toBe('Pending habits');
