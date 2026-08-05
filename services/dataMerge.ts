@@ -5,9 +5,7 @@
 
 /**
  * @file services/dataMerge.ts
- * @description Barrel re-export — all logic lives in services/dataMerge/ sub-modules.
- *
- * Consumers continue importing from './dataMerge' with zero breaking changes.
+ * @description API pública do merge — toda a lógica vive em services/dataMerge/.
  */
 
 export type {
@@ -15,9 +13,7 @@ export type {
     DedupCandidate,
     MergeOptions,
     DedupModalContext,
-} from './dataMerge/index';
+} from './dataMerge/types';
 
-export {
-    mergeStates,
-    buildDedupModalContext,
-} from './dataMerge/index';
+export { mergeStates } from './dataMerge/merge';
+export { buildDedupModalContext } from './dataMerge/dedupModal';

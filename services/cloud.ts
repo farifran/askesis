@@ -209,7 +209,7 @@ function updateStoredRemoteStateEtagFromResponse(response: Response) {
 function serializeConflictRecoveryBackup(appState: AppState): string {
     return JSON.stringify({
         ...appState,
-        monthlyLogs: Array.from((appState.monthlyLogs || new Map()).entries()).map(([key, value]) => [key, `0x${value.toString(16)}`])
+        monthlyLogs: Array.from((appState.monthlyLogs || new Map()).entries()).map(([key, value]) => [key, HabitService.serializeLogValue(value)])
     });
 }
 
@@ -355,13 +355,9 @@ function buildAppStateFromDecryptedShards(decryptedShards: Record<string, any>, 
             result.archives[key.replace('archive:', '')] = decryptedShards[key];
         }
         if (key.startsWith('logs:')) {
-            decryptedShards[key].forEach(([k, v]: [string, string]) => {
-                try {
-                    result.monthlyLogs.set(k, BigInt(v));
-                } catch (e) {
-                    logger.warn(`[Sync] Invalid log value for ${k}, skipping.`, e);
-                }
-            });
+            for (const [k, v] of HabitService.deserializeLogs(decryptedShards[key])) {
+                result.monthlyLogs.set(k, v);
+            }
         }
     }
 

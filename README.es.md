@@ -783,74 +783,100 @@ IndexedDB de Askesis almacena datos en **dos columnas separadas**:
 
 **🔗 PATRÓN TOMBSTONE: SOFT DELETE CON SEGURIDAD DE SINC**
 
-Cuando eliminas un hábito, Askesis **no lo borra**. En su lugar, lo marca con una "Tumba" (grave):
+Existen **dos** lápidas independientes, en niveles distintos. Confundirlas lleva a
+conclusiones erróneas sobre el merge, así que conviene separarlas:
+
+**1. Lápida de hábito** (`habit.deletedOn`) — cuando eliminas un hábito:
 
 ```
 ┌───────────────────────────────────────┐
 │ ELIMINAR HÁBITO 'Meditar'             │
 ├───────────────────────────────────────┤
 │ 1. En lugar de: habits.remove(id)     │
-│    Hace:         habit.deletedOn = now │
+│    Hace:        habit.deletedOn = now │
 │                                       │
-│ 2. Marca en bitmask:                  │
-│    Bit 8 (Tombstone) = 1              │
-│    (Fuerza todos los bits a 0)        │
+│ 2. Los logs del hábito se eliminan    │
+│    del Map (HabitService              │
+│    .pruneLogsForHabit)                │
 │                                       │
 │ 3. Beneficio:                         │
 │    - Si sinc no llegó a otra app,     │
 │      recibe DELETE + Sincs            │
-│    - Historia preservada para backup  │
+│    - Historia preservada en archives  │
 │    - Undo posible (re-activar)        │
 └───────────────────────────────────────┘
 ```
 
-**Ejemplo real:**
+**2. Lápida de slot** (bit 2 del bloque de 3 bits) — cuando **desmarcas** un hábito
+en un día/periodo concreto. No proviene de eliminar hábitos: la escribe el propio
+ciclo del checkbox, en el 3er toque.
+
 ```typescript
-// Usuario elimina 'Meditar' en 2025-02-01
-habitActions.requestHabitPermanentDeletion('habit-123');
+// HECHO -> DIFERIDO -> (3er toque) desmarcado
+toggleHabitStatus('habit-123', 'Morning', '2025-02-01');
 
-// En bitmask, 2025-02-01 se convierte en:
-// 100 | 00 | 00 | 00 | 00 = 4 (Tombstone activo)
-
-// Al sincronizar con otro dispositivo:
-// 1. Servidor recibe bit tombstone
-// 2. Propaga DELETE a todos los clientes
-// 3. Historia previa preservada en archives/
+// El bloque de 3 bits de ese slot pasa a 100 (lápida activa, estado 00).
+// HabitService.getStatus() lee la lápida y devuelve 0 (PENDIENTE).
 ```
+
+La lápida de slot existe para distinguir **"nunca marqué"** (`000`) de
+**"marqué y desmarqué"** (`100`) — sin ella, el merge no podría propagar un
+desmarcado a un dispositivo que aún conserva el `HECHO` antiguo.
 
 **🧬 CRDT-LITE: RESOLUCIÓN DE CONFLICTOS SIN SERVIDOR**
 
 Cuando dos dispositivos sincronizan con cambios conflictivos, Askesis resuelve automáticamente **sin necesidad de un servidor autoridad**:
 
 ```
-┌─── Dispositivo A (Offline 2 días) ──────┐
+┌─── Dispositivo A (más reciente) ───────┐
 │ 2025-01-15 Mañana: HECHO               │
-│ 2025-01-16 Tarde: DIFERIDO             │
+│ 2025-01-16 Tarde: (nunca tocado)       │
 └────────────────────────────────────────┘
                 ↓ Reconecta
-┌─── Estado Nube ────────────────────────┐
-│ 2025-01-15 Mañana: DIFERIDO (Dispositivo B)│
-│ 2025-01-16 Tarde: PENDIENTE (Dispositivo B)│ 
+┌─── Dispositivo B (offline 2 días) ─────┐
+│ 2025-01-15 Mañana: DIFERIDO            │
+│ 2025-01-16 Tarde: DIFERIDO             │
 └────────────────────────────────────────┘
                 ↓ Merge (CRDT)
 ┌─── Resultado (Convergencia) ───────────┐
 │ 2025-01-15 Mañana: HECHO ✅            │
-│   (Razón: HECHO > DIFERIDO = más fuerte)│
-│ 2025-01-16 Tarde: DIFERIDO             │
-│   (Razón: DIFERIDO > PENDIENTE = más   │
-│    cercano a completado)               │
+│   (Slot en conflicto: gana el estado   │
+│    con lastModified más reciente)      │
+│ 2025-01-16 Tarde: DIFERIDO ✅          │
+│   (A nunca tocó este slot, así que la  │
+│    edición de B se preserva)           │
 └────────────────────────────────────────┘
 ```
 
-**Semántica de resolución:**
-```
-Precedencia de estado:
-HECHO (01) > DIFERIDO (10) > PENDIENTE (00)
+**Semántica de resolución** (`HabitService.mergeLogValues`):
 
-Lógica: max(a, b) entre los dos valores de 2 bits
+La unidad de resolución es el **bloque de 3 bits** de un slot (hábito × día × periodo):
+
+```
+Bloque del ganador con datos   → gana el bloque del ganador
+Bloque del ganador vacío (000) → hereda el bloque del perdedor
 ```
 
-Esto asegura que el usuario **nunca pierda progreso** al sincronizar.
+El "ganador" es el estado con el `lastModified` más reciente, elegido en `mergeStates`.
+No hay precedencia semántica entre HECHO/DIFERIDO/LÁPIDA: la lápida (`100`) es
+solo otro valor con timestamp, no una prioridad incondicional.
+
+De ahí se derivan dos propiedades:
+
+- **Las ediciones offline en slots distintos conviven.** Un dispositivo que solo
+  tocó el día 16 no sobrescribe el día 15 del otro.
+- **Gana la intención más reciente.** Desmarcar un hábito por error y volver a
+  marcarlo después no se revierte por una lápida obsoleta en otra réplica.
+
+> Nunca uses `winner | loser` para combinar bloques: el OR mezcla bits de estados
+> distintos y fabrica valores inválidos (HECHO `001` | DIFERIDO `010` = `011`).
+
+**Limitación conocida:** el desempate usa el `lastModified` del estado completo, no
+un reloj por slot. Si dos dispositivos editan *el mismo* slot estando ambos offline,
+gana el estado guardado en último lugar — no necesariamente la edición más reciente
+de ese slot concreto. Un reloj por slot costaría ~20× el almacenamiento de los logs
+(ver [ADR-0001](docs/decisions/ADR-0001-bitmask-log-encoding.md)), por lo que se
+descartó deliberadamente.
 
 <b style="display:inline; margin:0; padding:0; border:0;">PRIVACIDAD Y CRIPTOGRAFÍA: DETALLES TÉCNICOS</b>
 

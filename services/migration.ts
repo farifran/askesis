@@ -12,6 +12,7 @@
 import { logger, getTodayUTCIso } from '../utils';
 import { AppState, SyncLog } from '../state';
 import { normalizeHabitMode, normalizeTimesByMode, normalizeFrequencyByMode } from './habitActions';
+import { HabitService } from './HabitService';
 
 /**
  * Migra os bitmasks mensais de 6 bits/dia (v8) para 9 bits/dia (v9).
@@ -70,30 +71,7 @@ export function migrateState(loadedState: unknown, targetVersion: number): AppSt
 
     // 2. SCHEMA HYDRATION (Map/BigInt Reconstruction)
     if (state.monthlyLogs && !(state.monthlyLogs instanceof Map)) {
-        try {
-            const entries = Array.isArray(state.monthlyLogs) 
-                ? state.monthlyLogs 
-                : Object.entries(state.monthlyLogs);
-                
-            state.monthlyLogs = new Map(entries.map(([k, v]: [string, unknown]) => {
-                let bigVal: bigint;
-                const obj = (v !== null && typeof v === 'object') ? v as Record<string, unknown> : null;
-                if (obj && obj['__type'] === 'bigint') {
-                    bigVal = BigInt(obj['val'] as string);
-                } else if (typeof v === 'bigint') {
-                    bigVal = v;
-                } else {
-                    // Logs no IDB são hex (toString(16)); sem prefixo 0x o BigInt
-                    // interpreta decimal ou falha em dígitos a-f → Map vazio na 1ª carga.
-                    const raw = String(v);
-                    bigVal = /^0x/i.test(raw) ? BigInt(raw) : BigInt('0x' + raw);
-                }
-                return [k, bigVal] as [string, bigint];
-            }));
-        } catch (e) {
-            logger.warn("[Migration] Failed to hydrate monthlyLogs", e);
-            state.monthlyLogs = new Map();
-        }
+        state.monthlyLogs = HabitService.deserializeLogs(state.monthlyLogs);
     } else if (!state.monthlyLogs) {
         state.monthlyLogs = new Map();
     }

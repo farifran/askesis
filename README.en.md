@@ -780,76 +780,100 @@ Askesis's IndexedDB stores data in **two separate columns**:
 
 **🔗 TOMBSTONE PATTERN: SOFT DELETE WITH SYNC SAFETY**
 
-When you delete a habit, Askesis **does not erase it**. Instead, it marks with a "Tombstone" (grave):
+There are **two** independent tombstones, at different levels. Conflating them
+leads to wrong conclusions about the merge, so it's worth separating them:
+
+**1. Habit tombstone** (`habit.deletedOn`) — when you delete a habit:
 
 ```
 ┌───────────────────────────────────────┐
 │ DELETE HABIT 'Meditate'               │
 ├───────────────────────────────────────┤
-│ 1. Instead of: habits.remove(id)     │
-│    Does:         habit.deletedOn = now │
+│ 1. Instead of: habits.remove(id)      │
+│    Does:       habit.deletedOn = now  │
 │                                       │
-│ 2. Marks in bitmask:                  │
-│    Bit 8 (Tombstone) = 1              │
-│    (Forces all bits to 0)             │
+│ 2. The habit's logs are removed from  │
+│    the Map (HabitService              │
+│    .pruneLogsForHabit)                │
 │                                       │
 │ 3. Benefit:                           │
 │    - If sync didn't reach another app,│
 │      it receives DELETE + Syncs       │
-│    - History preserved for backup     │
+│    - History preserved in archives    │
 │    - Undo possible (re-activate)      │
 └───────────────────────────────────────┘
 ```
 
-**Example real:**
+**2. Slot tombstone** (bit 2 of the 3-bit block) — when you **uncheck** a habit on
+a specific day/period. It does not come from habit deletion: it is written by the
+checkbox cycle itself, on the 3rd tap.
 
 ```typescript
-// User deletes 'Meditate' on 2025-02-01
-habitActions.requestHabitPermanentDeletion('habit-123');
+// DONE -> DEFERRED -> (3rd tap) unchecked
+toggleHabitStatus('habit-123', 'Morning', '2025-02-01');
 
-// In bitmask, 2025-02-01 becomes:
-// 100 | 00 | 00 | 00 | 00 = 4 (Tombstone active)
-
-// When syncing with another device:
-// 1. Server receives tombstone bit
-// 2. Propagates DELETE to all clients
-// 3. Previous history preserved in archives/
+// That slot's 3-bit block becomes 100 (tombstone set, status 00).
+// HabitService.getStatus() reads the tombstone and returns 0 (PENDING).
 ```
+
+The slot tombstone exists to tell **"never checked"** (`000`) apart from
+**"checked and then unchecked"** (`100`) — without it, the merge would have no way
+to propagate an uncheck to a device still holding the old `DONE`.
 
 **🧬 CRDT-LITE: CONFLICT RESOLUTION WITHOUT SERVER**
 
 When two devices sync with conflicting changes, Askesis resolves automatically **without needing an authority server**:
 
 ```
-┌─── Device A (Offline for 2 days) ──────┐
+┌─── Device A (most recent) ─────────────┐
 │ 2025-01-15 Morning: DONE               │
-│ 2025-01-16 Afternoon: DEFERRED         │
+│ 2025-01-16 Afternoon: (never touched)  │
 └────────────────────────────────────────┘
                 ↓ Reconnects
-┌─── Cloud State ────────────────────────┐
-│ 2025-01-15 Morning: DEFERRED (Device B)│
-│ 2025-01-16 Afternoon: PENDING (Device B)│ 
+┌─── Device B (offline for 2 days) ──────┐
+│ 2025-01-15 Morning: DEFERRED           │
+│ 2025-01-16 Afternoon: DEFERRED         │
 └────────────────────────────────────────┘
                 ↓ Merge (CRDT)
-┌─── Result (Convergence) ────────────────┐
+┌─── Result (Convergence) ───────────────┐
 │ 2025-01-15 Morning: DONE ✅            │
-│   (Reason: DONE > DEFERRED = stronger) │
-│ 2025-01-16 Afternoon: DEFERRED         │
-│   (Reason: DEFERRED > PENDING = closer │
-│    to completion)                      │
+│   (Conflicting slot: the state with    │
+│    the newer lastModified wins)        │
+│ 2025-01-16 Afternoon: DEFERRED ✅      │
+│   (Device A never touched this slot,   │
+│    so B's edit is preserved)           │
 └────────────────────────────────────────┘
 ```
 
-**Semantics of resolution:**
+**Semantics of resolution** (`HabitService.mergeLogValues`):
+
+The unit of resolution is the **3-bit block** of a slot (habit × day × period):
 
 ```
-State precedence:
-DONE (01) > DEFERRED (10) > PENDING (00)
-
-Logic: max(a, b) between the two 2-bit values
+Winner's block is filled    → the winner's block wins
+Winner's block is empty (000) → inherit the loser's block
 ```
 
-This ensures the user **never loses progress** when syncing.
+The "winner" is the state with the newer `lastModified`, picked in `mergeStates`.
+There is no semantic precedence between DONE/DEFERRED/TOMBSTONE: the tombstone
+(`100`) is just another timestamped value, not an unconditional priority.
+
+Two properties follow:
+
+- **Offline edits to different slots coexist.** A device that only touched day 16
+  does not overwrite the other device's day 15.
+- **The most recent intent wins.** Unchecking a habit by mistake and re-checking it
+  later is not reverted by a stale tombstone still held by another replica.
+
+> Never use `winner | loser` to combine blocks: OR mixes bits from distinct states
+> and fabricates invalid values (DONE `001` | DEFERRED `010` = `011`).
+
+**Known limitation:** the tiebreak uses the whole state's `lastModified`, not a
+per-slot clock. If two devices edit *the same* slot while both are offline, the
+state saved last wins — not necessarily the most recent edit of that specific
+slot. A per-slot clock would cost ~20× the logs' storage (see
+[ADR-0001](docs/decisions/ADR-0001-bitmask-log-encoding.md)), so it was
+deliberately ruled out.
 
 <b style="display:inline; margin:0; padding:0; border:0;">PRIVACY & CRYPTOGRAPHY: TECHNICAL DETAILS</b>
 

@@ -278,14 +278,20 @@ export async function mergeStates(local: AppState, incoming: AppState, options?:
             const suffix = parts.pop(); // YYYY-MM
             const habitId = parts.join('_');
 
-            const targetId = idRemap.get(habitId) || habitId;
+            const remappedId = idRemap.get(habitId);
+            const targetId = remappedId || habitId;
             const newKey = `${targetId}_${suffix}`;
 
             const existingVal = remappedLoserLogs.get(newKey);
-            if (existingVal !== undefined) {
-                remappedLoserLogs.set(newKey, existingVal | value);
-            } else {
+            if (existingVal === undefined) {
                 remappedLoserLogs.set(newKey, value);
+            } else if (remappedId) {
+                // Colisão de dedup: os logs do hábito canônico têm precedência
+                // sobre os do hábito absorvido.
+                remappedLoserLogs.set(newKey, HabitService.mergeLogValues(existingVal, value));
+            } else {
+                // Este `value` é o do próprio hábito canônico; ele é o vencedor.
+                remappedLoserLogs.set(newKey, HabitService.mergeLogValues(value, existingVal));
             }
         }
     }

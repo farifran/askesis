@@ -11,6 +11,12 @@
 import { state, PERIOD_OFFSET, TimeOfDay } from '../state';
 import { logger } from '../utils';
 
+/** 31 dias * 3 períodos = 93 blocos de 3 bits. */
+const BLOCKS_PER_MONTH = 93n;
+
+/** 31 * 9 = 279 bits -> 70 dígitos hexadecimais. */
+const MAX_LOG_HEX_DIGITS = 70;
+
 export class HabitService {
 
     // --- LAZY SHARDING CACHE ---
@@ -36,6 +42,79 @@ export class HabitService {
 
     private static getLogKey(habitId: string, dateISO: string): string {
         return `${habitId}_${dateISO.substring(0, 7)}`; // ID_YYYY-MM
+    }
+
+    /**
+     * Serializa um bitmask mensal. Formato canônico: hexadecimal com prefixo `0x`.
+     */
+    static serializeLogValue(value: bigint): string {
+        return '0x' + value.toString(16);
+    }
+
+    /**
+     * Parser canônico de bitmask mensal — inverso de `serializeLogValue`.
+     *
+     * Aceita todas as representações que circulam no app:
+     *   - `bigint` / `number` (já em memória)
+     *   - hex com ou sem prefixo `0x` (shards da nuvem levam prefixo; o binário
+     *     do IndexedDB é gravado sem)
+     *   - `{ __type: 'bigint', val: '<decimal>' }`, produzido pelo `sync.worker`
+     *
+     * Retorna `null` em vez de lançar, para que uma entrada corrompida não
+     * derrube o mês inteiro. Usar sempre isto — parsers ad-hoc já divergiram
+     * quanto ao prefixo e ao limite de tamanho.
+     */
+    static parseLogValue(value: unknown): bigint | null {
+        if (typeof value === 'bigint') return value;
+
+        if (typeof value === 'number') {
+            if (!Number.isSafeInteger(value) || value < 0) return null;
+            return BigInt(value);
+        }
+
+        if (value && typeof value === 'object') {
+            const obj = value as Record<string, unknown>;
+            // O worker serializa em decimal (`bigint.toString()`), não em hex.
+            if (obj['__type'] === 'bigint' && typeof obj['val'] === 'string') {
+                return /^\d+$/.test(obj['val']) ? BigInt(obj['val']) : null;
+            }
+            return null;
+        }
+
+        if (typeof value !== 'string' || value === '') return null;
+
+        const digits = /^0x/i.test(value) ? value.slice(2) : value;
+        if (!/^[0-9a-f]+$/i.test(digits)) return null;
+        if (digits.length > MAX_LOG_HEX_DIGITS) return null;
+
+        return BigInt('0x' + digits);
+    }
+
+    /**
+     * Reconstrói o Map de logs a partir de qualquer forma serializada
+     * (Array de entries ou objeto). Entradas inválidas são descartadas
+     * individualmente, com aviso.
+     */
+    static deserializeLogs(source: unknown): Map<string, bigint> {
+        const result = new Map<string, bigint>();
+        if (!source || typeof source !== 'object') return result;
+
+        // `Object.entries` de um Map devolve [], o que apagaria os logs em silêncio.
+        const entries: [string, unknown][] = source instanceof Map
+            ? Array.from(source.entries())
+            : Array.isArray(source)
+                ? source as [string, unknown][]
+                : Object.entries(source as Record<string, unknown>);
+
+        for (const [key, raw] of entries) {
+            const parsed = this.parseLogValue(raw);
+            if (parsed === null) {
+                logger.warn(`[Logs] Valor de bitmask inválido para "${key}", entrada descartada.`);
+                continue;
+            }
+            result.set(key, parsed);
+        }
+        return result;
     }
 
     /**
@@ -143,7 +222,7 @@ export class HabitService {
             // Só processa se o mês estiver sujo OU se não estiver no cache (primeira execução)
             if (this.dirtyMonths.has(month) || !this.shardCache.has(month)) {
                 if (!tempRegen.has(month)) tempRegen.set(month, []);
-                tempRegen.get(month)!.push([key, "0x" + val.toString(16)]);
+                tempRegen.get(month)!.push([key, this.serializeLogValue(val)]);
             }
         }
 
@@ -175,7 +254,7 @@ export class HabitService {
         for (const [key, value] of logs.entries()) {
             const month = key.slice(-7);
             if (!grouped[month]) grouped[month] = [];
-            grouped[month].push([key, '0x' + value.toString(16)]);
+            grouped[month].push([key, this.serializeLogValue(value)]);
         }
         return grouped;
     }
@@ -190,42 +269,42 @@ export class HabitService {
     }
 
     /**
+     * Resolve dois bitmasks mensais bloco a bloco (LWW-Register com união em ausência).
+     *
+     *   - Bloco do vencedor preenchido (status OU lápide) -> vence.
+     *   - Bloco do vencedor vazio (000 = "nunca toquei")  -> herda o do perdedor.
+     *
+     * A lápide (100) é apenas mais um valor com timestamp, e não uma prioridade
+     * incondicional: isso preserva a união de edições offline em slots disjuntos
+     * sem deixar uma lápide antiga engolir uma re-marcação mais recente.
+     *
+     * Nunca usar `winner | loser`: o OR combina bits de blocos distintos e
+     * fabrica estados inválidos (DONE 001 | DEFERRED 010 = DONE_PLUS 011).
+     */
+    static mergeLogValues(winnerVal: bigint, loserVal: bigint): bigint {
+        if (winnerVal === loserVal) return winnerVal;
+
+        let mergedVal = 0n;
+        for (let i = 0n; i < BLOCKS_PER_MONTH; i++) {
+            const shift = i * 3n;
+            const winnerBlock = (winnerVal >> shift) & 7n;
+            const finalBlock = winnerBlock !== 0n ? winnerBlock : (loserVal >> shift) & 7n;
+
+            mergedVal |= (finalBlock << shift);
+        }
+        return mergedVal;
+    }
+
+    /**
      * INTELLIGENT MERGE (CRDT-Lite para Bitmasks).
+     * O vencedor é o estado com `lastModified` mais recente (ver `mergeStates`).
      */
     static mergeLogs(winnerMap: Map<string, bigint> | undefined, loserMap: Map<string, bigint> | undefined): Map<string, bigint> {
         const result = new Map<string, bigint>(winnerMap || []);
         if (!loserMap) return result;
 
         for (const [key, loserVal] of loserMap.entries()) {
-            const winnerVal = result.get(key) || 0n;
-            let mergedVal = 0n;
-
-            // 31 dias * 3 períodos = 93 blocos de 3 bits
-            for (let i = 0n; i < 93n; i++) {
-                const shift = i * 3n;
-                const winnerBlock = (winnerVal >> shift) & 7n;
-                const loserBlock = (loserVal >> shift) & 7n;
-
-                let finalBlock = 0n;
-
-                // CRDT LOGIC: Tombstone Priority > Data Priority > Empty
-                const winnerTomb = (winnerBlock & 4n) === 4n;
-                const loserTomb = (loserBlock & 4n) === 4n;
-
-                if (winnerTomb || loserTomb) {
-                    finalBlock = 4n; 
-                } else if (winnerBlock !== 0n && loserBlock !== 0n) {
-                    // CRDT: Winner-takes-precedence when both have data.
-                    // OR would create invalid states (e.g., DONE|DEFERRED = DONE_PLUS).
-                    finalBlock = winnerBlock;
-                } else {
-                    // One is 0n, the other has data — pick the non-zero one.
-                    finalBlock = winnerBlock || loserBlock;
-                }
-
-                mergedVal |= (finalBlock << shift);
-            }
-            result.set(key, mergedVal);
+            result.set(key, this.mergeLogValues(result.get(key) || 0n, loserVal));
         }
         return result;
     }

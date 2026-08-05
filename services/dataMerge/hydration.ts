@@ -9,27 +9,12 @@
  */
 
 import type { AppState, HabitDailyInfo } from '../../state';
-import { logger } from '../../utils';
-import { safeBigIntFromUnknown, isUnsafeObjectKey } from './validation';
+import { HabitService } from '../HabitService';
+import { isUnsafeObjectKey } from './validation';
 
 export function hydrateLogs(appState: AppState) {
     if (appState.monthlyLogs && !(appState.monthlyLogs instanceof Map)) {
-        const entries = Array.isArray(appState.monthlyLogs)
-            ? appState.monthlyLogs
-            : Object.entries(appState.monthlyLogs);
-
-        const map = new Map<string, bigint>();
-        entries.forEach((item: any) => {
-            const [key, val] = item as [string, any];
-            try {
-                const hydrated = safeBigIntFromUnknown(val);
-                if (hydrated !== null) map.set(key, hydrated);
-                else logger.warn(`[Merge] Invalid bigint value for ${key}`);
-            } catch(e) {
-                logger.warn(`[Merge] Failed to hydrate bitmask for ${key}`, e);
-            }
-        });
-        (appState as any).monthlyLogs = map;
+        (appState as any).monthlyLogs = HabitService.deserializeLogs(appState.monthlyLogs);
     }
 }
 

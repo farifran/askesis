@@ -46,14 +46,16 @@ describe('🔄 Migração de Schema (migration.ts)', () => {
     });
 
     describe('Hidratação de monthlyLogs (Map/BigInt)', () => {
-        it('deve hidratar Object entries para Map<string, bigint>', () => {
+        // Os logs são serializados em HEXADECIMAL (`HabitService.serializeLogValue`).
+        // O prefixo `0x` é opcional: o binário legado do IndexedDB foi gravado sem ele.
+        it('deve hidratar Object entries (hex com prefixo) para Map<string, bigint>', () => {
             const loaded = {
                 version: APP_VERSION,
                 habits: [],
                 dailyData: {},
                 monthlyLogs: {
-                    'habit1-2024-01': '255',
-                    'habit2-2024-02': '1023'
+                    'habit1-2024-01': '0xff',
+                    'habit2-2024-02': '0x3ff'
                 }
             };
 
@@ -64,22 +66,38 @@ describe('🔄 Migração de Schema (migration.ts)', () => {
             expect(result.monthlyLogs.get('habit2-2024-02')).toBe(1023n);
         });
 
-        it('deve hidratar Array entries para Map<string, bigint>', () => {
+        it('deve hidratar hex legado sem prefixo 0x', () => {
             const loaded = {
                 version: APP_VERSION,
                 habits: [],
                 monthlyLogs: [
-                    ['habit1-2024-01', '100'],
-                    ['habit2-2024-02', '200']
+                    ['habit1-2024-01', 'ff'],
+                    ['habit2-2024-02', '3ff']
                 ]
             };
 
             const result = migrateState(loaded, APP_VERSION);
             expect(result.monthlyLogs).toBeInstanceOf(Map);
-            expect(result.monthlyLogs.get('habit1-2024-01')).toBe(100n);
+            expect(result.monthlyLogs.get('habit1-2024-01')).toBe(255n);
+            expect(result.monthlyLogs.get('habit2-2024-02')).toBe(1023n);
         });
 
-        it('deve hidratar formato serializado { __type: "bigint", val: "..." }', () => {
+        it('deve hidratar um mês cheio (279 bits / 70 dígitos hex) sem truncar', () => {
+            // Regressão: um limite de 64 dígitos descartava silenciosamente
+            // qualquer log com marcações a partir do dia ~29.
+            const fullMonth = (1n << 279n) - 1n;
+            const loaded = {
+                version: APP_VERSION,
+                habits: [],
+                monthlyLogs: { 'habit1-2024-01': '0x' + fullMonth.toString(16) }
+            };
+
+            const result = migrateState(loaded, APP_VERSION);
+            expect(result.monthlyLogs.get('habit1-2024-01')).toBe(fullMonth);
+        });
+
+        it('deve hidratar formato do worker { __type: "bigint", val: "<decimal>" }', () => {
+            // `sync.worker.ts` serializa via `bigint.toString()`, ou seja, DECIMAL.
             const loaded = {
                 version: APP_VERSION,
                 habits: [],

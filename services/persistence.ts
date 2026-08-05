@@ -130,7 +130,7 @@ async function saveSplitState(main: AppState): Promise<void> {
         if (logs && logs.size > 0) {
             const serializedLogs: Record<string, string> = {};
             logs.forEach((v, k) => {
-                serializedLogs[k] = v.toString(16);
+                serializedLogs[k] = HabitService.serializeLogValue(v);
             });
             store.put(serializedLogs, STATE_BINARY_KEY);
         } else {
@@ -353,12 +353,7 @@ export async function loadState(cloudState?: AppState): Promise<AppState | null>
         
         // Fallback robusto: se a migração falhou em hidratar o Map, tenta recuperar dos dados brutos
         if ((!state.monthlyLogs || state.monthlyLogs.size === 0) && binaryLogsData) {
-             if (typeof binaryLogsData === 'object' && !Array.isArray(binaryLogsData)) {
-                state.monthlyLogs = new Map();
-                Object.entries(binaryLogsData as Record<string, string>).forEach(([k, v]) => {
-                    state.monthlyLogs.set(k, BigInt("0x" + v));
-                });
-            }
+            state.monthlyLogs = HabitService.deserializeLogs(binaryLogsData);
         }
 
         state.habits = [...(migrated.habits || [])];

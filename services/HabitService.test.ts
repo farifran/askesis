@@ -192,6 +192,52 @@ describe('HabitService (Bitmasks Core)', () => {
     });
 });
 
+describe('HabitService — parser canônico de bitmask', () => {
+    it('faz round-trip de um mês cheio (279 bits / 70 dígitos hex)', () => {
+        const fullMonth = (1n << 279n) - 1n;
+        const hex = HabitService.serializeLogValue(fullMonth);
+
+        expect(hex.slice(2)).toHaveLength(70);
+        expect(HabitService.parseLogValue(hex)).toBe(fullMonth);
+    });
+
+    it('aceita hex com e sem prefixo 0x (binário legado do IndexedDB)', () => {
+        expect(HabitService.parseLogValue('0xff')).toBe(255n);
+        expect(HabitService.parseLogValue('ff')).toBe(255n);
+    });
+
+    it('lê o formato do worker como DECIMAL, não hex', () => {
+        // sync.worker.ts serializa com bigint.toString() (base 10).
+        expect(HabitService.parseLogValue({ __type: 'bigint', val: '999' })).toBe(999n);
+    });
+
+    it('rejeita entradas inválidas em vez de lançar', () => {
+        expect(HabitService.parseLogValue('não-é-número')).toBeNull();
+        expect(HabitService.parseLogValue('')).toBeNull();
+        expect(HabitService.parseLogValue(null)).toBeNull();
+        expect(HabitService.parseLogValue(-1)).toBeNull();
+        // Acima de 70 dígitos não é um mês representável.
+        expect(HabitService.parseLogValue('f'.repeat(71))).toBeNull();
+    });
+
+    it('aceita um Map já hidratado sem esvaziá-lo', () => {
+        const logs = HabitService.deserializeLogs(new Map([['h1_2024-01', 255n]]));
+        expect(logs.get('h1_2024-01')).toBe(255n);
+    });
+
+    it('descarta apenas a entrada corrompida, preservando o resto do mês', () => {
+        const logs = HabitService.deserializeLogs({
+            'h1_2024-01': '0xff',
+            'h2_2024-01': 'lixo',
+            'h3_2024-01': '0x10'
+        });
+
+        expect(logs.get('h1_2024-01')).toBe(255n);
+        expect(logs.has('h2_2024-01')).toBe(false);
+        expect(logs.get('h3_2024-01')).toBe(16n);
+    });
+});
+
 // ================================================================================
 // 🔥 NUCLEAR QA: FUZZING & ORACLE COMPARISON
 // ================================================================================

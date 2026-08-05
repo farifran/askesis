@@ -16,7 +16,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { state, HABIT_STATE, Habit, AppState } from '../state';
 import { HabitService } from '../services/HabitService';
 import { mergeStates } from '../services/dataMerge';
-import { createTestHabit, clearTestState } from './test-utils';
+import { buildTestHabit, createTestHabit, clearTestState } from './test-utils';
 
 describe('🔄 TESTE DE CENARIO 2: Sincronização com Conflitos', () => {
   const TEST_DATE = '2024-01-15';
@@ -58,72 +58,85 @@ describe('🔄 TESTE DE CENARIO 2: Sincronização com Conflitos', () => {
     // ========================================
     // PASSO 2: CONFLITO! Simular edições em dois "dispositivos"
     // ========================================
-    const conflictDate = TEST_DATE;
     const conflictHabitId = habitIds[0];
+    const key = `${conflictHabitId}_2024-01`;
 
-    // "Device A": Marca como DONE
-    const deviceALogs = new Map(stateSnapshot.monthlyLogs);
-    const keyA = `${conflictHabitId}_2024-01`;
-    const currentA = deviceALogs.get(keyA) || 0n;
-    // Simular mudança no device A
-    deviceALogs.set(keyA, currentA | 1n); // Força bit de DONE
-
-    // "Device B": Marca como DEFERRED  
-    const deviceBLogs = new Map(stateSnapshot.monthlyLogs);
-    const keyB = `${conflictHabitId}_2024-01`;
-    const currentB = deviceBLogs.get(keyB) || 0n;
-    // Simular mudança no device B
-    deviceBLogs.set(keyB, currentB | 2n); // Força bit de DEFERRED
-
-    // ========================================
-    // PASSO 3: Merge dos logs
-    // ========================================
-    const merged = HabitService.mergeLogs(deviceALogs, deviceBLogs);
-
-    // O merge deve ter ocorrido
-    expect(merged.size).toBeGreaterThan(0);
-    
-    // Verificar que dados não foram perdidos
-    expect(merged.has(keyA)).toBe(true);
-  });
-
-  it('deve mesclar dados de múltiplos dispositivos sem perda', async () => {
-    // Criar hábitos em diferentes "sessões"
-    const habitsSession1 = [1, 2, 3].map(i => 
-      createTestHabit({ name: `Hábito A${i}`, time: 'Morning', goalType: 'check' })
-    );
-
-    const session1State = {
-      habits: [...state.habits],
-      monthlyLogs: new Map(state.monthlyLogs)
+    // Bloco de 3 bits do dia D, período Manhã.
+    const blockAt = (day: number) => BigInt((day - 1) * 9);
+    const readBlock = (logs: Map<string, bigint>, day: number) => (logs.get(key)! >> blockAt(day)) & 7n;
+    const writeBlock = (logs: Map<string, bigint>, day: number, value: bigint) => {
+      const shift = blockAt(day);
+      logs.set(key, (logs.get(key)! & ~(7n << shift)) | (value << shift));
     };
 
-    // "Nova sessão" - adicionar mais hábitos
-    const habitsSession2 = [4, 5, 6].map(i => 
-      createTestHabit({ name: `Hábito B${i}`, time: 'Afternoon', goalType: 'check' })
-    );
+    // O histórico compartilhado cobre os dias 1..30; o dia 31 está livre.
+    // "Device A" (vencedor, lastModified mais recente): adia o dia 15.
+    const deviceALogs = new Map(stateSnapshot.monthlyLogs);
+    writeBlock(deviceALogs, 15, BigInt(HABIT_STATE.DEFERRED));
 
-    // Deve ter todos os 6 hábitos
-    expect(state.habits).toHaveLength(6);
+    // "Device B" (perdedor, offline): marca o dia 31, que A nunca tocou.
+    const deviceBLogs = new Map(stateSnapshot.monthlyLogs);
+    writeBlock(deviceBLogs, 31, BigInt(HABIT_STATE.DONE));
+
+    const merged = HabitService.mergeLogs(deviceALogs, deviceBLogs);
+
+    // Edição do vencedor prevalece no slot que ele tocou...
+    expect(readBlock(merged, 15)).toBe(BigInt(HABIT_STATE.DEFERRED));
+    // ...e a edição do perdedor sobrevive no slot que o vencedor deixou vazio.
+    expect(readBlock(merged, 31)).toBe(BigInt(HABIT_STATE.DONE));
+    // Os demais dias do histórico compartilhado seguem intactos.
+    expect(readBlock(merged, 1)).toBe(BigInt(HABIT_STATE.DONE));
+    expect(readBlock(merged, 30)).toBe(BigInt(HABIT_STATE.DONE));
   });
 
-  it('deve lidar com conflito de tombstone (delete vence update)', async () => {
+  it('deve mesclar hábitos de dois dispositivos sem perda nem duplicação', async () => {
+    const deviceA: AppState = {
+      ...state,
+      habits: [1, 2, 3].map(i => buildTestHabit({ name: `Hábito A${i}`, time: 'Morning' }, `a${i}`)),
+      dailyData: {},
+      monthlyLogs: new Map([['a1_2024-01', 1n]]),
+      lastModified: 2000
+    } as AppState;
+
+    const deviceB: AppState = {
+      ...state,
+      habits: [4, 5, 6].map(i => buildTestHabit({ name: `Hábito B${i}`, time: 'Afternoon' }, `b${i}`)),
+      dailyData: {},
+      monthlyLogs: new Map([['b4_2024-01', 2n]]),
+      lastModified: 1000
+    } as AppState;
+
+    const merged = await mergeStates(deviceA, deviceB);
+
+    expect(merged.habits.map(h => h.id).sort()).toEqual(['a1', 'a2', 'a3', 'b4', 'b5', 'b6']);
+    expect(merged.monthlyLogs.get('a1_2024-01')).toBe(1n);
+    expect(merged.monthlyLogs.get('b4_2024-01')).toBe(2n);
+  });
+
+  it('desmarcação recente vence dado antigo, mas não reverte re-marcação posterior', async () => {
     const habitId = createTestHabit({ name: 'Test', time: 'Morning', goalType: 'check' });
-    const date = TEST_DATE;
+    const readMerged = (winner: Map<string, bigint>, loser: Map<string, bigint>) => {
+      state.monthlyLogs = HabitService.mergeLogs(winner, loser);
+      return HabitService.getStatus(habitId, TEST_DATE, 'Morning');
+    };
 
-    // Marcar como DONE
-    HabitService.setStatus(habitId, date, 'Morning', HABIT_STATE.DONE);
-    expect(HabitService.getStatus(habitId, date, 'Morning')).toBe(HABIT_STATE.DONE);
+    HabitService.setStatus(habitId, TEST_DATE, 'Morning', HABIT_STATE.DONE);
+    const marked = new Map(state.monthlyLogs);
 
-    // Simular tombstone (bit 2)
-    const monthKey = `${habitId}_2024-01`;
-    const logs1 = new Map([[monthKey, 1n]]); // DONE
-    const logs2 = new Map([[monthKey, 4n]]); // Tombstone
+    // O tombstone é escrito pelo próprio ciclo do checkbox (3º toque -> NULL).
+    HabitService.setStatus(habitId, TEST_DATE, 'Morning', HABIT_STATE.NULL);
+    expect(HabitService.getStatus(habitId, TEST_DATE, 'Morning')).toBe(HABIT_STATE.NULL);
+    const tombstoned = new Map(state.monthlyLogs);
 
-    const merged = HabitService.mergeLogs(logs1, logs2);
-    
-    // Deve ter mantido o tombstone
-    expect(merged.has(monthKey)).toBe(true);
+    // Desmarcação recente (vencedor) sobrepõe o DONE antigo da réplica.
+    expect(readMerged(tombstoned, marked)).toBe(HABIT_STATE.NULL);
+
+    // Mas a lápide obsoleta (perdedor) não pode engolir uma re-marcação recente.
+    state.monthlyLogs = new Map(tombstoned);
+    HabitService.setStatus(habitId, TEST_DATE, 'Morning', HABIT_STATE.DONE);
+    const remarked = new Map(state.monthlyLogs);
+
+    expect(readMerged(remarked, tombstoned)).toBe(HABIT_STATE.DONE);
   });
 
   it('deve manter integridade de bitmask após múltiplos merges', async () => {

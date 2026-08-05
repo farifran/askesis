@@ -18,11 +18,10 @@ export interface SimpleHabitData {
 }
 
 /**
- * Cria um hábito de teste com estrutura simplificada
+ * Monta um hábito de teste desacoplado do `state` global.
+ * Use quando o teste precisa montar AppStates independentes (ex.: merge multi-device).
  */
-export function createTestHabit(data: SimpleHabitData): string {
-  const habitId = generateUUID();
-  
+export function buildTestHabit(data: SimpleHabitData, id: string = generateUUID()): Habit {
   const schedule: HabitSchedule = {
     startDate: getTodayUTCIso(),
     icon: data.icon || '⭐',
@@ -37,15 +36,21 @@ export function createTestHabit(data: SimpleHabitData): string {
     frequency: { type: 'daily' },
     scheduleAnchor: getTodayUTCIso()
   };
-  
-  const habit: Habit = {
-    id: habitId,
+
+  return {
+    id,
     createdOn: getTodayUTCIso(),
     scheduleHistory: [schedule]
   };
-  
+}
+
+/**
+ * Cria um hábito de teste com estrutura simplificada e o registra no `state` global.
+ */
+export function createTestHabit(data: SimpleHabitData): string {
+  const habit = buildTestHabit(data);
   state.habits.push(habit);
-  return habitId;
+  return habit.id;
 }
 
 /**

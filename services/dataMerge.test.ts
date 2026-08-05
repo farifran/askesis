@@ -184,26 +184,48 @@ describe('Smart Merge (CRDT-lite Logic)', () => {
         expect((result & 512n) === 512n).toBe(true);
     });
 
-    it('deve priorizar Tombstone sobre dados (Delete vence Update)', async () => {
-        // Cenário CRDT Clássico:
-        // Usuário A marca como FEITO.
-        // Usuário B marca como APAGADO (Tombstone).
-        // Resultado deve ser APAGADO.
-
+    it('propaga Tombstone para o lado que nunca tocou o slot', async () => {
+        // Cenário: o vencedor nunca marcou este slot (000), o perdedor tem uma
+        // exclusão explícita. A exclusão deve chegar ao vencedor.
         const key = 'h1_2024-01';
-        
-        // Local: Status DONE (Binário 001)
-        const localLogs = new Map([[key, 1n]]); 
-        
-        // Remoto: Tombstone (Binário 100 -> Decimal 4)
-        const remoteLogs = new Map([[key, 4n]]);
 
-        const mergedLogs = HabitService.mergeLogs(localLogs, remoteLogs);
-        const result = mergedLogs.get(key)!;
+        const winnerLogs = new Map([[key, 0n]]);
+        const loserLogs = new Map([[key, 4n]]); // Tombstone (Binário 100)
 
-        // O resultado deve ser 4 (Tombstone), não 5 (Merge)
-        // A lógica do mergeLogs verifica se o bit 2 (Tombstone) está ativo em QUALQUER um dos lados.
-        expect(result).toBe(4n);
+        const mergedLogs = HabitService.mergeLogs(winnerLogs, loserLogs);
+
+        // Nunca 5n: o OR de blocos distintos fabricaria um estado inválido.
+        expect(mergedLogs.get(key)).toBe(4n);
+    });
+
+    it('Tombstone recente vence dado antigo (desmarcação é respeitada)', async () => {
+        const key = 'h1_2024-01';
+
+        // Vencedor (lastModified mais recente) desmarcou o slot.
+        const winnerLogs = new Map([[key, 4n]]);
+        // Perdedor ainda carrega o DONE antigo.
+        const loserLogs = new Map([[key, 1n]]);
+
+        expect(HabitService.mergeLogs(winnerLogs, loserLogs).get(key)).toBe(4n);
+    });
+
+    it('re-marcação recente NÃO é engolida por Tombstone obsoleto', async () => {
+        // Regressão: o usuário desmarca, sincroniza, e depois re-marca.
+        // A réplica remota ainda carrega a lápide; ela não pode reverter a re-marcação.
+        const key = 'h1_2024-01';
+
+        const winnerLogs = new Map([[key, 1n]]); // DONE re-marcado agora
+        const loserLogs = new Map([[key, 4n]]);  // Tombstone obsoleto
+
+        expect(HabitService.mergeLogs(winnerLogs, loserLogs).get(key)).toBe(1n);
+    });
+
+    it('conflito real no mesmo slot resolve pelo vencedor, sem estado inválido', async () => {
+        const key = 'h1_2024-01';
+
+        // DONE (001) vs DEFERRED (010): o OR daria DONE_PLUS (011), que é inválido aqui.
+        expect(HabitService.mergeLogs(new Map([[key, 1n]]), new Map([[key, 2n]])).get(key)).toBe(1n);
+        expect(HabitService.mergeLogs(new Map([[key, 2n]]), new Map([[key, 1n]])).get(key)).toBe(2n);
     });
 });
 
