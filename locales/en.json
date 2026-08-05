@@ -201,6 +201,10 @@
         "other": "You have {count} pending habits today."
     },
     "pendingBadgeTitle": "Pending habits",
+    "notifyAllDoneTitle": "All done",
+    "notifyPendingList": "Still to do: {names}",
+    "notifyPendingMore": "{names} +{count}",
+    "notifyQuoteBody": "“{text}” — {author}",
     "notificationChangePending": "Enabling notifications…",
     "notificationStatusActivated": "activated",
     "notificationStatusDeactivated": "deactivated",

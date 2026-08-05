@@ -144,13 +144,8 @@ async function build() {
     await fs.promises.writeFile(path.join(OUT_DIR, 'index.html'), html);
 
     await copyFile('manifest.json', path.join(OUT_DIR, 'manifest.json'));
-    // Push OneSignal: worker dedicado em subpath (não compete com sw.js).
-    await fs.promises.mkdir(path.join(OUT_DIR, 'push', 'onesignal'), { recursive: true });
-    await copyFile(
-        'push/onesignal/OneSignalSDKWorker.js',
-        path.join(OUT_DIR, 'push', 'onesignal', 'OneSignalSDKWorker.js')
-    );
-    // Path legado na raiz (dashboard default + clients antigos).
+    // Push OneSignal: worker registrado em utils.ts com scope '/onesignal/',
+    // isolado do sw.js (offline, scope '/'). Também personaliza o lembrete.
     await copyFile('OneSignalSDKWorker.js', path.join(OUT_DIR, 'OneSignalSDKWorker.js'));
 
     // Processa sw.js: injeta nomes hasheados no CACHE_FILES e o hash de build no

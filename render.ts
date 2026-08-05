@@ -15,8 +15,9 @@ import { ui } from './render/ui';
 import { t, setLanguage, formatDate } from './i18n'; 
 import { UI_ICONS } from './render/icons';
 import type { Quote } from './data/quotes';
-import { selectBestQuote } from './services/quoteEngine'; 
+import { selectBestQuote } from './services/quoteEngine';
 import { calculateDaySummary } from './services/selectors';
+import { setNotificationQuote } from './services/notificationCard';
 import { APP_EVENTS, emitRequestAnalysis } from './events';
 
 // Importa os renderizadores especializados
@@ -426,7 +427,12 @@ export function renderStoicQuote() {
     const userLevel = diagnosis ? diagnosis.level : 1;
     const lang = state.activeLanguageCode as 'pt' | 'en' | 'es';
     const adaptationText = selectedQuote.adaptations[`level_${userLevel}` as keyof typeof selectedQuote.adaptations][lang];
-    
+
+    // Publica a frase para o cartão de notificação. É aqui, e não no cartão,
+    // porque data/quotes.ts é carregado sob demanda — ver setNotificationQuote.
+    setNotificationQuote({ text: selectedQuote.original_text[lang], authorKey: selectedQuote.author });
+
+
     const container = ui.stoicQuoteDisplay;
     container.classList.remove('visible');
     container.replaceChildren();

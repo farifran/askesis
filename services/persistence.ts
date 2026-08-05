@@ -11,6 +11,7 @@
 import { state, AppState, Habit, HabitDailyInfo, APP_VERSION, getPersistableState, clearAllCaches } from '../state';
 import { migrateState } from './migration';
 import { HabitService } from './HabitService';
+import { buildNotificationCard, NOTIFICATION_CARD_KEY, type NotificationCard } from './notificationCard';
 import { clearHabitDomCache } from '../render';
 import { logger } from '../utils';
 import { emitRenderApp } from '../events';
@@ -113,20 +114,24 @@ async function clearBackupSnapshot(): Promise<void> {
 /**
  * Grava um estado específico no IndexedDB.
  * Otimizado para separar JSON leve de binários pesados (Hex-Strings).
+ *
+ * `card` só é passado pelo caminho de save local, onde o `state` global é a
+ * fonte da verdade. `persistStateLocally` (dados vindos da nuvem) omite: ali o
+ * global ainda não foi hidratado, e um cartão montado dali sairia defasado.
  */
-async function saveSplitState(main: AppState): Promise<void> {
+async function saveSplitState(main: AppState, card?: NotificationCard | null): Promise<void> {
     const db = await getDB();
     return new Promise((resolve, reject) => {
         const tx = db.transaction(STORE_NAME, 'readwrite');
         const store = tx.objectStore(STORE_NAME);
-        
+
         const logs = main.monthlyLogs;
         const jsonState = { ...main };
         // Remove logs do objeto principal para não duplicar no armazenamento
         delete (jsonState as any).monthlyLogs;
-        
+
         store.put(jsonState, STATE_JSON_KEY);
-        
+
         if (logs && logs.size > 0) {
             const serializedLogs: Record<string, string> = {};
             logs.forEach((v, k) => {
@@ -137,7 +142,14 @@ async function saveSplitState(main: AppState): Promise<void> {
             // FIX: Remove stale binary key when logs are empty (e.g., all habits deleted)
             store.delete(STATE_BINARY_KEY);
         }
-        
+
+        if (card !== undefined) {
+            // Cartão nulo (sem hábitos hoje) apaga o anterior: melhor o texto
+            // genérico do push do que um lembrete de ontem.
+            if (card) store.put(card, NOTIFICATION_CARD_KEY);
+            else store.delete(NOTIFICATION_CARD_KEY);
+        }
+
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error);
     });
@@ -171,9 +183,9 @@ async function saveStateInternal(immediate = false, suppressSync = false) {
         const structuredData = getPersistableState();
         try {
             if (HAS_INDEXED_DB) {
-                await saveSplitState(structuredData);
+                await saveSplitState(structuredData, buildNotificationCard());
             }
-        } catch (e) { 
+        } catch (e) {
             if (!(IS_TEST_ENV && String(e).includes('IndexedDB not available'))) {
                 logger.error("IDB Save Failed:", e);
             }

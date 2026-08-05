@@ -89,7 +89,7 @@ self.addEventListener('fetch', (event) => {
     if (url.pathname.startsWith('/api/')) return;
 
     // Não interceptar workers (offline update + push OneSignal).
-    if (url.pathname === '/sw.js' || url.pathname === '/OneSignalSDKWorker.js' || url.pathname.startsWith('/onesignal/') || url.pathname.startsWith('/push/onesignal/')) return;
+    if (url.pathname === '/sw.js' || url.pathname === '/OneSignalSDKWorker.js' || url.pathname.startsWith('/onesignal/')) return;
 
     if (req.mode === 'navigate') {
         event.respondWith(

@@ -57,6 +57,34 @@ describe('api/reminder', () => {
         expect(payload.contents.pt).toContain('hábitos');
         expect(payload.headings.en).toBe('Pending habits');
         expect(payload.idempotency_key).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-a[0-9a-f]{3}-[0-9a-f]{12}$/);
+        // Sem o topic, a OneSignal gera uma tag aleatória e o worker não
+        // consegue substituir o texto genérico pelo lembrete personalizado.
+        expect(payload.web_push_topic).toBe('askesis-reminder');
+    });
+
+    it('servidor e worker de push concordam na mesma tag', async () => {
+        const { readFileSync } = await import('node:fs');
+        const { NOTIFICATION_TAG } = await import('./reminder');
+
+        // Edge runtime e service worker não podem se importar: a única garantia
+        // possível é comparar o literal.
+        expect(readFileSync('OneSignalSDKWorker.js', 'utf8'))
+            .toContain(`var NOTIFICATION_TAG = '${NOTIFICATION_TAG}'`);
+    });
+
+    it('a tag do lembrete não colide com a do badge local', async () => {
+        const { readFileSync } = await import('node:fs');
+        const { NOTIFICATION_TAG } = await import('./reminder');
+
+        // Elas vivem em registrations diferentes (sw.js vs /onesignal/), então
+        // reusar a mesma string sugeriria um colapso que não acontece.
+        expect(readFileSync('services/badge.ts', 'utf8'))
+            .not.toContain(`PENDING_NOTIFICATION_TAG = '${NOTIFICATION_TAG}'`);
+    });
+
+    it('web_push_topic respeita o limite de 64 caracteres da OneSignal', async () => {
+        const { NOTIFICATION_TAG } = await import('./reminder');
+        expect(NOTIFICATION_TAG.length).toBeLessThanOrEqual(64);
     });
 
     it('idempotency key é estável para a mesma data e distinta entre datas', async () => {

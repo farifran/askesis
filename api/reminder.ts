@@ -29,6 +29,20 @@ export const config = {
 const DEFAULT_APP_ID = 'd69cf0b6-bc03-4375-b3b7-dd7b37e05a17';
 const ONESIGNAL_API_URL = 'https://api.onesignal.com/notifications';
 
+/**
+ * Tag da notificação no navegador (`web_push_topic` -> Notification.tag).
+ *
+ * Precisa bater com OneSignalSDKWorker.js, que a usa para substituir este texto
+ * genérico pelo lembrete personalizado montado no aparelho — há teste garantindo
+ * isso em api/reminder.test.ts.
+ *
+ * Deliberadamente DIFERENTE de PENDING_NOTIFICATION_TAG (services/badge.ts): a
+ * substituição por tag vale por service worker registration, e o badge vive no
+ * sw.js (scope '/') enquanto o push vive no worker da OneSignal ('/onesignal/').
+ * Tags iguais não colapsariam — só criariam a ilusão de que colapsam.
+ */
+export const NOTIFICATION_TAG = 'askesis-reminder';
+
 const HEADINGS = {
     en: 'Pending habits',
     pt: 'Hábitos pendentes',
@@ -101,6 +115,11 @@ export default async function handler(req: Request) {
         delivery_time_of_day: deliveryTime,
         // Expira sem entrega após 24h (evita lembrete atrasado no dia seguinte).
         ttl: 86400,
+        // Vira o `tag` da Notification no navegador. É o que permite ao
+        // OneSignalSDKWorker.js substituir este texto genérico pelo lembrete
+        // personalizado montado no aparelho, sem empilhar duas notificações.
+        // Mesma tag do badge local (services/badge.ts) para colapsarem numa só.
+        web_push_topic: NOTIFICATION_TAG,
         idempotency_key: await idempotencyKeyForDate(todayISO)
     };
 

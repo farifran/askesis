@@ -201,6 +201,10 @@
         "other": "Tienes {count} hábitos pendientes hoy."
     },
     "pendingBadgeTitle": "Hábitos pendientes",
+    "notifyAllDoneTitle": "Todo al día",
+    "notifyPendingList": "Faltan: {names}",
+    "notifyPendingMore": "{names} +{count}",
+    "notifyQuoteBody": "“{text}” — {author}",
     "notificationChangePending": "Activando notificaciones…",
     "notificationStatusActivated": "activado",
     "notificationStatusDeactivated": "desactivado",
