@@ -19,7 +19,6 @@ describe('api/reminder', () => {
         process.env.ONESIGNAL_REST_API_KEY = 'os_v2_test_key';
         process.env.CRON_SECRET = 'segredo';
         delete process.env.ONESIGNAL_APP_ID;
-        delete process.env.REMINDER_LOCAL_TIME;
     });
 
     it('rejeita chamada sem o Bearer do CRON_SECRET', async () => {
@@ -37,7 +36,7 @@ describe('api/reminder', () => {
         expect(fetchMock).not.toHaveBeenCalled();
     });
 
-    it('cria a notificação com entrega por fuso e idempotência diária', async () => {
+    it('cria a notificação com entrega imediata e idempotência diária', async () => {
         fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ id: 'notif-1' }), { status: 200 }));
 
         const mod = await import('./reminder');
@@ -51,8 +50,6 @@ describe('api/reminder', () => {
 
         const payload = JSON.parse(init.body);
         expect(payload.included_segments).toEqual(['Subscribed Users']);
-        expect(payload.delayed_option).toBe('timezone');
-        expect(payload.delivery_time_of_day).toBe('8:00PM');
         expect(payload.ttl).toBe(86400);
         expect(payload.contents.pt).toContain('hábitos');
         expect(payload.headings.en).toBe('Pending habits');
@@ -60,6 +57,21 @@ describe('api/reminder', () => {
         // Sem o topic, a OneSignal gera uma tag aleatória e o worker não
         // consegue substituir o texto genérico pelo lembrete personalizado.
         expect(payload.web_push_topic).toBe('askesis-reminder');
+
+        // Regressão: agendar por fuso zerava o público elegível ("All included
+        // players are not subscribed") e nenhum lembrete chegava. Quem define o
+        // horário agora é o cron.
+        expect(payload.delayed_option).toBeUndefined();
+        expect(payload.delivery_time_of_day).toBeUndefined();
+    });
+
+    it('o cron entrega às 20:00 BRT, já que o horário agora vem dele', async () => {
+        const { readFileSync } = await import('node:fs');
+        const vercelConfig = JSON.parse(readFileSync('vercel.json', 'utf8'));
+
+        const reminderCron = vercelConfig.crons.find((c: { path: string }) => c.path === '/api/reminder');
+        // 23:00 UTC = 20:00 BRT. Hobby tem janela de 1h, então entrega 20:00–21:00.
+        expect(reminderCron.schedule).toBe('0 23 * * *');
     });
 
     it('servidor e worker de push concordam na mesma tag', async () => {

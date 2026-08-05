@@ -8,18 +8,28 @@
  * @description Lembrete diário via OneSignal (badge de reengajamento no Android).
  *
  * Disparado pelo Vercel Cron (ver vercel.json). Cria UMA notificação por dia na
- * OneSignal com entrega por fuso horário: cada assinante recebe às
- * REMINDER_LOCAL_TIME no seu horário local. No Android, a notificação não lida é
- * o que produz o badge no ícone do launcher (a Badging API não existe lá).
+ * OneSignal, entregue no ato. No Android, a notificação não lida é o que produz
+ * o badge no ícone do launcher (a Badging API não existe lá).
+ *
+ * HORÁRIO: quem define é o cron (`0 23 * * *` = 20:00 BRT), não a OneSignal.
+ * A entrega por fuso (`delayed_option: 'timezone'`) foi removida: ela exige que
+ * a OneSignal conheça o fuso de cada assinatura e, sem esse dado, o público
+ * elegível vira zero — a API respondia 200 com "All included players are not
+ * subscribed" e nenhum lembrete chegava a ninguém.
+ *
+ * CONSEQUÊNCIA: todos recebem no mesmo instante. Aceitável enquanto o público
+ * está num fuso só; com usuários espalhados, será preciso voltar à entrega por
+ * fuso (garantindo o timezone nas assinaturas) ou criar uma notificação por
+ * fuso com `send_after`.
  *
  * PRIVACIDADE: o servidor não sabe quem tem pendências (estado é E2E cifrado);
  * o texto é genérico e a entrega vai só a quem optou por push (assinantes).
+ * O aparelho substitui esse texto pelo lembrete real — ver OneSignalSDKWorker.js.
  *
  * ENV VARS (Vercel):
  * - ONESIGNAL_REST_API_KEY (obrigatória; prefixo os_v2_ usa auth "Key")
  * - CRON_SECRET (recomendada; Vercel a envia como Bearer automaticamente)
  * - ONESIGNAL_APP_ID (opcional; default = app id público do cliente)
- * - REMINDER_LOCAL_TIME (opcional; default "8:00PM")
  */
 
 export const config = {
@@ -119,7 +129,6 @@ export default async function handler(req: Request) {
     }
 
     const appId = process.env.ONESIGNAL_APP_ID || DEFAULT_APP_ID;
-    const deliveryTime = process.env.REMINDER_LOCAL_TIME || '8:00PM';
     const todayISO = new Date().toISOString().slice(0, 10);
 
     const payload = {
@@ -128,9 +137,7 @@ export default async function handler(req: Request) {
         headings: HEADINGS,
         contents: CONTENTS,
         url: 'https://askesis.vercel.app/',
-        // Entrega no horário local de cada assinante.
-        delayed_option: 'timezone',
-        delivery_time_of_day: deliveryTime,
+        // Sem agendamento: quem define o horário é o cron. Ver o cabeçalho.
         // Expira sem entrega após 24h (evita lembrete atrasado no dia seguinte).
         ttl: 86400,
         // Vira o `tag` da Notification no navegador. É o que permite ao
@@ -178,8 +185,7 @@ export default async function handler(req: Request) {
         console.log('[reminder] notificação criada', {
             id: body.id,
             recipients: body.recipients ?? null,
-            date: todayISO,
-            deliveryTime
+            date: todayISO
         });
         return json(200, { ok: true, date: todayISO, id: body.id, recipients: body.recipients ?? null });
     } catch (error) {
