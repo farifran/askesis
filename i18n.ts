@@ -36,9 +36,20 @@ type TranslationValue = string | PluralableTranslation;
 type Translations = Record<string, TranslationValue>;
 
 // --- CACHE DE API INTL (Performance Crítica) ---
-// A criação de instâncias Intl é custosa. Mantemos caches para reutilização.
-const pluralRulesCache: Record<string, Intl.PluralRules> = {};
-const collatorCache: Record<string, Intl.Collator> = {};
+// Criar instâncias Intl é custoso, então cada idioma monta as suas uma única vez.
+type NumberFormatBundle = { int: Intl.NumberFormat; dec: Intl.NumberFormat; evo: Intl.NumberFormat };
+type NumberFormatType = keyof NumberFormatBundle;
+
+interface LangBundle {
+    pluralRules: Intl.PluralRules;
+    collator: Intl.Collator;
+    listFormat: ListFormatter;
+    numbers: NumberFormatBundle;
+    /** Índice = getUTCDay() (0 = domingo). Acesso O(1) nos loops de calendário. */
+    weekdays: string[];
+}
+
+const bundleCache: Record<string, LangBundle> = {};
 
 // DUAL-LAYER CACHE STRATEGY [2025-04-13]:
 // 1. WeakMap: Fast-path para objetos de opções reutilizados (Hoisted Constants). Chave = Referência do Objeto.
@@ -48,18 +59,6 @@ const dateTimeStringCache = new Map<string, Intl.DateTimeFormat>();
 
 // MEMORY GUARD: Limite de cache para evitar leaks em sessões longas.
 const MAX_CACHE_SIZE = 100;
-
-const listFormatCache: Record<string, ListFormatter> = {};
-
-// NUMERIC CACHE [2025-04-14]: Cache para formatadores numéricos (Int, Decimal, Evolution).
-// Evita recriar Intl.NumberFormat em loops de renderização de gráficos.
-type NumberFormatBundle = { int: Intl.NumberFormat; dec: Intl.NumberFormat; evo: Intl.NumberFormat };
-type NumberFormatType = keyof NumberFormatBundle;
-const numberFormatCache: Record<string, NumberFormatBundle> = {};
-
-// PERFORMANCE: Cache imutável para nomes de dias da semana por idioma.
-// Permite acesso O(1) em loops de calendário.
-const weekdayCache: Record<string, string[]> = {};
 
 const loadedTranslations: Record<string, Translations> = {};
 
@@ -79,13 +78,10 @@ const TIME_OF_DAY_KEYS: Record<TimeOfDay, string> = {
 };
 
 // PERFORMANCE: Hot-Cache (Ponteiros diretos para uso síncrono rápido).
+// Os dicionários ficam soltos de propósito: `t()` é o caminho mais quente do app.
 let currentDict: Translations | null = null;
 let fallbackDict: Translations | null = null; // Granular Fallback (ex: ES -> PT)
-let currentPluralRules: Intl.PluralRules | null = null;
-let currentCollator: Intl.Collator | null = null;
-let currentListFormat: ListFormatter | null = null;
-let currentNumberFormat: NumberFormatBundle | null = null;
-let currentWeekdayNames: string[] = []; // Cache array access is faster than Intl calls
+let current: LangBundle | null = null;
 let currentLangCode: string | null = null;
 
 // CONCURRENCY: ID da última requisição.
@@ -161,115 +157,86 @@ function triggerBackgroundLoad(langCode: string) {
     });
 }
 
+/** Devolve o resultado da primeira fábrica que não explodir (degradação graciosa). */
+function firstThatWorks<T>(...factories: Array<() => T>): T {
+    let lastError: unknown;
+    for (const make of factories) {
+        try {
+            return make();
+        } catch (error) {
+            lastError = error;
+        }
+    }
+    throw lastError;
+}
+
+const NUMBER_OPTS = {
+    int: { maximumFractionDigits: 0 },
+    dec: { minimumFractionDigits: 2, maximumFractionDigits: 2 },
+    evo: { minimumFractionDigits: 1, maximumFractionDigits: 1 }
+} as const;
+
+const makeNumbers = (locale?: string): NumberFormatBundle => ({
+    int: new Intl.NumberFormat(locale, NUMBER_OPTS.int),
+    dec: new Intl.NumberFormat(locale, NUMBER_OPTS.dec),
+    evo: new Intl.NumberFormat(locale, NUMBER_OPTS.evo)
+});
+
 /**
- * INTERNAL HELPER: Atualiza os caches quentes quando o idioma muda.
- * Centraliza a lógica de sincronização.
+ * Monta as instâncias Intl de um idioma. Cada campo degrada para PT e, no limite,
+ * para um substituto que não quebra o render — browser antigo perde a formatação
+ * localizada, nunca a funcionalidade.
  */
+function buildBundle(langCode: string): LangBundle {
+    const ListFormatCtor = (Intl as unknown as { ListFormat?: new (locales?: string | string[], options?: Intl.ListFormatOptions) => ListFormatter }).ListFormat;
+    return {
+        pluralRules: firstThatWorks(
+            () => new Intl.PluralRules(langCode),
+            () => new Intl.PluralRules('pt'),
+            () => ({ select: () => 'other' }) as unknown as Intl.PluralRules
+        ),
+        collator: firstThatWorks(
+            () => new Intl.Collator(langCode, { sensitivity: 'base', numeric: true }),
+            () => new Intl.Collator('pt')
+        ),
+        listFormat: firstThatWorks<ListFormatter>(
+            () => new ListFormatCtor!(langCode, { style: 'long', type: 'conjunction' }),
+            () => ({ format: (list: Iterable<string>) => Array.from(list).join(', ') })
+        ),
+        numbers: firstThatWorks(
+            () => makeNumbers(langCode),
+            () => makeNumbers('pt'),
+            () => makeNumbers(undefined)
+        ),
+        weekdays: firstThatWorks(
+            () => {
+                const dayFormatter = new Intl.DateTimeFormat(langCode, DAY_FORMAT_OPTS);
+                return WEEKDAY_REF_DATES.map(date => dayFormatter.format(date).toUpperCase());
+            },
+            () => bundleCache['pt']?.weekdays ?? []
+        )
+    };
+}
+
+/** Aponta os caches quentes para o idioma indicado, carregando-o se preciso. */
 function updateHotCache(langCode: string) {
     currentLangCode = langCode;
-    
-    // 1. Dictionary & Fallback Strategy
+
     if (loadedTranslations[langCode]) {
         currentDict = loadedTranslations[langCode];
-        if (langCode !== 'pt' && loadedTranslations['pt']) {
-            fallbackDict = loadedTranslations['pt'];
-        } else {
-            fallbackDict = null;
-        }
+        fallbackDict = langCode !== 'pt' ? (loadedTranslations['pt'] ?? null) : null;
     } else {
         currentDict = loadedTranslations['pt'] || null;
         fallbackDict = null;
         triggerBackgroundLoad(langCode);
     }
-    
-    // 2. Plural Rules (Crash Guard)
-    if (!pluralRulesCache[langCode]) {
-        try {
-            pluralRulesCache[langCode] = new Intl.PluralRules(langCode);
-        } catch (e) {
-            try {
-                pluralRulesCache[langCode] = new Intl.PluralRules('pt');
-            } catch (e2) {
-                // Fallback final para evitar crash: Mock que retorna sempre 'other'
-                pluralRulesCache[langCode] = { select: () => 'other' } as unknown as Intl.PluralRules;
-            }
-        }
-    }
-    currentPluralRules = pluralRulesCache[langCode];
 
-    // 3. Collator (Sorting)
-    if (!collatorCache[langCode]) {
-        try {
-            collatorCache[langCode] = new Intl.Collator(langCode, { sensitivity: 'base', numeric: true });
-        } catch (e) {
-            collatorCache[langCode] = new Intl.Collator('pt'); // Se falhar aqui, o browser está quebrado
-        }
-    }
-    currentCollator = collatorCache[langCode];
+    current = bundleCache[langCode] ??= buildBundle(langCode);
+}
 
-    // 4. List Format (Arrays)
-    if (!listFormatCache[langCode]) {
-        try {
-            // Prefer a typed access to Intl.ListFormat when available in the runtime.
-            const ListFormatCtor = (Intl as unknown as { ListFormat?: new (locales?: string | string[], options?: Intl.ListFormatOptions) => Intl.ListFormat }).ListFormat;
-            if (ListFormatCtor) {
-                listFormatCache[langCode] = new ListFormatCtor(langCode, { style: 'long', type: 'conjunction' });
-            } else {
-                throw new Error('ListFormat not available');
-            }
-        } catch (e) {
-            // ROBUSTEZ: Fallback seguro se a API não existir (Browser antigo).
-            listFormatCache[langCode] = { 
-                format: (list: Iterable<string>) => Array.from(list).join(', ') 
-            }; 
-        }
-    }
-    currentListFormat = listFormatCache[langCode];
-
-    // 5. Number Formats (Integer, Decimal & Evolution)
-    if (!numberFormatCache[langCode]) {
-        try {
-            numberFormatCache[langCode] = {
-                int: new Intl.NumberFormat(langCode, { maximumFractionDigits: 0 }),
-                dec: new Intl.NumberFormat(langCode, { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-                evo: new Intl.NumberFormat(langCode, { minimumFractionDigits: 1, maximumFractionDigits: 1 })
-            };
-        } catch (e) {
-            // Fallback seguro com as mesmas opções de formatação
-            const optsInt = { maximumFractionDigits: 0 };
-            const optsDec = { minimumFractionDigits: 2, maximumFractionDigits: 2 };
-            const optsEvo = { minimumFractionDigits: 1, maximumFractionDigits: 1 };
-            
-            // Se 'pt' também falhar, usa padrão do sistema (undefined locale)
-            try {
-                numberFormatCache[langCode] = { 
-                    int: new Intl.NumberFormat('pt', optsInt), 
-                    dec: new Intl.NumberFormat('pt', optsDec), 
-                    evo: new Intl.NumberFormat('pt', optsEvo) 
-                };
-            } catch (e2) {
-                numberFormatCache[langCode] = { 
-                    int: new Intl.NumberFormat(undefined, optsInt), 
-                    dec: new Intl.NumberFormat(undefined, optsDec), 
-                    evo: new Intl.NumberFormat(undefined, optsEvo) 
-                };
-            }
-        }
-    }
-    currentNumberFormat = numberFormatCache[langCode];
-
-    // 6. Weekday Names (Fast Lookup Cache)
-    if (!weekdayCache[langCode]) {
-        try {
-            const dayFormatter = new Intl.DateTimeFormat(langCode, DAY_FORMAT_OPTS);
-            weekdayCache[langCode] = WEEKDAY_REF_DATES.map(date => 
-                dayFormatter.format(date).toUpperCase()
-            );
-        } catch (e) {
-            weekdayCache[langCode] = weekdayCache['pt'] || []; 
-        }
-    }
-    currentWeekdayNames = weekdayCache[langCode];
+/** Sincroniza os ponteiros quentes com o idioma ativo do estado. */
+function syncLang() {
+    if (state.activeLanguageCode !== currentLangCode) updateHotCache(state.activeLanguageCode);
 }
 
 /**
@@ -278,9 +245,7 @@ function updateHotCache(langCode: string) {
  */
 export function t(key: string, options?: { [key: string]: string | number | undefined }): string {
     // Sync check
-    if (state.activeLanguageCode !== currentLangCode) {
-        updateHotCache(state.activeLanguageCode);
-    }
+    syncLang();
 
     if (!currentDict) return key;
 
@@ -303,7 +268,7 @@ export function t(key: string, options?: { [key: string]: string | number | unde
         // Pluralization
         if (options?.count !== undefined) {
             // CRASH GUARD: Ensure rules exist
-            const rules = currentPluralRules || pluralRulesCache['pt'] || new Intl.PluralRules('en'); 
+            const rules = current?.pluralRules ?? new Intl.PluralRules('en');
             const pluralKey = rules.select(options.count as number);
             
             const foundString = translationValue[pluralKey] || translationValue.other;
@@ -334,10 +299,8 @@ export function t(key: string, options?: { [key: string]: string | number | unde
  * Otimizado para uso em `array.sort()`.
  */
 export function compareStrings(a: string, b: string): number {
-    if (state.activeLanguageCode !== currentLangCode) {
-        updateHotCache(state.activeLanguageCode);
-    }
-    return currentCollator ? currentCollator.compare(a, b) : a.localeCompare(b);
+    syncLang();
+    return current ? current.collator.compare(a, b) : a.localeCompare(b);
 }
 
 /**
@@ -364,9 +327,7 @@ export function formatDate(date: Date | number | null | undefined, options: Intl
         return '---';
     }
 
-    if (state.activeLanguageCode !== currentLangCode) {
-        updateHotCache(state.activeLanguageCode);
-    }
+    syncLang();
 
     // 1. WeakMap Lookup (Fast Path / Zero Allocation)
     // Funciona perfeitamente quando o chamador usa constantes hoistadas (ex: OPTS_ARIA_DATE).
@@ -408,33 +369,18 @@ export function formatDate(date: Date | number | null | undefined, options: Intl
     return formatter.format(dateObj);
 }
 
-/**
- * REFACTOR [MAINTAINABILITY]: Helper interno para formatação de números.
- * Centraliza a lógica de verificação de idioma e acesso ao cache, eliminando redundância.
- */
 function _formatNumber(num: number, type: NumberFormatType): string {
-    if (state.activeLanguageCode !== currentLangCode) {
-        updateHotCache(state.activeLanguageCode);
-    }
-    return currentNumberFormat![type].format(num);
+    syncLang();
+    return current!.numbers[type].format(num);
 }
 
-/**
- * Formata um número inteiro usando as regras do locale ativo.
- * Ex: 1000 -> "1.000" (PT) ou "1,000" (EN).
- */
+/** 1000 -> "1.000" (PT) / "1,000" (EN). */
 export const formatInteger = (num: number) => _formatNumber(num, 'int');
 
-/**
- * Formata um número decimal (fixo em 2 casas) usando as regras do locale ativo.
- * Ex: 10.5 -> "10,50" (PT) ou "10.50" (EN).
- */
+/** 10.5 -> "10,50" (PT) / "10.50" (EN). */
 export const formatDecimal = (num: number) => _formatNumber(num, 'dec');
 
-/**
- * Formata um número de evolução/porcentagem (fixo em 1 casa) usando as regras do locale ativo.
- * Ex: 12.5 -> "12,5" (PT) ou "12.5" (EN).
- */
+/** 12.5 -> "12,5" (PT) / "12.5" (EN). */
 export const formatEvolution = (num: number) => _formatNumber(num, 'evo');
 
 /**
@@ -442,10 +388,8 @@ export const formatEvolution = (num: number) => _formatNumber(num, 'evo');
  */
 export function formatList(list: string[]): string {
     if (list.length === 0) return '';
-    if (state.activeLanguageCode !== currentLangCode) {
-        updateHotCache(state.activeLanguageCode);
-    }
-    return currentListFormat ? currentListFormat.format(list) : list.join(', ');
+    syncLang();
+    return current ? current.listFormat.format(list) : list.join(', ');
 }
 
 /**
@@ -461,20 +405,16 @@ export function getTimeOfDayName(time: TimeOfDay): string {
  * PERFORMANCE: Array access O(1) instead of Date/Intl instantiation.
  */
 export function getLocaleDayName(date: Date): string {
-    if (state.activeLanguageCode !== currentLangCode) {
-        updateHotCache(state.activeLanguageCode);
-    }
+    syncLang();
     // getUTCDay() returns 0 for Sunday, matches array index
-    return currentWeekdayNames[date.getUTCDay()] || '';
+    return current?.weekdays[date.getUTCDay()] || '';
 }
 
 /**
  * Obtém o nome localizado do idioma ativo para ser usado nos prompts da IA.
  */
 export function getAiLanguageName(): string {
-    if (state.activeLanguageCode !== currentLangCode) {
-        updateHotCache(state.activeLanguageCode);
-    }
+    syncLang();
     return t(LANGUAGES.find(l => l.code === state.activeLanguageCode)?.nameKey || 'langEnglish');
 }
 

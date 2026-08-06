@@ -81,16 +81,16 @@ describe('buildNotificationCard', () => {
         expect(card.body).toBe(QUOTE);
     });
 
-    it('mostra pendências E frase juntas, nesta ordem', () => {
+    it('mostra frase E pendências juntas, nesta ordem', () => {
         createTestHabit({ name: 'Meditar', time: 'Morning', goalType: 'check' });
         setNotificationQuote(QUOTE);
 
         const card = buildNotificationCard()!;
         const [primeira, segunda] = card.body.split('\n');
 
-        // O que exige ação primeiro, a leitura depois.
-        expect(primeira).toContain('Meditar');
-        expect(segunda).toBe(QUOTE);
+        // A frase abre; a lista fecha, para a ação ser a última coisa lida.
+        expect(primeira).toBe(QUOTE);
+        expect(segunda).toContain('Meditar');
     });
 
     it('mostra só as pendências enquanto a frase não carregou', () => {

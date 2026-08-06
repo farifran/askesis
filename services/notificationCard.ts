@@ -90,8 +90,9 @@ function pendingLine(dateISO: string, pending: number): string {
 /**
  * Monta o cartão a partir do estado atual.
  *
- * O corpo leva as pendências E a frase, nesta ordem: o que exige ação primeiro,
- * a leitura depois. Com o dia zerado sobra só a frase.
+ * O corpo leva a frase E as pendências, nesta ordem: a frase abre o lembrete e
+ * a lista fecha, deixando a ação como última coisa lida. Com o dia zerado sobra
+ * só a frase.
  *
  * Retorna `null` quando não há o que dizer (nenhum hábito ativo hoje): nesse
  * caso o SW mantém o texto genérico do push em vez de inventar conteúdo.
@@ -104,8 +105,8 @@ export function buildNotificationCard(): NotificationCard | null {
         if (total === 0) return null;
 
         const lines: string[] = [];
-        if (pending > 0) lines.push(pendingLine(dateISO, pending));
         if (publishedQuote) lines.push(publishedQuote);
+        if (pending > 0) lines.push(pendingLine(dateISO, pending));
 
         // Dia zerado antes de a frase carregar: nada a acrescentar ao genérico.
         if (lines.length === 0) return null;
