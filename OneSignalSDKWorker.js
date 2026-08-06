@@ -77,18 +77,20 @@ importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js');
     }
 
     /**
-     * O marcador pode chegar em lugares diferentes conforme o formato de payload
-     * do SDK (`custom.a` no legado, `data` no novo). Procura em todos.
+     * Procura o marcador no payload CRU, sem supor onde o SDK o aninha.
+     *
+     * As versões anteriores liam caminhos específicos (`custom.a`, `data`,
+     * `additionalData`, `topic`) e, quando erravam, o handler saía calado — o
+     * lembrete chegava genérico sem qualquer pista do motivo. O servidor manda o
+     * marcador em dois campos (`data.askesis` e `web_push_topic`), então buscar
+     * a string no texto do payload acerta independentemente do aninhamento.
+     *
+     * Continua evitando sequestro: um anúncio enviado pelo painel não carrega
+     * esta string em lugar nenhum.
      */
     function isReminderPush(event) {
         try {
-            var payload = event.data ? event.data.json() : null;
-            if (!payload) return false;
-
-            var extra = (payload.custom && payload.custom.a) || payload.data || payload.additionalData;
-            if (extra && extra.askesis === REMINDER_MARKER) return true;
-
-            return payload.topic === REMINDER_MARKER;
+            return !!event.data && event.data.text().indexOf(REMINDER_MARKER) !== -1;
         } catch (e) {
             return false;
         }

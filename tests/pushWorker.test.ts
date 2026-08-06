@@ -104,7 +104,8 @@ function loadWorker(card: Card, options: WorkerOptions = {}) {
     async function firePush(payload: unknown = { custom: { a: { askesis: MARKER } } }) {
         let pending: Promise<unknown> = Promise.resolve();
         listeners.push({
-            data: { json: () => payload },
+            // O worker lê o texto cru: não supõe onde o SDK aninha o marcador.
+            data: { json: () => payload, text: () => JSON.stringify(payload) },
             waitUntil: (p: Promise<unknown>) => { pending = p; }
         });
 
@@ -163,11 +164,19 @@ describe('OneSignalSDKWorker — personalização local do lembrete', () => {
         expect(shown).toHaveLength(0);
     });
 
-    it('aceita o marcador vindo em `data` além de `custom.a`', async () => {
-        const { firePush, shown } = loadWorker(CARD_HOJE);
-        await firePush({ data: { askesis: MARKER } });
-
-        expect(shown).toHaveLength(1);
+    it('aceita o marcador em qualquer aninhamento do payload', async () => {
+        // Regressão: ler caminhos fixos (custom.a / data / topic) fazia o handler
+        // sair calado quando o SDK aninhava diferente — genérica sem pista alguma.
+        for (const payload of [
+            { data: { askesis: MARKER } },
+            { topic: MARKER },
+            { custom: { a: { askesis: MARKER } } },
+            { qualquer: { coisa: { aninhada: MARKER } } }
+        ]) {
+            const { firePush, shown } = loadWorker(CARD_HOJE);
+            await firePush(payload);
+            expect(shown).toHaveLength(1);
+        }
     });
 
     it('fecha sempre a original, para não empilhar duas notificações', async () => {
