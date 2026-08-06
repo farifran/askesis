@@ -24,7 +24,6 @@ const GENERIC_HABIT_IDENTITIES = new Set([
     'test'
 ]);
 
-export { GENERIC_HABIT_IDENTITIES };
 
 export function evaluateIdentityDedupStrategy(
     identity: string,

@@ -51,7 +51,7 @@ const ONESIGNAL_API_URL = 'https://api.onesignal.com/notifications';
  * Se um dia isso quebrar de novo, confira o nome em Audience -> Segments antes
  * de suspeitar de qualquer outra coisa.
  */
-export const TARGET_SEGMENT = 'Total Subscriptions';
+const TARGET_SEGMENT = 'Total Subscriptions';
 
 /**
  * Identifica ESTE push. Vai em dois campos, com papéis distintos:

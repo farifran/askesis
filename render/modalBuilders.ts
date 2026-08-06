@@ -14,7 +14,7 @@ import { t, getTimeOfDayName } from '../i18n';
 import { PredefinedHabit, TimeOfDay, TIMES_OF_DAY } from '../state';
 import { EXPLORE_STAGGER_DELAY_MS } from './constants';
 
-export type FrequencyTypeOption = 'daily' | 'specific_days_of_week' | 'interval';
+type FrequencyTypeOption = 'daily' | 'specific_days_of_week' | 'interval';
 
 export function replaceWithHtmlFragment(target: HTMLElement, html: string) {
     target.replaceChildren(sanitizeHtmlToFragment(html));

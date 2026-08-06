@@ -1,6 +1,6 @@
 import { Redis } from '@upstash/redis';
 
-export type RateLimitResult = { limited: boolean; retryAfterSec: number };
+type RateLimitResult = { limited: boolean; retryAfterSec: number };
 
 type LocalRateEntry = { count: number; resetAt: number };
 
@@ -28,7 +28,7 @@ export function parseAllowedOrigins(value: string | undefined): string[] {
         .filter(Boolean);
 }
 
-export function isSameDeploymentOrigin(req: Request, origin: string): boolean {
+function isSameDeploymentOrigin(req: Request, origin: string): boolean {
     if (!origin) return false;
     try {
         const originUrl = new URL(origin);

@@ -306,7 +306,7 @@ export function updateNotificationUI() {
     });
 }
 
-export function initLanguageFilter() {
+function initLanguageFilter() {
     const langNames = LANGUAGES.map(lang => t(lang.nameKey));
     ui.languageReel.replaceChildren(
         ...langNames.map(name => {

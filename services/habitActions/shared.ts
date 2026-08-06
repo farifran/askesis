@@ -30,10 +30,10 @@ export function setBatchOpActive(v: boolean) { _isBatchOpActive = v; }
 // ══════════ Action Context State Machine ══════════
 
 export type HabitReorderInfo = { id: string; pos: 'before' | 'after' };
-export type ActionDropContext = { habitId: string; fromTime: TimeOfDay; toTime: TimeOfDay; reorderInfo?: HabitReorderInfo };
-export type ActionRemovalContext = { habitId: string; time: TimeOfDay; targetDate: string };
-export type ActionEndingContext = { habitId: string; targetDate: string };
-export type ActionDeletionContext = { habitId: string };
+type ActionDropContext = { habitId: string; fromTime: TimeOfDay; toTime: TimeOfDay; reorderInfo?: HabitReorderInfo };
+type ActionRemovalContext = { habitId: string; time: TimeOfDay; targetDate: string };
+type ActionEndingContext = { habitId: string; targetDate: string };
+type ActionDeletionContext = { habitId: string };
 
 type ActionContextState = {
     isLocked: boolean;
@@ -62,7 +62,7 @@ export const ActionContext: ActionContextState = {
  * BOOT LOCK PROTECTION: Durante o boot, usamos timestamp incremental simples.
  * Após o sync, usamos o relógio real para garantir LWW.
  */
-export function _bumpLastModified() {
+function _bumpLastModified() {
     if (!state.initialSyncDone) {
         state.lastModified = state.lastModified + 1;
     } else {

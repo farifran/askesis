@@ -12,7 +12,7 @@
  * Calcula distância de Levenshtein entre duas strings.
  * Usado para fuzzy matching de nomes de hábitos (singular/plural, typos).
  */
-export function levenshteinDistance(a: string, b: string): number {
+function levenshteinDistance(a: string, b: string): number {
     if (a === b) return 0;
     if (a.length === 0) return b.length;
     if (b.length === 0) return a.length;

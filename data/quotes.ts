@@ -8,7 +8,7 @@ import { StoicVirtue, StoicLevel, StoicDiscipline, GovernanceSphere } from '../s
 
 // --- TYPE DEFINITIONS ---
 
-export type CoercionType = 'Dogmatic' | 'Inspirational' | 'Reflective' | 'Directive';
+type CoercionType = 'Dogmatic' | 'Inspirational' | 'Reflective' | 'Directive';
 
 export type StoicTag = 
     | 'action' | 'resilience' | 'control' | 'time' | 'gratitude' | 'discipline' 
@@ -2857,15 +2857,6 @@ const NATURE_QUOTES: Quote[] = [
 ];
 
 // --- AGGREGATION & EXPORT ---
-
-export const QUOTES_BY_CATEGORY = Object.freeze({
-    mind: MIND_QUOTES,
-    action: ACTION_QUOTES,
-    resilience: RESILIENCE_QUOTES,
-    equilibrium: EQUILIBRIUM_QUOTES,
-    social: SOCIAL_QUOTES,
-    nature: NATURE_QUOTES
-});
 
 // @fix: Change type to readonly Quote[] to match Object.freeze return type and fix type assignment error.
 export const STOIC_QUOTES: readonly Quote[] = Object.freeze([

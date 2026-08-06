@@ -11,7 +11,7 @@
 import type { HabitDailyInfo } from '../../state';
 
 type HabitInstanceMap = NonNullable<HabitDailyInfo['instances']>;
-export type HabitInstanceKey = keyof HabitInstanceMap;
+type HabitInstanceKey = keyof HabitInstanceMap;
 
 export function isHabitInstanceKey(value: string): value is HabitInstanceKey {
     return value === 'Morning' || value === 'Afternoon' || value === 'Evening';
