@@ -108,30 +108,53 @@ importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js');
         return !!card && !!card.title && !!card.body && card.date === todayUTCIso();
     }
 
-    /**
-     * Espera a OneSignal publicar a notificação dela. Sem filtro de tag: o que
-     * esta registration exibe é dela, e assim não dependemos de qual tag usou.
-     *
-     * A espera é necessária porque os dois handlers correm em paralelo — se a
-     * nossa chegasse primeiro, a genérica sobrescreveria o texto personalizado.
-     */
-    function waitForNotification(registration) {
-        var deadline = Date.now() + POLL_TIMEOUT_MS;
-
-        function attempt() {
-            return registration.getNotifications().then(function (list) {
-                if (list.length > 0) return list[list.length - 1];
-                if (Date.now() >= deadline) return null;
-                return sleep(POLL_INTERVAL_MS).then(attempt);
-            });
-        }
-        return attempt();
+    /** Identidade estável o bastante para distinguir notificações na bandeja. */
+    function fingerprint(notification) {
+        return [notification.tag, notification.title, notification.body, notification.timestamp].join('|');
     }
 
-    /** Troca o conteúdo da notificação que a OneSignal acabou de publicar. */
+    /**
+     * Espera a OneSignal publicar a notificação DESTE push.
+     *
+     * Os dois handlers correm em paralelo: sem esperar, a genérica sobrescreveria
+     * o texto personalizado. Mas não basta esperar "alguma" notificação — uma
+     * antiga na bandeja satisfaria isso na hora, e acabaríamos substituindo a
+     * errada enquanto a nova aparece do lado (duas notificações). Por isso
+     * fotografamos a bandeja antes e só aceitamos o que for novo.
+     */
+    function waitForNewNotification(registration) {
+        return registration.getNotifications().then(function (before) {
+            var known = {};
+            before.forEach(function (n) { known[fingerprint(n)] = true; });
+
+            var deadline = Date.now() + POLL_TIMEOUT_MS;
+
+            function attempt() {
+                return registration.getNotifications().then(function (list) {
+                    for (var i = list.length - 1; i >= 0; i--) {
+                        if (!known[fingerprint(list[i])]) return list[i];
+                    }
+                    if (Date.now() >= deadline) return null;
+                    return sleep(POLL_INTERVAL_MS).then(attempt);
+                });
+            }
+            return attempt();
+        });
+    }
+
+    /**
+     * Troca o conteúdo da notificação que a OneSignal acabou de publicar.
+     *
+     * Fecha a original sempre, em vez de contar com a colisão de tag: se a tag
+     * dela vier vazia ou diferente da nossa, a "substituição" viraria uma
+     * segunda notificação na bandeja.
+     */
     function replaceWith(existing, title, body) {
-        var options = {
+        existing.close();
+        return self.registration.showNotification(title, {
             body: body,
+            // Tag própria e fixa: garante que lembretes seguidos colapsem entre si.
+            tag: REMINDER_MARKER,
             icon: existing.icon || 'icons/icon-192.svg',
             badge: existing.badge || 'icons/badge.svg',
             // Substituição silenciosa: a OneSignal já alertou o usuário.
@@ -139,18 +162,7 @@ importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js');
             // Preserva o payload da OneSignal para o notificationclick dela
             // continuar abrindo a URL e registrando o clique.
             data: existing.data
-        };
-
-        if (existing.tag) {
-            // Mesma tag substitui no lugar de empilhar.
-            options.tag = existing.tag;
-            return self.registration.showNotification(title, options);
-        }
-
-        // Sem tag não há substituição possível: fecha a original antes, senão
-        // ficariam duas notificações na bandeja.
-        existing.close();
-        return self.registration.showNotification(title, options);
+        });
     }
 
     self.addEventListener('push', function (event) {
@@ -160,7 +172,7 @@ importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js');
             readCard().catch(function () { return null; }).then(function (card) {
                 if (!isCardUsable(card)) return;
 
-                return waitForNotification(self.registration).then(function (existing) {
+                return waitForNewNotification(self.registration).then(function (existing) {
                     // Sem notificação da OneSignal não há o que substituir — e criar
                     // uma aqui arriscaria duplicar caso a dela ainda esteja a caminho.
                     if (!existing) return;

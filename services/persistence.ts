@@ -158,6 +158,36 @@ async function saveSplitState(main: AppState, card?: NotificationCard | null): P
 let syncHandler: ((state: AppState, immediate?: boolean) => void) | null = null;
 export const registerSyncHandler = (h: (s: AppState, immediate?: boolean) => void) => syncHandler = h;
 
+/**
+ * Regrava só o cartão de notificação, sem tocar no resto do estado.
+ *
+ * O cartão normalmente é gravado junto do `saveState`, mas isso só acontece
+ * quando algo muda. Abrir o app e apenas olhar não salva nada — e é justamente
+ * aí que a frase estoica é escolhida (o chunk de citações é lazy). Sem este
+ * caminho, a frase do dia só entraria no cartão depois da primeira marcação.
+ *
+ * Falha em silêncio: o cartão é um extra do lembrete, não fluxo do usuário.
+ */
+export async function persistNotificationCard(): Promise<void> {
+    if (!HAS_INDEXED_DB) return;
+    try {
+        const card = buildNotificationCard();
+        const db = await getDB();
+        await new Promise<void>((resolve, reject) => {
+            const tx = db.transaction(STORE_NAME, 'readwrite');
+            const store = tx.objectStore(STORE_NAME);
+            if (card) store.put(card, NOTIFICATION_CARD_KEY);
+            else store.delete(NOTIFICATION_CARD_KEY);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+        });
+    } catch (e) {
+        if (!(IS_TEST_ENV && String(e).includes('IndexedDB not available'))) {
+            logger.warn('[Persistence] Falha ao gravar o cartão de notificação.', e);
+        }
+    }
+}
+
 function pruneOrphanedDailyData(habits: readonly Habit[], dailyData: Record<string, Record<string, HabitDailyInfo>>) {
     if (habits.length === 0) {
         // Mitigation: only clear after loadState fully assigns habits.

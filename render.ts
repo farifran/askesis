@@ -19,6 +19,7 @@ import type { Quote } from './data/quotes';
 import { selectBestQuote } from './services/quoteEngine';
 import { calculateDaySummary } from './services/selectors';
 import { setNotificationQuote } from './services/notificationCard';
+import { persistNotificationCard } from './services/persistence';
 import { APP_EVENTS, emitRequestAnalysis } from './events';
 
 // Importa os renderizadores especializados
@@ -432,7 +433,11 @@ export function renderStoicQuote() {
     // Publica a frase para o cartão de notificação: a ADAPTAÇÃO, que é a versão
     // curta mostrada aqui sem expandir. É aqui, e não no cartão, porque
     // data/quotes.ts é carregado sob demanda — ver setNotificationQuote.
+    //
+    // A regravação é necessária: só abrir o app não dispara `saveState`, e sem
+    // ela a frase do dia só entraria no cartão após a primeira marcação.
     setNotificationQuote(adaptationText);
+    void persistNotificationCard();
 
 
     const container = ui.stoicQuoteDisplay;
