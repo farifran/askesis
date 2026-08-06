@@ -25,10 +25,9 @@ import { APP_EVENTS, emitRequestAnalysis } from './events';
 // Importa os renderizadores especializados
 import { setTextContent, updateReelRotaryARIA, setTrustedSvgContent } from './render/dom';
 import { renderCalendar } from './render/calendar';
-import { renderFullCalendar } from './render/calendarGrid';
 import { renderHabits } from './render/habits';
 import { renderChart } from './render/chart';
-import { setupManageModal, refreshEditModalUI, renderLanguageFilter, renderIconPicker, renderFrequencyOptions, openModal, showConfirmationModal } from './render/modals';
+import { setupManageModal, refreshEditModalUI, renderLanguageFilter, showConfirmationModal } from './render/modals';
 
 // Re-exporta tudo para manter compatibilidade
 export * from './render/dom';

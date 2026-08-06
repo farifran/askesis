@@ -40,20 +40,6 @@ const DEFAULT_APP_ID = 'd69cf0b6-bc03-4375-b3b7-dd7b37e05a17';
 const ONESIGNAL_API_URL = 'https://api.onesignal.com/notifications';
 
 /**
- * Tag da notificação no navegador (`web_push_topic` -> Notification.tag).
- *
- * Precisa bater com OneSignalSDKWorker.js, que a usa para substituir este texto
- * genérico pelo lembrete personalizado montado no aparelho — há teste garantindo
- * isso em api/reminder.test.ts.
- *
- * Deliberadamente DIFERENTE de PENDING_NOTIFICATION_TAG (services/badge.ts): a
- * substituição por tag vale por service worker registration, e o badge vive no
- * sw.js (scope '/') enquanto o push vive no worker da OneSignal ('/onesignal/').
- * Tags iguais não colapsariam — só criariam a ilusão de que colapsam.
- */
-export const NOTIFICATION_TAG = 'askesis-reminder';
-
-/**
  * Segmento alvo. É o segmento "Default" do app (Audience -> Segments).
  *
  * ATENÇÃO: a OneSignal renomeou os segmentos padrão no modelo de usuários novo.
@@ -68,15 +54,23 @@ export const NOTIFICATION_TAG = 'askesis-reminder';
 export const TARGET_SEGMENT = 'Total Subscriptions';
 
 /**
- * Marcador em `data` (dados adicionais) que identifica ESTE push no Service
- * Worker. É o que autoriza a personalização local.
+ * Identifica ESTE push. Vai em dois campos, com papéis distintos:
  *
- * Não usamos a `tag` para isso: depender de `web_push_topic` virar
- * `Notification.tag` é suposição sobre o interno do SDK. O marcador em `data`
- * chega íntegro ao `push` event e não depende de nada disso.
+ * - `data.askesis` — o que o Service Worker lê para autorizar a personalização.
+ *   Não usamos a tag para isso: depender de `web_push_topic` virar
+ *   `Notification.tag` é suposição sobre o interno do SDK, e ela não se
+ *   confirmou. O marcador em `data` chega íntegro ao evento `push`.
+ *   Também evita sequestro: um anúncio enviado pelo painel não o carrega, e
+ *   portanto não é reescrito com texto de hábitos.
  *
- * Também evita sequestro: um push de anúncio enviado pelo painel não tem este
- * marcador e portanto não é reescrito com o texto de hábitos.
+ * - `web_push_topic` — agrupa lembretes consecutivos numa notificação só,
+ *   quando o navegador honra o topic. A personalização não depende disto: o
+ *   worker fecha a original e publica com tag própria (o mesmo valor).
+ *
+ * Deliberadamente diferente de PENDING_NOTIFICATION_TAG (services/badge.ts):
+ * colapso por tag vale por service worker registration, e o badge vive no
+ * sw.js (scope '/') enquanto o push vive em '/onesignal/'. Tags iguais não
+ * colapsariam — só criariam a ilusão de que colapsam.
  */
 export const REMINDER_MARKER = 'askesis-reminder';
 
@@ -177,9 +171,7 @@ export default async function handler(req: Request) {
         // Marcador lido pelo OneSignalSDKWorker.js: é ele que autoriza a
         // substituição deste texto genérico pelo lembrete real do aparelho.
         data: { askesis: REMINDER_MARKER },
-        // Agrupa as notificações do lembrete numa só quando o navegador honra o
-        // topic. A personalização NÃO depende disto — ver REMINDER_MARKER.
-        web_push_topic: NOTIFICATION_TAG,
+        web_push_topic: REMINDER_MARKER,
         idempotency_key: await idempotencyKeyForDate(minuteStamp)
     };
 

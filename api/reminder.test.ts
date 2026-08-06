@@ -89,17 +89,17 @@ describe('api/reminder', () => {
 
     it('a tag do lembrete não colide com a do badge local', async () => {
         const { readFileSync } = await import('node:fs');
-        const { NOTIFICATION_TAG } = await import('./reminder');
+        const { REMINDER_MARKER } = await import('./reminder');
 
         // Elas vivem em registrations diferentes (sw.js vs /onesignal/), então
         // reusar a mesma string sugeriria um colapso que não acontece.
         expect(readFileSync('services/badge.ts', 'utf8'))
-            .not.toContain(`PENDING_NOTIFICATION_TAG = '${NOTIFICATION_TAG}'`);
+            .not.toContain(`PENDING_NOTIFICATION_TAG = '${REMINDER_MARKER}'`);
     });
 
     it('web_push_topic respeita o limite de 64 caracteres da OneSignal', async () => {
-        const { NOTIFICATION_TAG } = await import('./reminder');
-        expect(NOTIFICATION_TAG.length).toBeLessThanOrEqual(64);
+        const { REMINDER_MARKER } = await import('./reminder');
+        expect(REMINDER_MARKER.length).toBeLessThanOrEqual(64);
     });
 
     it('idempotency key é estável no mesmo minuto e distinta entre minutos', async () => {
