@@ -30,6 +30,26 @@ const ALLOWED_ATTR = [
     'stroke-dasharray', 'stroke-dashoffset', 'opacity', 'vector-effect'
 ];
 
+const URL_ATTRS = new Set(['href', 'src', 'xlink:href']);
+
+/**
+ * Remove handlers `on*` e URIs `javascript:` que tenham sobrevivido ao DOMPurify.
+ *
+ * Roda em CADA parse, e não só uma vez: serializar e reinterpretar HTML é o vetor
+ * clássico de mXSS, então todo conteúdo que volta a ser parseado é varrido de novo.
+ */
+function stripDangerousAttributes(root: DocumentFragment | HTMLElement) {
+    for (const el of root.querySelectorAll('*')) {
+        for (const attr of Array.from(el.attributes)) {
+            const name = attr.name.toLowerCase();
+            const value = (attr.value || '').trim().toLowerCase();
+            if (name.startsWith('on') || (URL_ATTRS.has(name) && value.startsWith('javascript:'))) {
+                el.removeAttribute(attr.name);
+            }
+        }
+    }
+}
+
 /**
  * Wrapper de sanitização que retorna string segura (DOMPurify).
  * Use quando for necessário manipular HTML como string antes de parsear.
@@ -41,26 +61,10 @@ export function sanitize(html: string): string {
         RETURN_TRUSTED_TYPE: false,
     }) as string;
 
-    // Extra hardening: ensure any remaining on* handlers or javascript: URIs are removed
-    // Parse the sanitized string into a template and scrub attributes then serialize back.
     try {
         const template = document.createElement('template');
         template.innerHTML = cleaned;
-        const elements = template.content.querySelectorAll('*');
-        for (const el of elements) {
-            const attrs = Array.from(el.attributes);
-            for (const attr of attrs) {
-                const name = attr.name.toLowerCase();
-                const value = (attr.value || '').trim().toLowerCase();
-                if (name.startsWith('on')) {
-                    el.removeAttribute(attr.name);
-                    continue;
-                }
-                if ((name === 'href' || name === 'src' || name === 'xlink:href') && value.startsWith('javascript:')) {
-                    el.removeAttribute(attr.name);
-                }
-            }
-        }
+        stripDangerousAttributes(template.content);
         return template.innerHTML;
     } catch {
         return cleaned;
@@ -153,28 +157,10 @@ export function setTrustedHtmlFragment(target: HTMLElement | null, html: string)
  * Bloqueia: script, iframe, object, embed, link, meta, style, handlers on*, javascript: hrefs.
  */
 export function sanitizeHtmlToFragment(html: string): DocumentFragment {
-    // Use centralized string sanitizer then parse into a DocumentFragment.
-    const clean = sanitize(html);
-
     const template = document.createElement('template');
-    template.innerHTML = clean;
-
-    // Extra hardening: garantir que qualquer atributo 'on*' e href/src javascript: sejam removidos
-    const elements = template.content.querySelectorAll('*');
-    for (const el of elements) {
-        const attrs = Array.from(el.attributes);
-        for (const attr of attrs) {
-            const attrName = attr.name.toLowerCase();
-            const attrValue = (attr.value || '').trim().toLowerCase();
-            if (attrName.startsWith('on')) {
-                el.removeAttribute(attr.name);
-                continue;
-            }
-            if ((attrName === 'href' || attrName === 'src' || attrName === 'xlink:href') && attrValue.startsWith('javascript:')) {
-                el.removeAttribute(attr.name);
-            }
-        }
-    }
-
+    template.innerHTML = sanitize(html);
+    // Segunda varredura obrigatória: o parse acima reinterpreta a string devolvida
+    // por sanitize(), e é justamente nesse round-trip que o mXSS se manifesta.
+    stripDangerousAttributes(template.content);
     return template.content;
 }
