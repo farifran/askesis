@@ -36,6 +36,18 @@ importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js');
 (function () {
     'use strict';
 
+    /**
+     * ATIVAÇÃO IMEDIATA.
+     *
+     * Sem isto, uma versão nova deste worker é instalada e fica em ESPERA
+     * indefinidamente enquanto a antiga segue atendendo os pushes — o SDK da
+     * OneSignal não chama `skipWaiting`, e o `sw.js` (que chama) é outro
+     * registration. Na prática, correções aqui nunca chegavam ao aparelho.
+     */
+    self.addEventListener('install', function () {
+        self.skipWaiting();
+    });
+
     var REMINDER_MARKER = 'askesis-reminder';
 
     // Espelha services/persistence.ts / services/notificationCard.ts.

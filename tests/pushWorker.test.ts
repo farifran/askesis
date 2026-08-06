@@ -80,9 +80,11 @@ function loadWorker(card: Card, options: WorkerOptions = {}) {
     const tray: any[] = [...(options.tray ?? [])];
     const shown: { title: string; options: any }[] = [];
     const listeners: Record<string, (event: any) => void> = {};
+    const state = { skipWaitingCalls: 0 };
 
     const selfStub = {
         addEventListener: (type: string, fn: (event: any) => void) => { listeners[type] = fn; },
+        skipWaiting: () => { state.skipWaitingCalls++; },
         registration: {
             getNotifications: async (filter?: { tag?: string }) =>
                 filter?.tag ? tray.filter(n => n.tag === filter.tag) : [...tray],
@@ -110,7 +112,13 @@ function loadWorker(card: Card, options: WorkerOptions = {}) {
         await pending;
     }
 
-    return { firePush, shown, tray };
+    return {
+        firePush,
+        shown,
+        tray,
+        install: () => listeners.install({}),
+        get skipWaitingCalls() { return state.skipWaitingCalls; }
+    };
 }
 
 const CARD_HOJE: Card = { date: TODAY, lang: 'pt', title: 'Hábitos pendentes', body: 'Faltam: Meditar' };
@@ -118,6 +126,16 @@ const CARD_HOJE: Card = { date: TODAY, lang: 'pt', title: 'Hábitos pendentes', 
 describe('OneSignalSDKWorker — personalização local do lembrete', () => {
     beforeEach(() => {
         vi.useRealTimers();
+    });
+
+    it('assume o controle na instalação, sem ficar em espera', async () => {
+        // Regressão: nem o SDK da OneSignal nem este worker chamavam skipWaiting,
+        // então cada versão nova ficava em espera e a antiga seguia atendendo os
+        // pushes — correções aqui não chegavam ao aparelho.
+        const worker = loadWorker(CARD_HOJE);
+        worker.install();
+
+        expect(worker.skipWaitingCalls).toBe(1);
     });
 
     it('substitui o texto genérico pelo cartão do dia', async () => {
