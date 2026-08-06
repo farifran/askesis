@@ -84,18 +84,25 @@ function pendingLine(dateISO: string, pending: number): string {
 
     const hidden = names.length - shown.length;
     const list = hidden > 0 ? t('notifyPendingMore', { names: shown.join(', '), count: hidden }) : shown.join(', ');
-    return t('notifyPendingList', { names: list });
+    // `count` é o total pendente, não o exibido: "Falta:" só com um hábito mesmo.
+    return t('notifyPendingList', { names: list, count: names.length });
 }
 
 /**
  * Monta o cartão a partir do estado atual.
  *
- * O corpo leva a frase E as pendências, nesta ordem: a frase abre o lembrete e
- * a lista fecha, deixando a ação como última coisa lida. Com o dia zerado sobra
- * só a frase.
+ * A frase vai no TÍTULO e o estado do dia desce para o corpo:
  *
- * Retorna `null` quando não há o que dizer (nenhum hábito ativo hoje): nesse
- * caso o SW mantém o texto genérico do push em vez de inventar conteúdo.
+ *     Nenhum vento é favorável a quem não sabe aonde vai.
+ *     Hábitos pendentes
+ *     Falta: Abstenção
+ *
+ * Sem frase (o chunk de citações é lazy), o título volta a ser o estado do dia
+ * para a notificação não ficar sem cabeçalho.
+ *
+ * Retorna `null` quando não há o que dizer — nenhum hábito ativo hoje, ou dia
+ * zerado antes de a frase carregar. Nesse caso o SW mantém o texto genérico do
+ * push em vez de inventar conteúdo.
  */
 export function buildNotificationCard(): NotificationCard | null {
     try {
@@ -104,19 +111,15 @@ export function buildNotificationCard(): NotificationCard | null {
 
         if (total === 0) return null;
 
-        const lines: string[] = [];
-        if (publishedQuote) lines.push(publishedQuote);
-        if (pending > 0) lines.push(pendingLine(dateISO, pending));
+        const status = pending > 0 ? t('pendingBadgeTitle') : t('notifyAllDoneTitle');
+        const list = pending > 0 ? pendingLine(dateISO, pending) : null;
+        const base = { date: dateISO, lang: state.activeLanguageCode };
 
-        // Dia zerado antes de a frase carregar: nada a acrescentar ao genérico.
-        if (lines.length === 0) return null;
+        if (publishedQuote) {
+            return { ...base, title: publishedQuote, body: [status, list].filter(Boolean).join('\n') };
+        }
 
-        return {
-            date: dateISO,
-            lang: state.activeLanguageCode,
-            title: pending > 0 ? t('pendingBadgeTitle') : t('notifyAllDoneTitle'),
-            body: lines.join('\n')
-        };
+        return list ? { ...base, title: status, body: list } : null;
     } catch (error) {
         // O cartão é um extra: nunca pode derrubar o save do estado.
         logger.error('[NotificationCard] Falha ao montar o cartão', error);

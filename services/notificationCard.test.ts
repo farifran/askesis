@@ -42,6 +42,7 @@ describe('buildNotificationCard', () => {
 
         expect(card.date).toBe(TODAY);
         expect(card.lang).toBe('pt');
+        // Sem frase carregada, o estado do dia assume o título.
         expect(card.title).toBe('Hábitos pendentes');
         expect(card.body).toContain('Meditar');
         expect(card.body).toContain('Ler');
@@ -57,6 +58,8 @@ describe('buildNotificationCard', () => {
         // 3 nomes visíveis + contagem dos 2 restantes.
         expect(card.body).toContain('+2');
         expect(card.body).not.toContain('E');
+        // Plural pelo total pendente, não pelo que coube.
+        expect(card.body).toContain('Faltam:');
     });
 
     it('não conta como pendente o hábito já concluído', () => {
@@ -77,20 +80,18 @@ describe('buildNotificationCard', () => {
 
         const card = buildNotificationCard()!;
 
-        expect(card.title).toBe('Tudo em dia');
-        expect(card.body).toBe(QUOTE);
+        expect(card.title).toBe(QUOTE);
+        expect(card.body).toBe('Tudo em dia');
     });
 
-    it('mostra frase E pendências juntas, nesta ordem', () => {
+    it('põe a frase no título e o estado do dia no corpo', () => {
         createTestHabit({ name: 'Meditar', time: 'Morning', goalType: 'check' });
         setNotificationQuote(QUOTE);
 
         const card = buildNotificationCard()!;
-        const [primeira, segunda] = card.body.split('\n');
 
-        // A frase abre; a lista fecha, para a ação ser a última coisa lida.
-        expect(primeira).toBe(QUOTE);
-        expect(segunda).toContain('Meditar');
+        expect(card.title).toBe(QUOTE);
+        expect(card.body.split('\n')).toEqual(['Hábitos pendentes', 'Falta: Meditar']);
     });
 
     it('mostra só as pendências enquanto a frase não carregou', () => {
@@ -111,8 +112,8 @@ describe('buildNotificationCard', () => {
         const card = buildNotificationCard()!;
 
         expect(card.lang).toBe('en');
-        expect(card.title).toBe('All done');
-        expect(card.body).toBe(QUOTE);
+        expect(card.title).toBe(QUOTE);
+        expect(card.body).toBe('All done');
     });
 
     it('retorna null no dia completo sem frase publicada', () => {

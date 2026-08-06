@@ -57,8 +57,11 @@ importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js');
      * disponível no aparelho onde este fluxo é depurado — e porque a
      * personalização já regrediu várias vezes por causas diferentes. Fica no
      * código, desligado, em vez de ser reescrito a cada investigação.
+     *
+     * MANTER DESLIGADO em produção: ligado, um dia sem abrir o app entrega
+     * "Askesis — diagnostico" ao usuário no lugar do lembrete.
      */
-    var DIAGNOSTICO = true;
+    var DIAGNOSTICO = false;
 
     // Espelha services/persistence.ts / services/notificationCard.ts.
     var DB_NAME = 'AskesisDB';

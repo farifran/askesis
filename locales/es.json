@@ -202,7 +202,10 @@
     },
     "pendingBadgeTitle": "Hábitos pendientes",
     "notifyAllDoneTitle": "Todo al día",
-    "notifyPendingList": "Faltan: {names}",
+    "notifyPendingList": {
+        "one": "Falta: {names}",
+        "other": "Faltan: {names}"
+    },
     "notifyPendingMore": "{names} +{count}",
     "notificationChangePending": "Activando notificaciones…",
     "notificationStatusActivated": "activado",

@@ -202,7 +202,10 @@
     },
     "pendingBadgeTitle": "Pending habits",
     "notifyAllDoneTitle": "All done",
-    "notifyPendingList": "Still to do: {names}",
+    "notifyPendingList": {
+        "one": "Still to do: {names}",
+        "other": "Still to do: {names}"
+    },
     "notifyPendingMore": "{names} +{count}",
     "notificationChangePending": "Enabling notifications…",
     "notificationStatusActivated": "activated",
