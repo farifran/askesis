@@ -26,12 +26,8 @@ importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js');
  *
  * COMO IDENTIFICAMOS O NOSSO PUSH:
  * Pelo marcador em `data` (REMINDER_MARKER, ver api/reminder.ts), não pela tag.
- * A primeira versão dependia de `web_push_topic` virar `Notification.tag` —
- * suposição sobre o interno do SDK que não se confirmou, e que fazia o worker
- * desistir em silêncio. O marcador chega íntegro ao evento `push`.
- *
- * O marcador também evita sequestro: um push de anúncio enviado pelo painel da
- * OneSignal não o carrega, e portanto não é reescrito com texto de hábitos.
+ * O marcador chega íntegro ao evento `push` e não depende do interno do SDK.
+ * Também evita sequestro: um anúncio enviado pelo painel não o carrega.
  *
  * Requisito do iOS/Safari: todo push precisa virar notificação visível. Por
  * isso este código nunca "desiste em silêncio" — se o cartão não servir, a
@@ -41,6 +37,17 @@ importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js');
     'use strict';
 
     var REMINDER_MARKER = 'askesis-reminder';
+
+    /**
+     * DIAGNÓSTICO TEMPORÁRIO — remover quando a personalização estiver confirmada.
+     *
+     * Logs de service worker só aparecem no DevTools, indisponível no aparelho
+     * onde isto precisa ser depurado. Com isto ligado, quando o worker NÃO
+     * consegue personalizar, ele escreve o motivo na própria notificação — que é
+     * onde dá para ler. Com isto desligado, a genérica permanece (comportamento
+     * definitivo).
+     */
+    var DIAGNOSTICO = true;
 
     // Espelha services/persistence.ts / services/notificationCard.ts.
     var DB_NAME = 'AskesisDB';
@@ -99,7 +106,15 @@ importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js');
                 db.close();
                 return card;
             });
-        }).catch(function () { return null; });
+        });
+    }
+
+    /** Motivo pelo qual o cartão não serve, ou null se estiver bom. */
+    function cardProblem(card) {
+        if (!card) return 'sem cartao no IndexedDB';
+        if (!card.title || !card.body) return 'cartao incompleto';
+        if (card.date !== todayUTCIso()) return 'cartao de ' + card.date + ', hoje-UTC e ' + todayUTCIso();
+        return null;
     }
 
     /**
@@ -122,41 +137,47 @@ importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js');
         return attempt();
     }
 
+    /** Troca o conteúdo da notificação que a OneSignal acabou de publicar. */
+    function replaceWith(existing, title, body) {
+        var options = {
+            body: body,
+            icon: existing.icon || 'icons/icon-192.svg',
+            badge: existing.badge || 'icons/badge.svg',
+            // Substituição silenciosa: a OneSignal já alertou o usuário.
+            renotify: false,
+            // Preserva o payload da OneSignal para o notificationclick dela
+            // continuar abrindo a URL e registrando o clique.
+            data: existing.data
+        };
+
+        if (existing.tag) {
+            // Mesma tag substitui no lugar de empilhar.
+            options.tag = existing.tag;
+            return self.registration.showNotification(title, options);
+        }
+
+        // Sem tag não há substituição possível: fecha a original antes, senão
+        // ficariam duas notificações na bandeja.
+        existing.close();
+        return self.registration.showNotification(title, options);
+    }
+
     self.addEventListener('push', function (event) {
         if (!isReminderPush(event)) return;
 
         event.waitUntil(
-            readCard().then(function (card) {
-                // Cartão de outro dia significa que o app não foi aberto hoje:
-                // o texto genérico da OneSignal é mais honesto que dados velhos.
-                if (!card || card.date !== todayUTCIso() || !card.title || !card.body) return;
+            readCard().catch(function () { return null; }).then(function (card) {
+                var problem = cardProblem(card);
 
                 return waitForNotification(self.registration).then(function (existing) {
                     // Sem notificação da OneSignal não há o que substituir — e criar
                     // uma aqui arriscaria duplicar caso a dela ainda esteja a caminho.
                     if (!existing) return;
 
-                    var options = {
-                        body: card.body,
-                        icon: existing.icon || 'icons/icon-192.svg',
-                        badge: existing.badge || 'icons/badge.svg',
-                        // Substituição silenciosa: a OneSignal já alertou o usuário.
-                        renotify: false,
-                        // Preserva o payload da OneSignal para o notificationclick
-                        // dela continuar abrindo a URL e registrando o clique.
-                        data: existing.data
-                    };
-
-                    if (existing.tag) {
-                        // Mesma tag substitui no lugar de empilhar.
-                        options.tag = existing.tag;
-                        return self.registration.showNotification(card.title, options);
-                    }
-
-                    // Sem tag não há substituição possível: fecha a original antes,
-                    // senão ficariam duas notificações na bandeja.
-                    existing.close();
-                    return self.registration.showNotification(card.title, options);
+                    if (!problem) return replaceWith(existing, card.title, card.body);
+                    if (DIAGNOSTICO) return replaceWith(existing, 'Askesis — diagnostico', problem);
+                    // Sem diagnóstico, a genérica permanece: dados velhos seriam
+                    // pior que o texto neutro do servidor.
                 });
             }).catch(function () {
                 // Falhar aqui só significa manter a notificação genérica.
