@@ -19,8 +19,8 @@ Comando usado: `npm test -- --run`
 
 <!-- INVENTARIO:INICIO -->
 
-- **Arquivos de teste:** 41
-- **Testes totais:** 533
+- **Arquivos de teste:** 42
+- **Testes totais:** 546
 
 > Gerado por `node scripts/update-test-inventory.js` a partir de execução real.
 > Não editar à mão: `--check` falha o CI quando divergir.
@@ -50,6 +50,7 @@ Comando usado: `npm test -- --run`
 ### `render`
 
 - `render/chart.test.ts` → 9
+- `render/modalBuilders.test.ts` → 8
 
 ### `services`
 
@@ -78,9 +79,9 @@ Comando usado: `npm test -- --run`
 
 - `tests/property/cacheCoherence.property.test.ts` → 5
 - `tests/property/merge.property.test.ts` → 1
-- `tests/pushWorker.test.ts` → 13
+- `tests/pushWorker.test.ts` → 15
 - `tests/render.dom.test.ts` → 2
-- `tests/render.sanitize.test.ts` → 2
+- `tests/render.sanitize.test.ts` → 5
 - `tests/scenario-test-1-user-journey.test.ts` → 3
 - `tests/scenario-test-2-sync-conflicts.test.ts` → 5
 - `tests/scenario-test-3-security-pentest.test.ts` → 43

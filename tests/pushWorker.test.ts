@@ -203,6 +203,25 @@ describe('OneSignalSDKWorker — personalização local do lembrete', () => {
         expect(shown[0].options.icon).toBe(original.icon);
     });
 
+    it('modo diagnóstico escreve o motivo na própria notificação', async () => {
+        // Único canal legível sem DevTools no aparelho onde isto é depurado.
+        const ontem: Card = { ...CARD_HOJE!, date: '2020-01-01' };
+        const { firePush, shown } = loadWorker(ontem, { diagnostico: true });
+        await firePush();
+
+        expect(shown).toHaveLength(1);
+        expect(shown[0].title).toContain('diagnostico');
+        expect(shown[0].options.body).toContain('2020-01-01');
+    });
+
+    it('modo diagnóstico reporta falha do IndexedDB', async () => {
+        const { firePush, shown } = loadWorker(CARD_HOJE, { idb: { failOpen: true }, diagnostico: true });
+        await firePush();
+
+        expect(shown).toHaveLength(1);
+        expect(shown[0].options.body).toContain('IndexedDB');
+    });
+
     it('mantém a notificação genérica quando o cartão é de outro dia', async () => {
         const ontem: Card = { ...CARD_HOJE!, date: '2020-01-01' };
         const { firePush, shown } = loadWorker(ontem);

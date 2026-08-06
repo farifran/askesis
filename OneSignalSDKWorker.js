@@ -50,6 +50,16 @@ importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js');
 
     var REMINDER_MARKER = 'askesis-reminder';
 
+    /**
+     * Quando ligado, o motivo de NÃO personalizar vai na própria notificação.
+     *
+     * Existe porque logs de service worker só aparecem no DevTools, que não está
+     * disponível no aparelho onde este fluxo é depurado — e porque a
+     * personalização já regrediu várias vezes por causas diferentes. Fica no
+     * código, desligado, em vez de ser reescrito a cada investigação.
+     */
+    var DIAGNOSTICO = true;
+
     // Espelha services/persistence.ts / services/notificationCard.ts.
     var DB_NAME = 'AskesisDB';
     var STORE_NAME = 'app_state';
@@ -111,13 +121,18 @@ importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js');
     }
 
     /**
-     * O cartão só serve se for do dia corrente em UTC — a mesma noção de "hoje"
-     * que o app usa (`getTodayUTCIso`). Cartão de outro dia significa que o app
-     * não foi aberto desde então: o texto genérico do servidor é mais honesto
-     * que pendências velhas.
+     * Motivo pelo qual o cartão não serve, ou null se estiver bom.
+     *
+     * O cartão só vale para o dia corrente em UTC — a mesma noção de "hoje" que
+     * o app usa (`getTodayUTCIso`). Cartão de outro dia significa que o app não
+     * foi aberto desde então: o texto genérico do servidor é mais honesto que
+     * pendências velhas.
      */
-    function isCardUsable(card) {
-        return !!card && !!card.title && !!card.body && card.date === todayUTCIso();
+    function cardProblem(card) {
+        if (!card) return 'sem cartao no IndexedDB';
+        if (!card.title || !card.body) return 'cartao incompleto';
+        if (card.date !== todayUTCIso()) return 'cartao de ' + card.date + ', hoje-UTC e ' + todayUTCIso();
+        return null;
     }
 
     /** Identidade estável o bastante para distinguir notificações na bandeja. */
@@ -181,13 +196,15 @@ importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js');
         if (!isReminderPush(event)) return;
 
         event.waitUntil(
-            readCard().catch(function () { return null; }).then(function (card) {
-                if (!isCardUsable(card)) return;
+            readCard().catch(function (e) { return { erro: String(e) }; }).then(function (card) {
+                var problem = card && card.erro ? 'IndexedDB: ' + card.erro : cardProblem(card);
+                if (problem && !DIAGNOSTICO) return;
 
                 return waitForNewNotification(self.registration).then(function (existing) {
                     // Sem notificação da OneSignal não há o que substituir — e criar
                     // uma aqui arriscaria duplicar caso a dela ainda esteja a caminho.
                     if (!existing) return;
+                    if (problem) return replaceWith(existing, 'Askesis — diagnostico', problem);
                     return replaceWith(existing, card.title, card.body);
                 });
             }).catch(function () {
