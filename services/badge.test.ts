@@ -15,9 +15,12 @@ let _optIn: boolean | null = true;
 let _permission: NotificationPermission = 'granted';
 vi.mock('../utils', () => ({
     getTodayUTCIso: () => '2026-08-01',
-    getLocalPushOptIn: () => _optIn,
-    getNotificationPermission: () => _permission,
     logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() }
+}));
+
+vi.mock('./push', () => ({
+    getLocalPushOptIn: () => _optIn,
+    getNotificationPermission: () => _permission
 }));
 
 vi.mock('../i18n', () => ({

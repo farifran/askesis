@@ -23,7 +23,8 @@
  */
 
 import { calculateDaySummary } from './selectors';
-import { getTodayUTCIso, getLocalPushOptIn, getNotificationPermission, logger } from '../utils';
+import { getTodayUTCIso, logger } from '../utils';
+import { getLocalPushOptIn, getNotificationPermission } from './push';
 import { t } from '../i18n';
 
 // [2025-01-15] TYPE SAFETY: Definição de interface local para a Badging API.

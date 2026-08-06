@@ -32,11 +32,18 @@ vi.mock('../utils', async (importOriginal) => {
     const actual = await importOriginal<typeof import('../utils')>();
     return {
         ...actual,
+        triggerHaptic: vi.fn(),
+        logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
+    };
+});
+
+vi.mock('../services/push', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../services/push')>();
+    return {
+        ...actual,
         ensureOneSignalReady: vi.fn(),
         setLocalPushOptIn: vi.fn((v: boolean) => { _localOptIn = v; }),
         getLocalPushOptIn: vi.fn(() => _localOptIn),
-        triggerHaptic: vi.fn(),
-        logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
     };
 });
 
@@ -141,7 +148,7 @@ vi.mock('../data/predefinedHabits', () => ({ PREDEFINED_HABITS: [] }));
 
 // --- Importações após mocks ---
 
-import { ensureOneSignalReady, setLocalPushOptIn } from '../utils';
+import { ensureOneSignalReady, setLocalPushOptIn } from '../services/push';
 
 // Extrai o handler de opt-out diretamente do módulo para testar sem DOM completo
 async function runOptOutFlow(sdkBehavior: 'success' | 'throws') {
@@ -159,7 +166,7 @@ async function runOptOutFlow(sdkBehavior: 'success' | 'throws') {
     mockToggle.checked = false;
 
     // Dispara o handler manualmente replicando o IIFE interno
-    const { ensureOneSignalReady: _ensure, setLocalPushOptIn: _set } = await import('../utils');
+    const { ensureOneSignalReady: _ensure, setLocalPushOptIn: _set } = await import('../services/push');
     const { updateNotificationUI: _update } = await import('../render');
     const { t: _t } = await import('../i18n');
     const { setTextContent: _setText } = await import('../render/dom');

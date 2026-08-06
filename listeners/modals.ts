@@ -46,7 +46,8 @@ import {
 } from '../services/habitActions';
 import { t, setLanguage } from '../i18n';
 import { setupReelRotary } from '../render/rotary';
-import { ensureOneSignalReady, ensurePushSubscribed, setLocalPushOptIn, triggerHaptic, logger, getTodayUTCIso, isActivationKeyboardEvent, getNotificationPermission } from '../utils';
+import { triggerHaptic, logger, getTodayUTCIso, isActivationKeyboardEvent } from '../utils';
+import { ensureOneSignalReady, ensurePushSubscribed, setLocalPushOptIn, getNotificationPermission } from '../services/push';
 import { setTextContent } from '../render/dom';
 import {
     handleAiEvalClick,

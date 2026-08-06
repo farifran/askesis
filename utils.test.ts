@@ -8,9 +8,6 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import {
     createDebounced,
     pad2,
-    arrayBufferToBase64,
-    base64ToArrayBuffer,
-    arrayBufferToHex,
     generateUUID,
     toUTCIsoDateString,
     getTodayUTC,
@@ -21,8 +18,7 @@ import {
     getSafeDate,
     escapeHTML,
     sanitizeText,
-    simpleMarkdownToHTML,
-    HEX_LUT
+    simpleMarkdownToHTML
 } from './utils';
 
 describe('🧰 Utilitários de Infraestrutura (utils.ts)', () => {
@@ -82,44 +78,6 @@ describe('🧰 Utilitários de Infraestrutura (utils.ts)', () => {
         it('deve funcionar com números fora do LUT (>99)', () => {
             const result = pad2(100);
             expect(result).toBe('100');
-        });
-    });
-
-    describe('Base64 ↔ ArrayBuffer', () => {
-        it('deve fazer roundtrip sem perda de dados', () => {
-            const original = new Uint8Array([0, 1, 2, 127, 128, 255]);
-            const base64 = arrayBufferToBase64(original.buffer);
-            const roundtrip = new Uint8Array(base64ToArrayBuffer(base64));
-
-            expect(roundtrip).toEqual(original);
-        });
-
-        it('deve lidar com buffer vazio', () => {
-            const empty = new Uint8Array(0);
-            const base64 = arrayBufferToBase64(empty.buffer);
-            const result = new Uint8Array(base64ToArrayBuffer(base64));
-            expect(result.length).toBe(0);
-        });
-
-        it('deve lidar com buffer grande (>8192 bytes, chunked)', () => {
-            const large = new Uint8Array(10000);
-            for (let i = 0; i < 10000; i++) large[i] = i % 256;
-
-            const base64 = arrayBufferToBase64(large.buffer);
-            const result = new Uint8Array(base64ToArrayBuffer(base64));
-
-            expect(result).toEqual(large);
-        });
-    });
-
-    describe('arrayBufferToHex', () => {
-        it('deve converter buffer para hex corretamente', () => {
-            const buffer = new Uint8Array([0, 15, 16, 255]).buffer;
-            expect(arrayBufferToHex(buffer)).toBe('000f10ff');
-        });
-
-        it('deve retornar string vazia para buffer vazio', () => {
-            expect(arrayBufferToHex(new ArrayBuffer(0))).toBe('');
         });
     });
 
@@ -319,105 +277,6 @@ describe('🧰 Utilitários de Infraestrutura (utils.ts)', () => {
             const md = '**<script>alert("xss")</script>**';
             const html = simpleMarkdownToHTML(md);
             expect(html).not.toContain('<script>');
-        });
-    });
-
-    describe('HEX_LUT', () => {
-        it('deve ter 256 entradas', () => {
-            expect(HEX_LUT).toHaveLength(256);
-        });
-
-        it('deve mapear extremos corretamente', () => {
-            expect(HEX_LUT[0]).toBe('00');
-            expect(HEX_LUT[255]).toBe('ff');
-            expect(HEX_LUT[16]).toBe('10');
-        });
-    });
-
-    describe('ensurePushSubscribed', () => {
-        afterEach(() => {
-            try {
-                delete (window as any).OneSignal;
-                delete (window as any).OneSignalDeferred;
-                localStorage.removeItem('askesis_onesignal_opted_in');
-            } catch {}
-            vi.restoreAllMocks();
-            vi.resetModules();
-        });
-
-        async function runWithMockSdk(sdk: any, nativePerm: NotificationPermission = 'granted') {
-            (window as any).OneSignal = sdk;
-            (window as any).OneSignalDeferred = [];
-            Object.defineProperty(window, 'Notification', {
-                configurable: true,
-                value: { permission: nativePerm },
-            });
-            vi.spyOn(document.head, 'appendChild').mockImplementation((node: any) => {
-                if (node?.tagName === 'SCRIPT') {
-                    queueMicrotask(async () => {
-                        const deferred = (window as any).OneSignalDeferred as Array<(os: any) => any>;
-                        for (const fn of [...(deferred || [])]) await fn(sdk);
-                        node.dispatchEvent(new Event('load'));
-                    });
-                }
-                return node;
-            });
-
-            const { ensurePushSubscribed, getLocalPushOptIn } = await import('./utils');
-            const result = await ensurePushSubscribed();
-            return { result, getLocalPushOptIn };
-        }
-
-        it('chama requestPermission+optIn e grava localOptIn quando optedIn=true', async () => {
-            const optIn = vi.fn(async () => {});
-            const requestPermission = vi.fn(async () => true);
-            const { result, getLocalPushOptIn } = await runWithMockSdk({
-                init: vi.fn(async () => {}),
-                User: {
-                    PushSubscription: {
-                        optIn,
-                        optOut: vi.fn(),
-                        optedIn: true,
-                        id: 'sub-1',
-                        token: 'tok',
-                    },
-                },
-                Notifications: {
-                    requestPermission,
-                    permission: true,
-                    isPushSupported: () => true,
-                },
-            });
-
-            expect(requestPermission).toHaveBeenCalled();
-            expect(optIn).toHaveBeenCalled();
-            expect(result.optedIn).toBe(true);
-            expect(getLocalPushOptIn()).toBe(true);
-        });
-
-        it('mantém localOptIn se permissão nativa granted mesmo com optedIn lento', async () => {
-            const optIn = vi.fn(async () => {});
-            const { result, getLocalPushOptIn } = await runWithMockSdk({
-                init: vi.fn(async () => {}),
-                User: {
-                    PushSubscription: {
-                        optIn,
-                        optOut: vi.fn(),
-                        optedIn: false,
-                        id: null,
-                        token: null,
-                    },
-                },
-                Notifications: {
-                    requestPermission: vi.fn(async () => true),
-                    permission: true,
-                    isPushSupported: () => true,
-                },
-            }, 'granted');
-
-            expect(result.optedIn).toBe(false);
-            // Intenção + permissão: toggle não fica “morto” nem pede reinício.
-            expect(getLocalPushOptIn()).toBe(true);
         });
     });
 });

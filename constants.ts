@@ -9,7 +9,6 @@
  */
 
 export const NETWORK_DEBOUNCE_MS = 500;
-export const PERMISSION_DELAY_MS = 500;
 export const INTERACTION_DELAY_MS = 50;
 
 export const CALENDAR_INITIAL_BUFFER_DAYS = 15;
@@ -52,9 +51,7 @@ export const HAPTIC_PATTERNS = {
 	error: [40, 60, 15]
 } as const;
 
-export const SWIPE_INTENT_THRESHOLD = 5;
 export const SWIPE_ACTION_THRESHOLD = 10;
-export const SWIPE_HAPTIC_THRESHOLD = 15;
 export const SWIPE_BLOCK_CLICK_MS = 150;
 
 export const DRAG_SCROLL_ZONE_PX = 80;

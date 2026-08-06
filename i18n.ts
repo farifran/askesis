@@ -21,7 +21,8 @@
  */
 
 import { state, TimeOfDay, LANGUAGES } from './state';
-import { pushToOneSignal, logger } from './utils';
+import { logger } from './utils';
+import { pushToOneSignal } from './services/push';
 import { LANG_LOAD_TIMEOUT_MS } from './constants';
 import { emitLanguageChanged } from './events';
 

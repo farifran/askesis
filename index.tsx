@@ -28,7 +28,8 @@ import { initSync } from './listeners/sync';
 import { fetchStateFromCloud, syncStateWithCloud, setSyncStatus } from './services/cloud';
 import { hasLocalSyncKey, initAuth } from './services/api';
 import { updateAppBadge } from './services/badge';
-import { setupMidnightLoop, logger, getLocalPushOptIn, ensurePushSubscribed, getNotificationPermission } from './utils';
+import { setupMidnightLoop, logger } from './utils';
+import { getLocalPushOptIn, ensurePushSubscribed, getNotificationPermission } from './services/push';
 import { BOOT_RELOAD_DELAY_MS, BOOT_SYNC_TIMEOUT_MS } from './constants';
 import { t } from './i18n';
 

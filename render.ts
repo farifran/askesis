@@ -9,7 +9,8 @@
  */
 
 import { state, LANGUAGES } from './state';
-import { parseUTCIsoDate, toUTCIsoDateString, addDays, pushToOneSignal, getLocalPushOptIn, getTodayUTCIso, createDebounced, escapeHTML } from './utils';
+import { parseUTCIsoDate, toUTCIsoDateString, addDays, getTodayUTCIso, createDebounced, escapeHTML } from './utils';
+import { pushToOneSignal, getLocalPushOptIn } from './services/push';
 import { QUOTE_COLLAPSE_DEBOUNCE_MS } from './constants';
 import { ui } from './render/ui';
 import { t, setLanguage, formatDate } from './i18n'; 

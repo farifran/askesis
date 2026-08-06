@@ -20,31 +20,16 @@ import {
 export { APP_EVENTS, CARD_EVENTS };
 export type { AppEventName, CardEventName, RequestAnalysisDetail, CardEventDetail };
 
-function _emitEvent<TDetail = undefined>(name: string, detail?: TDetail): void {
+function emit(name: AppEventName | CardEventName, detail?: unknown): void {
     if (typeof document === 'undefined') return;
-    if (detail === undefined) {
-        document.dispatchEvent(new CustomEvent(name));
-    } else {
-        document.dispatchEvent(new CustomEvent(name, { detail }));
-    }
+    document.dispatchEvent(detail === undefined ? new CustomEvent(name) : new CustomEvent(name, { detail }));
 }
 
-export function emitAppEvent<TDetail = undefined>(name: AppEventName, detail?: TDetail): void {
-    _emitEvent(name, detail);
-}
+export const emitRenderApp = () => emit(APP_EVENTS.renderApp);
+export const emitHabitsChanged = () => emit(APP_EVENTS.habitsChanged);
+export const emitDayChanged = () => emit(APP_EVENTS.dayChanged);
+export const emitLanguageChanged = () => emit(APP_EVENTS.languageChanged);
+export const emitRequestAnalysis = (date: string) => emit(APP_EVENTS.requestAnalysis, { date } satisfies RequestAnalysisDetail);
 
-export function emitCardEvent<TDetail = undefined>(name: CardEventName, detail?: TDetail): void {
-    _emitEvent(name, detail);
-}
-
-export const emitRenderApp = () => emitAppEvent(APP_EVENTS.renderApp);
-export const emitHabitsChanged = () => emitAppEvent(APP_EVENTS.habitsChanged);
-export const emitDayChanged = () => emitAppEvent(APP_EVENTS.dayChanged);
-export const emitLanguageChanged = () => emitAppEvent(APP_EVENTS.languageChanged);
-export const emitRequestAnalysis = (date: string) => emitAppEvent<RequestAnalysisDetail>(APP_EVENTS.requestAnalysis, { date });
-
-export const emitCardStatusChanged = (detail: CardEventDetail) =>
-    emitCardEvent(CARD_EVENTS.statusChanged, detail);
-
-export const emitCardGoalChanged = (detail: CardEventDetail) =>
-    emitCardEvent(CARD_EVENTS.goalChanged, detail);
+export const emitCardStatusChanged = (detail: CardEventDetail) => emit(CARD_EVENTS.statusChanged, detail);
+export const emitCardGoalChanged = (detail: CardEventDetail) => emit(CARD_EVENTS.goalChanged, detail);
