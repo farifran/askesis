@@ -24,36 +24,36 @@ function _getMemoizedDate(dateISO: string): Date {
 
 export const clearSelectorInternalCaches = () => _anchorDateCache.clear();
 
-export function getScheduleForDate(habit: Habit, dateISO: string): HabitSchedule | null {
-    let subCache = state.scheduleCache.get(habit.id);
-    if (!subCache) {
-        subCache = new Map();
-        state.scheduleCache.set(habit.id, subCache);
-    } else {
-        const cached = subCache.get(dateISO);
-        if (cached !== undefined) return cached;
-    }
+/**
+ * Cache de dois níveis (hábito → data). Ao estourar o teto, descarta o sub-cache
+ * inteiro: é derivável do estado, então recomputar é sempre seguro.
+ */
+function memoizeByHabitDate<T>(cache: Map<string, Map<string, T>>, habitId: string, dateISO: string, compute: () => T): T {
+    let subCache = cache.get(habitId);
+    if (!subCache) cache.set(habitId, subCache = new Map());
 
-    const history = habit.scheduleHistory;
-    if (!history || !Array.isArray(history) || history.length === 0) {
-        subCache.set(dateISO, null);
-        return null;
-    }
+    const cached = subCache.get(dateISO);
+    if (cached !== undefined) return cached;
 
-    let schedule: HabitSchedule | null = null;
-    for (let i = history.length - 1; i >= 0; i--) {
-        const s = history[i];
-        if (dateISO >= s.startDate) {
-            if (!s.endDate || dateISO < s.endDate) {
-                schedule = s;
-            }
-            break; 
-        }
-    }
-    
+    const value = compute();
     if (subCache.size > MAX_CACHE_SIZE) subCache.clear();
-    subCache.set(dateISO, schedule);
-    return schedule;
+    subCache.set(dateISO, value);
+    return value;
+}
+
+export function getScheduleForDate(habit: Habit, dateISO: string): HabitSchedule | null {
+    return memoizeByHabitDate(state.scheduleCache, habit.id, dateISO, () => {
+        const history = habit.scheduleHistory;
+        if (!Array.isArray(history)) return null;
+
+        // Do mais recente para o mais antigo: a primeira versão que já começou é a
+        // vigente — a menos que já tenha terminado, e aí o hábito não vale no dia.
+        for (let i = history.length - 1; i >= 0; i--) {
+            const s = history[i];
+            if (dateISO >= s.startDate) return !s.endDate || dateISO < s.endDate ? s : null;
+        }
+        return null;
+    });
 }
 
 export function getEffectiveScheduleForHabitOnDate(habit: Habit, dateISO: string): readonly TimeOfDay[] {
@@ -106,44 +106,28 @@ export function shouldHabitAppearOnDate(habit: Habit, dateISO: string, preParsed
     // TOMBSTONE CHECK: Se o hábito foi deletado antes ou nesta data, ele não aparece.
     if (habit.deletedOn && dateISO >= habit.deletedOn) return false;
 
-    let subCache = state.habitAppearanceCache.get(habit.id);
-    if (!subCache) {
-        subCache = new Map();
-        state.habitAppearanceCache.set(habit.id, subCache);
-    }
+    return memoizeByHabitDate(state.habitAppearanceCache, habit.id, dateISO, () => {
+        const schedule = getScheduleForDate(habit, dateISO);
+        if (!schedule || habit.graduatedOn) return false;
 
-    const cached = subCache.get(dateISO);
-    if (cached !== undefined) return cached;
+        const { frequency } = schedule;
+        const date = preParsedDate || parseUTCIsoDate(dateISO);
 
-    const schedule = getScheduleForDate(habit, dateISO);
-    if (!schedule || habit.graduatedOn) {
-        subCache.set(dateISO, false);
-        return false;
-    }
-
-    const { frequency } = schedule;
-    const date = preParsedDate || parseUTCIsoDate(dateISO);
-    let appears = false;
-
-    switch (frequency.type) {
-        case 'daily': appears = true; break;
-        case 'specific_days_of_week':
-            appears = frequency.days.includes(date.getUTCDay());
-            break;
-        case 'interval':
-            const anchorDate = _getMemoizedDate(schedule.scheduleAnchor || schedule.startDate);
-            const diffDays = Math.round((date.getTime() - anchorDate.getTime()) / MS_PER_DAY);
-            if (frequency.unit === 'days') {
-                appears = diffDays >= 0 && (diffDays % frequency.amount === 0);
-            } else {
-                appears = diffDays >= 0 && date.getUTCDay() === anchorDate.getUTCDay() && (Math.floor(diffDays / 7) % frequency.amount === 0);
+        switch (frequency.type) {
+            case 'daily':
+                return true;
+            case 'specific_days_of_week':
+                return frequency.days.includes(date.getUTCDay());
+            case 'interval': {
+                const anchorDate = _getMemoizedDate(schedule.scheduleAnchor || schedule.startDate);
+                const diffDays = Math.round((date.getTime() - anchorDate.getTime()) / MS_PER_DAY);
+                if (diffDays < 0) return false;
+                return frequency.unit === 'days'
+                    ? diffDays % frequency.amount === 0
+                    : date.getUTCDay() === anchorDate.getUTCDay() && Math.floor(diffDays / 7) % frequency.amount === 0;
             }
-            break;
-    }
-
-    if (subCache.size > MAX_CACHE_SIZE) subCache.clear();
-    subCache.set(dateISO, appears);
-    return appears;
+        }
+    });
 }
 
 function _isHabitConsistentlyDone(habit: Habit, dateISO: string): boolean {
@@ -162,35 +146,27 @@ export function calculateHabitStreak(habitOrId: string | Habit, endDateISO: stri
     const habit = typeof habitOrId === 'string' ? state.habits.find(h => h.id === habitOrId) : habitOrId;
     if (!habit) return 0;
 
-    let subCache = state.streaksCache.get(habit.id);
-    if (!subCache) {
-        subCache = new Map();
-        state.streaksCache.set(habit.id, subCache);
-    }
+    return memoizeByHabitDate(state.streaksCache, habit.id, endDateISO, () => {
+        const endDateObj = parseUTCIsoDate(endDateISO);
+        if (isNaN(endDateObj.getTime())) return 0;
 
-    const cached = subCache.get(endDateISO);
-    if (cached !== undefined) return cached;
+        let streak = 0;
+        let currentTs = endDateObj.getTime();
+        const iterDate = new Date();
 
-    const endDateObj = parseUTCIsoDate(endDateISO);
-    if (isNaN(endDateObj.getTime())) return 0; 
-
-    let streak = 0;
-    let currentTs = endDateObj.getTime();
-    const iterDate = new Date();
-    
-    for (let i = 0; i < STREAK_LOOKBACK_DAYS; i++) {
-        iterDate.setTime(currentTs);
-        const iso = toUTCIsoDateString(iterDate);
-        if (iso < habit.createdOn) break;
-        if (shouldHabitAppearOnDate(habit, iso, iterDate)) {
-            if (_isHabitConsistentlyDone(habit, iso)) streak++;
-            else break;
+        // Anda para trás enquanto os dias agendados estiverem cumpridos.
+        for (let i = 0; i < STREAK_LOOKBACK_DAYS; i++) {
+            iterDate.setTime(currentTs);
+            const iso = toUTCIsoDateString(iterDate);
+            if (iso < habit.createdOn) break;
+            if (shouldHabitAppearOnDate(habit, iso, iterDate)) {
+                if (!_isHabitConsistentlyDone(habit, iso)) break;
+                streak++;
+            }
+            currentTs -= MS_PER_DAY;
         }
-        currentTs -= MS_PER_DAY;
-    }
-    if (subCache.size > MAX_CACHE_SIZE) subCache.clear();
-    subCache.set(endDateISO, streak);
-    return streak;
+        return streak;
+    });
 }
 
 export function getSmartGoalForHabit(habit: Habit, dateISO: string, time: TimeOfDay): number {

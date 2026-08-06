@@ -268,56 +268,20 @@ export const state: {
     lastAIContextHash: null
 };
 
-class CacheManager {
-    clearActiveHabits() {
-        state.activeHabitsCache.clear();
-    }
+/**
+ * Caches indexados por hábito e data. Datas em ISO 8601 ordenam lexicograficamente,
+ * então comparar strings basta para decidir o que descartar.
+ */
+type DateKeyedCache = Map<string, Map<string, unknown>>;
 
-    clearSchedule() {
-        state.scheduleCache.clear();
-    }
-
-    clearAll() {
-        state.streaksCache.clear();
-        state.scheduleCache.clear();
-        state.activeHabitsCache.clear();
-        state.unarchivedCache.clear();
-        state.habitAppearanceCache.clear();
-        state.daySummaryCache.clear();
-    }
-
-    invalidateForDate(dateISO: string) {
-        state.daySummaryCache.delete(dateISO);
-        state.activeHabitsCache.delete(dateISO);
-        // Um streak é uma corrida de dias consecutivos terminando na data lida, então
-        // mudar o dia D altera o streak de D e de TODOS os dias posteriores. Apagar só
-        // a chave D deixava a UI mostrando streaks obsoletos para as datas seguintes
-        // até um reload — visível ao editar/desmarcar um dia passado.
-        this.invalidateDateKeyForwardInCacheMap(state.streaksCache, dateISO);
-        // Aparência e agenda dependem apenas da própria data (frequência e
-        // scheduleHistory), nunca do status registrado — invalidação pontual basta.
-        this.invalidateDateKeyInCacheMap(state.habitAppearanceCache, dateISO);
-        this.invalidateDateKeyInCacheMap(state.scheduleCache, dateISO);
-    }
-
-    private invalidateDateKeyInCacheMap<T>(cache: Map<string, Map<string, T>>, dateISO: string) {
-        cache.forEach((dateMap) => dateMap.delete(dateISO));
-    }
-
-    /**
-     * Remove a data indicada e todas as posteriores. Datas em ISO 8601 ordenam
-     * lexicograficamente, então a comparação de string é suficiente.
-     */
-    private invalidateDateKeyForwardInCacheMap<T>(cache: Map<string, Map<string, T>>, dateISO: string) {
-        cache.forEach((dateMap) => {
-            dateMap.forEach((_, key) => {
-                if (key >= dateISO) dateMap.delete(key);
-            });
+function dropDateKeys(cache: DateKeyedCache, shouldDrop: (dateISO: string) => boolean, pruneEmpty = false) {
+    cache.forEach((dateMap, habitId) => {
+        dateMap.forEach((_, dateISO) => {
+            if (shouldDrop(dateISO)) dateMap.delete(dateISO);
         });
-    }
+        if (pruneEmpty && dateMap.size === 0) cache.delete(habitId);
+    });
 }
-
-const cacheManager = new CacheManager();
 
 /**
  * Extrai o estado atual para um formato serializável (JSON-safe para sync).
@@ -344,11 +308,34 @@ export function getPersistableState(): AppState {
 }
 
 export function clearActiveHabitsCache() {
-    cacheManager.clearActiveHabits();
+    state.activeHabitsCache.clear();
+}
+
+export function clearScheduleCache() {
+    state.scheduleCache.clear();
 }
 
 export function clearAllCaches() {
-    cacheManager.clearAll();
+    state.streaksCache.clear();
+    state.scheduleCache.clear();
+    state.activeHabitsCache.clear();
+    state.unarchivedCache.clear();
+    state.habitAppearanceCache.clear();
+    state.daySummaryCache.clear();
+}
+
+export function invalidateCachesForDateChange(dateISO: string) {
+    state.daySummaryCache.delete(dateISO);
+    state.activeHabitsCache.delete(dateISO);
+    // Um streak é uma corrida de dias consecutivos terminando na data lida, então
+    // mudar o dia D altera o streak de D e de TODOS os dias posteriores. Apagar só
+    // a chave D deixava a UI mostrando streaks obsoletos para as datas seguintes
+    // até um reload — visível ao editar/desmarcar um dia passado.
+    dropDateKeys(state.streaksCache, (key) => key >= dateISO);
+    // Aparência e agenda dependem apenas da própria data (frequência e
+    // scheduleHistory), nunca do status registrado — invalidação pontual basta.
+    dropDateKeys(state.habitAppearanceCache, (key) => key === dateISO);
+    dropDateKeys(state.scheduleCache, (key) => key === dateISO);
 }
 
 export function getHabitDailyInfoForDate(dateISO: string): Record<string, HabitDailyInfo> {
@@ -374,14 +361,6 @@ export function ensureHabitInstanceData(dateISO: string, habitId: string, time: 
     return habitInfo.instances[time]!;
 }
 
-export function clearScheduleCache() {
-    cacheManager.clearSchedule();
-}
-
-export function invalidateCachesForDateChange(dateISO: string) {
-    cacheManager.invalidateForDate(dateISO);
-}
-
 export function isChartDataDirty(): boolean {
     return state.uiDirtyState.chartData;
 }
@@ -391,52 +370,26 @@ export function invalidateChartCache() {
 }
 
 /**
- * Limpa entradas antigas do habitAppearanceCache (mais de 90 dias).
- * Implementa rolling window cache para evitar memory leak.
+ * Rolling window: descarta entradas anteriores ao corte para evitar memory leak
+ * em sessões longas. Só falha em log — cache podado é otimização, não correção.
  */
-export function pruneHabitAppearanceCache(): void {
+function pruneBefore(name: string, cache: DateKeyedCache, shiftCutoff: (date: Date) => void): void {
     try {
-        const today = parseUTCIsoDate(getTodayUTCIso());
-        const ninetyDaysAgo = new Date(today);
-        ninetyDaysAgo.setUTCDate(ninetyDaysAgo.getUTCDate() - CACHE_HABIT_APPEARANCE_DAYS);
-        const cutoffDate = toUTCIsoDateString(ninetyDaysAgo);
-        
-        state.habitAppearanceCache.forEach((dateMap, habitId) => {
-            dateMap.forEach((_, dateISO) => {
-                if (dateISO < cutoffDate) {
-                    dateMap.delete(dateISO);
-                }
-            });
-            if (dateMap.size === 0) {
-                state.habitAppearanceCache.delete(habitId);
-            }
-        });
+        const cutoff = parseUTCIsoDate(getTodayUTCIso());
+        shiftCutoff(cutoff);
+        const cutoffDate = toUTCIsoDateString(cutoff);
+        dropDateKeys(cache, (dateISO) => dateISO < cutoffDate, true);
     } catch (error) {
-        logger.warn('[Cache] Error pruning habitAppearanceCache:', error);
+        logger.warn(`[Cache] Error pruning ${name}:`, error);
     }
 }
 
-/**
- * Limpa entradas antigas do streaksCache (mais de 1 ano).
- */
+export function pruneHabitAppearanceCache(): void {
+    pruneBefore('habitAppearanceCache', state.habitAppearanceCache,
+        (date) => date.setUTCDate(date.getUTCDate() - CACHE_HABIT_APPEARANCE_DAYS));
+}
+
 export function pruneStreaksCache(): void {
-    try {
-        const today = new Date(parseUTCIsoDate(getTodayUTCIso()));
-        const oneYearAgo = new Date(today);
-        oneYearAgo.setUTCFullYear(oneYearAgo.getUTCFullYear() - CACHE_STREAKS_YEARS);
-        const cutoffDate = toUTCIsoDateString(oneYearAgo);
-        
-        state.streaksCache.forEach((dateMap, habitId) => {
-            dateMap.forEach((_, dateISO) => {
-                if (dateISO < cutoffDate) {
-                    dateMap.delete(dateISO);
-                }
-            });
-            if (dateMap.size === 0) {
-                state.streaksCache.delete(habitId);
-            }
-        });
-    } catch (error) {
-        logger.warn('[Cache] Error pruning streaksCache:', error);
-    }
+    pruneBefore('streaksCache', state.streaksCache,
+        (date) => date.setUTCFullYear(date.getUTCFullYear() - CACHE_STREAKS_YEARS));
 }
