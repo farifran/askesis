@@ -72,6 +72,23 @@ export function sanitize(html: string): string {
 }
 
 /**
+ * `createElement` com classe e filhos, que é o formato de quase todo nó criado
+ * no app. Strings viram nós de texto (nunca HTML), então o caminho é seguro por
+ * construção. Deliberadamente mínimo: sem props mágicas, sem diffing, sem ciclo
+ * de vida — quem precisa de mais ajusta a referência devolvida, como antes.
+ */
+export function el<K extends keyof HTMLElementTagNameMap>(
+    tag: K,
+    className?: string,
+    ...children: (Node | string)[]
+): HTMLElementTagNameMap[K] {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (children.length) node.append(...children);
+    return node;
+}
+
+/**
  * OTIMIZAÇÃO DE PERFORMANCE: Helper para atualizar texto do DOM.
  */
 export function setTextContent(element: Element | null, text: string) {

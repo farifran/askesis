@@ -70,12 +70,17 @@ interface WorkerOptions {
     /** O que a OneSignal publica em resposta a ESTE push. */
     incoming?: any[] | null;
     idb?: { missingStore?: boolean; failOpen?: boolean };
+    /** Escreve o motivo de não personalizar na própria notificação. */
+    diagnostico?: boolean;
 }
 
 function loadWorker(card: Card, options: WorkerOptions = {}) {
     // `importScripts` traria o SDK real da CDN; aqui só interessa o nosso trecho.
+    // DIAGNOSTICO é forçado conforme o teste: os casos abaixo cobrem o
+    // comportamento definitivo, salvo o que cobre o próprio diagnóstico.
     const source = readFileSync('OneSignalSDKWorker.js', 'utf8')
-        .replace(/^importScripts\([^)]*\);?\s*$/m, '');
+        .replace(/^importScripts\([^)]*\);?\s*$/m, '')
+        .replace(/var DIAGNOSTICO = \w+;/, `var DIAGNOSTICO = ${options.diagnostico ?? false};`);
 
     const tray: any[] = [...(options.tray ?? [])];
     const shown: { title: string; options: any }[] = [];
