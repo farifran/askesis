@@ -49,13 +49,10 @@ function fakeIndexedDB(card: Card, opts: { missingStore?: boolean; failOpen?: bo
     };
 }
 
-function loadWorker(card: Card, existingNotifications: any[], idbOpts = {}, diagnostico = false) {
+function loadWorker(card: Card, existingNotifications: any[], idbOpts = {}) {
     // `importScripts` traria o SDK real da CDN; aqui só interessa o nosso trecho.
-    // DIAGNOSTICO é um modo temporário de depuração: os testes verificam o
-    // comportamento definitivo, salvo o caso que cobre o próprio diagnóstico.
     const source = readFileSync('OneSignalSDKWorker.js', 'utf8')
-        .replace(/^importScripts\([^)]*\);?\s*$/m, '')
-        .replace(/var DIAGNOSTICO = \w+;/, `var DIAGNOSTICO = ${diagnostico};`);
+        .replace(/^importScripts\([^)]*\);?\s*$/m, '');
 
     const shown: { title: string; options: any }[] = [];
     const listeners: Record<string, (event: any) => void> = {};
@@ -200,17 +197,6 @@ describe('OneSignalSDKWorker — personalização local do lembrete', () => {
         expect(shown).toHaveLength(0);
     });
 
-    it('modo diagnóstico escreve o motivo na própria notificação', async () => {
-        // Temporário: o DevTools não está disponível no aparelho em depuração,
-        // então o motivo vai onde dá para ler.
-        const ontem: Card = { ...CARD_HOJE!, date: '2020-01-01' };
-        const { firePush, shown } = loadWorker(ontem, [oneSignalNotification()], {}, true);
-        await firePush();
-
-        expect(shown).toHaveLength(1);
-        expect(shown[0].title).toContain('diagnostico');
-        expect(shown[0].options.body).toContain('2020-01-01');
-    });
 
     it('não cria notificação própria se a da OneSignal nunca aparecer', async () => {
         vi.useFakeTimers();

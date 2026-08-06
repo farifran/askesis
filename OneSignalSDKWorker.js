@@ -38,17 +38,6 @@ importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js');
 
     var REMINDER_MARKER = 'askesis-reminder';
 
-    /**
-     * DIAGNÓSTICO TEMPORÁRIO — remover quando a personalização estiver confirmada.
-     *
-     * Logs de service worker só aparecem no DevTools, indisponível no aparelho
-     * onde isto precisa ser depurado. Com isto ligado, quando o worker NÃO
-     * consegue personalizar, ele escreve o motivo na própria notificação — que é
-     * onde dá para ler. Com isto desligado, a genérica permanece (comportamento
-     * definitivo).
-     */
-    var DIAGNOSTICO = true;
-
     // Espelha services/persistence.ts / services/notificationCard.ts.
     var DB_NAME = 'AskesisDB';
     var STORE_NAME = 'app_state';
@@ -109,12 +98,14 @@ importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js');
         });
     }
 
-    /** Motivo pelo qual o cartão não serve, ou null se estiver bom. */
-    function cardProblem(card) {
-        if (!card) return 'sem cartao no IndexedDB';
-        if (!card.title || !card.body) return 'cartao incompleto';
-        if (card.date !== todayUTCIso()) return 'cartao de ' + card.date + ', hoje-UTC e ' + todayUTCIso();
-        return null;
+    /**
+     * O cartão só serve se for do dia corrente em UTC — a mesma noção de "hoje"
+     * que o app usa (`getTodayUTCIso`). Cartão de outro dia significa que o app
+     * não foi aberto desde então: o texto genérico do servidor é mais honesto
+     * que pendências velhas.
+     */
+    function isCardUsable(card) {
+        return !!card && !!card.title && !!card.body && card.date === todayUTCIso();
     }
 
     /**
@@ -167,17 +158,13 @@ importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js');
 
         event.waitUntil(
             readCard().catch(function () { return null; }).then(function (card) {
-                var problem = cardProblem(card);
+                if (!isCardUsable(card)) return;
 
                 return waitForNotification(self.registration).then(function (existing) {
                     // Sem notificação da OneSignal não há o que substituir — e criar
                     // uma aqui arriscaria duplicar caso a dela ainda esteja a caminho.
                     if (!existing) return;
-
-                    if (!problem) return replaceWith(existing, card.title, card.body);
-                    if (DIAGNOSTICO) return replaceWith(existing, 'Askesis — diagnostico', problem);
-                    // Sem diagnóstico, a genérica permanece: dados velhos seriam
-                    // pior que o texto neutro do servidor.
+                    return replaceWith(existing, card.title, card.body);
                 });
             }).catch(function () {
                 // Falhar aqui só significa manter a notificação genérica.
