@@ -568,7 +568,7 @@ Cuatro techos gratuitos operan al mismo tiempo. El límite práctico de la app e
 - Cliente (Askesis PWA): La interfaz basada en React manejando interacciones diarias del usuario, gestión de estado local y iniciación de solicitudes.
 - Backend sin Servidor (Vercel API): Actúa como una capa intermedia segura. Maneja sincronización de estado y sirve como un "Proxy de IA," protegiendo claves de API y validando solicitudes antes de enrutarlas al modelo de lenguaje.
 - Motor de IA (API de Google Gemini): El cerebro analítico detrás de la aplicación, recibiendo datos filtrados del backend para procesar reflexiones y generar insights personalizados.
-- Notificaciones (OneSignal): Servicio de mensajería independiente que registra la PWA y maneja entrega asíncrona de notificaciones push para re-comprometer al usuario de vuelta en la aplicación.</span>
+- Notificaciones (OneSignal): Servicio de mensajería independiente que registra la PWA y entrega el push que despierta el dispositivo. Transporta solo un texto genérico, igual para todos: el recordatorio real lo arma el Service Worker, leyendo los hábitos pendientes y la frase del día directamente del IndexedDB local.</span>
 
 <a id="es-data-lifecycle"></a>
 <b>CICLO GENERAL DE DATOS</b><br>
@@ -644,8 +644,7 @@ Conflictos: desencriptación remota, merge con LWW/deduplicación, persistencia 
 ├── index.tsx            # Punto de entrada
 ├── index.html           # App Shell (Ruta Crítica de Render)
 ├── sw.js                          # Offline/cache (ámbito /)
-├── push/onesignal/OneSignalSDKWorker.js  # Push OneSignal (ámbito aislado)
-└── OneSignalSDKWorker.js          # Legado (raíz)
+└── OneSignalSDKWorker.js          # Push (ámbito /onesignal/) + recordatorio local
 ```
 
 <a id="es-project-structure"></a>
@@ -877,6 +876,57 @@ gana el estado guardado en último lugar — no necesariamente la edición más 
 de ese slot concreto. Un reloj por slot costaría ~20× el almacenamiento de los logs
 (ver [ADR-0001](docs/decisions/ADR-0001-bitmask-log-encoding.md)), por lo que se
 descartó deliberadamente.
+
+<b style="display:inline; margin:0; padding:0; border:0;">RECORDATORIO DIARIO: EL SERVIDOR TOCA EL TIMBRE, EL DISPOSITIVO ESCRIBE EL TEXTO</b>
+
+<br>
+
+Un recordatorio útil necesita decir **qué** falta. Pero el servidor no puede saberlo: el estado está cifrado de extremo a extremo y no tiene manera de leer tus hábitos. Y con la app cerrada nada corre en el dispositivo — ningún código tuyo está vivo esperando las 20:00.
+
+La salida fue separar **disparador** de **contenido**:
+
+<div align="center">
+  <img src="assets/screenshot/notificacao.jpeg" alt="Recordatorio diario personalizado en el dispositivo" width="45%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
+</div>
+
+<br>
+
+```
+┌─ Vercel Cron (23:00 UTC) ──────────────────────────────┐
+│ Llama a /api/reminder, una vez al día                  │
+└────────────────────────────────────────────────────────┘
+                     ↓
+┌─ OneSignal ────────────────────────────────────────────┐
+│ Entrega un timbre IDÉNTICO a cada suscriptor           │
+│ Texto genérico: "¿Cómo van tus hábitos hoy?"           │
+└────────────────────────────────────────────────────────┘
+                     ↓  despierta el Service Worker
+┌─ Tu dispositivo ───────────────────────────────────────┐
+│ Lee la tarjeta del IndexedDB y reescribe la            │
+│ notificación:                                          │
+│                                                        │
+│   "Ningún viento es favorable para quien no sabe       │
+│    adónde va."                                         │
+│   Hábitos pendientes                                   │
+│   Falta: Abstinencia                                   │
+└────────────────────────────────────────────────────────┘
+```
+
+**Lo que el servidor aprende: nada.** Envía el mismo mensaje a todos y nunca sabe cuántos hábitos tienes, cuáles son, ni qué terminó diciendo la notificación. El nombre "Abstinencia" y la frase del día existen solo en tu dispositivo.
+
+**Por qué un servicio de push es indispensable.** Con la app cerrada, lo único capaz de despertar tu código es un mensaje de la red — quien escucha es el sistema operativo, no la app. La programación local no existe: la Notification Triggers API fue descontinuada por Chrome, y los temporizadores de Service Worker mueren en ~30 segundos. OneSignal encaja exactamente ahí, como transporte, no como dueño del contenido.
+
+**El texto se arma en el idioma activo**, porque la tarjeta la pre-renderiza la app antes de llegar al disco — el Service Worker no carga el i18n, solo muestra:
+
+<div align="center">
+  <img src="assets/screenshot/notificacao_en.jpeg" alt="El mismo recordatorio en inglés" width="45%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
+</div>
+
+<br>
+
+La frase es la misma adaptación que la tarjeta estoica muestra en la app, elegida por el motor de recomendación contextual. Con el día completo, la lista desaparece y queda "Todo al día" — el espacio que iOS obliga a llenar se vuelve el mejor lugar para la frase, sin competir con pendientes.
+
+<br>
 
 <b style="display:inline; margin:0; padding:0; border:0;">PRIVACIDAD Y CRIPTOGRAFÍA: DETALLES TÉCNICOS</b>
 

@@ -568,7 +568,7 @@ Four free ceilings operate at once. The app's practical limit is the **lowest** 
 - Client (Askesis PWA): The React-based interface handling daily user interactions, local state management and request initiations.
 - Serverless Backend (Vercel API): Acts as a secure intermediary layer. It manages state synchronization and serves as an "AI Proxy," protecting API keys and validating requests before routing them to the language model.
 - AI Engine (Google Gemini API): The analytical brain behind the app, receiving filtered data from the backend to process reflections and generate personalized insights.
-- Notifications (OneSignal): Independent messaging service that registers the PWA and handles asynchronous push notification delivery to re-engage the user back into the app.</span>
+- Notifications (OneSignal): Independent messaging service that registers the PWA and delivers the push that wakes the device. It carries only a generic text, identical for everyone: the real reminder is assembled by the Service Worker, reading pending habits and the day's quote straight from local IndexedDB.</span>
 
 <a id="en-data-lifecycle"></a>
 <b>GENERAL DATA CYCLE</b><br>
@@ -642,8 +642,7 @@ Conflicts: remote decryption, merge with LWW/deduplication, persistence and retr
 ├── index.tsx            # Entry point
 ├── index.html           # App Shell (Critical Render Path)
 ├── sw.js                          # Offline/cache (scope /)
-├── push/onesignal/OneSignalSDKWorker.js  # OneSignal push (isolated scope)
-└── OneSignalSDKWorker.js          # Legacy (root)
+└── OneSignalSDKWorker.js          # Push (scope /onesignal/) + local reminder
 ```
 
 <a id="en-project-structure"></a>
@@ -874,6 +873,55 @@ state saved last wins — not necessarily the most recent edit of that specific
 slot. A per-slot clock would cost ~20× the logs' storage (see
 [ADR-0001](docs/decisions/ADR-0001-bitmask-log-encoding.md)), so it was
 deliberately ruled out.
+
+<b style="display:inline; margin:0; padding:0; border:0;">DAILY REMINDER: THE SERVER RINGS THE BELL, THE DEVICE WRITES THE TEXT</b>
+
+<br>
+
+A useful reminder has to say **what** is missing. But the server cannot know: state is end-to-end encrypted and it has no way to read your habits. And with the app closed, nothing runs on the device — no code of yours is alive waiting for 8pm.
+
+The answer was to separate **trigger** from **content**:
+
+<div align="center">
+  <img src="assets/screenshot/notificacao_en.jpeg" alt="Daily reminder personalized on the device" width="45%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
+</div>
+
+<br>
+
+```
+┌─ Vercel Cron (23:00 UTC) ──────────────────────────────┐
+│ Calls /api/reminder, once a day                        │
+└────────────────────────────────────────────────────────┘
+                     ↓
+┌─ OneSignal ────────────────────────────────────────────┐
+│ Delivers an IDENTICAL bell to every subscriber         │
+│ Generic text: "How are your habits today?"             │
+└────────────────────────────────────────────────────────┘
+                     ↓  wakes the Service Worker
+┌─ Your device ──────────────────────────────────────────┐
+│ Reads the card from IndexedDB and rewrites it:         │
+│                                                        │
+│   "Watch your thoughts. They create your peace."       │
+│   Pending habits                                       │
+│   Still to do: Sustenance                              │
+└────────────────────────────────────────────────────────┘
+```
+
+**What the server learns: nothing.** It sends the same message to everyone and never knows how many habits you have, which ones, or what the notification ended up saying. The name "Sustenance" and the day's quote exist only on your device.
+
+**Why a push service is indispensable.** With the app closed, the only thing that can wake your code is a message from the network — the operating system is what listens, not the app. Local scheduling does not exist: the Notification Triggers API was discontinued by Chrome, and Service Worker timers die in ~30 seconds. OneSignal fits exactly there, as transport, not as owner of the content.
+
+**The text is built in the active language**, because the card is pre-rendered by the app before it reaches disk — the Service Worker does not load i18n, it only displays:
+
+<div align="center">
+  <img src="assets/screenshot/notificacao.jpeg" alt="O mesmo lembrete em português" width="45%" style="border-radius: 10px; border: 1px solid #2a2a2a;">
+</div>
+
+<br>
+
+The quote is the same adaptation the stoic card shows in the app, picked by the contextual recommendation engine. With the day complete, the list disappears and "All done" remains — the slot iOS forces you to fill becomes the best place for the quote, with nothing competing against it.
+
+<br>
 
 <b style="display:inline; margin:0; padding:0; border:0;">PRIVACY & CRYPTOGRAPHY: TECHNICAL DETAILS</b>
 
