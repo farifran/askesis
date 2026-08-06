@@ -36,7 +36,7 @@ describe('api/reminder', () => {
         expect(fetchMock).not.toHaveBeenCalled();
     });
 
-    it('cria a notificação com entrega imediata e idempotência diária', async () => {
+    it('cria a notificação com entrega imediata e idempotência', async () => {
         fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ id: 'notif-1' }), { status: 200 }));
 
         const mod = await import('./reminder');
@@ -102,16 +102,16 @@ describe('api/reminder', () => {
         expect(NOTIFICATION_TAG.length).toBeLessThanOrEqual(64);
     });
 
-    it('idempotency key é estável na mesma hora e distinta entre horas', async () => {
+    it('idempotency key é estável no mesmo minuto e distinta entre minutos', async () => {
         const { idempotencyKeyForDate } = await import('./reminder');
-        const a1 = await idempotencyKeyForDate('2026-08-01T23');
-        const a2 = await idempotencyKeyForDate('2026-08-01T23');
-        const b = await idempotencyKeyForDate('2026-08-02T00');
+        const a1 = await idempotencyKeyForDate('2026-08-01T23:00');
+        const a2 = await idempotencyKeyForDate('2026-08-01T23:00');
+        const b = await idempotencyKeyForDate('2026-08-01T23:01');
         expect(a1).toBe(a2);
         expect(a1).not.toBe(b);
     });
 
-    it('a chave usa granularidade de hora, não de dia', async () => {
+    it('a chave usa granularidade de minuto', async () => {
         // Com chave diária a OneSignal devolvia a notificação já criada e nenhum
         // push novo saía — impossível testar o lembrete duas vezes no mesmo dia.
         fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ id: 'notif-1' }), { status: 200 }));
@@ -121,8 +121,8 @@ describe('api/reminder', () => {
 
         const now = new Date().toISOString();
         const payload = JSON.parse(fetchMock.mock.calls[0][1].body);
-        expect(payload.idempotency_key).toBe(await mod.idempotencyKeyForDate(now.slice(0, 13)));
-        expect(payload.idempotency_key).not.toBe(await mod.idempotencyKeyForDate(now.slice(0, 10)));
+        expect(payload.idempotency_key).toBe(await mod.idempotencyKeyForDate(now.slice(0, 16)));
+        expect(payload.idempotency_key).not.toBe(await mod.idempotencyKeyForDate(now.slice(0, 13)));
     });
 
     it('usa auth Basic para chaves legadas', async () => {

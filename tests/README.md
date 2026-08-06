@@ -19,8 +19,8 @@ Comando usado: `npm test -- --run`
 
 <!-- INVENTARIO:INICIO -->
 
-- **Arquivos de teste:** 40
-- **Testes totais:** 539
+- **Arquivos de teste:** 41
+- **Testes totais:** 532
 
 > Gerado por `node scripts/update-test-inventory.js` a partir de execução real.
 > Não editar à mão: `--check` falha o CI quando divergir.
@@ -45,7 +45,7 @@ Comando usado: `npm test -- --run`
 ### `raiz`
 
 - `i18n.test.ts` → 26
-- `utils.test.ts` → 46
+- `utils.test.ts` → 37
 
 ### `render`
 
@@ -69,6 +69,7 @@ Comando usado: `npm test -- --run`
 - `services/migration.test.ts` → 21
 - `services/notificationCard.test.ts` → 8
 - `services/persistence.test.ts` → 13
+- `services/push.test.ts` → 2
 - `services/quoteEngine.test.ts` → 13
 - `services/selectors.test.ts` → 24
 - `services/stateUIConsistency.test.ts` → 35

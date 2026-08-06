@@ -122,10 +122,10 @@ export function extractErrors(body: OneSignalResponse): string[] {
  * logo em seguida (retry/redeploy), a OneSignal deduplica em vez de enviar duas
  * vezes. Formato UUID exigido pela API, derivado de SHA-256 do carimbo.
  *
- * Granularidade de hora, e não de dia, porque com chave diária a OneSignal
- * devolve a notificação já criada e NENHUM push novo sai — o que tornava
- * impossível testar o lembrete mais de uma vez no mesmo dia. Retries do cron
- * acontecem em minutos, então a hora ainda os cobre.
+ * Granularidade de MINUTO. Com chave diária (ou horária) a OneSignal devolve a
+ * notificação já criada e NENHUM push novo sai, o que inviabiliza testar o
+ * lembrete duas vezes seguidas. Disparo duplo de cron acontece em segundos, e
+ * o minuto ainda o cobre.
  */
 export async function idempotencyKeyForDate(stamp: string): Promise<string> {
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`askesis-reminder|${stamp}`));
@@ -163,7 +163,7 @@ export default async function handler(req: Request) {
     const appId = process.env.ONESIGNAL_APP_ID || DEFAULT_APP_ID;
     const now = new Date().toISOString();
     const todayISO = now.slice(0, 10);
-    const hourStamp = now.slice(0, 13); // YYYY-MM-DDTHH
+    const minuteStamp = now.slice(0, 16); // YYYY-MM-DDTHH:MM
 
     const payload = {
         app_id: appId,
@@ -180,7 +180,7 @@ export default async function handler(req: Request) {
         // Agrupa as notificações do lembrete numa só quando o navegador honra o
         // topic. A personalização NÃO depende disto — ver REMINDER_MARKER.
         web_push_topic: NOTIFICATION_TAG,
-        idempotency_key: await idempotencyKeyForDate(hourStamp)
+        idempotency_key: await idempotencyKeyForDate(minuteStamp)
     };
 
     try {
