@@ -60,26 +60,38 @@ function collectPendingNames(dateISO: string): string[] {
 }
 
 /**
- * A frase que o app está exibindo agora, publicada por `renderStoicQuote`.
+ * A adaptação da frase que o app está exibindo agora, publicada por
+ * `renderStoicQuote` — a versão curta, a mesma que aparece no card sem precisar
+ * expandir. O texto original (mais longo, com autor) fica só no expandido.
  *
  * A dependência é invertida de propósito: `data/quotes.ts` pesa ~87 KB e é
  * carregado sob demanda (`import()` em render.ts). Importá-lo aqui o traria
  * para o grafo estático e o app pagaria esse custo já no boot.
  */
-let publishedQuote: { text: string; authorKey: string } | null = null;
+let publishedQuote: string | null = null;
 
-export function setNotificationQuote(quote: { text: string; authorKey: string } | null): void {
-    publishedQuote = quote;
+export function setNotificationQuote(adaptationText: string | null): void {
+    publishedQuote = adaptationText || null;
 }
 
-function currentQuoteBody(): string | null {
-    if (!publishedQuote?.text) return null;
-    // `author` é chave de i18n ("musoniusRufus"), não o nome já escrito.
-    return t('notifyQuoteBody', { text: publishedQuote.text, author: t(publishedQuote.authorKey) });
+/** Linha das pendências, ou null quando não há nome legível para mostrar. */
+function pendingLine(dateISO: string, pending: number): string {
+    const names = collectPendingNames(dateISO);
+    const shown = names.slice(0, MAX_HABIT_NAMES);
+
+    // Sem nomes legíveis, cai para a contagem pura.
+    if (shown.length === 0) return t('pendingBadgeBody', { count: pending });
+
+    const hidden = names.length - shown.length;
+    const list = hidden > 0 ? t('notifyPendingMore', { names: shown.join(', '), count: hidden }) : shown.join(', ');
+    return t('notifyPendingList', { names: list });
 }
 
 /**
  * Monta o cartão a partir do estado atual.
+ *
+ * O corpo leva as pendências E a frase, nesta ordem: o que exige ação primeiro,
+ * a leitura depois. Com o dia zerado sobra só a frase.
  *
  * Retorna `null` quando não há o que dizer (nenhum hábito ativo hoje): nesse
  * caso o SW mantém o texto genérico do push em vez de inventar conteúdo.
@@ -91,26 +103,18 @@ export function buildNotificationCard(): NotificationCard | null {
 
         if (total === 0) return null;
 
-        const base = { date: dateISO, lang: state.activeLanguageCode };
+        const lines: string[] = [];
+        if (pending > 0) lines.push(pendingLine(dateISO, pending));
+        if (publishedQuote) lines.push(publishedQuote);
 
-        if (pending === 0) {
-            // Slot que o iOS obriga a preencher: é onde a frase estoica cabe melhor,
-            // porque não compete com a lista de pendências.
-            const quote = currentQuoteBody();
-            if (!quote) return null;
-            return { ...base, title: t('notifyAllDoneTitle'), body: quote };
-        }
-
-        const names = collectPendingNames(dateISO);
-        const shown = names.slice(0, MAX_HABIT_NAMES);
-        const hidden = names.length - shown.length;
-        const list = hidden > 0 ? t('notifyPendingMore', { names: shown.join(', '), count: hidden }) : shown.join(', ');
+        // Dia zerado antes de a frase carregar: nada a acrescentar ao genérico.
+        if (lines.length === 0) return null;
 
         return {
-            ...base,
-            title: t('pendingBadgeTitle'),
-            // Sem nomes legíveis, o corpo cai para a contagem pura.
-            body: shown.length > 0 ? t('notifyPendingList', { names: list }) : t('pendingBadgeBody', { count: pending })
+            date: dateISO,
+            lang: state.activeLanguageCode,
+            title: pending > 0 ? t('pendingBadgeTitle') : t('notifyAllDoneTitle'),
+            body: lines.join('\n')
         };
     } catch (error) {
         // O cartão é um extra: nunca pode derrubar o save do estado.

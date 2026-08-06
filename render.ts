@@ -429,9 +429,10 @@ export function renderStoicQuote() {
     const lang = state.activeLanguageCode as 'pt' | 'en' | 'es';
     const adaptationText = selectedQuote.adaptations[`level_${userLevel}` as keyof typeof selectedQuote.adaptations][lang];
 
-    // Publica a frase para o cartão de notificação. É aqui, e não no cartão,
-    // porque data/quotes.ts é carregado sob demanda — ver setNotificationQuote.
-    setNotificationQuote({ text: selectedQuote.original_text[lang], authorKey: selectedQuote.author });
+    // Publica a frase para o cartão de notificação: a ADAPTAÇÃO, que é a versão
+    // curta mostrada aqui sem expandir. É aqui, e não no cartão, porque
+    // data/quotes.ts é carregado sob demanda — ver setNotificationQuote.
+    setNotificationQuote(adaptationText);
 
 
     const container = ui.stoicQuoteDisplay;

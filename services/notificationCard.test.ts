@@ -13,8 +13,8 @@ import { createTestHabit, clearTestState } from '../tests/test-utils';
 
 const TODAY = getTodayUTCIso();
 
-// `author` é chave de i18n, resolvida na montagem do cartão.
-const QUOTE = { text: 'Nenhum vento é favorável a quem não sabe aonde vai.', authorKey: 'musoniusRufus' };
+// A adaptação: versão curta que o app mostra sem expandir.
+const QUOTE = 'Nenhum vento é favorável a quem não sabe aonde vai.';
 
 describe('buildNotificationCard', () => {
     beforeAll(async () => {
@@ -78,13 +78,31 @@ describe('buildNotificationCard', () => {
         const card = buildNotificationCard()!;
 
         expect(card.title).toBe('Tudo em dia');
-        expect(card.body).toContain(QUOTE.text);
-        // Autor resolvido pelo i18n, não a chave crua.
-        expect(card.body).toContain('Musônio Rufo');
-        expect(card.body).not.toContain('musoniusRufus');
+        expect(card.body).toBe(QUOTE);
     });
 
-    it('usa o idioma ativo no título e no autor', () => {
+    it('mostra pendências E frase juntas, nesta ordem', () => {
+        createTestHabit({ name: 'Meditar', time: 'Morning', goalType: 'check' });
+        setNotificationQuote(QUOTE);
+
+        const card = buildNotificationCard()!;
+        const [primeira, segunda] = card.body.split('\n');
+
+        // O que exige ação primeiro, a leitura depois.
+        expect(primeira).toContain('Meditar');
+        expect(segunda).toBe(QUOTE);
+    });
+
+    it('mostra só as pendências enquanto a frase não carregou', () => {
+        createTestHabit({ name: 'Meditar', time: 'Morning', goalType: 'check' });
+
+        const card = buildNotificationCard()!;
+
+        expect(card.body).toContain('Meditar');
+        expect(card.body).not.toContain('\n');
+    });
+
+    it('usa o idioma ativo no título', () => {
         const id = createTestHabit({ name: 'Meditar', time: 'Morning', goalType: 'check' });
         HabitService.setStatus(id, TODAY, 'Morning', HABIT_STATE.DONE);
         setNotificationQuote(QUOTE);
@@ -94,7 +112,7 @@ describe('buildNotificationCard', () => {
 
         expect(card.lang).toBe('en');
         expect(card.title).toBe('All done');
-        expect(card.body).toContain(QUOTE.text);
+        expect(card.body).toBe(QUOTE);
     });
 
     it('retorna null no dia completo sem frase publicada', () => {
