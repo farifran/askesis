@@ -476,9 +476,9 @@ LANGUAGES = {
 }
 
 // Sistema de tradução:
-// 1. Busca chave no idioma preferido
-// 2. Se não existir, volta para 'en' (padrão)
-// 3. Se nem em 'en', retorna a chave como fallback
+// 1. Busca a chave no idioma ativo
+// 2. Se não existir, cai para 'pt' (dicionário base do projeto)
+// 3. Se nem em 'pt', devolve a própria chave — a UI nunca fica vazia
 ```
 
 **Exemplos de Chaves de Tradução:**

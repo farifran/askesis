@@ -475,9 +475,9 @@ LANGUAGES = {
 }
 
 // Translation system:
-// 1. Search key in preferred language
-// 2. If not exists, fallback to 'en' (default)
-// 3. If not in 'en' either, return key as fallback
+// 1. Look the key up in the active language
+// 2. If missing, fall back to 'pt' (the project's base dictionary)
+// 3. If missing there too, return the key itself — the UI is never blank
 ```
 
 **Translation Key Examples:**

@@ -476,9 +476,9 @@ LANGUAGES = {
 }
 
 // Sistema de traducción:
-// 1. Busca clave en idioma preferido
-// 2. Si no existe, respaldo a 'en' (predeterminado)
-// 3. Si no en 'en' tampoco, retorna clave como respaldo
+// 1. Busca la clave en el idioma activo
+// 2. Si no existe, recurre a 'pt' (diccionario base del proyecto)
+// 3. Si tampoco está en 'pt', devuelve la propia clave — la UI nunca queda vacía
 ```
 
 **Claves de Traducción de Ejemplo:**
