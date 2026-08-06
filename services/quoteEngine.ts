@@ -12,14 +12,10 @@
  * Sistema de pontuação ponderada (Weighted Scoring System).
  * O objetivo é entregar o "remédio" correto para o estado atual da alma do usuário.
  * 
- * V7.2 UPDATES [2025-05-14] - ROBUST SAGE:
- * - Crash Guard: Validação estrita de datas para evitar seeds NaN.
- * - True Urgency: Implementação real do estado 'urgency' para noites improdutivas.
- * - Case Insensitive: Normalização de tags da IA.
- * - Historical Determinism: O passado é imutável.
+ * Garantias: datas inválidas nunca viram seed NaN, tags da IA são normalizadas
+ * em minúsculas e o passado é determinístico (mesma data → mesma citação).
  */
 
-// AUDIT FIX: Removed unused 'getHabitDailyInfoForDate'
 import { state, Habit, StoicVirtue, GovernanceSphere, HABIT_STATE } from '../state';
 import { Quote, StoicTag } from '../data/quotes';
 import { calculateDaySummary, getEffectiveScheduleForHabitOnDate, calculateHabitStreak, getScheduleForDate } from './selectors';
@@ -68,6 +64,19 @@ function _stringHash(str: string): number {
         hash = (hash * 33) ^ str.charCodeAt(--i);
     }
     return hash >>> 0; 
+}
+
+/**
+ * Lê a assinatura de contexto gravada em `quoteState.lockedContext`.
+ * Ela começa com a data ISO, que já contém dois hifens — por isso o período do
+ * dia cai em parts[3] e o estado de performance em parts[4].
+ */
+function readSignature(signature: string | undefined) {
+    const parts = signature ? signature.split('-') : [];
+    return {
+        timeOfDay: parts[3] as ContextVector['timeOfDay'] | undefined,
+        performanceState: parts[4] as PerformanceState | undefined
+    };
 }
 
 function _analyzeRecentHistory(todayISO: string): number {
@@ -216,11 +225,7 @@ function _getPerformanceStateWithHysteresis(dateISO: string, lastContextHash?: s
         return 'neutral';
     }
     
-    let previousState: PerformanceState = 'neutral';
-    if (lastContextHash && lastContextHash.includes('-')) {
-        const parts = lastContextHash.split('-');
-        if (parts[4]) previousState = parts[4] as PerformanceState;
-    }
+    const previousState = readSignature(lastContextHash).performanceState ?? 'neutral';
 
     if (previousState === 'triumph' && completionRate >= QUOTE_TRIUMPH_EXIT) return 'triumph';
     if (previousState === 'struggle' && snoozeRate > QUOTE_STRUGGLE_EXIT) return 'struggle';
@@ -244,19 +249,13 @@ function _gatherContext(dateISO: string): ContextVector {
     const timeOfDay = _getTimeOfDay();
     const performanceState = _getPerformanceStateWithHysteresis(dateISO, quoteState?.lockedContext);
 
-    let isMajorShift = false;
-    if (quoteState && quoteState.lockedContext) {
-        const parts = quoteState.lockedContext.split('-');
-        const oldState = parts[4] as PerformanceState;
-        
-        if (oldState !== performanceState && (performanceState === 'triumph' || performanceState === 'defeat' || performanceState === 'urgency')) {
-            isMajorShift = true;
-        }
-        if (parts[3] !== timeOfDay) {
-            isMajorShift = true;
-        }
-    } else {
-        isMajorShift = true;
+    // Sem citação anterior não há o que preservar: qualquer contexto é "novo".
+    let isMajorShift = !quoteState?.lockedContext;
+    if (quoteState?.lockedContext) {
+        const previous = readSignature(quoteState.lockedContext);
+        const enteredStrongState = previous.performanceState !== performanceState
+            && (performanceState === 'triumph' || performanceState === 'defeat' || performanceState === 'urgency');
+        isMajorShift = enteredStrongState || previous.timeOfDay !== timeOfDay;
     }
 
     return {
@@ -272,17 +271,30 @@ function _gatherContext(dateISO: string): ContextVector {
     };
 }
 
+// Cada estado do contexto puxa as tags que fazem a citação ser o "remédio" certo.
+const TIME_OF_DAY_TAGS: Record<ContextVector['timeOfDay'], readonly StoicTag[]> = {
+    morning: ['morning'],
+    afternoon: [],
+    evening: ['evening', 'reflection', 'rest']
+};
+
+const PERFORMANCE_TAGS: Record<PerformanceState, readonly StoicTag[]> = {
+    neutral: [],
+    defeat: ['resilience', 'acceptance', 'fate'],
+    triumph: ['humility', 'temperance', 'death'],
+    struggle: ['discipline', 'action', 'focus'],
+    urgency: ['urgency', 'time', 'action', 'death']
+};
+
 function _scoreQuote(quote: Quote, context: ContextVector): number {
     let score = 1.0; 
 
-    // Helper DRY para aplicar regra baseada em tags
-    const applyTagRule = (condition: boolean, tagsToCheck: StoicTag[], weight: number) => {
-        if (condition) {
-            for (const tag of tagsToCheck) {
-                if (quote.metadata.tags.includes(tag)) {
-                    score += weight;
-                    return; // Aplica o peso apenas uma vez por regra
-                }
+    // Soma o peso uma única vez, na primeira tag da regra que a citação tiver.
+    const addIfTagged = (tags: readonly StoicTag[], weight: number) => {
+        for (const tag of tags) {
+            if (quote.metadata.tags.includes(tag)) {
+                score += weight;
+                return;
             }
         }
     };
@@ -304,35 +316,23 @@ function _scoreQuote(quote: Quote, context: ContextVector): number {
     }
 
     // 3. RECOVERY
-    applyTagRule(context.isRecovery, ['resilience', 'growth', 'hope'], QUOTE_WEIGHTS.RECOVERY);
+    if (context.isRecovery) addIfTagged(['resilience', 'growth', 'hope'], QUOTE_WEIGHTS.RECOVERY);
 
     // 4. TIME OF DAY
-    if (context.timeOfDay === 'morning') applyTagRule(true, ['morning'], QUOTE_WEIGHTS.TIME_OF_DAY);
-    if (context.timeOfDay === 'evening') applyTagRule(true, ['evening', 'reflection', 'rest'], QUOTE_WEIGHTS.TIME_OF_DAY);
+    addIfTagged(TIME_OF_DAY_TAGS[context.timeOfDay], QUOTE_WEIGHTS.TIME_OF_DAY);
 
     // 5. VIRTUE RESONANCE
     if (context.dominantVirtues.has(quote.metadata.virtue)) {
         score += QUOTE_WEIGHTS.VIRTUE_ALIGN;
     }
 
-    // 6. PERFORMANCE REACTION
-    // AUDIT FIX: Renamed shadowed variable 'state' to 'perfState'
+    // 6. PERFORMANCE REACTION — urgência pesa 20% mais, é o estado mais agudo.
     const perfState = context.performanceState;
-    if (perfState === 'defeat') {
-        applyTagRule(true, ['resilience', 'acceptance', 'fate'], QUOTE_WEIGHTS.PERFORMANCE);
-    } else if (perfState === 'triumph') {
-        applyTagRule(true, ['humility', 'temperance', 'death'], QUOTE_WEIGHTS.PERFORMANCE);
-    } else if (perfState === 'struggle') {
-        applyTagRule(true, ['discipline', 'action', 'focus'], QUOTE_WEIGHTS.PERFORMANCE);
-    } else if (perfState === 'urgency') {
-        if (quote.metadata.tags.includes('urgency') || quote.metadata.tags.includes('time') || 
-            quote.metadata.tags.includes('action') || quote.metadata.tags.includes('death')) {
-            score += QUOTE_WEIGHTS.PERFORMANCE * 1.2;
-        }
-    }
+    const perfWeight = perfState === 'urgency' ? QUOTE_WEIGHTS.PERFORMANCE * 1.2 : QUOTE_WEIGHTS.PERFORMANCE;
+    addIfTagged(PERFORMANCE_TAGS[perfState], perfWeight);
 
     // 7. MOMENTUM CONTEXT
-    applyTagRule(context.momentumState === 'unbroken', ['consistency', 'habit'], QUOTE_WEIGHTS.MOMENTUM);
+    if (context.momentumState === 'unbroken') addIfTagged(['consistency', 'habit'], QUOTE_WEIGHTS.MOMENTUM);
 
     return score;
 }

@@ -82,6 +82,9 @@ const TIME_OF_DAY_KEYS: Record<TimeOfDay, string> = {
 let currentDict: Translations | null = null;
 let fallbackDict: Translations | null = null; // Granular Fallback (ex: ES -> PT)
 let current: LangBundle | null = null;
+// Ponteiro direto: o calendário chama getLocaleDayName por célula renderizada,
+// e o acesso ao array sem passar pelo bundle é mensuravelmente mais rápido.
+let currentWeekdays: string[] = [];
 let currentLangCode: string | null = null;
 
 // CONCURRENCY: ID da última requisição.
@@ -232,6 +235,7 @@ function updateHotCache(langCode: string) {
     }
 
     current = bundleCache[langCode] ??= buildBundle(langCode);
+    currentWeekdays = current.weekdays;
 }
 
 /** Sincroniza os ponteiros quentes com o idioma ativo do estado. */
@@ -407,7 +411,7 @@ export function getTimeOfDayName(time: TimeOfDay): string {
 export function getLocaleDayName(date: Date): string {
     syncLang();
     // getUTCDay() returns 0 for Sunday, matches array index
-    return current?.weekdays[date.getUTCDay()] || '';
+    return currentWeekdays[date.getUTCDay()] || '';
 }
 
 /**
