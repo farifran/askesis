@@ -40,6 +40,23 @@ const TRANSIENT_SYNC_RETRY_DELAY_MS = 1500;
 const WORKER_TIMEOUT_RETRYABLE_TASKS = new Set<WorkerTaskType>(['encrypt-json', 'decrypt', 'decrypt-with-hash']);
 const workerPayloadEncoder = new TextEncoder();
 
+/**
+ * Tudo que o sync guarda em localStorage é cache reconstruível (hashes, ETag,
+ * backup de conflito). Falha de quota ou modo privado não pode derrubar o sync,
+ * então a escrita é best-effort e a leitura degrada para null.
+ */
+const cache = {
+    read(key: string): string | null {
+        try { return localStorage.getItem(key); } catch { return null; }
+    },
+    write(key: string, value: string | null) {
+        try {
+            if (value === null) localStorage.removeItem(key);
+            else localStorage.setItem(key, value);
+        } catch {}
+    }
+};
+
 let isSyncInProgress = false;
 let pendingSyncQueue: AppState[] = [];
 const debouncedSync = createDebounced(() => { if (!isSyncInProgress) performSync(); }, CLOUD_SYNC_DEBOUNCE_MS);
@@ -147,11 +164,8 @@ function statesEquivalentForSync(a: AppState, b: AppState): boolean {
 // PERF: Carrega hashes do localStorage para evitar re-upload no boot (Cold Start Optimization)
 const lastSyncedHashes: Map<string, string> = (() => {
     try {
-        const raw = localStorage.getItem(HASH_STORAGE_KEY);
-        if (raw) {
-            const loaded = new Map(JSON.parse(raw));
-            return loaded;
-        }
+        const raw = cache.read(HASH_STORAGE_KEY);
+        if (raw) return new Map(JSON.parse(raw));
     } catch (e) {
         logger.warn("[Sync] Falha ao carregar cache de hashes", e);
     }
@@ -162,12 +176,8 @@ const lastSyncedHashes: Map<string, string> = (() => {
 pruneHashCache();
 
 function persistHashCache() {
-    try {
-        pruneHashCache();
-        localStorage.setItem(HASH_STORAGE_KEY, JSON.stringify(Array.from(lastSyncedHashes.entries())));
-    } catch (e) {
-        logger.error("[Sync] Falha ao salvar cache de hashes", e);
-    }
+    pruneHashCache();
+    cache.write(HASH_STORAGE_KEY, JSON.stringify(Array.from(lastSyncedHashes.entries())));
 }
 
 function pruneHashCache() {
@@ -185,23 +195,8 @@ export function clearSyncHashCache() {
     logger.info("[Sync] Hash cache cleared.");
 }
 
-function getStoredRemoteStateEtag(): string | null {
-    try {
-        return localStorage.getItem(REMOTE_STATE_ETAG_STORAGE_KEY);
-    } catch {
-        return null;
-    }
-}
-
-function setStoredRemoteStateEtag(etag: string | null) {
-    try {
-        if (!etag) {
-            localStorage.removeItem(REMOTE_STATE_ETAG_STORAGE_KEY);
-            return;
-        }
-        localStorage.setItem(REMOTE_STATE_ETAG_STORAGE_KEY, etag);
-    } catch {}
-}
+const getStoredRemoteStateEtag = () => cache.read(REMOTE_STATE_ETAG_STORAGE_KEY);
+const setStoredRemoteStateEtag = (etag: string | null) => cache.write(REMOTE_STATE_ETAG_STORAGE_KEY, etag || null);
 
 function updateStoredRemoteStateEtagFromResponse(response: Response) {
     const etag = response?.headers?.get?.('ETag') || response?.headers?.get?.('etag');
@@ -215,19 +210,10 @@ function serializeConflictRecoveryBackup(appState: AppState): string {
     });
 }
 
-function storeConflictRecoveryBackup(appState: AppState) {
-    try {
-        localStorage.setItem(CONFLICT_RECOVERY_BACKUP_KEY, serializeConflictRecoveryBackup(appState));
-    } catch (error) {
-        logger.warn('[Sync] Failed to persist conflict recovery backup.', error);
-    }
-}
+const storeConflictRecoveryBackup = (appState: AppState) =>
+    cache.write(CONFLICT_RECOVERY_BACKUP_KEY, serializeConflictRecoveryBackup(appState));
 
-function clearConflictRecoveryBackup() {
-    try {
-        localStorage.removeItem(CONFLICT_RECOVERY_BACKUP_KEY);
-    } catch {}
-}
+const clearConflictRecoveryBackup = () => cache.write(CONFLICT_RECOVERY_BACKUP_KEY, null);
 
 function buildConditionalSyncGetHeaders(): HeadersInit | undefined {
     const etag = getStoredRemoteStateEtag();
@@ -366,14 +352,12 @@ function buildAppStateFromDecryptedShards(decryptedShards: Record<string, any>, 
 }
 
 function confirmDeduplicationViaModal(identity: string, winnerHabit: any, loserHabit: any): Promise<'deduplicate' | 'keep_separate'> {
-    const winnerName = escapeHTML((winnerHabit.scheduleHistory?.[winnerHabit.scheduleHistory.length - 1]?.name
-        || winnerHabit.scheduleHistory?.[winnerHabit.scheduleHistory.length - 1]?.nameKey
-        || identity
-        || ''));
-    const loserName = escapeHTML((loserHabit.scheduleHistory?.[loserHabit.scheduleHistory.length - 1]?.name
-        || loserHabit.scheduleHistory?.[loserHabit.scheduleHistory.length - 1]?.nameKey
-        || identity
-        || ''));
+    const displayName = (habit: any) => {
+        const latest = habit.scheduleHistory?.[habit.scheduleHistory.length - 1];
+        return escapeHTML(latest?.name || latest?.nameKey || identity || '');
+    };
+    const winnerName = displayName(winnerHabit);
+    const loserName = displayName(loserHabit);
 
     const html = `
         <p>Foram detectados dois hábitos potencialmente iguais durante a sincronização.</p>
@@ -595,19 +579,38 @@ async function reconstructStateFromShards(shards: SyncServerShards): Promise<App
     }
 }
 
-export async function downloadRemoteState(): Promise<AppState | undefined> {
-    addSyncLog("Baixando dados remotos...", "info");
+type RemoteShardsResult =
+    | { status: 'not-modified' }
+    | { status: 'empty' }
+    | { status: 'ok'; shards: SyncServerShards };
+
+/**
+ * GET condicional em /api/sync. O resultado distingue "nada mudou" (304, o ETag
+ * bate) de "cofre vazio", porque os chamadores reagem de formas diferentes a
+ * cada um. A mensagem de erro fica por conta de quem chama, pelo mesmo motivo.
+ */
+async function fetchRemoteShards(onError: (response: Response) => Promise<never>): Promise<RemoteShardsResult> {
     const response = await apiFetch('/api/sync', { headers: buildConditionalSyncGetHeaders() }, true);
-    if (response.status === 304) { addSyncLog("Sem novidades na nuvem.", "info"); return undefined; }
-    if (!response.ok) {
-        const parsed = await readApiErrorMessage(response, 'Falha na conexão com a nuvem');
-        throw new Error(parsed.message);
-    }
+    if (response.status === 304) return { status: 'not-modified' };
+    if (!response.ok) await onError(response);
+
     updateStoredRemoteStateEtagFromResponse(response);
     const shards = await response.json();
-    if (!shards || Object.keys(shards).length === 0) { addSyncLog("Cofre vazio na nuvem.", "info"); return undefined; }
+    return shards && Object.keys(shards).length > 0 ? { status: 'ok', shards } : { status: 'empty' };
+}
+
+export async function downloadRemoteState(): Promise<AppState | undefined> {
+    addSyncLog("Baixando dados remotos...", "info");
+    const result = await fetchRemoteShards(async (response) => {
+        const parsed = await readApiErrorMessage(response, 'Falha na conexão com a nuvem');
+        throw new Error(parsed.message);
+    });
+
+    if (result.status === 'not-modified') { addSyncLog("Sem novidades na nuvem.", "info"); return undefined; }
+    if (result.status === 'empty') { addSyncLog("Cofre vazio na nuvem.", "info"); return undefined; }
+
     addSyncLog("Dados baixados com sucesso.", "success");
-    return await reconstructStateFromShards(shards);
+    return await reconstructStateFromShards(result.shards);
 }
 
 export async function fetchStateFromCloud(): Promise<AppState | undefined> {
@@ -617,24 +620,16 @@ export async function fetchStateFromCloud(): Promise<AppState | undefined> {
     }
     setSyncStatus('syncSaving'); 
     try {
-        const response = await apiFetch('/api/sync', { headers: buildConditionalSyncGetHeaders() }, true);
-        if (response.status === 304) { 
-            state.initialSyncDone = true;
-            setSyncStatus('syncSynced'); 
-            return undefined; 
-        }
-        if (!response.ok) throw new Error("Cloud fetch failed with status " + response.status);
-        updateStoredRemoteStateEtagFromResponse(response);
-        const shards = await response.json();
-        if (!shards || Object.keys(shards).length === 0) {
-            state.initialSyncDone = true;
-            return undefined;
-        }
-        const remoteState = await reconstructStateFromShards(shards);
-        if (!remoteState) {
-            state.initialSyncDone = true;
-            return undefined;
-        }
+        const result = await fetchRemoteShards(async (response) => {
+            throw new Error("Cloud fetch failed with status " + response.status);
+        });
+        // 304 confirma que a nuvem tem o que já temos; cofre vazio não confirma
+        // nada, então segue local sem mexer no status.
+        if (result.status === 'not-modified') { setSyncStatus('syncSynced'); return undefined; }
+        if (result.status === 'empty') return undefined;
+
+        const remoteState = await reconstructStateFromShards(result.shards);
+        if (!remoteState) return undefined;
         const localState = getPersistableState();
 
         const hasDivergence = !statesEquivalentForSync(localState, remoteState);
