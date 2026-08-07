@@ -119,6 +119,36 @@ export function setupOverscroll(container: HTMLElement) {
         if (wheelResetTimer) { clearTimeout(wheelResetTimer); wheelResetTimer = null; }
     }
 
+    function readEdges() {
+        const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight);
+        return { maxScroll, atTop: container.scrollTop <= 0, atBottom: container.scrollTop >= maxScroll - 0.5 };
+    }
+
+    /**
+     * Feedback tátil do elástico: granulado enquanto o usuário puxa e contínuo
+     * ao encostar no limite. Toque e roda da mesma forma, por isso vive aqui.
+     */
+    function applyHaptics(target: number) {
+        if (Math.abs(target) >= MAX_OVERSCROLL_PX - 0.001) {
+            if (!limitVibrationTimer) {
+                triggerHaptic('heavy');
+                limitVibrationTimer = window.setInterval(() => triggerHaptic('medium'), 120);
+            }
+            return;
+        }
+
+        _stopLimitVibration();
+        const HAPTIC_GRAIN = 3;
+        const absTarget = Math.min(Math.abs(target), MAX_OVERSCROLL_PX);
+        const currentStep = Math.floor(absTarget / HAPTIC_GRAIN);
+        if (currentStep === lastFeedbackStep) return;
+
+        if (currentStep > lastFeedbackStep) {
+            triggerHaptic(absTarget / MAX_OVERSCROLL_PX > 0.6 ? 'light' : 'selection');
+        }
+        lastFeedbackStep = currentStep;
+    }
+
     function onTouchMove(e: TouchEvent) {
         if (!isTouching) return;
         if (e.touches.length !== 1) return;
@@ -127,9 +157,7 @@ export function setupOverscroll(container: HTMLElement) {
         const dy = touchY - lastTouchY; // positive = pulling down
         lastTouchY = touchY;
 
-        const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight);
-        const atTop = container.scrollTop <= 0;
-        const atBottom = container.scrollTop >= maxScroll - 0.5;
+        const { maxScroll, atTop, atBottom } = readEdges();
 
         // If the user attempts to scroll beyond bounds, activate overscroll visual
         if ((atTop && dy > 0) || (atBottom && dy < 0)) {
@@ -138,27 +166,7 @@ export function setupOverscroll(container: HTMLElement) {
             const sign = dy > 0 ? 1 : -1;
             const additional = Math.abs(dy) * SCALE_FACTOR;
             const target = activeOffset + sign * additional;
-            const willBeAtLimit = Math.abs(target) >= MAX_OVERSCROLL_PX - 0.001;
-
-            if (willBeAtLimit) {
-                if (!limitVibrationTimer) {
-                    triggerHaptic('heavy');
-                    limitVibrationTimer = window.setInterval(() => triggerHaptic('medium'), 120);
-                }
-            } else {
-                _stopLimitVibration();
-                const HAPTIC_GRAIN = 3;
-                const absTarget = Math.min(Math.abs(target), MAX_OVERSCROLL_PX);
-                const currentStep = Math.floor(absTarget / HAPTIC_GRAIN);
-                if (currentStep !== lastFeedbackStep) {
-                    if (currentStep > lastFeedbackStep) {
-                        const ratio = absTarget / MAX_OVERSCROLL_PX;
-                        if (ratio > 0.6) triggerHaptic('light');
-                        else triggerHaptic('selection');
-                    }
-                    lastFeedbackStep = currentStep;
-                }
-            }
+            applyHaptics(target);
 
             applyOffset(target);
         } else if (activeOffset !== 0) {
@@ -177,9 +185,7 @@ export function setupOverscroll(container: HTMLElement) {
     // WHEEL HANDLER (desktop)
     function onWheel(e: WheelEvent) {
         if (e.deltaY === 0) return;
-        const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight);
-        const atTop = container.scrollTop <= 0;
-        const atBottom = container.scrollTop >= maxScroll - 0.5;
+        const { maxScroll, atTop, atBottom } = readEdges();
 
         if ((atTop && e.deltaY < 0) || (atBottom && e.deltaY > 0) || maxScroll === 0) {
             // Prevent default scrolling beyond bounds and show overscroll effect
@@ -187,27 +193,7 @@ export function setupOverscroll(container: HTMLElement) {
             const sign = e.deltaY > 0 ? -1 : 1; // wheel down -> negative offset
             const delta = Math.abs(e.deltaY) * 0.02; // gentle mapping
             const target = activeOffset + sign * delta;
-            const willBeAtLimit = Math.abs(target) >= MAX_OVERSCROLL_PX - 0.001;
-
-            if (willBeAtLimit) {
-                if (!limitVibrationTimer) {
-                    triggerHaptic('heavy');
-                    limitVibrationTimer = window.setInterval(() => triggerHaptic('medium'), 120);
-                }
-            } else {
-                _stopLimitVibration();
-                const HAPTIC_GRAIN = 3;
-                const absTarget = Math.min(Math.abs(target), MAX_OVERSCROLL_PX);
-                const currentStep = Math.floor(absTarget / HAPTIC_GRAIN);
-                if (currentStep !== lastFeedbackStep) {
-                    if (currentStep > lastFeedbackStep) {
-                        const ratio = absTarget / MAX_OVERSCROLL_PX;
-                        if (ratio > 0.6) triggerHaptic('light');
-                        else triggerHaptic('selection');
-                    }
-                    lastFeedbackStep = currentStep;
-                }
-            }
+            applyHaptics(target);
 
             applyOffset(target);
 
@@ -228,7 +214,8 @@ export function setupOverscroll(container: HTMLElement) {
     // Wrapped handlers with guard
     const _onTouchStart = (e: TouchEvent) => { if (shouldIgnore()) return; onTouchStart(e); };
     const _onTouchMove = (e: TouchEvent) => { if (shouldIgnore()) return; onTouchMove(e); };
-    const _onTouchEnd = (e: TouchEvent) => { if (shouldIgnore()) return onTouchEnd(); onTouchEnd(); };
+    // Sem guard: o encerramento precisa zerar o offset mesmo se o gesto virou drag.
+    const _onTouchEnd = () => onTouchEnd();
     const _onWheel = (e: WheelEvent) => { if (shouldIgnore()) return; onWheel(e); };
 
     container.addEventListener('touchstart', _onTouchStart, { passive: true });
