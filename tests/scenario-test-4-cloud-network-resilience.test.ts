@@ -17,7 +17,7 @@
 
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { state, HABIT_STATE, APP_VERSION } from '../state';
-import { clearTestState, createTestHabit, populateTestPeriod } from './test-utils';
+import { clearTestState, createTestHabit, populateTestPeriod, makeAppState } from './test-utils';
 import { HabitService } from '../services/HabitService';
 import { generateUUID, getTodayUTCIso, parseUTCIsoDate, addDays, toUTCIsoDateString } from '../utils';
 
@@ -84,24 +84,7 @@ describe('🟠 TESTE DE CENARIO 7: Cloud, Network & Data Resilience', () => {
     // 1. Data Merge — Advanced Scenarios
     // ===================================================================
     describe('DataMerge — Advanced Scenarios', () => {
-        const makeState = (overrides: any = {}): any => ({
-            version: APP_VERSION,
-            habits: [],
-            dailyData: {},
-            monthlyLogs: new Map(),
-            lastModified: 0,
-            archives: {},
-            dailyDiagnoses: {},
-            notificationsShown: [],
-            pending21DayHabitIds: [],
-            pendingConsolidationHabitIds: [],
-            hasOnboarded: true,
-            syncLogs: [],
-            aiDailyCount: 0,
-            aiQuotaDate: '',
-            lastAIContextHash: null,
-            ...overrides
-        });
+        const makeState = (overrides: any = {}): any => makeAppState(overrides);
 
         it('merge de dailyData com notas divergentes (longest wins)', async () => {
             const { mergeStates } = await import('../services/dataMerge');

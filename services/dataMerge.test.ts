@@ -5,6 +5,32 @@ import { HabitService } from './HabitService';
 import { logger } from '../utils';
 
 // Helper para criar estados falsos
+/**
+ * Hábito de teste com um único schedule. Os defaults cobrem o caso comum
+ * (diário, meta de check, âncora igual à data de início), então cada teste
+ * declara apenas o que a sua asserção realmente depende.
+ */
+const makeHabit = (o: {
+    id: string; name: string; date: string;
+    times: any; icon: string; color: string;
+    mode?: any; startDate?: string; scheduleAnchor?: string;
+    frequency?: any; goal?: any;
+}): any => ({
+    id: o.id,
+    createdOn: o.date,
+    scheduleHistory: [{
+        startDate: o.startDate ?? o.date,
+        name: o.name,
+        ...(o.mode ? { mode: o.mode } : {}),
+        times: o.times,
+        frequency: o.frequency ?? { type: 'daily' as const },
+        scheduleAnchor: o.scheduleAnchor ?? o.startDate ?? o.date,
+        icon: o.icon,
+        color: o.color,
+        goal: o.goal ?? { type: 'check' as const }
+    }]
+});
+
 const createMockState = (ts: number, logs = new Map()): AppState => ({
     version: 9,
     lastModified: ts,
@@ -490,40 +516,10 @@ describe('🔗 Deduplication by Name (Habit Name Collision Prevention)', () => {
         const incoming = createMockState(2000);
 
         // Local tem "Exercício" com ID 1
-        (local as any).habits = [...local.habits, {
-            id: 'habit-1',
-            createdOn: '2024-01-01',
-            scheduleHistory: [
-                {
-                    startDate: '2024-01-01',
-                    name: 'Exercício',
-                    times: ['Morning'] as any,
-                    frequency: { type: 'daily' as const },
-                    scheduleAnchor: '2024-01-01',
-                    icon: '🏃',
-                    color: '#FF0000',
-                    goal: { type: 'check' as const }
-                }
-            ]
-        } as any];
+        (local as any).habits = [...local.habits, makeHabit({ id: 'habit-1', name: 'Exercício', date: '2024-01-01', times: ['Morning'] as any, icon: '🏃', color: '#FF0000' }) as any];
 
         // Incoming tem "EXERCÍCIO" com ID 2 (different ID, same name after normalization)
-        (incoming as any).habits = [...incoming.habits, {
-            id: 'habit-2',
-            createdOn: '2024-01-02',
-            scheduleHistory: [
-                {
-                    startDate: '2024-01-02',
-                    name: 'EXERCÍCIO',
-                    times: ['Afternoon'] as any,
-                    frequency: { type: 'daily' as const },
-                    scheduleAnchor: '2024-01-02',
-                    icon: '💪',
-                    color: '#0000FF',
-                    goal: { type: 'check' as const }
-                }
-            ]
-        } as any];
+        (incoming as any).habits = [...incoming.habits, makeHabit({ id: 'habit-2', name: 'EXERCÍCIO', date: '2024-01-02', times: ['Afternoon'] as any, icon: '💪', color: '#0000FF' }) as any];
 
         const merged = await mergeStates(local, incoming, {
             onDedupCandidate: () => 'deduplicate'
@@ -556,23 +552,15 @@ describe('🔗 Deduplication by Name (Habit Name Collision Prevention)', () => {
         } as any);
 
         // Incoming tem "Meditação" ATIVO
-        (incoming as any).habits = [...incoming.habits, {
+        (incoming as any).habits = [...incoming.habits, makeHabit({
             id: 'habit-2',
-            createdOn: '2024-01-02',
-            scheduleHistory: [
-                {
-                    startDate: '2024-01-02',
-                    name: 'Meditação',
-                    mode: 'scheduled',
-                    times: ['Morning'] as any,
-                    frequency: { type: 'daily' as const },
-                    scheduleAnchor: '2024-01-02',
-                    icon: '🧘',
-                    color: '#00FF00',
-                    goal: { type: 'check' as const }
-                }
-            ]
-        } as any];
+            name: 'Meditação',
+            date: '2024-01-02',
+            times: ['Morning'] as any,
+            icon: '🧘',
+            color: '#00FF00',
+            mode: 'scheduled'
+        }) as any];
 
         const merged = await mergeStates(local, incoming, {
             onDedupCandidate: () => 'deduplicate'
@@ -597,46 +585,30 @@ describe('🔗 Deduplication by Name (Habit Name Collision Prevention)', () => {
         const incoming = createMockState(2000);
 
         // Local tem "Leitura" (ID 1) com dados no dia 01
-        (local as any).habits = [...local.habits, {
+        (local as any).habits = [...local.habits, makeHabit({
             id: 'habit-1',
-            createdOn: '2024-01-01',
-            scheduleHistory: [
-                {
-                    startDate: '2024-01-01',
-                    name: 'Leitura',
-                    mode: 'scheduled',
-                    times: ['Evening'] as any,
-                    frequency: { type: 'daily' as const },
-                    scheduleAnchor: '2024-01-01',
-                    icon: '📖',
-                    color: '#FF00FF',
-                    goal: { type: 'check' as const }
-                }
-            ]
-        } as any];
+            name: 'Leitura',
+            date: '2024-01-01',
+            times: ['Evening'] as any,
+            icon: '📖',
+            color: '#FF00FF',
+            mode: 'scheduled'
+        }) as any];
 
         local.dailyData['2024-01-01'] = {
             'habit-1': { instances: { Evening: { note: 'Read 30 pages' } } }
         } as any;
 
         // Incoming tem "LEITURA" (ID 2) com dados no dia 02
-        (incoming as any).habits = [...incoming.habits, {
+        (incoming as any).habits = [...incoming.habits, makeHabit({
             id: 'habit-2',
-            createdOn: '2024-01-02',
-            scheduleHistory: [
-                {
-                    startDate: '2024-01-02',
-                    name: 'LEITURA',
-                    mode: 'scheduled',
-                    times: ['Evening'] as any,
-                    frequency: { type: 'daily' as const },
-                    scheduleAnchor: '2024-01-02',
-                    icon: '📚',
-                    color: '#00FFFF',
-                    goal: { type: 'check' as const }
-                }
-            ]
-        } as any];
+            name: 'LEITURA',
+            date: '2024-01-02',
+            times: ['Evening'] as any,
+            icon: '📚',
+            color: '#00FFFF',
+            mode: 'scheduled'
+        }) as any];
 
         incoming.dailyData['2024-01-02'] = {
             'habit-2': { instances: { Evening: { note: 'Read 40 pages' } } }
@@ -662,39 +634,9 @@ describe('🔗 Deduplication by Name (Habit Name Collision Prevention)', () => {
         const local = createMockState(1000);
         const incoming = createMockState(2000);
 
-        (local as any).habits = [...local.habits, {
-            id: 'habit-1',
-            createdOn: '2024-01-01',
-            scheduleHistory: [
-                {
-                    startDate: '2024-01-01',
-                    name: 'Correr',
-                    times: ['Morning'] as any,
-                    frequency: { type: 'daily' as const },
-                    scheduleAnchor: '2024-01-01',
-                    icon: '🏃',
-                    color: '#FF0000',
-                    goal: { type: 'check' as const }
-                }
-            ]
-        } as any];
+        (local as any).habits = [...local.habits, makeHabit({ id: 'habit-1', name: 'Correr', date: '2024-01-01', times: ['Morning'] as any, icon: '🏃', color: '#FF0000' }) as any];
 
-        (incoming as any).habits = [...incoming.habits, {
-            id: 'habit-2',
-            createdOn: '2024-01-02',
-            scheduleHistory: [
-                {
-                    startDate: '2024-01-02',
-                    name: 'Nadar',
-                    times: ['Morning'] as any,
-                    frequency: { type: 'daily' as const },
-                    scheduleAnchor: '2024-01-02',
-                    icon: '🏊',
-                    color: '#0000FF',
-                    goal: { type: 'check' as const }
-                }
-            ]
-        } as any];
+        (incoming as any).habits = [...incoming.habits, makeHabit({ id: 'habit-2', name: 'Nadar', date: '2024-01-02', times: ['Morning'] as any, icon: '🏊', color: '#0000FF' }) as any];
 
         const merged = await mergeStates(local, incoming);
 
@@ -712,39 +654,24 @@ describe('🔗 Deduplication by Name (Habit Name Collision Prevention)', () => {
         const local = createMockState(3000);
         const incoming = createMockState(2000);
 
-        (local as any).habits = [...local.habits, {
+        (local as any).habits = [...local.habits, makeHabit({
             id: 'habit-1',
-            createdOn: '2024-01-01',
-            scheduleHistory: [
-                {
-                    startDate: '2024-01-01',
-                    name: 'Exercicio',
-                    times: ['Morning', 'Evening'] as any,
-                    frequency: { type: 'daily' as const },
-                    scheduleAnchor: '2024-01-01',
-                    icon: '🏃',
-                    color: '#FF0000',
-                    goal: { type: 'check' as const }
-                }
-            ]
-        } as any];
+            name: 'Exercicio',
+            date: '2024-01-01',
+            times: ['Morning', 'Evening'] as any,
+            icon: '🏃',
+            color: '#FF0000'
+        }) as any];
 
-        (incoming as any).habits = [...incoming.habits, {
+        (incoming as any).habits = [...incoming.habits, makeHabit({
             id: 'habit-2',
-            createdOn: '2024-01-02',
-            scheduleHistory: [
-                {
-                    startDate: '2024-01-01',
-                    name: '  exercício  ',
-                    times: ['Evening', 'Morning'] as any,
-                    frequency: { type: 'daily' as const },
-                    scheduleAnchor: '2024-01-01',
-                    icon: '🏃',
-                    color: '#00FF00',
-                    goal: { type: 'check' as const }
-                }
-            ]
-        } as any];
+            name: '  exercício  ',
+            date: '2024-01-02',
+            times: ['Evening', 'Morning'] as any,
+            icon: '🏃',
+            color: '#00FF00',
+            startDate: '2024-01-01'
+        }) as any];
 
         let promptCount = 0;
         const merged = await mergeStates(local, incoming, {
@@ -762,39 +689,17 @@ describe('🔗 Deduplication by Name (Habit Name Collision Prevention)', () => {
         const local = createMockState(3000);
         const incoming = createMockState(2000);
 
-        (local as any).habits = [...local.habits, {
-            id: 'habit-1',
-            createdOn: '2024-01-01',
-            scheduleHistory: [
-                {
-                    startDate: '2024-01-01',
-                    name: 'Hábito',
-                    times: ['Morning'] as any,
-                    frequency: { type: 'daily' as const },
-                    scheduleAnchor: '2024-01-01',
-                    icon: '🧩',
-                    color: '#222222',
-                    goal: { type: 'check' as const }
-                }
-            ]
-        } as any];
+        (local as any).habits = [...local.habits, makeHabit({ id: 'habit-1', name: 'Hábito', date: '2024-01-01', times: ['Morning'] as any, icon: '🧩', color: '#222222' }) as any];
 
-        (incoming as any).habits = [...incoming.habits, {
+        (incoming as any).habits = [...incoming.habits, makeHabit({
             id: 'habit-2',
-            createdOn: '2024-01-02',
-            scheduleHistory: [
-                {
-                    startDate: '2024-01-01',
-                    name: 'habito',
-                    times: ['Morning'] as any,
-                    frequency: { type: 'daily' as const },
-                    scheduleAnchor: '2024-01-01',
-                    icon: '🧩',
-                    color: '#333333',
-                    goal: { type: 'check' as const }
-                }
-            ]
-        } as any];
+            name: 'habito',
+            date: '2024-01-02',
+            times: ['Morning'] as any,
+            icon: '🧩',
+            color: '#333333',
+            startDate: '2024-01-01'
+        }) as any];
 
         let promptCount = 0;
         const merged = await mergeStates(local, incoming, {
@@ -812,59 +717,37 @@ describe('🔗 Deduplication by Name (Habit Name Collision Prevention)', () => {
         const local = createMockState(3000);
         const incoming = createMockState(2000);
 
-        (local as any).habits = [...local.habits, {
+        (local as any).habits = [...local.habits, makeHabit({
             id: 'habit-1',
-            createdOn: '2024-01-01',
-            scheduleHistory: [
-                {
-                    startDate: '2024-01-01',
-                    name: 'Leitura',
-                    mode: 'scheduled',
-                    times: ['Morning'] as any,
-                    frequency: { type: 'daily' as const },
-                    scheduleAnchor: '2024-01-01',
-                    icon: '📖',
-                    color: '#444444',
-                    goal: { type: 'check' as const }
-                }
-            ]
-        } as any];
+            name: 'Leitura',
+            date: '2024-01-01',
+            times: ['Morning'] as any,
+            icon: '📖',
+            color: '#444444',
+            mode: 'scheduled'
+        }) as any];
 
         (incoming as any).habits = [...incoming.habits,
-            {
-                id: 'habit-2',
-                createdOn: '2024-01-02',
-                scheduleHistory: [
-                    {
-                        startDate: '2024-01-02',
-                        name: 'LEITURA',
-                        mode: 'scheduled',
-                        times: ['Evening'] as any, // Diferente -> vai precisar confirmar
-                        frequency: { type: 'weekly' as const, interval: 1, weekdays: [1, 3, 5] }, // Diferente
-                        scheduleAnchor: '2024-01-02',
-                        icon: '📚',
-                        color: '#555555',
-                        goal: { type: 'check' as const }
-                    }
-                ]
-            } as any,
-            {
-                id: 'habit-3',
-                createdOn: '2024-01-03',
-                scheduleHistory: [
-                    {
-                        startDate: '2024-01-03',
-                        name: 'leitura',
-                        mode: 'scheduled',
-                        times: ['Afternoon'] as any, // Diferente
-                        frequency: { type: 'daily' as const },
-                        scheduleAnchor: '2024-01-03',
-                        icon: '📘',
-                        color: '#666666',
-                        goal: { type: 'numeric' as const, target: 30, unit: 'páginas' }
-                    }
-                ]
-            } as any
+            makeHabit({
+            id: 'habit-2',
+            name: 'LEITURA',
+            date: '2024-01-02',
+            times: ['Evening'] as any, // Diferente -> vai precisar confirmar,
+            icon: '📚',
+            color: '#555555',
+            mode: 'scheduled',
+            frequency: { type: 'weekly' as const, interval: 1, weekdays: [1, 3, 5] }, // Diferente
+        }) as any,
+            makeHabit({
+            id: 'habit-3',
+            name: 'leitura',
+            date: '2024-01-03',
+            times: ['Afternoon'] as any, // Diferente,
+            icon: '📘',
+            color: '#666666',
+            mode: 'scheduled',
+            goal: { type: 'numeric' as const, target: 30, unit: 'páginas' }
+        }) as any
         ];
 
         let promptCount = 0;
@@ -886,41 +769,26 @@ describe('🔗 Deduplication by Name (Habit Name Collision Prevention)', () => {
         const local = createMockState(3000);
         const incoming = createMockState(2000);
 
-        (local as any).habits = [...local.habits, {
+        (local as any).habits = [...local.habits, makeHabit({
             id: 'habit-1',
-            createdOn: '2024-01-01',
-            scheduleHistory: [
-                {
-                    startDate: '2024-01-01',
-                    name: 'Exercício',
-                    mode: 'scheduled',
-                    times: ['Morning'] as any,
-                    frequency: { type: 'daily' as const },
-                    scheduleAnchor: '2024-01-01',
-                    icon: '🏃',
-                    color: '#FF0000',
-                    goal: { type: 'check' as const }
-                }
-            ]
-        } as any];
+            name: 'Exercício',
+            date: '2024-01-01',
+            times: ['Morning'] as any,
+            icon: '🏃',
+            color: '#FF0000',
+            mode: 'scheduled'
+        }) as any];
 
-        (incoming as any).habits = [...incoming.habits, {
+        (incoming as any).habits = [...incoming.habits, makeHabit({
             id: 'habit-2',
-            createdOn: '2024-01-02',
-            scheduleHistory: [
-                {
-                    startDate: '2024-01-01',
-                    name: 'Exercícios',
-                    mode: 'scheduled',
-                    times: ['Morning'] as any,
-                    frequency: { type: 'daily' as const },
-                    scheduleAnchor: '2024-01-01',
-                    icon: '🏃',
-                    color: '#FF0000',
-                    goal: { type: 'check' as const }
-                }
-            ]
-        } as any];
+            name: 'Exercícios',
+            date: '2024-01-02',
+            times: ['Morning'] as any,
+            icon: '🏃',
+            color: '#FF0000',
+            startDate: '2024-01-01',
+            mode: 'scheduled'
+        }) as any];
 
         const merged = await mergeStates(local, incoming, {
             onDedupCandidate: () => 'deduplicate'
@@ -935,43 +803,13 @@ describe('🔗 Deduplication by Name (Habit Name Collision Prevention)', () => {
         const local = createMockState(3000);
         const incoming = createMockState(2000);
 
-        (local as any).habits = [...local.habits, {
-            id: 'habit-1',
-            createdOn: '2024-01-01',
-            scheduleHistory: [
-                {
-                    startDate: '2024-01-01',
-                    name: 'Corrida',
-                    times: ['Morning'] as any,
-                    frequency: { type: 'daily' as const },
-                    scheduleAnchor: '2024-01-01',
-                    icon: '🏃',
-                    color: '#FF0000',
-                    goal: { type: 'check' as const }
-                }
-            ]
-        } as any];
+        (local as any).habits = [...local.habits, makeHabit({ id: 'habit-1', name: 'Corrida', date: '2024-01-01', times: ['Morning'] as any, icon: '🏃', color: '#FF0000' }) as any];
 
         local.dailyData['2024-01-15'] = {
             'habit-1': { instances: { Morning: { note: 'Corrida antiga' } } }
         } as any;
 
-        (incoming as any).habits = [...incoming.habits, {
-            id: 'habit-2',
-            createdOn: '2024-06-01',
-            scheduleHistory: [
-                {
-                    startDate: '2024-06-01',
-                    name: 'Corrida',
-                    times: ['Morning'] as any,
-                    frequency: { type: 'daily' as const },
-                    scheduleAnchor: '2024-06-01',
-                    icon: '🏃',
-                    color: '#00FF00',
-                    goal: { type: 'check' as const }
-                }
-            ]
-        } as any];
+        (incoming as any).habits = [...incoming.habits, makeHabit({ id: 'habit-2', name: 'Corrida', date: '2024-06-01', times: ['Morning'] as any, icon: '🏃', color: '#00FF00' }) as any];
 
         incoming.dailyData['2024-06-15'] = {
             'habit-2': { instances: { Morning: { note: 'Corrida nova' } } }
@@ -1012,22 +850,7 @@ describe('🔗 Deduplication by Name (Habit Name Collision Prevention)', () => {
             ]
         } as any];
 
-        (incoming as any).habits = [...incoming.habits, {
-            id: 'habit-2',
-            createdOn: '2024-06-01',
-            scheduleHistory: [
-                {
-                    startDate: '2024-06-01',
-                    name: 'Meditação',
-                    times: ['Morning'] as any,
-                    frequency: { type: 'daily' as const },
-                    scheduleAnchor: '2024-06-01',
-                    icon: '🧘',
-                    color: '#00FFFF',
-                    goal: { type: 'check' as const }
-                }
-            ]
-        } as any];
+        (incoming as any).habits = [...incoming.habits, makeHabit({ id: 'habit-2', name: 'Meditação', date: '2024-06-01', times: ['Morning'] as any, icon: '🧘', color: '#00FFFF' }) as any];
 
         let promptCount = 0;
         const merged = await mergeStates(local, incoming, {
@@ -1046,39 +869,17 @@ describe('🔗 Deduplication by Name (Habit Name Collision Prevention)', () => {
         const local = createMockState(3000);
         const incoming = createMockState(2000);
 
-        (local as any).habits = [...local.habits, {
-            id: 'habit-1',
-            createdOn: '2024-01-05',
-            scheduleHistory: [
-                {
-                    startDate: '2024-01-05',
-                    name: 'Leitura',
-                    times: ['Evening'] as any,
-                    frequency: { type: 'daily' as const },
-                    scheduleAnchor: '2024-01-05',
-                    icon: '📖',
-                    color: '#FF0000',
-                    goal: { type: 'check' as const }
-                }
-            ]
-        } as any];
+        (local as any).habits = [...local.habits, makeHabit({ id: 'habit-1', name: 'Leitura', date: '2024-01-05', times: ['Evening'] as any, icon: '📖', color: '#FF0000' }) as any];
 
-        (incoming as any).habits = [...incoming.habits, {
+        (incoming as any).habits = [...incoming.habits, makeHabit({
             id: 'habit-2',
-            createdOn: '2024-01-01',
-            scheduleHistory: [
-                {
-                    startDate: '2024-01-05',
-                    name: 'Leitura',
-                    times: ['Evening'] as any,
-                    frequency: { type: 'daily' as const },
-                    scheduleAnchor: '2024-01-05',
-                    icon: '📖',
-                    color: '#FF0000',
-                    goal: { type: 'check' as const }
-                }
-            ]
-        } as any];
+            name: 'Leitura',
+            date: '2024-01-01',
+            times: ['Evening'] as any,
+            icon: '📖',
+            color: '#FF0000',
+            startDate: '2024-01-05'
+        }) as any];
 
         const merged = await mergeStates(local, incoming, {
             onDedupCandidate: () => 'deduplicate'
@@ -1098,40 +899,24 @@ describe('🔗 Deduplication by Name (Habit Name Collision Prevention)', () => {
             const incoming = createMockState(2000);
 
             // Local: hábito com times duplicados (corrupção de dados)
-            (local as any).habits = [...local.habits, {
-                id: 'habit-1',
-                createdOn: '2024-01-01',
-                scheduleHistory: [
-                    {
-                        startDate: '2024-01-01',
-                        name: 'Exercício',
-                        times: ['Morning', 'Afternoon', 'Morning', 'Evening'] as any, // DUPLICATA!
-                        frequency: { type: 'daily' as const },
-                        scheduleAnchor: '2024-01-01',
-                        icon: '🏃',
-                        color: '#FF0000',
-                        goal: { type: 'check' as const }
-                    }
-                ]
-            } as any];
+            (local as any).habits = [...local.habits, makeHabit({
+            id: 'habit-1',
+            name: 'Exercício',
+            date: '2024-01-01',
+            times: ['Morning', 'Afternoon', 'Morning', 'Evening'] as any, // DUPLICATA!,
+            icon: '🏃',
+            color: '#FF0000'
+        }) as any];
 
             // Incoming: mesmo hábito com times corretos
-            (incoming as any).habits = [...incoming.habits, {
-                id: 'habit-1',
-                createdOn: '2024-01-01',
-                scheduleHistory: [
-                    {
-                        startDate: '2024-01-01',
-                        name: 'Exercício',
-                        times: ['Morning', 'Afternoon', 'Evening'] as any,
-                        frequency: { type: 'daily' as const },
-                        scheduleAnchor: '2024-01-01',
-                        icon: '🏃',
-                        color: '#FF0000',
-                        goal: { type: 'check' as const }
-                    }
-                ]
-            } as any];
+            (incoming as any).habits = [...incoming.habits, makeHabit({
+            id: 'habit-1',
+            name: 'Exercício',
+            date: '2024-01-01',
+            times: ['Morning', 'Afternoon', 'Evening'] as any,
+            icon: '🏃',
+            color: '#FF0000'
+        }) as any];
 
             const merged = await mergeStates(local, incoming);
 
@@ -1149,40 +934,24 @@ describe('🔗 Deduplication by Name (Habit Name Collision Prevention)', () => {
             const incoming = createMockState(2000);
 
             // Local: ['Morning', 'Evening']
-            (local as any).habits = [...local.habits, {
-                id: 'habit-1',
-                createdOn: '2024-01-01',
-                scheduleHistory: [
-                    {
-                        startDate: '2024-01-01',
-                        name: 'Meditação',
-                        times: ['Morning', 'Evening'] as any,
-                        frequency: { type: 'daily' as const },
-                        scheduleAnchor: '2024-01-01',
-                        icon: '🧘',
-                        color: '#FF00FF',
-                        goal: { type: 'check' as const }
-                    }
-                ]
-            } as any];
+            (local as any).habits = [...local.habits, makeHabit({
+            id: 'habit-1',
+            name: 'Meditação',
+            date: '2024-01-01',
+            times: ['Morning', 'Evening'] as any,
+            icon: '🧘',
+            color: '#FF00FF'
+        }) as any];
 
             // Incoming (mais recente): ['Evening', 'Morning', 'Afternoon']
-            (incoming as any).habits = [...incoming.habits, {
-                id: 'habit-1',
-                createdOn: '2024-01-01',
-                scheduleHistory: [
-                    {
-                        startDate: '2024-01-01',
-                        name: 'Meditação',
-                        times: ['Evening', 'Morning', 'Afternoon'] as any,
-                        frequency: { type: 'daily' as const },
-                        scheduleAnchor: '2024-01-01',
-                        icon: '🧘',
-                        color: '#FF00FF',
-                        goal: { type: 'check' as const }
-                    }
-                ]
-            } as any];
+            (incoming as any).habits = [...incoming.habits, makeHabit({
+            id: 'habit-1',
+            name: 'Meditação',
+            date: '2024-01-01',
+            times: ['Evening', 'Morning', 'Afternoon'] as any,
+            icon: '🧘',
+            color: '#FF00FF'
+        }) as any];
 
             const merged = await mergeStates(local, incoming);
 
@@ -1202,22 +971,7 @@ describe('🔗 Deduplication by Name (Habit Name Collision Prevention)', () => {
             const incoming = createMockState(2000);
 
             // Local: versão antiga do hábito com 2 times
-            (local as any).habits = [...local.habits, {
-                id: 'habit-1',
-                createdOn: '2024-01-01',
-                scheduleHistory: [
-                    {
-                        startDate: '2024-01-01',
-                        name: 'Yoga',
-                        times: ['Morning'] as any,
-                        frequency: { type: 'daily' as const },
-                        scheduleAnchor: '2024-01-01',
-                        icon: '🧘',
-                        color: '#00FF00',
-                        goal: { type: 'check' as const }
-                    }
-                ]
-            } as any];
+            (local as any).habits = [...local.habits, makeHabit({ id: 'habit-1', name: 'Yoga', date: '2024-01-01', times: ['Morning'] as any, icon: '🧘', color: '#00FF00' }) as any];
 
             // Incoming: versão mais recente (com atualização), mas times potencialmente duplicados de bug anterior
             (incoming as any).habits = [...incoming.habits, {
@@ -1265,41 +1019,26 @@ describe('🔗 Deduplication by Name (Habit Name Collision Prevention)', () => {
             const local = createMockState(1000);
             const incoming = createMockState(2000);
 
-            (local as any).habits = [...local.habits, {
-                id: 'habit-att',
-                createdOn: '2024-01-01',
-                scheduleHistory: [
-                    {
-                        startDate: '2024-01-01',
-                        name: 'Discernimento',
-                        mode: 'attitudinal',
-                        times: ['Morning', 'Evening'] as any,
-                        frequency: { type: 'daily' as const },
-                        scheduleAnchor: '2024-01-01',
-                        icon: '🧠',
-                        color: '#f1c40f',
-                        goal: { type: 'check' as const }
-                    }
-                ]
-            } as any];
+            (local as any).habits = [...local.habits, makeHabit({
+            id: 'habit-att',
+            name: 'Discernimento',
+            date: '2024-01-01',
+            times: ['Morning', 'Evening'] as any,
+            icon: '🧠',
+            color: '#f1c40f',
+            mode: 'attitudinal'
+        }) as any];
 
-            (incoming as any).habits = [...incoming.habits, {
-                id: 'habit-att',
-                createdOn: '2024-01-01',
-                scheduleHistory: [
-                    {
-                        startDate: '2024-01-01',
-                        name: 'Discernimento',
-                        mode: 'attitudinal',
-                        times: ['Evening', 'Morning', 'Afternoon'] as any,
-                        frequency: { type: 'interval' as const, amount: 2, unit: 'days' as const },
-                        scheduleAnchor: '2024-01-01',
-                        icon: '🧠',
-                        color: '#f1c40f',
-                        goal: { type: 'check' as const }
-                    }
-                ]
-            } as any];
+            (incoming as any).habits = [...incoming.habits, makeHabit({
+            id: 'habit-att',
+            name: 'Discernimento',
+            date: '2024-01-01',
+            times: ['Evening', 'Morning', 'Afternoon'] as any,
+            icon: '🧠',
+            color: '#f1c40f',
+            mode: 'attitudinal',
+            frequency: { type: 'interval' as const, amount: 2, unit: 'days' as const }
+        }) as any];
 
             const merged = await mergeStates(local, incoming);
             const entry = merged.habits[0].scheduleHistory[0];

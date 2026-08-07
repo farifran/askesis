@@ -3,7 +3,7 @@
  * @description Utilitários e helpers para facilitar os testes
  */
 
-import { state, Habit, HabitSchedule, TimeOfDay, HABIT_STATE } from '../state';
+import { state, APP_VERSION, AppState, Habit, HabitSchedule, TimeOfDay, HABIT_STATE } from '../state';
 import { HabitService } from '../services/HabitService';
 import { generateUUID, getTodayUTCIso } from '../utils';
 
@@ -42,6 +42,32 @@ export function buildTestHabit(data: SimpleHabitData, id: string = generateUUID(
     createdOn: getTodayUTCIso(),
     scheduleHistory: [schedule]
   };
+}
+
+/**
+ * AppState mínimo e válido para testes de merge/sync, que precisam de estados
+ * independentes do `state` global. Os campos que o teste exercita entram por
+ * `overrides`; o resto fica no default e sai da frente da leitura.
+ */
+export function makeAppState(overrides: Partial<AppState> | Record<string, any> = {}): AppState {
+  return {
+    version: APP_VERSION,
+    habits: [],
+    dailyData: {},
+    monthlyLogs: new Map(),
+    lastModified: 0,
+    archives: {},
+    dailyDiagnoses: {},
+    notificationsShown: [],
+    pending21DayHabitIds: [],
+    pendingConsolidationHabitIds: [],
+    hasOnboarded: true,
+    syncLogs: [],
+    aiDailyCount: 0,
+    aiQuotaDate: '',
+    lastAIContextHash: null,
+    ...overrides
+  } as AppState;
 }
 
 /**
