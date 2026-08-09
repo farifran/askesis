@@ -432,6 +432,12 @@ export async function loadState(cloudState?: AppState): Promise<AppState | null>
             setTimeout(runCleanup, 50);
         }
 
+        // Estado veio de fora (boot ou merge da nuvem): `saveState` não roda, e o
+        // render da frase só regrava os cartões quando o contexto dela muda —
+        // um hábito renomeado em outro aparelho não muda a contagem do dia e
+        // deixaria o lembrete com o nome antigo.
+        void persistNotificationCard();
+
         emitRenderApp();
         return migrated;
     }
