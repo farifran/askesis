@@ -903,7 +903,8 @@ A saída foi separar **gatilho** de **conteúdo**:
 └────────────────────────────────────────────────────────┘
                      ↓  acorda o Service Worker
 ┌─ Seu aparelho ─────────────────────────────────────────┐
-│ Lê o cartão do IndexedDB e reescreve a notificação:    │
+│ Intercepta o push antes do texto genérico aparecer e   │
+│ escreve a notificação lendo o cartão do IndexedDB:     │
 │                                                        │
 │   "Nenhum vento é favorável a quem não sabe aonde vai."│
 │   Hábitos pendentes                                    │

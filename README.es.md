@@ -902,8 +902,9 @@ La salida fue separar **disparador** de **contenido**:
 └────────────────────────────────────────────────────────┘
                      ↓  despierta el Service Worker
 ┌─ Tu dispositivo ───────────────────────────────────────┐
-│ Lee la tarjeta del IndexedDB y reescribe la            │
-│ notificación:                                          │
+│ Intercepta el push antes de que aparezca el texto      │
+│ genérico y escribe la notificación con la tarjeta      │
+│ del IndexedDB:                                         │
 │                                                        │
 │   "Ningún viento es favorable para quien no sabe       │
 │    adónde va."                                         │

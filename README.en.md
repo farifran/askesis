@@ -899,7 +899,8 @@ The answer was to separate **trigger** from **content**:
 └────────────────────────────────────────────────────────┘
                      ↓  wakes the Service Worker
 ┌─ Your device ──────────────────────────────────────────┐
-│ Reads the card from IndexedDB and rewrites it:         │
+│ Intercepts the push before the generic text shows and  │
+│ writes the notification from the IndexedDB card:       │
 │                                                        │
 │   "Watch your thoughts. They create your peace."       │
 │   Pending habits                                       │

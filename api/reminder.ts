@@ -24,7 +24,9 @@
  *
  * PRIVACIDADE: o servidor não sabe quem tem pendências (estado é E2E cifrado);
  * o texto é genérico e a entrega vai só a quem optou por push (assinantes).
- * O aparelho substitui esse texto pelo lembrete real — ver OneSignalSDKWorker.js.
+ * O aparelho escreve o lembrete real no lugar dele — ver OneSignalSDKWorker.js.
+ * O texto daqui não é desperdício: é o que o aparelho exibe quando não tem
+ * cartão utilizável (app nunca aberto, ou dias sem abrir).
  *
  * ENV VARS (Vercel):
  * - ONESIGNAL_REST_API_KEY (obrigatória; prefixo os_v2_ usa auth "Key")
@@ -61,11 +63,11 @@ const TARGET_SEGMENT = 'Total Subscriptions';
  *   `Notification.tag` é suposição sobre o interno do SDK, e ela não se
  *   confirmou. O marcador em `data` chega íntegro ao evento `push`.
  *   Também evita sequestro: um anúncio enviado pelo painel não o carrega, e
- *   portanto não é reescrito com texto de hábitos.
+ *   portanto segue o caminho normal da OneSignal.
  *
  * - `web_push_topic` — agrupa lembretes consecutivos numa notificação só,
  *   quando o navegador honra o topic. A personalização não depende disto: o
- *   worker fecha a original e publica com tag própria (o mesmo valor).
+ *   worker publica com tag própria (o mesmo valor).
  *
  * Deliberadamente diferente de PENDING_NOTIFICATION_TAG (services/badge.ts):
  * colapso por tag vale por service worker registration, e o badge vive no

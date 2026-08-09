@@ -3,18 +3,32 @@
  * @description Personalização local do lembrete dentro do OneSignalSDKWorker.js.
  *
  * O worker não é um módulo (roda em contexto de Service Worker e faz
- * `importScripts` do SDK), então aqui ele é avaliado com `self`, `indexedDB` e
- * `registration` falsos. É o trecho mais arriscado do fluxo de push: corre em
- * paralelo com o handler da OneSignal e precisa nunca deixar o usuário sem
- * notificação — no iOS, push sem notificação visível custa a permissão.
+ * `importScripts` do SDK), então aqui ele é avaliado com `self` e `indexedDB`
+ * falsos. É o trecho mais arriscado do fluxo de push: ele curto-circuita o
+ * handler da OneSignal e passa a ser o ÚNICO a notificar — no iOS, push sem
+ * notificação visível custa a permissão.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 
 const TAG = 'askesis-reminder';
 const MARKER = 'askesis-reminder';
 const TODAY = new Date().toISOString().slice(0, 10);
+
+/** Texto genérico que o servidor manda e o SDK exibiria sozinho. */
+const GENERICO = { title: 'Hábitos pendentes', alert: 'Como estão seus hábitos hoje?' };
+
+/** Payload cru da OneSignal, no formato que o SDK dela consome. */
+function pushPayload(extra: Record<string, unknown> = {}) {
+    return {
+        custom: { i: 'os-123', a: { askesis: MARKER }, u: 'https://askesis.vercel.app/' },
+        icon: 'https://cdn.onesignal.com/icon.png',
+        badge: 'https://cdn.onesignal.com/badge.png',
+        ...GENERICO,
+        ...extra
+    };
+}
 
 type Card = { date: string; lang: string; title: string; body: string };
 type Stored = Card | Card[] | null;
@@ -50,50 +64,31 @@ function fakeIndexedDB(card: Stored, opts: { missingStore?: boolean; failOpen?: 
     };
 }
 
-/** Notificação genérica que a OneSignal publica em resposta ao push. */
-function oneSignalNotification(overrides: Record<string, unknown> = {}) {
-    return {
-        tag: TAG,
-        title: 'Hábitos pendentes',
-        body: 'Como estão seus hábitos hoje?',
-        timestamp: 2000,
-        icon: 'https://cdn.onesignal.com/icon.png',
-        badge: 'https://cdn.onesignal.com/badge.png',
-        data: { url: 'https://askesis.vercel.app/', notificationId: 'os-123' },
-        close: () => { /* noop */ },
-        ...overrides
-    };
-}
-
 interface WorkerOptions {
-    /** Já estava na bandeja antes do push (lembrete de ontem, por exemplo). */
-    tray?: any[];
-    /** O que a OneSignal publica em resposta a ESTE push. */
-    incoming?: any[] | null;
     idb?: { missingStore?: boolean; failOpen?: boolean };
     /** Escreve o motivo de não personalizar na própria notificação. */
     diagnostico?: boolean;
 }
 
 function loadWorker(card: Stored, options: WorkerOptions = {}) {
-    // `importScripts` traria o SDK real da CDN; aqui só interessa o nosso trecho.
+    // `importScripts` traria o SDK real da CDN; o handler dele é simulado abaixo.
     // DIAGNOSTICO é forçado conforme o teste: os casos abaixo cobrem o
     // comportamento definitivo, salvo o que cobre o próprio diagnóstico.
     const source = readFileSync('OneSignalSDKWorker.js', 'utf8')
         .replace(/^importScripts\([^)]*\);?\s*$/m, '')
         .replace(/var DIAGNOSTICO = \w+;/, `var DIAGNOSTICO = ${options.diagnostico ?? false};`);
 
-    const tray: any[] = [...(options.tray ?? [])];
     const shown: { title: string; options: any }[] = [];
-    const listeners: Record<string, (event: any) => void> = {};
+    const oneSignalShown: unknown[] = [];
+    const listeners: Record<string, ((event: any) => void)[]> = {};
     const state = { skipWaitingCalls: 0 };
 
     const selfStub = {
-        addEventListener: (type: string, fn: (event: any) => void) => { listeners[type] = fn; },
+        addEventListener: (type: string, fn: (event: any) => void) => {
+            (listeners[type] ??= []).push(fn);
+        },
         skipWaiting: () => { state.skipWaitingCalls++; },
         registration: {
-            getNotifications: async (filter?: { tag?: string }) =>
-                filter?.tag ? tray.filter(n => n.tag === filter.tag) : [...tray],
             showNotification: async (title: string, opts: any) => { shown.push({ title, options: opts }); }
         }
     };
@@ -101,29 +96,34 @@ function loadWorker(card: Stored, options: WorkerOptions = {}) {
     // eslint-disable-next-line no-new-func
     new Function('self', 'indexedDB', source)(selfStub, fakeIndexedDB(card, options.idb));
 
-    /** Payload real da OneSignal carrega os dados adicionais em `custom.a`. */
-    async function firePush(payload: unknown = { custom: { a: { askesis: MARKER } } }) {
+    // O handler do SDK, que o `importScripts` removido teria registrado DEPOIS
+    // do nosso. É exatamente essa ordem que o worker explora.
+    selfStub.addEventListener('push', event => { oneSignalShown.push(event); });
+
+    async function firePush(payload: unknown = pushPayload()) {
         let pending: Promise<unknown> = Promise.resolve();
-        listeners.push({
-            // O worker lê o texto cru: não supõe onde o SDK aninha o marcador.
-            data: { json: () => payload, text: () => JSON.stringify(payload) },
+        let stopped = false;
+        const event = {
+            data: {
+                json: () => (typeof payload === 'string' ? JSON.parse(payload) : payload),
+                text: () => (typeof payload === 'string' ? payload : JSON.stringify(payload))
+            },
+            stopImmediatePropagation: () => { stopped = true; },
             waitUntil: (p: Promise<unknown>) => { pending = p; }
-        });
+        };
 
-        // A OneSignal publica a dela em paralelo, logo depois do nosso handler
-        // começar. `null` simula o caso em que ela nunca chega.
-        if (options.incoming !== null) {
-            setTimeout(() => tray.push(...(options.incoming ?? [oneSignalNotification()])), 10);
+        for (const fn of listeners.push ?? []) {
+            fn(event);
+            if (stopped) break;
         }
-
         await pending;
     }
 
     return {
         firePush,
         shown,
-        tray,
-        install: () => listeners.install({}),
+        oneSignalShown,
+        install: () => listeners.install[0]({}),
         get skipWaitingCalls() { return state.skipWaitingCalls; }
     };
 }
@@ -131,11 +131,7 @@ function loadWorker(card: Stored, options: WorkerOptions = {}) {
 const CARD_HOJE: Card = { date: TODAY, lang: 'pt', title: 'Hábitos pendentes', body: 'Faltam: Meditar' };
 
 describe('OneSignalSDKWorker — personalização local do lembrete', () => {
-    beforeEach(() => {
-        vi.useRealTimers();
-    });
-
-    it('assume o controle na instalação, sem ficar em espera', async () => {
+    it('assume o controle na instalação, sem ficar em espera', () => {
         // Regressão: nem o SDK da OneSignal nem este worker chamavam skipWaiting,
         // então cada versão nova ficava em espera e a antiga seguia atendendo os
         // pushes — correções aqui não chegavam ao aparelho.
@@ -145,23 +141,28 @@ describe('OneSignalSDKWorker — personalização local do lembrete', () => {
         expect(worker.skipWaitingCalls).toBe(1);
     });
 
-    it('substitui o texto genérico pelo cartão do dia', async () => {
-        const { firePush, shown } = loadWorker(CARD_HOJE);
+    it('exibe o cartão do dia e cala o handler da OneSignal', async () => {
+        // Regressão: substituir a notificação DELA depois de publicada é uma
+        // corrida — ela republicava e o usuário recebia as duas. Cortando a
+        // propagação existe uma notificação só, a nossa.
+        const { firePush, shown, oneSignalShown } = loadWorker(CARD_HOJE);
         await firePush();
 
+        expect(oneSignalShown).toHaveLength(0);
         expect(shown).toHaveLength(1);
         expect(shown[0].title).toBe('Hábitos pendentes');
         expect(shown[0].options.body).toBe('Faltam: Meditar');
-        // Tag própria e fixa: lembretes seguidos colapsam entre si.
+        // Tag fixa colapsa lembretes seguidos; renotify faz o de hoje alertar.
         expect(shown[0].options.tag).toBe(TAG);
-        // Sem renotify a troca é silenciosa: a OneSignal já alertou.
-        expect(shown[0].options.renotify).toBe(false);
+        expect(shown[0].options.renotify).toBe(true);
     });
 
-    it('ignora push sem o marcador (não sequestra anúncio enviado pelo painel)', async () => {
-        const { firePush, shown } = loadWorker(CARD_HOJE);
+    it('deixa passar push sem o marcador (não sequestra anúncio do painel)', async () => {
+        const { firePush, shown, oneSignalShown } = loadWorker(CARD_HOJE);
         await firePush({ custom: { a: {} }, alert: 'Novidade no Askesis!' });
 
+        // Quem notifica é o SDK, pelo caminho normal dele.
+        expect(oneSignalShown).toHaveLength(1);
         expect(shown).toHaveLength(0);
     });
 
@@ -174,43 +175,81 @@ describe('OneSignalSDKWorker — personalização local do lembrete', () => {
             { custom: { a: { askesis: MARKER } } },
             { qualquer: { coisa: { aninhada: MARKER } } }
         ]) {
-            const { firePush, shown } = loadWorker(CARD_HOJE);
+            const { firePush, shown, oneSignalShown } = loadWorker(CARD_HOJE, {});
             await firePush(payload);
             expect(shown).toHaveLength(1);
+            expect(oneSignalShown).toHaveLength(0);
         }
     });
 
-    it('fecha sempre a original, para não empilhar duas notificações', async () => {
-        // Regressão: contar com colisão de tag deixava DUAS na bandeja quando a
-        // tag da OneSignal vinha vazia ou diferente da nossa.
-        const closed: string[] = [];
-        const original = oneSignalNotification({ tag: '', close: () => { closed.push('fechada'); } });
-        const { firePush, shown } = loadWorker(CARD_HOJE, { incoming: [original] });
+    it('publica o data que o notificationclick do SDK espera', async () => {
+        // O handler de clique dele continua registrado: sem estes campos, clicar
+        // no lembrete deixaria de abrir o app e de registrar o evento.
+        const { firePush, shown } = loadWorker(CARD_HOJE);
         await firePush();
 
-        expect(closed).toEqual(['fechada']);
-        expect(shown).toHaveLength(1);
-        expect(shown[0].options.tag).toBe(TAG);
+        expect(shown[0].options.data).toEqual({
+            notificationId: 'os-123',
+            title: GENERICO.title,
+            body: GENERICO.alert,
+            additionalData: { askesis: MARKER },
+            launchURL: 'https://askesis.vercel.app/'
+        });
+        expect(shown[0].options.icon).toBe('https://cdn.onesignal.com/icon.png');
     });
 
-    it('ignora notificação antiga da bandeja e espera a nova', async () => {
-        // Regressão: aceitar "alguma" notificação fazia o worker reescrever uma
-        // antiga enquanto a nova aparecia do lado — duas na bandeja.
-        const antiga = oneSignalNotification({ title: 'lembrete de ontem', timestamp: 1 });
-        const { firePush, shown } = loadWorker(CARD_HOJE, { tray: [antiga] });
+    it('cai para os ícones do app quando o payload não traz os dele', async () => {
+        // Caminho absoluto: relativo resolveria contra /onesignal/, que não
+        // serve assets.
+        const { firePush, shown } = loadWorker(CARD_HOJE);
+        await firePush(pushPayload({ icon: undefined, badge: undefined }));
+
+        expect(shown[0].options.icon).toBe('/icons/icon-192.svg');
+        expect(shown[0].options.badge).toBe('/icons/badge.svg');
+    });
+
+    it('escolhe da lista o cartão do dia UTC corrente', async () => {
+        // O app grava hoje + próximos dias para sobreviver a uma ausência.
+        const ontem: Card = { ...CARD_HOJE, date: '2020-01-01', body: 'Falta: Velho' };
+        const depois: Card = { ...CARD_HOJE, date: '2099-12-31', body: 'Falta: Futuro' };
+        const { firePush, shown } = loadWorker([ontem, CARD_HOJE, depois]);
         await firePush();
 
         expect(shown).toHaveLength(1);
         expect(shown[0].options.body).toBe('Faltam: Meditar');
     });
 
-    it('preserva o data da OneSignal para o clique continuar funcionando', async () => {
-        const original = oneSignalNotification();
-        const { firePush, shown } = loadWorker(CARD_HOJE, { incoming: [original] });
-        await firePush();
+    describe('sem cartão utilizável, exibe o texto genérico do próprio payload', () => {
+        // Como o handler do SDK foi curto-circuitado, ninguém mais notificaria:
+        // sair calado aqui custaria a permissão de push no iOS.
+        const casos: Array<[string, Stored, WorkerOptions]> = [
+            ['nenhum cartão', null, {}],
+            ['lista vazia', [], {}],
+            ['nenhum cartão cobre hoje', [{ ...CARD_HOJE, date: '2020-01-01' }], {}],
+            ['cartão de outro dia', { ...CARD_HOJE, date: '2020-01-01' }, {}],
+            ['cartão incompleto', { ...CARD_HOJE, body: '' }, {}],
+            ['banco do app ainda não existe', CARD_HOJE, { idb: { missingStore: true } }],
+            ['IndexedDB falha ao abrir', CARD_HOJE, { idb: { failOpen: true } }]
+        ];
 
-        expect(shown[0].options.data).toEqual(original.data);
-        expect(shown[0].options.icon).toBe(original.icon);
+        it.each(casos)('%s', async (_nome, card, options) => {
+            const { firePush, shown } = loadWorker(card, options);
+            await firePush();
+
+            expect(shown).toHaveLength(1);
+            expect(shown[0].title).toBe(GENERICO.title);
+            expect(shown[0].options.body).toBe(GENERICO.alert);
+        });
+    });
+
+    it('notifica mesmo com payload ilegível, desde que traga o marcador', async () => {
+        // `text()` acha o marcador, `json()` estoura: ainda assim tem de sair
+        // notificação, porque o SDK já não vai publicar nenhuma.
+        const { firePush, shown } = loadWorker(null);
+        await firePush('lixo askesis-reminder lixo');
+
+        expect(shown).toHaveLength(1);
+        expect(shown[0].title).toBe('Askesis');
     });
 
     it('modo diagnóstico escreve o motivo na própria notificação', async () => {
@@ -230,77 +269,5 @@ describe('OneSignalSDKWorker — personalização local do lembrete', () => {
 
         expect(shown).toHaveLength(1);
         expect(shown[0].options.body).toContain('IndexedDB');
-    });
-
-    it('escolhe da lista o cartão do dia UTC corrente', async () => {
-        // O app grava hoje + próximos dias para sobreviver a uma ausência.
-        const ontem: Card = { ...CARD_HOJE, date: '2020-01-01', body: 'Falta: Velho' };
-        const depois: Card = { ...CARD_HOJE, date: '2099-12-31', body: 'Falta: Futuro' };
-        const { firePush, shown } = loadWorker([ontem, CARD_HOJE, depois]);
-        await firePush();
-
-        expect(shown).toHaveLength(1);
-        expect(shown[0].options.body).toBe('Faltam: Meditar');
-    });
-
-    it('mantém a genérica quando nenhum cartão da lista cobre hoje', async () => {
-        const ontem: Card = { ...CARD_HOJE, date: '2020-01-01' };
-        const { firePush, shown } = loadWorker([ontem]);
-        await firePush();
-
-        expect(shown).toHaveLength(0);
-    });
-
-    it('mantém a genérica quando a lista está vazia', async () => {
-        const { firePush, shown } = loadWorker([]);
-        await firePush();
-        expect(shown).toHaveLength(0);
-    });
-
-    it('mantém a notificação genérica quando o cartão é de outro dia', async () => {
-        const ontem: Card = { ...CARD_HOJE, date: '2020-01-01' };
-        const { firePush, shown } = loadWorker(ontem);
-        await firePush();
-
-        // App não foi aberto hoje: dados velhos seriam pior que o texto genérico.
-        expect(shown).toHaveLength(0);
-    });
-
-    it('mantém a genérica quando não há cartão', async () => {
-        const { firePush, shown } = loadWorker(null);
-        await firePush();
-        expect(shown).toHaveLength(0);
-    });
-
-    it('mantém a genérica quando o cartão está incompleto', async () => {
-        const semCorpo = { date: TODAY, lang: 'pt', title: 'Só título', body: '' } as Card;
-        const { firePush, shown } = loadWorker(semCorpo);
-        await firePush();
-        expect(shown).toHaveLength(0);
-    });
-
-    it('não quebra se o banco do app ainda não existir', async () => {
-        const { firePush, shown } = loadWorker(CARD_HOJE, { idb: { missingStore: true } });
-        await expect(firePush()).resolves.not.toThrow();
-        expect(shown).toHaveLength(0);
-    });
-
-    it('não quebra se o IndexedDB falhar ao abrir', async () => {
-        const { firePush, shown } = loadWorker(CARD_HOJE, { idb: { failOpen: true } });
-        await expect(firePush()).resolves.not.toThrow();
-        expect(shown).toHaveLength(0);
-    });
-
-    it('não cria notificação própria se a da OneSignal nunca aparecer', async () => {
-        vi.useFakeTimers();
-        const { firePush, shown } = loadWorker(CARD_HOJE, { incoming: null });
-
-        const done = firePush();
-        // Esgota a janela de espera (3s) sem que nada seja publicado.
-        await vi.advanceTimersByTimeAsync(3200);
-        await done;
-
-        // Criar uma aqui arriscaria duplicar caso a da OneSignal chegasse depois.
-        expect(shown).toHaveLength(0);
     });
 });

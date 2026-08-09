@@ -10,7 +10,6 @@
  * Registrado pelo SDK com serviceWorkerPath: 'OneSignalSDKWorker.js' e
  * serviceWorkerParam: { scope: '/onesignal/' } — coexiste com sw.js (offline).
  */
-importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js');
 
 /**
  * PERSONALIZAÇÃO LOCAL DO LEMBRETE
@@ -19,19 +18,34 @@ importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js');
  * cifrado; ele não sabe o que está pendente). Quem escreve o texto é este
  * worker, lendo o cartão que o app deixou no IndexedDB.
  *
- * POR QUE SUBSTITUIR EM VEZ DE INTERCEPTAR:
- * No SDK v16 o listener de `push` é registrado como função anônima inline, sem
- * referência exportada — `removeEventListener` é impossível. Então deixamos a
- * OneSignal exibir a dela e trocamos o conteúdo em seguida.
+ * ORDEM DOS LISTENERS — É O QUE FAZ ISTO FUNCIONAR:
+ * O `importScripts` do SDK está no FIM do arquivo, de propósito. Listeners de
+ * um mesmo evento correm na ordem de registro, então o nosso roda primeiro e
+ * pode chamar `stopImmediatePropagation()`: o handler da OneSignal nunca é
+ * invocado para o nosso lembrete, e existe UMA notificação — a nossa.
+ *
+ * A tentativa anterior era outra: deixar a OneSignal exibir a dela e trocar o
+ * conteúdo depois (esperar a notificação aparecer na bandeja, fechar, publicar
+ * a nossa). Isso é uma corrida contra o handler dela, e ela chegava a publicar
+ * de novo depois do nosso `close()` — o usuário recebia as duas. Cortar a
+ * propagação elimina a corrida em vez de tentar vencê-la.
+ *
+ * `removeEventListener` continua impossível (no SDK v16 o listener é uma função
+ * anônima inline, sem referência exportada); por isso a saída é a ordem.
  *
  * COMO IDENTIFICAMOS O NOSSO PUSH:
- * Pelo marcador em `data` (REMINDER_MARKER, ver api/reminder.ts), não pela tag.
- * O marcador chega íntegro ao evento `push` e não depende do interno do SDK.
- * Também evita sequestro: um anúncio enviado pelo painel não o carrega.
+ * Pelo marcador REMINDER_MARKER no payload cru (ver api/reminder.ts). Só ele
+ * autoriza o desvio: um anúncio enviado pelo painel não o carrega, segue o
+ * caminho normal da OneSignal e não é reescrito com texto de hábitos.
  *
- * Requisito do iOS/Safari: todo push precisa virar notificação visível. Por
- * isso este código nunca "desiste em silêncio" — se o cartão não servir, a
- * notificação genérica da OneSignal simplesmente permanece.
+ * O QUE SE PERDE AO PULAR O HANDLER DELES:
+ * O relatório de entrega confirmada e o webhook `notification.willDisplay` do
+ * lembrete. O clique continua íntegro: publicamos com o mesmo `data` que o SDK
+ * montaria, e o `notificationclick` dele (que segue registrado) o consome.
+ *
+ * Requisito do iOS/Safari: todo push precisa virar notificação visível. Como
+ * assumimos o controle, o caminho de erro NÃO pode sair calado — sem cartão
+ * utilizável exibimos o texto genérico que veio no próprio payload.
  */
 (function () {
     'use strict';
@@ -49,6 +63,13 @@ importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js');
     });
 
     var REMINDER_MARKER = 'askesis-reminder';
+
+    /** Absolutos: relativos resolveriam contra /onesignal/, que não tem assets. */
+    var DEFAULT_ICON = '/icons/icon-192.svg';
+    var DEFAULT_BADGE = '/icons/badge.svg';
+
+    /** Último recurso: o push precisa virar notificação mesmo sem texto algum. */
+    var FALLBACK_TITLE = 'Askesis';
 
     /**
      * Quando ligado, o motivo de NÃO personalizar vai na própria notificação.
@@ -68,13 +89,6 @@ importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js');
     var STORE_NAME = 'app_state';
     var CARD_KEY = 'askesis_notification_card';
 
-    var POLL_INTERVAL_MS = 60;
-    var POLL_TIMEOUT_MS = 3000;
-
-    function sleep(ms) {
-        return new Promise(function (resolve) { setTimeout(resolve, ms); });
-    }
-
     function todayUTCIso() {
         return new Date().toISOString().slice(0, 10);
     }
@@ -87,9 +101,6 @@ importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js');
      * lembrete chegava genérico sem qualquer pista do motivo. O servidor manda o
      * marcador em dois campos (`data.askesis` e `web_push_topic`), então buscar
      * a string no texto do payload acerta independentemente do aninhamento.
-     *
-     * Continua evitando sequestro: um anúncio enviado pelo painel não carrega
-     * esta string em lugar nenhum.
      */
     function isReminderPush(event) {
         try {
@@ -97,6 +108,37 @@ importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js');
         } catch (e) {
             return false;
         }
+    }
+
+    /** Payload cru da OneSignal: `{ custom: { i, a, u }, title, alert, icon, badge }`. */
+    function parsePayload(event) {
+        try {
+            return event.data.json() || {};
+        } catch (e) {
+            return {};
+        }
+    }
+
+    /**
+     * O `data` que o SDK anexaria à notificação (ver `Tt()` no bundle dele).
+     *
+     * Só os campos que os handlers de `notificationclick`/`notificationclose`
+     * leem — é o que mantém o clique abrindo a URL e registrando o evento.
+     */
+    function oneSignalData(payload) {
+        var custom = payload.custom || {};
+        return {
+            notificationId: custom.i,
+            title: payload.title,
+            body: payload.alert,
+            additionalData: custom.a,
+            launchURL: custom.u
+        };
+    }
+
+    /** O texto genérico que o servidor mandou, usado quando o cartão não serve. */
+    function genericText(payload) {
+        return { title: payload.title || FALLBACK_TITLE, body: payload.alert || '' };
     }
 
     function openDB() {
@@ -154,81 +196,50 @@ importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js');
         return null;
     }
 
-    /** Identidade estável o bastante para distinguir notificações na bandeja. */
-    function fingerprint(notification) {
-        return [notification.tag, notification.title, notification.body, notification.timestamp].join('|');
-    }
-
     /**
-     * Espera a OneSignal publicar a notificação DESTE push.
-     *
-     * Os dois handlers correm em paralelo: sem esperar, a genérica sobrescreveria
-     * o texto personalizado. Mas não basta esperar "alguma" notificação — uma
-     * antiga na bandeja satisfaria isso na hora, e acabaríamos substituindo a
-     * errada enquanto a nova aparece do lado (duas notificações). Por isso
-     * fotografamos a bandeja antes e só aceitamos o que for novo.
+     * Decide o texto da notificação. NUNCA rejeita: como o handler da OneSignal
+     * já foi curto-circuitado, uma rejeição aqui deixaria o push sem notificação
+     * nenhuma — no iOS, isso custa a permissão.
      */
-    function waitForNewNotification(registration) {
-        return registration.getNotifications().then(function (before) {
-            var known = {};
-            before.forEach(function (n) { known[fingerprint(n)] = true; });
-
-            var deadline = Date.now() + POLL_TIMEOUT_MS;
-
-            function attempt() {
-                return registration.getNotifications().then(function (list) {
-                    for (var i = list.length - 1; i >= 0; i--) {
-                        if (!known[fingerprint(list[i])]) return list[i];
-                    }
-                    if (Date.now() >= deadline) return null;
-                    return sleep(POLL_INTERVAL_MS).then(attempt);
-                });
-            }
-            return attempt();
-        });
-    }
-
-    /**
-     * Troca o conteúdo da notificação que a OneSignal acabou de publicar.
-     *
-     * Fecha a original sempre, em vez de contar com a colisão de tag: se a tag
-     * dela vier vazia ou diferente da nossa, a "substituição" viraria uma
-     * segunda notificação na bandeja.
-     */
-    function replaceWith(existing, title, body) {
-        existing.close();
-        return self.registration.showNotification(title, {
-            body: body,
-            // Tag própria e fixa: garante que lembretes seguidos colapsem entre si.
-            tag: REMINDER_MARKER,
-            icon: existing.icon || 'icons/icon-192.svg',
-            badge: existing.badge || 'icons/badge.svg',
-            // Substituição silenciosa: a OneSignal já alertou o usuário.
-            renotify: false,
-            // Preserva o payload da OneSignal para o notificationclick dela
-            // continuar abrindo a URL e registrando o clique.
-            data: existing.data
+    function chooseText(payload) {
+        return readCard().then(
+            function (card) { return cardProblem(card) || card; },
+            function (error) { return 'IndexedDB: ' + String(error); }
+        ).then(function (result) {
+            if (typeof result !== 'string') return { title: result.title, body: result.body };
+            return DIAGNOSTICO ? { title: 'Askesis — diagnostico', body: result } : genericText(payload);
         });
     }
 
     self.addEventListener('push', function (event) {
         if (!isReminderPush(event)) return;
 
-        event.waitUntil(
-            readCard().catch(function (e) { return { erro: String(e) }; }).then(function (card) {
-                var problem = card && card.erro ? 'IndexedDB: ' + card.erro : cardProblem(card);
-                if (problem && !DIAGNOSTICO) return;
+        // A partir daqui a notificação é nossa, inteira: o handler da OneSignal
+        // (registrado depois, no importScripts) não chega a rodar.
+        event.stopImmediatePropagation();
 
-                return waitForNewNotification(self.registration).then(function (existing) {
-                    // Sem notificação da OneSignal não há o que substituir — e criar
-                    // uma aqui arriscaria duplicar caso a dela ainda esteja a caminho.
-                    if (!existing) return;
-                    if (problem) return replaceWith(existing, 'Askesis — diagnostico', problem);
-                    return replaceWith(existing, card.title, card.body);
+        var payload = parsePayload(event);
+
+        event.waitUntil(
+            chooseText(payload).then(function (text) {
+                return self.registration.showNotification(text.title, {
+                    body: text.body,
+                    // Tag fixa: lembretes seguidos colapsam num só. `renotify`
+                    // garante que o de hoje alerte mesmo com o de ontem parado
+                    // na bandeja — do contrário a troca seria silenciosa.
+                    tag: REMINDER_MARKER,
+                    renotify: true,
+                    icon: payload.icon || DEFAULT_ICON,
+                    badge: payload.badge || DEFAULT_BADGE,
+                    data: oneSignalData(payload)
                 });
             }).catch(function () {
-                // Falhar aqui só significa manter a notificação genérica.
+                // Só chega aqui se o próprio showNotification for recusado pelo
+                // navegador; repetir a chamada não mudaria o resultado.
             })
         );
     });
 })();
+
+// Depois do nosso listener, de propósito — ver ORDEM DOS LISTENERS acima.
+importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js');
