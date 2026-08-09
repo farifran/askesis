@@ -111,6 +111,12 @@ importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js');
         });
     }
 
+    /**
+     * Lê o cartão do dia UTC corrente.
+     *
+     * O app grava uma LISTA — hoje e os próximos dias — para que um dia sem
+     * abrir o Askesis não derrube o lembrete para o texto genérico.
+     */
     function readCard() {
         return openDB().then(function (db) {
             if (!db || !db.objectStoreNames.contains(STORE_NAME)) return null;
@@ -118,9 +124,17 @@ importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js');
                 var req = db.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).get(CARD_KEY);
                 req.onsuccess = function () { resolve(req.result || null); };
                 req.onerror = function () { resolve(null); };
-            }).then(function (card) {
+            }).then(function (stored) {
                 db.close();
-                return card;
+                if (!Array.isArray(stored)) return stored || null;
+
+                var today = todayUTCIso();
+                for (var i = 0; i < stored.length; i++) {
+                    if (stored[i] && stored[i].date === today) return stored[i];
+                }
+                // Nenhum cartão cobre hoje: devolve o primeiro só para o
+                // diagnóstico poder dizer de que dia ele era.
+                return stored[0] || null;
             });
         });
     }

@@ -26,17 +26,30 @@
 import { state, HABIT_STATE } from '../state';
 import { calculateDaySummary, getActiveHabitsForDate, getHabitDisplayInfo } from './selectors';
 import { HabitService } from './HabitService';
-import { getTodayUTCIso, parseUTCIsoDate, logger } from '../utils';
+import { getTodayUTCIso, parseUTCIsoDate, toUTCIsoDateString, addDays, logger } from '../utils';
 import { t } from '../i18n';
+import { NOTIFICATION_QUOTE_DAYS } from '../constants';
 
-/** Chave do cartão no object store `app_state`. Espelhada em OneSignalSDKWorker.js. */
+/** Chave dos cartões no object store `app_state`. Espelhada em OneSignalSDKWorker.js. */
 export const NOTIFICATION_CARD_KEY = 'askesis_notification_card';
 
 /** Quantos nomes de hábito cabem no corpo antes de virar "+N". */
 const MAX_HABIT_NAMES = 3;
 
+/**
+ * Quantos dias à frente de hoje ganham cartão.
+ *
+ * O cartão vale para um dia UTC específico, e quem o grava é o app. Sem isto,
+ * passar um dia inteiro sem abrir o Askesis fazia o lembrete cair no texto
+ * genérico — justamente para quem mais precisava dele.
+ *
+ * Dias futuros são calculáveis: nada foi marcado ainda, então as pendências são
+ * todos os hábitos agendados para aquele dia.
+ */
+const DAYS_AHEAD = NOTIFICATION_QUOTE_DAYS;
+
 export interface NotificationCard {
-    /** Data UTC (YYYY-MM-DD) em que o cartão foi montado. O SW descarta se não for hoje. */
+    /** Data UTC (YYYY-MM-DD) a que o cartão se refere. O SW usa o que casar com hoje. */
     date: string;
     /** Idioma em que title/body foram renderizados — só para diagnóstico. */
     lang: string;
@@ -68,10 +81,10 @@ function collectPendingNames(dateISO: string): string[] {
  * carregado sob demanda (`import()` em render.ts). Importá-lo aqui o traria
  * para o grafo estático e o app pagaria esse custo já no boot.
  */
-let publishedQuote: string | null = null;
+let publishedQuotes: Record<string, string> = {};
 
-export function setNotificationQuote(adaptationText: string | null): void {
-    publishedQuote = adaptationText || null;
+export function setNotificationQuotes(byDateISO: Record<string, string>): void {
+    publishedQuotes = byDateISO || {};
 }
 
 /** Linha das pendências, ou null quando não há nome legível para mostrar. */
@@ -89,7 +102,7 @@ function pendingLine(dateISO: string, pending: number): string {
 }
 
 /**
- * Monta o cartão a partir do estado atual.
+ * Monta o cartão de UM dia UTC.
  *
  * A frase vai no TÍTULO e o estado do dia desce para o corpo:
  *
@@ -100,29 +113,45 @@ function pendingLine(dateISO: string, pending: number): string {
  * Sem frase (o chunk de citações é lazy), o título volta a ser o estado do dia
  * para a notificação não ficar sem cabeçalho.
  *
- * Retorna `null` quando não há o que dizer — nenhum hábito ativo hoje, ou dia
- * zerado antes de a frase carregar. Nesse caso o SW mantém o texto genérico do
- * push em vez de inventar conteúdo.
+ * Retorna `null` quando não há o que dizer — nenhum hábito agendado, ou dia
+ * zerado sem frase. Nesse caso o SW mantém o texto genérico do push em vez de
+ * inventar conteúdo.
  */
-export function buildNotificationCard(): NotificationCard | null {
+function buildCardForDate(dateISO: string): NotificationCard | null {
+    const { total, pending } = calculateDaySummary(dateISO);
+    if (total === 0) return null;
+
+    const status = pending > 0 ? t('pendingBadgeTitle') : t('notifyAllDoneTitle');
+    const list = pending > 0 ? pendingLine(dateISO, pending) : null;
+    const base = { date: dateISO, lang: state.activeLanguageCode };
+    const quote = publishedQuotes[dateISO];
+
+    if (quote) {
+        return { ...base, title: quote, body: [status, list].filter(Boolean).join('\n') };
+    }
+
+    return list ? { ...base, title: status, body: list } : null;
+}
+
+/**
+ * Monta os cartões de hoje e dos próximos {@link DAYS_AHEAD} dias.
+ *
+ * O Service Worker escolhe o que casar com a data UTC no momento do push, então
+ * um dia inteiro sem abrir o app deixa de derrubar o lembrete para o genérico.
+ */
+export function buildNotificationCards(): NotificationCard[] {
     try {
-        const dateISO = getTodayUTCIso();
-        const { total, pending } = calculateDaySummary(dateISO);
+        const today = parseUTCIsoDate(getTodayUTCIso());
+        const cards: NotificationCard[] = [];
 
-        if (total === 0) return null;
-
-        const status = pending > 0 ? t('pendingBadgeTitle') : t('notifyAllDoneTitle');
-        const list = pending > 0 ? pendingLine(dateISO, pending) : null;
-        const base = { date: dateISO, lang: state.activeLanguageCode };
-
-        if (publishedQuote) {
-            return { ...base, title: publishedQuote, body: [status, list].filter(Boolean).join('\n') };
+        for (let offset = 0; offset <= DAYS_AHEAD; offset++) {
+            const card = buildCardForDate(toUTCIsoDateString(addDays(today, offset)));
+            if (card) cards.push(card);
         }
-
-        return list ? { ...base, title: status, body: list } : null;
+        return cards;
     } catch (error) {
-        // O cartão é um extra: nunca pode derrubar o save do estado.
-        logger.error('[NotificationCard] Falha ao montar o cartão', error);
-        return null;
+        // Os cartões são um extra: nunca podem derrubar o save do estado.
+        logger.error('[NotificationCard] Falha ao montar os cartões', error);
+        return [];
     }
 }

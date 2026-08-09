@@ -6,9 +6,9 @@
 import { describe, it, expect, beforeEach, beforeAll } from 'vitest';
 import { state, HABIT_STATE } from '../state';
 import { HabitService } from './HabitService';
-import { getTodayUTCIso } from '../utils';
+import { getTodayUTCIso, toUTCIsoDateString, addDays, parseUTCIsoDate } from '../utils';
 import { setLanguage } from '../i18n';
-import { buildNotificationCard, setNotificationQuote } from './notificationCard';
+import { buildNotificationCards, setNotificationQuotes } from './notificationCard';
 import { createTestHabit, clearTestState } from '../tests/test-utils';
 
 const TODAY = getTodayUTCIso();
@@ -26,19 +26,23 @@ describe('buildNotificationCard', () => {
 
     beforeEach(() => {
         clearTestState();
-        setNotificationQuote(null);
+        setNotificationQuotes({});
     });
+
+    /** Cartão de hoje, que é o que o Service Worker exibe. */
+    const todayCard = () => buildNotificationCards().find(c => c.date === TODAY);
+    const quoteToday = () => setNotificationQuotes({ [TODAY]: QUOTE });
 
     it('retorna null quando não há hábitos ativos hoje', () => {
         // Sem nada agendado, o texto genérico do push é mais honesto.
-        expect(buildNotificationCard()).toBeNull();
+        expect(todayCard()).toBeUndefined();
     });
 
     it('lista os hábitos pendentes pelo nome', () => {
         createTestHabit({ name: 'Meditar', time: 'Morning', goalType: 'check' });
         createTestHabit({ name: 'Ler', time: 'Morning', goalType: 'check' });
 
-        const card = buildNotificationCard()!;
+        const card = todayCard()!;
 
         expect(card.date).toBe(TODAY);
         expect(card.lang).toBe('pt');
@@ -53,7 +57,7 @@ describe('buildNotificationCard', () => {
             createTestHabit({ name, time: 'Morning', goalType: 'check' })
         );
 
-        const card = buildNotificationCard()!;
+        const card = todayCard()!;
 
         // 3 nomes visíveis + contagem dos 2 restantes.
         expect(card.body).toContain('+2');
@@ -67,7 +71,7 @@ describe('buildNotificationCard', () => {
         createTestHabit({ name: 'Pendente', time: 'Morning', goalType: 'check' });
         HabitService.setStatus(feito, TODAY, 'Morning', HABIT_STATE.DONE);
 
-        const card = buildNotificationCard()!;
+        const card = todayCard()!;
 
         expect(card.body).toContain('Pendente');
         expect(card.body).not.toContain('Feito');
@@ -76,9 +80,9 @@ describe('buildNotificationCard', () => {
     it('mostra a frase estoica quando o dia está completo', () => {
         const id = createTestHabit({ name: 'Meditar', time: 'Morning', goalType: 'check' });
         HabitService.setStatus(id, TODAY, 'Morning', HABIT_STATE.DONE);
-        setNotificationQuote(QUOTE);
+        quoteToday();
 
-        const card = buildNotificationCard()!;
+        const card = todayCard()!;
 
         expect(card.title).toBe(QUOTE);
         expect(card.body).toBe('Tudo em dia');
@@ -86,9 +90,9 @@ describe('buildNotificationCard', () => {
 
     it('põe a frase no título e o estado do dia no corpo', () => {
         createTestHabit({ name: 'Meditar', time: 'Morning', goalType: 'check' });
-        setNotificationQuote(QUOTE);
+        quoteToday();
 
-        const card = buildNotificationCard()!;
+        const card = todayCard()!;
 
         expect(card.title).toBe(QUOTE);
         expect(card.body.split('\n')).toEqual(['Hábitos pendentes', 'Falta: Meditar']);
@@ -97,7 +101,7 @@ describe('buildNotificationCard', () => {
     it('mostra só as pendências enquanto a frase não carregou', () => {
         createTestHabit({ name: 'Meditar', time: 'Morning', goalType: 'check' });
 
-        const card = buildNotificationCard()!;
+        const card = todayCard()!;
 
         expect(card.body).toContain('Meditar');
         expect(card.body).not.toContain('\n');
@@ -106,10 +110,10 @@ describe('buildNotificationCard', () => {
     it('usa o idioma ativo no título', () => {
         const id = createTestHabit({ name: 'Meditar', time: 'Morning', goalType: 'check' });
         HabitService.setStatus(id, TODAY, 'Morning', HABIT_STATE.DONE);
-        setNotificationQuote(QUOTE);
+        quoteToday();
         state.activeLanguageCode = 'en';
 
-        const card = buildNotificationCard()!;
+        const card = todayCard()!;
 
         expect(card.lang).toBe('en');
         expect(card.title).toBe(QUOTE);
@@ -122,7 +126,42 @@ describe('buildNotificationCard', () => {
         const id = createTestHabit({ name: 'Meditar', time: 'Morning', goalType: 'check' });
         HabitService.setStatus(id, TODAY, 'Morning', HABIT_STATE.DONE);
 
-        expect(buildNotificationCard()).toBeNull();
+        expect(todayCard()).toBeUndefined();
+    });
+
+    it('grava hoje e os próximos 5 dias', () => {
+        // Sem isto, um dia sem abrir o app derrubava o lembrete para o genérico
+        // — justamente para quem mais precisava dele.
+        createTestHabit({ name: 'Meditar', time: 'Morning', goalType: 'check' });
+
+        const cards = buildNotificationCards();
+        const esperado = Array.from({ length: 6 }, (_, i) =>
+            toUTCIsoDateString(addDays(parseUTCIsoDate(TODAY), i))
+        );
+
+        expect(cards.map(c => c.date)).toEqual(esperado);
+    });
+
+    it('nos dias futuros tudo está pendente, pois nada foi marcado', () => {
+        const id = createTestHabit({ name: 'Meditar', time: 'Morning', goalType: 'check' });
+        HabitService.setStatus(id, TODAY, 'Morning', HABIT_STATE.DONE);
+
+        const cards = buildNotificationCards();
+        const amanha = cards.find(c => c.date !== TODAY)!;
+
+        // Hoje está zerado; amanhã o mesmo hábito volta a constar.
+        expect(amanha.body).toContain('Meditar');
+    });
+
+    it('cada dia recebe a sua própria frase', () => {
+        createTestHabit({ name: 'Meditar', time: 'Morning', goalType: 'check' });
+        const amanhaISO = toUTCIsoDateString(addDays(parseUTCIsoDate(TODAY), 1));
+        setNotificationQuotes({ [TODAY]: QUOTE, [amanhaISO]: 'Outra frase.' });
+
+        const cards = buildNotificationCards();
+
+        expect(cards.find(c => c.date === TODAY)!.title).toBe(QUOTE);
+        expect(cards.find(c => c.date === amanhaISO)!.title).toBe('Outra frase.');
     });
 
     it('nunca lança: falha ao montar vira null', () => {
@@ -130,7 +169,7 @@ describe('buildNotificationCard', () => {
         // Corrompe o estado de um jeito que quebra o cálculo do resumo.
         (state as unknown as { habits: unknown }).habits = null;
 
-        expect(() => buildNotificationCard()).not.toThrow();
-        expect(buildNotificationCard()).toBeNull();
+        expect(() => buildNotificationCards()).not.toThrow();
+        expect(todayCard()).toBeUndefined();
     });
 });

@@ -11,14 +11,14 @@
 import { state, LANGUAGES } from './state';
 import { parseUTCIsoDate, toUTCIsoDateString, addDays, getTodayUTCIso, createDebounced, escapeHTML } from './utils';
 import { pushToOneSignal, getLocalPushOptIn } from './services/push';
-import { QUOTE_COLLAPSE_DEBOUNCE_MS } from './constants';
+import { QUOTE_COLLAPSE_DEBOUNCE_MS, NOTIFICATION_QUOTE_DAYS } from './constants';
 import { ui } from './render/ui';
 import { t, setLanguage, formatDate } from './i18n'; 
 import { UI_ICONS } from './render/icons';
 import type { Quote } from './data/quotes';
 import { selectBestQuote } from './services/quoteEngine';
 import { calculateDaySummary } from './services/selectors';
-import { setNotificationQuote } from './services/notificationCard';
+import { setNotificationQuotes } from './services/notificationCard';
 import { persistNotificationCard } from './services/persistence';
 import { APP_EVENTS, emitRequestAnalysis } from './events';
 
@@ -403,6 +403,44 @@ function ensureQuotesLoaded(): boolean {
     return false;
 }
 
+/**
+ * Publica a adaptação de hoje e dos próximos dias para o cartão de notificação.
+ *
+ * A ADAPTAÇÃO é a versão curta, a mesma mostrada no card sem expandir. Isto vive
+ * aqui, e não em notificationCard.ts, porque `data/quotes.ts` pesa ~87 KB e é
+ * carregado sob demanda — importá-lo lá o traria para o grafo estático do boot.
+ *
+ * Os dias futuros existem para o lembrete sobreviver a uma ausência: o cartão
+ * vale por dia UTC, e sem eles passar um dia sem abrir o app derrubava o texto
+ * para o genérico. `selectBestQuote` só grava `state.quoteState` quando a data é
+ * hoje, então calcular para datas futuras é livre de efeito colateral.
+ *
+ * A regravação é necessária: só abrir o app não dispara `saveState`.
+ */
+function publishNotificationQuotes() {
+    if (!_quotes) return;
+
+    const lang = state.activeLanguageCode as 'pt' | 'en' | 'es';
+    const today = parseUTCIsoDate(getTodayUTCIso());
+    const byDate: Record<string, string> = {};
+
+    for (let offset = 0; offset <= NOTIFICATION_QUOTE_DAYS; offset++) {
+        const dateISO = toUTCIsoDateString(addDays(today, offset));
+        try {
+            const quote = selectBestQuote(_quotes, dateISO);
+            // Sem diagnóstico da IA para o dia (sempre o caso no futuro), nível 1.
+            const level = state.dailyDiagnoses[dateISO]?.level ?? 1;
+            const text = quote.adaptations[`level_${level}` as keyof typeof quote.adaptations]?.[lang];
+            if (text) byDate[dateISO] = text;
+        } catch {
+            // Um dia sem frase apenas cai para o título de status; os demais seguem.
+        }
+    }
+
+    setNotificationQuotes(byDate);
+    void persistNotificationCard();
+}
+
 export function renderStoicQuote() {
     if (!ensureQuotesLoaded()) return;
     if (!state.dailyDiagnoses[state.selectedDate]) {
@@ -429,14 +467,7 @@ export function renderStoicQuote() {
     const lang = state.activeLanguageCode as 'pt' | 'en' | 'es';
     const adaptationText = selectedQuote.adaptations[`level_${userLevel}` as keyof typeof selectedQuote.adaptations][lang];
 
-    // Publica a frase para o cartão de notificação: a ADAPTAÇÃO, que é a versão
-    // curta mostrada aqui sem expandir. É aqui, e não no cartão, porque
-    // data/quotes.ts é carregado sob demanda — ver setNotificationQuote.
-    //
-    // A regravação é necessária: só abrir o app não dispara `saveState`, e sem
-    // ela a frase do dia só entraria no cartão após a primeira marcação.
-    setNotificationQuote(adaptationText);
-    void persistNotificationCard();
+    publishNotificationQuotes();
 
 
     const container = ui.stoicQuoteDisplay;

@@ -11,7 +11,7 @@
 import { state, AppState, Habit, HabitDailyInfo, APP_VERSION, getPersistableState, clearAllCaches } from '../state';
 import { migrateState } from './migration';
 import { HabitService } from './HabitService';
-import { buildNotificationCard, NOTIFICATION_CARD_KEY, type NotificationCard } from './notificationCard';
+import { buildNotificationCards, NOTIFICATION_CARD_KEY, type NotificationCard } from './notificationCard';
 import { clearHabitDomCache } from '../render';
 import { logger } from '../utils';
 import { emitRenderApp } from '../events';
@@ -115,11 +115,11 @@ async function clearBackupSnapshot(): Promise<void> {
  * Grava um estado específico no IndexedDB.
  * Otimizado para separar JSON leve de binários pesados (Hex-Strings).
  *
- * `card` só é passado pelo caminho de save local, onde o `state` global é a
+ * `cards` só é passado pelo caminho de save local, onde o `state` global é a
  * fonte da verdade. `persistStateLocally` (dados vindos da nuvem) omite: ali o
  * global ainda não foi hidratado, e um cartão montado dali sairia defasado.
  */
-async function saveSplitState(main: AppState, card?: NotificationCard | null): Promise<void> {
+async function saveSplitState(main: AppState, cards?: NotificationCard[]): Promise<void> {
     const db = await getDB();
     return new Promise((resolve, reject) => {
         const tx = db.transaction(STORE_NAME, 'readwrite');
@@ -143,10 +143,10 @@ async function saveSplitState(main: AppState, card?: NotificationCard | null): P
             store.delete(STATE_BINARY_KEY);
         }
 
-        if (card !== undefined) {
-            // Cartão nulo (sem hábitos hoje) apaga o anterior: melhor o texto
-            // genérico do push do que um lembrete de ontem.
-            if (card) store.put(card, NOTIFICATION_CARD_KEY);
+        if (cards !== undefined) {
+            // Lista vazia (sem hábitos agendados) apaga a anterior: melhor o
+            // texto genérico do push do que um lembrete de ontem.
+            if (cards.length > 0) store.put(cards, NOTIFICATION_CARD_KEY);
             else store.delete(NOTIFICATION_CARD_KEY);
         }
 
@@ -171,12 +171,12 @@ export const registerSyncHandler = (h: (s: AppState, immediate?: boolean) => voi
 export async function persistNotificationCard(): Promise<void> {
     if (!HAS_INDEXED_DB) return;
     try {
-        const card = buildNotificationCard();
+        const cards = buildNotificationCards();
         const db = await getDB();
         await new Promise<void>((resolve, reject) => {
             const tx = db.transaction(STORE_NAME, 'readwrite');
             const store = tx.objectStore(STORE_NAME);
-            if (card) store.put(card, NOTIFICATION_CARD_KEY);
+            if (cards.length > 0) store.put(cards, NOTIFICATION_CARD_KEY);
             else store.delete(NOTIFICATION_CARD_KEY);
             tx.oncomplete = () => resolve();
             tx.onerror = () => reject(tx.error);
@@ -213,7 +213,7 @@ async function saveStateInternal(immediate = false, suppressSync = false) {
         const structuredData = getPersistableState();
         try {
             if (HAS_INDEXED_DB) {
-                await saveSplitState(structuredData, buildNotificationCard());
+                await saveSplitState(structuredData, buildNotificationCards());
             }
         } catch (e) {
             if (!(IS_TEST_ENV && String(e).includes('IndexedDB not available'))) {

@@ -16,10 +16,11 @@ const TAG = 'askesis-reminder';
 const MARKER = 'askesis-reminder';
 const TODAY = new Date().toISOString().slice(0, 10);
 
-type Card = { date: string; lang: string; title: string; body: string } | null;
+type Card = { date: string; lang: string; title: string; body: string };
+type Stored = Card | Card[] | null;
 
 /** IndexedDB mínimo: só `open -> transaction -> objectStore -> get`. */
-function fakeIndexedDB(card: Card, opts: { missingStore?: boolean; failOpen?: boolean } = {}) {
+function fakeIndexedDB(card: Stored, opts: { missingStore?: boolean; failOpen?: boolean } = {}) {
     return {
         open() {
             const req: any = {};
@@ -74,7 +75,7 @@ interface WorkerOptions {
     diagnostico?: boolean;
 }
 
-function loadWorker(card: Card, options: WorkerOptions = {}) {
+function loadWorker(card: Stored, options: WorkerOptions = {}) {
     // `importScripts` traria o SDK real da CDN; aqui só interessa o nosso trecho.
     // DIAGNOSTICO é forçado conforme o teste: os casos abaixo cobrem o
     // comportamento definitivo, salvo o que cobre o próprio diagnóstico.
@@ -214,7 +215,7 @@ describe('OneSignalSDKWorker — personalização local do lembrete', () => {
 
     it('modo diagnóstico escreve o motivo na própria notificação', async () => {
         // Único canal legível sem DevTools no aparelho onde isto é depurado.
-        const ontem: Card = { ...CARD_HOJE!, date: '2020-01-01' };
+        const ontem: Card = { ...CARD_HOJE, date: '2020-01-01' };
         const { firePush, shown } = loadWorker(ontem, { diagnostico: true });
         await firePush();
 
@@ -231,8 +232,33 @@ describe('OneSignalSDKWorker — personalização local do lembrete', () => {
         expect(shown[0].options.body).toContain('IndexedDB');
     });
 
+    it('escolhe da lista o cartão do dia UTC corrente', async () => {
+        // O app grava hoje + próximos dias para sobreviver a uma ausência.
+        const ontem: Card = { ...CARD_HOJE, date: '2020-01-01', body: 'Falta: Velho' };
+        const depois: Card = { ...CARD_HOJE, date: '2099-12-31', body: 'Falta: Futuro' };
+        const { firePush, shown } = loadWorker([ontem, CARD_HOJE, depois]);
+        await firePush();
+
+        expect(shown).toHaveLength(1);
+        expect(shown[0].options.body).toBe('Faltam: Meditar');
+    });
+
+    it('mantém a genérica quando nenhum cartão da lista cobre hoje', async () => {
+        const ontem: Card = { ...CARD_HOJE, date: '2020-01-01' };
+        const { firePush, shown } = loadWorker([ontem]);
+        await firePush();
+
+        expect(shown).toHaveLength(0);
+    });
+
+    it('mantém a genérica quando a lista está vazia', async () => {
+        const { firePush, shown } = loadWorker([]);
+        await firePush();
+        expect(shown).toHaveLength(0);
+    });
+
     it('mantém a notificação genérica quando o cartão é de outro dia', async () => {
-        const ontem: Card = { ...CARD_HOJE!, date: '2020-01-01' };
+        const ontem: Card = { ...CARD_HOJE, date: '2020-01-01' };
         const { firePush, shown } = loadWorker(ontem);
         await firePush();
 

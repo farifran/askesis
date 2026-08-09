@@ -21,6 +21,12 @@ export const CALENDAR_TURBO_TIME_WINDOW_MS = 1500;
 
 export const QUOTE_COLLAPSE_DEBOUNCE_MS = 120;
 
+/**
+ * Dias à frente de hoje que recebem frase pré-calculada para o lembrete.
+ * Precisa acompanhar DAYS_AHEAD em services/notificationCard.ts.
+ */
+export const NOTIFICATION_QUOTE_DAYS = 5;
+
 export const BOOT_RELOAD_DELAY_MS = 500;
 export const BOOT_SYNC_TIMEOUT_MS = 5000;
 export const LANG_LOAD_TIMEOUT_MS = 5000;
