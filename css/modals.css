@@ -33,11 +33,6 @@
     /* UX: Evita scroll chaining */
     overscroll-behavior: contain;
 }
-#edit-habit-modal .modal-content {
-    display: flex;
-    flex-direction: column;
-}
-
 /* NEW: Layout for modals with sticky headers/footers */
 .modal-content--sticky-header {
     padding: 0;
