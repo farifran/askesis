@@ -89,8 +89,20 @@
     var STORE_NAME = 'app_state';
     var CARD_KEY = 'askesis_notification_card';
 
+    /**
+     * O MESMO "hoje" que o app usa para nomear os cartões (`getTodayUTCIso`).
+     *
+     * Apesar do nome, aquele helper devolve a data do CALENDÁRIO LOCAL: ele monta
+     * `Date.UTC(...)` a partir de `getFullYear/getMonth/getDate`, que são locais.
+     * Um `toISOString().slice(0,10)` cru aqui daria a data UTC de verdade, e as
+     * duas divergem sempre que o fuso empurra o relógio para o outro dia — em
+     * Tóquio, o push das 23:00 UTC procuraria o cartão de ontem e cairia no
+     * texto genérico todo santo dia. Em BRT elas coincidem nesse horário, que é
+     * por que isso nunca apareceu aqui.
+     */
     function todayUTCIso() {
-        return new Date().toISOString().slice(0, 10);
+        var d = new Date();
+        return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())).toISOString().slice(0, 10);
     }
 
     /**

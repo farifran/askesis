@@ -9,7 +9,7 @@
  * notificação visível custa a permissão.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 
 const TAG = 'askesis-reminder';
@@ -269,5 +269,57 @@ describe('OneSignalSDKWorker — personalização local do lembrete', () => {
 
         expect(shown).toHaveLength(1);
         expect(shown[0].options.body).toContain('IndexedDB');
+    });
+
+    describe('virada do dia sem o app ser aberto', () => {
+        // O caso que motivou gravar uma janela de dias: quem passa o dia sem
+        // abrir o Askesis é justamente quem mais precisa do lembrete.
+        const janela = ['2026-03-10', '2026-03-11', '2026-03-12', '2026-03-13'].map(date => ({
+            date, lang: 'pt', title: 'Frase de ' + date, body: 'Falta: Meditar'
+        }));
+
+        /** O push do dia: cron às 23:00 UTC. */
+        const noDia = (dateISO: string) => vi.setSystemTime(new Date(`${dateISO}T23:00:00Z`));
+
+        afterEach(() => { vi.useRealTimers(); });
+
+        it('pega o cartão do dia novo, escrito dias antes', async () => {
+            vi.useFakeTimers();
+            noDia('2026-03-12');
+            const { firePush, shown } = loadWorker(janela);
+            await firePush();
+
+            expect(shown[0].title).toBe('Frase de 2026-03-12');
+        });
+
+        it('usa o mesmo "hoje" do app, não a data UTC crua', async () => {
+            // `getTodayUTCIso` nomeia os cartões pelo calendário LOCAL. Num fuso
+            // adiantado, a data UTC às 23:00 ainda é a de ontem: procurar por ela
+            // derrubaria o lembrete para o genérico todo dia. Em BRT as duas
+            // coincidem nesse horário, e foi por isso que passou despercebido.
+            const tz = process.env.TZ;
+            process.env.TZ = 'Asia/Tokyo';
+            try {
+                vi.useFakeTimers();
+                noDia('2026-03-12'); // 23:00 UTC = 08:00 do dia 13 em Tóquio
+                const { firePush, shown } = loadWorker(janela);
+                await firePush();
+
+                expect(shown[0].title).toBe('Frase de 2026-03-13');
+            } finally {
+                process.env.TZ = tz;
+            }
+        });
+
+        it('esgotada a janela, volta ao texto genérico do servidor', async () => {
+            // Pendências velhas seriam pior que o texto neutro.
+            vi.useFakeTimers();
+            noDia('2026-03-14');
+            const { firePush, shown } = loadWorker(janela);
+            await firePush();
+
+            expect(shown).toHaveLength(1);
+            expect(shown[0].title).toBe(GENERICO.title);
+        });
     });
 });

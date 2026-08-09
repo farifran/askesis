@@ -3,10 +3,10 @@
  * @description Cartão pré-renderizado que o Service Worker lê para personalizar o lembrete.
  */
 
-import { describe, it, expect, beforeEach, beforeAll } from 'vitest';
-import { state, HABIT_STATE } from '../state';
+import { describe, it, expect, beforeEach, beforeAll, afterEach, vi } from 'vitest';
+import { state, HABIT_STATE, clearAllCaches } from '../state';
 import { HabitService } from './HabitService';
-import { getTodayUTCIso, toUTCIsoDateString, addDays, parseUTCIsoDate } from '../utils';
+import { getTodayUTCIso, toUTCIsoDateString, addDays, parseUTCIsoDate, resetTodayCache } from '../utils';
 import { setLanguage } from '../i18n';
 import { buildNotificationCards, setNotificationQuotes } from './notificationCard';
 import { createTestHabit, clearTestState } from '../tests/test-utils';
@@ -171,5 +171,117 @@ describe('buildNotificationCard', () => {
 
         expect(() => buildNotificationCards()).not.toThrow();
         expect(todayCard()).toBeUndefined();
+    });
+});
+
+/**
+ * O cartão de um dia futuro é escrito ANTES desse dia chegar. Estes testes
+ * cobrem a pergunta que só a virada responde: quando o dia vira, o lembrete
+ * encontra um cartão, e o conteúdo dele é o do dia certo.
+ */
+describe('buildNotificationCards — virada do dia', () => {
+    const DIA_D = '2026-03-10';
+    const dia = (offset: number) => toUTCIsoDateString(addDays(parseUTCIsoDate(DIA_D), offset));
+
+    /**
+     * Congela o relógio ao meio-dia UTC do dia pedido.
+     *
+     * `getTodayUTCIso` guarda a data por 60s — sem limpar esse cache, viajar no
+     * tempo não muda o "hoje" que os cartões enxergam. Em produção o próprio
+     * TTL cobre a virada com o app aberto.
+     */
+    const viajarPara = (dateISO: string) => {
+        vi.setSystemTime(new Date(`${dateISO}T12:00:00Z`));
+        resetTodayCache();
+    };
+
+    beforeAll(async () => {
+        await setLanguage('pt');
+    });
+
+    beforeEach(() => {
+        clearTestState();
+        setNotificationQuotes({});
+        vi.useFakeTimers();
+        viajarPara(DIA_D);
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+        resetTodayCache();
+    });
+
+    it('o cartão de amanhã, escrito hoje, é igual ao que amanhã produziria', () => {
+        // É o teste central da antecipação: o lembrete de amanhã não pode
+        // depender de o app ser aberto amanhã.
+        createTestHabit({ name: 'Meditar', time: 'Morning', goalType: 'check' });
+        setNotificationQuotes({ [dia(1)]: 'Frase de amanhã.' });
+
+        const escritoHoje = buildNotificationCards().find(c => c.date === dia(1));
+
+        viajarPara(dia(1));
+        clearAllCaches();
+        const escritoAmanha = buildNotificationCards().find(c => c.date === dia(1));
+
+        expect(escritoHoje).toEqual(escritoAmanha);
+        expect(escritoHoje!.title).toBe('Frase de amanhã.');
+        expect(escritoHoje!.body).toContain('Meditar');
+    });
+
+    it('respeita a agenda do dia do cartão, não a de hoje', () => {
+        // Hábito só no mesmo dia da semana que hoje: os dias D+1..D+5 ficam
+        // vazios, e cartão nenhum pode inventar pendência para eles.
+        const id = createTestHabit({ name: 'Semanal', time: 'Morning', goalType: 'check' });
+        const habito = state.habits.find(h => h.id === id)!;
+        habito.scheduleHistory[0].frequency = {
+            type: 'specific_days_of_week',
+            days: [parseUTCIsoDate(DIA_D).getUTCDay()]
+        };
+        clearAllCaches();
+
+        expect(buildNotificationCards().map(c => c.date)).toEqual([DIA_D]);
+    });
+
+    it('abrir o app no dia seguinte desliza a janela inteira', () => {
+        createTestHabit({ name: 'Meditar', time: 'Morning', goalType: 'check' });
+
+        expect(buildNotificationCards().map(c => c.date)).toEqual(
+            Array.from({ length: 6 }, (_, i) => dia(i))
+        );
+
+        viajarPara(dia(1));
+        clearAllCaches();
+
+        // O dia que passou sai da lista e um novo entra no fim: sem isso a
+        // janela encolheria um dia a cada dia.
+        expect(buildNotificationCards().map(c => c.date)).toEqual(
+            Array.from({ length: 6 }, (_, i) => dia(i + 1))
+        );
+    });
+
+    it('hábito criado hoje entra nos cartões dos dias já escritos', () => {
+        // A janela é reescrita inteira a cada save; o cartão de D+3 montado
+        // antes da criação não pode sobreviver ao rebuild.
+        createTestHabit({ name: 'Antigo', time: 'Morning', goalType: 'check' });
+        expect(buildNotificationCards().find(c => c.date === dia(3))!.body).not.toContain('Novo');
+
+        createTestHabit({ name: 'Novo', time: 'Morning', goalType: 'check' });
+        // O app invalida os caches de seletor antes de salvar (`_notifyChanges`).
+        clearAllCaches();
+
+        expect(buildNotificationCards().find(c => c.date === dia(3))!.body).toContain('Novo');
+    });
+
+    it('o que foi marcado hoje não zera o cartão de amanhã', () => {
+        // Bitmask é por dia: marcar hoje não pode vazar para os dias seguintes.
+        const id = createTestHabit({ name: 'Meditar', time: 'Morning', goalType: 'check' });
+        HabitService.setStatus(id, DIA_D, 'Morning', HABIT_STATE.DONE);
+        setNotificationQuotes({ [DIA_D]: QUOTE, [dia(1)]: QUOTE });
+        clearAllCaches();
+
+        const cards = buildNotificationCards();
+
+        expect(cards.find(c => c.date === DIA_D)!.body).toBe('Tudo em dia');
+        expect(cards.find(c => c.date === dia(1))!.body).toContain('Meditar');
     });
 });
