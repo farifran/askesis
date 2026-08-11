@@ -235,6 +235,13 @@ export function triggerHaptic(type: keyof typeof HAPTIC_PATTERNS) {
     }
 }
 
+/** Contrário de triggerHaptic: corta a vibração em curso ao sair do limite. */
+export function stopHaptic() {
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        try { navigator.vibrate(0); } catch {}
+    }
+}
+
 // --- CONTRASTE DE COR (hot path do render de cartões) ---
 let themeColors: { light: string; dark: string } | null = null;
 const contrastCache = new Map<string, string>();

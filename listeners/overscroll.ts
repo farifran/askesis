@@ -10,7 +10,7 @@
  * `MAX_OVERSCROLL_PX` e retorna com animação elástica.
  */
 
-import { triggerHaptic } from '../utils';
+import { triggerHaptic, stopHaptic } from '../utils';
 
 const MAX_OVERSCROLL_PX = 10; // deslocamento máximo visual
 const SCALE_FACTOR = 0.35; // reduz impacto do delta do gesto
@@ -79,7 +79,7 @@ export function setupOverscroll(container: HTMLElement) {
         if (limitVibrationTimer) {
             clearInterval(limitVibrationTimer);
             limitVibrationTimer = null;
-            if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(0);
+            stopHaptic();
         }
     }
 

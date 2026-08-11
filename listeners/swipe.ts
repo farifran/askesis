@@ -14,7 +14,7 @@
  *    - Feedback visual (.is-charging) informa o usuário.
  */
 
-import { triggerHaptic } from '../utils';
+import { triggerHaptic, stopHaptic } from '../utils';
 import { DOM_SELECTORS, CSS_CLASSES } from '../render/constants';
 import { renderApp } from '../render';
 import { state } from '../state';
@@ -73,7 +73,7 @@ const _stopLimitVibration = () => {
     if (SwipeMachine.limitVibrationTimer) {
         clearInterval(SwipeMachine.limitVibrationTimer);
         SwipeMachine.limitVibrationTimer = 0;
-        if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(0);
+        stopHaptic();
     }
 };
 
