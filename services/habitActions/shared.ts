@@ -10,8 +10,7 @@
 
 import {
     state, HabitSchedule, Habit, TimeOfDay,
-    clearScheduleCache, clearActiveHabitsCache, invalidateCachesForDateChange,
-    HabitDailyInfo
+    clearScheduleCache, clearActiveHabitsCache, invalidateCachesForDateChange
 } from '../../state';
 import { saveState } from '../persistence';
 import { clearSelectorInternalCaches } from '../selectors';

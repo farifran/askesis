@@ -10,7 +10,7 @@
 
 import { state, TimeOfDay, HABIT_STATE, ensureHabitDailyInfo } from '../../state';
 import { getEffectiveScheduleForHabitOnDate, getHabitDisplayInfo, getHabitPropertiesForDate } from '../selectors';
-import { getSafeDate, parseUTCIsoDate, toUTCIsoDateString } from '../../utils';
+import { getSafeDate, parseUTCIsoDate } from '../../utils';
 import { showConfirmationModal } from '../../render';
 import { HabitService } from '../HabitService';
 import { t, getTimeOfDayName, formatDate } from '../../i18n';

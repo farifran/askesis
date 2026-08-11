@@ -10,9 +10,8 @@
 
 import {
     state, TimeOfDay, HABIT_STATE, Habit,
-    ensureHabitDailyInfo, ensureHabitInstanceData,
-    invalidateCachesForDateChange, STREAK_SEMI_CONSOLIDATED, STREAK_CONSOLIDATED,
-    HabitDayData
+    ensureHabitInstanceData,
+    invalidateCachesForDateChange, STREAK_SEMI_CONSOLIDATED, STREAK_CONSOLIDATED
 } from '../../state';
 import {
     getEffectiveScheduleForHabitOnDate, shouldHabitAppearOnDate,

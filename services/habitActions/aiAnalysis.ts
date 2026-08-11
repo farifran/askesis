@@ -13,7 +13,7 @@ import {
 } from '../../state';
 import {
     getTodayUTCIso, parseUTCIsoDate, addDays, toUTCIsoDateString,
-    logger, escapeHTML
+    escapeHTML
 } from '../../utils';
 import {
     closeModal, showConfirmationModal, renderAINotificationState, openModal

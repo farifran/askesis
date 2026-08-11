@@ -26,7 +26,7 @@
 import { state, isChartDataDirty } from '../state';
 import { calculateDaySummary } from '../services/selectors';
 import { ui } from './ui';
-import { t, formatDate, formatDecimal, formatEvolution } from '../i18n';
+import { t, formatDate, formatEvolution } from '../i18n';
 import { getTodayUTCIso, parseUTCIsoDate, toUTCIsoDateString, MS_PER_DAY, logger } from '../utils';
 import { setTextContent, setTrustedHtmlFragment } from './dom';
 import {
@@ -250,7 +250,6 @@ function _generateChartPaths(chartData: ChartDataPoint[], chartWidthPx: number):
     }
 
     const areaBaseY = yBase - ((minVal - minVal) * yFactor);
-    const lastX = paddingLeft + (len - 1) * xStep;
     const areaPathData = linePathData + ' V ' + areaBaseY + ' L ' + firstX + ' ' + areaBaseY + ' Z';
     
     return { areaPathData, linePathData };

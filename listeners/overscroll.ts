@@ -157,7 +157,7 @@ export function setupOverscroll(container: HTMLElement) {
         const dy = touchY - lastTouchY; // positive = pulling down
         lastTouchY = touchY;
 
-        const { maxScroll, atTop, atBottom } = readEdges();
+        const { atTop, atBottom } = readEdges();
 
         // If the user attempts to scroll beyond bounds, activate overscroll visual
         if ((atTop && dy > 0) || (atBottom && dy < 0)) {

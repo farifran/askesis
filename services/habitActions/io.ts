@@ -8,7 +8,7 @@
  * @description Import/export de dados em formato JSON.
  */
 
-import { state, HabitDailyInfo, getPersistableState } from '../../state';
+import { getPersistableState } from '../../state';
 import { getTodayUTCIso, sanitizeText } from '../../utils';
 import { closeModal, showConfirmationModal } from '../../render';
 import { ui } from '../../render/ui';

@@ -9,7 +9,7 @@
  * @description Motor de Renderização de Modais e Diálogos (UI Overlay Layer).
  */
 
-import { state, Habit, HabitTemplate, Frequency, TimeOfDay, STREAK_CONSOLIDATED, FREQUENCIES, LANGUAGES, getHabitDailyInfoForDate, MAX_HABIT_NAME_LENGTH } from '../state';
+import { state, Habit, HabitTemplate, Frequency, TimeOfDay, STREAK_CONSOLIDATED, LANGUAGES, getHabitDailyInfoForDate, MAX_HABIT_NAME_LENGTH } from '../state';
 import { PREDEFINED_HABITS } from '../data/predefinedHabits';
 import { getScheduleForDate, calculateHabitStreak, getHabitDisplayInfo } from '../services/selectors';
 import { ui } from './ui';

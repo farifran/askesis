@@ -12,7 +12,7 @@
 import { state } from '../state';
 import { calculateDaySummary } from '../services/selectors';
 import { ui } from './ui';
-import { toUTCIsoDateString, parseUTCIsoDate, pad2, getTodayUTCIso } from '../utils';
+import { parseUTCIsoDate, pad2, getTodayUTCIso } from '../utils';
 import { formatInteger } from '../i18n';
 import { setTextContent } from './dom';
 import { CSS_CLASSES } from './constants';

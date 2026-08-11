@@ -14,7 +14,7 @@ import {
 } from '../../state';
 import type { HabitTemplate } from '../../state';
 import { generateUUID, sanitizeText } from '../../utils';
-import { getEffectiveScheduleForHabitOnDate, getHabitDisplayInfo } from '../selectors';
+import { getHabitDisplayInfo } from '../selectors';
 import { closeModal } from '../../render';
 import { ui } from '../../render/ui';
 import { t } from '../../i18n';

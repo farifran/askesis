@@ -8,10 +8,7 @@
  * @description Deleção permanente, arquivamento, graduação e reset de dados.
  */
 
-import {
-    state, clearAllCaches,
-    STREAK_SEMI_CONSOLIDATED, STREAK_CONSOLIDATED
-} from '../../state';
+import { state, clearAllCaches } from '../../state';
 import { getSafeDate, logger, toUTCIsoDateString, addDays, parseUTCIsoDate, getTodayUTCIso, triggerHaptic } from '../../utils';
 import { ARCHIVE_IDLE_FALLBACK_MS, ARCHIVE_DAYS_THRESHOLD } from '../../constants';
 import { showConfirmationModal } from '../../render';
@@ -21,8 +18,7 @@ import { clearKey } from '../api';
 import { HabitService } from '../HabitService';
 import { getHabitDisplayInfo } from '../selectors';
 import { t } from '../../i18n';
-import { emitRenderApp, emitHabitsChanged } from '../../events';
-import { renderAINotificationState } from '../../render';
+import { emitRenderApp } from '../../events';
 import { ActionContext, _lockActionHabit, _notifyChanges } from './shared';
 
 const _applyHabitDeletion = async () => {

@@ -25,7 +25,7 @@ import { renderApp, initI18n, updateUIText, showConfirmationModal } from './rend
 import { setupEventListeners } from './listeners';
 import { handleDayTransition, performArchivalCheck } from './services/habitActions';
 import { initSync } from './listeners/sync';
-import { fetchStateFromCloud, syncStateWithCloud, setSyncStatus } from './services/cloud';
+import { fetchStateFromCloud, syncStateWithCloud } from './services/cloud';
 import { hasLocalSyncKey, initAuth } from './services/api';
 import { updateAppBadge } from './services/badge';
 import { setupMidnightLoop, logger } from './utils';

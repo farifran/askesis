@@ -10,7 +10,7 @@
 
 import { ui } from '../render/ui';
 import { state } from '../state';
-import { renderApp, renderFullCalendar, openModal, closeModal, viewTransitionRender } from '../render';
+import { renderFullCalendar, openModal, closeModal, viewTransitionRender } from '../render';
 import { appendDayToStrip, prependDayToStrip, scrollToSelectedDate } from '../render/calendar';
 import { parseUTCIsoDate, triggerHaptic, getTodayUTCIso, getNormalizedKeyboardKey, isActivationKeyboardEvent } from '../utils';
 import { CSS_CLASSES, DOM_SELECTORS } from '../render/constants';
