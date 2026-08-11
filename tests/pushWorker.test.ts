@@ -9,12 +9,26 @@
  * notificação visível custa a permissão.
  */
 
-import { describe, it, expect, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 
 const TAG = 'askesis-reminder';
 const MARKER = 'askesis-reminder';
-const TODAY = new Date().toISOString().slice(0, 10);
+/**
+ * O MESMO "hoje" que o app e o worker usam para nomear os cartões.
+ *
+ * `getTodayUTCIso` monta `Date.UTC(...)` a partir de `getFullYear/getMonth/
+ * getDate`, que são LOCAIS: apesar do nome, devolve a data do calendário local.
+ * Um `toISOString().slice(0,10)` cru aqui daria a data UTC de verdade, e as duas
+ * divergem sempre que o fuso empurra o relógio para o outro dia — era o que
+ * fazia estes testes quebrarem sozinhos das 21h à meia-noite em BRT, sem que
+ * nada no produto estivesse errado. É a mesma armadilha que o teste de Tóquio
+ * mais abaixo já cobre no worker.
+ */
+const TODAY = (() => {
+    const d = new Date();
+    return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())).toISOString().slice(0, 10);
+})();
 
 /** Texto genérico que o servidor manda e o SDK exibiria sozinho. */
 const GENERICO = { title: 'Hábitos pendentes', alert: 'Como estão seus hábitos hoje?' };
@@ -281,7 +295,14 @@ describe('OneSignalSDKWorker — personalização local do lembrete', () => {
         /** O push do dia: cron às 23:00 UTC. */
         const noDia = (dateISO: string) => vi.setSystemTime(new Date(`${dateISO}T23:00:00Z`));
 
-        afterEach(() => { vi.useRealTimers(); });
+        // Este bloco mede dependência de fuso, então FIXA o fuso em vez de
+        // herdá-lo da máquina: às 23:00 UTC quem está adiantado já virou o dia,
+        // e os casos que não são sobre isso passariam a medir onde o teste roda
+        // (falhavam em Tóquio e Kiritimati, passavam em BRT e UTC). O caso do
+        // fuso adiantado sobrescreve isto por conta própria, logo abaixo.
+        const tzAmbiente = process.env.TZ;
+        beforeEach(() => { process.env.TZ = 'America/Sao_Paulo'; });
+        afterEach(() => { process.env.TZ = tzAmbiente; vi.useRealTimers(); });
 
         it('pega o cartão do dia novo, escrito dias antes', async () => {
             vi.useFakeTimers();
