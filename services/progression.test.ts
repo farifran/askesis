@@ -523,6 +523,47 @@ describe('regressão e caducidade', () => {
         expect(state.quests[0].days).toEqual([]);
     });
 
+    it('dia no futuro não conta como avanço', () => {
+        // Um aparelho com o relógio adiantado (ou um backup editado) gravava
+        // datas à frente de hoje; elas entravam na contagem sem nenhum ciclo
+        // fechado correspondente e fechavam o objetivo sem trabalho nenhum.
+        const amanha = toUTCIsoDateString(addDays(parseUTCIsoDate(getTodayUTCIso()), 1));
+        const depois = toUTCIsoDateString(addDays(parseUTCIsoDate(getTodayUTCIso()), 2));
+        const quest = seed(dailyQuest.id, getTodayUTCIso(), [amanha, depois]);
+
+        expect(getQuestNetProgress(quest)).toBe(0);
+        expect(getQuestProgress(quest)).toBe(0);
+        expect(getProgression().totalXp).toBe(0);
+    });
+
+    it('o grau memoizado não atravessa a meia-noite', () => {
+        // REGRESSÃO: a chave do memo era só a geração do estado, e a virada do
+        // dia não escreve nada — a leitura ficava congelada no valor de ontem
+        // até que alguma outra ação bumpasse a geração.
+        //
+        // A sonda é um dia marcado à frente (chega assim de um aparelho com o
+        // relógio adiantado): hoje ele não conta, amanhã conta, e nada no estado
+        // muda entre os dois momentos.
+        const tz = process.env.TZ;
+        process.env.TZ = 'UTC';
+        vi.useFakeTimers();
+        try {
+            vi.setSystemTime(new Date('2026-03-10T12:00:00Z'));
+            resetTodayCache();
+            state.quests = [{ id: dailyQuest.id, startedOn: '2026-03-10', days: ['2026-03-11'] }];
+            expect(getProgression().totalXp).toBe(0);
+
+            vi.setSystemTime(new Date('2026-03-11T12:00:00Z'));
+            resetTodayCache();
+            const stepXp = Math.max(QUEST_MIN_STEP_XP, Math.round(dailyQuest.xp / dailyQuest.target));
+            expect(getProgression().totalXp).toBe(stepXp);
+        } finally {
+            vi.useRealTimers();
+            process.env.TZ = tz;
+            resetTodayCache();
+        }
+    });
+
     it('concluído e abandonado não caducam depois', () => {
         state.quests = [
             { id: dailyQuest.id, startedOn: daysAgo(30), days: [daysAgo(30)], completedOn: daysAgo(28) },

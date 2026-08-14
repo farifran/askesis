@@ -1064,6 +1064,24 @@ describe('🔗 Deduplication by Name (Habit Name Collision Prevention)', () => {
             return (merged as any).quests as any[];
         };
 
+        it('não devolve o objeto de notas por referência', async () => {
+            // REGRESSÃO: com um dos lados sem notas, o merge devolvia o objeto do
+            // outro sem copiar. `setQuestNote` apaga nota com `delete` in-place,
+            // então apagar depois do merge sumia com ela também no estado de
+            // origem — inclusive no checkpoint de recuperação de conflito.
+            const minhasNotas = { '2026-01-02': 'custou' };
+            const quests = await mergeQuestStates(
+                [{ ...quest({ days: ['2026-01-02'] }), notes: minhasNotas }],
+                [quest({ days: ['2026-01-03'] })]
+            );
+
+            expect(quests[0].notes).toEqual(minhasNotas);
+            expect(quests[0].notes).not.toBe(minhasNotas);
+
+            delete quests[0].notes['2026-01-02'];
+            expect(minhasNotas['2026-01-02']).toBe('custou');
+        });
+
         it('une os dias registrados dos dois aparelhos', async () => {
             const quests = await mergeQuestStates(
                 [quest({ days: ['2026-01-02', '2026-01-03'] })],

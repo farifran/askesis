@@ -150,6 +150,25 @@ export function getCatalogStepXp(target: number, xp: number): number {
     return Math.max(QUEST_MIN_STEP_XP, Math.round(xp / target));
 }
 
+/**
+ * Data ISO → epoch, memoizado.
+ *
+ * `parseUTCIsoDate` constrói um `Date` e valida o overflow a cada chamada, e o
+ * motor pergunta a mesma data dezenas de vezes por render — um objetivo de 365
+ * dias custava 365 parses por chamada, e são várias por repintura. Memoizar o
+ * número (e não o `Date`, que é mutável) é seguro por construção: a mesma
+ * string devolve sempre o mesmo instante, então não há o que invalidar.
+ */
+const dayEpochCache = new Map<string, number>();
+function dayEpoch(dateISO: string): number {
+    let ms = dayEpochCache.get(dateISO);
+    if (ms === undefined) {
+        ms = parseUTCIsoDate(dateISO).getTime();
+        dayEpochCache.set(dateISO, ms);
+    }
+    return ms;
+}
+
 /** Cadência esperada, em dias, entre um avanço e o seguinte (1 = diário). */
 function getQuestCadence(quest: QuestRecord): number {
     return getQuestCatalogItem(quest.id)?.cadence ?? 1;
@@ -168,11 +187,16 @@ function getQuestCadence(quest: QuestRecord): number {
  */
 function markedCycles(quest: QuestRecord, anchorISO: string): Map<number, string[]> {
     const cadence = getQuestCadence(quest);
-    const from = parseUTCIsoDate(anchorISO).getTime();
+    const from = dayEpoch(anchorISO);
+    const today = getTodayUTCIso();
     const cycles = new Map<number, string[]>();
 
     for (const day of quest.days) {
-        const offset = Math.round((parseUTCIsoDate(day).getTime() - from) / MS_PER_DAY);
+        // Dia à frente de hoje não é avanço: um aparelho com o relógio adiantado
+        // (ou um backup editado) fecharia o objetivo sem nenhum ciclo cumprido.
+        // Filtrar na leitura se corrige sozinho quando a data enfim chega.
+        if (day > today) continue;
+        const offset = Math.round((dayEpoch(day) - from) / MS_PER_DAY);
         const index = Math.floor(offset / cadence);
         const existing = cycles.get(index);
         if (existing) existing.push(day);
@@ -205,10 +229,10 @@ function attemptStart(quest: QuestRecord): string {
  * sincronizam chegam ao mesmo número sem nenhum campo para conciliar.
  */
 export function getQuestNetProgress(quest: QuestRecord): number {
-    const from = parseUTCIsoDate(attemptStart(quest)).getTime();
+    const from = dayEpoch(attemptStart(quest));
     const cadence = getQuestCadence(quest);
 
-    const closedDays = Math.max(0, Math.round((parseUTCIsoDate(getTodayUTCIso()).getTime() - from) / MS_PER_DAY));
+    const closedDays = Math.max(0, Math.round((dayEpoch(getTodayUTCIso()) - from) / MS_PER_DAY));
     const closedCycles = Math.floor(closedDays / cadence);
 
     // Ciclos com avanço, não dias marcados: dois avanços na mesma semana valem
@@ -278,8 +302,8 @@ export function getCompletedQuestIds(): Set<string> {
  * reabria no dia seguinte e aceitava uma marcação que não rendia nada.
  */
 export function isQuestRegisteredForCycleOf(quest: QuestRecord, dateISO: string): boolean {
-    const from = parseUTCIsoDate(attemptStart(quest)).getTime();
-    const offset = Math.round((parseUTCIsoDate(dateISO).getTime() - from) / MS_PER_DAY);
+    const from = dayEpoch(attemptStart(quest));
+    const offset = Math.round((dayEpoch(dateISO) - from) / MS_PER_DAY);
     return markedCycles(quest, attemptStart(quest)).has(Math.floor(offset / getQuestCadence(quest)));
 }
 
@@ -358,18 +382,37 @@ function cappedQuestXp(): number {
 // --- AGREGADO (memoizado) ---
 
 let cachedGrade: GradeInfo | null = null;
-let cachedForGeneration = -1;
+let cachedTierState: { tier: number; pending: number } | null = null;
+let cachedEpoch = '';
+
+/**
+ * Chave dos memos deste módulo: geração do estado MAIS o dia corrente.
+ *
+ * A geração sozinha não bastava. Caducidade e avanço líquido saem da comparação
+ * com a data de hoje, e a virada do dia não escreve nada no estado — o grau
+ * memoizado atravessava a meia-noite com o valor de ontem até que alguma outra
+ * ação bumpasse a geração. A geração continua na chave porque reset, import e
+ * volta da nuvem podem reinstalar um `lastModified` já visto.
+ */
+function currentEpoch(): string {
+    const epoch = `${getStateGeneration()}:${getTodayUTCIso()}`;
+    if (epoch !== cachedEpoch) {
+        cachedEpoch = epoch;
+        cachedGrade = null;
+        cachedTierState = null;
+    }
+    return epoch;
+}
 
 /**
  * Grau e XP atuais.
  *
  * A varredura dos bitmasks é barata mas não é de graça, e `renderApp` chega aqui
- * a cada frame de navegação entre dias. A chave é a geração do estado, e não
- * `lastModified`: reset, import e volta da nuvem podem reinstalar um timestamp
- * já visto, e o cache devolveria um grau calculado sobre outros dados.
+ * a cada frame de navegação entre dias.
  */
 export function getProgression(): GradeInfo {
-    if (cachedGrade && cachedForGeneration === getStateGeneration()) return cachedGrade;
+    currentEpoch();
+    if (cachedGrade) return cachedGrade;
 
     const { done, overachieved } = countCompletions();
     const habitXp = done * XP_PER_COMPLETION + overachieved * (XP_PER_COMPLETION + XP_PER_OVERACHIEVEMENT);
@@ -377,7 +420,6 @@ export function getProgression(): GradeInfo {
     // Hábito não tem teto; objetivo tem, por leva. Somar depois do corte é o que
     // garante que o teto limite os objetivos e não a disciplina diária.
     cachedGrade = gradeFromXp(habitXp + cappedQuestXp());
-    cachedForGeneration = getStateGeneration();
     return cachedGrade;
 }
 
@@ -406,6 +448,16 @@ export type UnlockStatus =
  * outro, e separá-los custava cinco varreduras do catálogo em vez de uma.
  */
 function currentTierState(): { tier: number; pending: number } {
+    // Memoizado porque o catálogo pergunta uma vez por LINHA, e cada resposta
+    // custava uma varredura das 54 entradas mais duas da lista de objetivos.
+    currentEpoch();
+    if (cachedTierState) return cachedTierState;
+
+    cachedTierState = computeTierState();
+    return cachedTierState;
+}
+
+function computeTierState(): { tier: number; pending: number } {
     const completedIds = getCompletedQuestIds();
     const activeIds = new Set(getActiveQuests().map(quest => quest.id));
 
@@ -559,8 +611,8 @@ export function toggleQuestProgress(questId: string): QuestActionResult {
     if (isQuestRegisteredForCycleOf(quest, today)) {
         // Desfaz o avanço DESTE ciclo, que num objetivo diário é o dia de hoje e
         // num semanal é o dia em que a semana foi registrada.
-        const from = parseUTCIsoDate(attemptStart(quest)).getTime();
-        const cycleOfToday = Math.floor(Math.round((parseUTCIsoDate(today).getTime() - from) / MS_PER_DAY) / getQuestCadence(quest));
+        const from = dayEpoch(attemptStart(quest));
+        const cycleOfToday = Math.floor(Math.round((dayEpoch(today) - from) / MS_PER_DAY) / getQuestCadence(quest));
         const desfeitos = new Set(markedCycles(quest, attemptStart(quest)).get(cycleOfToday) ?? []);
 
         quest.days = quest.days.filter(day => !desfeitos.has(day));

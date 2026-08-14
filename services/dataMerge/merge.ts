@@ -80,8 +80,12 @@ function mergeQuestNotes(
     winner?: Record<string, string>,
     loser?: Record<string, string>
 ): Record<string, string> | undefined {
-    if (!winner) return loser;
-    if (!loser) return winner;
+    // Cópia mesmo quando um dos lados falta: devolver a referência faria o estado
+    // mesclado dividir o objeto com o de entrada, e `setQuestNote` apaga nota com
+    // `delete` in-place — o checkpoint de recuperação de conflito perderia a nota
+    // junto. `days` logo abaixo já se protege assim.
+    if (!winner) return loser && { ...loser };
+    if (!loser) return { ...winner };
     return { ...loser, ...winner };
 }
 

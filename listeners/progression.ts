@@ -111,6 +111,14 @@ function submitCustomQuest() {
 
     const result = createCustomQuest(title, target);
     if (!result.ok) {
+        // Slots cheios não é problema do nome: marcar o campo apontaria para o
+        // único dado que estava certo. Vibra e para, como as outras recusas que
+        // a tela não explica.
+        if (result.reason !== 'invalidTitle') {
+            reportFailure();
+            return;
+        }
+
         // O erro se marca onde ele acontece. `.shake` é o mesmo tremor vermelho
         // que o nome do hábito usa quando fica vazio (css/base.css) — o app já
         // tinha esta linguagem, e ela dispensa texto: cor e movimento não
