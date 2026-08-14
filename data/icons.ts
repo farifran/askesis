@@ -100,7 +100,6 @@ export const UI_ICONS = {
     swipeDelete: makeIcon(D_TRASH),
     swipeNote: makeIcon(D_PAGE),
     swipeNoteHasNote: makeFilledIcon(D_PAGE),
-    editAction: makeIcon(D_PEN),
     graduateAction: makeIcon('M22 10v6M2 10l10-5 10 5-10 5zM6 12v5c3 3 9 3 12 0v-5'),
     endAction: makeIcon(D_CIRCLE_OUTLINE + 'M15 9l-6 6M9 9l6 6'),
     deletePermanentAction: makeIcon(D_TRASH),
