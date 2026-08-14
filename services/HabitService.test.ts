@@ -111,7 +111,7 @@ describe('HabitService (Bitmasks Core)', () => {
     // SETUP: Limpa o estado global antes de cada teste para evitar contaminação
     beforeEach(() => {
         state.monthlyLogs = new Map();
-        state.uiDirtyState = { calendarVisuals: false, habitListStructure: false, chartData: false };
+        state.uiDirtyState = { calendarVisuals: false, habitListStructure: false };
         HabitService.resetCache();
     });
 
@@ -247,7 +247,7 @@ describe('🔥 NUCLEAR QA: Fuzzing & Oracle (Propriedade-Based Testing)', () => 
 
     beforeEach(() => {
         state.monthlyLogs = new Map();
-        state.uiDirtyState = { calendarVisuals: false, habitListStructure: false, chartData: false };
+        state.uiDirtyState = { calendarVisuals: false, habitListStructure: false };
         HabitService.resetCache();
 
         fuzzer = new HabitFuzzer();

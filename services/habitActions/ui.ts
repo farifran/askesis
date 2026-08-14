@@ -34,7 +34,7 @@ export function handleDayTransition() {
     pruneHabitAppearanceCache();
     pruneStreaksCache();
 
-    state.uiDirtyState.calendarVisuals = state.uiDirtyState.habitListStructure = state.uiDirtyState.chartData = true;
+    state.uiDirtyState.calendarVisuals = state.uiDirtyState.habitListStructure = true;
     state.calendarDates = [];
     if (state.selectedDate !== today) state.selectedDate = today;
     emitRenderApp();

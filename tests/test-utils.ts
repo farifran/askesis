@@ -3,7 +3,7 @@
  * @description Utilitários e helpers para facilitar os testes
  */
 
-import { state, APP_VERSION, AppState, Habit, HabitSchedule, TimeOfDay, HABIT_STATE } from '../state';
+import { state, APP_VERSION, AppState, Habit, HabitSchedule, TimeOfDay, HABIT_STATE, bumpStateGeneration } from '../state';
 import { HabitService } from '../services/HabitService';
 import { generateUUID, getTodayUTCIso } from '../utils';
 
@@ -179,9 +179,13 @@ export function clearTestState(): void {
   state.syncState = 'syncInitial';
   state.initialSyncDone = false;
   state.fullCalendar = { year: new Date().getUTCFullYear(), month: new Date().getUTCMonth() };
-  state.uiDirtyState = { calendarVisuals: true, habitListStructure: true, chartData: true };
+  state.uiDirtyState = { calendarVisuals: true, habitListStructure: true };
   state.calendarDates = [];
+  state.quests = [];
   HabitService.resetCache();
+  // `lastModified` volta a 0 aqui, então avançar a geração é o que impede um
+  // teste de herdar o grau memoizado do anterior.
+  bumpStateGeneration();
 }
 
 /**

@@ -27,6 +27,7 @@ export const QUOTE_COLLAPSE_DEBOUNCE_MS = 120;
  */
 export const NOTIFICATION_QUOTE_DAYS = 5;
 
+/** Espera antes de recarregar quando o boot falha, e teto do fetch inicial da nuvem. */
 export const BOOT_RELOAD_DELAY_MS = 500;
 export const BOOT_SYNC_TIMEOUT_MS = 5000;
 export const LANG_LOAD_TIMEOUT_MS = 5000;
@@ -35,18 +36,57 @@ export const SYNC_COPY_FEEDBACK_MS = 1500;
 export const SYNC_INPUT_FOCUS_MS = 100;
 export const CALENDAR_LONG_PRESS_MS = 500;
 
-export const CHART_DAYS = 30;
-export const CHART_INITIAL_SCORE = 100;
-export const CHART_MAX_DAILY_CHANGE_RATE = 0.025;
-export const CHART_PLUS_BONUS_MULTIPLIER = 1.5;
-export const CHART_SVG_HEIGHT = 75;
-export const CHART_PADDING = { top: 5, right: 0, bottom: 5, left: 3 } as const;
-export const CHART_MIN_VISUAL_AMPLITUDE = 2.0;
-export const CHART_SAFETY_PADDING_RATIO = 0.25;
-export const CHART_FALLBACK_WIDTH = 300;
-export const CHART_CONTAINER_PADDING_PX = 32;
-export const CHART_INTERSECTION_THRESHOLD = 0.1;
-export const CHART_CURVE_TENSION = 0.25;
+/**
+ * --- PROGRESSÃO (GRAU E XP) ---
+ *
+ * A curva é linear no incremento: o grau N custa BASE + (N-1)*STEP. Com estes
+ * números, quem cumpre 3 hábitos por dia chega ao grau 6 em um mês, ao 25 em
+ * cerca de um ano e ao 100 em torno de uma década — a escada inteira é
+ * alcançável, ao contrário do protótipo, em que zerar o catálogo parava no grau
+ * 25 e as duas patentes mais altas eram inatingíveis por construção.
+ */
+export const GRADE_XP_BASE = 120;
+export const GRADE_XP_STEP = 30;
+export const MAX_GRADE = 100;
+
+/** XP por instância de hábito concluída, e o extra de quem superou a meta. */
+export const XP_PER_COMPLETION = 10;
+export const XP_PER_OVERACHIEVEMENT = 5;
+
+export const QUEST_MAX_ACTIVE = 3;
+/**
+ * Acima disto a barra do objetivo deixa de ser dividida e volta a ser contínua.
+ * Num filete de ~280px, 31 divisões já dão ~9px cada; as 90 do desafio
+ * trimestral dariam 3px, menos que o próprio corte entre elas — viraria ruído
+ * em vez de contagem.
+ */
+export const QUEST_MAX_SEGMENTS = 31;
+/**
+ * Piso do avanço líquido: abaixo dele o objetivo sai do slot.
+ *
+ * O avanço soma um dia marcado e desconta um dia perdido, então -1 é o primeiro
+ * valor que só se alcança perdendo mais do que se fez. Quem nunca marcou some
+ * depois de um único dia inteiro de silêncio — é o que libera o slot para algo
+ * que a pessoa vá de fato fazer. Baixar para -2 dá um dia de tolerância a mais.
+ */
+export const QUEST_FAILURE_FLOOR = -1;
+/** Prêmio de maestria somado ao XP do objetivo quando ele fecha. */
+export const QUEST_MASTERY_BONUS = 0.2;
+/**
+ * Piso do XP por avanço — rede contra um item mal calibrado, não regra de preço.
+ *
+ * Era 10, e a 10 nenhum desafio de trinta dias conseguia valer menos de 300 XP:
+ * o piso passava por cima do `xp` do catálogo e estourava o teto da leva por
+ * conta própria. Em 5 ele volta a ser o que devia ser — garantia de que um passo
+ * nunca arredonda para zero. Nenhum item do catálogo o alcança hoje.
+ */
+export const QUEST_MIN_STEP_XP = 5;
+/** Objetivo personalizado tem XP derivado do alvo — o usuário não cunha o próprio. */
+export const CUSTOM_QUEST_XP_PER_DAY = 25;
+export const CUSTOM_QUEST_MAX_TARGET = 365;
+export const CUSTOM_QUEST_MAX_TITLE_LENGTH = 60;
+/** Teto da nota de um dia num objetivo; o mesmo que a nota do hábito aceita. */
+export const QUEST_NOTE_MAX_LENGTH = 500;
 
 export const HAPTIC_PATTERNS = {
 	selection: 8,

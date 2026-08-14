@@ -241,7 +241,7 @@ export function setupReelRotary({
         // CHAOS FIX: Acquire Locks
         // 1. Local Lock: Prevents render/modals.ts from overwriting position
         viewportEl.classList.add('is-interacting');
-        // 2. Global Lock: Pauses heavy rendering (charts, etc) for smoothness
+        // 2. Global Lock: Pauses heavy rendering (habit list, etc) for smoothness
         document.body.classList.add('is-interaction-active');
 
         // OPTIMIZATION: Use memory state instead of getComputedStyle.

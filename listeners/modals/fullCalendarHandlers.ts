@@ -8,7 +8,7 @@
  * @description Handlers do calendário completo (almanac modal).
  */
 
-import { state, invalidateChartCache } from '../../state';
+import { state } from '../../state';
 import { ui } from '../../render/ui';
 import { closeModal, renderFullCalendar, viewTransitionRender } from '../../render';
 import { addDays, parseUTCIsoDate, toUTCIsoDateString, triggerHaptic, getNormalizedKeyboardKey } from '../../utils';
@@ -21,7 +21,6 @@ function navigateToDateFromAlmanac(dateISO: string) {
 
     state.uiDirtyState.calendarVisuals = true;
     state.uiDirtyState.habitListStructure = true;
-    invalidateChartCache();
 
     viewTransitionRender(flipDir);
 

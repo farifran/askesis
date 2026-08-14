@@ -9,10 +9,11 @@
  * @description Inicializador de Estado e Sanitizador de Schema.
  */
 
-import { logger, getTodayUTCIso } from '../utils';
-import { AppState, SyncLog } from '../state';
+import { logger, getTodayUTCIso, sanitizeText } from '../utils';
+import { AppState, SyncLog, QuestRecord } from '../state';
 import { normalizeHabitMode, normalizeTimesByMode, normalizeFrequencyByMode } from './habitActions';
 import { HabitService } from './HabitService';
+import { CUSTOM_QUEST_MAX_TITLE_LENGTH, QUEST_NOTE_MAX_LENGTH } from '../constants';
 
 /**
  * Migra os bitmasks mensais de 6 bits/dia (v8) para 9 bits/dia (v9).
@@ -44,6 +45,69 @@ function migrateBitmasksV8toV9(logs: Map<string, bigint>): Map<string, bigint> {
     return newMap;
 }
 
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Aceita apenas registros de objetivo com forma reconhecível e descarta o resto.
+ *
+ * Roda contra dados que podem vir da nuvem de outro aparelho ou de um import
+ * manual, então trata tudo como hostil: `days` é deduplicado e ordenado aqui
+ * para que `days.length` seja de fato o progresso, e não a contagem de um dia
+ * gravado duas vezes por um merge malfeito.
+ */
+/**
+ * Notas de objetivo vindas de um JSON importado: só chaves de data válida e texto
+ * saneado, e nada de `__proto__` — é o mesmo cuidado que `dailyData` recebe.
+ */
+function sanitizeQuestNotes(raw: unknown): Record<string, string> | undefined {
+    if (!raw || typeof raw !== 'object') return undefined;
+
+    const notes: Record<string, string> = Object.create(null);
+    let found = false;
+    for (const [date, text] of Object.entries(raw as Record<string, unknown>)) {
+        if (!ISO_DATE.test(date) || typeof text !== 'string') continue;
+        const clean = sanitizeText(text, QUEST_NOTE_MAX_LENGTH);
+        if (!clean) continue;
+        notes[date] = clean;
+        found = true;
+    }
+    return found ? { ...notes } : undefined;
+}
+
+function sanitizeQuests(raw: unknown): QuestRecord[] {
+    if (!Array.isArray(raw)) return [];
+
+    const seen = new Set<string>();
+    const result: QuestRecord[] = [];
+
+    for (const entry of raw) {
+        if (!entry || typeof entry !== 'object') continue;
+        const quest = entry as Partial<QuestRecord>;
+        if (typeof quest.id !== 'string' || !quest.id || seen.has(quest.id)) continue;
+        seen.add(quest.id);
+
+        const days = Array.isArray(quest.days)
+            ? Array.from(new Set(quest.days.filter((d): d is string => typeof d === 'string' && ISO_DATE.test(d)))).sort()
+            : [];
+
+        result.push({
+            id: quest.id,
+            startedOn: typeof quest.startedOn === 'string' && ISO_DATE.test(quest.startedOn) ? quest.startedOn : getTodayUTCIso(),
+            days,
+            attemptFrom: typeof quest.attemptFrom === 'string' && ISO_DATE.test(quest.attemptFrom) ? quest.attemptFrom : undefined,
+            notes: sanitizeQuestNotes(quest.notes),
+            completedOn: typeof quest.completedOn === 'string' && ISO_DATE.test(quest.completedOn) ? quest.completedOn : undefined,
+            abandonedOn: typeof quest.abandonedOn === 'string' && ISO_DATE.test(quest.abandonedOn) ? quest.abandonedOn : undefined,
+            // O título de objetivo personalizado é o único texto livre daqui, e
+            // pode chegar de um JSON importado — mesmo tratamento do nome de hábito.
+            customTitle: typeof quest.customTitle === 'string' ? sanitizeText(quest.customTitle, CUSTOM_QUEST_MAX_TITLE_LENGTH) : undefined,
+            customTarget: typeof quest.customTarget === 'number' && Number.isFinite(quest.customTarget) ? quest.customTarget : undefined
+        });
+    }
+
+    return result;
+}
+
 export function migrateState(loadedState: unknown, targetVersion: number): AppState {
     // 1. FRESH INSTALL / NULL STATE
     if (!loadedState) {
@@ -59,6 +123,7 @@ export function migrateState(loadedState: unknown, targetVersion: number): AppSt
             pendingConsolidationHabitIds: [], 
             hasOnboarded: true,
             syncLogs: [],
+            quests: [],
             monthlyLogs: new Map(),
             aiDailyCount: 0,
             aiQuotaDate: getTodayUTCIso(),
@@ -98,6 +163,11 @@ export function migrateState(loadedState: unknown, targetVersion: number): AppSt
     if (state.hasOnboarded === undefined) {
         Object.assign(state, { hasOnboarded: true });
     }
+
+    // 5. SCHEMA UPGRADE: V11 -> V12 (Progressão e Objetivos Secundários)
+    // Estado anterior à v12 não tem `quests`; o sanitizador devolve [] e o grau
+    // passa a ser derivado apenas do histórico de hábitos, que já existe.
+    Object.assign(state, { quests: sanitizeQuests(state.quests) });
 
     if (!state.syncLogs) {
         Object.assign(state, { syncLogs: [] });

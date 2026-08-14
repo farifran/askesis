@@ -111,5 +111,9 @@ export const UI_ICONS = {
     evening: makeIcon(D_MOON),
     calendar: makeIcon('M19 4H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V6a2 2 0 00-2-2zM16 2v4M8 2v4M3 10h18'),
     backArrow: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>',
+    // --- Progressão e Objetivos Secundários ---
+    bolt: makeIcon('M13 2L3 14h9l-1 8 10-12h-9l1-8z'),
+    lock: makeIcon('M19 11H5a2 2 0 00-2 2v7a2 2 0 002 2h14a2 2 0 002-2v-7a2 2 0 00-2-2zM7 11V7a5 5 0 0110 0v4'),
+    close: makeIcon('M18 6L6 18M6 6l12 12'),
 } as const;
 

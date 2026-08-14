@@ -417,8 +417,8 @@ export function setupSwipeHandler(container: HTMLElement) {
         _forceReset();
 
         const target = e.target as HTMLElement;
-        const cw = target.closest<HTMLElement>(DOM_SELECTORS.HABIT_CONTENT_WRAPPER);
-        const card = cw?.closest<HTMLElement>(DOM_SELECTORS.HABIT_CARD);
+        const cw = target.closest<HTMLElement>(DOM_SELECTORS.SWIPEABLE_CONTENT);
+        const card = cw?.closest<HTMLElement>(DOM_SELECTORS.SWIPEABLE_CARD);
         if (!card || !cw) return;
 
         SwipeMachine.card = card;
@@ -439,13 +439,18 @@ export function setupSwipeHandler(container: HTMLElement) {
 
         // Detecção de Swipe, Scroll ou Long Press
         SwipeMachine.state = 'DETECTING';
-        
-        // Inicia Timer de Long Press
-        SwipeMachine.longPressTimer = window.setTimeout(_triggerDrag, LONG_PRESS_DELAY);
-        
+
+        // Long press só arma no cartão de hábito: é o único reordenável, e
+        // `startDragSession` desiste sem `data-habit-id` — mas só depois de já ter
+        // vibrado e posto `is-locking-scroll` no contêiner, que ninguém tiraria.
+        const isDraggable = !!card.dataset.habitId;
+        if (isDraggable) {
+            SwipeMachine.longPressTimer = window.setTimeout(_triggerDrag, LONG_PRESS_DELAY);
+        }
+
         // Visual Feedback
         card.classList.add('is-pressing');
-        card.classList.add('is-charging');
+        if (isDraggable) card.classList.add('is-charging');
         
         window.addEventListener('pointermove', _onPointerMove, { passive: false });
         window.addEventListener('pointerup', _onPointerUp);

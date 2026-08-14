@@ -99,6 +99,49 @@ export interface SyncLog {
     type: 'success' | 'error' | 'info';
 }
 
+/**
+ * Um objetivo secundário em curso, concluído ou abandonado.
+ *
+ * `days` guarda as DATAS em que houve avanço, não um contador: o merge da nuvem
+ * escolhe um vencedor por `lastModified` e descartaria o número do outro
+ * aparelho, enquanto um conjunto de datas se une sem perda (mesma garantia que
+ * `monthlyLogs` já tem). Guardar datas também é o que torna possível cobrar os
+ * dias PERDIDOS: o avanço líquido sai da comparação entre o calendário e este
+ * conjunto, sem nenhum contador para dessincronizar.
+ *
+ * Abandonar grava lápide em vez de remover o registro, senão a união com o
+ * outro aparelho ressuscitaria o objetivo (mesma razão de `deletedOn` no hábito).
+ */
+export interface QuestRecord {
+    /** Id do catálogo, ou `custom:<uuid>` para objetivos criados pelo usuário. */
+    readonly id: string;
+    readonly startedOn: string;
+    days: string[];
+    /**
+     * Início da tentativa em curso; ausente significa `startedOn`.
+     *
+     * O avanço líquido conta dias marcados MENOS dias perdidos desde aqui, então
+     * retomar um objetivo que caducou precisa de um marco novo. Zerar `days`
+     * faria o mesmo efeito na barra, mas apagaria XP já ganho e o grau andaria
+     * para trás — o que este motor não permite. A janela se move; o histórico
+     * fica. No merge vale a tentativa MAIS RECENTE.
+     */
+    attemptFrom?: string;
+    completedOn?: string;
+    abandonedOn?: string;
+    /**
+     * Anotações por dia: data ISO → texto, como a nota do cartão de hábito.
+     *
+     * Objeto por data e não uma nota só pelo mesmo motivo de `days`: o merge une
+     * chave por chave e nenhum aparelho apaga o que o outro escreveu offline. Uma
+     * string única viveria e morreria com o vencedor do `lastModified`.
+     */
+    notes?: Record<string, string>;
+    /** Apenas para objetivos personalizados; o do catálogo vem por chave i18n. */
+    readonly customTitle?: string;
+    readonly customTarget?: number;
+}
+
 export interface DaySummary {
     total: number;
     completed: number;
@@ -120,8 +163,9 @@ export interface AppState {
     readonly pending21DayHabitIds: string[];
     readonly pendingConsolidationHabitIds: string[];
     readonly quoteState?: QuoteDisplayState;
-    readonly hasOnboarded: boolean; 
+    readonly hasOnboarded: boolean;
     readonly syncLogs: SyncLog[];
+    readonly quests: QuestRecord[];
     monthlyLogs: Map<string, bigint>; // Bitmask Storage
     
     // AI Quota & Caching
@@ -150,7 +194,7 @@ export interface PredefinedHabit extends HabitTemplate {
 }
 
 // --- CONSTANTS ---
-export const APP_VERSION = 11; // Bump version for Habit mode normalization
+export const APP_VERSION = 12; // Bump version for the progression/quests module
 export const STREAK_SEMI_CONSOLIDATED = 21;
 export const STREAK_CONSOLIDATED = 66;
 export const MAX_HABIT_NAME_LENGTH = 50;
@@ -206,8 +250,9 @@ export const state: {
     pending21DayHabitIds: string[];
     pendingConsolidationHabitIds: string[];
     notificationsShown: string[];
-    hasOnboarded: boolean; 
+    hasOnboarded: boolean;
     syncLogs: SyncLog[];
+    quests: QuestRecord[];
     quoteState?: QuoteDisplayState;
     aiState: 'idle' | 'loading' | 'completed' | 'error';
     aiReqId: number;
@@ -217,12 +262,19 @@ export const state: {
     syncState: 'syncInitial' | 'syncSaving' | 'syncSynced' | 'syncError';
     initialSyncDone: boolean; // PROTEÇÃO DE BOOT
     fullCalendar: { year: number; month: number; };
-    uiDirtyState: { calendarVisuals: boolean; habitListStructure: boolean; chartData: boolean; };
+    uiDirtyState: { calendarVisuals: boolean; habitListStructure: boolean; };
     monthlyLogs: Map<string, bigint>;
     editingHabit?: { isNew: boolean; habitId?: string; originalData?: Habit; formData: HabitTemplate; targetDate: string };
     confirmAction: (() => void) | null;
     confirmEditAction: (() => void) | null;
-    editingNoteFor: { habitId: string; date: string; time: TimeOfDay } | null;
+    /**
+     * Alvo da nota aberta. Hábito tem horário; objetivo secundário não tem, e é
+     * o campo presente que diz de qual dos dois se trata.
+     */
+    editingNoteFor:
+        | { habitId: string; date: string; time: TimeOfDay }
+        | { questId: string; date: string }
+        | null;
     pendingHabitTime: TimeOfDay | null;
     calendarDates: string[];
     // AI Quota Fields
@@ -249,6 +301,7 @@ export const state: {
     notificationsShown: [],
     hasOnboarded: false,
     syncLogs: [],
+    quests: [],
     aiState: 'idle',
     aiReqId: 0,
     hasSeenAIResult: true,
@@ -256,7 +309,7 @@ export const state: {
     syncState: 'syncInitial',
     initialSyncDone: false, // Inicia como falso até o fetch cloud completar
     fullCalendar: { year: new Date().getUTCFullYear(), month: new Date().getUTCMonth() },
-    uiDirtyState: { calendarVisuals: true, habitListStructure: true, chartData: true },
+    uiDirtyState: { calendarVisuals: true, habitListStructure: true },
     monthlyLogs: new Map(),
     confirmAction: null,
     confirmEditAction: null,
@@ -300,11 +353,47 @@ export function getPersistableState(): AppState {
         quoteState: state.quoteState,
         hasOnboarded: state.hasOnboarded,
         syncLogs: state.syncLogs,
+        quests: state.quests,
         monthlyLogs: state.monthlyLogs,
         aiDailyCount: state.aiDailyCount,
         aiQuotaDate: state.aiQuotaDate,
         lastAIContextHash: state.lastAIContextHash
     };
+}
+
+/**
+ * BOOT LOCK PROTECTION: durante o boot usamos timestamp incremental simples;
+ * depois do sync, o relógio real, para garantir o Last-Write-Wins do merge.
+ *
+ * Vive aqui, e não junto das ações de hábito, porque toda mutação persistida
+ * precisa dele — inclusive as de objetivos secundários, que não passam por
+ * `_notifyChanges`.
+ */
+export function bumpLastModified() {
+    if (!state.initialSyncDone) {
+        state.lastModified = state.lastModified + 1;
+    } else {
+        state.lastModified = Math.max(Date.now(), (state.lastModified || 0) + 1);
+    }
+    bumpStateGeneration();
+}
+
+/**
+ * Contador de gerações do estado, para memoizações caras derivadas dos dados
+ * (o grau, por exemplo).
+ *
+ * Existe porque `lastModified` NÃO serve de chave: reset, import e volta da
+ * nuvem podem reinstalar um timestamp já visto, e o cache devolveria um valor
+ * calculado sobre outros dados. Este número só cresce.
+ */
+let _stateGeneration = 0;
+
+export function getStateGeneration(): number {
+    return _stateGeneration;
+}
+
+export function bumpStateGeneration(): void {
+    _stateGeneration++;
 }
 
 export function clearActiveHabitsCache() {
@@ -316,6 +405,7 @@ export function clearScheduleCache() {
 }
 
 export function clearAllCaches() {
+    bumpStateGeneration();
     state.streaksCache.clear();
     state.scheduleCache.clear();
     state.activeHabitsCache.clear();
@@ -359,14 +449,6 @@ export function ensureHabitInstanceData(dateISO: string, habitId: string, time: 
         habitInfo.instances[time] = {};
     }
     return habitInfo.instances[time]!;
-}
-
-export function isChartDataDirty(): boolean {
-    return state.uiDirtyState.chartData;
-}
-
-export function invalidateChartCache() {
-    state.uiDirtyState.chartData = true;
 }
 
 /**

@@ -10,7 +10,7 @@
 
 import {
     state, HabitSchedule, Habit, TimeOfDay,
-    clearScheduleCache, clearActiveHabitsCache, invalidateCachesForDateChange
+    clearScheduleCache, clearActiveHabitsCache, invalidateCachesForDateChange, bumpLastModified
 } from '../../state';
 import { saveState } from '../persistence';
 import { clearSelectorInternalCaches } from '../selectors';
@@ -57,18 +57,6 @@ export const ActionContext: ActionContextState = {
 
 // ══════════ Shared Helpers ══════════
 
-/**
- * BOOT LOCK PROTECTION: Durante o boot, usamos timestamp incremental simples.
- * Após o sync, usamos o relógio real para garantir LWW.
- */
-function _bumpLastModified() {
-    if (!state.initialSyncDone) {
-        state.lastModified = state.lastModified + 1;
-    } else {
-        state.lastModified = Math.max(Date.now(), (state.lastModified || 0) + 1);
-    }
-}
-
 export function _notifyChanges(fullRebuild = false, immediate = false) {
     if (fullRebuild) {
         clearScheduleCache();
@@ -76,12 +64,11 @@ export function _notifyChanges(fullRebuild = false, immediate = false) {
         clearSelectorInternalCaches();
         // FIX [2025-06-13]: Limpa cache de sumário diário (anéis) em mudanças estruturais.
         state.daySummaryCache.clear();
-        state.uiDirtyState.chartData = true;
     }
     clearActiveHabitsCache();
     state.uiDirtyState.habitListStructure = state.uiDirtyState.calendarVisuals = true;
 
-    _bumpLastModified();
+    bumpLastModified();
 
     document.body.classList.remove('is-interaction-active', 'is-dragging-active');
     saveState(immediate);
@@ -94,7 +81,7 @@ export function _notifyChanges(fullRebuild = false, immediate = false) {
 export function _notifyPartialUIRefresh(date: string, immediate = false) {
     invalidateCachesForDateChange(date);
 
-    _bumpLastModified();
+    bumpLastModified();
     // immediate=true no toggle de status: a 1ª marcação pós-install não pode
     // depender só do debounce de 800ms (fechar o app cancela o timer).
     saveState(immediate);

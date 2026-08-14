@@ -26,7 +26,7 @@ import { APP_EVENTS, emitRequestAnalysis } from './events';
 import { setTextContent, updateReelRotaryARIA, setTrustedSvgContent } from './render/dom';
 import { renderCalendar } from './render/calendar';
 import { renderHabits } from './render/habits';
-import { renderChart } from './render/chart';
+import { renderProgression } from './render/progression';
 import { setupManageModal, refreshEditModalUI, renderLanguageFilter, showConfirmationModal } from './render/modals';
 
 // Re-exporta tudo para manter compatibilidade
@@ -35,7 +35,7 @@ export * from './render/calendar';
 export * from './render/calendarGrid';
 export * from './render/habits';
 export * from './render/modals';
-export * from './render/chart';
+export * from './render/progression';
 
 /**
  * Monitor de Sincronização: Abre um diálogo com o histórico técnico de operações.
@@ -252,13 +252,13 @@ export function renderApp() {
     if ('scheduler' in window && window.scheduler) {
         window.scheduler.postTask(() => {
             renderAINotificationState();
-            renderChart();
+            renderProgression();
             window.scheduler!.postTask(() => renderStoicQuote(), { priority: 'background' });
         }, { priority: 'user-visible' });
     } else {
         requestAnimationFrame(() => {
             renderAINotificationState();
-            renderChart();
+            renderProgression();
             if ('requestIdleCallback' in window) requestIdleCallback(() => renderStoicQuote());
             else setTimeout(renderStoicQuote, 50);
         });

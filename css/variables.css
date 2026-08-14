@@ -62,7 +62,7 @@
     --z-index-indicator: 3;
     --z-index-sticky: 20; /* Time markers */
     --z-index-header: 50; /* Header above scrolling content */
-    --z-index-footer: 50; /* Chart footer above scrolling content */
+    --z-index-footer: 50; /* Progression footer above scrolling content */
     --z-index-tooltip: 60;
     --z-index-modal-overlay: 1000;
     --z-index-modal-content: 1001;

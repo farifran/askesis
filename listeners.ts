@@ -16,7 +16,7 @@ import { setupDragHandler } from './listeners/drag';
 import { setupSwipeHandler } from './listeners/swipe';
 import { setupOverscroll } from './listeners/overscroll';
 import { setupCalendarListeners } from './listeners/calendar';
-import { setupChartListeners } from './listeners/chart';
+import { setupProgressionListeners } from './listeners/progression';
 import { updateAppBadge } from './services/badge';
 import { getTodayUTCIso, resetTodayCache, createDebounced, logger } from './utils';
 import { getLocalPushOptIn, setLocalPushOptIn, hasRequestedPushPermission, getPushPermissionRequestAgeMs, markPushPermissionRequested, ensurePushSubscribed, getNotificationPermission, requestNotificationPermission } from './services/push';
@@ -192,7 +192,7 @@ export function setupEventListeners() {
             setupDragHandler(container);
             setupSwipeHandler(container);
             setupOverscroll(container);
-            setupChartListeners();
+            setupProgressionListeners();
         } catch (e) {}
     };
 

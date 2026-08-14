@@ -12,7 +12,7 @@ import { state, AppState, Habit, HabitDailyInfo, APP_VERSION, getPersistableStat
 import { migrateState } from './migration';
 import { HabitService } from './HabitService';
 import { buildNotificationCards, NOTIFICATION_CARD_KEY, type NotificationCard } from './notificationCard';
-import { clearHabitDomCache } from '../render';
+import { clearHabitDomCache, resetGradeBaseline } from '../render';
 import { logger } from '../utils';
 import { emitRenderApp } from '../events';
 
@@ -407,6 +407,7 @@ export async function loadState(cloudState?: AppState): Promise<AppState | null>
         state.pending21DayHabitIds = [...(migrated.pending21DayHabitIds || [])];
         state.pendingConsolidationHabitIds = [...(migrated.pendingConsolidationHabitIds || [])];
         state.hasOnboarded = migrated.hasOnboarded ?? true;
+        state.quests = [...(migrated.quests || [])];
         state.syncLogs = (migrated.syncLogs || []).map((log: any) => ({
             time: log.time,
             msg: log.msg,
@@ -417,11 +418,14 @@ export async function loadState(cloudState?: AppState): Promise<AppState | null>
             state.syncLogs = state.syncLogs.slice(-50);
         }
 
-        // Clear Caches
+        // Clear Caches (também avança a geração, invalidando o grau memoizado)
         clearAllCaches();
+        // O render anterior a esta hidratação viu o estado vazio, no grau 1;
+        // sem rebaixar a linha de base, o grau real chegaria como "conquista".
+        resetGradeBaseline();
         
         clearHabitDomCache();
-        Object.assign(state.uiDirtyState, { calendarVisuals: true, habitListStructure: true, chartData: true });
+        Object.assign(state.uiDirtyState, { calendarVisuals: true, habitListStructure: true });
         
         const runCleanup = () => pruneOrphanedDailyData(state.habits, state.dailyData);
         if (window.scheduler?.postTask) {

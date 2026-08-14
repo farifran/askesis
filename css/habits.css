@@ -14,12 +14,18 @@
     --edge-fade-bottom-depth: 14px;
     --edge-fade-bleed: 5px;
     
-    /* SMART LAYOUT: 
-       flex-grow: 0 (Não ocupa espaço vazio desnecessário, deixando o gráfico subir)
+    /* SMART LAYOUT [revisto 2026-08-13]:
+       flex-grow: 1 (Toma o espaço livre, PRENDENDO o rodapé de progressão embaixo)
        flex-shrink: 1 (Encolhe se faltar espaço, ativando o scroll)
-       flex-basis: auto (Tamanho baseado no conteúdo)
-    */
-    flex: 0 1 auto;
+       flex-basis: auto (Tamanho base vem do conteúdo)
+
+       Era `flex-grow: 0` "para deixar o gráfico subir": com poucos hábitos o
+       contêiner encolhia e o gráfico — que era alto — vinha junto, colado ao
+       conteúdo. O rodapé de hoje tem 103px, então o mesmo comportamento deixava
+       um vazio de quase 200px abaixo dele. Crescer prende o rodapé no fundo da
+       tela sem `position: fixed`: a coluna do app já tem altura fixa (body com
+       overflow hidden), e é o contêiner que absorve a folga. */
+    flex: 1 1 auto;
     
     /* SCROLL INTERNO: Ativa apenas quando o conteúdo excede o espaço disponível */
     overflow-y: auto; 
@@ -442,7 +448,6 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     z-index: var(--z-index-content);
     cursor: pointer;
     transition: transform var(--transition-duration-slow) cubic-bezier(0.23, 1, 0.32, 1), background var(--transition-duration), padding-right var(--transition-duration);
-    border-radius: 9px;
     flex-grow: 1;
     /* UPDATE [2025-06-09]: pan-y para rolagem nativa */
     touch-action: pan-y;
@@ -471,11 +476,13 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 
 /* Only use will-change during interaction to save memory */
 .habit-card.is-swiping .habit-content-wrapper,
-.habit-card.dragging .habit-content-wrapper {
+.habit-card.dragging .habit-content-wrapper,
+.quest-row.is-swiping .quest-content-wrapper {
     will-change: transform;
 }
 
-.habit-card:not(.completed):not(.snoozed) .habit-content-wrapper {
+.habit-card:not(.completed):not(.snoozed) .habit-content-wrapper,
+.quest-content-wrapper {
     /* 3D EFFECT: Gradiente sutil para simular luz de cima e dar perspectiva */
     background: linear-gradient(180deg, rgba(255, 255, 255, 0.05) 0%, transparent 60%), var(--bg-color);
 }
@@ -500,7 +507,8 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     touch-action: none;
     pointer-events: none !important; /* Allow hit-test through to drop zone */
 }
-.habit-card.is-swiping .habit-content-wrapper {
+.habit-card.is-swiping .habit-content-wrapper,
+.quest-row.is-swiping .quest-content-wrapper {
     transition: none; /* Desativa transição durante o deslize manual */
     user-select: none;
 }
@@ -545,7 +553,9 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     stroke: currentColor;
 }
 
-.habit-icon {
+/* [COMPARTILHADO 2026-08-13]: .quest-icon é a mesma bolha de 34px no catálogo de
+   objetivos — mesmo tamanho, mesmos cantos, mesmo SVG a 60%. */
+.habit-icon, .quest-icon {
     font-size: 14px;
     width: 34px;
     height: 34px;
@@ -562,7 +572,7 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     -webkit-user-select: none;
 }
 
-.habit-icon svg { width: 60%; height: 60%; pointer-events: none; }
+.habit-icon svg, .quest-icon svg { width: 60%; height: 60%; pointer-events: none; }
 
 /* UX [2025-01-18]: Classe de animação para o ícone ao completar o hábito */
 .habit-icon.animate-pop {
@@ -702,7 +712,11 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 /* FIX [2026-02-06]: Cada faixa cobre 50% da largura do cartão, alinhadas ao centro.
    Isso garante que ao deslizar para um lado, apenas a cor desse lado seja visível,
    sem vazar a cor da faixa oposta nos cantos ou bordas. */
-.habit-actions-left, .habit-actions-right {
+/* [COMPARTILHADO 2026-08-13]: a linha de objetivo secundário usa o mesmo motor de
+   gesto (listeners/swipe.ts) e as mesmas gavetas. Os seletores abaixo cobrem os
+   dois cartões para que cor, lado e visibilidade não possam divergir. */
+.habit-actions-left, .habit-actions-right,
+.quest-actions-left, .quest-actions-right {
     position: absolute;
     inset-block: 0;
     z-index: var(--z-index-base);
@@ -715,11 +729,19 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
     transition: visibility 0s linear 0.2s; /* Atrasa o hide para permitir animação de slide */
 }
 /* UX [2025-02-05]: Mudança para cinza para indicar ação destrutiva/reset menos agressiva */
-.habit-actions-left { inset-inline-start: 0; background-color: var(--text-tertiary); }
-.habit-actions-right { inset-inline-end: 0; background-color: var(--accent-blue); justify-content: flex-end; }
+.habit-actions-left, .quest-actions-left { inset-inline-start: 0; background-color: var(--text-tertiary); }
+.habit-actions-right, .quest-actions-right { inset-inline-end: 0; background-color: var(--accent-blue); justify-content: flex-end; }
 
-.habit-card.is-open-left .habit-content-wrapper { transform: translateX(var(--swipe-action-width)); }
-.habit-card.is-open-right .habit-content-wrapper { transform: translateX(calc(-1 * var(--swipe-action-width))); }
+/* O corpo que desliza tem cantos próprios, um pouco menores que os do cartão
+   (9px contra 12px): ao sair do lugar, a sua borda de fuga deixa de ser aparada
+   pelo cartão e apareceria como um corte reto ao lado da gaveta. Vale para os
+   dois cartões — sem isto a linha de objetivo abria com um bloco quadrado. */
+:is(.habit-content-wrapper, .quest-content-wrapper) {
+    border-radius: 9px;
+}
+
+:is(.habit-card, .quest-row).is-open-left :is(.habit-content-wrapper, .quest-content-wrapper) { transform: translateX(var(--swipe-action-width)); }
+:is(.habit-card, .quest-row).is-open-right :is(.habit-content-wrapper, .quest-content-wrapper) { transform: translateX(calc(-1 * var(--swipe-action-width))); }
 
 /* UX FIX: Oculta APENAS controles de meta e ícone de horário ao deslizar.
    Mantém o ícone do hábito visível para contexto. */
@@ -729,10 +751,9 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 }
 
 /* A11Y [2025-01-18]: Torna visível quando aberto ou sendo arrastado */
-.habit-card.is-open-left .habit-actions-left,
-.habit-card.is-open-right .habit-actions-right,
-.habit-card.is-swiping .habit-actions-left,
-.habit-card.is-swiping .habit-actions-right {
+:is(.habit-card, .quest-row).is-open-left :is(.habit-actions-left, .quest-actions-left),
+:is(.habit-card, .quest-row).is-open-right :is(.habit-actions-right, .quest-actions-right),
+:is(.habit-card, .quest-row).is-swiping :is(.habit-actions-left, .habit-actions-right, .quest-actions-left, .quest-actions-right) {
     visibility: visible;
     transition-delay: 0s;
 }
@@ -761,7 +782,9 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 }
 
 /* REFINAMENTO VISUAL [2025-01-16]: Estilos do wrapper de status 'Adiado' para corrigir sobreposição e alinhar com o ícone. */
-.snoozed-wrapper, .completed-wrapper {
+/* [COMPARTILHADO 2026-08-13]: .quest-done-wrapper é a mesma bolha de status na
+   linha de objetivo secundário — mesmo quadrado, mesmo azul, mesmo ícone. */
+.snoozed-wrapper, .completed-wrapper, .quest-done-wrapper {
     display: flex;
     align-items: center;
     padding: 4px;
@@ -776,13 +799,14 @@ body:not(.is-dragging-active) .empty-group-placeholder.show-smart-placeholder .p
 }
 
 /* VISUAL UPDATE [2025-02-26]: Wrapper para estado concluído combinando com estilo de adiado */
-.completed-wrapper {
+.completed-wrapper, .quest-done-wrapper {
     background-color: rgba(0, 122, 255, 0.15); /* Contraste sutil sobre o fundo completed */
 }
 
 /* Generic SVG styling for snoozed/checked icon inside wrapper */
 .snoozed-wrapper svg,
-.completed-wrapper svg {
+.completed-wrapper svg,
+.quest-done-wrapper svg {
     width: 20px;
     height: 20px;
     display: block;

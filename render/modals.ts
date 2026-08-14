@@ -22,7 +22,9 @@ import { replaceWithHtmlFragment, buildManageActionButton, buildIconPickerItem, 
 
 interface ModalContext { element: HTMLElement; previousFocus: HTMLElement | null; onClose?: () => void; firstFocusable?: HTMLElement; lastFocusable?: HTMLElement; }
 const modalStack: ModalContext[] = [];
-const OPTS_NOTES = { day: 'numeric', month: 'long', timeZone: 'UTC' } as const;
+/** Subtítulo da nota: dia e mês por extenso. Exportado porque a nota do objetivo
+    secundário abre o MESMO modal e precisa do mesmo formato. */
+export const OPTS_NOTES = { day: 'numeric', month: 'long', timeZone: 'UTC' } as const;
 interface ConfirmationModalOptions {
     onEdit?: () => void;
     title?: string;
@@ -441,6 +443,7 @@ export function openEditModal(habit: Habit | HabitTemplate | null, targetDateOve
     state.pendingHabitTime = null;
 
     state.editingHabit = { isNew: isN, habitId: isN ? undefined : (habit as Habit).id, originalData: isN ? undefined : (habit as Habit), formData: fd, targetDate: safe };
+
     const ni = ui.editHabitForm.elements.namedItem('habit-name') as HTMLInputElement;
     if (ni) {
         ni.maxLength = MAX_HABIT_NAME_LENGTH;

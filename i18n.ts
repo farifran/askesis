@@ -450,7 +450,6 @@ export async function setLanguage(langCode: 'pt' | 'en' | 'es') {
         // Dirty Checking flags
         state.uiDirtyState.calendarVisuals = true;
         state.uiDirtyState.habitListStructure = true;
-        state.uiDirtyState.chartData = true;
 
         emitLanguageChanged();
     } else {

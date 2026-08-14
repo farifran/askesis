@@ -180,7 +180,6 @@ const _handleStripClick = (e: MouseEvent) => {
             
             // Render App Content (Habits)
             state.uiDirtyState.habitListStructure = true;
-            state.uiDirtyState.chartData = true;
             viewTransitionRender(flipDir);
         }
     }

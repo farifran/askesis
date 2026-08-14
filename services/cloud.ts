@@ -122,7 +122,8 @@ function splitIntoShards(appState: AppState): Record<string, any> {
         dailyDiagnoses: appState.dailyDiagnoses,
         notificationsShown: appState.notificationsShown,
         hasOnboarded: appState.hasOnboarded,
-        quoteState: appState.quoteState
+        quoteState: appState.quoteState,
+        quests: appState.quests
     };
     
     // Logs: Shards granulares mensais (Bitmasks)
@@ -334,7 +335,8 @@ function buildAppStateFromDecryptedShards(decryptedShards: Record<string, any>, 
         monthlyLogs: new Map(),
         notificationsShown: core?.notificationsShown || [],
         hasOnboarded: core?.hasOnboarded ?? true,
-        quoteState: core?.quoteState
+        quoteState: core?.quoteState,
+        quests: Array.isArray(core?.quests) ? core.quests : []
     };
 
     for (const key in decryptedShards) {

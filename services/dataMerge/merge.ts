@@ -8,7 +8,7 @@
  * @description Algoritmo principal de merge CRDT-lite: mergeStates, mergeHabitHistories, mergeDayRecord.
  */
 
-import type { AppState, HabitDailyInfo, Habit, HabitSchedule } from '../../state';
+import type { AppState, HabitDailyInfo, Habit, HabitSchedule, QuestRecord } from '../../state';
 import { logger } from '../../utils';
 import { HabitService } from '../HabitService';
 import { normalizeHabitMode, normalizeTimesByMode, normalizeFrequencyByMode } from '../habitActions';
@@ -67,6 +67,79 @@ function mergeDayRecord(source: Record<string, HabitDailyInfo>, target: Record<s
             targetHabit.dailySchedule = sourceHabit.dailySchedule;
         }
     }
+}
+
+/** Data mais antiga entre as duas, ignorando as ausentes. */
+function earliestDate(a?: string, b?: string): string | undefined {
+    if (!a) return b;
+    if (!b) return a;
+    return a < b ? a : b;
+}
+
+function mergeQuestNotes(
+    winner?: Record<string, string>,
+    loser?: Record<string, string>
+): Record<string, string> | undefined {
+    if (!winner) return loser;
+    if (!loser) return winner;
+    return { ...loser, ...winner };
+}
+
+/** Ausente perde: quem nunca retomou não sobrepõe a tentativa de quem retomou. */
+function latestDate(a?: string, b?: string): string | undefined {
+    if (!a) return b;
+    if (!b) return a;
+    return a > b ? a : b;
+}
+
+/**
+ * Une os objetivos secundários dos dois lados.
+ *
+ * `days` é conjunto justamente para chegar aqui: a união não perde o avanço que
+ * cada aparelho registrou offline, coisa que um contador `progress` não
+ * permitiria — o merge escolhe um vencedor e o número do perdedor evaporaria.
+ *
+ * Concluir vence abandonar. As duas marcas são irreversíveis, mas só uma
+ * representa trabalho feito; deixar a lápide ganhar apagaria uma conquista real
+ * só porque o outro aparelho desistiu antes de sincronizar.
+ */
+function mergeQuests(winnerQuests: QuestRecord[] = [], loserQuests: QuestRecord[] = []): QuestRecord[] {
+    const byId = new Map<string, QuestRecord>();
+
+    for (const quest of winnerQuests) {
+        byId.set(quest.id, { ...quest, days: [...quest.days] });
+    }
+
+    for (const loserQuest of loserQuests) {
+        const winnerQuest = byId.get(loserQuest.id);
+        if (!winnerQuest) {
+            byId.set(loserQuest.id, { ...loserQuest, days: [...loserQuest.days] });
+            continue;
+        }
+
+        const days = Array.from(new Set([...winnerQuest.days, ...loserQuest.days])).sort();
+        const completedOn = earliestDate(winnerQuest.completedOn, loserQuest.completedOn);
+
+        byId.set(loserQuest.id, {
+            ...winnerQuest,
+            days,
+            startedOn: earliestDate(winnerQuest.startedOn, loserQuest.startedOn) ?? winnerQuest.startedOn,
+            // Tentativa MAIS RECENTE, ao contrário de todo o resto aqui: retomar é
+            // reabrir a janela do avanço, e a janela mais nova é a que vale. Pegar
+            // a mais antiga ressuscitaria os dias perdidos de uma tentativa morta e
+            // mataria o objetivo de novo no primeiro render depois do merge.
+            attemptFrom: latestDate(winnerQuest.attemptFrom, loserQuest.attemptFrom),
+            // Notas se unem por data, como `days`: o vencedor manda no dia em que
+            // os dois escreveram, e nenhum lado perde o dia que só ele anotou.
+            notes: mergeQuestNotes(winnerQuest.notes, loserQuest.notes),
+            completedOn,
+            abandonedOn: completedOn ? undefined : earliestDate(winnerQuest.abandonedOn, loserQuest.abandonedOn),
+            customTitle: winnerQuest.customTitle ?? loserQuest.customTitle,
+            customTarget: winnerQuest.customTarget ?? loserQuest.customTarget
+        });
+    }
+
+    return Array.from(byId.values());
 }
 
 export async function mergeStates(local: AppState, incoming: AppState, options?: MergeOptions): Promise<AppState> {
@@ -297,6 +370,10 @@ export async function mergeStates(local: AppState, incoming: AppState, options?:
     }
 
     merged.monthlyLogs = HabitService.mergeLogs(winner.monthlyLogs, remappedLoserLogs);
+
+    // Objetivos não passam pelo remap de identidade: o id vem do catálogo (ou é
+    // um UUID), então não há o problema de dedup que os hábitos têm.
+    (merged as { quests: QuestRecord[] }).quests = mergeQuests(winner.quests, loser.quests);
 
     merged.lastModified = Math.max(localTs, incomingTs, Date.now()) + 1;
 

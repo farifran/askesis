@@ -74,7 +74,17 @@ export const DOM_SELECTORS = {
     SWIPE_NOTE_BTN: `.${CSS_CLASSES.SWIPE_NOTE_BTN}`,
     DAY_ITEM: `.${CSS_CLASSES.DAY_ITEM}`,
     DROP_ZONE: `.${CSS_CLASSES.DROP_ZONE}`,
-    EMPTY_GROUP_PLACEHOLDER: `.${CSS_CLASSES.EMPTY_GROUP_PLACEHOLDER}`
+    EMPTY_GROUP_PLACEHOLDER: `.${CSS_CLASSES.EMPTY_GROUP_PLACEHOLDER}`,
+    /**
+     * Cartões que aceitam swipe: hábito e objetivo secundário.
+     *
+     * O motor de gesto (listeners/swipe.ts) é genérico — só mexe em transform e
+     * em classes —, então o que o prendia ao hábito eram estes dois seletores.
+     * O long press de reordenar continua exclusivo do hábito, que é o único com
+     * `data-habit-id` e posição na grade.
+     */
+    SWIPEABLE_CARD: `.${CSS_CLASSES.HABIT_CARD}, .quest-row`,
+    SWIPEABLE_CONTENT: `.${CSS_CLASSES.HABIT_CONTENT_WRAPPER}, .quest-content-wrapper`
 } as const;
 
 // UI constants (modals/explore)

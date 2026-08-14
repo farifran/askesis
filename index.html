@@ -42,7 +42,8 @@
     <!-- OPTIMIZATION: 'modulepreload' garante o tratamento correto de credenciais/cache para ESM. -->
     <link rel="modulepreload" href="bundle.js">
     <link rel="modulepreload" href="boot/error-handler.js">
-    
+
+
     <!-- PERFORMANCE: Network Socket Warming. 
          Inicia o handshake DNS/TCP/TLS com o CDN do OneSignal antes que o parser encontre a tag de script.
          Reduz a latência de carregamento do SDK em ~50-100ms em redes móveis. -->
@@ -237,47 +238,35 @@
                     <div class="time-marker"></div>
                     <ul class="habit-group drop-zone" data-time="Evening"></ul>
                 </div>
+
+                <!-- Objetivos Secundários: dentro do contêiner rolável, para
+                     sumirem com a rolagem quando falta altura, igual aos hábitos.
+                     O marcador à esquerda repete a coluna da linha do tempo e é
+                     também a porta do catálogo. -->
+                <div class="quests-wrapper">
+                    <div class="quests-marker" aria-hidden="true"></div>
+                    <section id="quests-container" class="quests-container">
+                        <button type="button" class="quests-title" data-quest-action="open-picker"></button>
+                        <ul class="quests-list"></ul>
+                    </section>
+                </div>
             </div>
 
-            <section id="chart-container" class="chart-container">
-                <div class="chart-header">
+            <!-- Progressão: grau, patente e barra de XP (rodapé) -->
+            <section id="progression-container" class="progression-container">
+                <div class="progression-header">
                     <div class="app-subtitle"></div>
-                    <div class="chart-title-row">
-                        <h3 class="chart-title"></h3>
-                        <div class="chart-evolution-indicator"></div>
+                    <div class="progression-title-row">
+                        <h3 class="progression-title"></h3>
                     </div>
                 </div>
-                <!-- Estado Vazio -->
-                <div class="chart-empty-state"></div>
-                <!-- Estrutura do Gráfico -->
-                <div class="chart-data-view">
-                    <div class="chart-wrapper">
-                        <svg class="chart-svg" preserveAspectRatio="none">
-                            <defs>
-                                <linearGradient id="chart-gradient" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="0%" stop-color="var(--accent-blue)" stop-opacity="0.3"/>
-                                    <stop offset="100%" stop-color="var(--accent-blue)" stop-opacity="0"/>
-                                </linearGradient>
-                            </defs>
-                            <path class="chart-area"></path>
-                            <path class="chart-line"></path>
-                        </svg>
-                        <div class="chart-tooltip">
-                            <div class="tooltip-date"></div>
-                            <div class="tooltip-score">
-                                <span class="tooltip-score-label"></span>
-                                <span class="tooltip-score-value"></span>
-                            </div>
-                            <ul class="tooltip-habits"><li></li></ul>
-                        </div>
-                        <div class="chart-indicator">
-                            <div class="chart-indicator-dot"></div>
-                        </div>
-                    </div>
-                    <div class="chart-axis-labels">
-                        <span></span>
-                        <span></span>
-                    </div>
+                <div class="grade-row">
+                    <span class="grade-badge"></span>
+                    <span class="grade-rank"></span>
+                    <span class="grade-xp"></span>
+                </div>
+                <div class="grade-track">
+                    <div class="grade-fill"></div>
                 </div>
             </section>
         </main>
@@ -543,6 +532,34 @@
         </div>
     </div>
 
+    <!-- Catálogo de Objetivos Secundários -->
+    <div id="quest-picker-modal" class="modal-overlay" role="dialog" aria-modal="true">
+        <div class="modal-content modal-content--sticky-header">
+            <div class="modal-header">
+                <div class="modal-header-spacer"></div>
+                <h2 id="quest-picker-title"></h2>
+                <div class="modal-header-spacer"></div>
+            </div>
+            <!-- O scroll do catálogo vive aqui: modal-content--sticky-header
+                 desabilita o scroll do container e delega a este wrapper. -->
+            <div class="modal-scroll-wrapper">
+                <div id="quest-catalog-list"></div>
+                <p id="quest-catalog-note" class="quest-catalog-note"></p>
+                <button id="create-custom-quest-btn" class="btn btn--primary"></button>
+                <div id="quest-custom-form" class="quest-custom-form hidden">
+                    <label id="quest-custom-title-label" for="quest-custom-title"></label>
+                    <input id="quest-custom-title" type="text" maxlength="60" autocomplete="off">
+                    <label id="quest-custom-target-label" for="quest-custom-target"></label>
+                    <input id="quest-custom-target" type="number" min="1" max="365" value="7" inputmode="numeric">
+                    <button id="quest-custom-confirm" class="btn btn--primary"></button>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="modal-close-btn btn"></button>
+            </div>
+        </div>
+    </div>
+
     <!-- Quick Actions Popover -->
     <div id="calendar-quick-actions" class="modal-overlay" role="dialog" aria-modal="true">
         <div class="quick-actions-content">
@@ -556,6 +573,8 @@
 
     <script src="bundle.js" type="module"></script>
 </script>
+    <!-- Avisos efêmeros de progressão (o CSS já existia em css/components.css) -->
+
     <!-- Safe-area overlay: cobre a faixa inferior do sistema em Android/Chrome -->
     <div class="safe-area-bottom" aria-hidden="true"></div>
 </body>

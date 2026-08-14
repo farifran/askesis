@@ -548,7 +548,6 @@ describe('🟠 TESTE DE CENARIO 7: Cloud, Network & Data Resilience', () => {
             expect(state.calendarDates).toEqual([]);
             expect(state.uiDirtyState.calendarVisuals).toBe(true);
             expect(state.uiDirtyState.habitListStructure).toBe(true);
-            expect(state.uiDirtyState.chartData).toBe(true);
         });
     });
 

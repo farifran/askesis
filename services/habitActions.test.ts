@@ -209,7 +209,6 @@ describe('⚙️ Lógica de Negócios (habitActions.ts)', () => {
             expect(state.calendarDates).toEqual([]);
             expect(state.uiDirtyState.calendarVisuals).toBe(true);
             expect(state.uiDirtyState.habitListStructure).toBe(true);
-            expect(state.uiDirtyState.chartData).toBe(true);
         });
     });
 

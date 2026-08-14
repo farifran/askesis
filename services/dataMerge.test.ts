@@ -1050,6 +1050,62 @@ describe('🔗 Deduplication by Name (Habit Name Collision Prevention)', () => {
         });
     });
 
+    describe('🎯 Objetivos secundários', () => {
+        const quest = (o: Partial<{ id: string; startedOn: string; days: string[]; attemptFrom: string; completedOn: string; abandonedOn: string }>) => ({
+            id: 'sunrise', startedOn: '2026-01-01', days: [], ...o
+        });
+
+        const mergeQuestStates = async (mine: any[], theirs: any[]) => {
+            const local = createMockState(1000);
+            const incoming = createMockState(2000);
+            (local as any).quests = mine;
+            (incoming as any).quests = theirs;
+            const merged = await mergeStates(local, incoming);
+            return (merged as any).quests as any[];
+        };
+
+        it('une os dias registrados dos dois aparelhos', async () => {
+            const quests = await mergeQuestStates(
+                [quest({ days: ['2026-01-02', '2026-01-03'] })],
+                [quest({ days: ['2026-01-03', '2026-01-04'] })]
+            );
+
+            expect(quests).toHaveLength(1);
+            expect(quests[0].days).toEqual(['2026-01-02', '2026-01-03', '2026-01-04']);
+        });
+
+        it('mantém a tentativa MAIS RECENTE, ao contrário do resto', async () => {
+            // Quem retomou hoje é quem tem a janela válida. Herdar a tentativa
+            // antiga faria os dias perdidos dela voltarem e o objetivo caducaria
+            // no primeiro render depois do merge.
+            const quests = await mergeQuestStates(
+                [quest({ attemptFrom: '2026-02-01' })],
+                [quest({ attemptFrom: '2026-03-01' })]
+            );
+
+            expect(quests[0].attemptFrom).toBe('2026-03-01');
+        });
+
+        it('a ausência de retomada não sobrepõe quem retomou', async () => {
+            const quests = await mergeQuestStates(
+                [quest({})],
+                [quest({ attemptFrom: '2026-03-01' })]
+            );
+
+            expect(quests[0].attemptFrom).toBe('2026-03-01');
+        });
+
+        it('conclusão vence abandono, e vale a data mais antiga', async () => {
+            const quests = await mergeQuestStates(
+                [quest({ abandonedOn: '2026-02-10' })],
+                [quest({ completedOn: '2026-02-05' })]
+            );
+
+            expect(quests[0].completedOn).toBe('2026-02-05');
+            expect(quests[0].abandonedOn).toBeUndefined();
+        });
+    });
+
     describe('🛡️ Security regressions', () => {
         it('deve ignorar chave __proto__ em dailyData durante merge', async () => {
             const local = createMockState(1000);

@@ -32,7 +32,18 @@ const ROOT = {
     navArrowFuture: el<HTMLElement>('#nav-arrow-future'),
     stoicQuoteDisplay: el<HTMLElement>('#stoic-quote-display'),
     habitContainer: el<HTMLElement>('#habit-container'),
-    chartContainer: el<HTMLElement>('#chart-container'),
+    questsContainer: el<HTMLElement>('.quests-wrapper'),
+    questPickerModal: el<HTMLElement>('#quest-picker-modal'),
+    questPickerTitle: el<HTMLElement>('#quest-picker-title'),
+    questCatalogList: el<HTMLElement>('#quest-catalog-list'),
+    questCatalogNote: el<HTMLElement>('#quest-catalog-note'),
+    createCustomQuestBtn: el<HTMLButtonElement>('#create-custom-quest-btn'),
+    questCustomForm: el<HTMLElement>('#quest-custom-form'),
+    questCustomTitleLabel: el<HTMLElement>('#quest-custom-title-label'),
+    questCustomTitleInput: el<HTMLInputElement>('#quest-custom-title'),
+    questCustomTargetLabel: el<HTMLElement>('#quest-custom-target-label'),
+    questCustomTargetInput: el<HTMLInputElement>('#quest-custom-target'),
+    questCustomConfirmBtn: el<HTMLButtonElement>('#quest-custom-confirm'),
     manageHabitsBtn: el<HTMLButtonElement>('#manage-habits-btn'),
     fabAddHabit: el<HTMLButtonElement>('#fab-add-habit'),
     manageModal: el<HTMLElement>('#manage-modal'),
@@ -121,28 +132,21 @@ const ROOT = {
     syncErrorMsg: el<HTMLElement>('#sync-error-msg'),
 };
 
-const CHART = {
-    title: el<HTMLElement>('#chart-container .chart-title'),
-    subtitle: el<HTMLElement>('#chart-container .app-subtitle'),
-    emptyState: el<HTMLElement>('#chart-container .chart-empty-state'),
-    dataView: el<HTMLElement>('#chart-container .chart-data-view'),
-    wrapper: el<HTMLElement>('#chart-container .chart-wrapper'),
-    svg: el<SVGSVGElement>('.chart-svg'),
-    areaPath: el<SVGPathElement>('.chart-area'),
-    linePath: el<SVGPathElement>('.chart-line'),
-    tooltip: el<HTMLElement>('#chart-container .chart-tooltip'),
-    tooltipDate: el<HTMLElement>('#chart-container .tooltip-date'),
-    tooltipScoreLabel: el<HTMLElement>('#chart-container .tooltip-score-label'),
-    tooltipScoreValue: el<HTMLElement>('#chart-container .tooltip-score-value'),
-    tooltipHabits: el<HTMLElement>('#chart-container .tooltip-habits li'),
-    indicator: el<HTMLElement>('#chart-container .chart-indicator'),
-    evolutionIndicator: el<HTMLElement>('#chart-container .chart-evolution-indicator'),
-    axisStart: el<HTMLElement>('#chart-container .chart-axis-labels span:first-child'),
-    axisEnd: el<HTMLElement>('#chart-container .chart-axis-labels span:last-child'),
+const PROGRESSION = {
+    title: el<HTMLElement>('#progression-container .progression-title'),
+    subtitle: el<HTMLElement>('#progression-container .app-subtitle'),
+    gradeBadge: el<HTMLElement>('#progression-container .grade-badge'),
+    gradeRank: el<HTMLElement>('#progression-container .grade-rank'),
+    gradeXp: el<HTMLElement>('#progression-container .grade-xp'),
+    gradeTrack: el<HTMLElement>('#progression-container .grade-track'),
+    gradeFill: el<HTMLElement>('#progression-container .grade-fill'),
+    questsMarker: el<HTMLElement>('.quests-marker'),
+    questsTitle: el<HTMLElement>('#quests-container .quests-title'),
+    questsList: el<HTMLElement>('#quests-container .quests-list'),
 };
 
 type Resolved<M> = { [K in keyof M]: M[K] extends Descriptor<infer T> ? T : never };
-export type UIElements = Resolved<typeof ROOT> & { chart: Resolved<typeof CHART> };
+export type UIElements = Resolved<typeof ROOT> & { progression: Resolved<typeof PROGRESSION> };
 
 function queryElement(selector: string, isOptional: boolean): Element | null {
     // IDs simples usam getElementById (mais rápido que querySelector)
@@ -180,5 +184,5 @@ function bind(target: object, descriptors: Record<string, Descriptor<Element>>) 
 export const ui = {} as UIElements;
 bind(ui, ROOT);
 
-ui.chart = {} as UIElements['chart'];
-bind(ui.chart, CHART);
+ui.progression = {} as UIElements['progression'];
+bind(ui.progression, PROGRESSION);

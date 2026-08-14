@@ -8,7 +8,7 @@
  * @description Motor de Operações Binárias para Logs de Hábitos (Esquema 9-bit / Tombstone).
  */
 
-import { state, PERIOD_OFFSET, TimeOfDay } from '../state';
+import { state, PERIOD_OFFSET, TimeOfDay, bumpStateGeneration } from '../state';
 import { logger } from '../utils';
 
 /** 31 dias * 3 períodos = 93 blocos de 3 bits. */
@@ -170,7 +170,7 @@ export class HabitService {
         // LAZY SHARDING: Marca o mês como sujo
         this.markDirty(dateISO.substring(0, 7));
         
-        state.uiDirtyState.chartData = true;
+        bumpStateGeneration();
     }
 
     /**
@@ -193,7 +193,7 @@ export class HabitService {
                 state.monthlyLogs.delete(key);
             }
         }
-        state.uiDirtyState.chartData = true;
+        bumpStateGeneration();
     }
 
     /**
@@ -312,6 +312,6 @@ export class HabitService {
     static clearAllLogs() {
         state.monthlyLogs = new Map();
         this.resetCache();
-        state.uiDirtyState.chartData = true;
+        bumpStateGeneration();
     }
 }

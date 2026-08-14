@@ -23,6 +23,7 @@ import { ui } from '../../render/ui';
 import { closeModal } from '../../render';
 import { saveState } from '../persistence';
 import { HabitService } from '../HabitService';
+import { setQuestNote } from '../progression';
 import { emitCardGoalChanged, emitCardStatusChanged, emitRenderApp } from '../../events';
 import {
     _notifyChanges, _notifyPartialUIRefresh,
@@ -104,6 +105,16 @@ export function setGoalOverride(habitId: string, d: string, t: TimeOfDay, v: num
 
 export function handleSaveNote() {
     if (!state.editingNoteFor) return;
+
+    // O objetivo secundário usa o mesmo modal; quem grava é o motor dele, que
+    // sabe do merge por data. `questId` presente é o que distingue os dois.
+    if ('questId' in state.editingNoteFor) {
+        const { questId, date } = state.editingNoteFor;
+        setQuestNote(questId, date, ui.notesTextarea.value);
+        closeModal(ui.notesModal);
+        return;
+    }
+
     const { habitId, date, time } = state.editingNoteFor;
     const val = sanitizeText(ui.notesTextarea.value);
     const inst = ensureHabitInstanceData(date, habitId, time);

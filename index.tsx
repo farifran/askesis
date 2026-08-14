@@ -15,7 +15,7 @@ import './css/header.css';
 import './css/components.css';
 import './css/calendar.css';
 import './css/habits.css';
-import './css/charts.css';
+import './css/progression.css';
 import './css/forms.css';
 import './css/modals.css';
 

@@ -107,7 +107,7 @@ export async function resetApplicationData() {
     state.pendingConsolidationHabitIds = [];
     state.monthlyLogs = new Map();
     clearAllCaches();
-    state.uiDirtyState = { calendarVisuals: true, habitListStructure: true, chartData: true };
+    state.uiDirtyState = { calendarVisuals: true, habitListStructure: true };
     HabitService.resetCache();
     state.aiDailyCount = 0; state.lastAIContextHash = null;
     emitRenderApp();

@@ -99,7 +99,7 @@ async function _processKey(key: string) {
             await loadState(mergedState);
             clearActiveHabitsCache();
             clearHabitDomCache();
-            state.uiDirtyState.habitListStructure = state.uiDirtyState.calendarVisuals = state.uiDirtyState.chartData = true;
+            state.uiDirtyState.habitListStructure = state.uiDirtyState.calendarVisuals = true;
             await saveState(true);
             renderApp();
             setSyncStatus('syncSynced');

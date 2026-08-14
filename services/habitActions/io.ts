@@ -81,6 +81,7 @@ export function exportData() {
         pendingConsolidationHabitIds: stateSnapshot.pendingConsolidationHabitIds,
         quoteState: stateSnapshot.quoteState,
         hasOnboarded: stateSnapshot.hasOnboarded,
+        quests: stateSnapshot.quests,
         // syncLogs excluded (monitoring info should not be part of user backup)
         // monthly logs exported in serialized form below
         aiDailyCount: stateSnapshot.aiDailyCount,
