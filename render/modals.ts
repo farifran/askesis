@@ -86,13 +86,13 @@ function buildManageHabitListItem(item: ManageHabitItem, today: string): HTMLLIE
         if (isConsolidated) {
             actions.appendChild(buildManageActionButton(
                 'graduate-habit-btn',
-                t('aria_graduate', { name }),
+                t('aria_graduate', { habitName: name }),
                 UI_ICONS.graduateAction
             ));
         } else {
             actions.appendChild(buildManageActionButton(
                 'end-habit-btn',
-                t('aria_end', { name }),
+                t('aria_end', { habitName: name }),
                 UI_ICONS.endAction
             ));
         }
@@ -104,7 +104,7 @@ function buildManageHabitListItem(item: ManageHabitItem, today: string): HTMLLIE
         actions.appendChild(statusEl);
         actions.appendChild(buildManageActionButton(
             'permanent-delete-habit-btn',
-            t('aria_delete_permanent', { name }),
+            t('aria_delete_permanent', { habitName: name }),
             UI_ICONS.deletePermanentAction
         ));
     }
@@ -443,6 +443,11 @@ export function openEditModal(habit: Habit | HabitTemplate | null, targetDateOve
     state.pendingHabitTime = null;
 
     state.editingHabit = { isNew: isN, habitId: isN ? undefined : (habit as Habit).id, originalData: isN ? undefined : (habit as Habit), formData: fd, targetDate: safe };
+
+    // O título estava fixo em "Editar Hábito" no HTML, sem ninguém traduzi-lo: quem
+    // usa o app em inglês ou espanhol via português aqui. As duas chaves já
+    // existiam nos três idiomas, órfãs desde sempre — só faltava a ligação.
+    setTextContent(ui.editHabitModalTitle, t(isN ? 'modalEditNewTitle' : 'modalEditTitle'));
 
     const ni = ui.editHabitForm.elements.namedItem('habit-name') as HTMLInputElement;
     if (ni) {

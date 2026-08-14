@@ -200,6 +200,8 @@ export function updateUIText() {
     setTextContent(ui.iconPickerModal.querySelector('.modal-close-btn'), t('cancelButton'));
     setTextContent(ui.colorPickerTitle, t('modalColorPickerTitle'));
     setTextContent(ui.colorPickerModal.querySelector('.modal-close-btn'), t('cancelButton'));
+    // Também estava fixo no HTML ("Salvar"), com a chave existindo sem uso.
+    setTextContent(ui.editHabitSaveBtn, t('modalEditSaveButton'));
 
     const setBtnHtml = (btn: HTMLButtonElement, icon: string, text: string) => {
         const currentText = btn.textContent || '';
