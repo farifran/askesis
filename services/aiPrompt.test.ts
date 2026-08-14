@@ -120,10 +120,26 @@ describe('Prompt de análise estoica', () => {
             }
         });
 
-        it('não vaza palavras de outro idioma no template português', () => {
-            const pt = String(loadLocale('pt').aiPromptQuote);
-            for (const leak of ['palabras', 'Granularidad ', 'puntuación', 'siguiente']) {
-                expect(pt.includes(leak), `PT contém termo em espanhol: ${leak}`).toBe(false);
+        it('não vaza palavras de outro idioma, em nenhum dos prompts', () => {
+            // Os três idiomas nasceram por tradução manual um do outro, e sobrou
+            // texto do vizinho em ambas as direções: o mentor estoico instruía em
+            // portunhol ("O Conselho Práctico", "Reglas Adicionais") e o espanhol
+            // pedia "Período de Análise". Como é a instrução que define a
+            // ESTRUTURA da resposta, o modelo copia o erro para a tela.
+            const PROMPTS = ['aiPromptQuote', 'aiSystemInstruction', 'aiPromptMonthly', 'aiPromptQuarterly', 'aiPromptGeneral'];
+            const INTRUSOS: Record<string, string[]> = {
+                pt: ['palabras', 'Granularidad ', 'puntuación', 'siguiente', 'Días', 'Práctico', 'Reglas', 'fortaleciendo', 'Análisis', 'Historial'],
+                es: ['Dias', 'Prático', 'Regras', 'fortalecendo', 'Análise', 'Histórico', 'surgindo', ' and '],
+                en: ['Días', 'Dias', 'Reglas', 'Regras', 'Análisis', 'Análise']
+            };
+            for (const lang of LOCALES) {
+                const locale = loadLocale(lang);
+                for (const chave of PROMPTS) {
+                    const texto = String(locale[chave] ?? '');
+                    for (const intruso of INTRUSOS[lang]) {
+                        expect(texto.includes(intruso), `${lang}/${chave} contém termo estrangeiro: ${intruso}`).toBe(false);
+                    }
+                }
             }
         });
     });
