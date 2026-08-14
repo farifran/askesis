@@ -20,7 +20,7 @@ Comando usado: `npm test -- --run`
 <!-- INVENTARIO:INICIO -->
 
 - **Arquivos de teste:** 42
-- **Testes totais:** 559
+- **Testes totais:** 619
 
 > Gerado por `node scripts/update-test-inventory.js` a partir de execução real.
 > Não editar à mão: `--check` falha o CI quando divergir.
@@ -40,7 +40,7 @@ Comando usado: `npm test -- --run`
 
 - `listeners/drag.test.ts` → 6
 - `listeners/notifications.test.ts` → 5
-- `listeners/swipe.test.ts` → 3
+- `listeners/swipe.test.ts` → 4
 
 ### `raiz`
 
@@ -49,12 +49,11 @@ Comando usado: `npm test -- --run`
 
 ### `render`
 
-- `render/chart.test.ts` → 9
 - `render/modalBuilders.test.ts` → 8
 
 ### `services`
 
-- `services/aiPrompt.test.ts` → 12
+- `services/aiPrompt.test.ts` → 17
 - `services/analysis.test.ts` → 5
 - `services/api.test.ts` → 14
 - `services/badge.test.ts` → 8
@@ -62,7 +61,7 @@ Comando usado: `npm test -- --run`
 - `services/cloudDataMerge.integration.test.ts` → 2
 - `services/compression.test.ts` → 16
 - `services/crypto.test.ts` → 26
-- `services/dataMerge.test.ts` → 30
+- `services/dataMerge.test.ts` → 34
 - `services/exportFiltering.test.ts` → 1
 - `services/habitActions.test.ts` → 29
 - `services/HabitService.test.ts` → 22
@@ -70,6 +69,7 @@ Comando usado: `npm test -- --run`
 - `services/migration.test.ts` → 21
 - `services/notificationCard.test.ts` → 18
 - `services/persistence.test.ts` → 13
+- `services/progression.test.ts` → 59
 - `services/push.test.ts` → 2
 - `services/quoteEngine.test.ts` → 13
 - `services/selectors.test.ts` → 24
