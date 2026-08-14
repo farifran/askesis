@@ -117,7 +117,11 @@ function loadLanguage(langCode: string): Promise<boolean> {
         const timeoutId = setTimeout(() => controller.abort(), LANG_LOAD_TIMEOUT_MS);
 
         try {
-            const response = await fetch(`./locales/${langCode}.json`, { signal: controller.signal });
+            // A versão vem do conteúdo das traduções (injetada pelo build). Sem ela,
+            // o endereço é fixo e um service worker antigo responde com a cópia
+            // velha enquanto o bundle novo já veio da rede — texto velho em código
+            // novo, que aparece na tela como a chave crua.
+            const response = await fetch(`./locales/${langCode}.json?v=${__LOCALE_VERSION__}`, { signal: controller.signal });
             clearTimeout(timeoutId);
             
             if (!response.ok) {

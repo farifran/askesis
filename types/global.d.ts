@@ -4,6 +4,9 @@
 */
 
 declare global {
+    /** Versão das traduções, injetada pelo build a partir do conteúdo dos locales. */
+    const __LOCALE_VERSION__: string;
+
     interface Element {
         attributeStyleMap?: {
             set(property: string, value: any): void;

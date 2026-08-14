@@ -1,6 +1,12 @@
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+  // O build injeta esta constante nos três consumidores do locale (index.html,
+  // i18n.ts e sw.js). O vitest não passa pelo build, então sem este espelho o
+  // `i18n.ts` lança ReferenceError e nenhuma tradução carrega nos testes.
+  define: {
+    __LOCALE_VERSION__: JSON.stringify('test'),
+  },
   test: {
     // Simula um navegador para que 'window', 'document' e 'localStorage' existam.
     // jsdom (e não happy-dom): DOMPurify >= 3.4.8 não sanitiza sob happy-dom.

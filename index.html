@@ -56,7 +56,7 @@
                 // `crossOrigin` casa o modo da dica com o do fetch() do i18n
                 // (cors + credenciais same-origin). Sem ele o navegador busca
                 // o arquivo duas vezes — medido.
-                rel: 'preload', as: 'fetch', crossOrigin: 'anonymous', href: './locales/' + _lang + '.json'
+                rel: 'preload', as: 'fetch', crossOrigin: 'anonymous', href: './locales/' + _lang + '.json?v=__LOCALE_VERSION__'
             }));
         } catch (e) { /* sem localStorage o app segue: a dica é opcional */ }
     </script>

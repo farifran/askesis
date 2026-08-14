@@ -2,6 +2,7 @@
 const esbuild = require('esbuild');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const isProd = process.env.NODE_ENV === 'production';
 // Use absolute path for output directory to avoid CWD ambiguity
@@ -34,6 +35,22 @@ async function build() {
     }
     await fs.promises.mkdir(OUT_DIR, { recursive: true });
 
+    // Versão dos arquivos de tradução, tirada do conteúdo deles.
+    //
+    // Por que não o hash do bundle: ele é calculado A PARTIR do bundle, e injetá-lo
+    // dentro do bundle seria circular. Por que o conteúdo é MELHOR: o endereço só
+    // muda quando o texto muda, então um deploy que não mexe em tradução mantém o
+    // cache de todo mundo quente.
+    //
+    // Sem isto, `locales/pt.json` tem nome fixo e o service worker antigo responde
+    // com a cópia velha enquanto o bundle novo — que tem hash no nome — já veio da
+    // rede. O resultado é código novo lendo texto velho, e cada string nova sai na
+    // tela como a própria chave.
+    const localeFiles = ['pt', 'en', 'es'].map(l => path.resolve(__dirname, 'locales', `${l}.json`));
+    const localeHash = crypto.createHash('sha256');
+    for (const f of localeFiles) localeHash.update(await fs.promises.readFile(f));
+    const localeVersion = isProd ? localeHash.digest('hex').slice(0, 8) : 'dev';
+
     // 1. Bundle App (index.tsx -> bundle.[hash].js + bundle.[hash].css em prod)
     let jsBundleName  = 'bundle.js';
     let cssBundleName = 'bundle.css';
@@ -45,6 +62,7 @@ async function build() {
         target: ['es2020'],
         define: {
             'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'development'),
+            __LOCALE_VERSION__: JSON.stringify(localeVersion),
             // NUNCA adicionar chaves de API aqui: o define substitui referências no
             // BUNDLE PÚBLICO. A chave do Gemini vive só no servidor (api/analyze).
         },
@@ -141,6 +159,12 @@ async function build() {
             .replace(/"bundle\.css"/g, `"${cssBundleName}"`)
             .replace(/"bundle\.js"/g,  `"${jsBundleName}"`);
     }
+    // Fora do bloco de produção: a dica de preload precisa apontar para o MESMO
+    // endereço que o i18n vai pedir, em dev também. Divergir aqui faz o navegador
+    // baixar o arquivo duas vezes.
+    html = html.replace('__LOCALE_VERSION__', localeVersion);
+    {
+    }
     await fs.promises.writeFile(path.join(OUT_DIR, 'index.html'), html);
 
     await copyFile('manifest.json', path.join(OUT_DIR, 'manifest.json'));
@@ -155,7 +179,7 @@ async function build() {
     const buildHash = isProd
         ? (jsBundleName.match(/^bundle-([A-Za-z0-9]+)\.js$/) || [])[1] || String(Date.now())
         : 'dev';
-    swSrc = swSrc.replace('__BUILD_HASH__', buildHash);
+    swSrc = swSrc.replace('__BUILD_HASH__', buildHash).replace(/__LOCALE_VERSION__/g, localeVersion);
     if (isProd) {
         swSrc = swSrc
             .replace("'/bundle.js'",  `'/${jsBundleName}'`)
