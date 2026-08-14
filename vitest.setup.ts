@@ -41,7 +41,7 @@ if (!globalThis.localStorage) {
         configurable: true,
         enumerable: true
     });
-    const win = (globalThis as { window?: Record<string, unknown> }).window;
+    const win = (globalThis as unknown as { window?: Record<string, unknown> }).window;
     if (win && !win.localStorage) {
         Object.defineProperty(win, 'localStorage', {
             value: storage,

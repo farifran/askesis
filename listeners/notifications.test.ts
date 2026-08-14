@@ -20,7 +20,9 @@ const mockToggle = {
 const mockLabel = {
     classList: { toggle: vi.fn(), contains: vi.fn(() => false) },
 };
-const mockStatusDesc = {};
+// Elemento falso: só `textContent` é tocado, mas o tipo precisa ser o de um
+// Element porque é isso que `ui.notificationStatusDesc` promete.
+const mockStatusDesc = { textContent: '' } as unknown as HTMLElement;
 
 const mockSetTextContent = vi.fn();
 vi.mock('../render/dom', () => ({
@@ -228,7 +230,7 @@ describe('Notificações push — fluxo de opt-out', () => {
             //   (caso nativePerm='granted' e isPushEnabled=true: NÃO sobrescreve)
             const isPushEnabled = true;  // SDK em race condition
             const nativePerm = 'granted';
-            const localOptIn = false;    // opt-out explícito já persistido
+            const localOptIn = false as boolean | null;    // opt-out explícito já persistido
 
             // Lógica corrigida: isPushEnabled=true → sobrescreveria para true
             // MAS: a lógica corrigida só chama setLocalPushOptIn(true) quando isPushEnabled=true
@@ -254,7 +256,7 @@ describe('Notificações push — fluxo de opt-out', () => {
             // Mas localOptIn NÃO é sobrescrito para true, então na próxima chamada:
             // effectiveEnabled = false || (true && false) = false ✓
 
-            const localOptIn = false; // opt-out explícito persistido
+            const localOptIn = false as boolean | null; // opt-out explícito persistido
             const isPushEnabled = false; // SDK finalmente atualizado
             const nativePerm = 'granted';
 

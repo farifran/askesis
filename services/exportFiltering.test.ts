@@ -33,7 +33,8 @@ describe('exportData filtering', () => {
 
     // Assert
     expect(capturedBlob).toBeInstanceOf(Blob);
-    const text = await (capturedBlob as Blob).text();
+    // O compilador não vê o mock rodar, então continua achando que é `null`.
+    const text = await (capturedBlob as unknown as Blob).text();
     const payload = JSON.parse(text);
 
     // Deleted habit must NOT be exported

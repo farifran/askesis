@@ -233,9 +233,14 @@ describe('buildNotificationCards — virada do dia', () => {
         // vazios, e cartão nenhum pode inventar pendência para eles.
         const id = createTestHabit({ name: 'Semanal', time: 'Morning', goalType: 'check' });
         const habito = state.habits.find(h => h.id === id)!;
-        habito.scheduleHistory[0].frequency = {
-            type: 'specific_days_of_week',
-            days: [parseUTCIsoDate(DIA_D).getUTCDay()]
+        // `frequency` é readonly no HabitSchedule: troca-se o agendamento inteiro,
+        // que é o que a camada de ações também faz em produção.
+        habito.scheduleHistory[0] = {
+            ...habito.scheduleHistory[0],
+            frequency: {
+                type: 'specific_days_of_week',
+                days: [parseUTCIsoDate(DIA_D).getUTCDay()]
+            }
         };
         clearAllCaches();
 
