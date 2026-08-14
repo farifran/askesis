@@ -51,9 +51,6 @@ const FLAG_GZIP = 0x01;
 /** OWASP (2023+) para PBKDF2-HMAC-SHA256. */
 export const PBKDF2_ITERATIONS = 600_000;
 
-/** Custo do formato legado, fixo por definição. */
-const LEGACY_ITERATIONS = 100_000;
-
 /**
  * Teto defensivo: o contador de iterações vem de dados não confiáveis (o blob
  * remoto). Sem limite, um envelope forjado com 2^32 iterações travaria a aba.
@@ -161,49 +158,13 @@ async function decryptV2(bytes: Uint8Array, password: string): Promise<string> {
 }
 
 /**
- * DEPRECIADO — formato v1 (100k iterações, sem cabeçalho).
+ * Descriptografa envelopes v3 e v2.
  *
- * Introduzido antes de 2026-08-01; o envelope v2 entrou em produção nessa data e
- * o v3 em 2026-08-02. Todo save regrava na versão atual, então os blobs v1
- * desaparecem conforme os dispositivos ressincronizam.
- *
- * CRITÉRIO DE REMOÇÃO (não é prazo de calendário): remover quando for razoável
- * assumir que todos os dispositivos ativos já ressincronizaram ao menos uma vez
- * — na prática, alguns meses após 2026-08-01. Remover cedo demais deixa
- * ilegíveis os dados de quem ficou offline no intervalo, sem recuperação
- * possível: a chave deriva no cliente e o servidor só guarda ciphertext.
- *
- * EVIDÊNCIA: o aviso abaixo é a única sinalização disponível — não há telemetria
- * por decisão de privacidade. Se ninguém vir esse warning no console por um
- * período longo, é o sinal de que o caminho pode cair.
- */
-let _warnedLegacy = false;
-
-async function decryptLegacy(bytes: Uint8Array, password: string): Promise<string> {
-    // Uma vez por sessão: o sync percorre vários shards e repetir por blob só
-    // geraria ruído. `console` direto mantém crypto.ts sem dependências (ele é
-    // isomórfico e roda também dentro do Web Worker).
-    if (!_warnedLegacy) {
-        _warnedLegacy = true;
-        console.warn('[crypto] Envelope v1 (depreciado) em uso. Será regravado em v3 no próximo save.');
-    }
-
-    const minLength = SALT_LEN + IV_LEN + 1;
-    if (bytes.length < minLength) {
-        throw new Error(`decrypt: ciphertext too short (${bytes.length} < ${minLength})`);
-    }
-
-    const salt = bytes.slice(0, SALT_LEN);
-    const iv = bytes.slice(SALT_LEN, SALT_LEN + IV_LEN);
-    const data = bytes.slice(SALT_LEN + IV_LEN);
-
-    const key = await deriveKey(password, salt, LEGACY_ITERATIONS);
-    const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, data);
-    return new TextDecoder().decode(decrypted);
-}
-
-/**
- * Descriptografa envelopes v3, v2 e legados (v1) de forma transparente.
+ * O formato v1 (100k iterações, sem cabeçalho) foi REMOVIDO em 2026-08-14, com
+ * o app em produção e sem dado a preservar. Um blob sem cabeçalho reconhecível
+ * agora falha alto em vez de tentar uma leitura legada — e falhar é o
+ * comportamento correto: a chave deriva no cliente e não há como recuperar o
+ * conteúdo de um formato que ninguém mais sabe ler.
  */
 export async function decrypt(encryptedBase64: string, password: string): Promise<string> {
     if (!encryptedBase64 || typeof encryptedBase64 !== 'string') {
@@ -222,19 +183,11 @@ export async function decrypt(encryptedBase64: string, password: string): Promis
 
     const version = readEnvelopeVersion(bytes);
     if (version === null) {
-        return decryptLegacy(bytes, password);
+        throw new Error('decrypt: envelope não reconhecido — o formato v1 (sem cabeçalho) foi removido em 2026-08-14');
     }
 
-    try {
-        return version === 3 ? await decryptV3(bytes, password) : await decryptV2(bytes, password);
-    } catch (error) {
-        // Um salt legado aleatório tem ~2^-40 de chance de imitar MAGIC+VERSION.
-        // Improvável, mas o AES-GCM é autenticado: a leitura errada falha de forma
-        // limpa, então o fallback é seguro e torna a detecção inequívoca.
-        try {
-            return await decryptLegacy(bytes, password);
-        } catch {
-            throw error;
-        }
-    }
+    // Sem tentativa de fallback: ela existia só para desempatar um blob v1 cujo
+    // salt aleatório imitasse MAGIC+VERSION (~2^-40). Sem o v1, a versão lida no
+    // cabeçalho é a resposta final, e o AES-GCM autenticado cuida do resto.
+    return version === 3 ? decryptV3(bytes, password) : decryptV2(bytes, password);
 }

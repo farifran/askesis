@@ -20,7 +20,7 @@ Comando usado: `npm test -- --run`
 <!-- INVENTARIO:INICIO -->
 
 - **Arquivos de teste:** 42
-- **Testes totais:** 628
+- **Testes totais:** 627
 
 > Gerado por `node scripts/update-test-inventory.js` a partir de execução real.
 > Não editar à mão: `--check` falha o CI quando divergir.
@@ -60,7 +60,7 @@ Comando usado: `npm test -- --run`
 - `services/cloud.test.ts` → 8
 - `services/cloudDataMerge.integration.test.ts` → 2
 - `services/compression.test.ts` → 16
-- `services/crypto.test.ts` → 26
+- `services/crypto.test.ts` → 25
 - `services/dataMerge.test.ts` → 35
 - `services/exportFiltering.test.ts` → 1
 - `services/habitActions.test.ts` → 29

@@ -146,17 +146,14 @@ describe('🔐 Criptografia AES-GCM (crypto.ts)', () => {
             expect(PBKDF2_ITERATIONS).toBe(600_000);
         });
 
-        it('deve descriptografar blobs no formato legado v1 (100k iterações, sem cabeçalho)', async () => {
-            const text = 'dados sincronizados antes da migração';
-            const password = 'senha-antiga';
-
-            const legacyBlob = await encryptLegacyV1(text, password);
-            expect(await decrypt(legacyBlob, password)).toBe(text);
-        });
-
-        it('deve rejeitar blob legado com senha errada em vez de aceitar silenciosamente', async () => {
-            const legacyBlob = await encryptLegacyV1('segredo', 'senha-certa');
-            await expect(decrypt(legacyBlob, 'senha-errada')).rejects.toThrow();
+        it('deve recusar o formato v1, removido em 2026-08-14', async () => {
+            // O caminho legado saiu com o app em produção e sem dado a preservar.
+            // O teste sobrevive à remoção com o sinal invertido: um blob sem
+            // cabeçalho tem de falhar ALTO, dizendo o que aconteceu, em vez de
+            // devolver lixo ou silêncio. `encryptLegacyV1` continua aqui para
+            // fabricar exatamente esse blob.
+            const legacyBlob = await encryptLegacyV1('dados de antes da migração', 'senha-antiga');
+            await expect(decrypt(legacyBlob, 'senha-antiga')).rejects.toThrow(/envelope não reconhecido/);
         });
 
         it('deve descriptografar blobs no formato v2 (sem byte de flags)', async () => {
