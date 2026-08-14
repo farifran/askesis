@@ -25,6 +25,8 @@ import { runWorkerTask, addSyncLog } from '../cloud';
 import { apiFetch } from '../api';
 import { HabitService } from '../HabitService';
 import { PREDEFINED_HABITS } from '../../data/predefinedHabits';
+import { getQuestCatalogItem } from '../../data/quests';
+import { getQuestTarget } from '../progression';
 import { t, getAiLanguageName } from '../../i18n';
 
 // SIMPLES HASHING FUNCTION (Fowler-Noll-Vo)
@@ -35,6 +37,30 @@ function fnv1aHash(str: string): string {
         hash = (hash * 0x01000193) >>> 0;
     }
     return hash.toString(16);
+}
+
+/**
+ * Objetivos secundários cumpridos, como notas da janela analisada.
+ *
+ * Só a conclusão entra: um objetivo pela metade é ruído, não reflexão — e, como
+ * nada além dela muda o prompt, marcar avanço não invalida a análise em cache
+ * nem queima a cota diária. As anotações do percurso viajam como complemento da
+ * entrada final, que é onde ganham sentido.
+ */
+function buildQuestNotes(cutoffISO: string) {
+    return state.quests
+        .filter(q => !!q.completedOn && q.completedOn >= cutoffISO)
+        .map(q => {
+            const item = getQuestCatalogItem(q.id);
+            const notes = q.notes ?? {};
+            return {
+                date: q.completedOn!,
+                title: item ? t(item.titleKey) : (q.customTitle || ''),
+                target: getQuestTarget(q),
+                notes: Object.keys(notes).sort().map(date => ({ date, text: notes[date] }))
+            };
+        })
+        .filter(entry => entry.title.length > 0);
 }
 
 export async function performAIAnalysis(type: 'monthly' | 'quarterly' | 'historical') {
@@ -64,7 +90,8 @@ export async function performAIAnalysis(type: 'monthly' | 'quarterly' | 'histori
     addSyncLog(`Iniciando análise IA (${type})...`, 'info');
 
     try {
-        const trans: Record<string, string> = { promptTemplate: t(type === 'monthly' ? 'aiPromptMonthly' : (type === 'quarterly' ? 'aiPromptQuarterly' : 'aiPromptGeneral')), aiDaysUnit: t('unitDays', { count: 2 }) };
+        const periodKey = type === 'monthly' ? 'aiPeriodMonthly' : (type === 'quarterly' ? 'aiPeriodQuarterly' : 'aiPeriodHistorical');
+        const trans: Record<string, string> = { promptTemplate: t(type === 'monthly' ? 'aiPromptMonthly' : (type === 'quarterly' ? 'aiPromptQuarterly' : 'aiPromptGeneral')), aiDaysUnit: t('unitDays', { count: 2 }), periodLabel: t(periodKey) };
         ['aiPromptGraduatedSection', 'aiPromptNoData', 'aiPromptNone', 'aiSystemInstruction', 'aiPromptHabitDetails', 'aiVirtue', 'aiDiscipline', 'aiSphere', 'stoicVirtueWisdom', 'stoicVirtueCourage', 'stoicVirtueJustice', 'stoicVirtueTemperance', 'stoicDisciplineDesire', 'stoicDisciplineAction', 'stoicDisciplineAssent', 'governanceSphereBiological', 'governanceSphereStructural', 'governanceSphereSocial', 'governanceSphereMental', 'aiPromptNotesSectionHeader', 'aiStreakLabel', 'aiSuccessRateLabelMonthly', 'aiSuccessRateLabelQuarterly', 'aiSuccessRateLabelHistorical', 'aiHistoryChange', 'aiHistoryChangeFrequency', 'aiHistoryChangeGoal', 'aiHistoryChangeTimes'].forEach(k => trans[k] = t(k));
         PREDEFINED_HABITS.forEach(h => trans[h.nameKey] = t(h.nameKey));
         const logsSerialized = HabitService.serializeLogsForCloud();
@@ -84,7 +111,7 @@ export async function performAIAnalysis(type: 'monthly' | 'quarterly' | 'histori
         });
 
         // --- 2. GENERATE CONTENT & HASH ---
-        const workerPayload = { analysisType: type, habits: state.habits, dailyData: filteredDailyData, archives: state.archives, monthlyLogsSerialized: logsSerialized, languageName: getAiLanguageName(), translations: trans, todayISO };
+        const workerPayload = { analysisType: type, habits: state.habits, dailyData: filteredDailyData, archives: state.archives, monthlyLogsSerialized: logsSerialized, languageName: getAiLanguageName(), translations: trans, questNotes: buildQuestNotes(cutoffISO), todayISO };
         const { prompt, systemInstruction } = await runWorkerTask<any>('build-ai-prompt', workerPayload);
 
         // Compute Content-Hash (Cheap and Fast)

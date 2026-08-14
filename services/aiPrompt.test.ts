@@ -129,6 +129,80 @@ describe('Prompt de análise estoica', () => {
     });
 });
 
+describe('Montagem do prompt de análise', () => {
+    const HABITO = {
+        id: 'h1',
+        scheduleHistory: [{ name: 'Leitura', mode: 'scheduled' }]
+    };
+
+    /** Payload mínimo com o template real de um idioma. */
+    function payload(lang: string, extra: Record<string, unknown> = {}) {
+        const locale = loadLocale(lang);
+        const trans: Record<string, unknown> = {
+            promptTemplate: locale.aiPromptMonthly,
+            aiSystemInstruction: locale.aiSystemInstruction,
+            aiPromptNotesSectionHeader: locale.aiPromptNotesSectionHeader,
+            aiPromptGraduatedSection: locale.aiPromptGraduatedSection,
+            periodLabel: locale.aiPeriodMonthly
+        };
+        return { habits: [HABITO], dailyData: {}, translations: trans, languageName: 'Portuguese', ...extra };
+    }
+
+    it('não deixa nenhum marcador do template sem substituir', async () => {
+        // REGRESSÃO: o montador substituía só {activeHabitDetails} e {history}.
+        // {aiPeriodMonthly}, {graduatedHabitsSection} e {notesSection} viajavam
+        // literais até o modelo, em todos os idiomas.
+        const { buildAiPrompt } = await import('./sync.worker');
+        for (const lang of LOCALES) {
+            const { prompt } = buildAiPrompt(payload(lang)) as { prompt: string };
+            const restantes = prompt.match(/\{[a-zA-Z_]+\}/g);
+            expect(restantes, `locale ${lang}`).toBeNull();
+        }
+    });
+
+    it('põe a nota do usuário em prosa e a tira do JSON do histórico', async () => {
+        const { buildAiPrompt } = await import('./sync.worker');
+        const dailyData = { '2026-08-10': { h1: { instances: { Morning: { status: 'completed', note: 'custou hoje' } } } } };
+        const { prompt } = buildAiPrompt(payload('pt', { dailyData })) as { prompt: string };
+
+        expect(prompt).toContain('Leitura (Morning): custou hoje');
+        // o histórico continua no prompt, mas sem duplicar o texto da nota
+        expect(prompt).toContain('2026-08-10');
+        expect(prompt.match(/custou hoje/g)).toHaveLength(1);
+    });
+
+    it('registra objetivo cumprido como nota, com as anotações do percurso', async () => {
+        const { buildAiPrompt } = await import('./sync.worker');
+        const questNotes = [{
+            date: '2026-08-12',
+            title: 'Três dias de caminhada',
+            target: 3,
+            notes: [{ date: '2026-08-10', text: 'comecei devagar' }, { date: '2026-08-12', text: 'fechei' }]
+        }];
+        const { prompt } = buildAiPrompt(payload('pt', { questNotes })) as { prompt: string };
+
+        expect(prompt).toContain('[quest_completed target=3] Três dias de caminhada');
+        expect(prompt).toContain('comecei devagar | fechei');
+    });
+
+    it('não inventa seção quando não há nota nem objetivo', async () => {
+        const { buildAiPrompt } = await import('./sync.worker');
+        const { prompt } = buildAiPrompt(payload('pt')) as { prompt: string };
+        expect(prompt).not.toContain('Notas do Usuário');
+    });
+
+    it('preserva padrões de $ vindos de nota e de título de objetivo', async () => {
+        const { buildAiPrompt } = await import('./sync.worker');
+        const texto = "Gastei $& e $` e $$ hoje";
+        const dailyData = { '2026-08-10': { h1: { instances: { Morning: { note: texto } } } } };
+        const questNotes = [{ date: '2026-08-11', title: "Meta $& de $$", target: 1, notes: [] }];
+        const { prompt } = buildAiPrompt(payload('pt', { dailyData, questNotes })) as { prompt: string };
+
+        expect(prompt).toContain(texto);
+        expect(prompt).toContain("Meta $& de $$");
+    });
+});
+
 describe('Montagem do prompt (sync.worker)', () => {
     it('preserva padrões de $ vindos das notas do usuário', async () => {
         // REGRESSÃO: String.replace(str, str) interpreta `$&`, `$\``, `$'` e `$$`
