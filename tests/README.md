@@ -20,7 +20,7 @@ Comando usado: `npm test -- --run`
 <!-- INVENTARIO:INICIO -->
 
 - **Arquivos de teste:** 42
-- **Testes totais:** 619
+- **Testes totais:** 625
 
 > Gerado por `node scripts/update-test-inventory.js` a partir de execução real.
 > Não editar à mão: `--check` falha o CI quando divergir.
@@ -66,10 +66,10 @@ Comando usado: `npm test -- --run`
 - `services/habitActions.test.ts` → 29
 - `services/HabitService.test.ts` → 22
 - `services/importExport.test.ts` → 1
-- `services/migration.test.ts` → 21
+- `services/migration.test.ts` → 24
 - `services/notificationCard.test.ts` → 18
 - `services/persistence.test.ts` → 13
-- `services/progression.test.ts` → 59
+- `services/progression.test.ts` → 62
 - `services/push.test.ts` → 2
 - `services/quoteEngine.test.ts` → 13
 - `services/selectors.test.ts` → 24

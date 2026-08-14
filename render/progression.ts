@@ -34,7 +34,7 @@ import {
     getProgression, getRankTier, getActiveQuests, getQuestNote,
     getVisibleCatalog, hasHiddenQuestTiers,
     getQuestTarget, getQuestProgress, getQuestNetProgress, getQuestStepXp, getCatalogStepXp,
-    getQuestUnlockStatus, isQuestRegisteredOn, getCompletedQuestIds,
+    getQuestUnlockStatus, isQuestRegisteredForCycleOf, getCompletedQuestIds,
     type UnlockStatus
 } from '../services/progression';
 
@@ -151,7 +151,7 @@ function questSignature(active: QuestRecord[], hasFreeSlot: boolean, today: stri
         .map(q => [
             q.id,
             getQuestNetProgress(q),
-            isQuestRegisteredOn(q, today) ? 1 : 0,
+            isQuestRegisteredForCycleOf(q, today) ? 1 : 0,
             getQuestNote(q, today) ? 1 : 0
         ].join(':'))
         .join('|');
@@ -212,7 +212,7 @@ function buildSwipeAction(side: 'left' | 'right', buttonClass: string, icon: str
 function buildActiveQuestRow(quest: QuestRecord, today: string): HTMLElement {
     const target = getQuestTarget(quest);
     const progress = getQuestProgress(quest);
-    const doneToday = isQuestRegisteredOn(quest, today);
+    const doneToday = isQuestRegisteredForCycleOf(quest, today);
 
     // Espelha o .completed-wrapper do cartão de hábito concluído. Não é botão: o
     // cartão todo é que recebe o toque.

@@ -7,6 +7,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { migrateState } from './migration';
 import { APP_VERSION } from '../state';
+import { CUSTOM_QUEST_MAX_TARGET } from '../constants';
 
 describe('🔄 Migração de Schema (migration.ts)', () => {
 
@@ -330,6 +331,40 @@ describe('🔄 Migração de Schema (migration.ts)', () => {
 
             const result = migrateState(loaded, 99);
             expect(result.version).toBe(99);
+        });
+    });
+
+    describe('Objetivos secundários vindos de fora (V11 → V12)', () => {
+        /** Estado mínimo com um objetivo personalizado de alvo arbitrário. */
+        function comAlvo(customTarget: unknown) {
+            return migrateState({
+                version: 11,
+                habits: [],
+                dailyData: {},
+                quests: [{ id: 'custom:x', startedOn: '2026-01-01', days: [], customTarget }]
+            }, APP_VERSION);
+        }
+
+        it('prende o alvo na mesma faixa que o formulário impõe', () => {
+            // REGRESSÃO: aceitar "qualquer número finito" deixava passar 0, e
+            // `getQuestStepXp` dividia por zero. O NaN atravessava a soma de XP
+            // até `gradeFromXp`, cujo laço não sai enquanto a comparação for
+            // falsa — um backup importado promovia ao grau máximo.
+            expect(comAlvo(0).quests[0].customTarget).toBe(1);
+            expect(comAlvo(-7).quests[0].customTarget).toBe(1);
+            expect(comAlvo(3.7).quests[0].customTarget).toBe(3);
+            expect(comAlvo(1e9).quests[0].customTarget).toBe(CUSTOM_QUEST_MAX_TARGET);
+        });
+
+        it('descarta alvo que não é número, sem inventar um', () => {
+            expect(comAlvo('12').quests[0].customTarget).toBeUndefined();
+            expect(comAlvo(NaN).quests[0].customTarget).toBeUndefined();
+            expect(comAlvo(Infinity).quests[0].customTarget).toBeUndefined();
+        });
+
+        it('estado anterior à v12 ganha a lista vazia, não undefined', () => {
+            const result = migrateState({ version: 11, habits: [], dailyData: {} }, APP_VERSION);
+            expect(result.quests).toEqual([]);
         });
     });
 });

@@ -155,6 +155,32 @@ function getQuestCadence(quest: QuestRecord): number {
     return getQuestCatalogItem(quest.id)?.cadence ?? 1;
 }
 
+/**
+ * Dias marcados agrupados no ciclo a que pertencem.
+ *
+ * UM CRÉDITO POR CICLO é a regra em todo o motor: a cadência diz de quanto em
+ * quanto tempo se espera um avanço, e marcar duas vezes dentro da mesma janela
+ * não adianta o objetivo. Sem isso, creditar cada dia enquanto se cobrava por
+ * ciclo deixava uma mentoria de doze semanas fechar em doze dias, com o XP
+ * inteiro mais o bônus de maestria.
+ *
+ * Com cadência 1 — a maioria — cada dia é o seu próprio ciclo e nada muda.
+ */
+function markedCycles(quest: QuestRecord, anchorISO: string): Map<number, string[]> {
+    const cadence = getQuestCadence(quest);
+    const from = parseUTCIsoDate(anchorISO).getTime();
+    const cycles = new Map<number, string[]>();
+
+    for (const day of quest.days) {
+        const offset = Math.round((parseUTCIsoDate(day).getTime() - from) / MS_PER_DAY);
+        const index = Math.floor(offset / cadence);
+        const existing = cycles.get(index);
+        if (existing) existing.push(day);
+        else cycles.set(index, [day]);
+    }
+    return cycles;
+}
+
 /** Começo da tentativa em curso; sem retomada, é o dia da ativação. */
 function attemptStart(quest: QuestRecord): string {
     return quest.attemptFrom ?? quest.startedOn;
@@ -185,13 +211,12 @@ export function getQuestNetProgress(quest: QuestRecord): number {
     const closedDays = Math.max(0, Math.round((parseUTCIsoDate(getTodayUTCIso()).getTime() - from) / MS_PER_DAY));
     const closedCycles = Math.floor(closedDays / cadence);
 
+    // Ciclos com avanço, não dias marcados: dois avanços na mesma semana valem
+    // um só, do mesmo jeito que a cobrança do dia perdido é por ciclo.
+    const cyclesWithProgress = markedCycles(quest, attemptStart(quest));
     let marked = 0;
-    const cyclesWithProgress = new Set<number>();
-    for (const day of quest.days) {
-        const offset = Math.round((parseUTCIsoDate(day).getTime() - from) / MS_PER_DAY);
-        if (offset < 0) continue;  // dias de uma tentativa anterior
-        marked++;
-        cyclesWithProgress.add(Math.floor(offset / cadence));
+    for (const cycle of cyclesWithProgress.keys()) {
+        if (cycle >= 0) marked++;  // negativo é de uma tentativa anterior
     }
 
     let missed = 0;
@@ -245,8 +270,17 @@ export function getCompletedQuestIds(): Set<string> {
     return ids;
 }
 
-export function isQuestRegisteredOn(quest: QuestRecord, dateISO: string): boolean {
-    return quest.days.includes(dateISO);
+/**
+ * Já houve avanço no ciclo a que esta data pertence?
+ *
+ * O cartão pergunta isto, e não "marquei hoje": num objetivo de ritmo semanal,
+ * registrado na segunda significa registrado a semana toda. Antes o cartão
+ * reabria no dia seguinte e aceitava uma marcação que não rendia nada.
+ */
+export function isQuestRegisteredForCycleOf(quest: QuestRecord, dateISO: string): boolean {
+    const from = parseUTCIsoDate(attemptStart(quest)).getTime();
+    const offset = Math.round((parseUTCIsoDate(dateISO).getTime() - from) / MS_PER_DAY);
+    return markedCycles(quest, attemptStart(quest)).has(Math.floor(offset / getQuestCadence(quest)));
 }
 
 /**
@@ -262,7 +296,11 @@ export function isQuestRegisteredOn(quest: QuestRecord, dateISO: string): boolea
  */
 function questEarnedXp(quest: QuestRecord): number {
     const stepXp = getQuestStepXp(quest);
-    let xp = quest.days.length * stepXp;
+    // Um crédito por ciclo aqui também, senão a barra do objetivo andaria por
+    // ciclo e o grau por dia. A âncora é `startedOn`, e não a tentativa em curso:
+    // as fronteiras de ciclo do histórico inteiro precisam ficar paradas, ou
+    // retomar moveria os ciclos antigos e o XP já ganho mudaria de valor.
+    let xp = markedCycles(quest, quest.startedOn).size * stepXp;
     if (quest.completedOn) xp += Math.round(getQuestTotalXp(quest) * QUEST_MASTERY_BONUS);
     return xp;
 }
@@ -518,11 +556,17 @@ export function toggleQuestProgress(questId: string): QuestActionResult {
 
     const today = getTodayUTCIso();
 
-    if (isQuestRegisteredOn(quest, today)) {
-        quest.days = quest.days.filter(day => day !== today);
-        // Conclusão de hoje se desfaz junto; a de outro dia já tirou o objetivo
-        // da lista e não há cartão para tocar.
-        if (quest.completedOn === today) quest.completedOn = undefined;
+    if (isQuestRegisteredForCycleOf(quest, today)) {
+        // Desfaz o avanço DESTE ciclo, que num objetivo diário é o dia de hoje e
+        // num semanal é o dia em que a semana foi registrada.
+        const from = parseUTCIsoDate(attemptStart(quest)).getTime();
+        const cycleOfToday = Math.floor(Math.round((parseUTCIsoDate(today).getTime() - from) / MS_PER_DAY) / getQuestCadence(quest));
+        const desfeitos = new Set(markedCycles(quest, attemptStart(quest)).get(cycleOfToday) ?? []);
+
+        quest.days = quest.days.filter(day => !desfeitos.has(day));
+        // Conclusão do ciclo se desfaz junto; a de um ciclo anterior já tirou o
+        // objetivo da lista e não há cartão para tocar.
+        if (quest.completedOn && desfeitos.has(quest.completedOn)) quest.completedOn = undefined;
         notifyQuestChange();
         return { ok: true, completed: false };
     }

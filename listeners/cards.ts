@@ -19,7 +19,11 @@ import { DOM_SELECTORS, CSS_CLASSES } from '../render/constants';
 
 const GOAL_STEP = 5, MAX_GOAL = 9999;
 const SELECTOR = `${DOM_SELECTORS.HABIT_CONTENT_WRAPPER}, ${DOM_SELECTORS.GOAL_CONTROL_BTN}, ${DOM_SELECTORS.GOAL_VALUE_WRAPPER}, ${DOM_SELECTORS.SWIPE_DELETE_BTN}, ${DOM_SELECTORS.SWIPE_NOTE_BTN}, ${DOM_SELECTORS.EMPTY_GROUP_PLACEHOLDER}`;
-const KEYBOARD_NAV_SELECTOR = `${DOM_SELECTORS.HABIT_CONTENT_WRAPPER}, ${DOM_SELECTORS.EMPTY_GROUP_PLACEHOLDER}`;
+// A linha de objetivo secundário tem a mesma anatomia do cartão de hábito e o
+// mesmo `role="button"` com tabindex — mas ficava de fora daqui, então o Tab
+// chegava nela e o Enter não fazia nada. Usar os seletores do gesto mantém as
+// duas listas em pé de igualdade sem um caso especial por tipo de linha.
+const KEYBOARD_NAV_SELECTOR = `${DOM_SELECTORS.SWIPEABLE_CONTENT}, ${DOM_SELECTORS.PLACEHOLDER}`;
 const goalAnimationCleanupTimers = new WeakMap<HTMLElement, number>();
 
 /**
@@ -103,7 +107,7 @@ const _handleContainerClick = (e: MouseEvent) => {
         triggerHaptic('light'); renderExploreHabits(); openModal(ui.exploreModal); return;
     }
 
-    const card = el.closest<HTMLElement>(DOM_SELECTORS.HABIT_CARD);
+    const card = el.closest<HTMLElement>(DOM_SELECTORS.SWIPEABLE_CARD);
     const { habitId: hId, time } = card?.dataset || {};
     if (!hId || !time) return;
     const t = time as TimeOfDay;

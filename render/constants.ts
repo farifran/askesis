@@ -84,7 +84,10 @@ export const DOM_SELECTORS = {
      * `data-habit-id` e posição na grade.
      */
     SWIPEABLE_CARD: `.${CSS_CLASSES.HABIT_CARD}, .quest-row`,
-    SWIPEABLE_CONTENT: `.${CSS_CLASSES.HABIT_CONTENT_WRAPPER}, .quest-content-wrapper`
+    SWIPEABLE_CONTENT: `.${CSS_CLASSES.HABIT_CONTENT_WRAPPER}, .quest-content-wrapper`,
+    // Convite de espaço vazio: horário sem hábito e slot de objetivo livre. Ambos
+    // são `role="button"` com tabindex, então ambos precisam responder ao teclado.
+    PLACEHOLDER: `.${CSS_CLASSES.EMPTY_GROUP_PLACEHOLDER}, .quest-placeholder`
 } as const;
 
 // UI constants (modals/explore)

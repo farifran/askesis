@@ -13,7 +13,7 @@ import { logger, getTodayUTCIso, sanitizeText } from '../utils';
 import { AppState, SyncLog, QuestRecord } from '../state';
 import { normalizeHabitMode, normalizeTimesByMode, normalizeFrequencyByMode } from './habitActions';
 import { HabitService } from './HabitService';
-import { CUSTOM_QUEST_MAX_TITLE_LENGTH, QUEST_NOTE_MAX_LENGTH } from '../constants';
+import { CUSTOM_QUEST_MAX_TITLE_LENGTH, CUSTOM_QUEST_MAX_TARGET, QUEST_NOTE_MAX_LENGTH } from '../constants';
 
 /**
  * Migra os bitmasks mensais de 6 bits/dia (v8) para 9 bits/dia (v9).
@@ -74,6 +74,21 @@ function sanitizeQuestNotes(raw: unknown): Record<string, string> | undefined {
     return found ? { ...notes } : undefined;
 }
 
+/**
+ * Alvo de objetivo personalizado vindo de fora, preso na mesma faixa que o
+ * formulário impõe em `createCustomQuest`.
+ *
+ * Aceitar "qualquer número finito" abria dois buracos: `0` fazia `getQuestStepXp`
+ * dividir por zero, e o NaN resultante atravessava a soma de XP até
+ * `gradeFromXp`, cujo laço não sai enquanto a comparação for falsa — o usuário
+ * saía promovido ao grau máximo. Um alvo enorme cunhava grau pelo outro lado,
+ * via bônus de maestria proporcional ao total.
+ */
+function sanitizeQuestTarget(raw: unknown): number | undefined {
+    if (typeof raw !== 'number' || !Number.isFinite(raw)) return undefined;
+    return Math.min(CUSTOM_QUEST_MAX_TARGET, Math.max(1, Math.floor(raw)));
+}
+
 function sanitizeQuests(raw: unknown): QuestRecord[] {
     if (!Array.isArray(raw)) return [];
 
@@ -101,7 +116,7 @@ function sanitizeQuests(raw: unknown): QuestRecord[] {
             // O título de objetivo personalizado é o único texto livre daqui, e
             // pode chegar de um JSON importado — mesmo tratamento do nome de hábito.
             customTitle: typeof quest.customTitle === 'string' ? sanitizeText(quest.customTitle, CUSTOM_QUEST_MAX_TITLE_LENGTH) : undefined,
-            customTarget: typeof quest.customTarget === 'number' && Number.isFinite(quest.customTarget) ? quest.customTarget : undefined
+            customTarget: sanitizeQuestTarget(quest.customTarget)
         });
     }
 

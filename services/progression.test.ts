@@ -12,7 +12,7 @@ import { QUEST_CATALOG, QUEST_TIERS } from '../data/quests';
 import {
     GRADE_XP_BASE, GRADE_XP_STEP, MAX_GRADE,
     XP_PER_COMPLETION, XP_PER_OVERACHIEVEMENT,
-    QUEST_MAX_ACTIVE, QUEST_FAILURE_FLOOR, QUEST_MASTERY_BONUS,
+    QUEST_MAX_ACTIVE, QUEST_FAILURE_FLOOR, QUEST_MASTERY_BONUS, QUEST_MIN_STEP_XP,
     CUSTOM_QUEST_MAX_TARGET
 } from '../constants';
 import {
@@ -20,7 +20,7 @@ import {
     getProgression,
     activateQuest, toggleQuestProgress, abandonQuest, createCustomQuest,
     getActiveQuests, getQuestUnlockStatus, getQuestTarget, getQuestTotalXp,
-    getQuestNetProgress, getQuestProgress, isQuestExpired
+    getQuestNetProgress, getQuestProgress, isQuestExpired, isQuestRegisteredForCycleOf
 } from './progression';
 
 /** Data ISO de N dias atrás, para montar objetivos com passado. */
@@ -486,6 +486,41 @@ describe('regressão e caducidade', () => {
 
         const late = seed(weeklyQuest.id, daysAgo(7), []);
         expect(isQuestExpired(late)).toBe(true);
+    });
+
+    it('ritmo semanal não fecha em dias seguidos', () => {
+        // REGRESSÃO: o líquido creditava cada DIA marcado e cobrava por CICLO,
+        // então marcar quatro dias seguidos fechava um objetivo de quatro
+        // semanas — e uma mentoria de doze semanas caía em doze dias, com o XP
+        // inteiro mais o bônus de maestria.
+        const dias = Array.from({ length: weeklyQuest.target }, (_, i) => daysAgo(weeklyQuest.target - 1 - i));
+        const quest = seed(weeklyQuest.id, dias[0], dias);
+
+        expect(getQuestNetProgress(quest)).toBe(1);
+        expect(getQuestProgress(quest)).toBeLessThan(weeklyQuest.target);
+    });
+
+    it('um crédito por ciclo, tanto na barra quanto no XP', () => {
+        const cadencia = weeklyQuest.cadence!;
+        // Duas semanas de fato, com um avanço repetido dentro da primeira.
+        const quest = seed(weeklyQuest.id, daysAgo(cadencia + 1), [
+            daysAgo(cadencia + 1), daysAgo(cadencia), daysAgo(1)
+        ]);
+        const stepXp = Math.max(QUEST_MIN_STEP_XP, Math.round(weeklyQuest.xp / weeklyQuest.target));
+
+        expect(getQuestNetProgress(quest)).toBe(2);
+        expect(getProgression().totalXp).toBe(2 * stepXp);
+    });
+
+    it('registrado num ciclo vale o ciclo inteiro', () => {
+        // O cartão reabria no dia seguinte e aceitava uma marca que não rendia
+        // nada — a tela dizia "disponível" para um avanço já creditado.
+        const quest = seed(weeklyQuest.id, daysAgo(1), [daysAgo(1)]);
+        expect(isQuestRegisteredForCycleOf(quest, getTodayUTCIso())).toBe(true);
+
+        // E tocar de novo desfaz o avanço do ciclo, não só o dia de hoje.
+        expect(toggleQuestProgress(weeklyQuest.id)).toEqual({ ok: true, completed: false });
+        expect(state.quests[0].days).toEqual([]);
     });
 
     it('concluído e abandonado não caducam depois', () => {
