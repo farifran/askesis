@@ -43,6 +43,23 @@
     <link rel="modulepreload" href="bundle.js">
     <link rel="modulepreload" href="boot/error-handler.js">
 
+    <!-- PERFORMANCE: o LCP desta tela é texto, e texto só pinta depois que o
+         locale chega. A busca dele só começava quando o bundle já tinha baixado
+         E executado — um round trip inteiro na frente do LCP. Aqui a dica sai
+         junto com a do bundle. A regra é a mesma de initI18n(); divergir custa
+         no máximo uma dica desperdiçada, nunca um idioma errado. -->
+    <script>
+        try {
+            var _lang = localStorage.getItem('habitTrackerLanguage') || navigator.language.split('-')[0];
+            if (_lang !== 'pt' && _lang !== 'en' && _lang !== 'es') _lang = 'pt';
+            document.head.appendChild(Object.assign(document.createElement('link'), {
+                // `crossOrigin` casa o modo da dica com o do fetch() do i18n
+                // (cors + credenciais same-origin). Sem ele o navegador busca
+                // o arquivo duas vezes — medido.
+                rel: 'preload', as: 'fetch', crossOrigin: 'anonymous', href: './locales/' + _lang + '.json'
+            }));
+        } catch (e) { /* sem localStorage o app segue: a dica é opcional */ }
+    </script>
 
     <!-- PERFORMANCE: Network Socket Warming. 
          Inicia o handshake DNS/TCP/TLS com o CDN do OneSignal antes que o parser encontre a tag de script.
