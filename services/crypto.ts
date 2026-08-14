@@ -8,14 +8,14 @@
  * @file services/crypto.ts
  * @description Fonte única de verdade para criptografia simétrica.
  *
- * FORMATO DO ENVELOPE (v3, atual):
+ * FORMATO DO ENVELOPE (v3, único):
  *   MAGIC(4) | VERSION(1) | FLAGS(1) | ITERATIONS(4, big-endian) | SALT(16) | IV(12) | CIPHERTEXT+TAG
  *
- * FORMATO v2:
- *   MAGIC(4) | VERSION(1) | ITERATIONS(4, big-endian) | SALT(16) | IV(12) | CIPHERTEXT+TAG
- *
- * FORMATO LEGADO (v1, sem cabeçalho):
- *   SALT(16) | IV(12) | CIPHERTEXT+TAG        — sempre 100.000 iterações
+ * Os formatos v1 e v2 foram removidos em 2026-08-14. O v1 chegou a circular; o
+ * v2 nunca — ele e o v3 subiram no mesmo push (2026-08-02), então nenhum cliente
+ * escreveu um blob v2 sequer, e o caminho de leitura dele era ficção desde o
+ * primeiro dia. Manter um formato que nunca existiu no mundo é documentação
+ * falsa: sugere uma migração com dados reais que jamais aconteceu.
  *
  * O número de iterações viaja dentro do envelope, então elevá-lo no futuro não
  * exige nova versão de formato nem migração: blobs antigos continuam legíveis
@@ -40,9 +40,7 @@ const IV_LEN = 12;
 
 /** "ASK2" — identifica os envelopes com cabeçalho (v2 e v3). */
 const MAGIC = Uint8Array.from([0x41, 0x53, 0x4b, 0x32]);
-const VERSION_V2 = 2;
 const VERSION_V3 = 3;
-const HEADER_LEN_V2 = MAGIC.length + 1 + 4;
 const HEADER_LEN_V3 = MAGIC.length + 1 + 1 + 4;
 
 /** FLAGS do v3. Bit 0: plaintext comprimido com gzip. */
@@ -71,17 +69,14 @@ async function deriveKey(password: string, salt: Uint8Array, iterations: number)
  * Lê a versão do envelope com cabeçalho. Devolve `null` para o formato legado v1
  * (que não tem cabeçalho) e para qualquer coisa curta demais para ser um envelope.
  */
-function readEnvelopeVersion(bytes: Uint8Array): 2 | 3 | null {
-    if (bytes.length < MAGIC.length + 1) return null;
+function isV3Envelope(bytes: Uint8Array): boolean {
+    if (bytes.length < HEADER_LEN_V3 + SALT_LEN + IV_LEN) return false;
     for (let i = 0; i < MAGIC.length; i++) {
-        if (bytes[i] !== MAGIC[i]) return null;
+        if (bytes[i] !== MAGIC[i]) return false;
     }
-
-    const version = bytes[MAGIC.length];
-    if (version === VERSION_V2 && bytes.length >= HEADER_LEN_V2 + SALT_LEN + IV_LEN) return 2;
-    if (version === VERSION_V3 && bytes.length >= HEADER_LEN_V3 + SALT_LEN + IV_LEN) return 3;
-    return null;
+    return bytes[MAGIC.length] === VERSION_V3;
 }
+
 
 /**
  * Comprime quando compensa. O gzip tem ~20 bytes de cabeçalho, então payloads
@@ -131,7 +126,8 @@ function readIterations(bytes: Uint8Array, offset: number): number {
     return iterations;
 }
 
-async function decryptHeadered(bytes: Uint8Array, password: string, headerLen: number): Promise<ArrayBuffer> {
+async function decryptHeadered(bytes: Uint8Array, password: string): Promise<ArrayBuffer> {
+    const headerLen = HEADER_LEN_V3;
     const iterations = readIterations(bytes, headerLen - 4);
 
     const salt = bytes.slice(headerLen, headerLen + SALT_LEN);
@@ -144,7 +140,7 @@ async function decryptHeadered(bytes: Uint8Array, password: string, headerLen: n
 
 async function decryptV3(bytes: Uint8Array, password: string): Promise<string> {
     const flags = bytes[MAGIC.length + 1];
-    const plain = await decryptHeadered(bytes, password, HEADER_LEN_V3);
+    const plain = await decryptHeadered(bytes, password);
 
     if ((flags & FLAG_GZIP) === 0) return new TextDecoder().decode(plain);
     if (!canCompress()) {
@@ -153,18 +149,12 @@ async function decryptV3(bytes: Uint8Array, password: string): Promise<string> {
     return new TextDecoder().decode(await gunzipBytes(plain));
 }
 
-async function decryptV2(bytes: Uint8Array, password: string): Promise<string> {
-    return new TextDecoder().decode(await decryptHeadered(bytes, password, HEADER_LEN_V2));
-}
-
 /**
- * Descriptografa envelopes v3 e v2.
+ * Descriptografa o envelope v3, o único que existe.
  *
- * O formato v1 (100k iterações, sem cabeçalho) foi REMOVIDO em 2026-08-14, com
- * o app em produção e sem dado a preservar. Um blob sem cabeçalho reconhecível
- * agora falha alto em vez de tentar uma leitura legada — e falhar é o
- * comportamento correto: a chave deriva no cliente e não há como recuperar o
- * conteúdo de um formato que ninguém mais sabe ler.
+ * Qualquer outra coisa falha alto, dizendo o quê e quando — e falhar é o
+ * comportamento correto: a chave deriva no cliente, então não há como recuperar
+ * o conteúdo de um formato que ninguém mais sabe ler.
  */
 export async function decrypt(encryptedBase64: string, password: string): Promise<string> {
     if (!encryptedBase64 || typeof encryptedBase64 !== 'string') {
@@ -181,13 +171,9 @@ export async function decrypt(encryptedBase64: string, password: string): Promis
         throw new Error('decrypt: malformed base64 input');
     }
 
-    const version = readEnvelopeVersion(bytes);
-    if (version === null) {
-        throw new Error('decrypt: envelope não reconhecido — o formato v1 (sem cabeçalho) foi removido em 2026-08-14');
+    if (!isV3Envelope(bytes)) {
+        throw new Error('decrypt: envelope não reconhecido — os formatos v1 e v2 foram removidos em 2026-08-14');
     }
 
-    // Sem tentativa de fallback: ela existia só para desempatar um blob v1 cujo
-    // salt aleatório imitasse MAGIC+VERSION (~2^-40). Sem o v1, a versão lida no
-    // cabeçalho é a resposta final, e o AES-GCM autenticado cuida do resto.
-    return version === 3 ? decryptV3(bytes, password) : decryptV2(bytes, password);
+    return decryptV3(bytes, password);
 }

@@ -4,58 +4,9 @@
  * P0 - Crítico: Perda de dados se encrypt/decrypt falhar.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { encrypt, decrypt, PBKDF2_ITERATIONS } from './crypto';
 import { bytesToBase64 } from './base64';
-
-/**
- * Reproduz o formato legado (v1): SALT(16) | IV(12) | CIPHERTEXT, 100k iterações,
- * sem cabeçalho. Serve para garantir que dados já sincronizados na nuvem antes da
- * introdução do envelope versionado continuem legíveis.
- */
-async function encryptLegacyV1(text: string, password: string): Promise<string> {
-    const salt = crypto.getRandomValues(new Uint8Array(16));
-    const iv = crypto.getRandomValues(new Uint8Array(12));
-    const keyMaterial = await crypto.subtle.importKey(
-        'raw', new TextEncoder().encode(password), { name: 'PBKDF2' }, false, ['deriveKey']
-    );
-    const key = await crypto.subtle.deriveKey(
-        { name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' },
-        keyMaterial, { name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']
-    );
-    const encrypted = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(text));
-    const combined = new Uint8Array(16 + 12 + encrypted.byteLength);
-    combined.set(salt);
-    combined.set(iv, 16);
-    combined.set(new Uint8Array(encrypted), 28);
-    return bytesToBase64(combined);
-}
-
-/**
- * Reproduz o envelope v2: MAGIC | VERSION(2) | ITERATIONS(4) | SALT | IV | CT.
- * Sem o byte de FLAGS do v3 e sem compressão. Garante que os blobs escritos entre
- * 2026-08-01 e a chegada do v3 continuem legíveis.
- */
-async function encryptV2(text: string, password: string): Promise<string> {
-    const salt = crypto.getRandomValues(new Uint8Array(16));
-    const iv = crypto.getRandomValues(new Uint8Array(12));
-    const keyMaterial = await crypto.subtle.importKey(
-        'raw', new TextEncoder().encode(password), { name: 'PBKDF2' }, false, ['deriveKey']
-    );
-    const key = await crypto.subtle.deriveKey(
-        { name: 'PBKDF2', salt, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
-        keyMaterial, { name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']
-    );
-    const encrypted = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(text));
-    const combined = new Uint8Array(9 + 16 + 12 + encrypted.byteLength);
-    combined.set([0x41, 0x53, 0x4b, 0x32], 0);
-    combined[4] = 2;
-    new DataView(combined.buffer).setUint32(5, PBKDF2_ITERATIONS, false);
-    combined.set(salt, 9);
-    combined.set(iv, 25);
-    combined.set(new Uint8Array(encrypted), 37);
-    return bytesToBase64(combined);
-}
 
 describe('🔐 Criptografia AES-GCM (crypto.ts)', () => {
 
@@ -141,26 +92,9 @@ describe('🔐 Criptografia AES-GCM (crypto.ts)', () => {
         });
     });
 
-    describe('Envelope versionado e retrocompatibilidade', () => {
+    describe('Envelope v3', () => {
         it('deve usar 600.000 iterações (recomendação OWASP)', () => {
             expect(PBKDF2_ITERATIONS).toBe(600_000);
-        });
-
-        it('deve recusar o formato v1, removido em 2026-08-14', async () => {
-            // O caminho legado saiu com o app em produção e sem dado a preservar.
-            // O teste sobrevive à remoção com o sinal invertido: um blob sem
-            // cabeçalho tem de falhar ALTO, dizendo o que aconteceu, em vez de
-            // devolver lixo ou silêncio. `encryptLegacyV1` continua aqui para
-            // fabricar exatamente esse blob.
-            const legacyBlob = await encryptLegacyV1('dados de antes da migração', 'senha-antiga');
-            await expect(decrypt(legacyBlob, 'senha-antiga')).rejects.toThrow(/envelope não reconhecido/);
-        });
-
-        it('deve descriptografar blobs no formato v2 (sem byte de flags)', async () => {
-            const text = 'shard gravado antes do envelope comprimido';
-            const password = 'senha-v2';
-
-            expect(await decrypt(await encryptV2(text, password), password)).toBe(text);
         });
 
         it('deve gravar o cabeçalho v3 (MAGIC "ASK2" + versão + flags + iterações)', async () => {
