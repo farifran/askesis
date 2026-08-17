@@ -31,6 +31,7 @@ const LUA_SHARDED_UPDATE = `
 local key = KEYS[1]
 local newTs = tonumber(ARGV[1])
 local shardsJson = ARGV[2]
+local purge = ARGV[3] == "1"
 
 local currentTs = tonumber(redis.call("HGET", key, "lastModified") or 0)
 
@@ -38,8 +39,21 @@ if not newTs then
     return { "ERROR", "INVALID_TS" }
 end
 
--- Optimistic Concurrency Control
-if newTs < currentTs then
+if purge then
+    -- Reset de conta: o cofre inteiro sai, e não só os shards que este cliente
+    -- conhece. Um POST comum só faz HSET do que recebe, então logs e arquivos de
+    -- meses que o aparelho já esqueceu sobreviveriam ao "apagar tudo".
+    redis.call("DEL", key)
+    -- Sem controle de concorrência: apagar é ordem explícita do dono da chave, e
+    -- um relógio atrasado não pode prendê-lo a um cofre que ele mandou apagar. O
+    -- carimbo avança à força para que os outros aparelhos leiam o reset como o
+    -- estado mais novo da conta.
+    if newTs <= currentTs then
+        newTs = currentTs + 1
+    end
+    redis.call("HSET", key, "resetAt", newTs)
+elseif newTs < currentTs then
+    -- Optimistic Concurrency Control
     local all = redis.call("HGETALL", key)
     return { "CONFLICT", all }
 end
@@ -121,6 +135,7 @@ type ErrorLike = { message?: string };
 type SyncPostBody = {
     lastModified?: unknown;
     shards?: Record<string, unknown>;
+    purge?: unknown;
 };
 
 function getErrorMessage(error: unknown): string {
@@ -218,7 +233,11 @@ export default async function handler(req: Request) {
             } catch {
                 return new Response(JSON.stringify({ error: 'Invalid JSON', code: 'INVALID_JSON' }), { status: 400, headers: HEADERS_BASE });
             }
-            const { lastModified, shards } = body;
+            const { lastModified, shards, purge } = body;
+
+            if (purge !== undefined && typeof purge !== 'boolean') {
+                return new Response(JSON.stringify({ error: 'Invalid purge flag', code: 'INVALID_PURGE' }), { status: 400, headers: HEADERS_BASE });
+            }
 
             if (lastModified === undefined) {
                 return new Response(JSON.stringify({ error: 'Missing lastModified' }), { status: 400, headers: HEADERS_BASE });
@@ -254,7 +273,7 @@ export default async function handler(req: Request) {
 
             let result: unknown = null;
             for (let attempt = 0; attempt < 2; attempt++) {
-                result = await kv.eval(LUA_SHARDED_UPDATE, [dataKey], [String(lastModifiedNum), JSON.stringify(shards)]);
+                result = await kv.eval(LUA_SHARDED_UPDATE, [dataKey], [String(lastModifiedNum), JSON.stringify(shards), purge === true ? '1' : '0']);
                 if (Array.isArray(result)) break;
                 await sleep(50);
             }

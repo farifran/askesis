@@ -12,7 +12,7 @@ export { deduplicateTimeOfDay, normalizeHabitMode, normalizeTimesByMode, normali
 export { saveHabitFromModal } from './crudCore';
 export { toggleHabitStatus, markAllHabitsForDate, setGoalOverride, handleSaveNote } from './statusTracking';
 export { handleHabitDrop, requestHabitEndingFromModal, requestHabitTimeRemoval } from './scheduleManagement';
-export { requestHabitPermanentDeletion, graduateHabit, performArchivalCheck, resetApplicationData } from './deletion';
+export { requestHabitPermanentDeletion, graduateHabit, performArchivalCheck, resetDeviceData, resetAccountData } from './deletion';
 export { performAIAnalysis } from './aiAnalysis';
 export { importData, exportData } from './io';
 export { reorderHabit, handleDayTransition, consumeAndFormatCelebrations } from './ui';

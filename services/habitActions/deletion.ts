@@ -8,17 +8,17 @@
  * @description Deleção permanente, arquivamento, graduação e reset de dados.
  */
 
-import { state, clearAllCaches } from '../../state';
+import { state } from '../../state';
 import { getSafeDate, logger, toUTCIsoDateString, addDays, parseUTCIsoDate, getTodayUTCIso, triggerHaptic } from '../../utils';
 import { ARCHIVE_IDLE_FALLBACK_MS, ARCHIVE_DAYS_THRESHOLD } from '../../constants';
 import { showConfirmationModal } from '../../render';
-import { saveState, clearLocalPersistence } from '../persistence';
-import { runWorkerTask } from '../cloud';
-import { clearKey } from '../api';
+import { saveState } from '../persistence';
+import { runWorkerTask, purgeCloudVault, clearSyncClientCaches } from '../cloud';
+import { clearKey, hasLocalSyncKey } from '../api';
+import { wipeLocalData, buildResetState } from '../reset';
 import { HabitService } from '../HabitService';
 import { getHabitDisplayInfo } from '../selectors';
 import { t } from '../../i18n';
-import { emitRenderApp } from '../../events';
 import { ActionContext, _lockActionHabit, _notifyChanges } from './shared';
 
 const _applyHabitDeletion = async () => {
@@ -98,18 +98,32 @@ export function performArchivalCheck() {
     if ('requestIdleCallback' in window) requestIdleCallback(() => run()); else setTimeout(run, ARCHIVE_IDLE_FALLBACK_MS);
 }
 
-export async function resetApplicationData() {
-    state.habits = [];
-    state.dailyData = {};
-    state.archives = {};
-    state.notificationsShown = [];
-    state.pending21DayHabitIds = [];
-    state.pendingConsolidationHabitIds = [];
-    state.monthlyLogs = new Map();
-    clearAllCaches();
-    state.uiDirtyState = { calendarVisuals: true, habitListStructure: true };
-    HabitService.resetCache();
-    state.aiDailyCount = 0; state.lastAIContextHash = null;
-    emitRenderApp();
-    try { await clearLocalPersistence(); } catch (e) { logger.error('Clear persistence failed', e); } finally { clearKey(); window.location.reload(); }
+/**
+ * "Apagar dados do aplicativo": limpa este aparelho e o desvincula da conta.
+ *
+ * A chave sai junto de propósito. Mantê-la faria o boot seguinte baixar o cofre
+ * inteiro de volta em segundos — seria um "limpar cache", não um apagar. O cofre
+ * na nuvem continua intacto e volta ao colar a chave de novo.
+ */
+export async function resetDeviceData() {
+    await wipeLocalData();
+    clearKey();
+    clearSyncClientCaches();
+    window.location.reload();
+}
+
+/**
+ * "Apagar dados da conta": zera a conta em todos os aparelhos, mantendo a
+ * sincronização ligada.
+ *
+ * A nuvem vem primeiro: se o purge falhar, os dados locais ficam de pé e o erro
+ * sobe para quem chamou. Apagar o local antes deixaria o aparelho vazio diante
+ * de um cofre cheio, e o próximo boot desfaria o reset inteiro.
+ */
+export async function resetAccountData() {
+    if (!hasLocalSyncKey()) return resetDeviceData();
+
+    await purgeCloudVault(buildResetState(Date.now()));
+    await wipeLocalData();
+    window.location.reload();
 }

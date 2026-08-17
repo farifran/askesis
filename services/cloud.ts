@@ -10,6 +10,7 @@
 
 import { AppState, state, getPersistableState } from '../state';
 import { loadState, persistStateLocally } from './persistence';
+import { wipeLocalData } from './reset';
 import { createDebounced, logger, escapeHTML } from '../utils';
 import { ui } from '../render/ui';
 import { t } from '../i18n';
@@ -58,6 +59,13 @@ const cache = {
 };
 
 let isSyncInProgress = false;
+/**
+ * Trava do reset de conta. Entre o purge e o reload da página, qualquer envio
+ * pendente carregaria de volta o estado antigo — e com carimbo mais velho que o
+ * do purge, o que faria o servidor responder 409 e o cliente "resolver" o
+ * conflito ressuscitando tudo.
+ */
+let isVaultResetInProgress = false;
 let pendingSyncQueue: AppState[] = [];
 const debouncedSync = createDebounced(() => { if (!isSyncInProgress) performSync(); }, CLOUD_SYNC_DEBOUNCE_MS);
 
@@ -196,6 +204,17 @@ export function clearSyncHashCache() {
     logger.info("[Sync] Hash cache cleared.");
 }
 
+/**
+ * Zera todo o cache local que descreve o cofre remoto. Usado nos dois resets:
+ * hashes e ETag antigos descrevem dados que não existem mais e fariam o próximo
+ * sync pular shards por "nada mudou".
+ */
+export function clearSyncClientCaches() {
+    clearSyncHashCache();
+    setStoredRemoteStateEtag(null);
+    clearConflictRecoveryBackup();
+}
+
 const getStoredRemoteStateEtag = () => cache.read(REMOTE_STATE_ETAG_STORAGE_KEY);
 const setStoredRemoteStateEtag = (etag: string | null) => cache.write(REMOTE_STATE_ETAG_STORAGE_KEY, etag || null);
 
@@ -280,7 +299,7 @@ async function decryptServerShards(
     const decrypted: Record<string, any> = {};
     let coreDecryptFailed = false;
     for (const key in shards) {
-        if (key === 'lastModified') continue;
+        if (key === 'lastModified' || key === 'resetAt') continue;
         try {
             if (options.updateHashCache) {
                 try {
@@ -436,7 +455,7 @@ async function resolveConflictWithServerState(serverShards: Record<string, strin
 }
 
 async function performSync() {
-    if (isSyncInProgress || pendingSyncQueue.length === 0) return;
+    if (isSyncInProgress || isVaultResetInProgress || pendingSyncQueue.length === 0) return;
     isSyncInProgress = true;
     const appState = pendingSyncQueue.shift()!;
     let retryDelayMs = 500;
@@ -488,6 +507,12 @@ async function performSync() {
             body: payloadBody 
         }, true);
         const postEnd = performance.now();
+
+        // O reset de conta começou enquanto este envio estava no ar. Tratar a
+        // resposta agora reescreveria o cofre recém-apagado — e o 409 é o pior
+        // caso: a resolução de conflito mescla o estado antigo, ainda em
+        // memória, com o cofre vazio e o devolve inteiro para a nuvem.
+        if (isVaultResetInProgress) return;
 
         if (response.status === 409) {
             clearSyncHashCache();
@@ -550,8 +575,74 @@ async function performSync() {
     }
 }
 
+/**
+ * Reset de conta: esvazia o cofre e planta a marca `resetAt` do lado do
+ * servidor, mantendo a chave de sync viva.
+ *
+ * O POST normal só faz HSET do que envia, então mandar um estado vazio deixaria
+ * de pé todo shard que este aparelho não conhece mais (logs e arquivos de meses
+ * já arquivados). Por isso o `purge`, que apaga a chave inteira antes de gravar.
+ *
+ * Falha aqui é fatal de propósito: quem chama não pode apagar o local se a
+ * nuvem continuou cheia, senão o próximo boot baixa tudo de volta e o reset
+ * vira um susto sem efeito.
+ */
+export async function purgeCloudVault(emptyState: AppState): Promise<void> {
+    const syncKey = getSyncKey();
+    if (!syncKey) throw new Error('Sync key ausente');
+
+    isVaultResetInProgress = true;
+    debouncedSync.cancel();
+    pendingSyncQueue.length = 0;
+
+    try {
+        const rawShards = splitIntoShards(emptyState);
+        const encryptedShards: EncryptedShardMap = {};
+        for (const shardName in rawShards) {
+            encryptedShards[shardName] = await runWorkerTask<string>('encrypt-json', JSON.stringify(rawShards[shardName]), syncKey);
+        }
+
+        const payload: SyncPostRequest = {
+            lastModified: emptyState.lastModified || Date.now(),
+            shards: encryptedShards,
+            purge: true
+        };
+
+        const response = await apiFetch('/api/sync', { method: 'POST', body: JSON.stringify(payload) }, true);
+        if (!response.ok) {
+            const parsed = await readApiErrorMessage(response, `Erro ${response.status}`);
+            const err = new Error(parsed.message) as Error & { status?: number; code?: string };
+            err.status = response.status;
+            err.code = parsed.code;
+            throw err;
+        }
+
+        // Os hashes descrevem um cofre que não existe mais; mantê-los faria o
+        // próximo sync pular shards por "não mudou".
+        clearSyncClientCaches();
+        addSyncLog('Dados da conta apagados na nuvem.', 'success');
+        setSyncStatus('syncSynced');
+    } catch (error: any) {
+        // A trava só sobrevive ao caminho de sucesso, que termina em reload. Se
+        // o purge falhou, o app continua vivo e o sync precisa voltar a andar.
+        isVaultResetInProgress = false;
+        addSyncLog(`Falha ao apagar a conta: ${error?.message || error}`, 'error');
+        setSyncStatus('syncError');
+        throw error;
+    }
+}
+
+/**
+ * Carimbo do reset de conta, se houver. Campo de controle em texto claro: vem
+ * junto dos shards, mas não é conteúdo cifrado.
+ */
+function readVaultResetAt(shards: SyncServerShards): number {
+    const parsed = Number(shards.resetAt || 0);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
 export function syncStateWithCloud(appState: AppState, immediate = false) {
-    if (!hasLocalSyncKey()) return;
+    if (!hasLocalSyncKey() || isVaultResetInProgress) return;
     enqueueSyncState(appState);
     setSyncStatus('syncSaving');
     if (isSyncInProgress) return;
@@ -632,6 +723,19 @@ export async function fetchStateFromCloud(): Promise<AppState | undefined> {
 
         const remoteState = await reconstructStateFromShards(result.shards);
         if (!remoteState) return undefined;
+
+        // Conta reiniciada em outro aparelho: este ainda tem a base antiga, e o
+        // merge — que faz união e deixa o lado cheio vencer o vazio — devolveria
+        // tudo à nuvem. Só a base ANTERIOR ao reset é descartada: o que foi
+        // registrado aqui depois do carimbo é trabalho novo, não sobra do que o
+        // usuário mandou apagar. A limpeza vem depois da reconstrução de
+        // propósito: um cofre ilegível não pode custar os dados locais.
+        const resetAt = readVaultResetAt(result.shards);
+        if (resetAt > (state.lastModified || 0)) {
+            addSyncLog('Conta reiniciada em outro aparelho. Limpando dados locais.', 'info');
+            await wipeLocalData();
+        }
+
         const localState = getPersistableState();
 
         const hasDivergence = !statesEquivalentForSync(localState, remoteState);

@@ -27,6 +27,10 @@ vi.mock('./persistence', () => ({
     persistStateLocally: vi.fn(async () => {})
 }));
 
+vi.mock('./reset', () => ({
+    wipeLocalData: vi.fn(async () => {})
+}));
+
 vi.mock('./dataMerge', () => ({
     mergeStates: vi.fn(async (_local: any, remote: any) => remote)
 }));
@@ -303,6 +307,69 @@ describe('cloud sync basics', () => {
         expect(state.syncState).toBe('syncError');
     });
 
+    it('libera o sync de novo quando o purge falha, sem apagar nada', async () => {
+        const { apiFetch, getSyncKey, hasLocalSyncKey } = await import('./api');
+        vi.mocked(hasLocalSyncKey).mockReturnValue(true);
+        vi.mocked(getSyncKey).mockReturnValue('k');
+        vi.mocked(apiFetch).mockResolvedValueOnce({
+            ok: false,
+            status: 500,
+            json: async () => ({ error: 'KV down' })
+        } as any);
+
+        const { purgeCloudVault, syncStateWithCloud } = await import('./cloud');
+        await expect(purgeCloudVault({ ...getPersistableState(), lastModified: 5000 })).rejects.toThrow('KV down');
+
+        vi.mocked(apiFetch).mockResolvedValue({ ok: true, status: 200, json: async () => ({}) } as any);
+        createTestHabit({ name: 'Sobrevivente', time: 'Morning', goalType: 'check' });
+        state.lastModified = 6000;
+        syncStateWithCloud(getPersistableState(), true);
+        await new Promise(resolve => setTimeout(resolve, 0));
+
+        expect(apiFetch).toHaveBeenCalledTimes(2);
+    });
+
+    it('descarta a base local anterior ao reset de conta feito em outro aparelho', async () => {
+        const { apiFetch, getSyncKey, hasLocalSyncKey } = await import('./api');
+        const { wipeLocalData } = await import('./reset');
+        vi.mocked(hasLocalSyncKey).mockReturnValue(true);
+        vi.mocked(getSyncKey).mockReturnValue('k');
+        vi.mocked(apiFetch).mockResolvedValueOnce({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: async () => ({ lastModified: '2000', resetAt: '2000', core: 'coreEnc' })
+        } as any);
+
+        state.lastModified = 1000;
+
+        const { fetchStateFromCloud } = await import('./cloud');
+        await fetchStateFromCloud();
+
+        expect(wipeLocalData).toHaveBeenCalled();
+    });
+
+    it('preserva o que foi registrado depois do carimbo de reset', async () => {
+        const { apiFetch, getSyncKey, hasLocalSyncKey } = await import('./api');
+        const { wipeLocalData } = await import('./reset');
+        vi.mocked(hasLocalSyncKey).mockReturnValue(true);
+        vi.mocked(getSyncKey).mockReturnValue('k');
+        vi.mocked(apiFetch).mockResolvedValue({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            json: async () => ({ lastModified: '2000', resetAt: '2000', core: 'coreEnc' })
+        } as any);
+
+        createTestHabit({ name: 'Depois do reset', time: 'Morning', goalType: 'check' });
+        state.lastModified = 3000;
+
+        const { fetchStateFromCloud } = await import('./cloud');
+        await fetchStateFromCloud();
+
+        expect(wipeLocalData).not.toHaveBeenCalled();
+    });
+
     it('faz retry de tarefa pesada quando o worker estoura timeout', async () => {
         vi.useFakeTimers();
         try {
@@ -321,6 +388,36 @@ describe('cloud sync basics', () => {
             expect(TimeoutThenSuccessWorker.attempts).toBe(2);
         } finally {
             vi.useRealTimers();
+        }
+    });
+
+    // ÚLTIMO do arquivo por necessidade: ele reseta o registro de módulos, e a
+    // partir daí `./cloud` passa a enxergar uma instância de `../state`
+    // diferente da importada no topo — todo teste posterior leria outro estado.
+    it('purga o cofre com purge:true e derruba os caches que descrevem o cofre antigo', async () => {
+        const { apiFetch, getSyncKey } = await import('./api');
+        vi.mocked(getSyncKey).mockReturnValue('k');
+        vi.mocked(apiFetch).mockResolvedValue({ ok: true, status: 200, json: async () => ({}) } as any);
+
+        localStorage.setItem('askesis_sync_hashes', JSON.stringify([['core', 'hash-velho']]));
+        localStorage.setItem('askesis_sync_remote_etag', '"etag-velho"');
+
+        try {
+            const { purgeCloudVault } = await import('./cloud');
+            await purgeCloudVault({ ...getPersistableState(), lastModified: 5000 });
+
+            const [, opts] = vi.mocked(apiFetch).mock.calls[0];
+            const payload = JSON.parse(opts!.body as string);
+            expect(payload.purge).toBe(true);
+            expect(payload.lastModified).toBe(5000);
+            expect(Object.keys(payload.shards)).toContain('core');
+            expect(localStorage.getItem('askesis_sync_hashes')).toBeNull();
+            expect(localStorage.getItem('askesis_sync_remote_etag')).toBeNull();
+        } finally {
+            // O purge bem-sucedido trava o sync de propósito — em produção o
+            // caminho termina em reload. Aqui o módulo sobrevive ao teste, então
+            // a trava precisa morrer com ele.
+            vi.resetModules();
         }
     });
 });

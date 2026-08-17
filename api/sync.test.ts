@@ -233,6 +233,50 @@ describe('api/sync payload hardening', () => {
     expect(evalMock).toHaveBeenCalledTimes(1);
   });
 
+  it('repassa o modo purge ao script atômico', async () => {
+    const handler = await loadHandler();
+
+    const response = await handler(makePostRequest({
+      lastModified: 1234,
+      shards: { core: JSON.stringify({ version: 12, habits: [] }) },
+      purge: true
+    }));
+
+    expect(response.status).toBe(200);
+    const [, , argv] = evalMock.mock.calls[0];
+    expect(argv[0]).toBe('1234');
+    expect(argv[2]).toBe('1');
+  });
+
+  it('mantém o sync normal fora do modo purge', async () => {
+    const handler = await loadHandler();
+
+    await handler(makePostRequest({
+      lastModified: 1234,
+      shards: { core: JSON.stringify({ version: 12, habits: [] }) }
+    }));
+
+    const [, , argv] = evalMock.mock.calls[0];
+    expect(argv[2]).toBe('0');
+  });
+
+  it('rejeita purge que não seja booleano', async () => {
+    // O flag apaga a chave inteira no Redis: qualquer valor "quase verdadeiro"
+    // vindo de um cliente antigo ou de um proxy não pode virar um apagar.
+    const handler = await loadHandler();
+
+    const response = await handler(makePostRequest({
+      lastModified: 1234,
+      shards: {},
+      purge: 'yes'
+    }));
+
+    const body = await response.json();
+    expect(response.status).toBe(400);
+    expect(body.code).toBe('INVALID_PURGE');
+    expect(evalMock).not.toHaveBeenCalled();
+  });
+
   it('retorna ETag no GET quando há estado remoto', async () => {
     const handler = await loadHandler();
     hgetallMock.mockResolvedValue({ lastModified: '10', core: 'ciphertext' });
