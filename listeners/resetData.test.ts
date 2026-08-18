@@ -2,11 +2,10 @@
  * @file listeners/resetData.test.ts
  * @description Testes do fluxo de "Apagar dados" nas Configurações Gerais.
  *
- * O botão pergunta o escopo antes de apagar: dados da conta (zera a conta
- * inteira e mantém a sincronização) ou dados do aparelho (limpa e desvincula).
- * Os dois alcances são irreversíveis e não se parecem, então o que se testa aqui
- * é justamente que nenhum deles sai de um toque só e que cada botão dispara o
- * reset que promete.
+ * O botão tem um alcance só: zera a conta inteira e mantém a sincronização.
+ * Sair da conta é trabalho do "Desativar sincronização", noutro lugar da tela.
+ * O que se testa aqui é que a confirmação descreve o alcance certo — inclusive
+ * quando não há conta nenhuma — e que a falha do purge aparece em vez de sumir.
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
@@ -137,7 +136,7 @@ vi.mock('../render/ui', () => ({
 }));
 
 import { hasLocalSyncKey } from '../services/api';
-import { resetAccountData, resetDeviceData } from '../services/habitActions';
+import { resetAccountData } from '../services/habitActions';
 
 type ModalCall = [string, () => void, Record<string, any> | undefined];
 
@@ -157,74 +156,57 @@ async function clickResetButton(): Promise<ModalCall> {
 /** O encadeamento entre modais passa por microtask; deixa a fila drenar. */
 const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
-describe('🧹 Apagar dados (escopo conta x aparelho)', () => {
+describe('🧹 Apagar dados', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         vi.mocked(hasLocalSyncKey).mockReturnValue(true);
     });
 
-    it('pergunta o escopo antes de apagar qualquer coisa', async () => {
-        const [text, , opts] = await clickResetButton();
+    it('confirma antes de apagar, dizendo que a conta inteira é zerada', async () => {
+        const [text, applyReset, opts] = await clickResetButton();
 
-        expect(text).toBe('resetScopeQuestion');
-        expect(opts?.confirmText).toBe('resetScopeAccount');
-        expect(opts?.editText).toBe('resetScopeDevice');
-        expect(resetAccountData).not.toHaveBeenCalled();
-        expect(resetDeviceData).not.toHaveBeenCalled();
-    });
-
-    it('escolher "dados da conta" ainda exige a confirmação destrutiva', async () => {
-        const [, confirmAccount] = await clickResetButton();
-        confirmAccount();
-        await flush();
-
-        const [text, applyReset] = mockShowConfirmationModal.mock.calls.at(-1) as ModalCall;
-        expect(text).toBe('confirmResetAccount');
+        expect(text).toBe('confirmResetData');
+        expect(opts?.confirmText).toBe('modalManageResetButton');
         expect(resetAccountData).not.toHaveBeenCalled();
 
         applyReset();
         expect(resetAccountData).toHaveBeenCalledTimes(1);
-        expect(resetDeviceData).not.toHaveBeenCalled();
     });
 
-    it('escolher "dados deste aparelho" leva ao reset local', async () => {
-        const [, , opts] = await clickResetButton();
-        opts?.onEdit();
-        await flush();
-
-        const [text, applyReset] = mockShowConfirmationModal.mock.calls.at(-1) as ModalCall;
-        expect(text).toBe('confirmResetDevice');
-
-        applyReset();
-        expect(resetDeviceData).toHaveBeenCalledTimes(1);
-        expect(resetAccountData).not.toHaveBeenCalled();
-    });
-
-    it('sem chave de sync vai direto à confirmação do aparelho', async () => {
-        // Não existe conta a reiniciar: perguntar o escopo seria oferecer a mesma
-        // coisa duas vezes.
+    it('sem chave de sync, o texto fala só deste aparelho', async () => {
+        // Não existe conta a reiniciar: prometer "todos os aparelhos" seria
+        // descrever um alcance que não existe.
         vi.mocked(hasLocalSyncKey).mockReturnValue(false);
 
         const [text, applyReset] = await clickResetButton();
-        expect(text).toBe('confirmResetDevice');
+        expect(text).toBe('confirmResetLocal');
 
         applyReset();
-        expect(resetDeviceData).toHaveBeenCalledTimes(1);
+        expect(resetAccountData).toHaveBeenCalledTimes(1);
     });
 
     it('avisa quando o purge falha, em vez de apagar em silêncio', async () => {
         vi.mocked(resetAccountData).mockRejectedValueOnce(new Error('KV down'));
 
-        const [, confirmAccount] = await clickResetButton();
-        confirmAccount();
-        await flush();
-
-        const [, applyReset] = mockShowConfirmationModal.mock.calls.at(-1) as ModalCall;
+        const [, applyReset] = await clickResetButton();
         applyReset();
         await flush();
 
         const [errorText, , errorOpts] = mockShowConfirmationModal.mock.calls.at(-1) as ModalCall;
         expect(errorText).toBe('resetAccountError');
         expect(errorOpts?.hideCancel).toBe(true);
+    });
+
+    it('não abre modal de erro quando não havia conta para purgar', async () => {
+        // Sem conta a falha só pode ser local, e o texto de nuvem mentiria.
+        vi.mocked(hasLocalSyncKey).mockReturnValue(false);
+        vi.mocked(resetAccountData).mockRejectedValueOnce(new Error('IDB down'));
+
+        const [, applyReset] = await clickResetButton();
+        const antes = mockShowConfirmationModal.mock.calls.length;
+        applyReset();
+        await flush();
+
+        expect(mockShowConfirmationModal.mock.calls.length).toBe(antes);
     });
 });

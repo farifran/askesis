@@ -38,7 +38,6 @@ import {
     saveHabitFromModal,
     requestHabitEndingFromModal,
     requestHabitPermanentDeletion,
-    resetDeviceData,
     resetAccountData,
     handleSaveNote,
     graduateHabit,
@@ -121,20 +120,29 @@ const _handleManageModalClick = (e: MouseEvent) => {
     }
 };
 
-const _confirmResetScope = (scope: 'account' | 'device') => {
-    const isAccount = scope === 'account';
+/**
+ * "Apagar dados" tem um alcance só: zera a conta inteira e continua
+ * sincronizado. Não há escopo a escolher — quem quer sair da conta usa
+ * "Desativar sincronização", que solta a chave e limpa este aparelho.
+ *
+ * Sem chave de sync não existe conta, e o texto muda para o que de fato
+ * acontece: só este aparelho é apagado.
+ */
+const _handleResetAppClick = () => {
+    if (ui.confirmModal.classList.contains('visible')) return;
+
+    triggerHaptic('light');
+
+    const hasAccount = hasLocalSyncKey();
     showConfirmationModal(
-        isAccount ? t('confirmResetAccount') : t('confirmResetDevice'),
+        t(hasAccount ? 'confirmResetData' : 'confirmResetLocal'),
         () => {
-            const run = isAccount ? resetAccountData : resetDeviceData;
-            // Nenhum dos dois resolve: ambos terminam em reload. O catch existe
-            // para o purge recusado pela nuvem, que mantém os dados de pé e
-            // precisa dizer isso — apagar em silêncio seria pior que não apagar.
-            // O reset do aparelho não fala com a rede e engole as falhas de IDB
-            // por dentro, então ali só resta registrar.
-            run().catch((e) => {
+            // Não resolve: o caminho feliz termina em reload. O catch é para o
+            // purge recusado pela nuvem, que mantém os dados de pé e precisa
+            // dizer isso — apagar em silêncio seria pior que não apagar.
+            resetAccountData().catch((e) => {
                 logger.error('Reset failed', e);
-                if (!isAccount) return;
+                if (!hasAccount) return;
                 showConfirmationModal(t('resetAccountError'), () => {}, {
                     title: t('modalManageReset'),
                     confirmText: 'OK',
@@ -145,42 +153,8 @@ const _confirmResetScope = (scope: 'account' | 'device') => {
         },
         {
             confirmText: t('modalManageResetButton'),
-            title: isAccount ? t('resetScopeAccount') : t('resetScopeDevice'),
-            confirmButtonStyle: 'danger'
-        }
-    );
-};
-
-/**
- * Duas perguntas, não uma: primeiro O QUE apagar, depois a confirmação
- * destrutiva do escopo escolhido. Os dois alcances são irreversíveis e não se
- * parecem — um zera a conta em todos os aparelhos, o outro desliga este da
- * sincronização — então nenhum deles pode sair de um toque só.
- */
-const _handleResetAppClick = () => {
-    if (ui.confirmModal.classList.contains('visible')) return;
-
-    triggerHaptic('light');
-
-    // Sem chave de sync não existe conta a reiniciar: a pergunta de escopo seria
-    // uma escolha entre a mesma coisa e ela mesma.
-    if (!hasLocalSyncKey()) {
-        _confirmResetScope('device');
-        return;
-    }
-
-    // O modal de confirmação zera `confirmAction` e fecha DEPOIS de rodar a ação;
-    // abrir a segunda pergunta ali dentro apagaria o botão que acabamos de armar.
-    // A microtask entrega o encadeamento com o primeiro modal já fechado.
-    showConfirmationModal(
-        t('resetScopeQuestion'),
-        () => queueMicrotask(() => _confirmResetScope('account')),
-        {
             title: t('modalManageReset'),
-            confirmText: t('resetScopeAccount'),
-            confirmButtonStyle: 'danger',
-            editText: t('resetScopeDevice'),
-            onEdit: () => queueMicrotask(() => _confirmResetScope('device'))
+            confirmButtonStyle: 'danger'
         }
     );
 };

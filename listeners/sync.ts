@@ -10,10 +10,11 @@ import { loadState, saveState } from "../services/persistence";
 import { renderApp, openSyncDebugModal, clearHabitDomCache } from "../render";
 import { showConfirmationModal } from "../render/modals";
 import { storeKey, clearKey, hasLocalSyncKey, getSyncKey, isValidKeyFormat } from "../services/api";
-import { generateUUID } from "../utils";
+import { generateUUID, logger } from "../utils";
 import { SYNC_ENABLE_RETRY_MS, SYNC_COPY_FEEDBACK_MS, SYNC_INPUT_FOCUS_MS } from "../constants";
 import { getPersistableState, state, clearActiveHabitsCache } from "../state";
 import { mergeStates } from "../services/dataMerge";
+import { resetDeviceData } from "../services/habitActions";
 import { escapeHTML } from "../utils";
 
 
@@ -177,7 +178,11 @@ const _handleCopyKey = () => {
     }
 };
 const _handleViewKey = () => { const key = getSyncKey(); if (key) { ui.syncKeyText.textContent = key; ui.syncDisplayKeyView.dataset.context = 'view'; showView('displayKey'); } };
-const _handleDisableSync = () => { showConfirmationModal(t('confirmSyncDisable'), () => { clearKey(); setSyncStatus('syncInitial'); showView('inactive'); }, { title: t('syncDisableTitle'), confirmText: t('syncDisableConfirm'), confirmButtonStyle: 'danger' }); };
+// Desvincular apaga o que está guardado aqui, junto com a chave: sem ela, o que
+// sobraria é uma cópia órfã dos dados de uma conta à qual este aparelho não
+// pertence mais. O cofre na nuvem continua intacto — é a chave que dá acesso a
+// ele, e é por isso que o texto da confirmação insiste nela.
+const _handleDisableSync = () => { showConfirmationModal(t('confirmSyncDisable'), () => { resetDeviceData().catch(e => logger.error('Disable sync reset failed', e)); }, { title: t('syncDisableTitle'), confirmText: t('syncDisableConfirm'), confirmButtonStyle: 'danger' }); };
 const _handleDiagnostics = (e: Event) => { openSyncDebugModal(); };
 
 function _refreshViewState() {

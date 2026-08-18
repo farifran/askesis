@@ -99,11 +99,13 @@ export function performArchivalCheck() {
 }
 
 /**
- * "Apagar dados do aplicativo": limpa este aparelho e o desvincula da conta.
+ * Desliga este aparelho da conta: apaga o que está guardado aqui e solta a
+ * chave. O cofre na nuvem fica intacto — quem tem a chave volta a ele.
  *
- * A chave sai junto de propósito. Mantê-la faria o boot seguinte baixar o cofre
- * inteiro de volta em segundos — seria um "limpar cache", não um apagar. O cofre
- * na nuvem continua intacto e volta ao colar a chave de novo.
+ * Apagar o local junto não é zelo excessivo: sem a chave, o que sobrou aqui é
+ * uma cópia órfã dos dados de uma conta à qual este aparelho não pertence mais.
+ * É também o caminho de quem nunca ligou a sincronização, onde `clearKey` não
+ * tem o que fazer e sobra só a limpeza local.
  */
 export async function resetDeviceData() {
     await wipeLocalData();
@@ -113,12 +115,14 @@ export async function resetDeviceData() {
 }
 
 /**
- * "Apagar dados da conta": zera a conta em todos os aparelhos, mantendo a
- * sincronização ligada.
+ * "Apagar dados": zera a conta inteira — este aparelho e todos os outros — sem
+ * desfazer a sincronização. Mesma chave, tudo do zero.
  *
  * A nuvem vem primeiro: se o purge falhar, os dados locais ficam de pé e o erro
  * sobe para quem chamou. Apagar o local antes deixaria o aparelho vazio diante
  * de um cofre cheio, e o próximo boot desfaria o reset inteiro.
+ *
+ * Sem chave não há conta a reiniciar, e a limpeza local é tudo o que existe.
  */
 export async function resetAccountData() {
     if (!hasLocalSyncKey()) return resetDeviceData();

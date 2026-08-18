@@ -24,16 +24,32 @@ caminho para isso não existia em nenhuma camada:
 
 ## Decision
 
-Dois escopos no botão, com uma pergunta antes da confirmação destrutiva:
+**"Apagar dados" tem um alcance só:** zera a conta inteira — este aparelho e
+todos os outros — e mantém a sincronização ligada, com a mesma chave. Uma
+confirmação, nenhuma escolha de escopo. Sem chave de sync não existe conta, e o
+texto muda para o que de fato acontece: só este aparelho é apagado.
 
-- **Dados do aplicativo** — comportamento anterior: limpa o local e desvincula a
-  chave. O cofre continua na nuvem e volta ao colar a chave de novo. A chave sai
-  de propósito: mantê-la faria o boot rebaixar tudo, o que é "limpar cache", não
-  apagar.
-- **Dados da conta** — zera a conta inteira, mantendo a sincronização ligada e a
-  mesma chave.
+**"Desativar sincronização" passa a apagar os dados locais** junto com a chave.
+Sem a chave, o que sobraria aqui é uma cópia órfã dos dados de uma conta à qual
+este aparelho não pertence mais. O cofre na nuvem fica intacto: é a chave que dá
+acesso a ele, e é por isso que a confirmação insiste nela.
 
-O segundo escopo precisou de duas peças novas:
+Os dois eixos ficam assim, cada um num lugar da tela e sem sobreposição:
+
+| Ação | Dados da conta (nuvem) | Dados deste aparelho | Vínculo |
+| :--- | :--- | :--- | :--- |
+| Apagar dados | apagados | apagados | mantido |
+| Desativar sincronização | intactos | apagados | desfeito |
+
+Versões anteriores desta decisão tentaram resolver isso dentro do próprio botão,
+com uma pergunta de escopo antes da confirmação ("dados da conta" × "dados deste
+aparelho", depois "manter a conta" × "apagar a conta"). Ambas confundiam pelo
+mesmo motivo: empilhavam a decisão sobre o VÍNCULO em cima da decisão sobre os
+DADOS, quando o vínculo já tem seu próprio botão. Desativar a sincronização é o
+lugar natural dessa escolha — e apagar o local ali fecha o buraco que fazia o
+escopo extra parecer necessário.
+
+O reset de conta precisou de duas peças novas:
 
 **Purge no servidor.** O POST aceita `purge: true` (booleano estrito). No Lua, o
 purge faz `DEL` da chave antes de gravar os shards enviados, e grava `resetAt`
@@ -49,9 +65,9 @@ não é shard cifrado, e `decryptServerShards` o ignora como já ignorava o
 antes do merge. O que foi registrado **depois** do carimbo sobrevive: é trabalho
 novo, não sobra do que o usuário mandou apagar.
 
-Ordem de execução do reset de conta: purga primeiro, apaga o local depois. Se a
-nuvem recusar, nada é apagado e o erro chega à tela — um aparelho vazio diante de
-um cofre cheio desfaria o reset no boot seguinte e viraria um susto sem efeito.
+Ordem de execução: purga primeiro, apaga o local depois. Se a nuvem recusar,
+nada é apagado e o erro chega à tela — um aparelho vazio diante de um cofre cheio
+desfaria o reset no boot seguinte e viraria um susto sem efeito.
 
 ## Alternatives considered
 
@@ -63,8 +79,13 @@ um cofre cheio desfaria o reset no boot seguinte e viraria um susto sem efeito.
 - **Lápides por hábito em vez do epoch.** O merge respeita lápides, mas elas não
   cobrem `dailyData`, `archives` nem `monthlyLogs`, e o custo de gerar uma lápide
   por hábito cresce com o histórico — justamente o que o reset quer jogar fora.
-- **Manter a chave no "apagar dados do aplicativo".** Vira um repovoamento a
-  partir da nuvem; não é o que o botão promete.
+- **Perguntar o escopo dentro do botão** (duas tentativas, ver acima). Mistura o
+  eixo dos dados com o eixo do vínculo em rótulos curtos e parecidos.
+- **Desativar a sincronização purgando o cofre também.** Apagaria os dados dos
+  OUTROS aparelhos da conta por causa de uma decisão local — e a chave existe
+  justamente para voltar ao cofre depois.
+- **Desativar sem apagar o local (comportamento anterior).** Deixa no aparelho
+  uma cópia dos dados de uma conta que ele não integra mais.
 
 ## Consequences
 
@@ -76,15 +97,19 @@ um cofre cheio desfaria o reset no boot seguinte e viraria um susto sem efeito.
   ressuscitaria o estado que acabou de ser apagado.
 - Um aparelho offline que registre algo depois do reset mantém esses dados e os
   reenvia. É a mesma política Last-Write-Wins do ADR-0003, aplicada ao reset.
-- Hashes de shard e ETag são zerados nos dois escopos: descrevem um cofre que não
-  existe mais e fariam o sync seguinte pular shards por "nada mudou".
+- Hashes de shard e ETag são zerados nos dois caminhos: descrevem um cofre que o
+  aparelho não vai mais seguir e fariam o sync seguinte pular shards por "nada
+  mudou".
+- Desativar a sincronização ficou destrutivo do lado local. Quem não anotou a
+  chave perde o acesso — o texto da confirmação diz isso, e "Ver chave" e
+  "Exportar backup" continuam ao lado, na mesma tela.
 - A semântica do Lua só roda de verdade contra o Redis; os testes cobrem o
   cabeamento dos ARGV e a validação do flag.
 
 ## Rollback plan
 
-- Reverter o cliente para um único escopo (o de aparelho) desativa o caminho sem
-  tocar no servidor.
+- Reverter o botão ao reset puramente local desativa o caminho de purge sem tocar
+  no servidor.
 - O `purge` e o `resetAt` no servidor são compatíveis com clientes antigos: sem o
   flag, o script se comporta como antes; sem leitura do `resetAt`, o cliente
   antigo só ignora o campo.
@@ -96,6 +121,7 @@ um cofre cheio desfaria o reset no boot seguinte e viraria um susto sem efeito.
 - `services/reset.ts`
 - `services/habitActions/deletion.ts`
 - `listeners/modals.ts`
+- `listeners/sync.ts`
 - `listeners/resetData.test.ts`
 - `services/cloud.test.ts`
 - `api/sync.test.ts`
