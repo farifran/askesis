@@ -21,7 +21,14 @@
  */
 
 const HTML_FALLBACK = '/index.html';
-const NETWORK_TIMEOUT_MS = 3000;
+// Teto de espera pelo shell antes de servir o do cache. 1s, e não 3s: o cache é
+// nomeado pelo BUILD_HASH e o `install` guarda shell, bundle e chunks juntos, de
+// modo que cair no cache entrega o app inteiro e coerente — no pior caso um
+// deploy atrás naquela abertura, e a atualização chega assim mesmo, pelo
+// `sw.js` que o navegador rebusca. Esperar custa tempo que o usuário sente;
+// desistir cedo não custa quase nada. Abaixo de ~600ms começaria a atrapalhar
+// conexões 3G que responderiam, e o `updateShellCache` deixaria de rodar.
+const NETWORK_TIMEOUT_MS = 1000;
 
 const timeout = (ms) => new Promise((_, reject) => setTimeout(() => reject(new Error('Network Timeout')), ms));
 
@@ -94,13 +101,27 @@ self.addEventListener('fetch', (event) => {
     if (req.mode === 'navigate') {
         event.respondWith(
             (async () => {
-                try {
+                // O preload entra na MESMA corrida do fetch. Esperá-lo antes do
+                // timeout — como era — tornava NETWORK_TIMEOUT_MS inócuo em todo
+                // navegador que suporta navigation preload, que é justamente por
+                // onde a maioria dos aparelhos passa: `preloadResponse` é uma
+                // promessa sem teto próprio, e o limite de espera nunca valia.
+                const fromNetwork = (async () => {
                     const preloadResp = await event.preloadResponse;
-                    if (preloadResp) return updateShellCache(preloadResp);
-                    const networkResp = await Promise.race([fetch(req), timeout(NETWORK_TIMEOUT_MS)]);
-                    return updateShellCache(networkResp);
+                    return updateShellCache(preloadResp || await fetch(req));
+                })();
+
+                // Consumir a resposta mesmo quando o cache vence a corrida: é ela
+                // que renova o shell guardado, e um preload descartado sem uso
+                // ainda rende aviso no console.
+                event.waitUntil(fromNetwork.catch(() => {}));
+
+                try {
+                    return await Promise.race([fromNetwork, timeout(NETWORK_TIMEOUT_MS)]);
                 } catch (error) {
-                    return caches.match(HTML_FALLBACK, MATCH_OPTS);
+                    // Sem cópia no cache (primeira visita em rede ruim), esperar a
+                    // rede ainda é melhor que devolver erro.
+                    return (await caches.match(HTML_FALLBACK, MATCH_OPTS)) || fromNetwork;
                 }
             })()
         );

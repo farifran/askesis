@@ -243,7 +243,16 @@ export function viewTransitionRender(direction?: 'forward' | 'back') {
     }
 }
 
+/**
+ * Já houve um render completo? No boot a resposta é não até o `init` terminar de
+ * carregar o estado, e é isso que impede o `languageChanged` de desenhar a tela
+ * com a lista ainda vazia — 31 células de calendário montadas para serem
+ * descartadas no render seguinte.
+ */
+let hasRenderedOnce = false;
+
 export function renderApp() {
+    hasRenderedOnce = true;
     _renderHeaderIcons();
     _updateHeaderTitle();
     renderCalendar();
@@ -517,7 +526,10 @@ document.addEventListener(APP_EVENTS.languageChanged, () => {
     renderLanguageFilter();
     updateUIText();
     if (ui.syncStatus) setTextContent(ui.syncStatus, t(state.syncState));
-    renderApp();
+    // No boot este evento chega antes do estado sair do IndexedDB; o `init`
+    // renderiza logo depois, com dados. Só a troca de idioma em uso precisa
+    // redesenhar aqui.
+    if (hasRenderedOnce) renderApp();
 });
 
 document.addEventListener(APP_EVENTS.habitsChanged, () => {

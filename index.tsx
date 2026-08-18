@@ -269,7 +269,11 @@ async function init(loader: HTMLElement | null) {
 
     await initAuth();
     
-    await Promise.all([initI18n(), updateUIText()]);
+    // `updateUIText` NÃO entra aqui: os argumentos de um `Promise.all` são
+    // avaliados antes da chamada, então ele rodaria síncrono com o dicionário
+    // ainda vazio e gravaria as chaves cruas em ~46 nós. Quem o chama com a
+    // tradução pronta é o próprio `initI18n`, pelo evento `languageChanged`.
+    await initI18n();
 
     await loadInitialState();
     const isFirstTimeUser = !state.hasOnboarded;

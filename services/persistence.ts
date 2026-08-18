@@ -370,14 +370,24 @@ export async function loadState(cloudState?: AppState): Promise<AppState | null>
         }
 
         // 3. Migrate State (Handles Schema Upgrades & Bitmask Expansion)
-        // Create a backup snapshot before running migrations so we can recover on failure.
-        await createBackupSnapshot(mainState);
+        //
+        // A rede de segurança da migração custava duas transações IDB (gravar o
+        // estado inteiro, apagá-lo) AGUARDADAS antes da hidratação — em TODA
+        // abertura, inclusive nas que não têm o que migrar, que são quase todas.
+        // Quando não há upgrade de schema, `migrateState` só sanitiza, e uma
+        // cópia em memória (~1ms) devolve a mesma capacidade de recuperação sem
+        // encostar no disco. O snapshot durável fica para o que ele existe:
+        // migração de verdade, onde a transformação é grande e irreversível.
+        const needsMigration = (mainState.version || 0) !== APP_VERSION;
+        const memorySnapshot = needsMigration ? null : structuredClone(mainState);
+        if (needsMigration) await createBackupSnapshot(mainState);
+
         let migrated: AppState | null = null;
         try {
             migrated = migrateState(mainState, APP_VERSION);
         } catch (e) {
             logger.error("[Persistence] Migration failed, attempting to restore backup", e);
-            const restored = await restoreBackupSnapshot();
+            const restored = needsMigration ? await restoreBackupSnapshot() : memorySnapshot;
             if (restored) {
                 migrated = restored;
             } else {
@@ -385,7 +395,7 @@ export async function loadState(cloudState?: AppState): Promise<AppState | null>
                 throw e;
             }
         } finally {
-            await clearBackupSnapshot();
+            if (needsMigration) await clearBackupSnapshot();
         }
         
         // 4. Hydrate Result into Global State
@@ -393,8 +403,16 @@ export async function loadState(cloudState?: AppState): Promise<AppState | null>
         // CRITICAL: Reset Lazy Sharding cache whenever state is replaced from storage/cloud.
         HabitService.resetCache();
         
-        // Fallback robusto: se a migração falhou em hidratar o Map, tenta recuperar dos dados brutos
-        if ((!state.monthlyLogs || state.monthlyLogs.size === 0) && binaryLogsData) {
+        // Fallback robusto: se a migração não hidratou o Map, reconstrói dos dados brutos.
+        //
+        // A checagem é por TIPO, e não só por tamanho: quando a rede de segurança
+        // devolve o estado pré-migração, `monthlyLogs` vem como veio do disco — um
+        // Record cru, não um Map. `.size` nele é `undefined`, que não é `0`, então
+        // a condição antiga passava batida e o app seguia com um objeto simples
+        // onde todo o HabitService espera um Map.
+        if (!(state.monthlyLogs instanceof Map)) {
+            state.monthlyLogs = HabitService.deserializeLogs(state.monthlyLogs ?? binaryLogsData);
+        } else if (state.monthlyLogs.size === 0 && binaryLogsData) {
             state.monthlyLogs = HabitService.deserializeLogs(binaryLogsData);
         }
 
