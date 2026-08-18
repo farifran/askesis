@@ -25,6 +25,15 @@ const modalStack: ModalContext[] = [];
 /** Subtítulo da nota: dia e mês por extenso. Exportado porque a nota do objetivo
     secundário abre o MESMO modal e precisa do mesmo formato. */
 export const OPTS_NOTES = { day: 'numeric', month: 'long', timeZone: 'UTC' } as const;
+/**
+ * Chaves dos dias da semana, indexadas por `Date.getDay()`.
+ *
+ * Literais em vez de `t(`weekday${...}`)`: montar a chave em tempo de execução
+ * torna estes textos invisíveis para qualquer busca por chave usada, e uma
+ * limpeza de traduções órfãs os apagaria — o seletor de dias passaria a mostrar
+ * a própria chave. De quebra, o array deixa de ser realocado a cada dia do laço.
+ */
+const WEEKDAY_KEYS = ['weekdaySun', 'weekdayMon', 'weekdayTue', 'weekdayWed', 'weekdayThu', 'weekdayFri', 'weekdaySat'] as const;
 interface ConfirmationModalOptions {
     onEdit?: () => void;
     title?: string;
@@ -346,7 +355,7 @@ export function renderFrequencyOptions() {
         dayInput.checked = sel.has(d);
         const dayBtn = document.createElement('span');
         dayBtn.className = 'weekday-button';
-        setTextContent(dayBtn, t(`weekday${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d]}`).charAt(0));
+        setTextContent(dayBtn, t(WEEKDAY_KEYS[d]).charAt(0));
         dayLabel.append(dayInput, dayBtn);
         weekdayPicker.appendChild(dayLabel);
     });
