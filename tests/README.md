@@ -19,8 +19,8 @@ Comando usado: `npm test -- --run`
 
 <!-- INVENTARIO:INICIO -->
 
-- **Arquivos de teste:** 43
-- **Testes totais:** 630
+- **Arquivos de teste:** 46
+- **Testes totais:** 658
 
 > Gerado por `node scripts/update-test-inventory.js` a partir de execução real.
 > Não editar à mão: `--check` falha o CI quando divergir.
@@ -30,7 +30,7 @@ Comando usado: `npm test -- --run`
 - `api/_httpSecurity.test.ts` → 5
 - `api/analyze.test.ts` → 5
 - `api/reminder.test.ts` → 15
-- `api/sync.test.ts` → 10
+- `api/sync.test.ts` → 13
 
 ### `data`
 
@@ -40,6 +40,7 @@ Comando usado: `npm test -- --run`
 
 - `listeners/drag.test.ts` → 6
 - `listeners/notifications.test.ts` → 5
+- `listeners/resetData.test.ts` → 4
 - `listeners/swipe.test.ts` → 4
 
 ### `raiz`
@@ -57,7 +58,7 @@ Comando usado: `npm test -- --run`
 - `services/analysis.test.ts` → 5
 - `services/api.test.ts` → 14
 - `services/badge.test.ts` → 8
-- `services/cloud.test.ts` → 8
+- `services/cloud.test.ts` → 12
 - `services/cloudDataMerge.integration.test.ts` → 2
 - `services/compression.test.ts` → 16
 - `services/crypto.test.ts` → 23
@@ -69,7 +70,8 @@ Comando usado: `npm test -- --run`
 - `services/migration.test.ts` → 24
 - `services/notificationCard.test.ts` → 18
 - `services/persistence.test.ts` → 13
-- `services/progression.test.ts` → 64
+- `services/persistenceRecovery.test.ts` → 4
+- `services/progression.test.ts` → 74
 - `services/push.test.ts` → 2
 - `services/quoteEngine.test.ts` → 13
 - `services/selectors.test.ts` → 24
@@ -88,6 +90,7 @@ Comando usado: `npm test -- --run`
 - `tests/scenario-test-3-security-pentest.test.ts` → 43
 - `tests/scenario-test-4-cloud-network-resilience.test.ts` → 33
 - `tests/scenario-test-5-streak-graduation.test.ts` → 10
+- `tests/swNavigation.test.ts` → 3
 
 <!-- INVENTARIO:FIM -->
 

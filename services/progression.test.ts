@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { state, HABIT_STATE, bumpStateGeneration } from '../state';
+import { state, Habit, HABIT_STATE, TimeOfDay, bumpStateGeneration } from '../state';
 import { HabitService } from './HabitService';
 import { clearTestState } from '../tests/test-utils';
 import { resetTodayCache, getTodayUTCIso, parseUTCIsoDate, toUTCIsoDateString, addDays } from '../utils';
@@ -147,6 +147,101 @@ describe('XP derivado dos hábitos', () => {
     });
 });
 
+/**
+ * Os testes acima marcam ids que não existem em `state.habits` — logs órfãos,
+ * que valem o que renderam e não têm agenda para cobrar. Aqui os hábitos existem
+ * de verdade, que é onde a regra da falta vive.
+ */
+describe('XP dos hábitos: a falta cobra', () => {
+    /** Hábito diário começando N dias atrás. */
+    function seedHabit(id: string, startedDaysAgo: number, times: TimeOfDay[] = ['Morning']): Habit {
+        const start = daysAgo(startedDaysAgo);
+        const habit: Habit = {
+            id,
+            createdOn: start,
+            scheduleHistory: [{
+                startDate: start,
+                icon: '⭐',
+                color: '#ffffff',
+                goal: { type: 'check' },
+                times,
+                frequency: { type: 'daily' },
+                scheduleAnchor: start
+            }]
+        };
+        state.habits.push(habit);
+        bumpStateGeneration();
+        return habit;
+    }
+
+    it('o dia em branco devolve o preço de um dia cumprido', () => {
+        seedHabit('h1', 3);
+        markDone('h1', daysAgo(3));
+        markDone('h1', daysAgo(2));
+        // daysAgo(1) fechou vazio: dois ganhos menos uma falta.
+        expect(getProgression().totalXp).toBe(XP_PER_COMPLETION);
+    });
+
+    it('adiar protege: o motor cobra o silêncio, não a falha assumida', () => {
+        seedHabit('h1', 3);
+        markDone('h1', daysAgo(3));
+        markDone('h1', daysAgo(2));
+        markDone('h1', daysAgo(1), HABIT_STATE.DEFERRED);
+        expect(getProgression().totalXp).toBe(2 * XP_PER_COMPLETION);
+    });
+
+    it('hoje não cobra: o dia só fecha à meia-noite', () => {
+        seedHabit('h1', 2);
+        markDone('h1', daysAgo(2));
+        markDone('h1', daysAgo(1));
+        expect(getProgression().totalXp).toBe(2 * XP_PER_COMPLETION);
+    });
+
+    it('nenhum hábito devolve mais do que deu', () => {
+        seedHabit('h1', 10);
+        markDone('h1', daysAgo(10));
+        // Nove dias em branco valeriam -90 sobre 10 ganhos; o piso é zero.
+        expect(getProgression().totalXp).toBe(0);
+    });
+
+    it('a falta de um hábito não come o XP do outro', () => {
+        seedHabit('faltoso', 10);
+        markDone('faltoso', daysAgo(10));
+
+        seedHabit('fiel', 10);
+        for (let d = 10; d >= 0; d--) markDone('fiel', daysAgo(d));
+
+        expect(getProgression().totalXp).toBe(11 * XP_PER_COMPLETION);
+    });
+
+    it('marcar o dia esquecido devolve o XP na hora', () => {
+        seedHabit('h1', 3);
+        markDone('h1', daysAgo(3));
+        markDone('h1', daysAgo(2));
+        expect(getProgression().totalXp).toBe(XP_PER_COMPLETION);
+
+        // Fez e esqueceu de marcar: volta no calendário e marca.
+        markDone('h1', daysAgo(1));
+        expect(getProgression().totalXp).toBe(3 * XP_PER_COMPLETION);
+    });
+
+    it('hábito graduado não cobra: ele saiu do calendário', () => {
+        const habit = seedHabit('h1', 30);
+        markDone('h1', daysAgo(30));
+        habit.graduatedOn = daysAgo(29);
+        bumpStateGeneration();
+        expect(getProgression().totalXp).toBe(XP_PER_COMPLETION);
+    });
+
+    it('cobra por instância, não por dia: dois períodos são duas cobranças', () => {
+        seedHabit('h1', 2, ['Morning', 'Evening']);
+        markDone('h1', daysAgo(2));
+        markDone('h1', daysAgo(1));
+        // Quatro instâncias pedidas nos dois dias fechados, duas cumpridas.
+        expect(getProgression().totalXp).toBe(0);
+    });
+});
+
 describe('ciclo de vida de um objetivo', () => {
     const shortQuest = QUEST_CATALOG.find(q => q.reqGrade === 1 && q.target === 1)!;
     const weekQuest = QUEST_CATALOG.find(q => q.reqGrade === 1 && q.target > 1)!;
@@ -263,7 +358,7 @@ describe('ciclo de vida de um objetivo', () => {
         expect(getActiveQuests()).toHaveLength(0);
     });
 
-    it('abandonar não devolve XP: o grau nunca anda para trás', () => {
+    it('abandonar não zera na hora: o XP derrete com os dias, não com o gesto', () => {
         activateQuest(weekQuest.id);
         toggleQuestProgress(weekQuest.id);
         const earned = getProgression().totalXp;
@@ -271,6 +366,20 @@ describe('ciclo de vida de um objetivo', () => {
 
         abandonQuest(weekQuest.id);
         expect(getProgression().totalXp).toBe(earned);
+    });
+
+    it('o objetivo largado derrete sozinho até zero', () => {
+        // Um avanço no primeiro dia e mais nada: os ciclos vazios seguem correndo
+        // depois da lápide, e o líquido chega ao chão.
+        state.quests = [{
+            id: weekQuest.id,
+            startedOn: daysAgo(10),
+            days: [daysAgo(10)],
+            abandonedOn: daysAgo(9)
+        }];
+        bumpStateGeneration();
+
+        expect(getProgression().totalXp).toBe(0);
     });
 
     it('reativar recupera o progresso em vez de duplicar o registro', () => {
@@ -550,13 +659,15 @@ describe('regressão e caducidade', () => {
         try {
             vi.setSystemTime(new Date('2026-03-10T12:00:00Z'));
             resetTodayCache();
-            state.quests = [{ id: dailyQuest.id, startedOn: '2026-03-10', days: ['2026-03-11'] }];
-            expect(getProgression().totalXp).toBe(0);
-
-            vi.setSystemTime(new Date('2026-03-11T12:00:00Z'));
-            resetTodayCache();
+            state.quests = [{ id: dailyQuest.id, startedOn: '2026-03-10', days: ['2026-03-10'] }];
             const stepXp = Math.max(QUEST_MIN_STEP_XP, Math.round(dailyQuest.xp / dailyQuest.target));
             expect(getProgression().totalXp).toBe(stepXp);
+
+            // Dois dias à frente, com o mesmo estado: o ciclo do dia 11 venceu
+            // vazio, o líquido caiu a zero e o XP foi junto.
+            vi.setSystemTime(new Date('2026-03-12T12:00:00Z'));
+            resetTodayCache();
+            expect(getProgression().totalXp).toBe(0);
         } finally {
             vi.useRealTimers();
             process.env.TZ = tz;
@@ -572,12 +683,26 @@ describe('regressão e caducidade', () => {
         expect(state.quests.every(q => !isQuestExpired(q))).toBe(true);
     });
 
-    it('a regressão não toca no XP: o grau nunca anda para trás', () => {
-        // Dois dias marcados, dois perdidos: a barra mostra zero, o XP mostra dois.
+    it('a regressão leva o XP junto: barra e grau são a mesma conta', () => {
+        // Dois dias marcados, dois perdidos: a barra zera e o XP zera com ela.
         const quest = seed(dailyQuest.id, daysAgo(4), [daysAgo(4), daysAgo(3)]);
-        const stepXp = Math.max(10, Math.round(dailyQuest.xp / dailyQuest.target));
 
         expect(getQuestProgress(quest)).toBe(0);
+        expect(getProgression().totalXp).toBe(0);
+    });
+
+    it('repor o dia esquecido devolve o XP do objetivo', () => {
+        // O caso de quem fez e não marcou. Nada aqui é acumulado, então voltar no
+        // calendário não "credita de novo": recalcula, e o valor volta sozinho.
+        const quest = seed(dailyQuest.id, daysAgo(2), [daysAgo(2)]);
+        const stepXp = Math.max(QUEST_MIN_STEP_XP, Math.round(dailyQuest.xp / dailyQuest.target));
+
+        expect(getProgression().totalXp).toBe(0);
+
+        quest.days.push(daysAgo(1));
+        bumpStateGeneration();
+
+        expect(getQuestProgress(quest)).toBe(2);
         expect(getProgression().totalXp).toBe(2 * stepXp);
     });
 
@@ -675,8 +800,11 @@ describe('teto de XP por leva', () => {
     it('objetivo personalizado também entra no teto', () => {
         // Sem isto, 365 dias de um objetivo inventado renderiam 9.125 XP soltos.
         expect(createCustomQuest('Mina de XP', CUSTOM_QUEST_MAX_TARGET).ok).toBe(true);
-        const quest = state.quests[0];
-        quest.days = Array.from({ length: 120 }, (_, i) => `2026-${String(Math.floor(i / 28) + 1).padStart(2, '0')}-${String((i % 28) + 1).padStart(2, '0')}`);
+        const quest = state.quests[0] as { startedOn: string; days: string[] };
+        // 120 dias SEGUIDOS até hoje: sem buraco, o líquido é 120 e o bruto
+        // (120 x 25 = 3.000 XP) fica muito acima do teto da leva.
+        quest.startedOn = daysAgo(119);
+        quest.days = Array.from({ length: 120 }, (_, i) => daysAgo(119 - i));
         bumpStateGeneration();
 
         expect(getProgression().totalXp).toBe(xpToReach(QUEST_TIERS[1] - 1));

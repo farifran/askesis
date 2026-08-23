@@ -8,28 +8,37 @@
  * @description Motor de Grau, XP e Objetivos Secundários.
  *
  * ARQUITETURA (Derivar, não acumular):
- * O XP de hábitos NÃO é um contador guardado. Ele é recalculado a partir de
- * `state.monthlyLogs`, que o merge da nuvem já une bit a bit. Um saldo escalar
- * teria o destino oposto: o merge escolhe um vencedor por `lastModified` e o
- * outro lado seria descartado inteiro — dois aparelhos usados offline no mesmo
- * dia perderiam o XP de um deles. Derivar custa uma varredura; guardar custaria
- * dados do usuário.
+ * O XP NÃO é um contador guardado. Ele é recalculado a partir de
+ * `state.monthlyLogs` e das datas dos objetivos, que o merge da nuvem já une bit
+ * a bit e por união de conjuntos. Um saldo escalar teria o destino oposto: o
+ * merge escolhe um vencedor por `lastModified` e o outro lado seria descartado
+ * inteiro — dois aparelhos usados offline no mesmo dia perderiam o XP de um
+ * deles. Derivar custa uma varredura; guardar custaria dados do usuário.
  *
- * O grau nunca cai SOZINHO. Objetivo abandonado ou caducado conserva o que já
- * rendeu, e falhar um dia apenas deixa de somar: punir quem falha é o oposto do
- * que este app se propõe, e um grau que anda para trás por si transformaria a
- * barra em ansiedade. A única coisa que baixa o grau é a correção manual —
- * desmarcar hoje um avanço que não houve —, exatamente como desmarcar um hábito
- * já fazia. A barra do OBJETIVO, essa sim, recua com o dia perdido; ela mede a
- * tentativa em curso, e não o que foi feito.
+ * O GRAU ACOMPANHA O PRESENTE, não o passado acumulado. O dia deixado em branco
+ * devolve o XP de um dia cumprido, e o objetivo largado devolve o que rendeu:
+ * quem para de manter, para de contar com o que manteve. Duas regras seguram a
+ * queda para que ela seja justa em vez de cruel:
+ *
+ *   1. NADA DEVOLVE MAIS DO QUE DEU. O piso é por hábito e por objetivo — um
+ *      hábito nunca come o XP de outro, e nenhum dos dois desce de zero.
+ *   2. TUDO É REVERSÍVEL. Como o XP é derivado e não acumulado, voltar no
+ *      calendário e marcar o dia que de fato foi cumprido devolve o XP na hora.
+ *      A cobrança é do silêncio, não do esquecimento — e adiar já basta para
+ *      não perder nada.
+ *
+ * O único jeito de travar o XP de um objetivo é CONCLUÍ-LO: alvo cheio, nenhum
+ * ciclo por vencer, nada mais a regredir.
  *
  * [PUREZA]: este módulo não conhece i18n nem DOM. Devolve dados estruturados
  * (chaves e números); quem traduz e desenha é `render/progression.ts`.
  */
 
-import { state, QuestRecord, bumpLastModified, getStateGeneration } from '../state';
+import { state, Habit, HABIT_STATE, QuestRecord, TIMES_OF_DAY, bumpLastModified, getStateGeneration } from '../state';
+import { HabitService } from './HabitService';
+import { getScheduleForDate, shouldHabitAppearOnDate } from './selectors';
 import { QUEST_CATALOG, QUEST_TIERS, getQuestCatalogItem, type QuestCatalogItem } from '../data/quests';
-import { getTodayUTCIso, generateUUID, sanitizeText, parseUTCIsoDate, MS_PER_DAY } from '../utils';
+import { getTodayUTCIso, generateUUID, sanitizeText, parseUTCIsoDate, toUTCIsoDateString, addDays, MS_PER_DAY } from '../utils';
 import { saveState } from './persistence';
 import { emitRenderApp } from '../events';
 import {
@@ -99,33 +108,193 @@ export function gradeFromXp(totalXp: number): GradeInfo {
 
 // --- XP DE HÁBITOS (derivado dos bitmasks) ---
 
+interface HabitTally {
+    done: number;
+    overachieved: number;
+    deferred: number;
+}
+
 /**
- * Conta instâncias concluídas percorrendo os blocos de 3 bits de cada mês.
+ * Instâncias marcadas, separadas POR HÁBITO.
+ *
+ * Separadas porque a perda tem piso próprio: um hábito só desconta o XP que ele
+ * mesmo deu. Num balde só, um hábito esquecido comeria o ganho dos outros, e um
+ * mês de descuido zeraria a disciplina inteira.
+ *
+ * A chave do log é `<habitId>_<YYYY-MM>` e o id pode conter `_`, por isso o
+ * corte é no ÚLTIMO — que é sempre o separador do mês.
  *
  * O deslocamento é progressivo (`v >>= 3n`) em vez de indexado por dia: um mês
  * pouco preenchido termina no primeiro bloco zerado à esquerda, em vez de varrer
  * os 93 blocos sempre. O layout é o de `HabitService`: bits 0-1 são o status,
- * bit 2 é a lápide, e bloco com lápide vale NULL — por isso só 1 (DONE) e
- * 3 (DONE_PLUS) contam.
+ * bit 2 é a lápide, e bloco com lápide vale NULL.
  */
-function countCompletions(): { done: number; overachieved: number } {
-    let done = 0;
-    let overachieved = 0;
+function tallyByHabit(): Map<string, HabitTally> {
+    const byHabit = new Map<string, HabitTally>();
 
     const logs = state.monthlyLogs;
-    if (!logs) return { done, overachieved };
+    if (!logs) return byHabit;
 
-    for (const log of logs.values()) {
+    for (const [key, log] of logs) {
+        const cut = key.lastIndexOf('_');
+        const habitId = cut > 0 ? key.slice(0, cut) : key;
+
+        let tally = byHabit.get(habitId);
+        if (!tally) byHabit.set(habitId, tally = { done: 0, overachieved: 0, deferred: 0 });
+
         let remaining = log;
         while (remaining > 0n) {
             const block = remaining & 7n;
-            if (block === 1n) done++;
-            else if (block === 3n) overachieved++;
+            if (block === 1n) tally.done++;
+            else if (block === 3n) tally.overachieved++;
+            else if (block === 2n) tally.deferred++;
             remaining >>= 3n;
         }
     }
 
-    return { done, overachieved };
+    return byHabit;
+}
+
+/** O que as marcações renderam, antes de qualquer desconto. */
+function tallyXp(tally: HabitTally): number {
+    return tally.done * XP_PER_COMPLETION
+        + tally.overachieved * (XP_PER_COMPLETION + XP_PER_OVERACHIEVEMENT);
+}
+
+/**
+ * Quantas instâncias o hábito pede num dia — a alteração daquele dia vence a
+ * agenda, como no cartão.
+ *
+ * A leitura é direta em `state.dailyData`, e não por
+ * `getEffectiveScheduleForHabitOnDate`: aquele passa por
+ * `getHabitDailyInfoForDate`, que CRIA a entrada do dia quando ela não existe.
+ * Varrer o histórico por ali encheria o estado de objetos vazios — que seriam
+ * gravados no IndexedDB e subiriam para a nuvem.
+ */
+function instancesOnDate(habit: Habit, dateISO: string): number {
+    const override = state.dailyData[dateISO]?.[habit.id]?.dailySchedule;
+    if (override) return override.length;
+    return getScheduleForDate(habit, dateISO)?.times.length ?? 0;
+}
+
+/**
+ * Instâncias que cada hábito PEDIU nos dias já fechados, até `endISO` inclusive.
+ *
+ * Hoje fica de fora, como no objetivo: o dia só cobra quando acaba. Sem isso o
+ * app abriria de manhã já descontando o que ainda vai ser feito à noite.
+ *
+ * O calendário é percorrido UMA VEZ para todos os hábitos, e não uma vez por
+ * hábito, com um cursor só avançado in loco. A conta de cada dia é barata (dois
+ * memos), mas andar no calendário não era: cada passo alocava uma `Date` e
+ * formatava uma string, POR HÁBITO. E o recálculo acontece a cada marcação.
+ *
+ * O acumulador é um array paralelo, e não um `Map` por id: seriam três operações
+ * de Map por par (dia, hábito), e com três anos de histórico isso passa de
+ * quarenta mil. Somando as duas coisas, o pior caso medido — quinze hábitos,
+ * três anos, dois períodos por dia — caiu de 7,5 ms para 4,7 ms por recálculo.
+ * O perfil comum (cinco hábitos, um ano) fica em 0,4 ms.
+ *
+ * Nada disso está no caminho do primeiro pixel: `renderProgression` roda depois
+ * da primeira pintura, em prioridade de fundo.
+ */
+function scheduledInstancesByHabit(habits: readonly Habit[], endISO: string): Map<string, number> {
+    const starts: string[] = [];
+    const counts: number[] = [];
+
+    let firstDay = '';
+    for (const habit of habits) {
+        const start = habit.scheduleHistory?.[0]?.startDate;
+        starts.push(start && start <= endISO ? start : '');
+        counts.push(0);
+        if (start && start <= endISO && (!firstDay || start < firstDay)) firstDay = start;
+    }
+
+    if (firstDay) {
+        const cursor = parseUTCIsoDate(firstDay);
+        for (let dateISO = firstDay; dateISO <= endISO;) {
+            for (let i = 0; i < habits.length; i++) {
+                const start = starts[i];
+                if (!start || dateISO < start) continue;
+                const habit = habits[i];
+                if (shouldHabitAppearOnDate(habit, dateISO, cursor)) counts[i] += instancesOnDate(habit, dateISO);
+            }
+            cursor.setUTCDate(cursor.getUTCDate() + 1);
+            dateISO = toUTCIsoDateString(cursor);
+        }
+    }
+
+    const byId = new Map<string, number>();
+    for (let i = 0; i < habits.length; i++) byId.set(habits[i].id, counts[i]);
+    return byId;
+}
+
+/**
+ * Instâncias de hoje já resolvidas — feitas, superadas ou adiadas.
+ *
+ * Varre os três períodos sem consultar a agenda: uma marcação que sobreviveu a
+ * uma troca de horário precisa sair da conta do mesmo jeito, senão o dia de hoje
+ * apareceria como falta antes mesmo de fechar.
+ */
+function resolvedToday(habitId: string, todayISO: string): number {
+    let resolved = 0;
+    for (const time of TIMES_OF_DAY) {
+        if (HabitService.getStatus(habitId, todayISO, time) !== HABIT_STATE.NULL) resolved++;
+    }
+    return resolved;
+}
+
+/**
+ * XP dos hábitos: o que foi marcado, menos o que foi deixado em branco.
+ *
+ * A falta cobra o preço de uma instância cumprida, e o piso é por hábito —
+ * nenhum devolve mais do que deu. Quem nunca marcou nada vale zero, não um
+ * número negativo, e por isso nem chega a ser varrido: sem XP, não há o que
+ * tirar.
+ *
+ * Adiar PROTEGE. O que este motor cobra é o silêncio, não a falha declarada — e
+ * a cobrança é reversível: voltar no calendário e marcar o dia que de fato foi
+ * cumprido devolve o XP no mesmo render.
+ *
+ * Hábito graduado também não cobra: ele saiu do calendário, e cobrar de quem
+ * chegou ao fim do caminho seria o contrário do que a graduação significa.
+ */
+function habitXp(): number {
+    const byHabit = tallyByHabit();
+    if (byHabit.size === 0) return 0;
+
+    const todayISO = getTodayUTCIso();
+    const yesterdayISO = toUTCIsoDateString(addDays(parseUTCIsoDate(todayISO), -1));
+
+    let total = 0;
+    const counted = new Set<string>();
+
+    // Só quem tem XP entra na varredura do calendário: sem nada dado, não há
+    // nada a tirar, e o hábito recém-criado não paga o custo de ser conferido.
+    const chargeable: Habit[] = [];
+    for (const habit of state.habits) {
+        counted.add(habit.id);
+        if (byHabit.has(habit.id) && !habit.graduatedOn) chargeable.push(habit);
+    }
+    const scheduled = scheduledInstancesByHabit(chargeable, yesterdayISO);
+
+    for (const habit of state.habits) {
+        const tally = byHabit.get(habit.id);
+        if (!tally) continue;
+
+        const markedInClosedDays = tally.done + tally.overachieved + tally.deferred
+            - resolvedToday(habit.id, todayISO);
+        const missed = Math.max(0, (scheduled.get(habit.id) ?? 0) - markedInClosedDays);
+
+        total += Math.max(0, tallyXp(tally) - missed * XP_PER_COMPLETION);
+    }
+
+    // Log sem hábito correspondente — apagado de vez, ou um id que só existe nos
+    // testes. Sem agenda para comparar, não há falta a cobrar: vale o que rendeu.
+    for (const [habitId, tally] of byHabit) {
+        if (!counted.has(habitId)) total += tallyXp(tally);
+    }
+
+    return total;
 }
 
 // --- OBJETIVOS: LEITURA ---
@@ -308,25 +477,31 @@ export function isQuestRegisteredForCycleOf(quest: QuestRecord, dateISO: string)
 }
 
 /**
- * XP já rendido por um objetivo — contado em DIAS MARCADOS, não no líquido.
+ * XP rendido por um objetivo — o LÍQUIDO, o mesmo número que a barra mostra.
  *
- * É aqui que a regressão para. A barra do objetivo recua quando um dia se perde,
- * porque ela mede a tentativa em curso; o grau não recua nunca, porque mede o
- * que foi feito. Um dia cumprido e depois "perdido" continua tendo sido cumprido
- * — descontá-lo do XP faria a barra de grau andar para trás, que é a única coisa
- * que este motor promete nunca fazer.
+ * XP e barra são a mesma conta de propósito: o ciclo perdido tira o avanço e
+ * tira o XP junto. Enquanto o objetivo está em curso, o que se tem é um
+ * empréstimo contra uma promessa — e concluir é o que o quita.
  *
- * Objetivo abandonado ou caducado conserva o mesmo pelo mesmo motivo.
+ * CONCLUÍDO É O ÚNICO ESTADO ESTÁVEL, e por isso ele curto-circuita a conta: sem
+ * isso o líquido continuaria caindo depois da conclusão e o prêmio derreteria
+ * junto. Alvo cheio, nada mais a vencer, valor congelado.
+ *
+ * Largar tem o caminho oposto: caducado ou abandonado, os ciclos vazios seguem
+ * correndo, o líquido desce até o piso e o objetivo se apaga sozinho. Não é
+ * castigo — é a mesma regra vista do outro lado.
+ *
+ * A base é `alvo × passo`, e não `getQuestTotalXp`, para não haver degrau no
+ * instante da conclusão: é exatamente onde a barra cheia já estava. Hoje as duas
+ * contas batem em todo o catálogo; o piso de `QUEST_MIN_STEP_XP` poderia
+ * separá-las num item futuro, e aí quem manda é a barra que o usuário viu.
  */
 function questEarnedXp(quest: QuestRecord): number {
     const stepXp = getQuestStepXp(quest);
-    // Um crédito por ciclo aqui também, senão a barra do objetivo andaria por
-    // ciclo e o grau por dia. A âncora é `startedOn`, e não a tentativa em curso:
-    // as fronteiras de ciclo do histórico inteiro precisam ficar paradas, ou
-    // retomar moveria os ciclos antigos e o XP já ganho mudaria de valor.
-    let xp = markedCycles(quest, quest.startedOn).size * stepXp;
-    if (quest.completedOn) xp += Math.round(getQuestTotalXp(quest) * QUEST_MASTERY_BONUS);
-    return xp;
+    if (quest.completedOn) {
+        return getQuestTarget(quest) * stepXp + Math.round(getQuestTotalXp(quest) * QUEST_MASTERY_BONUS);
+    }
+    return getQuestProgress(quest) * stepXp;
 }
 
 // --- TETO DE XP POR LEVA ---
@@ -414,12 +589,9 @@ export function getProgression(): GradeInfo {
     currentEpoch();
     if (cachedGrade) return cachedGrade;
 
-    const { done, overachieved } = countCompletions();
-    const habitXp = done * XP_PER_COMPLETION + overachieved * (XP_PER_COMPLETION + XP_PER_OVERACHIEVEMENT);
-
     // Hábito não tem teto; objetivo tem, por leva. Somar depois do corte é o que
     // garante que o teto limite os objetivos e não a disciplina diária.
-    cachedGrade = gradeFromXp(habitXp + cappedQuestXp());
+    cachedGrade = gradeFromXp(habitXp() + cappedQuestXp());
     return cachedGrade;
 }
 
@@ -594,9 +766,10 @@ export function createCustomQuest(rawTitle: string, rawTarget: number): QuestAct
  * como no hábito, tocar de novo desfaz — o toque errado se corrige onde
  * aconteceu, sem menu.
  *
- * Desmarcar DEVOLVE o XP daquele dia, e é a única coisa em todo o motor que
- * baixa o grau. Não é regressão automática: é a mesma correção manual que
- * desmarcar um hábito já fazia. O que o grau promete é nunca cair sozinho.
+ * Desmarcar DEVOLVE o XP daquele ciclo, como desmarcar um hábito já fazia. Não
+ * é a única coisa que baixa o grau — o ciclo vencido em branco faz o mesmo, sem
+ * ninguém tocar em nada —, mas é a única que o usuário provoca de propósito, e
+ * a que ele desfaz tocando de novo.
  *
  * `getTodayUTCIso` devolve a data do calendário LOCAL. Um
  * `toISOString().slice(0,10)` cru daria a data UTC e, a leste ou a oeste de
