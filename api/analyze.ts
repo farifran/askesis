@@ -4,6 +4,9 @@
  * SPDX-License-Identifier: MIT
 */
 
+import { readRequestBody, RequestBodyError } from './_requestBody';
+import { readAiSession } from './_aiSession';
+import { buildAiTask } from './_aiTask';
 import { GoogleGenAI } from '@google/genai';
 import {
     checkRateLimit,
@@ -121,15 +124,20 @@ export default async function handler(req: Request) {
     if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS_HEADERS });
     if (req.method !== 'POST') return new Response(null, { status: 405 });
 
+    let sessionId: string | null;
+    try { sessionId = await readAiSession(req); } catch { return new Response(null, { status: 503 }); }
+    if (!sessionId) return new Response(null, { status: 401, headers: CORS_HEADERS });
+
     const ip = getClientIp(req);
-    const limiter = await checkRateLimit({
+    let limiter;
+    try { limiter = await checkRateLimit({
         namespace: 'analyze',
         key: ip,
         windowMs: ANALYZE_RATE_LIMIT_WINDOW_MS,
         maxRequests: ANALYZE_RATE_LIMIT_MAX_REQUESTS,
         disabled: ANALYZE_RATE_LIMIT_DISABLED,
-        localMaxEntries: 4000
-    });
+        localMaxEntries: 4000, requireDistributed: true
+    }); } catch { return new Response(null, { status: 503, headers: CORS_HEADERS }); }
     if (limiter.limited) {
         return new Response(JSON.stringify({ error: 'Too Many Requests', code: 'RATE_LIMITED' }), {
             status: 429,
@@ -145,26 +153,15 @@ export default async function handler(req: Request) {
         return new Response(JSON.stringify({ error: 'Server Configuration: Missing API Key' }), { status: 500, headers: CORS_HEADERS });
     }
 
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
     try {
-        // CHAOS DEFENSE: Timeout de leitura do prompt para evitar workers pendentes
-        const bodyText = await Promise.race([
-            req.text(),
-            new Promise<string>((_, r) => setTimeout(() => r('TIMEOUT'), 8000))
-        ]);
+        const bodyText = await readRequestBody(req, MAX_PROMPT_SIZE);
 
-        if (bodyText === 'TIMEOUT') return new Response(null, { status: 408 });
-        if (bodyText.length > MAX_PROMPT_SIZE) return new Response(null, { status: 413 });
-
-        const body = JSON.parse(bodyText);
-        const { prompt, systemInstruction, responseSchema } = body;
-
-        if (!prompt || !systemInstruction) return new Response(null, { status: 400 });
-
-        // Saída estruturada é OPCIONAL: a análise de citação envia um schema e
-        // recebe JSON garantido; a avaliação de hábitos não envia e segue
-        // recebendo prosa em markdown. O schema é dado do cliente, então entra
-        // na chave de cache — schemas distintos produzem saídas distintas.
-        const useSchema = !!responseSchema && typeof responseSchema === 'object';
+        let task;
+        try { task = buildAiTask(JSON.parse(bodyText)); }
+        catch { return new Response(null, { status: 400, headers: CORS_HEADERS }); }
+        const { prompt, systemInstruction, responseSchema } = task;
+        const useSchema = !!responseSchema;
         const schemaKey = useSchema ? JSON.stringify(responseSchema) : '';
 
         const cacheKey = await computeCacheKey(prompt, systemInstruction, schemaKey);
@@ -190,12 +187,26 @@ export default async function handler(req: Request) {
             });
         }
 
+        // Orçamentos independentes: uma sessão nova não reinicia a cota do IP/global.
+        for (const [namespace, key, maxRequests] of [
+            ['ai-daily-session', sessionId, parsePositiveInt(process.env.AI_SESSION_DAILY_LIMIT, 4)],
+            ['ai-daily-ip', ip, parsePositiveInt(process.env.AI_IP_DAILY_LIMIT, 20)],
+            ['ai-daily-global', 'all', parsePositiveInt(process.env.AI_GLOBAL_DAILY_LIMIT, 200)]
+        ] as const) {
+            const limit = await checkRateLimit({ namespace, key, maxRequests, windowMs: 86400000,
+                disabled: ANALYZE_RATE_LIMIT_DISABLED, requireDistributed: true });
+            if (limit.limited) return new Response(JSON.stringify({ error: 'AI quota reached' }), {
+                status: 429, headers: { ...CORS_HEADERS, 'Retry-After': String(limit.retryAfterSec) }
+            });
+        }
+
         if (!aiClient) aiClient = new GoogleGenAI({ apiKey: API_KEY });
 
         // PROTEÇÃO CONTRA ZUMBIFICAÇÃO: Timeout de execução da IA
-        let timeoutId: ReturnType<typeof setTimeout> | undefined;
+        const abort = new AbortController();
         const timeoutPromise = new Promise<never>((_, reject) => {
             timeoutId = setTimeout(() => {
+                abort.abort();
                 const timeoutError = new Error('AI generation timeout');
                 timeoutError.name = 'AbortError';
                 reject(timeoutError);
@@ -211,8 +222,8 @@ export default async function handler(req: Request) {
                 // determinismo vem da systemInstruction, que já impõe pontuação
                 // rigorosa e resposta exclusivamente em JSON.
                 config: useSchema
-                    ? { systemInstruction, responseMimeType: 'application/json', responseSchema }
-                    : { systemInstruction },
+                    ? { systemInstruction, responseMimeType: 'application/json', responseSchema: JSON.parse(schemaKey), maxOutputTokens: 4096, abortSignal: abort.signal }
+                    : { systemInstruction, maxOutputTokens: 4096, abortSignal: abort.signal },
             }),
             timeoutPromise
         ]);
@@ -235,6 +246,7 @@ export default async function handler(req: Request) {
         });
 
     } catch (error: unknown) {
+        if (error instanceof RequestBodyError) return new Response(null, { status: error.status, headers: CORS_HEADERS });
         const errorMessage = getErrorMessage(error);
         console.error("AI Analysis Failed:", errorMessage);
 
@@ -264,5 +276,7 @@ export default async function handler(req: Request) {
         // SECURITY FIX: Truncate and sanitize error details to prevent information leakage
         const safeDetails = errorMessage.substring(0, 200).replace(/[<>"'&]/g, '');
         return new Response(JSON.stringify({ error: 'AI processing failed', details: safeDetails }), { status: 500, headers: CORS_HEADERS });
+    } finally {
+        if (timeoutId) clearTimeout(timeoutId);
     }
 }

@@ -40,6 +40,7 @@ export type Frequency =
 export interface HabitDayData {
     goalOverride?: number;
     note?: string;
+    noteModifiedAt?: number;
 }
 
 export type HabitDailyInstances = Partial<Record<TimeOfDay, HabitDayData>>;
@@ -117,6 +118,10 @@ export interface QuestRecord {
     readonly id: string;
     readonly startedOn: string;
     days: string[];
+    /** Registros por dia, inclusive desmarcações, para merge sem ressurreição. */
+    dayEdits?: Record<string, { at: number; done: boolean }>;
+    noteEdits?: Record<string, number>;
+    lifecycleAt?: number;
     /**
      * Início da tentativa em curso; ausente significa `startedOn`.
      *
@@ -154,7 +159,8 @@ export interface DaySummary {
 
 export interface AppState {
     readonly version: number;
-    lastModified: number; 
+    lastModified: number;
+    accountGeneration?: string;
     readonly habits: readonly Habit[];
     readonly dailyData: Record<string, Record<string, HabitDailyInfo>>;
     readonly archives: Record<string, string | Uint8Array>; 
@@ -194,7 +200,7 @@ export interface PredefinedHabit extends HabitTemplate {
 }
 
 // --- CONSTANTS ---
-export const APP_VERSION = 12; // Bump version for the progression/quests module
+export const APP_VERSION = 13; // Geração de conta e metadados de edição dos objetivos
 export const STREAK_SEMI_CONSOLIDATED = 21;
 export const STREAK_CONSOLIDATED = 66;
 export const MAX_HABIT_NAME_LENGTH = 50;
@@ -236,6 +242,7 @@ export const state: {
     version: number;
     habits: Habit[];
     lastModified: number;
+    accountGeneration?: string;
     dailyData: Record<string, Record<string, HabitDailyInfo>>;
     archives: Record<string, string | Uint8Array>;
     dailyDiagnoses: Record<string, DailyStoicDiagnosis>;
@@ -343,6 +350,7 @@ export function getPersistableState(): AppState {
     return {
         version: APP_VERSION,
         lastModified: state.lastModified,
+        accountGeneration: state.accountGeneration,
         habits: state.habits,
         dailyData: state.dailyData,
         archives: state.archives,

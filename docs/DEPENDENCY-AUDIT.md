@@ -1,33 +1,32 @@
-# Dependency Audit: Vite advisory
+# Auditoria de dependências — 2 de outubro de 2026
 
-Date: 2026-04-07
+Após atualizar o lockfile e instalar as ferramentas exigidas pelo ESLint, `npm audit`
+reportou **zero vulnerabilidades**, tanto em produção quanto incluindo desenvolvimento.
+O resultado é uma consulta datada ao registry, não uma garantia de ausência de falhas.
 
-Resumo:
+Versões instaladas relevantes:
 
-- O comando `npm audit` reportou uma vulnerabilidade de alta severidade em `vite` (7.0.0 - 7.3.1) que afeta o servidor de desenvolvimento. No projeto atual, a versão vulnerável aparece como dependência transitiva de `vitest` (ex.: `node_modules/vitest/node_modules/vite`).
+| Pacote | Versão |
+|---|---|
+| @google/genai | 1.52.0 |
+| @upstash/redis | 1.39.0 |
+| dompurify | 3.4.16 |
+| vitest / @vitest/ui / @vitest/coverage-v8 | 4.1.11 |
+| vite direto | 6.4.3 |
+| esbuild direto | 0.28.2 |
+| eslint | 10.11.0 |
+| @typescript-eslint/parser / eslint-plugin | 8.71.0 |
 
-Impacto:
+`package-lock.json` fixa a árvore completa. O relatório bruto anterior permanece em
+[system-audit-dependencies-2026-10-02.json](code-review/system-audit-dependencies-2026-10-02.json)
+como evidência histórica; ele não descreve a árvore atual.
 
-- A vulnerabilidade permite path traversal / file read via dev server/WebSocket, o que representa risco apenas se o dev server estiver exposto a usuários não confiáveis (por exemplo em CI público sem isolamento ou em máquinas com portas encaminhadas).
+`npm run lint` executa ESLint. TypeScript tem seu próprio comando (`npm run typecheck`).
+O guardrail de auditoria falha se o registry estiver indisponível, se a execução
+falhar ou se o JSON estiver incompleto. HIGH/CRITICAL de produção bloqueiam CI;
+os demais níveis continuam visíveis no relatório. O job noturno também bloqueia
+HIGH/CRITICAL e publica o relatório mesmo em falha.
 
-Recomendações imediatas:
-
-1. Investigar a árvore de dependências localmente: execute `npm ls vite --all` para ver exatamente quais pacotes estão trazendo `vite` e em que versões.
-2. Verificar se há uma versão do `vitest` que dependa de uma versão corrigida de `vite`. Se disponível, atualizar `devDependencies` para essa versão e regenerar o lockfile.
-3. Se não for possível atualizar upstream rapidamente, mitigar o risco operacionalmente: garantir que o dev server (Vite) não seja exposto publicamente em CI ou máquinas de desenvolvimento; aplicar regras de firewall/ACL; e manter o passo de guardrails em CI (warnings/monitoramento) ativo.
-4. Como último recurso temporário, considerar `patch-package` para aplicar um hotfix em `node_modules/vitest/node_modules/vite` — isso é arriscado e deveria ser usado apenas como stopgap até a correção upstream.
-
-Procedimento sugerido (local):
-
-- ver onde vite aparece: `npm ls vite --all`
-- verificar versão mais recente do vitest: `npm view vitest version`
-- tentar atualizar vitest e regenerar lockfile: `npm install -D vitest@latest` ; `npm install` ; `npm audit fix`
-
-Registro das ações neste repositório:
-
-- Adicionado um script `scripts/check-vite.sh` e um script npm `check:deps` para facilitar investigação local.
-- Não aplicar upgrades automaticamente sem rodar testes de integração; prefer abrir um branch com a atualização e validar em CI.
-
-Contato/next steps:
-
-- Se desejar, posso abrir um branch que atualize `vitest` e gerar um PR com as alterações e um plano de rollback, ou posso só orientar os comandos para você executar localmente.
+Verificação: `npm run guardrail:audit`, `npm run typecheck`, `npm run lint`,
+`npm test` e `npm run build`. O inventário de testes é gerado por
+`npm run test:inventory`, que executa a suíte completa.

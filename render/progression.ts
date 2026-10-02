@@ -402,19 +402,21 @@ function buildCatalogRow(
 }
 
 /**
- * Linha de catálogo para um objetivo PERSONALIZADO em curso.
+ * Linha de catálogo para um objetivo personalizado ativo ou disponível.
  *
  * Sem isto, um objetivo criado pelo usuário ficaria preso no slot para sempre:
  * abandonar só existe no catálogo, e o catálogo é montado a partir de
  * `QUEST_CATALOG`, onde um `custom:` nunca está.
  */
-function buildCustomQuestRow(quest: QuestRecord): HTMLElement {
+function buildCustomQuestRow(quest: QuestRecord, active: boolean, slotsFull: boolean): HTMLElement {
     const target = getQuestTarget(quest);
 
-    const abandonBtn = el('button', 'quest-abandon-btn', t('questAbandon'));
-    abandonBtn.type = 'button';
-    abandonBtn.dataset.questAction = 'abandon';
-    abandonBtn.dataset.questId = quest.id;
+    const action = el('button', active ? 'quest-abandon-btn' : 'quest-activate-btn',
+        active ? t('questAbandon') : t('questActivate', { xp: formatInteger(getQuestStepXp(quest)) }));
+    action.type = 'button';
+    action.dataset.questAction = active ? 'abandon' : 'activate';
+    action.dataset.questId = quest.id;
+    action.disabled = !active && slotsFull;
 
     return el(
         'div',
@@ -434,7 +436,7 @@ function buildCustomQuestRow(quest: QuestRecord): HTMLElement {
                 }))
             ),
             el('span', 'quest-desc', t('questCustomDesc')),
-            el('div', 'quest-catalog-actions', abandonBtn)
+            el('div', 'quest-catalog-actions', action)
         )
     );
 }
@@ -444,10 +446,9 @@ export function renderQuestCatalog() {
     const activeQuests = getActiveQuests();
     const activeIds = new Set(activeQuests.map(q => q.id));
     const slotsFull = activeQuests.length >= QUEST_MAX_ACTIVE;
-    // Personalizados em curso primeiro: são os que só existem aqui.
-    const customRows = activeQuests
-        .filter(quest => !getQuestCatalogItem(quest.id))
-        .map(buildCustomQuestRow);
+    // Inclui os personalizados que voltaram à lista, permitindo retomá-los.
+    const customQuests = state.quests.filter(quest => !getQuestCatalogItem(quest.id) && !quest.completedOn);
+    const customRows = customQuests.map(quest => buildCustomQuestRow(quest, activeIds.has(quest.id), slotsFull));
 
     setTextContent(ui.questPickerTitle, t('questPickerTitle'));
     setTextContent(ui.createCustomQuestBtn, t('questCreateCustom'));
@@ -476,7 +477,10 @@ export function renderQuestCatalog() {
     // também não fica apagado, e procurar "a última linha acesa" jogaria o aviso
     // depois de um concluído que viesse abaixo do último ativo.
     if (slotsFull) {
-        let lastActive = customRows.length - 1;
+        let lastActive = -1;
+        customQuests.forEach((quest, index) => {
+            if (activeIds.has(quest.id)) lastActive = index;
+        });
         catalogItems.forEach((item, index) => {
             if (activeIds.has(item.id)) lastActive = customRows.length + index;
         });

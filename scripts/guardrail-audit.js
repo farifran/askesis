@@ -16,7 +16,7 @@
 
 'use strict';
 
-const { execSync, spawnSync } = require('child_process');
+const { spawnSync } = require('child_process');
 
 const PROD_LEVEL = 'high';
 const DEV_LEVEL = 'moderate';
@@ -29,16 +29,13 @@ function run(args) {
     } catch {
         data = {};
     }
-    return { exitCode: result.status ?? 0, data };
-}
-
-function countBySeverity(vulnerabilities) {
-    const counts = { critical: 0, high: 0, moderate: 0, low: 0, info: 0 };
-    for (const v of Object.values(vulnerabilities || {})) {
-        const sev = v.severity?.toLowerCase();
-        if (sev in counts) counts[sev]++;
+    const counts = data.metadata?.vulnerabilities;
+    if (result.error || result.signal || ![0, 1].includes(result.status) || data.error
+        || !counts || !['total', 'high', 'critical', 'moderate', 'low', 'info'].every(k => Number.isInteger(counts[k]) && counts[k] >= 0)) {
+        console.error('[guardrail-audit] Auditoria indisponível ou resultado inválido. Não é possível aprovar.');
+        process.exit(1);
     }
-    return counts;
+    return { data };
 }
 
 // --- Produção (--omit=dev) ---

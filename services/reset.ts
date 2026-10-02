@@ -15,7 +15,7 @@
  */
 
 import { state, clearAllCaches, APP_VERSION, type AppState } from '../state';
-import { logger } from '../utils';
+import { generateUUID } from '../utils';
 import { clearLocalPersistence } from './persistence';
 import { HabitService } from './HabitService';
 import { emitRenderApp } from '../events';
@@ -31,6 +31,7 @@ export function buildResetState(resetTimestamp: number): AppState {
     return {
         version: APP_VERSION,
         lastModified: resetTimestamp,
+        accountGeneration: generateUUID(),
         habits: [],
         dailyData: {},
         archives: {},
@@ -54,6 +55,9 @@ export function buildResetState(resetTimestamp: number): AppState {
  * nem na nuvem — quem chama decide o alcance.
  */
 export async function wipeLocalData(): Promise<void> {
+    await clearLocalPersistence();
+    state.accountGeneration = undefined;
+    state.quoteState = undefined;
     state.habits = [];
     state.dailyData = {};
     state.archives = {};
@@ -70,9 +74,5 @@ export async function wipeLocalData(): Promise<void> {
     state.lastAIContextHash = null;
     emitRenderApp();
 
-    try {
-        await clearLocalPersistence();
-    } catch (e) {
-        logger.error('Clear persistence failed', e);
-    }
+
 }

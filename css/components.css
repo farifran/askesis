@@ -180,3 +180,15 @@
     height: 16px;
 }
 #language-rotary { --reel-item-width: 95px; }
+
+.storage-error-banner {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 10000;
+    padding: 12px 20px;
+    color: #fff;
+    background: #8b2020;
+    text-align: center;
+}

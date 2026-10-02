@@ -21,7 +21,7 @@ import './css/modals.css';
 
 import { state } from './state';
 import { loadState, registerSyncHandler, saveState, setupPersistenceLifecycleFlush } from './services/persistence';
-import { renderApp, initI18n, updateUIText, showConfirmationModal } from './render';
+import { renderApp, initI18n, showConfirmationModal } from './render';
 import { setupEventListeners } from './listeners';
 import { handleDayTransition, performArchivalCheck } from './services/habitActions';
 import { initSync } from './listeners/sync';

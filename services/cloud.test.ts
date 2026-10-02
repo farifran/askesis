@@ -155,6 +155,7 @@ describe('cloud sync basics', () => {
         vi.mocked(apiFetch).mockResolvedValue({
             ok: true,
             status: 200,
+            headers: new Headers(),
             json: async () => ({ lastModified: '2000', core: 'coreEnc', 'logs:2024-01': 'logsEnc' })
         } as any);
 
@@ -169,20 +170,18 @@ describe('cloud sync basics', () => {
         expect(renderApp).toHaveBeenCalled();
     });
 
-    it('reenfileira e reenvia quando API retorna 503/LUA_UNAVAILABLE', async () => {
+    it.each(['LUA_UNAVAILABLE', 'NETWORK_ERROR'])('reenfileira e reenvia após %s', async (failure) => {
         vi.useFakeTimers();
         try {
             const { apiFetch, getSyncKey, hasLocalSyncKey } = await import('./api');
             vi.mocked(hasLocalSyncKey).mockReturnValue(true);
             vi.mocked(getSyncKey).mockReturnValue('k');
 
-            vi.mocked(apiFetch)
-                .mockResolvedValueOnce({
-                    ok: false,
-                    status: 503,
-                    json: async () => ({ error: 'Atomic sync unavailable', code: 'LUA_UNAVAILABLE' })
-                } as any)
-                .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({}) } as any);
+            if (failure === 'NETWORK_ERROR') vi.mocked(apiFetch).mockRejectedValueOnce(Object.assign(new TypeError('Failed to fetch'), { code: failure }));
+            else vi.mocked(apiFetch).mockResolvedValueOnce({
+                ok: false, status: 503, json: async () => ({ error: 'Atomic sync unavailable', code: failure })
+            } as any);
+            vi.mocked(apiFetch).mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({}) } as any);
 
             const habitId = createTestHabit({ name: 'Retry Habit', time: 'Morning', goalType: 'check' });
             HabitService.setStatus(habitId, '2024-01-01', 'Morning', 1);
@@ -329,45 +328,38 @@ describe('cloud sync basics', () => {
         expect(apiFetch).toHaveBeenCalledTimes(2);
     });
 
-    it('descarta a base local anterior ao reset de conta feito em outro aparelho', async () => {
+    it.each([1000, 9000])('substitui geração antiga mesmo com edição offline em %s', async (localTimestamp) => {
         const { apiFetch, getSyncKey, hasLocalSyncKey } = await import('./api');
-        const { wipeLocalData } = await import('./reset');
+        const { persistStateLocally, loadState } = await import('./persistence');
+        const { mergeStates } = await import('./dataMerge');
         vi.mocked(hasLocalSyncKey).mockReturnValue(true);
         vi.mocked(getSyncKey).mockReturnValue('k');
-        vi.mocked(apiFetch).mockResolvedValueOnce({
-            ok: true,
-            status: 200,
-            headers: new Headers(),
-            json: async () => ({ lastModified: '2000', resetAt: '2000', core: 'coreEnc' })
-        } as any);
-
-        state.lastModified = 1000;
-
-        const { fetchStateFromCloud } = await import('./cloud');
-        await fetchStateFromCloud();
-
-        expect(wipeLocalData).toHaveBeenCalled();
+        vi.mocked(apiFetch).mockResolvedValueOnce(new Response(JSON.stringify({
+            lastModified: '2000', resetAt: '2000', accountGeneration: 'new-generation', core: 'coreEnc'
+        }), { headers: { ETag: '"new"' } }));
+        createTestHabit({ name: 'Antes do reset', time: 'Morning' });
+        state.lastModified = localTimestamp;
+        await (await import('./cloud')).fetchStateFromCloud();
+        expect(mergeStates).not.toHaveBeenCalled();
+        expect(persistStateLocally).toHaveBeenCalledWith(expect.objectContaining({ habits: [], accountGeneration: 'new-generation' }));
+        expect(loadState).toHaveBeenCalled();
+        expect(vi.mocked(persistStateLocally).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(loadState).mock.invocationCallOrder[0]);
     });
 
-    it('preserva o que foi registrado depois do carimbo de reset', async () => {
+    it('preserva a cópia local e não avança ETag se a gravação do reset falha', async () => {
         const { apiFetch, getSyncKey, hasLocalSyncKey } = await import('./api');
-        const { wipeLocalData } = await import('./reset');
+        const { persistStateLocally, loadState } = await import('./persistence');
         vi.mocked(hasLocalSyncKey).mockReturnValue(true);
         vi.mocked(getSyncKey).mockReturnValue('k');
-        vi.mocked(apiFetch).mockResolvedValue({
-            ok: true,
-            status: 200,
-            headers: new Headers(),
-            json: async () => ({ lastModified: '2000', resetAt: '2000', core: 'coreEnc' })
-        } as any);
-
-        createTestHabit({ name: 'Depois do reset', time: 'Morning', goalType: 'check' });
-        state.lastModified = 3000;
-
-        const { fetchStateFromCloud } = await import('./cloud');
-        await fetchStateFromCloud();
-
-        expect(wipeLocalData).not.toHaveBeenCalled();
+        vi.mocked(apiFetch).mockResolvedValueOnce(new Response(JSON.stringify({
+            lastModified: '2000', resetAt: '2000', accountGeneration: 'new-generation', core: 'coreEnc'
+        }), { headers: { ETag: '"new"' } }));
+        const id = createTestHabit({ name: 'Cópia local', time: 'Morning' });
+        vi.mocked(persistStateLocally).mockRejectedValueOnce(new Error('Disk full'));
+        await (await import('./cloud')).fetchStateFromCloud();
+        expect(state.habits[0].id).toBe(id);
+        expect(loadState).not.toHaveBeenCalled();
+        expect(localStorage.getItem('askesis_sync_remote_etag')).toBeNull();
     });
 
     it('faz retry de tarefa pesada quando o worker estoura timeout', async () => {

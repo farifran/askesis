@@ -35,9 +35,8 @@ jobs:
         if: github.event_name == 'pull_request'
         run: npm run guardrail:l3-l4
 
-      - name: Guardrails (warning)
-        run: npm run guardrail:all 2>&1 | tee guardrails.log || true
-        continue-on-error: true
+      - name: Guardrails
+        run: set -o pipefail; npm run guardrail:all 2>&1 | tee guardrails.log
 
       - name: Upload guardrails report
         if: always()
@@ -50,7 +49,7 @@ jobs:
         run: npm run lint
 
       - name: Unit and integration tests
-        run: npm test
+        run: npx vitest run
 
       # O inventário de tests/README.md é gerado a partir de execução real.
       # Sem esta verificação ele volta a derivar: chegou a declarar 23

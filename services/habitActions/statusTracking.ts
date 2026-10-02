@@ -9,7 +9,7 @@
  */
 
 import {
-    state, TimeOfDay, HABIT_STATE, Habit,
+    bumpLastModified, state, TimeOfDay, HABIT_STATE, Habit,
     ensureHabitInstanceData,
     invalidateCachesForDateChange, STREAK_SEMI_CONSOLIDATED, STREAK_CONSOLIDATED
 } from '../../state';
@@ -120,6 +120,8 @@ export function handleSaveNote() {
     const inst = ensureHabitInstanceData(date, habitId, time);
     if ((inst.note || '') !== val) {
         inst.note = val || undefined;
+        bumpLastModified();
+        inst.noteModifiedAt = state.lastModified;
         state.uiDirtyState.habitListStructure = true;
         saveState();
         emitRenderApp();

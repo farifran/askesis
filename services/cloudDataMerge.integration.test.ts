@@ -180,7 +180,7 @@ describe('cloud + dataMerge integration', () => {
 
     vi.mocked(apiFetch).mockResolvedValue({
       ok: true,
-      status: 200,
+      status: 200, headers: new Headers(),
       json: async () => ({
         lastModified: '2000',
         core: 'coreEnc',
@@ -216,7 +216,7 @@ describe('cloud + dataMerge integration', () => {
 
     vi.mocked(apiFetch).mockResolvedValue({
       ok: true,
-      status: 200,
+      status: 200, headers: new Headers(),
       json: async () => ({
         lastModified: '1000',
         core: 'coreOlderEnc',

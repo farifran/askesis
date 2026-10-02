@@ -10,8 +10,9 @@
 
 import type { AppState, HabitDailyInfo, Habit, HabitSchedule, QuestRecord } from '../../state';
 import { logger } from '../../utils';
+import { compressArchive, decompressArchive } from '../compression';
 import { HabitService } from '../HabitService';
-import { normalizeHabitMode, normalizeTimesByMode, normalizeFrequencyByMode } from '../habitActions';
+import { normalizeSchedule } from '../habitActions/normalization';
 import type { MergeOptions } from './types';
 import { isUnsafeObjectKey, isHabitInstanceKey } from './validation';
 import { hydrateLogs, sanitizeDailyData } from './hydration';
@@ -53,8 +54,10 @@ function mergeDayRecord(source: Record<string, HabitDailyInfo>, target: Record<s
             if (!tgtInst) {
                 targetInstances[time] = { ...srcInst };
             } else {
-                if ((srcInst.note?.length || 0) > (tgtInst.note?.length || 0)) {
+                if ((srcInst.noteModifiedAt ?? 0) > (tgtInst.noteModifiedAt ?? 0)
+                    || (!tgtInst.noteModifiedAt && tgtInst.note === undefined && srcInst.note !== undefined)) {
                     tgtInst.note = srcInst.note;
+                    tgtInst.noteModifiedAt = srcInst.noteModifiedAt;
                 }
                 if (srcInst.goalOverride !== undefined) {
                     tgtInst.goalOverride = srcInst.goalOverride;
@@ -76,77 +79,91 @@ function earliestDate(a?: string, b?: string): string | undefined {
     return a < b ? a : b;
 }
 
-function mergeQuestNotes(
-    winner?: Record<string, string>,
-    loser?: Record<string, string>
-): Record<string, string> | undefined {
-    // Cópia mesmo quando um dos lados falta: devolver a referência faria o estado
-    // mesclado dividir o objeto com o de entrada, e `setQuestNote` apaga nota com
-    // `delete` in-place — o checkpoint de recuperação de conflito perderia a nota
-    // junto. `days` logo abaixo já se protege assim.
-    if (!winner) return loser && { ...loser };
-    if (!loser) return { ...winner };
-    return { ...loser, ...winner };
-}
-
-/** Ausente perde: quem nunca retomou não sobrepõe a tentativa de quem retomou. */
-function latestDate(a?: string, b?: string): string | undefined {
-    if (!a) return b;
-    if (!b) return a;
-    return a > b ? a : b;
-}
-
-/**
- * Une os objetivos secundários dos dois lados.
- *
- * `days` é conjunto justamente para chegar aqui: a união não perde o avanço que
- * cada aparelho registrou offline, coisa que um contador `progress` não
- * permitiria — o merge escolhe um vencedor e o número do perdedor evaporaria.
- *
- * Concluir vence abandonar. As duas marcas são irreversíveis, mas só uma
- * representa trabalho feito; deixar a lápide ganhar apagaria uma conquista real
- * só porque o outro aparelho desistiu antes de sincronizar.
- */
+/** Merge por campo: ausência antiga não desfaz edições ou lápides recentes. */
 function mergeQuests(winnerQuests: QuestRecord[] = [], loserQuests: QuestRecord[] = []): QuestRecord[] {
-    const byId = new Map<string, QuestRecord>();
-
-    for (const quest of winnerQuests) {
-        byId.set(quest.id, { ...quest, days: [...quest.days] });
-    }
-
-    for (const loserQuest of loserQuests) {
-        const winnerQuest = byId.get(loserQuest.id);
-        if (!winnerQuest) {
-            byId.set(loserQuest.id, { ...loserQuest, days: [...loserQuest.days] });
-            continue;
+    const byId = new Map(winnerQuests.map(q => [q.id, structuredClone(q)]));
+    for (const loser of loserQuests) {
+        const winner = byId.get(loser.id);
+        if (!winner) { byId.set(loser.id, structuredClone(loser)); continue; }
+        const dayEdits = { ...loser.dayEdits, ...winner.dayEdits };
+        for (const [day, edit] of Object.entries(loser.dayEdits ?? {})) {
+            const current = dayEdits[day];
+            // Em empate a desmarcação vence, de forma independente da ordem.
+            if (edit.at > current.at || (edit.at === current.at && !edit.done)) dayEdits[day] = { ...edit };
         }
-
-        const days = Array.from(new Set([...winnerQuest.days, ...loserQuest.days])).sort();
-        const completedOn = earliestDate(winnerQuest.completedOn, loserQuest.completedOn);
-
-        byId.set(loserQuest.id, {
-            ...winnerQuest,
-            days,
-            startedOn: earliestDate(winnerQuest.startedOn, loserQuest.startedOn) ?? winnerQuest.startedOn,
-            // Tentativa MAIS RECENTE, ao contrário de todo o resto aqui: retomar é
-            // reabrir a janela do avanço, e a janela mais nova é a que vale. Pegar
-            // a mais antiga ressuscitaria os dias perdidos de uma tentativa morta e
-            // mataria o objetivo de novo no primeiro render depois do merge.
-            attemptFrom: latestDate(winnerQuest.attemptFrom, loserQuest.attemptFrom),
-            // Notas se unem por data, como `days`: o vencedor manda no dia em que
-            // os dois escreveram, e nenhum lado perde o dia que só ele anotou.
-            notes: mergeQuestNotes(winnerQuest.notes, loserQuest.notes),
+        const days = new Set([...winner.days, ...loser.days]);
+        for (const [day, edit] of Object.entries(dayEdits)) {
+            if (edit.done) days.add(day); else days.delete(day);
+        }
+        const notes = { ...loser.notes, ...winner.notes };
+        const noteEdits = { ...loser.noteEdits, ...winner.noteEdits };
+        for (const day of new Set([...Object.keys(winner.noteEdits ?? {}), ...Object.keys(loser.noteEdits ?? {})])) {
+            const a = winner.noteEdits?.[day] ?? 0;
+            const b = loser.noteEdits?.[day] ?? 0;
+            const source = b > a ? loser : winner;
+            noteEdits[day] = Math.max(a, b);
+            if (source.notes?.[day]) notes[day] = source.notes[day]; else delete notes[day];
+        }
+        // Uma tentativa retomada não herda conclusão/abandono da anterior.
+        const winnerAttempt = winner.attemptFrom ?? winner.startedOn;
+        const loserAttempt = loser.attemptFrom ?? loser.startedOn;
+        const lifecycle = (loser.lifecycleAt ?? 0) > (winner.lifecycleAt ?? 0) ? loser : winner;
+        const attempt = winnerAttempt > loserAttempt ? winner : loserAttempt > winnerAttempt ? loser : lifecycle;
+        const sameAttempt = winnerAttempt === loserAttempt;
+        const hasLifecycle = !!(winner.lifecycleAt || loser.lifecycleAt);
+        const completedOn = sameAttempt && !hasLifecycle
+            ? earliestDate(winner.completedOn, loser.completedOn) : attempt.completedOn;
+        byId.set(winner.id, {
+            ...winner,
+            days: [...days].sort(), dayEdits, notes, noteEdits,
+            startedOn: earliestDate(winner.startedOn, loser.startedOn)!,
+            attemptFrom: attempt.attemptFrom,
+            lifecycleAt: Math.max(winner.lifecycleAt ?? 0, loser.lifecycleAt ?? 0) || undefined,
             completedOn,
-            abandonedOn: completedOn ? undefined : earliestDate(winnerQuest.abandonedOn, loserQuest.abandonedOn),
-            customTitle: winnerQuest.customTitle ?? loserQuest.customTitle,
-            customTarget: winnerQuest.customTarget ?? loserQuest.customTarget
+            abandonedOn: completedOn ? undefined : sameAttempt && !hasLifecycle
+                ? earliestDate(winner.abandonedOn, loser.abandonedOn) : attempt.abandonedOn,
+            customTitle: winner.customTitle ?? loser.customTitle,
+            customTarget: winner.customTarget ?? loser.customTarget
         });
     }
+    return [...byId.values()];
+}
 
-    return Array.from(byId.values());
+async function readArchive(value: string | Uint8Array): Promise<Record<string, Record<string, HabitDailyInfo>>> {
+    const text = typeof value === 'string' ? value : new TextDecoder().decode(value);
+    const parsed = JSON.parse(await decompressArchive(text));
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Invalid archive');
+    return parsed;
+}
+
+async function mergeArchives(winner: AppState, loser: AppState, idRemap: Map<string, string>) {
+    const archives = { ...winner.archives };
+    for (const [year, value] of Object.entries(loser.archives ?? {})) {
+        if (isUnsafeObjectKey(year)) continue;
+        if (!archives[year] && idRemap.size === 0) { archives[year] = value; continue; }
+        if (archives[year] === value && idRemap.size === 0) continue;
+        // Erro aborta o merge: nenhuma das cópias pode ser substituída por {}.
+        const source = await readArchive(value);
+        const target = archives[year] ? await readArchive(archives[year]) : {};
+        for (const [day, data] of Object.entries(source)) {
+            if (isUnsafeObjectKey(day)) continue;
+            const remapped: Record<string, HabitDailyInfo> = Object.create(null);
+            for (const [id, info] of Object.entries(data)) {
+                const mapped = idRemap.get(id) ?? id;
+                if (!isUnsafeObjectKey(mapped)) remapped[mapped] = info;
+            }
+            target[day] ??= {};
+            mergeDayRecord(remapped, target[day]);
+        }
+        archives[year] = await compressArchive(JSON.stringify(target));
+    }
+    return archives;
 }
 
 export async function mergeStates(local: AppState, incoming: AppState, options?: MergeOptions): Promise<AppState> {
+    if ((local.accountGeneration ?? 'legacy') !== (incoming.accountGeneration ?? 'legacy')) {
+        throw new Error('Cannot merge different account generations');
+    }
     [local, incoming].forEach(hydrateLogs);
     [local, incoming].forEach(sanitizeDailyData);
 
@@ -300,28 +317,7 @@ export async function mergeStates(local: AppState, incoming: AppState, options?:
     for (const habit of merged.habits) {
         for (let i = 0; i < habit.scheduleHistory.length; i++) {
             const schedule = habit.scheduleHistory[i];
-            const normalizedMode = normalizeHabitMode(schedule.mode);
-            const normalizedTimes = normalizeTimesByMode(normalizedMode, schedule.times);
-            const normalizedFrequency = normalizeFrequencyByMode(normalizedMode, schedule.frequency as any);
-            const hadModeChange = schedule.mode !== normalizedMode;
-            const hadTimesChange =
-                normalizedTimes.length !== schedule.times.length
-                || normalizedTimes.some((time, idx) => time !== schedule.times[idx]);
-            const hadFrequencyChange = JSON.stringify(normalizedFrequency) !== JSON.stringify(schedule.frequency);
-
-            if (hadModeChange) {
-                (habit.scheduleHistory[i] as any).mode = normalizedMode;
-            }
-
-            if (hadTimesChange) {
-                logger.warn(`[Merge] Habit "${schedule.name}": normalized times for mode=${normalizedMode}`);
-                (habit.scheduleHistory[i] as any).times = normalizedTimes;
-            }
-
-            if (hadFrequencyChange) {
-                logger.warn(`[Merge] Habit "${schedule.name}": normalized frequency for mode=${normalizedMode}`);
-                (habit.scheduleHistory[i] as any).frequency = normalizedFrequency;
-            }
+            normalizeSchedule(schedule);
         }
     }
 
@@ -378,6 +374,8 @@ export async function mergeStates(local: AppState, incoming: AppState, options?:
     // Objetivos não passam pelo remap de identidade: o id vem do catálogo (ou é
     // um UUID), então não há o problema de dedup que os hábitos têm.
     (merged as { quests: QuestRecord[] }).quests = mergeQuests(winner.quests, loser.quests);
+
+    Object.assign(merged, { archives: await mergeArchives(winner, loser, idRemap) });
 
     merged.lastModified = Math.max(localTs, incomingTs, Date.now()) + 1;
 

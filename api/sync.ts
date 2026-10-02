@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: MIT
 */
 
+import { readRequestBody, RequestBodyError } from './_requestBody';
 import { Redis } from '@upstash/redis';
 import {
     checkRateLimit,
@@ -27,54 +28,56 @@ const logger = {
         }
 };
 
-const LUA_SHARDED_UPDATE = `
+export const LUA_SHARDED_UPDATE = `
 local key = KEYS[1]
+local registry = KEYS[2]
 local newTs = tonumber(ARGV[1])
-local shardsJson = ARGV[2]
 local purge = ARGV[3] == "1"
-
-local currentTs = tonumber(redis.call("HGET", key, "lastModified") or 0)
-
-if not newTs then
-    return { "ERROR", "INVALID_TS" }
+local generation = ARGV[4]
+local maxBytes = tonumber(ARGV[5])
+local maxShards = tonumber(ARGV[6])
+local maxVaults = tonumber(ARGV[7])
+local exists = redis.call('EXISTS', key) == 1
+local currentTs = tonumber(redis.call('HGET', key, 'lastModified') or 0)
+local currentGeneration = redis.call('HGET', key, 'accountGeneration') or 'legacy'
+if not newTs then return {'ERROR', 'INVALID_TS'} end
+if purge and exists and generation == currentGeneration then return {'OK'} end
+if not purge and exists and (generation ~= currentGeneration or newTs < currentTs) then
+    return {'CONFLICT', redis.call('HGETALL', key)}
 end
-
+local ok, shards = pcall(cjson.decode, ARGV[2])
+if not ok or type(shards) ~= 'table' then return {'ERROR', 'INVALID_JSON'} end
+local total = 0
+local count = 0
+local old = {}
+if not purge then
+    local fields = redis.call('HGETALL', key)
+    for i = 1, #fields, 2 do
+        local name = fields[i]
+        if name ~= 'lastModified' and name ~= 'resetAt' and name ~= 'accountGeneration' then
+            old[name] = fields[i+1]
+            total = total + string.len(fields[i+1])
+            count = count + 1
+        end
+    end
+end
+for name, data in pairs(shards) do
+    if type(data) ~= 'string' then return {'ERROR', 'INVALID_SHARD_TYPE'} end
+    if old[name] then total = total - string.len(old[name]) else count = count + 1 end
+    total = total + string.len(data)
+end
+if total > maxBytes or count > maxShards then return {'ERROR', 'VAULT_QUOTA_EXCEEDED'} end
+if not exists and redis.call('SCARD', registry) >= maxVaults then return {'ERROR', 'VAULT_CAPACITY_REACHED'} end
+-- Todas as validações precedem o DEL/HSET: falha nunca deixa reset parcial.
 if purge then
-    -- Reset de conta: o cofre inteiro sai, e não só os shards que este cliente
-    -- conhece. Um POST comum só faz HSET do que recebe, então logs e arquivos de
-    -- meses que o aparelho já esqueceu sobreviveriam ao "apagar tudo".
-    redis.call("DEL", key)
-    -- Sem controle de concorrência: apagar é ordem explícita do dono da chave, e
-    -- um relógio atrasado não pode prendê-lo a um cofre que ele mandou apagar. O
-    -- carimbo avança à força para que os outros aparelhos leiam o reset como o
-    -- estado mais novo da conta.
-    if newTs <= currentTs then
-        newTs = currentTs + 1
-    end
-    redis.call("HSET", key, "resetAt", newTs)
-elseif newTs < currentTs then
-    -- Optimistic Concurrency Control
-    local all = redis.call("HGETALL", key)
-    return { "CONFLICT", all }
+    redis.call('DEL', key)
+    newTs = math.max(newTs, currentTs + 1)
+    redis.call('HSET', key, 'resetAt', newTs)
 end
-
--- Robust JSON Parsing
-local status, shards = pcall(cjson.decode, shardsJson)
-if not status then
-    return { "ERROR", "INVALID_JSON" }
-end
-
--- Atomic Shard Update
-for shardName, shardData in pairs(shards) do
-    if type(shardData) == "string" then
-        redis.call("HSET", key, shardName, shardData)
-    else
-        return { "ERROR", "INVALID_SHARD_TYPE", shardName, type(shardData) }
-    end
-end
-
-redis.call("HSET", key, "lastModified", newTs)
-return { "OK" }
+redis.call('SADD', registry, key)
+for name, data in pairs(shards) do redis.call('HSET', key, name, data) end
+redis.call('HSET', key, 'lastModified', newTs, 'accountGeneration', generation)
+return {'OK'}
 `;
 
 const MAX_SHARDS_PER_REQUEST = 256;
@@ -136,6 +139,7 @@ type SyncPostBody = {
     lastModified?: unknown;
     shards?: Record<string, unknown>;
     purge?: unknown;
+    accountGeneration?: unknown;
 };
 
 function getErrorMessage(error: unknown): string {
@@ -184,14 +188,16 @@ export default async function handler(req: Request) {
         }
 
         const ip = getClientIp(req);
-        const limiter = await checkRateLimit({
-            namespace: 'sync',
-            key: `${keyHash}:${ip}:${req.method}`,
-            windowMs: SYNC_RATE_LIMIT_WINDOW_MS,
-            maxRequests: SYNC_RATE_LIMIT_MAX_REQUESTS,
-            disabled: SYNC_RATE_LIMIT_DISABLED,
-            localMaxEntries: 2000
-        });
+        const limitOptions = {
+            windowMs: SYNC_RATE_LIMIT_WINDOW_MS, maxRequests: SYNC_RATE_LIMIT_MAX_REQUESTS,
+            disabled: SYNC_RATE_LIMIT_DISABLED, requireDistributed: true
+        };
+        const ipLimit = await checkRateLimit({ ...limitOptions, namespace: 'sync-ip', key: ip });
+        const identityLimit = ipLimit.limited ? ipLimit
+            : await checkRateLimit({ ...limitOptions, namespace: 'sync-vault', key: keyHash });
+        const limiter = identityLimit.limited ? identityLimit
+            : await checkRateLimit({ ...limitOptions, namespace: 'sync-global', key: 'all',
+                maxRequests: parsePositiveInt(process.env.SYNC_GLOBAL_RATE_LIMIT, 600) });
         if (limiter.limited) {
             return new Response(JSON.stringify({ error: 'Too Many Requests', code: 'RATE_LIMITED' }), {
                 status: 429,
@@ -221,7 +227,7 @@ export default async function handler(req: Request) {
                 return new Response(JSON.stringify({ error: 'Payload too large', code: 'PAYLOAD_TOO_LARGE', detail: 'content-length' }), { status: 413, headers: HEADERS_BASE });
             }
 
-            const rawBody = await req.text();
+            const rawBody = await readRequestBody(req, MAX_REQUEST_BODY_BYTES);
             const rawBodyBytes = new TextEncoder().encode(rawBody).length;
             if (rawBodyBytes > MAX_REQUEST_BODY_BYTES) {
                 return new Response(JSON.stringify({ error: 'Payload too large', code: 'PAYLOAD_TOO_LARGE', detail: 'body' }), { status: 413, headers: HEADERS_BASE });
@@ -233,7 +239,14 @@ export default async function handler(req: Request) {
             } catch {
                 return new Response(JSON.stringify({ error: 'Invalid JSON', code: 'INVALID_JSON' }), { status: 400, headers: HEADERS_BASE });
             }
+            if (!body || typeof body !== 'object' || Array.isArray(body)) {
+                return new Response(null, { status: 400, headers: HEADERS_BASE });
+            }
             const { lastModified, shards, purge } = body;
+            const generation = body.accountGeneration ?? (purge === true ? crypto.randomUUID() : 'legacy');
+            if (typeof generation !== 'string' || !/^(legacy|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$/.test(generation) || (purge === true && generation === 'legacy')) {
+                return new Response(JSON.stringify({ code: 'INVALID_GENERATION' }), { status: 400, headers: HEADERS_BASE });
+            }
 
             if (purge !== undefined && typeof purge !== 'boolean') {
                 return new Response(JSON.stringify({ error: 'Invalid purge flag', code: 'INVALID_PURGE' }), { status: 400, headers: HEADERS_BASE });
@@ -252,12 +265,15 @@ export default async function handler(req: Request) {
             }
 
             const lastModifiedNum = Number(lastModified);
-            if (!Number.isFinite(lastModifiedNum)) {
+            if (!Number.isSafeInteger(lastModifiedNum) || lastModifiedNum < 0) {
                 return new Response(JSON.stringify({ error: 'Invalid lastModified', code: 'INVALID_TS' }), { status: 400, headers: HEADERS_BASE });
             }
 
             let totalBytes = 0;
             for (const [shardName, shardValue] of shardEntries) {
+                if (!/^(core|logs:\d{4}-(0[1-9]|1[0-2])|archive:\d{4})$/.test(shardName)) {
+                    return new Response(JSON.stringify({ code: 'INVALID_SHARD_NAME' }), { status: 400, headers: HEADERS_BASE });
+                }
                 if (typeof shardValue !== 'string') {
                     return new Response(JSON.stringify({ error: 'Invalid shard type', code: 'INVALID_SHARD_TYPE', detail: shardName, detailType: typeof shardValue }), { status: 400, headers: HEADERS_BASE });
                 }
@@ -273,7 +289,10 @@ export default async function handler(req: Request) {
 
             let result: unknown = null;
             for (let attempt = 0; attempt < 2; attempt++) {
-                result = await kv.eval(LUA_SHARDED_UPDATE, [dataKey], [String(lastModifiedNum), JSON.stringify(shards), purge === true ? '1' : '0']);
+                result = await kv.eval(LUA_SHARDED_UPDATE, [dataKey, 'sync_v3:vault-registry'], [String(lastModifiedNum), JSON.stringify(shards), purge === true ? '1' : '0', generation,
+                    parsePositiveInt(process.env.SYNC_MAX_VAULT_BYTES, 16 * 1024 * 1024),
+                    parsePositiveInt(process.env.SYNC_MAX_VAULT_SHARDS, 512),
+                    parsePositiveInt(process.env.SYNC_MAX_VAULTS, 1000)]);
                 if (Array.isArray(result)) break;
                 await sleep(50);
             }
@@ -306,6 +325,9 @@ export default async function handler(req: Request) {
                 return new Response(JSON.stringify(conflictShards), { status: 409, headers: HEADERS_BASE });
             }
 
+            if (result[1] === 'VAULT_QUOTA_EXCEEDED' || result[1] === 'VAULT_CAPACITY_REACHED') {
+                return new Response(JSON.stringify({ error: 'Storage capacity reached', code: result[1] }), { status: 413, headers: HEADERS_BASE });
+            }
             const code = typeof result[1] === 'string' ? result[1] : 'UNKNOWN';
             const detail = typeof result[2] === 'string' ? result[2] : undefined;
             const detailType = typeof result[3] === 'string' ? result[3] : undefined;
@@ -314,6 +336,7 @@ export default async function handler(req: Request) {
 
         return new Response(null, { status: 405 });
     } catch (error: unknown) {
+        if (error instanceof RequestBodyError) return new Response(JSON.stringify({ code: error.status === 413 ? 'PAYLOAD_TOO_LARGE' : 'REQUEST_TIMEOUT' }), { status: error.status, headers: HEADERS_BASE });
         logger.error('KV Error:', error);
         return new Response(JSON.stringify({ error: getErrorMessage(error) }), { status: 500, headers: HEADERS_BASE });
     }

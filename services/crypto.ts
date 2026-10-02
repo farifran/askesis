@@ -66,8 +66,7 @@ async function deriveKey(password: string, salt: Uint8Array, iterations: number)
 }
 
 /**
- * Lê a versão do envelope com cabeçalho. Devolve `null` para o formato legado v1
- * (que não tem cabeçalho) e para qualquer coisa curta demais para ser um envelope.
+ * Confere o cabeçalho v3; formatos não reconhecidos devolvem false.
  */
 function isV3Envelope(bytes: Uint8Array): boolean {
     if (bytes.length < HEADER_LEN_V3 + SALT_LEN + IV_LEN) return false;

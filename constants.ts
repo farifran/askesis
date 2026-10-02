@@ -61,15 +61,6 @@ export const QUEST_MAX_ACTIVE = 3;
  * em vez de contagem.
  */
 export const QUEST_MAX_SEGMENTS = 31;
-/**
- * Piso do avanço líquido: abaixo dele o objetivo sai do slot.
- *
- * O avanço soma um dia marcado e desconta um dia perdido, então -1 é o primeiro
- * valor que só se alcança perdendo mais do que se fez. Quem nunca marcou some
- * depois de um único dia inteiro de silêncio — é o que libera o slot para algo
- * que a pessoa vá de fato fazer. Baixar para -2 dá um dia de tolerância a mais.
- */
-export const QUEST_FAILURE_FLOOR = -1;
 /** Prêmio de maestria somado ao XP do objetivo quando ele fecha. */
 export const QUEST_MASTERY_BONUS = 0.2;
 /**

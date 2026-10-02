@@ -30,7 +30,7 @@
  *
  * ENV VARS (Vercel):
  * - ONESIGNAL_REST_API_KEY (obrigatória; prefixo os_v2_ usa auth "Key")
- * - CRON_SECRET (recomendada; Vercel a envia como Bearer automaticamente)
+ * - CRON_SECRET (obrigatória; Vercel a envia como Bearer automaticamente)
  * - ONESIGNAL_APP_ID (opcional; default = app id público do cliente)
  */
 
@@ -113,16 +113,7 @@ export function extractErrors(body: OneSignalResponse): string[] {
     return [];
 }
 
-/**
- * Chave de idempotência determinística por HORA (UTC): se o cron reexecutar
- * logo em seguida (retry/redeploy), a OneSignal deduplica em vez de enviar duas
- * vezes. Formato UUID exigido pela API, derivado de SHA-256 do carimbo.
- *
- * Granularidade de MINUTO. Com chave diária (ou horária) a OneSignal devolve a
- * notificação já criada e NENHUM push novo sai, o que inviabiliza testar o
- * lembrete duas vezes seguidas. Disparo duplo de cron acontece em segundos, e
- * o minuto ainda o cobre.
- */
+/** Idempotência por app e dia UTC, incluindo retries que atravessam minutos. */
 export async function idempotencyKeyForDate(stamp: string): Promise<string> {
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`askesis-reminder|${stamp}`));
     const hex = Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
@@ -144,7 +135,8 @@ export default async function handler(req: Request) {
     // AUTENTICAÇÃO: o Vercel Cron envia Authorization: Bearer ${CRON_SECRET}.
     // Sem isso, qualquer um poderia disparar notificações para toda a base.
     const cronSecret = process.env.CRON_SECRET;
-    if (cronSecret) {
+    if (!cronSecret) return json(503, { error: 'Reminder authentication unavailable' });
+    {
         const auth = req.headers.get('authorization') || '';
         if (auth !== `Bearer ${cronSecret}`) {
             return json(401, { error: 'Unauthorized' });
@@ -159,7 +151,7 @@ export default async function handler(req: Request) {
     const appId = process.env.ONESIGNAL_APP_ID || DEFAULT_APP_ID;
     const now = new Date().toISOString();
     const todayISO = now.slice(0, 10);
-    const minuteStamp = now.slice(0, 16); // YYYY-MM-DDTHH:MM
+    const dailyStamp = `${appId}:${todayISO}`;
 
     const payload = {
         app_id: appId,
@@ -174,7 +166,7 @@ export default async function handler(req: Request) {
         // substituição deste texto genérico pelo lembrete real do aparelho.
         data: { askesis: REMINDER_MARKER },
         web_push_topic: REMINDER_MARKER,
-        idempotency_key: await idempotencyKeyForDate(minuteStamp)
+        idempotency_key: await idempotencyKeyForDate(dailyStamp)
     };
 
     try {

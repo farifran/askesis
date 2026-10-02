@@ -1,0 +1,86 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { makeAppState, buildTestHabit, clearTestState } from './test-utils';
+import { mergeStates } from '../services/dataMerge/merge';
+import { state, APP_VERSION } from '../state';
+import { loadState } from '../services/persistence';
+import { getTodayUTCIso } from '../utils';
+
+const generate = vi.hoisted(() => vi.fn());
+vi.mock('@google/genai', () => ({ GoogleGenAI: class { models = { generateContent: generate }; } }));
+
+beforeEach(() => { clearTestState(); vi.clearAllMocks(); });
+afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.useRealTimers(); });
+
+describe('diagnóstico temporário: reproduções do estado atual', () => {
+ it('IA aceita requisição sem Origin e sem credencial mesmo com CORS estrito', async () => {
+  vi.stubEnv('API_KEY', 'audit-fake-key');
+  vi.stubEnv('CORS_STRICT', '1');
+  vi.stubEnv('CORS_ALLOWED_ORIGINS', 'https://askesis.vercel.app');
+  generate.mockResolvedValue({text:'simulated'});
+  const {default:handler}=await import('../api/analyze');
+  const res=await handler(new Request('https://local.invalid/api/analyze',{method:'POST',body:JSON.stringify({prompt:'arbitrary',systemInstruction:'arbitrary'})}));
+  expect(res.status).toBe(200);
+  expect(generate).toHaveBeenCalledOnce();
+ });
+ it('lembrete aceita chamada anônima se CRON_SECRET não estiver configurado', async () => {
+  vi.stubEnv('CRON_SECRET', ''); vi.stubEnv('ONESIGNAL_REST_API_KEY','os_v2_fake');
+  const fetchMock=vi.fn().mockResolvedValue(new Response(JSON.stringify({id:'simulated'})));
+  vi.stubGlobal('fetch',fetchMock);
+  const {default:handler}=await import('../api/reminder');
+  expect((await handler(new Request('https://local.invalid/api/reminder'))).status).toBe(200);
+  expect(fetchMock).toHaveBeenCalledOnce();
+ });
+ it('rotacionar o hash restaura a cota de sync para o mesmo IP', async () => {
+  const {checkRateLimit}=await import('../api/_httpSecurity');
+  const opts={namespace:'audit-local',windowMs:60000,maxRequests:1};
+  expect((await checkRateLimit({...opts,key:'hash1:192.0.2.1:POST'})).limited).toBe(false);
+  expect((await checkRateLimit({...opts,key:'hash1:192.0.2.1:POST'})).limited).toBe(true);
+  expect((await checkRateLimit({...opts,key:'hash2:192.0.2.1:POST'})).limited).toBe(false);
+ });
+ it('merge restaura a marcação de objetivo desfeita no estado mais recente', async () => {
+  const old=makeAppState({lastModified:100,quests:[{id:'custom:q',startedOn:'2026-10-01',days:['2026-10-01']}]});
+  const recent=makeAppState({lastModified:200,quests:[{id:'custom:q',startedOn:'2026-10-01',days:[]}]});
+  expect((await mergeStates(recent,old)).quests[0].days).toEqual(['2026-10-01']);
+ });
+ it('merge abandona de novo o objetivo retomado no estado mais recente', async () => {
+  const old=makeAppState({lastModified:100,quests:[{id:'custom:q',startedOn:'2026-09-01',days:[],abandonedOn:'2026-09-02'}]});
+  const recent=makeAppState({lastModified:200,quests:[{id:'custom:q',startedOn:'2026-09-01',attemptFrom:'2026-10-01',days:[]}]});
+  expect((await mergeStates(recent,old)).quests[0].abandonedOn).toBe('2026-09-02');
+ });
+ it('merge descarta arquivo anual que só existe no perdedor', async () => {
+  const old=makeAppState({lastModified:100,archives:{'2024':'{"2024-01-01":{"h1":{"instances":{}}}}'}});
+  const recent=makeAppState({lastModified:200,archives:{'2025':'{}'}});
+  expect((await mergeStates(recent,old)).archives).not.toHaveProperty('2024');
+ });
+ it('merge perde entradas de um mesmo ano arquivado no outro aparelho', async () => {
+  const old=makeAppState({lastModified:100,archives:{'2024':'{"2024-01-01":{"h1":{"instances":{}}}}'}});
+  const recent=makeAppState({lastModified:200,archives:{'2024':'{"2024-02-01":{"h2":{"instances":{}}}}'}});
+  const merged=await mergeStates(recent,old);
+  expect(JSON.parse(merged.archives['2024'] as string)).not.toHaveProperty('2024-01-01');
+ });
+ it('loadState não hidrata campos persistidos de quota e quoteState', async () => {
+  const input=makeAppState({version:APP_VERSION,aiDailyCount:5,aiQuotaDate:getTodayUTCIso(),lastAIContextHash:'saved-hash',quoteState:{currentId:'saved-quote',displayedAt:123,lockedContext:'x'}});
+  await loadState(input);
+  expect(state.aiDailyCount).toBe(0);
+  expect(state.lastAIContextHash).not.toBe('saved-hash');
+  expect(state.quoteState?.currentId).not.toBe('saved-quote');
+ });
+ it('estado antigo com timestamp posterior ao reset ressuscita hábitos no merge', async () => {
+  const habit=buildTestHabit({name:'Antigo',time:'Morning'},'old');
+  const device=makeAppState({lastModified:300,habits:[habit]});
+  const resetRemote=makeAppState({lastModified:200,habits:[]});
+  const resetAt=200;
+  expect(resetAt > device.lastModified).toBe(false);
+  expect((await mergeStates(device,resetRemote)).habits.map(h=>h.id)).toContain('old');
+ });
+ it('worker converte texto do usuário começando em 0x em BigInt', async () => {
+  await import('../services/sync.worker');
+  const reply=vi.fn(); vi.stubGlobal('postMessage',reply);
+  await self.onmessage!({data:{id:'enc',type:'encrypt',payload:{note:'0x123'},key:'audit-fake'}} as MessageEvent);
+  const encrypted=reply.mock.calls[0][0].result;
+  await self.onmessage!({data:{id:'dec',type:'decrypt',payload:encrypted,key:'audit-fake'}} as MessageEvent);
+  const decrypted=reply.mock.calls[1][0].result;
+  expect(decrypted.note).toBe(291n);
+  expect(()=>JSON.stringify(decrypted)).toThrow();
+ });
+});

@@ -12,7 +12,7 @@ import { state } from '../../state';
 import { getSafeDate, logger, toUTCIsoDateString, addDays, parseUTCIsoDate, getTodayUTCIso, triggerHaptic } from '../../utils';
 import { ARCHIVE_IDLE_FALLBACK_MS, ARCHIVE_DAYS_THRESHOLD } from '../../constants';
 import { showConfirmationModal } from '../../render';
-import { saveState } from '../persistence';
+import { persistStateLocally, saveState } from '../persistence';
 import { runWorkerTask, purgeCloudVault, clearSyncClientCaches } from '../cloud';
 import { clearKey, hasLocalSyncKey } from '../api';
 import { wipeLocalData, buildResetState } from '../reset';
@@ -127,7 +127,9 @@ export async function resetDeviceData() {
 export async function resetAccountData() {
     if (!hasLocalSyncKey()) return resetDeviceData();
 
-    await purgeCloudVault(buildResetState(Date.now()));
+    const resetState = buildResetState(Date.now());
+    await purgeCloudVault(resetState);
     await wipeLocalData();
+    await persistStateLocally(resetState);
     window.location.reload();
 }

@@ -10,7 +10,6 @@
 
 import { AppState, state, getPersistableState } from '../state';
 import { loadState, persistStateLocally } from './persistence';
-import { wipeLocalData } from './reset';
 import { createDebounced, logger, escapeHTML } from '../utils';
 import { ui } from '../render/ui';
 import { t } from '../i18n';
@@ -21,7 +20,7 @@ import { mergeStates } from './dataMerge';
 import { HabitService } from './HabitService';
 import { runWorkerTask as runWorkerTaskInternal, type WorkerTaskType } from './workerClient';
 import type { WorkerDecryptWithHashResult } from '../contracts/worker';
-import type { EncryptedShardMap, SyncPostRequest, SyncPostResponse, SyncServerShards } from '../contracts/api-sync';
+import type { EncryptedShardMap, SyncPostRequest, SyncServerShards } from '../contracts/api-sync';
 import { emitHabitsChanged } from '../events';
 import { murmurHash3 } from './murmurHash3';
 import {
@@ -125,6 +124,7 @@ function splitIntoShards(appState: AppState): Record<string, any> {
     // Core: Dados leves e críticos para o boot
     shards['core'] = {
         version: appState.version,
+        accountGeneration: appState.accountGeneration,
         habits: appState.habits,
         dailyData: appState.dailyData,
         dailyDiagnoses: appState.dailyDiagnoses,
@@ -218,11 +218,6 @@ export function clearSyncClientCaches() {
 const getStoredRemoteStateEtag = () => cache.read(REMOTE_STATE_ETAG_STORAGE_KEY);
 const setStoredRemoteStateEtag = (etag: string | null) => cache.write(REMOTE_STATE_ETAG_STORAGE_KEY, etag || null);
 
-function updateStoredRemoteStateEtagFromResponse(response: Response) {
-    const etag = response?.headers?.get?.('ETag') || response?.headers?.get?.('etag');
-    if (etag) setStoredRemoteStateEtag(etag);
-}
-
 function serializeConflictRecoveryBackup(appState: AppState): string {
     return JSON.stringify({
         ...appState,
@@ -299,7 +294,7 @@ async function decryptServerShards(
     const decrypted: Record<string, any> = {};
     let coreDecryptFailed = false;
     for (const key in shards) {
-        if (key === 'lastModified' || key === 'resetAt') continue;
+        if (key === 'lastModified' || key === 'resetAt' || key === 'accountGeneration') continue;
         try {
             if (options.updateHashCache) {
                 try {
@@ -337,7 +332,7 @@ async function decryptServerShards(
     return decrypted;
 }
 
-function buildAppStateFromDecryptedShards(decryptedShards: Record<string, any>, lastModifiedRaw: string | undefined): AppState | undefined {
+function buildAppStateFromDecryptedShards(decryptedShards: Record<string, any>, lastModifiedRaw: string | undefined, accountGeneration?: string): AppState | undefined {
     const core = decryptedShards['core'];
     if (core && (!Array.isArray(core.habits) || !core.habits.every((h: any) => h && typeof h.id === 'string' && Array.isArray(h.scheduleHistory)))) {
         logger.error('[Sync] Decrypted core data has invalid structure. Aborting reconstruction.');
@@ -346,6 +341,7 @@ function buildAppStateFromDecryptedShards(decryptedShards: Record<string, any>, 
 
     const result: any = {
         version: core?.version || 0,
+        accountGeneration: accountGeneration || core?.accountGeneration,
         lastModified: parseInt(lastModifiedRaw || '0', 10),
         habits: core?.habits || [],
         dailyData: core?.dailyData || {},
@@ -416,19 +412,23 @@ async function resolveConflictWithServerState(serverShards: Record<string, strin
     try {
         addSyncLog("Conflito detectado. Mesclando dados...", "info");
         const remoteShards = await decryptServerShards(serverShards, syncKey, { updateHashCache: false });
-        const remoteState = buildAppStateFromDecryptedShards(remoteShards, serverShards.lastModified);
+        const remoteState = buildAppStateFromDecryptedShards(remoteShards, serverShards.lastModified, serverShards.accountGeneration);
         if (!remoteState) throw new Error('Falha ao reconstruir estado remoto');
 
-        const localState = getPersistableState();
+        const localState = structuredClone(getPersistableState());
         localStateBeforeMerge = localState;
         storeConflictRecoveryBackup(localState);
 
-        const mergedState = await mergeStates(localState, remoteState, {
+        const generationChanged = (localState.accountGeneration ?? 'legacy') !== (remoteState.accountGeneration ?? 'legacy');
+        const mergedState = generationChanged
+            ? structuredClone(remoteState)
+            : await mergeStates(localState, remoteState, {
             onDedupCandidate: ({ identity, winnerHabit, loserHabit }) => confirmDeduplicationViaModal(identity, winnerHabit, loserHabit)
         });
         
         await persistStateLocally(mergedState);
         await loadState(mergedState);
+        if (generationChanged) { debouncedSync.cancel(); pendingSyncQueue.length = 0; }
         renderApp();
         clearConflictRecoveryBackup();
         
@@ -497,7 +497,7 @@ async function performSync() {
         const safeTs = appState.lastModified || Date.now();
         
         const payloadStart = performance.now();
-        const payload: SyncPostRequest = { lastModified: safeTs, shards: encryptedShards };
+        const payload: SyncPostRequest = { lastModified: safeTs, shards: encryptedShards, accountGeneration: appState.accountGeneration };
         const payloadBody = JSON.stringify(payload);
         const payloadEnd = performance.now();
 
@@ -518,12 +518,6 @@ async function performSync() {
             clearSyncHashCache();
             await resolveConflictWithServerState(await response.json());
         } else if (response.ok) {
-            try {
-                const payload: SyncPostResponse = await response.json();
-                if (payload?.fallback) {
-                    addSyncLog("Fallback sem Lua aplicado.", "info");
-                }
-            } catch (e) { logger.warn('[Sync] Failed to parse POST response body', e); }
             addSyncLog("Nuvem atualizada.", "success");
             setSyncStatus('syncSynced');
             setStoredRemoteStateEtag(null);
@@ -541,7 +535,7 @@ async function performSync() {
     } catch (error: any) {
         const status = Number(error?.status || 0);
         const code = String(error?.code || '');
-        const isTransient = status === 503 || code === 'LUA_UNAVAILABLE' || status === 429 || status >= 500;
+        const isTransient = code === 'NETWORK_ERROR' || status === 503 || code === 'LUA_UNAVAILABLE' || status === 429 || status >= 500;
 
         const formatTransientSyncLog = (err: any) => {
             const tech = String(err?.message || 'Erro desconhecido');
@@ -605,7 +599,8 @@ export async function purgeCloudVault(emptyState: AppState): Promise<void> {
         const payload: SyncPostRequest = {
             lastModified: emptyState.lastModified || Date.now(),
             shards: encryptedShards,
-            purge: true
+            purge: true,
+            accountGeneration: emptyState.accountGeneration
         };
 
         const response = await apiFetch('/api/sync', { method: 'POST', body: JSON.stringify(payload) }, true);
@@ -665,7 +660,7 @@ async function reconstructStateFromShards(shards: SyncServerShards): Promise<App
     try {
         const decryptedShards = await decryptServerShards(shards, syncKey, { updateHashCache: true });
         persistHashCache();
-        return buildAppStateFromDecryptedShards(decryptedShards, shards.lastModified);
+        return buildAppStateFromDecryptedShards(decryptedShards, shards.lastModified, shards.accountGeneration);
     } catch (e) {
         logger.error("State reconstruction failed:", e);
         return undefined;
@@ -675,7 +670,7 @@ async function reconstructStateFromShards(shards: SyncServerShards): Promise<App
 type RemoteShardsResult =
     | { status: 'not-modified' }
     | { status: 'empty' }
-    | { status: 'ok'; shards: SyncServerShards };
+    | { status: 'ok'; shards: SyncServerShards; etag: string | null };
 
 /**
  * GET condicional em /api/sync. O resultado distingue "nada mudou" (304, o ETag
@@ -687,9 +682,8 @@ async function fetchRemoteShards(onError: (response: Response) => Promise<never>
     if (response.status === 304) return { status: 'not-modified' };
     if (!response.ok) await onError(response);
 
-    updateStoredRemoteStateEtagFromResponse(response);
     const shards = await response.json();
-    return shards && Object.keys(shards).length > 0 ? { status: 'ok', shards } : { status: 'empty' };
+    return shards && Object.keys(shards).length > 0 ? { status: 'ok', shards, etag: response.headers.get('ETag') } : { status: 'empty' };
 }
 
 export async function downloadRemoteState(): Promise<AppState | undefined> {
@@ -703,7 +697,7 @@ export async function downloadRemoteState(): Promise<AppState | undefined> {
     if (result.status === 'empty') { addSyncLog("Cofre vazio na nuvem.", "info"); return undefined; }
 
     addSyncLog("Dados baixados com sucesso.", "success");
-    return await reconstructStateFromShards(result.shards);
+    return reconstructStateFromShards(result.shards);
 }
 
 export async function fetchStateFromCloud(): Promise<AppState | undefined> {
@@ -724,28 +718,37 @@ export async function fetchStateFromCloud(): Promise<AppState | undefined> {
         const remoteState = await reconstructStateFromShards(result.shards);
         if (!remoteState) return undefined;
 
-        // Conta reiniciada em outro aparelho: este ainda tem a base antiga, e o
-        // merge — que faz união e deixa o lado cheio vencer o vazio — devolveria
-        // tudo à nuvem. Só a base ANTERIOR ao reset é descartada: o que foi
-        // registrado aqui depois do carimbo é trabalho novo, não sobra do que o
-        // usuário mandou apagar. A limpeza vem depois da reconstrução de
-        // propósito: um cofre ilegível não pode custar os dados locais.
-        const resetAt = readVaultResetAt(result.shards);
-        if (resetAt > (state.lastModified || 0)) {
-            addSyncLog('Conta reiniciada em outro aparelho. Limpando dados locais.', 'info');
-            await wipeLocalData();
-        }
-
-        const localState = getPersistableState();
-
-        const hasDivergence = !statesEquivalentForSync(localState, remoteState);
-        if (!hasDivergence) {
+        // Uma geração nova substitui a antiga mesmo que o aparelho offline tenha
+        // edições com timestamp posterior ao reset. Gravar antes de hidratar
+        // preserva a cópia local se o armazenamento falhar.
+        const localState = structuredClone(getPersistableState());
+        const resetDetected = (remoteState.accountGeneration ?? 'legacy') !== (localState.accountGeneration ?? 'legacy')
+            || readVaultResetAt(result.shards) > (localState.lastModified || 0);
+        if (resetDetected) {
+            storeConflictRecoveryBackup(localState);
+            await persistStateLocally(remoteState);
+            await loadState(remoteState);
+            debouncedSync.cancel();
+            pendingSyncQueue.length = 0;
+            clearSyncHashCache();
+            clearConflictRecoveryBackup();
+            setStoredRemoteStateEtag(result.etag);
+            renderApp();
             setSyncStatus('syncSynced');
             return remoteState;
         }
 
+        const hasDivergence = !statesEquivalentForSync(localState, remoteState);
+        if (!hasDivergence) {
+            setSyncStatus('syncSynced');
+            setStoredRemoteStateEtag(result.etag);
+            return remoteState;
+        }
+
         addSyncLog("Divergência detectada. Mesclando estados...", "info");
-        const mergedState = await mergeStates(localState, remoteState, {
+        const mergedState = (localState.accountGeneration ?? 'legacy') !== (remoteState.accountGeneration ?? 'legacy')
+            ? structuredClone(remoteState)
+            : await mergeStates(localState, remoteState, {
             onDedupCandidate: ({ identity, winnerHabit, loserHabit }) => confirmDeduplicationViaModal(identity, winnerHabit, loserHabit)
         });
 
@@ -761,6 +764,7 @@ export async function fetchStateFromCloud(): Promise<AppState | undefined> {
         } else {
             setSyncStatus('syncSynced');
         }
+        setStoredRemoteStateEtag(result.etag);
         return remoteState;
     } catch (error) {
         logger.warn("[Cloud] Boot sync failed (Offline or Error). Proceeding locally.", error);

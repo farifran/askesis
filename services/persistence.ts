@@ -14,7 +14,7 @@ import { HabitService } from './HabitService';
 import { buildNotificationCards, NOTIFICATION_CARD_KEY, type NotificationCard } from './notificationCard';
 import { clearHabitDomCache, resetGradeBaseline } from '../render';
 import { logger } from '../utils';
-import { emitRenderApp } from '../events';
+import { APP_EVENTS, emitRenderApp } from '../events';
 
 const DB_NAME = 'AskesisDB', DB_VERSION = 1, STORE_NAME = 'app_state';
 const STATE_JSON_KEY = 'askesis_core_json';
@@ -30,8 +30,9 @@ const IS_TEST_ENV = (() => {
 const DB_OPEN_TIMEOUT_MS = 15000, IDB_SAVE_DEBOUNCE_MS = 800;
 let dbPromise: Promise<IDBDatabase> | null = null;
 let saveTimeout: number | undefined;
-let activeSavePromise: Promise<void> | null = null;
-let pendingSaveResolve: (() => void) | null = null;
+let activeSavePromise: Promise<boolean> | null = null;
+let hasUnsavedChanges = false;
+let pendingSaveResolve: ((saved: boolean) => void) | null = null;
 
 function getDB(): Promise<IDBDatabase> {
     if (!HAS_INDEXED_DB) {
@@ -73,7 +74,7 @@ async function createBackupSnapshot(stateObj: AppState): Promise<void> {
             const tx = db.transaction(STORE_NAME, 'readwrite');
             tx.objectStore(STORE_NAME).put(stateObj, STATE_JSON_BACKUP_KEY);
             tx.oncomplete = () => resolve();
-            tx.onerror = () => reject(tx.error);
+            tx.onerror = tx.onabort = () => reject(tx.error ?? new Error('Storage transaction aborted'));
         });
     } catch (e) {
         logger.warn('[Persistence] createBackupSnapshot failed', e);
@@ -104,7 +105,7 @@ async function clearBackupSnapshot(): Promise<void> {
             const tx = db.transaction(STORE_NAME, 'readwrite');
             tx.objectStore(STORE_NAME).delete(STATE_JSON_BACKUP_KEY);
             tx.oncomplete = () => resolve();
-            tx.onerror = () => reject(tx.error);
+            tx.onerror = tx.onabort = () => reject(tx.error ?? new Error('Storage transaction aborted'));
         });
     } catch (e) {
         logger.warn('[Persistence] clearBackupSnapshot failed', e);
@@ -151,7 +152,7 @@ async function saveSplitState(main: AppState, cards?: NotificationCard[]): Promi
         }
 
         tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
+        tx.onerror = tx.onabort = () => reject(tx.error ?? new Error('Storage transaction aborted'));
     });
 }
 
@@ -179,7 +180,7 @@ export async function persistNotificationCard(): Promise<void> {
             if (cards.length > 0) store.put(cards, NOTIFICATION_CARD_KEY);
             else store.delete(NOTIFICATION_CARD_KEY);
             tx.oncomplete = () => resolve();
-            tx.onerror = () => reject(tx.error);
+            tx.onerror = tx.onabort = () => reject(tx.error ?? new Error('Storage transaction aborted'));
         });
     } catch (e) {
         if (!(IS_TEST_ENV && String(e).includes('IndexedDB not available'))) {
@@ -205,32 +206,38 @@ function pruneOrphanedDailyData(habits: readonly Habit[], dailyData: Record<stri
     }
 }
 
-async function saveStateInternal(immediate = false, suppressSync = false) {
-    if (activeSavePromise) await activeSavePromise;
-
-    activeSavePromise = (async () => {
-        // O timestamp já foi incrementado pelo chamador (_notifyChanges ou _notifyPartialUIRefresh)
-        const structuredData = getPersistableState();
-        try {
-            if (HAS_INDEXED_DB) {
-                await saveSplitState(structuredData, buildNotificationCards());
-            }
-        } catch (e) {
-            if (!(IS_TEST_ENV && String(e).includes('IndexedDB not available'))) {
-                logger.error("IDB Save Failed:", e);
-            }
-        }
-        
-        if (!suppressSync) {
-            syncHandler?.(structuredData, immediate);
-        }
-    })();
-
-    try {
-        await activeSavePromise;
-    } finally {
-        activeSavePromise = null;
+function reportStorageResult(saved: boolean) {
+    const changed = hasUnsavedChanges !== !saved;
+    hasUnsavedChanges = !saved;
+    if (changed && typeof document !== 'undefined') {
+        document.dispatchEvent(new CustomEvent(APP_EVENTS.persistenceChanged, { detail: { saved } }));
     }
+}
+
+async function saveStateInternal(immediate = false, suppressSync = false): Promise<boolean> {
+    // Revalidar após cada await também serializa três ou mais chamadores.
+    while (activeSavePromise) await activeSavePromise;
+    const pending = (async () => {
+        const structuredData = structuredClone(getPersistableState());
+        let saved = false;
+        try {
+            if (!HAS_INDEXED_DB && !IS_TEST_ENV) throw new Error('IndexedDB not available');
+            if (HAS_INDEXED_DB) await saveSplitState(structuredData, buildNotificationCards());
+            saved = true;
+        } catch (error) {
+            logger.error('IDB Save Failed:', error);
+        }
+        reportStorageResult(saved);
+        // A cópia remota ainda pode proteger dados quando o disco falha.
+        if (!suppressSync) {
+            try { syncHandler?.(structuredData, immediate); }
+            catch (error) { logger.error('Sync scheduling failed:', error); }
+        }
+        return saved;
+    })();
+    activeSavePromise = pending;
+    try { return await pending; }
+    finally { if (activeSavePromise === pending) activeSavePromise = null; }
 }
 
 function cancelPendingSave() {
@@ -239,7 +246,7 @@ function cancelPendingSave() {
         saveTimeout = undefined;
     }
     if (pendingSaveResolve) {
-        pendingSaveResolve();
+        pendingSaveResolve(false);
         pendingSaveResolve = null;
     }
 }
@@ -254,7 +261,7 @@ function hasPendingDebouncedSave(): boolean {
  * marcação se o usuário fechar o PWA logo após instalar.
  */
 export async function flushPendingSave(suppressSync = true): Promise<void> {
-    if (!hasPendingDebouncedSave() && !activeSavePromise) return;
+    if (!hasPendingDebouncedSave() && !activeSavePromise && !hasUnsavedChanges) return;
     try {
         await saveState(true, suppressSync);
     } catch (e) {
@@ -278,6 +285,9 @@ export function setupPersistenceLifecycleFlush(): void {
     };
 
     window.addEventListener('pagehide', onHide);
+    const retry = () => { if (hasUnsavedChanges) void saveState(true); };
+    window.addEventListener('online', retry);
+    window.addEventListener('focus', retry);
     // iOS/Android: ao mandar o PWA para segundo plano.
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'hidden') onHide();
@@ -286,7 +296,7 @@ export function setupPersistenceLifecycleFlush(): void {
     window.addEventListener('freeze', onHide as EventListener);
 }
 
-export async function saveState(immediate = false, suppressSync = false): Promise<void> {
+export async function saveState(immediate = false, suppressSync = false): Promise<boolean> {
     if (saveTimeout !== undefined) {
         clearTimeout(saveTimeout);
         saveTimeout = undefined;
@@ -295,22 +305,23 @@ export async function saveState(immediate = false, suppressSync = false): Promis
     if (immediate) {
         const resolve = pendingSaveResolve;
         pendingSaveResolve = null;
-        await saveStateInternal(true, suppressSync);
-        resolve?.();
+        const saved = await saveStateInternal(true, suppressSync);
+        resolve?.(saved);
+        return saved;
     } else {
         return new Promise((resolve) => {
             const oldResolve = pendingSaveResolve;
-            pendingSaveResolve = () => {
-                oldResolve?.();
-                resolve();
+            pendingSaveResolve = (saved) => {
+                oldResolve?.(saved);
+                resolve(saved);
             };
 
             saveTimeout = self.setTimeout(async () => {
                 saveTimeout = undefined;
                 const currentResolve = pendingSaveResolve;
                 pendingSaveResolve = null;
-                await saveStateInternal(false, suppressSync);
-                currentResolve?.();
+                const saved = await saveStateInternal(false, suppressSync);
+                currentResolve?.(saved);
             }, IDB_SAVE_DEBOUNCE_MS);
         });
     }
@@ -321,16 +332,24 @@ export async function saveState(immediate = false, suppressSync = false): Promis
  * Usado para dados vindo da nuvem: grava no disco exatamente o que recebeu, 
  * sem alterar o timestamp lastModified original da nuvem.
  */
-export const persistStateLocally = async (data: AppState) => {
-    if (activeSavePromise) await activeSavePromise;
-    try {
-        if (!HAS_INDEXED_DB) return;
-        await saveSplitState(data);
-    } catch (e) {
-        if (!(IS_TEST_ENV && String(e).includes('IndexedDB not available'))) {
-            logger.error("[Persistence] Immediate Cloud Persistence Failed:", e);
+export const persistStateLocally = async (data: AppState): Promise<void> => {
+    while (activeSavePromise) await activeSavePromise;
+    const pending = (async () => {
+        try {
+            if (!HAS_INDEXED_DB && !IS_TEST_ENV) throw new Error('IndexedDB not available');
+            if (HAS_INDEXED_DB) await saveSplitState(structuredClone(data));
+            reportStorageResult(true);
+            return true;
+        } catch (error) {
+            reportStorageResult(false);
+            throw error;
         }
-    }
+    })();
+    // Convert rejection only for other queued writers; this caller still receives it.
+    const barrier = pending.catch(() => false);
+    activeSavePromise = barrier;
+    try { await pending; }
+    finally { if (activeSavePromise === barrier) activeSavePromise = null; }
 };
 
 export async function loadState(cloudState?: AppState): Promise<AppState | null> {
@@ -418,6 +437,7 @@ export async function loadState(cloudState?: AppState): Promise<AppState | null>
 
         state.habits = [...(migrated.habits || [])];
         state.lastModified = migrated.lastModified || Date.now();
+        state.accountGeneration = migrated.accountGeneration;
         state.dailyData = migrated.dailyData || {};
         state.archives = migrated.archives || {};
         state.dailyDiagnoses = migrated.dailyDiagnoses || {};
@@ -426,6 +446,10 @@ export async function loadState(cloudState?: AppState): Promise<AppState | null>
         state.pendingConsolidationHabitIds = [...(migrated.pendingConsolidationHabitIds || [])];
         state.hasOnboarded = migrated.hasOnboarded ?? true;
         state.quests = [...(migrated.quests || [])];
+        state.quoteState = migrated.quoteState;
+        state.aiDailyCount = migrated.aiDailyCount ?? 0;
+        state.aiQuotaDate = migrated.aiQuotaDate;
+        state.lastAIContextHash = migrated.lastAIContextHash ?? null;
         state.syncLogs = (migrated.syncLogs || []).map((log: any) => ({
             time: log.time,
             msg: log.msg,
@@ -468,14 +492,16 @@ export async function loadState(cloudState?: AppState): Promise<AppState | null>
 
 export const clearLocalPersistence = async () => {
     cancelPendingSave();
-    try {
+    while (activeSavePromise) await activeSavePromise;
+    if (HAS_INDEXED_DB) {
         const db = await getDB();
-        const tx = db.transaction(STORE_NAME, 'readwrite');
-        tx.objectStore(STORE_NAME).clear();
-        await new Promise(r => tx.oncomplete = r);
-    } catch (e) {
-        logger.warn("IDB clear failed", e);
-    }
-    // Use HabitService to clear logs and cache consistently
+        await new Promise<void>((resolve, reject) => {
+            const tx = db.transaction(STORE_NAME, 'readwrite');
+            tx.objectStore(STORE_NAME).clear();
+            tx.oncomplete = () => resolve();
+            tx.onerror = tx.onabort = () => reject(tx.error ?? new Error('Storage transaction aborted'));
+        });
+    } else if (!IS_TEST_ENV) throw new Error('IndexedDB not available');
+    reportStorageResult(true);
     HabitService.clearAllLogs();
 };
