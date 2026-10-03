@@ -34,17 +34,17 @@
  * (chaves e números); quem traduz e desenha é `render/progression.ts`.
  */
 
-import { state, HABIT_STATE, QuestRecord, TIMES_OF_DAY, bumpLastModified, getStateGeneration } from '../state';
+import { state, Habit, HABIT_STATE, QuestRecord, TIMES_OF_DAY, bumpLastModified, getStateGeneration } from '../state';
 import { HabitService } from './HabitService';
 import { getScheduleForDate, shouldHabitAppearOnDate } from './selectors';
 import { QUEST_CATALOG, QUEST_TIERS, getQuestCatalogItem, type QuestCatalogItem } from '../data/quests';
-import { getTodayUTCIso, generateUUID, sanitizeText, parseUTCIsoDate, toUTCIsoDateString, MS_PER_DAY } from '../utils';
+import { getTodayUTCIso, generateUUID, sanitizeText, parseUTCIsoDate, toUTCIsoDateString, addDays, MS_PER_DAY } from '../utils';
 import { saveState } from './persistence';
 import { emitRenderApp } from '../events';
 import {
     GRADE_XP_BASE, GRADE_XP_STEP, MAX_GRADE,
     XP_PER_COMPLETION, XP_PER_OVERACHIEVEMENT,
-    QUEST_MAX_ACTIVE, QUEST_MASTERY_BONUS, QUEST_MIN_STEP_XP,
+    QUEST_MAX_ACTIVE, QUEST_FAILURE_FLOOR, QUEST_MASTERY_BONUS, QUEST_MIN_STEP_XP,
     CUSTOM_QUEST_XP_PER_DAY, CUSTOM_QUEST_MAX_TARGET, CUSTOM_QUEST_MAX_TITLE_LENGTH,
     QUEST_NOTE_MAX_LENGTH
 } from '../constants';
@@ -162,54 +162,138 @@ function tallyXp(tally: HabitTally): number {
 }
 
 /**
- * Reconstitui o saldo em ordem de calendário. O piso vale a cada dia fechado,
- * não só no total: faltas sem saldo não podem consumir ganhos futuros.
- * Marcações fora da agenda continuam valendo; só horários agendados e vazios
- * cobram. Hoje concede XP, mas só poderá cobrar quando terminar.
+ * Quantas instâncias o hábito pede num dia — a alteração daquele dia vence a
+ * agenda, como no cartão.
+ *
+ * A leitura é direta em `state.dailyData`, e não por
+ * `getEffectiveScheduleForHabitOnDate`: aquele passa por
+ * `getHabitDailyInfoForDate`, que CRIA a entrada do dia quando ela não existe.
+ * Varrer o histórico por ali encheria o estado de objetos vazios — que seriam
+ * gravados no IndexedDB e subiriam para a nuvem.
+ */
+function instancesOnDate(habit: Habit, dateISO: string): number {
+    const override = state.dailyData[dateISO]?.[habit.id]?.dailySchedule;
+    if (override) return override.length;
+    return getScheduleForDate(habit, dateISO)?.times.length ?? 0;
+}
+
+/**
+ * Instâncias que cada hábito PEDIU nos dias já fechados, até `endISO` inclusive.
+ *
+ * Hoje fica de fora, como no objetivo: o dia só cobra quando acaba. Sem isso o
+ * app abriria de manhã já descontando o que ainda vai ser feito à noite.
+ *
+ * O calendário é percorrido UMA VEZ para todos os hábitos, e não uma vez por
+ * hábito, com um cursor só avançado in loco. A conta de cada dia é barata (dois
+ * memos), mas andar no calendário não era: cada passo alocava uma `Date` e
+ * formatava uma string, POR HÁBITO. E o recálculo acontece a cada marcação.
+ *
+ * O acumulador é um array paralelo, e não um `Map` por id: seriam três operações
+ * de Map por par (dia, hábito), e com três anos de histórico isso passa de
+ * quarenta mil. Somando as duas coisas, o pior caso medido — quinze hábitos,
+ * três anos, dois períodos por dia — caiu de 7,5 ms para 4,7 ms por recálculo.
+ * O perfil comum (cinco hábitos, um ano) fica em 0,4 ms.
+ *
+ * Nada disso está no caminho do primeiro pixel: `renderProgression` roda depois
+ * da primeira pintura, em prioridade de fundo.
+ */
+function scheduledInstancesByHabit(habits: readonly Habit[], endISO: string): Map<string, number> {
+    const starts: string[] = [];
+    const counts: number[] = [];
+
+    let firstDay = '';
+    for (const habit of habits) {
+        const start = habit.scheduleHistory?.[0]?.startDate;
+        starts.push(start && start <= endISO ? start : '');
+        counts.push(0);
+        if (start && start <= endISO && (!firstDay || start < firstDay)) firstDay = start;
+    }
+
+    if (firstDay) {
+        const cursor = parseUTCIsoDate(firstDay);
+        for (let dateISO = firstDay; dateISO <= endISO;) {
+            for (let i = 0; i < habits.length; i++) {
+                const start = starts[i];
+                if (!start || dateISO < start) continue;
+                const habit = habits[i];
+                if (shouldHabitAppearOnDate(habit, dateISO, cursor)) counts[i] += instancesOnDate(habit, dateISO);
+            }
+            cursor.setUTCDate(cursor.getUTCDate() + 1);
+            dateISO = toUTCIsoDateString(cursor);
+        }
+    }
+
+    const byId = new Map<string, number>();
+    for (let i = 0; i < habits.length; i++) byId.set(habits[i].id, counts[i]);
+    return byId;
+}
+
+/**
+ * Instâncias de hoje já resolvidas — feitas, superadas ou adiadas.
+ *
+ * Varre os três períodos sem consultar a agenda: uma marcação que sobreviveu a
+ * uma troca de horário precisa sair da conta do mesmo jeito, senão o dia de hoje
+ * apareceria como falta antes mesmo de fechar.
+ */
+function resolvedToday(habitId: string, todayISO: string): number {
+    let resolved = 0;
+    for (const time of TIMES_OF_DAY) {
+        if (HabitService.getStatus(habitId, todayISO, time) !== HABIT_STATE.NULL) resolved++;
+    }
+    return resolved;
+}
+
+/**
+ * XP dos hábitos: o que foi marcado, menos o que foi deixado em branco.
+ *
+ * A falta cobra o preço de uma instância cumprida, e o piso é por hábito —
+ * nenhum devolve mais do que deu. Quem nunca marcou nada vale zero, não um
+ * número negativo, e por isso nem chega a ser varrido: sem XP, não há o que
+ * tirar.
+ *
+ * Adiar PROTEGE. O que este motor cobra é o silêncio, não a falha declarada — e
+ * a cobrança é reversível: voltar no calendário e marcar o dia que de fato foi
+ * cumprido devolve o XP no mesmo render.
+ *
+ * Hábito graduado também não cobra: ele saiu do calendário, e cobrar de quem
+ * chegou ao fim do caminho seria o contrário do que a graduação significa.
  */
 function habitXp(): number {
     const byHabit = tallyByHabit();
-    const today = getTodayUTCIso();
-    const habits = new Map(state.habits.map(habit => [habit.id, habit]));
-    const firstLog = new Map<string, string>();
-    for (const key of state.monthlyLogs?.keys() ?? []) {
-        const cut = key.lastIndexOf('_');
-        if (cut < 1) continue;
-        const id = key.slice(0, cut);
-        const date = `${key.slice(cut + 1)}-01`;
-        if (!firstLog.has(id) || date < firstLog.get(id)!) firstLog.set(id, date);
-    }
+    if (byHabit.size === 0) return 0;
+
+    const todayISO = getTodayUTCIso();
+    const yesterdayISO = toUTCIsoDateString(addDays(parseUTCIsoDate(todayISO), -1));
 
     let total = 0;
-    for (const [id, tally] of byHabit) {
-        const habit = habits.get(id);
-        // Sem agenda não há faltas a cobrar; graduação preserva o prêmio.
-        if (!habit || habit.graduatedOn) {
-            total += tallyXp(tally);
-            continue;
-        }
-        const start = firstLog.get(id);
-        if (!start || start > today) continue;
-        const cursor = parseUTCIsoDate(start);
-        let balance = 0;
-        for (let date = start; date <= today;) {
-            const scheduled = date < today && shouldHabitAppearOnDate(habit, date, cursor)
-                ? state.dailyData[date]?.[id]?.dailySchedule ?? getScheduleForDate(habit, date)?.times ?? []
-                : [];
-            let earned = 0;
-            let missed = 0;
-            for (const time of TIMES_OF_DAY) {
-                const status = HabitService.getStatus(id, date, time);
-                if (status === HABIT_STATE.DONE) earned += XP_PER_COMPLETION;
-                else if (status === HABIT_STATE.DONE_PLUS) earned += XP_PER_COMPLETION + XP_PER_OVERACHIEVEMENT;
-                else if (status === HABIT_STATE.NULL && scheduled.includes(time)) missed++;
-            }
-            balance = Math.max(0, balance + earned - missed * XP_PER_COMPLETION);
-            cursor.setUTCDate(cursor.getUTCDate() + 1);
-            date = toUTCIsoDateString(cursor);
-        }
-        total += balance;
+    const counted = new Set<string>();
+
+    // Só quem tem XP entra na varredura do calendário: sem nada dado, não há
+    // nada a tirar, e o hábito recém-criado não paga o custo de ser conferido.
+    const chargeable: Habit[] = [];
+    for (const habit of state.habits) {
+        counted.add(habit.id);
+        if (byHabit.has(habit.id) && !habit.graduatedOn) chargeable.push(habit);
     }
+    const scheduled = scheduledInstancesByHabit(chargeable, yesterdayISO);
+
+    for (const habit of state.habits) {
+        const tally = byHabit.get(habit.id);
+        if (!tally) continue;
+
+        const markedInClosedDays = tally.done + tally.overachieved + tally.deferred
+            - resolvedToday(habit.id, todayISO);
+        const missed = Math.max(0, (scheduled.get(habit.id) ?? 0) - markedInClosedDays);
+
+        total += Math.max(0, tallyXp(tally) - missed * XP_PER_COMPLETION);
+    }
+
+    // Log sem hábito correspondente — apagado de vez, ou um id que só existe nos
+    // testes. Sem agenda para comparar, não há falta a cobrar: vale o que rendeu.
+    for (const [habitId, tally] of byHabit) {
+        if (!counted.has(habitId)) total += tallyXp(tally);
+    }
+
     return total;
 }
 
@@ -296,51 +380,61 @@ function attemptStart(quest: QuestRecord): string {
 }
 
 /**
- * Reconstitui a tentativa por ciclo, sem dívida. Ao perder o último avanço,
- * o objetivo permanece disponível no dia em que zerou e expira no seguinte.
- * Uma tentativa nunca iniciada expira ao fechar seu primeiro ciclo vazio.
- * A data de expiração é derivada, preservando o merge entre aparelhos.
+ * Avanço LÍQUIDO: dias marcados menos dias perdidos.
+ *
+ * O dia de hoje nunca cobra — só ciclos JÁ FECHADOS. Quem marcou três dias e
+ * deixa o quarto passar vê 3 durante todo o quarto dia e 2 na manhã do quinto:
+ * a conta muda quando o dia acaba, não quando ele começa.
+ *
+ * A perda é DEFINITIVA dentro da tentativa. Contar "quantos avanços faltam para
+ * a data de hoje" seria mais curto, mas apagaria o prejuízo no instante em que a
+ * pessoa se pusesse em dia — quem perdeu o quarto dia e marcou o quinto voltaria
+ * de 2 direto para 4. Por isso o que se conta são os ciclos vazios, um por um.
+ *
+ * A cadência agrupa os dias: um objetivo de ritmo semanal deve um avanço a cada
+ * sete dias, e cobrá-lo diariamente o mataria antes da primeira semana.
+ *
+ * Nada disso é guardado. Sai de `days` + calendário, então dois aparelhos que se
+ * sincronizam chegam ao mesmo número sem nenhum campo para conciliar.
  */
-function questAttemptState(quest: QuestRecord): { progress: number; expired: boolean } {
-    const from = dayEpoch(attemptStart(quest));
-    const today = dayEpoch(getTodayUTCIso());
-    const cadence = getQuestCadence(quest);
-    const closedCycles = Math.floor(Math.max(0, (today - from) / MS_PER_DAY) / cadence);
-    const marked = markedCycles(quest, attemptStart(quest));
-    let progress = 0;
-    let expiresAt = Infinity;
-
-    for (let cycle = 0; cycle <= closedCycles; cycle++) {
-        const start = from + cycle * cadence * MS_PER_DAY;
-        const days = marked.get(cycle);
-        const markedAt = days?.length ? Math.min(...days.map(dayEpoch)) : Infinity;
-        if (expiresAt <= Math.min(today, markedAt)) return { progress: 0, expired: true };
-        if (days?.length) {
-            progress++;
-            expiresAt = Infinity;
-        } else if (cycle < closedCycles) {
-            const hadProgress = progress > 0;
-            progress = Math.max(0, progress - 1);
-            if (progress === 0 && expiresAt === Infinity) {
-                expiresAt = start + (cadence + (hadProgress ? 1 : 0)) * MS_PER_DAY;
-            }
-        }
-    }
-    return { progress, expired: expiresAt <= today };
-}
-
 export function getQuestNetProgress(quest: QuestRecord): number {
-    return questAttemptState(quest).progress;
+    const from = dayEpoch(attemptStart(quest));
+    const cadence = getQuestCadence(quest);
+
+    const closedDays = Math.max(0, Math.round((dayEpoch(getTodayUTCIso()) - from) / MS_PER_DAY));
+    const closedCycles = Math.floor(closedDays / cadence);
+
+    // Ciclos com avanço, não dias marcados: dois avanços na mesma semana valem
+    // um só, do mesmo jeito que a cobrança do dia perdido é por ciclo.
+    const cyclesWithProgress = markedCycles(quest, attemptStart(quest));
+    let marked = 0;
+    for (const cycle of cyclesWithProgress.keys()) {
+        if (cycle >= 0) marked++;  // negativo é de uma tentativa anterior
+    }
+
+    let missed = 0;
+    for (let cycle = 0; cycle < closedCycles; cycle++) {
+        if (!cyclesWithProgress.has(cycle)) missed++;
+    }
+
+    return marked - missed;
 }
 
-/** O que a barra mostra: saldo disponível, limitado ao alvo. */
+/** O que a barra mostra: o líquido, preso entre zero e o alvo. */
 export function getQuestProgress(quest: QuestRecord): number {
-    return Math.min(getQuestTarget(quest), getQuestNetProgress(quest));
+    return Math.min(getQuestTarget(quest), Math.max(0, getQuestNetProgress(quest)));
 }
 
+/**
+ * Caducou: o abandono que a própria falta de uso escreve.
+ *
+ * Sem lápide no estado, de propósito. A data de hoje é o que decide, e ela é a
+ * mesma nos dois aparelhos — gravar `expiredOn` num deles criaria um conflito
+ * onde não havia nenhum. Retomar depois é possível (ver `activateQuest`).
+ */
 export function isQuestExpired(quest: QuestRecord): boolean {
     if (quest.completedOn || quest.abandonedOn) return false;
-    return questAttemptState(quest).expired;
+    return getQuestNetProgress(quest) <= QUEST_FAILURE_FLOOR;
 }
 
 function isQuestActive(quest: QuestRecord): boolean {
@@ -393,7 +487,9 @@ export function isQuestRegisteredForCycleOf(quest: QuestRecord, dateISO: string)
  * isso o líquido continuaria caindo depois da conclusão e o prêmio derreteria
  * junto. Alvo cheio, nada mais a vencer, valor congelado.
  *
- * Caducado ou abandonado, o saldo pode cair somente até zero.
+ * Largar tem o caminho oposto: caducado ou abandonado, os ciclos vazios seguem
+ * correndo, o líquido desce até o piso e o objetivo se apaga sozinho. Não é
+ * castigo — é a mesma regra vista do outro lado.
  *
  * A base é `alvo × passo`, e não `getQuestTotalXp`, para não haver degrau no
  * instante da conclusão: é exatamente onde a barra cheia já estava. Hoje as duas
@@ -618,22 +714,20 @@ function notifyQuestChange() {
 
 export function activateQuest(questId: string): QuestActionResult {
     const item = getQuestCatalogItem(questId);
-    const existing = state.quests.find(q => q.id === questId);
-    if (!item && !existing?.customTitle) return { ok: false, reason: 'unknownQuest' };
-    if (existing && isQuestActive(existing)) return { ok: true, completed: false };
+    if (!item) return { ok: false, reason: 'unknownQuest' };
     if (getActiveQuests().length >= QUEST_MAX_ACTIVE) return { ok: false, reason: 'slotsFull' };
-    if (item && !getQuestUnlockStatus(item.reqGrade).unlocked) return { ok: false, reason: 'locked' };
+    if (!getQuestUnlockStatus(item.reqGrade).unlocked) return { ok: false, reason: 'locked' };
 
     // Retomada: um só registro por id, sempre. Nasce uma TENTATIVA nova — a
     // lápide sai e a janela do avanço passa a contar de hoje, senão os dias
     // perdidos da tentativa anterior matariam o objetivo no mesmo instante em
-    // que ele volta ao slot. Os dias antigos ficam em `days` como histórico, mas não
-    // entram no saldo da nova tentativa.
+    // que ele volta ao slot. Os dias antigos ficam em `days`: são XP ganho, e
+    // apagá-los faria o grau andar para trás.
+    const existing = state.quests.find(q => q.id === questId);
     if (existing) {
         if (existing.completedOn) return { ok: false, reason: 'unknownQuest' };
         existing.abandonedOn = undefined;
         existing.attemptFrom = getTodayUTCIso();
-        existing.lifecycleAt = Math.max(Date.now(), state.lastModified + 1);
     } else {
         state.quests.push({ id: questId, startedOn: getTodayUTCIso(), days: [] });
     }
@@ -694,9 +788,6 @@ export function toggleQuestProgress(questId: string): QuestActionResult {
         const cycleOfToday = Math.floor(Math.round((dayEpoch(today) - from) / MS_PER_DAY) / getQuestCadence(quest));
         const desfeitos = new Set(markedCycles(quest, attemptStart(quest)).get(cycleOfToday) ?? []);
 
-        const at = Math.max(Date.now(), state.lastModified + 1);
-        quest.dayEdits ??= {};
-        for (const day of desfeitos) quest.dayEdits[day] = { at, done: false };
         quest.days = quest.days.filter(day => !desfeitos.has(day));
         // Conclusão do ciclo se desfaz junto; a de um ciclo anterior já tirou o
         // objetivo da lista e não há cartão para tocar.
@@ -705,18 +796,13 @@ export function toggleQuestProgress(questId: string): QuestActionResult {
         return { ok: true, completed: false };
     }
 
-    quest.dayEdits ??= {};
-    quest.dayEdits[today] = { at: Math.max(Date.now(), state.lastModified + 1), done: true };
     quest.days.push(today);
     quest.days.sort();
 
     // Fecha pelo LÍQUIDO da tentativa em curso, não pelo total de dias marcados:
     // um dia perdido pelo caminho tem de ser reposto antes de o objetivo fechar.
     const completed = getQuestNetProgress(quest) >= getQuestTarget(quest);
-    if (completed) {
-        quest.completedOn = today;
-        quest.lifecycleAt = Math.max(Date.now(), state.lastModified + 1);
-    }
+    if (completed) quest.completedOn = today;
 
     notifyQuestChange();
     return { ok: true, completed };
@@ -740,8 +826,6 @@ export function setQuestNote(questId: string, dateISO: string, rawText: string):
     const text = sanitizeText(rawText, QUEST_NOTE_MAX_LENGTH);
     if (getQuestNote(quest, dateISO) === text) return;
 
-    quest.noteEdits ??= {};
-    quest.noteEdits[dateISO] = Math.max(Date.now(), state.lastModified + 1);
     if (!text) {
         if (quest.notes) delete quest.notes[dateISO];
     } else {
@@ -756,7 +840,6 @@ export function abandonQuest(questId: string): QuestActionResult {
     if (!quest || !isQuestActive(quest)) return { ok: false, reason: 'unknownQuest' };
 
     quest.abandonedOn = getTodayUTCIso();
-    quest.lifecycleAt = Math.max(Date.now(), state.lastModified + 1);
     notifyQuestChange();
     return { ok: true, completed: false };
 }

@@ -11,7 +11,6 @@ type CheckRateLimitOptions = {
     maxRequests: number;
     disabled?: boolean;
     localMaxEntries?: number;
-    requireDistributed?: boolean;
 };
 
 const localRateLimitStores = new Map<string, Map<string, LocalRateEntry>>();
@@ -19,7 +18,7 @@ let distributedLimiterRedis: Redis | null | undefined;
 
 export function parsePositiveInt(value: string | undefined, fallback: number): number {
     const parsed = Number(value);
-    return Number.isFinite(parsed) && parsed >= 1 ? Math.floor(parsed) : fallback;
+    return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
 }
 
 export function parseAllowedOrigins(value: string | undefined): string[] {
@@ -138,14 +137,13 @@ function checkRateLimitLocal(options: CheckRateLimitOptions): RateLimitResult {
 
     const now = Date.now();
 
-    if (store.size >= localMaxEntries) {
+    if (store.size > localMaxEntries) {
         for (const [storeKey, value] of store.entries()) {
             if (value.resetAt <= now) store.delete(storeKey);
         }
     }
 
     const current = store.get(key);
-    if (!current && store.size >= localMaxEntries) return { limited: true, retryAfterSec: Math.ceil(windowMs / 1000) };
     if (!current || current.resetAt <= now) {
         store.set(key, { count: 1, resetAt: now + windowMs });
         return { limited: false, retryAfterSec: 0 };
@@ -166,25 +164,26 @@ export async function checkRateLimit(options: CheckRateLimitOptions): Promise<Ra
     if (options.disabled) return { limited: false, retryAfterSec: 0 };
 
     const redis = getDistributedLimiterRedis();
-    if (!redis) {
-        if (options.requireDistributed) throw new Error('Distributed rate limiter unavailable');
-        return checkRateLimitLocal(options);
-    }
+    if (!redis) return checkRateLimitLocal(options);
+
+    const redisKey = `rl:${options.namespace}:${options.key}`;
+
     try {
-        const result = await redis.eval(`
-            local count = redis.call('INCR', KEYS[1])
-            if count == 1 or redis.call('PTTL', KEYS[1]) < 0 then
-                redis.call('PEXPIRE', KEYS[1], ARGV[1])
-            end
-            return {count, redis.call('PTTL', KEYS[1])}
-        `, [`rl:${options.namespace}:${options.key}`], [options.windowMs]);
-        if (!Array.isArray(result) || result.length !== 2) throw new Error('Invalid limiter response');
-        const count = Number(result[0]);
-        const ttl = Number(result[1]);
-        if (!Number.isFinite(count) || !Number.isFinite(ttl)) throw new Error('Invalid limiter response');
-        return { limited: count > options.maxRequests, retryAfterSec: Math.max(1, Math.ceil(ttl / 1000)) };
-    } catch (error) {
-        if (options.requireDistributed) throw error;
+        const count = Number(await redis.incr(redisKey));
+        if (count === 1) {
+            await redis.pexpire(redisKey, options.windowMs);
+        }
+
+        if (count > options.maxRequests) {
+            const ttlMs = Number(await redis.pttl(redisKey));
+            return {
+                limited: true,
+                retryAfterSec: Math.max(1, Math.ceil(Math.max(0, ttlMs) / 1000))
+            };
+        }
+
+        return { limited: false, retryAfterSec: 0 };
+    } catch {
         return checkRateLimitLocal(options);
     }
 }

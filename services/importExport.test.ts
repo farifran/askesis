@@ -24,14 +24,12 @@ vi.mock('../i18n', () => ({
 vi.mock('./persistence', () => ({
     loadState: vi.fn(async () => null),
     saveState: vi.fn(async () => {}),
-    persistStateLocally: vi.fn(async () => {}),
     clearLocalPersistence: vi.fn(async () => {})
 }));
 
 vi.mock('./cloud', () => ({
     runWorkerTask: vi.fn(async () => ({})),
-    addSyncLog: vi.fn(),
-    syncStateWithCloud: vi.fn()
+    addSyncLog: vi.fn()
 }));
 
 vi.mock('./api', () => ({
@@ -41,7 +39,6 @@ vi.mock('./api', () => ({
 
 describe('import/export round-trip', () => {
     beforeEach(() => {
-        vi.restoreAllMocks();
         vi.clearAllMocks();
     });
 
@@ -59,12 +56,8 @@ describe('import/export round-trip', () => {
 
         importData();
 
-        const { state } = await import('../state');
-        state.accountGeneration = 'current-generation';
         const payload = {
             version: 10,
-            accountGeneration: 'backup-generation',
-            archives: { '2023': '{}' },
             habits: [{ id: 'h1', createdOn: '2024-01-01', scheduleHistory: [] }],
             monthlyLogsSerialized: [['h1_2024-01', '0x1']]
         };
@@ -82,30 +75,6 @@ describe('import/export round-trip', () => {
 
         expect(loadState).toHaveBeenCalled();
         const arg = (loadState as any).mock.calls[0][0];
-        expect(arg.monthlyLogs).toEqual(new Map([['h1_2024-01', 1n]]));
-        expect(arg.archives).toEqual(payload.archives);
-        expect(arg.accountGeneration).toBe('current-generation');
+        expect(arg.monthlyLogs).toEqual({ 'h1_2024-01': '0x1' });
     });
-    it('não aplica nem envia importação cuja gravação falhou', async () => {
-        const { importData } = await import('./habitActions');
-        const { loadState, persistStateLocally } = await import('./persistence');
-        const { syncStateWithCloud } = await import('./cloud');
-        const { showConfirmationModal } = await import('../render');
-        const originalCreate = document.createElement.bind(document);
-        let input!: HTMLInputElement;
-        vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
-            const el = originalCreate(tag);
-            if (tag === 'input') input = el as HTMLInputElement;
-            return el;
-        });
-        importData();
-        const file = new File([JSON.stringify({ version: 13, habits: [], archives: {} })], 'backup.json');
-        Object.defineProperty(input, 'files', { value: [file] });
-        vi.mocked(persistStateLocally).mockRejectedValueOnce(new Error('Disk full'));
-        await input.onchange?.({ target: input } as any);
-        expect(loadState).not.toHaveBeenCalled();
-        expect(syncStateWithCloud).not.toHaveBeenCalled();
-        expect(showConfirmationModal).toHaveBeenCalledWith('importError', expect.any(Function), expect.any(Object));
-    });
-
 });

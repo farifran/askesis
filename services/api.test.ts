@@ -92,36 +92,9 @@ describe('🌐 Cliente de API (api.ts)', () => {
             const mockFetch = vi.fn().mockResolvedValue(new Response('unauthorized', { status: 401 }));
             vi.stubGlobal('fetch', mockFetch);
 
-            await apiFetch('/api/test', {}, true);
+            await apiFetch('/api/test');
 
             expect(hasLocalSyncKey()).toBe(false);
-        });
-
-        it('preserva a chave em erro de autenticação alheio ao sync e permite corpos grandes', async () => {
-            storeKey('preserved-key');
-            const mockFetch = vi.fn().mockResolvedValue(new Response('unauthorized', { status: 401 }));
-            vi.stubGlobal('fetch', mockFetch);
-            await apiFetch('/api/test', { method: 'POST', body: 'x'.repeat(100_000) });
-            expect(getSyncKey()).toBe('preserved-key');
-            expect(mockFetch.mock.calls[0][1].keepalive).toBe(false);
-        });
-
-        it('obtém uma sessão antes de solicitar análise', async () => {
-            const mockFetch = vi.fn()
-                .mockResolvedValueOnce(new Response(null, { status: 204 }))
-                .mockResolvedValueOnce(new Response('analysis'));
-            vi.stubGlobal('fetch', mockFetch);
-            await apiFetch('/api/analyze', { method: 'POST', body: '{}' });
-            expect(mockFetch.mock.calls.map(call => call[0])).toEqual(['/api/ai-session', '/api/analyze']);
-            expect(mockFetch.mock.calls[0][1].credentials).toBe('same-origin');
-        });
-
-        it('não repete geração paga de IA após perda de conexão', async () => {
-            const mockFetch = vi.fn().mockResolvedValueOnce(new Response(null, { status: 204 }))
-                .mockRejectedValueOnce(new TypeError('Failed to fetch'));
-            vi.stubGlobal('fetch', mockFetch);
-            await expect(apiFetch('/api/analyze', { method: 'POST', body: '{}' })).rejects.toMatchObject({ code: 'NETWORK_ERROR' });
-            expect(mockFetch).toHaveBeenCalledTimes(2);
         });
 
         it('deve fazer retry em caso de erro de rede', async () => {

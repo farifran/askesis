@@ -113,7 +113,7 @@ async function getSyncKeyHash(): Promise<string | null> {
             
             return hashHex;
         } catch (e) {
-            logWarn('Crypto Digest failed; authentication unavailable', e);
+            logWarn('Crypto Digest failed, falling back to raw auth', e);
         }
     }
     return null;
@@ -124,20 +124,7 @@ async function getSyncKeyHash(): Promise<string | null> {
 /**
  * Wrapper de Fetch com injeção automática de Headers de Sync.
  */
-let aiSessionRequest: Promise<Response> | null = null;
-async function ensureAiSession(): Promise<Response> {
-    if (!aiSessionRequest) {
-        aiSessionRequest = fetchWithTimeout('/api/ai-session', { method: 'POST', credentials: 'same-origin' }, API_TIMEOUT_MS)
-            .finally(() => { aiSessionRequest = null; });
-    }
-    return aiSessionRequest;
-}
-
 export async function apiFetch(endpoint: string, options: RequestInit = {}, includeSyncKey = false): Promise<Response> {
-    if (endpoint === '/api/analyze') {
-        const session = await ensureAiSession();
-        if (!session.ok) return session;
-    }
     const headers = new Headers(options.headers || {});
     
     if (!headers.has('Content-Type')) {
@@ -159,19 +146,17 @@ export async function apiFetch(endpoint: string, options: RequestInit = {}, incl
     const config = {
         ...options,
         headers,
-        // Corpos grandes de sync/IA usam fetch normal; keepalive tem teto de 64 KiB.
-        keepalive: options.keepalive ?? false
+        // PERFORMANCE: Mantém a conexão aberta para múltiplos pings de sincronização
+        keepalive: options.method === 'POST'
     };
 
-    const isAnalysis = endpoint === '/api/analyze';
-    const maxRetries = isAnalysis ? 0 : API_MAX_RETRIES;
     let lastError: unknown;
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    for (let attempt = 0; attempt <= API_MAX_RETRIES; attempt++) {
         try {
-            const response = await fetchWithTimeout(endpoint, config, isAnalysis ? 35000 : API_TIMEOUT_MS);
+            const response = await fetchWithTimeout(endpoint, config, API_TIMEOUT_MS);
 
             // Gestão de Resiliência: Se o servidor diz que a chave não existe mais, limpa localmente
-            if (response.status === 401 && includeSyncKey && hasLocalSyncKey()) {
+            if (response.status === 401 && hasLocalSyncKey()) {
                 clearKey();
                 cachedHash = null;
                 lastKeyForHash = null;
@@ -181,7 +166,7 @@ export async function apiFetch(endpoint: string, options: RequestInit = {}, incl
             return response;
         } catch (error) {
             lastError = error;
-            if (attempt < maxRetries) {
+            if (attempt < API_MAX_RETRIES) {
                 await wait(API_RETRY_DELAY_MS * (attempt + 1));
                 continue;
             }
@@ -189,7 +174,6 @@ export async function apiFetch(endpoint: string, options: RequestInit = {}, incl
         }
     }
 
-    if (lastError instanceof Error) Object.assign(lastError, { code: 'NETWORK_ERROR' });
     throw lastError;
 }
 

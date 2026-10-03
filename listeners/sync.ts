@@ -101,7 +101,7 @@ async function _processKey(key: string) {
             clearActiveHabitsCache();
             clearHabitDomCache();
             state.uiDirtyState.habitListStructure = state.uiDirtyState.calendarVisuals = true;
-            if (await saveState(true) === false) throw new Error(t('storageSaveError'));
+            await saveState(true);
             renderApp();
             setSyncStatus('syncSynced');
             syncStateWithCloud(mergedState, true);

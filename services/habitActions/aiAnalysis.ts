@@ -128,7 +128,7 @@ export async function performAIAnalysis(type: 'monthly' | 'quarterly' | 'histori
 
         if (id !== state.aiReqId) return;
 
-        const res = await apiFetch('/api/analyze', { method: 'POST', body: JSON.stringify({ task: 'habits', language: state.activeLanguageCode, context: { analysisType: type, habits: state.habits, dailyData: filteredDailyData, questNotes: buildQuestNotes(cutoffISO) } }) });
+        const res = await apiFetch('/api/analyze', { method: 'POST', body: JSON.stringify({ prompt, systemInstruction }) });
 
         if (!res.ok) {
             let errorDetail = `Status ${res.status}`;

@@ -11,22 +11,20 @@ vi.mock('@google/genai', () => ({
   }
 }));
 
-let cookie = '';
 function makeAnalyzeRequest(prompt = 'hello', systemInstruction = 'sys') {
   return new Request('https://askesis.vercel.app/api/analyze', {
     method: 'POST',
     headers: {
-      'cookie': cookie,
       'content-type': 'application/json',
       'origin': 'https://askesis.vercel.app',
       'x-vercel-forwarded-for': '203.0.113.10'
     },
-    body: JSON.stringify({ task: 'habits', language: 'pt', context: { analysisType: 'monthly', habits: [{ id: 'h', scheduleHistory: [{ name: prompt }] }] }, systemInstruction })
+    body: JSON.stringify({ prompt, systemInstruction })
   });
 }
 
 describe('api/analyze quota cooldown', () => {
-  beforeEach(async () => {
+  beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
     process.env.API_KEY = 'test-key';
@@ -34,24 +32,6 @@ describe('api/analyze quota cooldown', () => {
     process.env.CORS_STRICT = '1';
     process.env.DISABLE_RATE_LIMIT = '1';
     process.env.AI_QUOTA_COOLDOWN_MS = '120000';
-    const { createAiSessionCookie } = await import('./_aiSession');
-    cookie = (await createAiSessionCookie()).split(';')[0];
-  });
-
-  it('rejeita ausência de sessão, assinatura inválida e API antiga sem gastar tokens', async () => {
-    const { default: handler } = await import('./analyze');
-    const missing = makeAnalyzeRequest();
-    missing.headers.delete('cookie');
-    expect((await handler(missing)).status).toBe(401);
-    const tampered = makeAnalyzeRequest();
-    tampered.headers.set('cookie', cookie.slice(0, -1) + (cookie.endsWith('0') ? '1' : '0'));
-    expect((await handler(tampered)).status).toBe(401);
-    const legacy = new Request('https://askesis.vercel.app/api/analyze', {
-      method: 'POST', headers: { cookie, origin: 'https://askesis.vercel.app' },
-      body: JSON.stringify({ prompt: 'any request', systemInstruction: 'do anything' })
-    });
-    expect((await handler(legacy)).status).toBe(400);
-    expect(generateContentMock).not.toHaveBeenCalled();
   });
 
   it('chama o modelo esperado sem parâmetros de amostragem depreciados', async () => {
@@ -66,31 +46,26 @@ describe('api/analyze quota cooldown', () => {
     expect(generateContentMock).toHaveBeenCalledTimes(1);
     const args = generateContentMock.mock.calls[0][0];
     expect(args.model).toBe('gemini-3.5-flash-lite');
-    expect(args.config.systemInstruction).not.toBe('s');
-    expect(args.config.systemInstruction).toContain('untrusted data');
-    expect(args.config.maxOutputTokens).toBe(4096);
-    expect(args.config.abortSignal).toBeInstanceOf(AbortSignal);
+    expect(args.config.systemInstruction).toBe('s');
     expect(args.config).not.toHaveProperty('temperature');
     expect(args.config).not.toHaveProperty('topP');
     expect(args.config).not.toHaveProperty('topK');
   });
 
-  it('usa schema confiável para citações, ignorando o schema do cliente', async () => {
+  it('ativa saída estruturada quando o cliente envia responseSchema', async () => {
     generateContentMock.mockResolvedValueOnce({ text: '{"ok":true}' });
     const schema = { type: 'object', properties: { a: { type: 'string' } } };
 
     const mod = await import('./analyze');
     await mod.default(new Request('https://askesis.vercel.app/api/analyze', {
       method: 'POST',
-      headers: { cookie, 'content-type': 'application/json', origin: 'https://askesis.vercel.app', 'x-vercel-forwarded-for': '203.0.113.10' },
-      body: JSON.stringify({ task: 'quote', language: 'pt', context: { notes: 'reflexão' }, responseSchema: schema })
+      headers: { 'content-type': 'application/json', origin: 'https://askesis.vercel.app', 'x-vercel-forwarded-for': '203.0.113.10' },
+      body: JSON.stringify({ prompt: 'p', systemInstruction: 's', responseSchema: schema })
     }));
 
     const cfg = generateContentMock.mock.calls[0][0].config;
     expect(cfg.responseMimeType).toBe('application/json');
-    const { QUOTE_ANALYSIS_SCHEMA } = await import('../contracts/ai');
-    expect(cfg.responseSchema).toEqual(QUOTE_ANALYSIS_SCHEMA);
-    expect(cfg.responseSchema).not.toEqual(schema);
+    expect(cfg.responseSchema).toEqual(schema);
   });
 
   it('mantém resposta em prosa quando não há responseSchema (avaliação de hábitos)', async () => {

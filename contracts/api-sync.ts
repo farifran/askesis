@@ -12,7 +12,6 @@ export type EncryptedShardMap = Record<string, string>;
 
 export type SyncPostRequest = {
     lastModified: number;
-    accountGeneration?: string;
     shards: EncryptedShardMap;
     /** Reset de conta: apaga o cofre inteiro antes de gravar os shards enviados. */
     purge?: boolean;
@@ -22,9 +21,8 @@ export type SyncServerShards = EncryptedShardMap & {
     lastModified?: string;
     /** Carimbo do último reset de conta. Campo de controle, não é shard cifrado. */
     resetAt?: string;
-    accountGeneration?: string;
 };
 
 export type SyncPostResponse = {
-    success: boolean;
+    fallback?: boolean;
 };

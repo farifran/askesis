@@ -50,7 +50,6 @@ function makeRawPostRequest(body: string, headers?: Record<string, string>) {
 
   return {
     method: request.method,
-    body: request.body,
     text: () => request.text(),
     headers: {
       get(name: string) {

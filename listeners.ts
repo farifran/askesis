@@ -8,7 +8,6 @@
  * @description Ponto de Entrada para Inicialização de Eventos (Event Bootstrapper).
  */
 
-import { t } from './i18n';
 import { ui } from './render/ui';
 import { renderApp, renderAINotificationState, updateNotificationUI, initModalEngine, getCachedHabitCard, updateHabitCardElement, updateDayVisuals } from './render';
 import { setupModalListeners } from './listeners/modals';
@@ -104,18 +103,6 @@ const _handleCardUpdate = (e: Event) => {
 export function setupEventListeners() {
     if (areListenersAttached) return;
     areListenersAttached = true;
-    document.addEventListener(APP_EVENTS.persistenceChanged, (event) => {
-        const saved = (event as CustomEvent<{ saved: boolean }>).detail.saved;
-        const existing = document.getElementById('storage-error-banner');
-        if (saved) { existing?.remove(); return; }
-        if (existing) return;
-        const banner = document.createElement('div');
-        banner.id = 'storage-error-banner';
-        banner.className = 'storage-error-banner';
-        banner.setAttribute('role', 'alert');
-        banner.textContent = t('storageSaveError');
-        document.body.prepend(banner);
-    });
 
     initModalEngine();
     setupModalListeners();

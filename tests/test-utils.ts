@@ -157,10 +157,6 @@ export function clearTestState(): void {
   state.archives = {};
   state.dailyDiagnoses = {};
   state.lastModified = 0;
-  state.accountGeneration = undefined;
-  state.aiDailyCount = 0;
-  state.aiQuotaDate = "";
-  state.lastAIContextHash = null;
   state.unarchivedCache = new Map();
   state.streaksCache = new Map();
   state.habitAppearanceCache = new Map();

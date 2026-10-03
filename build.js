@@ -163,6 +163,8 @@ async function build() {
     // endereço que o i18n vai pedir, em dev também. Divergir aqui faz o navegador
     // baixar o arquivo duas vezes.
     html = html.replace('__LOCALE_VERSION__', localeVersion);
+    {
+    }
     await fs.promises.writeFile(path.join(OUT_DIR, 'index.html'), html);
 
     await copyFile('manifest.json', path.join(OUT_DIR, 'manifest.json'));

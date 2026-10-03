@@ -41,13 +41,3 @@ export function normalizeFrequencyByMode(mode: HabitMode, frequency: HabitTempla
     }
     return { ...frequency };
 }
-
-/** Normalização única usada tanto na migração quanto na mesclagem. */
-export function normalizeSchedule(schedule: HabitSchedule): void {
-    const mode = normalizeHabitMode(schedule.mode);
-    Object.assign(schedule, {
-        mode,
-        times: normalizeTimesByMode(mode, schedule.times),
-        frequency: normalizeFrequencyByMode(mode, schedule.frequency)
-    });
-}

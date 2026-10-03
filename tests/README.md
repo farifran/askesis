@@ -19,8 +19,8 @@ Comando usado: `npm test -- --run`
 
 <!-- INVENTARIO:INICIO -->
 
-- **Arquivos de teste:** 53
-- **Testes totais:** 700
+- **Arquivos de teste:** 46
+- **Testes totais:** 658
 
 > Gerado por `node scripts/update-test-inventory.js` a partir de execução real.
 > Não editar à mão: `--check` falha o CI quando divergir.
@@ -28,10 +28,7 @@ Comando usado: `npm test -- --run`
 ### `api`
 
 - `api/_httpSecurity.test.ts` → 5
-- `api/_requestBody.test.ts` → 3
-- `api/ai-session.test.ts` → 4
-- `api/analyze.test.ts` → 6
-- `api/budgets.test.ts` → 3
+- `api/analyze.test.ts` → 5
 - `api/reminder.test.ts` → 15
 - `api/sync.test.ts` → 13
 
@@ -54,15 +51,14 @@ Comando usado: `npm test -- --run`
 ### `render`
 
 - `render/modalBuilders.test.ts` → 8
-- `render/progression.test.ts` → 2
 
 ### `services`
 
 - `services/aiPrompt.test.ts` → 17
 - `services/analysis.test.ts` → 5
-- `services/api.test.ts` → 17
+- `services/api.test.ts` → 14
 - `services/badge.test.ts` → 8
-- `services/cloud.test.ts` → 14
+- `services/cloud.test.ts` → 12
 - `services/cloudDataMerge.integration.test.ts` → 2
 - `services/compression.test.ts` → 16
 - `services/crypto.test.ts` → 23
@@ -70,13 +66,12 @@ Comando usado: `npm test -- --run`
 - `services/exportFiltering.test.ts` → 1
 - `services/habitActions.test.ts` → 29
 - `services/HabitService.test.ts` → 22
-- `services/importExport.test.ts` → 2
+- `services/importExport.test.ts` → 1
 - `services/migration.test.ts` → 24
 - `services/notificationCard.test.ts` → 18
-- `services/persistence.failure.test.ts` → 2
 - `services/persistence.test.ts` → 13
 - `services/persistenceRecovery.test.ts` → 4
-- `services/progression.test.ts` → 83
+- `services/progression.test.ts` → 74
 - `services/push.test.ts` → 2
 - `services/quoteEngine.test.ts` → 13
 - `services/selectors.test.ts` → 24
@@ -84,8 +79,6 @@ Comando usado: `npm test -- --run`
 
 ### `tests`
 
-- `tests/audit-guardrail.test.ts` → 4
-- `tests/audit-regressions.test.ts` → 8
 - `tests/offlineWorker.test.ts` → 5
 - `tests/property/cacheCoherence.property.test.ts` → 5
 - `tests/property/merge.property.test.ts` → 1

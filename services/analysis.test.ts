@@ -19,6 +19,7 @@ vi.mock('./persistence', () => ({
     saveState: vi.fn(),
 }));
 
+import { runWorkerTask } from './cloud';
 import { apiFetch } from './api';
 import { checkAndAnalyzeDayContext, getDailyNoteHistoryContext } from './analysis';
 
@@ -78,6 +79,7 @@ describe('🧠 Análise diária IA (analysis.ts)', () => {
             });
             addTestNote(habitId, '2026-02-13', 'Morning', 'Minha primeira nota de diário.');
 
+            vi.mocked(runWorkerTask).mockResolvedValue({ prompt: 'p', systemInstruction: 's' } as any);
             vi.mocked(apiFetch).mockResolvedValue(new Response(JSON.stringify({
                 analysis: { determined_level: 2 },
                 relevant_themes: ['disciplina']
@@ -85,8 +87,8 @@ describe('🧠 Análise diária IA (analysis.ts)', () => {
 
             await checkAndAnalyzeDayContext('2026-02-13');
 
-            expect(apiFetch).toHaveBeenCalledTimes(1);
-            const payload = JSON.parse(vi.mocked(apiFetch).mock.calls[0][1]!.body as string).context;
+            expect(runWorkerTask).toHaveBeenCalledTimes(1);
+            const [, payload] = vi.mocked(runWorkerTask).mock.calls[0];
             expect(payload.dataContext.firstEntry).toBe(true);
             expect(payload.habitModes).toContain('[mode=');
         });
@@ -106,6 +108,7 @@ describe('🧠 Análise diária IA (analysis.ts)', () => {
             addTestNote(habitId, '2026-02-10', 'Morning', 'Nota antiga.');
             addTestNote(habitId, '2026-02-13', 'Morning', 'Nota de hoje.');
 
+            vi.mocked(runWorkerTask).mockResolvedValue({ prompt: 'p', systemInstruction: 's' } as any);
             vi.mocked(apiFetch).mockResolvedValue(new Response(JSON.stringify({
                 analysis: { determined_level: 2 },
                 relevant_themes: ['disciplina']
@@ -113,8 +116,8 @@ describe('🧠 Análise diária IA (analysis.ts)', () => {
 
             await checkAndAnalyzeDayContext('2026-02-13');
 
-            expect(apiFetch).toHaveBeenCalledTimes(1);
-            const payload = JSON.parse(vi.mocked(apiFetch).mock.calls[0][1]!.body as string).context;
+            expect(runWorkerTask).toHaveBeenCalledTimes(1);
+            const [, payload] = vi.mocked(runWorkerTask).mock.calls[0];
             expect(payload.dataContext.firstEntry).toBe(false);
             expect(payload.dataContext.daysBeforeTargetWithNotes).toBe(1);
         });

@@ -12,7 +12,7 @@ import { QUEST_CATALOG, QUEST_TIERS } from '../data/quests';
 import {
     GRADE_XP_BASE, GRADE_XP_STEP, MAX_GRADE,
     XP_PER_COMPLETION, XP_PER_OVERACHIEVEMENT,
-    QUEST_MAX_ACTIVE, QUEST_MASTERY_BONUS, QUEST_MIN_STEP_XP,
+    QUEST_MAX_ACTIVE, QUEST_FAILURE_FLOOR, QUEST_MASTERY_BONUS, QUEST_MIN_STEP_XP,
     CUSTOM_QUEST_MAX_TARGET
 } from '../constants';
 import {
@@ -202,41 +202,6 @@ describe('XP dos hábitos: a falta cobra', () => {
         markDone('h1', daysAgo(10));
         // Nove dias em branco valeriam -90 sobre 10 ganhos; o piso é zero.
         expect(getProgression().totalXp).toBe(0);
-    });
-
-    it('volta a conceder XP imediatamente após muitos dias sem saldo', () => {
-        seedHabit('h1', 60);
-        markDone('h1', daysAgo(60));
-        expect(getProgression().totalXp).toBe(0);
-        markDone('h1', daysAgo(0));
-        expect(getProgression().totalXp).toBe(XP_PER_COMPLETION);
-        markDone('h1', daysAgo(0), HABIT_STATE.NULL);
-        expect(getProgression().totalXp).toBe(0);
-    });
-
-    it('faltas anteriores à primeira marcação não criam dívida', () => {
-        seedHabit('h1', 30);
-        markDone('h1', daysAgo(1));
-        markDone('h1', daysAgo(0));
-        expect(getProgression().totalXp).toBe(2 * XP_PER_COMPLETION);
-    });
-
-    it('desconta só o saldo restante do bônus e preserva o próximo ganho', () => {
-        seedHabit('h1', 4);
-        markDone('h1', daysAgo(4), HABIT_STATE.DONE_PLUS);
-        markDone('h1', daysAgo(0), HABIT_STATE.DONE_PLUS);
-        expect(getProgression().totalXp).toBe(XP_PER_COMPLETION + XP_PER_OVERACHIEVEMENT);
-    });
-
-    it('não cobra horários adiados, fora da agenda ou removidos por exceção diária', () => {
-        const habit = seedHabit('h1', 3);
-        habit.scheduleHistory[0] = { ...habit.scheduleHistory[0], frequency: { type: 'interval', unit: 'days', amount: 2 } };
-        state.dailyData[daysAgo(2)] = {
-            h1: { dailySchedule: [], instances: {} }
-        };
-        markDone('h1', daysAgo(3));
-        markDone('h1', daysAgo(1), HABIT_STATE.DEFERRED);
-        expect(getProgression().totalXp).toBe(XP_PER_COMPLETION);
     });
 
     it('a falta de um hábito não come o XP do outro', () => {
@@ -601,7 +566,7 @@ describe('regressão e caducidade', () => {
 
     it('a barra nunca mostra número negativo', () => {
         const quest = seed(dailyQuest.id, daysAgo(3), []);
-        expect(getQuestNetProgress(quest)).toBe(0);
+        expect(getQuestNetProgress(quest)).toBeLessThan(0);
         expect(getQuestProgress(quest)).toBe(0);
     });
 
@@ -614,54 +579,9 @@ describe('regressão e caducidade', () => {
 
     it('caduca e sai da lista ao chegar no piso', () => {
         const quest = seed(dailyQuest.id, daysAgo(1), []);
-        expect(getQuestNetProgress(quest)).toBe(0);
+        expect(getQuestNetProgress(quest)).toBe(QUEST_FAILURE_FLOOR);
         expect(isQuestExpired(quest)).toBe(true);
         expect(getActiveQuests()).toHaveLength(0);
-    });
-
-    it('permite recuperar no dia em que zera e concede o passo inteiro', () => {
-        const quest = seed(dailyQuest.id, daysAgo(2), [daysAgo(2)]);
-        expect(getQuestNetProgress(quest)).toBe(0);
-        expect(isQuestExpired(quest)).toBe(false);
-        expect(toggleQuestProgress(quest.id).ok).toBe(true);
-        expect(getQuestNetProgress(quest)).toBe(1);
-        expect(getProgression().totalXp).toBe(Math.max(QUEST_MIN_STEP_XP, Math.round(dailyQuest.xp / dailyQuest.target)));
-    });
-
-    it('sai dos ativos no dia seguinte ao dia em que zerou', () => {
-        const quest = seed(dailyQuest.id, daysAgo(3), [daysAgo(3)]);
-        expect(getQuestNetProgress(quest)).toBe(0);
-        expect(isQuestExpired(quest)).toBe(true);
-        expect(getActiveQuests()).toEqual([]);
-        expect(activateQuest(quest.id).ok).toBe(true);
-        expect(toggleQuestProgress(quest.id).ok).toBe(true);
-        expect(getQuestNetProgress(quest)).toBe(1);
-    });
-
-    it('objetivo semanal também sai no dia seguinte ao zero, sem esperar outra semana', () => {
-        const quest = seed(weeklyQuest.id, daysAgo(14), [daysAgo(14)]);
-        expect(isQuestExpired(quest)).toBe(false);
-        const expired = seed(weeklyQuest.id, daysAgo(15), [daysAgo(15)]);
-        expect(isQuestExpired(expired)).toBe(true);
-    });
-
-    it('reativa personalizado expirado preservando título, alvo e histórico', () => {
-        const quest = seed('custom:retomar', daysAgo(30), [daysAgo(30)]);
-        Object.assign(quest, { customTitle: 'Praticar', customTarget: 10 });
-        expect(isQuestExpired(quest)).toBe(true);
-        expect(activateQuest(quest.id).ok).toBe(true);
-        expect(toggleQuestProgress(quest.id).ok).toBe(true);
-        expect(getQuestProgress(quest)).toBe(1);
-        expect(getQuestTarget(quest)).toBe(10);
-        expect(quest.days).toContain(daysAgo(30));
-        expect(state.quests).toHaveLength(1);
-    });
-
-    it('ativar um objetivo já ativo não reinicia o saldo', () => {
-        const quest = seed(dailyQuest.id, daysAgo(1), [daysAgo(1)]);
-        expect(activateQuest(quest.id).ok).toBe(true);
-        expect(quest.attemptFrom).toBeUndefined();
-        expect(getQuestProgress(quest)).toBe(1);
     });
 
     it('caducado não aceita mais avanço', () => {

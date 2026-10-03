@@ -10,7 +10,6 @@
 
 export const APP_EVENTS = {
     renderApp: 'render-app',
-    persistenceChanged: 'persistence-changed',
     habitsChanged: 'habitsChanged',
     dayChanged: 'dayChanged',
     languageChanged: 'language-changed',

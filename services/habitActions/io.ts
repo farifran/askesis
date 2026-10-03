@@ -8,13 +8,11 @@
  * @description Import/export de dados em formato JSON.
  */
 
-import { state, APP_VERSION, getPersistableState } from '../../state';
+import { getPersistableState } from '../../state';
 import { getTodayUTCIso, sanitizeText } from '../../utils';
 import { closeModal, showConfirmationModal } from '../../render';
 import { ui } from '../../render/ui';
-import { loadState, persistStateLocally } from '../persistence';
-import { migrateState } from '../migration';
-import { syncStateWithCloud } from '../cloud';
+import { saveState, loadState } from '../persistence';
 import { HabitService } from '../HabitService';
 import { sanitizeHabitIcon } from '../../data/icons';
 import { t } from '../../i18n';
@@ -45,18 +43,7 @@ export function importData() {
                     data.monthlyLogsSerialized.forEach(([k, v]: [string, string]) => { logsMap[k] = v; });
                     data.monthlyLogs = logsMap;
                 }
-                const imported = migrateState(data, APP_VERSION);
-                // Uma restauração explícita pertence à conta atual, mesmo quando
-                // o backup foi criado antes de seu último reset.
-                imported.accountGeneration = state.accountGeneration;
-                imported.lastModified = Math.max(Date.now(), state.lastModified + 1);
-                await persistStateLocally(imported);
-                await loadState(imported);
-                syncStateWithCloud(getPersistableState(), true);
-                emitRenderApp();
-                emitHabitsChanged();
-                closeModal(ui.manageModal);
-                showConfirmationModal(t('importSuccess'), () => {}, { title: t('privacyLabel'), confirmText: 'OK', hideCancel: true });
+                await loadState(data); await saveState(); emitRenderApp(); emitHabitsChanged(); closeModal(ui.manageModal); showConfirmationModal(t('importSuccess'), () => {}, { title: t('privacyLabel'), confirmText: 'OK', hideCancel: true });
             } else throw 0;
         } catch { showConfirmationModal(t('importError'), () => {}, { title: t('importError'), confirmText: 'OK', hideCancel: true, confirmButtonStyle: 'danger' }); }
     };
@@ -64,17 +51,30 @@ export function importData() {
 }
 
 export function exportData() {
-    // Backup integral: preserva histórico arquivado e lápides necessárias ao merge.
+    // Build a JSON-safe export payload that excludes deleted habits, archives and syncLogs,
+    // and includes monthly logs only for exported habits.
     const stateSnapshot = getPersistableState();
-    const logs = HabitService.serializeLogsForCloud();
+
+    // Filter out habits that were permanently deleted (have deletedOn)
+    const exportedHabits = (stateSnapshot.habits || []).filter(h => !h.deletedOn);
+    const exportedHabitIds = new Set(exportedHabits.map(h => h.id));
+
+    // Collect serialized logs and keep only those that belong to exported habits
+    const allLogs = HabitService.serializeLogsForCloud(); // [key, hex]
+    const filteredLogs: [string, string][] = allLogs.filter(([k]) => {
+        const parts = k.split('_'); // habit id may contain underscores
+        const suffix = parts.pop(); // YYYY-MM
+        if (!suffix || !/^[0-9]{4}-[0-9]{2}$/.test(String(suffix))) return false;
+        const habitId = parts.join('_');
+        return exportedHabitIds.has(habitId);
+    });
 
     const payload: any = {
         version: stateSnapshot.version,
         lastModified: stateSnapshot.lastModified,
-        accountGeneration: stateSnapshot.accountGeneration,
-        habits: stateSnapshot.habits,
+        habits: exportedHabits,
         dailyData: stateSnapshot.dailyData,
-        archives: stateSnapshot.archives,
+        // archives intentionally excluded to reduce backup size (policy decision)
         dailyDiagnoses: stateSnapshot.dailyDiagnoses,
         notificationsShown: stateSnapshot.notificationsShown,
         pending21DayHabitIds: stateSnapshot.pending21DayHabitIds,
@@ -89,7 +89,7 @@ export function exportData() {
         lastAIContextHash: stateSnapshot.lastAIContextHash
     };
 
-    payload.monthlyLogsSerialized = logs;
+    if (filteredLogs.length > 0) payload.monthlyLogsSerialized = filteredLogs;
 
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);

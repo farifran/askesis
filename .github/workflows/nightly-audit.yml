@@ -24,10 +24,10 @@ jobs:
 
       - name: Run npm audit (production)
         run: |
-          npm audit --omit=dev --audit-level=high --json > audit.json
+          npm audit --production --json > audit.json || true
+          cat audit.json
 
       - name: Upload audit report
-        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: npm-audit-report

@@ -1,6 +1,5 @@
 
 {
-  "storageSaveError": "No se pudo guardar en este dispositivo. Mantén la app abierta y libera espacio. Reintentaremos cuando vuelvas a la app.",
     "aiCelebration21Day": {
         "one": "### ¡Felicidades! 🎉\n\n¡Has mantenido el hábito **{habitNames}** durante 21 días consecutivos! Este es un hito crucial para hacer una acción automática. ¡Sigue con el buen trabajo!",
         "other": "### ¡Felicidades! 🎉\n\n¡Has mantenido los hábitos **{habitNames}** durante 21 días consecutivos! Este es un hito crucial para hacer una acción automática. ¡Sigue con el buen trabajo!"

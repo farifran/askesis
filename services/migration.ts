@@ -11,7 +11,7 @@
 
 import { logger, getTodayUTCIso, sanitizeText } from '../utils';
 import { AppState, SyncLog, QuestRecord } from '../state';
-import { normalizeSchedule } from './habitActions/normalization';
+import { normalizeHabitMode, normalizeTimesByMode, normalizeFrequencyByMode } from './habitActions';
 import { HabitService } from './HabitService';
 import { CUSTOM_QUEST_MAX_TITLE_LENGTH, CUSTOM_QUEST_MAX_TARGET, QUEST_NOTE_MAX_LENGTH } from '../constants';
 
@@ -89,23 +89,6 @@ function sanitizeQuestTarget(raw: unknown): number | undefined {
     return Math.min(CUSTOM_QUEST_MAX_TARGET, Math.max(1, Math.floor(raw)));
 }
 
-function sanitizeEditTimes(raw: unknown): Record<string, number> | undefined {
-    if (!raw || typeof raw !== 'object') return undefined;
-    const entries = Object.entries(raw).filter(([date, at]) => ISO_DATE.test(date) && typeof at === 'number' && Number.isSafeInteger(at) && at > 0);
-    return Object.fromEntries(entries) as Record<string, number>;
-}
-
-function sanitizeDayEdits(raw: unknown): QuestRecord['dayEdits'] {
-    if (!raw || typeof raw !== 'object') return undefined;
-    const result: NonNullable<QuestRecord['dayEdits']> = {};
-    for (const [date, edit] of Object.entries(raw)) {
-        if (!ISO_DATE.test(date) || !edit || typeof edit !== 'object') continue;
-        const { at, done } = edit;
-        if (Number.isSafeInteger(at) && at > 0 && typeof done === 'boolean') result[date] = { at, done };
-    }
-    return result;
-}
-
 function sanitizeQuests(raw: unknown): QuestRecord[] {
     if (!Array.isArray(raw)) return [];
 
@@ -126,9 +109,6 @@ function sanitizeQuests(raw: unknown): QuestRecord[] {
             id: quest.id,
             startedOn: typeof quest.startedOn === 'string' && ISO_DATE.test(quest.startedOn) ? quest.startedOn : getTodayUTCIso(),
             days,
-            dayEdits: sanitizeDayEdits(quest.dayEdits),
-            noteEdits: sanitizeEditTimes(quest.noteEdits),
-            lifecycleAt: Number.isSafeInteger(quest.lifecycleAt) && quest.lifecycleAt! > 0 ? quest.lifecycleAt : undefined,
             attemptFrom: typeof quest.attemptFrom === 'string' && ISO_DATE.test(quest.attemptFrom) ? quest.attemptFrom : undefined,
             notes: sanitizeQuestNotes(quest.notes),
             completedOn: typeof quest.completedOn === 'string' && ISO_DATE.test(quest.completedOn) ? quest.completedOn : undefined,
@@ -220,7 +200,28 @@ export function migrateState(loadedState: unknown, targetVersion: number): AppSt
         for (const habit of state.habits) {
             for (let i = 0; i < habit.scheduleHistory.length; i++) {
                 const schedule = habit.scheduleHistory[i];
-                normalizeSchedule(schedule);
+                const normalizedMode = normalizeHabitMode(schedule.mode);
+                const normalizedTimes = normalizeTimesByMode(normalizedMode, schedule.times);
+                const normalizedFrequency = normalizeFrequencyByMode(normalizedMode, schedule.frequency);
+                const hadModeChange = schedule.mode !== normalizedMode;
+                const hadTimesChange =
+                    normalizedTimes.length !== schedule.times.length
+                    || normalizedTimes.some((time, idx) => time !== schedule.times[idx]);
+                const hadFrequencyChange = JSON.stringify(normalizedFrequency) !== JSON.stringify(schedule.frequency);
+
+                if (hadModeChange) {
+                    Object.assign(habit.scheduleHistory[i], { mode: normalizedMode });
+                }
+
+                if (hadTimesChange) {
+                    logger.warn(`[Migration] Habit "${schedule.name}": normalized times for mode=${normalizedMode}`);
+                    Object.assign(habit.scheduleHistory[i], { times: normalizedTimes });
+                }
+
+                if (hadFrequencyChange) {
+                    logger.warn(`[Migration] Habit "${schedule.name}": normalized frequency for mode=${normalizedMode}`);
+                    Object.assign(habit.scheduleHistory[i], { frequency: normalizedFrequency });
+                }
             }
         }
     }

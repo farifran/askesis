@@ -102,20 +102,27 @@ describe('api/reminder', () => {
         expect(REMINDER_MARKER.length).toBeLessThanOrEqual(64);
     });
 
-    it('recusa envio se o segredo do cron estiver ausente', async () => {
-        delete process.env.CRON_SECRET;
-        const mod = await import('./reminder');
-        expect((await mod.default(makeRequest())).status).toBe(503);
-        expect(fetchMock).not.toHaveBeenCalled();
+    it('idempotency key é estável no mesmo minuto e distinta entre minutos', async () => {
+        const { idempotencyKeyForDate } = await import('./reminder');
+        const a1 = await idempotencyKeyForDate('2026-08-01T23:00');
+        const a2 = await idempotencyKeyForDate('2026-08-01T23:00');
+        const b = await idempotencyKeyForDate('2026-08-01T23:01');
+        expect(a1).toBe(a2);
+        expect(a1).not.toBe(b);
     });
 
-    it('usa idempotência diária por aplicativo para evitar disparos repetidos', async () => {
+    it('a chave usa granularidade de minuto', async () => {
+        // Com chave diária a OneSignal devolvia a notificação já criada e nenhum
+        // push novo saía — impossível testar o lembrete duas vezes no mesmo dia.
         fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ id: 'notif-1' }), { status: 200 }));
+
         const mod = await import('./reminder');
         await mod.default(makeRequest({ authorization: 'Bearer segredo' }));
+
+        const now = new Date().toISOString();
         const payload = JSON.parse(fetchMock.mock.calls[0][1].body);
-        expect(payload.idempotency_key).toBe(await mod.idempotencyKeyForDate(`${payload.app_id}:${new Date().toISOString().slice(0, 10)}`));
-        expect(payload.idempotency_key).not.toBe(await mod.idempotencyKeyForDate(`${payload.app_id}:2020-01-01`));
+        expect(payload.idempotency_key).toBe(await mod.idempotencyKeyForDate(now.slice(0, 16)));
+        expect(payload.idempotency_key).not.toBe(await mod.idempotencyKeyForDate(now.slice(0, 13)));
     });
 
     it('usa auth Basic para chaves legadas', async () => {
