@@ -44,7 +44,7 @@ describe('api/analyze quota cooldown', () => {
 
     expect(generateContentMock).toHaveBeenCalledTimes(1);
     const args = generateContentMock.mock.calls[0][0];
-    expect(args.model).toBe('gemma-4-31b-it');
+    expect(args.model).toBe('gemma-4-26b-a4b-it');
     expect(args.contents).toContain('[INSTRUÇÕES DO SISTEMA / SÁBIO ESTOICO]:\ns');
     expect(args.contents).toContain('[DADOS DO USUÁRIO]:\np');
     expect(args.config).not.toHaveProperty('systemInstruction');
