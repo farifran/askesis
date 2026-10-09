@@ -41,10 +41,10 @@ function getCorsHeaders(req: Request): Record<string, string> {
 
 // ROBUSTNESS: Support both standard naming conventions
 const API_KEY = process.env.API_KEY || process.env.GEMINI_API_KEY;
-// Gemma 4 31B (Instruction Tuned): cota massiva de 14.400 RPD no Google AI Studio,
-// 256K de contexto, suporte a JSON Schema e determinismo via systemInstruction.
+// Gemma 4 26B A4B (MoE Instruction Tuned): cota de 14.400 RPD no Google AI Studio,
+// 256K de contexto, arquitetura Mixture-of-Experts (4B ativos) de alta velocidade e sem instabilidade.
 // Permite override via variável de ambiente (AI_MODEL_NAME ou GEMINI_MODEL).
-const MODEL_NAME = process.env.AI_MODEL_NAME || process.env.GEMINI_MODEL || 'gemma-4-31b-it';
+const MODEL_NAME = process.env.AI_MODEL_NAME || process.env.GEMINI_MODEL || 'gemma-4-26b-a4b-it';
 
 let aiClient: GoogleGenAI | null = null;
 let aiQuotaCooldownUntil = 0;
