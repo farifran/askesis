@@ -45,11 +45,10 @@
   "dependencies": {
     "@google/genai": "^1.40.0",
     "@upstash/redis": "^1.36.2",
-    "dompurify": "^3.4.16"
+    "dompurify": "^3.3.3"
   },
   "overrides": {
-    "serialize-javascript": ">=7.0.3",
-    "brace-expansion": ">=2.1.7"
+    "serialize-javascript": ">=7.0.3"
   },
   "devDependencies": {
     "@types/node": "^24.12.2",
