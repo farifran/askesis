@@ -34,9 +34,24 @@ describe('api/analyze quota cooldown', () => {
     process.env.AI_QUOTA_COOLDOWN_MS = '120000';
   });
 
-  it('chama o modelo esperado sem parâmetros de amostragem depreciados e adapta prompt para Gemma', async () => {
-    // temperature/top_p/top_k são desaconselhados em toda a família Gemini 3.x e Gemma
-    // Para modelos Gemma, systemInstruction é injetada no conteúdo para evitar HTTP 500 do backend do Google.
+  it('chama o modelo padrão gemini-3.5-flash-lite sem parâmetros depreciados e com config nativo', async () => {
+    generateContentMock.mockResolvedValueOnce({ text: '{"ok":true}' });
+
+    const mod = await import('./analyze');
+    await mod.default(makeAnalyzeRequest('p', 's'));
+
+    expect(generateContentMock).toHaveBeenCalledTimes(1);
+    const args = generateContentMock.mock.calls[0][0];
+    expect(args.model).toBe('gemini-3.5-flash-lite');
+    expect(args.contents).toBe('p');
+    expect(args.config.systemInstruction).toBe('s');
+    expect(args.config).not.toHaveProperty('temperature');
+    expect(args.config).not.toHaveProperty('topP');
+    expect(args.config).not.toHaveProperty('topK');
+  });
+
+  it('adapta prompt injetando systemInstruction quando configurado com modelo Gemma', async () => {
+    process.env.AI_MODEL_NAME = 'gemma-4-26b-a4b-it';
     generateContentMock.mockResolvedValueOnce({ text: '{"ok":true}' });
 
     const mod = await import('./analyze');
@@ -48,23 +63,6 @@ describe('api/analyze quota cooldown', () => {
     expect(args.contents).toContain('[INSTRUÇÕES DO SISTEMA / SÁBIO ESTOICO]:\ns');
     expect(args.contents).toContain('[DADOS DO USUÁRIO]:\np');
     expect(args.config).not.toHaveProperty('systemInstruction');
-    expect(args.config).not.toHaveProperty('temperature');
-    expect(args.config).not.toHaveProperty('topP');
-    expect(args.config).not.toHaveProperty('topK');
-  });
-
-  it('usa systemInstruction nativo no config quando o modelo é Gemini', async () => {
-    process.env.AI_MODEL_NAME = 'gemini-3.5-flash-lite';
-    generateContentMock.mockResolvedValueOnce({ text: '{"ok":true}' });
-
-    const mod = await import('./analyze');
-    await mod.default(makeAnalyzeRequest('p', 's'));
-
-    expect(generateContentMock).toHaveBeenCalledTimes(1);
-    const args = generateContentMock.mock.calls[0][0];
-    expect(args.model).toBe('gemini-3.5-flash-lite');
-    expect(args.contents).toBe('p');
-    expect(args.config.systemInstruction).toBe('s');
   });
 
   it('ativa saída estruturada quando o cliente envia responseSchema', async () => {
