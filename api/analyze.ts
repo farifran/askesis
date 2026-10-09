@@ -41,10 +41,10 @@ function getCorsHeaders(req: Request): Record<string, string> {
 
 // ROBUSTNESS: Support both standard naming conventions
 const API_KEY = process.env.API_KEY || process.env.GEMINI_API_KEY;
-// Gemini 3.5 Flash-Lite: GA, menor latência e custo da família 3.5 — dimensionado
-// para esta carga (prompt curto, resposta JSON pequena, poucas chamadas por dia).
-// MODEL_NAME entra na chave de cache: trocar o modelo invalida respostas antigas.
-const MODEL_NAME = 'gemini-3.5-flash-lite';
+// Gemma 4 31B (Instruction Tuned): cota massiva de 14.400 RPD no Google AI Studio,
+// 256K de contexto, suporte a JSON Schema e determinismo via systemInstruction.
+// Permite override via variável de ambiente (AI_MODEL_NAME ou GEMINI_MODEL).
+const MODEL_NAME = process.env.AI_MODEL_NAME || process.env.GEMINI_MODEL || 'gemma-4-31b-it';
 
 let aiClient: GoogleGenAI | null = null;
 let aiQuotaCooldownUntil = 0;

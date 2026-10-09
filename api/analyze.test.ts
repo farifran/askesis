@@ -45,7 +45,7 @@ describe('api/analyze quota cooldown', () => {
 
     expect(generateContentMock).toHaveBeenCalledTimes(1);
     const args = generateContentMock.mock.calls[0][0];
-    expect(args.model).toBe('gemini-3.5-flash-lite');
+    expect(args.model).toBe('gemma-4-31b-it');
     expect(args.config.systemInstruction).toBe('s');
     expect(args.config).not.toHaveProperty('temperature');
     expect(args.config).not.toHaveProperty('topP');
