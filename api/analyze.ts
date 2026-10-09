@@ -202,17 +202,38 @@ export default async function handler(req: Request) {
             }, 30000);
         });
 
+        const isGemma = MODEL_NAME.toLowerCase().startsWith('gemma');
+
+        // COMPATIBILIDADE GEMMA: Modelos Gemma não possuem role 'system' nativo em seu tokenizer.
+        // Enviar systemInstruction no config do @google/genai gera HTTP 500 Internal Error no backend do Google.
+        // Para a família Gemma, injetamos a instrução do sábio estoico no topo do conteúdo.
+        const effectiveContents = isGemma && systemInstruction
+            ? `[INSTRUÇÕES DO SISTEMA / SÁBIO ESTOICO]:\n${systemInstruction}\n\n[DADOS DO USUÁRIO]:\n${prompt}`
+            : prompt;
+
+        const genConfig: Record<string, unknown> = {};
+        if (!isGemma && systemInstruction) {
+            genConfig.systemInstruction = systemInstruction;
+        }
+        if (useSchema) {
+            genConfig.responseMimeType = 'application/json';
+            if (isGemma) {
+                // Remove propriedades proprietárias do Gemini (ex: propertyOrdering) que podem quebrar o validador de Gemma
+                const cleanSchema = JSON.parse(JSON.stringify(responseSchema, (key, value) => {
+                    if (key === 'propertyOrdering') return undefined;
+                    return value;
+                }));
+                genConfig.responseSchema = cleanSchema;
+            } else {
+                genConfig.responseSchema = responseSchema;
+            }
+        }
+
         const geminiResponse = await Promise.race([
             aiClient.models.generateContent({
                 model: MODEL_NAME,
-                contents: prompt,
-                // Sem temperature/top_p/top_k: desaconselhados em toda a família
-                // Gemini 3.x, onde interferem na otimização de raciocínio. O
-                // determinismo vem da systemInstruction, que já impõe pontuação
-                // rigorosa e resposta exclusivamente em JSON.
-                config: useSchema
-                    ? { systemInstruction, responseMimeType: 'application/json', responseSchema }
-                    : { systemInstruction },
+                contents: effectiveContents,
+                config: genConfig,
             }),
             timeoutPromise
         ]);

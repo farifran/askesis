@@ -34,10 +34,9 @@ describe('api/analyze quota cooldown', () => {
     process.env.AI_QUOTA_COOLDOWN_MS = '120000';
   });
 
-  it('chama o modelo esperado sem parâmetros de amostragem depreciados', async () => {
-    // temperature/top_p/top_k são desaconselhados em toda a família Gemini 3.x
-    // (interferem na otimização de raciocínio). O determinismo vem da
-    // systemInstruction. Este teste impede que voltem por descuido.
+  it('chama o modelo esperado sem parâmetros de amostragem depreciados e adapta prompt para Gemma', async () => {
+    // temperature/top_p/top_k são desaconselhados em toda a família Gemini 3.x e Gemma
+    // Para modelos Gemma, systemInstruction é injetada no conteúdo para evitar HTTP 500 do backend do Google.
     generateContentMock.mockResolvedValueOnce({ text: '{"ok":true}' });
 
     const mod = await import('./analyze');
@@ -46,10 +45,26 @@ describe('api/analyze quota cooldown', () => {
     expect(generateContentMock).toHaveBeenCalledTimes(1);
     const args = generateContentMock.mock.calls[0][0];
     expect(args.model).toBe('gemma-4-31b-it');
-    expect(args.config.systemInstruction).toBe('s');
+    expect(args.contents).toContain('[INSTRUÇÕES DO SISTEMA / SÁBIO ESTOICO]:\ns');
+    expect(args.contents).toContain('[DADOS DO USUÁRIO]:\np');
+    expect(args.config).not.toHaveProperty('systemInstruction');
     expect(args.config).not.toHaveProperty('temperature');
     expect(args.config).not.toHaveProperty('topP');
     expect(args.config).not.toHaveProperty('topK');
+  });
+
+  it('usa systemInstruction nativo no config quando o modelo é Gemini', async () => {
+    process.env.AI_MODEL_NAME = 'gemini-3.5-flash-lite';
+    generateContentMock.mockResolvedValueOnce({ text: '{"ok":true}' });
+
+    const mod = await import('./analyze');
+    await mod.default(makeAnalyzeRequest('p', 's'));
+
+    expect(generateContentMock).toHaveBeenCalledTimes(1);
+    const args = generateContentMock.mock.calls[0][0];
+    expect(args.model).toBe('gemini-3.5-flash-lite');
+    expect(args.contents).toBe('p');
+    expect(args.config.systemInstruction).toBe('s');
   });
 
   it('ativa saída estruturada quando o cliente envia responseSchema', async () => {
