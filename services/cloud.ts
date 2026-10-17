@@ -170,7 +170,9 @@ function statesEquivalentForSync(a: AppState, b: AppState): boolean {
     return true;
 }
 
-// PERF: Carrega hashes do localStorage para evitar re-upload no boot (Cold Start Optimization)
+// PERF: Carrega hashes do localStorage para evitar re-upload e re-decriptação PBKDF2 no boot
+const CIPHER_HASH_STORAGE_KEY = 'askesis_sync_cipher_hashes';
+
 const lastSyncedHashes: Map<string, string> = (() => {
     try {
         const raw = cache.read(HASH_STORAGE_KEY);
@@ -181,26 +183,43 @@ const lastSyncedHashes: Map<string, string> = (() => {
     return new Map();
 })();
 
+const lastSyncedCipherHashes: Map<string, string> = (() => {
+    try {
+        const raw = cache.read(CIPHER_HASH_STORAGE_KEY);
+        if (raw) return new Map(JSON.parse(raw));
+    } catch (e) {
+        logger.warn("[Sync] Falha ao carregar cache de cipher hashes", e);
+    }
+    return new Map();
+})();
+
 // Normaliza tamanho do cache após o load (evita crescimento indefinido no boot)
 pruneHashCache();
 
 function persistHashCache() {
     pruneHashCache();
     cache.write(HASH_STORAGE_KEY, JSON.stringify(Array.from(lastSyncedHashes.entries())));
+    cache.write(CIPHER_HASH_STORAGE_KEY, JSON.stringify(Array.from(lastSyncedCipherHashes.entries())));
 }
 
 function pruneHashCache() {
-    if (lastSyncedHashes.size <= CLOUD_HASH_CACHE_MAX_ENTRIES) return;
     while (lastSyncedHashes.size > CLOUD_HASH_CACHE_MAX_ENTRIES) {
         const firstKey = lastSyncedHashes.keys().next().value;
         if (firstKey === undefined) break;
         lastSyncedHashes.delete(firstKey);
     }
+    while (lastSyncedCipherHashes.size > CLOUD_HASH_CACHE_MAX_ENTRIES) {
+        const firstKey = lastSyncedCipherHashes.keys().next().value;
+        if (firstKey === undefined) break;
+        lastSyncedCipherHashes.delete(firstKey);
+    }
 }
 
 export function clearSyncHashCache() {
     lastSyncedHashes.clear();
+    lastSyncedCipherHashes.clear();
     localStorage.removeItem(HASH_STORAGE_KEY);
+    localStorage.removeItem(CIPHER_HASH_STORAGE_KEY);
     logger.info("[Sync] Hash cache cleared.");
 }
 
@@ -249,15 +268,13 @@ function enqueueSyncState(appState: AppState, options?: { prioritize?: boolean }
         return;
     }
 
-    const lastQueued = pendingSyncQueue[pendingSyncQueue.length - 1];
-    if (!lastQueued) {
+    if (pendingSyncQueue.length === 0) {
         pendingSyncQueue.push(snapshot);
         return;
     }
 
-    if (statesEquivalentForSync(lastQueued, snapshot)) return;
-
-    // Snapshots são estados completos; manter só o mais recente pendente evita perder mudanças locais.
+    // Snapshots são estados completos; manter só o mais recente pendente evita perder mudanças locais
+    // sem re-serializar todos os shards na thread principal a cada clique.
     pendingSyncQueue[pendingSyncQueue.length - 1] = snapshot;
 }
 
@@ -294,13 +311,33 @@ export function setSyncStatus(statusKey: 'syncSaving' | 'syncSynced' | 'syncErro
 async function decryptServerShards(
     shards: EncryptedShardMap,
     syncKey: string,
-    options: { updateHashCache: boolean }
+    options: { updateHashCache: boolean; localShards?: Record<string, any> }
 ): Promise<Record<string, any>> {
     const decrypted: Record<string, any> = {};
     let coreDecryptFailed = false;
     for (const key in shards) {
         if (key === 'lastModified' || key === 'resetAt') continue;
         try {
+            const cipherText = shards[key];
+            const cipherHash = typeof cipherText === 'string' ? murmurHash3(cipherText) : '';
+
+            // FAST PATH: Se o ciphertext remoto deste shard não mudou desde o último sync
+            // e o nosso shard local correspondente mantém o mesmo hash de conteúdo, evita
+            // rodar 600.000 iterações PBKDF2 + gunzip no Web Worker para shards históricos.
+            if (
+                options.localShards &&
+                key in options.localShards &&
+                cipherHash &&
+                lastSyncedCipherHashes.get(key) === cipherHash
+            ) {
+                const localVal = options.localShards[key];
+                const localContentHash = murmurHash3(JSON.stringify(localVal));
+                if (lastSyncedHashes.get(key) === localContentHash) {
+                    decrypted[key] = structuredClone(localVal);
+                    continue;
+                }
+            }
+
             if (options.updateHashCache) {
                 try {
                     const res = await runWorkerTask<WorkerDecryptWithHashResult>('decrypt-with-hash', shards[key], syncKey);
@@ -309,12 +346,14 @@ async function decryptServerShards(
                     }
                     decrypted[key] = res.value;
                     if (typeof res.hash === 'string') lastSyncedHashes.set(key, res.hash);
+                    if (cipherHash) lastSyncedCipherHashes.set(key, cipherHash);
                 } catch {
                     // Backward-compat / test mocks: fall back to plain decrypt.
                     const value = await runWorkerTask<any>('decrypt', shards[key], syncKey);
                     decrypted[key] = value;
                     try {
                         lastSyncedHashes.set(key, murmurHash3(JSON.stringify(value)));
+                        if (cipherHash) lastSyncedCipherHashes.set(key, cipherHash);
                     } catch {}
                 }
             } else {
@@ -468,6 +507,7 @@ async function performSync() {
         const encryptedShards: Record<string, string> = {};
         
         const pendingHashUpdates = new Map<string, string>();
+        const pendingCipherHashUpdates = new Map<string, string>();
         let changeCount = 0;
 
         const encryptStart = performance.now();
@@ -481,6 +521,9 @@ async function performSync() {
                 const encrypted = await runWorkerTask<string>('encrypt-json', json, syncKey);
                 encryptedShards[shardName] = encrypted;
                 pendingHashUpdates.set(shardName, currentHash);
+                if (typeof encrypted === 'string') {
+                    pendingCipherHashUpdates.set(shardName, murmurHash3(encrypted));
+                }
                 changeCount++;
             }
         }
@@ -528,6 +571,7 @@ async function performSync() {
             setSyncStatus('syncSynced');
             setStoredRemoteStateEtag(null);
             pendingHashUpdates.forEach((hash, shard) => lastSyncedHashes.set(shard, hash));
+            pendingCipherHashUpdates.forEach((cipherHash, shard) => lastSyncedCipherHashes.set(shard, cipherHash));
             persistHashCache();
             emitHabitsChanged();
         } else {
@@ -659,11 +703,11 @@ export async function pullRemoteChanges(): Promise<void> {
     await fetchStateFromCloud();
 }
 
-async function reconstructStateFromShards(shards: SyncServerShards): Promise<AppState | undefined> {
+async function reconstructStateFromShards(shards: SyncServerShards, localShards?: Record<string, any>): Promise<AppState | undefined> {
     const syncKey = getSyncKey();
     if (!syncKey) return undefined;
     try {
-        const decryptedShards = await decryptServerShards(shards, syncKey, { updateHashCache: true });
+        const decryptedShards = await decryptServerShards(shards, syncKey, { updateHashCache: true, localShards });
         persistHashCache();
         return buildAppStateFromDecryptedShards(decryptedShards, shards.lastModified);
     } catch (e) {
@@ -703,7 +747,7 @@ export async function downloadRemoteState(): Promise<AppState | undefined> {
     if (result.status === 'empty') { addSyncLog("Cofre vazio na nuvem.", "info"); return undefined; }
 
     addSyncLog("Dados baixados com sucesso.", "success");
-    return await reconstructStateFromShards(result.shards);
+    return await reconstructStateFromShards(result.shards, splitIntoShards(getPersistableState()));
 }
 
 export async function fetchStateFromCloud(): Promise<AppState | undefined> {
@@ -721,7 +765,8 @@ export async function fetchStateFromCloud(): Promise<AppState | undefined> {
         if (result.status === 'not-modified') { setSyncStatus('syncSynced'); return undefined; }
         if (result.status === 'empty') return undefined;
 
-        const remoteState = await reconstructStateFromShards(result.shards);
+        const currentLocalShards = splitIntoShards(getPersistableState());
+        const remoteState = await reconstructStateFromShards(result.shards, currentLocalShards);
         if (!remoteState) return undefined;
 
         // Conta reiniciada em outro aparelho: este ainda tem a base antiga, e o

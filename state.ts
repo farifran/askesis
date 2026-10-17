@@ -423,9 +423,9 @@ export function invalidateCachesForDateChange(dateISO: string) {
     // até um reload — visível ao editar/desmarcar um dia passado.
     dropDateKeys(state.streaksCache, (key) => key >= dateISO);
     // Aparência e agenda dependem apenas da própria data (frequência e
-    // scheduleHistory), nunca do status registrado — invalidação pontual basta.
-    dropDateKeys(state.habitAppearanceCache, (key) => key === dateISO);
-    dropDateKeys(state.scheduleCache, (key) => key === dateISO);
+    // scheduleHistory), nunca do status registrado — invalidação pontual O(1) por hábito basta.
+    state.habitAppearanceCache.forEach(dateMap => dateMap.delete(dateISO));
+    state.scheduleCache.forEach(dateMap => dateMap.delete(dateISO));
 }
 
 export function getHabitDailyInfoForDate(dateISO: string): Record<string, HabitDailyInfo> {

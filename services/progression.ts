@@ -112,6 +112,7 @@ interface HabitTally {
     done: number;
     overachieved: number;
     deferred: number;
+    firstEarnedMonth?: string;
 }
 
 /**
@@ -143,12 +144,28 @@ function tallyByHabit(): Map<string, HabitTally> {
         if (!tally) byHabit.set(habitId, tally = { done: 0, overachieved: 0, deferred: 0 });
 
         let remaining = log;
+        let earnedInMonth = false;
         while (remaining > 0n) {
             const block = remaining & 7n;
-            if (block === 1n) tally.done++;
-            else if (block === 3n) tally.overachieved++;
-            else if (block === 2n) tally.deferred++;
+            if (block === 1n) {
+                tally.done++;
+                earnedInMonth = true;
+            } else if (block === 3n) {
+                tally.overachieved++;
+                earnedInMonth = true;
+            } else if (block === 2n) {
+                tally.deferred++;
+            }
             remaining >>= 3n;
+        }
+
+        // Logs que só guardam adiamentos ou lápides nunca produziram saldo. Ignorá-
+        // los evita varrer anos de calendário por uma marcação desfeita.
+        if (earnedInMonth && cut > 0) {
+            const monthStart = `${key.slice(cut + 1)}-01`;
+            if (!tally.firstEarnedMonth || monthStart < tally.firstEarnedMonth) {
+                tally.firstEarnedMonth = monthStart;
+            }
         }
     }
 
@@ -159,6 +176,53 @@ function tallyByHabit(): Map<string, HabitTally> {
 function tallyXp(tally: HabitTally): number {
     return tally.done * XP_PER_COMPLETION
         + tally.overachieved * (XP_PER_COMPLETION + XP_PER_OVERACHIEVEMENT);
+}
+
+const EMPTY_TIMES: readonly (typeof TIMES_OF_DAY)[number][] = [];
+
+/**
+ * Resolve os períodos agendados de um hábito numa data fechada sem alocar closures
+ * nem poluir `habitAppearanceCache` / `scheduleCache` com milhares de datas históricas
+ * visitadas apenas uma vez durante a varredura linear de XP.
+ */
+function scheduledTimesForXp(
+    habit: (typeof state.habits)[number],
+    dateISO: string,
+    cursor: Date
+): readonly (typeof TIMES_OF_DAY)[number][] {
+    if ((habit.deletedOn && dateISO >= habit.deletedOn) || habit.graduatedOn) return EMPTY_TIMES;
+
+    const history = habit.scheduleHistory;
+    if (!Array.isArray(history) || history.length === 0) return EMPTY_TIMES;
+
+    let schedule: (typeof history)[number] | null = null;
+    for (let i = history.length - 1; i >= 0; i--) {
+        const s = history[i];
+        if (dateISO >= s.startDate) {
+            if (!s.endDate || dateISO < s.endDate) schedule = s;
+            break;
+        }
+    }
+    if (!schedule) return EMPTY_TIMES;
+
+    const { frequency } = schedule;
+    let appears = false;
+    if (frequency.type === 'daily') {
+        appears = true;
+    } else if (frequency.type === 'specific_days_of_week') {
+        appears = frequency.days.includes(cursor.getUTCDay());
+    } else if (frequency.type === 'interval') {
+        const anchorMs = dayEpoch(schedule.scheduleAnchor || schedule.startDate);
+        const diffDays = Math.round((cursor.getTime() - anchorMs) / MS_PER_DAY);
+        if (diffDays >= 0) {
+            appears = frequency.unit === 'days'
+                ? diffDays % frequency.amount === 0
+                : cursor.getUTCDay() === new Date(anchorMs).getUTCDay() && Math.floor(diffDays / 7) % frequency.amount === 0;
+        }
+    }
+
+    if (!appears) return EMPTY_TIMES;
+    return state.dailyData[dateISO]?.[habit.id]?.dailySchedule ?? schedule.times ?? EMPTY_TIMES;
 }
 
 /**
@@ -174,31 +238,8 @@ function habitXp(): number {
     if (byHabit.size === 0) return 0;
 
     const today = getTodayUTCIso();
+    const todayYm = today.slice(0, 7);
     const habits = new Map(state.habits.map(habit => [habit.id, habit]));
-    const firstEarnedMonth = new Map<string, string>();
-
-    // Logs que só guardam adiamentos ou lápides nunca produziram saldo. Ignorá-
-    // los evita varrer anos de calendário por uma marcação desfeita.
-    for (const [key, log] of state.monthlyLogs ?? []) {
-        const cut = key.lastIndexOf('_');
-        if (cut < 1) continue;
-        let value = log;
-        let earned = false;
-        while (value > 0n) {
-            const block = value & 7n;
-            if (block === 1n || block === 3n) {
-                earned = true;
-                break;
-            }
-            value >>= 3n;
-        }
-        if (!earned) continue;
-        const id = key.slice(0, cut);
-        const month = `${key.slice(cut + 1)}-01`;
-        if (!firstEarnedMonth.has(id) || month < firstEarnedMonth.get(id)!) {
-            firstEarnedMonth.set(id, month);
-        }
-    }
 
     let total = 0;
     for (const [id, tally] of byHabit) {
@@ -208,25 +249,55 @@ function habitXp(): number {
             continue;
         }
 
-        const start = firstEarnedMonth.get(id);
+        const start = tally.firstEarnedMonth;
         if (!start || start > today) continue;
 
         let balance = 0;
         const cursor = parseUTCIsoDate(start);
+        let currentYm = '';
+        let monthLog = 0n;
+
         for (let date = start; date <= today;) {
-            const scheduled = date < today && shouldHabitAppearOnDate(habit, date, cursor)
-                ? state.dailyData[date]?.[id]?.dailySchedule ?? getScheduleForDate(habit, date)?.times ?? []
-                : [];
-            for (const time of TIMES_OF_DAY) {
-                const status = HabitService.getStatus(id, date, time);
-                if (status === HABIT_STATE.DONE) balance += XP_PER_COMPLETION;
-                else if (status === HABIT_STATE.DONE_PLUS) balance += XP_PER_COMPLETION + XP_PER_OVERACHIEVEMENT;
-                else if (status === HABIT_STATE.NULL && scheduled.includes(time)) {
-                    // O período vazio só pode consumir o saldo que já existia
-                    // antes dele; nunca o ganho de uma noite que ainda virá.
-                    balance = Math.max(0, balance - XP_PER_COMPLETION);
+            const ym = date.slice(0, 7);
+            if (ym !== currentYm) {
+                currentYm = ym;
+                monthLog = state.monthlyLogs?.get(`${id}_${ym}`) ?? 0n;
+                // Mês inteiro sem nenhuma marcação e sem saldo acumulado a perder:
+                // salta direto para o 1º dia do mês seguinte sem varrer dia a dia.
+                if (monthLog === 0n && balance === 0 && ym < todayYm) {
+                    cursor.setUTCMonth(cursor.getUTCMonth() + 1, 1);
+                    date = toUTCIsoDateString(cursor);
+                    continue;
                 }
             }
+
+            const dayIndex = cursor.getUTCDate() - 1;
+            const dayBits = Number((monthLog >> BigInt(dayIndex * 9)) & 511n);
+
+            // Se o dia está zerado no bitmask e o saldo já é zero, nenhuma falta
+            // pode reduzir abaixo de zero — evita consultar agenda/seletores à toa.
+            if (dayBits !== 0 || balance > 0) {
+                let scheduled: readonly (typeof TIMES_OF_DAY)[number][] | undefined;
+                for (let p = 0; p < TIMES_OF_DAY.length; p++) {
+                    const block = (dayBits >> (p * 3)) & 7;
+                    const status = (block & 4) ? 0 : (block & 3);
+                    if (status === HABIT_STATE.DONE) balance += XP_PER_COMPLETION;
+                    else if (status === HABIT_STATE.DONE_PLUS) balance += XP_PER_COMPLETION + XP_PER_OVERACHIEVEMENT;
+                    else if (status === HABIT_STATE.NULL && balance > 0 && date < today) {
+                        // A agenda só importa quando há saldo positivo e período vazio
+                        // em dia já fechado (antes de hoje).
+                        if (scheduled === undefined) {
+                            scheduled = scheduledTimesForXp(habit, date, cursor);
+                        }
+                        if (scheduled.includes(TIMES_OF_DAY[p])) {
+                            // O período vazio só pode consumir o saldo que já existia
+                            // antes dele; nunca o ganho de uma noite que ainda virá.
+                            balance = Math.max(0, balance - XP_PER_COMPLETION);
+                        }
+                    }
+                }
+            }
+
             cursor.setUTCDate(cursor.getUTCDate() + 1);
             date = toUTCIsoDateString(cursor);
         }

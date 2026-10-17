@@ -9,8 +9,8 @@ import { t } from '../i18n';
 import { HabitService } from './HabitService';
 
 const _anchorDateCache = new Map<string, Date>();
-const MAX_ANCHOR_CACHE_SIZE = 365;
-const MAX_CACHE_SIZE = 750; 
+const MAX_ANCHOR_CACHE_SIZE = 2048;
+const MAX_CACHE_SIZE = 4096;
 
 function _getMemoizedDate(dateISO: string): Date {
     let date = _anchorDateCache.get(dateISO);

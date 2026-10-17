@@ -82,9 +82,10 @@ export function _notifyPartialUIRefresh(date: string, immediate = false) {
     invalidateCachesForDateChange(date);
 
     bumpLastModified();
-    // immediate=true no toggle de status: a 1ª marcação pós-install não pode
-    // depender só do debounce de 800ms (fechar o app cancela o timer).
-    saveState(immediate);
+    // immediate=true no toggle de status: grava imediatamente no IndexedDB local
+    // (evita perder a 1ª marcação se o app for fechado cedo), mas mantém o envio
+    // para a nuvem debounced (2s) para coalescer cliques rápidos (ex.: DONE -> DEFERRED).
+    saveState(immediate, false, false);
 
     requestAnimationFrame(() => {
         updateDayVisuals(date);

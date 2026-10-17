@@ -205,7 +205,7 @@ function pruneOrphanedDailyData(habits: readonly Habit[], dailyData: Record<stri
     }
 }
 
-async function saveStateInternal(immediate = false, suppressSync = false) {
+async function saveStateInternal(immediate = false, suppressSync = false, immediateSync = immediate) {
     if (activeSavePromise) await activeSavePromise;
 
     activeSavePromise = (async () => {
@@ -222,7 +222,7 @@ async function saveStateInternal(immediate = false, suppressSync = false) {
         }
         
         if (!suppressSync) {
-            syncHandler?.(structuredData, immediate);
+            syncHandler?.(structuredData, immediateSync);
         }
     })();
 
@@ -286,7 +286,7 @@ export function setupPersistenceLifecycleFlush(): void {
     window.addEventListener('freeze', onHide as EventListener);
 }
 
-export async function saveState(immediate = false, suppressSync = false): Promise<void> {
+export async function saveState(immediate = false, suppressSync = false, immediateSync = immediate): Promise<void> {
     if (saveTimeout !== undefined) {
         clearTimeout(saveTimeout);
         saveTimeout = undefined;
@@ -295,7 +295,7 @@ export async function saveState(immediate = false, suppressSync = false): Promis
     if (immediate) {
         const resolve = pendingSaveResolve;
         pendingSaveResolve = null;
-        await saveStateInternal(true, suppressSync);
+        await saveStateInternal(true, suppressSync, immediateSync);
         resolve?.();
     } else {
         return new Promise((resolve) => {
@@ -309,7 +309,7 @@ export async function saveState(immediate = false, suppressSync = false): Promis
                 saveTimeout = undefined;
                 const currentResolve = pendingSaveResolve;
                 pendingSaveResolve = null;
-                await saveStateInternal(false, suppressSync);
+                await saveStateInternal(false, suppressSync, false);
                 currentResolve?.();
             }, IDB_SAVE_DEBOUNCE_MS);
         });

@@ -118,6 +118,10 @@ export function updateReelRotaryARIA(viewportEl: HTMLElement, currentIndex: numb
     viewportEl.setAttribute('tabindex', '0');
 }
 
+const MAX_DOM_TEMPLATE_CACHE_SIZE = 256;
+const _trustedSvgCache = new Map<string, Element>();
+const _sanitizedFragmentCache = new Map<string, HTMLTemplateElement>();
+
 /**
  * Renderiza SVG confiavel sem usar innerHTML no elemento de destino.
  */
@@ -134,14 +138,19 @@ export function setTrustedSvgContent(element: Element | null, svgOrText: string)
     }
 
     try {
-        const parsed = new DOMParser().parseFromString(svgOrText, 'image/svg+xml');
-        const svg = parsed.documentElement;
-        if (svg.nodeName.toLowerCase() !== 'svg') {
-            element.textContent = svgOrText;
-            return;
+        let cachedSvg = _trustedSvgCache.get(svgOrText);
+        if (!cachedSvg) {
+            const parsed = new DOMParser().parseFromString(svgOrText, 'image/svg+xml');
+            const svg = parsed.documentElement;
+            if (svg.nodeName.toLowerCase() !== 'svg') {
+                element.textContent = svgOrText;
+                return;
+            }
+            if (_trustedSvgCache.size >= MAX_DOM_TEMPLATE_CACHE_SIZE) _trustedSvgCache.clear();
+            cachedSvg = document.importNode(svg, true);
+            _trustedSvgCache.set(svgOrText, cachedSvg);
         }
-        const imported = document.importNode(svg, true);
-        element.replaceChildren(imported);
+        element.replaceChildren(cachedSvg.cloneNode(true));
     } catch {
         element.textContent = svgOrText;
     }
@@ -174,10 +183,16 @@ export function setTrustedHtmlFragment(target: HTMLElement | null, html: string)
  * Bloqueia: script, iframe, object, embed, link, meta, style, handlers on*, javascript: hrefs.
  */
 export function sanitizeHtmlToFragment(html: string): DocumentFragment {
-    const template = document.createElement('template');
-    template.innerHTML = sanitize(html);
-    // Segunda varredura obrigatória: o parse acima reinterpreta a string devolvida
-    // por sanitize(), e é justamente nesse round-trip que o mXSS se manifesta.
-    stripDangerousAttributes(template.content);
-    return template.content;
+    let cachedTemplate = _sanitizedFragmentCache.get(html);
+    if (!cachedTemplate) {
+        const template = document.createElement('template');
+        template.innerHTML = sanitize(html);
+        // Segunda varredura obrigatória: o parse acima reinterpreta a string devolvida
+        // por sanitize(), e é justamente nesse round-trip que o mXSS se manifesta.
+        stripDangerousAttributes(template.content);
+        if (_sanitizedFragmentCache.size >= MAX_DOM_TEMPLATE_CACHE_SIZE) _sanitizedFragmentCache.clear();
+        _sanitizedFragmentCache.set(html, template);
+        cachedTemplate = template;
+    }
+    return cachedTemplate.content.cloneNode(true) as DocumentFragment;
 }

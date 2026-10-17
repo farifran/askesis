@@ -88,6 +88,8 @@ const _handleServiceWorkerMessage = (event: MessageEvent) => {
 
 const _handleCardUpdate = (e: Event) => {
     const { habitId, time, date } = (e as CustomEvent).detail;
+    const targetDate = date || state.selectedDate;
+    invalidateCachesForDateChange(targetDate);
     const habit = state.habits.find(h => h.id === habitId);
     let cardElement = getCachedHabitCard(habitId, time);
     if (!cardElement) cardElement = document.querySelector(`.habit-card[data-habit-id="${habitId}"][data-time="${time}"]`) as HTMLElement;
@@ -95,8 +97,6 @@ const _handleCardUpdate = (e: Event) => {
         const shouldAnimate = e.type === CARD_EVENTS.statusChanged;
         updateHabitCardElement(cardElement, habit, time, undefined, { animate: shouldAnimate });
     }
-    const targetDate = date || state.selectedDate;
-    invalidateCachesForDateChange(targetDate);
     updateDayVisuals(targetDate);
 };
 

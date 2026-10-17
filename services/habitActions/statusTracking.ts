@@ -49,6 +49,7 @@ export function toggleHabitStatus(habitId: string, time: TimeOfDay, dateISO: str
     if (currentStatus === HABIT_STATE.DONE || currentStatus === HABIT_STATE.DONE_PLUS) nextStatus = HABIT_STATE.DEFERRED;
     else if (currentStatus === HABIT_STATE.DEFERRED) nextStatus = HABIT_STATE.NULL;
     HabitService.setStatus(habitId, dateISO, time, nextStatus);
+    invalidateCachesForDateChange(dateISO);
     const h = state.habits.find(x => x.id === habitId);
     if (nextStatus === HABIT_STATE.DONE) { if (h) _checkStreakMilestones(h, dateISO); triggerHaptic('light'); }
     else if (nextStatus === HABIT_STATE.DEFERRED) triggerHaptic('medium');
@@ -99,7 +100,9 @@ export function setGoalOverride(habitId: string, d: string, t: TimeOfDay, v: num
             if (props?.goal?.total && v > props.goal.total) { if (currentStatus !== HABIT_STATE.DONE_PLUS) HabitService.setStatus(habitId, d, t, HABIT_STATE.DONE_PLUS); }
             else { if (currentStatus !== HABIT_STATE.DONE) HabitService.setStatus(habitId, d, t, HABIT_STATE.DONE); }
         }
-        saveState(); emitCardGoalChanged({ habitId, time: t, date: d }); _notifyPartialUIRefresh(d);
+        invalidateCachesForDateChange(d);
+        emitCardGoalChanged({ habitId, time: t, date: d });
+        _notifyPartialUIRefresh(d);
     } catch (e) { logger.error('setGoalOverride failed', e); }
 }
 

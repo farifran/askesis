@@ -8,7 +8,7 @@
  * @description Orquestrador de Renderização (View Orchestrator / Facade).
  */
 
-import { state, LANGUAGES } from './state';
+import { state, LANGUAGES, getStateGeneration } from './state';
 import { parseUTCIsoDate, toUTCIsoDateString, addDays, getTodayUTCIso, createDebounced, escapeHTML } from './utils';
 import { pushToOneSignal, getLocalPushOptIn } from './services/push';
 import { QUOTE_COLLAPSE_DEBOUNCE_MS, NOTIFICATION_QUOTE_DAYS } from './constants';
@@ -428,24 +428,54 @@ function ensureQuotesLoaded(): boolean {
  *
  * A regravação é necessária: só abrir o app não dispara `saveState`.
  */
-function publishNotificationQuotes() {
+let _notificationQuotesCacheKey = '';
+let _cachedFutureNotificationQuotes: { key: string; byDate: Record<string, string> } | null = null;
+
+function publishNotificationQuotes(selectedForSelectedDate?: Quote) {
     if (!_quotes) return;
 
     const lang = state.activeLanguageCode as 'pt' | 'en' | 'es';
-    const today = parseUTCIsoDate(getTodayUTCIso());
-    const byDate: Record<string, string> = {};
+    const todayISO = getTodayUTCIso();
+    const todayDiagLevel = state.dailyDiagnoses[todayISO]?.level ?? 1;
+    const stateGen = getStateGeneration();
+    const fullCacheKey = `${stateGen}|${todayISO}|${lang}|${todayDiagLevel}`;
 
-    for (let offset = 0; offset <= NOTIFICATION_QUOTE_DAYS; offset++) {
-        const dateISO = toUTCIsoDateString(addDays(today, offset));
-        try {
-            const quote = selectBestQuote(_quotes, dateISO);
-            // Sem diagnóstico da IA para o dia (sempre o caso no futuro), nível 1.
-            const level = state.dailyDiagnoses[dateISO]?.level ?? 1;
-            const text = quote.adaptations[`level_${level}` as keyof typeof quote.adaptations]?.[lang];
-            if (text) byDate[dateISO] = text;
-        } catch {
-            // Um dia sem frase apenas cai para o título de status; os demais seguem.
+    // Se a geração do estado, o dia de hoje e o idioma não mudaram (ex.: o usuário
+    // apenas navegou entre datas no calendário ou o sync de nuvem terminou), os
+    // cartões de notificação de hoje..hoje+5 já estão publicados e salvos.
+    if (_notificationQuotesCacheKey === fullCacheKey) return;
+    _notificationQuotesCacheKey = fullCacheKey;
+
+    const today = parseUTCIsoDate(todayISO);
+    let futureByDate: Record<string, string>;
+    if (_cachedFutureNotificationQuotes && _cachedFutureNotificationQuotes.key === fullCacheKey) {
+        futureByDate = _cachedFutureNotificationQuotes.byDate;
+    } else {
+        futureByDate = {};
+        for (let offset = 1; offset <= NOTIFICATION_QUOTE_DAYS; offset++) {
+            const dateISO = toUTCIsoDateString(addDays(today, offset));
+            try {
+                const quote = selectBestQuote(_quotes, dateISO);
+                // Sem diagnóstico da IA para o dia (sempre o caso no futuro), nível 1.
+                const level = state.dailyDiagnoses[dateISO]?.level ?? 1;
+                const text = quote.adaptations[`level_${level}` as keyof typeof quote.adaptations]?.[lang];
+                if (text) futureByDate[dateISO] = text;
+            } catch {
+                // Um dia sem frase apenas cai para o título de status; os demais seguem.
+            }
         }
+        _cachedFutureNotificationQuotes = { key: fullCacheKey, byDate: futureByDate };
+    }
+
+    const byDate: Record<string, string> = { ...futureByDate };
+    try {
+        const todayQuote = (selectedForSelectedDate && state.selectedDate === todayISO)
+            ? selectedForSelectedDate
+            : selectBestQuote(_quotes, todayISO);
+        const text = todayQuote.adaptations[`level_${todayDiagLevel}` as keyof typeof todayQuote.adaptations]?.[lang];
+        if (text) byDate[todayISO] = text;
+    } catch {
+        // Sem frase hoje: cai para o título de status.
     }
 
     setNotificationQuotes(byDate);
@@ -460,7 +490,9 @@ export function renderStoicQuote() {
     const hour = new Date().getHours();
     const timeOfDay = hour < 12 ? 'Morning' : (hour < 18 ? 'Afternoon' : 'Evening');
     const summary = calculateDaySummary(state.selectedDate);
-    const performanceSig = `${summary.completed}/${summary.total}`;
+    const diagnosis = state.dailyDiagnoses[state.selectedDate];
+    const userLevel = diagnosis ? diagnosis.level : 1;
+    const performanceSig = `${summary.completed}/${summary.snoozed}/${summary.total}|${getStateGeneration()}|${userLevel}`;
     const currentContextKey = `${state.selectedDate}|${state.activeLanguageCode}|${timeOfDay}|${performanceSig}`;
 
     if (_cachedQuoteState && _cachedQuoteState.contextKey === currentContextKey) return;
@@ -473,12 +505,10 @@ export function renderStoicQuote() {
     }
 
     _cachedQuoteState = { id: selectedQuote.id, contextKey: currentContextKey };
-    const diagnosis = state.dailyDiagnoses[state.selectedDate];
-    const userLevel = diagnosis ? diagnosis.level : 1;
     const lang = state.activeLanguageCode as 'pt' | 'en' | 'es';
     const adaptationText = selectedQuote.adaptations[`level_${userLevel}` as keyof typeof selectedQuote.adaptations][lang];
 
-    publishNotificationQuotes();
+    publishNotificationQuotes(selectedQuote);
 
 
     const container = ui.stoicQuoteDisplay;
@@ -533,7 +563,6 @@ document.addEventListener(APP_EVENTS.languageChanged, () => {
 });
 
 document.addEventListener(APP_EVENTS.habitsChanged, () => {
-    _cachedQuoteState = null;
     if ('requestIdleCallback' in window) requestIdleCallback(() => renderStoicQuote());
     else setTimeout(renderStoicQuote, 1000);
 });
